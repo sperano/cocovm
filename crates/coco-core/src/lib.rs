@@ -122,11 +122,13 @@ impl Machine {
         for (i, cell) in screen.iter_mut().enumerate() {
             *cell = self.bus.read(TEXT_SCREEN_BASE + i as u16);
         }
-        // Colours come from the GIME palette registers the ROM programmed. The
+        // Resolve the GIME palette registers the ROM programmed to RGBA. The
         // legacy CoCo-compatible text border is black (GIME `update_border`).
-        let fg = GIME::rgb_color(self.bus.gime.palette[video::TEXT_FG_INDEX]);
-        let bg = GIME::rgb_color(self.bus.gime.palette[video::TEXT_BG_INDEX]);
+        let mut palette = [[0u8; 4]; video::PALETTE_LEN];
+        for (i, entry) in palette.iter_mut().enumerate() {
+            *entry = GIME::rgb_color(self.bus.gime.palette[i]);
+        }
         let border = GIME::rgb_color(TEXT_BORDER_COLOR);
-        video::render_text(&screen, fg, bg, border, &mut self.framebuffer);
+        video::render_text(&screen, &palette, border, &mut self.framebuffer);
     }
 }

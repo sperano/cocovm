@@ -1,14 +1,27 @@
 //! Deterministic coverage for the VDG text renderer (`video::render_text`):
-//! geometry (border vs. active area) and glyph vs. blank cells. Colours are passed
-//! in, so tests use distinct sentinel colours to check placement.
+//! geometry, alphanumeric glyphs, inverse video, and semigraphics-4 blocks.
+//! Colours are supplied via a resolved palette, so tests use sentinel colours.
 
 use coco_core::video::{
-    render_text, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, SCREEN_LEN,
+    render_text, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN, SCREEN_LEN,
+    TEXT_BG_INDEX, TEXT_FG_INDEX,
 };
 
-const FG: [u8; 4] = [0xFF, 0x00, 0x00, 0xFF]; // red
-const BG: [u8; 4] = [0x00, 0xFF, 0x00, 0xFF]; // green
-const BD: [u8; 4] = [0x00, 0x00, 0xFF, 0xFF]; // blue
+const FG: [u8; 4] = [0xFF, 0x00, 0x00, 0xFF]; // red   (palette[13])
+const BG: [u8; 4] = [0x00, 0xFF, 0x00, 0xFF]; // green (palette[12])
+const BD: [u8; 4] = [0x00, 0x00, 0xFF, 0xFF]; // blue  (border)
+const SG_COLOR: [u8; 4] = [0xFF, 0xFF, 0x00, 0xFF]; // yellow (palette[3])
+const SG_OFF: [u8; 4] = [0x11, 0x11, 0x11, 0xFF]; // palette[8] (SG4 unlit)
+
+/// A resolved palette with distinct sentinels in the entries the renderer reads.
+fn palette() -> [[u8; 4]; PALETTE_LEN] {
+    let mut p = [[0u8; 4]; PALETTE_LEN];
+    p[TEXT_FG_INDEX] = FG;
+    p[TEXT_BG_INDEX] = BG;
+    p[3] = SG_COLOR;
+    p[8] = SG_OFF;
+    p
+}
 
 fn fb() -> Vec<u8> {
     vec![0u8; FB_W * FB_H * BYTES_PER_PIXEL]
@@ -27,12 +40,10 @@ const AT: u8 = 0x00;
 #[test]
 fn border_and_active_area_use_their_colors() {
     let mut fb = fb();
-    render_text(&[SPACE; SCREEN_LEN], FG, BG, BD, &mut fb);
+    render_text(&[SPACE; SCREEN_LEN], &palette(), BD, &mut fb);
 
-    // The outer border is the border colour.
     assert_eq!(px(&fb, 0, 0), BD);
     assert_eq!(px(&fb, FB_W - 1, FB_H - 1), BD);
-    // A fully-blank screen: the whole active interior is the background colour.
     for y in BORDER..BORDER + CELL_H {
         for x in BORDER..BORDER + CELL_W {
             assert_eq!(px(&fb, x, y), BG);
@@ -43,11 +54,10 @@ fn border_and_active_area_use_their_colors() {
 #[test]
 fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     let mut screen = [SPACE; SCREEN_LEN];
-    screen[0] = AT; // cell (0,0) = '@', cell (0,1) stays blank
+    screen[0] = AT;
     let mut fb = fb();
-    render_text(&screen, FG, BG, BD, &mut fb);
+    render_text(&screen, &palette(), BD, &mut fb);
 
-    // Cell (0,0) must contain at least one foreground pixel.
     let mut fg_pixels = 0;
     for y in BORDER..BORDER + CELL_H {
         for x in BORDER..BORDER + CELL_W {
@@ -58,7 +68,6 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     }
     assert!(fg_pixels > 0, "'@' cell rendered no foreground pixels");
 
-    // Cell (0,1) is a space — entirely background, no foreground.
     for y in BORDER..BORDER + CELL_H {
         for x in BORDER + CELL_W..BORDER + 2 * CELL_W {
             assert_eq!(px(&fb, x, y), BG, "blank cell should be all background");
@@ -68,29 +77,44 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
 
 #[test]
 fn inverse_video_swaps_fg_and_bg() {
-    // Bit 6 set = inverse: the glyph strokes take the background colour and the
-    // cell fills with the foreground colour. This is why the CoCo prompt (all
-    // bytes have bit 6 set) is black-on-green rather than green-on-black.
     const AT_INVERSE: u8 = AT | 0x40;
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = AT_INVERSE;
     let mut fb = fb();
-    render_text(&screen, FG, BG, BD, &mut fb);
+    render_text(&screen, &palette(), BD, &mut fb);
 
-    let mut fg_bgcount = (0, 0);
+    let mut counts = (0, 0);
     for y in BORDER..BORDER + CELL_H {
         for x in BORDER..BORDER + CELL_W {
             match px(&fb, x, y) {
-                p if p == FG => fg_bgcount.0 += 1,
-                p if p == BG => fg_bgcount.1 += 1,
+                p if p == FG => counts.0 += 1,
+                p if p == BG => counts.1 += 1,
                 _ => {}
             }
         }
     }
-    // Inverse '@': strokes (a few pixels) are BG, the rest of the cell is FG.
-    assert!(fg_bgcount.1 > 0, "inverse glyph strokes should use the background colour");
-    assert!(
-        fg_bgcount.0 > fg_bgcount.1,
-        "inverse cell should be mostly foreground-filled"
-    );
+    assert!(counts.1 > 0, "inverse glyph strokes should use the background colour");
+    assert!(counts.0 > counts.1, "inverse cell should be mostly foreground-filled");
+}
+
+#[test]
+fn semigraphics4_renders_2x2_color_blocks() {
+    // bit7=1 (SG4), colour = palette reg 3, pattern = upper-left + lower-right lit.
+    const SG4: u8 = 0x80 | (3 << 4) | 0b1001; // upper-left (0x08) + lower-right (0x01)
+    let mut screen = [SPACE; SCREEN_LEN];
+    screen[0] = SG4;
+    let mut fb = fb();
+    render_text(&screen, &palette(), BD, &mut fb);
+
+    let quad_x = CELL_W / 2;
+    let quad_y = CELL_H / 2;
+    // Upper-left quadrant: lit → SG_COLOR.
+    assert_eq!(px(&fb, BORDER, BORDER), SG_COLOR);
+    assert_eq!(px(&fb, BORDER + quad_x - 1, BORDER + quad_y - 1), SG_COLOR);
+    // Upper-right quadrant: unlit → SG_OFF.
+    assert_eq!(px(&fb, BORDER + quad_x, BORDER), SG_OFF);
+    // Lower-left quadrant: unlit → SG_OFF.
+    assert_eq!(px(&fb, BORDER, BORDER + quad_y), SG_OFF);
+    // Lower-right quadrant: lit → SG_COLOR.
+    assert_eq!(px(&fb, BORDER + quad_x, BORDER + quad_y), SG_COLOR);
 }

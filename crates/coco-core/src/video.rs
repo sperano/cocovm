@@ -38,20 +38,34 @@ pub const SCREEN_LEN: usize = COLS * ROWS;
 pub const TEXT_BG_INDEX: usize = 12;
 pub const TEXT_FG_INDEX: usize = 13;
 
+/// Number of resolved palette entries (GIME palette registers).
+pub const PALETTE_LEN: usize = 16;
+
 /// Number of glyphs in the font (VDG codes $00–$3F).
 const GLYPH_COUNT: usize = 64;
-/// MC6847 alphanumeric attribute bits within a screen byte.
-const GLYPH_CODE_MASK: u8 = 0x3F;
-const INVERSE_BIT: u8 = 0x40; // bit 6 — inverse video (swaps fg/bg)
+/// MC6847 attribute bits within a screen byte.
+const SEMIGRAPHICS_BIT: u8 = 0x80; // bit 7 — 1 = semigraphics 4, 0 = alphanumeric
+const INVERSE_BIT: u8 = 0x40; // bit 6 — inverse video (alphanumeric only)
+const GLYPH_CODE_MASK: u8 = 0x3F; // bits 5-0 — alphanumeric glyph code
 
-/// Render the text screen (`SCREEN_LEN` bytes) into `fb` (`FB_W*FB_H*4` bytes)
-/// using the resolved `fg`/`bg`/`border` RGBA colours.
+// Semigraphics 4: bits 6-4 select a colour (GIME palette reg 0–7), bits 3-0 are a
+// 2×2 block pattern; unlit blocks use palette reg 8 (black in CoCo-compat mode).
+const SG4_COLOR_SHIFT: u8 = 4;
+const SG4_COLOR_MASK: u8 = 0x07;
+const SG4_OFF_INDEX: usize = 8;
+const SG4_UPPER_LEFT: u8 = 0x08;
+const SG4_UPPER_RIGHT: u8 = 0x04;
+const SG4_LOWER_LEFT: u8 = 0x02;
+const SG4_LOWER_RIGHT: u8 = 0x01;
+
+/// Render the text screen (`SCREEN_LEN` bytes) into `fb` (`FB_W*FB_H*4` bytes).
 ///
-/// Each byte's low 6 bits pick the glyph; bit 6 is inverse video. The stock BASIC
-/// text screen stores every character inverse (bit 6 set), which is why the
-/// prompt is black-on-green rather than green-on-black. (bit 7 = semigraphics is
-/// not handled yet.)
-pub fn render_text(screen: &[u8], fg: [u8; 4], bg: [u8; 4], border: [u8; 4], fb: &mut [u8]) {
+/// `palette` is the resolved 16-entry GIME palette (RGBA). Each byte is either an
+/// alphanumeric character (bit 7 = 0: low 6 bits pick the glyph, bit 6 = inverse,
+/// coloured from palette regs 12/13) or a semigraphics-4 block (bit 7 = 1). The
+/// stock BASIC screen stores alphanumerics inverse (bit 6 set), so the prompt is
+/// black-on-green; the blinking cursor is an SG4 cell that cycles colours.
+pub fn render_text(screen: &[u8], palette: &[[u8; 4]; PALETTE_LEN], border: [u8; 4], fb: &mut [u8]) {
     debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
 
     // Border fills everything first; active cells overwrite the interior.
@@ -59,12 +73,42 @@ pub fn render_text(screen: &[u8], fg: [u8; 4], bg: [u8; 4], border: [u8; 4], fb:
         px.copy_from_slice(&border);
     }
 
+    let fg = palette[TEXT_FG_INDEX];
+    let bg = palette[TEXT_BG_INDEX];
+
     for row in 0..ROWS {
         for col in 0..COLS {
             let code = screen.get(row * COLS + col).copied().unwrap_or(0);
-            let glyph = &MC6847_FONT[(code & GLYPH_CODE_MASK) as usize % GLYPH_COUNT];
-            let (cell_fg, cell_bg) = if code & INVERSE_BIT != 0 { (bg, fg) } else { (fg, bg) };
-            blit_cell(fb, row, col, glyph, cell_fg, cell_bg);
+            if code & SEMIGRAPHICS_BIT != 0 {
+                blit_semigraphics4(fb, row, col, code, palette);
+            } else {
+                let glyph = &MC6847_FONT[(code & GLYPH_CODE_MASK) as usize % GLYPH_COUNT];
+                let (cell_fg, cell_bg) = if code & INVERSE_BIT != 0 { (bg, fg) } else { (fg, bg) };
+                blit_cell(fb, row, col, glyph, cell_fg, cell_bg);
+            }
+        }
+    }
+}
+
+/// Render one semigraphics-4 cell: a 2×2 grid of blocks in the selected colour.
+fn blit_semigraphics4(fb: &mut [u8], row: usize, col: usize, code: u8, palette: &[[u8; 4]; PALETTE_LEN]) {
+    let on = palette[((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize];
+    let off = palette[SG4_OFF_INDEX];
+    let x0 = BORDER + col * CELL_W;
+    let y0 = BORDER + row * CELL_H;
+    for cy in 0..CELL_H {
+        let bottom = cy >= CELL_H / 2;
+        for cx in 0..CELL_W {
+            let right = cx >= CELL_W / 2;
+            let block = match (bottom, right) {
+                (false, false) => SG4_UPPER_LEFT,
+                (false, true) => SG4_UPPER_RIGHT,
+                (true, false) => SG4_LOWER_LEFT,
+                (true, true) => SG4_LOWER_RIGHT,
+            };
+            let color = if code & block != 0 { on } else { off };
+            let idx = ((y0 + cy) * FB_W + (x0 + cx)) * BYTES_PER_PIXEL;
+            fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
         }
     }
 }

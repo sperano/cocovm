@@ -2,3 +2,5 @@
 /target
 /docs/*.pdf
 /roms/*
+# stray MAME run log
+/error.log
