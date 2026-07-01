@@ -125,3 +125,113 @@ fn blit_cell(fb: &mut [u8], row: usize, col: usize, glyph: &[u8; CELL_H], fg: [u
         }
     }
 }
+
+// --- VDG resolution graphics (CoCo-compatible PMODE, `DESIGN.md` §6) -------------
+//
+// All VDG graphics modes scan out into the same 256×192 active area as text, so
+// lower-resolution modes are pixel-doubled to fill it. The mode, colour set, and
+// colour depth come from PIA1 $FF22 (A/G, GM2–0, CSS); the display base from the SAM
+// page register; and the actual colours from the GIME palette (SEB Fig 13).
+
+/// PIA1 $FF22 bit 7: 1 = VDG graphics, 0 = alphanumeric/semigraphics.
+pub const VDG_AG: u8 = 0x80;
+/// PIA1 $FF22 bit 3: colour-set select (picks which GIME palette registers apply).
+pub const VDG_CSS: u8 = 0x08;
+/// PIA1 $FF22 bits 6–4: VDG graphics-mode select (GM2–GM0).
+const VDG_GM_MASK: u8 = 0x70;
+const VDG_GM_SHIFT: u8 = 4;
+
+/// First GIME palette register for 2-colour modes, indexed by CSS (SEB Fig 13):
+/// CSS=0 → regs 8,9; CSS=1 → regs 10,11.
+const G2_PALETTE_BASE: [usize; 2] = [8, 10];
+/// First GIME palette register for 4-colour modes, indexed by CSS (SEB Fig 13):
+/// CSS=0 → regs 0–3; CSS=1 → regs 4–7.
+const G4_PALETTE_BASE: [usize; 2] = [0, 4];
+
+/// A decoded VDG resolution-graphics mode.
+pub struct VdgGraphicsMode {
+    /// Bytes fetched per displayed row.
+    pub bytes_per_row: usize,
+    /// Displayed rows (before vertical doubling into [`ACTIVE_H`]).
+    pub rows: usize,
+    /// Bits per pixel: 1 = 2 colours, 2 = 4 colours.
+    pub bpp: usize,
+    /// Logical pixels across (before horizontal doubling into [`ACTIVE_W`]).
+    pub logical_w: usize,
+}
+
+/// Decode the VDG graphics mode from PIA1 $FF22. GM2–0 select one of the eight
+/// resolution-graphics modes; the five BASIC PMODEs are RG2/CG3/RG3/CG6/RG6.
+pub fn decode_vdg_graphics(ff22: u8) -> VdgGraphicsMode {
+    let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
+    // (logical width, rows, 4-colour?) for GM2..GM0 = 0..7.
+    let (logical_w, rows, four_colour) = match gm {
+        0 => (64, 64, true),    // CG1
+        1 => (128, 64, false),  // RG1
+        2 => (128, 64, true),   // CG2
+        3 => (128, 96, false),  // RG2  (PMODE 0)
+        4 => (128, 96, true),   // CG3  (PMODE 1)
+        5 => (128, 192, false), // RG3  (PMODE 2)
+        6 => (128, 192, true),  // CG6  (PMODE 3)
+        _ => (256, 192, false), // RG6  (PMODE 4)
+    };
+    let bpp = if four_colour { 2 } else { 1 };
+    VdgGraphicsMode { bytes_per_row: logical_w * bpp / 8, rows, bpp, logical_w }
+}
+
+/// GIME palette-register indices for a VDG graphics mode, in pixel-value order
+/// (SEB Fig 13). `css` is 0 or 1.
+pub fn vdg_palette_indices(bpp: usize, css: usize) -> Vec<usize> {
+    if bpp == 1 {
+        let b = G2_PALETTE_BASE[css];
+        vec![b, b + 1]
+    } else {
+        let b = G4_PALETTE_BASE[css];
+        vec![b, b + 1, b + 2, b + 3]
+    }
+}
+
+/// Render a VDG graphics field. `data` is the video RAM snapshot
+/// (`bytes_per_row * rows` bytes); `colors` is the resolved 2- or 4-entry LUT
+/// (pixel value → RGBA). Each logical pixel is scaled to fill the 256×192 active area.
+pub fn render_graphics(
+    data: &[u8],
+    mode: &VdgGraphicsMode,
+    colors: &[[u8; 4]],
+    border: [u8; 4],
+    fb: &mut [u8],
+) {
+    debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
+    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
+        px.copy_from_slice(&border);
+    }
+
+    let hscale = ACTIVE_W / mode.logical_w;
+    let vscale = ACTIVE_H / mode.rows;
+    let pixels_per_byte = 8 / mode.bpp;
+    let mask = (1u8 << mode.bpp) - 1;
+
+    for ly in 0..mode.rows {
+        for bx in 0..mode.bytes_per_row {
+            let byte = data.get(ly * mode.bytes_per_row + bx).copied().unwrap_or(0);
+            for j in 0..pixels_per_byte {
+                // Pixels are packed MSB-first within the byte.
+                let shift = 8 - mode.bpp * (j + 1);
+                let value = ((byte >> shift) & mask) as usize;
+                let color = colors[value.min(colors.len() - 1)];
+                let lx = bx * pixels_per_byte + j;
+                blit_block(fb, lx * hscale, ly * vscale, hscale, vscale, color);
+            }
+        }
+    }
+}
+
+/// Fill an `w`×`h` block of the active area (offset by [`BORDER`]) with one colour.
+fn blit_block(fb: &mut [u8], x: usize, y: usize, w: usize, h: usize, color: [u8; 4]) {
+    for dy in 0..h {
+        for dx in 0..w {
+            let idx = ((BORDER + y + dy) * FB_W + (BORDER + x + dx)) * BYTES_PER_PIXEL;
+            fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
+        }
+    }
+}

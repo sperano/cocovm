@@ -42,6 +42,12 @@ pub const SAM_LAST: u16 = 0xFFDF;
 /// patched RAM copy; the Super Extended init depends on the switch (SEB Unravelled II).
 pub const SAM_TY_CLEAR: u16 = 0xFFDE;
 pub const SAM_TY_SET: u16 = 0xFFDF;
+/// Page-select strobe pairs F0–F6 ($FFC6–$FFD3): 7 bits selecting the video base in
+/// units of [`SAM_PAGE_UNIT`]. Even address clears a bit, odd sets it.
+pub const SAM_PAGE_BASE: u16 = 0xFFC6;
+pub const SAM_PAGE_LAST: u16 = 0xFFD3;
+/// Each page-select step is 512 bytes (base = `sam_page * SAM_PAGE_UNIT`).
+pub const SAM_PAGE_UNIT: u16 = 512;
 
 /// INIT0 ($FF90) bit assignments (SEB Unravelled II).
 pub mod init0 {
@@ -111,6 +117,9 @@ pub struct GIME {
     pub init1: u8,
     /// SAM map-type bit ($FFDE/$FFDF, TY): true = all-RAM (system ROM disabled).
     pub all_ram: bool,
+    /// SAM display page-select bits F0–F6 ($FFC6–$FFD3). The CoCo-compatible video
+    /// base is `sam_page * SAM_PAGE_UNIT` (`DESIGN.md` §6).
+    pub sam_page: u8,
     pub palette: [u8; PALETTE_LEN],
     pub border: u8,
     pub vmode: u8,
@@ -135,6 +144,7 @@ impl Default for GIME {
             init0: 0,
             init1: 0,
             all_ram: false,
+            sam_page: 0,
             palette: [0; PALETTE_LEN],
             border: 0,
             vmode: 0,
@@ -184,16 +194,31 @@ impl GIME {
         self.task = usize::from(val & init1::TR != 0);
     }
 
-    /// Apply a SAM control-register strobe ($FFC0–$FFDF). Only the TY map-type bit
-    /// ($FFDE/$FFDF) is modelled — it selects the all-RAM map. The lower SAM bits
-    /// (CoCo 1/2 video mode / display offset / page) are compatibility strobes not
-    /// yet modelled (`DESIGN.md` §3/§6 TODO).
+    /// Apply a SAM control-register strobe ($FFC0–$FFDF). The TY map-type bit
+    /// ($FFDE/$FFDF) selects the all-RAM map; the F0–F6 page-select pairs
+    /// ($FFC6–$FFD3) set the CoCo-compatible video base. The remaining SAM bits
+    /// (V0–V2 VDG mode, clock rate) are compatibility strobes not modelled — the VDG
+    /// mode is taken from PIA1 $FF22 instead (`DESIGN.md` §3/§6 TODO).
     pub fn write_sam(&mut self, addr: u16) {
         match addr {
             SAM_TY_CLEAR => self.all_ram = false,
             SAM_TY_SET => self.all_ram = true,
+            SAM_PAGE_BASE..=SAM_PAGE_LAST => {
+                let bit = (addr - SAM_PAGE_BASE) / 2;
+                let mask = 1u8 << bit;
+                if (addr - SAM_PAGE_BASE) & 1 == 0 {
+                    self.sam_page &= !mask; // even address clears the bit
+                } else {
+                    self.sam_page |= mask; // odd address sets the bit
+                }
+            }
             _ => {}
         }
+    }
+
+    /// CoCo-compatible video base address: the SAM page bits times 512.
+    pub fn sam_display_base(&self) -> u16 {
+        (self.sam_page as u16).wrapping_mul(SAM_PAGE_UNIT)
     }
 
     /// True when the system ROM is visible in the `$8000–$FFFF` window

@@ -44,10 +44,8 @@ const CPU_HZ: f64 = 894_886.0;
 enum VideoMode {
     /// INIT0 COCO=1, VDG alphanumerics/semigraphics: the legacy 32×16 text screen.
     CocoText,
-    /// INIT0 COCO=1, VDG bitmap graphics (PMODE). Same 256×192 active area as text.
-    /// TODO(`DESIGN.md` §6): needs the SAM V0–V2 / PIA GM mode bits, not modelled yet.
-    /// Unconstructed until `video_mode` learns to read those bits.
-    #[allow(dead_code)]
+    /// INIT0 COCO=1, VDG bitmap graphics (PMODE), selected by PIA1 $FF22 A/G.
+    /// Same 256×192 active area as text; lower resolutions are pixel-doubled.
     CocoGraphics,
     /// INIT0 COCO=0, $FF98 BP=0: GIME native hi-res text (40/80 columns). TODO.
     GimeText,
@@ -147,8 +145,12 @@ impl Machine {
     fn video_mode(&self) -> VideoMode {
         let g = &self.bus.gime;
         if g.init0 & gime::init0::COCO != 0 {
-            // TODO: inspect SAM V0–V2 / PIA GM bits to select CocoGraphics (PMODE).
-            VideoMode::CocoText
+            // PIA1 $FF22 bit 7 selects VDG graphics (PMODE) vs alphanumerics/semigraphics.
+            if self.bus.pia1.b.output & video::VDG_AG != 0 {
+                VideoMode::CocoGraphics
+            } else {
+                VideoMode::CocoText
+            }
         } else if g.vmode & gime::vmode::BP != 0 {
             VideoMode::GimeGraphics
         } else {
@@ -163,8 +165,7 @@ impl Machine {
     fn render_field(&mut self) {
         match self.video_mode() {
             VideoMode::CocoText => self.render_coco_text(),
-            // TODO(`DESIGN.md` §6): VDG bitmap graphics (PMODE), 256×192 active.
-            VideoMode::CocoGraphics => self.render_coco_text(),
+            VideoMode::CocoGraphics => self.render_coco_graphics(),
             // TODO: GIME native hi-res text (40/80 columns, GIME character generator).
             VideoMode::GimeText => self.render_coco_text(),
             // TODO(`DESIGN.md` §6): GIME native graphics (HSCREEN); resize the buffer
@@ -189,5 +190,29 @@ impl Machine {
         }
         let border = GIME::rgb_color(TEXT_BORDER_COLOR);
         video::render_text(&screen, &palette, border, &mut self.framebuffer);
+    }
+
+    /// Render a VDG bitmap graphics (PMODE) field (`DESIGN.md` §6).
+    ///
+    /// The mode/colour set come from PIA1 $FF22 and the display base from the SAM
+    /// page register. Video RAM is read through the bus (honours the MMU) from that
+    /// base — the same low-64K simplification as `render_coco_text`.
+    fn render_coco_graphics(&mut self) {
+        let ff22 = self.bus.pia1.b.output;
+        let mode = video::decode_vdg_graphics(ff22);
+        let css = usize::from(ff22 & video::VDG_CSS != 0);
+        let colors: Vec<[u8; 4]> = video::vdg_palette_indices(mode.bpp, css)
+            .iter()
+            .map(|&reg| GIME::rgb_color(self.bus.gime.palette[reg]))
+            .collect();
+
+        let base = self.bus.gime.sam_display_base();
+        let mut data = vec![0u8; mode.bytes_per_row * mode.rows];
+        for (i, byte) in data.iter_mut().enumerate() {
+            *byte = self.bus.read(base.wrapping_add(i as u16));
+        }
+
+        let border = GIME::rgb_color(TEXT_BORDER_COLOR);
+        video::render_graphics(&data, &mode, &colors, border, &mut self.framebuffer);
     }
 }
