@@ -21,6 +21,10 @@ use eframe::egui;
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 const SCALE: f32 = 3.0;
+/// Physical aspect the CoCo frame fills on an NTSC set (4:3). The framebuffer is
+/// 288×224 (≈1.29:1); when aspect correction is on, the image is stretched
+/// horizontally to this ratio so pixels are ~3% wider than tall, as on real hardware.
+const TARGET_ASPECT: f32 = 4.0 / 3.0;
 /// Emulated video fields to run per UI repaint (≈ real time at 60 Hz refresh).
 const FIELDS_PER_FRAME: usize = 1;
 /// Height reserved for the top menu bar when sizing the window.
@@ -99,6 +103,7 @@ struct CocoApp {
     kb_mode: KbMode,
     type_ahead: TypeAhead,
     show_kbd_help: bool,
+    aspect_correct: bool,
 }
 
 impl CocoApp {
@@ -110,6 +115,7 @@ impl CocoApp {
             kb_mode: KbMode::Positional,
             type_ahead: TypeAhead::default(),
             show_kbd_help: false,
+            aspect_correct: true,
         }
     }
 
@@ -136,6 +142,7 @@ impl CocoApp {
                         self.set_mode(next);
                     }
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
+                    egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
                     _ => {}
                 }
             }
@@ -220,6 +227,7 @@ impl eframe::App for CocoApp {
                 if ui.button("⌨ Keys (F10)").clicked() {
                     self.show_kbd_help = !self.show_kbd_help;
                 }
+                ui.checkbox(&mut self.aspect_correct, "4:3 (F9)");
                 ui.separator();
                 ui.label(format!("cycles: {}", self.machine.cpu.cycles));
             });
@@ -231,11 +239,29 @@ impl eframe::App for CocoApp {
         }
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
+            .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
             .show(ctx, |ui| {
                 let tex = self.texture.as_ref().unwrap();
-                let sized = egui::load::SizedTexture::new(tex.id(), tex.size_vec2() * SCALE);
-                ui.image(sized);
+                let tex_size = tex.size_vec2();
+                // Aspect the displayed frame should have, independent of the buffer's
+                // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
+                // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+                let aspect = if self.aspect_correct {
+                    TARGET_ASPECT
+                } else {
+                    tex_size.x / tex_size.y
+                };
+                // Largest rect of that aspect that fits the panel, centered (letterboxed).
+                let avail = ui.available_rect_before_wrap();
+                let mut w = avail.width();
+                let mut h = w / aspect;
+                if h > avail.height() {
+                    h = avail.height();
+                    w = h * aspect;
+                }
+                let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
+                let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
+                ui.put(rect, egui::Image::new(sized));
             });
     }
 }
@@ -317,8 +343,11 @@ fn main() -> eframe::Result<()> {
             std::process::exit(1);
         }
     };
-    let win_w = coco_core::video::FB_W as f32 * SCALE;
-    let win_h = coco_core::video::FB_H as f32 * SCALE + MENU_BAR_H;
+    // Size for the aspect-corrected (wider) image so it always fits; the
+    // uncorrected image is narrower and simply leaves margin.
+    let img_h = coco_core::video::FB_H as f32 * SCALE;
+    let win_w = img_h * TARGET_ASPECT;
+    let win_h = img_h + MENU_BAR_H;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([win_w, win_h]),
         ..Default::default()

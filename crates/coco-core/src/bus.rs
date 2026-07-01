@@ -23,6 +23,8 @@ const INIT0_REG: u16 = 0xFF90;
 const INIT1_REG: u16 = 0xFF91;
 /// GIME control registers past INIT0/INIT1: IRQ/FIRQ enables, timer, video, border.
 const GIME_CTRL_BASE: u16 = 0xFF92;
+const VMODE_REG: u16 = 0xFF98;
+const VRES_REG: u16 = 0xFF99;
 const GIME_LAST: u16 = 0xFF9F;
 const MMU_BASE: u16 = 0xFFA0;
 const MMU_LAST: u16 = 0xFFAF;
@@ -154,7 +156,9 @@ impl SystemBus {
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
             INIT0_REG => self.gime.write_init0(val),
             INIT1_REG => self.gime.write_init1(val),
-            GIME_CTRL_BASE..=GIME_LAST => { /* TODO: IRQ/timer/video control regs */ }
+            VMODE_REG => self.gime.vmode = val,
+            VRES_REG => self.gime.vres = val,
+            GIME_CTRL_BASE..=GIME_LAST => { /* TODO: IRQ/timer/border control regs */ }
             MMU_BASE..=MMU_LAST => {
                 let (task, slot) = mmu_index(addr);
                 self.gime.mmu[task][slot] = val; // full 8 bits stored on write
@@ -162,7 +166,8 @@ impl SystemBus {
             PALETTE_BASE..=PALETTE_LAST => {
                 self.gime.palette[(addr - PALETTE_BASE) as usize] = val;
             }
-            _ => { /* SAM-compat / unmapped — TODO */ }
+            gime::SAM_BASE..=gime::SAM_LAST => self.gime.write_sam(addr),
+            _ => { /* unmapped — TODO */ }
         }
     }
 }

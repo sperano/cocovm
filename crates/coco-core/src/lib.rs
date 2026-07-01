@@ -33,6 +33,29 @@ const TEXT_BORDER_COLOR: u8 = 0x00;
 /// Provisional NTSC CPU clock (~0.895 MHz). Unverified constant; see `DESIGN.md` §4.
 const CPU_HZ: f64 = 894_886.0;
 
+/// Which video path the GIME is currently driving; `render_field` dispatches on it.
+///
+/// Only [`VideoMode::CocoText`] is implemented today. The other variants are the
+/// branch points for the graphics renderers to come (PMODE and HSCREEN). Each
+/// renderer fills its own-size buffer and the frontend scales to fit — see the
+/// `video-output-architecture` note (Option A). Option B (one canonical raster) is
+/// the planned follow-up for per-scanline mode changes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum VideoMode {
+    /// INIT0 COCO=1, VDG alphanumerics/semigraphics: the legacy 32×16 text screen.
+    CocoText,
+    /// INIT0 COCO=1, VDG bitmap graphics (PMODE). Same 256×192 active area as text.
+    /// TODO(`DESIGN.md` §6): needs the SAM V0–V2 / PIA GM mode bits, not modelled yet.
+    /// Unconstructed until `video_mode` learns to read those bits.
+    #[allow(dead_code)]
+    CocoGraphics,
+    /// INIT0 COCO=0, $FF98 BP=0: GIME native hi-res text (40/80 columns). TODO.
+    GimeText,
+    /// INIT0 COCO=0, $FF98 BP=1: GIME native graphics (HSCREEN), up to 640-wide with
+    /// a variable-size buffer. TODO(`DESIGN.md` §6).
+    GimeGraphics,
+}
+
 /// The whole emulated machine.
 ///
 /// The CPU is one field and everything else lives in `bus`, so `cpu.step(&mut bus)`
@@ -116,7 +139,42 @@ impl Machine {
         (CPU_HZ / self.config.video.field_rate_hz()) as u32
     }
 
+    /// Classify the current video mode from the GIME registers.
+    ///
+    /// The CoCo-compatible text-vs-graphics split (VDG mode bits live in the SAM /
+    /// PIA, not modelled yet) always resolves to text for now, so at the BASIC
+    /// prompt this returns [`VideoMode::CocoText`].
+    fn video_mode(&self) -> VideoMode {
+        let g = &self.bus.gime;
+        if g.init0 & gime::init0::COCO != 0 {
+            // TODO: inspect SAM V0–V2 / PIA GM bits to select CocoGraphics (PMODE).
+            VideoMode::CocoText
+        } else if g.vmode & gime::vmode::BP != 0 {
+            VideoMode::GimeGraphics
+        } else {
+            VideoMode::GimeText
+        }
+    }
+
+    /// Render one video field into `framebuffer`, dispatching on the current mode.
+    ///
+    /// Unimplemented graphics modes fall back to the text renderer so the machine
+    /// keeps producing a picture; each arm is the seam where a real renderer lands.
     fn render_field(&mut self) {
+        match self.video_mode() {
+            VideoMode::CocoText => self.render_coco_text(),
+            // TODO(`DESIGN.md` §6): VDG bitmap graphics (PMODE), 256×192 active.
+            VideoMode::CocoGraphics => self.render_coco_text(),
+            // TODO: GIME native hi-res text (40/80 columns, GIME character generator).
+            VideoMode::GimeText => self.render_coco_text(),
+            // TODO(`DESIGN.md` §6): GIME native graphics (HSCREEN); resize the buffer
+            // and set fb_width/fb_height from the VRES bytes-per-row / LPF fields.
+            VideoMode::GimeGraphics => self.render_coco_text(),
+        }
+    }
+
+    /// Render the legacy CoCo-compatible 32×16 text screen (`DESIGN.md` §6).
+    fn render_coco_text(&mut self) {
         // Snapshot the text screen through the bus (honours the MMU), then render.
         // TODO: per-scanline scanout straight from RAM (`DESIGN.md` §2b/§6).
         let mut screen = [0u8; video::SCREEN_LEN];

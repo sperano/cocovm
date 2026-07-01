@@ -30,6 +30,19 @@ pub const DISABLED_MMU_BASE: usize = 0x7_0000;
 /// two are bus bleedover on most machines (SEB Unravelled II, MMU special note 1).
 pub const MMU_READ_MASK: u8 = 0x3F;
 
+/// SAM-compatibility control strobes ($FFC0–$FFDF). Each SAM bit is a pair of
+/// addresses: the even one clears it, the odd sets it (the data written is
+/// ignored). See `DESIGN.md` §3.
+pub const SAM_BASE: u16 = 0xFFC0;
+pub const SAM_LAST: u16 = 0xFFDF;
+/// TY (map type) strobe pair — the highest SAM bit. `$FFDE` clears TY (system ROM
+/// mapped in the `$8000–$FFFF` window); `$FFDF` sets TY (all-RAM: the ROM is
+/// switched out and the RAM underneath — into which BASIC copies and *patches* a
+/// working image of itself — becomes visible). The CoCo 3 runs BASIC from this
+/// patched RAM copy; the Super Extended init depends on the switch (SEB Unravelled II).
+pub const SAM_TY_CLEAR: u16 = 0xFFDE;
+pub const SAM_TY_SET: u16 = 0xFFDF;
+
 /// INIT0 ($FF90) bit assignments (SEB Unravelled II).
 pub mod init0 {
     /// 1 = CoCo 1/2 compatible mode (enables SAM video/offset regs).
@@ -56,6 +69,32 @@ pub mod init1 {
     pub const TINS: u8 = 0x20;
     /// Task register select: 0 = $FFA0 set, 1 = $FFA8 set.
     pub const TR: u8 = 0x01;
+}
+
+/// Video Mode Register ($FF98) bit assignments (SEB Unravelled II). Only meaningful
+/// when INIT0 COCO=0 (GIME native modes); ignored in CoCo-compatible mode.
+pub mod vmode {
+    /// Bit-plane / graphics select: 1 = graphics (HSCREEN), 0 = hi-res text.
+    pub const BP: u8 = 0x80;
+    /// Monochrome on composite output.
+    pub const MOCH: u8 = 0x10;
+    /// 50 Hz field rate (else 60 Hz).
+    pub const H50: u8 = 0x08;
+    /// Lines per character row (text modes).
+    pub const LPR_MASK: u8 = 0x07;
+}
+
+/// Video Resolution Register ($FF99) bit assignments (SEB Unravelled II): rows per
+/// field (LPF), bytes per row (HRES), and colour depth (CRES).
+pub mod vres {
+    /// Lines-per-field select (bits 5–6): 192/200/210/225 rows.
+    pub const LPF_MASK: u8 = 0x60;
+    pub const LPF_SHIFT: u8 = 5;
+    /// Horizontal resolution select (bits 2–4): sets bytes per row, not pixels.
+    pub const HRES_MASK: u8 = 0x1C;
+    pub const HRES_SHIFT: u8 = 2;
+    /// Colour-resolution select (bits 0–1): pixels packed per byte (2/4/16 colours).
+    pub const CRES_MASK: u8 = 0x03;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +182,18 @@ impl GIME {
     pub fn write_init1(&mut self, val: u8) {
         self.init1 = val;
         self.task = usize::from(val & init1::TR != 0);
+    }
+
+    /// Apply a SAM control-register strobe ($FFC0–$FFDF). Only the TY map-type bit
+    /// ($FFDE/$FFDF) is modelled — it selects the all-RAM map. The lower SAM bits
+    /// (CoCo 1/2 video mode / display offset / page) are compatibility strobes not
+    /// yet modelled (`DESIGN.md` §3/§6 TODO).
+    pub fn write_sam(&mut self, addr: u16) {
+        match addr {
+            SAM_TY_CLEAR => self.all_ram = false,
+            SAM_TY_SET => self.all_ram = true,
+            _ => {}
+        }
     }
 
     /// True when the system ROM is visible in the `$8000–$FFFF` window
