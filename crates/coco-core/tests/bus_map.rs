@@ -45,6 +45,20 @@ fn io_page_below_vectors_is_not_rom() {
 }
 
 #[test]
+fn constant_page_fe00_is_ram_not_rom() {
+    // $FE00-$FEFF is the interrupt-trampoline page: RAM even though it sits inside
+    // the $8000-$FFFF ROM window. Writing then reading must round-trip through RAM.
+    let mut b = bus(MemorySize::K512);
+    b.write(0xFE00, 0x5A);
+    b.write(0xFEFF, 0xA5);
+    assert_eq!(b.read(0xFE00), 0x5A);
+    assert_eq!(b.read(0xFEFF), 0xA5);
+    // The byte just below still reads ROM (writes fall through to shadow RAM).
+    b.write(0xFDFF, 0x11);
+    assert_eq!(b.read(0xFDFF), marked_rom()[0xFDFF - 0x8000]);
+}
+
+#[test]
 fn all_ram_mode_exposes_ram_under_rom() {
     let mut b = bus(MemorySize::K512);
     b.gime.all_ram = true; // SAM map-type = RAM: ROM disabled

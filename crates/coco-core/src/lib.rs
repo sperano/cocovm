@@ -7,6 +7,7 @@ pub mod cart;
 pub mod config;
 mod font6847;
 pub mod gime;
+pub mod keyboard;
 pub mod pia;
 pub mod video;
 

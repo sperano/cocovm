@@ -9,6 +9,7 @@ use mc6809::Bus;
 use crate::cart::{Cartridge, EmptySlot};
 use crate::config::MemorySize;
 use crate::gime::{self, GIME};
+use crate::keyboard::Keyboard;
 use crate::pia::MC6821;
 
 // I/O page device ranges (`DESIGN.md` §3). PIA0/PIA1 mirror every 4 bytes.
@@ -31,6 +32,14 @@ const PALETTE_LAST: u16 = 0xFFBF;
 /// Base of the ROM window. `$8000–$FFFF` reads return ROM when it is mapped, with
 /// the fixed I/O page overlaid on top of `$FF00–$FFEF` (`DESIGN.md` §3).
 const ROM_WINDOW_BASE: u16 = 0x8000;
+/// `$FE00–$FEFF` is always RAM — the "constant" interrupt-vector page the ROM
+/// routes NMI/IRQ/FIRQ/SWI through (SEB Unravelled II; INIT0 MC3 controls whether
+/// it is fixed at physical `$7FE00` or follows MMU logical block 7). It sits inside
+/// the ROM window address range but is *not* ROM: BASIC writes JMP trampolines here.
+const CONSTANT_RAM_BASE: u16 = 0xFE00;
+const CONSTANT_RAM_LAST: u16 = 0xFEFF;
+/// Physical base of the constant `$FE00` page when INIT0 MC3 is set.
+const CONSTANT_RAM_PHYS: usize = 0x7_FE00;
 /// The 6809 hardware vectors (`$FFF0–$FFFF`) are always fetched from internal ROM,
 /// even in the "32K external" ROM configuration (SEB Unravelled II ROM-map table).
 const VECTOR_BASE: u16 = 0xFFF0;
@@ -44,6 +53,7 @@ pub struct SystemBus {
     pub pia0: MC6821,
     pub pia1: MC6821,
     pub cart: Box<dyn Cartridge>,
+    pub keyboard: Keyboard,
     pub io_enabled: bool,
 }
 
@@ -56,13 +66,26 @@ impl SystemBus {
             pia0: MC6821::new(),
             pia1: MC6821::new(),
             cart: Box::new(EmptySlot),
+            keyboard: Keyboard::new(),
             io_enabled: true,
         }
     }
 
     /// Physical RAM offset for a CPU address, masked to installed RAM.
     fn phys(&self, addr: u16) -> usize {
+        // MC3: hold the $FE00 page constant at physical $7FE00 regardless of the MMU.
+        if (CONSTANT_RAM_BASE..=CONSTANT_RAM_LAST).contains(&addr)
+            && self.gime.init0 & gime::init0::MC3 != 0
+        {
+            return (CONSTANT_RAM_PHYS | (addr as usize & 0xFF)) % self.ram.len();
+        }
         self.gime.translate(addr) % self.ram.len()
+    }
+
+    /// True when `addr` reads internal ROM (the `$8000–$FDFF` window when ROM is
+    /// mapped). `$FE00–$FEFF` is RAM; `$FF00+` is the I/O page / vectors.
+    fn is_rom_window(&self, addr: u16) -> bool {
+        (ROM_WINDOW_BASE..CONSTANT_RAM_BASE).contains(&addr) && self.gime.rom_enabled()
     }
 
     /// True when any interrupt source is holding the CPU IRQ line low.
@@ -104,7 +127,12 @@ impl SystemBus {
 
     fn io_read(&mut self, addr: u16) -> u8 {
         match addr {
-            IO_BASE..=PIA0_LAST => self.pia0.read((addr & 0x03) as u8),
+            IO_BASE..=PIA0_LAST => {
+                // Port A senses the keyboard rows for the current port-B column
+                // strobe. Refresh its input pins before the PIA read.
+                self.pia0.a.input = self.keyboard.sense(self.pia0.b.output);
+                self.pia0.read((addr & 0x03) as u8)
+            }
             PIA1_BASE..=PIA1_LAST => self.pia1.read((addr & 0x03) as u8),
             CART_BASE..=CART_LAST => self.cart.read(addr),
             INIT0_REG => self.gime.init0,
@@ -154,7 +182,7 @@ impl Bus for SystemBus {
             }
             return self.io_read(addr);
         }
-        if addr >= ROM_WINDOW_BASE && self.gime.rom_enabled() {
+        if self.is_rom_window(addr) {
             return self.rom_read(addr);
         }
         let p = self.phys(addr);
