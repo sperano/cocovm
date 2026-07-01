@@ -71,6 +71,12 @@ impl TypeAhead {
         self.phase = TypePhase::Idle;
     }
 
+    /// True while taps are still queued or a tap is mid hold/gap — i.e. a paste or
+    /// type-ahead burst is still draining and owns the keyboard matrix.
+    fn is_active(&self) -> bool {
+        !self.queue.is_empty() || !matches!(self.phase, TypePhase::Idle)
+    }
+
     /// Advance one field, driving the CoCo matrix for the current tap.
     fn advance(&mut self, kb: &mut kbd::Keyboard) {
         match self.phase {
@@ -127,13 +133,25 @@ impl CocoApp {
         }
     }
 
+    /// Queue a string as symbolic key taps (used by clipboard paste and, in symbolic
+    /// mode, typed text). Characters with no CoCo key are skipped; `\n`/`\r` → ENTER.
+    fn enqueue_text(&mut self, text: &str) {
+        for c in text.chars() {
+            if let Some(entry) = kbd::char_key(c) {
+                self.type_ahead.queue.push_back(entry);
+            }
+        }
+    }
+
     fn handle_input(&mut self, ctx: &egui::Context) {
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
 
-        // F10/F12 are UI hotkeys, never forwarded to the CoCo.
+        // UI hotkeys (never forwarded) and clipboard paste, both keyboard-mode-agnostic.
+        // egui/eframe normalises the platform paste shortcut (Cmd+V / Ctrl+V) into a
+        // single Event::Paste, so this works the same on macOS, Windows, and Linux.
         for ev in &events {
-            if let egui::Event::Key { key, pressed: true, repeat: false, .. } = ev {
-                match key {
+            match ev {
+                egui::Event::Key { key, pressed: true, repeat: false, .. } => match key {
                     egui::Key::F12 => {
                         let next = match self.kb_mode {
                             KbMode::Positional => KbMode::Symbolic,
@@ -144,47 +162,50 @@ impl CocoApp {
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
                     egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
                     _ => {}
+                },
+                egui::Event::Paste(text) => self.enqueue_text(text),
+                _ => {}
+            }
+        }
+
+        // Symbolic mode also turns typed characters and control keys into queued taps.
+        if self.kb_mode == KbMode::Symbolic {
+            for ev in &events {
+                match ev {
+                    egui::Event::Text(text) => self.enqueue_text(text),
+                    egui::Event::Key { key, pressed: true, .. } => {
+                        if let Some(pos) = control_key_pos(*key) {
+                            self.type_ahead.queue.push_back((pos, false));
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
 
-        match self.kb_mode {
-            KbMode::Positional => {
-                let kb = &mut self.machine.bus.keyboard;
-                kb.set(kbd::SHIFT, mods.shift);
-                kb.set(kbd::CTRL, mods.ctrl);
-                kb.set(kbd::ALT, mods.alt);
-                for ev in &events {
-                    if let egui::Event::Key { key, physical_key, pressed, .. } = ev {
-                        let k = physical_key.unwrap_or(*key);
-                        if k == egui::Key::F12 {
-                            continue;
-                        }
-                        if let Some(pos) = key_to_pos(k) {
-                            kb.set(pos, *pressed);
-                        }
+        // While a paste / type-ahead burst is draining it owns the matrix, in either
+        // mode, so replayed taps aren't clobbered by the per-frame positional writes.
+        if self.type_ahead.is_active() {
+            self.type_ahead.advance(&mut self.machine.bus.keyboard);
+            return;
+        }
+
+        // Positional mode: physical keys drive the CoCo matrix directly.
+        if self.kb_mode == KbMode::Positional {
+            let kb = &mut self.machine.bus.keyboard;
+            kb.set(kbd::SHIFT, mods.shift);
+            kb.set(kbd::CTRL, mods.ctrl);
+            kb.set(kbd::ALT, mods.alt);
+            for ev in &events {
+                if let egui::Event::Key { key, physical_key, pressed, .. } = ev {
+                    let k = physical_key.unwrap_or(*key);
+                    if k == egui::Key::F12 {
+                        continue;
+                    }
+                    if let Some(pos) = key_to_pos(k) {
+                        kb.set(pos, *pressed);
                     }
                 }
-            }
-            KbMode::Symbolic => {
-                for ev in &events {
-                    match ev {
-                        egui::Event::Text(text) => {
-                            for c in text.chars() {
-                                if let Some(entry) = kbd::char_key(c) {
-                                    self.type_ahead.queue.push_back(entry);
-                                }
-                            }
-                        }
-                        egui::Event::Key { key, pressed: true, .. } => {
-                            if let Some(pos) = control_key_pos(*key) {
-                                self.type_ahead.queue.push_back((pos, false));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                self.type_ahead.advance(&mut self.machine.bus.keyboard);
             }
         }
     }
