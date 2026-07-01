@@ -218,6 +218,13 @@ entirely lines-per-field and thus field rate, which drives the host pacing perio
   `$FF92`/`$FF93` enables. The PIAs *also* drive IRQ/FIRQ (legacy path). So the
   CPU sees `irq = gime.irq() | pia0.irq() | …`. Reading the GIME status reg
   (`$FF92`) returns and clears pending bits — model that as a side-effecting read.
+  - **Implementation note (2026-07, verified against the real ROM):** the stock
+    CoCo 3 sits at the BASIC prompt with **INIT0 IEN=0/FEN=0**, i.e. the *legacy
+    PIA path*, not the GIME interrupt block. The 60 Hz field sync is wired to
+    **PIA0 CB1** (`$FF03`) and horizontal sync to **PIA0 CA1** (`$FF01`); both
+    drive IRQ. That field-sync IRQ is what breaks the ROM out of its `BRA *` idle
+    loop. `coco-core` implements this path first (`SystemBus::{hsync,vsync}` +
+    `Machine::run_field`); GIME-sourced IRQ ORs in later.
 
 **Host pacing**: don't trust egui's repaint cadence for emulation timing. Use a
 real-time accumulator — accumulate wall-clock delta, run whole emulated fields
@@ -286,6 +293,21 @@ This is where "start with the GIME" actually means a lot of surface area. Split 
   semigraphics/VDG modes selected through the SAM-compat and PIA mode bits. Needed
   to run old software, but not to boot CoCo 3 BASIC. Flag this as explicit deferred
   scope.
+  - **Correction (2026-07, verified against the real ROM):** the power-on BASIC
+    prompt is drawn in the **VDG-compatible 32×16 alphanumeric text mode** (COCO
+    bit set), *not* a GIME native text mode — native 40/80-col text only appears
+    with `WIDTH 40/80`. So the first visible-prompt milestone required the VDG
+    text path ahead of "native first". `coco-core::video` implements it: 32×16
+    from logical `$0400`, MC6847 glyphs. **Colours are data-driven from the GIME
+    palette registers** the ROM programmed (not hardcoded): text bg = palette reg
+    12, fg = reg 13, converted via `GIME::rgb_color` (6-bit `RGBrgb`, ×0x55, per
+    MAME `gime.cpp`); legacy text border is black. **Bit 6 of each screen byte is
+    inverse video** (swaps fg/bg); the stock BASIC screen stores every character
+    with bit 6 set, so the prompt is **black glyphs on green** (`#00FF00`) with a
+    black border — verified against a MAME screenshot. CSS orange set, semigraphics
+    (bit 7), and native GIME text are TODO. FONT LICENSING: `src/font6847.rs` is
+    MAME's GPL-2.0+ `vdg_t1_fontdata8x12`, pending a licensing decision — see
+    `NOTICE.md`.
 
 Render to an RGBA `framebuffer: Vec<u8>` sized to the max active area (border
 included). Per-scanline write into it; at VSYNC upload as an `egui::ColorImage` →

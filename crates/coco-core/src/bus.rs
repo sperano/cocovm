@@ -8,7 +8,7 @@ use mc6809::Bus;
 
 use crate::cart::{Cartridge, EmptySlot};
 use crate::config::MemorySize;
-use crate::gime::GIME;
+use crate::gime::{self, GIME};
 use crate::pia::MC6821;
 
 // I/O page device ranges (`DESIGN.md` §3). PIA0/PIA1 mirror every 4 bytes.
@@ -18,12 +18,22 @@ const PIA1_BASE: u16 = 0xFF20;
 const PIA1_LAST: u16 = 0xFF3F;
 const CART_BASE: u16 = 0xFF40;
 const CART_LAST: u16 = 0xFF5F;
-const GIME_BASE: u16 = 0xFF90;
+const INIT0_REG: u16 = 0xFF90;
+const INIT1_REG: u16 = 0xFF91;
+/// GIME control registers past INIT0/INIT1: IRQ/FIRQ enables, timer, video, border.
+const GIME_CTRL_BASE: u16 = 0xFF92;
 const GIME_LAST: u16 = 0xFF9F;
 const MMU_BASE: u16 = 0xFFA0;
 const MMU_LAST: u16 = 0xFFAF;
 const PALETTE_BASE: u16 = 0xFFB0;
 const PALETTE_LAST: u16 = 0xFFBF;
+
+/// Base of the ROM window. `$8000–$FFFF` reads return ROM when it is mapped, with
+/// the fixed I/O page overlaid on top of `$FF00–$FFEF` (`DESIGN.md` §3).
+const ROM_WINDOW_BASE: u16 = 0x8000;
+/// The 6809 hardware vectors (`$FFF0–$FFFF`) are always fetched from internal ROM,
+/// even in the "32K external" ROM configuration (SEB Unravelled II ROM-map table).
+const VECTOR_BASE: u16 = 0xFFF0;
 
 const OPEN_BUS: u8 = 0xFF;
 
@@ -55,18 +65,57 @@ impl SystemBus {
         self.gime.translate(addr) % self.ram.len()
     }
 
+    /// True when any interrupt source is holding the CPU IRQ line low.
+    ///
+    /// At the BASIC prompt the stock ROM runs the legacy PIA path (INIT0 IEN=0),
+    /// so IRQ comes from PIA0's field/horizontal sync. GIME-sourced IRQ (timer,
+    /// VBORD) will OR in here once wired (`DESIGN.md` §4).
+    pub fn irq_asserted(&self) -> bool {
+        self.pia0.irq() || self.pia1.irq()
+    }
+
+    /// True when any interrupt source is holding the CPU FIRQ line low.
+    /// Cartridge/GIME FIRQ sources are TODO.
+    pub fn firq_asserted(&self) -> bool {
+        false
+    }
+
+    /// Horizontal-sync edge: latches PIA0 CA1 (control reg $FF01, port A).
+    pub fn hsync(&mut self) {
+        self.pia0.a.pulse_c1();
+    }
+
+    /// Field-sync (~60 Hz vertical) edge: latches PIA0 CB1 (control reg $FF03,
+    /// port B) — the interrupt that drives BASIC's housekeeping loop.
+    pub fn vsync(&mut self) {
+        self.pia0.b.pulse_c1();
+    }
+
+    /// Read internal ROM for a logical address in the `$8000–$FFFF` window.
+    ///
+    /// The 32K image sits at offset `addr - $8000`. A cartridge ROM overlay on
+    /// the upper half (INIT0 MC1=0, "16K external") plugs in here — deferred until
+    /// a real `Cartridge` provides ROM; `EmptySlot` yields pure internal ROM, which
+    /// is what boots a diskless CoCo 3.
+    fn rom_read(&self, addr: u16) -> u8 {
+        let off = (addr - ROM_WINDOW_BASE) as usize;
+        self.rom.get(off).copied().unwrap_or(OPEN_BUS)
+    }
+
     fn io_read(&mut self, addr: u16) -> u8 {
         match addr {
             IO_BASE..=PIA0_LAST => self.pia0.read((addr & 0x03) as u8),
             PIA1_BASE..=PIA1_LAST => self.pia1.read((addr & 0x03) as u8),
             CART_BASE..=CART_LAST => self.cart.read(addr),
-            GIME_BASE..=GIME_LAST => 0, // TODO: GIME register reads (status clears)
+            INIT0_REG => self.gime.init0,
+            INIT1_REG => self.gime.init1,
+            GIME_CTRL_BASE..=GIME_LAST => 0, // TODO: IRQ/timer/video status regs (clear-on-read)
             MMU_BASE..=MMU_LAST => {
-                // TODO: reads return only the low 6 bits reliably (`DESIGN.md` §3).
-                0
+                let (task, slot) = mmu_index(addr);
+                self.gime.mmu[task][slot] & gime::MMU_READ_MASK
             }
             PALETTE_BASE..=PALETTE_LAST => self.gime.palette[(addr - PALETTE_BASE) as usize],
-            _ => OPEN_BUS, // SAM-compat / vectors / unmapped — TODO
+            _ => OPEN_BUS, // SAM-compat / spare / unmapped — TODO
         }
     }
 
@@ -75,11 +124,11 @@ impl SystemBus {
             IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
             PIA1_BASE..=PIA1_LAST => self.pia1.write((addr & 0x03) as u8, val),
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
-            GIME_BASE..=GIME_LAST => { /* TODO: GIME control registers */ }
+            INIT0_REG => self.gime.write_init0(val),
+            INIT1_REG => self.gime.write_init1(val),
+            GIME_CTRL_BASE..=GIME_LAST => { /* TODO: IRQ/timer/video control regs */ }
             MMU_BASE..=MMU_LAST => {
-                let idx = (addr - MMU_BASE) as usize;
-                let task = idx / crate::gime::SLOTS_PER_TASK;
-                let slot = idx % crate::gime::SLOTS_PER_TASK;
+                let (task, slot) = mmu_index(addr);
                 self.gime.mmu[task][slot] = val; // full 8 bits stored on write
             }
             PALETTE_BASE..=PALETTE_LAST => {
@@ -90,10 +139,23 @@ impl SystemBus {
     }
 }
 
+/// Decode an `$FFA0–$FFAF` MMU register address to `(task, slot)`.
+fn mmu_index(addr: u16) -> (usize, usize) {
+    let idx = (addr - MMU_BASE) as usize;
+    (idx / gime::SLOTS_PER_TASK, idx % gime::SLOTS_PER_TASK)
+}
+
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
         if self.io_enabled && addr >= IO_BASE {
+            // Vectors are pulled from internal ROM; the rest of the page is I/O.
+            if addr >= VECTOR_BASE {
+                return self.rom_read(addr);
+            }
             return self.io_read(addr);
+        }
+        if addr >= ROM_WINDOW_BASE && self.gime.rom_enabled() {
+            return self.rom_read(addr);
         }
         let p = self.phys(addr);
         self.ram[p]
@@ -101,9 +163,13 @@ impl Bus for SystemBus {
 
     fn write(&mut self, addr: u16, val: u8) {
         if self.io_enabled && addr >= IO_BASE {
-            self.io_write(addr, val);
-            return;
+            // The vector page is ROM: writes there fall through to shadow RAM.
+            if addr < VECTOR_BASE {
+                self.io_write(addr, val);
+                return;
+            }
         }
+        // ROM is read-only; writes to the ROM window reach the RAM mapped beneath it.
         let p = self.phys(addr);
         self.ram[p] = val;
     }
