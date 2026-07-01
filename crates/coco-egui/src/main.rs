@@ -10,6 +10,7 @@
 //!
 //! ROM file dialog, audio, and the debugger panels are still TODO.
 
+mod about;
 mod kbd_help;
 
 use std::collections::VecDeque;
@@ -109,6 +110,7 @@ struct CocoApp {
     kb_mode: KbMode,
     type_ahead: TypeAhead,
     show_kbd_help: bool,
+    show_about: bool,
     aspect_correct: bool,
 }
 
@@ -121,6 +123,7 @@ impl CocoApp {
             kb_mode: KbMode::Positional,
             type_ahead: TypeAhead::default(),
             show_kbd_help: false,
+            show_about: false,
             aspect_correct: true,
         }
     }
@@ -249,6 +252,9 @@ impl eframe::App for CocoApp {
                     self.show_kbd_help = !self.show_kbd_help;
                 }
                 ui.checkbox(&mut self.aspect_correct, "4:3 (F9)");
+                if ui.button("About").clicked() {
+                    self.show_about = !self.show_about;
+                }
                 ui.separator();
                 ui.label(format!("cycles: {}", self.machine.cpu.cycles));
             });
@@ -257,6 +263,9 @@ impl eframe::App for CocoApp {
         if self.show_kbd_help {
             let symbolic = self.kb_mode == KbMode::Symbolic;
             kbd_help::window(ctx, &mut self.show_kbd_help, symbolic);
+        }
+        if self.show_about {
+            about::window(ctx, &mut self.show_about);
         }
 
         egui::CentralPanel::default()
