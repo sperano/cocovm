@@ -10,6 +10,8 @@
 //!
 //! ROM file dialog, audio, and the debugger panels are still TODO.
 
+mod kbd_help;
+
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
@@ -96,6 +98,7 @@ struct CocoApp {
     running: bool,
     kb_mode: KbMode,
     type_ahead: TypeAhead,
+    show_kbd_help: bool,
 }
 
 impl CocoApp {
@@ -106,6 +109,7 @@ impl CocoApp {
             running: true, // boot straight to the prompt
             kb_mode: KbMode::Positional,
             type_ahead: TypeAhead::default(),
+            show_kbd_help: false,
         }
     }
 
@@ -120,14 +124,20 @@ impl CocoApp {
     fn handle_input(&mut self, ctx: &egui::Context) {
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
 
-        // F12 toggles keyboard mode (never forwarded to the CoCo).
+        // F10/F12 are UI hotkeys, never forwarded to the CoCo.
         for ev in &events {
-            if let egui::Event::Key { key: egui::Key::F12, pressed: true, repeat: false, .. } = ev {
-                let next = match self.kb_mode {
-                    KbMode::Positional => KbMode::Symbolic,
-                    KbMode::Symbolic => KbMode::Positional,
-                };
-                self.set_mode(next);
+            if let egui::Event::Key { key, pressed: true, repeat: false, .. } = ev {
+                match key {
+                    egui::Key::F12 => {
+                        let next = match self.kb_mode {
+                            KbMode::Positional => KbMode::Symbolic,
+                            KbMode::Symbolic => KbMode::Positional,
+                        };
+                        self.set_mode(next);
+                    }
+                    egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
+                    _ => {}
+                }
             }
         }
 
@@ -207,10 +217,18 @@ impl eframe::App for CocoApp {
                 }
                 ui.separator();
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
+                if ui.button("⌨ Keys (F10)").clicked() {
+                    self.show_kbd_help = !self.show_kbd_help;
+                }
                 ui.separator();
                 ui.label(format!("cycles: {}", self.machine.cpu.cycles));
             });
         });
+
+        if self.show_kbd_help {
+            let symbolic = self.kb_mode == KbMode::Symbolic;
+            kbd_help::window(ctx, &mut self.show_kbd_help, symbolic);
+        }
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
