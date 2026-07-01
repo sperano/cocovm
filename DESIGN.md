@@ -23,10 +23,10 @@ coco-rs/                 (workspace root)
 
 Why three crates, not one:
 
-- **`mc6809` standalone** — the CPU is the one component with a public,
-  well-specified conformance test suite (the TomHarte/SingleStepTests-style 6809
-  JSON sets exist now). Keeping it dependency-free and bus-generic means it can be
-  tested against a flat 64K array with zero machine baggage.
+- **`mc6809` standalone** — keeping the CPU dependency-free and bus-generic means
+  it can be tested against a flat 64K array with zero machine baggage. (Note:
+  unlike the 6502/68000/Z80, the 6809 has **no** TomHarte/SingleStepTests-style
+  per-instruction JSON suite — see §5 for the validation strategy that replaces it.)
 - **`coco-core` headless** — lets you boot the real ROM to the BASIC prompt in an
   integration test and assert on the framebuffer, no GPU needed.
 - **`coco-egui`** — the "Virtual ][ niceness" lives here and changes fastest;
@@ -73,7 +73,7 @@ pub struct Machine {
 }
 
 pub struct SystemBus {
-    ram: Box<[u8; 512 * 1024]>,
+    ram: Box<[u8]>,           // size chosen at construction: 128K / 512K / 2048K
     rom: Box<[u8]>,           // Super Extended Color BASIC, 32K
     gime: Gime,               // MMU table, video regs, timer, irq state
     pia0: Mc6821,
@@ -128,10 +128,44 @@ I/O page map (`$FF00–$FFFF`):
 | `$FFC0–$FFDF` | SAM-compatibility registers (legacy video/memory bits)         |
 | `$FFE0–$FFFF` | ROM / vectors when mapped                                      |
 
-The MMU: each task register holds a 6-bit (128K) or 8-bit (512K) physical block
-number; `phys = (block << 13) | (addr & 0x1FFF)`. When the MMU is disabled (INIT0
-bit), use the fixed power-on map. ROM mapping (INIT0 ROM bits) overlays the top
-16K/32K — handle that *before* the MMU translation for the affected range.
+The MMU: each task register holds a physical block number; `phys = (block << 13)
+| (addr & 0x1FFF)`. The GIME's MMU addresses **up to 2 MB** — 512K was only Tandy's
+shipped maximum, not a chip limit. The valid block range scales with installed RAM:
+
+| RAM    | 8K blocks | Valid bank range | Block-number bits | Notes                          |
+|--------|-----------|------------------|-------------------|--------------------------------|
+| 128K   | 16        | high blocks ¹    | (see ¹)           | RAM sits at the *top* of space |
+| 512K   | 64        | `0x00–0x3F`      | 6                 | Tandy's shipped maximum        |
+| 1024K  | 128       | `0x00–0x7F`      | 7                 | confirmed real config          |
+| 2048K  | 256       | `0x00–0xFF`      | 8 (full register) | confirmed real config ²        |
+
+Two real hardware behaviours the emulator must model — both verified against the
+[Sock GIME reference](https://www.6809.org.uk/twilight/sock/gime.html) /
+[cococommunity reference](https://www.cococommunity.net/socks-gime-register-reference/)
+and corroborated by an owner of a 2 MB machine:
+
+- **Writes use the full 8 bits** (banks `0–255` → 2 MB). **Reads return only the
+  low 6 bits reliably** — on most machines the upper 2 bits read back as *bus
+  bleedover*, not the stored value. Some memory upgrades fix the readback; most
+  don't, so software can't rely on those 2 bits. Model: store 8 bits on write;
+  on read return `stored & 0x3F | (bus_garbage & 0xC0)` unless configured as a
+  "fixed-readback" machine. Sizing is therefore *not* a simple `block_mask & ` on
+  every access — it's a write-width / read-width asymmetry.
+- ¹ **Smaller machines map RAM into the *high* blocks**, not `0..N`. A 128K machine
+  doesn't use banks `0x00–0x0F`; its RAM lives at the top of the block space
+  (default mapping puts usable RAM where the ROM/BASIC bring-up expects it). The
+  exact 128K valid range is **not yet pinned** here — verify against the Super
+  Extended BASIC Unravelled docs and a reference emulator before coding it. Do not
+  assume a low-bit mask.
+- ² 2 MB on a stock GIME is real (owner-confirmed). 8 MB exists too via further
+  banking (e.g. CoCoZilla) but is out of scope.
+
+`MemorySize` thus carries both the byte count and the valid-bank predicate; keep
+the read/write asymmetry in the MMU model from day one.
+
+When the MMU is disabled (INIT0 bit), use the fixed power-on map. ROM mapping
+(INIT0 ROM bits) overlays the top 16K/32K — handle that *before* the MMU
+translation for the affected range.
 
 ---
 
@@ -142,20 +176,43 @@ because it maps cleanly to both the GIME's sync interrupts and the host's 60 fps
 
 ```
 run_field():
-  for line in 0..lines_per_field (262 NTSC):
-      run CPU for ~CYCLES_PER_LINE cycles   (≈ 57 @ 0.895 MHz)
+  for line in 0..lines_per_field:           // NTSC 262 @ 60Hz, PAL 312 @ 50Hz
+      run CPU for ~CYCLES_PER_LINE cycles    (≈ 57 @ 0.895 MHz; ~same per-line both standards)
       gime.tick_timer(by cycles, line)       // 12-bit countdown
       if line in active area: gime.render_scanline(line, ram, fb)
       gime.hsync()    // may raise HBORD interrupt
   gime.vsync()        // may raise VBORD interrupt; present framebuffer
 ```
 
+**NTSC vs PAL** is a `VideoStandard` enum chosen at construction, collapsing to a
+small constants table — don't scatter `if pal` checks through the code:
+
+| Standard | Lines/field | Field rate | Active lines    | Selected by         |
+|----------|-------------|------------|-----------------|---------------------|
+| NTSC     | 262         | ~60 Hz     | 192 / 200 / 225 | default             |
+| PAL      | 312         | ~50 Hz     | 192 / 200 / 225 | GIME 50/60Hz bit ¹  |
+
+¹ The GIME has a 50/60 Hz video-mode bit (`$FF98`), but it only retimes the
+display within the host standard — the *machine* is physically NTSC or PAL (master
+crystal). Model the crystal as the construction-time `VideoStandard`; treat the
+GIME bit as a mode flag on top of it. The horizontal rate (~15.7 kHz) is nearly
+identical for both, so `CYCLES_PER_LINE` barely moves; the difference is almost
+entirely lines-per-field and thus field rate, which drives the host pacing period.
+
 - **CPU speed switch**: the "high-speed poke" (`$FFD7`/`$FFD9` SAM bits) doubles
   to ~1.79 MHz — that's just a different `CYCLES_PER_LINE`.
-- **GIME timer**: 12-bit, clocked from either ~279 kHz (fast) or the ~15.7 kHz
-  horizontal rate (slow), selected by INIT1. On underflow it reloads and raises a
-  timer interrupt (IRQ and/or FIRQ per the enable regs). Decrement it by elapsed
-  cycles inside the line loop.
+- **GIME timer**: 12-bit (counts 0–4095, per Sock's GIME reference), clocked from
+  one of two sources selected by INIT1 bit 5 (TINS). On underflow it reloads and
+  raises a timer interrupt (IRQ and/or FIRQ per the enable regs). Decrement it by
+  elapsed cycles inside the line loop.
+  - **Caution — sources disagree on the fast clock.** Sock's reference gives the
+    two periods as **279.365 ns (≈3.58 MHz, the NTSC colour clock) fast** and
+    **63.695 µs (≈15.7 kHz, the horizontal line rate) slow**. The cococommunity
+    register reference instead lists **70 ns (≈14.3 MHz dot clock)** for the fast
+    source. This must be pinned empirically against a reference emulator (XRoar /
+    MAME `gime.cpp`) during implementation — do **not** hard-code a number on
+    authority alone. The slow = horizontal-line-rate value is consistent across
+    sources and is the safer one to rely on first.
 - **Interrupt aggregation**: the GIME ORs its sources (timer, HBORD, VBORD,
   keyboard, serial, cartridge) into the 6809's IRQ and FIRQ lines, gated by
   `$FF92`/`$FF93` enables. The PIAs *also* drive IRQ/FIRQ (legacy path). So the
@@ -192,10 +249,28 @@ per-opcode cycle table. Don't try to be cycle-*exact* mid-instruction at first;
 instruction-granular cycle counts are enough to get the ROM booting and sync
 interrupts roughly right. Tighten later only if a game needs it.
 
-**Test it for real**: wire the 6809 JSON single-step tests into `mc6809`'s test
-suite from day one. Hand-verifying a 6809 by eye is a trap — the addressing modes
-have too many corners. (Design for the Hitachi 6309 later as a feature-flagged
-superset, but don't pay for it now — ask before adding that scope.)
+**Test it for real.** There is **no** per-instruction JSON suite for the 6809 (the
+TomHarte/SingleStepTests project covers the 68000, 65x02, Z80, 8088, etc. — but no
+6800-family 8-bit). Hand-verifying a 6809 by eye is a trap, so the validation
+strategy is:
+
+1. **Trace-diff against a reference emulator.** Boot the real ROM and compare a
+   per-instruction CPU trace (PC, opcode, registers, cycles) against
+   [XRoar](https://github.com/sixxie/xroar) or MAME's `m6809` debugger trace from
+   the same reset vector. The first divergent line is the bug.
+2. **Self-checking exerciser ROMs** — run a 6809 assembly test program that
+   executes each instruction, captures the condition codes, and compares against
+   expected results, flagging mismatches. A concrete, verified-on-real-silicon one:
+   [`flexemu`'s `cputest.txt`](https://github.com/aladur/flexemu/blob/master/src/tools/cputest.txt)
+   by W. Schwotzer (tested on an SGS-Thomson EF6809P) — covers the arithmetic/logic
+   instructions, `TFR`/`EXG`, and the full range of addressing modes (indexed
+   pre/post inc-dec, indirect, PC-relative, extended). Assemble it and run it
+   headless in `mc6809`; a clean pass is strong evidence the core is correct.
+3. **Hand-written unit tests for the corners** — indexed-mode postbytes, `TFR`/
+   `EXG` register encodings, FIRQ-vs-IRQ stacking, `CWAI`/`SYNC`.
+
+(Design for the Hitachi 6309 later as a feature-flagged superset, but don't pay for
+it now — ask before adding that scope.)
 
 ---
 
@@ -295,7 +370,15 @@ in the middle. The GIME is still the *centerpiece*; it's just not the *entry poi
 - **6309 and Multi-Pak designed-for but not built** — don't add that scope without
   asking.
 
-### Open questions before writing code
+### Settled decisions
 
-- **NTSC-only, or NTSC + PAL?** (changes lines-per-field and timing constants)
-- **128K or 512K default memory?** (changes MMU block-number width)
+- **Both NTSC and PAL.** Chosen at construction via a `VideoStandard` enum that
+  feeds a constants table (lines-per-field, field rate, pacing period). See §4.
+- **User-selectable memory: 128K / 512K / 2048K** (1024K trivially follows). Single
+  `Box<[u8]>` sized at construction. The MMU models the real **write-8-bits /
+  read-low-6-bits asymmetry** rather than a single mask, and smaller machines map
+  RAM into the high blocks. 2 MB on a stock GIME is real hardware. See §2b and §3.
+
+Both become fields of a `MachineConfig` passed to `Machine::new` — the frontend
+exposes them as menu options, and they are part of the serialized save-state
+header so a snapshot restores into a matching machine.

@@ -1,0 +1,8 @@
+[package]
+name = "coco-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mc6809 = { path = "../mc6809", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
