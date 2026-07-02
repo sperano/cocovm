@@ -244,7 +244,7 @@ impl Machine {
     fn render_coco_graphics(&mut self) {
         self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;
-        let mode = video::decode_vdg_graphics(ff22);
+        let mode = video::decode_vdg_graphics(ff22, self.bus.gime.sam_video);
         let css = usize::from(ff22 & video::VDG_CSS != 0);
         let indices = video::vdg_palette_indices(mode.bpp, css);
         let mut colors = [[0u8; 4]; video::MAX_VDG_COLORS];

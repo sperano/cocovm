@@ -129,9 +129,14 @@ fn blit_cell(fb: &mut [u8], row: usize, col: usize, glyph: &[u8; CELL_H], fg: [u
 // --- VDG resolution graphics (CoCo-compatible PMODE, `DESIGN.md` §6) -------------
 //
 // All VDG graphics modes scan out into the same 256×192 active area as text, so
-// lower-resolution modes are pixel-doubled to fill it. The mode, colour set, and
-// colour depth come from PIA1 $FF22 (A/G, GM2–0, CSS); the display base from the SAM
-// page register; and the actual colours from the GIME palette (SEB Fig 13).
+// lower-resolution modes are pixel-doubled to fill it. The horizontal decode (bytes
+// per row, bits per pixel, colour set) comes from PIA1 $FF22 (A/G, GM2–0, CSS); the
+// display base from the SAM page register; and the actual colours from the GIME
+// palette (SEB Fig 13). The *vertical* cadence (how many RAM rows are fetched, and
+// how many times each is repeated to fill the 192-line active area) instead comes
+// from the SAM V0–V2 bits — see [`LEGACY_GFX_LINES_PER_ROW`]. Real hardware doesn't
+// reconcile the two: if a program sets V and GM to a non-standard pairing, the
+// vertical cadence follows V and the horizontal decode follows GM independently.
 
 /// PIA1 $FF22 bit 7: 1 = VDG graphics, 0 = alphanumeric/semigraphics.
 pub const VDG_AG: u8 = 0x80;
@@ -152,11 +157,19 @@ const G4_PALETTE_INDICES: [[usize; 4]; 2] = [[0, 1, 2, 3], [4, 5, 6, 7]];
 /// 4-colour modes use all four; 2-colour modes use a `[..2]` prefix).
 pub const MAX_VDG_COLORS: usize = 4;
 
+/// Lines-per-row for CoCo-compatible legacy graphics, indexed by the SAM V bits
+/// packed `V2:V1:V0` (0–7). Hardware-verified (MAME
+/// `gime_legacy_lines_per_row_graphic`): RAM rows fetched = `ACTIVE_H /
+/// LEGACY_GFX_LINES_PER_ROW[v]` (64, 96, or 192), each repeated this many times
+/// vertically to fill the 192-line active area.
+pub const LEGACY_GFX_LINES_PER_ROW: [usize; 8] = [3, 3, 3, 2, 2, 1, 1, 1];
+
 /// A decoded VDG resolution-graphics mode.
 pub struct VdgGraphicsMode {
     /// Bytes fetched per displayed row.
     pub bytes_per_row: usize,
-    /// Displayed rows (before vertical doubling into [`ACTIVE_H`]).
+    /// RAM rows fetched (before vertical repetition into [`ACTIVE_H`]); driven by
+    /// the SAM V bits, not the GM bits (see [`LEGACY_GFX_LINES_PER_ROW`]).
     pub rows: usize,
     /// Bits per pixel: 1 = 2 colours, 2 = 4 colours.
     pub bpp: usize,
@@ -164,23 +177,37 @@ pub struct VdgGraphicsMode {
     pub logical_w: usize,
 }
 
-/// Decode the VDG graphics mode from PIA1 $FF22. GM2–0 select one of the eight
-/// resolution-graphics modes; the five BASIC PMODEs are RG2/CG3/RG3/CG6/RG6.
-pub fn decode_vdg_graphics(ff22: u8) -> VdgGraphicsMode {
+/// Mask for the 3-bit SAM V value (`V2:V1:V0`) passed to [`decode_vdg_graphics`].
+const SAM_VIDEO_MASK: u8 = 0x07;
+
+/// Decode the VDG graphics mode. The horizontal geometry (bytes per row, bits
+/// per pixel, logical width) comes from PIA1 $FF22 GM2–0; the five BASIC PMODEs
+/// are RG2/CG3/RG3/CG6/RG6. The vertical geometry (RAM rows fetched) instead
+/// comes from `sam_video`, the SAM V0–V2 bits (`V2:V1:V0`, 0–7) — see
+/// [`LEGACY_GFX_LINES_PER_ROW`]. Real BASIC always programs matching GM/V pairs,
+/// but the two are independent on hardware and this function does not reconcile
+/// a mismatched pairing: it just follows each source for its own axis.
+pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VdgGraphicsMode {
     let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
-    // (logical width, rows, 4-colour?) for GM2..GM0 = 0..7.
-    let (logical_w, rows, four_colour) = match gm {
-        0 => (64, 64, true),    // CG1
-        1 => (128, 64, false),  // RG1
-        2 => (128, 64, true),   // CG2
-        3 => (128, 96, false),  // RG2  (PMODE 0)
-        4 => (128, 96, true),   // CG3  (PMODE 1)
-        5 => (128, 192, false), // RG3  (PMODE 2)
-        6 => (128, 192, true),  // CG6  (PMODE 3)
-        _ => (256, 192, false), // RG6  (PMODE 4)
+    // (logical width, 4-colour?) for GM2..GM0 = 0..7.
+    let (logical_w, four_colour) = match gm {
+        0 => (64, true),   // CG1
+        1 => (128, false), // RG1
+        2 => (128, true),  // CG2
+        3 => (128, false), // RG2  (PMODE 0)
+        4 => (128, true),  // CG3  (PMODE 1)
+        5 => (128, false), // RG3  (PMODE 2)
+        6 => (128, true),  // CG6  (PMODE 3)
+        _ => (256, false), // RG6  (PMODE 4)
     };
     let bpp = if four_colour { 2 } else { 1 };
-    VdgGraphicsMode { bytes_per_row: logical_w * bpp / 8, rows, bpp, logical_w }
+    let lines_per_row = LEGACY_GFX_LINES_PER_ROW[(sam_video & SAM_VIDEO_MASK) as usize];
+    VdgGraphicsMode {
+        bytes_per_row: logical_w * bpp / 8,
+        rows: ACTIVE_H / lines_per_row,
+        bpp,
+        logical_w,
+    }
 }
 
 /// GIME palette-register indices for a VDG graphics mode, in pixel-value order

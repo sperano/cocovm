@@ -35,6 +35,13 @@ pub const MMU_READ_MASK: u8 = 0x3F;
 /// ignored). See `DESIGN.md` §3.
 pub const SAM_BASE: u16 = 0xFFC0;
 pub const SAM_LAST: u16 = 0xFFDF;
+/// VDG-mode strobe pairs V0–V2 ($FFC0–$FFC5): 3 bits selecting the legacy
+/// (CoCo-compatible) graphics vertical row cadence — see
+/// [`crate::video::LEGACY_GFX_LINES_PER_ROW`]. Latched unconditionally, but
+/// only *used* when INIT0 COCO=1 (SEB Unravelled II; MAME `6883sam.cpp`).
+/// Even address clears a bit, odd sets it, same as F0–F6.
+pub const SAM_VDG_BASE: u16 = 0xFFC0;
+pub const SAM_VDG_LAST: u16 = 0xFFC5;
 /// TY (map type) strobe pair — the highest SAM bit. `$FFDE` clears TY (system ROM
 /// mapped in the `$8000–$FFFF` window); `$FFDF` sets TY (all-RAM: the ROM is
 /// switched out and the RAM underneath — into which BASIC copies and *patches* a
@@ -195,6 +202,12 @@ pub struct GIME {
     /// SAM display page-select bits F0–F6 ($FFC6–$FFD3). The CoCo-compatible video
     /// base is `sam_page * SAM_PAGE_UNIT` (`DESIGN.md` §6).
     pub sam_page: u8,
+    /// SAM VDG-mode bits V0–V2 ($FFC0–$FFC5), packed as `V2:V1:V0` (0–7).
+    /// Latched always; only consulted in CoCo-compatible mode (INIT0 COCO=1),
+    /// where it sets the legacy graphics vertical row cadence — see
+    /// [`crate::video::LEGACY_GFX_LINES_PER_ROW`]. The horizontal decode
+    /// (bytes/row, bpp, colour set) stays PIA1 $FF22 GM/CSS-derived.
+    pub sam_video: u8,
     pub palette: [u8; PALETTE_LEN],
     /// Border colour register ($FF9A): a 6-bit colour value (not a palette index).
     pub border: u8,
@@ -262,13 +275,22 @@ impl GIME {
         self.task = usize::from(val & init1::TR != 0);
     }
 
-    /// Apply a SAM control-register strobe ($FFC0–$FFDF). TY ($FFDE/$FFDF)
-    /// selects the all-RAM map, F0–F6 ($FFC6–$FFD3) the CoCo-compatible video
-    /// base, R1 ($FFD8/$FFD9) the CPU rate. Not modelled: V0–V2 VDG-mode bits
-    /// (`DESIGN.md` §3/§6 TODO — the VDG mode is taken from PIA1 $FF22), the
+    /// Apply a SAM control-register strobe ($FFC0–$FFDF). V0–V2 ($FFC0–$FFC5)
+    /// select the CoCo-compatible legacy-graphics vertical cadence, F0–F6
+    /// ($FFC6–$FFD3) the CoCo-compatible video base, R1 ($FFD8/$FFD9) the CPU
+    /// rate, and TY ($FFDE/$FFDF) selects the all-RAM map. Not modelled: the
     /// inert-on-CoCo-3 R0 pair, and P1/M0/M1.
     pub fn write_sam(&mut self, addr: u16) {
         match addr {
+            SAM_VDG_BASE..=SAM_VDG_LAST => {
+                let bit = (addr - SAM_VDG_BASE) / 2;
+                let mask = 1u8 << bit;
+                if (addr - SAM_VDG_BASE) & 1 == 0 {
+                    self.sam_video &= !mask; // even address clears the bit
+                } else {
+                    self.sam_video |= mask; // odd address sets the bit
+                }
+            }
             SAM_TY_CLEAR => self.all_ram = false,
             SAM_TY_SET => self.all_ram = true,
             SAM_R1_CLEAR => self.cpu_fast = false,
