@@ -158,6 +158,10 @@ pub const GFX_BPP: [usize; 4] = [1, 2, 4, 4];
 /// Virtual row width in bytes when $FF9F HVEN is set.
 pub const HVEN_ROW_BYTES: usize = 256;
 
+/// Start of the upper ROM half — external (cartridge, CTS*) when INIT0
+/// MC1:MC0 selects a 16K+16K map.
+pub const EXTERNAL_ROM_BASE: u16 = 0xC000;
+
 /// Interrupt source bits shared by IRQENR ($FF92) and FIRQENR ($FF93)
 /// (SEB Unravelled II Fig 14). Write = per-source enable; read = latched
 /// status, cleared by the read.
@@ -336,6 +340,20 @@ impl GIME {
     /// (SAM map-type = ROM). When all-RAM is selected the region is plain RAM.
     pub fn rom_enabled(&self) -> bool {
         !self.all_ram
+    }
+
+    /// True when `addr` in the ROM window maps to the *external* (cartridge)
+    /// ROM, per INIT0 MC1:MC0 (SEB Unravelled II ROM-map table):
+    /// `00`/`01` = 16K internal + 16K external at `$C000`; `10` = 32K
+    /// internal; `11` = 32K external (the CPU vectors stay internal — the bus
+    /// handles those separately). The cold-start writes INIT0 with MC=`10`
+    /// before its `JMP $C000`, which is why a diskless boot runs internal ROM.
+    pub fn rom_is_external(&self, addr: u16) -> bool {
+        match self.init0 & (init0::MC1 | init0::MC0) {
+            0b10 => false,
+            0b11 => true,
+            _ => addr >= EXTERNAL_ROM_BASE,
+        }
     }
 
     /// Convert a 6-bit GIME palette value to RGBA. The register format is

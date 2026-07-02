@@ -198,13 +198,17 @@ impl SystemBus {
         level
     }
 
-    /// Read internal ROM for a logical address in the `$8000–$FFFF` window.
+    /// Read ROM for a logical address in the `$8000–$FFFF` window.
     ///
-    /// The 32K image sits at offset `addr - $8000`. A cartridge ROM overlay on
-    /// the upper half (INIT0 MC1=0, "16K external") plugs in here — deferred until
-    /// a real `Cartridge` provides ROM; `EmptySlot` yields pure internal ROM, which
-    /// is what boots a diskless CoCo 3.
-    fn rom_read(&self, addr: u16) -> u8 {
+    /// INIT0 MC1:MC0 splits the window between internal ROM (image offset
+    /// `addr - $8000`) and the external cartridge ROM (CTS*), which an empty
+    /// slot answers with open-bus $00 — matching MAME trace-diff behaviour.
+    /// The CPU vectors are exempt: they always read internal ROM, so callers
+    /// route `$FFF0+` here and we skip the external check for them.
+    fn rom_read(&mut self, addr: u16) -> u8 {
+        if addr < VECTOR_BASE && self.gime.rom_is_external(addr) {
+            return self.cart.rom_read(addr);
+        }
         let off = (addr - ROM_WINDOW_BASE) as usize;
         self.rom.get(off).copied().unwrap_or(OPEN_BUS)
     }

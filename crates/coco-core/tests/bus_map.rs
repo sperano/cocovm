@@ -44,6 +44,52 @@ fn io_page_below_vectors_is_not_rom() {
     assert_eq!(b.read(0xFF90), 0x00);
 }
 
+// ---- INIT0 MC1:MC0 ROM map -----------------------------------------------------
+
+/// A cartridge whose ROM window answers with a recognizable constant.
+struct MarkerCart;
+impl coco_core::cart::Cartridge for MarkerCart {
+    fn read(&mut self, _addr: u16) -> u8 {
+        0xFF
+    }
+    fn write(&mut self, _addr: u16, _val: u8) {}
+    fn rom_read(&mut self, _addr: u16) -> u8 {
+        0xAA
+    }
+}
+
+#[test]
+fn mc_16k_split_routes_upper_half_to_cartridge() {
+    let mut b = bus(MemorySize::K512);
+    // Power-on INIT0 = $00 -> MC=00: 16K internal + 16K external. The empty
+    // slot answers open-bus $00 (MAME trace-diff verified), not internal ROM.
+    assert_eq!(b.read(0x8123), 0x23, "lower half stays internal");
+    assert_eq!(b.read(0xC123), 0x00, "upper half is the (empty) cartridge");
+
+    b.cart = Box::new(MarkerCart);
+    assert_eq!(b.read(0xC123), 0xAA, "upper half reads the cartridge ROM");
+    assert_eq!(b.read(0x8123), 0x23, "lower half still internal");
+}
+
+#[test]
+fn mc_32k_internal_keeps_upper_half_internal() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Box::new(MarkerCart);
+    // The cold-start value: MC=10 (32K internal) — what a diskless boot runs.
+    b.write(0xFF90, init0::MC1);
+    assert_eq!(b.read(0xC123), 0x23, "upper half reads internal ROM");
+}
+
+#[test]
+fn mc_32k_external_maps_whole_window_except_vectors() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Box::new(MarkerCart);
+    b.write(0xFF90, init0::MC1 | init0::MC0);
+    assert_eq!(b.read(0x8123), 0xAA, "lower half external under MC=11");
+    assert_eq!(b.read(0xFDFF), 0xAA, "top of window external");
+    assert_eq!(b.read(0xFFFE), 0xFE, "vectors always internal ROM");
+}
+
 #[test]
 fn constant_page_fe00_is_ram_not_rom() {
     // $FE00-$FEFF is the interrupt-trampoline page: RAM even though it sits inside
@@ -54,6 +100,8 @@ fn constant_page_fe00_is_ram_not_rom() {
     assert_eq!(b.read(0xFE00), 0x5A);
     assert_eq!(b.read(0xFEFF), 0xA5);
     // The byte just below still reads ROM (writes fall through to shadow RAM).
+    // MC=10 (32K internal) so $FDFF is internal ROM, not the external window.
+    b.write(0xFF90, init0::MC1);
     b.write(0xFDFF, 0x11);
     assert_eq!(b.read(0xFDFF), marked_rom()[0xFDFF - 0x8000]);
 }
