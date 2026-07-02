@@ -46,6 +46,12 @@ pub const SAM_TY_SET: u16 = 0xFFDF;
 /// units of [`SAM_PAGE_UNIT`]. Even address clears a bit, odd sets it.
 pub const SAM_PAGE_BASE: u16 = 0xFFC6;
 pub const SAM_PAGE_LAST: u16 = 0xFFD3;
+/// R1 CPU-rate strobe pair: $FFD9 switches to true double speed (~1.79 MHz),
+/// $FFD8 back to ~0.89 MHz — the classic `POKE 65497,0` / `POKE 65496,0`.
+/// The CoCo 1/2 R0 pair ($FFD6/$FFD7, address-dependent speed) is inert on the
+/// CoCo 3 — SEB Unravelled II Fig 8 lists only R1 as active.
+pub const SAM_R1_CLEAR: u16 = 0xFFD8;
+pub const SAM_R1_SET: u16 = 0xFFD9;
 /// Each page-select step is 512 bytes (base = `sam_page * SAM_PAGE_UNIT`).
 pub const SAM_PAGE_UNIT: u16 = 512;
 
@@ -219,6 +225,8 @@ pub struct GIME {
     pub firq_pending: u8,
     /// Text-attribute blink phase; toggles on every timer underflow.
     pub blink_state: bool,
+    /// SAM R1 CPU-rate bit ($FFD8/$FFD9): true = double speed (~1.79 MHz).
+    pub cpu_fast: bool,
 }
 
 impl GIME {
@@ -254,15 +262,17 @@ impl GIME {
         self.task = usize::from(val & init1::TR != 0);
     }
 
-    /// Apply a SAM control-register strobe ($FFC0–$FFDF). The TY map-type bit
-    /// ($FFDE/$FFDF) selects the all-RAM map; the F0–F6 page-select pairs
-    /// ($FFC6–$FFD3) set the CoCo-compatible video base. The remaining SAM bits
-    /// (V0–V2 VDG mode, clock rate) are compatibility strobes not modelled — the VDG
-    /// mode is taken from PIA1 $FF22 instead (`DESIGN.md` §3/§6 TODO).
+    /// Apply a SAM control-register strobe ($FFC0–$FFDF). TY ($FFDE/$FFDF)
+    /// selects the all-RAM map, F0–F6 ($FFC6–$FFD3) the CoCo-compatible video
+    /// base, R1 ($FFD8/$FFD9) the CPU rate. Not modelled: V0–V2 VDG-mode bits
+    /// (`DESIGN.md` §3/§6 TODO — the VDG mode is taken from PIA1 $FF22), the
+    /// inert-on-CoCo-3 R0 pair, and P1/M0/M1.
     pub fn write_sam(&mut self, addr: u16) {
         match addr {
             SAM_TY_CLEAR => self.all_ram = false,
             SAM_TY_SET => self.all_ram = true,
+            SAM_R1_CLEAR => self.cpu_fast = false,
+            SAM_R1_SET => self.cpu_fast = true,
             SAM_PAGE_BASE..=SAM_PAGE_LAST => {
                 let bit = (addr - SAM_PAGE_BASE) / 2;
                 let mask = 1u8 << bit;

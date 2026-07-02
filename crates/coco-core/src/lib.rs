@@ -28,13 +28,16 @@ const BYTES_PER_PIXEL: usize = video::BYTES_PER_PIXEL;
 /// GIME palette value for the legacy CoCo-compatible text border: black.
 const TEXT_BORDER_COLOR: u8 = 0x00;
 
-/// Provisional NTSC CPU clock (~0.895 MHz). Unverified constant; see `DESIGN.md` §4.
+/// NTSC CPU clock at normal speed: the 28.636363 MHz crystal / 32 (MAME
+/// `coco3.cpp`). The SAM R1 bit doubles it (crystal / 16, ~1.79 MHz).
 const CPU_HZ: f64 = 894_886.0;
 
-/// GIME timer input clocks per CPU cycle with INIT1 TINS=1. The fast timer
-/// clock is 3.579545 MHz (279.365 ns — hardware-measured; MAME `gime.cpp`.
-/// SEB's "70 ns" is wrong), exactly 4× the 0.89 MHz CPU clock. With TINS=0
-/// the input is the ~63.5 µs horizontal sync: one tick per scanline.
+/// GIME timer input clocks per normal-speed CPU cycle with INIT1 TINS=1. The
+/// fast timer clock is 3.579545 MHz (279.365 ns — hardware-measured; MAME
+/// `gime.cpp`. SEB's "70 ns" is wrong), exactly 4× the 0.89 MHz CPU clock —
+/// and 2× the double-speed CPU clock, since the timer runs off the fixed
+/// video crystal and ignores the CPU rate. With TINS=0 the input is the
+/// ~63.5 µs horizontal sync: one tick per scanline.
 const FAST_TIMER_TICKS_PER_CPU_CYCLE: u32 = 4;
 
 /// Which video path the GIME is currently driving; `render_field` dispatches on it.
@@ -113,14 +116,18 @@ impl Machine {
     /// runs BASIC's housekeeping. Video scanout is filled at the end (`§6`).
     pub fn run_field(&mut self) {
         let lines = self.config.video.lines_per_field();
-        let cycles_per_line = self.cycles_per_field() / lines;
         for _ in 0..lines {
+            // Sampled per line so a mid-field speed poke takes effect promptly.
+            let cycles_per_line = self.cycles_per_field() / lines;
             self.run_cycles(cycles_per_line);
             self.bus.hsync();
-            // GIME interval timer: TINS=1 counts the fast clock (4 ticks per
-            // CPU cycle), TINS=0 counts horizontal syncs (1 per line).
+            // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4
+            // ticks per normal-speed CPU cycle, 2 per double-speed cycle —
+            // TINS=0 counts horizontal syncs (1 per line).
             let ticks = if self.bus.gime.timer_is_fast() {
-                cycles_per_line * FAST_TIMER_TICKS_PER_CPU_CYCLE
+                let per_cycle = FAST_TIMER_TICKS_PER_CPU_CYCLE
+                    / if self.bus.gime.cpu_fast { 2 } else { 1 };
+                cycles_per_line * per_cycle
             } else {
                 1
             };
@@ -152,7 +159,8 @@ impl Machine {
     }
 
     fn cycles_per_field(&self) -> u32 {
-        (CPU_HZ / self.config.video.field_rate_hz()) as u32
+        let hz = if self.bus.gime.cpu_fast { CPU_HZ * 2.0 } else { CPU_HZ };
+        (hz / self.config.video.field_rate_hz()) as u32
     }
 
     /// Classify the current video mode from the GIME registers.
