@@ -169,6 +169,35 @@ impl SystemBus {
         self.gime.raise(gime::intr::VBORD);
     }
 
+    /// Instantaneous speaker level, 0.0–1.0.
+    ///
+    /// Two sources mix on the CoCo 3 (it has no sound chip of its own):
+    /// the 6-bit DAC (PIA1 PA2–PA7), routed through the analog mux only when
+    /// SNDEN (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are
+    /// 00 — states 01/10 route cassette/cartridge audio (neither emulated,
+    /// silent) and 11 is grounded; and the single-bit sound on PIA1 PB1,
+    /// which is always connected. (Tandy Service Manual mux table via MAME
+    /// `coco.cpp` `update_sound`; SEB Unravelled II $FF22/$FF23.)
+    pub fn sound_sample(&self) -> f32 {
+        /// Relative loudness of the full-scale DAC vs the single-bit beeper.
+        const DAC_GAIN: f32 = 0.75;
+        const SINGLE_BIT_GAIN: f32 = 0.25;
+        /// PIA1 PB1: the single-bit sound output.
+        const SINGLE_BIT: u8 = 0x02;
+        const DAC_MAX: f32 = 63.0;
+
+        let mut level = 0.0;
+        let sel = u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output());
+        if self.pia1.b.c2_output() && sel == 0 {
+            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+            level += DAC_GAIN * f32::from(dac) / DAC_MAX;
+        }
+        if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
+            level += SINGLE_BIT_GAIN;
+        }
+        level
+    }
+
     /// Read internal ROM for a logical address in the `$8000–$FFFF` window.
     ///
     /// The 32K image sits at offset `addr - $8000`. A cartridge ROM overlay on

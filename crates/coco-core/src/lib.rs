@@ -78,7 +78,16 @@ pub struct Machine {
     /// Scratch buffer for the VDG graphics video-RAM snapshot
     /// (`render_coco_graphics`), reused every field instead of reallocating.
     graphics_scratch: Vec<u8>,
+    /// Speaker samples, one per scanline (~15.7 kHz — the horizontal rate).
+    /// `run_field` appends; the frontend drains via [`Machine::take_audio`]
+    /// and resamples to the host rate. Self-capping so headless use (tests,
+    /// no audio sink) doesn't grow it unboundedly.
+    audio_buffer: Vec<f32>,
 }
+
+/// Cap on buffered audio samples (~8 fields); beyond this the buffer resets
+/// rather than growing (headless runs never drain it).
+const AUDIO_BUFFER_CAP: usize = 8 * 262;
 
 impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
@@ -93,7 +102,19 @@ impl Machine {
             fb_width: FB_WIDTH,
             fb_height: FB_HEIGHT,
             graphics_scratch: Vec::new(),
+            audio_buffer: Vec::new(),
         }
+    }
+
+    /// Drain the speaker samples accumulated since the last call (one per
+    /// scanline, i.e. lines-per-field × field-rate ≈ 15.7 kHz).
+    pub fn take_audio(&mut self) -> std::vec::Drain<'_, f32> {
+        self.audio_buffer.drain(..)
+    }
+
+    /// The audio sample rate matching [`Machine::take_audio`]'s stream.
+    pub fn audio_sample_rate(&self) -> f64 {
+        self.config.video.lines_per_field() as f64 * self.config.video.field_rate_hz()
     }
 
     /// Execute one CPU instruction; returns cycles consumed.
@@ -121,6 +142,12 @@ impl Machine {
             let cycles_per_line = self.cycles_per_field() / lines;
             self.run_cycles(cycles_per_line);
             self.bus.hsync();
+            // One speaker sample per scanline (~15.7 kHz), self-capping when
+            // nothing drains it.
+            if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
+                self.audio_buffer.clear();
+            }
+            self.audio_buffer.push(self.bus.sound_sample());
             // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4
             // ticks per normal-speed CPU cycle, 2 per double-speed cycle —
             // TINS=0 counts horizontal syncs (1 per line).
