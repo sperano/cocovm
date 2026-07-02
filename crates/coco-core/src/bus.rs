@@ -9,6 +9,7 @@ use mc6809::Bus;
 use crate::cart::{Cartridge, EmptySlot};
 use crate::config::MemorySize;
 use crate::gime::{self, GIME};
+use crate::joystick::Joysticks;
 use crate::keyboard::Keyboard;
 use crate::pia::MC6821;
 
@@ -69,6 +70,7 @@ pub struct SystemBus {
     pub pia1: MC6821,
     pub cart: Box<dyn Cartridge>,
     pub keyboard: Keyboard,
+    pub joysticks: Joysticks,
     pub io_enabled: bool,
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
@@ -85,9 +87,29 @@ impl SystemBus {
             pia1: MC6821::new(),
             cart: Box::new(EmptySlot),
             keyboard: Keyboard::new(),
+            joysticks: Joysticks::new(),
             io_enabled: true,
             kbd_line_low: false,
         }
+    }
+
+    /// PIA0 port-A input pins: keyboard rows for the current column strobe,
+    /// fire buttons pulling their rows low regardless of the strobe, and the
+    /// joystick comparator on PA7 — high while the 6-bit DAC (PIA1 PA2–PA7)
+    /// is at or below the pot the CA2/CB2 mux selects (`DESIGN.md` §7).
+    fn pia0_pa_pins(&self) -> u8 {
+        const COMPARATOR_BIT: u8 = 0x80;
+        let mut pa = self.keyboard.sense(self.pia0.b.output);
+        pa &= !self.joysticks.button_rows();
+        let axis = usize::from(self.pia0.a.c2_output()); // SEL1: 0 = X, 1 = Y
+        let stick = usize::from(self.pia0.b.c2_output()); // SEL2: 0 = right
+        let dac = (self.pia1.a.output & 0xFC) >> 2;
+        if self.joysticks.compare(stick, axis, dac) {
+            pa |= COMPARATOR_BIT;
+        } else {
+            pa &= !COMPARATOR_BIT;
+        }
+        pa
     }
 
     /// Physical RAM offset for a CPU address, masked to installed RAM.
@@ -131,7 +153,8 @@ impl SystemBus {
     pub fn hsync(&mut self) {
         self.pia0.a.pulse_c1();
         self.gime.raise(gime::intr::HBORD);
-        let line_low = self.keyboard.sense(self.pia0.b.output) & 0x7F != 0x7F;
+        // Buttons are included: SEB warns joystick fire buttons always trip EI1.
+        let line_low = self.pia0_pa_pins() & 0x7F != 0x7F;
         if line_low && !self.kbd_line_low {
             self.gime.raise(gime::intr::EI1);
         }
@@ -160,9 +183,9 @@ impl SystemBus {
     fn io_read(&mut self, addr: u16) -> u8 {
         match addr {
             IO_BASE..=PIA0_LAST => {
-                // Port A senses the keyboard rows for the current port-B column
-                // strobe. Refresh its input pins before the PIA read.
-                self.pia0.a.input = self.keyboard.sense(self.pia0.b.output);
+                // Refresh port A's input pins (keyboard rows + joystick
+                // comparator/buttons) before the PIA read.
+                self.pia0.a.input = self.pia0_pa_pins();
                 self.pia0.read((addr & 0x03) as u8)
             }
             PIA1_BASE..=PIA1_LAST => self.pia1.read((addr & 0x03) as u8),

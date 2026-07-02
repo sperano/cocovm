@@ -6,8 +6,9 @@
 //! reading the data register are what the CoCo relies on: the 60 Hz field sync
 //! and the horizontal sync are wired to PIA0's CB1/CA1 and drive the CPU IRQ.
 //!
-//! Not yet modelled: the CA2/CB2 output/interrupt logic (bits 3–6) — stored but
-//! inert. That's fine for keyboard scan and sync interrupts.
+//! Cx2 is modelled as a set/reset output only (`c2_output`, the mode the CoCo
+//! uses for the joystick mux and sound enable); Cx2 interrupt-input and
+//! handshake/pulse strobe modes are not modelled.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,13 @@ pub mod cr {
     pub const C1_EDGE_HIGH: u8 = 0x02;
     /// Data/DDR access select — 1 = data register, 0 = data-direction register.
     pub const DDR_ACCESS: u8 = 0x04;
+    /// Cx2 output level when bits 5:4 select set/reset output mode.
+    pub const C2_SET: u8 = 0x08;
+    /// Cx2 output-mode select — with [`C2_OUTPUT`], 1 = set/reset (static level
+    /// from [`C2_SET`]), 0 = handshake/pulse strobes (unmodelled).
+    pub const C2_SET_RESET: u8 = 0x10;
+    /// Cx2 direction — 1 = Cx2 is an output pin.
+    pub const C2_OUTPUT: u8 = 0x20;
     /// Cx2 interrupt flag (read-only). Modelled as storage only.
     pub const C2_FLAG: u8 = 0x40;
     /// Cx1 interrupt flag (read-only) — set by an active Cx1 edge.
@@ -61,6 +69,15 @@ impl PiaPort {
     /// True when this side is asserting IRQ (Cx1 flag set and its enable on).
     fn irq(&self) -> bool {
         self.control & cr::C1_FLAG != 0 && self.control & cr::C1_IRQ_ENABLE != 0
+    }
+
+    /// The Cx2 pin level when programmed as a set/reset output (control bits
+    /// 5:4 = 11, the only Cx2 output mode the CoCo uses — the ROM's standard
+    /// control values are $34/$3C). The CoCo hangs the joystick-mux selects on
+    /// PIA0 CA2/CB2 and the sound enable on PIA1 CB2. Handshake/pulse strobe
+    /// modes (bit 4 = 0) are not modelled; they'd need bus-cycle hooks.
+    pub fn c2_output(&self) -> bool {
+        self.control & cr::C2_SET != 0
     }
 }
 
@@ -123,5 +140,28 @@ impl MC6821 {
     /// Combined IRQ output of both sides.
     pub fn irq(&self) -> bool {
         self.a.irq() || self.b.irq()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn c2_output_follows_set_reset_level() {
+        let mut pia = MC6821::new();
+        // The ROM's standard idle control value: C2 set/reset output, level 0.
+        pia.write(1, 0x34);
+        assert!(!pia.a.c2_output());
+        // Level bit raised (e.g. selecting the other joystick mux input).
+        pia.write(1, 0x3C);
+        assert!(pia.a.c2_output());
+    }
+
+    #[test]
+    fn c2_flags_are_not_writable() {
+        let mut pia = MC6821::new();
+        pia.write(1, 0xFF);
+        assert_eq!(pia.a.control & (cr::C1_FLAG | cr::C2_FLAG), 0);
     }
 }

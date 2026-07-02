@@ -9,6 +9,7 @@ mod font6847;
 mod font_gime;
 pub mod gime;
 pub mod gime_video;
+pub mod joystick;
 pub mod keyboard;
 pub mod pia;
 pub mod video;
