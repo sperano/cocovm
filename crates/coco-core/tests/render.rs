@@ -2,10 +2,13 @@
 //! geometry, alphanumeric glyphs, inverse video, and semigraphics-4 blocks.
 //! Colours are supplied via a resolved palette, so tests use sentinel colours.
 
+use coco_core::gime::init0;
 use coco_core::video::{
     render_text, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN, SCREEN_LEN,
     TEXT_BG_INDEX, TEXT_FG_INDEX,
 };
+use coco_core::{Machine, MachineConfig};
+use mc6809::Bus;
 
 const FG: [u8; 4] = [0xFF, 0x00, 0x00, 0xFF]; // red   (palette[13])
 const BG: [u8; 4] = [0x00, 0xFF, 0x00, 0xFF]; // green (palette[12])
@@ -96,6 +99,59 @@ fn inverse_video_swaps_fg_and_bg() {
     assert!(counts.1 > 0, "inverse glyph strokes should use the background colour");
     assert!(counts.0 > counts.1, "inverse cell should be mostly foreground-filled");
 }
+
+#[test]
+fn text_renderer_follows_sam_page_register() {
+    // The CoCo-compatible text base is the SAM F0-F6 page register, not a fixed
+    // $0400: move the screen to $0600 (page 3) and check the renderer follows.
+    const MOVED_BASE: u16 = 0x0600;
+    const SPACE_FILL_START: u16 = 0x0400;
+    const SPACE_FILL_END: u16 = 0x0800;
+    /// White in GIME 6-bit RGBrgb.
+    const WHITE6: u8 = 0x3F;
+
+    let mut m = Machine::new(
+        MachineConfig::default(),
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    );
+    // CoCo-compat mode, VDG alphanumerics; park the CPU on a BRA * so the
+    // zeroed synthetic ROM never executes anything with side effects.
+    m.bus.gime.write_init0(init0::COCO);
+    m.bus.write(0x0000, 0x20); // BRA
+    m.bus.write(0x0001, 0xFE); // -2
+    m.bus.gime.palette[TEXT_FG_INDEX] = WHITE6;
+
+    // SAM page 3 = $0600: set F0+F1 (odd strobe addresses set the bit).
+    m.bus.write(0xFFC7, 0);
+    m.bus.write(0xFFC9, 0);
+
+    // Spaces over both candidate bases, then one '@' (VDG code $00, lots of
+    // strokes) only on the MOVED screen. Any white pixel therefore proves the
+    // renderer read $0600; the old hardcoded $0400 screen is all spaces.
+    for addr in SPACE_FILL_START..SPACE_FILL_END {
+        m.bus.write(addr, SPACE);
+    }
+    m.bus.write(MOVED_BASE + 33, AT);
+    m.run_field();
+
+    let white = GIME_WHITE_RGBA;
+    let mut white_pixels = 0;
+    for y in 0..FB_H {
+        for x in 0..FB_W {
+            if px(&m.framebuffer, x, y) == white {
+                white_pixels += 1;
+            }
+        }
+    }
+    assert!(
+        white_pixels > 0,
+        "'@' on the SAM-selected screen never rendered: text base is not \
+         following the SAM page register"
+    );
+}
+
+/// `GIME::rgb_color(0x3F)` — all channels 0b11 × 0x55.
+const GIME_WHITE_RGBA: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
 
 #[test]
 fn semigraphics4_renders_2x2_color_blocks() {

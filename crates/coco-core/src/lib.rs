@@ -24,11 +24,6 @@ const FB_WIDTH: u32 = video::FB_W as u32;
 const FB_HEIGHT: u32 = video::FB_H as u32;
 const BYTES_PER_PIXEL: usize = video::BYTES_PER_PIXEL;
 
-/// Logical base of the CoCo-compatible text screen. Reading through the bus honours
-/// the MMU mapping the CPU sees. TODO: track the true video base from the SAM
-/// display-offset registers instead of assuming $0400 (`DESIGN.md` §6).
-const TEXT_SCREEN_BASE: u16 = 0x0400;
-
 /// GIME palette value for the legacy CoCo-compatible text border: black.
 const TEXT_BORDER_COLOR: u8 = 0x00;
 
@@ -213,11 +208,14 @@ impl Machine {
     /// Render the legacy CoCo-compatible 32×16 text screen (`DESIGN.md` §6).
     fn render_coco_text(&mut self) {
         self.reset_legacy_fb();
-        // Snapshot the text screen through the bus (honours the MMU), then render.
+        // Snapshot the text screen through the bus (honours the MMU) from the SAM
+        // page-register base (the ROM programs $0400; CLS n / double-buffering
+        // move it), then render.
         // TODO: per-scanline scanout straight from RAM (`DESIGN.md` §2b/§6).
+        let base = self.bus.gime.sam_display_base();
         let mut screen = [0u8; video::SCREEN_LEN];
         for (i, cell) in screen.iter_mut().enumerate() {
-            *cell = self.bus.read(TEXT_SCREEN_BASE + i as u16);
+            *cell = self.bus.read(base.wrapping_add(i as u16));
         }
         // Resolve the GIME palette registers the ROM programmed to RGBA. The
         // legacy CoCo-compatible text border is black (GIME `update_border`).
