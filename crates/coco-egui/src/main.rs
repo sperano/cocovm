@@ -26,8 +26,12 @@ const SCALE: f32 = 3.0;
 /// 288×224 (≈1.29:1); when aspect correction is on, the image is stretched
 /// horizontally to this ratio so pixels are ~3% wider than tall, as on real hardware.
 const TARGET_ASPECT: f32 = 4.0 / 3.0;
-/// Emulated video fields to run per UI repaint (≈ real time at 60 Hz refresh).
-const FIELDS_PER_FRAME: usize = 1;
+/// Cap on emulated fields run in one UI update: catches up after short host
+/// stalls (~130 ms) but drops time beyond that instead of spiralling.
+const MAX_FIELDS_PER_UPDATE: usize = 8;
+/// Longest wall-clock gap credited to the emulation clock, in seconds. Gaps
+/// beyond this (window drag, app hidden, debugger pause) are discarded.
+const MAX_FRAME_DT: f64 = 0.25;
 /// Height reserved for the top menu bar when sizing the window.
 const MENU_BAR_H: f32 = 30.0;
 /// Symbolic-mode key timing, in fields: hold a synthesized key then release.
@@ -112,6 +116,14 @@ struct CocoApp {
     show_kbd_help: bool,
     show_about: bool,
     aspect_correct: bool,
+    /// Wall-clock instant of the previous update while running; `None` right
+    /// after a pause/start so the first frame credits no elapsed time.
+    last_update: Option<std::time::Instant>,
+    /// Fractional emulated fields owed to the wall clock (`DESIGN.md` §4):
+    /// fields run when it reaches 1, the remainder carries over. This decouples
+    /// emulation speed from the host refresh rate (120 Hz displays no longer
+    /// run the CoCo at double speed).
+    field_debt: f64,
 }
 
 impl CocoApp {
@@ -125,7 +137,23 @@ impl CocoApp {
             show_kbd_help: false,
             show_about: false,
             aspect_correct: true,
+            last_update: None,
+            field_debt: 0.0,
         }
+    }
+
+    /// Emulated fields owed for this update, from wall-clock time at the
+    /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
+    fn fields_due(&mut self) -> usize {
+        let now = std::time::Instant::now();
+        let dt = match self.last_update.replace(now) {
+            Some(prev) => (now - prev).as_secs_f64().min(MAX_FRAME_DT),
+            None => 0.0,
+        };
+        self.field_debt += dt * self.machine.config.video.field_rate_hz();
+        let due = (self.field_debt as usize).min(MAX_FIELDS_PER_UPDATE);
+        self.field_debt = (self.field_debt - due as f64).min(1.0);
+        due
     }
 
     fn set_mode(&mut self, mode: KbMode) {
@@ -188,8 +216,8 @@ impl CocoApp {
 
         // While a paste / type-ahead burst is draining it owns the matrix, in either
         // mode, so replayed taps aren't clobbered by the per-frame positional writes.
+        // (The taps themselves advance once per *emulated field*, in `update`.)
         if self.type_ahead.is_active() {
-            self.type_ahead.advance(&mut self.machine.bus.keyboard);
             return;
         }
 
@@ -219,10 +247,17 @@ impl eframe::App for CocoApp {
         self.handle_input(ctx);
 
         if self.running {
-            for _ in 0..FIELDS_PER_FRAME {
+            // Run however many fields the wall clock owes us (real-time pacing),
+            // stepping type-ahead per field so paste timing is refresh-agnostic.
+            for _ in 0..self.fields_due() {
+                if self.type_ahead.is_active() {
+                    self.type_ahead.advance(&mut self.machine.bus.keyboard);
+                }
                 self.machine.run_field();
             }
             ctx.request_repaint();
+        } else {
+            self.last_update = None;
         }
 
         let image = egui::ColorImage::from_rgba_unmultiplied(
