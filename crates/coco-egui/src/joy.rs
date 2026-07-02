@@ -193,18 +193,21 @@ impl JoystickInputs {
         }
     }
 
-    /// "Joysticks" menu contents: a source combo box per port plus gamepad status.
+    /// "Joysticks" menu contents: a flat list of selectable sources per port, plus
+    /// gamepad status. Deliberately not a nested `ComboBox` — a combo's own popup
+    /// fights the menu's dismiss-on-outside-click handling in egui, so selections
+    /// inside it don't register reliably.
     pub fn menu_ui(&mut self, ui: &mut egui::Ui) {
         for (stick, name) in [(RIGHT, "Right stick"), (LEFT, "Left stick")] {
-            egui::ComboBox::from_label(name)
-                .selected_text(self.sources[stick].label())
-                .show_ui(ui, |ui| {
-                    for source in JoySource::ALL {
-                        ui.selectable_value(&mut self.sources[stick], source, source.label());
-                    }
-                });
+            ui.label(egui::RichText::new(name).strong());
+            for source in JoySource::ALL {
+                let selected = self.sources[stick] == source;
+                if ui.selectable_label(selected, source.label()).clicked() {
+                    self.sources[stick] = source;
+                }
+            }
+            ui.separator();
         }
-        ui.separator();
         ui.label(if self.gamepad_available() {
             "Gamepad: connected"
         } else {
