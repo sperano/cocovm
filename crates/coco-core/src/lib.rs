@@ -35,10 +35,11 @@ const TEXT_BORDER_COLOR: u8 = 0x00;
 /// Provisional NTSC CPU clock (~0.895 MHz). Unverified constant; see `DESIGN.md` §4.
 const CPU_HZ: f64 = 894_886.0;
 
-/// Fields per half blink period for GIME text blink attributes (~0.27 s at 60 Hz).
-/// Provisional: real hardware blinks at the GIME interval-timer rate ($FF94/5),
-/// which isn't modelled yet — replace when the timer lands (`DESIGN.md` §4).
-const BLINK_HALF_PERIOD_FIELDS: u64 = 16;
+/// GIME timer input clocks per CPU cycle with INIT1 TINS=1. The fast timer
+/// clock is 3.579545 MHz (279.365 ns — hardware-measured; MAME `gime.cpp`.
+/// SEB's "70 ns" is wrong), exactly 4× the 0.89 MHz CPU clock. With TINS=0
+/// the input is the ~63.5 µs horizontal sync: one tick per scanline.
+const FAST_TIMER_TICKS_PER_CPU_CYCLE: u32 = 4;
 
 /// Which video path the GIME is currently driving; `render_field` dispatches on it.
 ///
@@ -75,8 +76,9 @@ pub struct Machine {
     pub framebuffer: Vec<u8>,
     pub fb_width: u32,
     pub fb_height: u32,
-    /// Fields rendered since power-on; drives the provisional text-blink phase.
-    field_count: u64,
+    /// Scratch buffer for the VDG graphics video-RAM snapshot
+    /// (`render_coco_graphics`), reused every field instead of reallocating.
+    graphics_scratch: Vec<u8>,
 }
 
 impl Machine {
@@ -91,7 +93,7 @@ impl Machine {
             framebuffer: vec![0u8; (FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL],
             fb_width: FB_WIDTH,
             fb_height: FB_HEIGHT,
-            field_count: 0,
+            graphics_scratch: Vec::new(),
         }
     }
 
@@ -119,9 +121,16 @@ impl Machine {
         for _ in 0..lines {
             self.run_cycles(cycles_per_line);
             self.bus.hsync();
+            // GIME interval timer: TINS=1 counts the fast clock (4 ticks per
+            // CPU cycle), TINS=0 counts horizontal syncs (1 per line).
+            let ticks = if self.bus.gime.timer_is_fast() {
+                cycles_per_line * FAST_TIMER_TICKS_PER_CPU_CYCLE
+            } else {
+                1
+            };
+            self.bus.gime.tick_timer(ticks);
         }
         self.bus.vsync();
-        self.field_count += 1;
         self.render_field();
     }
 
@@ -177,7 +186,9 @@ impl Machine {
             VideoMode::CocoText => self.render_coco_text(),
             VideoMode::CocoGraphics => self.render_coco_graphics(),
             VideoMode::GimeText => {
-                let blink_on = (self.field_count / BLINK_HALF_PERIOD_FIELDS) % 2 == 1;
+                // Blink phase is toggled by the GIME interval timer, which
+                // BASIC programs at hi-res text setup (SEB Unravelled II).
+                let blink_on = self.bus.gime.blink_state;
                 let (w, h) = gime_video::render_text(
                     &self.bus.gime,
                     &self.bus.ram,
@@ -228,19 +239,21 @@ impl Machine {
         let ff22 = self.bus.pia1.b.output;
         let mode = video::decode_vdg_graphics(ff22);
         let css = usize::from(ff22 & video::VDG_CSS != 0);
-        let colors: Vec<[u8; 4]> = video::vdg_palette_indices(mode.bpp, css)
-            .iter()
-            .map(|&reg| GIME::rgb_color(self.bus.gime.palette[reg]))
-            .collect();
+        let indices = video::vdg_palette_indices(mode.bpp, css);
+        let mut colors = [[0u8; 4]; video::MAX_VDG_COLORS];
+        for (slot, &reg) in colors.iter_mut().zip(indices) {
+            *slot = GIME::rgb_color(self.bus.gime.palette[reg]);
+        }
 
         let base = self.bus.gime.sam_display_base();
-        let mut data = vec![0u8; mode.bytes_per_row * mode.rows];
-        for (i, byte) in data.iter_mut().enumerate() {
+        self.graphics_scratch.resize(mode.bytes_per_row * mode.rows, 0);
+        for (i, byte) in self.graphics_scratch.iter_mut().enumerate() {
             *byte = self.bus.read(base.wrapping_add(i as u16));
         }
 
         let border = GIME::rgb_color(TEXT_BORDER_COLOR);
-        video::render_graphics(&data, &mode, &colors, border, &mut self.framebuffer);
+        let colors = &colors[..indices.len()];
+        video::render_graphics(&self.graphics_scratch, &mode, colors, border, &mut self.framebuffer);
     }
 
     /// Restore the fixed legacy-mode framebuffer geometry after a GIME-native

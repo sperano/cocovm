@@ -145,7 +145,34 @@ pub const GFX_BPP: [usize; 4] = [1, 2, 4, 4];
 /// Virtual row width in bytes when $FF9F HVEN is set.
 pub const HVEN_ROW_BYTES: usize = 256;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Interrupt source bits shared by IRQENR ($FF92) and FIRQENR ($FF93)
+/// (SEB Unravelled II Fig 14). Write = per-source enable; read = latched
+/// status, cleared by the read.
+pub mod intr {
+    /// Timer interrupt: the 12-bit interval timer counted down through zero.
+    pub const TMR: u8 = 0x20;
+    /// Horizontal border: falling edge of horizontal sync, once per scanline.
+    pub const HBORD: u8 = 0x10;
+    /// Vertical border: falling edge of vertical sync, once per field.
+    pub const VBORD: u8 = 0x08;
+    /// Serial data: falling edge on the serial connector status pin.
+    pub const EI2: u8 = 0x04;
+    /// Keyboard: a zero appearing on any PIA0 PA0–PA6 row sense line.
+    pub const EI1: u8 = 0x02;
+    /// Cartridge: falling edge on the expansion connector CART pin.
+    pub const EI0: u8 = 0x01;
+    /// Bits 6–7 are unused; enables are masked to the six real sources.
+    pub const SOURCE_MASK: u8 = 0x3F;
+}
+
+/// The 12-bit timer counts this many extra ticks past the programmed value on
+/// each (re)load. Hardware-measured on the 1986 GIME (MAME `gime.cpp`
+/// `reset_timer`); the 1987 revision uses +1. We model the 1986 chip.
+pub const TIMER_RELOAD_OFFSET: u16 = 2;
+/// Programmed timer values are 12 bits ($FF94 low nibble + $FF95).
+pub const TIMER_VALUE_MASK: u16 = 0x0FFF;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GIME {
     /// MMU task registers: `[task][logical 8K slot]` -> physical block number.
     /// Writes store the full 8 bits; reads return only the low 6 reliably
@@ -178,41 +205,20 @@ pub struct GIME {
     pub vertical_offset: u16,
     /// Horizontal offset register ($FF9F): HVEN + X offset (see [`hoff`]).
     pub horizontal_offset: u8,
-    /// 12-bit timer reload value and live count.
+    /// 12-bit timer programmed value ($FF94 low nibble / $FF95). Zero inhibits
+    /// the count; nonzero reloads (+[`TIMER_RELOAD_OFFSET`]) on each underflow.
     pub timer_reload: u16,
+    /// Live countdown, in timer input clocks (INIT1 TINS selects the rate).
     pub timer_count: u16,
+    /// IRQENR ($FF92) / FIRQENR ($FF93) source enables (see [`intr`]).
     pub irq_enable: u8,
     pub firq_enable: u8,
+    /// Latched interrupt status: sources that fired while enabled. Cleared by
+    /// reading the register (or by writing 0 to the source's enable bit).
     pub irq_pending: u8,
     pub firq_pending: u8,
-}
-
-impl Default for GIME {
-    fn default() -> Self {
-        Self {
-            mmu: [[0; SLOTS_PER_TASK]; TASK_COUNT],
-            task: 0,
-            mmu_enabled: false,
-            init0: 0,
-            init1: 0,
-            all_ram: false,
-            sam_page: 0,
-            palette: [0; PALETTE_LEN],
-            border: 0,
-            vmode: 0,
-            vres: 0,
-            video_bank: 0,
-            vertical_scroll: 0,
-            vertical_offset: 0,
-            horizontal_offset: 0,
-            timer_reload: 0,
-            timer_count: 0,
-            irq_enable: 0,
-            firq_enable: 0,
-            irq_pending: 0,
-            firq_pending: 0,
-        }
-    }
+    /// Text-attribute blink phase; toggles on every timer underflow.
+    pub blink_state: bool,
 }
 
 impl GIME {
@@ -311,9 +317,97 @@ impl GIME {
         [chan(5, 2), chan(4, 1), chan(3, 0), 0xFF]
     }
 
-    /// Advance the 12-bit timer by `cycles`; returns true on underflow (reload).
-    /// Skeleton: no interrupt raised yet (`DESIGN.md` §4).
-    pub fn tick_timer(&mut self, _cycles: u32) -> bool {
-        false
+    /// Write IRQENR ($FF92): set the per-source IRQ enables. Writing 0 to an
+    /// enable bit also clears that source's latched status — a hardware anomaly
+    /// SEB Unravelled II documents and MAME models (`change_gime_irq(m_irq & data)`).
+    pub fn write_irq_enable(&mut self, val: u8) {
+        self.irq_pending &= val;
+        self.irq_enable = val & intr::SOURCE_MASK;
+    }
+
+    /// Write FIRQENR ($FF93): the FIRQ twin of [`Self::write_irq_enable`].
+    pub fn write_firq_enable(&mut self, val: u8) {
+        self.firq_pending &= val;
+        self.firq_enable = val & intr::SOURCE_MASK;
+    }
+
+    /// Read IRQENR ($FF92): returns the latched IRQ status and clears it
+    /// (SEB Unravelled II — reading the status register resets the flags).
+    pub fn read_irq_status(&mut self) -> u8 {
+        std::mem::take(&mut self.irq_pending)
+    }
+
+    /// Read FIRQENR ($FF93): returns the latched FIRQ status and clears it.
+    pub fn read_firq_status(&mut self) -> u8 {
+        std::mem::take(&mut self.firq_pending)
+    }
+
+    /// Signal an interrupt source edge (an [`intr`] bit). The source latches
+    /// into the IRQ/FIRQ status only where its enable bit is set — GIME
+    /// interrupts trigger "when the enable line is high" (SEB Unravelled II).
+    pub fn raise(&mut self, source: u8) {
+        self.irq_pending |= source & self.irq_enable;
+        self.firq_pending |= source & self.firq_enable;
+    }
+
+    /// True while the GIME holds the CPU IRQ line: any latched source, gated
+    /// by the INIT0 IEN master enable.
+    pub fn irq_asserted(&self) -> bool {
+        self.init0 & init0::IEN != 0 && self.irq_pending != 0
+    }
+
+    /// True while the GIME holds the CPU FIRQ line (INIT0 FEN master enable).
+    pub fn firq_asserted(&self) -> bool {
+        self.init0 & init0::FEN != 0 && self.firq_pending != 0
+    }
+
+    /// Write the timer MSB ($FF94, low nibble = timer bits 8–11) and restart
+    /// the count. SEB documents the MSB write as starting the timer; on the
+    /// real chip either byte restarts it (MAME `reset_timer` on both).
+    pub fn write_timer_msb(&mut self, val: u8) {
+        self.timer_reload =
+            (self.timer_reload & 0x00FF) | (u16::from(val) << 8 & TIMER_VALUE_MASK);
+        self.restart_timer();
+    }
+
+    /// Write the timer LSB ($FF95) and restart the count.
+    pub fn write_timer_lsb(&mut self, val: u8) {
+        self.timer_reload = (self.timer_reload & 0x0F00) | u16::from(val);
+        self.restart_timer();
+    }
+
+    /// Reload the live count from the programmed value. A zero value inhibits
+    /// the countdown; nonzero counts value + [`TIMER_RELOAD_OFFSET`] input
+    /// clocks per period (1986 GIME behaviour).
+    fn restart_timer(&mut self) {
+        self.timer_count = if self.timer_reload == 0 {
+            0
+        } else {
+            self.timer_reload + TIMER_RELOAD_OFFSET
+        };
+    }
+
+    /// True when INIT1 TINS selects the fast (3.58 MHz-class) timer clock
+    /// rather than the horizontal-sync rate.
+    pub fn timer_is_fast(&self) -> bool {
+        self.init1 & init1::TINS != 0
+    }
+
+    /// Advance the 12-bit timer by `ticks` input clocks. Each underflow raises
+    /// the TMR interrupt source, toggles the text blink phase, and reloads
+    /// (SEB Unravelled II; MAME `timer_elapsed`). Inhibited while the
+    /// programmed value is zero.
+    pub fn tick_timer(&mut self, ticks: u32) {
+        if self.timer_reload == 0 {
+            return;
+        }
+        let mut remaining = ticks;
+        while remaining >= u32::from(self.timer_count) {
+            remaining -= u32::from(self.timer_count);
+            self.blink_state = !self.blink_state;
+            self.raise(intr::TMR);
+            self.restart_timer();
+        }
+        self.timer_count -= remaining as u16;
     }
 }

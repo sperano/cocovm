@@ -41,10 +41,10 @@ fn decodes_pmode_geometry() {
 
 #[test]
 fn palette_indices_follow_css_and_depth() {
-    assert_eq!(vdg_palette_indices(1, 0), vec![8, 9]);
-    assert_eq!(vdg_palette_indices(1, 1), vec![10, 11]);
-    assert_eq!(vdg_palette_indices(2, 0), vec![0, 1, 2, 3]);
-    assert_eq!(vdg_palette_indices(2, 1), vec![4, 5, 6, 7]);
+    assert_eq!(vdg_palette_indices(1, 0), [8, 9].as_slice());
+    assert_eq!(vdg_palette_indices(1, 1), [10, 11].as_slice());
+    assert_eq!(vdg_palette_indices(2, 0), [0, 1, 2, 3].as_slice());
+    assert_eq!(vdg_palette_indices(2, 1), [4, 5, 6, 7].as_slice());
 }
 
 #[test]

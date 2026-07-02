@@ -141,12 +141,16 @@ pub const VDG_CSS: u8 = 0x08;
 const VDG_GM_MASK: u8 = 0x70;
 const VDG_GM_SHIFT: u8 = 4;
 
-/// First GIME palette register for 2-colour modes, indexed by CSS (SEB Fig 13):
+/// Palette-register indices for 2-colour modes, indexed by CSS (SEB Fig 13):
 /// CSS=0 → regs 8,9; CSS=1 → regs 10,11.
-const G2_PALETTE_BASE: [usize; 2] = [8, 10];
-/// First GIME palette register for 4-colour modes, indexed by CSS (SEB Fig 13):
+const G2_PALETTE_INDICES: [[usize; 2]; 2] = [[8, 9], [10, 11]];
+/// Palette-register indices for 4-colour modes, indexed by CSS (SEB Fig 13):
 /// CSS=0 → regs 0–3; CSS=1 → regs 4–7.
-const G4_PALETTE_BASE: [usize; 2] = [0, 4];
+const G4_PALETTE_INDICES: [[usize; 4]; 2] = [[0, 1, 2, 3], [4, 5, 6, 7]];
+
+/// Upper bound on palette entries a VDG graphics mode can resolve to (the
+/// 4-colour modes use all four; 2-colour modes use a `[..2]` prefix).
+pub const MAX_VDG_COLORS: usize = 4;
 
 /// A decoded VDG resolution-graphics mode.
 pub struct VdgGraphicsMode {
@@ -180,14 +184,12 @@ pub fn decode_vdg_graphics(ff22: u8) -> VdgGraphicsMode {
 }
 
 /// GIME palette-register indices for a VDG graphics mode, in pixel-value order
-/// (SEB Fig 13). `css` is 0 or 1.
-pub fn vdg_palette_indices(bpp: usize, css: usize) -> Vec<usize> {
+/// (SEB Fig 13). `css` is 0 or 1. Borrows a compile-time table — no allocation.
+pub fn vdg_palette_indices(bpp: usize, css: usize) -> &'static [usize] {
     if bpp == 1 {
-        let b = G2_PALETTE_BASE[css];
-        vec![b, b + 1]
+        &G2_PALETTE_INDICES[css]
     } else {
-        let b = G4_PALETTE_BASE[css];
-        vec![b, b + 1, b + 2, b + 3]
+        &G4_PALETTE_INDICES[css]
     }
 }
 

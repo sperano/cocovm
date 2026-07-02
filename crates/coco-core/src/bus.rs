@@ -21,8 +21,15 @@ const CART_BASE: u16 = 0xFF40;
 const CART_LAST: u16 = 0xFF5F;
 const INIT0_REG: u16 = 0xFF90;
 const INIT1_REG: u16 = 0xFF91;
-/// GIME control registers past INIT0/INIT1: IRQ/FIRQ enables, timer, video, border.
-const GIME_CTRL_BASE: u16 = 0xFF92;
+/// IRQ enable/status register (write = enables, read = latched status).
+const IRQENR_REG: u16 = 0xFF92;
+/// FIRQ enable/status register (write = enables, read = latched status).
+const FIRQENR_REG: u16 = 0xFF93;
+const TIMER_MSB_REG: u16 = 0xFF94;
+const TIMER_LSB_REG: u16 = 0xFF95;
+/// $FF96/$FF97 are reserved on the GIME.
+const GIME_RESERVED_BASE: u16 = 0xFF96;
+const GIME_RESERVED_LAST: u16 = 0xFF97;
 const VMODE_REG: u16 = 0xFF98;
 const VRES_REG: u16 = 0xFF99;
 const BORDER_REG: u16 = 0xFF9A;
@@ -63,6 +70,9 @@ pub struct SystemBus {
     pub cart: Box<dyn Cartridge>,
     pub keyboard: Keyboard,
     pub io_enabled: bool,
+    /// Last sampled state of the GIME keyboard-interrupt input (true = some
+    /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
+    kbd_line_low: bool,
 }
 
 impl SystemBus {
@@ -76,6 +86,7 @@ impl SystemBus {
             cart: Box::new(EmptySlot),
             keyboard: Keyboard::new(),
             io_enabled: true,
+            kbd_line_low: false,
         }
     }
 
@@ -98,28 +109,41 @@ impl SystemBus {
 
     /// True when any interrupt source is holding the CPU IRQ line low.
     ///
-    /// At the BASIC prompt the stock ROM runs the legacy PIA path (INIT0 IEN=0),
-    /// so IRQ comes from PIA0's field/horizontal sync. GIME-sourced IRQ (timer,
-    /// VBORD) will OR in here once wired (`DESIGN.md` §4).
+    /// PIA0's output and the GIME's IRQ output are wired-OR on the CPU pin: at
+    /// the BASIC prompt the stock ROM runs the legacy PIA path (INIT0 IEN=0)
+    /// off PIA0's field/horizontal sync, while GIME-native software enables
+    /// IEN and the $FF92 sources instead (`DESIGN.md` §4).
     pub fn irq_asserted(&self) -> bool {
-        self.pia0.irq() || self.pia1.irq()
+        self.pia0.irq() || self.gime.irq_asserted()
     }
 
-    /// True when any interrupt source is holding the CPU FIRQ line low.
-    /// Cartridge/GIME FIRQ sources are TODO.
+    /// True when any interrupt source is holding the CPU FIRQ line low: PIA1
+    /// (the legacy cartridge FIRQ path) wired-OR with the GIME's FIRQ output
+    /// ($FF93 sources gated by INIT0 FEN).
     pub fn firq_asserted(&self) -> bool {
-        false
+        self.pia1.irq() || self.gime.firq_asserted()
     }
 
-    /// Horizontal-sync edge: latches PIA0 CA1 (control reg $FF01, port A).
+    /// Horizontal-sync edge: latches PIA0 CA1 (control reg $FF01, port A) and
+    /// the GIME HBORD source; also the GIME's per-scanline sample point for
+    /// the EI1 keyboard-interrupt input (a zero on any PA0–PA6 row while some
+    /// column is strobed — SEB Unravelled II), which fires on falling edge.
     pub fn hsync(&mut self) {
         self.pia0.a.pulse_c1();
+        self.gime.raise(gime::intr::HBORD);
+        let line_low = self.keyboard.sense(self.pia0.b.output) & 0x7F != 0x7F;
+        if line_low && !self.kbd_line_low {
+            self.gime.raise(gime::intr::EI1);
+        }
+        self.kbd_line_low = line_low;
     }
 
     /// Field-sync (~60 Hz vertical) edge: latches PIA0 CB1 (control reg $FF03,
-    /// port B) — the interrupt that drives BASIC's housekeeping loop.
+    /// port B) — the interrupt that drives BASIC's housekeeping loop — and the
+    /// GIME VBORD source.
     pub fn vsync(&mut self) {
         self.pia0.b.pulse_c1();
+        self.gime.raise(gime::intr::VBORD);
     }
 
     /// Read internal ROM for a logical address in the `$8000–$FFFF` window.
@@ -145,7 +169,9 @@ impl SystemBus {
             CART_BASE..=CART_LAST => self.cart.read(addr),
             INIT0_REG => self.gime.init0,
             INIT1_REG => self.gime.init1,
-            GIME_CTRL_BASE..=GIME_LAST => 0, // TODO: IRQ/timer/video status regs (clear-on-read)
+            IRQENR_REG => self.gime.read_irq_status(),
+            FIRQENR_REG => self.gime.read_firq_status(),
+            TIMER_MSB_REG..=GIME_LAST => 0, // timer/video regs are write-only on HW
             MMU_BASE..=MMU_LAST => {
                 let (task, slot) = mmu_index(addr);
                 self.gime.mmu[task][slot] & gime::MMU_READ_MASK
@@ -162,6 +188,10 @@ impl SystemBus {
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
             INIT0_REG => self.gime.write_init0(val),
             INIT1_REG => self.gime.write_init1(val),
+            IRQENR_REG => self.gime.write_irq_enable(val),
+            FIRQENR_REG => self.gime.write_firq_enable(val),
+            TIMER_MSB_REG => self.gime.write_timer_msb(val),
+            TIMER_LSB_REG => self.gime.write_timer_lsb(val),
             VMODE_REG => self.gime.vmode = val,
             VRES_REG => self.gime.vres = val,
             BORDER_REG => self.gime.border = val,
@@ -175,7 +205,7 @@ impl SystemBus {
                 self.gime.vertical_offset = (self.gime.vertical_offset & 0xFF00) | u16::from(val);
             }
             HOFFSET_REG => self.gime.horizontal_offset = val,
-            GIME_CTRL_BASE..=GIME_LAST => { /* TODO: IRQ/timer control regs */ }
+            GIME_RESERVED_BASE..=GIME_RESERVED_LAST => {}
             MMU_BASE..=MMU_LAST => {
                 let (task, slot) = mmu_index(addr);
                 self.gime.mmu[task][slot] = val; // full 8 bits stored on write
