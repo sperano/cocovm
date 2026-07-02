@@ -11,6 +11,7 @@
 //! ROM file dialog, audio, and the debugger panels are still TODO.
 
 mod about;
+mod joy;
 mod kbd_help;
 
 use std::collections::VecDeque;
@@ -19,6 +20,7 @@ use std::path::PathBuf;
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::{Machine, MachineConfig};
 use eframe::egui;
+use joy::JoystickInputs;
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 const SCALE: f32 = 3.0;
@@ -124,6 +126,11 @@ struct CocoApp {
     /// emulation speed from the host refresh rate (120 Hz displays no longer
     /// run the CoCo at double speed).
     field_debt: f64,
+    /// Per-port joystick source selection (mouse/gamepad/keys) and gamepad state.
+    joysticks: JoystickInputs,
+    /// Letterboxed display rect from the last frame's `CentralPanel`, used to map
+    /// pointer position to joystick axes. One frame stale (see `drive_joysticks`).
+    display_rect: egui::Rect,
 }
 
 impl CocoApp {
@@ -139,6 +146,8 @@ impl CocoApp {
             aspect_correct: true,
             last_update: None,
             field_debt: 0.0,
+            joysticks: JoystickInputs::new(),
+            display_rect: egui::Rect::NOTHING,
         }
     }
 
@@ -200,11 +209,16 @@ impl CocoApp {
         }
 
         // Symbolic mode also turns typed characters and control keys into queued taps.
+        // Arrows are skipped when a joystick port is in Keys mode (see below).
         if self.kb_mode == KbMode::Symbolic {
+            let joystick_keys = self.joysticks.keys_active();
             for ev in &events {
                 match ev {
                     egui::Event::Text(text) => self.enqueue_text(text),
                     egui::Event::Key { key, pressed: true, .. } => {
+                        if joystick_keys && is_joystick_key(*key) {
+                            continue;
+                        }
                         if let Some(pos) = control_key_pos(*key) {
                             self.type_ahead.queue.push_back((pos, false));
                         }
@@ -221,8 +235,11 @@ impl CocoApp {
             return;
         }
 
-        // Positional mode: physical keys drive the CoCo matrix directly.
+        // Positional mode: physical keys drive the CoCo matrix directly. Arrows and
+        // Z/X are skipped when a joystick port is in Keys mode, so the two input
+        // paths don't fight over the same physical keys.
         if self.kb_mode == KbMode::Positional {
+            let joystick_keys = self.joysticks.keys_active();
             let kb = &mut self.machine.bus.keyboard;
             kb.set(kbd::SHIFT, mods.shift);
             kb.set(kbd::CTRL, mods.ctrl);
@@ -233,6 +250,9 @@ impl CocoApp {
                     if k == egui::Key::F12 {
                         continue;
                     }
+                    if joystick_keys && is_joystick_key(k) {
+                        continue;
+                    }
                     if let Some(pos) = key_to_pos(k) {
                         kb.set(pos, *pressed);
                     }
@@ -240,11 +260,19 @@ impl CocoApp {
             }
         }
     }
+
+    /// Poll and apply all joystick input sources (mouse/gamepad/keys) for both
+    /// ports. Called once per `update()`, before running any emulated fields, so
+    /// the pot/button state a field sees is this frame's, not last frame's.
+    fn drive_joysticks(&mut self, ctx: &egui::Context) {
+        self.joysticks.apply(ctx, self.display_rect, &mut self.machine);
+    }
 }
 
 impl eframe::App for CocoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_input(ctx);
+        self.drive_joysticks(ctx);
 
         if self.running {
             // Run however many fields the wall clock owes us (real-time pacing),
@@ -290,6 +318,7 @@ impl eframe::App for CocoApp {
                 if ui.button("About").clicked() {
                     self.show_about = !self.show_about;
                 }
+                ui.menu_button("Joysticks", |ui| self.joysticks.menu_ui(ui));
                 ui.separator();
                 ui.label(format!("cycles: {}", self.machine.cpu.cycles));
             });
@@ -327,6 +356,9 @@ impl eframe::App for CocoApp {
                 let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
                 let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
                 ui.put(rect, egui::Image::new(sized));
+                // Remembered for `drive_joysticks` next frame, to map pointer
+                // position to joystick axes (see the `display_rect` field doc).
+                self.display_rect = rect;
             });
     }
 }
@@ -388,6 +420,21 @@ fn control_key_pos(key: egui::Key) -> Option<Pos> {
         _ => return None,
     };
     Some(pos)
+}
+
+/// Keys claimed by `joy::JoySource::Keys` (arrows for the axes, Z/X for the fire
+/// buttons) once a joystick port uses that source — these stop reaching the CoCo
+/// keyboard matrix so the two consumers don't fight over the same physical keys.
+fn is_joystick_key(key: egui::Key) -> bool {
+    matches!(
+        key,
+        egui::Key::ArrowUp
+            | egui::Key::ArrowDown
+            | egui::Key::ArrowLeft
+            | egui::Key::ArrowRight
+            | egui::Key::Z
+            | egui::Key::X
+    )
 }
 
 /// Resolve the boot ROM: the first CLI argument, else `roms/coco3.rom` at the

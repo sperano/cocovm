@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 coco-core = { path = "../coco-core" }
 eframe = "0.33"
+gilrs = "0.11.2"

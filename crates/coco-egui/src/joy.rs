@@ -1,0 +1,277 @@
+//! Joystick input sources: drive the CoCo's two analog ports
+//! (`coco_core::joystick`) from the mouse, a gamepad (via `gilrs`), or the
+//! keyboard, per-port selectable from the "Joysticks" menu.
+
+use coco_core::joystick::{AXIS_CENTER, AXIS_MAX, AXIS_X, AXIS_Y, LEFT, RIGHT};
+use coco_core::Machine;
+use eframe::egui;
+
+/// Pot floor (0 = fully left/up), named to match `joystick::AXIS_MAX` (63 =
+/// fully right/down) rather than leaving a bare `0` at each call site.
+const AXIS_MIN: u8 = 0;
+
+/// Where a joystick port's axes and buttons are read from.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum JoySource {
+    #[default]
+    None,
+    Mouse,
+    Gamepad,
+    Keys,
+}
+
+impl JoySource {
+    pub const ALL: [Self; 4] = [Self::None, Self::Mouse, Self::Gamepad, Self::Keys];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::Mouse => "Mouse",
+            Self::Gamepad => "Gamepad",
+            Self::Keys => "Keys",
+        }
+    }
+}
+
+/// Host-side keys driving `JoySource::Keys`: arrows for the axes, Z/X for the
+/// two fire buttons (mirroring the analog stick's button 0/1).
+struct KeyState {
+    left: bool,
+    right: bool,
+    up: bool,
+    down: bool,
+    button0: bool,
+    button1: bool,
+}
+
+/// Runtime state for the two joystick ports: which source drives each, plus
+/// the (optional) gilrs handle shared by any port set to `Gamepad`.
+pub struct JoystickInputs {
+    /// Indexed by `coco_core::joystick::{RIGHT, LEFT}`.
+    pub sources: [JoySource; 2],
+    /// `None` when no gamepad backend is available on this host (`gilrs::Gilrs::new`
+    /// failed) — the `Gamepad` source is then selectable but stays centered.
+    gilrs: Option<gilrs::Gilrs>,
+    /// Left analog stick of the first gamepad seen, in gilrs' -1.0..=1.0 range.
+    pad_axes: [f32; 2],
+    /// South (button 0) / East (button 1) state of the first gamepad seen.
+    pad_buttons: [bool; 2],
+}
+
+impl JoystickInputs {
+    pub fn new() -> Self {
+        let gilrs = match gilrs::Gilrs::new() {
+            Ok(g) => Some(g),
+            Err(e) => {
+                eprintln!("coco-egui: gamepad input unavailable: {e}");
+                None
+            }
+        };
+        Self {
+            // Defaults per spec: right stick to the mouse (the common single-stick
+            // case), left stick off.
+            sources: [JoySource::Mouse, JoySource::None],
+            gilrs,
+            pad_axes: [0.0, 0.0],
+            pad_buttons: [false, false],
+        }
+    }
+
+    pub fn gamepad_available(&self) -> bool {
+        self.gilrs.is_some()
+    }
+
+    /// True if either port is set to `Keys`, meaning arrow/Z/X keys are claimed by
+    /// the joystick and must not also reach the CoCo keyboard matrix.
+    pub fn keys_active(&self) -> bool {
+        self.sources.contains(&JoySource::Keys)
+    }
+
+    /// Pump pending gilrs events, updating the shared `pad_axes`/`pad_buttons`
+    /// from whichever gamepad reports them (effectively "first one to speak").
+    /// D-pad presses are reported as `EventType::ButtonPressed` (gilrs' default
+    /// filters turn the D-pad's axis into synthetic buttons) and are treated as
+    /// full deflection, same as the requirement for keyboard arrows.
+    fn poll_gamepad(&mut self) {
+        use gilrs::{Axis, Button, EventType};
+
+        let Some(gilrs) = self.gilrs.as_mut() else {
+            return;
+        };
+        while let Some(gilrs::Event { event, .. }) = gilrs.next_event() {
+            match event {
+                EventType::AxisChanged(Axis::LeftStickX, v, _) => self.pad_axes[0] = v,
+                // gilrs reports stick-up as a negative value (HID/SDL convention),
+                // which already lines up with the CoCo pot's 0 = up.
+                EventType::AxisChanged(Axis::LeftStickY, v, _) => self.pad_axes[1] = v,
+                EventType::ButtonPressed(Button::DPadLeft, _) => self.pad_axes[0] = -1.0,
+                EventType::ButtonPressed(Button::DPadRight, _) => self.pad_axes[0] = 1.0,
+                EventType::ButtonReleased(Button::DPadLeft | Button::DPadRight, _) => {
+                    self.pad_axes[0] = 0.0;
+                }
+                EventType::ButtonPressed(Button::DPadUp, _) => self.pad_axes[1] = -1.0,
+                EventType::ButtonPressed(Button::DPadDown, _) => self.pad_axes[1] = 1.0,
+                EventType::ButtonReleased(Button::DPadUp | Button::DPadDown, _) => {
+                    self.pad_axes[1] = 0.0;
+                }
+                EventType::ButtonPressed(Button::South, _) => self.pad_buttons[0] = true,
+                EventType::ButtonReleased(Button::South, _) => self.pad_buttons[0] = false,
+                EventType::ButtonPressed(Button::East, _) => self.pad_buttons[1] = true,
+                EventType::ButtonReleased(Button::East, _) => self.pad_buttons[1] = false,
+                _ => {}
+            }
+        }
+    }
+
+    fn key_state(ctx: &egui::Context) -> KeyState {
+        ctx.input(|i| KeyState {
+            left: i.key_down(egui::Key::ArrowLeft),
+            right: i.key_down(egui::Key::ArrowRight),
+            up: i.key_down(egui::Key::ArrowUp),
+            down: i.key_down(egui::Key::ArrowDown),
+            button0: i.key_down(egui::Key::Z),
+            button1: i.key_down(egui::Key::X),
+        })
+    }
+
+    /// Poll gamepad events and push the current axis/button state of every
+    /// non-`None` port onto the bus. Call once per `update()`, before running
+    /// any emulated fields.
+    pub fn apply(&mut self, ctx: &egui::Context, display_rect: egui::Rect, machine: &mut Machine) {
+        self.poll_gamepad();
+
+        let (pointer_pos, primary_down, secondary_down) = ctx.input(|i| {
+            (
+                i.pointer.hover_pos(),
+                i.pointer.primary_down(),
+                i.pointer.secondary_down(),
+            )
+        });
+        let keys = Self::key_state(ctx);
+
+        for stick in [RIGHT, LEFT] {
+            match self.sources[stick] {
+                JoySource::None => {
+                    // Explicitly recenter so a port doesn't stay wherever a
+                    // previously selected source last left it.
+                    machine.bus.joysticks.set_axis(stick, AXIS_X, AXIS_CENTER);
+                    machine.bus.joysticks.set_axis(stick, AXIS_Y, AXIS_CENTER);
+                    machine.bus.joysticks.set_button(stick, 0, false);
+                    machine.bus.joysticks.set_button(stick, 1, false);
+                }
+                JoySource::Mouse => {
+                    // Only update the axes while the pointer is actually over the
+                    // display; when it leaves, the pot holds its last position.
+                    if let Some(pos) = pointer_pos
+                        && display_rect.contains(pos)
+                    {
+                        let nx = (pos.x - display_rect.left()) / display_rect.width();
+                        let ny = (pos.y - display_rect.top()) / display_rect.height();
+                        machine.bus.joysticks.set_axis(stick, AXIS_X, pot_from_unit(nx));
+                        machine.bus.joysticks.set_axis(stick, AXIS_Y, pot_from_unit(ny));
+                    }
+                    machine.bus.joysticks.set_button(stick, 0, primary_down);
+                    machine.bus.joysticks.set_button(stick, 1, secondary_down);
+                }
+                JoySource::Gamepad => {
+                    let x = pot_from_bipolar(self.pad_axes[0]);
+                    let y = pot_from_bipolar(self.pad_axes[1]);
+                    machine.bus.joysticks.set_axis(stick, AXIS_X, x);
+                    machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
+                    machine.bus.joysticks.set_button(stick, 0, self.pad_buttons[0]);
+                    machine.bus.joysticks.set_button(stick, 1, self.pad_buttons[1]);
+                }
+                JoySource::Keys => {
+                    let x = axis_from_keys(keys.left, keys.right);
+                    let y = axis_from_keys(keys.up, keys.down);
+                    machine.bus.joysticks.set_axis(stick, AXIS_X, x);
+                    machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
+                    machine.bus.joysticks.set_button(stick, 0, keys.button0);
+                    machine.bus.joysticks.set_button(stick, 1, keys.button1);
+                }
+            }
+        }
+    }
+
+    /// "Joysticks" menu contents: a source combo box per port plus gamepad status.
+    pub fn menu_ui(&mut self, ui: &mut egui::Ui) {
+        for (stick, name) in [(RIGHT, "Right stick"), (LEFT, "Left stick")] {
+            egui::ComboBox::from_label(name)
+                .selected_text(self.sources[stick].label())
+                .show_ui(ui, |ui| {
+                    for source in JoySource::ALL {
+                        ui.selectable_value(&mut self.sources[stick], source, source.label());
+                    }
+                });
+        }
+        ui.separator();
+        ui.label(if self.gamepad_available() {
+            "Gamepad: connected"
+        } else {
+            "Gamepad: unavailable"
+        });
+    }
+}
+
+/// Full deflection while exactly one of a key pair is held, else centered —
+/// covers "neither held" and "both held" (e.g. opposing arrows) the same way.
+fn axis_from_keys(negative: bool, positive: bool) -> u8 {
+    match (negative, positive) {
+        (true, false) => AXIS_MIN,
+        (false, true) => AXIS_MAX,
+        _ => AXIS_CENTER,
+    }
+}
+
+/// Map a 0.0..=1.0 fraction (e.g. pointer position within the display rect) to
+/// a 0..=63 pot value.
+fn pot_from_unit(frac: f32) -> u8 {
+    (frac.clamp(0.0, 1.0) * AXIS_MAX as f32).round() as u8
+}
+
+/// Map a gilrs-style -1.0..=1.0 analog axis to a 0..=63 pot value.
+fn pot_from_bipolar(v: f32) -> u8 {
+    pot_from_unit((v.clamp(-1.0, 1.0) + 1.0) / 2.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pot_from_unit_clamps_and_scales() {
+        assert_eq!(pot_from_unit(0.0), AXIS_MIN);
+        assert_eq!(pot_from_unit(1.0), AXIS_MAX);
+        assert_eq!(pot_from_unit(-1.0), AXIS_MIN);
+        assert_eq!(pot_from_unit(2.0), AXIS_MAX);
+        assert_eq!(pot_from_unit(0.5), 32); // rounds to the nearest pot step
+    }
+
+    #[test]
+    fn pot_from_bipolar_maps_full_range() {
+        assert_eq!(pot_from_bipolar(-1.0), AXIS_MIN);
+        assert_eq!(pot_from_bipolar(1.0), AXIS_MAX);
+        assert_eq!(pot_from_bipolar(0.0), 32);
+    }
+
+    #[test]
+    fn axis_from_keys_centers_on_conflict_or_no_input() {
+        assert_eq!(axis_from_keys(false, false), AXIS_CENTER);
+        assert_eq!(axis_from_keys(true, true), AXIS_CENTER);
+        assert_eq!(axis_from_keys(true, false), AXIS_MIN);
+        assert_eq!(axis_from_keys(false, true), AXIS_MAX);
+    }
+
+    #[test]
+    fn joy_source_default_is_none() {
+        assert_eq!(JoySource::default(), JoySource::None);
+    }
+
+    #[test]
+    fn keys_active_reflects_either_port() {
+        let mut inputs = JoystickInputs::new();
+        assert!(!inputs.keys_active());
+        inputs.sources[LEFT] = JoySource::Keys;
+        assert!(inputs.keys_active());
+    }
+}
