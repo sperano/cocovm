@@ -8,9 +8,10 @@
 //!   semantics, like MAME). The default.
 //! - Symbolic — the character you type is injected via the CoCo keys that produce it.
 //!
-//! ROM file dialog, audio, and the debugger panels are still TODO.
+//! ROM file dialog and the debugger panels are still TODO.
 
 mod about;
+mod audio;
 mod joy;
 mod kbd_help;
 
@@ -132,6 +133,8 @@ struct CocoApp {
     field_debt: f64,
     /// Per-port joystick source selection (mouse/gamepad/keys) and gamepad state.
     joysticks: JoystickInputs,
+    /// cpal output stream, resampler, and volume/mute state (`audio.rs`).
+    audio: audio::AudioOutput,
     /// Letterboxed display rect from the last frame's `CentralPanel`, used to map
     /// pointer position to joystick axes. One frame stale (see `drive_joysticks`).
     display_rect: egui::Rect,
@@ -152,6 +155,7 @@ impl CocoApp {
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),
             display_rect: egui::Rect::NOTHING,
+            audio: audio::AudioOutput::new(),
         }
     }
 
@@ -287,6 +291,8 @@ impl eframe::App for CocoApp {
                 }
                 self.machine.run_field();
             }
+            let sample_rate = self.machine.audio_sample_rate();
+            self.audio.push_samples(self.machine.take_audio(), sample_rate);
             ctx.request_repaint();
         } else {
             self.last_update = None;
@@ -333,6 +339,7 @@ impl eframe::App for CocoApp {
                     ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
                 });
                 ui.menu_button("Joysticks", |ui| self.joysticks.menu_ui(ui));
+                ui.menu_button("Sound", |ui| self.audio.menu_ui(ui));
                 ui.menu_button("Help", |ui| {
                     if ui.button("About").clicked() {
                         self.show_about = !self.show_about;
