@@ -289,6 +289,16 @@ This is where "start with the GIME" actually means a lot of surface area. Split 
   160/256/320/640 width; text at 32/40/64/80 columns with attributes (8 colors
   fg/bg, blink, underline). 16 palette registers, 6-bit values interpreted as RGB
   or composite per the monitor-type bit.
+  - **DONE (2026-07, `coco-core::gime_video`):** both native paths render from
+    *physical* RAM at the $FF9D/$FF9E vertical offset ×8 (MMU bypassed), honour
+    $FF9A border, $FF9B video bank (>512K), $FF9C smooth scroll, and $FF9F
+    HVEN/X-offset with the 256-byte seam wrap. Text uses the GIME internal font
+    (MAME `hires_font`, see `NOTICE.md`), attribute fg regs 8–15 / bg regs 0–7,
+    blink (provisional field-count phase until the GIME timer lands), and the
+    LPR-dependent underline line. Geometry verified against SEB Unravelled II
+    and MAME `gime.cpp` (text HRES ignores bit 1; LPR is 1/1/2/8/9/10/11).
+    Composite palette interpretation and per-scanline mode changes (Option B
+    canonical raster) are still TODO.
 - **Legacy VDG modes** (defer — large compat surface): the CoCo 1/2
   semigraphics/VDG modes selected through the SAM-compat and PIA mode bits. Needed
   to run old software, but not to boot CoCo 3 BASIC. Flag this as explicit deferred

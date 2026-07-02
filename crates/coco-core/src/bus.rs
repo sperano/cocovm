@@ -25,6 +25,12 @@ const INIT1_REG: u16 = 0xFF91;
 const GIME_CTRL_BASE: u16 = 0xFF92;
 const VMODE_REG: u16 = 0xFF98;
 const VRES_REG: u16 = 0xFF99;
+const BORDER_REG: u16 = 0xFF9A;
+const VBANK_REG: u16 = 0xFF9B;
+const VSCROLL_REG: u16 = 0xFF9C;
+const VOFFSET1_REG: u16 = 0xFF9D;
+const VOFFSET0_REG: u16 = 0xFF9E;
+const HOFFSET_REG: u16 = 0xFF9F;
 const GIME_LAST: u16 = 0xFF9F;
 const MMU_BASE: u16 = 0xFFA0;
 const MMU_LAST: u16 = 0xFFAF;
@@ -158,7 +164,18 @@ impl SystemBus {
             INIT1_REG => self.gime.write_init1(val),
             VMODE_REG => self.gime.vmode = val,
             VRES_REG => self.gime.vres = val,
-            GIME_CTRL_BASE..=GIME_LAST => { /* TODO: IRQ/timer/border control regs */ }
+            BORDER_REG => self.gime.border = val,
+            VBANK_REG => self.gime.video_bank = val,
+            VSCROLL_REG => self.gime.vertical_scroll = val,
+            VOFFSET1_REG => {
+                self.gime.vertical_offset =
+                    (self.gime.vertical_offset & 0x00FF) | u16::from(val) << 8;
+            }
+            VOFFSET0_REG => {
+                self.gime.vertical_offset = (self.gime.vertical_offset & 0xFF00) | u16::from(val);
+            }
+            HOFFSET_REG => self.gime.horizontal_offset = val,
+            GIME_CTRL_BASE..=GIME_LAST => { /* TODO: IRQ/timer control regs */ }
             MMU_BASE..=MMU_LAST => {
                 let (task, slot) = mmu_index(addr);
                 self.gime.mmu[task][slot] = val; // full 8 bits stored on write

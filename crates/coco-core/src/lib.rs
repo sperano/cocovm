@@ -6,7 +6,9 @@ pub mod bus;
 pub mod cart;
 pub mod config;
 mod font6847;
+mod font_gime;
 pub mod gime;
+pub mod gime_video;
 pub mod keyboard;
 pub mod pia;
 pub mod video;
@@ -32,6 +34,11 @@ const TEXT_BORDER_COLOR: u8 = 0x00;
 
 /// Provisional NTSC CPU clock (~0.895 MHz). Unverified constant; see `DESIGN.md` §4.
 const CPU_HZ: f64 = 894_886.0;
+
+/// Fields per half blink period for GIME text blink attributes (~0.27 s at 60 Hz).
+/// Provisional: real hardware blinks at the GIME interval-timer rate ($FF94/5),
+/// which isn't modelled yet — replace when the timer lands (`DESIGN.md` §4).
+const BLINK_HALF_PERIOD_FIELDS: u64 = 16;
 
 /// Which video path the GIME is currently driving; `render_field` dispatches on it.
 ///
@@ -62,10 +69,14 @@ pub struct Machine {
     pub cpu: MC6809,
     pub bus: SystemBus,
     pub config: MachineConfig,
-    /// RGBA framebuffer for the active video field (`DESIGN.md` §6).
+    /// RGBA framebuffer for the active video field (`DESIGN.md` §6). Its size is
+    /// mode-dependent: each renderer fills a native-size buffer and the frontend
+    /// scales to fit (`video-output-architecture` Option A).
     pub framebuffer: Vec<u8>,
     pub fb_width: u32,
     pub fb_height: u32,
+    /// Fields rendered since power-on; drives the provisional text-blink phase.
+    field_count: u64,
 }
 
 impl Machine {
@@ -80,6 +91,7 @@ impl Machine {
             framebuffer: vec![0u8; (FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL],
             fb_width: FB_WIDTH,
             fb_height: FB_HEIGHT,
+            field_count: 0,
         }
     }
 
@@ -109,6 +121,7 @@ impl Machine {
             self.bus.hsync();
         }
         self.bus.vsync();
+        self.field_count += 1;
         self.render_field();
     }
 
@@ -159,23 +172,36 @@ impl Machine {
     }
 
     /// Render one video field into `framebuffer`, dispatching on the current mode.
-    ///
-    /// Unimplemented graphics modes fall back to the text renderer so the machine
-    /// keeps producing a picture; each arm is the seam where a real renderer lands.
     fn render_field(&mut self) {
         match self.video_mode() {
             VideoMode::CocoText => self.render_coco_text(),
             VideoMode::CocoGraphics => self.render_coco_graphics(),
-            // TODO: GIME native hi-res text (40/80 columns, GIME character generator).
-            VideoMode::GimeText => self.render_coco_text(),
-            // TODO(`DESIGN.md` §6): GIME native graphics (HSCREEN); resize the buffer
-            // and set fb_width/fb_height from the VRES bytes-per-row / LPF fields.
-            VideoMode::GimeGraphics => self.render_coco_text(),
+            VideoMode::GimeText => {
+                let blink_on = (self.field_count / BLINK_HALF_PERIOD_FIELDS) % 2 == 1;
+                let (w, h) = gime_video::render_text(
+                    &self.bus.gime,
+                    &self.bus.ram,
+                    blink_on,
+                    &mut self.framebuffer,
+                );
+                self.fb_width = w as u32;
+                self.fb_height = h as u32;
+            }
+            VideoMode::GimeGraphics => {
+                let (w, h) = gime_video::render_graphics(
+                    &self.bus.gime,
+                    &self.bus.ram,
+                    &mut self.framebuffer,
+                );
+                self.fb_width = w as u32;
+                self.fb_height = h as u32;
+            }
         }
     }
 
     /// Render the legacy CoCo-compatible 32×16 text screen (`DESIGN.md` §6).
     fn render_coco_text(&mut self) {
+        self.reset_legacy_fb();
         // Snapshot the text screen through the bus (honours the MMU), then render.
         // TODO: per-scanline scanout straight from RAM (`DESIGN.md` §2b/§6).
         let mut screen = [0u8; video::SCREEN_LEN];
@@ -198,6 +224,7 @@ impl Machine {
     /// page register. Video RAM is read through the bus (honours the MMU) from that
     /// base — the same low-64K simplification as `render_coco_text`.
     fn render_coco_graphics(&mut self) {
+        self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;
         let mode = video::decode_vdg_graphics(ff22);
         let css = usize::from(ff22 & video::VDG_CSS != 0);
@@ -214,5 +241,14 @@ impl Machine {
 
         let border = GIME::rgb_color(TEXT_BORDER_COLOR);
         video::render_graphics(&data, &mode, &colors, border, &mut self.framebuffer);
+    }
+
+    /// Restore the fixed legacy-mode framebuffer geometry after a GIME-native
+    /// mode may have resized it (e.g. WIDTH 32 back from WIDTH 80).
+    fn reset_legacy_fb(&mut self) {
+        self.framebuffer
+            .resize((FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL, 0);
+        self.fb_width = FB_WIDTH;
+        self.fb_height = FB_HEIGHT;
     }
 }

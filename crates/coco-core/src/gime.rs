@@ -1,8 +1,8 @@
 //! GIME — MMU + video + timer + interrupt controller. See `DESIGN.md` §3, §4, §6.
 //!
-//! STATUS: skeleton. Register storage and a basic MMU translate are present;
-//! ROM mapping, the disabled-MMU power-on map, the write-8/read-6 register
-//! asymmetry, real video scanout, and interrupt generation are TODO.
+//! STATUS: MMU translate, SAM compatibility strobes, and the video registers
+//! ($FF98–$FF9F) are modelled; native scanout lives in `gime_video`. The timer,
+//! GIME-sourced interrupts, and the write-8/read-6 register asymmetry are TODO.
 
 use serde::{Deserialize, Serialize};
 
@@ -82,6 +82,8 @@ pub mod init1 {
 pub mod vmode {
     /// Bit-plane / graphics select: 1 = graphics (HSCREEN), 0 = hi-res text.
     pub const BP: u8 = 0x80;
+    /// Burst phase invert (alternate composite colour set).
+    pub const BPI: u8 = 0x20;
     /// Monochrome on composite output.
     pub const MOCH: u8 = 0x10;
     /// 50 Hz field rate (else 60 Hz).
@@ -100,8 +102,48 @@ pub mod vres {
     pub const HRES_MASK: u8 = 0x1C;
     pub const HRES_SHIFT: u8 = 2;
     /// Colour-resolution select (bits 0–1): pixels packed per byte (2/4/16 colours).
+    /// In text modes (BP=0) bit 0 instead enables per-character attribute bytes.
     pub const CRES_MASK: u8 = 0x03;
+    /// Text-mode attribute enable (CRES bit 0, BP=0 only).
+    pub const TEXT_ATTR: u8 = 0x01;
 }
+
+/// Horizontal Offset Register ($FF9F) bit assignments (SEB Unravelled II).
+pub mod hoff {
+    /// Horizontal virtual enable: rows are 256 bytes wide; the display is a
+    /// scrollable window into them.
+    pub const HVEN: u8 = 0x80;
+    /// X0–X6 horizontal offset; ×2 gives the byte offset added within each row.
+    pub const X_MASK: u8 = 0x7F;
+}
+
+/// Active display lines per field, indexed by the VRES LPF field.
+///
+/// LPF=%10 is documented as 210 lines (SEB Unravelled II); on real hardware it
+/// is a glitched "infinite" count (MAME `update_geometry`) — 210 is the sane
+/// approximation.
+pub const LPF_LINES: [usize; 4] = [192, 200, 210, 225];
+
+/// Lines per character row, indexed by the $FF98 LPR field. Hardware-verified
+/// values from MAME `get_lines_per_row` (SEB's table says 1/2/3/8/9/10/12 but
+/// the chip does 1/1/2/8/9/10/11; LPR=%111 repeats one glitched line forever,
+/// approximated by a huge count so only the first row ever shows).
+pub const LPR_LINES: [usize; 8] = [1, 1, 2, 8, 9, 10, 11, usize::MAX];
+
+/// Text columns per row, indexed by the VRES HRES field (BP=0). HRES bit 1 is
+/// ignored by the chip in text modes (MAME dispatches on $FF99 & $15), which
+/// yields SEB's 32/40/32/40/64/80/64/80 table.
+pub const TEXT_COLS: [usize; 8] = [32, 40, 32, 40, 64, 80, 64, 80];
+
+/// Graphics bytes fetched per row, indexed by the VRES HRES field (BP=1).
+pub const GFX_BYTES_PER_ROW: [usize; 8] = [16, 20, 32, 40, 64, 80, 128, 160];
+
+/// Graphics bits per pixel, indexed by the VRES CRES field (BP=1): 2, 4, or 16
+/// colours. CRES=%11 is undefined on the GIME; 4 bpp is the closest behaviour.
+pub const GFX_BPP: [usize; 4] = [1, 2, 4, 4];
+
+/// Virtual row width in bytes when $FF9F HVEN is set.
+pub const HVEN_ROW_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GIME {
@@ -121,10 +163,20 @@ pub struct GIME {
     /// base is `sam_page * SAM_PAGE_UNIT` (`DESIGN.md` §6).
     pub sam_page: u8,
     pub palette: [u8; PALETTE_LEN],
+    /// Border colour register ($FF9A): a 6-bit colour value (not a palette index).
     pub border: u8,
     pub vmode: u8,
     pub vres: u8,
+    /// $FF9B: 512K video-bank select for >512K machines (low bits become physical
+    /// address bits 19+; unused on stock 128K/512K). MAME `record_scanline_res`.
+    pub video_bank: u8,
+    /// Vertical scroll register ($FF9C) low nibble: the character-row line the
+    /// field starts on, for smooth text scrolling.
+    pub vertical_scroll: u8,
+    /// Vertical offset registers $FF9D (high byte) / $FF9E (low byte). GIME-native
+    /// video starts at physical `vertical_offset * 8`.
     pub vertical_offset: u16,
+    /// Horizontal offset register ($FF9F): HVEN + X offset (see [`hoff`]).
     pub horizontal_offset: u8,
     /// 12-bit timer reload value and live count.
     pub timer_reload: u16,
@@ -149,6 +201,8 @@ impl Default for GIME {
             border: 0,
             vmode: 0,
             vres: 0,
+            video_bank: 0,
+            vertical_scroll: 0,
             vertical_offset: 0,
             horizontal_offset: 0,
             timer_reload: 0,
@@ -219,6 +273,25 @@ impl GIME {
     /// CoCo-compatible video base address: the SAM page bits times 512.
     pub fn sam_display_base(&self) -> u16 {
         (self.sam_page as u16).wrapping_mul(SAM_PAGE_UNIT)
+    }
+
+    /// Physical start address of the GIME-native video display: the vertical
+    /// offset registers ×8 (any 8-byte boundary in the 512K space), plus the
+    /// $FF9B 512K bank on >512K machines. GIME-native scanout bypasses the MMU
+    /// entirely — this is a physical address (SEB Unravelled II Fig 6).
+    pub fn video_base(&self) -> usize {
+        ((self.video_bank as usize & 0x0F) << 19) | ((self.vertical_offset as usize) << 3)
+    }
+
+    /// Lines per character row from the $FF98 LPR field (also applied to
+    /// graphics rows, where BASIC's HSCREEN setup selects 1).
+    pub fn lines_per_row(&self) -> usize {
+        LPR_LINES[(self.vmode & vmode::LPR_MASK) as usize]
+    }
+
+    /// Active display lines in the current field from the VRES LPF bits.
+    pub fn lines_per_field(&self) -> usize {
+        LPF_LINES[((self.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize]
     }
 
     /// True when the system ROM is visible in the `$8000–$FFFF` window

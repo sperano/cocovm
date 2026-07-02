@@ -8,8 +8,8 @@
 //! hardcoded: CoCo-compatible text takes its background from palette reg
 //! [`TEXT_BG_INDEX`] and its foreground from [`TEXT_FG_INDEX`] (the MC6847 text
 //! `color_base_0`/`color_base_1`), and the legacy text border is black. At the
-//! stock BASIC prompt that resolves to pure green (`#00FF00`) on black. Inverse
-//! video, the orange colour set, semigraphics, and GIME native text are TODO (`§6`).
+//! stock BASIC prompt that resolves to pure green (`#00FF00`) on black. The CSS
+//! orange colour set is TODO (`§6`); GIME native text/graphics live in `gime_video`.
 
 use crate::font6847::MC6847_FONT;
 
