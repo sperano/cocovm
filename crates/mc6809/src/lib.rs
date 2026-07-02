@@ -48,6 +48,23 @@ pub mod cc {
     pub const ENTIRE: u8 = 0x80;
 }
 
+/// Register-selector nibble codes used by the TFR/EXG postbyte and by
+/// [`crate::Cpu::reg_read`]/[`crate::Cpu::reg_write`]/[`crate::Cpu::tfr_value`].
+/// Codes `D..=PC` (0x0-0x5) name the 16-bit registers; `A..=DP` (0x8-0xB) the
+/// 8-bit ones.
+mod regsel {
+    pub const D: u8 = 0x0;
+    pub const X: u8 = 0x1;
+    pub const Y: u8 = 0x2;
+    pub const U: u8 = 0x3;
+    pub const S: u8 = 0x4;
+    pub const PC: u8 = 0x5;
+    pub const A: u8 = 0x8;
+    pub const B: u8 = 0x9;
+    pub const CC: u8 = 0xA;
+    pub const DP: u8 = 0xB;
+}
+
 /// Field masks for the indexed-addressing postbyte (`1 rr i mmmm`).
 mod postbyte {
     /// Indirect bit.
@@ -64,12 +81,26 @@ mod postbyte {
     pub const INDIRECT_CYCLES: u32 = 3;
 }
 
+/// Field masks for the PSH/PUL register-mask postbyte. Each bit selects one
+/// register (or register pair) to push/pull; see [`crate::Cpu::psh`] and
+/// [`crate::Cpu::pul`] for the transfer order.
+mod stack_mask {
+    pub const CC: u8 = 0x01;
+    pub const A: u8 = 0x02;
+    pub const B: u8 = 0x04;
+    pub const DP: u8 = 0x08;
+    pub const X: u8 = 0x10;
+    pub const Y: u8 = 0x20;
+    /// The *other* stack pointer: U when pushing/pulling S, S when pushing/pulling U.
+    pub const OTHER_STACK_PTR: u8 = 0x40;
+    pub const PC: u8 = 0x80;
+}
+
 /// Base cycle count for PSH/PUL, before adding one cycle per byte transferred.
 const PUSH_PULL_BASE_CYCLES: u32 = 5;
 
-/// PSH/PUL register mask selecting only PC (bit 7) and CC (bit 0) — the FIRQ
-/// interrupt stack frame.
-const PC_CC_MASK: u8 = 0x81;
+/// PSH/PUL register mask selecting only PC and CC — the FIRQ interrupt stack frame.
+const PC_CC_MASK: u8 = stack_mask::PC | stack_mask::CC;
 
 /// Hardware interrupt / exception vectors (top of the address space).
 pub const VECTOR_SWI3: u16 = 0xFFF2;
@@ -1000,37 +1031,37 @@ impl MC6809 {
     // Codes 0..5 are the 16-bit registers.
 
     fn reg_is16(code: u8) -> bool {
-        code < 0x6
+        code <= regsel::PC
     }
 
     fn reg_read(&self, code: u8) -> u16 {
         match code {
-            0x0 => self.d(),
-            0x1 => self.x,
-            0x2 => self.y,
-            0x3 => self.u,
-            0x4 => self.s,
-            0x5 => self.pc,
-            0x8 => self.a as u16,
-            0x9 => self.b as u16,
-            0xA => self.cc as u16,
-            0xB => self.dp as u16,
+            regsel::D => self.d(),
+            regsel::X => self.x,
+            regsel::Y => self.y,
+            regsel::U => self.u,
+            regsel::S => self.s,
+            regsel::PC => self.pc,
+            regsel::A => self.a as u16,
+            regsel::B => self.b as u16,
+            regsel::CC => self.cc as u16,
+            regsel::DP => self.dp as u16,
             _ => 0xFFFF, // invalid on 6809
         }
     }
 
     fn reg_write(&mut self, code: u8, value: u16) {
         match code {
-            0x0 => self.set_d(value),
-            0x1 => self.x = value,
-            0x2 => self.y = value,
-            0x3 => self.u = value,
-            0x4 => self.s = value,
-            0x5 => self.pc = value,
-            0x8 => self.a = value as u8,
-            0x9 => self.b = value as u8,
-            0xA => self.cc = value as u8,
-            0xB => self.dp = value as u8,
+            regsel::D => self.set_d(value),
+            regsel::X => self.x = value,
+            regsel::Y => self.y = value,
+            regsel::U => self.u = value,
+            regsel::S => self.s = value,
+            regsel::PC => self.pc = value,
+            regsel::A => self.a = value as u8,
+            regsel::B => self.b = value as u8,
+            regsel::CC => self.cc = value as u8,
+            regsel::DP => self.dp = value as u8,
             _ => {} // invalid
         }
     }
@@ -1044,8 +1075,8 @@ impl MC6809 {
             (false, true) => {
                 let b = sv & 0x00FF;
                 match src {
-                    0x8 | 0x9 => 0xFF00 | b, // A/B → 16: high byte = $FF
-                    _ => (b << 8) | b,       // CC/DP → 16: both bytes = source
+                    regsel::A | regsel::B => 0xFF00 | b, // A/B → 16: high byte = $FF
+                    _ => (b << 8) | b,                   // CC/DP → 16: both bytes = source
                 }
             }
             _ => sv, // same size, or 16 → 8 (reg_write truncates to the LSB)
@@ -1082,14 +1113,14 @@ impl MC6809 {
             *n += 1;
         };
         let mut bytes = 0u32;
-        if mask & 0x80 != 0 { push8(&mut sp, self.pc as u8, &mut bytes); push8(&mut sp, (self.pc >> 8) as u8, &mut bytes); }
-        if mask & 0x40 != 0 { push8(&mut sp, other as u8, &mut bytes); push8(&mut sp, (other >> 8) as u8, &mut bytes); }
-        if mask & 0x20 != 0 { push8(&mut sp, self.y as u8, &mut bytes); push8(&mut sp, (self.y >> 8) as u8, &mut bytes); }
-        if mask & 0x10 != 0 { push8(&mut sp, self.x as u8, &mut bytes); push8(&mut sp, (self.x >> 8) as u8, &mut bytes); }
-        if mask & 0x08 != 0 { push8(&mut sp, self.dp, &mut bytes); }
-        if mask & 0x04 != 0 { push8(&mut sp, self.b, &mut bytes); }
-        if mask & 0x02 != 0 { push8(&mut sp, self.a, &mut bytes); }
-        if mask & 0x01 != 0 { push8(&mut sp, self.cc, &mut bytes); }
+        if mask & stack_mask::PC != 0 { push8(&mut sp, self.pc as u8, &mut bytes); push8(&mut sp, (self.pc >> 8) as u8, &mut bytes); }
+        if mask & stack_mask::OTHER_STACK_PTR != 0 { push8(&mut sp, other as u8, &mut bytes); push8(&mut sp, (other >> 8) as u8, &mut bytes); }
+        if mask & stack_mask::Y != 0 { push8(&mut sp, self.y as u8, &mut bytes); push8(&mut sp, (self.y >> 8) as u8, &mut bytes); }
+        if mask & stack_mask::X != 0 { push8(&mut sp, self.x as u8, &mut bytes); push8(&mut sp, (self.x >> 8) as u8, &mut bytes); }
+        if mask & stack_mask::DP != 0 { push8(&mut sp, self.dp, &mut bytes); }
+        if mask & stack_mask::B != 0 { push8(&mut sp, self.b, &mut bytes); }
+        if mask & stack_mask::A != 0 { push8(&mut sp, self.a, &mut bytes); }
+        if mask & stack_mask::CC != 0 { push8(&mut sp, self.cc, &mut bytes); }
         if to_s { self.s = sp; } else { self.u = sp; }
         PUSH_PULL_BASE_CYCLES + bytes
     }
@@ -1105,19 +1136,19 @@ impl MC6809 {
             *n += 1;
             v
         };
-        if mask & 0x01 != 0 { self.cc = pull8(&mut sp, &mut bytes); }
-        if mask & 0x02 != 0 { self.a = pull8(&mut sp, &mut bytes); }
-        if mask & 0x04 != 0 { self.b = pull8(&mut sp, &mut bytes); }
-        if mask & 0x08 != 0 { self.dp = pull8(&mut sp, &mut bytes); }
-        if mask & 0x10 != 0 { let hi = pull8(&mut sp, &mut bytes); let lo = pull8(&mut sp, &mut bytes); self.x = ((hi as u16) << 8) | lo as u16; }
-        if mask & 0x20 != 0 { let hi = pull8(&mut sp, &mut bytes); let lo = pull8(&mut sp, &mut bytes); self.y = ((hi as u16) << 8) | lo as u16; }
-        if mask & 0x40 != 0 {
+        if mask & stack_mask::CC != 0 { self.cc = pull8(&mut sp, &mut bytes); }
+        if mask & stack_mask::A != 0 { self.a = pull8(&mut sp, &mut bytes); }
+        if mask & stack_mask::B != 0 { self.b = pull8(&mut sp, &mut bytes); }
+        if mask & stack_mask::DP != 0 { self.dp = pull8(&mut sp, &mut bytes); }
+        if mask & stack_mask::X != 0 { let hi = pull8(&mut sp, &mut bytes); let lo = pull8(&mut sp, &mut bytes); self.x = ((hi as u16) << 8) | lo as u16; }
+        if mask & stack_mask::Y != 0 { let hi = pull8(&mut sp, &mut bytes); let lo = pull8(&mut sp, &mut bytes); self.y = ((hi as u16) << 8) | lo as u16; }
+        if mask & stack_mask::OTHER_STACK_PTR != 0 {
             let hi = pull8(&mut sp, &mut bytes);
             let lo = pull8(&mut sp, &mut bytes);
             let v = ((hi as u16) << 8) | lo as u16;
             if from_s { self.u = v; } else { self.s = v; }
         }
-        if mask & 0x80 != 0 { let hi = pull8(&mut sp, &mut bytes); let lo = pull8(&mut sp, &mut bytes); self.pc = ((hi as u16) << 8) | lo as u16; }
+        if mask & stack_mask::PC != 0 { let hi = pull8(&mut sp, &mut bytes); let lo = pull8(&mut sp, &mut bytes); self.pc = ((hi as u16) << 8) | lo as u16; }
         if from_s { self.s = sp; } else { self.u = sp; }
         PUSH_PULL_BASE_CYCLES + bytes
     }
