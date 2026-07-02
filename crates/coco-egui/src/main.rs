@@ -34,8 +34,12 @@ const MAX_FIELDS_PER_UPDATE: usize = 8;
 /// Longest wall-clock gap credited to the emulation clock, in seconds. Gaps
 /// beyond this (window drag, app hidden, debugger pause) are discarded.
 const MAX_FRAME_DT: f64 = 0.25;
-/// Height reserved for the top menu bar when sizing the window.
-const MENU_BAR_H: f32 = 30.0;
+/// Height reserved for the top menu bar row when sizing the window.
+const MENU_BAR_H: f32 = 22.0;
+/// Height reserved for the toolbar row when sizing the window.
+const TOOLBAR_H: f32 = 30.0;
+/// Height reserved for the bottom status bar row when sizing the window.
+const STATUS_BAR_H: f32 = 22.0;
 /// Symbolic-mode key timing, in fields: hold a synthesized key then release.
 const TYPE_HOLD_FIELDS: u8 = 2;
 const TYPE_GAP_FIELDS: u8 = 1;
@@ -300,25 +304,69 @@ impl eframe::App for CocoApp {
         });
         texture.set(image, egui::TextureOptions::NEAREST);
 
-        egui::TopBottomPanel::top("menu").show(ctx, |ui| {
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                ui.menu_button("Machine", |ui| {
+                    let run_label = if self.running { "Pause" } else { "Run" };
+                    if ui.button(run_label).clicked() {
+                        self.running = !self.running;
+                        ui.close();
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.machine.reset();
+                        ui.close();
+                    }
+                });
+                ui.menu_button("Keyboard", |ui| {
+                    for mode in [KbMode::Positional, KbMode::Symbolic] {
+                        if ui.selectable_label(self.kb_mode == mode, mode.label()).clicked() {
+                            self.set_mode(mode);
+                        }
+                    }
+                    ui.separator();
+                    if ui.button("Key layout (F10)").clicked() {
+                        self.show_kbd_help = !self.show_kbd_help;
+                        ui.close();
+                    }
+                });
+                ui.menu_button("View", |ui| {
+                    ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
+                });
+                ui.menu_button("Joysticks", |ui| self.joysticks.menu_ui(ui));
+                ui.menu_button("Help", |ui| {
+                    if ui.button("About").clicked() {
+                        self.show_about = !self.show_about;
+                        ui.close();
+                    }
+                });
+            });
+        });
+
+        // Toolbar: one-click access to the most frequent actions, redundant with
+        // (but quicker than) the menu bar above.
+        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let label = if self.running { "Pause" } else { "Run" };
-                if ui.button(label).clicked() {
+                let run_label = if self.running { "Pause" } else { "Run" };
+                if ui.button(run_label).clicked() {
                     self.running = !self.running;
                 }
                 if ui.button("Reset").clicked() {
                     self.machine.reset();
                 }
                 ui.separator();
-                ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 if ui.button("⌨ Keys (F10)").clicked() {
                     self.show_kbd_help = !self.show_kbd_help;
                 }
                 ui.checkbox(&mut self.aspect_correct, "4:3 (F9)");
-                if ui.button("About").clicked() {
-                    self.show_about = !self.show_about;
-                }
-                ui.menu_button("Joysticks", |ui| self.joysticks.menu_ui(ui));
+            });
+        });
+
+        // Status bar: read-only live state, no controls.
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(if self.running { "Running" } else { "Paused" });
+                ui.separator();
+                ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 ui.separator();
                 ui.label(format!("cycles: {}", self.machine.cpu.cycles));
             });
@@ -459,7 +507,7 @@ fn main() -> eframe::Result<()> {
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
     let win_w = img_h * TARGET_ASPECT;
-    let win_h = img_h + MENU_BAR_H;
+    let win_h = img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([win_w, win_h]),
         ..Default::default()
