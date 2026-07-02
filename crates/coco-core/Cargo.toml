@@ -2,6 +2,7 @@
 name = "coco-core"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 mc6809 = { path = "../mc6809", features = ["serde"] }

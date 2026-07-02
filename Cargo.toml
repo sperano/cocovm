@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["crates/mc6809", "crates/coco-core", "crates/coco-egui"]
+
+[workspace.package]
+license = "GPL-3.0-or-later"
