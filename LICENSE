@@ -2,7 +2,9 @@ coco-rs — a Tandy Color Computer 3 emulator.
 Copyright (C) 2026 Éric Spérano
 
 Licensed under the GNU General Public License, version 3 or (at your option)
-any later version. The license text follows.
+any later version, EXCEPT the `crates/mc6809` CPU core, which is dual-licensed
+MIT OR Apache-2.0 (see `crates/mc6809/LICENSE-MIT` and
+`crates/mc6809/LICENSE-APACHE`). The GPL text follows.
 
 ---
 

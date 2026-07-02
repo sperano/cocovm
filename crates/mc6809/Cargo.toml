@@ -2,7 +2,8 @@
 name = "mc6809"
 version = "0.1.0"
 edition = "2024"
-license.workspace = true
+# Reusable CPU core: permissively dual-licensed, unlike the GPL-3 emulator crates.
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
