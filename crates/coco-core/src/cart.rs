@@ -49,6 +49,12 @@ pub trait Cartridge {
     fn take_nmi(&mut self) -> bool {
         false
     }
+    /// Downcast to the FD-502 disk controller, if that's what this cartridge
+    /// is — how the frontend reaches drive slots (insert/eject a floppy while
+    /// the machine runs, as on real hardware) behind the trait object.
+    fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
+        None
+    }
 }
 
 /// No cartridge inserted.

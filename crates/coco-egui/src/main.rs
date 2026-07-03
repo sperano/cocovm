@@ -21,6 +21,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use coco_core::cart::RomPak;
+use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::{Machine, MachineConfig, MemorySize, VideoStandard};
 use eframe::egui;
@@ -152,7 +153,15 @@ struct CocoApp {
     /// Message from the last failed cartridge load, shown in a dismissible
     /// window until acknowledged.
     cart_error: Option<String>,
+    /// Source paths of the floppies mounted in the FD-502's drives the UI
+    /// exposes (status bar, eject menu items, and write-back targets — a
+    /// modified image is written back to its file on eject/replace/exit).
+    disk_paths: [Option<PathBuf>; UI_DRIVES],
 }
+
+/// Drives the UI exposes. The FD-502 latch can address four, but real setups
+/// were one or two — and the menu stays small.
+const UI_DRIVES: usize = 2;
 
 impl CocoApp {
     fn new(
@@ -160,6 +169,7 @@ impl CocoApp {
         config: MachineConfig,
         rom: Box<[u8]>,
         cart_path: Option<PathBuf>,
+        disk_paths: [Option<PathBuf>; UI_DRIVES],
     ) -> Self {
         let mut app = Self {
             machine: Machine::new(config, rom),
@@ -178,9 +188,15 @@ impl CocoApp {
             autostart_cart: true,
             cart_path: None,
             cart_error: None,
+            disk_paths: [None, None],
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
+        }
+        for (drive, path) in disk_paths.into_iter().enumerate() {
+            if let Some(path) = path {
+                app.insert_disk(drive, path);
+            }
         }
         app
     }
@@ -200,9 +216,11 @@ impl CocoApp {
         };
         match RomPak::from_bytes(&bytes, self.autostart_cart) {
             Ok(pak) => {
+                self.flush_dirty_disks();
                 self.machine.insert_cartridge(Box::new(pak));
                 self.machine.reset();
                 self.cart_path = Some(path);
+                self.disk_paths = [None, None];
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -212,9 +230,89 @@ impl CocoApp {
 
     /// Eject the current cartridge and reset the machine.
     fn eject_cartridge(&mut self) {
+        self.flush_dirty_disks();
         self.machine.eject_cartridge();
         self.machine.reset();
         self.cart_path = None;
+        self.disk_paths = [None, None];
+    }
+
+    /// Make sure the inserted cartridge is the FD-502 disk controller,
+    /// creating one (with `roms/disk11.rom`) if something else — or nothing —
+    /// is in the slot. Creating it cold-resets the machine: BASIC only probes
+    /// for Disk BASIC at cold start. Swapping a floppy in an already-present
+    /// controller does NOT reset, like on real hardware.
+    fn ensure_disk_controller(&mut self) -> Result<(), String> {
+        if self.machine.bus.cart.as_disk_cart().is_some() {
+            return Ok(());
+        }
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
+        let rom = std::fs::read(&path)
+            .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
+        self.flush_dirty_disks();
+        self.machine.insert_cartridge(Box::new(DiskCart::new(rom.into_boxed_slice())));
+        self.machine.reset();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        Ok(())
+    }
+
+    /// Mount the floppy image at `path` in `drive`, inserting the FD-502
+    /// controller first if needed. Failures land in [`Self::cart_error`].
+    fn insert_disk(&mut self, drive: usize, path: PathBuf) {
+        let result = (|| -> Result<(), String> {
+            self.ensure_disk_controller()?;
+            let bytes =
+                std::fs::read(&path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
+            let disk =
+                JvcDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            self.write_back_disk(drive); // whatever was in the drive first
+            let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
+            cart.insert_disk(drive, disk);
+            self.disk_paths[drive] = Some(path);
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.cart_error = Some(e);
+        }
+    }
+
+    /// Eject the floppy in `drive`, writing a modified image back to its file
+    /// first (like MAME/VCC, in-place).
+    fn eject_disk(&mut self, drive: usize) {
+        self.write_back_disk(drive);
+        if let Some(cart) = self.machine.bus.cart.as_disk_cart() {
+            cart.eject_disk(drive);
+        }
+        self.disk_paths[drive] = None;
+    }
+
+    /// If the floppy in `drive` was written to, save the image back to its
+    /// source file. Failures land in [`Self::cart_error`] (the in-memory disk
+    /// is left mounted and still dirty, so a later retry can succeed).
+    fn write_back_disk(&mut self, drive: usize) {
+        let Some(path) = self.disk_paths[drive].clone() else {
+            return;
+        };
+        let Some(cart) = self.machine.bus.cart.as_disk_cart() else {
+            return;
+        };
+        let Some(disk) = cart.disk(drive) else {
+            return;
+        };
+        if !disk.dirty() {
+            return;
+        }
+        if let Err(e) = std::fs::write(&path, disk.bytes()) {
+            self.cart_error = Some(format!("could not save {}: {e}", path.display()));
+        }
+    }
+
+    /// Write every modified floppy back to its file (controller swap, exit).
+    fn flush_dirty_disks(&mut self) {
+        for drive in 0..UI_DRIVES {
+            self.write_back_disk(drive);
+        }
     }
 
     /// Emulated fields owed for this update, from wall-clock time at the
@@ -336,6 +434,12 @@ impl CocoApp {
 }
 
 impl eframe::App for CocoApp {
+    /// Write modified floppies back to their files on quit — a BASIC `SAVE`
+    /// only exists in the in-memory image until then.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.flush_dirty_disks();
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
@@ -399,6 +503,30 @@ impl eframe::App for CocoApp {
                         ui.close();
                     }
                     ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
+                    ui.separator();
+                    for drive in 0..UI_DRIVES {
+                        if ui.button(format!("Insert Disk in Drive {drive}…")).clicked() {
+                            ui.close();
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Disk image", &["dsk", "jvc", "os9"])
+                                .pick_file()
+                            {
+                                self.insert_disk(drive, path);
+                            }
+                        }
+                        let label = match &self.disk_paths[drive] {
+                            Some(p) => format!(
+                                "Eject Drive {drive} ({})",
+                                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                            ),
+                            None => format!("Eject Drive {drive}"),
+                        };
+                        let mounted = self.disk_paths[drive].is_some();
+                        if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+                            self.eject_disk(drive);
+                            ui.close();
+                        }
+                    }
                 });
                 ui.menu_button("Keyboard", |ui| {
                     for mode in [KbMode::Positional, KbMode::Symbolic] {
@@ -457,6 +585,22 @@ impl eframe::App for CocoApp {
                     ui.separator();
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     ui.label(format!("Cart: {name}"));
+                }
+                for drive in 0..UI_DRIVES {
+                    let Some(path) = &self.disk_paths[drive] else {
+                        continue;
+                    };
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                    // "*" = modified in memory; written back on eject/exit.
+                    let dirty = self
+                        .machine
+                        .bus
+                        .cart
+                        .as_disk_cart()
+                        .and_then(|c| c.disk(drive))
+                        .is_some_and(|d| d.dirty());
+                    ui.separator();
+                    ui.label(format!("D{drive}: {name}{}", if dirty { "*" } else { "" }));
                 }
             });
         });
@@ -640,6 +784,15 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     cart: Option<PathBuf>,
 
+    /// Floppy image for drive 0 (`.dsk`/`.jvc`/`.os9`); implies the FD-502
+    /// disk controller (`roms/disk11.rom`) in the cartridge slot.
+    #[arg(long, value_name = "PATH", conflicts_with = "cart")]
+    disk0: Option<PathBuf>,
+
+    /// Floppy image for drive 1 (see `--disk0`).
+    #[arg(long, value_name = "PATH", conflicts_with = "cart")]
+    disk1: Option<PathBuf>,
+
     /// Installed RAM.
     #[arg(long, value_enum, default_value = "512k")]
     ram: RamArg,
@@ -673,6 +826,7 @@ fn main() -> eframe::Result<()> {
         }
     };
     let cart_path = cli.cart;
+    let disk_paths = [cli.disk0, cli.disk1];
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
@@ -689,6 +843,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |cc| Ok(Box::new(CocoApp::new(cc, config, rom, cart_path)))),
+        Box::new(move |cc| Ok(Box::new(CocoApp::new(cc, config, rom, cart_path, disk_paths)))),
     )
 }

@@ -173,6 +173,12 @@ impl JvcDisk {
         self.dirty
     }
 
+    /// The full image bytes (header included), e.g. for writing a modified
+    /// disk back to its file.
+    pub fn bytes(&self) -> &[u8] {
+        &self.data
+    }
+
     /// Byte offset of `(track, side, sector_id)` in the in-memory image, or
     /// `None` if out of range.
     ///
@@ -338,6 +344,11 @@ impl DiskCart {
         self.drives[drive].is_some()
     }
 
+    /// The floppy in `drive`, if any (status display, write-back on eject).
+    pub fn disk(&self, drive: usize) -> Option<&JvcDisk> {
+        self.drives[drive].as_ref()
+    }
+
     fn drive_index(&self) -> Option<usize> {
         selected_drive(self.dskreg)
     }
@@ -434,5 +445,9 @@ impl Cartridge for DiskCart {
 
     fn take_nmi(&mut self) -> bool {
         std::mem::replace(&mut self.nmi_pending, false)
+    }
+
+    fn as_disk_cart(&mut self) -> Option<&mut DiskCart> {
+        Some(self)
     }
 }
