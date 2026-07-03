@@ -19,9 +19,10 @@ mod kbd_help;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use clap::{Parser, ValueEnum};
 use coco_core::cart::RomPak;
 use coco_core::keyboard::{self as kbd, Pos};
-use coco_core::{Machine, MachineConfig};
+use coco_core::{Machine, MachineConfig, MemorySize, VideoStandard};
 use eframe::egui;
 use joy::JoystickInputs;
 
@@ -154,9 +155,14 @@ struct CocoApp {
 }
 
 impl CocoApp {
-    fn new(_cc: &eframe::CreationContext<'_>, rom: Box<[u8]>, cart_path: Option<PathBuf>) -> Self {
+    fn new(
+        _cc: &eframe::CreationContext<'_>,
+        config: MachineConfig,
+        rom: Box<[u8]>,
+        cart_path: Option<PathBuf>,
+    ) -> Self {
         let mut app = Self {
-            machine: Machine::new(MachineConfig::default(), rom),
+            machine: Machine::new(config, rom),
             texture: None,
             running: true, // boot straight to the prompt
             kb_mode: KbMode::Positional,
@@ -584,30 +590,89 @@ fn is_joystick_key(key: egui::Key) -> bool {
     )
 }
 
-/// Resolve the boot ROM: the first CLI argument, else `roms/coco3.rom` at the
-/// workspace root. The ROM is copyrighted and git-ignored (`./roms`).
-fn load_rom() -> std::io::Result<Box<[u8]>> {
-    let path = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
+/// Installed RAM, as a CLI value. Mirrors [`MemorySize`]; kept separate so the
+/// core crate stays free of a `clap` dependency.
+#[derive(Clone, Copy, ValueEnum)]
+enum RamArg {
+    #[value(name = "128k")]
+    K128,
+    #[value(name = "512k")]
+    K512,
+    #[value(name = "2048k")]
+    K2048,
+}
+
+impl From<RamArg> for MemorySize {
+    fn from(r: RamArg) -> Self {
+        match r {
+            RamArg::K128 => MemorySize::K128,
+            RamArg::K512 => MemorySize::K512,
+            RamArg::K2048 => MemorySize::K2048,
+        }
+    }
+}
+
+/// Master video standard, as a CLI value. Mirrors [`VideoStandard`].
+#[derive(Clone, Copy, ValueEnum)]
+enum VideoArg {
+    Ntsc,
+    Pal,
+}
+
+impl From<VideoArg> for VideoStandard {
+    fn from(v: VideoArg) -> Self {
+        match v {
+            VideoArg::Ntsc => VideoStandard::Ntsc,
+            VideoArg::Pal => VideoStandard::Pal,
+        }
+    }
+}
+
+#[derive(Parser)]
+#[command(name = "coco", about = "A Tandy Color Computer 3 emulator")]
+struct Cli {
+    /// Boot ROM image (32K Super Extended Color BASIC).
+    /// Defaults to `roms/coco3.rom` at the workspace root.
+    #[arg(long, value_name = "PATH")]
+    rom: Option<PathBuf>,
+
+    /// Cartridge ROM pak to insert at boot (`.rom`/`.ccc`/`.bin`).
+    #[arg(long, value_name = "PATH")]
+    cart: Option<PathBuf>,
+
+    /// Installed RAM.
+    #[arg(long, value_enum, default_value = "512k")]
+    ram: RamArg,
+
+    /// Master video standard (crystal), independent of the GIME 50/60 Hz mode bit.
+    #[arg(long, value_enum, default_value = "ntsc")]
+    video: VideoArg,
+}
+
+/// Load the boot ROM from `path`, or `roms/coco3.rom` at the workspace root.
+/// The ROM is copyrighted and git-ignored (`./roms`).
+fn load_rom(path: Option<PathBuf>) -> std::io::Result<Box<[u8]>> {
+    let path = path.unwrap_or_else(|| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom")
     });
     Ok(std::fs::read(path)?.into_boxed_slice())
 }
 
-/// Resolve an optional cartridge ROM pak: the second CLI argument, if given.
-fn cart_arg() -> Option<PathBuf> {
-    std::env::args().nth(2).map(PathBuf::from)
-}
-
 fn main() -> eframe::Result<()> {
-    let rom = match load_rom() {
+    let cli = Cli::parse();
+    let config = MachineConfig {
+        video: cli.video.into(),
+        memory: cli.ram.into(),
+    };
+    let rom = match load_rom(cli.rom) {
         Ok(rom) => rom,
         Err(e) => {
-            eprintln!("coco-egui: could not load ROM: {e}");
-            eprintln!("Pass a ROM path, or place one at roms/coco3.rom.");
+            eprintln!("coco: could not load ROM: {e}");
+            eprintln!("Pass --rom <PATH>, or place one at roms/coco3.rom.");
             std::process::exit(1);
         }
     };
-    let cart_path = cart_arg();
+    let cart_path = cli.cart;
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
@@ -624,6 +689,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(|cc| Ok(Box::new(CocoApp::new(cc, rom, cart_path)))),
+        Box::new(move |cc| Ok(Box::new(CocoApp::new(cc, config, rom, cart_path)))),
     )
 }
