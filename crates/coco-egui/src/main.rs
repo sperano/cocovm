@@ -610,8 +610,12 @@ fn main() -> eframe::Result<()> {
     let img_h = coco_core::video::FB_H as f32 * SCALE;
     let win_w = img_h * TARGET_ASPECT;
     let win_h = img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H;
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
+        .expect("embedded icon PNG is valid");
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([win_w, win_h]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([win_w, win_h])
+            .with_icon(icon),
         ..Default::default()
     };
     eframe::run_native(
