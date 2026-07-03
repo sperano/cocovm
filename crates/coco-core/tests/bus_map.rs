@@ -90,6 +90,59 @@ fn mc_32k_external_maps_whole_window_except_vectors() {
     assert_eq!(b.read(0xFFFE), 0xFE, "vectors always internal ROM");
 }
 
+// ---- $FFE0-$FFFF hardwired-ROM window (fact 4: MAME coco3.cpp:53-58 / Astle) ---
+
+#[test]
+fn hardwired_window_reads_internal_rom_with_32k_external_cart() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Box::new(MarkerCart);
+    b.write(0xFF90, init0::MC1 | init0::MC0); // MC=11: 32K external
+    assert_eq!(
+        b.read(0x8000),
+        0xAA,
+        "external cart drives the rest of the window"
+    );
+    for addr in 0xFFE0u32..=0xFFFF {
+        assert_eq!(
+            b.read(addr as u16),
+            marked_rom()[(addr - 0x8000) as usize],
+            "addr {addr:#06x} must read internal ROM, not the cart"
+        );
+    }
+}
+
+#[test]
+fn hardwired_window_reads_internal_rom_even_in_all_ram_mode() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Box::new(MarkerCart);
+    b.write(0xFF90, init0::MC1 | init0::MC0); // MC=11: 32K external
+    b.gime.all_ram = true; // SAM TY set: ROM disabled everywhere else
+    assert_eq!(
+        b.read(0x8000),
+        0x00,
+        "all-RAM mode: $8000 now reads RAM, not ROM or cart"
+    );
+    for addr in 0xFFE0u32..=0xFFFF {
+        assert_eq!(
+            b.read(addr as u16),
+            marked_rom()[(addr - 0x8000) as usize],
+            "all-RAM mode: {addr:#06x} must still read internal ROM"
+        );
+    }
+}
+
+#[test]
+fn hardwired_window_writes_are_dropped_not_shadowed_to_ram() {
+    let mut b = bus(MemorySize::K512);
+    let before = b.read(0xFFFE);
+    b.write(0xFFFE, 0x00);
+    assert_eq!(
+        b.read(0xFFFE),
+        before,
+        "write to the hardwired window must be a no-op"
+    );
+}
+
 #[test]
 fn constant_page_fe00_is_ram_not_rom() {
     // $FE00-$FEFF is the interrupt-trampoline page: RAM even though it sits inside

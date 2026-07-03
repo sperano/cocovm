@@ -9,3 +9,4 @@ coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
 eframe = "0.33"
 gilrs = "0.11.2"
+rfd = "0.17.2"

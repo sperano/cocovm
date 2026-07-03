@@ -128,6 +128,20 @@ impl Machine {
         self.cpu.reset(&mut self.bus);
     }
 
+    /// Plug a cartridge into the expansion port. Real cartridges are only
+    /// swapped machine-off, and the stock ROM's autostart/DK-probe logic only
+    /// runs at cold start, so this does not reset the machine itself — call
+    /// [`Machine::reset`] afterwards.
+    pub fn insert_cartridge(&mut self, cart: Box<dyn cart::Cartridge>) {
+        self.bus.cart = cart;
+    }
+
+    /// Remove the cartridge, restoring the empty slot. As with
+    /// [`Machine::insert_cartridge`], call [`Machine::reset`] afterwards.
+    pub fn eject_cartridge(&mut self) {
+        self.bus.cart = Box::new(cart::EmptySlot);
+    }
+
     /// Run one video field's worth of emulation (`DESIGN.md` §4).
     ///
     /// Scanline-driven: each line runs a slice of CPU cycles then pulses the

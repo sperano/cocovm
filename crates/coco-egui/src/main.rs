@@ -8,7 +8,8 @@
 //!   semantics, like MAME). The default.
 //! - Symbolic — the character you type is injected via the CoCo keys that produce it.
 //!
-//! ROM file dialog and the debugger panels are still TODO.
+//! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`);
+//! the debugger panels are still TODO.
 
 mod about;
 mod audio;
@@ -18,6 +19,7 @@ mod kbd_help;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use coco_core::cart::RomPak;
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::{Machine, MachineConfig};
 use eframe::egui;
@@ -138,11 +140,22 @@ struct CocoApp {
     /// Letterboxed display rect from the last frame's `CentralPanel`, used to map
     /// pointer position to joystick axes. One frame stale (see `drive_joysticks`).
     display_rect: egui::Rect,
+    /// Whether the next inserted cartridge should tie CART* to Q (auto-run at
+    /// power-up). Consulted at insert time, not retroactively — see
+    /// `RomPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
+    /// must be started with `EXEC &HE010`.
+    autostart_cart: bool,
+    /// Path of the currently inserted cartridge, if any (shown in the status
+    /// bar; also gates the "Eject Cartridge" menu item).
+    cart_path: Option<PathBuf>,
+    /// Message from the last failed cartridge load, shown in a dismissible
+    /// window until acknowledged.
+    cart_error: Option<String>,
 }
 
 impl CocoApp {
-    fn new(_cc: &eframe::CreationContext<'_>, rom: Box<[u8]>) -> Self {
-        Self {
+    fn new(_cc: &eframe::CreationContext<'_>, rom: Box<[u8]>, cart_path: Option<PathBuf>) -> Self {
+        let mut app = Self {
             machine: Machine::new(MachineConfig::default(), rom),
             texture: None,
             running: true, // boot straight to the prompt
@@ -156,7 +169,46 @@ impl CocoApp {
             joysticks: JoystickInputs::new(),
             display_rect: egui::Rect::NOTHING,
             audio: audio::AudioOutput::new(),
+            autostart_cart: true,
+            cart_path: None,
+            cart_error: None,
+        };
+        if let Some(path) = cart_path {
+            app.insert_cartridge(path);
         }
+        app
+    }
+
+    /// Load a ROM pak from `path` and insert it, using the current
+    /// `autostart_cart` setting. Resets the machine on success (cartridge
+    /// insertion is a machine-off operation on real hardware); on failure,
+    /// leaves the running cartridge (if any) untouched and records the error
+    /// for [`Self::cart_error`] to display.
+    fn insert_cartridge(&mut self, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match RomPak::from_bytes(&bytes, self.autostart_cart) {
+            Ok(pak) => {
+                self.machine.insert_cartridge(Box::new(pak));
+                self.machine.reset();
+                self.cart_path = Some(path);
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Eject the current cartridge and reset the machine.
+    fn eject_cartridge(&mut self) {
+        self.machine.eject_cartridge();
+        self.machine.reset();
+        self.cart_path = None;
     }
 
     /// Emulated fields owed for this update, from wall-clock time at the
@@ -322,6 +374,22 @@ impl eframe::App for CocoApp {
                         self.machine.reset();
                         ui.close();
                     }
+                    ui.separator();
+                    if ui.button("Insert Cartridge…").clicked() {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("ROM Pak", &["rom", "ccc", "bin"])
+                            .pick_file()
+                        {
+                            self.insert_cartridge(path);
+                        }
+                    }
+                    let inserted = self.cart_path.is_some();
+                    if ui.add_enabled(inserted, egui::Button::new("Eject Cartridge")).clicked() {
+                        self.eject_cartridge();
+                        ui.close();
+                    }
+                    ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
                 });
                 ui.menu_button("Keyboard", |ui| {
                     for mode in [KbMode::Positional, KbMode::Symbolic] {
@@ -376,6 +444,11 @@ impl eframe::App for CocoApp {
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 ui.separator();
                 ui.label(format!("cycles: {}", self.machine.cpu.cycles));
+                if let Some(path) = &self.cart_path {
+                    ui.separator();
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                    ui.label(format!("Cart: {name}"));
+                }
             });
         });
 
@@ -385,6 +458,22 @@ impl eframe::App for CocoApp {
         }
         if self.show_about {
             about::window(ctx, &mut self.show_about);
+        }
+        if let Some(err) = self.cart_error.clone() {
+            let mut open = true;
+            egui::Window::new("Cartridge Error")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(err);
+                    if ui.button("OK").clicked() {
+                        self.cart_error = None;
+                    }
+                });
+            if !open {
+                self.cart_error = None;
+            }
         }
 
         egui::CentralPanel::default()
@@ -501,6 +590,11 @@ fn load_rom() -> std::io::Result<Box<[u8]>> {
     Ok(std::fs::read(path)?.into_boxed_slice())
 }
 
+/// Resolve an optional cartridge ROM pak: the second CLI argument, if given.
+fn cart_arg() -> Option<PathBuf> {
+    std::env::args().nth(2).map(PathBuf::from)
+}
+
 fn main() -> eframe::Result<()> {
     let rom = match load_rom() {
         Ok(rom) => rom,
@@ -510,6 +604,7 @@ fn main() -> eframe::Result<()> {
             std::process::exit(1);
         }
     };
+    let cart_path = cart_arg();
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
@@ -522,6 +617,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(|cc| Ok(Box::new(CocoApp::new(cc, rom)))),
+        Box::new(|cc| Ok(Box::new(CocoApp::new(cc, rom, cart_path)))),
     )
 }

@@ -56,9 +56,14 @@ const CONSTANT_RAM_BASE: u16 = 0xFE00;
 const CONSTANT_RAM_LAST: u16 = 0xFEFF;
 /// Physical base of the constant `$FE00` page when INIT0 MC3 is set.
 const CONSTANT_RAM_PHYS: usize = 0x7_FE00;
-/// The 6809 hardware vectors (`$FFF0–$FFFF`) are always fetched from internal ROM,
-/// even in the "32K external" ROM configuration (SEB Unravelled II ROM-map table).
-const VECTOR_BASE: u16 = 0xFFF0;
+/// `$FFE0–$FFFF` — the top 32 bytes of the `$8000–$FFFF` window, including the
+/// 6809 hardware vectors — is hardwired to internal ROM on every read,
+/// regardless of INIT0 MC1:MC0, the SAM TY map-type bit (`$FFDE`/`$FFDF`,
+/// all-RAM mode), MMU state, or any inserted cartridge. MAME `coco3.cpp:53-58`
+/// documents this as verified by William Astle's real-hardware test, which
+/// refutes SEB Unravelled II p.28's claim that this range aliases `$BFFx`.
+/// Writes here are dropped (`SystemBus::write`) — it isn't backed by RAM.
+const HARDWIRED_ROM_BASE: u16 = 0xFFE0;
 
 const OPEN_BUS: u8 = 0xFF;
 
@@ -150,6 +155,12 @@ impl SystemBus {
     /// the GIME HBORD source; also the GIME's per-scanline sample point for
     /// the EI1 keyboard-interrupt input (a zero on any PA0–PA6 row while some
     /// column is strobed — SEB Unravelled II), which fires on falling edge.
+    ///
+    /// Also the sample point for the expansion-port CART* line: auto-start
+    /// game paks tie it to the Q clock (~895 kHz), so while one is inserted
+    /// this pulses PIA1 CB1 (the legacy FIRQ cart-boot path) and raises the
+    /// GIME EI0 source (the same physical pin) every scanline, which is more
+    /// than enough cadence to keep either interrupt path continuously fed.
     pub fn hsync(&mut self) {
         self.pia0.a.pulse_c1();
         self.gime.raise(gime::intr::HBORD);
@@ -159,6 +170,10 @@ impl SystemBus {
             self.gime.raise(gime::intr::EI1);
         }
         self.kbd_line_low = line_low;
+        if self.cart.cart_line_ties_q() {
+            self.pia1.b.pulse_c1();
+            self.gime.raise(gime::intr::EI0);
+        }
     }
 
     /// Field-sync (~60 Hz vertical) edge: latches PIA0 CB1 (control reg $FF03,
@@ -203,10 +218,11 @@ impl SystemBus {
     /// INIT0 MC1:MC0 splits the window between internal ROM (image offset
     /// `addr - $8000`) and the external cartridge ROM (CTS*), which an empty
     /// slot answers with open-bus $00 — matching MAME trace-diff behaviour.
-    /// The CPU vectors are exempt: they always read internal ROM, so callers
-    /// route `$FFF0+` here and we skip the external check for them.
+    /// `$FFE0–$FFFF` is exempt: it always reads internal ROM (see
+    /// [`HARDWIRED_ROM_BASE`]), so callers route that range here directly and
+    /// we skip the external-cartridge check for it.
     fn rom_read(&mut self, addr: u16) -> u8 {
-        if addr < VECTOR_BASE && self.gime.rom_is_external(addr) {
+        if addr < HARDWIRED_ROM_BASE && self.gime.rom_is_external(addr) {
             return self.cart.rom_read(addr);
         }
         let off = (addr - ROM_WINDOW_BASE) as usize;
@@ -283,11 +299,13 @@ fn mmu_index(addr: u16) -> (usize, usize) {
 
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
+        // Hardwired to internal ROM ahead of everything else — I/O decode,
+        // ROM mapping, and MMU state all take a back seat here (fact behind
+        // `HARDWIRED_ROM_BASE`).
+        if addr >= HARDWIRED_ROM_BASE {
+            return self.rom_read(addr);
+        }
         if self.io_enabled && addr >= IO_BASE {
-            // Vectors are pulled from internal ROM; the rest of the page is I/O.
-            if addr >= VECTOR_BASE {
-                return self.rom_read(addr);
-            }
             return self.io_read(addr);
         }
         if self.is_rom_window(addr) {
@@ -298,12 +316,13 @@ impl Bus for SystemBus {
     }
 
     fn write(&mut self, addr: u16, val: u8) {
+        // $FFE0–$FFFF is ROM, not RAM: writes there are dropped.
+        if addr >= HARDWIRED_ROM_BASE {
+            return;
+        }
         if self.io_enabled && addr >= IO_BASE {
-            // The vector page is ROM: writes there fall through to shadow RAM.
-            if addr < VECTOR_BASE {
-                self.io_write(addr, val);
-                return;
-            }
+            self.io_write(addr, val);
+            return;
         }
         // ROM is read-only; writes to the ROM window reach the RAM mapped beneath it.
         let p = self.phys(addr);
