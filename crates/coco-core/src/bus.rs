@@ -48,10 +48,15 @@ const PALETTE_LAST: u16 = 0xFFBF;
 /// Base of the ROM window. `$8000–$FFFF` reads return ROM when it is mapped, with
 /// the fixed I/O page overlaid on top of `$FF00–$FFEF` (`DESIGN.md` §3).
 const ROM_WINDOW_BASE: u16 = 0x8000;
-/// `$FE00–$FEFF` is always RAM — the "constant" interrupt-vector page the ROM
-/// routes NMI/IRQ/FIRQ/SWI through (SEB Unravelled II; INIT0 MC3 controls whether
-/// it is fixed at physical `$7FE00` or follows MMU logical block 7). It sits inside
-/// the ROM window address range but is *not* ROM: BASIC writes JMP trampolines here.
+/// `$FE00–$FEFF` — the interrupt-vector page. INIT0 MC3 selects its mapping
+/// (SEB Unravelled II; MAME `gime.cpp update_memory` bank 8): MC3=1 pins it to
+/// constant RAM at physical `$7FE00` regardless of the MMU or ROM mode (BASIC
+/// boots with MC3 set and writes its JMP trampolines here); MC3=0 makes it
+/// follow the normal map like the rest of the `$8000+` window — MMU RAM in
+/// all-RAM mode, ROM in ROM mode (internal or cartridge per MC1:MC0, as the
+/// tail of the `$E000` bank). Sokoban relies on the MC3=0 ROM path: it is the
+/// only way to address the last `$200` bytes of a pak image (CTS stops at
+/// `$FDFF`), where it keeps its palette tables.
 const CONSTANT_RAM_BASE: u16 = 0xFE00;
 const CONSTANT_RAM_LAST: u16 = 0xFEFF;
 /// Physical base of the constant `$FE00` page when INIT0 MC3 is set.
@@ -128,10 +133,18 @@ impl SystemBus {
         self.gime.translate(addr) % self.ram.len()
     }
 
-    /// True when `addr` reads internal ROM (the `$8000–$FDFF` window when ROM is
-    /// mapped). `$FE00–$FEFF` is RAM; `$FF00+` is the I/O page / vectors.
+    /// True when `addr` reads ROM: the `$8000–$FDFF` window when ROM is mapped,
+    /// plus the `$FE00–$FEFF` vector page when INIT0 MC3 is clear (see
+    /// [`CONSTANT_RAM_BASE`] — MC3 set diverts that page to constant RAM via
+    /// [`SystemBus::phys`] instead). `$FF00+` is the I/O page / vectors.
     fn is_rom_window(&self, addr: u16) -> bool {
-        (ROM_WINDOW_BASE..CONSTANT_RAM_BASE).contains(&addr) && self.gime.rom_enabled()
+        if !self.gime.rom_enabled() {
+            return false;
+        }
+        if (CONSTANT_RAM_BASE..=CONSTANT_RAM_LAST).contains(&addr) {
+            return self.gime.init0 & gime::init0::MC3 == 0;
+        }
+        (ROM_WINDOW_BASE..CONSTANT_RAM_BASE).contains(&addr)
     }
 
     /// True when any interrupt source is holding the CPU IRQ line low.

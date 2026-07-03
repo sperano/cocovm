@@ -144,19 +144,55 @@ fn hardwired_window_writes_are_dropped_not_shadowed_to_ram() {
 }
 
 #[test]
-fn constant_page_fe00_is_ram_not_rom() {
-    // $FE00-$FEFF is the interrupt-trampoline page: RAM even though it sits inside
-    // the $8000-$FFFF ROM window. Writing then reading must round-trip through RAM.
+fn constant_page_fe00_is_ram_when_mc3_set() {
+    // With INIT0 MC3 set (how BASIC runs: reset writes $0A, boot writes $CC —
+    // both have bit 3 set), $FE00-$FEFF is the constant interrupt-trampoline
+    // RAM page even though ROM is mapped: write/read must round-trip.
     let mut b = bus(MemorySize::K512);
+    b.write(0xFF90, init0::MC3);
     b.write(0xFE00, 0x5A);
     b.write(0xFEFF, 0xA5);
     assert_eq!(b.read(0xFE00), 0x5A);
     assert_eq!(b.read(0xFEFF), 0xA5);
     // The byte just below still reads ROM (writes fall through to shadow RAM).
     // MC=10 (32K internal) so $FDFF is internal ROM, not the external window.
-    b.write(0xFF90, init0::MC1);
+    b.write(0xFF90, init0::MC3 | init0::MC1);
     b.write(0xFDFF, 0x11);
     assert_eq!(b.read(0xFDFF), marked_rom()[0xFDFF - 0x8000]);
+}
+
+#[test]
+fn vector_page_follows_rom_map_when_mc3_clear() {
+    // INIT0 MC3=0: $FE00-$FEFF follows the normal map like the rest of the
+    // window (MAME gime.cpp update_memory bank 8 — `force_ram` only when MC3
+    // is set). In 16K+16K mode the page is the tail of the external bank —
+    // the ONLY way a pak's last $200 bytes are addressable (CTS stops at
+    // $FDFF); Sokoban keeps its palette tables there and copies them out via
+    // $FE88 reads. In 32K-internal mode it reads coco3.rom offset $7Exx.
+    let mut b = bus(MemorySize::K512);
+    b.cart = Box::new(MarkerCart);
+    b.write(0xFF90, 0x00); // MC3=0, MC=00: 16K internal + 16K external
+    assert_eq!(b.read(0xFE88), 0xAA, "vector page reads the cartridge");
+    b.write(0xFF90, init0::MC1); // MC3=0, MC=10: 32K internal
+    assert_eq!(
+        b.read(0xFE88),
+        marked_rom()[0x7E88],
+        "vector page reads internal ROM offset $7E88"
+    );
+    // MC3 set flips the same address to the constant RAM page.
+    b.write(0xFF90, init0::MC3 | init0::MC1);
+    b.write(0xFE88, 0x21);
+    assert_eq!(b.read(0xFE88), 0x21, "MC3 diverts the page to constant RAM");
+}
+
+#[test]
+fn vector_page_is_mapped_ram_in_all_ram_mode_when_mc3_clear() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Box::new(MarkerCart);
+    b.write(0xFF90, 0x00); // MC3=0
+    b.gime.all_ram = true; // SAM TY: no ROM anywhere in the window
+    b.write(0xFE88, 0x7E);
+    assert_eq!(b.read(0xFE88), 0x7E, "all-RAM mode: plain mapped RAM");
 }
 
 #[test]
