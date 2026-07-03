@@ -385,7 +385,10 @@ impl eframe::App for CocoApp {
                         }
                     }
                     let inserted = self.cart_path.is_some();
-                    if ui.add_enabled(inserted, egui::Button::new("Eject Cartridge")).clicked() {
+                    if ui
+                        .add_enabled(inserted, egui::Button::new("Eject Cartridge"))
+                        .clicked()
+                    {
                         self.eject_cartridge();
                         ui.close();
                     }
