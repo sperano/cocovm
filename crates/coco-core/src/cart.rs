@@ -34,6 +34,21 @@ pub trait Cartridge {
     fn cart_line_ties_q(&self) -> bool {
         false
     }
+    /// Advance the cartridge's internal clocks by `cycles` CPU cycles. Called
+    /// by the machine loop after every instruction (and once per burned cycle
+    /// while the CPU is halted, so a device can pace work — the FDC's DRQ
+    /// cadence — while it holds the HALT line).
+    fn tick(&mut self, _cycles: u32) {}
+    /// True while the cartridge holds the CPU HALT* line low (the FD-502's
+    /// transfer handshake). Sampled at instruction boundaries.
+    fn halt_asserted(&self) -> bool {
+        false
+    }
+    /// Consume a pending NMI edge from the cartridge (the FD-502 gates the
+    /// FDC's INTRQ onto the CPU NMI). Returns true at most once per edge.
+    fn take_nmi(&mut self) -> bool {
+        false
+    }
 }
 
 /// No cartridge inserted.

@@ -234,9 +234,26 @@ fn nmi_is_non_maskable() {
     s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
     s.cpu.pc = 0x1234;
     s.cpu.s = 0x2000;
+    s.cpu.nmi_armed = true; // recognition armed (S "loaded"); see arming test
     s.cpu.cc = cc::IRQ_MASK | cc::FIRQ_MASK; // fully masked
     s.cpu.nmi(&mut s.bus);
     assert_eq!(s.cpu.pc, 0x6000); // serviced anyway
+    assert_eq!(s.cpu.s, 0x2000 - 12);
+}
+
+#[test]
+fn nmi_is_ignored_until_the_first_program_load_of_s() {
+    // MC6809 datasheet: after reset, NMI is not recognized until S is loaded —
+    // a frame push through a garbage pointer would corrupt memory.
+    let mut s = Sys::code(0x1000, &[0x10, 0xCE, 0x20, 0x00, 0x12]); // LDS #$2000 ; NOP
+    s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
+    s.bus.load(0xFFFE, &[0x10, 0x00]); // reset vector -> $1000
+    s.cpu.reset(&mut s.bus);
+    s.cpu.nmi(&mut s.bus);
+    assert_eq!(s.cpu.pc, 0x1000, "unarmed NMI must be ignored");
+    s.step(); // LDS #$2000 arms recognition
+    s.cpu.nmi(&mut s.bus);
+    assert_eq!(s.cpu.pc, 0x6000, "NMI must vector once S is loaded");
     assert_eq!(s.cpu.s, 0x2000 - 12);
 }
 

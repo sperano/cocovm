@@ -180,11 +180,26 @@ impl Machine {
 
     /// Step instructions until at least `budget` cycles elapse, delivering any
     /// pending interrupt before each instruction.
+    ///
+    /// The cartridge HALT* line has priority over everything (MC6809 pin
+    /// behaviour): while a device holds it — the FD-502's sector-transfer
+    /// handshake — the CPU sits at an instruction boundary burning cycles and
+    /// pending interrupts wait. The cartridge is ticked either way so it can
+    /// pace the very work (DRQ cadence) that releases the line.
     fn run_cycles(&mut self, budget: u32) {
         let mut spent = 0u32;
         while spent < budget {
-            self.service_interrupts();
-            spent += self.cpu.step(&mut self.bus);
+            let cycles = if self.bus.halt_asserted() {
+                1
+            } else {
+                if self.bus.take_nmi() {
+                    self.cpu.nmi(&mut self.bus);
+                }
+                self.service_interrupts();
+                self.cpu.step(&mut self.bus)
+            };
+            self.bus.cart.tick(cycles);
+            spent += cycles;
         }
     }
 

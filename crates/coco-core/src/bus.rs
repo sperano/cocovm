@@ -164,6 +164,18 @@ impl SystemBus {
         self.pia1.irq() || self.gime.firq_asserted()
     }
 
+    /// True while the cartridge holds the CPU HALT* line low (the FD-502's
+    /// sector-transfer handshake). The only HALT source on a stock CoCo 3 is
+    /// the expansion port.
+    pub fn halt_asserted(&self) -> bool {
+        self.cart.halt_asserted()
+    }
+
+    /// Consume a pending NMI edge (the FD-502 gates FDC INTRQ onto NMI).
+    pub fn take_nmi(&mut self) -> bool {
+        self.cart.take_nmi()
+    }
+
     /// Horizontal-sync edge: latches PIA0 CA1 (control reg $FF01, port A) and
     /// the GIME HBORD source; also the GIME's per-scanline sample point for
     /// the EI1 keyboard-interrupt input (a zero on any PA0–PA6 row while some

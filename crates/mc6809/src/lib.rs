@@ -142,6 +142,12 @@ pub struct MC6809 {
     pub cycles: u64,
     /// Running vs halted (SYNC/CWAI).
     pub state: State,
+    /// NMI is not recognized until the first program load of the stack
+    /// pointer after reset (MC6809 datasheet) — before S is valid an NMI
+    /// frame push would scribble through a garbage pointer. Set by any
+    /// instruction that writes S (LDS, LEAS, TFR/EXG, indexed `,S++`-style
+    /// writeback), cleared by reset.
+    pub nmi_armed: bool,
 }
 
 impl MC6809 {
@@ -165,10 +171,21 @@ impl MC6809 {
         self.cc |= cc::IRQ_MASK | cc::FIRQ_MASK;
         self.pc = bus.read_u16(VECTOR_RESET);
         self.state = State::Running;
+        self.nmi_armed = false;
     }
 
-    /// Deliver a non-maskable interrupt. Always serviced (full frame, sets I+F).
+    /// Load the stack pointer from program action, arming NMI recognition.
+    fn load_s(&mut self, v: u16) {
+        self.s = v;
+        self.nmi_armed = true;
+    }
+
+    /// Deliver a non-maskable interrupt: full frame, sets I+F. Ignored until
+    /// the first program load of S arms recognition (see `nmi_armed`).
     pub fn nmi(&mut self, bus: &mut impl Bus) {
+        if !self.nmi_armed {
+            return;
+        }
         self.take_interrupt(bus, VECTOR_NMI, true, true, true);
     }
 
@@ -311,10 +328,10 @@ impl MC6809 {
                     0xBF => { let ea = self.ea_extended(bus);    bus.write_u16(ea, self.y); self.set_nz16(self.y); 7 }
 
                     // LDS
-                    0xCE => { let v = self.fetch_u16(bus);       self.s = v; self.set_nz16(v); 4 }
-                    0xDE => { let v = self.read_direct16(bus);   self.s = v; self.set_nz16(v); 6 }
-                    0xEE => { let (ea, ic) = self.ea_indexed(bus); let v = bus.read_u16(ea); self.s = v; self.set_nz16(v); 6 + ic }
-                    0xFE => { let v = self.read_extended16(bus); self.s = v; self.set_nz16(v); 7 }
+                    0xCE => { let v = self.fetch_u16(bus);       self.load_s(v); self.set_nz16(v); 4 }
+                    0xDE => { let v = self.read_direct16(bus);   self.load_s(v); self.set_nz16(v); 6 }
+                    0xEE => { let (ea, ic) = self.ea_indexed(bus); let v = bus.read_u16(ea); self.load_s(v); self.set_nz16(v); 6 + ic }
+                    0xFE => { let v = self.read_extended16(bus); self.load_s(v); self.set_nz16(v); 7 }
                     // STS
                     0xDF => { let ea = self.ea_direct(bus);      bus.write_u16(ea, self.s); self.set_nz16(self.s); 6 }
                     0xEF => { let (ea, ic) = self.ea_indexed(bus); bus.write_u16(ea, self.s); self.set_nz16(self.s); 6 + ic }
@@ -509,7 +526,7 @@ impl MC6809 {
             // LEAX/LEAY set Z from the result; LEAS/LEAU affect no flags.
             0x30 => { let (ea, ic) = self.ea_indexed(bus); self.x = ea; self.set_z16(ea); 4 + ic }
             0x31 => { let (ea, ic) = self.ea_indexed(bus); self.y = ea; self.set_z16(ea); 4 + ic }
-            0x32 => { let (ea, ic) = self.ea_indexed(bus); self.s = ea; 4 + ic }
+            0x32 => { let (ea, ic) = self.ea_indexed(bus); self.load_s(ea); 4 + ic }
             0x33 => { let (ea, ic) = self.ea_indexed(bus); self.u = ea; 4 + ic }
 
             // LDA / LDB / STA / STB indexed
@@ -708,7 +725,7 @@ impl MC6809 {
             0b00 => self.x = val,
             0b01 => self.y = val,
             0b10 => self.u = val,
-            _ => self.s = val,
+            _ => self.load_s(val),
         }
     }
 
@@ -1056,7 +1073,7 @@ impl MC6809 {
             regsel::X => self.x = value,
             regsel::Y => self.y = value,
             regsel::U => self.u = value,
-            regsel::S => self.s = value,
+            regsel::S => self.load_s(value),
             regsel::PC => self.pc = value,
             regsel::A => self.a = value as u8,
             regsel::B => self.b = value as u8,
