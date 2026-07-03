@@ -85,6 +85,12 @@ pub struct Machine {
     /// and resamples to the host rate. Self-capping so headless use (tests,
     /// no audio sink) doesn't grow it unboundedly.
     audio_buffer: Vec<f32>,
+    /// True when the previous `run_cycles` iteration burned a HALT* cycle
+    /// instead of stepping. The MC6809 recognizes interrupts only at
+    /// instruction-end boundaries, so the first instruction after HALT*
+    /// releases must execute before a pending NMI/IRQ/FIRQ is serviced (see
+    /// [`Machine::run_cycles`]).
+    prev_halted: bool,
 }
 
 /// Cap on buffered audio samples (~8 fields); beyond this the buffer resets
@@ -105,6 +111,7 @@ impl Machine {
             fb_height: FB_HEIGHT,
             graphics_scratch: Vec::new(),
             audio_buffer: Vec::new(),
+            prev_halted: false,
         }
     }
 
@@ -188,16 +195,28 @@ impl Machine {
     /// handshake — the CPU sits at an instruction boundary burning cycles and
     /// pending interrupts wait. The cartridge is ticked either way so it can
     /// pace the very work (DRQ cadence) that releases the line.
+    ///
+    /// The MC6809 recognizes interrupts only at the *end* of an instruction, so
+    /// the first instruction after HALT* releases must execute before any
+    /// pending NMI/IRQ/FIRQ is serviced. Skipping this lets the completion NMI
+    /// of an FD-502 sector read preempt the DSKCON copy loop's `STB ,X+` that
+    /// stores the sector's final byte — dropping one byte per sector on load.
     fn run_cycles(&mut self, budget: u32) {
         let mut spent = 0u32;
         while spent < budget {
             let cycles = if self.bus.halt_asserted() {
+                self.prev_halted = true;
                 1
             } else {
-                if self.bus.take_nmi() {
-                    self.cpu.nmi(&mut self.bus);
+                // Coming straight out of HALT, run one instruction before
+                // acknowledging interrupts (they stay pending for next loop).
+                if !self.prev_halted {
+                    if self.bus.take_nmi() {
+                        self.cpu.nmi(&mut self.bus);
+                    }
+                    self.service_interrupts();
                 }
-                self.service_interrupts();
+                self.prev_halted = false;
                 self.cpu.step(&mut self.bus)
             };
             self.bus.cart.tick(cycles);

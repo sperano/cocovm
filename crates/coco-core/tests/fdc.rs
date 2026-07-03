@@ -616,3 +616,121 @@ fn boots_to_disk_basic_without_a_disk_inserted() {
     let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
     assert!(banner, "expected the Disk BASIC banner even with no disk mounted (no spurious HALT)");
 }
+
+/// Like [`load_rom`] but returns `None` instead of panicking when the
+/// (git-ignored) ROM image isn't present, so the LOADM regression below skips
+/// gracefully in an asset-less checkout.
+fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../roms")
+        .join(name);
+    std::fs::read(&path).ok().map(Vec::into_boxed_slice)
+}
+
+/// Synthesize a 35-track RS-DOS disk holding one machine-language file
+/// (`name8`.BIN) whose `data` loads at `load_addr`. The file (a single DECB
+/// binary load segment plus the exec trailer) occupies granule 0.
+fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JvcDisk {
+    const TRACKS: usize = 35;
+    let mut bytes = vec![0u8; TRACKS * ONE_TRACK_BYTES];
+    let track_offset =
+        |track: usize, sector: u8| -> usize { (track * 18 + (sector as usize - 1)) * SECTOR_SIZE };
+
+    // DECB binary file image: one load segment ($00 len addr data) then the
+    // exec trailer ($FF $0000 exec-addr).
+    let len = data.len() as u16;
+    let mut file = vec![
+        0x00,
+        (len >> 8) as u8,
+        len as u8,
+        (load_addr >> 8) as u8,
+        load_addr as u8,
+    ];
+    file.extend_from_slice(data);
+    file.extend_from_slice(&[0xFF, 0x00, 0x00, (load_addr >> 8) as u8, load_addr as u8]);
+
+    // Lay the file into granule 0 (track 0, sectors 1..), a 9-sector granule.
+    let sectors_used = file.len().div_ceil(SECTOR_SIZE);
+    assert!(sectors_used <= 9, "test file must fit one granule");
+    bytes[0..file.len()].copy_from_slice(&file);
+
+    // GAT: granule 0 is the file's only (hence last) granule.
+    let gat_off = track_offset(DIR_TRACK as usize, GAT_SECTOR);
+    bytes[gat_off..gat_off + 68].fill(0xFF);
+    bytes[gat_off] = 0xC0 | sectors_used as u8;
+
+    // Directory: entry 0 = our file, the rest free ($FF).
+    for sector in DIR_FIRST_SECTOR..=DIR_LAST_SECTOR {
+        let off = track_offset(DIR_TRACK as usize, sector);
+        bytes[off..off + SECTOR_SIZE].fill(0xFF);
+    }
+    let entry_off = track_offset(DIR_TRACK as usize, DIR_FIRST_SECTOR);
+    let mut name = [b' '; 8];
+    for (i, b) in name8.bytes().enumerate() {
+        name[i] = b;
+    }
+    bytes[entry_off..entry_off + 8].copy_from_slice(&name);
+    bytes[entry_off + 8..entry_off + 11].copy_from_slice(b"BIN");
+    bytes[entry_off + 11] = 0x02; // file type: machine language
+    bytes[entry_off + 12] = 0x00; // binary (not ASCII)
+    bytes[entry_off + 13] = 0x00; // first granule
+    let last_sector_bytes = (file.len() - (sectors_used - 1) * SECTOR_SIZE) as u16;
+    bytes[entry_off + 14] = (last_sector_bytes >> 8) as u8;
+    bytes[entry_off + 15] = last_sector_bytes as u8;
+
+    JvcDisk::from_bytes(bytes).unwrap()
+}
+
+/// Regression: the FD-502 halt/NMI handshake must not drop a sector's final
+/// byte. Before the fix, the sector-completion NMI preempted DSKCON's
+/// `STB ,X+` for the last byte of every 256-byte sector — the MC6809
+/// recognizes interrupts only at instruction-end boundaries, so the
+/// instruction that HALT* released must run before the NMI is acknowledged.
+/// One byte per sector was loading as $00. The payload here fills three
+/// sectors with a non-zero marker; every byte, including each sector's 256th,
+/// must survive LOADM.
+#[test]
+fn loadm_preserves_every_sector_byte_across_the_halt_nmi_handshake() {
+    const LOAD_ADDR: u16 = 0x3F00;
+    const DATA_LEN: usize = 600; // spans 3 sectors -> 2 sector-boundary bytes in payload
+    const FILL: u8 = 0xE5;
+    const FIELDS: usize = 400;
+
+    let (Some(coco), Some(disk_rom)) = (try_load_rom("coco3.rom"), try_load_rom("disk11.rom"))
+    else {
+        eprintln!("skipping loadm_preserves_every_sector_byte: roms/ assets not present");
+        return;
+    };
+
+    let data = vec![FILL; DATA_LEN];
+    let mut m = Machine::new(MachineConfig::default(), coco);
+    let mut cart = DiskCart::new(disk_rom);
+    cart.insert_disk(0, synthesized_ml_disk("TESTML", LOAD_ADDR, &data));
+    m.insert_cartridge(Box::new(cart));
+    m.reset();
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+    assert!(
+        (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC")),
+        "expected the Disk BASIC banner before LOADM"
+    );
+
+    type_str(&mut m, "LOADM\"TESTML\"");
+    tap_char(&mut m, '\r');
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+
+    let loaded: Vec<u8> = (0..DATA_LEN as u16)
+        .map(|i| m.bus.read(LOAD_ADDR + i))
+        .collect();
+    if let Some(i) = loaded.iter().position(|&b| b != FILL) {
+        panic!(
+            "byte at {:#06X} loaded as {:#04X}, expected {:#04X} — a sector's final byte was dropped",
+            LOAD_ADDR + i as u16,
+            loaded[i],
+            FILL
+        );
+    }
+}
