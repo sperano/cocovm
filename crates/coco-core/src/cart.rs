@@ -51,10 +51,19 @@ impl Cartridge for EmptySlot {
 /// (`$8000–$FFFF` under INIT0 MC1:MC0 = `11`).
 pub const ROM_PAK_MAX_LEN: usize = 32 * 1024;
 
-/// Physical base the pak image is indexed from: `rom_read` receives logical
-/// addresses starting at `$8000` (the `$C000`-based 16K window is just the
-/// upper half of the same 32K-based image — fact 5).
+/// Base of the logical addresses `rom_read` receives (`$8000-$FDFF`).
 const ROM_PAK_BASE: u16 = 0x8000;
+
+/// Pak images are dumped CTS-window-first: file offset 0 is the byte at
+/// `$C000`, and (for 32K carts) offset `$4000` is the byte at `$8000` once
+/// INIT0 MC1:MC0 = `11` maps the second half in. The GIME routes cart banks
+/// as `((bank & 3) ^ 2) * 0x2000` (MAME `gime.cpp` `update_memory`), i.e. the
+/// two 16K halves are swapped relative to a flat `addr - $8000` view, so we
+/// XOR the half-select bit when indexing. Invisible for ≤16K paks (the
+/// mirror-fill makes both halves identical); load-bearing for 32K carts like
+/// Arkanoid, whose entry code lives at file offset 0 expecting to be fetched
+/// at `$C000`.
+const ROM_PAK_HALF_SWAP: u16 = 0x4000;
 
 /// Error constructing a [`RomPak`] from a raw image.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,8 +95,9 @@ impl std::error::Error for RomPakError {}
 /// the kind sold for CoCo game/utility cartridges.
 ///
 /// Undersized images are mirror-filled to the full 32K exactly as MAME's
-/// `coco_pak_device::call_load` does, so `rom_read` can always index by
-/// `addr - $8000` regardless of the original image size (fact 5).
+/// `coco_pak_device::call_load` does, so `rom_read` needs no bounds logic
+/// regardless of the original image size (fact 5). Indexing swaps the 16K
+/// halves — see [`ROM_PAK_HALF_SWAP`].
 pub struct RomPak {
     image: Box<[u8]>,
     /// Whether this pak ties the CART* line to Q (see
@@ -150,7 +160,7 @@ impl Cartridge for RomPak {
     }
     fn write(&mut self, _addr: u16, _val: u8) {}
     fn rom_read(&mut self, addr: u16) -> u8 {
-        self.image[(addr - ROM_PAK_BASE) as usize]
+        self.image[((addr - ROM_PAK_BASE) ^ ROM_PAK_HALF_SWAP) as usize]
     }
     fn cart_line_ties_q(&self) -> bool {
         self.autostart

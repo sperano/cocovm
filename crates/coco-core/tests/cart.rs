@@ -31,12 +31,18 @@ fn rejects_oversized_image() {
 }
 
 #[test]
-fn full_32k_image_reads_straight_through() {
+fn full_32k_image_maps_cts_half_first() {
+    // Pak dumps are CTS-window-first: file offset 0 is the byte at $C000, and
+    // the file's second half lands at $8000-$BFFF (GIME bank swap — MAME
+    // gime.cpp `((bank & 3) ^ 2) * 0x2000`). Arkanoid's entry code at file
+    // offset 0 must be fetched by BASIC's JMP $C000.
     let bytes: Vec<u8> = (0..ROM_PAK_MAX_LEN).map(|i| i as u8).collect();
     let mut pak = RomPak::from_bytes(&bytes, false).unwrap();
-    assert_eq!(pak.rom_read(0x8000), bytes[0x0000]);
-    assert_eq!(pak.rom_read(0xC000), bytes[0x4000]);
-    assert_eq!(pak.rom_read(0xFFFF), bytes[0x7FFF]);
+    assert_eq!(pak.rom_read(0xC000), bytes[0x0000]);
+    assert_eq!(pak.rom_read(0xE000), bytes[0x2000]);
+    assert_eq!(pak.rom_read(0x8000), bytes[0x4000]);
+    assert_eq!(pak.rom_read(0xA000), bytes[0x6000]);
+    assert_eq!(pak.rom_read(0xFDFF), bytes[0x3DFF]);
 }
 
 #[test]
@@ -72,14 +78,15 @@ fn mirror_fill_equals_plain_repetition_for_any_size() {
     // each copy at a multiple of the image length and copies a prefix of an
     // already-periodic buffer, so its output is byte-identical to plain
     // repetition (`image[i % len]`) for every image size — assert exactly
-    // that, byte for byte, across the whole 32K buffer.
+    // that, byte for byte, across the whole 32K buffer (through the 16K
+    // half-swap `rom_read` applies on top of the filled image).
     const LEN: usize = 5000;
     let bytes: Vec<u8> = (0..LEN).map(|i| (i % 256) as u8).collect();
     let mut pak = RomPak::from_bytes(&bytes, false).unwrap();
     for i in 0..ROM_PAK_MAX_LEN {
         assert_eq!(
             pak.rom_read(0x8000 + i as u16),
-            bytes[i % LEN],
+            bytes[(i ^ 0x4000) % LEN],
             "mismatch at offset {i:#06x}"
         );
     }
@@ -119,8 +126,9 @@ fn screen_row(m: &mut Machine, row: u16) -> String {
 /// it writes.
 const MARKER_ADDR: u16 = 0x0400;
 const MARKER_BYTE: u8 = 0xA5;
-/// Offset of the external ROM base ($C000) within a pak's 32K image ($C000 - $8000).
-const CART_ENTRY_OFFSET: usize = 0x4000;
+/// Offset of the external ROM base ($C000) within a pak's 32K image: pak
+/// dumps are CTS-window-first, so $C000 is file offset 0.
+const CART_ENTRY_OFFSET: usize = 0x0000;
 
 /// A pak whose code at $C000 writes [`MARKER_BYTE`] to [`MARKER_ADDR`] and
 /// loops forever: `LDA #$A5 ; STA $0400 ; BRA *` (bytes verified by hand:
