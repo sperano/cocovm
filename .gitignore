@@ -4,3 +4,8 @@
 /roms/*
 # stray MAME run log
 /error.log
+# cartridge dumps (copyrighted, local only)
+/*.ccc
+/*.rom
+# Claude Code local settings
+.claude/settings.local.json
