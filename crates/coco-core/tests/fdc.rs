@@ -1,0 +1,618 @@
+//! FD-502 disk controller coverage: JVC image geometry, DSKREG decode and the
+//! HALT*/NMI control-line recomputation, the WD1773 command state machine, and
+//! an end-to-end boot-and-`DIR` integration test against the real
+//! `roms/disk11.rom`.
+
+use std::path::PathBuf;
+
+use coco_core::cart::Cartridge;
+use coco_core::fdc::{dskreg, DiskCart, JvcDisk, JvcError};
+use coco_core::wd1773::{status, WD1773};
+use coco_core::{Machine, MachineConfig};
+use mc6809::Bus;
+
+// ============================================================================
+// JVC image geometry (jvc_dsk.cpp)
+// ============================================================================
+
+/// Default geometry, one 18-sector/256-byte/1-side track's worth of bytes.
+const ONE_TRACK_BYTES: usize = 18 * 256;
+
+#[test]
+fn headerless_image_uses_all_defaults() {
+    // 35 tracks x 18 spt x 1 side x 256B, no header (file_len is an exact
+    // multiple of 256).
+    let bytes = vec![0u8; 35 * ONE_TRACK_BYTES];
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.track_count(), 35);
+    assert_eq!(disk.sectors_per_track(), 18);
+    assert_eq!(disk.sides(), 1);
+    assert_eq!(disk.sector_size(), 256);
+    assert_eq!(disk.first_sector_id(), 1);
+}
+
+#[test]
+fn two_byte_header_sets_spt_and_sides_defaults_the_rest() {
+    // Header = [spt=18, sides=2]; size code/first-id/attribute byte all absent
+    // -> defaults. 40 tracks of 18 spt x 2 sides x 256B.
+    const TRACKS: usize = 40;
+    let mut bytes = vec![18u8, 2u8];
+    bytes.extend(vec![0u8; TRACKS * ONE_TRACK_BYTES * 2]);
+    // file_len % 256 must equal the 2-byte header for this to parse as
+    // intended; ONE_TRACK_BYTES*2 is a multiple of 256, so this holds for any
+    // TRACKS.
+    assert_eq!(bytes.len() % 256, 2);
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.sectors_per_track(), 18);
+    assert_eq!(disk.sides(), 2);
+    assert_eq!(disk.sector_size(), 256);
+    assert_eq!(disk.first_sector_id(), 1);
+    assert_eq!(disk.track_count(), TRACKS);
+}
+
+#[test]
+fn sector_offset_matches_the_spec_formula_single_sided() {
+    // Explicit 5-byte header: spt=2, sides=1, size code=0 (128B), first id=1,
+    // attribute flag=0. 3 tracks, each sector's 128 bytes filled with a marker
+    // identifying (track, sector) so the offset math can be checked by content.
+    const SPT: usize = 2;
+    const SIDES: usize = 1;
+    const SECTOR_SIZE: usize = 128;
+    const TRACKS: usize = 3;
+    let mut bytes = vec![SPT as u8, SIDES as u8, 0, 1, 0];
+    for row in 0..TRACKS * SIDES {
+        for sector_index in 0..SPT {
+            let marker = (row * SPT + sector_index) as u8;
+            bytes.extend(std::iter::repeat_n(marker, SECTOR_SIZE));
+        }
+    }
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.track_count(), TRACKS);
+
+    for track in 0..TRACKS as u8 {
+        for sector_id in 1..=SPT as u8 {
+            let off = disk.sector_offset(track, 0, sector_id).unwrap();
+            let expected_marker = (track as usize) * SPT + (sector_id as usize - 1);
+            assert_eq!(disk.read_bytes(off, 1)[0], expected_marker as u8);
+        }
+    }
+}
+
+#[test]
+fn two_sided_image_interleaves_track0_side0_track0_side1_track1_side0() {
+    // 1 spt, 2 sides, 128B sectors, 2 tracks: markers 0,1,2,3 laid out in
+    // (track*sides+side) row order.
+    let mut bytes = vec![1u8, 2, 0, 1, 0];
+    for marker in 0u8..4 {
+        bytes.extend(std::iter::repeat_n(marker, 128));
+    }
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let cases = [
+        (0u8, 0u8, 0u8), // track0 side0 -> marker 0
+        (0, 1, 1),       // track0 side1 -> marker 1
+        (1, 0, 2),       // track1 side0 -> marker 2
+        (1, 1, 3),       // track1 side1 -> marker 3
+    ];
+    for (track, side, marker) in cases {
+        let off = disk.sector_offset(track, side, 1).unwrap();
+        assert_eq!(disk.read_bytes(off, 1)[0], marker, "track{track} side{side}");
+    }
+}
+
+#[test]
+fn sector_offset_rejects_out_of_range_track_side_and_sector() {
+    let disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track
+    assert_eq!(disk.sector_offset(1, 0, 1), None, "track beyond track_count");
+    assert_eq!(disk.sector_offset(0, 1, 1), None, "side beyond sides (single-sided)");
+    assert_eq!(disk.sector_offset(0, 0, 0), None, "sector below first_sector_id");
+    assert_eq!(disk.sector_offset(0, 0, 19), None, "sector beyond sectors_per_track");
+    assert!(disk.sector_offset(0, 0, 1).is_some());
+    assert!(disk.sector_offset(0, 0, 18).is_some());
+}
+
+#[test]
+fn invalid_geometry_is_rejected() {
+    // Headerless (multiple of 256) but not a whole number of default-geometry
+    // tracks (4608 bytes/track).
+    let bytes = vec![0u8; 5120];
+    assert_eq!(bytes.len() % 256, 0);
+    let err = JvcDisk::from_bytes(bytes).unwrap_err();
+    assert!(matches!(err, JvcError::InvalidGeometry { .. }));
+}
+
+#[test]
+fn nonzero_attribute_flag_is_rejected() {
+    // 5-byte header (spt=18, sides=1, size code=1, first id=1, attr flag=1),
+    // one otherwise-valid track of data.
+    let mut bytes = vec![18u8, 1, 1, 1, 1];
+    bytes.extend(vec![0u8; ONE_TRACK_BYTES]);
+    assert_eq!(JvcDisk::from_bytes(bytes).unwrap_err(), JvcError::AttributeBytesUnsupported);
+}
+
+// ============================================================================
+// DSKREG decode + update_lines (coco_fdc.cpp)
+// ============================================================================
+
+fn load_rom(name: &str) -> Box<[u8]> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms").join(name);
+    std::fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display())).into_boxed_slice()
+}
+
+fn disk_cart() -> DiskCart {
+    DiskCart::new(load_rom("disk11.rom"))
+}
+
+/// One track, one sector, every byte the given marker — enough to identify
+/// which drive/side answered a Read Sector without caring about pacing.
+fn marker_disk(marker: u8) -> JvcDisk {
+    JvcDisk::from_bytes(vec![marker; ONE_TRACK_BYTES]).unwrap()
+}
+
+/// One track, 2 sides, 1 sector/side, 128B — for side-select coverage.
+fn two_sided_marker_disk(side0: u8, side1: u8) -> JvcDisk {
+    let mut bytes = vec![1u8, 2, 0, 1, 0]; // spt=1, sides=2, size 128, first id 1
+    bytes.extend(vec![side0; 128]);
+    bytes.extend(vec![side1; 128]);
+    JvcDisk::from_bytes(bytes).unwrap()
+}
+
+/// Comfortably more than the implementation's DRQ pacing interval (spec: ~30
+/// cycles), enough for one sector-lookup command's first byte to land.
+const ONE_DRQ_INTERVAL: u32 = 64;
+
+/// Read sector 1 of track 0 through the currently-selected drive/side and
+/// return the byte delivered. Force-Interrupts first so a previous call's
+/// still-in-flight command (this only ticks long enough for the first byte,
+/// not a whole 256-byte sector) doesn't cause the new command to be silently
+/// ignored (spec: a command written while busy is ignored).
+fn read_marker_byte(cart: &mut DiskCart) -> u8 {
+    cart.write(0xFF48, 0xD0); // Force Interrupt, cancel only
+    cart.write(0xFF49, 0); // track register
+    cart.write(0xFF4A, 1); // sector register
+    cart.write(0xFF48, 0x80); // Read Sector, single
+    cart.tick(ONE_DRQ_INTERVAL);
+    cart.read(0xFF4B)
+}
+
+#[test]
+fn reset_state_has_drq_set_so_halt_never_spuriously_asserts() {
+    let cart = disk_cart();
+    // dskreg=0 out of the gate, so halt-enable is clear regardless of drq —
+    // this is the "reset state drq=true" fact under direct test.
+    assert!(!cart.halt_asserted());
+}
+
+#[test]
+fn halt_line_is_not_drq_and_halt_enable() {
+    let mut cart = disk_cart();
+    cart.write(0xFF40, dskreg::HALT_ENABLE);
+    // drq is still true (nothing has cleared it yet): HALT must not assert.
+    assert!(!cart.halt_asserted());
+    cart.read(0xFF4B); // clears DRQ as a side effect
+    assert!(cart.halt_asserted(), "HALT must assert once DRQ clears with halt-enable set");
+}
+
+#[test]
+fn intrq_high_clears_dskreg_halt_enable() {
+    let mut cart = disk_cart();
+    cart.write(0xFF40, dskreg::HALT_ENABLE);
+    cart.read(0xFF4B); // drq now false -> halt asserted
+    assert!(cart.halt_asserted());
+    cart.write(0xFF48, 0xD8); // Force Interrupt, I3 set -> INTRQ high
+    assert!(!cart.halt_asserted(), "a high INTRQ must clear DSKREG's halt-enable bit");
+}
+
+#[test]
+fn nmi_edge_fires_only_when_density_nmi_enable_bit_is_set() {
+    let mut cart = disk_cart();
+    cart.write(0xFF40, 0); // bit5 clear
+    cart.write(0xFF48, 0xD8); // Force Interrupt, I3 -> INTRQ high
+    assert!(!cart.take_nmi(), "NMI must not fire when DSKREG bit5 is clear");
+
+    let mut cart = disk_cart();
+    cart.write(0xFF40, dskreg::DENSITY_AND_NMI_ENABLE);
+    cart.write(0xFF48, 0xD8);
+    assert!(cart.take_nmi(), "NMI must fire on the rising edge of intrq && bit5");
+    assert!(!cart.take_nmi(), "the edge must not repeat once consumed");
+}
+
+#[test]
+fn dskreg_reads_are_open_bus() {
+    let mut cart = disk_cart();
+    cart.write(0xFF40, 0xFF);
+    for addr in 0xFF40u16..=0xFF47 {
+        assert_eq!(cart.read(addr), coco_core::cart::IO_OPEN_BUS);
+    }
+}
+
+#[test]
+fn drive_select_priority_bit2_then_bit1_then_bit0_then_bit6() {
+    let mut cart = disk_cart();
+    cart.insert_disk(0, marker_disk(10));
+    cart.insert_disk(1, marker_disk(11));
+    cart.insert_disk(2, marker_disk(12));
+    cart.insert_disk(3, marker_disk(13));
+
+    let cases: [(u8, u8); 4] = [
+        (dskreg::DRIVE2 | dskreg::DRIVE1 | dskreg::DRIVE0, 12), // bit2 wins
+        (dskreg::DRIVE1 | dskreg::DRIVE0, 11),                  // bit1 wins (no bit2)
+        (dskreg::DRIVE0, 10),                                   // bit0 wins
+        (dskreg::DRIVE3_OR_SIDE, 13),                           // only bit6 -> drive 3
+    ];
+    for (select_bits, expect_marker) in cases {
+        cart.write(0xFF40, dskreg::MOTOR_ON | select_bits);
+        assert_eq!(read_marker_byte(&mut cart), expect_marker, "select bits {select_bits:#04x}");
+    }
+}
+
+#[test]
+fn side_select_is_bit6_unless_it_is_selecting_drive3() {
+    let mut cart = disk_cart();
+    cart.insert_disk(0, two_sided_marker_disk(20, 21));
+
+    cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE0);
+    assert_eq!(read_marker_byte(&mut cart), 20, "bit6 clear -> side 0");
+
+    cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE0 | dskreg::DRIVE3_OR_SIDE);
+    assert_eq!(read_marker_byte(&mut cart), 21, "bit6 set with drive0 selected -> side 1");
+}
+
+#[test]
+fn not_ready_status_bit_reflects_missing_disk_or_motor_off() {
+    let mut cart = disk_cart();
+    cart.insert_disk(0, marker_disk(1));
+
+    cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE0);
+    assert_eq!(cart.read(0xFF48) & status::NOT_READY, 0, "mounted + motor on -> ready");
+
+    cart.write(0xFF40, dskreg::DRIVE0); // motor off
+    assert_eq!(cart.read(0xFF48) & status::NOT_READY, status::NOT_READY, "motor off -> not ready");
+
+    cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE1); // unmounted drive
+    assert_eq!(cart.read(0xFF48) & status::NOT_READY, status::NOT_READY, "unmounted drive -> not ready");
+}
+
+// ============================================================================
+// WD1773 command state machine
+// ============================================================================
+
+/// A disk whose track 0, sector 1 is filled with `i as u8` for `i` in
+/// `0..256` — lets a read-sector test confirm both delivery order and value.
+fn index_pattern_disk() -> JvcDisk {
+    let bytes: Vec<u8> = (0..ONE_TRACK_BYTES).map(|i| i as u8).collect();
+    JvcDisk::from_bytes(bytes).unwrap()
+}
+
+/// Comfortably longer than the implementation's fixed Type I/RNF settle delay.
+const SETTLE: u32 = 200;
+/// The implementation's DRQ pacing interval, mirrored here so tests can step
+/// exactly one byte at a time.
+const DRQ_INTERVAL: u32 = 30;
+/// Mirrors the WD1773's CRC trailer: the gap between a read's final data-byte
+/// DRQ and command completion (2 byte times).
+const CRC_TRAILER: u32 = 2 * DRQ_INTERVAL;
+
+#[test]
+fn restore_zeroes_track_register_and_sets_track0_plus_intrq() {
+    let mut wd = WD1773::new();
+    let mut disk = index_pattern_disk();
+    wd.track = 5;
+    wd.write_command(0x00, Some(&mut disk), 0); // Restore, no verify
+    assert!(wd.busy);
+    wd.tick(SETTLE, Some(&mut disk), 0);
+    assert!(!wd.busy);
+    assert!(wd.intrq);
+    assert_eq!(wd.track, 0);
+    let s = wd.read_status(true, true);
+    assert_eq!(s & status::TRACK0, status::TRACK0);
+    assert!(!wd.intrq, "reading status must clear INTRQ");
+}
+
+#[test]
+fn seek_moves_to_the_data_register_value() {
+    let mut wd = WD1773::new();
+    let mut disk = JvcDisk::from_bytes(vec![0u8; 10 * ONE_TRACK_BYTES]).unwrap(); // 10 tracks
+    wd.data = 5;
+    wd.write_command(0x10, Some(&mut disk), 0); // Seek, no verify
+    wd.tick(SETTLE, Some(&mut disk), 0);
+    assert!(!wd.busy);
+    assert!(wd.intrq);
+    assert_eq!(wd.track, 5);
+    assert_eq!(wd.read_status(true, true) & status::TRACK0, 0, "track 5 is not track 0");
+}
+
+#[test]
+fn verify_sets_rnf_when_the_target_track_is_beyond_the_image() {
+    let mut wd = WD1773::new();
+    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track only
+    wd.data = 5; // beyond the single mounted track
+    wd.write_command(0x14, Some(&mut disk), 0); // Seek with Verify (V bit set)
+    wd.tick(SETTLE, Some(&mut disk), 0);
+    assert!(!wd.busy);
+    assert!(wd.intrq, "RNF still completes with INTRQ");
+    assert_eq!(wd.read_status(true, true) & status::RECORD_NOT_FOUND, status::RECORD_NOT_FOUND);
+}
+
+#[test]
+fn read_sector_delivers_256_correct_bytes_paced_by_drq_then_intrq() {
+    let mut wd = WD1773::new();
+    let mut disk = index_pattern_disk();
+    wd.track = 0;
+    wd.sector = 1;
+    wd.write_command(0x80, Some(&mut disk), 0); // Read Sector, no multiple
+    assert!(wd.busy);
+    for expected in 0..256u32 {
+        wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+        assert!(wd.drq, "DRQ must be asserted for byte {expected}");
+        // INTRQ must trail the final byte's DRQ by the CRC-read time: if it
+        // rose together with it, the FD-502's NMI would preempt the halt
+        // loop's collection of the last byte of every sector.
+        assert!(!wd.intrq, "INTRQ before byte {expected} was collected");
+        assert_eq!(wd.read_data(), expected as u8, "byte {expected}");
+    }
+    wd.tick(CRC_TRAILER, Some(&mut disk), 0);
+    assert!(!wd.busy, "busy must clear once all 256 bytes are delivered");
+    assert!(wd.intrq);
+    assert_eq!(
+        wd.read_status(true, true) & status::LOST_DATA,
+        0,
+        "a fully-serviced read must not report LOST DATA"
+    );
+}
+
+#[test]
+fn write_sector_round_trips_into_the_image() {
+    let mut wd = WD1773::new();
+    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap();
+    wd.track = 0;
+    wd.sector = 1;
+    wd.write_command(0xA0, Some(&mut disk), 0); // Write Sector, no multiple
+    assert!(wd.busy);
+    for expected in 0..256u32 {
+        wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+        assert!(wd.drq, "DRQ must request byte {expected}");
+        wd.write_data(expected as u8, Some(&mut disk), 0);
+    }
+    assert!(!wd.busy);
+    assert!(wd.intrq);
+    let off = disk.sector_offset(0, 0, 1).unwrap();
+    let written = disk.read_bytes(off, 256);
+    let expected: Vec<u8> = (0..256u32).map(|i| i as u8).collect();
+    assert_eq!(written, expected.as_slice());
+}
+
+#[test]
+fn write_sector_to_a_write_protected_image_sets_status_and_does_not_transfer() {
+    let mut wd = WD1773::new();
+    let mut disk = JvcDisk::from_bytes(vec![0xAAu8; ONE_TRACK_BYTES]).unwrap();
+    disk.set_write_protected(true);
+    wd.track = 0;
+    wd.sector = 1;
+    wd.write_command(0xA0, Some(&mut disk), 0);
+    assert!(!wd.busy, "write-protected write must not transfer");
+    assert!(wd.intrq);
+    assert_eq!(wd.read_status(true, true) & status::WRITE_PROTECT, status::WRITE_PROTECT);
+    let off = disk.sector_offset(0, 0, 1).unwrap();
+    assert_eq!(disk.read_bytes(off, 1)[0], 0xAA, "image must be untouched");
+}
+
+#[test]
+fn read_sector_sets_rnf_when_the_sector_is_missing() {
+    let mut wd = WD1773::new();
+    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // spt=18
+    wd.track = 0;
+    wd.sector = 99; // out of range
+    wd.write_command(0x80, Some(&mut disk), 0);
+    wd.tick(SETTLE, Some(&mut disk), 0);
+    assert!(!wd.busy);
+    assert!(wd.intrq);
+    assert_eq!(wd.read_status(true, true) & status::RECORD_NOT_FOUND, status::RECORD_NOT_FOUND);
+}
+
+#[test]
+fn force_interrupt_cancels_a_pending_command() {
+    let mut wd = WD1773::new();
+    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap();
+    wd.track = 0;
+    wd.sector = 1;
+    wd.write_command(0xA0, Some(&mut disk), 0); // Write Sector: busy, awaiting DRQ
+    assert!(wd.busy);
+    wd.write_command(0xD0, None, 0); // Force Interrupt, low nibble 0: cancel only
+    assert!(!wd.busy);
+    assert!(!wd.intrq, "low nibble 0 must not raise INTRQ");
+    // The cancelled write must never complete on its own.
+    wd.tick(10_000, Some(&mut disk), 0);
+    assert!(!wd.intrq);
+    assert!(!wd.busy);
+}
+
+#[test]
+fn force_interrupt_with_i3_sets_intrq_even_while_idle() {
+    let mut wd = WD1773::new();
+    assert!(!wd.busy);
+    wd.write_command(0xD8, None, 0); // Force Interrupt, I3 set
+    assert!(wd.intrq);
+}
+
+#[test]
+fn status_read_clears_intrq() {
+    let mut wd = WD1773::new();
+    wd.write_command(0xD8, None, 0);
+    assert!(wd.intrq);
+    wd.read_status(true, true);
+    assert!(!wd.intrq);
+}
+
+#[test]
+fn multiple_read_increments_the_sector_register_then_rnf_past_the_last_sector() {
+    // spt=3 so the run-off-the-end case is reachable quickly.
+    let mut bytes = vec![3u8, 1, 1, 1, 0]; // spt=3, sides=1, size 256, first id 1
+    for sector in 1u8..=3 {
+        bytes.extend(vec![sector; 256]);
+    }
+    let mut disk = JvcDisk::from_bytes(bytes).unwrap();
+    let mut wd = WD1773::new();
+    wd.track = 0;
+    wd.sector = 1;
+    wd.write_command(0x90, Some(&mut disk), 0); // Read Sector, multiple
+
+    for sector in 1u8..=3 {
+        assert_eq!(wd.sector, sector, "sector register before reading sector {sector}");
+        for _ in 0..256 {
+            wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+            assert_eq!(wd.read_data(), sector, "sector {sector}");
+        }
+        // The CRC trailer after the sector's last byte doubles as the
+        // inter-sector gap: once it elapses, the register rolls onto the next
+        // sector — or, past the end of the track, the lookup fails with RNF.
+        wd.tick(CRC_TRAILER, Some(&mut disk), 0);
+    }
+    assert!(!wd.busy);
+    assert!(wd.intrq);
+    assert_eq!(wd.read_status(true, true) & status::RECORD_NOT_FOUND, status::RECORD_NOT_FOUND);
+}
+
+// ============================================================================
+// Integration: boot Disk Extended Color BASIC and read a synthesized RS-DOS
+// directory via DIR.
+// ============================================================================
+
+fn boot_machine() -> Machine {
+    Machine::new(MachineConfig::default(), load_rom("coco3.rom"))
+}
+
+fn screen_row(m: &mut Machine, row: u16) -> String {
+    (0..32)
+        .map(|c| {
+            let code = m.bus.read(0x0400 + row * 32 + c) & 0x3F;
+            if code < 0x20 { (b'@' + code) as char } else { (b' ' + (code - 0x20)) as char }
+        })
+        .collect()
+}
+
+fn tap(m: &mut Machine, pos: (u8, u8)) {
+    for _ in 0..3 {
+        m.bus.keyboard.set(pos, true);
+        m.run_field();
+    }
+    m.bus.keyboard.set(pos, false);
+    for _ in 0..3 {
+        m.run_field();
+    }
+}
+
+fn tap_char(m: &mut Machine, c: char) {
+    let (pos, shift) = coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
+    if shift {
+        m.bus.keyboard.set(coco_core::keyboard::SHIFT, true);
+    }
+    tap(m, pos);
+    if shift {
+        m.bus.keyboard.set(coco_core::keyboard::SHIFT, false);
+    }
+}
+
+fn type_str(m: &mut Machine, s: &str) {
+    for c in s.chars() {
+        tap_char(m, c);
+    }
+}
+
+/// Directory track (RS-DOS): track 17, 0-indexed physical track (the 18th
+/// track on a 35-track disk).
+const DIR_TRACK: u8 = 17;
+/// GAT (granule allocation table) sector.
+const GAT_SECTOR: u8 = 2;
+/// First directory-entry sector; entries run through sector 11.
+const DIR_FIRST_SECTOR: u8 = 3;
+const DIR_LAST_SECTOR: u8 = 11;
+const SECTOR_SIZE: usize = 256;
+const DIR_ENTRY_SIZE: usize = 32;
+
+/// Synthesize a headerless 35-track/18-spt/1-side/256B RS-DOS disk with one
+/// file, "HELLO.BAS", occupying granule 0 (track 0, both granules — i.e. the
+/// first 2 tracks worth of granules; RS-DOS granules are half-tracks, 2 per
+/// track, 9 sectors each on a 18-spt disk).
+fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JvcDisk {
+    const TRACKS: usize = 35;
+    let mut bytes = vec![0u8; TRACKS * ONE_TRACK_BYTES];
+
+    let track_offset = |track: usize, sector: u8| -> usize {
+        (track * 18 + (sector as usize - 1)) * SECTOR_SIZE
+    };
+
+    // GAT: 68 granules, $FF = free, except granule 0 = $C1 (last granule of
+    // the file, 1 sector used in its last sector).
+    let gat_off = track_offset(DIR_TRACK as usize, GAT_SECTOR);
+    bytes[gat_off..gat_off + 68].fill(0xFF);
+    bytes[gat_off] = 0xC1;
+
+    // Directory entries: sectors 3..=11, 8 x 32-byte entries per sector,
+    // unused entries start with $FF. First entry = our file.
+    for sector in DIR_FIRST_SECTOR..=DIR_LAST_SECTOR {
+        let off = track_offset(DIR_TRACK as usize, sector);
+        bytes[off..off + SECTOR_SIZE].fill(0xFF);
+    }
+    let entry_off = track_offset(DIR_TRACK as usize, DIR_FIRST_SECTOR);
+    let mut name = [b' '; 8];
+    for (i, b) in filename8.bytes().enumerate() {
+        name[i] = b;
+    }
+    let mut ext = [b' '; 3];
+    for (i, b) in ext3.bytes().enumerate() {
+        ext[i] = b;
+    }
+    bytes[entry_off..entry_off + 8].copy_from_slice(&name);
+    bytes[entry_off + 8..entry_off + 11].copy_from_slice(&ext);
+    bytes[entry_off + 11] = 0x00; // file type: BASIC program
+    bytes[entry_off + 12] = 0xFF; // ASCII flag (not used for BAS, but harmless)
+    bytes[entry_off + 13] = 0x00; // first granule
+    bytes[entry_off + 14] = 0x00; // bytes in last sector (MSB)
+    bytes[entry_off + 15] = 0x01; // bytes in last sector (LSB) - 1 byte used
+    for b in &mut bytes[entry_off + 16..entry_off + DIR_ENTRY_SIZE] {
+        *b = 0;
+    }
+
+    JvcDisk::from_bytes(bytes).unwrap()
+}
+
+#[test]
+fn boots_to_disk_basic_and_dir_lists_the_synthesized_file() {
+    const FIELDS: usize = 400;
+    let mut m = boot_machine();
+    let mut cart = DiskCart::new(load_rom("disk11.rom"));
+    cart.insert_disk(0, synthesized_rsdos_disk("HELLO", "BAS"));
+    m.insert_cartridge(Box::new(cart));
+    m.reset();
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+    let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
+    assert!(banner, "expected the Disk BASIC banner; row0 = {:?}", screen_row(&mut m, 0));
+
+    type_str(&mut m, "DIR");
+    tap_char(&mut m, '\r');
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+
+    let found = (0..16).any(|r| screen_row(&mut m, r).contains("HELLO"));
+    assert!(
+        found,
+        "expected DIR to list HELLO.BAS; screen:\n{}",
+        (0..16).map(|r| screen_row(&mut m, r)).collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[test]
+fn boots_to_disk_basic_without_a_disk_inserted() {
+    const FIELDS: usize = 400;
+    let mut m = boot_machine();
+    m.insert_cartridge(Box::new(DiskCart::new(load_rom("disk11.rom"))));
+    m.reset();
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+    let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
+    assert!(banner, "expected the Disk BASIC banner even with no disk mounted (no spurious HALT)");
+}

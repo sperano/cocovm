@@ -5,6 +5,7 @@
 pub mod bus;
 pub mod cart;
 pub mod config;
+pub mod fdc;
 mod font6847;
 mod font_gime;
 pub mod gime;
@@ -13,6 +14,7 @@ pub mod joystick;
 pub mod keyboard;
 pub mod pia;
 pub mod video;
+pub mod wd1773;
 
 pub use bus::SystemBus;
 pub use config::{MachineConfig, MemorySize, VideoStandard};
