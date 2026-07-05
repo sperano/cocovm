@@ -50,6 +50,31 @@ mod type4 {
     pub const IMMEDIATE_INTRQ: u8 = 0x08;
 }
 
+/// MFM control-byte constants recognized by the Write Track (format) stream
+/// parser ([`feed_write_track_byte`]). Everything else in the stream is
+/// literal ID/data payload or gap filler (spec).
+mod mfm {
+    /// Sync/preamble marker (`A1` on the wire; also presets CRC on real
+    /// hardware, irrelevant here). At least one run of these precedes every
+    /// address mark.
+    pub const SYNC: u8 = 0xF5;
+    /// Index-AM preamble (`C2` on the wire). DSKINI never emits an index
+    /// address mark; treated as filler.
+    pub const INDEX_AM_PREAMBLE: u8 = 0xF6;
+    /// "Write CRC": one host byte causes the chip to emit two CRC bytes —
+    /// a field terminator from the host's point of view.
+    pub const WRITE_CRC: u8 = 0xF7;
+    /// ID address mark: the next [`ID_FIELD_LEN`] literal bytes are
+    /// track/side/sector/size.
+    pub const ID_AM: u8 = 0xFE;
+    /// Data address mark (normal data).
+    pub const DATA_AM: u8 = 0xFB;
+    /// Deleted-data address mark — treated identically to [`DATA_AM`] here.
+    pub const DELETED_DATA_AM: u8 = 0xF8;
+    /// Bytes in an ID field: track, side, sector, size code.
+    pub const ID_FIELD_LEN: usize = 4;
+}
+
 /// Status register bit assignments. Bit 1 and bit 2 are reused between Type I
 /// (INDEX_PULSE/TRACK0) and Type II/III (DRQ/LOST_DATA) status presentations —
 /// [`WD1773::read_status`] picks the right meaning from `last_was_type1`.
@@ -100,13 +125,14 @@ const CRC_TRAILER_CYCLES: u32 = 2 * DRQ_INTERVAL_CYCLES;
 const READ_ADDRESS_LEN: usize = 6;
 
 /// Bytes a Type III Write Track (format) command consumes before completing —
-/// a 300 RPM double-density (250 kbit/s MFM) track's approximate byte count
-/// (spec-provided). Parsing the format stream is not implemented (milestone 1
-/// scope): the bytes are discarded and no sector layout is written.
-/// TODO: parse the format stream (gap/sync/ID/data fields) once formatting
-/// from within the emulator is needed; today only pre-built JVC images are
-/// supported.
-const WRITE_TRACK_BYTE_COUNT: usize = 6250;
+/// headroom above DSKINI 1.1's own 6280-byte double-density track template
+/// (32×$4E gap1 + 18 sectors' ID/gap2/sync/data/gap3 fields + 200×$4E gap4;
+/// spec-provided). The stream IS parsed in double density (see `mod mfm`,
+/// [`FormatState`], [`feed_write_track_byte`]) to lay sectors into the
+/// mounted image; FM format streams are still only consumed and discarded
+/// (FM parsing is unimplemented — density comes from `WD1773`'s
+/// `density_double` field, set via [`WD1773::set_double_density`]).
+const WRITE_TRACK_BYTE_COUNT: usize = 6400;
 
 /// Which family of Type I step commands last ran, so a bare "Step" (no
 /// direction of its own) repeats the last Step-In/Step-Out direction — the
@@ -123,6 +149,25 @@ enum TransferKind {
     WriteSector,
     ReadAddress,
     WriteTrack,
+}
+
+/// Write Track (format) mark-triggered parser state: scans the incoming
+/// byte stream for MFM address marks framed by `$F5` sync runs and
+/// terminated by `$F7` (see `mfm` module and [`feed_write_track_byte`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FormatState {
+    /// Skipping gap/filler bytes, waiting for a `$F5` sync run.
+    Gap,
+    /// At least one `$F5` seen; the next non-`$F5` byte is the address mark.
+    Sync,
+    /// `$FE` seen: still gathering the 4 literal ID bytes (track, side, sector, size).
+    IdField(Vec<u8>),
+    /// The 4 ID bytes are gathered; consuming (ignored) bytes until `$F7`.
+    IdFieldTerm { track: u8, sector: u8, size_code: u8 },
+    /// `$FB`/`$F8` seen: still gathering the sector's data payload (target length also carried).
+    DataField(Vec<u8>, usize),
+    /// The payload is fully gathered; consuming (ignored) bytes until `$F7`.
+    DataFieldTerm(Vec<u8>),
 }
 
 /// An in-progress byte-paced data transfer (Type II Read/Write Sector, Type III
@@ -152,6 +197,17 @@ struct Transfer {
     /// byte from a previous transfer — this flag keeps that default from
     /// spuriously flagging LOST DATA on a command's first delivered byte.
     first_byte: bool,
+    /// Write Track's mark-triggered parser state; unused (stays [`FormatState::Gap`])
+    /// for every other `kind`.
+    format_state: FormatState,
+    /// (track, sector, size_code) of the most recently completed ID field
+    /// during a Write Track transfer; `None` until the first one completes,
+    /// and for every other `kind`.
+    last_id_field: Option<(u8, u8, u8)>,
+    /// True if a Write Track transfer should run the MFM format-stream parser
+    /// (double density at dispatch time) rather than discard bytes (FM).
+    /// Never consulted outside the `WriteTrack` arms.
+    format_enabled: bool,
 }
 
 /// What the controller is doing between command dispatch and completion.
@@ -202,6 +258,13 @@ pub struct WD1773 {
     status_record_not_found: bool,
     status_write_protect: bool,
     op: Op,
+    /// Density the controller currently operates at, from DSKREG bit5
+    /// (`dskreg::DENSITY_AND_NMI_ENABLE`, set out-of-band via
+    /// [`WD1773::set_double_density`] — see `crate::fdc`). Gates whether
+    /// Write Track parses the MFM format stream (`true`) or discards it (FM,
+    /// `false`, unimplemented). Defaults `true` so direct-construction unit
+    /// tests that never call the setter still exercise the MFM/parsing path.
+    density_double: bool,
 }
 
 impl Default for WD1773 {
@@ -221,6 +284,7 @@ impl Default for WD1773 {
             status_record_not_found: false,
             status_write_protect: false,
             op: Op::Idle,
+            density_double: true,
         }
     }
 }
@@ -228,6 +292,16 @@ impl Default for WD1773 {
 impl WD1773 {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the density the controller currently operates at (DSKREG bit5,
+    /// `dskreg::DENSITY_AND_NMI_ENABLE` — see `crate::fdc::DiskCart::write`,
+    /// which calls this before every `write_command`). Determines whether a
+    /// subsequently-dispatched Write Track runs the MFM format-stream parser
+    /// (`true`) or falls back to discard-only behavior (`false`, FM — parsing
+    /// FM format streams is unimplemented).
+    pub fn set_double_density(&mut self, double_density: bool) {
+        self.density_double = double_density;
     }
 
     /// Read the status register ($FF48 on the CoCo). Side effect: clears INTRQ
@@ -293,10 +367,18 @@ impl WD1773 {
             return;
         }
         if t.index < t.total {
-            if t.kind == TransferKind::WriteSector
-                && let Some(d) = disk.as_deref_mut()
-            {
-                d.write_byte(t.offset + t.index, val);
+            match t.kind {
+                TransferKind::WriteSector => {
+                    if let Some(d) = disk.as_deref_mut() {
+                        d.write_byte(t.offset + t.index, val);
+                    }
+                }
+                TransferKind::WriteTrack if t.format_enabled => {
+                    feed_write_track_byte(&mut t, val, disk.as_deref_mut(), side);
+                }
+                // FM Write Track (format_enabled == false): discard, matching
+                // the pre-parser behavior — FM parsing is unimplemented.
+                _ => {}
             }
             t.index += 1;
         }
@@ -355,7 +437,7 @@ impl WD1773 {
             }
             cmd_type::WRITE_TRACK => {
                 self.last_was_type1 = false;
-                self.start_write_track();
+                self.start_write_track(disk);
             }
             _ => unreachable!("4-bit nibble: all 16 values are matched above"),
         }
@@ -431,6 +513,9 @@ impl WD1773 {
                         offset,
                         buf,
                         first_byte: true,
+                        format_state: FormatState::Gap,
+                        last_id_field: None,
+                        format_enabled: true,
                     });
                 }
                 None => self.start_not_found(),
@@ -461,6 +546,9 @@ impl WD1773 {
                         offset,
                         buf: Vec::new(),
                         first_byte: true,
+                        format_state: FormatState::Gap,
+                        last_id_field: None,
+                        format_enabled: true,
                     });
                 }
                 None => self.start_not_found(),
@@ -493,15 +581,33 @@ impl WD1773 {
                     offset: 0,
                     buf,
                     first_byte: true,
+                    format_state: FormatState::Gap,
+                    last_id_field: None,
+                    format_enabled: true,
                 });
             }
             _ => self.start_not_found(),
         }
     }
 
-    /// Write Track (Type III, `0xF`, format): consumes [`WRITE_TRACK_BYTE_COUNT`]
-    /// DRQ-paced bytes and discards them — see that constant's doc comment.
-    fn start_write_track(&mut self) {
+    /// Write Track (Type III, `0xF`, format): consumes
+    /// [`WRITE_TRACK_BYTE_COUNT`] DRQ-paced bytes, parsing them into sectors
+    /// laid onto the mounted image via [`feed_write_track_byte`] when the
+    /// controller is in double density (FM streams are still just discarded —
+    /// see that constant's doc comment). Write-protect is checked up front,
+    /// mirroring [`WD1773::start_write_sector`]'s WP arm; there's no
+    /// "not found" case since a format command has no target sector to fail
+    /// to find (spec).
+    fn start_write_track(&mut self, disk: Option<&mut JvcDisk>) {
+        if let Some(d) = disk
+            && d.write_protected()
+        {
+            self.status_write_protect = true;
+            self.busy = false;
+            self.intrq = true;
+            self.op = Op::Idle;
+            return;
+        }
         self.op = Op::Transfer(Transfer {
             kind: TransferKind::WriteTrack,
             remaining: DRQ_INTERVAL_CYCLES,
@@ -511,6 +617,9 @@ impl WD1773 {
             offset: 0,
             buf: Vec::new(),
             first_byte: true,
+            format_state: FormatState::Gap,
+            last_id_field: None,
+            format_enabled: self.density_double,
         });
     }
 
@@ -640,6 +749,11 @@ impl WD1773 {
                     // transfer, so a still-unread last byte of the previous
                     // sector is a genuine overrun (spec's LOST DATA case).
                     first_byte: false,
+                    // Only Read/Write Sector ever set `multiple`, so this
+                    // continuation never applies to Write Track.
+                    format_state: FormatState::Gap,
+                    last_id_field: None,
+                    format_enabled: true,
                 });
                 return;
             }
@@ -649,4 +763,79 @@ impl WD1773 {
         self.intrq = true;
         self.op = Op::Idle;
     }
+}
+
+/// Feed one Write Track (format) byte through the mark-triggered parser,
+/// advancing `t.format_state`. Recognizes the MFM control bytes in `mod mfm`;
+/// everything else is either gap filler (`Gap`/`Sync` states) or literal
+/// ID/data payload (`IdField`/`DataField` states — captured verbatim, never
+/// interpreted as a mark, per spec). On a completed data field (the `$F7`
+/// that ends `DataFieldTerm`), writes the buffered payload into `disk` at
+/// `t.last_id_field`'s (track, sector, size_code) and `hw_side` — the
+/// hardware side select, not the stream's own (discarded) literal side byte,
+/// since the WD1773 never derives side from the ID field on Write Track
+/// (spec). Does nothing if `disk` is `None` or no ID field has completed yet.
+fn feed_write_track_byte(t: &mut Transfer, val: u8, disk: Option<&mut JvcDisk>, hw_side: u8) {
+    let state = std::mem::replace(&mut t.format_state, FormatState::Gap);
+    t.format_state = match state {
+        FormatState::Gap => {
+            if val == mfm::SYNC {
+                FormatState::Sync
+            } else {
+                FormatState::Gap
+            }
+        }
+        FormatState::Sync => match val {
+            mfm::SYNC => FormatState::Sync,
+            mfm::ID_AM => FormatState::IdField(Vec::new()),
+            mfm::DATA_AM | mfm::DELETED_DATA_AM => {
+                let target_len = t
+                    .last_id_field
+                    .map(|(_, _, size_code)| 128usize << size_code)
+                    .or_else(|| disk.as_deref().map(JvcDisk::sector_size))
+                    .unwrap_or(256);
+                FormatState::DataField(Vec::new(), target_len)
+            }
+            // Index-AM preamble: unused by DSKINI, but a real mark — filler.
+            mfm::INDEX_AM_PREAMBLE => FormatState::Gap,
+            // Any other unexpected byte: also filler.
+            _ => FormatState::Gap,
+        },
+        FormatState::IdField(mut buf) => {
+            buf.push(val);
+            if buf.len() == mfm::ID_FIELD_LEN {
+                // buf[1] is the literal side byte — deliberately discarded
+                // (see this function's doc comment).
+                FormatState::IdFieldTerm { track: buf[0], sector: buf[2], size_code: buf[3] }
+            } else {
+                FormatState::IdField(buf)
+            }
+        }
+        FormatState::IdFieldTerm { track, sector, size_code } => {
+            if val == mfm::WRITE_CRC {
+                t.last_id_field = Some((track, sector, size_code));
+                FormatState::Gap
+            } else {
+                FormatState::IdFieldTerm { track, sector, size_code }
+            }
+        }
+        FormatState::DataField(mut buf, target_len) => {
+            buf.push(val);
+            if buf.len() == target_len {
+                FormatState::DataFieldTerm(buf)
+            } else {
+                FormatState::DataField(buf, target_len)
+            }
+        }
+        FormatState::DataFieldTerm(buf) => {
+            if val == mfm::WRITE_CRC {
+                if let (Some(d), Some((track, sector, size_code))) = (disk, t.last_id_field) {
+                    d.format_sector(track, hw_side, sector, size_code, &buf);
+                }
+                FormatState::Gap
+            } else {
+                FormatState::DataFieldTerm(buf)
+            }
+        }
+    };
 }

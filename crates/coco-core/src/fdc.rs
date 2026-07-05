@@ -24,6 +24,9 @@ pub const DEFAULT_SIDES: usize = 1;
 pub const DEFAULT_SECTOR_SIZE_CODE: u8 = 1;
 /// Default first sector ID when the header omits byte 3.
 pub const DEFAULT_FIRST_SECTOR_ID: u8 = 1;
+/// Cap on tracks a Write Track (format) can grow an image to (MAME
+/// `jvc_dsk.cpp`'s own track cap; spec-provided).
+pub const MAX_FORMAT_TRACKS: usize = 82;
 
 /// JVC header length is the file length modulo this — headerless images (the
 /// common case) are an exact multiple of 256 bytes.
@@ -111,8 +114,7 @@ impl JvcDisk {
 
         let data_len = file_len - header_len;
         let track_bytes = sectors_per_track * sector_size * sides;
-        let track_count = if track_bytes == 0 { 0 } else { data_len / track_bytes };
-        if track_bytes == 0 || !data_len.is_multiple_of(track_bytes) || track_count == 0 {
+        if track_bytes == 0 || !data_len.is_multiple_of(track_bytes) {
             return Err(JvcError::InvalidGeometry {
                 file_len,
                 header_len,
@@ -121,6 +123,7 @@ impl JvcDisk {
                 sector_size,
             });
         }
+        let track_count = data_len / track_bytes;
 
         Ok(Self {
             sectors_per_track,
@@ -206,6 +209,55 @@ impl JvcDisk {
     pub fn write_byte(&mut self, offset: usize, val: u8) {
         self.data[offset] = val;
         self.dirty = true;
+    }
+
+    /// Lay down one formatted sector during a Write Track (DSKINI-style format).
+    /// Writes `data` at `(track, side, sector_id)` if the geometry matches this
+    /// image's own (side < sides(), sector_id in [first_sector_id,
+    /// first_sector_id+sectors_per_track), 128<<size_code == sector_size()),
+    /// growing the image with zero-filled tracks (capped at
+    /// [`MAX_FORMAT_TRACKS`]) if `track` is beyond the current track count.
+    /// Silently does nothing if the geometry doesn't match (foreign sector ID,
+    /// wrong size code, side >= sides(), including a side-1 write on a
+    /// single-sided image) or the cap is exceeded — real hardware has no error
+    /// path for this, and JvcDisk can't represent a sector outside its own
+    /// geometry (spec).
+    pub fn format_sector(&mut self, track: u8, side: u8, sector_id: u8, size_code: u8, data: &[u8]) {
+        let size = 128usize << size_code;
+        if size != self.sector_size || side as usize >= self.sides {
+            return;
+        }
+        let Some(sector_index) = sector_id.checked_sub(self.first_sector_id) else { return };
+        if sector_index as usize >= self.sectors_per_track {
+            return;
+        }
+        if track as usize >= self.track_count && !self.grow_to_track(track as usize) {
+            return;
+        }
+        let offset = self
+            .sector_offset(track, side, sector_id)
+            .expect("geometry validated above; grow_to_track (if needed) covers `track`");
+        self.data[offset..offset + size].copy_from_slice(data);
+        self.dirty = true;
+    }
+
+    /// Extend the image with zero-filled tracks so `track` exists (lets Write
+    /// Track format a blank/undersized image from nothing), capped at
+    /// [`MAX_FORMAT_TRACKS`]. Returns `false` (image left unchanged) if `track`
+    /// is beyond the cap; otherwise appends zero-filled track(s) after the
+    /// current last track (row order is `track*sides+side`, so tracks are
+    /// contiguous blocks — appending at the end is geometry-safe) and updates
+    /// `track_count`.
+    fn grow_to_track(&mut self, track: usize) -> bool {
+        if track >= MAX_FORMAT_TRACKS {
+            return false;
+        }
+        let track_bytes = self.sectors_per_track * self.sector_size * self.sides;
+        let new_track_count = track + 1;
+        self.data.resize(self.data.len() + (new_track_count - self.track_count) * track_bytes, 0);
+        self.track_count = new_track_count;
+        self.dirty = true;
+        true
     }
 }
 
@@ -405,6 +457,7 @@ impl Cartridge for DiskCart {
         match addr {
             DSKREG_BASE..=DSKREG_LAST => self.dskreg = val,
             STATUS_COMMAND_REG => {
+                self.fdc.set_double_density(self.dskreg & dskreg::DENSITY_AND_NMI_ENABLE != 0);
                 let side = self.side();
                 let idx = self.drive_index();
                 let disk = selected_disk(&mut self.drives, idx);

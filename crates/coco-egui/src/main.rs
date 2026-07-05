@@ -277,6 +277,35 @@ impl CocoApp {
         }
     }
 
+    /// Create a brand-new, blank (0-track) floppy image at `path` and mount it
+    /// in `drive`, inserting the FD-502 controller first if needed. Refuses to
+    /// overwrite an existing file. Failures land in [`Self::cart_error`].
+    fn new_blank_disk(&mut self, drive: usize, path: PathBuf) {
+        let result = (|| -> Result<(), String> {
+            self.ensure_disk_controller()?;
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    return Err(format!(
+                        "{} already exists; use Insert Disk to mount an existing image, or \
+                         choose a different name",
+                        path.display()
+                    ));
+                }
+                Err(e) => return Err(format!("could not create {}: {e}", path.display())),
+            }
+            let disk = JvcDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
+            self.write_back_disk(drive); // whatever was in the drive first
+            let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
+            cart.insert_disk(drive, disk);
+            self.disk_paths[drive] = Some(path);
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.cart_error = Some(e);
+        }
+    }
+
     /// Eject the floppy in `drive`, writing a modified image back to its file
     /// first (like MAME/VCC, in-place).
     fn eject_disk(&mut self, drive: usize) {
@@ -512,6 +541,16 @@ impl eframe::App for CocoApp {
                                 .pick_file()
                             {
                                 self.insert_disk(drive, path);
+                            }
+                        }
+                        if ui.button(format!("New Blank Disk in Drive {drive}…")).clicked() {
+                            ui.close();
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Disk image", &["dsk"])
+                                .set_file_name("untitled.dsk")
+                                .save_file()
+                            {
+                                self.new_blank_disk(drive, path);
                             }
                         }
                         let label = match &self.disk_paths[drive] {
