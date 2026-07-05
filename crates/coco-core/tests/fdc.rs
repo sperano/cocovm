@@ -959,6 +959,32 @@ fn boots_to_disk_basic_without_a_disk_inserted() {
     assert!(banner, "expected the Disk BASIC banner even with no disk mounted (no spurious HALT)");
 }
 
+/// Hot-plugging the controller into a machine already sitting at the BASIC
+/// prompt must power-cycle to take effect: the DK probe that links Disk
+/// BASIC only runs on the ROM's cold-start path, and a warm reset skips it
+/// because BASIC's warm-start magic is still in RAM (the frontend's
+/// Insert/New Disk menu path relies on this).
+#[test]
+fn controller_added_mid_session_boots_disk_basic_after_power_cycle() {
+    const FIELDS: usize = 400;
+    let mut m = boot_machine();
+    m.reset();
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+    let plain = (0..16).any(|r| screen_row(&mut m, r).contains("COLOR BASIC"))
+        && !(0..16).any(|r| screen_row(&mut m, r).contains("DISK"));
+    assert!(plain, "precondition: booted to non-disk BASIC");
+
+    m.insert_cartridge(Box::new(DiskCart::new(load_rom("disk11.rom"))));
+    m.power_cycle();
+    for _ in 0..FIELDS {
+        m.run_field();
+    }
+    let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
+    assert!(banner, "expected Disk BASIC after mid-session insert + power cycle");
+}
+
 /// Like [`load_rom`] but returns `None` instead of panicking when the
 /// (git-ignored) ROM image isn't present, so the LOADM regression below skips
 /// gracefully in an asset-less checkout.

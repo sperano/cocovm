@@ -83,7 +83,7 @@ fn cap_row(ui: &mut egui::Ui, caps: &[Cap], width: f32, symbolic: bool) {
 pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool) {
     const KEY_W: f32 = 42.0;
     const WIDE_W: f32 = 58.0;
-    egui::Window::new("CoCo Keyboard Mapping")
+    egui::Window::new(crate::window_title(ctx, "CoCo Keyboard Mapping"))
         .open(open)
         .resizable(false)
         .collapsible(true)

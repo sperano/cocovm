@@ -164,6 +164,26 @@ struct CocoApp {
     /// written canonical `.cas`, also synthesize and write a `.wav` of the
     /// tape audio (`coco_core::cassette_wav::synthesize_wav`) alongside it.
     save_tape_wav: bool,
+    /// A disk action waiting on the "this will power-cycle the machine"
+    /// confirmation dialog — set instead of acting when the FD-502 isn't in
+    /// the cartridge slot yet, since inserting it swaps the cartridge and
+    /// cold-restarts the machine (unsaved state is lost).
+    pending_disk_action: Option<PendingDiskAction>,
+}
+
+/// See [`CocoApp::pending_disk_action`].
+enum PendingDiskAction {
+    Insert { drive: usize, path: PathBuf },
+    NewBlank { drive: usize, path: PathBuf },
+}
+
+/// A window title styled uniformly across the app: sized to the button font
+/// and strong (bold). Applied to every [`egui::Window`] title so they match.
+/// We can't just resize `TextStyle::Heading` globally (egui's window-title
+/// fallback) because content `ui.heading()` calls share that style.
+pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
+    let size = ctx.style().text_styles[&egui::TextStyle::Button].size;
+    egui::RichText::new(text).size(size).strong()
 }
 
 /// Drives the UI exposes. The FD-502 latch can address four, but real setups
@@ -199,6 +219,7 @@ impl CocoApp {
             disk_paths: [None, None],
             tape_path: None,
             save_tape_wav,
+            pending_disk_action: None,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -228,7 +249,7 @@ impl CocoApp {
             Ok(pak) => {
                 self.flush_dirty_disks();
                 self.machine.insert_cartridge(Box::new(pak));
-                self.machine.reset();
+                self.machine.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
             }
@@ -238,11 +259,12 @@ impl CocoApp {
         }
     }
 
-    /// Eject the current cartridge and reset the machine.
+    /// Eject the current cartridge and power-cycle the machine (cartridge
+    /// swaps are machine-off operations on real hardware).
     fn eject_cartridge(&mut self) {
         self.flush_dirty_disks();
         self.machine.eject_cartridge();
-        self.machine.reset();
+        self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
     }
@@ -261,10 +283,33 @@ impl CocoApp {
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         self.flush_dirty_disks();
         self.machine.insert_cartridge(Box::new(DiskCart::new(rom.into_boxed_slice())));
-        self.machine.reset();
+        // Power cycle, not warm reset: the DK probe that links Disk BASIC
+        // only runs on the ROM's cold-start path (a warm reset leaves the
+        // DOS ROM unlinked and the drives dead).
+        self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
         Ok(())
+    }
+
+    /// Menu-path entry for Insert Disk: acts immediately when the FD-502 is
+    /// already in the slot; otherwise parks the action behind the
+    /// power-cycle confirmation dialog (see [`Self::pending_disk_action`]).
+    fn request_insert_disk(&mut self, drive: usize, path: PathBuf) {
+        if self.machine.bus.cart.as_disk_cart().is_some() {
+            self.insert_disk(drive, path);
+        } else {
+            self.pending_disk_action = Some(PendingDiskAction::Insert { drive, path });
+        }
+    }
+
+    /// Menu-path entry for New Blank Disk, gated like [`Self::request_insert_disk`].
+    fn request_new_blank_disk(&mut self, drive: usize, path: PathBuf) {
+        if self.machine.bus.cart.as_disk_cart().is_some() {
+            self.new_blank_disk(drive, path);
+        } else {
+            self.pending_disk_action = Some(PendingDiskAction::NewBlank { drive, path });
+        }
     }
 
     /// Mount the floppy image at `path` in `drive`, inserting the FD-502
@@ -656,7 +701,7 @@ impl eframe::App for CocoApp {
                                 .add_filter("Disk image", &["dsk", "jvc", "os9"])
                                 .pick_file()
                             {
-                                self.insert_disk(drive, path);
+                                self.request_insert_disk(drive, path);
                             }
                         }
                         if ui.button(format!("New Blank Disk in Drive {drive}…")).clicked() {
@@ -666,7 +711,7 @@ impl eframe::App for CocoApp {
                                 .set_file_name("untitled.dsk")
                                 .save_file()
                             {
-                                self.new_blank_disk(drive, path);
+                                self.request_new_blank_disk(drive, path);
                             }
                         }
                         let label = match &self.disk_paths[drive] {
@@ -821,9 +866,51 @@ impl eframe::App for CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
+        if self.pending_disk_action.is_some() {
+            // Match the dialog body to the button font (egui's default body
+            // text is a touch smaller) and give the text room.
+            let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
+            const DIALOG_MARGIN: i8 = 16;
+            egui::Window::new(window_title(ctx, "Insert disk controller?"))
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(
+                                "The FD-502 disk controller isn't installed yet. Installing \
+                                 it swaps the cartridge and cold-restarts the machine — any \
+                                 unsaved work in memory will be lost.",
+                            )
+                            .size(font),
+                        );
+                        ui.add_space(DIALOG_MARGIN as f32);
+                        ui.horizontal(|ui| {
+                            // Roomier buttons: pad text away from the button edge.
+                            ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                            if ui.button("Insert & Restart").clicked() {
+                                match self.pending_disk_action.take() {
+                                    Some(PendingDiskAction::Insert { drive, path }) => {
+                                        self.insert_disk(drive, path)
+                                    }
+                                    Some(PendingDiskAction::NewBlank { drive, path }) => {
+                                        self.new_blank_disk(drive, path)
+                                    }
+                                    None => {}
+                                }
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.pending_disk_action = None;
+                            }
+                        });
+                    });
+                });
+        }
+
         if let Some(err) = self.cart_error.clone() {
             let mut open = true;
-            egui::Window::new("Cartridge Error")
+            egui::Window::new(window_title(ctx, "Cartridge Error"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
@@ -1002,6 +1089,12 @@ struct Cli {
     #[arg(long, value_name = "PATH", conflicts_with = "cart")]
     disk1: Option<PathBuf>,
 
+    /// Insert the FD-502 disk controller with empty drives, so Disk BASIC
+    /// boots and blank disks can be added (and DSKINI'd) from the menu.
+    /// Implied by --disk0/--disk1.
+    #[arg(long, default_value_t = false, conflicts_with = "cart")]
+    fd502: bool,
+
     /// Installed RAM.
     #[arg(long, value_enum, default_value = "512k")]
     ram: RamArg,
@@ -1042,6 +1135,7 @@ fn main() -> eframe::Result<()> {
     };
     let cart_path = cli.cart;
     let disk_paths = [cli.disk0, cli.disk1];
+    let fd502 = cli.fd502;
     let save_tape_wav = cli.tape_wav;
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
@@ -1060,7 +1154,11 @@ fn main() -> eframe::Result<()> {
         "coco-rs",
         options,
         Box::new(move |cc| {
-            Ok(Box::new(CocoApp::new(cc, config, rom, cart_path, disk_paths, save_tape_wav)))
+            let mut app = CocoApp::new(cc, config, rom, cart_path, disk_paths, save_tape_wav);
+            if fd502 && let Err(e) = app.ensure_disk_controller() {
+                app.cart_error = Some(e);
+            }
+            Ok(Box::new(app))
         }),
     )
 }

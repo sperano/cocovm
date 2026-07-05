@@ -151,10 +151,27 @@ impl Machine {
         self.cpu.reset(&mut self.bus);
     }
 
+    /// Power the machine off and on: clear RAM (so BASIC's warm-start magic
+    /// is gone and the ROM runs its full cold-start path — including the DK
+    /// probe that links Disk BASIC and the cartridge autostart check, both
+    /// skipped on a warm reset) and return the GIME and PIAs to power-on
+    /// state. The cartridge and cassette stay in their slots: this is what
+    /// really happens when a cartridge is swapped on real hardware, which is
+    /// only ever done machine-off.
+    pub fn power_cycle(&mut self) {
+        self.bus.ram.fill(0);
+        self.bus.gime = GIME::new();
+        self.bus.pia0 = pia::MC6821::new();
+        self.bus.pia1 = pia::MC6821::new();
+        self.prev_halted = false;
+        self.reset();
+    }
+
     /// Plug a cartridge into the expansion port. Real cartridges are only
     /// swapped machine-off, and the stock ROM's autostart/DK-probe logic only
     /// runs at cold start, so this does not reset the machine itself — call
-    /// [`Machine::reset`] afterwards.
+    /// [`Machine::power_cycle`] afterwards (a warm [`Machine::reset`] skips
+    /// the cold-start cartridge probes).
     pub fn insert_cartridge(&mut self, cart: Box<dyn cart::Cartridge>) {
         self.bus.cart = cart;
     }
