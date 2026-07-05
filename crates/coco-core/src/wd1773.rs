@@ -97,6 +97,25 @@ pub mod status {
 /// double-density byte time at ~32µs, 0.895 MHz CPU clock (spec-provided).
 const DRQ_INTERVAL_CYCLES: u32 = 30;
 
+/// MFM byte times a Read/Write Sector command spends searching from the current
+/// head position to the target sector's DATA field before the first byte is
+/// available: the ID address mark, its 4-byte ID field and 2 CRC bytes, the
+/// ~22-byte Gap 2, and the data address mark. This is the *minimum* — a real
+/// rotation adds up to a full revolution on top — but it is already far longer
+/// than the microseconds-scale setup a driver runs between writing the command
+/// and enabling its byte-transfer handshake.
+///
+/// Load-bearing for polled/HALT drivers that issue the command, run a short
+/// fixed delay, THEN arm the transfer (NitrOS-9 `boot_1773`'s ~54-cycle
+/// `Delay2` before it sets HALT-enable and enters its `LDA DATAREG` loop). If
+/// the first DRQ fires during that delay window the driver never collects those
+/// bytes and the transfer trips LOST DATA — which `boot_1773`'s NMI handler
+/// reads as `E$Read` and the boot fails. Pacing the *first* byte by one
+/// [`DRQ_INTERVAL_CYCLES`] (as every earlier command did) put it inside the
+/// window; DSKCON only escaped because it arms HALT before issuing the command.
+const FIRST_SECTOR_SEARCH_BYTES: u32 = 30;
+const FIRST_BYTE_LATENCY_CYCLES: u32 = FIRST_SECTOR_SEARCH_BYTES * DRQ_INTERVAL_CYCLES;
+
 /// Sentinel `remaining` value for a write-direction transfer waiting on the host
 /// to supply the next byte via [`WD1773::write_data`] — no natural timeout fires
 /// this event; only an explicit `write_data` call rearms it. Chosen so the
@@ -498,6 +517,9 @@ impl WD1773 {
 
     /// Read Sector (Type II, `0x8`/`0x9`).
     fn start_read_sector(&mut self, cmd: u8, disk: Option<&mut JvcDisk>, side: u8) {
+        // No data yet: DRQ low so a HALT-enabled driver stalls at its LDA
+        // DATAREG loop until the first byte lands (see FIRST_BYTE_LATENCY_CYCLES).
+        self.drq = false;
         let multiple = cmd & type1::UPDATE_TRACK_REG != 0; // bit4, same physical bit as T
         match disk {
             Some(d) => match d.sector_offset(self.physical_track, side, self.sector) {
@@ -506,7 +528,7 @@ impl WD1773 {
                     let buf = d.read_bytes(offset, total).to_vec();
                     self.op = Op::Transfer(Transfer {
                         kind: TransferKind::ReadSector,
-                        remaining: DRQ_INTERVAL_CYCLES,
+                        remaining: FIRST_BYTE_LATENCY_CYCLES,
                         index: 0,
                         total,
                         multiple,
@@ -526,6 +548,9 @@ impl WD1773 {
 
     /// Write Sector (Type II, `0xA`/`0xB`).
     fn start_write_sector(&mut self, cmd: u8, disk: Option<&mut JvcDisk>, side: u8) {
+        // No sector located yet: DRQ low until the ID field is found and the
+        // controller requests the first byte (see FIRST_BYTE_LATENCY_CYCLES).
+        self.drq = false;
         let multiple = cmd & type1::UPDATE_TRACK_REG != 0;
         match disk {
             Some(d) if d.write_protected() => {
@@ -539,7 +564,7 @@ impl WD1773 {
                     let total = d.sector_size();
                     self.op = Op::Transfer(Transfer {
                         kind: TransferKind::WriteSector,
-                        remaining: DRQ_INTERVAL_CYCLES,
+                        remaining: FIRST_BYTE_LATENCY_CYCLES,
                         index: 0,
                         total,
                         multiple,
@@ -562,6 +587,9 @@ impl WD1773 {
     /// unmodelled). The sector register is deliberately left alone (spec: "not
     /// needed").
     fn start_read_address(&mut self, disk: Option<&mut JvcDisk>, side: u8) {
+        // No ID field under the head yet: DRQ low until the next address mark
+        // spins around (see FIRST_BYTE_LATENCY_CYCLES).
+        self.drq = false;
         match disk {
             Some(d) if (self.physical_track as usize) < d.track_count() => {
                 let buf = vec![
@@ -574,7 +602,7 @@ impl WD1773 {
                 ];
                 self.op = Op::Transfer(Transfer {
                     kind: TransferKind::ReadAddress,
-                    remaining: DRQ_INTERVAL_CYCLES,
+                    remaining: FIRST_BYTE_LATENCY_CYCLES,
                     index: 0,
                     total: READ_ADDRESS_LEN,
                     multiple: false,
@@ -697,6 +725,24 @@ impl WD1773 {
                 // very first byte of a fresh command — see `first_byte`.
                 if self.drq && !t.first_byte {
                     self.status_lost_data = true;
+                }
+                // The WD1773 has no side input: head (side) select is the
+                // external DSKREG bit, and the controller reads the data field
+                // off whatever side the head sits over *when the field streams*
+                // — after the ID-address-mark search ([`FIRST_BYTE_LATENCY_CYCLES`]),
+                // not when the command was written. OS-9's RBF driver relies on
+                // this: it issues the Read Sector command, *then* flips DSKREG to
+                // the next side, before the (halting) DATAREG read. So resolve a
+                // Read Sector's bytes from the live side at first delivery, not at
+                // dispatch. (Multiple-sector continuations already re-resolve in
+                // `finish_transfer`; this covers the first/only sector.)
+                if t.first_byte
+                    && t.kind == TransferKind::ReadSector
+                    && let Some(d) = disk.as_deref()
+                    && let Some(offset) = d.sector_offset(self.physical_track, side, self.sector)
+                {
+                    t.offset = offset;
+                    t.buf = d.read_bytes(offset, t.total).to_vec();
                 }
                 self.data = t.buf[t.index];
                 self.drq = true;

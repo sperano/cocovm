@@ -183,6 +183,43 @@ fn underline_line(lines_per_row: usize) -> Option<usize> {
     }
 }
 
+/// ASCII stand-in for a GIME hi-res text character code that has no printable
+/// ASCII meaning: codes $00-$1F are accented/special glyphs, not C0 control
+/// codes (`font_gime.rs`), so they can't be rendered as their own ASCII value.
+const UNPRINTABLE_CHAR: char = '.';
+
+/// Decode a GIME hi-res text field to plain ASCII strings, one per character
+/// row — a debug/probe dump, not a renderer. Shares [`decode_text`] and
+/// [`Scanout`] with [`render_text`] so the two can't drift apart; unlike
+/// [`render_text`] this ignores attribute bytes' colour/blink/underline
+/// fields (only the character byte of each cell is read) and scan lines
+/// (each text row is fetched once, not once per [`TextMode::lines_per_row`]).
+///
+/// Character bytes are ASCII from $20 up (`font_gime.rs`); $00-$1F are
+/// accented/special glyphs with no ASCII equivalent and print as
+/// [`UNPRINTABLE_CHAR`].
+pub fn text_lines(g: &GIME, ram: &[u8]) -> Vec<String> {
+    let mode = decode_text(g);
+    let bytes_per_char = if mode.attributes { 2 } else { 1 };
+    let mut scan = Scanout::new(g, ram, mode.cols * bytes_per_char, mode.lines_per_row);
+    let rows = mode.lines.checked_div(mode.lines_per_row).unwrap_or(0);
+
+    let mut out = Vec::with_capacity(rows);
+    for _ in 0..rows {
+        let line = (0..mode.cols)
+            .map(|col| {
+                let code = scan.fetch(col * bytes_per_char) & CHAR_CODE_MASK;
+                if (0x20..0x7F).contains(&code) { code as char } else { UNPRINTABLE_CHAR }
+            })
+            .collect();
+        out.push(line);
+        for _ in 0..mode.lines_per_row {
+            scan.next_line();
+        }
+    }
+    out
+}
+
 /// Render a GIME hi-res text field into `fb` (resized to fit); returns the new
 /// framebuffer dimensions. `ram` is physical memory; `blink_on` is the blink
 /// phase (blinking characters are blanked while it is true).

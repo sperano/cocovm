@@ -130,6 +130,115 @@ fn nonzero_attribute_flag_is_rejected() {
 }
 
 // ============================================================================
+// OS-9 LSN0 geometry sniffing for headerless images (os9_dsk.cpp find_size)
+// ============================================================================
+
+/// JVC default sectors/track and sector size, as assumed for any headerless
+/// image (the sniff only ever trusts LSN0 against these).
+const OS9_SPT: usize = 18;
+const OS9_SECTOR_SIZE: usize = 256;
+/// Byte offset within a sector safely clear of every LSN0 field the sniff
+/// reads (0x00-0x02, 0x10-0x12), used to stamp per-(track,side) markers
+/// without corrupting the identification sector under test.
+const MARKER_OFFSET: usize = 0x50;
+
+/// Build a headerless image of `tracks` x `sides` x 18 x 256B with a
+/// consistent OS-9 LSN0 (DD.TOT/DD.FMT/DD.SPT) stamped into its first sector.
+fn os9_synthetic_disk(tracks: usize, sides: usize) -> Vec<u8> {
+    let total_sectors = tracks * sides * OS9_SPT;
+    let mut bytes = vec![0u8; total_sectors * OS9_SECTOR_SIZE];
+    bytes[0] = ((total_sectors >> 16) & 0xFF) as u8;
+    bytes[1] = ((total_sectors >> 8) & 0xFF) as u8;
+    bytes[2] = (total_sectors & 0xFF) as u8;
+    bytes[0x10] = if sides == 2 { 1 } else { 0 };
+    bytes[0x11] = ((OS9_SPT >> 8) & 0xFF) as u8;
+    bytes[0x12] = (OS9_SPT & 0xFF) as u8;
+    bytes
+}
+
+#[test]
+fn os9_lsn0_sniff_adopts_two_sides_and_halves_track_count() {
+    // Mirrors the real 368,640-byte NitrOS-9 40-track/2-side disk: a bare JVC
+    // default parse would see 80 tracks x 1 side, but a consistent LSN0
+    // declaring 2 sides must flip that to 40 x 2.
+    const TRACKS: usize = 40;
+    const SIDES: usize = 2;
+    let mut bytes = os9_synthetic_disk(TRACKS, SIDES);
+    // Stamp a marker identifying (track, side) into every sector-1, at an
+    // offset clear of the LSN0 fields, to check the adopted geometry's
+    // interleaving (track-major, side-interleaved — same row order `JvcDisk`
+    // already uses for explicit 2-sided headers).
+    for track in 0..TRACKS {
+        for side in 0..SIDES {
+            let row = track * SIDES + side;
+            let sector_off = row * OS9_SPT * OS9_SECTOR_SIZE;
+            bytes[sector_off + MARKER_OFFSET] = (row % 256) as u8;
+        }
+    }
+
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.track_count(), TRACKS);
+    assert_eq!(disk.sides(), SIDES);
+    assert_eq!(disk.sectors_per_track(), OS9_SPT);
+
+    for track in 0..TRACKS as u8 {
+        for side in 0..SIDES as u8 {
+            let off = disk.sector_offset(track, side, 1).unwrap();
+            let row = track as usize * SIDES + side as usize;
+            let expected = (row % 256) as u8;
+            assert_eq!(
+                disk.read_bytes(off + MARKER_OFFSET, 1)[0],
+                expected,
+                "track{track} side{side}"
+            );
+        }
+    }
+}
+
+#[test]
+fn os9_lsn0_with_mismatched_tot_keeps_naive_defaults() {
+    // LSN0 claims 2 sides (DD.FMT bit 0 set) but DD.TOT is corrupted so it no
+    // longer matches file_len -- the sniff must reject it outright and the
+    // naive JVC-default geometry (18 spt, 1 side) must be kept exactly.
+    const TRACKS: usize = 10;
+    let mut bytes = os9_synthetic_disk(TRACKS, 1);
+    bytes[0x10] = 1; // claims 2 sides
+    bytes[2] = bytes[2].wrapping_add(1); // DD.TOT now wrong
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.sides(), 1);
+    assert_eq!(disk.track_count(), TRACKS);
+    assert_eq!(disk.sectors_per_track(), OS9_SPT);
+}
+
+#[test]
+fn headerless_disk_with_no_os9_signature_is_unaffected_by_the_sniff() {
+    // All-zero LSN0 (DD.TOT bytes all zero, no OS-9 signature): DD.SPT reads
+    // as 0 != 18, so the sniff must reject it and the plain RS-DOS 35-track
+    // default parse (already covered by `headerless_image_uses_all_defaults`)
+    // is unaffected. Restated here to pin the sniff-rejection path directly.
+    let bytes = vec![0u8; 35 * ONE_TRACK_BYTES];
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.track_count(), 35);
+    assert_eq!(disk.sides(), 1);
+}
+
+/// The real NitrOS-9 Level 2 CoCo3 40-track disk image, if present
+/// (git-ignored, local-only asset — see `CLAUDE.md`). Skips gracefully when
+/// absent, following `load_rom`'s pattern below.
+#[test]
+fn real_nitros9_40_track_disk_parses_as_40_tracks_2_sides() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../disks/NOS9_6809_L2_v030300_coco3_40d_1.dsk");
+    let Ok(bytes) = std::fs::read(&path) else {
+        eprintln!("skipping real_nitros9_40_track_disk_parses_as_40_tracks_2_sides: {} not present", path.display());
+        return;
+    };
+    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    assert_eq!(disk.track_count(), 40);
+    assert_eq!(disk.sides(), 2);
+}
+
+// ============================================================================
 // DSKREG decode + update_lines (coco_fdc.cpp)
 // ============================================================================
 
@@ -156,9 +265,10 @@ fn two_sided_marker_disk(side0: u8, side1: u8) -> JvcDisk {
     JvcDisk::from_bytes(bytes).unwrap()
 }
 
-/// Comfortably more than the implementation's DRQ pacing interval (spec: ~30
-/// cycles), enough for one sector-lookup command's first byte to land.
-const ONE_DRQ_INTERVAL: u32 = 64;
+/// Comfortably more than the implementation's first-byte search latency (~30
+/// byte times: the ID-field-to-data-field span a Read Sector spends before the
+/// first byte lands), so one sector read's first byte is ready.
+const ONE_DRQ_INTERVAL: u32 = 1200;
 
 /// Read sector 1 of track 0 through the currently-selected drive/side and
 /// return the byte delivered. Force-Interrupts first so a previous call's
@@ -288,6 +398,10 @@ const SETTLE: u32 = 200;
 /// The implementation's DRQ pacing interval, mirrored here so tests can step
 /// exactly one byte at a time.
 const DRQ_INTERVAL: u32 = 30;
+/// The implementation's first-byte search latency (30 byte times): a Read/Write
+/// Sector command's first DRQ trails the command by the ID-field-to-data-field
+/// span, not one DRQ interval.
+const FIRST_BYTE_LATENCY: u32 = 30 * DRQ_INTERVAL;
 /// Mirrors the WD1773's CRC trailer: the gap between a read's final data-byte
 /// DRQ and command completion (2 byte times).
 const CRC_TRAILER: u32 = 2 * DRQ_INTERVAL;
@@ -342,7 +456,10 @@ fn read_sector_delivers_256_correct_bytes_paced_by_drq_then_intrq() {
     wd.write_command(0x80, Some(&mut disk), 0); // Read Sector, no multiple
     assert!(wd.busy);
     for expected in 0..256u32 {
-        wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+        // The first byte waits out the sector-search latency; the rest pace at
+        // one DRQ interval each.
+        let step = if expected == 0 { FIRST_BYTE_LATENCY } else { DRQ_INTERVAL };
+        wd.tick(step, Some(&mut disk), 0);
         assert!(wd.drq, "DRQ must be asserted for byte {expected}");
         // INTRQ must trail the final byte's DRQ by the CRC-read time: if it
         // rose together with it, the FD-502's NMI would preempt the halt
@@ -360,6 +477,95 @@ fn read_sector_delivers_256_correct_bytes_paced_by_drq_then_intrq() {
     );
 }
 
+/// Regression: a Read Sector's first data byte must not arrive during the short
+/// setup window between the command write and the driver arming its transfer
+/// loop. NitrOS-9 Level 2's `boot_1773` issues Read Sector, runs a ~54-cycle
+/// `Delay2`, THEN enables HALT and enters its `LDA DATAREG` loop; if the first
+/// byte lands inside that delay the driver never collects it and the transfer
+/// trips LOST DATA, which its NMI handler reads as `E$Read` (the boot prints
+/// FAILED). Pacing the first byte at one DRQ interval — the pre-fix behaviour —
+/// put it squarely inside the window.
+#[test]
+fn read_sector_first_byte_waits_out_the_driver_setup_delay() {
+    /// Comfortably longer than boot_1773's ~54-cycle post-command `Delay2`.
+    const DRIVER_SETUP_DELAY: u32 = 70;
+
+    let mut wd = WD1773::new();
+    let mut disk = index_pattern_disk();
+    wd.track = 0;
+    wd.sector = 1;
+    wd.write_command(0x80, Some(&mut disk), 0); // Read Sector, no multiple
+
+    // The driver hasn't started collecting bytes yet: no DRQ may fire (and thus
+    // no byte can be lost) during its post-command setup delay.
+    wd.tick(DRIVER_SETUP_DELAY, Some(&mut disk), 0);
+    assert!(!wd.drq, "no DRQ may fire during the driver's post-command setup delay");
+
+    // Now collect all 256 bytes the way the HALT loop does: spin one byte-time
+    // at a time until each DRQ, then take the byte.
+    for expected in 0..256u32 {
+        while !wd.drq {
+            wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+        }
+        assert_eq!(wd.read_data(), expected as u8, "byte {expected}");
+    }
+    wd.tick(CRC_TRAILER, Some(&mut disk), 0);
+    assert!(!wd.busy);
+    assert!(wd.intrq);
+    assert_eq!(
+        wd.read_status(true, true) & status::LOST_DATA,
+        0,
+        "the first byte must survive the setup delay — no LOST DATA"
+    );
+}
+
+/// Regression: a Read Sector's data field is fetched from whichever side the
+/// head sits over when the field *streams* (after the ID-address-mark search),
+/// not from the side selected when the command was written. The WD1773 has no
+/// side input — head select is the external DSKREG bit, sampled continuously.
+///
+/// NitrOS-9 Level 2's RBF driver relies on this when a sequential read crosses a
+/// side boundary: it writes the Read Sector command with the *old* side still
+/// latched in DSKREG, then flips DSKREG to the new side before its (halting)
+/// `LDA DATAREG` loop collects the first byte. Sampling the side at command
+/// dispatch instead reads the wrong physical side — off by one full track's
+/// worth of sectors — silently corrupting every module whose body straddles a
+/// side boundary (e.g. `rb1773`), which wedges the boot at "NITROS9 BOOT".
+#[test]
+fn read_sector_samples_side_when_the_data_field_streams_not_at_dispatch() {
+    // Two-sided default-geometry image; mark (track 0, sector 1) distinctly on
+    // each side so the delivered byte reveals which side was actually read.
+    const SIDE0_MARK: u8 = 0xAA;
+    const SIDE1_MARK: u8 = 0x55;
+    let mut header = vec![18u8, 2u8]; // spt=18, sides=2; rest defaults (256B)
+    header.extend(vec![0u8; ONE_TRACK_BYTES * 2]); // one 2-sided track
+    let mut disk = JvcDisk::from_bytes(header).unwrap();
+    assert_eq!(disk.sides(), 2);
+    let off0 = disk.sector_offset(0, 0, 1).unwrap();
+    let off1 = disk.sector_offset(0, 1, 1).unwrap();
+    for i in 0..disk.sector_size() {
+        disk.write_byte(off0 + i, SIDE0_MARK);
+        disk.write_byte(off1 + i, SIDE1_MARK);
+    }
+
+    let mut wd = WD1773::new();
+    wd.track = 0;
+    wd.sector = 1;
+    // Command written while DSKREG still selects side 0 (the previous sector's
+    // side).
+    wd.write_command(0x80, Some(&mut disk), 0); // Read Sector, single
+    // DSKREG flips to side 1 during the ID-search latency, before the data
+    // field streams — modelled by ticking the first-byte latency with side 1.
+    wd.tick(FIRST_BYTE_LATENCY, Some(&mut disk), 1);
+    assert!(wd.drq, "first byte must be ready after the search latency");
+    assert_eq!(
+        wd.read_data(),
+        SIDE1_MARK,
+        "the data field must come from the side selected when it streams (side 1), \
+         not the side latched at command dispatch (side 0)"
+    );
+}
+
 #[test]
 fn write_sector_round_trips_into_the_image() {
     let mut wd = WD1773::new();
@@ -369,7 +575,9 @@ fn write_sector_round_trips_into_the_image() {
     wd.write_command(0xA0, Some(&mut disk), 0); // Write Sector, no multiple
     assert!(wd.busy);
     for expected in 0..256u32 {
-        wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+        // The first byte request waits out the sector-search latency.
+        let step = if expected == 0 { FIRST_BYTE_LATENCY } else { DRQ_INTERVAL };
+        wd.tick(step, Some(&mut disk), 0);
         assert!(wd.drq, "DRQ must request byte {expected}");
         wd.write_data(expected as u8, Some(&mut disk), 0);
     }
@@ -458,8 +666,11 @@ fn multiple_read_increments_the_sector_register_then_rnf_past_the_last_sector() 
 
     for sector in 1u8..=3 {
         assert_eq!(wd.sector, sector, "sector register before reading sector {sector}");
-        for _ in 0..256 {
-            wd.tick(DRQ_INTERVAL, Some(&mut disk), 0);
+        for byte in 0..256 {
+            // Only the command's very first byte waits out the sector-search
+            // latency; multiple-sector continuations roll on at one DRQ interval.
+            let step = if sector == 1 && byte == 0 { FIRST_BYTE_LATENCY } else { DRQ_INTERVAL };
+            wd.tick(step, Some(&mut disk), 0);
             assert_eq!(wd.read_data(), sector, "sector {sector}");
         }
         // The CRC trailer after the sector's last byte doubles as the
@@ -927,5 +1138,76 @@ fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
         !screen.iter().any(|row| row.contains("?IO ERROR")),
         "DIR must not report an IO error after DSKINI; screen:\n{}",
         screen.join("\n")
+    );
+}
+
+/// Like [`try_load_rom`], but for a disk image under the git-ignored `disks/`.
+fn try_load_disk(name: &str) -> Option<Vec<u8>> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../disks")
+        .join(name);
+    std::fs::read(&path).ok()
+}
+
+/// End-to-end regression that NitrOS-9 Level 2 boots all the way to its shell
+/// prompt on the real 40-track two-sided image, booted via Disk BASIC's `DOS`
+/// command. Two FD-502 bugs each stalled this boot:
+///
+/// - Read Sector first-byte latency: `boot_1773` arms its HALT/NMI collection
+///   loop only after a short post-command `Delay2`; a first byte paced at one
+///   DRQ interval landed inside that delay, tripped LOST DATA, and printed
+///   FAILED after the "NITROS9 BOOT" banner.
+/// - Read Sector side-at-dispatch: the RBF driver flips DSKREG to the next side
+///   *after* writing the Read Sector command, so sampling the side at dispatch
+///   read the wrong physical side across every side boundary and corrupted
+///   `rb1773`'s body — the console (`/Term`) attach then wedged the boot at the
+///   "NITROS9 BOOT" banner forever (see
+///   `read_sector_samples_side_when_the_data_field_streams_not_at_dispatch`).
+///
+/// Reaching the shell's `Time ?` startup prompt proves the whole boot module
+/// set loaded and linked and the console attach completed. Skips when the
+/// git-ignored ROM or disk assets aren't present.
+#[test]
+fn nitros9_l2_boot_reaches_shell_prompt() {
+    const BOOT_FIELDS: usize = 300;
+    const SETTLE_FIELDS: usize = 1500;
+    const DISK: &str = "NOS9_6809_L2_v030300_coco3_40d_1.dsk";
+
+    let (Some(coco), Some(disk_rom), Some(dsk)) = (
+        try_load_rom("coco3.rom"),
+        try_load_rom("disk11.rom"),
+        try_load_disk(DISK),
+    ) else {
+        eprintln!("skipping nitros9_l2_boot_reaches_shell_prompt: roms/ or disks/ assets not present");
+        return;
+    };
+
+    let mut m = Machine::new(MachineConfig::default(), coco);
+    let mut cart = DiskCart::new(disk_rom);
+    cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
+    m.insert_cartridge(Box::new(cart));
+    m.reset();
+    for _ in 0..BOOT_FIELDS {
+        m.run_field();
+    }
+    type_str(&mut m, "DOS");
+    tap_char(&mut m, '\r');
+    for _ in 0..SETTLE_FIELDS {
+        m.run_field();
+    }
+
+    // OS-9 switches to the GIME hi-res text screen; text_screen_lines() reads it.
+    let screen = m.text_screen_lines().join("\n");
+    assert!(
+        !screen.contains("FAILED"),
+        "NitrOS-9 boot must not report FAILED; screen:\n{screen}"
+    );
+    assert!(
+        screen.contains("NitrOS-9") && screen.contains("Level 2"),
+        "expected the NitrOS-9 Level 2 banner (console attach completed); screen:\n{screen}"
+    );
+    assert!(
+        screen.contains("Time ?"),
+        "expected the shell startup script's 'Time ?' prompt (full boot to shell); screen:\n{screen}"
     );
 }

@@ -32,6 +32,71 @@ pub const MAX_FORMAT_TRACKS: usize = 82;
 /// common case) are an exact multiple of 256 bytes.
 const HEADER_MODULUS: usize = 256;
 
+/// OS-9 "LSN0" identification-sector fields, sniffed from headerless images to
+/// disambiguate geometry a bare JVC-default parse gets wrong (MAME
+/// `os9_dsk.cpp` `os9_format::find_size`). Explicit JVC headers keep full
+/// authority — this sniff only ever runs when the header is absent.
+mod os9_lsn0 {
+    /// Sector length this module reads LSN0 from — a headerless image's
+    /// sectors are the JVC default 256 bytes (`os9_dsk.cpp:90-95`).
+    pub const LEN: usize = 256;
+    /// DD.TOT (total sector count): 24-bit big-endian at offset 0x00
+    /// (`os9_dsk.cpp:93`, `get_u24be(&os9_header[0x00])`).
+    pub const TOT_OFFSET: usize = 0x00;
+    /// DD.FMT (format byte) offset; only bit 0 is consulted (`os9_dsk.cpp:94`,
+    /// `util::BIT(os9_header[0x10], 0) ? 2 : 1`).
+    pub const FMT_OFFSET: usize = 0x10;
+    /// DD.FMT bit 0: clear = 1 side, set = 2 sides.
+    pub const FMT_SIDES_BIT: u8 = 0x01;
+    /// DD.SPT (sectors per track): 16-bit big-endian at offset 0x11
+    /// (`os9_dsk.cpp:95`, `get_u16be(&os9_header[0x11])`).
+    pub const SPT_OFFSET: usize = 0x11;
+}
+
+/// Sniff a headerless image's first 256 bytes as an OS-9 LSN0 identification
+/// sector and return the side count it declares (1 or 2), but only when the
+/// fields are fully self-consistent with `file_len` and this crate's own JVC
+/// default geometry — otherwise `None`, leaving the naive JVC-default parse
+/// untouched.
+///
+/// Trusted only if: DD.SPT equals the JVC default (18 — this crate doesn't
+/// support other sniffed geometries), `DD.TOT * 256 == file_len`, DD.TOT
+/// divides evenly by `DD.SPT * sides`, and the implied track count is nonzero
+/// and within [`MAX_FORMAT_TRACKS`] (MAME's largest floppy table entry is 80
+/// tracks). This rejects both non-OS-9 images (an all-zero LSN0 fails the SPT
+/// check) and disk-shaped-but-not-floppy images like a 1024-track cocosdc
+/// dump (fails the track-count cap).
+fn sniff_os9_sides(bytes: &[u8], file_len: usize) -> Option<usize> {
+    let lsn0 = bytes.get(..os9_lsn0::LEN)?;
+    let dd_tot = u32::from(lsn0[os9_lsn0::TOT_OFFSET]) << 16
+        | u32::from(lsn0[os9_lsn0::TOT_OFFSET + 1]) << 8
+        | u32::from(lsn0[os9_lsn0::TOT_OFFSET + 2]);
+    let sides = if lsn0[os9_lsn0::FMT_OFFSET] & os9_lsn0::FMT_SIDES_BIT != 0 {
+        2
+    } else {
+        1
+    };
+    let dd_spt =
+        (u16::from(lsn0[os9_lsn0::SPT_OFFSET]) << 8 | u16::from(lsn0[os9_lsn0::SPT_OFFSET + 1])) as usize;
+
+    if dd_spt != DEFAULT_SECTORS_PER_TRACK {
+        return None;
+    }
+    let headerless_sector_size = 128usize << DEFAULT_SECTOR_SIZE_CODE;
+    if dd_tot as usize * headerless_sector_size != file_len {
+        return None;
+    }
+    let sectors_per_side_group = dd_spt * sides;
+    if !(dd_tot as usize).is_multiple_of(sectors_per_side_group) {
+        return None;
+    }
+    let implied_tracks = dd_tot as usize / sectors_per_side_group;
+    if implied_tracks == 0 || implied_tracks > MAX_FORMAT_TRACKS {
+        return None;
+    }
+    Some(sides)
+}
+
 /// Error constructing a [`JvcDisk`] from a raw image.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JvcError {
@@ -103,7 +168,7 @@ impl JvcDisk {
             .copied()
             .map(usize::from)
             .unwrap_or(DEFAULT_SECTORS_PER_TRACK);
-        let sides = header.get(1).copied().map(usize::from).unwrap_or(DEFAULT_SIDES);
+        let mut sides = header.get(1).copied().map(usize::from).unwrap_or(DEFAULT_SIDES);
         let size_code = header.get(2).copied().unwrap_or(DEFAULT_SECTOR_SIZE_CODE);
         let sector_size = 128usize << size_code;
         let first_sector_id = header.get(3).copied().unwrap_or(DEFAULT_FIRST_SECTOR_ID);
@@ -123,7 +188,19 @@ impl JvcDisk {
                 sector_size,
             });
         }
-        let track_count = data_len / track_bytes;
+        let mut track_count = data_len / track_bytes;
+
+        // Headerless images only (an explicit JVC header keeps full authority):
+        // sniff LSN0 for an OS-9 identification sector. A 2-sided disk whose
+        // side-major bytes were parsed as 1 side needs its track count halved to
+        // match (see `sniff_os9_sides`'s doc comment for the trust conditions).
+        if header_len == 0
+            && sides == DEFAULT_SIDES
+            && sniff_os9_sides(&bytes, file_len) == Some(2)
+        {
+            sides = 2;
+            track_count /= 2;
+        }
 
         Ok(Self {
             sectors_per_track,

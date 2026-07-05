@@ -58,6 +58,22 @@ const SG4_UPPER_RIGHT: u8 = 0x04;
 const SG4_LOWER_LEFT: u8 = 0x02;
 const SG4_LOWER_RIGHT: u8 = 0x01;
 
+/// Decode one VDG alphanumeric screen byte's low 6 bits to the ASCII
+/// character it displays (ignores the semigraphics/inverse attribute bits —
+/// callers doing a plain-text dump don't care which glyph variant drew it).
+/// The MC6847 alphanumeric code space is `$00-$1F` -> `@A-Z[\]^_` (`@` + code)
+/// and `$20-$3F` -> a second copy of the ASCII block starting at space
+/// (`' '` + (code - `$20`)) — the same mapping used throughout this crate's
+/// tests and probes for the CoCo-compatible text screen.
+pub fn decode_alpha_char(code: u8) -> char {
+    let code = code & GLYPH_CODE_MASK;
+    if code < 0x20 {
+        (b'@' + code) as char
+    } else {
+        (b' ' + (code - 0x20)) as char
+    }
+}
+
 /// Render the text screen (`SCREEN_LEN` bytes) into `fb` (`FB_W*FB_H*4` bytes).
 ///
 /// `palette` is the resolved 16-entry GIME palette (RGBA). Each byte is either an

@@ -276,6 +276,65 @@ impl Machine {
         }
     }
 
+    /// Decode the current text screen to ASCII lines, whichever video mode is
+    /// active — a debug/probe helper, not a renderer (`gime_video::text_lines`
+    /// and `video::decode_alpha_char` do the actual decoding, shared with the
+    /// real renderers so this can't drift from what's actually on screen):
+    ///
+    /// - CoCo-compatible mode (INIT0 COCO=1): the legacy VDG alphanumeric
+    ///   screen at the SAM page base, decoded the same way `render_coco_text`
+    ///   reads it (through the bus, honouring the MMU).
+    /// - GIME hi-res text (INIT0 COCO=0, $FF98 BP=0): the GIME-native text
+    ///   buffer at the vertical-offset registers' physical address.
+    ///
+    /// The two graphics modes (VDG PMODE, GIME HSCREEN) have no text buffer to
+    /// decode; each returns one placeholder line naming the mode. Pair with
+    /// [`Machine::video_mode_summary`] to tell a "genuinely blank screen" apart
+    /// from "this is a graphics-mode screen with nothing to decode".
+    pub fn text_screen_lines(&mut self) -> Vec<String> {
+        match self.video_mode() {
+            VideoMode::CocoText | VideoMode::CocoGraphics => {
+                let base = self.bus.gime.sam_display_base();
+                (0..video::ROWS as u16)
+                    .map(|row| {
+                        (0..video::COLS as u16)
+                            .map(|col| {
+                                let addr = base.wrapping_add(row * video::COLS as u16 + col);
+                                video::decode_alpha_char(self.bus.read(addr))
+                            })
+                            .collect()
+                    })
+                    .collect()
+            }
+            VideoMode::GimeText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
+            VideoMode::GimeGraphics => {
+                vec!["<no text buffer: GIME graphics mode (HSCREEN, $FF98 BP=1)>".to_string()]
+            }
+        }
+    }
+
+    /// One-line diagnostic summary of the current video mode and its text/video
+    /// base address. Pairs with [`Machine::text_screen_lines`] to explain an
+    /// unexpectedly blank or garbled dump — most commonly, the machine has
+    /// switched to a graphics mode, which has no text buffer.
+    pub fn video_mode_summary(&self) -> String {
+        let g = &self.bus.gime;
+        match self.video_mode() {
+            VideoMode::CocoText => {
+                format!("video mode: CoCo-compatible text, base=${:04X}", g.sam_display_base())
+            }
+            VideoMode::CocoGraphics => {
+                format!("video mode: CoCo-compatible graphics (PMODE), base=${:04X}", g.sam_display_base())
+            }
+            VideoMode::GimeText => {
+                format!("video mode: GIME hi-res text, base=${:06X}", g.video_base())
+            }
+            VideoMode::GimeGraphics => {
+                format!("video mode: GIME graphics (HSCREEN), base=${:06X}", g.video_base())
+            }
+        }
+    }
+
     /// Render one video field into `framebuffer`, dispatching on the current mode.
     fn render_field(&mut self) {
         match self.video_mode() {
