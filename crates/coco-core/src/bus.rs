@@ -192,10 +192,22 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
-    /// Horizontal-sync edge: latches PIA0 CA1 (control reg $FF01, port A) and
-    /// the GIME HBORD source; also the GIME's per-scanline sample point for
-    /// the EI1 keyboard-interrupt input (a zero on any PA0–PA6 row while some
-    /// column is strobed — SEB Unravelled II), which fires on falling edge.
+    /// Horizontal-sync line: the GIME HS pin idles high and pulses low for 16
+    /// of 228 pixel clocks at line end (~4.5 µs; MAME `mc6847.cpp`
+    /// `TIMER_HSYNC_OFF_TIME`=212/`ON_TIME`=228). Our per-line model has no
+    /// resolution below one scanline, so both the falling and rising edges
+    /// are emitted back-to-back here rather than timed within the line; each
+    /// still only latches PIA0 CA1 (control reg $FF01, port A) and PIA1 CB1
+    /// (see below) if it matches that side's selected edge
+    /// ([`crate::pia::cr::C1_EDGE_HIGH`]), so software polling either edge —
+    /// stock BASIC's falling-edge CRA or NitrOS-9's rising-edge one — still
+    /// gets exactly one flag per line. The GIME HBORD source is raised once
+    /// per line regardless of edge selection: GIME border sources are
+    /// hardwired falling-edge only, not selectable (Lomont).
+    ///
+    /// Also the GIME's per-scanline sample point for the EI1
+    /// keyboard-interrupt input (a zero on any PA0–PA6 row while some column
+    /// is strobed — SEB Unravelled II), which fires on falling edge.
     ///
     /// Also the sample point for the expansion-port CART* line: auto-start
     /// game paks tie it to the Q clock (~895 kHz), so while one is inserted
@@ -203,8 +215,9 @@ impl SystemBus {
     /// GIME EI0 source (the same physical pin) every scanline, which is more
     /// than enough cadence to keep either interrupt path continuously fed.
     pub fn hsync(&mut self) {
-        self.pia0.a.pulse_c1();
+        self.pia0.a.set_c1(false);
         self.gime.raise(gime::intr::HBORD);
+        self.pia0.a.set_c1(true);
         // Buttons are included: SEB warns joystick fire buttons always trip EI1.
         let line_low = self.pia0_pa_pins() & 0x7F != 0x7F;
         if line_low && !self.kbd_line_low {
@@ -212,17 +225,29 @@ impl SystemBus {
         }
         self.kbd_line_low = line_low;
         if self.cart.cart_line_ties_q() {
-            self.pia1.b.pulse_c1();
+            self.pia1.b.set_c1(false);
             self.gime.raise(gime::intr::EI0);
+            self.pia1.b.set_c1(true);
         }
     }
 
-    /// Field-sync (~60 Hz vertical) edge: latches PIA0 CB1 (control reg $FF03,
-    /// port B) — the interrupt that drives BASIC's housekeeping loop — and the
-    /// GIME VBORD source.
-    pub fn vsync(&mut self) {
-        self.pia0.b.pulse_c1();
+    /// Field-sync falling edge (~60/50 Hz vertical, at
+    /// [`crate::config::VideoStandard::fs_falling_line`] scanlines into the
+    /// field, not at end-of-field): latches PIA0 CB1 (control reg $FF03, port
+    /// B) — the interrupt that drives BASIC's housekeeping loop — per its
+    /// selected edge, and raises the GIME VBORD source (Lomont: "VBORD
+    /// generated on falling edge of VSYNC").
+    pub fn fs_falling(&mut self) {
+        self.pia0.b.set_c1(false);
         self.gime.raise(gime::intr::VBORD);
+    }
+
+    /// Field-sync rising edge, at
+    /// [`crate::config::VideoStandard::fs_rising_line`] scanlines into the
+    /// field: latches PIA0 CB1 per its selected edge (e.g. NitrOS-9-style
+    /// rising-edge polling). No GIME border source is tied to this edge.
+    pub fn fs_rising(&mut self) {
+        self.pia0.b.set_c1(true);
     }
 
     /// Instantaneous speaker level, 0.0–1.0.

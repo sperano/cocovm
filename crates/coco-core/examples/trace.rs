@@ -68,9 +68,11 @@ fn main() {
 
     // Cart mode: faithful replica of Machine::run_field / run_cycles /
     // service_interrupts, with a trace line before every instruction.
+    let fs_falling_line = m.config.video.fs_falling_line();
+    let fs_rising_line = m.config.video.fs_rising_line();
     let mut logged = 0usize;
     'trace: loop {
-        for _line in 0..LINES_PER_FIELD {
+        for line in 0..LINES_PER_FIELD {
             let cycles_per_line = if m.bus.gime.cpu_fast {
                 CYCLES_PER_LINE_NORMAL * 2
             } else {
@@ -92,6 +94,12 @@ fn main() {
                 spent += m.step();
             }
             m.bus.hsync();
+            if line == fs_falling_line {
+                m.bus.fs_falling();
+            }
+            if line == fs_rising_line {
+                m.bus.fs_rising();
+            }
             // 4 ticks/cycle at normal speed, 2 at double: per-line total is
             // the same 228 either way (matches run_field's arithmetic).
             let ticks = if m.bus.gime.timer_is_fast() {
@@ -101,6 +109,5 @@ fn main() {
             };
             m.bus.gime.tick_timer(ticks);
         }
-        m.bus.vsync();
     }
 }

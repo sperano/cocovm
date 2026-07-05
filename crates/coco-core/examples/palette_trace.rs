@@ -26,7 +26,9 @@ fn main() {
             m.bus.cart = Box::new(quiet);
             println!("--- field {field}: CART line silenced");
         }
-        for _line in 0..262 {
+        let fs_falling_line = m.config.video.fs_falling_line();
+        let fs_rising_line = m.config.video.fs_rising_line();
+        for line in 0..262 {
             let cycles_per_line = if m.bus.gime.cpu_fast { 114 } else { 57 };
             let mut spent = 0u32;
             while spent < cycles_per_line {
@@ -52,10 +54,15 @@ fn main() {
                 }
             }
             m.bus.hsync();
+            if line == fs_falling_line {
+                m.bus.fs_falling();
+            }
+            if line == fs_rising_line {
+                m.bus.fs_rising();
+            }
             let ticks = if m.bus.gime.timer_is_fast() { 228 } else { 1 };
             m.bus.gime.tick_timer(ticks);
         }
-        m.bus.vsync();
         if field % 120 == 0 {
             println!(
                 "--- field {field}: palette={:02X?} sync_steps={sync_steps}",

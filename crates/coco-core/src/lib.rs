@@ -168,17 +168,28 @@ impl Machine {
     /// Run one video field's worth of emulation (`DESIGN.md` §4).
     ///
     /// Scanline-driven: each line runs a slice of CPU cycles then pulses the
-    /// horizontal sync; the field ends by pulsing the field (vertical) sync. Both
-    /// syncs are wired to PIA0 and drive the CPU IRQ, which is delivered between
-    /// instructions — this is what breaks the stock ROM out of its idle loop and
-    /// runs BASIC's housekeeping. Video scanout is filled at the end (`§6`).
+    /// horizontal sync. The field (vertical) sync is two separate edges at
+    /// their own scanlines mid-field — not one pulse at the end of the loop
+    /// — per [`config::VideoStandard::fs_falling_line`] /
+    /// [`config::VideoStandard::fs_rising_line`]. All of these are wired to
+    /// PIA0 and drive the CPU IRQ, which is delivered between instructions —
+    /// this is what breaks the stock ROM out of its idle loop and runs
+    /// BASIC's housekeeping. Video scanout is filled at the end (`§6`).
     pub fn run_field(&mut self) {
         let lines = self.config.video.lines_per_field();
-        for _ in 0..lines {
+        let fs_falling_line = self.config.video.fs_falling_line();
+        let fs_rising_line = self.config.video.fs_rising_line();
+        for line in 0..lines {
             // Sampled per line so a mid-field speed poke takes effect promptly.
             let cycles_per_line = self.cycles_per_field() / lines;
             self.run_cycles(cycles_per_line);
             self.bus.hsync();
+            if line == fs_falling_line {
+                self.bus.fs_falling();
+            }
+            if line == fs_rising_line {
+                self.bus.fs_rising();
+            }
             // One speaker sample per scanline (~15.7 kHz), self-capping when
             // nothing drains it.
             if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
@@ -197,7 +208,6 @@ impl Machine {
             };
             self.bus.gime.tick_timer(ticks);
         }
-        self.bus.vsync();
         self.render_field();
     }
 

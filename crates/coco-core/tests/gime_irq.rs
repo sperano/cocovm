@@ -24,7 +24,7 @@ fn bus() -> SystemBus {
 fn enabled_source_latches_and_read_clears() {
     let mut b = bus();
     b.write(IRQENR, intr::VBORD);
-    b.vsync();
+    b.fs_falling();
     // Latched; the read returns it and resets the flags (SEB: "reading the
     // status register resets the interrupt flags").
     assert_eq!(b.read(IRQENR), intr::VBORD);
@@ -35,7 +35,7 @@ fn enabled_source_latches_and_read_clears() {
 fn disabled_source_does_not_latch() {
     let mut b = bus();
     // No enables written: sync edges must leave the status empty.
-    b.vsync();
+    b.fs_falling();
     b.hsync();
     assert_eq!(b.read(IRQENR), 0);
     assert_eq!(b.read(FIRQENR), 0);
@@ -47,7 +47,7 @@ fn writing_zero_to_enable_bit_clears_pending() {
     // latched status, exactly like reading the register.
     let mut b = bus();
     b.write(IRQENR, intr::VBORD | intr::HBORD);
-    b.vsync();
+    b.fs_falling();
     b.hsync();
     b.write(IRQENR, intr::HBORD); // drop VBORD enable -> drops its status too
     assert_eq!(b.read(IRQENR), intr::HBORD);
@@ -57,7 +57,7 @@ fn writing_zero_to_enable_bit_clears_pending() {
 fn irq_line_requires_init0_ien() {
     let mut b = bus();
     b.write(IRQENR, intr::VBORD);
-    b.vsync();
+    b.fs_falling();
     // Latched but the master enable is off: the CPU line stays high.
     assert!(!b.irq_asserted());
     b.write(INIT0, init0::IEN);
@@ -71,7 +71,7 @@ fn firq_path_is_independent_of_irq_path() {
     let mut b = bus();
     b.write(INIT0, init0::FEN);
     b.write(FIRQENR, intr::VBORD);
-    b.vsync();
+    b.fs_falling();
     assert!(b.firq_asserted());
     assert!(!b.irq_asserted());
     assert_eq!(b.read(FIRQENR), intr::VBORD);

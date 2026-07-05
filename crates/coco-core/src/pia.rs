@@ -44,12 +44,15 @@ pub struct PiaPort {
     pub control: u8,
     /// State of the input pins (what the outside world drives).
     pub input: u8,
+    /// Current level of the Cx1 line, tracked so [`PiaPort::set_c1`] can tell
+    /// an edge from a repeated level. Idle high (MAME `6821pia.cpp`).
+    c1_level: bool,
 }
 
 impl Default for PiaPort {
     fn default() -> Self {
         // Idle input pins float high on the CoCo (keyboard rows read $FF = no key).
-        Self { output: 0, ddr: 0, control: 0, input: 0xFF }
+        Self { output: 0, ddr: 0, control: 0, input: 0xFF, c1_level: true }
     }
 }
 
@@ -60,10 +63,25 @@ impl PiaPort {
         (self.output & self.ddr) | (self.input & !self.ddr)
     }
 
-    /// Pulse the Cx1 line with its active edge, latching the Cx1 flag. The CoCo
-    /// wires horizontal sync to PIA0 CA1 and field sync to PIA0 CB1.
-    pub fn pulse_c1(&mut self) {
-        self.control |= cr::C1_FLAG;
+    /// Drive the Cx1 line to `level`, latching the Cx1 flag only on a real
+    /// transition whose direction matches CRA/CRB bit 1 ([`cr::C1_EDGE_HIGH`]):
+    /// bit1=1 selects low→high, bit1=0 selects high→low. A call that repeats
+    /// the current level (no edge) never sets the flag, and an edge in the
+    /// non-selected direction doesn't either — matching MAME `6821pia.cpp`
+    /// `c1_low_to_high`/`c1_high_to_low` (~line 1107): the flag sets iff
+    /// `(m_in_c1 != state) && ((state && rising_selected) || (!state &&
+    /// falling_selected))`. The CoCo wires horizontal sync to PIA0 CA1 and
+    /// field sync to PIA0 CB1.
+    pub fn set_c1(&mut self, level: bool) {
+        let transitioned = self.c1_level != level;
+        self.c1_level = level;
+        if !transitioned {
+            return;
+        }
+        let rising_selected = self.control & cr::C1_EDGE_HIGH != 0;
+        if level == rising_selected {
+            self.control |= cr::C1_FLAG;
+        }
     }
 
     /// True when this side is asserting IRQ (Cx1 flag set and its enable on).
@@ -163,5 +181,35 @@ mod tests {
         let mut pia = MC6821::new();
         pia.write(1, 0xFF);
         assert_eq!(pia.a.control & (cr::C1_FLAG | cr::C2_FLAG), 0);
+    }
+
+    #[test]
+    fn falling_edge_selected_flags_only_on_high_to_low() {
+        let mut port = PiaPort::default(); // idle high, control=0 -> falling edge selected
+        assert_eq!(port.control & cr::C1_EDGE_HIGH, 0);
+        port.set_c1(true); // still high: no transition
+        assert_eq!(port.control & cr::C1_FLAG, 0);
+        port.set_c1(false); // high -> low: matches the selected edge
+        assert_ne!(port.control & cr::C1_FLAG, 0);
+    }
+
+    #[test]
+    fn rising_edge_selected_flags_only_on_low_to_high() {
+        let mut port = PiaPort::default();
+        port.control |= cr::C1_EDGE_HIGH; // select low->high
+        port.set_c1(false); // high -> low: not the selected edge
+        assert_eq!(port.control & cr::C1_FLAG, 0);
+        port.set_c1(false); // still low: no transition
+        assert_eq!(port.control & cr::C1_FLAG, 0);
+        port.set_c1(true); // low -> high: matches the selected edge
+        assert_ne!(port.control & cr::C1_FLAG, 0);
+    }
+
+    #[test]
+    fn repeated_level_never_flags() {
+        let mut port = PiaPort::default();
+        port.control |= cr::C1_EDGE_HIGH; // rising edge selected
+        port.set_c1(true); // still high: no transition, no flag even though level matches
+        assert_eq!(port.control & cr::C1_FLAG, 0);
     }
 }

@@ -28,6 +28,40 @@ impl VideoStandard {
             VideoStandard::Pal => 50.0,
         }
     }
+
+    /// Physical scanline (0-based) where the GIME's internal field-sync line
+    /// falls: the point where the GIME raises VBORD (Lomont: "VBORD generated
+    /// on falling edge of VSYNC") and PIA0 CB1 latches per its selected edge.
+    ///
+    /// NTSC: MAME `gime.cpp`'s constructor derives the falling edge as top
+    /// border (25 lines) + active display (192 lines) + part of the bottom
+    /// border (26 lines) + 1 = 244. This is GIME-specific — the plain
+    /// MC6847 (CoCo 1/2) falling edge is at line 216 instead
+    /// (`mc6847.cpp`/`gime.cpp` header comment).
+    pub const fn fs_falling_line(self) -> u32 {
+        match self {
+            VideoStandard::Ntsc => 244,
+            // UNVERIFIED: MAME's PAL timing offsets this edge by
+            // `LINES_PADDING_TOP_PAL` (mc6847.cpp), which could not be pinned
+            // down cleanly from the source. Keep the pre-fix behaviour (the
+            // field-sync edges collapsed to the last scanline of the field)
+            // rather than guess a line number.
+            VideoStandard::Pal => VideoStandard::Pal.lines_per_field() - 1,
+        }
+    }
+
+    /// Physical scanline (0-based) where the field-sync line rises again.
+    ///
+    /// NTSC: MAME `mc6847.cpp` `LINES_UNTIL_RETRACE_NTSC` (243) +
+    /// `LINES_VERTICAL_RETRACE` (6) - 1 = 248.
+    pub const fn fs_rising_line(self) -> u32 {
+        match self {
+            VideoStandard::Ntsc => 248,
+            // UNVERIFIED, see fs_falling_line: both edges collapse to the
+            // same last scanline for PAL until the real offset is confirmed.
+            VideoStandard::Pal => VideoStandard::Pal.lines_per_field() - 1,
+        }
+    }
 }
 
 /// Installed RAM. The GIME MMU addresses up to 2 MB; 512K was only Tandy's shipped
