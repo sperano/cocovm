@@ -4,6 +4,7 @@
 
 pub mod bus;
 pub mod cart;
+pub mod cassette;
 pub mod config;
 pub mod fdc;
 mod font6847;
@@ -220,6 +221,7 @@ impl Machine {
                 self.cpu.step(&mut self.bus)
             };
             self.bus.cart.tick(cycles);
+            self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
             spent += cycles;
         }
     }

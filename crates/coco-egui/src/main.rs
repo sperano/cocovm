@@ -157,6 +157,9 @@ struct CocoApp {
     /// exposes (status bar, eject menu items, and write-back targets — a
     /// modified image is written back to its file on eject/replace/exit).
     disk_paths: [Option<PathBuf>; UI_DRIVES],
+    /// Source path of the mounted cassette tape (.cas), if any — the
+    /// write-back target for recordings, like `disk_paths` for floppies.
+    tape_path: Option<PathBuf>,
 }
 
 /// Drives the UI exposes. The FD-502 latch can address four, but real setups
@@ -189,6 +192,7 @@ impl CocoApp {
             cart_path: None,
             cart_error: None,
             disk_paths: [None, None],
+            tape_path: None,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -344,6 +348,69 @@ impl CocoApp {
         }
     }
 
+    /// Mount the .cas tape at `path`, writing back whatever was in the deck
+    /// first. Failures land in [`Self::cart_error`].
+    fn insert_tape(&mut self, path: PathBuf) {
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                self.write_back_tape();
+                self.machine.bus.cassette.insert_tape(bytes);
+                self.tape_path = Some(path);
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Create a brand-new blank tape at `path` and mount it, ready for CSAVE.
+    /// Refuses to overwrite an existing file (mirrors [`Self::new_blank_disk`]).
+    fn new_tape(&mut self, path: PathBuf) {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => {
+                self.write_back_tape();
+                self.machine.bus.cassette.insert_tape(Vec::new());
+                self.tape_path = Some(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.cart_error = Some(format!(
+                    "{} already exists; use Insert Tape to mount an existing tape, or \
+                     choose a different name",
+                    path.display()
+                ));
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("could not create {}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Eject the tape, saving an unfinished recording back to its file first.
+    fn eject_tape(&mut self) {
+        self.write_back_tape();
+        self.machine.bus.cassette.eject_tape();
+        self.tape_path = None;
+    }
+
+    /// Finalize any pending recording and, if the tape changed, save it back
+    /// to its source file (like [`Self::write_back_disk`]; on failure the
+    /// tape stays mounted and dirty so a later retry can succeed).
+    fn write_back_tape(&mut self) {
+        self.machine.bus.cassette.finalize_recording();
+        let Some(path) = self.tape_path.clone() else {
+            return;
+        };
+        if !self.machine.bus.cassette.dirty() {
+            return;
+        }
+        match std::fs::write(&path, self.machine.bus.cassette.tape_bytes()) {
+            Ok(()) => self.machine.bus.cassette.mark_saved(),
+            Err(e) => {
+                self.cart_error = Some(format!("could not save {}: {e}", path.display()));
+            }
+        }
+    }
+
     /// Emulated fields owed for this update, from wall-clock time at the
     /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
     fn fields_due(&mut self) -> usize {
@@ -463,10 +530,11 @@ impl CocoApp {
 }
 
 impl eframe::App for CocoApp {
-    /// Write modified floppies back to their files on quit — a BASIC `SAVE`
-    /// only exists in the in-memory image until then.
+    /// Write modified floppies and tape back to their files on quit — a BASIC
+    /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.flush_dirty_disks();
+        self.write_back_tape();
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -566,6 +634,45 @@ impl eframe::App for CocoApp {
                             ui.close();
                         }
                     }
+                    ui.separator();
+                    if ui.button("Insert Tape…").clicked() {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Cassette image", &["cas"])
+                            .pick_file()
+                        {
+                            self.insert_tape(path);
+                        }
+                    }
+                    if ui.button("New Tape…").clicked() {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Cassette image", &["cas"])
+                            .set_file_name("untitled.cas")
+                            .save_file()
+                        {
+                            self.new_tape(path);
+                        }
+                    }
+                    let tape_mounted = self.tape_path.is_some();
+                    if ui
+                        .add_enabled(tape_mounted, egui::Button::new("Rewind Tape"))
+                        .clicked()
+                    {
+                        self.machine.bus.cassette.rewind();
+                        ui.close();
+                    }
+                    let label = match &self.tape_path {
+                        Some(p) => format!(
+                            "Eject Tape ({})",
+                            p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                        ),
+                        None => "Eject Tape".to_string(),
+                    };
+                    if ui.add_enabled(tape_mounted, egui::Button::new(label)).clicked() {
+                        self.eject_tape();
+                        ui.close();
+                    }
                 });
                 ui.menu_button("Keyboard", |ui| {
                     for mode in [KbMode::Positional, KbMode::Symbolic] {
@@ -640,6 +747,20 @@ impl eframe::App for CocoApp {
                         .is_some_and(|d| d.dirty());
                     ui.separator();
                     ui.label(format!("D{drive}: {name}{}", if dirty { "*" } else { "" }));
+                }
+                if let Some(path) = &self.tape_path {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                    let cassette = &self.machine.bus.cassette;
+                    // "▶" = motor running (relay closed); the counter is the
+                    // playback position in tape bytes; "*" as for floppies.
+                    let motor =
+                        if self.machine.bus.pia1.a.c2_output() { " ▶" } else { "" };
+                    let (pos, len) = cassette.position();
+                    ui.separator();
+                    ui.label(format!(
+                        "Tape: {name}{} [{pos}/{len}]{motor}",
+                        if cassette.dirty() { "*" } else { "" }
+                    ));
                 }
             });
         });

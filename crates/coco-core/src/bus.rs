@@ -7,6 +7,7 @@
 use mc6809::Bus;
 
 use crate::cart::{Cartridge, EmptySlot};
+use crate::cassette::Cassette;
 use crate::config::MemorySize;
 use crate::gime::{self, GIME};
 use crate::joystick::Joysticks;
@@ -81,6 +82,7 @@ pub struct SystemBus {
     pub cart: Box<dyn Cartridge>,
     pub keyboard: Keyboard,
     pub joysticks: Joysticks,
+    pub cassette: Cassette,
     pub io_enabled: bool,
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
@@ -98,6 +100,7 @@ impl SystemBus {
             cart: Box::new(EmptySlot),
             keyboard: Keyboard::new(),
             joysticks: Joysticks::new(),
+            cassette: Cassette::new(),
             io_enabled: true,
             kbd_line_low: false,
         }
@@ -120,6 +123,19 @@ impl SystemBus {
             pa &= !COMPARATOR_BIT;
         }
         pa
+    }
+
+    /// PIA1 port-A input pins: only bit 0 (cassette data in, `$FF20` —
+    /// Service Manual / `cassette-verified-facts`) is driven by anything
+    /// emulated; the rest float high like every other unused CoCo input pin
+    /// ([`crate::pia::PiaPort`]'s default).
+    fn pia1_pa_pins(&self) -> u8 {
+        const CASSETTE_IN: u8 = 0x01;
+        if self.cassette.input_bit() {
+            0xFF
+        } else {
+            !CASSETTE_IN
+        }
     }
 
     /// Physical RAM offset for a CPU address, masked to installed RAM.
@@ -211,12 +227,13 @@ impl SystemBus {
 
     /// Instantaneous speaker level, 0.0–1.0.
     ///
-    /// Two sources mix on the CoCo 3 (it has no sound chip of its own):
-    /// the 6-bit DAC (PIA1 PA2–PA7), routed through the analog mux only when
-    /// SNDEN (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are
-    /// 00 — states 01/10 route cassette/cartridge audio (neither emulated,
-    /// silent) and 11 is grounded; and the single-bit sound on PIA1 PB1,
-    /// which is always connected. (Tandy Service Manual mux table via MAME
+    /// Sources mix on the CoCo 3 (it has no sound chip of its own): the 6-bit
+    /// DAC (PIA1 PA2–PA7), routed through the analog mux only when SNDEN
+    /// (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are 00;
+    /// mux state 01 routes cassette playback (the squared tape signal — the
+    /// key-click of a real CLOAD), 10 routes cartridge audio (not emulated,
+    /// silent), 11 is grounded; and the single-bit sound on PIA1 PB1, which
+    /// is always connected. (Tandy Service Manual mux table via MAME
     /// `coco.cpp` `update_sound`; SEB Unravelled II $FF22/$FF23.)
     pub fn sound_sample(&self) -> f32 {
         /// Relative loudness of the full-scale DAC vs the single-bit beeper.
@@ -225,12 +242,26 @@ impl SystemBus {
         /// PIA1 PB1: the single-bit sound output.
         const SINGLE_BIT: u8 = 0x02;
         const DAC_MAX: f32 = 63.0;
+        /// Tape playback through the mux: a square wave (the SALT detector's
+        /// output), kept below the DAC's full scale like the real attenuated
+        /// tape level.
+        const CASSETTE_GAIN: f32 = 0.35;
+        /// SEL2:SEL1 = 01: the mux's cassette input.
+        const SEL_CASSETTE: u8 = 0b01;
 
         let mut level = 0.0;
         let sel = u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output());
         if self.pia1.b.c2_output() && sel == 0 {
             let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
             level += DAC_GAIN * f32::from(dac) / DAC_MAX;
+        }
+        if self.pia1.b.c2_output()
+            && sel == SEL_CASSETTE
+            && self.pia1.a.c2_output()
+            && self.cassette.playing()
+            && self.cassette.input_bit()
+        {
+            level += CASSETTE_GAIN;
         }
         if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
             level += SINGLE_BIT_GAIN;
@@ -262,7 +293,10 @@ impl SystemBus {
                 self.pia0.a.input = self.pia0_pa_pins();
                 self.pia0.read((addr & 0x03) as u8)
             }
-            PIA1_BASE..=PIA1_LAST => self.pia1.read((addr & 0x03) as u8),
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1.a.input = self.pia1_pa_pins();
+                self.pia1.read((addr & 0x03) as u8)
+            }
             CART_BASE..=CART_LAST => self.cart.read(addr),
             INIT0_REG => self.gime.init0,
             INIT1_REG => self.gime.init1,
@@ -281,7 +315,15 @@ impl SystemBus {
     fn io_write(&mut self, addr: u16, val: u8) {
         match addr {
             IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
-            PIA1_BASE..=PIA1_LAST => self.pia1.write((addr & 0x03) as u8, val),
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1.write((addr & 0x03) as u8, val);
+                // Cassette record-out is a direct, unconditional tap of the DAC
+                // (not gated by SNDEN/the mux — `cassette-verified-facts`), fed
+                // on every PIA1 write since any of them (port A output/DDR or
+                // CRA, which carries the motor relay) can change it.
+                let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+                self.cassette.record_dac(dac, self.pia1.a.c2_output());
+            }
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
             INIT0_REG => self.gime.write_init0(val),
             INIT1_REG => self.gime.write_init1(val),
