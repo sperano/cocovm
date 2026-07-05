@@ -39,8 +39,12 @@ const ONE_BIT_LOW: u32 = 227;
 const MOTOR_SPINUP_CYCLES: u32 = 65536 * 8;
 
 /// Full tone periods, one cycle per bit (measured; the demodulator's unit).
-const ZERO_BIT_PERIOD: u32 = ZERO_BIT_HIGH + ZERO_BIT_LOW;
-const ONE_BIT_PERIOD: u32 = ONE_BIT_HIGH + ONE_BIT_LOW;
+///
+/// `pub(crate)`: shared with [`crate::cassette_wav`], which re-synthesizes/
+/// decodes these same tones as WAV audio and must use these exact measured
+/// values rather than duplicating the magic numbers.
+pub(crate) const ZERO_BIT_PERIOD: u32 = ZERO_BIT_HIGH + ZERO_BIT_LOW;
+pub(crate) const ONE_BIT_PERIOD: u32 = ONE_BIT_HIGH + ONE_BIT_LOW;
 
 /// Demodulation decision boundary between the two measured periods
 /// (midpoint of 455 and 793): a full period at or below this is a 1 bit.
@@ -54,7 +58,10 @@ const PERIOD_BREAK: u64 = 2 * ZERO_BIT_PERIOD as u64;
 /// Leader byte: alternating bits used for bit-sync (Service Manual §5.10).
 const LEADER: u8 = 0x55;
 /// Block sync byte following a leader run (Service Manual §5.10).
-const SYNC: u8 = 0x3C;
+///
+/// `pub(crate)`: [`crate::cassette_wav::decode_wav`] uses this to pick the
+/// more plausible of its two polarity guesses.
+pub(crate) const SYNC: u8 = 0x3C;
 
 /// One DAC level change while the motor was on: the new 6-bit level and the
 /// motor-on cycle-clock value at the moment it took effect.

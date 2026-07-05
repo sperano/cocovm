@@ -160,6 +160,10 @@ struct CocoApp {
     /// Source path of the mounted cassette tape (.cas), if any — the
     /// write-back target for recordings, like `disk_paths` for floppies.
     tape_path: Option<PathBuf>,
+    /// Whether [`Self::write_back_tape`] should, in addition to the always-
+    /// written canonical `.cas`, also synthesize and write a `.wav` of the
+    /// tape audio (`coco_core::cassette_wav::synthesize_wav`) alongside it.
+    save_tape_wav: bool,
 }
 
 /// Drives the UI exposes. The FD-502 latch can address four, but real setups
@@ -173,6 +177,7 @@ impl CocoApp {
         rom: Box<[u8]>,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
+        save_tape_wav: bool,
     ) -> Self {
         let mut app = Self {
             machine: Machine::new(config, rom),
@@ -193,6 +198,7 @@ impl CocoApp {
             cart_error: None,
             disk_paths: [None, None],
             tape_path: None,
+            save_tape_wav,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -348,19 +354,34 @@ impl CocoApp {
         }
     }
 
-    /// Mount the .cas tape at `path`, writing back whatever was in the deck
-    /// first. Failures land in [`Self::cart_error`].
+    /// Mount the tape at `path` (.cas decoded bytes, or a .wav recording
+    /// demodulated via [`coco_core::cassette_wav::decode_wav`] — sniffed by
+    /// the `RIFF` magic on the loaded bytes, not the file extension, since a
+    /// picked file's extension isn't authoritative), writing back whatever
+    /// was in the deck first. Failures land in [`Self::cart_error`] and
+    /// leave the currently mounted tape untouched.
     fn insert_tape(&mut self, path: PathBuf) {
-        match std::fs::read(&path) {
-            Ok(bytes) => {
-                self.write_back_tape();
-                self.machine.bus.cassette.insert_tape(bytes);
-                self.tape_path = Some(path);
-            }
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
             Err(e) => {
                 self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
             }
-        }
+        };
+        let tape = if bytes.starts_with(b"RIFF") {
+            match coco_core::cassette_wav::decode_wav(&bytes, self.machine.cpu_hz()) {
+                Ok(tape) => tape,
+                Err(e) => {
+                    self.cart_error = Some(format!("could not decode {}: {e}", path.display()));
+                    return;
+                }
+            }
+        } else {
+            bytes
+        };
+        self.write_back_tape();
+        self.machine.bus.cassette.insert_tape(tape);
+        self.tape_path = Some(path);
     }
 
     /// Create a brand-new blank tape at `path` and mount it, ready for CSAVE.
@@ -393,8 +414,18 @@ impl CocoApp {
     }
 
     /// Finalize any pending recording and, if the tape changed, save it back
-    /// to its source file (like [`Self::write_back_disk`]; on failure the
-    /// tape stays mounted and dirty so a later retry can succeed).
+    /// (like [`Self::write_back_disk`]; on failure the tape stays mounted
+    /// and dirty so a later retry can succeed).
+    ///
+    /// The canonical save is always a `.cas` — `tape_path` with its
+    /// extension forced to `.cas` (a no-op if it already was one, e.g. a
+    /// tape mounted from `.cas` to begin with; `foo.wav` becomes `foo.cas`).
+    /// On success, `tape_path` is updated to that `.cas` path so a tape
+    /// originally mounted from a `.wav` is never silently overwritten
+    /// again — from then on the app tracks the `.cas` sibling. When
+    /// [`Self::save_tape_wav`] is on, a `.wav` of the tape audio
+    /// ([`coco_core::cassette_wav::synthesize_wav`]) is additionally
+    /// written alongside it, next to (not instead of) the `.cas`.
     fn write_back_tape(&mut self) {
         self.machine.bus.cassette.finalize_recording();
         let Some(path) = self.tape_path.clone() else {
@@ -403,10 +434,27 @@ impl CocoApp {
         if !self.machine.bus.cassette.dirty() {
             return;
         }
-        match std::fs::write(&path, self.machine.bus.cassette.tape_bytes()) {
-            Ok(()) => self.machine.bus.cassette.mark_saved(),
+        let cas_path = path.with_extension("cas");
+        match std::fs::write(&cas_path, self.machine.bus.cassette.tape_bytes()) {
+            Ok(()) => {
+                self.machine.bus.cassette.mark_saved();
+                if cas_path != path {
+                    self.tape_path = Some(cas_path.clone());
+                }
+            }
             Err(e) => {
-                self.cart_error = Some(format!("could not save {}: {e}", path.display()));
+                self.cart_error = Some(format!("could not save {}: {e}", cas_path.display()));
+                return;
+            }
+        }
+        if self.save_tape_wav {
+            let wav_path = cas_path.with_extension("wav");
+            let wav = coco_core::cassette_wav::synthesize_wav(
+                self.machine.bus.cassette.tape_bytes(),
+                self.machine.cpu_hz(),
+            );
+            if let Err(e) = std::fs::write(&wav_path, wav) {
+                self.cart_error = Some(format!("could not save {}: {e}", wav_path.display()));
             }
         }
     }
@@ -638,7 +686,7 @@ impl eframe::App for CocoApp {
                     if ui.button("Insert Tape…").clicked() {
                         ui.close();
                         if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Cassette image", &["cas"])
+                            .add_filter("Cassette image", &["cas", "wav"])
                             .pick_file()
                         {
                             self.insert_tape(path);
@@ -673,6 +721,7 @@ impl eframe::App for CocoApp {
                         self.eject_tape();
                         ui.close();
                     }
+                    ui.checkbox(&mut self.save_tape_wav, "Also save tape audio (.wav)");
                 });
                 ui.menu_button("Keyboard", |ui| {
                     for mode in [KbMode::Positional, KbMode::Symbolic] {
@@ -960,6 +1009,12 @@ struct Cli {
     /// Master video standard (crystal), independent of the GIME 50/60 Hz mode bit.
     #[arg(long, value_enum, default_value = "ntsc")]
     video: VideoArg,
+
+    /// Also save a `.wav` of the tape audio alongside the canonical `.cas`
+    /// on every tape write-back (see the "Also save tape audio (.wav)"
+    /// Machine-menu checkbox, which this just sets the initial value of).
+    #[arg(long, default_value_t = false)]
+    tape_wav: bool,
 }
 
 /// Load the boot ROM from `path`, or `roms/coco3.rom` at the workspace root.
@@ -987,6 +1042,7 @@ fn main() -> eframe::Result<()> {
     };
     let cart_path = cli.cart;
     let disk_paths = [cli.disk0, cli.disk1];
+    let save_tape_wav = cli.tape_wav;
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
@@ -1003,6 +1059,8 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |cc| Ok(Box::new(CocoApp::new(cc, config, rom, cart_path, disk_paths)))),
+        Box::new(move |cc| {
+            Ok(Box::new(CocoApp::new(cc, config, rom, cart_path, disk_paths, save_tape_wav)))
+        }),
     )
 }

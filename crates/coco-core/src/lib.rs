@@ -5,6 +5,7 @@
 pub mod bus;
 pub mod cart;
 pub mod cassette;
+pub mod cassette_wav;
 pub mod config;
 pub mod fdc;
 mod font6847;
@@ -125,6 +126,18 @@ impl Machine {
     /// The audio sample rate matching [`Machine::take_audio`]'s stream.
     pub fn audio_sample_rate(&self) -> f64 {
         self.config.video.lines_per_field() as f64 * self.config.video.field_rate_hz()
+    }
+
+    /// The CPU clock (the private `CPU_HZ` constant above) for callers
+    /// converting cycle counts to wall-clock time outside the run loop —
+    /// e.g. `cassette_wav`'s WAV encode/decode, which times tape bit
+    /// periods in CPU cycles the same way
+    /// [`Cassette::tick`](cassette::Cassette::tick) does. Always the
+    /// normal-speed clock: the transient GIME double-speed POKE
+    /// (`self.bus.gime.cpu_fast`) doesn't apply to cassette I/O, which the
+    /// stock ROM never runs at double speed.
+    pub fn cpu_hz(&self) -> f64 {
+        CPU_HZ
     }
 
     /// Execute one CPU instruction; returns cycles consumed.
