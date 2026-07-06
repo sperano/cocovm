@@ -2,6 +2,13 @@
 //! auto-following view of the DMP-105's virtual fanfold paper, built on the
 //! pure rasterizer in [`crate::paper_render`].
 //!
+//! Shown as its own native OS window (an egui *immediate viewport*), so it
+//! can be moved, resized, and monitored independently of the emulator
+//! screen. Immediate (not deferred) because all paper state lives on the
+//! main thread behind `Rc<RefCell<...>>` handles; on backends without
+//! multi-window support egui reports `ViewportClass::Embedded` and the view
+//! falls back to an in-viewport `egui::Window`.
+//!
 //! Sink ownership: [`PaperWindow`] never attaches its own [`Dmp105Handle`] —
 //! that handshake (which touches [`crate::CocoApp::print_capture_path`] and
 //! `bus.bitbanger`, both owned by `CocoApp`) lives in
@@ -149,238 +156,278 @@ impl PaperWindow {
             total_pages - 1
         };
 
-        let mut open = self.open;
-        egui::Window::new(crate::window_title(ctx, "Printer Paper"))
-            .open(&mut open)
-            .default_width(520.0)
-            .default_height(700.0)
-            .resizable(true)
-            .frame(
-                egui::Frame::window(&ctx.style()).fill(egui::Color32::from_rgba_unmultiplied(
-                    paper_render::WINDOW_BG_COLOR[0],
-                    paper_render::WINDOW_BG_COLOR[1],
-                    paper_render::WINDOW_BG_COLOR[2],
-                    paper_render::WINDOW_BG_COLOR[3],
-                )),
-            )
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!(
-                        "{total_pages} page{}",
-                        if total_pages == 1 { "" } else { "s" }
-                    ));
-                    ui.separator();
-                    ui.checkbox(&mut self.green_bar, "Green bar");
-                    ui.separator();
-                    ui.menu_button("Export", |ui| {
-                        if ui.button("Save Page as PNG…").clicked() {
-                            ui.close();
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("PNG image", &["png"])
-                                .set_file_name(format!("page-{}.png", self.current_page + 1))
-                                .save_file()
-                            {
-                                let img = paper_render::rasterize(
-                                    &handle,
-                                    self.current_page as f32 * PAGE_HEIGHT_IN,
-                                    PAGE_HEIGHT_IN,
-                                    RASTER_DPI,
-                                    self.green_bar,
-                                );
-                                if let Err(e) = paper_export::save_png(&img, &path) {
-                                    error = Some(e);
-                                }
-                            }
-                        }
-                        if ui.button("Save Roll as PNG…").clicked() {
-                            ui.close();
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("PNG image", &["png"])
-                                .set_file_name("roll.png")
-                                .save_file()
-                            {
-                                // The whole printed roll plus the trailing
-                                // blank page, so the image ends on a page
-                                // boundary (T6).
-                                let img = paper_render::rasterize(
-                                    &handle,
-                                    0.0,
-                                    total_pages as f32 * PAGE_HEIGHT_IN,
-                                    RASTER_DPI,
-                                    self.green_bar,
-                                );
-                                if let Err(e) = paper_export::save_png(&img, &path) {
-                                    error = Some(e);
-                                }
-                            }
-                        }
-                        ui.separator();
-                        if ui
-                            .button("Save as PDF (fanfold, with tractor strips)…")
-                            .clicked()
-                        {
-                            ui.close();
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("PDF document", &["pdf"])
-                                .set_file_name("printout.pdf")
-                                .save_file()
-                            {
-                                let pages: Vec<_> = (0..total_pages)
-                                    .map(|page| {
-                                        paper_render::rasterize(
-                                            &handle,
-                                            page as f32 * PAGE_HEIGHT_IN,
-                                            PAGE_HEIGHT_IN,
-                                            RASTER_DPI,
-                                            self.green_bar,
-                                        )
-                                    })
-                                    .collect();
-                                if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
-                                    error = Some(e);
-                                }
-                            }
-                        }
-                        if ui.button("Save as PDF (trimmed, 8.5×11)…").clicked() {
-                            ui.close();
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("PDF document", &["pdf"])
-                                .set_file_name("printout-trimmed.pdf")
-                                .save_file()
-                            {
-                                let pages: Vec<_> = (0..total_pages)
-                                    .map(|page| {
-                                        let img = paper_render::rasterize(
-                                            &handle,
-                                            page as f32 * PAGE_HEIGHT_IN,
-                                            PAGE_HEIGHT_IN,
-                                            RASTER_DPI,
-                                            self.green_bar,
-                                        );
-                                        paper_export::crop_to_trimmed_width(&img, RASTER_DPI)
-                                    })
-                                    .collect();
-                                if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
-                                    error = Some(e);
-                                }
-                            }
-                        }
+        // One stable ID so egui reuses the same native OS window across
+        // frames instead of spawning a new one.
+        let viewport_id = egui::ViewportId::from_hash_of("printer-paper");
+        let builder = egui::ViewportBuilder::default()
+            .with_title("Printer Paper")
+            .with_inner_size([520.0, 700.0])
+            .with_min_inner_size([280.0, 220.0]);
+        ctx.show_viewport_immediate(viewport_id, builder, |ctx, class| {
+            let fill = egui::Color32::from_rgba_unmultiplied(
+                paper_render::WINDOW_BG_COLOR[0],
+                paper_render::WINDOW_BG_COLOR[1],
+                paper_render::WINDOW_BG_COLOR[2],
+                paper_render::WINDOW_BG_COLOR[3],
+            );
+            if class == egui::ViewportClass::Embedded {
+                // Backend without native multi-window support: fall back to
+                // the embedded in-viewport window this view used before it
+                // became a native one.
+                let mut open = self.open;
+                egui::Window::new(crate::window_title(ctx, "Printer Paper"))
+                    .open(&mut open)
+                    .default_width(520.0)
+                    .default_height(700.0)
+                    .resizable(true)
+                    .frame(egui::Frame::window(&ctx.style()).fill(fill))
+                    .show(ctx, |ui| {
+                        self.contents(ui, &handle, total_pages, printed_pages, &mut error);
                     });
-                    ui.separator();
-                    // Nothing to tear off a blank roll.
-                    if ui
-                        .add_enabled(printed_pages > 0, egui::Button::new("Tear Off"))
-                        .clicked()
+                self.open = open;
+            } else {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::default().fill(fill).inner_margin(6))
+                    .show(ctx, |ui| {
+                        self.contents(ui, &handle, total_pages, printed_pages, &mut error);
+                    });
+                // The OS close button: accept the close by not showing the
+                // viewport next frame (mirrors the View-menu checkbox).
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    self.open = false;
+                }
+            }
+
+            if self.pending_tear_off {
+                // Same confirm/cancel modal pattern as `CocoApp`'s
+                // `pending_disk_action` dialog in `main.rs`.
+                let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
+                const DIALOG_MARGIN: i8 = 16;
+                egui::Window::new(crate::window_title(ctx, "Tear off paper?"))
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .inner_margin(DIALOG_MARGIN)
+                            .show(ui, |ui| {
+                                ui.label(
+                                egui::RichText::new(format!(
+                                    "Tear off and discard {printed_pages} page{} of printed output?",
+                                    if printed_pages == 1 { "" } else { "s" }
+                                ))
+                                .size(font),
+                            );
+                                ui.add_space(DIALOG_MARGIN as f32);
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                                    if ui.button("Tear Off").clicked() {
+                                        self.perform_tear_off();
+                                    }
+                                    if ui.button("Cancel").clicked() {
+                                        self.pending_tear_off = false;
+                                    }
+                                });
+                            });
+                    });
+            }
+
+        });
+
+        error
+    }
+
+    /// Everything inside the paper window: the header row (page count,
+    /// green bar, Export menu, Tear Off) and the scrolling fanfold view.
+    /// Shared verbatim between the native-viewport and embedded-fallback
+    /// paths of [`Self::ui`].
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        handle: &Dmp105Handle,
+        total_pages: u32,
+        printed_pages: u32,
+        error: &mut Option<String>,
+    ) {
+        let ctx = ui.ctx().clone();
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "{total_pages} page{}",
+                if total_pages == 1 { "" } else { "s" }
+            ));
+            ui.separator();
+            ui.checkbox(&mut self.green_bar, "Green bar");
+            ui.separator();
+            ui.menu_button("Export", |ui| {
+                if ui.button("Save Page as PNG…").clicked() {
+                    ui.close();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("PNG image", &["png"])
+                        .set_file_name(format!("page-{}.png", self.current_page + 1))
+                        .save_file()
                     {
-                        self.pending_tear_off = true;
+                        let img = paper_render::rasterize(
+                            handle,
+                            self.current_page as f32 * PAGE_HEIGHT_IN,
+                            PAGE_HEIGHT_IN,
+                            RASTER_DPI,
+                            self.green_bar,
+                        );
+                        if let Err(e) = paper_export::save_png(&img, &path) {
+                            *error = Some(e);
+                        }
                     }
-                });
+                }
+                if ui.button("Save Roll as PNG…").clicked() {
+                    ui.close();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("PNG image", &["png"])
+                        .set_file_name("roll.png")
+                        .save_file()
+                    {
+                        // The whole printed roll plus the trailing
+                        // blank page, so the image ends on a page
+                        // boundary (T6).
+                        let img = paper_render::rasterize(
+                            handle,
+                            0.0,
+                            total_pages as f32 * PAGE_HEIGHT_IN,
+                            RASTER_DPI,
+                            self.green_bar,
+                        );
+                        if let Err(e) = paper_export::save_png(&img, &path) {
+                            *error = Some(e);
+                        }
+                    }
+                }
                 ui.separator();
-
-                // Fit-width scaling: no horizontal scrolling at default zoom.
-                let scale = ui.available_width() / (PAPER_WIDTH_IN * RASTER_DPI);
-                let page_size = egui::vec2(
-                    PAPER_WIDTH_IN * RASTER_DPI * scale,
-                    PAGE_HEIGHT_IN * RASTER_DPI * scale,
-                );
-                let keep_margin_px = page_size.y * KEEP_MARGIN_PAGES;
-                // Copied out before the loop so the per-page texture-building
-                // closure below doesn't need to re-borrow `self` while
-                // `self.pages.entry(...)` already holds a mutable borrow of
-                // the `pages` field.
-                let green_bar = self.green_bar;
-
-                let mut keep_pages: HashSet<u32> = HashSet::new();
-                // Page topmost in the viewport this frame — see
-                // `current_page`'s field doc comment.
-                let mut current_page_local = self.current_page;
-
-                egui::ScrollArea::vertical()
-                    .stick_to_bottom(true)
-                    .show_viewport(ui, |ui, viewport| {
-                        let keep_min = viewport.min.y - keep_margin_px;
-                        let keep_max = viewport.max.y + keep_margin_px;
-                        current_page_local = (viewport.min.y / page_size.y)
-                            .floor()
-                            .clamp(0.0, (total_pages - 1) as f32)
-                            as u32;
-
-                        for page in 0..total_pages {
-                            let y0 = page as f32 * page_size.y;
-                            let y1 = y0 + page_size.y;
-                            let (rect, _resp) =
-                                ui.allocate_exact_size(page_size, egui::Sense::hover());
-
-                            let in_keep_range = y1 >= keep_min && y0 <= keep_max;
-                            if !in_keep_range {
-                                continue;
-                            }
-                            keep_pages.insert(page);
-
-                            let texture = self.pages.entry(page).or_insert_with(|| {
-                                let img = paper_render::rasterize(
-                                    &handle,
+                if ui
+                    .button("Save as PDF (fanfold, with tractor strips)…")
+                    .clicked()
+                {
+                    ui.close();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("PDF document", &["pdf"])
+                        .set_file_name("printout.pdf")
+                        .save_file()
+                    {
+                        let pages: Vec<_> = (0..total_pages)
+                            .map(|page| {
+                                paper_render::rasterize(
+                                    handle,
                                     page as f32 * PAGE_HEIGHT_IN,
                                     PAGE_HEIGHT_IN,
                                     RASTER_DPI,
-                                    green_bar,
-                                );
-                                let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                                    [img.width as usize, img.height as usize],
-                                    &img.pixels,
-                                );
-                                ctx.load_texture(
-                                    format!("paper-page-{page}"),
-                                    color_image,
-                                    egui::TextureOptions::NEAREST,
+                                    self.green_bar,
                                 )
-                            });
-                            let sized = egui::load::SizedTexture::new(texture.id(), rect.size());
-                            ui.put(rect, egui::Image::new(sized));
+                            })
+                            .collect();
+                        if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
+                            *error = Some(e);
                         }
-                    });
-
-                // Evict cached textures outside the keep-set.
-                self.pages.retain(|page, _| keep_pages.contains(page));
-                self.current_page = current_page_local;
+                    }
+                }
+                if ui.button("Save as PDF (trimmed, 8.5×11)…").clicked() {
+                    ui.close();
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("PDF document", &["pdf"])
+                        .set_file_name("printout-trimmed.pdf")
+                        .save_file()
+                    {
+                        let pages: Vec<_> = (0..total_pages)
+                            .map(|page| {
+                                let img = paper_render::rasterize(
+                                    handle,
+                                    page as f32 * PAGE_HEIGHT_IN,
+                                    PAGE_HEIGHT_IN,
+                                    RASTER_DPI,
+                                    self.green_bar,
+                                );
+                                paper_export::crop_to_trimmed_width(&img, RASTER_DPI)
+                            })
+                            .collect();
+                        if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
+                            *error = Some(e);
+                        }
+                    }
+                }
             });
-        self.open = open;
+            ui.separator();
+            // Nothing to tear off a blank roll.
+            if ui
+                .add_enabled(printed_pages > 0, egui::Button::new("Tear Off"))
+                .clicked()
+            {
+                self.pending_tear_off = true;
+            }
+        });
+        ui.separator();
 
-        if self.pending_tear_off {
-            // Same confirm/cancel modal pattern as `CocoApp`'s
-            // `pending_disk_action` dialog in `main.rs`.
-            let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
-            const DIALOG_MARGIN: i8 = 16;
-            egui::Window::new(crate::window_title(ctx, "Tear off paper?"))
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    egui::Frame::NONE
-                        .inner_margin(DIALOG_MARGIN)
-                        .show(ui, |ui| {
-                            ui.label(
-                            egui::RichText::new(format!(
-                                "Tear off and discard {printed_pages} page{} of printed output?",
-                                if printed_pages == 1 { "" } else { "s" }
-                            ))
-                            .size(font),
+        // Fit-width scaling: no horizontal scrolling at default zoom.
+        let scale = ui.available_width() / (PAPER_WIDTH_IN * RASTER_DPI);
+        let page_size = egui::vec2(
+            PAPER_WIDTH_IN * RASTER_DPI * scale,
+            PAGE_HEIGHT_IN * RASTER_DPI * scale,
+        );
+        let keep_margin_px = page_size.y * KEEP_MARGIN_PAGES;
+        // Copied out before the loop so the per-page texture-building
+        // closure below doesn't need to re-borrow `self` while
+        // `self.pages.entry(...)` already holds a mutable borrow of
+        // the `pages` field.
+        let green_bar = self.green_bar;
+
+        let mut keep_pages: HashSet<u32> = HashSet::new();
+        // Page topmost in the viewport this frame — see
+        // `current_page`'s field doc comment.
+        let mut current_page_local = self.current_page;
+
+        egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .show_viewport(ui, |ui, viewport| {
+                let keep_min = viewport.min.y - keep_margin_px;
+                let keep_max = viewport.max.y + keep_margin_px;
+                current_page_local = (viewport.min.y / page_size.y)
+                    .floor()
+                    .clamp(0.0, (total_pages - 1) as f32)
+                    as u32;
+
+                for page in 0..total_pages {
+                    let y0 = page as f32 * page_size.y;
+                    let y1 = y0 + page_size.y;
+                    let (rect, _resp) = ui.allocate_exact_size(page_size, egui::Sense::hover());
+
+                    let in_keep_range = y1 >= keep_min && y0 <= keep_max;
+                    if !in_keep_range {
+                        continue;
+                    }
+                    keep_pages.insert(page);
+
+                    let texture = self.pages.entry(page).or_insert_with(|| {
+                        let img = paper_render::rasterize(
+                            handle,
+                            page as f32 * PAGE_HEIGHT_IN,
+                            PAGE_HEIGHT_IN,
+                            RASTER_DPI,
+                            green_bar,
                         );
-                            ui.add_space(DIALOG_MARGIN as f32);
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-                                if ui.button("Tear Off").clicked() {
-                                    self.perform_tear_off();
-                                }
-                                if ui.button("Cancel").clicked() {
-                                    self.pending_tear_off = false;
-                                }
-                            });
-                        });
-                });
-        }
+                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                            [img.width as usize, img.height as usize],
+                            &img.pixels,
+                        );
+                        ctx.load_texture(
+                            format!("paper-page-{page}"),
+                            color_image,
+                            egui::TextureOptions::NEAREST,
+                        )
+                    });
+                    let sized = egui::load::SizedTexture::new(texture.id(), rect.size());
+                    ui.put(rect, egui::Image::new(sized));
+                }
+            });
 
-        error
+        // Evict cached textures outside the keep-set.
+        self.pages.retain(|page, _| keep_pages.contains(page));
+        self.current_page = current_page_local;
     }
 }
 
