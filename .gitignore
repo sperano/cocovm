@@ -14,3 +14,4 @@
 # scratch cassette recordings in the repo root
 /tape*.cas
 /tape*.wav
+/printout.txt

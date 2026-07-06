@@ -118,32 +118,45 @@ impl PrinterSink for CaptureSink {
 }
 
 /// "Print to text file" sink (`docs/printer-plan.md` T2): appends every
-/// decoded byte to a file, unmodified. Printer output is raw bytes — BASIC's
-/// line ending is a bare CR (`$0D`, `bitbanger-spec.md` "Framing" — one stop
-/// bit terminates each frame, no translation implied by the framing itself)
-/// and this sink never rewrites it to LF or CRLF, so a captured `LLIST` reads
-/// back exactly as the ROM sent it.
+/// decoded byte to a file. By default bytes are written unmodified —
+/// BASIC's line ending is a bare CR (`$0D`, `bitbanger-spec.md` "Framing")
+/// and a faithful capture keeps it, so a captured `LLIST` reads back
+/// exactly as the ROM sent it. Optionally (`translate_cr_to_lf`, the GUI's
+/// "Translate CR to LF" checkbox) each CR is rewritten to LF so the file
+/// reads as normal host text; a CoCo never sends CRLF pairs, so a plain
+/// byte-for-byte swap is the whole job (a hypothetical CRLF in the stream
+/// would come out LFLF — acceptable for a convenience mode).
 ///
 /// Buffered via [`BufWriter`] so the decoder isn't paying one `write`
-/// syscall per character, flushed to the OS whenever a CR or LF byte is
-/// seen — the natural granularity for "printer output" (one line at a time),
-/// so a tail-follower on the capture file sees whole lines as they print.
+/// syscall per character, flushed to the OS whenever a (possibly
+/// translated) line ending is seen — the natural granularity for "printer
+/// output" (one line at a time), so a tail-follower on the capture file
+/// sees whole lines as they print.
 pub struct FileSink {
     file: BufWriter<File>,
+    translate_cr_to_lf: bool,
 }
 
 impl FileSink {
     /// Open `path` for capture: create it if it doesn't exist, truncate it if
     /// it does (a fresh capture session always starts from an empty file).
-    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
+    /// `translate_cr_to_lf` fixes the sink's line-ending mode for its whole
+    /// lifetime — it's a property of the capture session, not a live toggle.
+    pub fn create(path: impl AsRef<Path>, translate_cr_to_lf: bool) -> io::Result<Self> {
         Ok(Self {
             file: BufWriter::new(File::create(path)?),
+            translate_cr_to_lf,
         })
     }
 }
 
 impl PrinterSink for FileSink {
     fn write_byte(&mut self, b: u8) {
+        let b = if self.translate_cr_to_lf && b == b'\r' {
+            b'\n'
+        } else {
+            b
+        };
         // Best-effort: a full disk or a revoked permission has no useful
         // recovery path from inside the decoder's per-instruction tick, and
         // the alternative (propagating an error out of
@@ -247,10 +260,16 @@ impl BitBanger {
 
     /// Start "print to text file" capture at `path` (create/truncate — see
     /// [`FileSink::create`]), so both the CLI (`--print-capture`) and the GUI
-    /// (File menu "Start Print Capture…") can drive it through the same
-    /// call. Leaves any in-flight frame untouched, like [`Self::set_sink`].
-    pub fn start_file_capture(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
-        self.sink = Box::new(FileSink::create(path)?);
+    /// (the Machine menu's "Start Print Capture…") can drive it through the
+    /// same call. `translate_cr_to_lf` picks the session's line-ending mode
+    /// (see [`FileSink`]). Leaves any in-flight frame untouched, like
+    /// [`Self::set_sink`].
+    pub fn start_file_capture(
+        &mut self,
+        path: impl AsRef<Path>,
+        translate_cr_to_lf: bool,
+    ) -> io::Result<()> {
+        self.sink = Box::new(FileSink::create(path, translate_cr_to_lf)?);
         Ok(())
     }
 
@@ -568,12 +587,13 @@ mod tests {
         ))
     }
 
-    /// [`FileSink`] must write decoded bytes to disk unmodified — including a
-    /// bare CR line ending, never translated to LF/CRLF (module doc comment).
+    /// [`FileSink`] in faithful (default) mode must write decoded bytes to
+    /// disk unmodified — including a bare CR line ending, never rewritten
+    /// to LF/CRLF (struct doc comment).
     #[test]
     fn file_sink_writes_bytes_unmodified() {
         let path = scratch_path("writes-bytes");
-        let mut sink = FileSink::create(&path).expect("create scratch file");
+        let mut sink = FileSink::create(&path, false).expect("create scratch file");
         for &b in b"HELLO\r" {
             sink.write_byte(b);
         }
@@ -583,13 +603,28 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// With `translate_cr_to_lf` set, every CR comes out as LF and every
+    /// other byte is untouched (the GUI's "Translate CR to LF" checkbox).
+    #[test]
+    fn file_sink_translates_cr_to_lf_when_asked() {
+        let path = scratch_path("cr-to-lf");
+        let mut sink = FileSink::create(&path, true).expect("create scratch file");
+        for &b in b"HELLO\rWORLD\r" {
+            sink.write_byte(b);
+        }
+        drop(sink);
+        let contents = std::fs::read(&path).expect("read scratch file");
+        assert_eq!(contents, b"HELLO\nWORLD\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// [`FileSink::create`] truncates an existing file rather than appending,
     /// so a fresh capture session never inherits a previous run's tail.
     #[test]
     fn file_sink_create_truncates_existing_file() {
         let path = scratch_path("truncates");
         std::fs::write(&path, b"stale content that must be gone").unwrap();
-        let mut sink = FileSink::create(&path).expect("create scratch file");
+        let mut sink = FileSink::create(&path, false).expect("create scratch file");
         sink.write_byte(b'X');
         drop(sink);
         let contents = std::fs::read(&path).expect("read scratch file");
@@ -606,7 +641,7 @@ mod tests {
     fn start_and_stop_file_capture_gate_decoded_bytes() {
         let path = scratch_path("start-stop");
         let mut bb = BitBanger::new();
-        bb.start_file_capture(&path).expect("start capture");
+        bb.start_file_capture(&path, false).expect("start capture");
         feed_byte(&mut bb, b'A', DEFAULT_BIT_PERIOD, TICK_SIZE);
         bb.stop_capture();
         feed_byte(&mut bb, b'B', DEFAULT_BIT_PERIOD, TICK_SIZE);

@@ -180,6 +180,11 @@ struct CocoApp {
     /// back on eject: `coco_core::bitbanger::FileSink` writes straight
     /// through as bytes are decoded.
     print_capture_path: Option<PathBuf>,
+    /// Machine-menu "Translate CR to LF" checkbox: when set, print captures
+    /// rewrite the CoCo's bare-CR line endings as LF so the file reads as
+    /// normal host text (faithful raw bytes otherwise). Applies when a
+    /// capture starts — an in-progress capture keeps the mode it began with.
+    print_capture_lf: bool,
     /// A disk action waiting on the "this will power-cycle the machine"
     /// confirmation dialog — set instead of acting when the FD-502 isn't in
     /// the cartridge slot yet, since inserting it swaps the cartridge and
@@ -279,6 +284,7 @@ impl CocoApp {
             tape_path: None,
             save_tape_wav,
             print_capture_path: None,
+            print_capture_lf: false,
             pending_disk_action: None,
             mpi: None,
             paper_window: paper_view::PaperWindow::new(),
@@ -738,7 +744,12 @@ impl CocoApp {
     /// out from under the window, so the window is detached (and closed)
     /// rather than left showing stale content.
     fn start_print_capture(&mut self, path: PathBuf) {
-        match self.machine.bus.bitbanger.start_file_capture(&path) {
+        match self
+            .machine
+            .bus
+            .bitbanger
+            .start_file_capture(&path, self.print_capture_lf)
+        {
             Ok(()) => {
                 self.print_capture_path = Some(path);
                 self.paper_window.detach();
@@ -1182,6 +1193,11 @@ impl eframe::App for CocoApp {
                         self.stop_print_capture();
                         ui.close();
                     }
+                    ui.checkbox(&mut self.print_capture_lf, "Translate CR to LF")
+                        .on_hover_text(
+                            "Rewrite the CoCo's CR line endings as LF so the capture reads as \
+                             normal text. Takes effect when a capture starts.",
+                        );
                 });
                 ui.menu_button("Keyboard", |ui| {
                     for mode in [KbMode::Positional, KbMode::Symbolic] {
