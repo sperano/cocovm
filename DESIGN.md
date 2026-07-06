@@ -122,6 +122,8 @@ I/O page map (`$FF00–$FFFF`):
 | `$FF00–$FF03` | PIA0 (keyboard, joystick comparator)                           |
 | `$FF20–$FF23` | PIA1 (DAC sound, cassette, VDG-legacy mode bits)               |
 | `$FF40–$FF5F` | Cartridge / FDC control                                        |
+| `$FF7F`       | Multi-Pak Interface select register (SCS/CTS slot, when an MPI is inserted) |
+| `$FF80–$FF86` | VHD (virtual hard disk, NitrOS-9 `emudsk`)                     |
 | `$FF90–$FF9F` | GIME control (INIT0/1, IRQ/FIRQ enable, timer, video, border…) |
 | `$FFA0–$FFAF` | MMU task registers (8 blocks × 2 tasks, INIT1 selects task)    |
 | `$FFB0–$FFBF` | 16 palette registers                                           |

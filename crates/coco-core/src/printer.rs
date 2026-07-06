@@ -1,0 +1,185 @@
+//! Shared dot-matrix "paper" model for the DMP printer family
+//! (`docs/printer-plan.md` T4, "Family context": DMP-105 today, DMP-130/Epson
+//! dialects later share this raster, not the per-model control-code
+//! interpreters).
+//!
+//! The paper is a continuous roll: no page/form-feed concept exists in any
+//! documented DMP-105 behavior (`dmp105-protocol.md` §3, "FF (0x0C): VERIFIED
+//! ABSENT"), so [`Paper`] never introduces one either — an 11" page boundary
+//! is purely a frontend rendering choice (T5), not modeled here.
+//!
+//! Two independent fixed-point axes, chosen so every documented pitch/feed
+//! value converts to an exact integer — no floats anywhere in position
+//! accounting (`docs/printer-plan.md` T4 direction):
+//!
+//! - **Vertical** ([`Y_UNITS_PER_INCH`]): 1/72", matching every documented
+//!   vertical fact directly — the three text line-feed pitches (1/6", 1/8",
+//!   1/12" — `dmp105-protocol.md` §4 T9) and the fixed graphics line feed
+//!   (7/72" — §5) are all already whole numbers of 1/72" (12, 9, 6, and 7
+//!   respectively), so no finer unit is needed to keep them exact.
+//! - **Horizontal** ([`X_UNITS_PER_INCH`]): see its doc comment — a derived
+//!   internal choice, not a hardware register, so the three pitch densities
+//!   (`dmp105-protocol.md` §1 Appendix G) share one exact integer grid.
+
+use std::collections::BTreeMap;
+
+/// Vertical fixed-point resolution: 1/72" per unit. Not itself a hardware
+/// register — it's the finest unit that keeps every documented vertical fact
+/// in `dmp105-protocol.md` (§4 T9's 1/6"/1/8"/1/12" line-feed pitches, §5's
+/// fixed 7/72" graphics line feed) an exact integer count of units.
+pub const Y_UNITS_PER_INCH: u32 = 72;
+
+/// Horizontal fixed-point resolution: 1/3600". Derived, not a hardware fact:
+/// `dmp105-protocol.md` Appendix G (p.59) gives 960/1152/1600 dots over an
+/// (arithmetically derived, see `dmp105.rs`'s `Pitch`) constant 8" print
+/// width, i.e. 120/144/200 dots per inch for Normal/Compressed/Condensed
+/// pitch. 3600 is the LCM of 120, 144, and 200, so each pitch's per-dot
+/// spacing (3600/120=30, 3600/144=25, 3600/200=18) is an exact integer
+/// number of these units — one common fixed-point grid all three pitches
+/// (and mid-line pitch changes) can share without rounding.
+pub const X_UNITS_PER_INCH: u32 = 3600;
+
+/// Snapshot of how much paper has been printed on: the furthest dot row
+/// reached and how much ink has been laid down, cheap enough to poll every
+/// frame from a live-updating frontend view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PaperExtent {
+    /// Highest `y` (1/72" units) any dot has been marked at; 0 if the paper
+    /// is blank.
+    pub max_y: u32,
+    /// Total dots marked so far (not deduplicated — a dot re-struck at the
+    /// same position, e.g. via the repeat code, counts twice, matching real
+    /// ink laid down twice).
+    pub dot_count: usize,
+}
+
+/// A continuous dot-matrix paper roll: an abstract raster of impressions
+/// (dot columns at [`X_UNITS_PER_INCH`], rows at [`Y_UNITS_PER_INCH`]), not
+/// pixels — rendering style (dot bleed, tractor-feed strips, page
+/// perforations) is entirely a frontend concern (T5).
+///
+/// Storage is "Vec-of-bands": one row (`y`) maps to the sorted-or-not list of
+/// `x` columns marked on it, via a `BTreeMap` so a frontend asking for a
+/// visible window (`dots_in_range`) gets an efficient range scan rather than
+/// a linear filter over the whole roll.
+#[derive(Debug, Default)]
+pub struct Paper {
+    rows: BTreeMap<u32, Vec<u32>>,
+    dirty_min: Option<u32>,
+    dirty_max: Option<u32>,
+}
+
+impl Paper {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record one dot impression at absolute position (`x`, `y`).
+    pub fn mark(&mut self, x: u32, y: u32) {
+        self.rows.entry(y).or_default().push(x);
+        self.dirty_min = Some(self.dirty_min.map_or(y, |m| m.min(y)));
+        self.dirty_max = Some(self.dirty_max.map_or(y, |m| m.max(y)));
+    }
+
+    /// How much paper has been printed on so far.
+    pub fn extent(&self) -> PaperExtent {
+        PaperExtent {
+            max_y: self.rows.keys().next_back().copied().unwrap_or(0),
+            dot_count: self.rows.values().map(Vec::len).sum(),
+        }
+    }
+
+    /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs —
+    /// enough for a frontend to render a visible scroll window without
+    /// walking the whole roll.
+    pub fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
+        self.rows
+            .range(y0..=y1)
+            .flat_map(|(&y, xs)| xs.iter().map(move |&x| (x, y)))
+            .collect()
+    }
+
+    /// The row range touched since the last call (or since construction),
+    /// then reset — the simplest "what changed" signal a live-updating
+    /// frontend view needs: redraw at least that band, nothing below its
+    /// floor could have changed (the print head only ever advances `y`
+    /// forward within a print job — see `dmp105.rs`).
+    pub fn take_dirty(&mut self) -> Option<(u32, u32)> {
+        let range = self.dirty_min.zip(self.dirty_max);
+        self.dirty_min = None;
+        self.dirty_max = None;
+        range
+    }
+
+    /// Tear off: discard every dot printed so far. Does not rebase future
+    /// `y` coordinates to 0 — the print head's own position (owned by the
+    /// interpreter, not `Paper`) keeps advancing along the same continuous
+    /// axis it always has, matching the roll's "no page concept" design.
+    /// Rebasing a *view* to start fresh after tear-off is a T5 rendering
+    /// choice, not modeled here.
+    pub fn clear(&mut self) {
+        self.rows.clear();
+        self.dirty_min = None;
+        self.dirty_max = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_paper_has_zero_extent() {
+        let paper = Paper::new();
+        assert_eq!(paper.extent(), PaperExtent::default());
+    }
+
+    #[test]
+    fn mark_updates_extent_and_dot_count() {
+        let mut paper = Paper::new();
+        paper.mark(10, 5);
+        paper.mark(20, 5);
+        paper.mark(15, 50);
+        let extent = paper.extent();
+        assert_eq!(extent.max_y, 50);
+        assert_eq!(extent.dot_count, 3);
+    }
+
+    #[test]
+    fn dots_in_range_only_returns_the_requested_band() {
+        let mut paper = Paper::new();
+        paper.mark(1, 0);
+        paper.mark(2, 10);
+        paper.mark(3, 20);
+        paper.mark(4, 30);
+        let mut dots = paper.dots_in_range(10, 20);
+        dots.sort();
+        assert_eq!(dots, vec![(2, 10), (3, 20)]);
+    }
+
+    #[test]
+    fn dirty_range_reported_then_cleared_on_take() {
+        let mut paper = Paper::new();
+        assert_eq!(paper.take_dirty(), None);
+        paper.mark(0, 5);
+        paper.mark(0, 15);
+        assert_eq!(paper.take_dirty(), Some((5, 15)));
+        // Second call sees nothing new until another mark happens.
+        assert_eq!(paper.take_dirty(), None);
+        paper.mark(0, 100);
+        assert_eq!(paper.take_dirty(), Some((100, 100)));
+    }
+
+    #[test]
+    fn clear_empties_dots_but_does_not_touch_future_absolute_y() {
+        let mut paper = Paper::new();
+        paper.mark(0, 5);
+        paper.clear();
+        assert_eq!(paper.extent(), PaperExtent::default());
+        assert!(paper.dots_in_range(0, 1000).is_empty());
+        // A mark at a large absolute y after clear lands exactly there — no
+        // rebasing happens inside Paper.
+        paper.mark(0, 9_000);
+        assert_eq!(paper.extent().max_y, 9_000);
+    }
+}

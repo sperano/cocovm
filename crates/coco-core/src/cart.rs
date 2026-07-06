@@ -55,6 +55,29 @@ pub trait Cartridge {
     fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
         None
     }
+    /// Downcast to the [`MultiPak`], if that's what this cartridge is — how
+    /// the frontend reaches individual slots (insert/eject/switch) behind the
+    /// trait object.
+    fn as_multipak(&mut self) -> Option<&mut MultiPak> {
+        None
+    }
+    /// Read the Multi-Pak Interface's own select register (`$FF7F`). Not
+    /// routed through [`Cartridge::read`]/[`Cartridge::write`]: those carry
+    /// the SCS I/O window ($FF40-$FF5F), and `$FF7F` must reach the MPI
+    /// itself even when a `DiskCart` (whose own register decode could alias
+    /// it) is plugged into the MPI's selected SCS slot. Every cartridge other
+    /// than [`MultiPak`] leaves this at the default open-bus/no-op.
+    fn control_read(&mut self) -> u8 {
+        IO_OPEN_BUS
+    }
+    /// Write the Multi-Pak Interface's own select register (`$FF7F`). See
+    /// [`Cartridge::control_read`].
+    fn control_write(&mut self, _val: u8) {}
+    /// Re-run this cartridge's reset sequence (the CoCo's RESET* line, which
+    /// the expansion port shares). [`MultiPak`] reloads its select register
+    /// from the front-panel switch and forwards the reset to all 4 slots;
+    /// every other cartridge has nothing reset-sensitive to do.
+    fn reset(&mut self) {}
 }
 
 /// No cartridge inserted.
@@ -185,5 +208,209 @@ impl Cartridge for RomPak {
     }
     fn cart_line_ties_q(&self) -> bool {
         self.autostart
+    }
+}
+
+/// Tandy Multi-Pak Interface (MPI, 26-3024): a 4-slot passive expansion
+/// adapter for the cartridge port. Facts below are verified against MAME
+/// `src/devices/bus/coco/coco_multi.cpp` (`coco_multipak_device`) and the
+/// Lomont CoCo Hardware reference.
+///
+/// All expansion-port lines are shared across the 4 slots except SCS*, CTS*,
+/// and CART* (MAME's `coco_multi.cpp` header comment): those three follow the
+/// select register below, while `halt_asserted`/`take_nmi`/`tick` reach every
+/// slot regardless of selection (a device doesn't stop just because it isn't
+/// currently addressed).
+///
+/// Two MAME facts are deliberately NOT modeled here, per spec: the CoCo 3
+/// never delivers external-ROM-window *writes* to cartridges at all (already
+/// true of `SystemBus`, independent of the MPI), and the field-mod some real
+/// MPIs have that ties all 4 slots' CART* lines together (a hardware hack,
+/// not stock behaviour) is not reproduced — CART* here strictly follows the
+/// CTS select, as spec'd.
+pub struct MultiPak {
+    slots: [Box<dyn Cartridge>; mpi::SLOT_COUNT],
+    /// The raw `$FF7F` select register (both used and forced-high unused
+    /// bits — [`Cartridge::control_read`] applies [`mpi::READBACK_OR_MASK`]
+    /// on the way out, so this can be compared directly against a switch
+    /// value from [`mpi::SWITCH_VALUES`]).
+    select: u8,
+    /// Front-panel switch position (slot index, 0-3), moved by
+    /// [`MultiPak::set_switch`].
+    switch_slot: usize,
+    /// Set by any software write to `$FF7F` (MAME `m_block`); while set,
+    /// [`MultiPak::set_switch`] still records the new switch position but
+    /// does not apply it to `select` — real hardware ignores the switch
+    /// until the next reset once software has taken over slot selection.
+    switch_blocked: bool,
+}
+
+/// `$FF7F` select-register bitfield constants and the front-panel switch
+/// lookup (MAME `coco_multi.cpp`).
+pub mod mpi {
+    /// Number of physical cartridge slots.
+    pub const SLOT_COUNT: usize = 4;
+
+    /// SCS slot-select field (bits 1-0): the `$FF40-$FF5F` I/O window routes
+    /// to this slot only.
+    pub const SCS_MASK: u8 = 0x03;
+    /// CTS slot-select field, bit position (bits 5-4): the external ROM
+    /// window (`rom_read`) and the CART* line both follow this slot only —
+    /// CART* is not independently selectable from CTS.
+    pub const CTS_SHIFT: u8 = 4;
+    /// CTS slot-select field, mask after shifting into position.
+    pub const CTS_MASK: u8 = 0x03 << CTS_SHIFT;
+
+    /// Bits 7, 6, 3, 2 are unused; a `$FF7F` read forces them high (MAME
+    /// `coco_multi.cpp` `select_byte | 0xCC`). A write replaces the entire
+    /// byte — there is no nibble merge on the way in, only this OR-mask on
+    /// the way out.
+    pub const READBACK_OR_MASK: u8 = 0xCC;
+
+    /// Front-panel switch position -> power-on/reset `$FF7F` value, one
+    /// entry per physical slot 1-4 (MAME `MULTI_SLOT_LOOKUP`). Both the SCS
+    /// and CTS fields already point at the same slot, and the unused bits
+    /// already read as the forced-high pattern, so these double as valid
+    /// post-readback values too.
+    pub const SWITCH_VALUES: [u8; SLOT_COUNT] = [0xCC, 0xDD, 0xEE, 0xFF];
+}
+
+impl MultiPak {
+    /// Build an MPI with all 4 slots empty, select loaded from `switch_slot`
+    /// (0-3; the conventional default is 3 — slot 4, the disk-controller
+    /// slot).
+    pub fn new(switch_slot: usize) -> Self {
+        Self {
+            slots: [
+                Box::new(EmptySlot),
+                Box::new(EmptySlot),
+                Box::new(EmptySlot),
+                Box::new(EmptySlot),
+            ],
+            select: mpi::SWITCH_VALUES[switch_slot],
+            switch_slot,
+            switch_blocked: false,
+        }
+    }
+
+    /// Plug a cartridge into `slot` (0-3).
+    pub fn insert(&mut self, slot: usize, cart: Box<dyn Cartridge>) {
+        self.slots[slot] = cart;
+    }
+
+    /// Remove whatever is in `slot`, restoring the empty slot.
+    pub fn eject(&mut self, slot: usize) {
+        self.slots[slot] = Box::new(EmptySlot);
+    }
+
+    /// Model moving the physical front-panel switch to `slot` (0-3). Updates
+    /// the live select register immediately unless a software write to
+    /// `$FF7F` has taken over selection since the last reset (see
+    /// [`MultiPak::switch_blocked`]); the switch position itself is always
+    /// recorded, so the next reset picks it up regardless.
+    pub fn set_switch(&mut self, slot: usize) {
+        self.switch_slot = slot;
+        if !self.switch_blocked {
+            self.select = mpi::SWITCH_VALUES[slot];
+        }
+    }
+
+    /// The current front-panel switch position (0-3), for UI display —
+    /// independent of whether it's currently controlling `select` (see
+    /// [`MultiPak::switch_blocked`]).
+    pub fn switch_slot(&self) -> usize {
+        self.switch_slot
+    }
+
+    /// True if a software write to `$FF7F` is overriding the front-panel
+    /// switch (cleared on the next reset).
+    pub fn switch_blocked(&self) -> bool {
+        self.switch_blocked
+    }
+
+    /// The slot currently selected for the SCS I/O window (`$FF40-$FF5F`).
+    pub fn scs_slot(&self) -> usize {
+        (self.select & mpi::SCS_MASK) as usize
+    }
+
+    /// The slot currently selected for the CTS ROM window and the CART* line.
+    pub fn cts_slot(&self) -> usize {
+        ((self.select & mpi::CTS_MASK) >> mpi::CTS_SHIFT) as usize
+    }
+}
+
+impl Cartridge for MultiPak {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.slots[self.scs_slot()].read(addr)
+    }
+
+    fn write(&mut self, addr: u16, val: u8) {
+        self.slots[self.scs_slot()].write(addr, val);
+    }
+
+    fn rom_read(&mut self, addr: u16) -> u8 {
+        self.slots[self.cts_slot()].rom_read(addr)
+    }
+
+    fn cart_line_ties_q(&self) -> bool {
+        self.slots[self.cts_slot()].cart_line_ties_q()
+    }
+
+    /// Every slot's clock runs regardless of selection (MAME ticks all 4
+    /// devices every call), so this advances all 4 rather than just the
+    /// selected one(s).
+    fn tick(&mut self, cycles: u32) {
+        for slot in &mut self.slots {
+            slot.tick(cycles);
+        }
+    }
+
+    /// Wire-OR of all 4 slots: any device — e.g. an FD-502 in a
+    /// non-selected slot — can hold HALT* regardless of SCS/CTS selection.
+    fn halt_asserted(&self) -> bool {
+        self.slots.iter().any(|slot| slot.halt_asserted())
+    }
+
+    /// Polls (and consumes edges from) every slot, OR-ing the results —
+    /// never short-circuits, so a pending edge in a later slot isn't left
+    /// stranded behind an earlier slot's `false`.
+    fn take_nmi(&mut self) -> bool {
+        let mut any = false;
+        for slot in &mut self.slots {
+            if slot.take_nmi() {
+                any = true;
+            }
+        }
+        any
+    }
+
+    fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
+        self.slots.iter_mut().find_map(|slot| slot.as_disk_cart())
+    }
+
+    fn as_multipak(&mut self) -> Option<&mut MultiPak> {
+        Some(self)
+    }
+
+    fn control_read(&mut self) -> u8 {
+        self.select | mpi::READBACK_OR_MASK
+    }
+
+    fn control_write(&mut self, val: u8) {
+        // A write replaces the entire byte — no nibble merge (spec).
+        self.select = val;
+        self.switch_blocked = true;
+    }
+
+    /// Reloads `select` from the front-panel switch and lifts any software
+    /// override (MAME `device_reset`), then forwards the reset to every
+    /// slot's own cartridge — real hardware's RESET* line reaches the whole
+    /// expansion bus, not just the MPI itself.
+    fn reset(&mut self) {
+        self.select = mpi::SWITCH_VALUES[self.switch_slot];
+        self.switch_blocked = false;
+        for slot in &mut self.slots {
+            slot.reset();
+        }
     }
 }

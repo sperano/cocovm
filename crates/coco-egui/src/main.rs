@@ -15,15 +15,18 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod paper_render;
+mod paper_view;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
-use coco_core::cart::RomPak;
+use coco_core::cart::{MultiPak, RomPak};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
-use coco_core::{Machine, MachineConfig, MemorySize, VideoStandard};
+use coco_core::vhd::VhdImage;
+use coco_core::{Machine, MachineConfig, MemorySize, MonitorType, VideoStandard};
 use eframe::egui;
 use joy::JoystickInputs;
 
@@ -157,6 +160,11 @@ struct CocoApp {
     /// exposes (status bar, eject menu items, and write-back targets — a
     /// modified image is written back to its file on eject/replace/exit).
     disk_paths: [Option<PathBuf>; UI_DRIVES],
+    /// Source paths of the VHD (virtual hard disk) images mounted in the two
+    /// drives the UI exposes (status bar, eject menu items). Unlike
+    /// `disk_paths`, VHD writes hit the backing file directly — there is no
+    /// in-memory dirty state and so nothing to write back on eject/exit.
+    vhd_paths: [Option<PathBuf>; UI_DRIVES],
     /// Source path of the mounted cassette tape (.cas), if any — the
     /// write-back target for recordings, like `disk_paths` for floppies.
     tape_path: Option<PathBuf>,
@@ -164,11 +172,26 @@ struct CocoApp {
     /// written canonical `.cas`, also synthesize and write a `.wav` of the
     /// tape audio (`coco_core::cassette_wav::synthesize_wav`) alongside it.
     save_tape_wav: bool,
+    /// Destination path of the active bit-banger "print to text file"
+    /// capture, if any (`docs/printer-plan.md` T2) — shown in the Machine
+    /// menu and gates "Stop Print Capture", like `tape_path` does for the
+    /// cassette deck. Unlike disk/tape images, there is nothing to write
+    /// back on eject: `coco_core::bitbanger::FileSink` writes straight
+    /// through as bytes are decoded.
+    print_capture_path: Option<PathBuf>,
     /// A disk action waiting on the "this will power-cycle the machine"
     /// confirmation dialog — set instead of acting when the FD-502 isn't in
     /// the cartridge slot yet, since inserting it swaps the cartridge and
     /// cold-restarts the machine (unsaved state is lost).
     pending_disk_action: Option<PendingDiskAction>,
+    /// State of the inserted Multi-Pak Interface, if any — `None` means the
+    /// cartridge slot holds a plain cartridge (or nothing), today's default.
+    mpi: Option<MpiState>,
+    /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
+    /// the DMP-105's dot-matrix output on period-correct tractor-feed
+    /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
+    /// handshake with print-file-capture.
+    paper_window: paper_view::PaperWindow,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -190,6 +213,39 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
 /// were one or two — and the menu stays small.
 const UI_DRIVES: usize = 2;
 
+/// Number of physical slots on a Multi-Pak Interface — re-exported from the
+/// core crate's own constant so the frontend's slot arrays can't drift from
+/// [`coco_core::cart::MultiPak`]'s.
+const MPI_SLOT_COUNT: usize = coco_core::cart::mpi::SLOT_COUNT;
+
+/// Front-panel MPI switch position an [`MultiPak`] starts on
+/// ([`CocoApp::insert_multipak`]): slot 4, the conventional disk-controller
+/// default (also MAME's default — `coco_multi.cpp` `MULTI_SLOT_LOOKUP`).
+const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
+
+/// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
+/// cold restart (or just the status bar / menu labels) can describe it
+/// without having to downcast the core's trait objects. The FD-502 doesn't
+/// carry its own disk paths here — those stay in [`CocoApp::disk_paths`]
+/// exactly as they do without an MPI, since [`Cartridge::as_disk_cart`]
+/// forwarding already makes the drive UI transparent to whether the
+/// controller lives at the top level or nested in a slot.
+///
+/// [`Cartridge::as_disk_cart`]: coco_core::cart::Cartridge::as_disk_cart
+enum MpiSlot {
+    Empty,
+    RomPak(PathBuf),
+    Fd502,
+}
+
+/// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
+/// front-panel switch points at (mirrors [`MultiPak::set_switch`]) and what's
+/// plugged into each of its 4 slots ([`MpiSlot`]).
+struct MpiState {
+    switch: usize,
+    slots: [MpiSlot; MPI_SLOT_COUNT],
+}
+
 impl CocoApp {
     fn new(
         _cc: &eframe::CreationContext<'_>,
@@ -197,6 +253,7 @@ impl CocoApp {
         rom: Box<[u8]>,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
+        vhd_paths: [Option<PathBuf>; UI_DRIVES],
         save_tape_wav: bool,
     ) -> Self {
         let mut app = Self {
@@ -217,9 +274,13 @@ impl CocoApp {
             cart_path: None,
             cart_error: None,
             disk_paths: [None, None],
+            vhd_paths: [None, None],
             tape_path: None,
             save_tape_wav,
+            print_capture_path: None,
             pending_disk_action: None,
+            mpi: None,
+            paper_window: paper_view::PaperWindow::new(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -227,6 +288,11 @@ impl CocoApp {
         for (drive, path) in disk_paths.into_iter().enumerate() {
             if let Some(path) = path {
                 app.insert_disk(drive, path);
+            }
+        }
+        for (drive, path) in vhd_paths.into_iter().enumerate() {
+            if let Some(path) = path {
+                app.insert_vhd(drive, path);
             }
         }
         app
@@ -252,6 +318,7 @@ impl CocoApp {
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
+                self.mpi = None; // plugging straight into the port removes any MPI
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -267,6 +334,7 @@ impl CocoApp {
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
     }
 
     /// Make sure the inserted cartridge is the FD-502 disk controller,
@@ -274,9 +342,22 @@ impl CocoApp {
     /// is in the slot. Creating it cold-resets the machine: BASIC only probes
     /// for Disk BASIC at cold start. Swapping a floppy in an already-present
     /// controller does NOT reset, like on real hardware.
+    ///
+    /// With a Multi-Pak Interface installed, the slot to plug the FD-502 into
+    /// is a real choice a top-level "just ensure a controller exists" call
+    /// can't make on the caller's behalf — so this refuses instead of
+    /// silently replacing the MPI, and directs the caller to
+    /// [`Self::mpi_insert_fd502`] via the MultiPak submenu.
     fn ensure_disk_controller(&mut self) -> Result<(), String> {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             return Ok(());
+        }
+        if self.mpi.is_some() {
+            return Err(
+                "No FD-502 is installed in the MultiPak. Use Machine > MultiPak Interface > \
+                 a slot > Insert FD-502 first."
+                    .to_string(),
+            );
         }
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
         let rom = std::fs::read(&path)
@@ -290,6 +371,120 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         Ok(())
+    }
+
+    /// Insert a Multi-Pak Interface into the cartridge slot (cold-restart
+    /// gated, like plain cartridge insertion): swaps out whatever was
+    /// plugged directly into the port for an empty 4-slot MPI with its
+    /// front-panel switch on slot 4 ([`DEFAULT_MPI_SWITCH_SLOT`]).
+    fn insert_multipak(&mut self) {
+        self.flush_dirty_disks();
+        self.machine.insert_cartridge(Box::new(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT)));
+        self.machine.power_cycle();
+        self.mpi = Some(MpiState {
+            switch: DEFAULT_MPI_SWITCH_SLOT,
+            slots: std::array::from_fn(|_| MpiSlot::Empty),
+        });
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+    }
+
+    /// Remove the Multi-Pak Interface — and everything plugged into it —
+    /// restoring the plain empty cartridge slot.
+    fn eject_multipak(&mut self) {
+        self.flush_dirty_disks();
+        self.machine.eject_cartridge();
+        self.machine.power_cycle();
+        self.mpi = None;
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+    }
+
+    /// Load a ROM pak into MPI `slot` (0-3), using the current
+    /// `autostart_cart` setting. Mirrors [`Self::insert_cartridge`] but
+    /// targets one slot of the already-inserted MPI instead of the whole
+    /// cartridge port.
+    fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match RomPak::from_bytes(&bytes, self.autostart_cart) {
+            Ok(pak) => {
+                self.flush_dirty_disks();
+                if let Some(mp) = self.machine.bus.cart.as_multipak() {
+                    mp.insert(slot, Box::new(pak));
+                }
+                if let Some(mpi) = &mut self.mpi {
+                    mpi.slots[slot] = MpiSlot::RomPak(path);
+                }
+                self.machine.power_cycle();
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Insert the FD-502 disk controller into MPI `slot`, unless one is
+    /// already installed in a different slot (the FD-502 latch only ever
+    /// models one controller). Mirrors [`Self::ensure_disk_controller`]'s
+    /// cold-start rationale, but targets one MPI slot instead of the whole
+    /// cartridge port.
+    fn mpi_insert_fd502(&mut self, slot: usize) {
+        if self.machine.bus.cart.as_disk_cart().is_some() {
+            self.cart_error = Some("An FD-502 is already installed in another slot.".to_string());
+            return;
+        }
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
+        let rom = match std::fs::read(&path) {
+            Ok(rom) => rom,
+            Err(e) => {
+                self.cart_error =
+                    Some(format!("could not read Disk BASIC ROM {}: {e}", path.display()));
+                return;
+            }
+        };
+        self.flush_dirty_disks();
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, Box::new(DiskCart::new(rom.into_boxed_slice())));
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MpiSlot::Fd502;
+        }
+        self.disk_paths = [None, None];
+        self.machine.power_cycle();
+    }
+
+    /// Eject whatever is plugged into MPI `slot`, restoring its empty slot.
+    fn mpi_eject_slot(&mut self, slot: usize) {
+        let was_fd502 = matches!(self.mpi.as_ref().map(|m| &m.slots[slot]), Some(MpiSlot::Fd502));
+        if was_fd502 {
+            self.flush_dirty_disks();
+            self.disk_paths = [None, None];
+        }
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.eject(slot);
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MpiSlot::Empty;
+        }
+        self.machine.power_cycle();
+    }
+
+    /// Move the MPI's front-panel switch to `slot`. A running program's own
+    /// write to `$FF7F` overrides the switch until the next reset
+    /// ([`coco_core::cart::MultiPak::set_switch`]).
+    fn mpi_set_switch(&mut self, slot: usize) {
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.set_switch(slot);
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.switch = slot;
+        }
     }
 
     /// Menu-path entry for Insert Disk: acts immediately when the FD-502 is
@@ -399,6 +594,34 @@ impl CocoApp {
         }
     }
 
+    /// Mount the VHD image at `path` in `drive`. Unlike floppies, VHD is a
+    /// bus-level device (`$FF80-$FF86`, `SystemBus::vhd`) independent of the
+    /// cartridge slot: no controller to ensure, no machine reset, and no
+    /// write-back on eject/replace (VHD command execution writes straight
+    /// through to the backing file). Failures land in [`Self::cart_error`].
+    fn insert_vhd(&mut self, drive: usize, path: PathBuf) {
+        let result = (|| -> Result<(), String> {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .map_err(|e| format!("could not open {}: {e}", path.display()))?;
+            self.machine.bus.vhd.insert(drive, VhdImage::File(file));
+            self.vhd_paths[drive] = Some(path);
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.cart_error = Some(e);
+        }
+    }
+
+    /// Eject the VHD image in `drive`. No write-back: VHD writes already hit
+    /// the backing file directly.
+    fn eject_vhd(&mut self, drive: usize) {
+        self.machine.bus.vhd.eject(drive);
+        self.vhd_paths[drive] = None;
+    }
+
     /// Mount the tape at `path` (.cas decoded bytes, or a .wav recording
     /// demodulated via [`coco_core::cassette_wav::decode_wav`] — sniffed by
     /// the `RIFF` magic on the loaded bytes, not the file extension, since a
@@ -502,6 +725,51 @@ impl CocoApp {
                 self.cart_error = Some(format!("could not save {}: {e}", wav_path.display()));
             }
         }
+    }
+
+    /// Start "print to text file" capture at `path` (create/truncate —
+    /// [`coco_core::bitbanger::BitBanger::start_file_capture`]). Failures
+    /// (e.g. an unwritable path) land in [`Self::cart_error`] and leave any
+    /// previous capture running.
+    ///
+    /// Symmetric with [`Self::toggle_paper_window`]: if the paper window
+    /// currently owns the bit-banger's sink, starting file capture yanks it
+    /// out from under the window, so the window is detached (and closed)
+    /// rather than left showing stale content.
+    fn start_print_capture(&mut self, path: PathBuf) {
+        match self.machine.bus.bitbanger.start_file_capture(&path) {
+            Ok(()) => {
+                self.print_capture_path = Some(path);
+                self.paper_window.detach();
+            }
+            Err(e) => self.cart_error = Some(format!("could not open {}: {e}", path.display())),
+        }
+    }
+
+    /// Stop capture, restoring the bit-banger's no-op sink.
+    fn stop_print_capture(&mut self) {
+        self.machine.bus.bitbanger.stop_capture();
+        self.print_capture_path = None;
+    }
+
+    /// View-menu "Printer Paper" checkbox handler: on closed->open,
+    /// attaches a DMP-105 to the bit-banger if the paper window doesn't
+    /// already have a live handle (stopping any active print-file-capture
+    /// first, since only one sink is live at a time). Closing just hides
+    /// the window — the handle stays attached so it keeps accumulating
+    /// output in the background (see `paper_view`'s module doc comment).
+    fn toggle_paper_window(&mut self) {
+        if self.paper_window.open {
+            self.paper_window.open = false;
+            return;
+        }
+        if self.paper_window.handle.is_none() {
+            if self.print_capture_path.is_some() {
+                self.stop_print_capture();
+            }
+            self.paper_window.handle = Some(self.machine.bus.bitbanger.start_dmp105());
+        }
+        self.paper_window.open = true;
     }
 
     /// Emulated fields owed for this update, from wall-clock time at the
@@ -675,7 +943,13 @@ impl eframe::App for CocoApp {
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Insert Cartridge…").clicked() {
+                    // Plugging straight into the port only makes sense with no MPI in the
+                    // way — with one installed, cartridges go into its slots instead (below).
+                    let direct_port = self.mpi.is_none();
+                    if ui
+                        .add_enabled(direct_port, egui::Button::new("Insert Cartridge…"))
+                        .clicked()
+                    {
                         ui.close();
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("ROM Pak", &["rom", "ccc", "bin"])
@@ -684,7 +958,7 @@ impl eframe::App for CocoApp {
                             self.insert_cartridge(path);
                         }
                     }
-                    let inserted = self.cart_path.is_some();
+                    let inserted = direct_port && self.cart_path.is_some();
                     if ui
                         .add_enabled(inserted, egui::Button::new("Eject Cartridge"))
                         .clicked()
@@ -693,6 +967,94 @@ impl eframe::App for CocoApp {
                         ui.close();
                     }
                     ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
+                    ui.separator();
+                    ui.menu_button("MultiPak Interface", |ui| {
+                        let installed = self.mpi.is_some();
+                        if ui
+                            .add_enabled(!installed, egui::Button::new("Insert MultiPak"))
+                            .clicked()
+                        {
+                            self.insert_multipak();
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(installed, egui::Button::new("Remove MultiPak"))
+                            .clicked()
+                        {
+                            self.eject_multipak();
+                            ui.close();
+                        }
+                        if installed {
+                            ui.separator();
+                            for slot in 0..MPI_SLOT_COUNT {
+                                let slot_label = match self.mpi.as_ref().map(|m| &m.slots[slot]) {
+                                    Some(MpiSlot::RomPak(p)) => format!(
+                                        "Slot {} ({})",
+                                        slot + 1,
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                    ),
+                                    Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
+                                    _ => format!("Slot {}", slot + 1),
+                                };
+                                ui.menu_button(slot_label, |ui| {
+                                    if ui.button("Insert ROM Pak…").clicked() {
+                                        ui.close();
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("ROM Pak", &["rom", "ccc", "bin"])
+                                            .pick_file()
+                                        {
+                                            self.mpi_insert_rompak(slot, path);
+                                        }
+                                    }
+                                    // An FD-502 already installed elsewhere can't also go here
+                                    // — the emulated latch only ever models one controller.
+                                    let fd502_here = matches!(
+                                        self.mpi.as_ref().map(|m| &m.slots[slot]),
+                                        Some(MpiSlot::Fd502)
+                                    );
+                                    let fd502_elsewhere =
+                                        self.machine.bus.cart.as_disk_cart().is_some() && !fd502_here;
+                                    if ui
+                                        .add_enabled(
+                                            !fd502_elsewhere,
+                                            egui::Button::new("Insert FD-502"),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.mpi_insert_fd502(slot);
+                                        ui.close();
+                                    }
+                                    let occupied = !matches!(
+                                        self.mpi.as_ref().map(|m| &m.slots[slot]),
+                                        Some(MpiSlot::Empty)
+                                    );
+                                    if ui
+                                        .add_enabled(occupied, egui::Button::new("Eject"))
+                                        .clicked()
+                                    {
+                                        self.mpi_eject_slot(slot);
+                                        ui.close();
+                                    }
+                                });
+                            }
+                            ui.separator();
+                            ui.menu_button("Switch", |ui| {
+                                ui.label(
+                                    "Selects the power-on SCS/CTS slot. A running program's own \
+                                     $FF7F write overrides it until the next reset.",
+                                );
+                                let current = self.mpi.as_ref().map_or(0, |m| m.switch);
+                                for slot in 0..MPI_SLOT_COUNT {
+                                    if ui
+                                        .selectable_label(current == slot, format!("Slot {}", slot + 1))
+                                        .clicked()
+                                    {
+                                        self.mpi_set_switch(slot);
+                                    }
+                                }
+                            });
+                        }
+                    });
                     ui.separator();
                     for drive in 0..UI_DRIVES {
                         if ui.button(format!("Insert Disk in Drive {drive}…")).clicked() {
@@ -724,6 +1086,29 @@ impl eframe::App for CocoApp {
                         let mounted = self.disk_paths[drive].is_some();
                         if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
                             self.eject_disk(drive);
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    for drive in 0..UI_DRIVES {
+                        if ui.button(format!("Insert VHD {drive}…")).clicked() {
+                            ui.close();
+                            if let Some(path) =
+                                rfd::FileDialog::new().add_filter("VHD image", &["vhd"]).pick_file()
+                            {
+                                self.insert_vhd(drive, path);
+                            }
+                        }
+                        let label = match &self.vhd_paths[drive] {
+                            Some(p) => format!(
+                                "Eject VHD {drive} ({})",
+                                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                            ),
+                            None => format!("Eject VHD {drive}"),
+                        };
+                        let mounted = self.vhd_paths[drive].is_some();
+                        if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+                            self.eject_vhd(drive);
                             ui.close();
                         }
                     }
@@ -767,6 +1152,35 @@ impl eframe::App for CocoApp {
                         ui.close();
                     }
                     ui.checkbox(&mut self.save_tape_wav, "Also save tape audio (.wav)");
+                    ui.separator();
+                    let capturing = self.print_capture_path.is_some();
+                    if ui
+                        .add_enabled(!capturing, egui::Button::new("Start Print Capture…"))
+                        .clicked()
+                    {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Text file", &["txt"])
+                            .set_file_name("printout.txt")
+                            .save_file()
+                        {
+                            self.start_print_capture(path);
+                        }
+                    }
+                    let label = match &self.print_capture_path {
+                        Some(p) => format!(
+                            "Stop Print Capture ({})",
+                            p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                        ),
+                        None => "Stop Print Capture".to_string(),
+                    };
+                    if ui
+                        .add_enabled(capturing, egui::Button::new(label))
+                        .clicked()
+                    {
+                        self.stop_print_capture();
+                        ui.close();
+                    }
                 });
                 ui.menu_button("Keyboard", |ui| {
                     for mode in [KbMode::Positional, KbMode::Symbolic] {
@@ -782,6 +1196,26 @@ impl eframe::App for CocoApp {
                 });
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
+                    ui.separator();
+                    let mut paper_open = self.paper_window.open;
+                    if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
+                        self.toggle_paper_window();
+                    }
+                    ui.separator();
+                    // Swapping the monitor cable doesn't erase machine state,
+                    // so this takes effect live rather than requiring a
+                    // power cycle.
+                    for (mt, label) in [
+                        (MonitorType::Rgb, "RGB monitor"),
+                        (MonitorType::Composite, "Composite monitor"),
+                    ] {
+                        if ui
+                            .selectable_label(self.machine.bus.gime.monitor == mt, label)
+                            .clicked()
+                        {
+                            self.machine.bus.gime.monitor = mt;
+                        }
+                    }
                 });
                 ui.menu_button("Joysticks", |ui| self.joysticks.menu_ui(ui));
                 ui.menu_button("Sound", |ui| self.audio.menu_ui(ui));
@@ -826,6 +1260,25 @@ impl eframe::App for CocoApp {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     ui.label(format!("Cart: {name}"));
                 }
+                if let Some(mpi) = &self.mpi {
+                    ui.separator();
+                    let slots: Vec<String> = mpi
+                        .slots
+                        .iter()
+                        .enumerate()
+                        .map(|(i, slot)| {
+                            let label = match slot {
+                                MpiSlot::Empty => "-".to_string(),
+                                MpiSlot::RomPak(p) => {
+                                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string()
+                                }
+                                MpiSlot::Fd502 => "FD-502".to_string(),
+                            };
+                            format!("S{}:{label}", i + 1)
+                        })
+                        .collect();
+                    ui.label(format!("MPI [{}]", slots.join(" ")));
+                }
                 for drive in 0..UI_DRIVES {
                     let Some(path) = &self.disk_paths[drive] else {
                         continue;
@@ -841,6 +1294,14 @@ impl eframe::App for CocoApp {
                         .is_some_and(|d| d.dirty());
                     ui.separator();
                     ui.label(format!("D{drive}: {name}{}", if dirty { "*" } else { "" }));
+                }
+                for drive in 0..UI_DRIVES {
+                    let Some(path) = &self.vhd_paths[drive] else {
+                        continue;
+                    };
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                    ui.separator();
+                    ui.label(format!("VHD{drive}: {name}"));
                 }
                 if let Some(path) = &self.tape_path {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
@@ -866,6 +1327,7 @@ impl eframe::App for CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
+        self.paper_window.ui(ctx);
         if self.pending_disk_action.is_some() {
             // Match the dialog body to the button font (egui's default body
             // text is a touch smaller) and give the text room.
@@ -1068,6 +1530,23 @@ impl From<VideoArg> for VideoStandard {
     }
 }
 
+/// Composite vs RGB monitor cable. Mirrors [`MonitorType`].
+#[derive(Clone, Copy, ValueEnum)]
+enum MonitorArg {
+    Rgb,
+    #[value(name = "cmp", alias = "composite")]
+    Composite,
+}
+
+impl From<MonitorArg> for MonitorType {
+    fn from(m: MonitorArg) -> Self {
+        match m {
+            MonitorArg::Rgb => MonitorType::Rgb,
+            MonitorArg::Composite => MonitorType::Composite,
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "coco", about = "A Tandy Color Computer 3 emulator")]
 struct Cli {
@@ -1076,24 +1555,46 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     rom: Option<PathBuf>,
 
-    /// Cartridge ROM pak to insert at boot (`.rom`/`.ccc`/`.bin`).
+    /// Cartridge ROM pak to insert at boot (`.rom`/`.ccc`/`.bin`). Without
+    /// --mpi this plugs directly into the cartridge port (conflicts with
+    /// --disk0/--disk1/--fd502, which also want that port); with --mpi it
+    /// goes into slot 1 instead, alongside the FD-502 in slot 4.
     #[arg(long, value_name = "PATH")]
     cart: Option<PathBuf>,
 
     /// Floppy image for drive 0 (`.dsk`/`.jvc`/`.os9`); implies the FD-502
-    /// disk controller (`roms/disk11.rom`) in the cartridge slot.
-    #[arg(long, value_name = "PATH", conflicts_with = "cart")]
+    /// disk controller (`roms/disk11.rom`), in the cartridge slot directly or
+    /// (with --mpi) in slot 4.
+    #[arg(long, value_name = "PATH")]
     disk0: Option<PathBuf>,
 
     /// Floppy image for drive 1 (see `--disk0`).
-    #[arg(long, value_name = "PATH", conflicts_with = "cart")]
+    #[arg(long, value_name = "PATH")]
     disk1: Option<PathBuf>,
+
+    /// VHD (virtual hard disk) image for drive 0, for NitrOS-9's `emudsk`
+    /// driver. A bus-level device ($FF80-$FF86) independent of the cartridge
+    /// slot, so unlike --disk0/--disk1 this doesn't conflict with --cart.
+    #[arg(long, value_name = "PATH")]
+    vhd0: Option<PathBuf>,
+
+    /// VHD image for drive 1 (see `--vhd0`).
+    #[arg(long, value_name = "PATH")]
+    vhd1: Option<PathBuf>,
 
     /// Insert the FD-502 disk controller with empty drives, so Disk BASIC
     /// boots and blank disks can be added (and DSKINI'd) from the menu.
     /// Implied by --disk0/--disk1.
-    #[arg(long, default_value_t = false, conflicts_with = "cart")]
+    #[arg(long, default_value_t = false)]
     fd502: bool,
+
+    /// Insert a 4-slot Tandy Multi-Pak Interface into the cartridge port
+    /// instead of plugging --cart/--disk*/--fd502 directly into it: --cart
+    /// goes into slot 1 and the FD-502 (implied by --disk0/--disk1/--fd502)
+    /// goes into slot 4 — the conventional real-world layout (also MAME's
+    /// default), letting a cartridge and the disk controller coexist.
+    #[arg(long, default_value_t = false)]
+    mpi: bool,
 
     /// Installed RAM.
     #[arg(long, value_enum, default_value = "512k")]
@@ -1103,11 +1604,23 @@ struct Cli {
     #[arg(long, value_enum, default_value = "ntsc")]
     video: VideoArg,
 
+    /// Composite vs RGB monitor cable. Real hardware drives both signals
+    /// simultaneously; this picks which one the emulated monitor decodes
+    /// (also toggleable live from the View menu).
+    #[arg(long, value_enum, default_value = "rgb")]
+    monitor: MonitorArg,
+
     /// Also save a `.wav` of the tape audio alongside the canonical `.cas`
     /// on every tape write-back (see the "Also save tape audio (.wav)"
     /// Machine-menu checkbox, which this just sets the initial value of).
     #[arg(long, default_value_t = false)]
     tape_wav: bool,
+
+    /// Start "print to text file" capture at this path as soon as the
+    /// machine boots (create/truncate — see the Machine menu's "Start Print
+    /// Capture…", which this is the CLI equivalent of).
+    #[arg(long, value_name = "PATH")]
+    print_capture: Option<PathBuf>,
 }
 
 /// Load the boot ROM from `path`, or `roms/coco3.rom` at the workspace root.
@@ -1124,6 +1637,7 @@ fn main() -> eframe::Result<()> {
     let config = MachineConfig {
         video: cli.video.into(),
         memory: cli.ram.into(),
+        monitor: cli.monitor.into(),
     };
     let rom = match load_rom(cli.rom) {
         Ok(rom) => rom,
@@ -1133,10 +1647,25 @@ fn main() -> eframe::Result<()> {
             std::process::exit(1);
         }
     };
+    let mpi = cli.mpi;
     let cart_path = cli.cart;
     let disk_paths = [cli.disk0, cli.disk1];
+    let vhd_paths = [cli.vhd0, cli.vhd1];
     let fd502 = cli.fd502;
     let save_tape_wav = cli.tape_wav;
+    let print_capture = cli.print_capture;
+    // Without --mpi, --cart and --disk0/--disk1/--fd502 all want the single
+    // cartridge port (clap's declarative `conflicts_with` can't express "only
+    // when --mpi is absent", so this is checked by hand).
+    if !mpi
+        && cart_path.is_some()
+        && (disk_paths[0].is_some() || disk_paths[1].is_some() || fd502)
+    {
+        eprintln!(
+            "coco: --cart cannot be combined with --disk0/--disk1/--fd502 unless --mpi is also given"
+        );
+        std::process::exit(1);
+    }
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
@@ -1154,9 +1683,33 @@ fn main() -> eframe::Result<()> {
         "coco-rs",
         options,
         Box::new(move |cc| {
-            let mut app = CocoApp::new(cc, config, rom, cart_path, disk_paths, save_tape_wav);
-            if fd502 && let Err(e) = app.ensure_disk_controller() {
+            // With --mpi, --cart/--disk0/--disk1/--fd502 target MPI slots instead of
+            // the plain single-cartridge model, so the base constructor gets none of
+            // them and everything is wired up afterward through the same methods the
+            // MultiPak menu uses.
+            let mut app = if mpi {
+                CocoApp::new(cc, config, rom, None, [None, None], vhd_paths, save_tape_wav)
+            } else {
+                CocoApp::new(cc, config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
+            };
+            if mpi {
+                app.insert_multipak();
+                if let Some(path) = cart_path {
+                    app.mpi_insert_rompak(0, path);
+                }
+                if fd502 || disk_paths[0].is_some() || disk_paths[1].is_some() {
+                    app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
+                }
+                for (drive, path) in disk_paths.into_iter().enumerate() {
+                    if let Some(path) = path {
+                        app.insert_disk(drive, path);
+                    }
+                }
+            } else if fd502 && let Err(e) = app.ensure_disk_controller() {
                 app.cart_error = Some(e);
+            }
+            if let Some(path) = print_capture {
+                app.start_print_capture(path);
             }
             Ok(Box::new(app))
         }),

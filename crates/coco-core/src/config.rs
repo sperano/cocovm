@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::gime::MonitorType;
+
 /// Master video standard — fixed by the machine's crystal, chosen at construction.
 ///
 /// Distinct from the GIME's 50/60 Hz *mode* bit, which retimes the display *within*
@@ -96,6 +98,10 @@ impl MemorySize {
 pub struct MachineConfig {
     pub video: VideoStandard,
     pub memory: MemorySize,
+    /// Which monitor cable is plugged in (RGB vs composite decode of the
+    /// GIME's 6-bit palette values). Not a hardware register — see
+    /// [`MonitorType`].
+    pub monitor: MonitorType,
 }
 
 impl Default for MachineConfig {
@@ -103,6 +109,7 @@ impl Default for MachineConfig {
         Self {
             video: VideoStandard::Ntsc,
             memory: MemorySize::K512,
+            monitor: MonitorType::Rgb,
         }
     }
 }

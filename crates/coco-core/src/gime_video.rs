@@ -167,9 +167,9 @@ fn prepare_fb(
 fn resolve_colors(g: &GIME) -> ([[u8; 4]; PALETTE_LEN], [u8; 4]) {
     let mut palette = [[0u8; 4]; PALETTE_LEN];
     for (entry, &reg) in palette.iter_mut().zip(&g.palette) {
-        *entry = GIME::rgb_color(reg);
+        *entry = g.color(reg);
     }
-    (palette, GIME::rgb_color(g.border & BORDER_COLOR_MASK))
+    (palette, g.color(g.border & BORDER_COLOR_MASK))
 }
 
 /// The scan line within a character row that the underline attribute lights,

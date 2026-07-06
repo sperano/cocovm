@@ -2,11 +2,14 @@
 //! No UI dependencies, so it can be unit-tested and boot a ROM without a window.
 //! See `DESIGN.md` §1.
 
+pub mod bitbanger;
 pub mod bus;
 pub mod cart;
 pub mod cassette;
 pub mod cassette_wav;
 pub mod config;
+pub mod dmp105;
+mod dmp105_font;
 pub mod fdc;
 mod font6847;
 mod font_gime;
@@ -15,12 +18,14 @@ pub mod gime_video;
 pub mod joystick;
 pub mod keyboard;
 pub mod pia;
+pub mod printer;
 pub mod video;
+pub mod vhd;
 pub mod wd1773;
 
 pub use bus::SystemBus;
 pub use config::{MachineConfig, MemorySize, VideoStandard};
-pub use gime::GIME;
+pub use gime::{GIME, MonitorType};
 
 use mc6809::{Bus, MC6809};
 
@@ -103,6 +108,7 @@ impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
         let mut cpu = MC6809::new();
         let mut bus = SystemBus::new(config.memory, rom);
+        bus.gime.monitor = config.monitor;
         cpu.reset(&mut bus);
         Self {
             cpu,
@@ -147,8 +153,14 @@ impl Machine {
 
     /// Re-run the CPU reset sequence (re-fetches the reset vector from ROM). Does
     /// not clear RAM — a warm reset, like the CoCo's reset button.
+    ///
+    /// Also resets the cartridge: the expansion port's RESET* line is shared
+    /// with the CPU's, so a Multi-Pak Interface reloads its select register
+    /// from the front-panel switch (and lifts any software override) on
+    /// every reset, not just a cold power-on.
     pub fn reset(&mut self) {
         self.cpu.reset(&mut self.bus);
+        self.bus.cart.reset();
     }
 
     /// Power the machine off and on: clear RAM (so BASIC's warm-start magic
@@ -159,8 +171,13 @@ impl Machine {
     /// really happens when a cartridge is swapped on real hardware, which is
     /// only ever done machine-off.
     pub fn power_cycle(&mut self) {
+        // Monitor type isn't GIME hardware state — it's which cable is
+        // plugged into the back of the machine — so it survives a power
+        // cycle same as it would on a real machine.
+        let monitor = self.bus.gime.monitor;
         self.bus.ram.fill(0);
         self.bus.gime = GIME::new();
+        self.bus.gime.monitor = monitor;
         self.bus.pia0 = pia::MC6821::new();
         self.bus.pia1 = pia::MC6821::new();
         self.prev_halted = false;
@@ -262,6 +279,7 @@ impl Machine {
             };
             self.bus.cart.tick(cycles);
             self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
+            self.bus.bitbanger.tick(cycles, self.bus.pia1_tx_mark());
             spent += cycles;
         }
     }
@@ -408,9 +426,9 @@ impl Machine {
         // legacy CoCo-compatible text border is black (GIME `update_border`).
         let mut palette = [[0u8; 4]; video::PALETTE_LEN];
         for (i, entry) in palette.iter_mut().enumerate() {
-            *entry = GIME::rgb_color(self.bus.gime.palette[i]);
+            *entry = self.bus.gime.color(self.bus.gime.palette[i]);
         }
-        let border = GIME::rgb_color(TEXT_BORDER_COLOR);
+        let border = self.bus.gime.color(TEXT_BORDER_COLOR);
         video::render_text(&screen, &palette, border, &mut self.framebuffer);
     }
 
@@ -427,7 +445,7 @@ impl Machine {
         let indices = video::vdg_palette_indices(mode.bpp, css);
         let mut colors = [[0u8; 4]; video::MAX_VDG_COLORS];
         for (slot, &reg) in colors.iter_mut().zip(indices) {
-            *slot = GIME::rgb_color(self.bus.gime.palette[reg]);
+            *slot = self.bus.gime.color(self.bus.gime.palette[reg]);
         }
 
         let base = self.bus.gime.sam_display_base();
@@ -436,7 +454,7 @@ impl Machine {
             *byte = self.bus.read(base.wrapping_add(i as u16));
         }
 
-        let border = GIME::rgb_color(TEXT_BORDER_COLOR);
+        let border = self.bus.gime.color(TEXT_BORDER_COLOR);
         let colors = &colors[..indices.len()];
         video::render_graphics(&self.graphics_scratch, &mode, colors, border, &mut self.framebuffer);
     }

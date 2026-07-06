@@ -31,6 +31,9 @@ GPL-compatible; the attribution below satisfies its notice requirement.
   from `src/devices/video/mc6847.cpp`.
 - **GIME hi-res font (`crates/coco-core/src/font_gime.rs`)** —
   `gime_device::hires_font` from `src/mame/trs/gime.cpp`.
+- **Composite-monitor palette tables (`crates/coco-core/src/gime.rs`,
+  `COMPOSITE_PALETTE` / `COMPOSITE_PALETTE_180`)** —
+  `gime_device::get_composite_color` from `src/mame/trs/gime.cpp`.
 
 > Copyright (c) Nathan Woods (MAME project).
 >
