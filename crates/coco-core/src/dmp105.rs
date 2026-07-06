@@ -53,6 +53,13 @@ const DESCENDER_ROW: u32 = 7;
 /// Fixed graphics-mode line feed: 7/72" (`dmp105-protocol.md` §5).
 const GRAPHICS_LF_UNITS: u32 = 7;
 
+/// Right limit of the physical print zone in x-units: the head cannot move
+/// past the 8.0" line (`dmp105-protocol.md` §1 — 960 dot columns at 10 CPI).
+/// Marks past this are dropped, matching the physical platen limit; without
+/// it, a stream that never sends CR (or an out-of-range `1B 10` position)
+/// grows the paper model without bound.
+const PRINT_WIDTH_X_UNITS: u32 = 8 * X_UNITS_PER_INCH;
+
 /// Text-mode line-feed pitches, all exact whole numbers of
 /// [`Y_UNITS_PER_INCH`] (`dmp105-protocol.md` §4 T9).
 const LF_PITCH_1_6: u32 = Y_UNITS_PER_INCH / 6;
@@ -313,7 +320,7 @@ impl Dmp105 {
     fn dispatch_cp(&mut self, b: u8) {
         match b {
             control::NUL_IGNORED_0 | control::NUL_IGNORED_1 => {}
-            control::LF => self.y += self.lf_pitch_units,
+            control::LF => self.y = self.y.saturating_add(self.lf_pitch_units),
             control::CR => self.control_cr(),
             control::END_UNDERLINE => self.underline = false,
             control::START_UNDERLINE => self.underline = true,
@@ -342,7 +349,7 @@ impl Dmp105 {
             return;
         }
         match b {
-            control::LF => self.y += GRAPHICS_LF_UNITS,
+            control::LF => self.y = self.y.saturating_add(GRAPHICS_LF_UNITS),
             control::CR => self.control_cr(),
             control::END_GRAPHICS => self.mode = Mode::CharacterPrint,
             _ => {} // undefined / not applicable inside Graphics: ignored
@@ -355,7 +362,7 @@ impl Dmp105 {
     fn control_cr(&mut self) {
         self.x = 0;
         if self.nl_mode == NlMode::CrLf {
-            self.y += self.lf_pitch_units;
+            self.y = self.y.saturating_add(self.lf_pitch_units);
         }
     }
 
@@ -379,16 +386,29 @@ impl Dmp105 {
         let dot = self.pitch.dot_spacing();
         let col_step = if self.elongation { dot * 2 } else { dot };
         for (col, &bits) in glyph.iter().enumerate() {
-            let cx = self.x + col as u32 * col_step;
+            let cx = self.x.saturating_add(col as u32 * col_step);
             self.plot_column(cx, bits);
             if self.bold {
-                self.plot_column(cx + dot, bits);
+                self.plot_column(cx.saturating_add(dot), bits);
             }
         }
         if self.underline {
             self.draw_underline_rule(dot, CELL_DOTS * col_step);
         }
-        self.x += CELL_DOTS * col_step;
+        // Saturating, like every head-position advance in this module: a
+        // long-enough stream without CR would otherwise overflow (a panic in
+        // debug builds), and the interpreter must never panic on arbitrary
+        // input. Marks past PRINT_WIDTH_X_UNITS are dropped in mark_dot.
+        self.x = self.x.saturating_add(CELL_DOTS * col_step);
+    }
+
+    /// Mark one dot, dropping anything the physical head could never reach
+    /// (past the 8" print zone — see [`PRINT_WIDTH_X_UNITS`]). All ink lands
+    /// through here so the clamp is uniform.
+    fn mark_dot(&mut self, x: u32, y: u32) {
+        if x < PRINT_WIDTH_X_UNITS {
+            self.paper.mark(x, y);
+        }
     }
 
     /// Mark one glyph column's dots: bits 0-6 are the 7-row body (row `r` =
@@ -396,11 +416,11 @@ impl Dmp105 {
     fn plot_column(&mut self, cx: u32, bits: u8) {
         for row in 0..7u32 {
             if bits & (1 << row) != 0 {
-                self.paper.mark(cx, self.y + row);
+                self.mark_dot(cx, self.y.saturating_add(row));
             }
         }
         if bits & 0x80 != 0 {
-            self.paper.mark(cx, self.y + DESCENDER_ROW);
+            self.mark_dot(cx, self.y.saturating_add(DESCENDER_ROW));
         }
     }
 
@@ -409,9 +429,10 @@ impl Dmp105 {
     /// solid even when printing elongated text.
     fn draw_underline_rule(&mut self, step: u32, width: u32) {
         let mut cx = self.x;
-        let end = self.x + width;
+        let end = self.x.saturating_add(width).min(PRINT_WIDTH_X_UNITS);
+        let row = self.y.saturating_add(DESCENDER_ROW);
         while cx < end {
-            self.paper.mark(cx, self.y + DESCENDER_ROW);
+            self.mark_dot(cx, row);
             cx += step;
         }
     }
@@ -423,10 +444,10 @@ impl Dmp105 {
         let weights = b & 0x7F;
         for row in 0..7u32 {
             if weights & (1 << row) != 0 {
-                self.paper.mark(self.x, self.y + row);
+                self.mark_dot(self.x, self.y.saturating_add(row));
             }
         }
-        self.x += self.graphics_pitch.dot_spacing();
+        self.x = self.x.saturating_add(self.graphics_pitch.dot_spacing());
     }
 
     /// Second byte of an escape sequence just arrived: figure out how many
@@ -480,7 +501,7 @@ impl Dmp105 {
             }
             // Immediate feed: applies in both modes (`dmp105-protocol.md`
             // §4's "1B 5A n" row), unlike the latched-only 5B below.
-            esc::FEED_IMMEDIATE => self.y += u32::from(ops[0]),
+            esc::FEED_IMMEDIATE => self.y = self.y.saturating_add(u32::from(ops[0])),
             // Latched-only feed: CP mode only per the spec table; while in
             // Graphics mode the byte is still consumed (escape parsing is
             // mode-independent) but has no effect, matching how pitch
@@ -494,17 +515,28 @@ impl Dmp105 {
         }
     }
 
-    /// Execute `28 n c` / `1C n c`: feed `c` through the interpreter `n`
-    /// times, as if it had arrived `n` separate times
+    /// Execute `28 n c` / `1C n c`: repeat `c` `n` times
     /// (`dmp105-protocol.md` §3). In Graphics mode, only honored if `c` has
     /// its MSB set (i.e. is valid graphics data) — the spec table's explicit
     /// restriction for that mode.
+    ///
+    /// The repeated byte is expanded through the per-mode dispatchers, NOT
+    /// through [`Self::feed`]: inside a repeat, `c` is the datum being
+    /// repeated, never a new ESC/repeat sequence introducer (the spec gives
+    /// no semantics for repeating an introducer, and `dispatch_cp` already
+    /// handles an out-of-band `1C`/`1B` as an undefined code printing `X`).
+    /// Recursing through `feed` here would let the stream `1C 1C 1C` rebuild
+    /// its own spawning state unboundedly — a stack-overflow crash on
+    /// three bytes of arbitrary printer traffic.
     fn execute_repeat(&mut self, n: u8, c: u8) {
         if self.mode == Mode::Graphics && c & 0x80 == 0 {
             return;
         }
         for _ in 0..n {
-            self.feed(c);
+            match self.mode {
+                Mode::CharacterPrint => self.dispatch_cp(c),
+                Mode::Graphics => self.dispatch_graphics(c),
+            }
         }
     }
 }
@@ -603,6 +635,64 @@ mod tests {
     /// from `dot_spacing() * CELL_DOTS`.
     fn normal_cell_width() -> u32 {
         CELL_DOTS * Pitch::Normal.dot_spacing()
+    }
+
+    /// Regression: `1C 1C 1C` (repeat of the repeat introducer) once
+    /// re-entered `feed` and rebuilt its own spawning state without bound —
+    /// a stack overflow on three bytes of arbitrary traffic. Inside a
+    /// repeat, `c` is data: an undefined CP code that prints the `X`
+    /// placeholder glyph, `n` times, and the state machine ends clean.
+    #[test]
+    fn repeating_the_repeat_introducer_terminates_and_prints_placeholders() {
+        let mut dmp = Dmp105::default();
+        feed_str(&mut dmp, &[control::REPEAT, 3, control::REPEAT]);
+        assert_eq!(dmp.x, 3 * normal_cell_width());
+        assert!(dmp.paper.extent().dot_count > 0); // three X glyphs
+        // The machine is idle again: a normal byte prints in cell 4.
+        feed_str(&mut dmp, b"A");
+        assert_eq!(dmp.x, 4 * normal_cell_width());
+    }
+
+    /// Repeating ESC is equally data inside a repeat: undefined CP code,
+    /// no escape sequence starts, no panic.
+    #[test]
+    fn repeating_the_escape_introducer_terminates() {
+        let mut dmp = Dmp105::default();
+        feed_str(&mut dmp, &[control::REPEAT, 2, control::ESC]);
+        assert_eq!(dmp.x, 2 * normal_cell_width());
+        // Not left in Pending::Esc: a following 'Z' is a glyph, not a
+        // selector byte.
+        feed_str(&mut dmp, b"Z");
+        assert_eq!(dmp.x, 3 * normal_cell_width());
+    }
+
+    /// Head-position arithmetic saturates instead of overflowing (a panic
+    /// in debug builds): the interpreter must survive arbitrary input
+    /// volumes.
+    #[test]
+    fn head_position_saturates_at_extremes() {
+        let mut dmp = Dmp105 {
+            y: u32::MAX - 2,
+            ..Default::default()
+        };
+        feed_str(&mut dmp, &[control::LF, control::CR, control::LF]);
+        assert_eq!(dmp.y, u32::MAX);
+        dmp.x = u32::MAX - 2;
+        feed_str(&mut dmp, b"A"); // glyph plot + cell advance, all saturating
+        assert_eq!(dmp.x, u32::MAX);
+    }
+
+    /// Ink past the physical 8" print zone is dropped — the head can't be
+    /// there, and unbounded x would otherwise grow the paper model without
+    /// limit on a CR-less stream.
+    #[test]
+    fn marks_beyond_print_width_are_dropped() {
+        let mut dmp = Dmp105 {
+            x: PRINT_WIDTH_X_UNITS,
+            ..Default::default()
+        };
+        feed_str(&mut dmp, b"A");
+        assert_eq!(dmp.paper.extent().dot_count, 0);
     }
 
     #[test]

@@ -91,10 +91,22 @@ VHD/MPI/composite).
     matrix impressions rendered as discrete slightly-bled dots, not vector
     text. Optional: faint green-bar banding toggle.
   - Fable reviews a rendered screenshot before this task closes.
-- [ ] **T6: Export** — `coco-impl`
+- [x] **T6: Export** — `coco-impl` (done: `paper_export.rs` — PNG via `image`
+  [promoted to a regular dependency], hand-rolled minimal PDF [one page per
+  fanfold page, `FlateDecode`-compressed `DeviceRGB` image XObjects via
+  `flate2`, already resolved transitively so no new crate] with two menu
+  items for the 9.5×11-with-strips vs. 8.5×11-trimmed variants; Tear Off
+  wired up in `paper_view.rs` behind a confirm/cancel dialog)
   Save paper as PNG (per page and full roll) and PDF (one page per fanfold
   page, strips optionally cropped). Tear-off (clear) action, with confirm.
-- [ ] **Q2: sweep** — `quick-check`; review — `idiomatic-rust`.
+- [x] **Q2: sweep** — `quick-check` (417 tests green, clippy clean); review —
+  `idiomatic-rust`. Applied: CRITICAL `1C 1C 1C` unbounded-recursion fix
+  (repeat expands via mode dispatchers, never re-enters `feed`), saturating
+  head-position arithmetic + 8" print-zone mark clamp, blank-roll tear-off
+  count/disable, dirty-invalidation widened by the dot-bleed pad. Declined
+  (perf/cosmetic lows): extent() O(rows) dot-count sum, blank-fill loop,
+  rgb-helper DRY. Reviewer verified the hand-rolled PDF xref bookkeeping
+  correct.
 
 ## Phase 3 — Graphics + family extensions (appetite-driven)
 

@@ -13,8 +13,12 @@ clap = { version = "4.6.1", features = ["derive"] }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
 eframe = "0.33"
+# Both MIT OR Apache-2.0 (GPL-3.0-or-later-compatible); see
+# `paper_export.rs`'s module doc comment for the PNG/PDF dependency
+# rationale (T6). `flate2` is already resolved transitively via `image`'s
+# `png` feature (`image` -> `png` -> `flate2`), so promoting it to a direct
+# dependency here adds no new crate to the workspace's dependency graph.
+flate2 = "1.1.9"
 gilrs = "0.11.2"
-rfd = "0.17.2"
-
-[dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
+rfd = "0.17.2"

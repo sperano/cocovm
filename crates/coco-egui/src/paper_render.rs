@@ -114,7 +114,12 @@ pub const WINDOW_BG_COLOR: [u8; 4] = [0x3A, 0x3A, 0x40, 0xFF];
 /// band. `y`-units are coarse (1/72") relative to the dot's sub-unit
 /// diameter, so this is a generous fixed pad rather than a computed exact
 /// radius — the judgment call the T5 spec leaves to this module.
-const DOT_QUERY_PAD_Y_UNITS: u32 = 2;
+///
+/// `pub(crate)` because the paper window's dirty-page invalidation must
+/// widen changed ranges by the same bleed before mapping them to page
+/// textures: a dot near a page's top edge also renders into the bottom of
+/// the previous page's texture.
+pub(crate) const DOT_QUERY_PAD_Y_UNITS: u32 = 2;
 
 /// A source of already-printed dot impressions, in the same `(x, y)` unit
 /// system as `coco_core::printer::Paper`: `x` in [`X_UNITS_PER_INCH`]

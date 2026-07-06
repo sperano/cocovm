@@ -15,6 +15,7 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod paper_export;
 mod paper_render;
 mod paper_view;
 
@@ -1327,7 +1328,9 @@ impl eframe::App for CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
-        self.paper_window.ui(ctx);
+        if let Some(err) = self.paper_window.ui(ctx) {
+            self.cart_error = Some(err);
+        }
         if self.pending_disk_action.is_some() {
             // Match the dialog body to the button font (egui's default body
             // text is a touch smaller) and give the text room.

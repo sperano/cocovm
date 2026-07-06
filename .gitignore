@@ -10,3 +10,7 @@
 # Claude Code local settings
 .claude/settings.local.json
 /disks
+
+# scratch cassette recordings in the repo root
+/tape*.cas
+/tape*.wav

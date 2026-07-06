@@ -724,6 +724,7 @@ dependencies = [
  "coco-core",
  "cpal",
  "eframe",
+ "flate2",
  "gilrs",
  "image",
  "rfd",
