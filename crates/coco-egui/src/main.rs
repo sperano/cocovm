@@ -17,7 +17,7 @@ mod joy;
 mod kbd_help;
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
 use coco_core::cart::RomPak;
@@ -281,6 +281,7 @@ impl CocoApp {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
+        report_rom_validation(&path, &rom);
         self.flush_dirty_disks();
         self.machine.insert_cartridge(Box::new(DiskCart::new(rom.into_boxed_slice())));
         // Power cycle, not warm reset: the DK probe that links Disk BASIC
@@ -1116,7 +1117,41 @@ fn load_rom(path: Option<PathBuf>) -> std::io::Result<Box<[u8]>> {
     let path = path.unwrap_or_else(|| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom")
     });
-    Ok(std::fs::read(path)?.into_boxed_slice())
+    let rom = std::fs::read(&path)?.into_boxed_slice();
+    report_rom_validation(&path, &rom);
+    Ok(rom)
+}
+
+/// One advisory stderr line per loaded system ROM, checked against the
+/// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
+/// homebrew images are legitimate, but a corrupt known dump should say so.
+fn report_rom_validation(path: &Path, bytes: &[u8]) {
+    use coco_core::rom_db::{self, Validation};
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match rom_db::validate(&name, bytes) {
+        Validation::Verified(known) => {
+            eprintln!("coco: {name}: verified {} [crc32 {:08x}]", known.desc, known.crc32);
+        }
+        Validation::Mismatch { expected, actual_crc32, actual_size } => {
+            eprintln!(
+                "coco: warning: {name} does not match the known dump of {}: \
+                 expected {} bytes crc32 {:08x}, got {} bytes crc32 {actual_crc32:08x} \
+                 (patched image, or a bad dump)",
+                expected.desc, expected.size, expected.crc32, actual_size,
+            );
+        }
+        Validation::Unknown => {
+            eprintln!(
+                "coco: note: {name} is not in the known-ROM manifest \
+                 ({} bytes, crc32 {:08x})",
+                bytes.len(),
+                rom_db::crc32(bytes),
+            );
+        }
+    }
 }
 
 fn main() -> eframe::Result<()> {

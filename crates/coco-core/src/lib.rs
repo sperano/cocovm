@@ -15,6 +15,7 @@ pub mod gime_video;
 pub mod joystick;
 pub mod keyboard;
 pub mod pia;
+pub mod rom_db;
 pub mod video;
 pub mod wd1773;
 

@@ -1,0 +1,129 @@
+//! Known-ROM manifest: CRC32s of the system ROM dumps this emulator targets,
+//! copied from MAME's ROM definitions (`src/mame/trs/coco3.cpp`,
+//! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`, master as
+//! of 2026-07). File names follow the MAME romset convention so dumps can be
+//! taken straight out of a MAME `roms/` tree.
+//!
+//! Validation is advisory: an unrecognized or mismatching image still boots
+//! (patched and homebrew ROMs are legitimate), but the loader can tell the
+//! user exactly which known dump they have — or that they don't have one.
+
+/// One known-good dump from MAME's manifest.
+#[derive(Debug, PartialEq, Eq)]
+pub struct KnownRom {
+    /// Canonical file name in the MAME romset.
+    pub file: &'static str,
+    /// Size in bytes; CRC32 matches are only trusted at the right size.
+    pub size: usize,
+    /// CRC32 (IEEE, as printed by MAME's `CRC(...)`).
+    pub crc32: u32,
+    pub desc: &'static str,
+}
+
+/// Every system ROM the emulator knows how to use, per MAME.
+pub const KNOWN_ROMS: &[KnownRom] = &[
+    KnownRom { file: "coco3.rom", size: 0x8000, crc32: 0xb4c88d6c, desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)" },
+    KnownRom { file: "coco3p.rom", size: 0x8000, crc32: 0xff050d80, desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)" },
+    KnownRom { file: "bas10.rom", size: 0x2000, crc32: 0x00b50aaa, desc: "Color BASIC 1.0 (CoCo 1/2)" },
+    KnownRom { file: "bas11.rom", size: 0x2000, crc32: 0x6270955a, desc: "Color BASIC 1.1 (CoCo 1/2)" },
+    KnownRom { file: "bas12.rom", size: 0x2000, crc32: 0x54368805, desc: "Color BASIC 1.2 (CoCo 1/2)" },
+    KnownRom { file: "bas13.rom", size: 0x2000, crc32: 0xd8f4d15e, desc: "Color BASIC 1.3 (CoCo 2B)" },
+    KnownRom { file: "extbas10.rom", size: 0x2000, crc32: 0x6111a086, desc: "Extended Color BASIC 1.0 (CoCo 1/2)" },
+    KnownRom { file: "extbas11.rom", size: 0x2000, crc32: 0xa82a6254, desc: "Extended Color BASIC 1.1 (CoCo 1/2)" },
+    KnownRom { file: "disk10.rom", size: 0x2000, crc32: 0xb4f9968e, desc: "Disk Extended Color BASIC 1.0 (FD-502)" },
+    KnownRom { file: "disk11.rom", size: 0x2000, crc32: 0x0b9c5415, desc: "Disk Extended Color BASIC 1.1 (FD-502)" },
+];
+
+/// What [`validate`] concluded about a ROM image.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Validation {
+    /// Byte-identical to a known dump (matched by size + CRC32).
+    Verified(&'static KnownRom),
+    /// The file name claims a known ROM, but the contents differ.
+    Mismatch {
+        expected: &'static KnownRom,
+        actual_crc32: u32,
+        actual_size: usize,
+    },
+    /// Not in the manifest — a homebrew, patched, or renamed image.
+    Unknown,
+}
+
+/// CRC32 (IEEE 802.3, reflected) — the checksum MAME prints as `CRC(...)`.
+pub fn crc32(bytes: &[u8]) -> u32 {
+    const REFLECTED_POLY: u32 = 0xedb8_8320;
+    let mut crc = !0u32;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..u8::BITS {
+            let carry = crc & 1;
+            crc >>= 1;
+            if carry != 0 {
+                crc ^= REFLECTED_POLY;
+            }
+        }
+    }
+    !crc
+}
+
+/// Look up an image by contents alone (size + CRC32), regardless of name.
+pub fn identify(bytes: &[u8]) -> Option<&'static KnownRom> {
+    let crc = crc32(bytes);
+    KNOWN_ROMS
+        .iter()
+        .find(|r| r.size == bytes.len() && r.crc32 == crc)
+}
+
+/// Validate an image against the manifest. `file_name` is the bare name
+/// (no directory); matching is by contents first, then by claimed name.
+pub fn validate(file_name: &str, bytes: &[u8]) -> Validation {
+    if let Some(known) = identify(bytes) {
+        return Validation::Verified(known);
+    }
+    match KNOWN_ROMS.iter().find(|r| r.file == file_name) {
+        Some(expected) => Validation::Mismatch {
+            expected,
+            actual_crc32: crc32(bytes),
+            actual_size: bytes.len(),
+        },
+        None => Validation::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crc32_check_value() {
+        // The standard CRC-32/ISO-HDLC check value.
+        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+    }
+
+    #[test]
+    fn manifest_has_no_duplicate_names_or_crcs() {
+        for (i, a) in KNOWN_ROMS.iter().enumerate() {
+            for b in &KNOWN_ROMS[i + 1..] {
+                assert_ne!(a.file, b.file);
+                assert_ne!((a.crc32, a.size), (b.crc32, b.size), "{} vs {}", a.file, b.file);
+            }
+        }
+    }
+
+    #[test]
+    fn validate_flags_corrupt_known_name() {
+        let bytes = vec![0u8; 0x2000];
+        match validate("bas12.rom", &bytes) {
+            Validation::Mismatch { expected, actual_size, .. } => {
+                assert_eq!(expected.file, "bas12.rom");
+                assert_eq!(actual_size, 0x2000);
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_passes_unknown_names_through() {
+        assert_eq!(validate("homebrew.rom", &[0u8; 16]), Validation::Unknown);
+    }
+}

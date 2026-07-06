@@ -191,6 +191,15 @@ alone (16K non-ECB machine: $8000–$9FFF open bus) or both. Internally compose
 them into the existing flat ROM image (32K window, $8000-based): extbas at
 offset 0, bas at offset $2000, unused regions = open-bus filler.
 
+**Done (this branch): `coco-core::rom_db`** — the MAME CRC32 manifest for all
+ten system ROMs (coco3/coco3p, bas10–13, extbas10/11, disk10/11) with
+`identify` (by contents) and `validate` (by contents, then claimed name). The
+frontend prints one advisory stderr line per loaded system ROM (verified /
+mismatch / unknown — never fatal, patched ROMs are legitimate), and
+`tests/rom_db_local.rs` hard-fails if a locally present known-named dump is
+corrupt. Phase 5's per-variant ROM resolution should use `rom_db::identify` so
+renamed-but-genuine dumps are still recognized.
+
 ## Implementation phases
 
 Each phase compiles and keeps the CoCo 3 test suite green.
