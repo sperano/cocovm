@@ -159,6 +159,30 @@ impl SystemBus {
         }
     }
 
+    /// PIA1 port-B input pins for the plain-SAM path (CoCo 1/2 only — the
+    /// GIME path never calls this): only bit 2 (RAMSZ, the memory-size sense
+    /// switch Color BASIC's cold-start reads to size RAM) is driven; the rest
+    /// float high like every other unused input pin.
+    ///
+    /// MAME `coco.cpp` `pia1_pb_r`: 16K-32K RAM (`$4000..=$7FFF` bytes) senses
+    /// set unconditionally; 64K (`>= $8000`) instead follows PIA0 port B's
+    /// *output* register bit 6 (`b_output() & 0x40`, the raw latched value —
+    /// not the pin state, so DDR doesn't matter) — Color BASIC's memory-size
+    /// probe momentarily drives that bit while sensing, and since Color BASIC
+    /// 1.0's sizing routine can only configure 4K/16K banks, this lets the
+    /// CoCo 1 (which ships 1.0 but can take a 1.2 upgrade) reach 64K only with
+    /// the newer ROM. Below 16K the switch reads clear.
+    fn pia1_pb_pins(&self) -> u8 {
+        const RAMSZ_BIT: u8 = 0x04; // PB2
+        /// PIA0 port B bit 6 — Color BASIC's memory-size probe pin.
+        const PIA0_PROBE_BIT: u8 = 0x40;
+        const RAMSZ_16K_32K: std::ops::RangeInclusive<usize> = 0x4000..=0x7FFF;
+        let ram_len = self.ram.len();
+        let memory_sense = RAMSZ_16K_32K.contains(&ram_len)
+            || (ram_len >= 0x8000 && self.pia0.b.output & PIA0_PROBE_BIT != 0);
+        if memory_sense { 0xFF } else { !RAMSZ_BIT }
+    }
+
     /// Physical RAM offset for a CPU address, masked to installed RAM.
     fn phys(&self, addr: u16) -> usize {
         // MC3: hold the $FE00 page constant at physical $7FE00 regardless of the MMU.
@@ -236,18 +260,28 @@ impl SystemBus {
     /// GIME EI0 source (the same physical pin) every scanline, which is more
     /// than enough cadence to keep either interrupt path continuously fed.
     pub fn hsync(&mut self) {
+        // No GIME on the plain-SAM path (CoCo 1/2): the PIA0/PIA1 Cx1 pulses
+        // below stay exactly as-is, but the GIME border/keyboard/cart-EI0
+        // interrupt sources it would also raise here don't exist — the GIME
+        // struct must stay completely inert on that path
+        // (`docs/coco12-plan.md` Phase 4).
+        let is_gime = self.variant == MachineVariant::Coco3;
         self.pia0.a.set_c1(false);
-        self.gime.raise(gime::intr::HBORD);
+        if is_gime {
+            self.gime.raise(gime::intr::HBORD);
+        }
         self.pia0.a.set_c1(true);
         // Buttons are included: SEB warns joystick fire buttons always trip EI1.
         let line_low = self.pia0_pa_pins() & 0x7F != 0x7F;
-        if line_low && !self.kbd_line_low {
+        if is_gime && line_low && !self.kbd_line_low {
             self.gime.raise(gime::intr::EI1);
         }
         self.kbd_line_low = line_low;
         if self.cart.cart_line_ties_q() {
             self.pia1.b.set_c1(false);
-            self.gime.raise(gime::intr::EI0);
+            if is_gime {
+                self.gime.raise(gime::intr::EI0);
+            }
             self.pia1.b.set_c1(true);
         }
     }
@@ -260,7 +294,10 @@ impl SystemBus {
     /// generated on falling edge of VSYNC").
     pub fn fs_falling(&mut self) {
         self.pia0.b.set_c1(false);
-        self.gime.raise(gime::intr::VBORD);
+        // No GIME (hence no VBORD source) on the plain-SAM path — Phase 4.
+        if self.variant == MachineVariant::Coco3 {
+            self.gime.raise(gime::intr::VBORD);
+        }
     }
 
     /// Field-sync rising edge, at
@@ -471,6 +508,7 @@ impl SystemBus {
             }
             PIA1_BASE..=PIA1_LAST => {
                 self.pia1.a.input = self.pia1_pa_pins();
+                self.pia1.b.input = self.pia1_pb_pins();
                 self.pia1.read((addr & 0x03) as u8)
             }
             CART_BASE..=CART_LAST => self.cart.read(addr),

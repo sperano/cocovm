@@ -163,6 +163,7 @@ impl Machine {
     pub fn power_cycle(&mut self) {
         self.bus.ram.fill(0);
         self.bus.gime = GIME::new();
+        self.bus.sam = sam::Sam::new();
         self.bus.pia0 = pia::MC6821::new();
         self.bus.pia1 = pia::MC6821::new();
         self.prev_halted = false;
@@ -217,15 +218,19 @@ impl Machine {
             self.audio_buffer.push(self.bus.sound_sample());
             // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4
             // ticks per normal-speed CPU cycle, 2 per double-speed cycle —
-            // TINS=0 counts horizontal syncs (1 per line).
-            let ticks = if self.bus.gime.timer_is_fast() {
-                let per_cycle = FAST_TIMER_TICKS_PER_CPU_CYCLE
-                    / if self.bus.gime.cpu_fast { 2 } else { 1 };
-                cycles_per_line * per_cycle
-            } else {
-                1
-            };
-            self.bus.gime.tick_timer(ticks);
+            // TINS=0 counts horizontal syncs (1 per line). No such timer exists
+            // on the plain-SAM path (CoCo 1/2) — the GIME stays completely inert
+            // there (`docs/coco12-plan.md` Phase 4).
+            if self.config.variant == MachineVariant::Coco3 {
+                let ticks = if self.bus.gime.timer_is_fast() {
+                    let per_cycle =
+                        FAST_TIMER_TICKS_PER_CPU_CYCLE / if self.bus.gime.cpu_fast { 2 } else { 1 };
+                    cycles_per_line * per_cycle
+                } else {
+                    1
+                };
+                self.bus.gime.tick_timer(ticks);
+            }
         }
         self.render_field();
     }
@@ -280,28 +285,78 @@ impl Machine {
     }
 
     fn cycles_per_field(&self) -> u32 {
-        let hz = if self.bus.gime.cpu_fast { CPU_HZ * 2.0 } else { CPU_HZ };
+        // Speed-poke source differs per variant: the GIME's own R1 latch on
+        // CoCo 3, the plain SAM's R0|R1 strobes on CoCo 1/2
+        // (`docs/coco12-plan.md` Phase 4; `Sam::cpu_fast`'s KNOWN GAP note).
+        let cpu_fast = match self.config.variant {
+            MachineVariant::Coco3 => self.bus.gime.cpu_fast,
+            MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.cpu_fast(),
+        };
+        let hz = if cpu_fast { CPU_HZ * 2.0 } else { CPU_HZ };
         (hz / self.config.video.field_rate_hz()) as u32
     }
 
-    /// Classify the current video mode from the GIME registers.
+    /// Classify the current video mode.
     ///
-    /// The CoCo-compatible text-vs-graphics split (VDG mode bits live in the SAM /
-    /// PIA, not modelled yet) always resolves to text for now, so at the BASIC
-    /// prompt this returns [`VideoMode::CocoText`].
+    /// CoCo 1/2 (no GIME) never has INIT0/$FF98 to consult: they always run the
+    /// VDG-native path, chosen purely by PIA1 $FF22 bit 7 (A/G) —
+    /// `docs/coco12-plan.md` Phase 3. CoCo 3 keeps its existing INIT0 COCO /
+    /// $FF98 BP dispatch, unchanged.
     fn video_mode(&self) -> VideoMode {
-        let g = &self.bus.gime;
-        if g.init0 & gime::init0::COCO != 0 {
-            // PIA1 $FF22 bit 7 selects VDG graphics (PMODE) vs alphanumerics/semigraphics.
-            if self.bus.pia1.b.output & video::VDG_AG != 0 {
-                VideoMode::CocoGraphics
-            } else {
-                VideoMode::CocoText
+        match self.config.variant {
+            MachineVariant::Coco1 | MachineVariant::Coco2 => {
+                if self.bus.pia1.b.output & video::VDG_AG != 0 {
+                    VideoMode::CocoGraphics
+                } else {
+                    VideoMode::CocoText
+                }
             }
-        } else if g.vmode & gime::vmode::BP != 0 {
-            VideoMode::GimeGraphics
-        } else {
-            VideoMode::GimeText
+            MachineVariant::Coco3 => {
+                let g = &self.bus.gime;
+                if g.init0 & gime::init0::COCO != 0 {
+                    // PIA1 $FF22 bit 7 selects VDG graphics (PMODE) vs alphanumerics/semigraphics.
+                    if self.bus.pia1.b.output & video::VDG_AG != 0 {
+                        VideoMode::CocoGraphics
+                    } else {
+                        VideoMode::CocoText
+                    }
+                } else if g.vmode & gime::vmode::BP != 0 {
+                    VideoMode::GimeGraphics
+                } else {
+                    VideoMode::GimeText
+                }
+            }
+        }
+    }
+
+    /// CoCo-compatible video/text base address, per variant: the GIME's own
+    /// SAM-compat page register (CoCo 3, unchanged) or the primary SAM's F-bits
+    /// (CoCo 1/2 — `docs/coco12-plan.md` Phase 3).
+    fn legacy_display_base(&self) -> u16 {
+        match self.config.variant {
+            MachineVariant::Coco3 => self.bus.gime.sam_display_base(),
+            MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.display_base() as u16,
+        }
+    }
+
+    /// Resolve the 16-entry colour table the CoCo-compatible text/graphics
+    /// renderers read from, per variant (`docs/coco12-plan.md` Phase 3):
+    /// CoCo 3 snapshots the GIME palette registers (existing behaviour,
+    /// unchanged); CoCo 1/2 has none, so it resolves the fixed VDG RGB table.
+    /// `css` (PIA1 $FF22 bit 3) only matters for the fixed-VDG path — see
+    /// [`video::ColorSource::resolve`].
+    fn legacy_palette(&self, css: bool) -> [[u8; 4]; video::PALETTE_LEN] {
+        match self.config.variant {
+            MachineVariant::Coco3 => {
+                let mut resolved = [[0u8; 4]; video::PALETTE_LEN];
+                for (i, entry) in resolved.iter_mut().enumerate() {
+                    *entry = GIME::rgb_color(self.bus.gime.palette[i]);
+                }
+                video::ColorSource::GimePalette(&resolved).resolve(css)
+            }
+            MachineVariant::Coco1 | MachineVariant::Coco2 => {
+                video::ColorSource::VdgFixed.resolve(css)
+            }
         }
     }
 
@@ -323,7 +378,7 @@ impl Machine {
     pub fn text_screen_lines(&mut self) -> Vec<String> {
         match self.video_mode() {
             VideoMode::CocoText | VideoMode::CocoGraphics => {
-                let base = self.bus.gime.sam_display_base();
+                let base = self.legacy_display_base();
                 (0..video::ROWS as u16)
                     .map(|row| {
                         (0..video::COLS as u16)
@@ -347,19 +402,30 @@ impl Machine {
     /// unexpectedly blank or garbled dump — most commonly, the machine has
     /// switched to a graphics mode, which has no text buffer.
     pub fn video_mode_summary(&self) -> String {
-        let g = &self.bus.gime;
         match self.video_mode() {
             VideoMode::CocoText => {
-                format!("video mode: CoCo-compatible text, base=${:04X}", g.sam_display_base())
+                format!(
+                    "video mode: CoCo-compatible text, base=${:04X}",
+                    self.legacy_display_base()
+                )
             }
             VideoMode::CocoGraphics => {
-                format!("video mode: CoCo-compatible graphics (PMODE), base=${:04X}", g.sam_display_base())
+                format!(
+                    "video mode: CoCo-compatible graphics (PMODE), base=${:04X}",
+                    self.legacy_display_base()
+                )
             }
             VideoMode::GimeText => {
-                format!("video mode: GIME hi-res text, base=${:06X}", g.video_base())
+                format!(
+                    "video mode: GIME hi-res text, base=${:06X}",
+                    self.bus.gime.video_base()
+                )
             }
             VideoMode::GimeGraphics => {
-                format!("video mode: GIME graphics (HSCREEN), base=${:06X}", g.video_base())
+                format!(
+                    "video mode: GIME graphics (HSCREEN), base=${:06X}",
+                    self.bus.gime.video_base()
+                )
             }
         }
     }
@@ -397,48 +463,69 @@ impl Machine {
     /// Render the legacy CoCo-compatible 32×16 text screen (`DESIGN.md` §6).
     fn render_coco_text(&mut self) {
         self.reset_legacy_fb();
-        // Snapshot the text screen through the bus (honours the MMU) from the SAM
-        // page-register base (the ROM programs $0400; CLS n / double-buffering
-        // move it), then render.
+        // Snapshot the text screen through the bus (honours the MMU on CoCo 3;
+        // the SAM decode directly on CoCo 1/2) from the display-base register,
+        // then render.
         // TODO: per-scanline scanout straight from RAM (`DESIGN.md` §2b/§6).
-        let base = self.bus.gime.sam_display_base();
+        let base = self.legacy_display_base();
         let mut screen = [0u8; video::SCREEN_LEN];
         for (i, cell) in screen.iter_mut().enumerate() {
             *cell = self.bus.read(base.wrapping_add(i as u16));
         }
-        // Resolve the GIME palette registers the ROM programmed to RGBA. The
-        // legacy CoCo-compatible text border is black (GIME `update_border`).
-        let mut palette = [[0u8; 4]; video::PALETTE_LEN];
-        for (i, entry) in palette.iter_mut().enumerate() {
-            *entry = GIME::rgb_color(self.bus.gime.palette[i]);
-        }
-        let border = GIME::rgb_color(TEXT_BORDER_COLOR);
+        let css = self.bus.pia1.b.output & video::VDG_CSS != 0;
+        let palette = self.legacy_palette(css);
+        // The legacy CoCo-compatible text border is fixed black on both
+        // variants (GIME `update_border` / MAME `mc6847.cpp` `border_value`).
+        let border = match self.config.variant {
+            MachineVariant::Coco3 => GIME::rgb_color(TEXT_BORDER_COLOR),
+            MachineVariant::Coco1 | MachineVariant::Coco2 => {
+                video::VDG_FIXED_PALETTE[video::TEXT_BORDER_INDEX]
+            }
+        };
         video::render_text(&screen, &palette, border, &mut self.framebuffer);
     }
 
     /// Render a VDG bitmap graphics (PMODE) field (`DESIGN.md` §6).
     ///
-    /// The mode/colour set come from PIA1 $FF22 and the display base from the SAM
-    /// page register. Video RAM is read through the bus (honours the MMU) from that
-    /// base — the same low-64K simplification as `render_coco_text`.
+    /// The mode/colour set come from PIA1 $FF22 and the display base from the
+    /// display-base register. Video RAM is read through the bus (honours the
+    /// MMU on CoCo 3) from that base — the same low-64K simplification as
+    /// `render_coco_text`. The vertical cadence (RAM rows fetched) comes from
+    /// the SAM V0-V2 bits: the GIME's own SAM-compat overlay on CoCo 3, the
+    /// primary `Sam` on CoCo 1/2 (`docs/coco12-plan.md` Phase 3).
     fn render_coco_graphics(&mut self) {
         self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;
-        let mode = video::decode_vdg_graphics(ff22, self.bus.gime.sam_video);
-        let css = usize::from(ff22 & video::VDG_CSS != 0);
+        let sam_video = match self.config.variant {
+            MachineVariant::Coco3 => self.bus.gime.sam_video,
+            MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.v_bits(),
+        };
+        let mode = video::decode_vdg_graphics(ff22, sam_video);
+        let css_bit = ff22 & video::VDG_CSS != 0;
+        let css = usize::from(css_bit);
         let indices = video::vdg_palette_indices(mode.bpp, css);
+        let palette = self.legacy_palette(css_bit);
         let mut colors = [[0u8; 4]; video::MAX_VDG_COLORS];
         for (slot, &reg) in colors.iter_mut().zip(indices) {
-            *slot = GIME::rgb_color(self.bus.gime.palette[reg]);
+            *slot = palette[reg];
         }
 
-        let base = self.bus.gime.sam_display_base();
+        let base = self.legacy_display_base();
         self.graphics_scratch.resize(mode.bytes_per_row * mode.rows, 0);
         for (i, byte) in self.graphics_scratch.iter_mut().enumerate() {
             *byte = self.bus.read(base.wrapping_add(i as u16));
         }
 
-        let border = GIME::rgb_color(TEXT_BORDER_COLOR);
+        // The legacy graphics border is not black: MAME `mc6847.cpp`
+        // `border_value` returns green (CSS=0) or buff (CSS=1) for graphics
+        // modes. CoCo 3 keeps its pre-Phase-3 (black) behaviour unchanged —
+        // this fixed-VDG border only applies on the CoCo 1/2 path.
+        let border = match self.config.variant {
+            MachineVariant::Coco3 => GIME::rgb_color(TEXT_BORDER_COLOR),
+            MachineVariant::Coco1 | MachineVariant::Coco2 => {
+                video::VDG_FIXED_PALETTE[video::vdg_graphics_border_index(css_bit)]
+            }
+        };
         let colors = &colors[..indices.len()];
         video::render_graphics(&self.graphics_scratch, &mode, colors, border, &mut self.framebuffer);
     }
