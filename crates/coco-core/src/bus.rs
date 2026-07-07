@@ -8,11 +8,12 @@ use mc6809::Bus;
 
 use crate::cart::{Cartridge, EmptySlot};
 use crate::cassette::Cassette;
-use crate::config::MemorySize;
+use crate::config::{MachineVariant, MemorySize};
 use crate::gime::{self, GIME};
 use crate::joystick::Joysticks;
 use crate::keyboard::Keyboard;
 use crate::pia::MC6821;
+use crate::sam::{Sam, SamTarget};
 
 // I/O page device ranges (`DESIGN.md` §3). PIA0/PIA1 mirror every 4 bytes.
 const IO_BASE: u16 = 0xFF00;
@@ -73,10 +74,28 @@ const HARDWIRED_ROM_BASE: u16 = 0xFFE0;
 
 const OPEN_BUS: u8 = 0xFF;
 
+/// Plain-SAM path only: flat 32K ROM image offset where Color BASIC starts —
+/// extbas at 0, bas at $2000 (`docs/coco12-plan.md` "ROM files").
+const SAM_BAS_ROM_OFFSET: usize = 0x2000;
+/// Plain-SAM path only: base CPU address of the cartridge CTS* ROM window,
+/// added back to a `SamTarget::Cart` offset before calling
+/// [`Cartridge::rom_read`].
+const SAM_CART_ROM_BASE: u16 = 0xC000;
+
 pub struct SystemBus {
+    /// Which machine this bus decodes addresses for. `Bus::read`/`Bus::write`
+    /// branch on this once, up front, into two independent concrete decode
+    /// paths (GIME vs plain SAM) rather than a trait object — see
+    /// `docs/coco12-plan.md` Phase 2.
+    pub variant: MachineVariant,
     pub ram: Box<[u8]>,
     pub rom: Box<[u8]>,
     pub gime: GIME,
+    /// MC6883 SAM primary memory map, used only on [`MachineVariant::Coco1`]/
+    /// [`MachineVariant::Coco2`]. Left at its power-on state (and never
+    /// consulted) on [`MachineVariant::Coco3`] — the GIME keeps its own
+    /// SAM-compatibility overlay (`gime::write_sam`) for that path.
+    pub sam: Sam,
     pub pia0: MC6821,
     pub pia1: MC6821,
     pub cart: Box<dyn Cartridge>,
@@ -90,11 +109,13 @@ pub struct SystemBus {
 }
 
 impl SystemBus {
-    pub fn new(memory: MemorySize, rom: Box<[u8]>) -> Self {
+    pub fn new(variant: MachineVariant, memory: MemorySize, rom: Box<[u8]>) -> Self {
         Self {
+            variant,
             ram: vec![0u8; memory.bytes()].into_boxed_slice(),
             rom,
             gime: GIME::new(),
+            sam: Sam::new(),
             pia0: MC6821::new(),
             pia1: MC6821::new(),
             cart: Box::new(EmptySlot),
@@ -381,6 +402,95 @@ impl SystemBus {
             _ => { /* unmapped — TODO */ }
         }
     }
+
+    // ---- Plain-SAM path (CoCo 1/2, no GIME) --------------------------------
+    //
+    // `Sam::map` does the whole-address decode (RAM/ROM/cart/I/O/open-bus) in
+    // one step, unlike the GIME path's separate ROM-window/I/O-page/MMU
+    // layers, so there's no need for `phys`/`is_rom_window`/`rom_read`
+    // equivalents here. This path never touches `self.gime` — no MMU
+    // translate, no interrupt raises, no timer (`docs/coco12-plan.md` Phase
+    // 2; the field-loop gating that keeps it that way for `hsync`/`fs_*` is
+    // Phase 4).
+
+    /// Bounds-check a `Sam::map` RAM target against installed RAM. Unlike the
+    /// GIME path (which masks/wraps into a smaller machine's high blocks),
+    /// out-of-range plain-SAM RAM is just truncated for now: reads/writes
+    /// past the installed size fall off the bus (`docs/coco12-plan.md`).
+    fn sam_ram_index(&self, phys: usize) -> Option<usize> {
+        (phys < self.ram.len()).then_some(phys)
+    }
+
+    fn sam_read(&mut self, addr: u16) -> u8 {
+        match self.sam.map(addr) {
+            SamTarget::Ram(phys) => self
+                .sam_ram_index(phys)
+                .map(|i| self.ram[i])
+                .unwrap_or(OPEN_BUS),
+            SamTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
+            SamTarget::RomBas(off) => self
+                .rom
+                .get(SAM_BAS_ROM_OFFSET + off)
+                .copied()
+                .unwrap_or(OPEN_BUS),
+            SamTarget::Cart(off) => self
+                .cart
+                .rom_read(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
+            SamTarget::Io => self.sam_io_read(addr),
+            SamTarget::OpenBus => OPEN_BUS,
+        }
+    }
+
+    fn sam_write(&mut self, addr: u16, val: u8) {
+        match self.sam.map(addr) {
+            SamTarget::Ram(phys) => {
+                if let Some(i) = self.sam_ram_index(phys) {
+                    self.ram[i] = val;
+                }
+            }
+            // ROM/cart/open-bus targets: while TY=0 writes to $8000-$FEFF do
+            // not write through to the RAM underneath (MAME gates
+            // write-through on TY) — there's no RAM there at all in our
+            // model, so these are simply dropped.
+            SamTarget::RomExt(_)
+            | SamTarget::RomBas(_)
+            | SamTarget::Cart(_)
+            | SamTarget::OpenBus => {}
+            SamTarget::Io => self.sam_io_write(addr, val),
+        }
+    }
+
+    /// The `SamTarget::Io` sub-decode: PIA0, PIA1, cart SCS*, and the SAM
+    /// control strobes (read-only in effect — a strobe read falls through to
+    /// open bus, matching the plan's memory map).
+    fn sam_io_read(&mut self, addr: u16) -> u8 {
+        match addr {
+            IO_BASE..=PIA0_LAST => {
+                self.pia0.a.input = self.pia0_pa_pins();
+                self.pia0.read((addr & 0x03) as u8)
+            }
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1.a.input = self.pia1_pa_pins();
+                self.pia1.read((addr & 0x03) as u8)
+            }
+            CART_BASE..=CART_LAST => self.cart.read(addr),
+            _ => OPEN_BUS, // SAM control strobes ($FFC0-$FFDF): write-only.
+        }
+    }
+
+    fn sam_io_write(&mut self, addr: u16, val: u8) {
+        match addr {
+            IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1.write((addr & 0x03) as u8, val);
+                let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+                self.cassette.record_dac(dac, self.pia1.a.c2_output());
+            }
+            CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            crate::sam::STROBE_BASE..=crate::sam::STROBE_LAST => self.sam.write_strobe(addr),
+            _ => { /* unmapped */ }
+        }
+    }
 }
 
 /// Decode an `$FFA0–$FFAF` MMU register address to `(task, slot)`.
@@ -391,6 +501,12 @@ fn mmu_index(addr: u16) -> (usize, usize) {
 
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
+        // Two independent concrete decode paths, branched once up front
+        // (`docs/coco12-plan.md` Phase 2) — not a trait object, so both stay
+        // cycle-honest and the GIME path is untouched by the plain-SAM one.
+        if self.variant != MachineVariant::Coco3 {
+            return self.sam_read(addr);
+        }
         // Hardwired to internal ROM ahead of everything else — I/O decode,
         // ROM mapping, and MMU state all take a back seat here (fact behind
         // `HARDWIRED_ROM_BASE`).
@@ -408,6 +524,10 @@ impl Bus for SystemBus {
     }
 
     fn write(&mut self, addr: u16, val: u8) {
+        if self.variant != MachineVariant::Coco3 {
+            self.sam_write(addr, val);
+            return;
+        }
         // $FFE0–$FFFF is ROM, not RAM: writes there are dropped.
         if addr >= HARDWIRED_ROM_BASE {
             return;

@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use coco_core::gime::{init0, intr, TIMER_RELOAD_OFFSET};
-use coco_core::{keyboard, Machine, MachineConfig, MemorySize, SystemBus};
+use coco_core::gime::{TIMER_RELOAD_OFFSET, init0, intr};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus, keyboard};
 use mc6809::Bus;
 
 const IRQENR: u16 = 0xFF92;
@@ -15,7 +15,11 @@ const TIMER_LSB: u16 = 0xFF95;
 const INIT0: u16 = 0xFF90;
 
 fn bus() -> SystemBus {
-    SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice())
+    SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    )
 }
 
 // ---- Enable/status register semantics -----------------------------------------

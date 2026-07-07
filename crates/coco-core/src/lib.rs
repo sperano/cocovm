@@ -16,11 +16,12 @@ pub mod joystick;
 pub mod keyboard;
 pub mod pia;
 pub mod rom_db;
+pub mod sam;
 pub mod video;
 pub mod wd1773;
 
 pub use bus::SystemBus;
-pub use config::{MachineConfig, MemorySize, VideoStandard};
+pub use config::{MachineConfig, MachineVariant, MemorySize, VideoStandard};
 pub use gime::GIME;
 
 use mc6809::{Bus, MC6809};
@@ -103,7 +104,7 @@ const AUDIO_BUFFER_CAP: usize = 8 * 262;
 impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
         let mut cpu = MC6809::new();
-        let mut bus = SystemBus::new(config.memory, rom);
+        let mut bus = SystemBus::new(config.variant, config.memory, rom);
         cpu.reset(&mut bus);
         Self {
             cpu,
@@ -195,8 +196,8 @@ impl Machine {
     /// BASIC's housekeeping. Video scanout is filled at the end (`§6`).
     pub fn run_field(&mut self) {
         let lines = self.config.video.lines_per_field();
-        let fs_falling_line = self.config.video.fs_falling_line();
-        let fs_rising_line = self.config.video.fs_rising_line();
+        let fs_falling_line = self.config.video.fs_falling_line(self.config.variant);
+        let fs_rising_line = self.config.video.fs_rising_line(self.config.variant);
         for line in 0..lines {
             // Sampled per line so a mid-field speed poke takes effect promptly.
             let cycles_per_line = self.cycles_per_field() / lines;

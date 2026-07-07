@@ -1157,6 +1157,8 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
 fn main() -> eframe::Result<()> {
     let cli = Cli::parse();
     let config = MachineConfig {
+        // TODO(`docs/coco12-plan.md` Phase 5): a `--machine` CLI flag.
+        variant: coco_core::MachineVariant::Coco3,
         video: cli.video.into(),
         memory: cli.ram.into(),
     };
