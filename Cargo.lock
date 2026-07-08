@@ -727,6 +727,7 @@ dependencies = [
  "flate2",
  "gilrs",
  "image",
+ "mc6809",
  "rfd",
 ]
 

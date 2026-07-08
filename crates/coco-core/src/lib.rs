@@ -205,6 +205,25 @@ impl Machine {
         self.cpu.step(&mut self.bus)
     }
 
+    /// The scanline within the current field (`0..lines_per_field`) execution
+    /// is currently parked at — the debugger's status bar and its "Step
+    /// Scanline" control (`docs/plan-debugger.md` §3) are the only consumers;
+    /// everything inside the crate uses the private `line` field directly.
+    pub fn current_scanline(&self) -> u32 {
+        self.line
+    }
+
+    /// Write one byte through the CPU's logical address space, with full
+    /// side effects (unlike [`SystemBus::peek`], which is read-only by
+    /// design) — the debugger's memory/register editors use this while the
+    /// machine is paused, e.g. to poke a byte in the CoCo-logical memory
+    /// view. Real hardware has no side-effect-free write; a debugger editing
+    /// memory is expected to trip the same PIA/GIME register semantics a
+    /// running program's own store would.
+    pub fn poke(&mut self, addr: u16, val: u8) {
+        self.bus.write(addr, val);
+    }
+
     /// Re-run the CPU reset sequence (re-fetches the reset vector from ROM). Does
     /// not clear RAM — a warm reset, like the CoCo's reset button.
     ///

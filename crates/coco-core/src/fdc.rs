@@ -581,6 +581,10 @@ impl Cartridge for DiskCart {
         std::mem::replace(&mut self.nmi_pending, false)
     }
 
+    fn nmi_pending(&self) -> bool {
+        self.nmi_pending
+    }
+
     fn as_disk_cart(&mut self) -> Option<&mut DiskCart> {
         Some(self)
     }

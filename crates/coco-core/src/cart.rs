@@ -70,6 +70,14 @@ pub trait Cartridge {
     fn take_nmi(&mut self) -> bool {
         false
     }
+    /// Side-effect-free peek at whether an NMI edge is currently latched,
+    /// without consuming it (unlike [`Cartridge::take_nmi`]) — the
+    /// debugger's hardware-state panel uses this to show the cart port's NMI
+    /// line without perturbing the pending edge a running program still
+    /// needs to see (`docs/plan-debugger.md` §3, "cart line states").
+    fn nmi_pending(&self) -> bool {
+        false
+    }
     /// Downcast to the FD-502 disk controller, if that's what this cartridge
     /// is — how the frontend reaches drive slots (insert/eject a floppy while
     /// the machine runs, as on real hardware) behind the trait object.
@@ -419,6 +427,12 @@ impl Cartridge for MultiPak {
             }
         }
         any
+    }
+
+    /// Wire-OR of all 4 slots, mirroring [`MultiPak::take_nmi`] but without
+    /// consuming the edge.
+    fn nmi_pending(&self) -> bool {
+        self.slots.iter().any(|slot| slot.nmi_pending())
     }
 
     fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
