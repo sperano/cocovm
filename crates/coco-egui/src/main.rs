@@ -19,11 +19,11 @@ mod kbd_help;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use coco_core::cart::RomPak;
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
-use coco_core::{Machine, MachineConfig, MemorySize, VideoStandard};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VideoStandard};
 use eframe::egui;
 use joy::JoystickInputs;
 
@@ -1031,49 +1031,75 @@ fn is_joystick_key(key: egui::Key) -> bool {
     )
 }
 
-/// Installed RAM, as a CLI value. Mirrors [`MemorySize`]; kept separate so the
-/// core crate stays free of a `clap` dependency.
-#[derive(Clone, Copy, ValueEnum)]
-enum RamArg {
-    #[value(name = "128k")]
-    K128,
-    #[value(name = "512k")]
-    K512,
-    #[value(name = "2048k")]
-    K2048,
-}
+// `MachineVariant`/`MemorySize`/`VideoStandard` are all foreign types (defined
+// in `coco-core`), so none of them can derive `clap::ValueEnum` here (orphan
+// rule) without pulling a `clap` dependency into the core crate. Each gets a
+// plain string `value_parser` function instead — same shape, no mirror enum
+// (`docs/coco12-plan.md` Phase 5).
 
-impl From<RamArg> for MemorySize {
-    fn from(r: RamArg) -> Self {
-        match r {
-            RamArg::K128 => MemorySize::K128,
-            RamArg::K512 => MemorySize::K512,
-            RamArg::K2048 => MemorySize::K2048,
-        }
+/// `clap` value parser for `--machine`.
+fn parse_machine(s: &str) -> Result<MachineVariant, String> {
+    match s {
+        "coco1" => Ok(MachineVariant::Coco1),
+        "coco2" => Ok(MachineVariant::Coco2),
+        "coco3" => Ok(MachineVariant::Coco3),
+        _ => Err(format!(
+            "unknown machine '{s}' (expected coco1, coco2, or coco3)"
+        )),
     }
 }
 
-/// Master video standard, as a CLI value. Mirrors [`VideoStandard`].
-#[derive(Clone, Copy, ValueEnum)]
-enum VideoArg {
-    Ntsc,
-    Pal,
+/// Short label for the window title.
+const fn machine_label(variant: MachineVariant) -> &'static str {
+    match variant {
+        MachineVariant::Coco1 => "CoCo 1",
+        MachineVariant::Coco2 => "CoCo 2",
+        MachineVariant::Coco3 => "CoCo 3",
+    }
 }
 
-impl From<VideoArg> for VideoStandard {
-    fn from(v: VideoArg) -> Self {
-        match v {
-            VideoArg::Ntsc => VideoStandard::Ntsc,
-            VideoArg::Pal => VideoStandard::Pal,
-        }
+/// `clap` value parser for `--ram`. Accepts every [`MemorySize`] spelling
+/// across both machine families (`docs/coco12-plan.md`) —
+/// [`MachineConfig::validate`] rejects the wrong family for the chosen
+/// `--machine`.
+fn parse_ram(s: &str) -> Result<MemorySize, String> {
+    match s {
+        "4k" => Ok(MemorySize::K4),
+        "16k" => Ok(MemorySize::K16),
+        "32k" => Ok(MemorySize::K32),
+        "64k" => Ok(MemorySize::K64),
+        "128k" => Ok(MemorySize::K128),
+        "512k" => Ok(MemorySize::K512),
+        "2048k" => Ok(MemorySize::K2048),
+        _ => Err(format!(
+            "unknown RAM size '{s}' (expected 4k, 16k, 32k, 64k, 128k, 512k, or 2048k)"
+        )),
+    }
+}
+
+/// `clap` value parser for `--video`.
+fn parse_video(s: &str) -> Result<VideoStandard, String> {
+    match s {
+        "ntsc" => Ok(VideoStandard::Ntsc),
+        "pal" => Ok(VideoStandard::Pal),
+        _ => Err(format!(
+            "unknown video standard '{s}' (expected ntsc or pal)"
+        )),
     }
 }
 
 #[derive(Parser)]
-#[command(name = "coco", about = "A Tandy Color Computer 3 emulator")]
+#[command(name = "coco", about = "A Tandy Color Computer emulator")]
 struct Cli {
-    /// Boot ROM image (32K Super Extended Color BASIC).
-    /// Defaults to `roms/coco3.rom` at the workspace root.
+    /// Which machine to emulate (coco1, coco2, coco3).
+    #[arg(long, default_value = "coco3", value_parser = parse_machine)]
+    machine: MachineVariant,
+
+    /// Boot ROM image. Defaults, per `--machine`, to `roms/coco3.rom` (CoCo
+    /// 3) or a flat image composed from `roms/bas1{0,1,2,3}.rom` +
+    /// `roms/extbas1{0,1}.rom` (CoCo 1/2 — see `docs/coco12-plan.md`). When
+    /// given explicitly for CoCo 1/2, must already be that same pre-composed
+    /// flat layout (extbas at offset 0, Color BASIC at offset $2000).
     #[arg(long, value_name = "PATH")]
     rom: Option<PathBuf>,
 
@@ -1096,13 +1122,15 @@ struct Cli {
     #[arg(long, default_value_t = false, conflicts_with = "cart")]
     fd502: bool,
 
-    /// Installed RAM.
-    #[arg(long, value_enum, default_value = "512k")]
-    ram: RamArg,
+    /// Installed RAM (4k, 16k, 32k, 64k, 128k, 512k, 2048k). Defaults, per
+    /// `--machine`, to 512K (CoCo 3) or 64K (CoCo 1/2).
+    #[arg(long, value_parser = parse_ram)]
+    ram: Option<MemorySize>,
 
-    /// Master video standard (crystal), independent of the GIME 50/60 Hz mode bit.
-    #[arg(long, value_enum, default_value = "ntsc")]
-    video: VideoArg,
+    /// Master video standard (crystal), independent of the GIME 50/60 Hz mode
+    /// bit (ntsc or pal).
+    #[arg(long, default_value = "ntsc", value_parser = parse_video)]
+    video: VideoStandard,
 
     /// Also save a `.wav` of the tape audio alongside the canonical `.cas`
     /// on every tape write-back (see the "Also save tape audio (.wav)"
@@ -1120,6 +1148,123 @@ fn load_rom(path: Option<PathBuf>) -> std::io::Result<Box<[u8]>> {
     let rom = std::fs::read(&path)?.into_boxed_slice();
     report_rom_validation(&path, &rom);
     Ok(rom)
+}
+
+/// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
+/// primary-SAM path expects is Extended Color BASIC at offset 0 (8K), Color
+/// BASIC at offset [`COCO12_BAS_OFFSET`] (8K) — `docs/coco12-plan.md` "ROM
+/// files"; `bus.rs::SAM_BAS_ROM_OFFSET`.
+const COCO12_BAS_OFFSET: usize = 8 * 1024;
+/// Color BASIC dumps accepted for `--machine coco1`/`coco2` (any one is
+/// enough to boot), newest-preferred among the versions these machines
+/// actually shipped with: 1.2 first, down to 1.0. `bas13.rom` is the CoCo
+/// 2B's Color BASIC — it boots fine on the plain-SAM map, but 1.3 pairs with
+/// the MC6847T1 (a deferred follow-up, `docs/coco12-plan.md`), so it's a
+/// last resort here, not the preferred dump.
+const COCO_BASIC_CANDIDATES: &[&str] = &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
+/// Newest-preferred Extended Color BASIC dumps; optional
+/// (`docs/coco12-plan.md` "ROM files": a Color-BASIC-only machine still
+/// boots).
+const EXTENDED_BASIC_CANDIDATES: &[&str] = &["extbas11.rom", "extbas10.rom"];
+/// Fill byte for the Extended Color BASIC half of the flat image when no
+/// Extended BASIC dump is present — the conventional open-bus value used
+/// elsewhere in the emulator (`docs/coco12-plan.md`).
+const OPEN_BUS_FILLER: u8 = 0xFF;
+
+/// Find the first of `candidates` that exists under `roms_dir`, returning its
+/// path and contents.
+fn find_rom(roms_dir: &Path, candidates: &[&str]) -> Option<(PathBuf, Vec<u8>)> {
+    candidates.iter().find_map(|name| {
+        let path = roms_dir.join(name);
+        std::fs::read(&path).ok().map(|bytes| (path, bytes))
+    })
+}
+
+/// What [`compose_coco12_rom`] found (or didn't) while composing the flat
+/// image, so the CLI-facing caller can report it and the pure composition
+/// logic stays unit-testable without touching `std::process::exit`.
+enum Coco12RomResult {
+    Composed {
+        image: Box<[u8]>,
+        bas: (PathBuf, Vec<u8>),
+        extbas: Option<(PathBuf, Vec<u8>)>,
+    },
+    /// No Color BASIC dump found under `roms_dir` — nothing to boot.
+    NoColorBasic,
+}
+
+/// Search `roms_dir` for the newest-present Color BASIC dump (required) and
+/// Extended Color BASIC dump (optional) and lay them out the way `bus.rs`'s
+/// plain-SAM decode expects. Missing Extended BASIC leaves that half of the
+/// image at [`OPEN_BUS_FILLER`] rather than failing (`docs/coco12-plan.md`
+/// "ROM files": a Color-BASIC-only machine still boots). Pure (no I/O side
+/// effects beyond reading `roms_dir`, no process exit) so it's unit-testable.
+fn compose_coco12_rom(roms_dir: &Path) -> Coco12RomResult {
+    let Some((bas_path, bas_bytes)) = find_rom(roms_dir, COCO_BASIC_CANDIDATES) else {
+        return Coco12RomResult::NoColorBasic;
+    };
+
+    let mut image = vec![OPEN_BUS_FILLER; COCO12_BAS_OFFSET];
+    let extbas = find_rom(roms_dir, EXTENDED_BASIC_CANDIDATES);
+    if let Some((_, ext_bytes)) = &extbas {
+        let n = ext_bytes.len().min(COCO12_BAS_OFFSET);
+        image[..n].copy_from_slice(&ext_bytes[..n]);
+    }
+    image.extend_from_slice(&bas_bytes);
+    Coco12RomResult::Composed {
+        image: image.into_boxed_slice(),
+        bas: (bas_path, bas_bytes),
+        extbas,
+    }
+}
+
+/// Load the flat CoCo 1/2 ROM image, or exit with an explanatory message.
+/// `explicit` (`--rom`) bypasses [`compose_coco12_rom`] entirely and is used
+/// as-is (already the pre-composed flat layout, per the `Cli::rom` doc).
+fn load_coco12_rom(explicit: Option<PathBuf>, roms_dir: &Path) -> Box<[u8]> {
+    if let Some(path) = explicit {
+        return match std::fs::read(&path) {
+            Ok(bytes) => {
+                report_rom_validation(&path, &bytes);
+                bytes.into_boxed_slice()
+            }
+            Err(e) => {
+                eprintln!("coco: could not load ROM: {e}");
+                std::process::exit(1);
+            }
+        };
+    }
+
+    match compose_coco12_rom(roms_dir) {
+        Coco12RomResult::Composed { image, bas, extbas } => {
+            report_rom_validation(&bas.0, &bas.1);
+            match extbas {
+                Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
+                None => eprintln!(
+                    "coco: note: no Extended Color BASIC ROM found ({}); booting Color BASIC only.",
+                    EXTENDED_BASIC_CANDIDATES.join(", ")
+                ),
+            }
+            image
+        }
+        Coco12RomResult::NoColorBasic => {
+            eprintln!("coco: could not find a Color BASIC ROM for --machine coco1/coco2.");
+            eprintln!(
+                "Place one of {} in roms/, or pass --rom <PATH> with a pre-composed image.",
+                COCO_BASIC_CANDIDATES.join(", ")
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Per-variant default RAM size when `--ram` isn't given
+/// (`docs/coco12-plan.md` Phase 5).
+fn default_ram(variant: MachineVariant) -> MemorySize {
+    match variant {
+        MachineVariant::Coco3 => MemorySize::K512,
+        MachineVariant::Coco1 | MachineVariant::Coco2 => MemorySize::K64,
+    }
 }
 
 /// One advisory stderr line per loaded system ROM, checked against the
@@ -1156,18 +1301,29 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
 
 fn main() -> eframe::Result<()> {
     let cli = Cli::parse();
+    let variant = cli.machine;
+    let memory = cli.ram.unwrap_or_else(|| default_ram(variant));
     let config = MachineConfig {
-        // TODO(`docs/coco12-plan.md` Phase 5): a `--machine` CLI flag.
-        variant: coco_core::MachineVariant::Coco3,
-        video: cli.video.into(),
-        memory: cli.ram.into(),
+        variant,
+        video: cli.video,
+        memory,
     };
-    let rom = match load_rom(cli.rom) {
-        Ok(rom) => rom,
-        Err(e) => {
-            eprintln!("coco: could not load ROM: {e}");
-            eprintln!("Pass --rom <PATH>, or place one at roms/coco3.rom.");
-            std::process::exit(1);
+    if let Err(e) = config.validate() {
+        eprintln!("coco: invalid configuration: {e}");
+        std::process::exit(1);
+    }
+    let rom = match variant {
+        MachineVariant::Coco3 => match load_rom(cli.rom) {
+            Ok(rom) => rom,
+            Err(e) => {
+                eprintln!("coco: could not load ROM: {e}");
+                eprintln!("Pass --rom <PATH>, or place one at roms/coco3.rom.");
+                std::process::exit(1);
+            }
+        },
+        MachineVariant::Coco1 | MachineVariant::Coco2 => {
+            let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+            load_coco12_rom(cli.rom, &roms_dir)
         }
     };
     let cart_path = cli.cart;
@@ -1181,10 +1337,12 @@ fn main() -> eframe::Result<()> {
     let win_h = img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H;
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
         .expect("embedded icon PNG is valid");
+    let window_title = format!("coco-rs — {}", machine_label(variant));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([win_w, win_h])
-            .with_icon(icon),
+            .with_icon(icon)
+            .with_title(&window_title),
         ..Default::default()
     };
     eframe::run_native(
@@ -1198,4 +1356,127 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     )
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn parse_machine_accepts_known_spellings_and_rejects_others() {
+        assert_eq!(parse_machine("coco1"), Ok(MachineVariant::Coco1));
+        assert_eq!(parse_machine("coco2"), Ok(MachineVariant::Coco2));
+        assert_eq!(parse_machine("coco3"), Ok(MachineVariant::Coco3));
+        assert!(parse_machine("coco4").is_err());
+        assert!(parse_machine("").is_err());
+    }
+
+    #[test]
+    fn parse_ram_accepts_every_memory_size_spelling() {
+        assert_eq!(parse_ram("4k"), Ok(MemorySize::K4));
+        assert_eq!(parse_ram("16k"), Ok(MemorySize::K16));
+        assert_eq!(parse_ram("32k"), Ok(MemorySize::K32));
+        assert_eq!(parse_ram("64k"), Ok(MemorySize::K64));
+        assert_eq!(parse_ram("128k"), Ok(MemorySize::K128));
+        assert_eq!(parse_ram("512k"), Ok(MemorySize::K512));
+        assert_eq!(parse_ram("2048k"), Ok(MemorySize::K2048));
+        assert!(parse_ram("1mb").is_err());
+    }
+
+    #[test]
+    fn parse_video_accepts_ntsc_and_pal() {
+        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::Ntsc));
+        assert_eq!(parse_video("pal"), Ok(VideoStandard::Pal));
+        assert!(parse_video("secam").is_err());
+    }
+
+    #[test]
+    fn default_ram_is_512k_for_coco3_and_64k_for_coco1_2() {
+        assert_eq!(default_ram(MachineVariant::Coco3), MemorySize::K512);
+        assert_eq!(default_ram(MachineVariant::Coco1), MemorySize::K64);
+        assert_eq!(default_ram(MachineVariant::Coco2), MemorySize::K64);
+    }
+
+    /// Scratch directory under `target/` holding only the ROM files a given
+    /// test writes into it — deliberately not the real workspace `roms/`
+    /// (whose contents vary machine-to-machine), so [`compose_coco12_rom`]'s
+    /// candidate-preference logic is exercised deterministically.
+    fn scratch_roms_dir(name: &str) -> PathBuf {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/tmp-test-roms")
+            .join(name);
+        std::fs::create_dir_all(&dir).expect("create scratch roms dir");
+        dir
+    }
+
+    #[test]
+    fn compose_coco12_rom_lays_out_extbas_then_bas() {
+        let dir = scratch_roms_dir("compose_with_extbas");
+        let bas = vec![0xAAu8; COCO12_BAS_OFFSET];
+        let extbas = vec![0xBBu8; COCO12_BAS_OFFSET];
+        std::fs::write(dir.join("bas12.rom"), &bas).unwrap();
+        std::fs::write(dir.join("extbas11.rom"), &extbas).unwrap();
+
+        let Coco12RomResult::Composed { image, .. } = compose_coco12_rom(&dir) else {
+            panic!("expected Composed");
+        };
+        assert_eq!(image.len(), COCO12_BAS_OFFSET * 2);
+        assert_eq!(&image[..COCO12_BAS_OFFSET], &extbas[..]);
+        assert_eq!(&image[COCO12_BAS_OFFSET..], &bas[..]);
+    }
+
+    #[test]
+    fn compose_coco12_rom_fills_open_bus_when_extbas_missing() {
+        let dir = scratch_roms_dir("compose_without_extbas");
+        let bas = vec![0xAAu8; COCO12_BAS_OFFSET];
+        std::fs::write(dir.join("bas12.rom"), &bas).unwrap();
+
+        let Coco12RomResult::Composed { image, extbas, .. } = compose_coco12_rom(&dir) else {
+            panic!("expected Composed");
+        };
+        assert!(extbas.is_none());
+        assert!(
+            image[..COCO12_BAS_OFFSET]
+                .iter()
+                .all(|&b| b == OPEN_BUS_FILLER)
+        );
+        assert_eq!(&image[COCO12_BAS_OFFSET..], &bas[..]);
+    }
+
+    #[test]
+    fn compose_coco12_rom_prefers_newest_candidate_present() {
+        let dir = scratch_roms_dir("compose_prefers_newest");
+        // bas10 and bas12 both present: bas12 (newer) must win.
+        std::fs::write(dir.join("bas10.rom"), vec![0x10u8; COCO12_BAS_OFFSET]).unwrap();
+        std::fs::write(dir.join("bas12.rom"), vec![0x12u8; COCO12_BAS_OFFSET]).unwrap();
+
+        let Coco12RomResult::Composed { bas, .. } = compose_coco12_rom(&dir) else {
+            panic!("expected Composed");
+        };
+        assert_eq!(bas.0.file_name().unwrap(), "bas12.rom");
+    }
+
+    #[test]
+    fn compose_coco12_rom_demotes_coco2b_bas13_to_last_resort() {
+        let dir = scratch_roms_dir("compose_demotes_bas13");
+        // bas13 pairs with the unmodeled MC6847T1 (CoCo 2B): bas12 must win
+        // over it despite being the older version number.
+        std::fs::write(dir.join("bas13.rom"), vec![0x13u8; COCO12_BAS_OFFSET]).unwrap();
+        std::fs::write(dir.join("bas12.rom"), vec![0x12u8; COCO12_BAS_OFFSET]).unwrap();
+
+        let Coco12RomResult::Composed { bas, .. } = compose_coco12_rom(&dir) else {
+            panic!("expected Composed");
+        };
+        assert_eq!(bas.0.file_name().unwrap(), "bas12.rom");
+    }
+
+    #[test]
+    fn compose_coco12_rom_reports_missing_color_basic() {
+        let dir = scratch_roms_dir("compose_no_bas");
+        // Directory exists but has no candidate ROMs in it.
+        assert!(matches!(
+            compose_coco12_rom(&dir),
+            Coco12RomResult::NoColorBasic
+        ));
+    }
 }
