@@ -288,8 +288,11 @@ Mirroring `alive.rs`/`boot.rs` (skip-if-ROM-missing pattern):
 ### Deferred / follow-ups (explicitly not dropped)
 
 - **CoCo 2B / MC6847T1** (lowercase, SG6 removal) — text-renderer-contained.
-- **NTSC artifact colors for PMODE4** — many CoCo 1/2 games depend on them;
-  reuse the composite-palette work from initial-dev when it lands.
+- **NTSC artifact colors for PMODE4 + composite/TV-look palette** — now
+  specced in `docs/plan-composite-vdg.md` (verified 2026-07-07: MAME
+  artifacter LUT is the RG6 mechanism; the GIME composite tables are the
+  wrong chip's measurements — don't reuse them for the VDG; TV palette
+  blocked on adding the MC6847 datasheet to `./docs`).
 - External-ROM (INT/EXT) character generator support.
 - Address-dependent R0 speedup (blocked on a trustworthy source).
 - 4K/16K RAM mirroring subtleties, if BASIC's sizing misbehaves with plain
