@@ -23,6 +23,27 @@ pub trait Cartridge {
     fn rom_read(&mut self, _addr: u16) -> u8 {
         ROM_OPEN_BUS
     }
+    /// Side-effect-free twin of [`Cartridge::rom_read`] for the debugger's
+    /// disassembly/memory views ([`crate::SystemBus::peek`]). Overridden by
+    /// cartridges whose ROM read is a pure array fetch (ROM paks, the FD-502
+    /// controller ROM); the default is open bus so a device that can't read
+    /// its ROM without side effects safely reports nothing rather than
+    /// perturbing state.
+    fn rom_peek(&self, _addr: u16) -> u8 {
+        ROM_OPEN_BUS
+    }
+    /// Side-effect-free twin of [`Cartridge::read`] (the SCS* I/O window) for
+    /// [`crate::SystemBus::peek`]. Defaults to open bus: most cartridge I/O
+    /// reads (FDC status, etc.) mutate device state, so the debugger reports
+    /// open bus rather than risk a side effect.
+    fn peek(&self, _addr: u16) -> u8 {
+        IO_OPEN_BUS
+    }
+    /// Side-effect-free twin of [`Cartridge::control_read`] (`$FF7F`) for
+    /// [`crate::SystemBus::peek`].
+    fn peek_control(&self) -> u8 {
+        IO_OPEN_BUS
+    }
     /// True while this cartridge ties the expansion-port CART* line to the Q
     /// clock (~895 kHz): auto-start game paks do this so edges arrive
     /// continuously, which drives both the legacy PIA1 CB1 FIRQ path and the
@@ -206,6 +227,10 @@ impl Cartridge for RomPak {
     fn rom_read(&mut self, addr: u16) -> u8 {
         self.image[((addr - ROM_PAK_BASE) ^ ROM_PAK_HALF_SWAP) as usize]
     }
+    fn rom_peek(&self, addr: u16) -> u8 {
+        // Pure array fetch — identical to `rom_read`, no side effects.
+        self.image[((addr - ROM_PAK_BASE) ^ ROM_PAK_HALF_SWAP) as usize]
+    }
     fn cart_line_ties_q(&self) -> bool {
         self.autostart
     }
@@ -350,6 +375,18 @@ impl Cartridge for MultiPak {
 
     fn rom_read(&mut self, addr: u16) -> u8 {
         self.slots[self.cts_slot()].rom_read(addr)
+    }
+
+    fn rom_peek(&self, addr: u16) -> u8 {
+        self.slots[self.cts_slot()].rom_peek(addr)
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        self.slots[self.scs_slot()].peek(addr)
+    }
+
+    fn peek_control(&self) -> u8 {
+        self.select | mpi::READBACK_OR_MASK
     }
 
     fn cart_line_ties_q(&self) -> bool {

@@ -557,6 +557,10 @@ impl Cartridge for DiskCart {
         self.rom.rom_read(addr)
     }
 
+    fn rom_peek(&self, addr: u16) -> u8 {
+        self.rom.rom_peek(addr)
+    }
+
     fn cart_line_ties_q(&self) -> bool {
         false
     }

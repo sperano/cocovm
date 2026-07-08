@@ -126,6 +126,16 @@ pub struct SystemBus {
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
     kbd_line_low: bool,
+    /// Debugger memory watchpoints, installed by
+    /// [`crate::debug::Debugger::run_until`] only while a debugged run is in
+    /// flight and cleared again afterwards. `None` on the normal run path, so
+    /// `read`/`write` pay a single null-check and the hot path is never
+    /// regressed (`docs/plan-debugger.md` §2).
+    watch: Option<crate::debug::WatchTable>,
+    /// First watchpoint access seen since the last [`SystemBus::clear_watch_hit`];
+    /// [`SystemBus::take_watch_hit`] drains it. Only ever `Some` while `watch`
+    /// is installed.
+    watch_hit: Option<crate::debug::WatchHit>,
 }
 
 impl SystemBus {
@@ -146,6 +156,48 @@ impl SystemBus {
             bitbanger: BitBanger::new(),
             io_enabled: true,
             kbd_line_low: false,
+            watch: None,
+            watch_hit: None,
+        }
+    }
+
+    /// Install the debugger's memory-watch table for the duration of a
+    /// [`crate::debug::Debugger::run_until`]. An empty table installs `None` so
+    /// even a debugged run with no watchpoints keeps the `read`/`write` fast
+    /// path. Also clears any stale hit.
+    pub fn install_watches(&mut self, table: crate::debug::WatchTable) {
+        self.watch = (!table.is_empty()).then_some(table);
+        self.watch_hit = None;
+    }
+
+    /// Remove the watch table, returning `read`/`write` to their zero-overhead
+    /// path. Called on every exit from `run_until`.
+    pub fn uninstall_watches(&mut self) {
+        self.watch = None;
+        self.watch_hit = None;
+    }
+
+    /// Forget any recorded watch hit before stepping one instruction.
+    pub fn clear_watch_hit(&mut self) {
+        self.watch_hit = None;
+    }
+
+    /// Take the first watchpoint access observed since the last
+    /// [`SystemBus::clear_watch_hit`], if any.
+    pub fn take_watch_hit(&mut self) -> Option<crate::debug::WatchHit> {
+        self.watch_hit.take()
+    }
+
+    /// Record a watchpoint access if `watch` is installed and `addr`/`kind`
+    /// match an enabled watch. Keeps the FIRST hit within a step (later
+    /// accesses in the same instruction don't overwrite it). Only reached when
+    /// `watch.is_some()`, so the None path never calls this.
+    fn note_watch(&mut self, addr: u16, kind: crate::debug::WatchKind) {
+        if self.watch_hit.is_some() {
+            return;
+        }
+        if matches!(&self.watch, Some(w) if w.matches(addr, kind)) {
+            self.watch_hit = Some(crate::debug::WatchHit { addr, kind });
         }
     }
 
@@ -711,8 +763,121 @@ fn mmu_index(addr: u16) -> (usize, usize) {
     (idx / gime::SLOTS_PER_TASK, idx % gime::SLOTS_PER_TASK)
 }
 
+// ---- Side-effect-free reads (debugger) ---------------------------------
+//
+// `peek` mirrors `Bus::read`'s address decode exactly but takes `&self` and
+// never mutates: no PIA Cx1/Cx2 flag clears, no GIME IRQ/FIRQ status ack, no
+// cartridge register side effects, and no watchpoint hook. Devices whose real
+// read mutates return a last-latched value (GIME status registers, via their
+// public `*_pending` fields) or open bus (most cartridge I/O). The debugger UI
+// uses this for its disassembly, memory, and stack views (`docs/plan-debugger.md`
+// §2).
+impl SystemBus {
+    /// Read `addr` with no side effects. Routes identically to [`Bus::read`].
+    pub fn peek(&self, addr: u16) -> u8 {
+        if self.variant != MachineVariant::Coco3 {
+            return self.sam_peek(addr);
+        }
+        if addr >= HARDWIRED_ROM_BASE {
+            return self.rom_peek(addr);
+        }
+        if self.io_enabled && addr >= IO_BASE {
+            return self.io_peek(addr);
+        }
+        if self.is_rom_window(addr) {
+            return self.rom_peek(addr);
+        }
+        let p = self.phys(addr);
+        self.ram[p]
+    }
+
+    /// Side-effect-free twin of [`SystemBus::rom_read`].
+    fn rom_peek(&self, addr: u16) -> u8 {
+        if addr < HARDWIRED_ROM_BASE && self.gime.rom_is_external(addr) {
+            return self.cart.rom_peek(addr);
+        }
+        let off = (addr - ROM_WINDOW_BASE) as usize;
+        self.rom.get(off).copied().unwrap_or(OPEN_BUS)
+    }
+
+    /// Side-effect-free twin of [`SystemBus::io_read`] (GIME I/O page).
+    fn io_peek(&self, addr: u16) -> u8 {
+        match addr {
+            IO_BASE..=PIA0_LAST => {
+                // A real read refreshes only port A's input pins; port B keeps
+                // its latched `input` (see `io_read`), so peek does the same.
+                self.pia0
+                    .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
+            }
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1
+                    .peek((addr & 0x03) as u8, self.pia1_pa_pins(), self.pia1_pb_pins())
+            }
+            CART_BASE..=CART_LAST => self.cart.peek(addr),
+            MPI_CONTROL_REG => self.cart.peek_control(),
+            VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
+                self.vhd.read_lrn_or_buffer()
+            }
+            VHD_COMMAND_STATUS => self.vhd.read_status(),
+            VHD_SELECT => OPEN_BUS,
+            INIT0_REG => self.gime.init0,
+            INIT1_REG => self.gime.init1,
+            // Read would clear these (status ack); peek reports them intact.
+            IRQENR_REG => self.gime.irq_pending,
+            FIRQENR_REG => self.gime.firq_pending,
+            TIMER_MSB_REG..=GIME_LAST => 0,
+            MMU_BASE..=MMU_LAST => {
+                let (task, slot) = mmu_index(addr);
+                self.gime.mmu[task][slot] & gime::MMU_READ_MASK
+            }
+            PALETTE_BASE..=PALETTE_LAST => self.gime.palette[(addr - PALETTE_BASE) as usize],
+            _ => OPEN_BUS,
+        }
+    }
+
+    /// Side-effect-free twin of [`SystemBus::sam_read`] (plain-SAM path).
+    fn sam_peek(&self, addr: u16) -> u8 {
+        match self.sam.map(addr) {
+            SamTarget::Ram(phys) => self
+                .sam_ram_index(phys)
+                .map(|i| self.ram[i])
+                .unwrap_or(OPEN_BUS),
+            SamTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
+            SamTarget::RomBas(off) => self
+                .rom
+                .get(SAM_BAS_ROM_OFFSET + off)
+                .copied()
+                .unwrap_or(OPEN_BUS),
+            SamTarget::Cart(off) => self.cart.rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
+            SamTarget::Io => self.sam_io_peek(addr),
+            SamTarget::OpenBus => OPEN_BUS,
+        }
+    }
+
+    /// Side-effect-free twin of [`SystemBus::sam_io_read`].
+    fn sam_io_peek(&self, addr: u16) -> u8 {
+        match addr {
+            IO_BASE..=PIA0_LAST => {
+                self.pia0
+                    .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
+            }
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1
+                    .peek((addr & 0x03) as u8, self.pia1_pa_pins(), self.pia1_pb_pins())
+            }
+            CART_BASE..=CART_LAST => self.cart.peek(addr),
+            _ => OPEN_BUS,
+        }
+    }
+}
+
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
+        // Debugger watch hook: a single null-check when no watchpoints are
+        // installed (the common case), so the hot path is unchanged.
+        if self.watch.is_some() {
+            self.note_watch(addr, crate::debug::WatchKind::Read);
+        }
         // Two independent concrete decode paths, branched once up front
         // (`docs/coco12-plan.md` Phase 2) — not a trait object, so both stay
         // cycle-honest and the GIME path is untouched by the plain-SAM one.
@@ -736,6 +901,9 @@ impl Bus for SystemBus {
     }
 
     fn write(&mut self, addr: u16, val: u8) {
+        if self.watch.is_some() {
+            self.note_watch(addr, crate::debug::WatchKind::Write);
+        }
         if self.variant != MachineVariant::Coco3 {
             self.sam_write(addr, val);
             return;
