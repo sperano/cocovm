@@ -7,14 +7,18 @@
 //! scanline derivation).
 
 use coco_core::pia::cr;
-use coco_core::{MemorySize, SystemBus, VideoStandard};
+use coco_core::{MachineVariant, MemorySize, SystemBus, VideoStandard};
 use mc6809::Bus;
 
 const PIA0_CRA: u16 = 0xFF01;
 const PIA0_CRB: u16 = 0xFF03;
 
 fn bus() -> SystemBus {
-    SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice())
+    SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    )
 }
 
 // ---- Edge gating (bus-level, via hsync's CA1) ----------------------------------
@@ -48,7 +52,7 @@ fn cb1_falling_flag_first_appears_at_fs_falling_line_not_before() {
     let mut b = bus();
     // Default CRB ($FF03=0): falling edge selected, matching stock BASIC's
     // $34/$35 ROM setup.
-    let falling_line = VideoStandard::Ntsc.fs_falling_line();
+    let falling_line = VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco3);
     for _ in 0..falling_line {
         b.hsync(); // drives CA1 only; CB1 must stay untouched all field
         assert_eq!(
@@ -72,8 +76,8 @@ fn cb1_rising_edge_selected_polls_high_at_fs_rising_line() {
     // control register (reg 3), unaffected by DDR_ACCESS, so its bit 7 can be
     // polled directly without disturbing port B's data/DDR access mode.
     b.write(PIA0_CRB, cr::C1_EDGE_HIGH);
-    let falling_line = VideoStandard::Ntsc.fs_falling_line();
-    let rising_line = VideoStandard::Ntsc.fs_rising_line();
+    let falling_line = VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco3);
+    let rising_line = VideoStandard::Ntsc.fs_rising_line(MachineVariant::Coco3);
     for line in 0..rising_line {
         b.hsync();
         if line == falling_line {

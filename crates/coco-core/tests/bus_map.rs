@@ -3,8 +3,8 @@
 //! write-8 / read-low-6 MMU register asymmetry (`DESIGN.md` §3).
 
 use coco_core::config::BLOCK_SIZE;
-use coco_core::gime::{init0, init1, DISABLED_MMU_BASE, MMU_READ_MASK};
-use coco_core::{MemorySize, SystemBus};
+use coco_core::gime::{DISABLED_MMU_BASE, MMU_READ_MASK, init0, init1};
+use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 const ROM_SIZE: usize = 32 * 1024;
@@ -12,11 +12,14 @@ const ROM_SIZE: usize = 32 * 1024;
 /// A 32K ROM whose every byte equals its low-address byte, so a read reveals the
 /// offset it came from.
 fn marked_rom() -> Box<[u8]> {
-    (0..ROM_SIZE).map(|i| i as u8).collect::<Vec<_>>().into_boxed_slice()
+    (0..ROM_SIZE)
+        .map(|i| i as u8)
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }
 
 fn bus(mem: MemorySize) -> SystemBus {
-    SystemBus::new(mem, marked_rom())
+    SystemBus::new(MachineVariant::Coco3, mem, marked_rom())
 }
 
 // ---- ROM window --------------------------------------------------------------

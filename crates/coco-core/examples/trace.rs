@@ -68,8 +68,8 @@ fn main() {
 
     // Cart mode: faithful replica of Machine::run_field / run_cycles /
     // service_interrupts, with a trace line before every instruction.
-    let fs_falling_line = m.config.video.fs_falling_line();
-    let fs_rising_line = m.config.video.fs_rising_line();
+    let fs_falling_line = m.config.video.fs_falling_line(m.config.variant);
+    let fs_rising_line = m.config.video.fs_rising_line(m.config.variant);
     let mut logged = 0usize;
     'trace: loop {
         for line in 0..LINES_PER_FIELD {

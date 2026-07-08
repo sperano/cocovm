@@ -1,7 +1,7 @@
 //! SAM R1 CPU-rate strobe ($FFD8/$FFD9 — `POKE 65497,0`): true double speed
 //! on the CoCo 3. R0 ($FFD6/$FFD7) is inert (SEB Unravelled II Fig 8).
 
-use coco_core::{Machine, MachineConfig, MemorySize, SystemBus};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 const R0_SET: u16 = 0xFFD7;
@@ -10,7 +10,11 @@ const R1_SET: u16 = 0xFFD9;
 
 #[test]
 fn r1_strobes_latch_cpu_speed_and_r0_is_inert() {
-    let mut b = SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice());
+    let mut b = SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    );
     assert!(!b.gime.cpu_fast);
     b.write(R1_SET, 0);
     assert!(b.gime.cpu_fast);
