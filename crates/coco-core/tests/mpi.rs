@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use coco_core::cart::{Cartridge, MultiPak, RomPak};
 use coco_core::fdc::DiskCart;
-use coco_core::{Machine, MachineConfig, MemorySize, SystemBus};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 /// `$FF7F`: the MPI's own select register (see `crate::bus::MPI_CONTROL_REG`).
@@ -21,7 +21,7 @@ const SWITCH_SLOT4: usize = 3;
 /// A bus with a small dummy ROM — these tests never boot code, only drive
 /// registers directly (same pattern as `tests/gime_irq.rs`).
 fn bus() -> SystemBus {
-    SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice())
+    SystemBus::new(MachineVariant::Coco3, MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice())
 }
 
 /// A `Machine` with a small dummy ROM, for the reset-propagation test, which

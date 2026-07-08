@@ -2,7 +2,7 @@
 //! always-connected single-bit sound (`DESIGN.md` §7; Tandy Service Manual mux
 //! table via MAME coco.cpp).
 
-use coco_core::{Machine, MachineConfig, MemorySize, SystemBus};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 const PIA0_CRA: u16 = 0xFF01;
@@ -20,7 +20,11 @@ const CR_C2_HIGH: u8 = 0x3C;
 const CR_DDR: u8 = 0x30;
 
 fn bus() -> SystemBus {
-    let mut b = SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice());
+    let mut b = SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    );
     // DDRs: PIA1 PA2-7 outputs (DAC), PB1 output (single-bit sound).
     b.write(PIA1_CRA, CR_DDR);
     b.write(PIA1_DDRA, 0xFC);

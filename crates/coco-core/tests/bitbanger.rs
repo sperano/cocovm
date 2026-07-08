@@ -10,7 +10,7 @@
 //! exercise. This file only covers the bus wiring (`SystemBus::pia1_pb_pins`)
 //! that inline tests can't reach.
 
-use coco_core::{MemorySize, SystemBus};
+use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 const PIA1_DDRB: u16 = 0xFF22; // with control DDR-selected
@@ -22,7 +22,7 @@ const CR_DDR: u8 = 0x30;
 const CR_DATA: u8 = 0x34;
 
 fn bus() -> SystemBus {
-    let mut b = SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice());
+    let mut b = SystemBus::new(MachineVariant::Coco3, MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice());
     // PB0 (BUSY) stays an input pin (DDRB bit 0 = 0), matching the ROM's
     // DDRB = $F8 (`bitbanger-spec.md` "CoCo 3 differences").
     b.write(PIA1_CRB, CR_DDR);

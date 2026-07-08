@@ -2,7 +2,7 @@
 //! cadence bits (`GIME::sam_video`), same clear/set strobe-pair pattern as the
 //! F0–F6 page bits and R1 speed bit (SEB Unravelled II; MAME `6883sam.cpp`).
 
-use coco_core::{MemorySize, SystemBus};
+use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 const V0_CLEAR: u16 = 0xFFC0;
@@ -13,7 +13,11 @@ const V2_CLEAR: u16 = 0xFFC4;
 const V2_SET: u16 = 0xFFC5;
 
 fn bus() -> SystemBus {
-    SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice())
+    SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    )
 }
 
 #[test]

@@ -3,7 +3,7 @@
 //! (`DESIGN.md` §7; wiring verified against SEB Unravelled II + MAME coco.cpp).
 
 use coco_core::joystick::{AXIS_X, AXIS_Y, LEFT, RIGHT};
-use coco_core::{MemorySize, SystemBus};
+use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
 const PIA0_PA: u16 = 0xFF00;
@@ -16,7 +16,11 @@ const CR_C2_HIGH: u8 = 0x3C;
 const COMPARATOR: u8 = 0x80;
 
 fn bus() -> SystemBus {
-    let mut b = SystemBus::new(MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice());
+    let mut b = SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    );
     b.write(PIA0_CRA, CR_C2_LOW);
     b.write(PIA0_CRB, CR_C2_LOW);
     b
