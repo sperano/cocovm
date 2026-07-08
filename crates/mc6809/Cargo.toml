@@ -1,6 +1,6 @@
 [package]
 name = "mc6809"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 # Reusable CPU core: permissively dual-licensed, unlike the GPL-3 emulator crates.
 license = "MIT OR Apache-2.0"

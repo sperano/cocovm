@@ -710,7 +710,7 @@ dependencies = [
 
 [[package]]
 name = "coco-core"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "mc6809",
  "serde",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "coco-egui"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "clap",
  "coco-core",
@@ -1950,7 +1950,7 @@ dependencies = [
 
 [[package]]
 name = "mc6809"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "serde",
 ]
