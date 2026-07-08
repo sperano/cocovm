@@ -2,6 +2,11 @@
 //! Disassembly, Memory, Stack, and Hardware-state panels, toggled with F11
 //! (see `main.rs`'s `handle_input` — F9/F10/F12 are already taken).
 //!
+//! Shown as its own native OS window (an egui *immediate viewport*, like the
+//! printer's `paper_view`), so the panels never cover the emulated screen;
+//! backends without multi-window support fall back to floating panels in the
+//! main viewport.
+//!
 //! [`DebuggerPanel`] owns the `coco_core::debug::Debugger` (breakpoints,
 //! watchpoints, trace ring) and is the single entry point `CocoApp::update`
 //! drives the per-field run loop through ([`DebuggerPanel::run_field`]) so a
@@ -246,10 +251,43 @@ impl DebuggerPanel {
 
     /// Draw every panel, if [`Self::open`]. Called unconditionally once per
     /// `update()`, like the app's other optional windows.
+    ///
+    /// The panels live in their own native OS window (an egui *immediate
+    /// viewport*, same pattern as `paper_view::PaperWindow::ui`) so the
+    /// debugger never covers the emulated screen. On a backend without
+    /// native multi-window support egui reports `ViewportClass::Embedded`
+    /// and the panels fall back to floating over the main viewport.
     pub fn windows_ui(&mut self, ctx: &egui::Context, machine: &mut Machine, running: &mut bool) {
         if !self.open {
             return;
         }
+        // One stable ID so egui reuses the same native OS window across
+        // frames instead of spawning a new one.
+        let viewport_id = egui::ViewportId::from_hash_of("debugger");
+        let builder = egui::ViewportBuilder::default()
+            .with_title("Debugger")
+            .with_inner_size([1140.0, 780.0])
+            .with_min_inner_size([480.0, 320.0]);
+        ctx.show_viewport_immediate(viewport_id, builder, |ctx, class| {
+            if class != egui::ViewportClass::Embedded {
+                // Backdrop for the panel cluster to float over; without it
+                // the viewport is unpainted.
+                egui::CentralPanel::default().show(ctx, |_ui| {});
+                // The OS close button: accept the close by not showing the
+                // viewport next frame (mirrors the F11 / View-menu toggle).
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    self.open = false;
+                }
+            }
+            self.panel_windows(ctx, machine, running);
+        });
+    }
+
+    /// The six panel windows. Inside [`Self::windows_ui`]'s viewport closure
+    /// they render into the debugger's native window; on the embedded
+    /// fallback path they land in the main viewport, exactly as before the
+    /// debugger became a native window.
+    fn panel_windows(&mut self, ctx: &egui::Context, machine: &mut Machine, running: &mut bool) {
         egui::Window::new(crate::window_title(ctx, "Debug: Controls"))
             .default_pos([20.0, 40.0])
             .show(ctx, |ui| self.controls_ui(ui, machine, running));
