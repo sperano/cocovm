@@ -29,8 +29,20 @@ const CART_LAST: u16 = 0xFF5F;
 // sees the full window regardless of MC2.
 /// Multi-Pak Interface select register: decoded by the MPI itself (when one
 /// is inserted), never by the plugged-in cartridges' own `read`/`write` — see
-/// [`Cartridge::control_read`]. `$FF60-$FF7E` stays open bus.
+/// [`Cartridge::control_read`]. `$FF60-$FF7E` routes to the cartridge (below).
 const MPI_CONTROL_REG: u16 = 0xFF7F;
+/// Spare I/O window `$FF60-$FF7E`: no on-board device decodes it, but
+/// cartridges that decode the full address bus themselves live here — the
+/// Deluxe RS-232's 6551 ACIA at `$FF68-$FF6B`, the Orchestra-90's DACs at
+/// `$FF7A-$FF7B` — so it is forwarded to [`Cartridge::read`]/`write` like the
+/// SCS window. On real hardware SCS* covers only `$FF40-$FF5F` and these
+/// devices ignore it, matching addresses directly, so widening what reaches
+/// the cartridge is faithful. `$FF7F` (the MPI's own select register) stays
+/// excluded. Known limitation: through an MPI this window follows the SCS
+/// slot select (`MultiPak::read`/`write` route to `scs_slot()` only), so a
+/// full-decode device in a non-selected slot won't be addressed.
+const CART_SPARE_BASE: u16 = 0xFF60;
+const CART_SPARE_LAST: u16 = 0xFF7E;
 // VHD (virtual hard disk, NitrOS-9 `emudsk`) register window — see `vhd.rs`.
 // $FF87-$FF8F stays open-bus/unmapped.
 const VHD_LRN_HI: u16 = 0xFF80;
@@ -126,6 +138,10 @@ pub struct SystemBus {
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
     kbd_line_low: bool,
+    /// Last sampled level of the cartridge's level-driven CART* interrupt
+    /// ([`Cartridge::cart_interrupt`]), so [`SystemBus::poll_cart_interrupt`]
+    /// acts only on transitions.
+    prev_cart_int: bool,
 }
 
 impl SystemBus {
@@ -146,6 +162,7 @@ impl SystemBus {
             bitbanger: BitBanger::new(),
             io_enabled: true,
             kbd_line_low: false,
+            prev_cart_int: false,
         }
     }
 
@@ -294,6 +311,28 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
+    /// Sample the level-driven CART* interrupt ([`Cartridge::cart_interrupt`],
+    /// e.g. the Deluxe RS-232's 6551 ACIA IRQ) and convert transitions into
+    /// what the shared physical pin feeds: PIA1 CB1 sees the line level itself
+    /// — CART* is active-low, so asserted = CB1 low, and the PIA latches
+    /// whichever edge its control register selects — while the GIME EI0
+    /// source is raised on the falling (assert) edge only, its hardwired
+    /// trigger (GIME border/cart sources are falling-edge, per Lomont; same
+    /// treatment as the `cart_line_ties_q` Q-burst in [`SystemBus::hsync`]).
+    /// Polled per-instruction from `Machine::run_cycles` so serial-interrupt
+    /// latency isn't quantized to scanlines.
+    pub fn poll_cart_interrupt(&mut self) {
+        let level = self.cart.cart_interrupt();
+        if level == self.prev_cart_int {
+            return;
+        }
+        self.prev_cart_int = level;
+        self.pia1.b.set_c1(!level);
+        if level && self.variant == MachineVariant::Coco3 {
+            self.gime.raise(gime::intr::EI0);
+        }
+    }
+
     /// Horizontal-sync line: the GIME HS pin idles high and pulses low for 16
     /// of 228 pixel clocks at line end (~4.5 µs; MAME `mc6847.cpp`
     /// `TIMER_HSYNC_OFF_TIME`=212/`ON_TIME`=228). Our per-line model has no
@@ -439,6 +478,7 @@ impl SystemBus {
                 self.pia1.read((addr & 0x03) as u8)
             }
             CART_BASE..=CART_LAST => self.cart.read(addr),
+            CART_SPARE_BASE..=CART_SPARE_LAST => self.cart.read(addr),
             MPI_CONTROL_REG => self.cart.control_read(),
             VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
                 self.vhd.read_lrn_or_buffer()
@@ -472,6 +512,7 @@ impl SystemBus {
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
             }
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            CART_SPARE_BASE..=CART_SPARE_LAST => self.cart.write(addr, val),
             MPI_CONTROL_REG => self.cart.control_write(val),
             VHD_LRN_HI => self.vhd.write_lrn_hi(val),
             VHD_LRN_MID => self.vhd.write_lrn_mid(val),
