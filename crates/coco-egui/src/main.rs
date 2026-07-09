@@ -15,6 +15,7 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod new_vm;
 mod paper_export;
 mod paper_render;
 mod paper_view;
@@ -193,6 +194,9 @@ struct CocoApp {
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
     mpi: Option<MpiState>,
+    /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
+    /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
+    new_vm: new_vm::NewVmDialog,
     /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
     /// the DMP-105's dot-matrix output on period-correct tractor-feed
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
@@ -287,6 +291,7 @@ impl CocoApp {
             print_capture_lf: false,
             pending_disk_action: None,
             mpi: None,
+            new_vm: new_vm::NewVmDialog::new(),
             paper_window: paper_view::PaperWindow::new(),
         };
         if let Some(path) = cart_path {
@@ -785,6 +790,51 @@ impl CocoApp {
         self.paper_window.open = true;
     }
 
+    /// Build a brand-new machine from `config`, replacing the current one
+    /// wholesale (the "New…" dialog's Create). The ROM set for the chosen
+    /// variant is loaded first, so a failure (returned for the dialog to
+    /// display) leaves the running machine untouched. On success, dirty
+    /// floppies and tape are written back exactly like [`Self::on_exit`],
+    /// then every mounted device and frontend path is dropped — a new VM
+    /// starts bare, like a machine fresh out of the box. Sticky UI
+    /// preferences (keyboard mode, joysticks, audio, autostart, CR→LF)
+    /// survive; they belong to the app, not the machine.
+    fn create_vm(&mut self, config: MachineConfig, ctx: &egui::Context) -> Result<(), String> {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(config.variant, &roms_dir)?;
+
+        self.flush_dirty_disks();
+        self.write_back_tape();
+        // The bit-banger sinks (file capture / DMP-105 paper feed) belong to
+        // the old machine and drop with it; clear the frontend's handles so
+        // neither UI points at a dead device.
+        self.print_capture_path = None;
+        self.paper_window.detach();
+
+        self.machine = Machine::new(config, rom);
+        // `self.texture` is deliberately left alone: nulling it here would
+        // panic in this same frame's CentralPanel (drawn after the dialog),
+        // and the per-frame `texture.set` at the top of `update` re-uploads
+        // the new machine's framebuffer — including a size change, CoCo 1/2
+        // and CoCo 3 framebuffers differ — on the next pass anyway.
+        self.running = true; // boot straight to the prompt, like startup
+        self.type_ahead.clear();
+        self.last_update = None;
+        self.field_debt = 0.0;
+        self.cart_path = None;
+        self.cart_error = None;
+        self.disk_paths = [None, None];
+        self.vhd_paths = [None, None];
+        self.tape_path = None;
+        self.pending_disk_action = None;
+        self.mpi = None;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "coco-rs — {}",
+            machine_label(config.variant)
+        )));
+        Ok(())
+    }
+
     /// Emulated fields owed for this update, from wall-clock time at the
     /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
     fn fields_due(&mut self) -> usize {
@@ -946,6 +996,11 @@ impl eframe::App for CocoApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| {
+                    if ui.button("New…").clicked() {
+                        self.new_vm.open_with(self.machine.config);
+                        ui.close();
+                    }
+                    ui.separator();
                     let run_label = if self.running { "Pause" } else { "Run" };
                     if ui.button(run_label).clicked() {
                         self.running = !self.running;
@@ -1345,6 +1400,12 @@ impl eframe::App for CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
+        if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
+            match self.create_vm(config, ctx) {
+                Ok(()) => self.new_vm.close(),
+                Err(e) => self.new_vm.error = Some(e),
+            }
+        }
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
@@ -1671,15 +1732,54 @@ struct Cli {
     print_capture: Option<PathBuf>,
 }
 
-/// Load the boot ROM from `path`, or `roms/coco3.rom` at the workspace root.
-/// The ROM is copyrighted and git-ignored (`./roms`).
-fn load_rom(path: Option<PathBuf>) -> std::io::Result<Box<[u8]>> {
-    let path = path.unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom")
-    });
-    let rom = std::fs::read(&path)?.into_boxed_slice();
-    report_rom_validation(&path, &rom);
-    Ok(rom)
+/// Read an explicit `--rom` image as-is: a CoCo 3 image, or — for CoCo 1/2 —
+/// an already pre-composed flat layout (see the `Cli::rom` doc).
+fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            report_rom_validation(path, &bytes);
+            Ok(bytes.into_boxed_slice())
+        }
+        Err(e) => Err(format!("could not load {}: {e}", path.display())),
+    }
+}
+
+/// Load the default boot ROM set for `variant` from `roms_dir` (copyrighted
+/// and git-ignored, `./roms`): `coco3.rom` for the CoCo 3, or a flat image
+/// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
+/// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
+/// the "New…" dialog shows them inline; `main` prints them and exits.
+fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]>, String> {
+    match variant {
+        MachineVariant::Coco3 => {
+            let path = roms_dir.join("coco3.rom");
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    report_rom_validation(&path, &bytes);
+                    Ok(bytes.into_boxed_slice())
+                }
+                Err(e) => Err(format!("could not load {}: {e}", path.display())),
+            }
+        }
+        MachineVariant::Coco1 | MachineVariant::Coco2 => match compose_coco12_rom(roms_dir) {
+            Coco12RomResult::Composed { image, bas, extbas } => {
+                report_rom_validation(&bas.0, &bas.1);
+                match extbas {
+                    Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
+                    None => eprintln!(
+                        "coco: note: no Extended Color BASIC ROM found ({}); booting Color BASIC only.",
+                        EXTENDED_BASIC_CANDIDATES.join(", ")
+                    ),
+                }
+                Ok(image)
+            }
+            Coco12RomResult::NoColorBasic => Err(format!(
+                "no Color BASIC ROM found: place one of {} in {}",
+                COCO_BASIC_CANDIDATES.join(", "),
+                roms_dir.display()
+            )),
+        },
+    }
 }
 
 /// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
@@ -1750,46 +1850,6 @@ fn compose_coco12_rom(roms_dir: &Path) -> Coco12RomResult {
     }
 }
 
-/// Load the flat CoCo 1/2 ROM image, or exit with an explanatory message.
-/// `explicit` (`--rom`) bypasses [`compose_coco12_rom`] entirely and is used
-/// as-is (already the pre-composed flat layout, per the `Cli::rom` doc).
-fn load_coco12_rom(explicit: Option<PathBuf>, roms_dir: &Path) -> Box<[u8]> {
-    if let Some(path) = explicit {
-        return match std::fs::read(&path) {
-            Ok(bytes) => {
-                report_rom_validation(&path, &bytes);
-                bytes.into_boxed_slice()
-            }
-            Err(e) => {
-                eprintln!("coco: could not load ROM: {e}");
-                std::process::exit(1);
-            }
-        };
-    }
-
-    match compose_coco12_rom(roms_dir) {
-        Coco12RomResult::Composed { image, bas, extbas } => {
-            report_rom_validation(&bas.0, &bas.1);
-            match extbas {
-                Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
-                None => eprintln!(
-                    "coco: note: no Extended Color BASIC ROM found ({}); booting Color BASIC only.",
-                    EXTENDED_BASIC_CANDIDATES.join(", ")
-                ),
-            }
-            image
-        }
-        Coco12RomResult::NoColorBasic => {
-            eprintln!("coco: could not find a Color BASIC ROM for --machine coco1/coco2.");
-            eprintln!(
-                "Place one of {} in roms/, or pass --rom <PATH> with a pre-composed image.",
-                COCO_BASIC_CANDIDATES.join(", ")
-            );
-            std::process::exit(1);
-        }
-    }
-}
-
 /// Per-variant default RAM size when `--ram` isn't given
 /// (`docs/coco12-plan.md` Phase 5).
 fn default_ram(variant: MachineVariant) -> MemorySize {
@@ -1845,18 +1905,17 @@ fn main() -> eframe::Result<()> {
         eprintln!("coco: invalid configuration: {e}");
         std::process::exit(1);
     }
-    let rom = match variant {
-        MachineVariant::Coco3 => match load_rom(cli.rom) {
-            Ok(rom) => rom,
-            Err(e) => {
-                eprintln!("coco: could not load ROM: {e}");
-                eprintln!("Pass --rom <PATH>, or place one at roms/coco3.rom.");
-                std::process::exit(1);
-            }
-        },
-        MachineVariant::Coco1 | MachineVariant::Coco2 => {
-            let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-            load_coco12_rom(cli.rom, &roms_dir)
+    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+    let rom = match cli.rom {
+        Some(path) => load_explicit_rom(&path),
+        None => load_default_rom(variant, &roms_dir),
+    };
+    let rom = match rom {
+        Ok(rom) => rom,
+        Err(e) => {
+            eprintln!("coco: {e}");
+            eprintln!("Pass --rom <PATH> to boot a specific image.");
+            std::process::exit(1);
         }
     };
     let mpi = cli.mpi;
@@ -2050,5 +2109,67 @@ mod cli_tests {
             compose_coco12_rom(&dir),
             Coco12RomResult::NoColorBasic
         ));
+    }
+}
+
+/// Headless end-to-end drive of the full app through `egui_kittest`: real
+/// `eframe::App::update` frames, with clicks dispatched through the AccessKit
+/// tree — the closest a test gets to a user at the real window. Like
+/// `coco-core`'s boot tests, these need the git-ignored local `./roms`.
+#[cfg(test)]
+mod ui_tests {
+    use egui_kittest::kittest::Queryable;
+
+    use super::*;
+
+    #[test]
+    fn new_dialog_creates_a_coco1_machine_without_panicking() {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+            .expect("roms/coco3.rom is required (git-ignored, local-only)");
+        load_default_rom(MachineVariant::Coco1, &roms_dir)
+            .expect("a roms/bas1x.rom Color BASIC dump is required (git-ignored, local-only)");
+
+        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
+            CocoApp::new(
+                cc,
+                MachineConfig::default(),
+                rom,
+                None,
+                [None, None],
+                [None, None],
+                false,
+            )
+        });
+        assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
+
+        // Two steps per click: kittest delivers the press and release across
+        // successive frames, and egui fires `clicked` on the release.
+        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
+            harness.get_by_label(label).click();
+            harness.step();
+            harness.step();
+        };
+        click(&mut harness, "Machine");
+        click(&mut harness, "New…");
+        click(&mut harness, "CoCo 1");
+        // The frame that processes Create draws the CentralPanel *after*
+        // swapping the machine — the exact path that used to panic on the
+        // framebuffer texture.
+        click(&mut harness, "Create");
+
+        let app = harness.state();
+        assert_eq!(app.machine.config.variant, MachineVariant::Coco1);
+        assert_eq!(
+            app.machine.config.memory,
+            MemorySize::K64,
+            "RAM should snap to the CoCo 1/2 default when the model changes"
+        );
+        assert!(app.running, "a new VM boots running, like startup");
+        assert!(app.cart_path.is_none() && app.mpi.is_none());
+        assert!(
+            harness.query_by_label("Create").is_none(),
+            "the New Machine dialog should close after a successful create"
+        );
     }
 }
