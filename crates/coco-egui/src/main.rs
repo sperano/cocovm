@@ -24,7 +24,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, ValueEnum};
-use coco_core::cart::{MultiPak, RomPak};
+use coco_core::cart::{Gmc, MultiPak, RomPak};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::vhd::VhdImage;
@@ -246,6 +246,7 @@ enum MpiSlot {
     Empty,
     RomPak(PathBuf),
     Fd502,
+    Gmc(PathBuf),
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
@@ -327,6 +328,34 @@ impl CocoApp {
             Ok(pak) => {
                 self.flush_dirty_disks();
                 self.machine.insert_cartridge(Box::new(pak));
+                self.machine.power_cycle();
+                self.cart_path = Some(path);
+                self.disk_paths = [None, None];
+                self.mpi = None; // plugging straight into the port removes any MPI
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Load a Games Master Cartridge image (banked ROM + SN76489A) from
+    /// `path` and insert it. Mirrors [`Self::insert_cartridge`]'s RomPak
+    /// path exactly, including the `autostart_cart` choice — GMC games are
+    /// autostart game paks (CART* tied to Q), but the checkbox stays
+    /// authoritative like it is for plain paks.
+    fn insert_gmc(&mut self, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match Gmc::from_bytes(&bytes, self.autostart_cart) {
+            Ok(cart) => {
+                self.flush_dirty_disks();
+                self.machine.insert_cartridge(Box::new(cart));
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
@@ -433,6 +462,33 @@ impl CocoApp {
                 }
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MpiSlot::RomPak(path);
+                }
+                self.machine.power_cycle();
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Load a Games Master Cartridge image into MPI `slot`. Mirrors
+    /// [`Self::mpi_insert_rompak`] — see [`Self::insert_gmc`].
+    fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match Gmc::from_bytes(&bytes, self.autostart_cart) {
+            Ok(cart) => {
+                self.flush_dirty_disks();
+                if let Some(mp) = self.machine.bus.cart.as_multipak() {
+                    mp.insert(slot, Box::new(cart));
+                }
+                if let Some(mpi) = &mut self.mpi {
+                    mpi.slots[slot] = MpiSlot::Gmc(path);
                 }
                 self.machine.power_cycle();
             }
@@ -1026,6 +1082,18 @@ impl eframe::App for CocoApp {
                             self.insert_cartridge(path);
                         }
                     }
+                    if ui
+                        .add_enabled(direct_port, egui::Button::new("Insert Games Master…"))
+                        .clicked()
+                    {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Games Master ROM", &["rom", "ccc", "bin"])
+                            .pick_file()
+                        {
+                            self.insert_gmc(path);
+                        }
+                    }
                     let inserted = direct_port && self.cart_path.is_some();
                     if ui
                         .add_enabled(inserted, egui::Button::new("Eject Cartridge"))
@@ -1062,6 +1130,11 @@ impl eframe::App for CocoApp {
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
                                     Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
+                                    Some(MpiSlot::Gmc(p)) => format!(
+                                        "Slot {} (GMC: {})",
+                                        slot + 1,
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                    ),
                                     _ => format!("Slot {}", slot + 1),
                                 };
                                 ui.menu_button(slot_label, |ui| {
@@ -1072,6 +1145,15 @@ impl eframe::App for CocoApp {
                                             .pick_file()
                                         {
                                             self.mpi_insert_rompak(slot, path);
+                                        }
+                                    }
+                                    if ui.button("Insert Games Master…").clicked() {
+                                        ui.close();
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("Games Master ROM", &["rom", "ccc", "bin"])
+                                            .pick_file()
+                                        {
+                                            self.mpi_insert_gmc(slot, path);
                                         }
                                     }
                                     // An FD-502 already installed elsewhere can't also go here
@@ -1346,6 +1428,10 @@ impl eframe::App for CocoApp {
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string()
                                 }
                                 MpiSlot::Fd502 => "FD-502".to_string(),
+                                MpiSlot::Gmc(p) => format!(
+                                    "GMC:{}",
+                                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                ),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -2171,5 +2257,45 @@ mod ui_tests {
             harness.query_by_label("Create").is_none(),
             "the New Machine dialog should close after a successful create"
         );
+    }
+
+    #[test]
+    fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+            .expect("roms/coco3.rom is required (git-ignored, local-only)");
+
+        // A 64K banked image: every byte of 16K page `n` is 0xB0|n.
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-test-roms/gmc");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("banked.rom");
+        let mut image = vec![0u8; 4 * 16 * 1024];
+        for (n, page) in image.chunks_mut(16 * 1024).enumerate() {
+            page.fill(0xB0 | n as u8);
+        }
+        std::fs::write(&path, &image).unwrap();
+
+        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
+            CocoApp::new(
+                cc,
+                MachineConfig::default(),
+                rom,
+                None,
+                [None, None],
+                [None, None],
+                false,
+            )
+        });
+        // Drive the app-glue directly (the menu item's click handler opens a
+        // native file dialog, which a headless test can't answer).
+        harness.state_mut().insert_gmc(path.clone());
+        harness.step();
+
+        let app = harness.state_mut();
+        assert_eq!(app.cart_path.as_deref(), Some(path.as_path()));
+        assert!(app.cart_error.is_none(), "{:?}", app.cart_error);
+        assert_eq!(app.machine.bus.cart.rom_read(0xC000), 0xB0, "bank 0 up");
+        app.machine.bus.cart.write(0xFF40, 2);
+        assert_eq!(app.machine.bus.cart.rom_read(0xC000), 0xB2, "bank latch");
     }
 }

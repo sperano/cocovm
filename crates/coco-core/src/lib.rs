@@ -21,6 +21,7 @@ pub mod pia;
 pub mod printer;
 pub mod rom_db;
 pub mod sam;
+pub mod sn76489;
 pub mod video;
 pub mod vhd;
 pub mod wd1773;
@@ -216,6 +217,11 @@ impl Machine {
         let lines = self.config.video.lines_per_field();
         let fs_falling_line = self.config.video.fs_falling_line(self.config.variant);
         let fs_rising_line = self.config.video.fs_rising_line(self.config.variant);
+        // Cartridge sound chips (the GMC's SN76489A) run off their own
+        // crystal, so their clocks advance in wall time per scanline —
+        // immune to the GIME double-speed poke, which stretches the
+        // CPU-cycle timebase `Cartridge::tick` runs on.
+        let audio_dt = 1.0 / self.audio_sample_rate();
         for line in 0..lines {
             // Sampled per line so a mid-field speed poke takes effect promptly.
             let cycles_per_line = self.cycles_per_field() / lines;
@@ -232,6 +238,7 @@ impl Machine {
             if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
                 self.audio_buffer.clear();
             }
+            self.bus.cart.audio_tick(audio_dt);
             self.audio_buffer.push(self.bus.sound_sample());
             // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4
             // ticks per normal-speed CPU cycle, 2 per double-speed cycle —

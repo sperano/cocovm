@@ -371,14 +371,26 @@ impl SystemBus {
     /// DAC (PIA1 PA2–PA7), routed through the analog mux only when SNDEN
     /// (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are 00;
     /// mux state 01 routes cassette playback (the squared tape signal — the
-    /// key-click of a real CLOAD), 10 routes cartridge audio (not emulated,
-    /// silent), 11 is grounded; and the single-bit sound on PIA1 PB1, which
-    /// is always connected. (Tandy Service Manual mux table via MAME
-    /// `coco.cpp` `update_sound`; SEB Unravelled II $FF22/$FF23.)
+    /// key-click of a real CLOAD), 10 routes the cartridge SND pin (not
+    /// emulated, silent — same stub as MAME `coco.cpp` `update_sound`), 11
+    /// is grounded; and the single-bit sound on PIA1 PB1, which is always
+    /// connected. (Tandy Service Manual mux table via MAME `coco.cpp`
+    /// `update_sound`; SEB Unravelled II $FF22/$FF23.)
+    ///
+    /// Cartridge audio via [`Cartridge::sound_level`] (the GMC's SN76489A)
+    /// mixes in unconditionally: MAME routes such carts to a speaker of
+    /// their own, ignoring SOUND_ENABLE and the mux entirely (its mux
+    /// cart-sound path is an explicit "NYI" stub), and we keep that
+    /// behaviour.
+    ///
+    /// [`Cartridge::sound_level`]: crate::cart::Cartridge::sound_level
     pub fn sound_sample(&self) -> f32 {
         /// Relative loudness of the full-scale DAC vs the single-bit beeper.
         const DAC_GAIN: f32 = 0.75;
         const SINGLE_BIT_GAIN: f32 = 0.25;
+        /// Cartridge audio at the same full-scale loudness as the internal
+        /// 6-bit DAC.
+        const CART_GAIN: f32 = 0.75;
         /// PIA1 PB1: the single-bit sound output.
         const SINGLE_BIT: u8 = 0x02;
         const DAC_MAX: f32 = 63.0;
@@ -406,6 +418,7 @@ impl SystemBus {
         if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
             level += SINGLE_BIT_GAIN;
         }
+        level += CART_GAIN * self.cart.sound_level();
         level
     }
 
