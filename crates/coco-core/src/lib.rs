@@ -2,6 +2,7 @@
 //! No UI dependencies, so it can be unit-tested and boot a ROM without a window.
 //! See `DESIGN.md` §1.
 
+pub mod ay8913;
 pub mod bitbanger;
 pub mod bus;
 pub mod cart;
@@ -22,6 +23,7 @@ pub mod printer;
 pub mod rom_db;
 pub mod rtc;
 pub mod sam;
+pub mod ssc;
 pub mod video;
 pub mod vhd;
 pub mod wd1773;
