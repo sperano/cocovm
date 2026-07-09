@@ -20,6 +20,7 @@ pub mod keyboard;
 pub mod pia;
 pub mod printer;
 pub mod rom_db;
+pub mod rtc;
 pub mod sam;
 pub mod video;
 pub mod vhd;
