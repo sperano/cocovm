@@ -27,6 +27,7 @@ use clap::{Parser, ValueEnum};
 use coco_core::cart::{MultiPak, RomPak};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
+use coco_core::rtc::{DistoRtc, RtcTime};
 use coco_core::vhd::VhdImage;
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
 use eframe::egui;
@@ -197,6 +198,11 @@ struct CocoApp {
     /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
     /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
     new_vm: new_vm::NewVmDialog,
+    /// True while a Disto RTC is plugged directly into the cartridge port
+    /// (gates the "Eject Disto RTC" menu item, like `cart_path` does for ROM
+    /// paks). An RTC in a Multi-Pak slot is tracked by [`MpiSlot::DistoRtc`]
+    /// instead.
+    rtc_direct: bool,
     /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
     /// the DMP-105's dot-matrix output on period-correct tractor-feed
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
@@ -233,6 +239,10 @@ const MPI_SLOT_COUNT: usize = coco_core::cart::mpi::SLOT_COUNT;
 /// default (also MAME's default — `coco_multi.cpp` `MULTI_SLOT_LOOKUP`).
 const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 
+/// MPI slot `--rtc` targets (slot 3): --cart takes slot 1 and the FD-502
+/// slot 4, mirroring the conventional layout the `--mpi` CLI wiring builds.
+const DEFAULT_RTC_SLOT: usize = 2;
+
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
 /// cold restart (or just the status bar / menu labels) can describe it
 /// without having to downcast the core's trait objects. The FD-502 doesn't
@@ -246,6 +256,7 @@ enum MpiSlot {
     Empty,
     RomPak(PathBuf),
     Fd502,
+    DistoRtc,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
@@ -254,6 +265,26 @@ enum MpiSlot {
 struct MpiState {
     switch: usize,
     slots: [MpiSlot; MPI_SLOT_COUNT],
+}
+
+/// The host's local wall clock, read once (RTC sync).
+fn host_now() -> RtcTime {
+    use chrono::{Datelike, Timelike};
+    let now = chrono::Local::now();
+    RtcTime {
+        year: now.year(),
+        month: now.month() as u8,
+        day: now.day() as u8,
+        hour: now.hour() as u8,
+        minute: now.minute() as u8,
+        second: now.second() as u8,
+    }
+}
+
+/// [`host_now`] as the Disto RTC's injected time source
+/// (`coco_core::rtc::TimeSource` — coco-core itself never reads `std::time`).
+fn host_time_source() -> coco_core::rtc::TimeSource {
+    Box::new(host_now)
 }
 
 impl CocoApp {
@@ -292,6 +323,7 @@ impl CocoApp {
             pending_disk_action: None,
             mpi: None,
             new_vm: new_vm::NewVmDialog::new(),
+            rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
         };
         if let Some(path) = cart_path {
@@ -331,6 +363,7 @@ impl CocoApp {
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
+                self.rtc_direct = false; // ... and any directly-plugged RTC
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -347,6 +380,7 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
+        self.rtc_direct = false;
     }
 
     /// Make sure the inserted cartridge is the FD-502 disk controller,
@@ -383,6 +417,7 @@ impl CocoApp {
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rtc_direct = false;
         Ok(())
     }
 
@@ -400,6 +435,7 @@ impl CocoApp {
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rtc_direct = false;
     }
 
     /// Remove the Multi-Pak Interface — and everything plugged into it —
@@ -497,6 +533,52 @@ impl CocoApp {
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.switch = slot;
+        }
+    }
+
+    /// Plug a Disto RTC directly into the cartridge port, running on the
+    /// host's local clock (cold-restart gated like any cartridge swap). The
+    /// RTC has no boot ROM, so this pairs with a VHD boot (NitrOS-9 `emudsk`)
+    /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
+    fn insert_rtc(&mut self) {
+        self.flush_dirty_disks();
+        self.machine.insert_cartridge(Box::new(DistoRtc::new(host_time_source())));
+        self.machine.power_cycle();
+        self.rtc_direct = true;
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None;
+    }
+
+    /// Eject a directly-plugged Disto RTC, restoring the empty port.
+    fn eject_rtc(&mut self) {
+        self.machine.eject_cartridge();
+        self.machine.power_cycle();
+        self.rtc_direct = false;
+    }
+
+    /// Insert a Disto RTC into MPI `slot` (0-3). Mirrors
+    /// [`Self::mpi_insert_fd502`]; only one RTC is allowed across the
+    /// machine, since two would shadow each other at `$FF50`.
+    fn mpi_insert_rtc(&mut self, slot: usize) {
+        if self.machine.bus.cart.as_disto_rtc().is_some() {
+            self.cart_error = Some("A Disto RTC is already installed in another slot.".to_string());
+            return;
+        }
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, Box::new(DistoRtc::new(host_time_source())));
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MpiSlot::DistoRtc;
+        }
+        self.machine.power_cycle();
+    }
+
+    /// Set the emulated RTC (wherever it is — port or MPI slot) back to the
+    /// host's clock, discarding any offset a guest-side `setime` introduced.
+    fn sync_rtc_to_host(&mut self) {
+        if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
+            rtc.rtc().set_time(host_now());
         }
     }
 
@@ -828,6 +910,7 @@ impl CocoApp {
         self.tape_path = None;
         self.pending_disk_action = None;
         self.mpi = None;
+        self.rtc_direct = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "coco-rs — {}",
             machine_label(config.variant)
@@ -1062,6 +1145,9 @@ impl eframe::App for CocoApp {
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
                                     Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
+                                    Some(MpiSlot::DistoRtc) => {
+                                        format!("Slot {} (Disto RTC)", slot + 1)
+                                    }
                                     _ => format!("Slot {}", slot + 1),
                                 };
                                 ui.menu_button(slot_label, |ui| {
@@ -1090,6 +1176,29 @@ impl eframe::App for CocoApp {
                                         .clicked()
                                     {
                                         self.mpi_insert_fd502(slot);
+                                        ui.close();
+                                    }
+                                    // Same one-per-machine rule as the FD-502:
+                                    // two RTCs would shadow each other at $FF50.
+                                    let rtc_here = matches!(
+                                        self.mpi.as_ref().map(|m| &m.slots[slot]),
+                                        Some(MpiSlot::DistoRtc)
+                                    );
+                                    let rtc_elsewhere = self
+                                        .machine
+                                        .bus
+                                        .cart
+                                        .as_disto_rtc()
+                                        .is_some()
+                                        && !rtc_here;
+                                    if ui
+                                        .add_enabled(
+                                            !rtc_elsewhere,
+                                            egui::Button::new("Insert Disto RTC"),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.mpi_insert_rtc(slot);
                                         ui.close();
                                     }
                                     let occupied = !matches!(
@@ -1123,6 +1232,34 @@ impl eframe::App for CocoApp {
                             });
                         }
                     });
+                    ui.separator();
+                    // Disto RTC: directly in the port here, or via a MultiPak
+                    // slot submenu above when an MPI is installed.
+                    if ui
+                        .add_enabled(
+                            direct_port && !self.rtc_direct,
+                            egui::Button::new("Insert Disto RTC"),
+                        )
+                        .clicked()
+                    {
+                        self.insert_rtc();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(self.rtc_direct, egui::Button::new("Eject Disto RTC"))
+                        .clicked()
+                    {
+                        self.eject_rtc();
+                        ui.close();
+                    }
+                    let rtc_present = self.machine.bus.cart.as_disto_rtc().is_some();
+                    if ui
+                        .add_enabled(rtc_present, egui::Button::new("Sync RTC to Host Clock"))
+                        .clicked()
+                    {
+                        self.sync_rtc_to_host();
+                        ui.close();
+                    }
                     ui.separator();
                     for drive in 0..UI_DRIVES {
                         if ui.button(format!("Insert Disk in Drive {drive}…")).clicked() {
@@ -1346,6 +1483,7 @@ impl eframe::App for CocoApp {
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string()
                                 }
                                 MpiSlot::Fd502 => "FD-502".to_string(),
+                                MpiSlot::DistoRtc => "RTC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -1696,12 +1834,19 @@ struct Cli {
     fd502: bool,
 
     /// Insert a 4-slot Tandy Multi-Pak Interface into the cartridge port
-    /// instead of plugging --cart/--disk*/--fd502 directly into it: --cart
-    /// goes into slot 1 and the FD-502 (implied by --disk0/--disk1/--fd502)
-    /// goes into slot 4 — the conventional real-world layout (also MAME's
-    /// default), letting a cartridge and the disk controller coexist.
+    /// instead of plugging --cart/--disk*/--fd502/--rtc directly into it:
+    /// --cart goes into slot 1, the FD-502 (implied by --disk0/--disk1/
+    /// --fd502) into slot 4, and the RTC into slot 3 — the conventional
+    /// real-world layout (also MAME's default), letting a cartridge, the
+    /// disk controller, and the clock coexist.
     #[arg(long, default_value_t = false)]
     mpi: bool,
+
+    /// Insert a Disto real-time clock (OKI MSM6242 at $FF50-$FF53, for
+    /// NitrOS-9's clock2_disto drivers), running on the host's local clock —
+    /// directly in the cartridge port, or (with --mpi) in slot 3.
+    #[arg(long, default_value_t = false)]
+    rtc: bool,
 
     /// Installed RAM (4k, 16k, 32k, 64k, 128k, 512k, 2048k). Defaults, per
     /// `--machine`, to 512K (CoCo 3) or 64K (CoCo 1/2).
@@ -1923,17 +2068,24 @@ fn main() -> eframe::Result<()> {
     let disk_paths = [cli.disk0, cli.disk1];
     let vhd_paths = [cli.vhd0, cli.vhd1];
     let fd502 = cli.fd502;
+    let rtc = cli.rtc;
     let save_tape_wav = cli.tape_wav;
     let print_capture = cli.print_capture;
-    // Without --mpi, --cart and --disk0/--disk1/--fd502 all want the single
-    // cartridge port (clap's declarative `conflicts_with` can't express "only
-    // when --mpi is absent", so this is checked by hand).
-    if !mpi
-        && cart_path.is_some()
-        && (disk_paths[0].is_some() || disk_paths[1].is_some() || fd502)
-    {
+    // Without --mpi, --cart, --disk0/--disk1/--fd502, and --rtc all want the
+    // single cartridge port (clap's declarative `conflicts_with` can't
+    // express "only when --mpi is absent", so this is checked by hand).
+    let port_claims = [
+        cart_path.is_some(),
+        disk_paths[0].is_some() || disk_paths[1].is_some() || fd502,
+        rtc,
+    ]
+    .into_iter()
+    .filter(|&claims| claims)
+    .count();
+    if !mpi && port_claims > 1 {
         eprintln!(
-            "coco: --cart cannot be combined with --disk0/--disk1/--fd502 unless --mpi is also given"
+            "coco: --cart, --disk0/--disk1/--fd502, and --rtc all need the cartridge port; \
+             combine them only with --mpi"
         );
         std::process::exit(1);
     }
@@ -1973,6 +2125,9 @@ fn main() -> eframe::Result<()> {
                 if fd502 || disk_paths[0].is_some() || disk_paths[1].is_some() {
                     app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
                 }
+                if rtc {
+                    app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
+                }
                 for (drive, path) in disk_paths.into_iter().enumerate() {
                     if let Some(path) = path {
                         app.insert_disk(drive, path);
@@ -1980,6 +2135,8 @@ fn main() -> eframe::Result<()> {
                 }
             } else if fd502 && let Err(e) = app.ensure_disk_controller() {
                 app.cart_error = Some(e);
+            } else if rtc {
+                app.insert_rtc();
             }
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
