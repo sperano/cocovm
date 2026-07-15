@@ -1911,8 +1911,8 @@ fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]
                 report_rom_validation(&bas.0, &bas.1);
                 match extbas {
                     Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
-                    None => eprintln!(
-                        "coco: note: no Extended Color BASIC ROM found ({}); booting Color BASIC only.",
+                    None => tracing::info!(
+                        "no Extended Color BASIC ROM found ({}); booting Color BASIC only",
                         EXTENDED_BASIC_CANDIDATES.join(", ")
                     ),
                 }
@@ -2004,7 +2004,7 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
     }
 }
 
-/// One advisory stderr line per loaded system ROM, checked against the
+/// One advisory log line per loaded system ROM, checked against the
 /// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
 /// homebrew images are legitimate, but a corrupt known dump should say so.
 fn report_rom_validation(path: &Path, bytes: &[u8]) {
@@ -2015,20 +2015,19 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
         .unwrap_or_default();
     match rom_db::validate(&name, bytes) {
         Validation::Verified(known) => {
-            eprintln!("coco: {name}: verified {} [crc32 {:08x}]", known.desc, known.crc32);
+            tracing::info!("{name}: verified {} [crc32 {:08x}]", known.desc, known.crc32);
         }
         Validation::Mismatch { expected, actual_crc32, actual_size } => {
-            eprintln!(
-                "coco: warning: {name} does not match the known dump of {}: \
+            tracing::warn!(
+                "{name} does not match the known dump of {}: \
                  expected {} bytes crc32 {:08x}, got {} bytes crc32 {actual_crc32:08x} \
                  (patched image, or a bad dump)",
                 expected.desc, expected.size, expected.crc32, actual_size,
             );
         }
         Validation::Unknown => {
-            eprintln!(
-                "coco: note: {name} is not in the known-ROM manifest \
-                 ({} bytes, crc32 {:08x})",
+            tracing::info!(
+                "{name} is not in the known-ROM manifest ({} bytes, crc32 {:08x})",
                 bytes.len(),
                 rom_db::crc32(bytes),
             );
@@ -2037,6 +2036,17 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
 }
 
 fn main() -> eframe::Result<()> {
+    // Leveled stdout logging, colored only when stdout is a terminal.
+    // `RUST_LOG` filters per module (e.g. `RUST_LOG=coco_egui::audio=debug`);
+    // without it, everything at `info` and above is shown.
+    tracing_subscriber::fmt()
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
     let cli = Cli::parse();
     let variant = cli.machine;
     let memory = cli.ram.unwrap_or_else(|| default_ram(variant));

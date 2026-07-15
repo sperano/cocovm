@@ -63,7 +63,7 @@ impl JoystickInputs {
         let gilrs = match gilrs::Gilrs::new() {
             Ok(g) => Some(g),
             Err(e) => {
-                eprintln!("coco-egui: gamepad input unavailable: {e}");
+                tracing::warn!("gamepad input unavailable: {e}");
                 None
             }
         };
