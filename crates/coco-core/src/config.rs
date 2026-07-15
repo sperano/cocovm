@@ -20,6 +20,21 @@ pub enum MachineVariant {
     Coco3,
 }
 
+/// Which VDG chip is installed — only meaningfully distinct on
+/// [`MachineVariant::Coco2`] (CoCo 1 always shipped the plain chip; CoCo 3
+/// uses the GIME's own character generator, not a real MC6847 at all).
+/// MAME machine pairing: `coco`/`coco2` drivers = plain [`VdgVariant::Mc6847`];
+/// `coco2b`/`deluxecoco` = [`VdgVariant::Mc6847T1`] (`mc6847.cpp`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VdgVariant {
+    /// Original MC6847: no true lowercase, codes $00-$1F always show as
+    /// inverse-video uppercase regardless of PIA1 $FF22 bit 4.
+    Mc6847,
+    /// MC6847T1 ("MC6847T1 (CoCo 2B)"): PIA1 $FF22 bit 4 doubles as GM0 in
+    /// alpha mode, enabling true lowercase glyphs for codes $00-$1F.
+    Mc6847T1,
+}
+
 /// Master video standard — fixed by the machine's crystal, chosen at construction.
 ///
 /// Distinct from the GIME's 50/60 Hz *mode* bit, which retimes the display *within*
@@ -151,26 +166,42 @@ pub struct MachineConfig {
     /// GIME's 6-bit palette values). Not a hardware register — see
     /// [`MonitorType`].
     pub monitor: MonitorType,
+    /// Which VDG chip is installed. See [`VdgVariant`].
+    pub vdg: VdgVariant,
 }
 
 impl MachineConfig {
     /// Reject variant/video/memory combinations the emulator doesn't (or
     /// can't, on real hardware) support:
     ///
-    /// - CoCo 1/2 (plain SAM) only take the 4K/16K/32K/64K sizes the real
-    ///   MC6883 supports; CoCo 3 (GIME) only takes the 128K/512K/2048K sizes
-    ///   its MMU addresses (`docs/coco12-plan.md`).
+    /// - RAM is limited to the configurations each machine actually shipped
+    ///   in: 4K/16K/32K/64K for the CoCo 1, 16K/64K for the CoCo 2 (base
+    ///   16K×1 DRAMs plus the factory 64K upgrade — CoCo 2 service manual
+    ///   26-3026/26-3027 §3.3; no 4K or 32K CoCo 2 ever shipped), and the
+    ///   128K/512K/2048K sizes the CoCo 3's GIME MMU addresses
+    ///   (`docs/coco12-plan.md`).
     /// - CoCo 1/2 are NTSC-only for now: PAL VDG timing is out of scope
     ///   (`docs/coco12-plan.md` "What's missing").
+    /// - [`VdgVariant::Mc6847T1`] is only valid on [`MachineVariant::Coco2`]:
+    ///   CoCo 1 never had a T1 board, and CoCo 3 has no real MC6847 at all
+    ///   (the GIME does its own text character generation).
     pub fn validate(&self) -> Result<(), String> {
         match self.variant {
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
-                if !matches!(
-                    self.memory,
-                    MemorySize::K4 | MemorySize::K16 | MemorySize::K32 | MemorySize::K64
-                ) {
+                let shipped = match self.variant {
+                    MachineVariant::Coco1 => matches!(
+                        self.memory,
+                        MemorySize::K4 | MemorySize::K16 | MemorySize::K32 | MemorySize::K64
+                    ),
+                    _ => matches!(self.memory, MemorySize::K16 | MemorySize::K64),
+                };
+                if !shipped {
+                    let sizes = match self.variant {
+                        MachineVariant::Coco1 => "4K/16K/32K/64K",
+                        _ => "16K/64K",
+                    };
                     return Err(format!(
-                        "{:?} supports 4K/16K/32K/64K RAM, not {:?}",
+                        "{:?} shipped with {sizes} RAM, not {:?}",
                         self.variant, self.memory
                     ));
                 }
@@ -193,6 +224,12 @@ impl MachineConfig {
                 }
             }
         }
+        if self.vdg == VdgVariant::Mc6847T1 && self.variant != MachineVariant::Coco2 {
+            return Err(format!(
+                "{:?} does not support VdgVariant::Mc6847T1 (only Coco2 had a T1 board)",
+                self.variant
+            ));
+        }
         Ok(())
     }
 }
@@ -204,6 +241,7 @@ impl Default for MachineConfig {
             video: VideoStandard::Ntsc,
             memory: MemorySize::K512,
             monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
         }
     }
 }
@@ -224,6 +262,7 @@ mod tests {
             video: VideoStandard::Ntsc,
             memory: MemorySize::K64,
             monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
         };
         assert!(cfg.validate().is_err());
     }
@@ -235,6 +274,7 @@ mod tests {
             video: VideoStandard::Ntsc,
             memory: MemorySize::K128,
             monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
         };
         assert!(cfg.validate().is_err());
     }
@@ -252,10 +292,34 @@ mod tests {
                 video: VideoStandard::Ntsc,
                 memory,
                 monitor: MonitorType::Rgb,
+                vdg: VdgVariant::Mc6847,
             };
             assert!(
                 cfg.validate().is_ok(),
                 "{memory:?} should be valid for Coco1"
+            );
+        }
+    }
+
+    #[test]
+    fn coco2_only_accepts_shipped_memory_sizes() {
+        for (memory, ok) in [
+            (MemorySize::K4, false),
+            (MemorySize::K16, true),
+            (MemorySize::K32, false),
+            (MemorySize::K64, true),
+        ] {
+            let cfg = MachineConfig {
+                variant: MachineVariant::Coco2,
+                video: VideoStandard::Ntsc,
+                memory,
+                monitor: MonitorType::Rgb,
+                vdg: VdgVariant::Mc6847,
+            };
+            assert_eq!(
+                cfg.validate().is_ok(),
+                ok,
+                "{memory:?} for Coco2: expected valid={ok}"
             );
         }
     }
@@ -267,6 +331,7 @@ mod tests {
             video: VideoStandard::Pal,
             memory: MemorySize::K64,
             monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
         };
         assert!(cfg.validate().is_err());
     }
@@ -280,8 +345,57 @@ mod tests {
             video: VideoStandard::Pal,
             memory: MemorySize::K512,
             monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
         };
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn coco2_accepts_mc6847t1() {
+        let cfg = MachineConfig {
+            variant: MachineVariant::Coco2,
+            video: VideoStandard::Ntsc,
+            memory: MemorySize::K64,
+            monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847T1,
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn coco2_accepts_plain_mc6847() {
+        let cfg = MachineConfig {
+            variant: MachineVariant::Coco2,
+            video: VideoStandard::Ntsc,
+            memory: MemorySize::K64,
+            monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn coco1_rejects_mc6847t1() {
+        let cfg = MachineConfig {
+            variant: MachineVariant::Coco1,
+            video: VideoStandard::Ntsc,
+            memory: MemorySize::K64,
+            monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847T1,
+        };
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn coco3_rejects_mc6847t1() {
+        let cfg = MachineConfig {
+            variant: MachineVariant::Coco3,
+            video: VideoStandard::Ntsc,
+            memory: MemorySize::K512,
+            monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847T1,
+        };
+        assert!(cfg.validate().is_err());
     }
 
     #[test]
