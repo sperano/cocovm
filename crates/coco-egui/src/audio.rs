@@ -131,7 +131,7 @@ impl AudioOutput {
                 resampler: Resampler::default(),
             },
             Err(e) => {
-                eprintln!("coco-egui: audio output unavailable: {e}");
+                tracing::warn!("audio output unavailable: {e}");
                 Self {
                     stream: None,
                     ring,
@@ -191,7 +191,7 @@ impl AudioOutput {
                         }
                     }
                 },
-                |err| eprintln!("coco-egui: audio stream error: {err}"),
+                |err| tracing::error!("audio stream error: {err}"),
                 None,
             )
             .map_err(|e| e.to_string())?;

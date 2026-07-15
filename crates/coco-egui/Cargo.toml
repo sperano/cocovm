@@ -17,6 +17,9 @@ clap = { version = "4.6.1", features = ["derive"] }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
 eframe = "0.33"
+# MIT. Opts legacy Windows conhost into VT escape processing (no-op
+# elsewhere); called once at the top of main().
+enable-ansi-support = "0.3.1"
 # Both MIT OR Apache-2.0 (GPL-3.0-or-later-compatible); see
 # `paper_export.rs`'s module doc comment for the PNG/PDF dependency
 # rationale (T6). `flate2` is already resolved transitively via `image`'s
@@ -25,7 +28,12 @@ eframe = "0.33"
 flate2 = "1.1.9"
 gilrs = "0.11.2"
 image = { version = "0.25", default-features = false, features = ["png"] }
+owo-colors = {version="4.3.0",  features = ["supports-colors"]}
 rfd = "0.17.2"
+# Both MIT. Leveled, per-module-filterable logging (RUST_LOG) with colored
+# level tags; subscriber initialized once in main.rs.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 egui_kittest = { version = "0.33", features = ["eframe"] }
