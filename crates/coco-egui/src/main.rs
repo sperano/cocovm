@@ -32,6 +32,8 @@ use coco_core::vhd::VhdImage;
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
 use eframe::egui;
 use joy::JoystickInputs;
+use owo_colors::{OwoColorize, Stream};
+use owo_colors::colors::xterm;
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 const SCALE: f32 = 3.0;
@@ -1786,7 +1788,7 @@ impl From<MonitorArg> for MonitorType {
 }
 
 #[derive(Parser)]
-#[command(name = "coco", about = "A Tandy Color Computer emulator")]
+#[command(name = "coco", version, about = "A Tandy Color Computer emulator")]
 struct Cli {
     /// Which machine to emulate (coco1, coco2, coco3).
     #[arg(long, default_value = "coco3", value_parser = parse_machine)]
@@ -2036,17 +2038,31 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
 }
 
 fn main() -> eframe::Result<()> {
+    // Legacy Windows conhost only interprets VT escape codes after the app
+    // opts in; a no-op everywhere else. On failure, fall back to plain text.
+    let vt_ok = enable_ansi_support::enable_ansi_support().is_ok();
+    let use_color = vt_ok && std::io::IsTerminal::is_terminal(&std::io::stdout());
     // Leveled stdout logging, colored only when stdout is a terminal.
     // `RUST_LOG` filters per module (e.g. `RUST_LOG=coco_egui::audio=debug`);
     // without it, everything at `info` and above is shown.
     tracing_subscriber::fmt()
-        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+        .with_ansi(use_color)
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
                 .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
                 .from_env_lossy(),
         )
         .init();
+
+    println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano",
+             env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
+             "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
+             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
+             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
+             "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+    );
+
     let cli = Cli::parse();
     let variant = cli.machine;
     let memory = cli.ram.unwrap_or_else(|| default_ram(variant));
