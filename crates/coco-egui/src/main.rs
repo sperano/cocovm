@@ -29,7 +29,9 @@ use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::rtc::{DistoRtc, RtcTime};
 use coco_core::vhd::VhdImage;
-use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
+use coco_core::{
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+};
 use eframe::egui;
 use joy::JoystickInputs;
 
@@ -1934,10 +1936,11 @@ fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]
 const COCO12_BAS_OFFSET: usize = 8 * 1024;
 /// Color BASIC dumps accepted for `--machine coco1`/`coco2` (any one is
 /// enough to boot), newest-preferred among the versions these machines
-/// actually shipped with: 1.2 first, down to 1.0. `bas13.rom` is the CoCo
-/// 2B's Color BASIC — it boots fine on the plain-SAM map, but 1.3 pairs with
-/// the MC6847T1 (a deferred follow-up, `docs/coco12-plan.md`), so it's a
-/// last resort here, not the preferred dump.
+/// actually shipped with: 1.2 first, down to 1.0. `bas13.rom` (the CoCo 2B's
+/// Color BASIC, shipped with the MC6847T1 boards) boots fine too but is the
+/// far rarer dump, so it stays a last resort rather than the preferred one —
+/// even though the CoCo 2 now defaults to `VdgVariant::Mc6847T1`, 1.2 runs
+/// identically on a T1 machine (lowercase just goes unused).
 const COCO_BASIC_CANDIDATES: &[&str] = &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
 /// Newest-preferred Extended Color BASIC dumps; optional
 /// (`docs/coco12-plan.md` "ROM files": a Color-BASIC-only machine still
@@ -2045,6 +2048,13 @@ fn main() -> eframe::Result<()> {
         video: cli.video,
         memory,
         monitor: cli.monitor.into(),
+        // No CLI flag for this yet; same family defaults as the "New…"
+        // dialog — the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere
+        // (the only valid choice, `MachineConfig::validate`).
+        vdg: match variant {
+            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
+            _ => VdgVariant::Mc6847,
+        },
     };
     if let Err(e) = config.validate() {
         eprintln!("coco: invalid configuration: {e}");
@@ -2327,6 +2337,59 @@ mod ui_tests {
         assert!(
             harness.query_by_label("Create").is_none(),
             "the New Machine dialog should close after a successful create"
+        );
+    }
+
+    /// The VDG radio row only exists on a CoCo 2 draft
+    /// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
+    /// the row is absent with CoCo 1 or CoCo 3 selected, present and
+    /// selectable with CoCo 2 selected.
+    #[test]
+    fn new_dialog_vdg_row_only_visible_for_coco2() {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+            .expect("roms/coco3.rom is required (git-ignored, local-only)");
+
+        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
+            CocoApp::new(
+                cc,
+                MachineConfig::default(),
+                rom,
+                None,
+                [None, None],
+                [None, None],
+                false,
+            )
+        });
+
+        // Two steps per click: kittest delivers the press and release across
+        // successive frames, and egui fires `clicked` on the release.
+        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
+            harness.get_by_label(label).click();
+            harness.step();
+            harness.step();
+        };
+        click(&mut harness, "Machine");
+        click(&mut harness, "New…");
+
+        let t1_label = "MC6847T1 (CoCo 2B)";
+
+        // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
+        assert!(
+            harness.query_by_label(t1_label).is_none(),
+            "VDG row must be absent for CoCo 3"
+        );
+
+        click(&mut harness, "CoCo 2");
+        assert!(
+            harness.query_by_label(t1_label).is_some(),
+            "VDG row must be present for CoCo 2"
+        );
+
+        click(&mut harness, "CoCo 1");
+        assert!(
+            harness.query_by_label(t1_label).is_none(),
+            "VDG row must be absent for CoCo 1"
         );
     }
 }

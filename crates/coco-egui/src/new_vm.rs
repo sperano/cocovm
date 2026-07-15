@@ -4,18 +4,21 @@
 //! dirty media first) is `CocoApp::create_vm`'s job, so this module stays a
 //! pure view over a draft config.
 
-use coco_core::{MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
+use coco_core::{
+    MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+};
 use eframe::egui;
 
-/// RAM sizes selectable per machine family — the same sets
-/// [`MachineConfig::validate`] accepts (plain-SAM sizes for CoCo 1/2, GIME
-/// MMU sizes for CoCo 3), so every config this dialog can produce validates.
-const COCO12_RAM_CHOICES: &[MemorySize] = &[
+/// RAM sizes selectable per machine — the same sets
+/// [`MachineConfig::validate`] accepts (the configurations each machine
+/// actually shipped in), so every config this dialog can produce validates.
+const COCO1_RAM_CHOICES: &[MemorySize] = &[
     MemorySize::K4,
     MemorySize::K16,
     MemorySize::K32,
     MemorySize::K64,
 ];
+const COCO2_RAM_CHOICES: &[MemorySize] = &[MemorySize::K16, MemorySize::K64];
 const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, MemorySize::K2048];
 
 /// Inner padding of the dialog body, matching the power-cycle confirmation
@@ -24,7 +27,8 @@ const DIALOG_MARGIN: i8 = 16;
 
 const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
     match variant {
-        MachineVariant::Coco1 | MachineVariant::Coco2 => COCO12_RAM_CHOICES,
+        MachineVariant::Coco1 => COCO1_RAM_CHOICES,
+        MachineVariant::Coco2 => COCO2_RAM_CHOICES,
         MachineVariant::Coco3 => COCO3_RAM_CHOICES,
     }
 }
@@ -95,6 +99,14 @@ impl NewVmDialog {
         if self.draft.variant != MachineVariant::Coco3 {
             self.draft.video = VideoStandard::Ntsc;
         }
+        // Only runs on model-change clicks, so an explicit MC6847 pick made
+        // while staying on CoCo 2 sticks; switching models re-seeds the
+        // family default (the T1 "CoCo 2B" for CoCo 2, the only-possible
+        // plain MC6847 elsewhere — `MachineConfig::validate`).
+        self.draft.vdg = match self.draft.variant {
+            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
+            MachineVariant::Coco1 | MachineVariant::Coco3 => VdgVariant::Mc6847,
+        };
     }
 
     /// Draw the dialog if open. Returns [`NewVmAction::Create`] on the frame
@@ -134,6 +146,29 @@ impl NewVmDialog {
                                 }
                             });
                             ui.end_row();
+
+                            // The VDG choice only exists on the CoCo 2 (the
+                            // CoCo 1 always shipped the plain MC6847; the
+                            // CoCo 3 has no VDG — the GIME does its own
+                            // character generation), so the row is only
+                            // rendered for that model; constrain_draft snaps
+                            // the draft back to Mc6847 for the others.
+                            if self.draft.variant == MachineVariant::Coco2 {
+                                ui.label(egui::RichText::new("VDG").size(font));
+                                ui.horizontal(|ui| {
+                                    ui.radio_value(
+                                        &mut self.draft.vdg,
+                                        VdgVariant::Mc6847,
+                                        "MC6847",
+                                    );
+                                    ui.radio_value(
+                                        &mut self.draft.vdg,
+                                        VdgVariant::Mc6847T1,
+                                        "MC6847T1 (CoCo 2B)",
+                                    );
+                                });
+                                ui.end_row();
+                            }
 
                             ui.label(egui::RichText::new("RAM").size(font));
                             egui::ComboBox::from_id_salt("new_vm_ram")
@@ -238,19 +273,27 @@ mod tests {
             } else {
                 &[VideoStandard::Ntsc]
             };
+            let vdgs: &[VdgVariant] = if variant == MachineVariant::Coco2 {
+                &[VdgVariant::Mc6847, VdgVariant::Mc6847T1]
+            } else {
+                &[VdgVariant::Mc6847]
+            };
             for &memory in ram_choices(variant) {
                 for &video in videos {
                     for monitor in [MonitorType::Rgb, MonitorType::Composite] {
-                        let config = MachineConfig {
-                            variant,
-                            video,
-                            memory,
-                            monitor,
-                        };
-                        assert!(
-                            config.validate().is_ok(),
-                            "dialog offered invalid config: {config:?}"
-                        );
+                        for &vdg in vdgs {
+                            let config = MachineConfig {
+                                variant,
+                                video,
+                                memory,
+                                monitor,
+                                vdg,
+                            };
+                            assert!(
+                                config.validate().is_ok(),
+                                "dialog offered invalid config: {config:?}"
+                            );
+                        }
                     }
                 }
             }
@@ -258,7 +301,9 @@ mod tests {
     }
 
     /// Switching model away from CoCo 3 must snap GIME-only RAM and PAL back
-    /// to plain-SAM-valid values (and vice versa for RAM).
+    /// to plain-SAM-valid values (and vice versa for RAM); switching models
+    /// re-seeds the VDG family default: the T1 (CoCo 2B) on CoCo 2, the
+    /// plain MC6847 everywhere else.
     #[test]
     fn constrain_draft_snaps_family_specific_fields() {
         let mut dialog = NewVmDialog::new();
@@ -267,17 +312,29 @@ mod tests {
             video: VideoStandard::Pal,
             memory: MemorySize::K2048,
             monitor: MonitorType::Rgb,
+            vdg: VdgVariant::Mc6847,
         });
 
         dialog.draft.variant = MachineVariant::Coco2;
         dialog.constrain_draft();
         assert_eq!(dialog.draft.memory, MemorySize::K64);
         assert_eq!(dialog.draft.video, VideoStandard::Ntsc);
+        assert_eq!(
+            dialog.draft.vdg,
+            VdgVariant::Mc6847T1,
+            "CoCo 2 defaults to the T1 (CoCo 2B)"
+        );
         assert!(dialog.draft.validate().is_ok());
 
         dialog.draft.variant = MachineVariant::Coco3;
         dialog.constrain_draft();
         assert_eq!(dialog.draft.memory, MemorySize::K512);
+        assert_eq!(dialog.draft.vdg, VdgVariant::Mc6847);
+        assert!(dialog.draft.validate().is_ok());
+
+        dialog.draft.variant = MachineVariant::Coco1;
+        dialog.constrain_draft();
+        assert_eq!(dialog.draft.vdg, VdgVariant::Mc6847);
         assert!(dialog.draft.validate().is_ok());
     }
 
@@ -292,6 +349,7 @@ mod tests {
             video: VideoStandard::Ntsc,
             memory: MemorySize::K16,
             monitor: MonitorType::Composite,
+            vdg: VdgVariant::Mc6847,
         };
         dialog.open_with(current);
         assert!(dialog.open);
