@@ -2040,7 +2040,7 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
-fn main() -> eframe::Result<()> {
+fn setup_logging() {
     // Legacy Windows conhost only interprets VT escape codes after the app
     // opts in; a no-op everywhere else. On failure, fall back to plain text.
     let vt_ok = enable_ansi_support::enable_ansi_support().is_ok();
@@ -2056,7 +2056,9 @@ fn main() -> eframe::Result<()> {
                 .from_env_lossy(),
         )
         .init();
+}
 
+fn banner() {
     println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano",
              env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
@@ -2065,6 +2067,11 @@ fn main() -> eframe::Result<()> {
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
     );
+}
+
+fn main() -> eframe::Result<()> {
+    setup_logging();
+    banner();
 
     let cli = Cli::parse();
     let variant = cli.machine;
