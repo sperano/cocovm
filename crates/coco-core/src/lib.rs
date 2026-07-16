@@ -17,6 +17,7 @@ pub mod gime;
 pub mod gime_video;
 pub mod joystick;
 pub mod keyboard;
+pub mod orch90;
 pub mod pia;
 pub mod printer;
 pub mod rom_db;

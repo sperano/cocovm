@@ -15,7 +15,10 @@ pub const IO_OPEN_BUS: u8 = 0xFF;
 
 /// A device on the cartridge port.
 pub trait Cartridge {
-    /// Read cartridge I/O ($FF40–$FF5F, the SCS* decode).
+    /// Read cartridge I/O: `$FF40–$FF5F` (the SCS* decode) plus
+    /// `$FF60–$FF7E`, which real hardware doesn't strobe with SCS* but
+    /// devices there (Deluxe RS-232, Orchestra-90) decode off the raw
+    /// address bus — the port carries all 16 address lines.
     fn read(&mut self, addr: u16) -> u8;
     fn write(&mut self, addr: u16, val: u8);
     /// Read the external ROM window (the CTS* decode): `$C000–$FDFF`, or all
@@ -49,6 +52,14 @@ pub trait Cartridge {
     fn take_nmi(&mut self) -> bool {
         false
     }
+    /// Instantaneous audio level this cartridge drives onto the expansion
+    /// port's analog SND pin, 0.0–1.0 (0.0 = silent, the default for carts
+    /// with no audio hardware). Sampled by `SystemBus::sound_sample` once
+    /// per scanline alongside the internal DAC/beeper sources; the caller
+    /// applies its own gain before mixing.
+    fn sound_level(&self) -> f32 {
+        0.0
+    }
     /// Downcast to the FD-502 disk controller, if that's what this cartridge
     /// is — how the frontend reaches drive slots (insert/eject a floppy while
     /// the machine runs, as on real hardware) behind the trait object.
@@ -65,6 +76,12 @@ pub trait Cartridge {
     /// is — how the frontend reaches the clock chip (sync to host time)
     /// behind the trait object.
     fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
+        None
+    }
+    /// Downcast to the Orchestra-90, if that's what this cartridge is — how
+    /// the frontend reads the DAC latches for its level meters behind the
+    /// trait object.
+    fn as_orch90(&mut self) -> Option<&mut crate::orch90::Orch90> {
         None
     }
     /// Read the Multi-Pak Interface's own select register (`$FF7F`). Not
@@ -346,6 +363,10 @@ impl MultiPak {
 }
 
 impl Cartridge for MultiPak {
+    /// Routes the whole I/O window ($FF40-$FF5F and $FF60-$FF7E) to the
+    /// SCS-selected slot. Approximation for the $FF60-$FF7E part: a real MPI
+    /// switches only SCS*, so a device decoding raw addresses there (e.g. an
+    /// Orchestra-90) responds from any slot — here it must be the SCS slot.
     fn read(&mut self, addr: u16) -> u8 {
         self.slots[self.scs_slot()].read(addr)
     }
@@ -400,6 +421,17 @@ impl Cartridge for MultiPak {
 
     fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
         self.slots.iter_mut().find_map(|slot| slot.as_disto_rtc())
+    }
+
+    fn as_orch90(&mut self) -> Option<&mut crate::orch90::Orch90> {
+        self.slots.iter_mut().find_map(|slot| slot.as_orch90())
+    }
+
+    /// Sum of all 4 slots: the analog SND pin is common to every slot on a
+    /// real MPI (only SCS*/CTS*/CART* are switched), so slot outputs mix on
+    /// the wire regardless of selection.
+    fn sound_level(&self) -> f32 {
+        self.slots.iter().map(|slot| slot.sound_level()).sum()
     }
 
     fn control_read(&mut self) -> u8 {
