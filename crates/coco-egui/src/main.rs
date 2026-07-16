@@ -20,6 +20,7 @@ mod paper_export;
 mod paths;
 mod paper_render;
 mod paper_view;
+mod photo_view;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -214,6 +215,11 @@ struct CocoApp {
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     paper_window: paper_view::PaperWindow,
+    /// Second OS window showing a random image asset at startup (manual
+    /// scans). Constructed closed; `main()`'s creation closure opts in via
+    /// [`photo_view::PhotoWindow::random`] so kittest harnesses (and any
+    /// other direct `CocoApp::new` caller) don't touch the user's asset dir.
+    photo_window: photo_view::PhotoWindow,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -331,6 +337,7 @@ impl CocoApp {
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
+            photo_window: photo_view::PhotoWindow::default(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -1417,6 +1424,7 @@ impl eframe::App for CocoApp {
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
                         self.toggle_paper_window();
                     }
+                    ui.checkbox(&mut self.photo_window.open, "Photo");
                     ui.separator();
                     // Swapping the monitor cable doesn't erase machine state,
                     // so this takes effect live rather than requiring a
@@ -1553,6 +1561,7 @@ impl eframe::App for CocoApp {
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
+        self.photo_window.ui(ctx);
         if self.pending_disk_action.is_some() {
             // Match the dialog body to the button font (egui's default body
             // text is a touch smaller) and give the text room.
@@ -2231,6 +2240,7 @@ fn main() -> eframe::Result<()> {
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
             }
+            app.photo_window = photo_view::PhotoWindow::random();
             Ok(Box::new(app))
         }),
     )
