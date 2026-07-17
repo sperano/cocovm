@@ -1078,6 +1078,19 @@ impl CocoApp {
         self.running
     }
 
+    /// The framebuffer texture [`Self::step_emulation`] uploads every
+    /// frame — `None` only before the VM's very first frame runs. Exposed
+    /// so the manager's list-row thumbnail
+    /// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM"
+    /// bullet) can draw the *same* `TextureHandle` in a second place: one
+    /// `egui::Context` serves every viewport, so reusing the handle here
+    /// costs one extra quad, not an extra upload — and a paused VM's
+    /// texture simply stops changing, so the thumbnail naturally freezes on
+    /// its last frame with no special-casing needed.
+    pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {
+        self.texture.as_ref()
+    }
+
     /// Advance emulation for one host frame — input, joysticks, the
     /// wall-clock-paced field loop, audio, and the framebuffer texture
     /// upload. Runs regardless of which chrome (if any) is drawn around the

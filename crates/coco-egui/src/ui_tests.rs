@@ -716,6 +716,14 @@ fn start_button_launches_and_stop_button_stops() {
     assert!(harness.state().entries[0].vm.is_some(), "Start must launch the VM");
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Running"));
+    // One more step so `step_emulation` (which uploads the framebuffer
+    // texture) has run at least once — regression coverage for the row
+    // thumbnail staying black: `draw_row_thumbnail` reads exactly this.
+    harness.step();
+    assert!(
+        harness.state().entries[0].vm.as_ref().unwrap().framebuffer_texture().is_some(),
+        "a running VM must have an uploaded framebuffer texture for the row thumbnail to show"
+    );
 
     click(&mut harness, "Pause");
     assert!(!harness.state().entries[0].vm.as_ref().unwrap().is_running());

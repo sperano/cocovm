@@ -134,6 +134,36 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
     }
 }
 
+/// One list row's thumbnail: a running/paused VM's own framebuffer texture
+/// (`CocoApp::framebuffer_texture`), aspect-fit and centered within `rect`
+/// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM" bullet —
+/// the texture is already uploaded every frame for the VM's own window, so
+/// this is one extra quad, not an extra upload; a paused VM's texture stops
+/// changing, so the thumbnail just freezes on its last frame). The
+/// placeholder fill is always painted first as a letterbox background, so a
+/// stopped machine (`vm: None`) or a VM whose very first frame hasn't run
+/// yet (`framebuffer_texture` still `None`) shows the plain placeholder rect
+/// exactly as before this existed.
+fn draw_row_thumbnail(ui: &egui::Ui, rect: egui::Rect, vm: Option<&CocoApp>) {
+    let painter = ui.painter();
+    painter.rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
+    let Some(texture) = vm.and_then(CocoApp::framebuffer_texture) else {
+        return;
+    };
+    let tex_size = texture.size_vec2();
+    if tex_size.x <= 0.0 || tex_size.y <= 0.0 {
+        return;
+    }
+    let scale = (rect.width() / tex_size.x).min(rect.height() / tex_size.y);
+    let fitted_rect = egui::Rect::from_center_size(rect.center(), tex_size * scale);
+    painter.image(
+        texture.id(),
+        fitted_rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+}
+
 /// The detail pane's working copy of the selected entry's definition
 /// (`plan-machine-persistence.md` step 4). `saved` is the last-loaded (or
 /// last-saved) snapshot, compared against `def` for the Save button's dirty
@@ -276,8 +306,7 @@ impl ManagerApp {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(ROW_THUMBNAIL_SIZE, egui::Sense::hover());
-                    ui.painter()
-                        .rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
+                    draw_row_thumbnail(ui, rect, self.entries[i].vm.as_deref());
 
                     match &self.entries[i].def {
                         Ok(def) => {
