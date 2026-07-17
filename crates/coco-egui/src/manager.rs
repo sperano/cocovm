@@ -17,7 +17,9 @@
 //! window per running VM"). The direct-boot emulator (`CocoApp`) is
 //! otherwise untouched and still serves every CLI invocation with arguments.
 
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use coco_core::MachineConfig;
 use eframe::egui;
@@ -37,10 +39,10 @@ const LIST_MAX_WIDTH: f32 = 520.0;
 /// [`ROW_CORNER_RADIUS`], the row's own selection/hover frame.
 const THUMBNAIL_CORNER_RADIUS: f32 = 2.0;
 /// Fill of the row thumbnail placeholder — shown as a stopped machine's
-/// whole thumbnail, and as a running one's letterbox background before its
-/// texture is uploaded/when the texture's aspect doesn't exactly fill the
-/// allocated rect. Step 6 of the plan (`docs/plan-machine-persistence.md`)
-/// replaces the *stopped* case with a saved `thumbnail.png`; not done yet.
+/// whole thumbnail (until its saved [`THUMBNAIL_FILE`] loads, if one
+/// exists), and as a running one's letterbox background before its texture
+/// is uploaded/when the texture's aspect doesn't exactly fill the allocated
+/// rect.
 const THUMBNAIL_PLACEHOLDER_FILL: egui::Color32 = egui::Color32::from_gray(30);
 /// Row-thumbnail aspect ratio used when no live framebuffer texture is
 /// available to read one from — a stopped machine, or a VM whose first
@@ -113,6 +115,18 @@ pub struct MachineEntry {
     /// the next Start attempt or a fresh selection — the launch-time analog
     /// of [`ManagerApp::save_error`].
     pub launch_error: Option<String>,
+    /// Saved-preview texture for a *stopped* machine (its artifact dir's
+    /// [`THUMBNAIL_FILE`]), loaded lazily on first row draw. Pure cache —
+    /// never required state; a missing/undecodable file just leaves the
+    /// placeholder. `pub(crate)` for `ui_tests.rs` assertions.
+    pub(crate) thumbnail: Option<egui::TextureHandle>,
+    /// Whether a [`Self::thumbnail`] load was already attempted, so a
+    /// machine with no thumbnail file doesn't retry the filesystem every
+    /// frame. Cleared (with `thumbnail`) whenever a fresh PNG is written.
+    thumbnail_load_attempted: bool,
+    /// When this entry's *running* VM last had its `thumbnail.png`
+    /// refreshed — drives the [`THUMBNAIL_REFRESH`] crash-insurance cadence.
+    last_thumbnail_write: Option<Instant>,
 }
 
 impl MachineEntry {
@@ -123,7 +137,15 @@ impl MachineEntry {
     /// this constructor is what keeps that from drifting as more per-entry
     /// runtime state gets added later).
     pub(crate) fn new(slug: String, def: Result<machine_def::MachineDef, String>) -> Self {
-        Self { slug, def, vm: None, launch_error: None }
+        Self {
+            slug,
+            def,
+            vm: None,
+            launch_error: None,
+            thumbnail: None,
+            thumbnail_load_attempted: false,
+            last_thumbnail_write: None,
+        }
     }
 }
 
@@ -157,8 +179,9 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
     line_height * 3.0 + spacing * 2.0
 }
 
-/// One list row's thumbnail: a running/paused VM's own framebuffer texture
-/// (`CocoApp::framebuffer_texture`), sized to `height` tall (see
+/// One list row's thumbnail: the resolved preview `texture` — a live VM's
+/// framebuffer, or a stopped machine's saved [`THUMBNAIL_FILE`]; the caller
+/// resolves that priority — sized to `height` tall (see
 /// [`row_content_height`]) at the texture's own aspect ratio — correct
 /// regardless of which machine variant/GIME mode produced it, unlike a
 /// fixed ratio, and it's one extra quad reusing an already-uploaded
@@ -170,8 +193,11 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
 /// frame hasn't uploaded a texture yet. Allocates its own space (so its
 /// width, driven by whichever aspect is in play, is only known here, not by
 /// the caller) and returns the space it claimed.
-fn draw_row_thumbnail(ui: &mut egui::Ui, height: f32, vm: Option<&CocoApp>) -> egui::Rect {
-    let texture = vm.and_then(CocoApp::framebuffer_texture);
+fn draw_row_thumbnail(
+    ui: &mut egui::Ui,
+    height: f32,
+    texture: Option<&egui::TextureHandle>,
+) -> egui::Rect {
     let aspect = texture
         .map(|t| {
             let size = t.size_vec2();
@@ -192,6 +218,40 @@ fn draw_row_thumbnail(ui: &mut egui::Ui, height: f32, vm: Option<&CocoApp>) -> e
         );
     }
     rect
+}
+
+/// File name of a stopped machine's saved screen preview, inside its
+/// artifact directory (`machine_def::artifacts_root()/<slug>`).
+const THUMBNAIL_FILE: &str = "thumbnail.png";
+
+/// How often a running VM's `thumbnail.png` is refreshed on disk. Stop and
+/// manager-exit both do a final write regardless — this periodic one is
+/// crash insurance, so a force-killed process still shows a recent preview
+/// on the next launch instead of nothing.
+const THUMBNAIL_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Write `rgba` (`w`×`h`) as `dir/thumbnail.png`. Same tmp-then-rename
+/// pattern as `machine_def::save`, so a crash mid-write can never leave a
+/// torn PNG behind. A uniformly *black* frame is skipped whenever a previous
+/// thumbnail exists: stopping during a blanked display (mode switch, blank
+/// screen) would otherwise replace a useful preview with a black rectangle.
+fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), String> {
+    let final_path = dir.join(THUMBNAIL_FILE);
+    let all_black = rgba
+        .chunks_exact(4)
+        .all(|px| px[0] == 0 && px[1] == 0 && px[2] == 0);
+    if all_black && final_path.exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let image = image::RgbaImage::from_raw(w, h, rgba.to_vec()).ok_or_else(|| {
+        format!("framebuffer geometry mismatch: {w}x{h} vs {} bytes", rgba.len())
+    })?;
+    let tmp_path = dir.join(format!("{THUMBNAIL_FILE}.tmp"));
+    image
+        .save_with_format(&tmp_path, image::ImageFormat::Png)
+        .map_err(|e| format!("{}: {e}", tmp_path.display()))?;
+    fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))
 }
 
 /// The detail pane's working copy of the selected entry's definition
@@ -215,6 +275,12 @@ pub struct ManagerApp {
     /// directory exists (`paths::config_dir` docs) — Save/Create then report
     /// the problem in place rather than silently doing nothing.
     machines_dir: Option<PathBuf>,
+    /// Root of the per-machine artifact directories
+    /// (`machine_def::artifacts_root()`), where each entry's
+    /// [`THUMBNAIL_FILE`] lives under `<root>/<slug>`. Injected like
+    /// `machines_dir` so tests use a temp dir, never the real data dir;
+    /// `None` disables thumbnail persistence entirely.
+    artifacts_root: Option<PathBuf>,
     /// `pub(crate)`: `ui_tests.rs` asserts on the list contents directly —
     /// `ManagerApp` lives in this module, so plain private fields (as
     /// `CocoApp` in the crate root uses) aren't visible from that sibling
@@ -234,14 +300,20 @@ pub struct ManagerApp {
 }
 
 impl ManagerApp {
-    /// `photo`, `machines_dir`, and `entries` are all injected (rather than
-    /// loaded here) so tests can construct the manager without touching the
-    /// user's real config/asset directories.
-    pub fn new(photo: Option<Photo>, machines_dir: Option<PathBuf>, entries: Vec<MachineEntry>) -> Self {
+    /// `photo`, `machines_dir`, `artifacts_root`, and `entries` are all
+    /// injected (rather than loaded here) so tests can construct the manager
+    /// without touching the user's real config/data directories.
+    pub fn new(
+        photo: Option<Photo>,
+        machines_dir: Option<PathBuf>,
+        artifacts_root: Option<PathBuf>,
+        entries: Vec<MachineEntry>,
+    ) -> Self {
         Self {
             photo,
             photo_texture: None,
             machines_dir,
+            artifacts_root,
             entries,
             selected: None,
             edit: None,
@@ -322,6 +394,9 @@ impl ManagerApp {
     /// one. Clicking anywhere in the row selects it (`ui.interact` over the
     /// frame's rect — the row's own labels aren't themselves interactive).
     fn draw_machine_row(&mut self, ui: &mut egui::Ui, i: usize) {
+        // A stopped machine's saved preview, if any, loads (once) before the
+        // row draws so this frame can already show it.
+        self.ensure_row_thumbnail(&ui.ctx().clone(), i);
         let selected = self.selected == Some(i);
         let fill = if selected {
             ui.visuals().selection.bg_fill
@@ -336,7 +411,15 @@ impl ManagerApp {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let content_height = row_content_height(ui);
-                    draw_row_thumbnail(ui, content_height, self.entries[i].vm.as_deref());
+                    // Preview priority: a live VM's framebuffer texture,
+                    // else the saved thumbnail.png loaded above, else the
+                    // bare placeholder fill.
+                    let texture = self.entries[i]
+                        .vm
+                        .as_deref()
+                        .and_then(CocoApp::framebuffer_texture)
+                        .or(self.entries[i].thumbnail.as_ref());
+                    draw_row_thumbnail(ui, content_height, texture);
 
                     match &self.entries[i].def {
                         Ok(def) => {
@@ -562,9 +645,81 @@ impl ManagerApp {
     /// files — the same exit contract `CocoApp::on_exit` runs for the
     /// direct-boot window — then drop the VM, returning the row to Stopped.
     fn stop_vm(&mut self, index: usize) {
+        self.write_entry_thumbnail(index);
         if let Some(mut vm) = self.entries[index].vm.take() {
             vm.flush_media();
         }
+    }
+
+    /// Snapshot `entries[index]`'s running VM screen into its artifact dir
+    /// (see [`write_thumbnail_png`]) and invalidate the row's cached preview
+    /// texture so the next draw reloads the fresh file. No-op for a stopped
+    /// entry or when no artifact root exists. Capture happens between update
+    /// frames, so the framebuffer always holds a whole rendered field —
+    /// never a torn, mid-render frame.
+    fn write_entry_thumbnail(&mut self, index: usize) {
+        let Some(root) = &self.artifacts_root else {
+            return;
+        };
+        let entry = &mut self.entries[index];
+        let Some(vm) = entry.vm.as_ref() else {
+            return;
+        };
+        let (w, h) = (vm.machine.fb_width, vm.machine.fb_height);
+        if let Err(e) = write_thumbnail_png(&root.join(&entry.slug), &vm.machine.framebuffer, w, h)
+        {
+            tracing::warn!("thumbnail for '{}': {e}", entry.slug);
+        }
+        entry.thumbnail = None;
+        entry.thumbnail_load_attempted = false;
+        entry.last_thumbnail_write = Some(Instant::now());
+    }
+
+    /// [`THUMBNAIL_REFRESH`] cadence for every running VM — called once per
+    /// `update()`. The first write happens right after Start
+    /// (`last_thumbnail_write` starts `None`), so even a young machine has
+    /// an on-disk preview if the process dies.
+    fn refresh_due_thumbnails(&mut self) {
+        if self.artifacts_root.is_none() {
+            return;
+        }
+        for i in 0..self.entries.len() {
+            if self.entries[i].vm.is_none() {
+                continue;
+            }
+            let due = self.entries[i]
+                .last_thumbnail_write
+                .is_none_or(|last| last.elapsed() >= THUMBNAIL_REFRESH);
+            if due {
+                self.write_entry_thumbnail(i);
+            }
+        }
+    }
+
+    /// Lazily load a stopped entry's saved [`THUMBNAIL_FILE`] into a texture
+    /// the first time its row draws (and again after
+    /// [`Self::write_entry_thumbnail`] invalidates the cache). Failures just
+    /// leave the placeholder — the preview is a cache, never required state.
+    fn ensure_row_thumbnail(&mut self, ctx: &egui::Context, index: usize) {
+        let entry = &mut self.entries[index];
+        if entry.vm.is_some() || entry.thumbnail_load_attempted {
+            return;
+        }
+        entry.thumbnail_load_attempted = true;
+        let Some(root) = &self.artifacts_root else {
+            return;
+        };
+        let Ok(image) = image::open(root.join(&entry.slug).join(THUMBNAIL_FILE)) else {
+            return;
+        };
+        let image = image.to_rgba8();
+        let size = [image.width() as usize, image.height() as usize];
+        let pixels = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+        entry.thumbnail = Some(ctx.load_texture(
+            format!("thumbnail-{}", entry.slug),
+            pixels,
+            egui::TextureOptions::LINEAR,
+        ));
     }
 
     /// One native OS window per running VM (`docs/plan-machine-persistence.md`
@@ -710,8 +865,12 @@ impl eframe::App for ManagerApp {
     /// (`docs/plan-machine-persistence.md` "Lifetime rule"); this mirrors
     /// `CocoApp::on_exit`'s own contract for each of them.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        for entry in &mut self.entries {
-            if let Some(vm) = entry.vm.as_mut() {
+        for i in 0..self.entries.len() {
+            // Final preview before the write-back: quitting with VMs still
+            // running is the most common way a stopped row would otherwise
+            // lose its saved thumbnail.
+            self.write_entry_thumbnail(i);
+            if let Some(vm) = self.entries[i].vm.as_mut() {
                 vm.flush_media();
             }
         }
@@ -769,6 +928,7 @@ impl eframe::App for ManagerApp {
             }
         });
 
+        self.refresh_due_thumbnails();
         self.draw_running_vms(ctx);
     }
 }
@@ -799,7 +959,56 @@ pub fn run() -> eframe::Result<()> {
         "coco-rs",
         options,
         Box::new(move |_cc| {
-            Ok(Box::new(ManagerApp::new(photo_view::random(), machines_dir, entries)))
+            Ok(Box::new(ManagerApp::new(
+                photo_view::random(),
+                machines_dir,
+                machine_def::artifacts_root(),
+                entries,
+            )))
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::machine_def::tests::TempDir;
+
+    /// A tiny non-black RGBA frame (2×2, opaque red).
+    const RED_FRAME: [u8; 16] = [
+        0xFF, 0, 0, 0xFF, 0xFF, 0, 0, 0xFF, 0xFF, 0, 0, 0xFF, 0xFF, 0, 0, 0xFF,
+    ];
+    /// Same geometry, uniformly black — the frame [`write_thumbnail_png`]'s
+    /// blank-screen heuristic guards against.
+    const BLACK_FRAME: [u8; 16] = [
+        0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF,
+    ];
+
+    #[test]
+    fn write_thumbnail_png_round_trips_and_leaves_no_tmp() {
+        let dir = TempDir::new("thumb-roundtrip");
+        write_thumbnail_png(dir.path(), &RED_FRAME, 2, 2).expect("write succeeds");
+
+        assert!(!dir.path().join(format!("{THUMBNAIL_FILE}.tmp")).exists());
+        let image = image::open(dir.path().join(THUMBNAIL_FILE)).expect("decodable PNG");
+        assert_eq!((image.width(), image.height()), (2, 2));
+    }
+
+    #[test]
+    fn uniformly_black_frame_keeps_the_previous_thumbnail() {
+        let dir = TempDir::new("thumb-black-skip");
+        write_thumbnail_png(dir.path(), &RED_FRAME, 2, 2).unwrap();
+        let before = fs::read(dir.path().join(THUMBNAIL_FILE)).unwrap();
+
+        write_thumbnail_png(dir.path(), &BLACK_FRAME, 2, 2).unwrap();
+        let after = fs::read(dir.path().join(THUMBNAIL_FILE)).unwrap();
+        assert_eq!(before, after, "a blank screen must not clobber a useful preview");
+    }
+
+    #[test]
+    fn black_frame_is_still_written_when_no_previous_thumbnail_exists() {
+        let dir = TempDir::new("thumb-black-first");
+        write_thumbnail_png(dir.path(), &BLACK_FRAME, 2, 2).unwrap();
+        assert!(dir.path().join(THUMBNAIL_FILE).exists());
+    }
 }

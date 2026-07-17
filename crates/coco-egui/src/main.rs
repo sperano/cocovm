@@ -2142,6 +2142,16 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         return Err(err);
     }
 
+    // The definition's [ui] preferences are the launched window's *starting*
+    // state; F9 (aspect) and F12 (keyboard mode) keep working as live
+    // toggles afterwards — the file controls where they begin, exactly like
+    // the hardware section controls the machine's construction.
+    app.aspect_correct = def.ui.aspect_correct;
+    app.kb_mode = match def.ui.kb_mode {
+        machine_def::KbModeDto::Positional => KbMode::Positional,
+        machine_def::KbModeDto::Symbolic => KbMode::Symbolic,
+    };
+
     Ok(app)
 }
 

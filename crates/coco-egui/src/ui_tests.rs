@@ -437,7 +437,7 @@ fn disk_controller_confirmation_can_be_cancelled() {
 #[test]
 fn manager_window_shows_its_toolbar() {
     let mut harness =
-        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, Vec::new()));
+        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, None, Vec::new()));
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
@@ -462,7 +462,7 @@ fn manager_window_shows_its_toolbar() {
 #[test]
 fn manager_list_divider_is_draggable() {
     let mut harness =
-        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, Vec::new()));
+        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, None, Vec::new()));
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
@@ -506,7 +506,7 @@ fn manager_window_renders_an_injected_photo() {
         pixels: egui::ColorImage::from_rgba_unmultiplied([8, 6], &[0x20; 8 * 6 * 4]),
     };
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
-        manager::ManagerApp::new(Some(photo), None, Vec::new())
+        manager::ManagerApp::new(Some(photo), None, None, Vec::new())
     });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
@@ -532,8 +532,19 @@ fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
 /// machines directory for Create/Save to write into — never the user's real
 /// config dir.
 fn manager_harness(machines_dir: Option<PathBuf>, entries: Vec<manager::MachineEntry>) -> ManagerHarness {
+    manager_harness_with_artifacts(machines_dir, None, entries)
+}
+
+/// [`manager_harness`] with the artifact root injected too — for tests that
+/// exercise thumbnail persistence (always a temp dir, never the real
+/// `data_dir()`).
+fn manager_harness_with_artifacts(
+    machines_dir: Option<PathBuf>,
+    artifacts_root: Option<PathBuf>,
+    entries: Vec<manager::MachineEntry>,
+) -> ManagerHarness {
     let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
-        manager::ManagerApp::new(None, machines_dir, entries)
+        manager::ManagerApp::new(None, machines_dir, artifacts_root, entries)
     });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
@@ -705,8 +716,10 @@ fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, S>, label: 
 /// manager's bookkeeping around it.
 #[test]
 fn start_button_launches_and_stop_button_stops() {
+    let artifacts = TempDir::new("thumbnails");
     let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
-    let mut harness = manager_harness(None, entries);
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
 
     click(&mut harness, "Dev CoCo 3");
     assert!(harness.state().entries[0].vm.is_none());
@@ -736,6 +749,40 @@ fn start_button_launches_and_stop_button_stops() {
     click(&mut harness, "Stop");
     assert!(harness.state().entries[0].vm.is_none(), "Stop must drop the VM");
     assert!(label_exists(&harness, "Stopped"));
+
+    // Stop captured the machine's last screen as thumbnail.png in its
+    // artifact dir, and the next frame's row draw loads it back as the
+    // stopped entry's cached preview texture.
+    assert!(
+        artifacts.path().join("dev-coco-3").join("thumbnail.png").exists(),
+        "Stop must write the stopped machine's screen preview"
+    );
+    harness.step();
+    assert!(
+        harness.state().entries[0].thumbnail.is_some(),
+        "the stopped row must reload the saved preview as its thumbnail"
+    );
+}
+
+/// `[ui]` preferences in a definition are the launched VM's *starting*
+/// state (they stay live F9/F12 toggles afterwards) — regression coverage
+/// for `launch_machine` ignoring the section entirely.
+#[test]
+fn launch_honors_ui_settings() {
+    let mut def = machine_def::MachineDef::from_config(
+        "UI Prefs".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    def.ui.aspect_correct = false;
+    def.ui.kb_mode = machine_def::KbModeDto::Symbolic;
+
+    let vm = launch_machine(&def, "ui-prefs").expect("a default CoCo 3 definition launches");
+    assert!(!vm.aspect_correct, "[ui].aspect_correct must reach the VM");
+    assert!(
+        vm.kb_mode == KbMode::Symbolic,
+        "[ui].kb_mode must reach the VM"
+    );
 }
 
 /// Two machines — a CoCo 3 and a CoCo 2 — start independently in the same

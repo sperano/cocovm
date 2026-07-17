@@ -449,10 +449,19 @@ pub fn resolve_media_path(raw: &str, slug: &str) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
     }
-    match paths::data_dir() {
-        Some(dir) => dir.join("machines").join(slug).join(path),
+    match artifacts_root() {
+        Some(root) => root.join(slug).join(path),
         None => path.to_path_buf(),
     }
+}
+
+/// Root of every machine's artifact directory (`data_dir()/machines`); a
+/// machine's own artifacts (created blank disks, `thumbnail.png`, later
+/// snapshots) live under `<root>/<slug>`. Split out so the manager can hold
+/// one injectable copy of the root — tests point it at a temp dir instead
+/// of the real per-user data directory.
+pub fn artifacts_root() -> Option<PathBuf> {
+    paths::data_dir().map(|dir| dir.join("machines"))
 }
 
 const TOP_LEVEL_KEYS: &[&str] = &["schema", "name", "created", "hardware", "media", "peripherals", "ui"];
