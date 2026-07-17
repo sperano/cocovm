@@ -21,13 +21,14 @@ pub mod keyboard;
 pub mod pia;
 pub mod printer;
 pub mod rom_db;
+pub mod rtc;
 pub mod sam;
 pub mod vhd;
 pub mod video;
 pub mod wd1773;
 
 pub use bus::SystemBus;
-pub use config::{MachineConfig, MachineVariant, MemorySize, VideoStandard};
+pub use config::{MachineConfig, MachineVariant, MemorySize, VdgVariant, VideoStandard};
 pub use gime::{GIME, MonitorType};
 
 use mc6809::{Bus, MC6809};
@@ -492,7 +493,8 @@ impl Machine {
         for (i, cell) in screen.iter_mut().enumerate() {
             *cell = self.bus.read(base.wrapping_add(i as u16));
         }
-        let css = self.bus.pia1.b.output & video::VDG_CSS != 0;
+        let ff22 = self.bus.pia1.b.output;
+        let css = ff22 & video::VDG_CSS != 0;
         let palette = self.legacy_palette(css);
         // The legacy CoCo-compatible text border is fixed black on both
         // variants (GIME `update_border` / MAME `mc6847.cpp` `border_value`).
@@ -502,7 +504,18 @@ impl Machine {
                 video::VDG_FIXED_PALETTE[video::TEXT_BORDER_INDEX]
             }
         };
-        video::render_text(&screen, &palette, border, &mut self.framebuffer);
+        // A CoCo 3 has no VDG chip at all: CoCo-compatible text mode is the
+        // GIME's own compat-text generator (`video::AlphaGenerator::Gime`),
+        // not `self.config.vdg` (which only describes a real CoCo 1/2's VDG
+        // and is forced to `Mc6847` for CoCo 3 by `MachineConfig::validate`).
+        let generator = match self.config.variant {
+            MachineVariant::Coco3 => video::AlphaGenerator::Gime,
+            MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
+                VdgVariant::Mc6847 => video::AlphaGenerator::Mc6847,
+                VdgVariant::Mc6847T1 => video::AlphaGenerator::Mc6847T1,
+            },
+        };
+        video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);
     }
 
     /// Render a VDG bitmap graphics (PMODE) field (`DESIGN.md` §6).

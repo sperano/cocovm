@@ -15,11 +15,14 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod new_vm;
 mod paper_export;
+mod paths;
 mod paper_render;
 mod paper_view;
 
 use std::collections::VecDeque;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Timelike};
@@ -28,10 +31,15 @@ use coco_core::cart::{MultiPak, RomPak};
 use coco_core::drivewire::{self, DwImage, DwTime};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
+use coco_core::rtc::{DistoRtc, RtcTime};
 use coco_core::vhd::VhdImage;
-use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
+use coco_core::{
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+};
 use eframe::egui;
 use joy::JoystickInputs;
+use owo_colors::{OwoColorize, Stream};
+use owo_colors::colors::xterm;
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 const SCALE: f32 = 3.0;
@@ -199,6 +207,14 @@ struct CocoApp {
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
     mpi: Option<MpiState>,
+    /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
+    /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
+    new_vm: new_vm::NewVmDialog,
+    /// True while a Disto RTC is plugged directly into the cartridge port
+    /// (gates the "Eject Disto RTC" menu item, like `cart_path` does for ROM
+    /// paks). An RTC in a Multi-Pak slot is tracked by [`MpiSlot::DistoRtc`]
+    /// instead.
+    rtc_direct: bool,
     /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
     /// the DMP-105's dot-matrix output on period-correct tractor-feed
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
@@ -235,6 +251,10 @@ const MPI_SLOT_COUNT: usize = coco_core::cart::mpi::SLOT_COUNT;
 /// default (also MAME's default — `coco_multi.cpp` `MULTI_SLOT_LOOKUP`).
 const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 
+/// MPI slot `--rtc` targets (slot 3): --cart takes slot 1 and the FD-502
+/// slot 4, mirroring the conventional layout the `--mpi` CLI wiring builds.
+const DEFAULT_RTC_SLOT: usize = 2;
+
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
 /// cold restart (or just the status bar / menu labels) can describe it
 /// without having to downcast the core's trait objects. The FD-502 doesn't
@@ -248,6 +268,7 @@ enum MpiSlot {
     Empty,
     RomPak(PathBuf),
     Fd502,
+    DistoRtc,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
@@ -256,6 +277,26 @@ enum MpiSlot {
 struct MpiState {
     switch: usize,
     slots: [MpiSlot; MPI_SLOT_COUNT],
+}
+
+/// The host's local wall clock, read once (RTC sync).
+fn host_now() -> RtcTime {
+    use chrono::{Datelike, Timelike};
+    let now = chrono::Local::now();
+    RtcTime {
+        year: now.year(),
+        month: now.month() as u8,
+        day: now.day() as u8,
+        hour: now.hour() as u8,
+        minute: now.minute() as u8,
+        second: now.second() as u8,
+    }
+}
+
+/// [`host_now`] as the Disto RTC's injected time source
+/// (`coco_core::rtc::TimeSource` — coco-core itself never reads `std::time`).
+fn host_time_source() -> coco_core::rtc::TimeSource {
+    Box::new(host_now)
 }
 
 impl CocoApp {
@@ -298,6 +339,8 @@ impl CocoApp {
             print_capture_lf: false,
             pending_disk_action: None,
             mpi: None,
+            new_vm: new_vm::NewVmDialog::new(),
+            rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
         };
         if let Some(path) = cart_path {
@@ -347,6 +390,7 @@ impl CocoApp {
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
+                self.rtc_direct = false; // ... and any directly-plugged RTC
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -363,6 +407,7 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
+        self.rtc_direct = false;
     }
 
     /// Make sure the inserted cartridge is the FD-502 disk controller,
@@ -399,6 +444,7 @@ impl CocoApp {
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rtc_direct = false;
         Ok(())
     }
 
@@ -416,6 +462,7 @@ impl CocoApp {
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rtc_direct = false;
     }
 
     /// Remove the Multi-Pak Interface — and everything plugged into it —
@@ -513,6 +560,52 @@ impl CocoApp {
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.switch = slot;
+        }
+    }
+
+    /// Plug a Disto RTC directly into the cartridge port, running on the
+    /// host's local clock (cold-restart gated like any cartridge swap). The
+    /// RTC has no boot ROM, so this pairs with a VHD boot (NitrOS-9 `emudsk`)
+    /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
+    fn insert_rtc(&mut self) {
+        self.flush_dirty_disks();
+        self.machine.insert_cartridge(Box::new(DistoRtc::new(host_time_source())));
+        self.machine.power_cycle();
+        self.rtc_direct = true;
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None;
+    }
+
+    /// Eject a directly-plugged Disto RTC, restoring the empty port.
+    fn eject_rtc(&mut self) {
+        self.machine.eject_cartridge();
+        self.machine.power_cycle();
+        self.rtc_direct = false;
+    }
+
+    /// Insert a Disto RTC into MPI `slot` (0-3). Mirrors
+    /// [`Self::mpi_insert_fd502`]; only one RTC is allowed across the
+    /// machine, since two would shadow each other at `$FF50`.
+    fn mpi_insert_rtc(&mut self, slot: usize) {
+        if self.machine.bus.cart.as_disto_rtc().is_some() {
+            self.cart_error = Some("A Disto RTC is already installed in another slot.".to_string());
+            return;
+        }
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, Box::new(DistoRtc::new(host_time_source())));
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MpiSlot::DistoRtc;
+        }
+        self.machine.power_cycle();
+    }
+
+    /// Set the emulated RTC (wherever it is — port or MPI slot) back to the
+    /// host's clock, discarding any offset a guest-side `setime` introduced.
+    fn sync_rtc_to_host(&mut self) {
+        if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
+            rtc.rtc().set_time(host_now());
         }
     }
 
@@ -866,6 +959,52 @@ impl CocoApp {
         self.paper_window.open = true;
     }
 
+    /// Build a brand-new machine from `config`, replacing the current one
+    /// wholesale (the "New…" dialog's Create). The ROM set for the chosen
+    /// variant is loaded first, so a failure (returned for the dialog to
+    /// display) leaves the running machine untouched. On success, dirty
+    /// floppies and tape are written back exactly like [`Self::on_exit`],
+    /// then every mounted device and frontend path is dropped — a new VM
+    /// starts bare, like a machine fresh out of the box. Sticky UI
+    /// preferences (keyboard mode, joysticks, audio, autostart, CR→LF)
+    /// survive; they belong to the app, not the machine.
+    fn create_vm(&mut self, config: MachineConfig, ctx: &egui::Context) -> Result<(), String> {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(config.variant, &roms_dir)?;
+
+        self.flush_dirty_disks();
+        self.write_back_tape();
+        // The bit-banger sinks (file capture / DMP-105 paper feed) belong to
+        // the old machine and drop with it; clear the frontend's handles so
+        // neither UI points at a dead device.
+        self.print_capture_path = None;
+        self.paper_window.detach();
+
+        self.machine = Machine::new(config, rom);
+        // `self.texture` is deliberately left alone: nulling it here would
+        // panic in this same frame's CentralPanel (drawn after the dialog),
+        // and the per-frame `texture.set` at the top of `update` re-uploads
+        // the new machine's framebuffer — including a size change, CoCo 1/2
+        // and CoCo 3 framebuffers differ — on the next pass anyway.
+        self.running = true; // boot straight to the prompt, like startup
+        self.type_ahead.clear();
+        self.last_update = None;
+        self.field_debt = 0.0;
+        self.cart_path = None;
+        self.cart_error = None;
+        self.disk_paths = [None, None];
+        self.vhd_paths = [None, None];
+        self.tape_path = None;
+        self.pending_disk_action = None;
+        self.mpi = None;
+        self.rtc_direct = false;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "coco-rs — {}",
+            machine_label(config.variant)
+        )));
+        Ok(())
+    }
+
     /// Emulated fields owed for this update, from wall-clock time at the
     /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
     fn fields_due(&mut self) -> usize {
@@ -1027,6 +1166,11 @@ impl eframe::App for CocoApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| {
+                    if ui.button("New…").clicked() {
+                        self.new_vm.open_with(self.machine.config);
+                        ui.close();
+                    }
+                    ui.separator();
                     let run_label = if self.running { "Pause" } else { "Run" };
                     if ui.button(run_label).clicked() {
                         self.running = !self.running;
@@ -1088,6 +1232,9 @@ impl eframe::App for CocoApp {
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
                                     Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
+                                    Some(MpiSlot::DistoRtc) => {
+                                        format!("Slot {} (Disto RTC)", slot + 1)
+                                    }
                                     _ => format!("Slot {}", slot + 1),
                                 };
                                 ui.menu_button(slot_label, |ui| {
@@ -1116,6 +1263,29 @@ impl eframe::App for CocoApp {
                                         .clicked()
                                     {
                                         self.mpi_insert_fd502(slot);
+                                        ui.close();
+                                    }
+                                    // Same one-per-machine rule as the FD-502:
+                                    // two RTCs would shadow each other at $FF50.
+                                    let rtc_here = matches!(
+                                        self.mpi.as_ref().map(|m| &m.slots[slot]),
+                                        Some(MpiSlot::DistoRtc)
+                                    );
+                                    let rtc_elsewhere = self
+                                        .machine
+                                        .bus
+                                        .cart
+                                        .as_disto_rtc()
+                                        .is_some()
+                                        && !rtc_here;
+                                    if ui
+                                        .add_enabled(
+                                            !rtc_elsewhere,
+                                            egui::Button::new("Insert Disto RTC"),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.mpi_insert_rtc(slot);
                                         ui.close();
                                     }
                                     let occupied = !matches!(
@@ -1149,6 +1319,34 @@ impl eframe::App for CocoApp {
                             });
                         }
                     });
+                    ui.separator();
+                    // Disto RTC: directly in the port here, or via a MultiPak
+                    // slot submenu above when an MPI is installed.
+                    if ui
+                        .add_enabled(
+                            direct_port && !self.rtc_direct,
+                            egui::Button::new("Insert Disto RTC"),
+                        )
+                        .clicked()
+                    {
+                        self.insert_rtc();
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(self.rtc_direct, egui::Button::new("Eject Disto RTC"))
+                        .clicked()
+                    {
+                        self.eject_rtc();
+                        ui.close();
+                    }
+                    let rtc_present = self.machine.bus.cart.as_disto_rtc().is_some();
+                    if ui
+                        .add_enabled(rtc_present, egui::Button::new("Sync RTC to Host Clock"))
+                        .clicked()
+                    {
+                        self.sync_rtc_to_host();
+                        ui.close();
+                    }
                     ui.separator();
                     for drive in 0..UI_DRIVES {
                         if ui.button(format!("Insert Disk in Drive {drive}…")).clicked() {
@@ -1419,6 +1617,7 @@ impl eframe::App for CocoApp {
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string()
                                 }
                                 MpiSlot::Fd502 => "FD-502".to_string(),
+                                MpiSlot::DistoRtc => "RTC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -1486,6 +1685,12 @@ impl eframe::App for CocoApp {
         }
         if self.show_about {
             about::window(ctx, &mut self.show_about);
+        }
+        if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
+            match self.create_vm(config, ctx) {
+                Ok(()) => self.new_vm.close(),
+                Err(e) => self.new_vm.error = Some(e),
+            }
         }
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
@@ -1729,7 +1934,7 @@ impl From<MonitorArg> for MonitorType {
 }
 
 #[derive(Parser)]
-#[command(name = "coco", about = "A Tandy Color Computer emulator")]
+#[command(name = "coco", version, about = "A Tandy Color Computer emulator")]
 struct Cli {
     /// Which machine to emulate (coco1, coco2, coco3).
     #[arg(long, default_value = "coco3", value_parser = parse_machine)]
@@ -1805,12 +2010,19 @@ struct Cli {
     fd502: bool,
 
     /// Insert a 4-slot Tandy Multi-Pak Interface into the cartridge port
-    /// instead of plugging --cart/--disk*/--fd502 directly into it: --cart
-    /// goes into slot 1 and the FD-502 (implied by --disk0/--disk1/--fd502)
-    /// goes into slot 4 — the conventional real-world layout (also MAME's
-    /// default), letting a cartridge and the disk controller coexist.
+    /// instead of plugging --cart/--disk*/--fd502/--rtc directly into it:
+    /// --cart goes into slot 1, the FD-502 (implied by --disk0/--disk1/
+    /// --fd502) into slot 4, and the RTC into slot 3 — the conventional
+    /// real-world layout (also MAME's default), letting a cartridge, the
+    /// disk controller, and the clock coexist.
     #[arg(long, default_value_t = false)]
     mpi: bool,
+
+    /// Insert a Disto real-time clock (OKI MSM6242 at $FF50-$FF53, for
+    /// NitrOS-9's clock2_disto drivers), running on the host's local clock —
+    /// directly in the cartridge port, or (with --mpi) in slot 3.
+    #[arg(long, default_value_t = false)]
+    rtc: bool,
 
     /// Installed RAM (4k, 16k, 32k, 64k, 128k, 512k, 2048k). Defaults, per
     /// `--machine`, to 512K (CoCo 3) or 64K (CoCo 1/2).
@@ -1841,15 +2053,54 @@ struct Cli {
     print_capture: Option<PathBuf>,
 }
 
-/// Load the boot ROM from `path`, or `roms/coco3.rom` at the workspace root.
-/// The ROM is copyrighted and git-ignored (`./roms`).
-fn load_rom(path: Option<PathBuf>) -> std::io::Result<Box<[u8]>> {
-    let path = path.unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom")
-    });
-    let rom = std::fs::read(&path)?.into_boxed_slice();
-    report_rom_validation(&path, &rom);
-    Ok(rom)
+/// Read an explicit `--rom` image as-is: a CoCo 3 image, or — for CoCo 1/2 —
+/// an already pre-composed flat layout (see the `Cli::rom` doc).
+fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            report_rom_validation(path, &bytes);
+            Ok(bytes.into_boxed_slice())
+        }
+        Err(e) => Err(format!("could not load {}: {e}", path.display())),
+    }
+}
+
+/// Load the default boot ROM set for `variant` from `roms_dir` (copyrighted
+/// and git-ignored, `./roms`): `coco3.rom` for the CoCo 3, or a flat image
+/// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
+/// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
+/// the "New…" dialog shows them inline; `main` prints them and exits.
+fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]>, String> {
+    match variant {
+        MachineVariant::Coco3 => {
+            let path = roms_dir.join("coco3.rom");
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    report_rom_validation(&path, &bytes);
+                    Ok(bytes.into_boxed_slice())
+                }
+                Err(e) => Err(format!("could not load {}: {e}", path.display())),
+            }
+        }
+        MachineVariant::Coco1 | MachineVariant::Coco2 => match compose_coco12_rom(roms_dir) {
+            Coco12RomResult::Composed { image, bas, extbas } => {
+                report_rom_validation(&bas.0, &bas.1);
+                match extbas {
+                    Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
+                    None => tracing::info!(
+                        "no Extended Color BASIC ROM found ({}); booting Color BASIC only",
+                        EXTENDED_BASIC_CANDIDATES.join(", ")
+                    ),
+                }
+                Ok(image)
+            }
+            Coco12RomResult::NoColorBasic => Err(format!(
+                "no Color BASIC ROM found: place one of {} in {}",
+                COCO_BASIC_CANDIDATES.join(", "),
+                roms_dir.display()
+            )),
+        },
+    }
 }
 
 /// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
@@ -1859,10 +2110,11 @@ fn load_rom(path: Option<PathBuf>) -> std::io::Result<Box<[u8]>> {
 const COCO12_BAS_OFFSET: usize = 8 * 1024;
 /// Color BASIC dumps accepted for `--machine coco1`/`coco2` (any one is
 /// enough to boot), newest-preferred among the versions these machines
-/// actually shipped with: 1.2 first, down to 1.0. `bas13.rom` is the CoCo
-/// 2B's Color BASIC — it boots fine on the plain-SAM map, but 1.3 pairs with
-/// the MC6847T1 (a deferred follow-up, `docs/coco12-plan.md`), so it's a
-/// last resort here, not the preferred dump.
+/// actually shipped with: 1.2 first, down to 1.0. `bas13.rom` (the CoCo 2B's
+/// Color BASIC, shipped with the MC6847T1 boards) boots fine too but is the
+/// far rarer dump, so it stays a last resort rather than the preferred one —
+/// even though the CoCo 2 now defaults to `VdgVariant::Mc6847T1`, 1.2 runs
+/// identically on a T1 machine (lowercase just goes unused).
 const COCO_BASIC_CANDIDATES: &[&str] = &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
 /// Newest-preferred Extended Color BASIC dumps; optional
 /// (`docs/coco12-plan.md` "ROM files": a Color-BASIC-only machine still
@@ -1920,46 +2172,6 @@ fn compose_coco12_rom(roms_dir: &Path) -> Coco12RomResult {
     }
 }
 
-/// Load the flat CoCo 1/2 ROM image, or exit with an explanatory message.
-/// `explicit` (`--rom`) bypasses [`compose_coco12_rom`] entirely and is used
-/// as-is (already the pre-composed flat layout, per the `Cli::rom` doc).
-fn load_coco12_rom(explicit: Option<PathBuf>, roms_dir: &Path) -> Box<[u8]> {
-    if let Some(path) = explicit {
-        return match std::fs::read(&path) {
-            Ok(bytes) => {
-                report_rom_validation(&path, &bytes);
-                bytes.into_boxed_slice()
-            }
-            Err(e) => {
-                eprintln!("coco: could not load ROM: {e}");
-                std::process::exit(1);
-            }
-        };
-    }
-
-    match compose_coco12_rom(roms_dir) {
-        Coco12RomResult::Composed { image, bas, extbas } => {
-            report_rom_validation(&bas.0, &bas.1);
-            match extbas {
-                Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
-                None => eprintln!(
-                    "coco: note: no Extended Color BASIC ROM found ({}); booting Color BASIC only.",
-                    EXTENDED_BASIC_CANDIDATES.join(", ")
-                ),
-            }
-            image
-        }
-        Coco12RomResult::NoColorBasic => {
-            eprintln!("coco: could not find a Color BASIC ROM for --machine coco1/coco2.");
-            eprintln!(
-                "Place one of {} in roms/, or pass --rom <PATH> with a pre-composed image.",
-                COCO_BASIC_CANDIDATES.join(", ")
-            );
-            std::process::exit(1);
-        }
-    }
-}
-
 /// Per-variant default RAM size when `--ram` isn't given
 /// (`docs/coco12-plan.md` Phase 5).
 fn default_ram(variant: MachineVariant) -> MemorySize {
@@ -1969,7 +2181,7 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
     }
 }
 
-/// One advisory stderr line per loaded system ROM, checked against the
+/// One advisory log line per loaded system ROM, checked against the
 /// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
 /// homebrew images are legitimate, but a corrupt known dump should say so.
 fn report_rom_validation(path: &Path, bytes: &[u8]) {
@@ -1980,20 +2192,19 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
         .unwrap_or_default();
     match rom_db::validate(&name, bytes) {
         Validation::Verified(known) => {
-            eprintln!("coco: {name}: verified {} [crc32 {:08x}]", known.desc, known.crc32);
+            tracing::info!("{name}: verified {} [crc32 {:08x}]", known.desc, known.crc32);
         }
         Validation::Mismatch { expected, actual_crc32, actual_size } => {
-            eprintln!(
-                "coco: warning: {name} does not match the known dump of {}: \
+            tracing::warn!(
+                "{name} does not match the known dump of {}: \
                  expected {} bytes crc32 {:08x}, got {} bytes crc32 {actual_crc32:08x} \
                  (patched image, or a bad dump)",
                 expected.desc, expected.size, expected.crc32, actual_size,
             );
         }
         Validation::Unknown => {
-            eprintln!(
-                "coco: note: {name} is not in the known-ROM manifest \
-                 ({} bytes, crc32 {:08x})",
+            tracing::info!(
+                "{name} is not in the known-ROM manifest ({} bytes, crc32 {:08x})",
                 bytes.len(),
                 rom_db::crc32(bytes),
             );
@@ -2001,7 +2212,84 @@ fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
+fn setup_logging() {
+    // Legacy Windows conhost only interprets VT escape codes after the app
+    // opts in; a no-op everywhere else. On failure, fall back to plain text.
+    let vt_ok = enable_ansi_support::enable_ansi_support().is_ok();
+    let use_color = vt_ok && std::io::IsTerminal::is_terminal(&std::io::stdout());
+    // Leveled stdout logging, colored only when stdout is a terminal.
+    // `RUST_LOG` filters per module (e.g. `RUST_LOG=coco_egui::audio=debug`);
+    // without it, everything at `info` and above is shown.
+    tracing_subscriber::fmt()
+        .with_ansi(use_color)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
+}
+
+fn banner() {
+    println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano",
+             env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
+             "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
+             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
+             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
+             "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+    );
+}
+
+const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v1.tgz";
+
+/// Whether `dir` exists and contains at least one entry.
+fn dir_has_files(dir: &Path) -> bool {
+    fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some())
+}
+
+/// Unpack a gzipped tar stream into `dest`. Split from the download so the
+/// extraction can be unit-tested without a network.
+fn unpack_assets(reader: impl std::io::Read, dest: &Path) -> std::io::Result<()> {
+    let gz = flate2::read::GzDecoder::new(reader);
+    tar::Archive::new(gz).unpack(dest)
+}
+
+/// Download [`ASSETS_URL`] and unpack it into `dest`, streaming — the
+/// tarball is never held in memory or written to disk whole.
+fn download_and_unpack_assets(dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    fs::create_dir_all(dest)?;
+    let response = ureq::get(ASSETS_URL).call()?;
+    unpack_assets(response.into_body().into_reader(), dest)?;
+    Ok(())
+}
+
+fn ensure_assets() {
+    let Some(data_dir) = paths::data_dir() else {
+        eprintln!("no home directory found; cannot locate the asset directories");
+        std::process::exit(1);
+    };
+    let missing: Vec<String> = [paths::roms_dir(), paths::images_dir()]
+        .into_iter()
+        .flatten()
+        .filter(|dir| !dir_has_files(dir))
+        .map(|dir| dir.display().to_string())
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    println!("Downloading {ASSETS_URL}…");
+    match download_and_unpack_assets(&data_dir) {
+        Ok(()) => println!("assets installed in {}", data_dir.display()),
+        Err(e) => eprintln!("asset download failed: {e}"),
+    }
+}
+
 fn main() -> eframe::Result<()> {
+    setup_logging();
+    banner();
+    ensure_assets();
+
     let cli = Cli::parse();
     let variant = cli.machine;
     let memory = cli.ram.unwrap_or_else(|| default_ram(variant));
@@ -2010,23 +2298,29 @@ fn main() -> eframe::Result<()> {
         video: cli.video,
         memory,
         monitor: cli.monitor.into(),
+        // No CLI flag for this yet; same family defaults as the "New…"
+        // dialog — the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere
+        // (the only valid choice, `MachineConfig::validate`).
+        vdg: match variant {
+            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
+            _ => VdgVariant::Mc6847,
+        },
     };
     if let Err(e) = config.validate() {
         eprintln!("coco: invalid configuration: {e}");
         std::process::exit(1);
     }
-    let rom = match variant {
-        MachineVariant::Coco3 => match load_rom(cli.rom) {
-            Ok(rom) => rom,
-            Err(e) => {
-                eprintln!("coco: could not load ROM: {e}");
-                eprintln!("Pass --rom <PATH>, or place one at roms/coco3.rom.");
-                std::process::exit(1);
-            }
-        },
-        MachineVariant::Coco1 | MachineVariant::Coco2 => {
-            let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-            load_coco12_rom(cli.rom, &roms_dir)
+    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+    let rom = match cli.rom {
+        Some(path) => load_explicit_rom(&path),
+        None => load_default_rom(variant, &roms_dir),
+    };
+    let rom = match rom {
+        Ok(rom) => rom,
+        Err(e) => {
+            eprintln!("coco: {e}");
+            eprintln!("Pass --rom <PATH> to boot a specific image.");
+            std::process::exit(1);
         }
     };
     let mpi = cli.mpi;
@@ -2037,17 +2331,24 @@ fn main() -> eframe::Result<()> {
     let becker_enabled = cli.becker || dw_paths.iter().any(|p| p.is_some());
     let hdbdos_mode = cli.hdbdos;
     let fd502 = cli.fd502;
+    let rtc = cli.rtc;
     let save_tape_wav = cli.tape_wav;
     let print_capture = cli.print_capture;
-    // Without --mpi, --cart and --disk0/--disk1/--fd502 all want the single
-    // cartridge port (clap's declarative `conflicts_with` can't express "only
-    // when --mpi is absent", so this is checked by hand).
-    if !mpi
-        && cart_path.is_some()
-        && (disk_paths[0].is_some() || disk_paths[1].is_some() || fd502)
-    {
+    // Without --mpi, --cart, --disk0/--disk1/--fd502, and --rtc all want the
+    // single cartridge port (clap's declarative `conflicts_with` can't
+    // express "only when --mpi is absent", so this is checked by hand).
+    let port_claims = [
+        cart_path.is_some(),
+        disk_paths[0].is_some() || disk_paths[1].is_some() || fd502,
+        rtc,
+    ]
+    .into_iter()
+    .filter(|&claims| claims)
+    .count();
+    if !mpi && port_claims > 1 {
         eprintln!(
-            "coco: --cart cannot be combined with --disk0/--disk1/--fd502 unless --mpi is also given"
+            "coco: --cart, --disk0/--disk1/--fd502, and --rtc all need the cartridge port; \
+             combine them only with --mpi"
         );
         std::process::exit(1);
     }
@@ -2109,6 +2410,9 @@ fn main() -> eframe::Result<()> {
                 if fd502 || disk_paths[0].is_some() || disk_paths[1].is_some() {
                     app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
                 }
+                if rtc {
+                    app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
+                }
                 for (drive, path) in disk_paths.into_iter().enumerate() {
                     if let Some(path) = path {
                         app.insert_disk(drive, path);
@@ -2116,6 +2420,8 @@ fn main() -> eframe::Result<()> {
                 }
             } else if fd502 && let Err(e) = app.ensure_disk_controller() {
                 app.cart_error = Some(e);
+            } else if rtc {
+                app.insert_rtc();
             }
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
@@ -2224,6 +2530,32 @@ mod cli_tests {
     }
 
     #[test]
+    fn unpack_assets_extracts_gzipped_tar_into_dest() {
+        let dest = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/tmp-test-assets/unpack");
+        let _ = std::fs::remove_dir_all(&dest);
+
+        // Build a cocovm-assets-shaped tarball in memory: roms/ and images/.
+        let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut tarball = tar::Builder::new(gz);
+        for (path, contents) in [
+            ("roms/test.rom", &b"\xAA\xBB"[..]),
+            ("images/blank.dsk", &b"\x00\x01"[..]),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tarball.append_data(&mut header, path, contents).unwrap();
+        }
+        let bytes = tarball.into_inner().unwrap().finish().unwrap();
+
+        unpack_assets(&bytes[..], &dest).unwrap();
+        assert_eq!(std::fs::read(dest.join("roms/test.rom")).unwrap(), b"\xAA\xBB");
+        assert_eq!(std::fs::read(dest.join("images/blank.dsk")).unwrap(), b"\x00\x01");
+    }
+
+    #[test]
     fn compose_coco12_rom_demotes_coco2b_bas13_to_last_resort() {
         let dir = scratch_roms_dir("compose_demotes_bas13");
         // bas13 pairs with the unmodeled MC6847T1 (CoCo 2B): bas12 must win
@@ -2245,5 +2577,122 @@ mod cli_tests {
             compose_coco12_rom(&dir),
             Coco12RomResult::NoColorBasic
         ));
+    }
+}
+
+#[cfg(test)]
+mod ui_tests {
+    use egui_kittest::kittest::Queryable;
+
+    use super::*;
+
+    #[test]
+    fn new_dialog_creates_a_coco1_machine_without_panicking() {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+            .expect("roms/coco3.rom is required (git-ignored, local-only)");
+        load_default_rom(MachineVariant::Coco1, &roms_dir)
+            .expect("a roms/bas1x.rom Color BASIC dump is required (git-ignored, local-only)");
+
+        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
+            CocoApp::new(
+                cc,
+                MachineConfig::default(),
+                rom,
+                None,
+                [None, None],
+                [None, None],
+                [None, None, None, None],
+                false,
+                false,
+                false,
+            )
+        });
+        assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
+
+        // Two steps per click: kittest delivers the press and release across
+        // successive frames, and egui fires `clicked` on the release.
+        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
+            harness.get_by_label(label).click();
+            harness.step();
+            harness.step();
+        };
+        click(&mut harness, "Machine");
+        click(&mut harness, "New…");
+        click(&mut harness, "CoCo 1");
+        // The frame that processes Create draws the CentralPanel *after*
+        // swapping the machine — the exact path that used to panic on the
+        // framebuffer texture.
+        click(&mut harness, "Create");
+
+        let app = harness.state();
+        assert_eq!(app.machine.config.variant, MachineVariant::Coco1);
+        assert_eq!(
+            app.machine.config.memory,
+            MemorySize::K64,
+            "RAM should snap to the CoCo 1/2 default when the model changes"
+        );
+        assert!(app.running, "a new VM boots running, like startup");
+        assert!(app.cart_path.is_none() && app.mpi.is_none());
+        assert!(
+            harness.query_by_label("Create").is_none(),
+            "the New Machine dialog should close after a successful create"
+        );
+    }
+
+    /// The VDG radio row only exists on a CoCo 2 draft
+    /// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
+    /// the row is absent with CoCo 1 or CoCo 3 selected, present and
+    /// selectable with CoCo 2 selected.
+    #[test]
+    fn new_dialog_vdg_row_only_visible_for_coco2() {
+        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+            .expect("roms/coco3.rom is required (git-ignored, local-only)");
+
+        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
+            CocoApp::new(
+                cc,
+                MachineConfig::default(),
+                rom,
+                None,
+                [None, None],
+                [None, None],
+                [None, None, None, None],
+                false,
+                false,
+                false,
+            )
+        });
+
+        // Two steps per click: kittest delivers the press and release across
+        // successive frames, and egui fires `clicked` on the release.
+        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
+            harness.get_by_label(label).click();
+            harness.step();
+            harness.step();
+        };
+        click(&mut harness, "Machine");
+        click(&mut harness, "New…");
+
+        let t1_label = "MC6847T1 (CoCo 2B)";
+
+        // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
+        assert!(
+            harness.query_by_label(t1_label).is_none(),
+            "VDG row must be absent for CoCo 3"
+        );
+
+        click(&mut harness, "CoCo 2");
+        assert!(
+            harness.query_by_label(t1_label).is_some(),
+            "VDG row must be present for CoCo 2"
+        );
+
+        click(&mut harness, "CoCo 1");
+        assert!(
+            harness.query_by_label(t1_label).is_none(),
+            "VDG row must be absent for CoCo 1"
+        );
     }
 }
