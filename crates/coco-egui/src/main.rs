@@ -15,6 +15,7 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod manager;
 mod new_vm;
 mod paper_export;
 mod paths;
@@ -215,11 +216,6 @@ struct CocoApp {
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     paper_window: paper_view::PaperWindow,
-    /// Second OS window showing a random image asset at startup (manual
-    /// scans). Constructed closed; `main()`'s creation closure opts in via
-    /// [`photo_view::PhotoWindow::random`] so kittest harnesses (and any
-    /// other direct `CocoApp::new` caller) don't touch the user's asset dir.
-    photo_window: photo_view::PhotoWindow,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -337,7 +333,6 @@ impl CocoApp {
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
-            photo_window: photo_view::PhotoWindow::default(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -1424,7 +1419,6 @@ impl eframe::App for CocoApp {
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
                         self.toggle_paper_window();
                     }
-                    ui.checkbox(&mut self.photo_window.open, "Photo");
                     ui.separator();
                     // Swapping the monitor cable doesn't erase machine state,
                     // so this takes effect live rather than requiring a
@@ -1561,7 +1555,6 @@ impl eframe::App for CocoApp {
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
-        self.photo_window.ui(ctx);
         if self.pending_disk_action.is_some() {
             // Match the dialog body to the button font (egui's default body
             // text is a touch smaller) and give the text room.
@@ -2129,6 +2122,12 @@ fn main() -> eframe::Result<()> {
     banner();
     ensure_assets();
 
+    // Bare `coco` (no CLI arguments) opens the CocoVM manager window; any
+    // argument keeps the direct-boot emulator path below.
+    if std::env::args_os().len() == 1 {
+        return manager::run();
+    }
+
     let cli = Cli::parse();
     let variant = cli.machine;
     let memory = cli.ram.unwrap_or_else(|| default_ram(variant));
@@ -2240,7 +2239,6 @@ fn main() -> eframe::Result<()> {
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
             }
-            app.photo_window = photo_view::PhotoWindow::random();
             Ok(Box::new(app))
         }),
     )
@@ -2396,112 +2394,4 @@ mod cli_tests {
 }
 
 #[cfg(test)]
-mod ui_tests {
-    use egui_kittest::kittest::Queryable;
-
-    use super::*;
-
-    #[test]
-    fn new_dialog_creates_a_coco1_machine_without_panicking() {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-            .expect("roms/coco3.rom is required (git-ignored, local-only)");
-        load_default_rom(MachineVariant::Coco1, &roms_dir)
-            .expect("a roms/bas1x.rom Color BASIC dump is required (git-ignored, local-only)");
-
-        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
-            CocoApp::new(
-                cc,
-                MachineConfig::default(),
-                rom,
-                None,
-                [None, None],
-                [None, None],
-                false,
-            )
-        });
-        assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
-
-        // Two steps per click: kittest delivers the press and release across
-        // successive frames, and egui fires `clicked` on the release.
-        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
-            harness.get_by_label(label).click();
-            harness.step();
-            harness.step();
-        };
-        click(&mut harness, "Machine");
-        click(&mut harness, "New…");
-        click(&mut harness, "CoCo 1");
-        // The frame that processes Create draws the CentralPanel *after*
-        // swapping the machine — the exact path that used to panic on the
-        // framebuffer texture.
-        click(&mut harness, "Create");
-
-        let app = harness.state();
-        assert_eq!(app.machine.config.variant, MachineVariant::Coco1);
-        assert_eq!(
-            app.machine.config.memory,
-            MemorySize::K64,
-            "RAM should snap to the CoCo 1/2 default when the model changes"
-        );
-        assert!(app.running, "a new VM boots running, like startup");
-        assert!(app.cart_path.is_none() && app.mpi.is_none());
-        assert!(
-            harness.query_by_label("Create").is_none(),
-            "the New Machine dialog should close after a successful create"
-        );
-    }
-
-    /// The VDG radio row only exists on a CoCo 2 draft
-    /// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
-    /// the row is absent with CoCo 1 or CoCo 3 selected, present and
-    /// selectable with CoCo 2 selected.
-    #[test]
-    fn new_dialog_vdg_row_only_visible_for_coco2() {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-            .expect("roms/coco3.rom is required (git-ignored, local-only)");
-
-        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
-            CocoApp::new(
-                cc,
-                MachineConfig::default(),
-                rom,
-                None,
-                [None, None],
-                [None, None],
-                false,
-            )
-        });
-
-        // Two steps per click: kittest delivers the press and release across
-        // successive frames, and egui fires `clicked` on the release.
-        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
-            harness.get_by_label(label).click();
-            harness.step();
-            harness.step();
-        };
-        click(&mut harness, "Machine");
-        click(&mut harness, "New…");
-
-        let t1_label = "MC6847T1 (CoCo 2B)";
-
-        // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
-        assert!(
-            harness.query_by_label(t1_label).is_none(),
-            "VDG row must be absent for CoCo 3"
-        );
-
-        click(&mut harness, "CoCo 2");
-        assert!(
-            harness.query_by_label(t1_label).is_some(),
-            "VDG row must be present for CoCo 2"
-        );
-
-        click(&mut harness, "CoCo 1");
-        assert!(
-            harness.query_by_label(t1_label).is_none(),
-            "VDG row must be absent for CoCo 1"
-        );
-    }
-}
+mod ui_tests;

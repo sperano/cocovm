@@ -143,6 +143,38 @@ fn new_dialog_cancel_leaves_the_machine_untouched() {
     );
 }
 
+/// The VDG radio row only exists on a CoCo 2 draft
+/// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
+/// the row is absent with CoCo 1 or CoCo 3 selected, present and
+/// selectable with CoCo 2 selected.
+#[test]
+fn new_dialog_vdg_row_only_visible_for_coco2() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "Machine");
+    click(&mut harness, "New…");
+
+    let t1_label = "MC6847T1 (CoCo 2B)";
+
+    // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
+    assert!(
+        harness.query_by_label(t1_label).is_none(),
+        "VDG row must be absent for CoCo 3"
+    );
+
+    click(&mut harness, "CoCo 2");
+    assert!(
+        harness.query_by_label(t1_label).is_some(),
+        "VDG row must be present for CoCo 2"
+    );
+
+    click(&mut harness, "CoCo 1");
+    assert!(
+        harness.query_by_label(t1_label).is_none(),
+        "VDG row must be absent for CoCo 1"
+    );
+}
+
 #[test]
 fn toolbar_pause_and_resume_update_the_status_bar() {
     let mut harness = boot_harness();
@@ -396,4 +428,41 @@ fn disk_controller_confirmation_can_be_cancelled() {
         app.disk_paths[0].is_none(),
         "cancelling must not mount the disk"
     );
+}
+
+/// The manager window scaffold: toolbar buttons present (and inert), the
+/// machine-list panel and photo pane laid out without a photo injected.
+#[test]
+fn manager_window_shows_its_toolbar() {
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None));
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+
+    for label in ["New…", "Settings", "Help"] {
+        harness.get_by_label(label);
+    }
+    // The buttons are scaffolding: clicking must be a no-op, not a panic.
+    // (Same hover-then-click convention as `click`, which is typed for the
+    // CocoApp harness.)
+    harness.get_by_label("New…").hover();
+    harness.step();
+    harness.get_by_label("New…").click();
+    harness.step();
+    harness.step();
+}
+
+/// With a photo injected, the manager uploads it on the first frame and
+/// keeps rendering (the image itself is not an accessible node — this
+/// guards the upload path against panics/regressions).
+#[test]
+fn manager_window_renders_an_injected_photo() {
+    let photo = photo_view::Photo {
+        title: "test-photo".to_string(),
+        pixels: egui::ColorImage::from_rgba_unmultiplied([8, 6], &[0x20; 8 * 6 * 4]),
+    };
+    let mut harness =
+        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(Some(photo)));
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+    harness.step();
 }
