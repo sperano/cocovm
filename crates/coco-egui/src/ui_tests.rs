@@ -15,9 +15,11 @@
 
 use egui_kittest::kittest::{NodeT, Queryable};
 
+use crate::machine_def::tests::TempDir;
 use crate::*;
 
 type AppHarness = egui_kittest::Harness<'static, CocoApp>;
+type ManagerHarness = egui_kittest::Harness<'static, manager::ManagerApp>;
 
 /// Boot a default (CoCo 3) machine into a kittest harness, exactly as
 /// `main()` would with no CLI arguments.
@@ -45,8 +47,9 @@ fn boot_harness() -> AppHarness {
 
 /// Click the widget labelled exactly `label`: hover one frame (see module
 /// docs), then press and release across the following two frames — egui
-/// fires `clicked` on the release.
-fn click(harness: &mut AppHarness, label: &str) {
+/// fires `clicked` on the release. Generic over the app type so the same
+/// helper drives both `CocoApp` and `manager::ManagerApp` harnesses.
+fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
     harness.get_by_label(label).hover();
     harness.step();
     harness.get_by_label(label).click();
@@ -434,7 +437,8 @@ fn disk_controller_confirmation_can_be_cancelled() {
 /// machine-list panel and photo pane laid out without a photo injected.
 #[test]
 fn manager_window_shows_its_toolbar() {
-    let mut harness = egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None));
+    let mut harness =
+        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, Vec::new()));
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
@@ -458,7 +462,8 @@ fn manager_window_shows_its_toolbar() {
 /// `ManagerApp::update`).
 #[test]
 fn manager_list_divider_is_draggable() {
-    let mut harness = egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None));
+    let mut harness =
+        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, Vec::new()));
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
@@ -501,9 +506,160 @@ fn manager_window_renders_an_injected_photo() {
         title: "test-photo".to_string(),
         pixels: egui::ColorImage::from_rgba_unmultiplied([8, 6], &[0x20; 8 * 6 * 4]),
     };
-    let mut harness =
-        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(Some(photo)));
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        manager::ManagerApp::new(Some(photo), None, Vec::new())
+    });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
     harness.step();
+}
+
+/// A minimal valid `Ok` entry: a CoCo 3 default config under `name`, built
+/// through [`machine_def::MachineDef::from_config`] like the manager's own
+/// "New…" flow does, so tests don't hand-roll a second copy of the DTO
+/// shape.
+fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
+    manager::MachineEntry {
+        slug: slug.to_string(),
+        def: Ok(machine_def::MachineDef::from_config(
+            name.to_string(),
+            None,
+            &MachineConfig::default(),
+        )),
+    }
+}
+
+/// Boot a manager harness with injected entries and (optionally) a real
+/// machines directory for Create/Save to write into — never the user's real
+/// config dir.
+fn manager_harness(machines_dir: Option<PathBuf>, entries: Vec<manager::MachineEntry>) -> ManagerHarness {
+    let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
+        manager::ManagerApp::new(None, machines_dir, entries)
+    });
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+    harness
+}
+
+/// Selecting a row shows its detail pane, seeded from that entry's
+/// definition — not whatever the previously-selected row left behind.
+#[test]
+fn manager_list_shows_entries_and_selecting_shows_detail() {
+    let entries = vec![sample_entry("alpha", "Alpha CoCo 3"), sample_entry("beta", "Beta CoCo 3")];
+    let mut harness = manager_harness(None, entries);
+
+    harness.get_by_label("Alpha CoCo 3");
+    harness.get_by_label("Beta CoCo 3");
+    assert_eq!(harness.state().detail_name(), None, "nothing selected yet");
+
+    click(&mut harness, "Beta CoCo 3");
+    assert_eq!(harness.state().selected, Some(1));
+    assert_eq!(harness.state().detail_name(), Some("Beta CoCo 3"));
+
+    click(&mut harness, "Alpha CoCo 3");
+    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(
+        harness.state().detail_name(),
+        Some("Alpha CoCo 3"),
+        "switching rows must reseed the draft, not keep editing the old one"
+    );
+}
+
+/// "New…" opens the dialog; "Create" writes a `.toml` definition to the
+/// injected machines dir and adds a list row — without booting anything (the
+/// manager has no launch action at all yet, so there is nothing to assert
+/// beyond "no machine-running side effect exists to trigger").
+#[test]
+fn manager_new_dialog_create_writes_a_definition_file() {
+    let dir = TempDir::new("create");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+    assert!(harness.state().entries.is_empty());
+
+    click(&mut harness, "New…");
+    harness.get_by_label("Create"); // dialog open
+
+    click(&mut harness, "Create");
+
+    assert_eq!(harness.state().entries.len(), 1, "Create must add a list row");
+    let slug = harness.state().entries[0].slug.clone();
+    assert_eq!(slug, "coco-3", "slugified from the default draft name");
+    assert!(harness.state().entries[0].def.is_ok());
+
+    let file = dir.path().join(format!("{slug}.toml"));
+    let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    let parsed: machine_def::MachineDef =
+        toml::from_str(&contents).expect("Create must write a parseable definition");
+    assert_eq!(parsed.name, "CoCo 3");
+    assert_eq!(harness.state().selected, Some(0), "Create must select the new row");
+    // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
+    // form has its own "CoCo 3" *model* radio button, so the name would be
+    // ambiguous between that and the list row.
+    assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
+
+    assert!(
+        harness.query_by_label("Create").is_none(),
+        "the dialog should close after a successful Create"
+    );
+}
+
+/// Editing a hardware field and saving rewrites the definition file; Revert
+/// discards the in-progress edit instead of writing it.
+#[test]
+fn manager_detail_save_rewrites_file_and_revert_discards_edit() {
+    let dir = TempDir::new("save-revert");
+    let entry = sample_entry("dev-coco-3", "Dev CoCo 3");
+    let def = entry.def.clone().unwrap();
+    machine_def::save(dir.path(), "dev-coco-3", &def).expect("seed the file the entry claims to be");
+    assert!(!def.peripherals.mpi, "test assumes the sample starts without an MPI");
+
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    click(&mut harness, "Dev CoCo 3");
+    harness.get_by_label("Save"); // clean draft: no "*" yet
+    assert!(harness.query_by_label("Save*").is_none());
+
+    click(&mut harness, "MultiPak Interface"); // toggle a peripheral checkbox
+    harness.get_by_label("Save*"); // now dirty
+
+    click(&mut harness, "Save*");
+    assert!(
+        harness.query_by_label("Save*").is_none(),
+        "a clean save must drop the dirty indicator"
+    );
+    let file = dir.path().join("dev-coco-3.toml");
+    let saved: machine_def::MachineDef =
+        toml::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    assert!(saved.peripherals.mpi, "Save must persist the toggled checkbox");
+
+    // Toggle it off again without saving, then revert: the in-memory draft
+    // must go back to the saved (mpi = true) state, and the file — which
+    // Revert never touches — must be untouched too.
+    click(&mut harness, "MultiPak Interface");
+    harness.get_by_label("Save*");
+    click(&mut harness, "Revert");
+    assert!(
+        harness.query_by_label("Save*").is_none(),
+        "Revert must restore the clean (saved) draft"
+    );
+    let after_revert: machine_def::MachineDef =
+        toml::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    assert!(after_revert.peripherals.mpi, "Revert must not touch the file");
+}
+
+/// A definition that failed to parse/validate shows its error instead of an
+/// editable form, and selecting it doesn't panic (nothing to edit, but the
+/// row must still be selectable like any other).
+#[test]
+fn manager_error_entry_shows_badge_and_is_selectable_without_panicking() {
+    let entries = vec![manager::MachineEntry {
+        slug: "broken".to_string(),
+        def: Err("hardware/schema-3: unsupported schema".to_string()),
+    }];
+    let mut harness = manager_harness(None, entries);
+
+    harness.get_by_label("broken");
+    harness.get_by_label_contains("⚠");
+
+    click(&mut harness, "broken");
+    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(harness.state().detail_name(), None, "an Err entry has nothing to edit");
 }

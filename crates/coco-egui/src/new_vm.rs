@@ -3,6 +3,11 @@
 //! only *builds* the config — swapping the running machine (and writing back
 //! dirty media first) is `CocoApp::create_vm`'s job, so this module stays a
 //! pure view over a draft config.
+//!
+//! [`config_form_rows`] — the Model/VDG/RAM/Video/Monitor grid rows — is
+//! shared with the manager's detail pane (`manager::draw_detail`), so the
+//! `constrain` constraint behavior below lives in exactly one place no
+//! matter which caller edits the draft.
 
 use coco_core::{
     MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
@@ -25,6 +30,12 @@ const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, M
 /// dialog in `main.rs`.
 const DIALOG_MARGIN: i8 = 16;
 
+/// Spacing of [`config_form_rows`]'s two-column grid. `pub(crate)`: the
+/// manager's detail pane (`manager::draw_detail_ok`) hosts the same shared
+/// rows in its own `egui::Grid` and must use this exact value too, or the
+/// two hosts render the shared form with mismatched spacing.
+pub(crate) const FORM_GRID_SPACING: [f32; 2] = [24.0, 10.0];
+
 const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
     match variant {
         MachineVariant::Coco1 => COCO1_RAM_CHOICES,
@@ -33,7 +44,9 @@ const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
     }
 }
 
-const fn ram_label(memory: MemorySize) -> &'static str {
+/// `pub(crate)`: also used by `manager.rs`'s list-row subtitle ("CoCo 3 ·
+/// 512K").
+pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
     match memory {
         MemorySize::K4 => "4K",
         MemorySize::K16 => "16K",
@@ -55,6 +68,95 @@ pub enum NewVmAction {
     Create(MachineConfig),
 }
 
+/// Re-constrain a draft after a model change: snap RAM to the new family's
+/// default when the current pick isn't valid for it, and force NTSC where
+/// PAL isn't modeled ([`MachineConfig::validate`]'s rules). Free function
+/// (rather than a `NewVmDialog` method) so [`config_form_rows`] can call it
+/// too — the manager's detail pane edits a bare [`MachineConfig`], not a
+/// dialog.
+fn constrain(draft: &mut MachineConfig) {
+    if !ram_choices(draft.variant).contains(&draft.memory) {
+        // Same per-family default `main.rs`'s CLI path seeds `--ram` from.
+        draft.memory = crate::default_ram(draft.variant);
+    }
+    if draft.variant != MachineVariant::Coco3 {
+        draft.video = VideoStandard::Ntsc;
+    }
+    // Only runs on model-change clicks, so an explicit MC6847 pick made
+    // while staying on CoCo 2 sticks; switching models re-seeds the
+    // family default (the T1 "CoCo 2B" for CoCo 2, the only-possible
+    // plain MC6847 elsewhere — `MachineConfig::validate`).
+    draft.vdg = crate::default_vdg(draft.variant);
+}
+
+/// Shared hardware-config rows: Model radio row, conditional VDG row (CoCo 2
+/// only — see the inline comment below), RAM combo, Video radio row (PAL
+/// only for CoCo 3), Monitor radio row. Must be called inside an
+/// already-open two-column [`egui::Grid`]; `salt` distinguishes the
+/// [`egui::ComboBox`]'s persistent id when this is drawn from more than one
+/// call site in the same frame (the "New…" dialog *and* the manager's
+/// detail pane can both be visible at once).
+pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
+    let font = ui.style().text_styles[&egui::TextStyle::Button].size;
+
+    ui.label(egui::RichText::new("Model").size(font));
+    ui.horizontal(|ui| {
+        for (variant, label) in [
+            (MachineVariant::Coco1, "CoCo 1"),
+            (MachineVariant::Coco2, "CoCo 2"),
+            (MachineVariant::Coco3, "CoCo 3"),
+        ] {
+            if ui.radio_value(&mut draft.variant, variant, label).changed() {
+                constrain(draft);
+            }
+        }
+    });
+    ui.end_row();
+
+    // The VDG choice only exists on the CoCo 2 (the CoCo 1 always shipped
+    // the plain MC6847; the CoCo 3 has no VDG — the GIME does its own
+    // character generation), so the row is only rendered for that model;
+    // `constrain` snaps the draft back to Mc6847 for the others.
+    if draft.variant == MachineVariant::Coco2 {
+        ui.label(egui::RichText::new("VDG").size(font));
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut draft.vdg, VdgVariant::Mc6847, "MC6847");
+            ui.radio_value(&mut draft.vdg, VdgVariant::Mc6847T1, "MC6847T1 (CoCo 2B)");
+        });
+        ui.end_row();
+    }
+
+    ui.label(egui::RichText::new("RAM").size(font));
+    egui::ComboBox::from_id_salt((salt, "ram"))
+        .selected_text(ram_label(draft.memory))
+        .show_ui(ui, |ui| {
+            for &memory in ram_choices(draft.variant) {
+                ui.selectable_value(&mut draft.memory, memory, ram_label(memory));
+            }
+        });
+    ui.end_row();
+
+    ui.label(egui::RichText::new("Video").size(font));
+    // CoCo 1/2 PAL timing isn't modeled (`MachineConfig::validate`);
+    // `constrain` already snapped the draft back to NTSC.
+    let pal_possible = draft.variant == MachineVariant::Coco3;
+    ui.horizontal(|ui| {
+        ui.radio_value(&mut draft.video, VideoStandard::Ntsc, "NTSC");
+        ui.add_enabled_ui(pal_possible, |ui| {
+            ui.radio_value(&mut draft.video, VideoStandard::Pal, "PAL")
+                .on_disabled_hover_text("PAL is only supported on the CoCo 3");
+        });
+    });
+    ui.end_row();
+
+    ui.label(egui::RichText::new("Monitor").size(font));
+    ui.horizontal(|ui| {
+        ui.radio_value(&mut draft.monitor, MonitorType::Rgb, "RGB");
+        ui.radio_value(&mut draft.monitor, MonitorType::Composite, "Composite");
+    });
+    ui.end_row();
+}
+
 /// State of the "New…" dialog: a draft [`MachineConfig`] being edited, plus
 /// the error from the last failed create attempt (e.g. a missing ROM set),
 /// shown inline until the dialog closes or the next attempt.
@@ -62,6 +164,12 @@ pub struct NewVmDialog {
     open: bool,
     draft: MachineConfig,
     pub error: Option<String>,
+    /// Whether the "Name" row is drawn (the manager's flow needs a display
+    /// name; `CocoApp`'s direct-boot flow doesn't — swapping the running
+    /// machine doesn't rename anything).
+    show_name_field: bool,
+    /// The name-row draft, meaningful only when `show_name_field` is set.
+    pub name: String,
 }
 
 impl NewVmDialog {
@@ -70,6 +178,17 @@ impl NewVmDialog {
             open: false,
             draft: MachineConfig::default(),
             error: None,
+            show_name_field: false,
+            name: String::new(),
+        }
+    }
+
+    /// [`Self::new`] with the "Name" row enabled, for the manager's "New…"
+    /// flow (`manager.rs`).
+    pub fn new_for_manager() -> Self {
+        Self {
+            show_name_field: true,
+            ..Self::new()
         }
     }
 
@@ -81,32 +200,17 @@ impl NewVmDialog {
         self.open = true;
     }
 
+    /// [`Self::open_with`] that also seeds the "New Machine" title row —
+    /// the manager's "New…" flow, which has no "running machine" to default
+    /// from, so both the config and the display name are given explicitly.
+    pub fn open_new(&mut self, config: MachineConfig, name: impl Into<String>) {
+        self.name = name.into();
+        self.open_with(config);
+    }
+
     pub fn close(&mut self) {
         self.open = false;
         self.error = None;
-    }
-
-    /// Re-constrain the draft after a model change: snap RAM to the new
-    /// family's default when the current pick isn't valid for it, and force
-    /// NTSC where PAL isn't modeled ([`MachineConfig::validate`]'s rules).
-    fn constrain_draft(&mut self) {
-        if !ram_choices(self.draft.variant).contains(&self.draft.memory) {
-            self.draft.memory = match self.draft.variant {
-                MachineVariant::Coco1 | MachineVariant::Coco2 => MemorySize::K64,
-                MachineVariant::Coco3 => MemorySize::K512,
-            };
-        }
-        if self.draft.variant != MachineVariant::Coco3 {
-            self.draft.video = VideoStandard::Ntsc;
-        }
-        // Only runs on model-change clicks, so an explicit MC6847 pick made
-        // while staying on CoCo 2 sticks; switching models re-seeds the
-        // family default (the T1 "CoCo 2B" for CoCo 2, the only-possible
-        // plain MC6847 elsewhere — `MachineConfig::validate`).
-        self.draft.vdg = match self.draft.variant {
-            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
-            MachineVariant::Coco1 | MachineVariant::Coco3 => VdgVariant::Mc6847,
-        };
     }
 
     /// Draw the dialog if open. Returns [`NewVmAction::Create`] on the frame
@@ -128,92 +232,16 @@ impl NewVmDialog {
                 egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
                     egui::Grid::new("new_vm_grid")
                         .num_columns(2)
-                        .spacing([24.0, 10.0])
+                        .spacing(FORM_GRID_SPACING)
                         .show(ui, |ui| {
-                            ui.label(egui::RichText::new("Model").size(font));
-                            ui.horizontal(|ui| {
-                                for (variant, label) in [
-                                    (MachineVariant::Coco1, "CoCo 1"),
-                                    (MachineVariant::Coco2, "CoCo 2"),
-                                    (MachineVariant::Coco3, "CoCo 3"),
-                                ] {
-                                    if ui
-                                        .radio_value(&mut self.draft.variant, variant, label)
-                                        .changed()
-                                    {
-                                        self.constrain_draft();
-                                    }
-                                }
-                            });
-                            ui.end_row();
-
-                            // The VDG choice only exists on the CoCo 2 (the
-                            // CoCo 1 always shipped the plain MC6847; the
-                            // CoCo 3 has no VDG — the GIME does its own
-                            // character generation), so the row is only
-                            // rendered for that model; constrain_draft snaps
-                            // the draft back to Mc6847 for the others.
-                            if self.draft.variant == MachineVariant::Coco2 {
-                                ui.label(egui::RichText::new("VDG").size(font));
-                                ui.horizontal(|ui| {
-                                    ui.radio_value(
-                                        &mut self.draft.vdg,
-                                        VdgVariant::Mc6847,
-                                        "MC6847",
-                                    );
-                                    ui.radio_value(
-                                        &mut self.draft.vdg,
-                                        VdgVariant::Mc6847T1,
-                                        "MC6847T1 (CoCo 2B)",
-                                    );
-                                });
+                            if self.show_name_field {
+                                let name_label =
+                                    ui.label(egui::RichText::new("Name").size(font));
+                                ui.text_edit_singleline(&mut self.name)
+                                    .labelled_by(name_label.id);
                                 ui.end_row();
                             }
-
-                            ui.label(egui::RichText::new("RAM").size(font));
-                            egui::ComboBox::from_id_salt("new_vm_ram")
-                                .selected_text(ram_label(self.draft.memory))
-                                .show_ui(ui, |ui| {
-                                    for &memory in ram_choices(self.draft.variant) {
-                                        ui.selectable_value(
-                                            &mut self.draft.memory,
-                                            memory,
-                                            ram_label(memory),
-                                        );
-                                    }
-                                });
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("Video").size(font));
-                            // CoCo 1/2 PAL timing isn't modeled
-                            // (`MachineConfig::validate`); constrain_draft
-                            // already snapped the draft back to NTSC.
-                            let pal_possible = self.draft.variant == MachineVariant::Coco3;
-                            ui.horizontal(|ui| {
-                                ui.radio_value(&mut self.draft.video, VideoStandard::Ntsc, "NTSC");
-                                ui.add_enabled_ui(pal_possible, |ui| {
-                                    ui.radio_value(
-                                        &mut self.draft.video,
-                                        VideoStandard::Pal,
-                                        "PAL",
-                                    )
-                                    .on_disabled_hover_text(
-                                        "PAL is only supported on the CoCo 3",
-                                    );
-                                });
-                            });
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("Monitor").size(font));
-                            ui.horizontal(|ui| {
-                                ui.radio_value(&mut self.draft.monitor, MonitorType::Rgb, "RGB");
-                                ui.radio_value(
-                                    &mut self.draft.monitor,
-                                    MonitorType::Composite,
-                                    "Composite",
-                                );
-                            });
-                            ui.end_row();
+                            config_form_rows(ui, "new_vm", &mut self.draft);
                         });
 
                     if let Some(error) = &self.error {
@@ -316,7 +344,7 @@ mod tests {
         });
 
         dialog.draft.variant = MachineVariant::Coco2;
-        dialog.constrain_draft();
+        constrain(&mut dialog.draft);
         assert_eq!(dialog.draft.memory, MemorySize::K64);
         assert_eq!(dialog.draft.video, VideoStandard::Ntsc);
         assert_eq!(
@@ -327,13 +355,13 @@ mod tests {
         assert!(dialog.draft.validate().is_ok());
 
         dialog.draft.variant = MachineVariant::Coco3;
-        dialog.constrain_draft();
+        constrain(&mut dialog.draft);
         assert_eq!(dialog.draft.memory, MemorySize::K512);
         assert_eq!(dialog.draft.vdg, VdgVariant::Mc6847);
         assert!(dialog.draft.validate().is_ok());
 
         dialog.draft.variant = MachineVariant::Coco1;
-        dialog.constrain_draft();
+        constrain(&mut dialog.draft);
         assert_eq!(dialog.draft.vdg, VdgVariant::Mc6847);
         assert!(dialog.draft.validate().is_ok());
     }

@@ -15,6 +15,7 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod machine_def;
 mod manager;
 mod new_vm;
 mod paper_export;
@@ -2013,6 +2014,18 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
     }
 }
 
+/// Per-variant default VDG chip when no explicit choice is made: the T1
+/// (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
+/// `MachineConfig::validate` accepts there). Shared by the CLI path below,
+/// `new_vm.rs`'s `constrain`, and `machine_def.rs`'s `to_machine_config`'s
+/// `None` (omitted `[hardware].vdg`) arm — previously duplicated three ways.
+const fn default_vdg(variant: MachineVariant) -> VdgVariant {
+    match variant {
+        MachineVariant::Coco2 => VdgVariant::Mc6847T1,
+        MachineVariant::Coco1 | MachineVariant::Coco3 => VdgVariant::Mc6847,
+    }
+}
+
 /// One advisory log line per loaded system ROM, checked against the
 /// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
 /// homebrew images are legitimate, but a corrupt known dump should say so.
@@ -2136,13 +2149,9 @@ fn main() -> eframe::Result<()> {
         video: cli.video,
         memory,
         monitor: cli.monitor.into(),
-        // No CLI flag for this yet; same family defaults as the "New…"
-        // dialog — the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere
-        // (the only valid choice, `MachineConfig::validate`).
-        vdg: match variant {
-            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
-            _ => VdgVariant::Mc6847,
-        },
+        // No CLI flag for this yet; same family default as the "New…"
+        // dialog and the manager's detail pane (`default_vdg`).
+        vdg: default_vdg(variant),
     };
     if let Err(e) = config.validate() {
         eprintln!("coco: invalid configuration: {e}");
@@ -2281,6 +2290,13 @@ mod cli_tests {
         assert_eq!(default_ram(MachineVariant::Coco3), MemorySize::K512);
         assert_eq!(default_ram(MachineVariant::Coco1), MemorySize::K64);
         assert_eq!(default_ram(MachineVariant::Coco2), MemorySize::K64);
+    }
+
+    #[test]
+    fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
+        assert_eq!(default_vdg(MachineVariant::Coco2), VdgVariant::Mc6847T1);
+        assert_eq!(default_vdg(MachineVariant::Coco1), VdgVariant::Mc6847);
+        assert_eq!(default_vdg(MachineVariant::Coco3), VdgVariant::Mc6847);
     }
 
     /// Scratch directory under `target/` holding only the ROM files a given
