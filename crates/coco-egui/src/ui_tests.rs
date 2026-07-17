@@ -725,7 +725,7 @@ fn start_button_launches_and_stop_button_stops() {
     assert!(harness.state().entries[0].vm.is_none());
     assert!(label_exists(&harness, "Stopped"));
 
-    click(&mut harness, "Start");
+    click(&mut harness, manager::PLAY_GLYPH);
     assert!(harness.state().entries[0].vm.is_some(), "Start must launch the VM");
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Running"));
@@ -738,15 +738,25 @@ fn start_button_launches_and_stop_button_stops() {
         "a running VM must have an uploaded framebuffer texture for the row thumbnail to show"
     );
 
-    click(&mut harness, "Pause");
+    click(&mut harness, manager::PAUSE_GLYPH);
     assert!(!harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Paused"));
 
-    click(&mut harness, "Resume");
+    click(&mut harness, manager::PLAY_GLYPH);
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Running"));
 
-    click(&mut harness, "Stop");
+    // Console-side controls next to the transport: Reset restarts the
+    // machine but leaves it running (the console button, not a deck
+    // control); Suspend exists but is disabled until save-states land.
+    click(&mut harness, "Reset");
+    assert!(
+        harness.state().entries[0].vm.as_ref().unwrap().is_running(),
+        "Reset must leave the machine on"
+    );
+    harness.get_by_label("Suspend");
+
+    click(&mut harness, manager::STOP_GLYPH);
     assert!(harness.state().entries[0].vm.is_none(), "Stop must drop the VM");
     assert!(label_exists(&harness, "Stopped"));
 
@@ -799,11 +809,11 @@ fn starting_two_machines_runs_both() {
     let mut harness = manager_harness(None, entries);
 
     click(&mut harness, "Dev CoCo 3");
-    click(&mut harness, "Start");
+    click(&mut harness, manager::PLAY_GLYPH);
     assert!(harness.state().entries[0].vm.is_some());
 
     click(&mut harness, "Dev CoCo 2");
-    click(&mut harness, "Start");
+    click(&mut harness, manager::PLAY_GLYPH);
     assert!(harness.state().entries[1].vm.is_some());
 
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
@@ -835,7 +845,7 @@ fn launch_error_is_reported_not_fatal() {
     let mut harness = manager_harness(None, entries);
 
     click(&mut harness, "Broken Media");
-    click(&mut harness, "Start");
+    click(&mut harness, manager::PLAY_GLYPH);
 
     assert!(
         harness.state().entries[0].vm.is_none(),

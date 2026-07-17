@@ -183,3 +183,27 @@ postcard)" line) — everything else there stands.
 - Snapshot files live in the machine's artifact dir, giving the manager
   per-machine state slots for free — and the golden-fixture gate slots into
   its task 5 test list.
+
+## DECIDED (user, 2026-07-16): machine lifecycle & controls
+
+Four user-visible states — Stopped / Running / Paused / **Suspended** —
+VirtualBox's Powered Off / Running / Paused / Saved, by other names:
+
+- **Pause** (light): emulation halts, machine stays in the manager process.
+  Instant resume; does NOT survive quitting. Ephemeral by design.
+- **Suspend** (heavy): the whole machine serialized to disk — this IS the
+  save-states snapshot (`plan-save-states.md`), stored in the machine's
+  artifact dir. Survives restarts; portable to another computer along with
+  the machine dir + media (the CBOR compat contract + media path/hash refs
+  exist precisely for this). Ships with the save-states milestone; until
+  then the detail pane shows a disabled Suspend button whose tooltip
+  teaches the model.
+- Start on Stopped = cold boot; Start on Suspended = restore; a Discard-
+  saved-state action returns Suspended → Stopped.
+
+Controls split by what they act on (the cassette metaphor is applied only
+where it's honest): fat deck-style transport (▶/⏸ toggle + ⏹, constants in
+`manager.rs`) for execution; ordinary labeled buttons for Suspend and the
+console Reset (the CoCo's own case button — a deck has no reset). Stop's
+tooltip says state is lost: on a real deck Stop is gentle, here it's the
+power switch.

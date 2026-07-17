@@ -87,6 +87,32 @@ const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 /// Vertical gap between sections of the detail pane.
 const DETAIL_SECTION_GAP: f32 = 12.0;
 
+/// Cassette-deck transport glyphs (all in egui's documented built-in emoji
+/// set, `egui/src/lib.rs` "special emojis"). The deck metaphor is applied
+/// only to the machine's *execution* — run, freeze, power off — where it's
+/// honest; disk-level Suspend and the console Reset button deliberately stay
+/// ordinary labeled buttons outside the transport row (user decision
+/// 2026-07-16, after the "light pause vs dump-to-disk suspend" discussion —
+/// state model in `docs/plan-machine-persistence.md`).
+pub(crate) const PLAY_GLYPH: &str = "▶";
+pub(crate) const PAUSE_GLYPH: &str = "⏸";
+pub(crate) const STOP_GLYPH: &str = "⏹";
+/// Fat transport-button geometry: minimum button size and glyph point size.
+const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(56.0, 40.0);
+const TRANSPORT_GLYPH_SIZE: f32 = 24.0;
+/// Gap separating the transport pair from the console-style buttons
+/// (Suspend/Reset) and the status label.
+const TRANSPORT_GROUP_GAP: f32 = 12.0;
+
+/// One fat transport button ([`TRANSPORT_BUTTON_SIZE`]).
+fn transport_button(ui: &mut egui::Ui, glyph: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(egui::RichText::new(glyph).size(TRANSPORT_GLYPH_SIZE))
+            .min_size(TRANSPORT_BUTTON_SIZE),
+    )
+}
+
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
@@ -506,31 +532,68 @@ impl ManagerApp {
         ui.add(egui::TextEdit::singleline(&mut edit.def.name).font(egui::TextStyle::Heading));
         ui.add_space(DETAIL_SECTION_GAP);
 
-        // Run controls: Start when stopped, Pause/Resume + Stop when
-        // running. `is_running` is copied out before the buttons so the
-        // click handlers below can freely call `&mut self` methods
-        // (`start_vm`/`stop_vm`/`toggle_running`) without fighting a
+        // Run controls (see the transport-glyph constants' doc for the
+        // split-metaphor rationale): fat deck-style transport for execution,
+        // ordinary buttons for Suspend (a placeholder until save-states
+        // land) and the console Reset. `is_running` is copied out before the
+        // buttons so the click handlers below can freely call `&mut self`
+        // methods (`start_vm`/`stop_vm`/`toggle_running`) without fighting a
         // borrow of `self.entries[index].vm` still held by a `match` on it.
         let is_running = self.entries[index].vm.as_ref().map(|vm| vm.is_running());
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
-            match is_running {
-                None => {
-                    if ui.button("Start").clicked() {
-                        self.start_vm(index);
-                    }
-                }
-                Some(running) => {
-                    if ui.button(if running { "Pause" } else { "Resume" }).clicked()
-                        && let Some(vm) = self.entries[index].vm.as_mut()
-                    {
-                        vm.toggle_running();
-                    }
-                    if ui.button("Stop").clicked() {
-                        self.stop_vm(index);
+            // One Play/Pause toggle: ▶ starts a stopped machine or resumes
+            // a paused one; ⏸ pauses a running one.
+            let (glyph, hover) = match is_running {
+                None => (PLAY_GLYPH, "Start the machine"),
+                Some(true) => (
+                    PAUSE_GLYPH,
+                    "Pause emulation — freeze the machine in place; resume anytime. \
+                     Not saved: pausing does not survive quitting the manager.",
+                ),
+                Some(false) => (PLAY_GLYPH, "Resume emulation"),
+            };
+            if transport_button(ui, glyph, true).on_hover_text(hover).clicked() {
+                match is_running {
+                    None => self.start_vm(index),
+                    Some(_) => {
+                        if let Some(vm) = self.entries[index].vm.as_mut() {
+                            vm.toggle_running();
+                        }
                     }
                 }
             }
+            if transport_button(ui, STOP_GLYPH, is_running.is_some())
+                .on_hover_text(
+                    "Shut down the machine — like flipping the power switch; \
+                     unsaved work inside it is lost",
+                )
+                .clicked()
+            {
+                self.stop_vm(index);
+            }
+
+            ui.add_space(TRANSPORT_GROUP_GAP);
+            // Suspend is the *heavy* freeze — dump the whole machine to disk
+            // and resume much later, even on another computer. It ships with
+            // the save-states milestone (`docs/plan-save-states.md`); the
+            // disabled button teaches the model before the feature exists.
+            let _ = ui
+                .add_enabled(false, egui::Button::new("Suspend"))
+                .on_disabled_hover_text(
+                    "Freeze this machine to disk and free it — resume later, even after \
+                     quitting or on another computer. Coming with save-states.",
+                );
+            if ui
+                .add_enabled(is_running.is_some(), egui::Button::new("Reset"))
+                .on_hover_text("Press the machine's reset button — the machine stays on")
+                .clicked()
+                && let Some(vm) = self.entries[index].vm.as_mut()
+            {
+                vm.machine.reset();
+            }
+
+            ui.add_space(TRANSPORT_GROUP_GAP);
+            ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         });
         if edit.def != edit.saved {
             ui.small("Unsaved changes won't apply until this machine is saved.");
