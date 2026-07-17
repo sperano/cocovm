@@ -451,6 +451,47 @@ fn manager_window_shows_its_toolbar() {
     harness.step();
 }
 
+/// The divider between the machine list and the photo pane must be
+/// draggable. Regression test for the empty-panel gotcha: a `SidePanel`
+/// whose ui claims no space silently loses its resize drag
+/// (`SidePanel::resizable` docs — hence `take_available_space` in
+/// `ManagerApp::update`).
+#[test]
+fn manager_list_divider_is_draggable() {
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None));
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+
+    let panel_id = egui::Id::new("manager_machine_list");
+    let width = |harness: &egui_kittest::Harness<'_, manager::ManagerApp>| {
+        egui::containers::panel::PanelState::load(&harness.ctx, panel_id)
+            .expect("machine-list panel state exists")
+            .rect
+            .width()
+    };
+    let before = width(&harness);
+
+    // Grab the divider (the panel's right edge) at mid-height and drag it
+    // 80 px right: hover, press, move while pressed, release.
+    let grab = egui::pos2(before, 360.0);
+    let target = egui::pos2(before + 80.0, 360.0);
+    harness.hover_at(grab);
+    harness.step();
+    harness.drag_at(grab);
+    harness.step();
+    harness.hover_at(target);
+    harness.step();
+    harness.drop_at(target);
+    harness.step();
+    harness.step();
+
+    let after = width(&harness);
+    assert!(
+        (after - before) > 60.0,
+        "dragging the divider must widen the list panel (before {before}, after {after})"
+    );
+}
+
 /// With a photo injected, the manager uploads it on the first frame and
 /// keeps rendering (the image itself is not an accessible node — this
 /// guards the upload path against panics/regressions).

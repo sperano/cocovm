@@ -62,7 +62,12 @@ impl eframe::App for ManagerApp {
             .resizable(true)
             .default_width(LIST_DEFAULT_WIDTH)
             .width_range(LIST_MIN_WIDTH..=LIST_MAX_WIDTH)
-            .show(ctx, |_ui| {});
+            .show(ctx, |ui| {
+                // An empty ui claims no space, which disables the divider
+                // drag (`SidePanel::resizable` docs) — claim it all until
+                // the machine list fills the panel.
+                ui.take_available_space();
+            });
 
         // Right pane: with no machine selected (always, for now), a random
         // photo asset, centered and scaled to fit.
