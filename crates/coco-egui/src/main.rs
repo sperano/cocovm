@@ -2086,7 +2086,7 @@ fn banner() {
     );
 }
 
-const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v1.tgz";
+const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v2.tgz";
 
 /// Whether `dir` exists and contains at least one entry.
 fn dir_has_files(dir: &Path) -> bool {
