@@ -5,10 +5,17 @@
 //! pane on the right for the selected machine — or, with no machine
 //! selected, a random photo asset filling the pane.
 //!
-//! Launching a machine (`plan-machine-persistence.md` step 5+) isn't wired
-//! up yet: "New…" creates a definition file but never boots it, and there is
-//! no "Start" action. The direct-boot emulator (`CocoApp`) is untouched and
-//! still serves every CLI invocation with arguments.
+//! Launching a machine (`plan-machine-persistence.md` step 5) is wired up:
+//! the detail pane's Start button calls `crate::launch_machine` and, once a
+//! `MachineEntry` holds a running `CocoApp`, `ManagerApp::update` opens it in
+//! its own native OS window every frame — an *immediate viewport*, the same
+//! pattern `paper_view::PaperWindow` uses for the printer-paper window (see
+//! that module's doc comment). All VM state stays on the main thread; each
+//! viewport's own child `egui::Context` delivers that window's keyboard/
+//! mouse input, so focus routing comes for free from egui
+//! (`docs/plan-machine-persistence.md` "DECIDED: in-process, one native
+//! window per running VM"). The direct-boot emulator (`CocoApp`) is
+//! otherwise untouched and still serves every CLI invocation with arguments.
 
 use std::path::PathBuf;
 
@@ -16,7 +23,7 @@ use coco_core::MachineConfig;
 use eframe::egui;
 
 use crate::photo_view::{self, Photo};
-use crate::{machine_def, new_vm};
+use crate::{machine_def, new_vm, CocoApp};
 
 /// Manager window size at first open.
 const WINDOW_SIZE: [f32; 2] = [1080.0, 720.0];
@@ -42,11 +49,35 @@ const ROW_MARGIN: f32 = 8.0;
 /// Corner rounding of a list row's selection/hover frame.
 const ROW_CORNER_RADIUS: f32 = 4.0;
 
-/// List-row status label. Runtime state (running/paused/stopped) is never
-/// persisted (`plan-machine-persistence.md` "Decisions") and no machine can
-/// be launched from the manager yet, so every row reads the same thing for
-/// now.
+/// List-row / detail-pane status labels. Never persisted
+/// (`plan-machine-persistence.md` "Decisions" — "Runtime status … is never
+/// persisted"): purely a function of [`MachineEntry::vm`] at draw time, see
+/// [`vm_status_label`].
+const STATUS_RUNNING: &str = "Running";
+const STATUS_PAUSED: &str = "Paused";
 const STATUS_STOPPED: &str = "Stopped";
+
+/// Window size of a launched VM's own native OS window: the same formula
+/// `main()` uses for the direct-boot window (`main.rs`'s `SCALE`/
+/// `TARGET_ASPECT`/`MENU_BAR_H`/`TOOLBAR_H`/`STATUS_BAR_H`), sized for the
+/// aspect-corrected (wider) image so it always fits.
+fn vm_window_inner_size() -> egui::Vec2 {
+    let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
+    let win_w = img_h * crate::TARGET_ASPECT;
+    let win_h = img_h + crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
+    egui::vec2(win_w, win_h)
+}
+
+/// Default size of the `ViewportClass::Embedded` fallback's `egui::Window`
+/// (`draw_running_vms`) — deliberately much smaller than
+/// [`vm_window_inner_size`]'s full native-window formula. That size (which
+/// includes room for a menu bar/toolbar/status bar this fallback never
+/// draws) is often close to or larger than the *entire* embedded canvas, so
+/// even anchored to a corner it can span most of the screen and silently
+/// eat clicks meant for the manager's own panels underneath (topmost window
+/// wins pointer routing at a given position). A small preview loses nothing
+/// real: this fallback only ever shows the bare display, never chrome.
+const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
 /// Vertical gap between sections of the detail pane.
 const DETAIL_SECTION_GAP: f32 = 12.0;
@@ -70,6 +101,37 @@ fn default_new_name() -> String {
 pub struct MachineEntry {
     pub slug: String,
     pub def: Result<machine_def::MachineDef, String>,
+    /// The running VM, once [`ManagerApp::start_vm`] has launched it —
+    /// `None` means Stopped. Boxed: `CocoApp` is a large struct (the whole
+    /// machine plus every UI dialog's state), and every `MachineEntry` pays
+    /// its size even when stopped.
+    pub vm: Option<Box<CocoApp>>,
+    /// Message from the last failed Start, shown in the detail pane until
+    /// the next Start attempt or a fresh selection — the launch-time analog
+    /// of [`ManagerApp::save_error`].
+    pub launch_error: Option<String>,
+}
+
+impl MachineEntry {
+    /// `slug` + a freshly loaded/created `def`, with no VM running yet and
+    /// no stale launch error — the state every entry starts in, whether
+    /// loaded from disk ([`ManagerApp`]'s `run`) or just created (`Self`'s
+    /// callers previously wrote out the `vm`/`launch_error` fields by hand;
+    /// this constructor is what keeps that from drifting as more per-entry
+    /// runtime state gets added later).
+    pub(crate) fn new(slug: String, def: Result<machine_def::MachineDef, String>) -> Self {
+        Self { slug, def, vm: None, launch_error: None }
+    }
+}
+
+/// The status [`MachineEntry::vm`] implies right now — never persisted, see
+/// [`STATUS_RUNNING`]'s doc.
+fn vm_status_label(entry: &MachineEntry) -> &'static str {
+    match &entry.vm {
+        Some(vm) if vm.is_running() => STATUS_RUNNING,
+        Some(_) => STATUS_PAUSED,
+        None => STATUS_STOPPED,
+    }
 }
 
 /// The detail pane's working copy of the selected entry's definition
@@ -168,7 +230,7 @@ impl ManagerApp {
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
                 let index = self.entries.partition_point(|e| e.slug < slug);
-                self.entries.insert(index, MachineEntry { slug, def: Ok(def) });
+                self.entries.insert(index, MachineEntry::new(slug, Ok(def)));
                 self.selected = Some(index);
                 self.edit = None; // reseeded from the new entry when the detail pane next draws
                 self.save_error = None;
@@ -229,7 +291,7 @@ impl ManagerApp {
                                     crate::machine_label(config.variant),
                                     new_vm::ram_label(config.memory),
                                 ));
-                                ui.weak(STATUS_STOPPED);
+                                ui.weak(vm_status_label(&self.entries[i]));
                             });
                         }
                         Err(err) => {
@@ -300,6 +362,40 @@ impl ManagerApp {
         let mut edit = self.edit.take().expect("just ensured above");
 
         ui.add(egui::TextEdit::singleline(&mut edit.def.name).font(egui::TextStyle::Heading));
+        ui.add_space(DETAIL_SECTION_GAP);
+
+        // Run controls: Start when stopped, Pause/Resume + Stop when
+        // running. `is_running` is copied out before the buttons so the
+        // click handlers below can freely call `&mut self` methods
+        // (`start_vm`/`stop_vm`/`toggle_running`) without fighting a
+        // borrow of `self.entries[index].vm` still held by a `match` on it.
+        let is_running = self.entries[index].vm.as_ref().map(|vm| vm.is_running());
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
+            match is_running {
+                None => {
+                    if ui.button("Start").clicked() {
+                        self.start_vm(index);
+                    }
+                }
+                Some(running) => {
+                    if ui.button(if running { "Pause" } else { "Resume" }).clicked()
+                        && let Some(vm) = self.entries[index].vm.as_mut()
+                    {
+                        vm.toggle_running();
+                    }
+                    if ui.button("Stop").clicked() {
+                        self.stop_vm(index);
+                    }
+                }
+            }
+        });
+        if edit.def != edit.saved {
+            ui.small("Unsaved changes won't apply until this machine is saved.");
+        }
+        if let Some(err) = &self.entries[index].launch_error {
+            ui.colored_label(ui.visuals().error_fg_color, err);
+        }
         ui.add_space(DETAIL_SECTION_GAP);
 
         // Hardware form: shared with the "New…" dialog (`new_vm.rs`'s
@@ -378,6 +474,134 @@ impl ManagerApp {
             Err(e) => self.save_error = Some(e),
         }
     }
+
+    /// Detail pane's Start button: launch `entries[index]`'s *saved*
+    /// definition (`crate::launch_machine`) — not the in-progress edit
+    /// draft, which may hold changes the user hasn't saved yet (the small
+    /// note next to the button in [`Self::draw_detail_ok`] is the only
+    /// warning about that). A stopped entry always has `vm: None`, so this
+    /// only ever replaces `None` with `Some`; an entry that's already
+    /// running has no Start button to click (see the `is_running` match in
+    /// `draw_detail_ok`).
+    fn start_vm(&mut self, index: usize) {
+        let entry = &mut self.entries[index];
+        entry.launch_error = None;
+        let Ok(def) = &entry.def else {
+            // Unreachable via the UI (an `Err` entry's detail pane has no
+            // Start button), kept as a guard rather than a panic in case a
+            // future caller reaches this some other way.
+            return;
+        };
+        match crate::launch_machine(def, &entry.slug) {
+            Ok(vm) => entry.vm = Some(Box::new(vm)),
+            Err(e) => entry.launch_error = Some(e),
+        }
+    }
+
+    /// Stop button (and the VM window's own close box, via
+    /// [`Self::draw_running_vms`]): flush dirty disks/tape back to their
+    /// files — the same exit contract `CocoApp::on_exit` runs for the
+    /// direct-boot window — then drop the VM, returning the row to Stopped.
+    fn stop_vm(&mut self, index: usize) {
+        if let Some(mut vm) = self.entries[index].vm.take() {
+            vm.flush_media();
+        }
+    }
+
+    /// One native OS window per running VM (`docs/plan-machine-persistence.md`
+    /// "DECIDED: in-process, one native window per running VM"): an
+    /// immediate viewport per entry with a VM, keyed by a stable id derived
+    /// from the slug so egui reuses the same OS window across frames instead
+    /// of respawning it (the same pattern `paper_view::PaperWindow::ui` uses
+    /// for the printer-paper window). Called once per `ManagerApp::update`,
+    /// after the manager's own panels.
+    ///
+    /// Close requests (the native window's close box, or the embedded
+    /// fallback's `egui::Window` close button) are collected into a list and
+    /// applied with [`Self::stop_vm`] after the loop — `stop_vm` needs
+    /// `&mut self.entries[i]`, which would conflict with the `vm` this loop
+    /// already holds taken out of that same slot for the duration of the
+    /// viewport closure.
+    fn draw_running_vms(&mut self, ctx: &egui::Context) {
+        let mut to_stop: Vec<usize> = Vec::new();
+        for i in 0..self.entries.len() {
+            if self.entries[i].vm.is_none() {
+                continue;
+            }
+            let slug = self.entries[i].slug.clone();
+            let name = self.entries[i]
+                .def
+                .as_ref()
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|_| slug.clone());
+            let viewport_id = egui::ViewportId::from_hash_of(("vm-window", &slug));
+            let inner_size = vm_window_inner_size();
+            let builder = egui::ViewportBuilder::default()
+                .with_title(name.clone())
+                .with_inner_size(inner_size);
+
+            // Taken out of the entry so the viewport closure below can hold
+            // and mutate it without a conflicting borrow of `self` (the
+            // closure also needs to push into `to_stop`, a local, not
+            // `self` — so no `self` borrow is held across the closure at
+            // all here).
+            let mut vm = self.entries[i].vm.take().expect("checked Some above");
+            let mut close_requested = false;
+            ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
+                if class == egui::ViewportClass::Embedded {
+                    // Degraded single-window fallback (kittest and other
+                    // backends without native multi-window support, per
+                    // `paper_view`'s module doc comment on the same
+                    // pattern): don't draw `CocoApp`'s own menu bar/toolbar/
+                    // status bar into the manager's shared `ctx` — that
+                    // would interleave two independent sets of panels into
+                    // one window. Show just the VM's display in a plain
+                    // `egui::Window` instead; full chrome only exists as its
+                    // own native OS window. The VM still runs:
+                    // `step_emulation` is unconditional either way.
+                    vm.step_emulation(child_ctx);
+                    let mut open = true;
+                    // Anchored, and capped at `EMBEDDED_FALLBACK_SIZE`
+                    // rather than the native window's full
+                    // `inner_size` (found the hard way, via a kittest
+                    // regression: a window that large, even anchored to a
+                    // corner, still spans most of a modest single-window
+                    // canvas — e.g. the whole manager UI under kittest — and
+                    // silently eats clicks meant for the manager's own
+                    // panels underneath, since pointer routing goes to
+                    // whichever window is topmost at that screen position.
+                    // This fallback only ever shows the bare display anyway
+                    // (no chrome), so a smaller preview loses nothing a
+                    // real native window wouldn't already provide instead.
+                    egui::Window::new(crate::window_title(child_ctx, &name))
+                        .id(egui::Id::new(("vm-window-embedded", slug.as_str())))
+                        .open(&mut open)
+                        .resizable(false)
+                        .default_size(EMBEDDED_FALLBACK_SIZE)
+                        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-8.0, -8.0))
+                        .show(child_ctx, |ui| {
+                            vm.draw_display(ui);
+                        });
+                    if !open {
+                        close_requested = true;
+                    }
+                } else {
+                    vm.window_ui(child_ctx);
+                    if child_ctx.input(|i| i.viewport().close_requested()) {
+                        close_requested = true;
+                    }
+                }
+            });
+
+            self.entries[i].vm = Some(vm);
+            if close_requested {
+                to_stop.push(i);
+            }
+        }
+        for i in to_stop {
+            self.stop_vm(i);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -422,6 +646,18 @@ fn media_rows(media: &machine_def::MediaDto) -> Vec<(&'static str, &str)> {
 }
 
 impl eframe::App for ManagerApp {
+    /// Flush every running VM's dirty disks/tape on quit — the manager
+    /// window is the root viewport, so closing it closes every VM at once
+    /// (`docs/plan-machine-persistence.md` "Lifetime rule"); this mirrors
+    /// `CocoApp::on_exit`'s own contract for each of them.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        for entry in &mut self.entries {
+            if let Some(vm) = entry.vm.as_mut() {
+                vm.flush_media();
+            }
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Some(photo) = self.photo.take() {
             self.photo_texture =
@@ -473,6 +709,8 @@ impl eframe::App for ManagerApp {
                 });
             }
         });
+
+        self.draw_running_vms(ctx);
     }
 }
 
@@ -494,7 +732,7 @@ pub fn run() -> eframe::Result<()> {
         .map(|dir| {
             machine_def::load_all(dir)
                 .into_iter()
-                .map(|(slug, def)| MachineEntry { slug, def })
+                .map(|(slug, def)| MachineEntry::new(slug, def))
                 .collect()
         })
         .unwrap_or_default();

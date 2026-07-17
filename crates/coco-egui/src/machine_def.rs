@@ -434,6 +434,27 @@ pub fn machines_dir() -> Option<PathBuf> {
     paths::config_dir().map(|dir| dir.join("machines"))
 }
 
+/// Resolve one `[media]` path (`MediaDto`'s fields) the way the schema
+/// promises: absolute paths are used exactly as given; relative paths
+/// resolve against this machine's artifact directory,
+/// `data_dir()/machines/<slug>` (`plan-machine-persistence.md` "Media by
+/// reference, never embedded" — mirrors [`machines_dir`], which is the
+/// `config_dir()` sibling holding the *definition* files, not media). Falls
+/// back to interpreting a relative path against the process's current
+/// directory when no data directory can be determined at all (`paths::data_dir`
+/// docs: no home directory found) — a degraded but non-panicking result for
+/// a case unit tests can't easily hit.
+pub fn resolve_media_path(raw: &str, slug: &str) -> PathBuf {
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match paths::data_dir() {
+        Some(dir) => dir.join("machines").join(slug).join(path),
+        None => path.to_path_buf(),
+    }
+}
+
 const TOP_LEVEL_KEYS: &[&str] = &["schema", "name", "created", "hardware", "media", "peripherals", "ui"];
 const HARDWARE_KEYS: &[&str] = &["variant", "ram", "video", "monitor", "vdg", "rom"];
 const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
@@ -945,6 +966,19 @@ future_ui_field = 42
         assert_eq!(round_tripped.memory, config.memory);
         assert_eq!(round_tripped.monitor, config.monitor);
         assert_eq!(round_tripped.vdg, config.vdg);
+    }
+
+    #[test]
+    fn resolve_media_path_leaves_absolute_paths_untouched() {
+        let abs = if cfg!(windows) { r"C:\shared\utils.dsk" } else { "/shared/utils.dsk" };
+        assert_eq!(resolve_media_path(abs, "dev-coco-3"), PathBuf::from(abs));
+    }
+
+    #[test]
+    fn resolve_media_path_resolves_relative_against_the_slugs_artifact_dir() {
+        let resolved = resolve_media_path("dev.dsk", "dev-coco-3");
+        let data_dir = paths::data_dir().expect("home dir should exist in tests");
+        assert_eq!(resolved, data_dir.join("machines").join("dev-coco-3").join("dev.dsk"));
     }
 
     #[test]

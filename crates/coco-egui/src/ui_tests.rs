@@ -27,9 +27,8 @@ fn boot_harness() -> AppHarness {
     let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
     let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
         .expect("roms/coco3.rom is required (git-ignored, local-only)");
-    let mut harness = egui_kittest::Harness::new_eframe(|cc| {
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
-            cc,
             MachineConfig::default(),
             rom,
             None,
@@ -519,14 +518,14 @@ fn manager_window_renders_an_injected_photo() {
 /// "New…" flow does, so tests don't hand-roll a second copy of the DTO
 /// shape.
 fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
-    manager::MachineEntry {
-        slug: slug.to_string(),
-        def: Ok(machine_def::MachineDef::from_config(
+    manager::MachineEntry::new(
+        slug.to_string(),
+        Ok(machine_def::MachineDef::from_config(
             name.to_string(),
             None,
             &MachineConfig::default(),
         )),
-    }
+    )
 }
 
 /// Boot a manager harness with injected entries and (optionally) a real
@@ -650,10 +649,10 @@ fn manager_detail_save_rewrites_file_and_revert_discards_edit() {
 /// row must still be selectable like any other).
 #[test]
 fn manager_error_entry_shows_badge_and_is_selectable_without_panicking() {
-    let entries = vec![manager::MachineEntry {
-        slug: "broken".to_string(),
-        def: Err("hardware/schema-3: unsupported schema".to_string()),
-    }];
+    let entries = vec![manager::MachineEntry::new(
+        "broken".to_string(),
+        Err("hardware/schema-3: unsupported schema".to_string()),
+    )];
     let mut harness = manager_harness(None, entries);
 
     harness.get_by_label("broken");
@@ -662,4 +661,134 @@ fn manager_error_entry_shows_badge_and_is_selectable_without_panicking() {
     click(&mut harness, "broken");
     assert_eq!(harness.state().selected, Some(0));
     assert_eq!(harness.state().detail_name(), None, "an Err entry has nothing to edit");
+}
+
+/// A minimal valid CoCo 2 `Ok` entry — `sample_entry`'s default is CoCo 3,
+/// so pairing this with it gives two distinct machine families for
+/// `starting_two_machines_runs_both` (`docs/plan-machine-persistence.md`
+/// step 5's acceptance scenario: "a CoCo 3 and a newly created, launched
+/// CoCo 2").
+fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {
+    manager::MachineEntry::new(
+        slug.to_string(),
+        Ok(machine_def::MachineDef::from_config(
+            name.to_string(),
+            None,
+            &MachineConfig {
+                variant: MachineVariant::Coco2,
+                video: VideoStandard::Ntsc,
+                memory: MemorySize::K64,
+                monitor: MonitorType::Rgb,
+                vdg: VdgVariant::Mc6847T1,
+            },
+        )),
+    )
+}
+
+/// Whether `label` matches at least one accessible node — unlike
+/// `get_by_label`/`query_by_label` (which require *at most* one match), used
+/// where a status word like "Running" is deliberately shown twice at once
+/// (the list row's `weak()` copy and the detail pane header's `strong()`
+/// copy, both driven by `manager::vm_status_label`).
+fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, S>, label: &str) -> bool {
+    harness.get_all_by_label(label).next().is_some()
+}
+
+/// Start opens the definition's own VM (`entries[0].vm` goes from `None` to
+/// `Some`) and the row/detail status text follows: Stopped → Running on
+/// Start, Running → Paused on Pause, back to Running on Resume, and to
+/// Stopped (with `vm` dropped) on Stop. Exercises the actual detail-pane
+/// buttons end-to-end, including `manager::draw_running_vms`'s
+/// `ViewportClass::Embedded` fallback and the `CocoApp::step_emulation`/
+/// `draw_display` split `main.rs`'s `window_ui` refactor introduced — a
+/// regression here would mean that split broke a running VM, not just the
+/// manager's bookkeeping around it.
+#[test]
+fn start_button_launches_and_stop_button_stops() {
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Dev CoCo 3");
+    assert!(harness.state().entries[0].vm.is_none());
+    assert!(label_exists(&harness, "Stopped"));
+
+    click(&mut harness, "Start");
+    assert!(harness.state().entries[0].vm.is_some(), "Start must launch the VM");
+    assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
+    assert!(label_exists(&harness, "Running"));
+
+    click(&mut harness, "Pause");
+    assert!(!harness.state().entries[0].vm.as_ref().unwrap().is_running());
+    assert!(label_exists(&harness, "Paused"));
+
+    click(&mut harness, "Resume");
+    assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
+    assert!(label_exists(&harness, "Running"));
+
+    click(&mut harness, "Stop");
+    assert!(harness.state().entries[0].vm.is_none(), "Stop must drop the VM");
+    assert!(label_exists(&harness, "Stopped"));
+}
+
+/// Two machines — a CoCo 3 and a CoCo 2 — start independently in the same
+/// manager and both keep stepping across further frames without panicking:
+/// the "DECIDED: in-process, one native window per running VM" acceptance
+/// scenario (`docs/plan-machine-persistence.md`), minus the pacing/audio
+/// independence a headless harness has no way to observe.
+#[test]
+fn starting_two_machines_runs_both() {
+    let entries = vec![
+        sample_entry("dev-coco-3", "Dev CoCo 3"),
+        sample_coco2_entry("dev-coco-2", "Dev CoCo 2"),
+    ];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, "Start");
+    assert!(harness.state().entries[0].vm.is_some());
+
+    click(&mut harness, "Dev CoCo 2");
+    click(&mut harness, "Start");
+    assert!(harness.state().entries[1].vm.is_some());
+
+    assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
+    assert!(harness.state().entries[1].vm.as_ref().unwrap().is_running());
+
+    // Both VMs keep emulating side by side for a few more frames without
+    // panicking (each has its own `field_debt`/audio stream, so neither
+    // stepping the other is expected — just that co-existing doesn't break).
+    for _ in 0..5 {
+        harness.step();
+    }
+    assert!(harness.state().entries[0].vm.is_some());
+    assert!(harness.state().entries[1].vm.is_some());
+}
+
+/// A definition whose media references a file that doesn't exist reports the
+/// failure in the detail pane instead of panicking or leaving a partially
+/// mounted VM behind (`crate::launch_machine`'s contract: any mount failure
+/// is a returned `Err`, never a partial `CocoApp`).
+#[test]
+fn launch_error_is_reported_not_fatal() {
+    let mut def = machine_def::MachineDef::from_config(
+        "Broken Media".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    def.media.disk0 = Some("/definitely/does/not/exist.dsk".to_string());
+    let entries = vec![manager::MachineEntry::new("broken-media".to_string(), Ok(def))];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Broken Media");
+    click(&mut harness, "Start");
+
+    assert!(
+        harness.state().entries[0].vm.is_none(),
+        "a failed launch must not leave a partial VM running"
+    );
+    assert!(
+        harness.state().entries[0].launch_error.is_some(),
+        "the failure must be recorded for the detail pane"
+    );
+    harness.get_by_label_contains("could not read");
 }
