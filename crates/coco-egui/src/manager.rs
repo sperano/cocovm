@@ -33,17 +33,20 @@ const LIST_DEFAULT_WIDTH: f32 = 260.0;
 const LIST_MIN_WIDTH: f32 = 160.0;
 const LIST_MAX_WIDTH: f32 = 520.0;
 
-/// Fixed size of a list row's placeholder art. Step 6 of the plan
-/// (`docs/plan-machine-persistence.md`) replaces this with a live miniature
-/// of the VM's own framebuffer texture (running/paused) or a saved
-/// `thumbnail.png` (stopped) — until then every row gets the same dark rect.
-const ROW_THUMBNAIL_SIZE: egui::Vec2 = egui::vec2(48.0, 36.0);
 /// Corner rounding of the row thumbnail placeholder itself — distinct from
 /// [`ROW_CORNER_RADIUS`], the row's own selection/hover frame.
 const THUMBNAIL_CORNER_RADIUS: f32 = 2.0;
-/// Fill of the row thumbnail placeholder, until step 6 of the plan
-/// (`docs/plan-machine-persistence.md`) replaces it with a live/saved image.
+/// Fill of the row thumbnail placeholder — shown as a stopped machine's
+/// whole thumbnail, and as a running one's letterbox background before its
+/// texture is uploaded/when the texture's aspect doesn't exactly fill the
+/// allocated rect. Step 6 of the plan (`docs/plan-machine-persistence.md`)
+/// replaces the *stopped* case with a saved `thumbnail.png`; not done yet.
 const THUMBNAIL_PLACEHOLDER_FILL: egui::Color32 = egui::Color32::from_gray(30);
+/// Row-thumbnail aspect ratio used when no live framebuffer texture is
+/// available to read one from — a stopped machine, or a VM whose first
+/// frame hasn't uploaded a texture yet ([`draw_row_thumbnail`]). Matches the
+/// emulator's own default aspect-corrected display (`crate::TARGET_ASPECT`).
+const THUMBNAIL_FALLBACK_ASPECT: f32 = crate::TARGET_ASPECT;
 /// Inner padding of one list row's frame.
 const ROW_MARGIN: f32 = 8.0;
 /// Corner rounding of a list row's selection/hover frame.
@@ -134,34 +137,61 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
     }
 }
 
+/// Height the row's own text column (name, subtitle, status — three
+/// `TextStyle::Body`-sized lines with `ui.vertical`'s default item spacing
+/// between them) will render at, used to size the thumbnail to reach the
+/// same bottom edge as the status line (user follow-up to step 6: "should
+/// use the height available... go to the same edge as Stopped"). Computed
+/// from text metrics up front rather than measured after layout, since the
+/// thumbnail is the *first* widget placed in the row's `horizontal` — by
+/// the time the text column's actual rendered height is known, the
+/// thumbnail's own space is already allocated. All three lines use the
+/// default `Body` text style at its default size (`.strong()`/`ui.weak()`
+/// only change weight/color, not size), so one line height covers all
+/// three, and `ui.vertical`'s gaps are exactly `ui.spacing().item_spacing.y`
+/// — reproducing both here needs no second/probing layout pass.
+fn row_content_height(ui: &egui::Ui) -> f32 {
+    let font_id = egui::TextStyle::Body.resolve(ui.style());
+    let line_height = ui.fonts_mut(|f| f.row_height(&font_id));
+    let spacing = ui.spacing().item_spacing.y;
+    line_height * 3.0 + spacing * 2.0
+}
+
 /// One list row's thumbnail: a running/paused VM's own framebuffer texture
-/// (`CocoApp::framebuffer_texture`), aspect-fit and centered within `rect`
-/// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM" bullet —
-/// the texture is already uploaded every frame for the VM's own window, so
-/// this is one extra quad, not an extra upload; a paused VM's texture stops
-/// changing, so the thumbnail just freezes on its last frame). The
-/// placeholder fill is always painted first as a letterbox background, so a
-/// stopped machine (`vm: None`) or a VM whose very first frame hasn't run
-/// yet (`framebuffer_texture` still `None`) shows the plain placeholder rect
-/// exactly as before this existed.
-fn draw_row_thumbnail(ui: &egui::Ui, rect: egui::Rect, vm: Option<&CocoApp>) {
+/// (`CocoApp::framebuffer_texture`), sized to `height` tall (see
+/// [`row_content_height`]) at the texture's own aspect ratio — correct
+/// regardless of which machine variant/GIME mode produced it, unlike a
+/// fixed ratio, and it's one extra quad reusing an already-uploaded
+/// texture, not an extra upload (`docs/plan-machine-persistence.md` step 6,
+/// "Running/paused VM" bullet). A paused VM's texture simply stops
+/// changing, so the thumbnail freezes on its last frame with no special
+/// casing needed. Falls back to [`THUMBNAIL_FALLBACK_ASPECT`] — and just the
+/// placeholder fill, no image — for a stopped machine or a VM whose first
+/// frame hasn't uploaded a texture yet. Allocates its own space (so its
+/// width, driven by whichever aspect is in play, is only known here, not by
+/// the caller) and returns the space it claimed.
+fn draw_row_thumbnail(ui: &mut egui::Ui, height: f32, vm: Option<&CocoApp>) -> egui::Rect {
+    let texture = vm.and_then(CocoApp::framebuffer_texture);
+    let aspect = texture
+        .map(|t| {
+            let size = t.size_vec2();
+            size.x / size.y
+        })
+        .filter(|aspect| aspect.is_finite() && *aspect > 0.0)
+        .unwrap_or(THUMBNAIL_FALLBACK_ASPECT);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(height * aspect, height), egui::Sense::hover());
+
     let painter = ui.painter();
     painter.rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
-    let Some(texture) = vm.and_then(CocoApp::framebuffer_texture) else {
-        return;
-    };
-    let tex_size = texture.size_vec2();
-    if tex_size.x <= 0.0 || tex_size.y <= 0.0 {
-        return;
+    if let Some(texture) = texture {
+        painter.image(
+            texture.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
     }
-    let scale = (rect.width() / tex_size.x).min(rect.height() / tex_size.y);
-    let fitted_rect = egui::Rect::from_center_size(rect.center(), tex_size * scale);
-    painter.image(
-        texture.id(),
-        fitted_rect,
-        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
-    );
+    rect
 }
 
 /// The detail pane's working copy of the selected entry's definition
@@ -305,8 +335,8 @@ impl ManagerApp {
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(ROW_THUMBNAIL_SIZE, egui::Sense::hover());
-                    draw_row_thumbnail(ui, rect, self.entries[i].vm.as_deref());
+                    let content_height = row_content_height(ui);
+                    draw_row_thumbnail(ui, content_height, self.entries[i].vm.as_deref());
 
                     match &self.entries[i].def {
                         Ok(def) => {
