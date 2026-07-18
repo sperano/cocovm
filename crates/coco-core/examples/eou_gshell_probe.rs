@@ -107,7 +107,7 @@ fn main() {
     // Screenshot the same gshell frame through both monitor types.
     if let Some(dir) = std::env::args().nth(1) {
         for (monitor, name) in
-            [(MonitorType::Rgb, "gshell-rgb.ppm"), (MonitorType::Composite, "gshell-cmp.ppm")]
+            [(MonitorType::RGB, "gshell-rgb.ppm"), (MonitorType::Composite, "gshell-cmp.ppm")]
         {
             m.bus.gime.monitor = monitor;
             m.run_field();

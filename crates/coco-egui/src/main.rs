@@ -15,11 +15,14 @@ mod about;
 mod audio;
 mod joy;
 mod kbd_help;
+mod machine_def;
+mod manager;
 mod new_vm;
 mod paper_export;
 mod paths;
 mod paper_render;
 mod paper_view;
+mod photo_view;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -32,7 +35,7 @@ use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::rtc::{DistoRtc, RtcTime};
 use coco_core::vhd::VhdImage;
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
 use eframe::egui;
 use joy::JoystickInputs;
@@ -294,8 +297,16 @@ fn host_time_source() -> coco_core::rtc::TimeSource {
 }
 
 impl CocoApp {
+    /// `CreationContext` isn't taken here (unlike most `eframe::App`
+    /// constructors): nothing in this struct's setup touches egui context
+    /// state (fonts, wgpu/glow handles), so it's a plain constructor
+    /// callable from anywhere a machine needs to be built — the direct-boot
+    /// `main()` (which does have a `CreationContext` in its `run_native`
+    /// closure but never needed to pass it in) and the CocoVM manager's
+    /// `launch_machine` (`plan-machine-persistence.md` step 5), which builds
+    /// VMs from inside `ManagerApp::update` where no `CreationContext`
+    /// exists at all.
     fn new(
-        _cc: &eframe::CreationContext<'_>,
         config: MachineConfig,
         rom: Box<[u8]>,
         cart_path: Option<PathBuf>,
@@ -1040,17 +1051,55 @@ impl CocoApp {
     fn drive_joysticks(&mut self, ctx: &egui::Context) {
         self.joysticks.apply(ctx, self.display_rect, &mut self.machine);
     }
-}
 
-impl eframe::App for CocoApp {
-    /// Write modified floppies and tape back to their files on quit — a BASIC
-    /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    /// Write modified floppies and tape back to their files — the exit
+    /// contract [`eframe::App::on_exit`] runs for the direct-boot window,
+    /// and the same one a manager-owned VM needs on Stop or on the
+    /// manager's own `on_exit` (`ManagerApp`'s `eframe::App` impl in
+    /// `manager.rs`, `docs/plan-machine-persistence.md` "one native window
+    /// per running VM").
+    fn flush_media(&mut self) {
         self.flush_dirty_disks();
         self.write_back_tape();
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Toggle Run/Pause, the same assignment the toolbar and Machine-menu
+    /// "Pause"/"Run" buttons perform in [`Self::draw_chrome`] — exposed so
+    /// the manager's detail-pane Pause/Resume button can drive a VM it
+    /// doesn't otherwise reach into (`running` has no `pub` visibility).
+    pub(crate) fn toggle_running(&mut self) {
+        self.running = !self.running;
+    }
+
+    /// Whether the VM is currently running (vs. paused) — the manager's
+    /// list-row and detail-pane status label reads this instead of the
+    /// (never-persisted) `Stopped` placeholder every row used to show.
+    pub(crate) fn is_running(&self) -> bool {
+        self.running
+    }
+
+    /// The framebuffer texture [`Self::step_emulation`] uploads every
+    /// frame — `None` only before the VM's very first frame runs. Exposed
+    /// so the manager's list-row thumbnail
+    /// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM"
+    /// bullet) can draw the *same* `TextureHandle` in a second place: one
+    /// `egui::Context` serves every viewport, so reusing the handle here
+    /// costs one extra quad, not an extra upload — and a paused VM's
+    /// texture simply stops changing, so the thumbnail naturally freezes on
+    /// its last frame with no special-casing needed.
+    pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {
+        self.texture.as_ref()
+    }
+
+    /// Advance emulation for one host frame — input, joysticks, the
+    /// wall-clock-paced field loop, audio, and the framebuffer texture
+    /// upload. Runs regardless of which chrome (if any) is drawn around the
+    /// display this frame: [`Self::window_ui`] (full native window) and the
+    /// manager's `ViewportClass::Embedded` fallback both call this before
+    /// drawing anything, so a VM keeps emulating even in the degraded
+    /// single-window case (`docs/plan-machine-persistence.md` "one native
+    /// window per running VM").
+    fn step_emulation(&mut self, ctx: &egui::Context) {
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
@@ -1081,7 +1130,19 @@ impl eframe::App for CocoApp {
             ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
         });
         texture.set(image, egui::TextureOptions::NEAREST);
+    }
 
+    /// The menu bar, toolbar, status bar, and every optional window/dialog
+    /// (keyboard help, About, the "New…" dialog, the printer-paper window,
+    /// the disk-controller confirmation, the cartridge-error banner) — every
+    /// bit of chrome around the CoCo display itself. Split out of
+    /// [`Self::window_ui`] so the manager's `ViewportClass::Embedded`
+    /// fallback can skip it entirely: drawing two apps' menu bars/status
+    /// bars into one shared `ctx` would interleave them into a single
+    /// confusing window, so that fallback shows only [`Self::draw_display`]
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM").
+    fn draw_chrome(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| {
@@ -1422,7 +1483,7 @@ impl eframe::App for CocoApp {
                     // so this takes effect live rather than requiring a
                     // power cycle.
                     for (mt, label) in [
-                        (MonitorType::Rgb, "RGB monitor"),
+                        (MonitorType::RGB, "RGB monitor"),
                         (MonitorType::Composite, "Composite monitor"),
                     ] {
                         if ui
@@ -1611,35 +1672,72 @@ impl eframe::App for CocoApp {
                 self.cart_error = None;
             }
         }
+    }
 
+    /// The CoCo display itself: the letterboxed, (optionally) aspect-
+    /// corrected framebuffer texture, filling whatever `ui` it's given.
+    /// Split out of [`Self::window_ui`]'s `CentralPanel` closure so the
+    /// manager's `ViewportClass::Embedded` fallback can show just this —
+    /// without the rest of [`Self::draw_chrome`] — inside a plain
+    /// `egui::Window` instead of a full-window `CentralPanel`
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM"). Requires [`Self::step_emulation`] to have already run this
+    /// frame (it uploads `self.texture`, `unwrap`ped below).
+    fn draw_display(&mut self, ui: &mut egui::Ui) {
+        let tex = self.texture.as_ref().unwrap();
+        let tex_size = tex.size_vec2();
+        // Aspect the displayed frame should have, independent of the buffer's
+        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
+        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        let aspect = if self.aspect_correct {
+            TARGET_ASPECT
+        } else {
+            tex_size.x / tex_size.y
+        };
+        // Largest rect of that aspect that fits the panel, centered (letterboxed).
+        let avail = ui.available_rect_before_wrap();
+        let mut w = avail.width();
+        let mut h = w / aspect;
+        if h > avail.height() {
+            h = avail.height();
+            w = h * aspect;
+        }
+        let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
+        let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
+        ui.put(rect, egui::Image::new(sized));
+        // Remembered for `drive_joysticks` next frame, to map pointer
+        // position to joystick axes (see the `display_rect` field doc).
+        self.display_rect = rect;
+    }
+
+    /// The full app window for one frame: emulation step, every menu/toolbar/
+    /// dialog, then the display, in that order — exactly the body
+    /// `eframe::App::update` ran before this method existed. `pub(crate)` so
+    /// the manager's per-VM immediate viewport (`manager.rs`'s
+    /// `draw_running_vms`, `ViewportClass::Default`/native case) can call it
+    /// directly on a VM it owns, reproducing the direct-boot window's full
+    /// chrome inside its own native OS window
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM"). The trait method below (kept for the direct-boot CLI path,
+    /// which stays byte-for-byte identical) just forwards here.
+    pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {
+        self.step_emulation(ctx);
+        self.draw_chrome(ctx);
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
-            .show(ctx, |ui| {
-                let tex = self.texture.as_ref().unwrap();
-                let tex_size = tex.size_vec2();
-                // Aspect the displayed frame should have, independent of the buffer's
-                // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
-                // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
-                let aspect = if self.aspect_correct {
-                    TARGET_ASPECT
-                } else {
-                    tex_size.x / tex_size.y
-                };
-                // Largest rect of that aspect that fits the panel, centered (letterboxed).
-                let avail = ui.available_rect_before_wrap();
-                let mut w = avail.width();
-                let mut h = w / aspect;
-                if h > avail.height() {
-                    h = avail.height();
-                    w = h * aspect;
-                }
-                let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
-                let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
-                ui.put(rect, egui::Image::new(sized));
-                // Remembered for `drive_joysticks` next frame, to map pointer
-                // position to joystick axes (see the `display_rect` field doc).
-                self.display_rect = rect;
-            });
+            .show(ctx, |ui| self.draw_display(ui));
+    }
+}
+
+impl eframe::App for CocoApp {
+    /// Write modified floppies and tape back to their files on quit — a BASIC
+    /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.flush_media();
+    }
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.window_ui(ctx);
     }
 }
 
@@ -1766,8 +1864,8 @@ fn parse_ram(s: &str) -> Result<MemorySize, String> {
 /// `clap` value parser for `--video`.
 fn parse_video(s: &str) -> Result<VideoStandard, String> {
     match s {
-        "ntsc" => Ok(VideoStandard::Ntsc),
-        "pal" => Ok(VideoStandard::Pal),
+        "ntsc" => Ok(VideoStandard::NTSC),
+        "pal" => Ok(VideoStandard::PAL),
         _ => Err(format!(
             "unknown video standard '{s}' (expected ntsc or pal)"
         )),
@@ -1785,7 +1883,7 @@ enum MonitorArg {
 impl From<MonitorArg> for MonitorType {
     fn from(m: MonitorArg) -> Self {
         match m {
-            MonitorArg::Rgb => MonitorType::Rgb,
+            MonitorArg::Rgb => MonitorType::RGB,
             MonitorArg::Composite => MonitorType::Composite,
         }
     }
@@ -1933,6 +2031,130 @@ fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]
     }
 }
 
+/// Build a running [`CocoApp`] from a saved machine definition
+/// (`machine_def::MachineDef`): the same steps `main()`'s CLI branch below
+/// performs — load the ROM ([`load_explicit_rom`] for an explicit
+/// `[hardware].rom`, else [`load_default_rom`] with the same `./roms`
+/// resolution the CLI path uses), mount `[media]` (cart/disks/vhds/tape,
+/// resolved with `machine_def::resolve_media_path`) and `[peripherals]`
+/// (MPI/RTC) with the same `CocoApp` methods and ordering, and enforce the
+/// same single-cartridge-port rule — but every failure is a returned `Err`
+/// here instead of a process exit, since the caller (the manager's Start
+/// button, `manager.rs`) must show it in the detail pane rather than crash
+/// the whole app (`docs/plan-machine-persistence.md` step 5). On any
+/// mount-time failure (a bad disk/VHD/cassette image, or a disk-BASIC ROM
+/// read failure inside `mpi_insert_fd502` — not just a missing path, caught
+/// early below) the partially-built VM is discarded rather than returned:
+/// callers get either a fully-mounted machine or a precise error, never a
+/// half-broken one.
+pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
+    let config = def.to_machine_config()?;
+
+    let rom = match &def.hardware.rom {
+        Some(path) => load_explicit_rom(Path::new(path)),
+        None => {
+            let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+            load_default_rom(config.variant, &roms_dir)
+        }
+    }?;
+
+    let cart_path = def
+        .media
+        .cart
+        .as_deref()
+        .map(|p| machine_def::resolve_media_path(p, slug));
+    let disk_paths = [
+        def.media.disk0.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+        def.media.disk1.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+    ];
+    let vhd_paths = [
+        def.media.vhd0.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+        def.media.vhd1.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+    ];
+    let tape_path = def.media.tape.as_deref().map(|p| machine_def::resolve_media_path(p, slug));
+
+    // Same rule `main()`'s CLI branch enforces by hand (clap's declarative
+    // `conflicts_with` can't express "only when --mpi is absent"): cart,
+    // disk0/disk1 (which imply the FD-502), and rtc all want the single
+    // cartridge port unless an MPI is installed.
+    let mpi = def.peripherals.mpi;
+    let rtc = def.peripherals.rtc;
+    let port_claims = [
+        cart_path.is_some(),
+        disk_paths[0].is_some() || disk_paths[1].is_some(),
+        rtc,
+    ]
+    .into_iter()
+    .filter(|&claims| claims)
+    .count();
+    if !mpi && port_claims > 1 {
+        return Err(
+            "cart, disk0/disk1, and rtc all need the cartridge port; enable the MultiPak \
+             Interface peripheral to combine them"
+                .to_string(),
+        );
+    }
+
+    // No definition field for this UI preference yet (`machine_def.rs`'s
+    // schema doc); matches the CLI's own `--tape-wav` default of off.
+    let save_tape_wav = false;
+    let mut app = if mpi {
+        CocoApp::new(config, rom, None, [None, None], vhd_paths, save_tape_wav)
+    } else {
+        CocoApp::new(config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
+    };
+
+    if mpi {
+        app.insert_multipak();
+        if let Some(path) = cart_path {
+            app.mpi_insert_rompak(0, path);
+        }
+        if disk_paths[0].is_some() || disk_paths[1].is_some() {
+            app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
+        }
+        if rtc {
+            app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
+        }
+        for (drive, path) in disk_paths.into_iter().enumerate() {
+            if let Some(path) = path {
+                app.insert_disk(drive, path);
+            }
+        }
+    } else if rtc {
+        // cart/disk0/disk1 (handled by the `CocoApp::new` call above, same
+        // as the CLI's non-mpi branch) and rtc are mutually exclusive here —
+        // `port_claims` already rejected any combination of them without
+        // `--mpi`.
+        app.insert_rtc();
+    }
+
+    if let Some(path) = tape_path {
+        app.insert_tape(path);
+    }
+
+    // Every `insert_*`/`mpi_insert_*` helper above records its own failure
+    // in `cart_error` rather than returning a `Result` (it's designed to run
+    // from a live menu click, where the machine keeps running and a dialog
+    // reports the problem). Promote that here into the launch `Result`
+    // instead of returning a VM with a swallowed error nobody's watching
+    // for yet.
+    if let Some(err) = app.cart_error.take() {
+        return Err(err);
+    }
+
+    // The definition's [ui] preferences are the launched window's *starting*
+    // state; F9 (aspect) and F12 (keyboard mode) keep working as live
+    // toggles afterwards — the file controls where they begin, exactly like
+    // the hardware section controls the machine's construction.
+    app.aspect_correct = def.ui.aspect_correct;
+    app.kb_mode = match def.ui.kb_mode {
+        machine_def::KbModeDTO::Positional => KbMode::Positional,
+        machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,
+    };
+
+    Ok(app)
+}
+
 /// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
 /// primary-SAM path expects is Extended Color BASIC at offset 0 (8K), Color
 /// BASIC at offset [`COCO12_BAS_OFFSET`] (8K) — `docs/coco12-plan.md` "ROM
@@ -2011,6 +2233,18 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
     }
 }
 
+/// Per-variant default VDG chip when no explicit choice is made: the T1
+/// (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
+/// `MachineConfig::validate` accepts there). Shared by the CLI path below,
+/// `new_vm.rs`'s `constrain`, and `machine_def.rs`'s `to_machine_config`'s
+/// `None` (omitted `[hardware].vdg`) arm — previously duplicated three ways.
+const fn default_vdg(variant: MachineVariant) -> VDGVariant {
+    match variant {
+        MachineVariant::Coco2 => VDGVariant::MC6847T1,
+        MachineVariant::Coco1 | MachineVariant::Coco3 => VDGVariant::MC6847,
+    }
+}
+
 /// One advisory log line per loaded system ROM, checked against the
 /// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
 /// homebrew images are legitimate, but a corrupt known dump should say so.
@@ -2071,7 +2305,7 @@ fn banner() {
     );
 }
 
-const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v1.tgz";
+const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v2.tgz";
 
 /// Whether `dir` exists and contains at least one entry.
 fn dir_has_files(dir: &Path) -> bool {
@@ -2120,6 +2354,12 @@ fn main() -> eframe::Result<()> {
     banner();
     ensure_assets();
 
+    // Bare `coco` (no CLI arguments) opens the CocoVM manager window; any
+    // argument keeps the direct-boot emulator path below.
+    if std::env::args_os().len() == 1 {
+        return manager::run();
+    }
+
     let cli = Cli::parse();
     let variant = cli.machine;
     let memory = cli.ram.unwrap_or_else(|| default_ram(variant));
@@ -2128,13 +2368,9 @@ fn main() -> eframe::Result<()> {
         video: cli.video,
         memory,
         monitor: cli.monitor.into(),
-        // No CLI flag for this yet; same family defaults as the "New…"
-        // dialog — the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere
-        // (the only valid choice, `MachineConfig::validate`).
-        vdg: match variant {
-            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
-            _ => VdgVariant::Mc6847,
-        },
+        // No CLI flag for this yet; same family default as the "New…"
+        // dialog and the manager's detail pane (`default_vdg`).
+        vdg: default_vdg(variant),
     };
     if let Err(e) = config.validate() {
         eprintln!("coco: invalid configuration: {e}");
@@ -2197,15 +2433,15 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |cc| {
+        Box::new(move |_cc| {
             // With --mpi, --cart/--disk0/--disk1/--fd502 target MPI slots instead of
             // the plain single-cartridge model, so the base constructor gets none of
             // them and everything is wired up afterward through the same methods the
             // MultiPak menu uses.
             let mut app = if mpi {
-                CocoApp::new(cc, config, rom, None, [None, None], vhd_paths, save_tape_wav)
+                CocoApp::new(config, rom, None, [None, None], vhd_paths, save_tape_wav)
             } else {
-                CocoApp::new(cc, config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
+                CocoApp::new(config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
             };
             if mpi {
                 app.insert_multipak();
@@ -2263,8 +2499,8 @@ mod cli_tests {
 
     #[test]
     fn parse_video_accepts_ntsc_and_pal() {
-        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::Ntsc));
-        assert_eq!(parse_video("pal"), Ok(VideoStandard::Pal));
+        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::NTSC));
+        assert_eq!(parse_video("pal"), Ok(VideoStandard::PAL));
         assert!(parse_video("secam").is_err());
     }
 
@@ -2273,6 +2509,13 @@ mod cli_tests {
         assert_eq!(default_ram(MachineVariant::Coco3), MemorySize::K512);
         assert_eq!(default_ram(MachineVariant::Coco1), MemorySize::K64);
         assert_eq!(default_ram(MachineVariant::Coco2), MemorySize::K64);
+    }
+
+    #[test]
+    fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
+        assert_eq!(default_vdg(MachineVariant::Coco2), VDGVariant::MC6847T1);
+        assert_eq!(default_vdg(MachineVariant::Coco1), VDGVariant::MC6847);
+        assert_eq!(default_vdg(MachineVariant::Coco3), VDGVariant::MC6847);
     }
 
     /// Scratch directory under `target/` holding only the ROM files a given
@@ -2386,112 +2629,4 @@ mod cli_tests {
 }
 
 #[cfg(test)]
-mod ui_tests {
-    use egui_kittest::kittest::Queryable;
-
-    use super::*;
-
-    #[test]
-    fn new_dialog_creates_a_coco1_machine_without_panicking() {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-            .expect("roms/coco3.rom is required (git-ignored, local-only)");
-        load_default_rom(MachineVariant::Coco1, &roms_dir)
-            .expect("a roms/bas1x.rom Color BASIC dump is required (git-ignored, local-only)");
-
-        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
-            CocoApp::new(
-                cc,
-                MachineConfig::default(),
-                rom,
-                None,
-                [None, None],
-                [None, None],
-                false,
-            )
-        });
-        assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
-
-        // Two steps per click: kittest delivers the press and release across
-        // successive frames, and egui fires `clicked` on the release.
-        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
-            harness.get_by_label(label).click();
-            harness.step();
-            harness.step();
-        };
-        click(&mut harness, "Machine");
-        click(&mut harness, "New…");
-        click(&mut harness, "CoCo 1");
-        // The frame that processes Create draws the CentralPanel *after*
-        // swapping the machine — the exact path that used to panic on the
-        // framebuffer texture.
-        click(&mut harness, "Create");
-
-        let app = harness.state();
-        assert_eq!(app.machine.config.variant, MachineVariant::Coco1);
-        assert_eq!(
-            app.machine.config.memory,
-            MemorySize::K64,
-            "RAM should snap to the CoCo 1/2 default when the model changes"
-        );
-        assert!(app.running, "a new VM boots running, like startup");
-        assert!(app.cart_path.is_none() && app.mpi.is_none());
-        assert!(
-            harness.query_by_label("Create").is_none(),
-            "the New Machine dialog should close after a successful create"
-        );
-    }
-
-    /// The VDG radio row only exists on a CoCo 2 draft
-    /// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
-    /// the row is absent with CoCo 1 or CoCo 3 selected, present and
-    /// selectable with CoCo 2 selected.
-    #[test]
-    fn new_dialog_vdg_row_only_visible_for_coco2() {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-            .expect("roms/coco3.rom is required (git-ignored, local-only)");
-
-        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
-            CocoApp::new(
-                cc,
-                MachineConfig::default(),
-                rom,
-                None,
-                [None, None],
-                [None, None],
-                false,
-            )
-        });
-
-        // Two steps per click: kittest delivers the press and release across
-        // successive frames, and egui fires `clicked` on the release.
-        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
-            harness.get_by_label(label).click();
-            harness.step();
-            harness.step();
-        };
-        click(&mut harness, "Machine");
-        click(&mut harness, "New…");
-
-        let t1_label = "MC6847T1 (CoCo 2B)";
-
-        // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
-        assert!(
-            harness.query_by_label(t1_label).is_none(),
-            "VDG row must be absent for CoCo 3"
-        );
-
-        click(&mut harness, "CoCo 2");
-        assert!(
-            harness.query_by_label(t1_label).is_some(),
-            "VDG row must be present for CoCo 2"
-        );
-
-        click(&mut harness, "CoCo 1");
-        assert!(
-            harness.query_by_label(t1_label).is_none(),
-            "VDG row must be absent for CoCo 1"
-        );
-    }
-}
+mod ui_tests;

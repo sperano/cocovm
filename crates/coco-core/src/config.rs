@@ -23,16 +23,16 @@ pub enum MachineVariant {
 /// Which VDG chip is installed — only meaningfully distinct on
 /// [`MachineVariant::Coco2`] (CoCo 1 always shipped the plain chip; CoCo 3
 /// uses the GIME's own character generator, not a real MC6847 at all).
-/// MAME machine pairing: `coco`/`coco2` drivers = plain [`VdgVariant::Mc6847`];
-/// `coco2b`/`deluxecoco` = [`VdgVariant::Mc6847T1`] (`mc6847.cpp`).
+/// MAME machine pairing: `coco`/`coco2` drivers = plain [`VDGVariant::MC6847`];
+/// `coco2b`/`deluxecoco` = [`VDGVariant::MC6847T1`] (`mc6847.cpp`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VdgVariant {
+pub enum VDGVariant {
     /// Original MC6847: no true lowercase, codes $00-$1F always show as
     /// inverse-video uppercase regardless of PIA1 $FF22 bit 4.
-    Mc6847,
+    MC6847,
     /// MC6847T1 ("MC6847T1 (CoCo 2B)"): PIA1 $FF22 bit 4 doubles as GM0 in
     /// alpha mode, enabling true lowercase glyphs for codes $00-$1F.
-    Mc6847T1,
+    MC6847T1,
 }
 
 /// Master video standard — fixed by the machine's crystal, chosen at construction.
@@ -41,24 +41,24 @@ pub enum VdgVariant {
 /// a standard. This enum is the physical crystal. See `DESIGN.md` §4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VideoStandard {
-    Ntsc,
-    Pal,
+    NTSC,
+    PAL,
 }
 
 impl VideoStandard {
     /// Scanlines per field. Provisional (standard video values; see `DESIGN.md` §4).
     pub const fn lines_per_field(self) -> u32 {
         match self {
-            VideoStandard::Ntsc => 262,
-            VideoStandard::Pal => 312,
+            VideoStandard::NTSC => 262,
+            VideoStandard::PAL => 312,
         }
     }
 
     /// Nominal field (refresh) rate in Hz.
     pub const fn field_rate_hz(self) -> f64 {
         match self {
-            VideoStandard::Ntsc => 59.94,
-            VideoStandard::Pal => 50.0,
+            VideoStandard::NTSC => 59.94,
+            VideoStandard::PAL => 50.0,
         }
     }
 
@@ -75,7 +75,7 @@ impl VideoStandard {
     /// `docs/coco12-plan.md`).
     pub const fn fs_falling_line(self, variant: MachineVariant) -> u32 {
         match self {
-            VideoStandard::Ntsc => match variant {
+            VideoStandard::NTSC => match variant {
                 MachineVariant::Coco3 => 244,
                 MachineVariant::Coco1 | MachineVariant::Coco2 => 216,
             },
@@ -85,7 +85,7 @@ impl VideoStandard {
             // field-sync edges collapsed to the last scanline of the field)
             // rather than guess a line number. CoCo 1/2 + PAL is rejected by
             // [`MachineConfig::validate`] before this is ever consulted.
-            VideoStandard::Pal => VideoStandard::Pal.lines_per_field() - 1,
+            VideoStandard::PAL => VideoStandard::PAL.lines_per_field() - 1,
         }
     }
 
@@ -103,10 +103,10 @@ impl VideoStandard {
     /// change.
     pub const fn fs_rising_line(self, _variant: MachineVariant) -> u32 {
         match self {
-            VideoStandard::Ntsc => 248,
+            VideoStandard::NTSC => 248,
             // UNVERIFIED, see fs_falling_line: both edges collapse to the
             // same last scanline for PAL until the real offset is confirmed.
-            VideoStandard::Pal => VideoStandard::Pal.lines_per_field() - 1,
+            VideoStandard::PAL => VideoStandard::PAL.lines_per_field() - 1,
         }
     }
 }
@@ -166,8 +166,8 @@ pub struct MachineConfig {
     /// GIME's 6-bit palette values). Not a hardware register — see
     /// [`MonitorType`].
     pub monitor: MonitorType,
-    /// Which VDG chip is installed. See [`VdgVariant`].
-    pub vdg: VdgVariant,
+    /// Which VDG chip is installed. See [`VDGVariant`].
+    pub vdg: VDGVariant,
 }
 
 impl MachineConfig {
@@ -182,7 +182,7 @@ impl MachineConfig {
     ///   (`docs/coco12-plan.md`).
     /// - CoCo 1/2 are NTSC-only for now: PAL VDG timing is out of scope
     ///   (`docs/coco12-plan.md` "What's missing").
-    /// - [`VdgVariant::Mc6847T1`] is only valid on [`MachineVariant::Coco2`]:
+    /// - [`VDGVariant::MC6847T1`] is only valid on [`MachineVariant::Coco2`]:
     ///   CoCo 1 never had a T1 board, and CoCo 3 has no real MC6847 at all
     ///   (the GIME does its own text character generation).
     pub fn validate(&self) -> Result<(), String> {
@@ -205,7 +205,7 @@ impl MachineConfig {
                         self.variant, self.memory
                     ));
                 }
-                if self.video == VideoStandard::Pal {
+                if self.video == VideoStandard::PAL {
                     return Err(format!(
                         "{:?} PAL is out of scope (plain MC6847 PAL timing not modeled)",
                         self.variant
@@ -224,7 +224,7 @@ impl MachineConfig {
                 }
             }
         }
-        if self.vdg == VdgVariant::Mc6847T1 && self.variant != MachineVariant::Coco2 {
+        if self.vdg == VDGVariant::MC6847T1 && self.variant != MachineVariant::Coco2 {
             return Err(format!(
                 "{:?} does not support VdgVariant::Mc6847T1 (only Coco2 had a T1 board)",
                 self.variant
@@ -238,10 +238,10 @@ impl Default for MachineConfig {
     fn default() -> Self {
         Self {
             variant: MachineVariant::Coco3,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K512,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         }
     }
 }
@@ -259,10 +259,10 @@ mod tests {
     fn coco3_rejects_coco12_memory_sizes() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco3,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         };
         assert!(cfg.validate().is_err());
     }
@@ -271,10 +271,10 @@ mod tests {
     fn coco1_rejects_coco3_memory_sizes() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco1,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K128,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         };
         assert!(cfg.validate().is_err());
     }
@@ -289,10 +289,10 @@ mod tests {
         ] {
             let cfg = MachineConfig {
                 variant: MachineVariant::Coco1,
-                video: VideoStandard::Ntsc,
+                video: VideoStandard::NTSC,
                 memory,
-                monitor: MonitorType::Rgb,
-                vdg: VdgVariant::Mc6847,
+                monitor: MonitorType::RGB,
+                vdg: VDGVariant::MC6847,
             };
             assert!(
                 cfg.validate().is_ok(),
@@ -311,10 +311,10 @@ mod tests {
         ] {
             let cfg = MachineConfig {
                 variant: MachineVariant::Coco2,
-                video: VideoStandard::Ntsc,
+                video: VideoStandard::NTSC,
                 memory,
-                monitor: MonitorType::Rgb,
-                vdg: VdgVariant::Mc6847,
+                monitor: MonitorType::RGB,
+                vdg: VDGVariant::MC6847,
             };
             assert_eq!(
                 cfg.validate().is_ok(),
@@ -328,10 +328,10 @@ mod tests {
     fn coco2_rejects_pal() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco2,
-            video: VideoStandard::Pal,
+            video: VideoStandard::PAL,
             memory: MemorySize::K64,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         };
         assert!(cfg.validate().is_err());
     }
@@ -342,10 +342,10 @@ mod tests {
         // already models a (partially unverified) PAL timing branch.
         let cfg = MachineConfig {
             variant: MachineVariant::Coco3,
-            video: VideoStandard::Pal,
+            video: VideoStandard::PAL,
             memory: MemorySize::K512,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         };
         assert!(cfg.validate().is_ok());
     }
@@ -354,10 +354,10 @@ mod tests {
     fn coco2_accepts_mc6847t1() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco2,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847T1,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847T1,
         };
         assert!(cfg.validate().is_ok());
     }
@@ -366,10 +366,10 @@ mod tests {
     fn coco2_accepts_plain_mc6847() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco2,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         };
         assert!(cfg.validate().is_ok());
     }
@@ -378,10 +378,10 @@ mod tests {
     fn coco1_rejects_mc6847t1() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco1,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847T1,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847T1,
         };
         assert!(cfg.validate().is_err());
     }
@@ -390,10 +390,10 @@ mod tests {
     fn coco3_rejects_mc6847t1() {
         let cfg = MachineConfig {
             variant: MachineVariant::Coco3,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K512,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847T1,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847T1,
         };
         assert!(cfg.validate().is_err());
     }
@@ -401,15 +401,15 @@ mod tests {
     #[test]
     fn fs_falling_line_differs_between_gime_and_plain_vdg() {
         assert_eq!(
-            VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco3),
+            VideoStandard::NTSC.fs_falling_line(MachineVariant::Coco3),
             244
         );
         assert_eq!(
-            VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco1),
+            VideoStandard::NTSC.fs_falling_line(MachineVariant::Coco1),
             216
         );
         assert_eq!(
-            VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco2),
+            VideoStandard::NTSC.fs_falling_line(MachineVariant::Coco2),
             216
         );
     }

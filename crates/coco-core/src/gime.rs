@@ -196,7 +196,7 @@ pub const TIMER_VALUE_MASK: u16 = 0x0FFF;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MonitorType {
     #[default]
-    Rgb,
+    RGB,
     Composite,
 }
 
@@ -422,7 +422,7 @@ impl GIME {
     /// grey when $FF98 MOCH is set (MAME `gime.cpp` `update_composite`).
     pub fn color(&self, value: u8) -> [u8; 4] {
         match self.monitor {
-            MonitorType::Rgb => Self::rgb_color(value),
+            MonitorType::RGB => Self::rgb_color(value),
             MonitorType::Composite => {
                 let table = if self.vmode & vmode::BPI != 0 {
                     &COMPOSITE_PALETTE_180
