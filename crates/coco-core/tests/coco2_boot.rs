@@ -10,7 +10,9 @@
 
 use std::path::PathBuf;
 
-use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
+use coco_core::{
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+};
 use mc6809::Bus;
 
 /// Extended Color BASIC occupies the low 8K of the flat ROM image ($8000-$9FFF).
@@ -60,6 +62,7 @@ fn boot_machine() -> Option<(Machine, Vec<u8>)> {
         video: VideoStandard::Ntsc,
         memory: MemorySize::K64,
         monitor: MonitorType::Rgb,
+        vdg: VdgVariant::Mc6847,
     };
     config
         .validate()

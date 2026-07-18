@@ -11,7 +11,9 @@
 
 use std::path::PathBuf;
 
-use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VideoStandard};
+use coco_core::{
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+};
 use mc6809::Bus;
 
 /// Color BASIC occupies the high 8K ($A000-$BFFF) of the flat image, same
@@ -47,6 +49,7 @@ fn boot_machine() -> Option<(Machine, Vec<u8>)> {
         video: VideoStandard::Ntsc,
         memory: MemorySize::K32,
         monitor: MonitorType::Rgb,
+        vdg: VdgVariant::Mc6847,
     };
     config
         .validate()
