@@ -146,7 +146,7 @@ fn new_dialog_cancel_leaves_the_machine_untouched() {
 }
 
 /// The VDG radio row only exists on a CoCo 2 draft
-/// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
+/// (`MachineConfig::validate`: [`VDGVariant::MC6847T1`] is CoCo2-only) —
 /// the row is absent with CoCo 1 or CoCo 3 selected, present and
 /// selectable with CoCo 2 selected.
 #[test]
@@ -256,7 +256,7 @@ fn keyboard_menu_selects_mode_and_opens_key_layout() {
 #[test]
 fn view_menu_toggles_aspect_and_switches_monitor_type() {
     let mut harness = boot_harness();
-    assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::Rgb);
+    assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 
     click(&mut harness, "View");
     click(&mut harness, "4:3 aspect (F9)");
@@ -272,7 +272,7 @@ fn view_menu_toggles_aspect_and_switches_monitor_type() {
 
     click(&mut harness, "View");
     click(&mut harness, "RGB monitor");
-    assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::Rgb);
+    assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 }
 
 #[test]
@@ -687,10 +687,10 @@ fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {
             None,
             &MachineConfig {
                 variant: MachineVariant::Coco2,
-                video: VideoStandard::Ntsc,
+                video: VideoStandard::NTSC,
                 memory: MemorySize::K64,
-                monitor: MonitorType::Rgb,
-                vdg: VdgVariant::Mc6847T1,
+                monitor: MonitorType::RGB,
+                vdg: VDGVariant::MC6847T1,
             },
         )),
     )
@@ -785,7 +785,7 @@ fn launch_honors_ui_settings() {
         &MachineConfig::default(),
     );
     def.ui.aspect_correct = false;
-    def.ui.kb_mode = machine_def::KbModeDto::Symbolic;
+    def.ui.kb_mode = machine_def::KbModeDTO::Symbolic;
 
     let vm = launch_machine(&def, "ui-prefs").expect("a default CoCo 3 definition launches");
     assert!(!vm.aspect_correct, "[ui].aspect_correct must reach the VM");

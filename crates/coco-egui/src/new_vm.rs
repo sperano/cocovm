@@ -10,7 +10,7 @@
 //! matter which caller edits the draft.
 
 use coco_core::{
-    MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+    MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
 use eframe::egui;
 
@@ -80,7 +80,7 @@ fn constrain(draft: &mut MachineConfig) {
         draft.memory = crate::default_ram(draft.variant);
     }
     if draft.variant != MachineVariant::Coco3 {
-        draft.video = VideoStandard::Ntsc;
+        draft.video = VideoStandard::NTSC;
     }
     // Only runs on model-change clicks, so an explicit MC6847 pick made
     // while staying on CoCo 2 sticks; switching models re-seeds the
@@ -120,8 +120,8 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
     if draft.variant == MachineVariant::Coco2 {
         ui.label(egui::RichText::new("VDG").size(font));
         ui.horizontal(|ui| {
-            ui.radio_value(&mut draft.vdg, VdgVariant::Mc6847, "MC6847");
-            ui.radio_value(&mut draft.vdg, VdgVariant::Mc6847T1, "MC6847T1 (CoCo 2B)");
+            ui.radio_value(&mut draft.vdg, VDGVariant::MC6847, "MC6847");
+            ui.radio_value(&mut draft.vdg, VDGVariant::MC6847T1, "MC6847T1 (CoCo 2B)");
         });
         ui.end_row();
     }
@@ -141,9 +141,9 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
     // `constrain` already snapped the draft back to NTSC.
     let pal_possible = draft.variant == MachineVariant::Coco3;
     ui.horizontal(|ui| {
-        ui.radio_value(&mut draft.video, VideoStandard::Ntsc, "NTSC");
+        ui.radio_value(&mut draft.video, VideoStandard::NTSC, "NTSC");
         ui.add_enabled_ui(pal_possible, |ui| {
-            ui.radio_value(&mut draft.video, VideoStandard::Pal, "PAL")
+            ui.radio_value(&mut draft.video, VideoStandard::PAL, "PAL")
                 .on_disabled_hover_text("PAL is only supported on the CoCo 3");
         });
     });
@@ -151,7 +151,7 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
 
     ui.label(egui::RichText::new("Monitor").size(font));
     ui.horizontal(|ui| {
-        ui.radio_value(&mut draft.monitor, MonitorType::Rgb, "RGB");
+        ui.radio_value(&mut draft.monitor, MonitorType::RGB, "RGB");
         ui.radio_value(&mut draft.monitor, MonitorType::Composite, "Composite");
     });
     ui.end_row();
@@ -297,18 +297,18 @@ mod tests {
             MachineVariant::Coco3,
         ] {
             let videos: &[VideoStandard] = if variant == MachineVariant::Coco3 {
-                &[VideoStandard::Ntsc, VideoStandard::Pal]
+                &[VideoStandard::NTSC, VideoStandard::PAL]
             } else {
-                &[VideoStandard::Ntsc]
+                &[VideoStandard::NTSC]
             };
-            let vdgs: &[VdgVariant] = if variant == MachineVariant::Coco2 {
-                &[VdgVariant::Mc6847, VdgVariant::Mc6847T1]
+            let vdgs: &[VDGVariant] = if variant == MachineVariant::Coco2 {
+                &[VDGVariant::MC6847, VDGVariant::MC6847T1]
             } else {
-                &[VdgVariant::Mc6847]
+                &[VDGVariant::MC6847]
             };
             for &memory in ram_choices(variant) {
                 for &video in videos {
-                    for monitor in [MonitorType::Rgb, MonitorType::Composite] {
+                    for monitor in [MonitorType::RGB, MonitorType::Composite] {
                         for &vdg in vdgs {
                             let config = MachineConfig {
                                 variant,
@@ -337,19 +337,19 @@ mod tests {
         let mut dialog = NewVmDialog::new();
         dialog.open_with(MachineConfig {
             variant: MachineVariant::Coco3,
-            video: VideoStandard::Pal,
+            video: VideoStandard::PAL,
             memory: MemorySize::K2048,
-            monitor: MonitorType::Rgb,
-            vdg: VdgVariant::Mc6847,
+            monitor: MonitorType::RGB,
+            vdg: VDGVariant::MC6847,
         });
 
         dialog.draft.variant = MachineVariant::Coco2;
         constrain(&mut dialog.draft);
         assert_eq!(dialog.draft.memory, MemorySize::K64);
-        assert_eq!(dialog.draft.video, VideoStandard::Ntsc);
+        assert_eq!(dialog.draft.video, VideoStandard::NTSC);
         assert_eq!(
             dialog.draft.vdg,
-            VdgVariant::Mc6847T1,
+            VDGVariant::MC6847T1,
             "CoCo 2 defaults to the T1 (CoCo 2B)"
         );
         assert!(dialog.draft.validate().is_ok());
@@ -357,12 +357,12 @@ mod tests {
         dialog.draft.variant = MachineVariant::Coco3;
         constrain(&mut dialog.draft);
         assert_eq!(dialog.draft.memory, MemorySize::K512);
-        assert_eq!(dialog.draft.vdg, VdgVariant::Mc6847);
+        assert_eq!(dialog.draft.vdg, VDGVariant::MC6847);
         assert!(dialog.draft.validate().is_ok());
 
         dialog.draft.variant = MachineVariant::Coco1;
         constrain(&mut dialog.draft);
-        assert_eq!(dialog.draft.vdg, VdgVariant::Mc6847);
+        assert_eq!(dialog.draft.vdg, VDGVariant::MC6847);
         assert!(dialog.draft.validate().is_ok());
     }
 
@@ -374,10 +374,10 @@ mod tests {
         dialog.error = Some("old failure".into());
         let current = MachineConfig {
             variant: MachineVariant::Coco1,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K16,
             monitor: MonitorType::Composite,
-            vdg: VdgVariant::Mc6847,
+            vdg: VDGVariant::MC6847,
         };
         dialog.open_with(current);
         assert!(dialog.open);

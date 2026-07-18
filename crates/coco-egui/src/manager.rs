@@ -616,7 +616,7 @@ impl ManagerApp {
             .show(ui, |ui| {
                 new_vm::config_form_rows(ui, &format!("detail-{slug}"), &mut config);
             });
-        edit.def.hardware = machine_def::HardwareDto::from_config(&config, edit.def.hardware.rom.clone());
+        edit.def.hardware = machine_def::HardwareDTO::from_config(&config, edit.def.hardware.rom.clone());
 
         ui.add_space(DETAIL_SECTION_GAP);
         ui.label(egui::RichText::new("Media").strong());
@@ -638,8 +638,8 @@ impl ManagerApp {
         ui.checkbox(&mut edit.def.ui.aspect_correct, "4:3 aspect correction");
         ui.horizontal(|ui| {
             ui.label("Keyboard mode:");
-            ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDto::Positional, "Positional");
-            ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDto::Symbolic, "Symbolic");
+            ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDTO::Positional, "Positional");
+            ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDTO::Symbolic, "Symbolic");
         });
 
         ui.add_space(DETAIL_SECTION_GAP);
@@ -901,14 +901,14 @@ impl ManagerApp {
 /// (shouldn't happen for an already-`Ok` list entry) is returned unchanged.
 fn normalize_hardware(mut def: machine_def::MachineDef) -> machine_def::MachineDef {
     if let Ok(config) = def.to_machine_config() {
-        def.hardware = machine_def::HardwareDto::from_config(&config, def.hardware.rom.clone());
+        def.hardware = machine_def::HardwareDTO::from_config(&config, def.hardware.rom.clone());
     }
     def
 }
 
 /// The `[media]` fields that are set, as `(row label, value)` pairs, in
 /// schema-declaration order.
-fn media_rows(media: &machine_def::MediaDto) -> Vec<(&'static str, &str)> {
+fn media_rows(media: &machine_def::MediaDTO) -> Vec<(&'static str, &str)> {
     [
         ("Cart", &media.cart),
         ("Disk 0", &media.disk0),

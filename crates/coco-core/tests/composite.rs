@@ -52,7 +52,7 @@ fn composite_moch_averages_channels() {
 #[test]
 fn rgb_monitor_ignores_bpi_and_moch() {
     let g = GIME {
-        monitor: MonitorType::Rgb,
+        monitor: MonitorType::RGB,
         vmode: vmode::BPI | vmode::MOCH,
         ..GIME::new()
     };

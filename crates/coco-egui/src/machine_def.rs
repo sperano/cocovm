@@ -23,7 +23,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use coco_core::{
-    MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+    MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +42,7 @@ pub const DATE_FORMAT: &str = "%Y-%m-%d";
 
 /// `[hardware].variant`. Maps to [`coco_core::MachineVariant`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VariantDto {
+pub enum MachineVariantDTO {
     #[serde(rename = "coco1")]
     Coco1,
     #[serde(rename = "coco2")]
@@ -51,22 +51,22 @@ pub enum VariantDto {
     Coco3,
 }
 
-impl From<MachineVariant> for VariantDto {
+impl From<MachineVariant> for MachineVariantDTO {
     fn from(variant: MachineVariant) -> Self {
         match variant {
-            MachineVariant::Coco1 => VariantDto::Coco1,
-            MachineVariant::Coco2 => VariantDto::Coco2,
-            MachineVariant::Coco3 => VariantDto::Coco3,
+            MachineVariant::Coco1 => MachineVariantDTO::Coco1,
+            MachineVariant::Coco2 => MachineVariantDTO::Coco2,
+            MachineVariant::Coco3 => MachineVariantDTO::Coco3,
         }
     }
 }
 
-impl From<VariantDto> for MachineVariant {
-    fn from(variant: VariantDto) -> Self {
+impl From<MachineVariantDTO> for MachineVariant {
+    fn from(variant: MachineVariantDTO) -> Self {
         match variant {
-            VariantDto::Coco1 => MachineVariant::Coco1,
-            VariantDto::Coco2 => MachineVariant::Coco2,
-            VariantDto::Coco3 => MachineVariant::Coco3,
+            MachineVariantDTO::Coco1 => MachineVariant::Coco1,
+            MachineVariantDTO::Coco2 => MachineVariant::Coco2,
+            MachineVariantDTO::Coco3 => MachineVariant::Coco3,
         }
     }
 }
@@ -75,7 +75,7 @@ impl From<VariantDto> for MachineVariant {
 /// `512k` aren't valid Rust identifiers, hence the explicit renames rather
 /// than a derived `rename_all`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RamDto {
+pub enum RamDTO {
     #[serde(rename = "4k")]
     K4,
     #[serde(rename = "16k")]
@@ -92,122 +92,122 @@ pub enum RamDto {
     K2048,
 }
 
-impl From<MemorySize> for RamDto {
+impl From<MemorySize> for RamDTO {
     fn from(memory: MemorySize) -> Self {
         match memory {
-            MemorySize::K4 => RamDto::K4,
-            MemorySize::K16 => RamDto::K16,
-            MemorySize::K32 => RamDto::K32,
-            MemorySize::K64 => RamDto::K64,
-            MemorySize::K128 => RamDto::K128,
-            MemorySize::K512 => RamDto::K512,
-            MemorySize::K2048 => RamDto::K2048,
+            MemorySize::K4 => RamDTO::K4,
+            MemorySize::K16 => RamDTO::K16,
+            MemorySize::K32 => RamDTO::K32,
+            MemorySize::K64 => RamDTO::K64,
+            MemorySize::K128 => RamDTO::K128,
+            MemorySize::K512 => RamDTO::K512,
+            MemorySize::K2048 => RamDTO::K2048,
         }
     }
 }
 
-impl From<RamDto> for MemorySize {
-    fn from(ram: RamDto) -> Self {
+impl From<RamDTO> for MemorySize {
+    fn from(ram: RamDTO) -> Self {
         match ram {
-            RamDto::K4 => MemorySize::K4,
-            RamDto::K16 => MemorySize::K16,
-            RamDto::K32 => MemorySize::K32,
-            RamDto::K64 => MemorySize::K64,
-            RamDto::K128 => MemorySize::K128,
-            RamDto::K512 => MemorySize::K512,
-            RamDto::K2048 => MemorySize::K2048,
+            RamDTO::K4 => MemorySize::K4,
+            RamDTO::K16 => MemorySize::K16,
+            RamDTO::K32 => MemorySize::K32,
+            RamDTO::K64 => MemorySize::K64,
+            RamDTO::K128 => MemorySize::K128,
+            RamDTO::K512 => MemorySize::K512,
+            RamDTO::K2048 => MemorySize::K2048,
         }
     }
 }
 
 /// `[hardware].video`. Maps to [`coco_core::VideoStandard`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VideoDto {
+pub enum VideoStandardDTO {
     #[serde(rename = "ntsc")]
-    Ntsc,
+    NTSC,
     #[serde(rename = "pal")]
-    Pal,
+    PAL,
 }
 
-impl From<VideoStandard> for VideoDto {
+impl From<VideoStandard> for VideoStandardDTO {
     fn from(video: VideoStandard) -> Self {
         match video {
-            VideoStandard::Ntsc => VideoDto::Ntsc,
-            VideoStandard::Pal => VideoDto::Pal,
+            VideoStandard::NTSC => VideoStandardDTO::NTSC,
+            VideoStandard::PAL => VideoStandardDTO::PAL,
         }
     }
 }
 
-impl From<VideoDto> for VideoStandard {
-    fn from(video: VideoDto) -> Self {
+impl From<VideoStandardDTO> for VideoStandard {
+    fn from(video: VideoStandardDTO) -> Self {
         match video {
-            VideoDto::Ntsc => VideoStandard::Ntsc,
-            VideoDto::Pal => VideoStandard::Pal,
+            VideoStandardDTO::NTSC => VideoStandard::NTSC,
+            VideoStandardDTO::PAL => VideoStandard::PAL,
         }
     }
 }
 
 /// `[hardware].monitor`. Maps to [`coco_core::gime::MonitorType`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MonitorDto {
+pub enum MonitorDTO {
     #[serde(rename = "rgb")]
-    Rgb,
+    RGB,
     #[serde(rename = "composite")]
     Composite,
 }
 
-impl From<MonitorType> for MonitorDto {
+impl From<MonitorType> for MonitorDTO {
     fn from(monitor: MonitorType) -> Self {
         match monitor {
-            MonitorType::Rgb => MonitorDto::Rgb,
-            MonitorType::Composite => MonitorDto::Composite,
+            MonitorType::RGB => MonitorDTO::RGB,
+            MonitorType::Composite => MonitorDTO::Composite,
         }
     }
 }
 
-impl From<MonitorDto> for MonitorType {
-    fn from(monitor: MonitorDto) -> Self {
+impl From<MonitorDTO> for MonitorType {
+    fn from(monitor: MonitorDTO) -> Self {
         match monitor {
-            MonitorDto::Rgb => MonitorType::Rgb,
-            MonitorDto::Composite => MonitorType::Composite,
+            MonitorDTO::RGB => MonitorType::RGB,
+            MonitorDTO::Composite => MonitorType::Composite,
         }
     }
 }
 
-/// `[hardware].vdg`. Maps to [`coco_core::VdgVariant`]. Optional in the file
+/// `[hardware].vdg`. Maps to [`coco_core::VDGVariant`]. Optional in the file
 /// — when absent, [`MachineDef::to_machine_config`] defaults it per variant
 /// the same way `main.rs`'s CLI path and `new_vm.rs`'s `constrain_draft` do:
 /// the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
 /// `MachineConfig::validate` accepts there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VdgDto {
+pub enum VDGVariantDTO {
     #[serde(rename = "mc6847")]
-    Mc6847,
+    MC6847,
     #[serde(rename = "mc6847t1")]
-    Mc6847T1,
+    MC6847T1,
 }
 
-impl From<VdgVariant> for VdgDto {
-    fn from(vdg: VdgVariant) -> Self {
+impl From<VDGVariant> for VDGVariantDTO {
+    fn from(vdg: VDGVariant) -> Self {
         match vdg {
-            VdgVariant::Mc6847 => VdgDto::Mc6847,
-            VdgVariant::Mc6847T1 => VdgDto::Mc6847T1,
+            VDGVariant::MC6847 => VDGVariantDTO::MC6847,
+            VDGVariant::MC6847T1 => VDGVariantDTO::MC6847T1,
         }
     }
 }
 
-impl From<VdgDto> for VdgVariant {
-    fn from(vdg: VdgDto) -> Self {
+impl From<VDGVariantDTO> for VDGVariant {
+    fn from(vdg: VDGVariantDTO) -> Self {
         match vdg {
-            VdgDto::Mc6847 => VdgVariant::Mc6847,
-            VdgDto::Mc6847T1 => VdgVariant::Mc6847T1,
+            VDGVariantDTO::MC6847 => VDGVariant::MC6847,
+            VDGVariantDTO::MC6847T1 => VDGVariant::MC6847T1,
         }
     }
 }
 
 /// `[ui].kb_mode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum KbModeDto {
+pub enum KbModeDTO {
     #[default]
     #[serde(rename = "positional")]
     Positional,
@@ -217,26 +217,26 @@ pub enum KbModeDto {
 
 /// `[hardware]` section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HardwareDto {
-    pub variant: VariantDto,
-    pub ram: RamDto,
-    pub video: VideoDto,
-    pub monitor: MonitorDto,
-    /// Absent ⇒ per-variant default; see [`VdgDto`].
+pub struct HardwareDTO {
+    pub variant: MachineVariantDTO,
+    pub ram: RamDTO,
+    pub video: VideoStandardDTO,
+    pub monitor: MonitorDTO,
+    /// Absent ⇒ per-variant default; see [`VDGVariantDTO`].
     #[serde(default)]
-    pub vdg: Option<VdgDto>,
+    pub vdg: Option<VDGVariantDTO>,
     /// Absent ⇒ default ROM composition (`rom_db`/`load_default_rom`).
     #[serde(default)]
     pub rom: Option<String>,
 }
 
-impl HardwareDto {
+impl HardwareDTO {
     /// Build the `[hardware]` section from a config the "New…" dialog or the
     /// manager's detail-pane form produced (`new_vm::config_form_rows`
     /// already ran [`MachineConfig::validate`]-compatible constraints on
     /// it). `vdg` is always written explicitly here — the dialog/pane always
     /// resolve a concrete choice, unlike a hand-written TOML file that may
-    /// omit it to take the per-variant default (see [`VdgDto`]'s doc).
+    /// omit it to take the per-variant default (see [`VDGVariantDTO`]'s doc).
     /// `rom` is passed through as-is: the custom-ROM path isn't part of
     /// [`MachineConfig`] and has no editor yet.
     pub fn from_config(config: &MachineConfig, rom: Option<String>) -> Self {
@@ -258,7 +258,7 @@ impl HardwareDto {
 /// no caller resolves media paths yet (`plan-machine-persistence.md` step 5,
 /// launch/media mounting — not implemented).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct MediaDto {
+pub struct MediaDTO {
     #[serde(default)]
     pub cart: Option<String>,
     #[serde(default)]
@@ -275,7 +275,7 @@ pub struct MediaDto {
 
 /// `[peripherals]` section — section itself optional.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct PeripheralsDto {
+pub struct PeripheralsDTO {
     #[serde(default)]
     pub mpi: bool,
     #[serde(default)]
@@ -291,18 +291,18 @@ fn default_aspect_correct() -> bool {
 
 /// `[ui]` section — section itself optional.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UiDto {
+pub struct UIDTO {
     #[serde(default = "default_aspect_correct")]
     pub aspect_correct: bool,
     #[serde(default)]
-    pub kb_mode: KbModeDto,
+    pub kb_mode: KbModeDTO,
 }
 
-impl Default for UiDto {
+impl Default for UIDTO {
     fn default() -> Self {
         Self {
             aspect_correct: true,
-            kb_mode: KbModeDto::default(),
+            kb_mode: KbModeDTO::default(),
         }
     }
 }
@@ -318,13 +318,13 @@ pub struct MachineDef {
     /// Informational only (e.g. an ISO date); never interpreted.
     #[serde(default)]
     pub created: Option<String>,
-    pub hardware: HardwareDto,
+    pub hardware: HardwareDTO,
     #[serde(default)]
-    pub media: MediaDto,
+    pub media: MediaDTO,
     #[serde(default)]
-    pub peripherals: PeripheralsDto,
+    pub peripherals: PeripheralsDTO,
     #[serde(default)]
-    pub ui: UiDto,
+    pub ui: UIDTO,
     /// Keys `load_one` found in the source file but doesn't know about
     /// (top-level, and one level into each of [`KNOWN_SECTIONS`]) — the same
     /// set [`warn_unknown_keys`] warns about. Never serialized itself
@@ -348,7 +348,7 @@ impl MachineDef {
         let memory: MemorySize = self.hardware.ram.into();
         let video: VideoStandard = self.hardware.video.into();
         let monitor: MonitorType = self.hardware.monitor.into();
-        let vdg: VdgVariant = match self.hardware.vdg {
+        let vdg: VDGVariant = match self.hardware.vdg {
             Some(dto) => dto.into(),
             // Shared with main.rs's CLI path and new_vm.rs's `constrain` —
             // see VdgDto's doc comment and `default_vdg`'s.
@@ -374,10 +374,10 @@ impl MachineDef {
             schema: CURRENT_SCHEMA,
             name,
             created,
-            hardware: HardwareDto::from_config(config, None),
-            media: MediaDto::default(),
-            peripherals: PeripheralsDto::default(),
-            ui: UiDto::default(),
+            hardware: HardwareDTO::from_config(config, None),
+            media: MediaDTO::default(),
+            peripherals: PeripheralsDTO::default(),
+            ui: UIDTO::default(),
             unknown: toml::Table::new(),
         }
     }
@@ -685,15 +685,15 @@ pub(crate) mod tests {
             schema: CURRENT_SCHEMA,
             name: "Dev CoCo 3".to_string(),
             created: Some("2026-07-16".to_string()),
-            hardware: HardwareDto {
-                variant: VariantDto::Coco3,
-                ram: RamDto::K512,
-                video: VideoDto::Ntsc,
-                monitor: MonitorDto::Rgb,
-                vdg: Some(VdgDto::Mc6847),
+            hardware: HardwareDTO {
+                variant: MachineVariantDTO::Coco3,
+                ram: RamDTO::K512,
+                video: VideoStandardDTO::NTSC,
+                monitor: MonitorDTO::RGB,
+                vdg: Some(VDGVariantDTO::MC6847),
                 rom: Some("/path/custom.rom".to_string()),
             },
-            media: MediaDto {
+            media: MediaDTO {
                 cart: Some("/paks/arkanoid.ccc".to_string()),
                 disk0: Some("dev.dsk".to_string()),
                 disk1: Some("/shared/utils.dsk".to_string()),
@@ -701,13 +701,13 @@ pub(crate) mod tests {
                 vhd1: None,
                 tape: Some("session.cas".to_string()),
             },
-            peripherals: PeripheralsDto {
+            peripherals: PeripheralsDTO {
                 mpi: true,
                 rtc: true,
             },
-            ui: UiDto {
+            ui: UIDTO {
                 aspect_correct: false,
-                kb_mode: KbModeDto::Symbolic,
+                kb_mode: KbModeDTO::Symbolic,
             },
             unknown: toml::Table::new(),
         }
@@ -747,15 +747,15 @@ monitor = "rgb"
         assert_eq!(def.created, None);
         assert_eq!(def.hardware.vdg, None);
         assert_eq!(def.hardware.rom, None);
-        assert_eq!(def.media, MediaDto::default());
+        assert_eq!(def.media, MediaDTO::default());
         assert!(!def.peripherals.mpi);
         assert!(!def.peripherals.rtc);
         assert!(def.ui.aspect_correct);
-        assert_eq!(def.ui.kb_mode, KbModeDto::Positional);
+        assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
 
         // Default VDG is per-variant: CoCo 2 -> T1, else plain MC6847.
         let config = def.to_machine_config().expect("should validate");
-        assert_eq!(config.vdg, VdgVariant::Mc6847);
+        assert_eq!(config.vdg, VDGVariant::MC6847);
     }
 
     #[test]
@@ -775,7 +775,7 @@ monitor = "rgb"
         let loaded = load_all(dir.path());
         let def = loaded[0].1.as_ref().expect("minimal file should parse");
         let config = def.to_machine_config().expect("should validate");
-        assert_eq!(config.vdg, VdgVariant::Mc6847T1);
+        assert_eq!(config.vdg, VDGVariant::MC6847T1);
     }
 
     #[test]
@@ -961,13 +961,13 @@ future_ui_field = 42
     fn from_config_round_trips_through_to_machine_config() {
         let config = MachineConfig {
             variant: MachineVariant::Coco2,
-            video: VideoStandard::Ntsc,
+            video: VideoStandard::NTSC,
             memory: MemorySize::K16,
             monitor: MonitorType::Composite,
-            vdg: VdgVariant::Mc6847T1,
+            vdg: VDGVariant::MC6847T1,
         };
         let def = MachineDef::from_config("Test CoCo 2".to_string(), None, &config);
-        assert_eq!(def.hardware.vdg, Some(VdgDto::Mc6847T1));
+        assert_eq!(def.hardware.vdg, Some(VDGVariantDTO::MC6847T1));
         let round_tripped = def.to_machine_config().expect("from_config produces a valid def");
         // MachineConfig has no PartialEq derive — compare fields directly.
         assert_eq!(round_tripped.variant, config.variant);

@@ -35,7 +35,7 @@ use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::rtc::{DistoRtc, RtcTime};
 use coco_core::vhd::VhdImage;
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
 use eframe::egui;
 use joy::JoystickInputs;
@@ -1483,7 +1483,7 @@ impl CocoApp {
                     // so this takes effect live rather than requiring a
                     // power cycle.
                     for (mt, label) in [
-                        (MonitorType::Rgb, "RGB monitor"),
+                        (MonitorType::RGB, "RGB monitor"),
                         (MonitorType::Composite, "Composite monitor"),
                     ] {
                         if ui
@@ -1864,8 +1864,8 @@ fn parse_ram(s: &str) -> Result<MemorySize, String> {
 /// `clap` value parser for `--video`.
 fn parse_video(s: &str) -> Result<VideoStandard, String> {
     match s {
-        "ntsc" => Ok(VideoStandard::Ntsc),
-        "pal" => Ok(VideoStandard::Pal),
+        "ntsc" => Ok(VideoStandard::NTSC),
+        "pal" => Ok(VideoStandard::PAL),
         _ => Err(format!(
             "unknown video standard '{s}' (expected ntsc or pal)"
         )),
@@ -1883,7 +1883,7 @@ enum MonitorArg {
 impl From<MonitorArg> for MonitorType {
     fn from(m: MonitorArg) -> Self {
         match m {
-            MonitorArg::Rgb => MonitorType::Rgb,
+            MonitorArg::Rgb => MonitorType::RGB,
             MonitorArg::Composite => MonitorType::Composite,
         }
     }
@@ -2148,8 +2148,8 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // the hardware section controls the machine's construction.
     app.aspect_correct = def.ui.aspect_correct;
     app.kb_mode = match def.ui.kb_mode {
-        machine_def::KbModeDto::Positional => KbMode::Positional,
-        machine_def::KbModeDto::Symbolic => KbMode::Symbolic,
+        machine_def::KbModeDTO::Positional => KbMode::Positional,
+        machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,
     };
 
     Ok(app)
@@ -2238,10 +2238,10 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
 /// `MachineConfig::validate` accepts there). Shared by the CLI path below,
 /// `new_vm.rs`'s `constrain`, and `machine_def.rs`'s `to_machine_config`'s
 /// `None` (omitted `[hardware].vdg`) arm — previously duplicated three ways.
-const fn default_vdg(variant: MachineVariant) -> VdgVariant {
+const fn default_vdg(variant: MachineVariant) -> VDGVariant {
     match variant {
-        MachineVariant::Coco2 => VdgVariant::Mc6847T1,
-        MachineVariant::Coco1 | MachineVariant::Coco3 => VdgVariant::Mc6847,
+        MachineVariant::Coco2 => VDGVariant::MC6847T1,
+        MachineVariant::Coco1 | MachineVariant::Coco3 => VDGVariant::MC6847,
     }
 }
 
@@ -2499,8 +2499,8 @@ mod cli_tests {
 
     #[test]
     fn parse_video_accepts_ntsc_and_pal() {
-        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::Ntsc));
-        assert_eq!(parse_video("pal"), Ok(VideoStandard::Pal));
+        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::NTSC));
+        assert_eq!(parse_video("pal"), Ok(VideoStandard::PAL));
         assert!(parse_video("secam").is_err());
     }
 
@@ -2513,9 +2513,9 @@ mod cli_tests {
 
     #[test]
     fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
-        assert_eq!(default_vdg(MachineVariant::Coco2), VdgVariant::Mc6847T1);
-        assert_eq!(default_vdg(MachineVariant::Coco1), VdgVariant::Mc6847);
-        assert_eq!(default_vdg(MachineVariant::Coco3), VdgVariant::Mc6847);
+        assert_eq!(default_vdg(MachineVariant::Coco2), VDGVariant::MC6847T1);
+        assert_eq!(default_vdg(MachineVariant::Coco1), VDGVariant::MC6847);
+        assert_eq!(default_vdg(MachineVariant::Coco3), VDGVariant::MC6847);
     }
 
     /// Scratch directory under `target/` holding only the ROM files a given

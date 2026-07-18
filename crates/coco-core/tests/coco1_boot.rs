@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
 use mc6809::Bus;
 
@@ -46,10 +46,10 @@ fn boot_machine() -> Option<(Machine, Vec<u8>)> {
     image.extend_from_slice(&bas);
     let config = MachineConfig {
         variant: MachineVariant::Coco1,
-        video: VideoStandard::Ntsc,
+        video: VideoStandard::NTSC,
         memory: MemorySize::K32,
-        monitor: MonitorType::Rgb,
-        vdg: VdgVariant::Mc6847,
+        monitor: MonitorType::RGB,
+        vdg: VDGVariant::MC6847,
     };
     config
         .validate()
