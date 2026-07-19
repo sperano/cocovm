@@ -636,6 +636,7 @@ impl ManagerApp {
         ui.add_space(DETAIL_SECTION_GAP);
         ui.label(egui::RichText::new("UI").strong());
         ui.checkbox(&mut edit.def.ui.aspect_correct, "4:3 aspect correction");
+        ui.checkbox(&mut edit.def.ui.view_3d, "3D desk view (experimental)");
         ui.horizontal(|ui| {
             ui.label("Keyboard mode:");
             ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDTO::Positional, "Positional");

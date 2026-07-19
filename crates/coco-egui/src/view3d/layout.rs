@@ -10,8 +10,13 @@ use super::crt::{GLOW_QUAD_LIFT, GLOW_QUAD_SCALE};
 pub(super) const DESK_SIZE: [f32; 3] = [1.60, 0.04, 0.90];
 /// CoCo 3 case shell: width, height, depth.
 pub(super) const CASE_SIZE: [f32; 3] = [0.38, 0.08, 0.27];
-/// CRT monitor shell (CM-8-ish footprint): width, height, depth.
+/// CM-8 monitor shell (13" analog-RGB CRT, see [[desk-scene-verified-facts]]
+/// in the session notes / plan doc): width, height, depth.
 pub(super) const MONITOR_SIZE: [f32; 3] = [0.36, 0.34, 0.38];
+/// TV shell (composite/RF alternative): a bigger, deeper consumer set. Sized
+/// so its FRONT FACE sits in the same plane as the CM-8's — the screen quad
+/// and bezel glow stay put when the monitor is swapped.
+pub(super) const TV_SIZE: [f32; 3] = [0.46, 0.38, 0.44];
 /// A ROM pak lying on the desk: width, height, depth.
 pub(super) const CART_SIZE: [f32; 3] = [0.09, 0.025, 0.13];
 /// Visible CRT glass width; height is fixed 4:3 like the real tube, so the
@@ -24,6 +29,10 @@ const SCREEN_LIFT: f32 = 0.002;
 
 /// Monitor center: behind the case, sitting on the desk.
 pub(super) const MONITOR_POS: [f32; 3] = [0.0, MONITOR_SIZE[1] / 2.0, -0.15];
+/// The shared front-face plane both monitor shells present the tube in.
+const MONITOR_FRONT_Z: f32 = MONITOR_POS[2] + MONITOR_SIZE[2] / 2.0;
+/// TV center: same front plane as the CM-8, extra depth grows backwards.
+pub(super) const TV_POS: [f32; 3] = [0.0, TV_SIZE[1] / 2.0, MONITOR_FRONT_Z - TV_SIZE[2] / 2.0];
 /// Screen center: on the monitor's front face, slightly above monitor center
 /// (real CRTs put the tube high, electronics below).
 pub(super) const SCREEN_POS: [f32; 3] = [
@@ -54,6 +63,14 @@ pub(super) const SWITCH_PRESSED_OFFSET: f32 = -0.005;
 pub(crate) const SWITCH_WORLD: [f32; 3] = SWITCH_POS;
 #[cfg(test)]
 pub(crate) const CART_SLOT_WORLD: [f32; 3] = CART_SLOT_POS;
+/// A point on the monitor bezel — right of the screen glass, on the shared
+/// front face — so the swap test hits the shell, not the (occluding) screen.
+#[cfg(test)]
+pub(crate) const MONITOR_BEZEL_WORLD: [f32; 3] = [
+    (SCREEN_WIDTH / 2.0 + MONITOR_SIZE[0] / 2.0) / 2.0,
+    SCREEN_POS[1],
+    MONITOR_FRONT_Z,
+];
 
 /// Cartridge-slot pose: the CoCo's cartridge port is on the right side of
 /// the case; an inserted pak sticks out of that side, long axis along X.
@@ -75,6 +92,8 @@ const CART_ANIM_ARC: f32 = 0.06;
 pub(super) const DESK_COLOR: [f32; 4] = [0.45, 0.32, 0.22, 1.0];
 pub(super) const CASE_COLOR: [f32; 4] = [0.82, 0.80, 0.75, 1.0];
 pub(super) const MONITOR_COLOR: [f32; 4] = [0.75, 0.73, 0.68, 1.0];
+/// Walnut-veneer consumer TV, period-typical.
+pub(super) const TV_COLOR: [f32; 4] = [0.30, 0.20, 0.13, 1.0];
 pub(super) const CART_COLOR: [f32; 4] = [0.25, 0.25, 0.27, 1.0];
 pub(super) const SWITCH_COLOR: [f32; 4] = [0.35, 0.35, 0.36, 1.0];
 /// Room background the viewport clears to.
@@ -87,7 +106,11 @@ pub(super) const HIGHLIGHT_MIX: f32 = 0.25;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum PropKind {
     Desk,
-    Monitor,
+    /// The CM-8 analog-RGB monitor shell (drawn when the machine's monitor
+    /// is RGB; clicking it swaps to the TV — i.e. re-plugs the cable).
+    MonitorCm8,
+    /// The consumer-TV shell (drawn when the monitor is composite).
+    MonitorTv,
     Case,
     PowerSwitch,
     Cartridge,

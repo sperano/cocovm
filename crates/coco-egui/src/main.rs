@@ -1726,6 +1726,7 @@ impl CocoApp {
                 powered: self.powered,
                 cart_inserted: self.mpi.is_none() && self.cart_path.is_some(),
                 cart_interactive: self.mpi.is_none(),
+                composite: self.machine.bus.gime.monitor == MonitorType::Composite,
             };
             // The whole panel is the 3D viewport; pointer drags orbit the
             // camera there, so mouse-joystick mapping keeps the full rect
@@ -1746,6 +1747,15 @@ impl CocoApp {
                 }
                 Some(view3d::DeskAction::InsertCartridge(path)) => self.insert_cartridge(path),
                 Some(view3d::DeskAction::EjectCartridge) => self.eject_cartridge(),
+                // The cable, not machine state — live swap, same as the
+                // View-menu monitor radio.
+                Some(view3d::DeskAction::SwapMonitor) => {
+                    self.machine.bus.gime.monitor =
+                        match self.machine.bus.gime.monitor {
+                            MonitorType::RGB => MonitorType::Composite,
+                            MonitorType::Composite => MonitorType::RGB,
+                        };
+                }
                 None => {}
             }
             return;
@@ -2220,6 +2230,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // toggles afterwards — the file controls where they begin, exactly like
     // the hardware section controls the machine's construction.
     app.aspect_correct = def.ui.aspect_correct;
+    app.view3d.enabled = def.ui.view_3d;
     app.kb_mode = match def.ui.kb_mode {
         machine_def::KbModeDTO::Positional => KbMode::Positional,
         machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,

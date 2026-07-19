@@ -38,7 +38,7 @@ use layout::PropKind;
 use mesh::PropDef;
 
 #[cfg(test)]
-pub(crate) use layout::{CART_SLOT_WORLD, SWITCH_WORLD};
+pub(crate) use layout::{CART_SLOT_WORLD, MONITOR_BEZEL_WORLD, SWITCH_WORLD};
 
 /// Depth bits requested from eframe (`NativeOptions::depth_buffer`) — eframe
 /// defaults to 0 and egui itself never depth-tests, but the desk scene does.
@@ -62,6 +62,10 @@ pub struct MachineView {
     pub cart_inserted: bool,
     /// False while an MPI owns the port; the desk pak is then inert.
     pub cart_interactive: bool,
+    /// True = the composite decode is active, so the desk shows the TV;
+    /// false = RGB, the CM-8. Derived from `GIME::monitor` each frame, so
+    /// the View-menu radio moves the prop too.
+    pub composite: bool,
 }
 
 /// What the user physically did this frame. The app applies these through
@@ -75,6 +79,10 @@ pub enum DeskAction {
     InsertCartridge(PathBuf),
     /// Eject animation finished: pull the pak now.
     EjectCartridge,
+    /// The monitor shell was clicked: swap which display the video cable
+    /// runs to (CM-8 ↔ TV), i.e. flip `MonitorType` RGB ↔ composite. Live,
+    /// no power cycle — it's the cable, exactly like the View-menu radio.
+    SwapMonitor,
 }
 
 pub struct DeskResponse {
@@ -222,14 +230,20 @@ impl View3d {
         let mut best = f32::MAX;
         let mut hovered = None;
         for prop in props {
-            let interactive = match prop.kind {
-                PropKind::PowerSwitch => true,
+            // "Pickable" includes the screen glass, which takes no action —
+            // it sits just proud of the monitor's front face and occludes
+            // it, so clicking the picture never swaps the monitor; only the
+            // bezel/shell around it does.
+            let pickable = match prop.kind {
+                PropKind::PowerSwitch | PropKind::Screen => true,
+                PropKind::MonitorCm8 => !view.composite,
+                PropKind::MonitorTv => view.composite,
                 PropKind::Cartridge => {
                     view.cart_interactive && matches!(self.cart_anim, CartAnim::Idle)
                 }
                 _ => false,
             };
-            if !interactive {
+            if !pickable {
                 continue;
             }
             let inv_model = prop_transform(prop.kind).inverse();
@@ -242,14 +256,18 @@ impl View3d {
                 hovered = Some(prop.kind);
             }
         }
-        hovered
+        // The glass is an occluder, not a target: hovering it is not
+        // actionable, so report it as no hover at all.
+        (hovered != Some(PropKind::Screen)).then_some(hovered).flatten()
     }
 
     /// Apply a click on an already-hovered prop: toggles the power switch,
-    /// starts an eject slide, or asks the app to open the ROM picker.
+    /// swaps the monitor cable, starts an eject slide, or asks the app to
+    /// open the ROM picker.
     fn handle_prop_click(&mut self, kind: PropKind, view: MachineView) -> Option<DeskAction> {
         match kind {
             PropKind::PowerSwitch => Some(DeskAction::TogglePower),
+            PropKind::MonitorCm8 | PropKind::MonitorTv => Some(DeskAction::SwapMonitor),
             PropKind::Cartridge if view.cart_inserted => {
                 self.cart_anim = CartAnim::Ejecting { t: 0.0 };
                 None
@@ -285,7 +303,8 @@ impl View3d {
                 PropKind::Desk => {
                     Mat4::from_translation(Vec3::new(0.0, -layout::DESK_SIZE[1] / 2.0, 0.0))
                 }
-                PropKind::Monitor => Mat4::from_translation(Vec3::from(layout::MONITOR_POS)),
+                PropKind::MonitorCm8 => Mat4::from_translation(Vec3::from(layout::MONITOR_POS)),
+                PropKind::MonitorTv => Mat4::from_translation(Vec3::from(layout::TV_POS)),
                 PropKind::Case => Mat4::from_translation(Vec3::from(layout::CASE_POS)),
                 PropKind::PowerSwitch => {
                     let pressed = if view.powered {
@@ -314,7 +333,7 @@ impl View3d {
             action = self.handle_prop_click(kind, view);
         }
 
-        let instances = build_instances(&props, &prop_transform, hovered);
+        let instances = build_instances(&props, &prop_transform, hovered, view);
 
         let view_proj = view_proj_mat.to_cols_array();
         let gl_state = Arc::clone(&self.gl_state);
@@ -396,16 +415,23 @@ impl View3d {
     }
 }
 
-/// One [`Instance`] per prop for this frame: current pose from
-/// `prop_transform`, hover highlight from `hovered`.
+/// One [`Instance`] per drawn prop for this frame: current pose from
+/// `prop_transform`, hover highlight from `hovered`. Only the monitor shell
+/// the cable currently runs to is drawn (CM-8 for RGB, TV for composite).
 fn build_instances(
     props: &[PropDef],
     prop_transform: &impl Fn(PropKind) -> Mat4,
     hovered: Option<PropKind>,
+    view: MachineView,
 ) -> Vec<Instance> {
     props
         .iter()
         .enumerate()
+        .filter(|(_, prop)| match prop.kind {
+            PropKind::MonitorCm8 => !view.composite,
+            PropKind::MonitorTv => view.composite,
+            _ => true,
+        })
         .map(|(i, prop)| Instance {
             mesh_idx: i,
             transform: prop_transform(prop.kind).to_cols_array(),

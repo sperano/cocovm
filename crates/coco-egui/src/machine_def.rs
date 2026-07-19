@@ -296,6 +296,11 @@ pub struct UIDTO {
     pub aspect_correct: bool,
     #[serde(default)]
     pub kb_mode: KbModeDTO,
+    /// Launch straight into the experimental 3D desk view
+    /// (`docs/plan-3d-world.md`); same flag the View menu and `--view-3d`
+    /// set. Absent in older files → `false` (flat view).
+    #[serde(default)]
+    pub view_3d: bool,
 }
 
 impl Default for UIDTO {
@@ -303,6 +308,7 @@ impl Default for UIDTO {
         Self {
             aspect_correct: true,
             kb_mode: KbModeDTO::default(),
+            view_3d: false,
         }
     }
 }
@@ -468,7 +474,7 @@ const TOP_LEVEL_KEYS: &[&str] = &["schema", "name", "created", "hardware", "medi
 const HARDWARE_KEYS: &[&str] = &["variant", "ram", "video", "monitor", "vdg", "rom"];
 const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
 const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc"];
-const UI_KEYS: &[&str] = &["aspect_correct", "kb_mode"];
+const UI_KEYS: &[&str] = &["aspect_correct", "kb_mode", "view_3d"];
 
 /// Sections that nest under the top level, paired with their known-key
 /// lists, so [`warn_unknown_keys`] can recurse one level without extra
@@ -708,6 +714,7 @@ pub(crate) mod tests {
             ui: UIDTO {
                 aspect_correct: false,
                 kb_mode: KbModeDTO::Symbolic,
+                view_3d: false,
             },
             unknown: toml::Table::new(),
         }

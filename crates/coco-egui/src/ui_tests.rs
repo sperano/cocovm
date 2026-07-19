@@ -938,3 +938,46 @@ fn desk_cartridge_click_ejects_after_animation() {
         "eject animation completion must pull the cartridge"
     );
 }
+
+/// Clicking the monitor bezel re-plugs the video cable: RGB/CM-8 ↔
+/// composite/TV, live (no reset), mirroring the View-menu radio. The click
+/// lands on the shell beside the glass — the screen itself occludes the
+/// shell so the picture is never a swap target.
+#[test]
+fn desk_monitor_bezel_click_swaps_monitor_type() {
+    let mut harness = boot_harness();
+    harness.state_mut().view3d.enabled = true;
+    harness.step();
+    assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
+
+    let rect = harness.state().display_rect;
+    let bezel = harness
+        .state()
+        .view3d
+        .screen_pos_of(view3d::MONITOR_BEZEL_WORLD, rect);
+    click_at(&mut harness, bezel);
+    assert_eq!(
+        harness.state().machine.bus.gime.monitor,
+        MonitorType::Composite,
+        "bezel click must swap RGB → composite (TV)"
+    );
+
+    // And clicking the (bigger) TV shell's bezel swaps back.
+    click_at(&mut harness, bezel);
+    assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
+}
+
+/// `[ui].view_3d = true` in a machine definition launches that VM straight
+/// into the 3D desk view; absent, it stays flat (forward-compatible default).
+#[test]
+fn machine_def_view_3d_launches_into_desk_view() {
+    let mut def = machine_def::MachineDef::from_config(
+        "Desk VM".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    assert!(!def.ui.view_3d, "flat view must be the default");
+    def.ui.view_3d = true;
+    let app = launch_machine(&def, "desk-vm").expect("launch");
+    assert!(app.view3d.enabled);
+}

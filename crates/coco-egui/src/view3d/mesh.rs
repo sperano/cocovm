@@ -6,7 +6,8 @@ use glam::{Mat3, Mat4, Vec3};
 
 use super::layout::{
     CART_COLOR, CART_SIZE, CASE_COLOR, CASE_SIZE, DESK_COLOR, DESK_SIZE, MONITOR_COLOR,
-    MONITOR_SIZE, PropKind, SCREEN_HEIGHT, SCREEN_WIDTH, SWITCH_COLOR, SWITCH_SIZE,
+    MONITOR_SIZE, PropKind, SCREEN_HEIGHT, SCREEN_WIDTH, SWITCH_COLOR, SWITCH_SIZE, TV_COLOR,
+    TV_SIZE,
 };
 
 /// Interleaved vertex data: position (3), normal (3), uv (2).
@@ -188,7 +189,8 @@ pub(super) fn build_props() -> Vec<PropDef> {
     let screen_aabb = Aabb::of(&screen);
     vec![
         solid(PropKind::Desk, "desk", DESK_SIZE, DESK_COLOR),
-        solid(PropKind::Monitor, "monitor-cm8", MONITOR_SIZE, MONITOR_COLOR),
+        solid(PropKind::MonitorCm8, "monitor-cm8", MONITOR_SIZE, MONITOR_COLOR),
+        solid(PropKind::MonitorTv, "monitor-tv", TV_SIZE, TV_COLOR),
         solid(PropKind::Case, "coco3-case", CASE_SIZE, CASE_COLOR),
         solid(PropKind::PowerSwitch, "power-switch", SWITCH_SIZE, SWITCH_COLOR),
         solid(PropKind::Cartridge, "cartridge", CART_SIZE, CART_COLOR),
