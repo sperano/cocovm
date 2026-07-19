@@ -4,11 +4,18 @@
 
 use coco_core::gime::init0;
 use coco_core::video::{
-    render_text, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN, SCREEN_LEN,
-    TEXT_BG_INDEX, TEXT_FG_INDEX,
+    render_text, AlphaGenerator, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN,
+    SCREEN_LEN, TEXT_BG_INDEX, TEXT_FG_INDEX,
 };
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+
+/// These tests exercise `video::render_text` directly (not through a booted
+/// `Machine`), so there's no real PIA1 $FF22 to read. `AlphaGenerator::Mc6847`
+/// with GM0 clear reproduces the pre-`AlphaGenerator` behaviour exactly —
+/// none of these assertions depend on which generator drew the glyph, only
+/// on generic properties (fg/bg swap, border, blank cells).
+const NO_GM0: u8 = 0;
 
 const FG: [u8; 4] = [0xFF, 0x00, 0x00, 0xFF]; // red   (palette[13])
 const BG: [u8; 4] = [0x00, 0xFF, 0x00, 0xFF]; // green (palette[12])
@@ -43,7 +50,7 @@ const AT: u8 = 0x00;
 #[test]
 fn border_and_active_area_use_their_colors() {
     let mut fb = fb();
-    render_text(&[SPACE; SCREEN_LEN], &palette(), BD, &mut fb);
+    render_text(&[SPACE; SCREEN_LEN], &palette(), BD, AlphaGenerator::Mc6847, NO_GM0, &mut fb);
 
     assert_eq!(px(&fb, 0, 0), BD);
     assert_eq!(px(&fb, FB_W - 1, FB_H - 1), BD);
@@ -59,7 +66,7 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = AT;
     let mut fb = fb();
-    render_text(&screen, &palette(), BD, &mut fb);
+    render_text(&screen, &palette(), BD, AlphaGenerator::Mc6847, NO_GM0, &mut fb);
 
     let mut fg_pixels = 0;
     for y in BORDER..BORDER + CELL_H {
@@ -84,7 +91,7 @@ fn inverse_video_swaps_fg_and_bg() {
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = AT_INVERSE;
     let mut fb = fb();
-    render_text(&screen, &palette(), BD, &mut fb);
+    render_text(&screen, &palette(), BD, AlphaGenerator::Mc6847, NO_GM0, &mut fb);
 
     let mut counts = (0, 0);
     for y in BORDER..BORDER + CELL_H {
@@ -160,7 +167,7 @@ fn semigraphics4_renders_2x2_color_blocks() {
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = SG4;
     let mut fb = fb();
-    render_text(&screen, &palette(), BD, &mut fb);
+    render_text(&screen, &palette(), BD, AlphaGenerator::Mc6847, NO_GM0, &mut fb);
 
     let quad_x = CELL_W / 2;
     let quad_y = CELL_H / 2;

@@ -79,6 +79,12 @@ pub trait Cartridge {
     fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
         None
     }
+    /// Downcast to the Disto real-time clock, if that's what this cartridge
+    /// is — how the frontend reaches the clock chip (sync to host time)
+    /// behind the trait object.
+    fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
+        None
+    }
     /// Read the Multi-Pak Interface's own select register (`$FF7F`). Not
     /// routed through [`Cartridge::read`]/[`Cartridge::write`]: those carry
     /// the SCS I/O window ($FF40-$FF5F), and `$FF7F` must reach the MPI
@@ -421,6 +427,10 @@ impl Cartridge for MultiPak {
         self.slots
             .iter_mut()
             .find_map(|slot| slot.as_deluxe_rs232())
+    }
+
+    fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
+        self.slots.iter_mut().find_map(|slot| slot.as_disto_rtc())
     }
 
     fn control_read(&mut self) -> u8 {
