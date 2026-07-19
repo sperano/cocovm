@@ -93,6 +93,94 @@ const FOV_Y_RADIANS: f32 = std::f32::consts::FRAC_PI_4;
 const Z_NEAR: f32 = 0.05;
 const Z_FAR: f32 = 20.0;
 
+// ---------------------------------------------------------------------------
+// CRT shader stack (plan task 2). Six composable passes, each independently
+// toggleable from the CRT settings window; strength 0 / toggle off disables a
+// pass in the shader (uniform reaches it as 0).
+// ---------------------------------------------------------------------------
+
+/// Offscreen phosphor surface the framebuffer is accumulated onto (ping-pong
+/// pair for the persistence blend). 4:3 like the tube; finer than any CoCo
+/// mode so no detail is lost before the CRT-face pass resamples it.
+const PHOSPHOR_SIZE: [i32; 2] = [640, 480];
+/// Small blurred copy of the phosphor surface driving bloom + bezel glow.
+const GLOW_SIZE: [i32; 2] = [160, 120];
+/// The additive glow quad extends this far beyond the screen quad, spilling
+/// tube light onto the bezel. Must match `GLOW_QUAD_SCALE` in the fragment
+/// shader.
+const GLOW_QUAD_SCALE: f32 = 1.5;
+/// Lift of the glow quad off the screen quad (which itself sits
+/// [`SCREEN_LIFT`] off the monitor face).
+const GLOW_QUAD_LIFT: f32 = 0.004;
+/// Phosphor decay 1.0 would never fade — cap the settings slider below it.
+const PERSISTENCE_MAX: f32 = 0.95;
+
+/// Per-pass toggles and strengths for the CRT look, edited live in the
+/// "CRT" settings window. All strengths are 0..=1 except persistence
+/// (0..=[`PERSISTENCE_MAX`], it's a decay factor).
+#[derive(Clone, Copy)]
+pub struct CrtParams {
+    pub barrel_on: bool,
+    pub barrel: f32,
+    pub scanlines_on: bool,
+    pub scanlines: f32,
+    pub mask_on: bool,
+    pub mask: f32,
+    pub persistence_on: bool,
+    pub persistence: f32,
+    pub bloom_on: bool,
+    pub bloom: f32,
+    pub reflection_on: bool,
+    pub reflection: f32,
+}
+
+impl Default for CrtParams {
+    fn default() -> Self {
+        Self {
+            barrel_on: true,
+            barrel: 0.35,
+            scanlines_on: true,
+            scanlines: 0.35,
+            mask_on: true,
+            mask: 0.30,
+            persistence_on: true,
+            persistence: 0.55,
+            bloom_on: true,
+            bloom: 0.35,
+            reflection_on: true,
+            reflection: 0.25,
+        }
+    }
+}
+
+/// The uniform values one frame's callback needs, resolved from
+/// [`CrtParams`] on the UI thread (toggle off → 0.0 → pass disabled).
+#[derive(Clone, Copy)]
+struct CrtUniforms {
+    /// barrel, scanlines, mask, bloom — the shader's `u_crt_a`.
+    a: [f32; 4],
+    /// reflection, source scanline count, unused, unused — `u_crt_b`.
+    b: [f32; 4],
+    /// Phosphor decay factor for the persistence pass.
+    decay: f32,
+}
+
+impl CrtParams {
+    fn uniforms(&self, fb_lines: f32) -> CrtUniforms {
+        let on = |enabled: bool, strength: f32| if enabled { strength } else { 0.0 };
+        CrtUniforms {
+            a: [
+                on(self.barrel_on, self.barrel),
+                on(self.scanlines_on, self.scanlines),
+                on(self.mask_on, self.mask),
+                on(self.bloom_on, self.bloom),
+            ],
+            b: [on(self.reflection_on, self.reflection), fb_lines, 0.0, 0.0],
+            decay: on(self.persistence_on, self.persistence),
+        }
+    }
+}
+
 struct OrbitCamera {
     yaw: f32,
     pitch: f32,
@@ -289,6 +377,13 @@ fn build_props() -> Vec<PropDef> {
     ]
 }
 
+/// Where the additive bezel-glow quad sits: over the screen quad, scaled up
+/// to spill onto the monitor shell.
+fn glow_quad_transform() -> Mat4 {
+    Mat4::from_translation(Vec3::from(SCREEN_POS) + Vec3::new(0.0, 0.0, GLOW_QUAD_LIFT))
+        * Mat4::from_scale(Vec3::new(GLOW_QUAD_SCALE, GLOW_QUAD_SCALE, 1.0))
+}
+
 // ---------------------------------------------------------------------------
 // GL resources (live on the glow context, created inside the paint callback).
 // ---------------------------------------------------------------------------
@@ -308,23 +403,116 @@ void main() {
 }
 "#;
 
+/// `u_mode` values shared between [`FRAGMENT_SHADER`] and the draw loop.
+const MODE_SOLID: i32 = 0;
+const MODE_CRT: i32 = 1;
+const MODE_GLOW: i32 = 2;
+
 const FRAGMENT_SHADER: &str = r#"#version 150
 uniform vec4 u_color;
-uniform sampler2D u_tex;
-uniform int u_use_tex;
+uniform sampler2D u_tex;   // solid: unused; CRT: phosphor; glow quad: glow
+uniform sampler2D u_glow;  // CRT face only: blurred glow for the bloom add
+uniform int u_mode;        // 0 solid lit, 1 CRT face, 2 additive glow quad
+uniform vec4 u_crt_a;      // barrel, scanlines, mask, bloom strengths
+uniform vec4 u_crt_b;      // reflection strength, source scanline count, -, -
 in vec3 v_normal;
 in vec2 v_uv;
 out vec4 frag_color;
 const vec3 LIGHT_DIR = vec3(0.35, 0.86, 0.37); // pre-normalized
 const float AMBIENT = 0.35;
+const float PI = 3.14159265;
+// uv displacement toward the corners at barrel strength 1.0
+const float BARREL_MAX = 0.5;
+// aperture-grille RGB triads across the tube width
+const float MASK_TRIADS = 320.0;
+// must match Rust's GLOW_QUAD_SCALE
+const float GLOW_QUAD_SCALE = 1.5;
+
+// The tube face: barrel-distort the sample position (image bulges, raster
+// pulls in from the quad corners), then scanlines and grille on the tube
+// pixel, then bloom and the room-light streak on the glass over everything.
+vec3 crt_face(vec2 uv) {
+    float barrel = u_crt_a.x, scan = u_crt_a.y, mask = u_crt_a.z, bloom = u_crt_a.w;
+    float refl = u_crt_b.x, lines = u_crt_b.y;
+    vec2 centered = uv - 0.5;
+    vec2 tube_uv = 0.5 + centered * (1.0 + barrel * BARREL_MAX * dot(centered, centered) * 2.0);
+    vec3 col = vec3(0.0);
+    if (all(greaterThanEqual(tube_uv, vec2(0.0))) && all(lessThanEqual(tube_uv, vec2(1.0)))) {
+        col = texture(u_tex, tube_uv).rgb;
+        col *= 1.0 - scan * 0.5 * (1.0 - cos(tube_uv.y * lines * 2.0 * PI));
+        int triad = int(mod(floor(tube_uv.x * MASK_TRIADS * 3.0), 3.0));
+        vec3 tint = triad == 0 ? vec3(1.0, 0.6, 0.6)
+                  : triad == 1 ? vec3(0.6, 1.0, 0.6)
+                               : vec3(0.6, 0.6, 1.0);
+        col *= mix(vec3(1.0), tint, mask);
+    }
+    col += texture(u_glow, uv).rgb * bloom * 0.7;
+    float d = dot(uv - vec2(0.30, 0.25), normalize(vec2(0.8, 1.0)));
+    col += refl * 0.25 * exp(-d * d * 40.0);
+    return col;
+}
+
+// The oversized additive quad in front of the bezel: the blurred tube image
+// with a radial falloff, so bright screens light the plastic around them.
+vec3 glow_quad() {
+    vec2 tube = (v_uv - 0.5) * GLOW_QUAD_SCALE + 0.5;
+    vec3 g = texture(u_tex, clamp(tube, 0.0, 1.0)).rgb;
+    float falloff = smoothstep(1.0, 0.45, length(v_uv - 0.5) * 2.0);
+    return g * falloff;
+}
+
 void main() {
-    if (u_use_tex == 1) {
-        // The CRT face is emissive: no lighting on the phosphor.
-        frag_color = texture(u_tex, v_uv);
+    if (u_mode == 1) {
+        frag_color = vec4(crt_face(v_uv), 1.0);
+    } else if (u_mode == 2) {
+        frag_color = vec4(glow_quad() * u_crt_a.w * 0.8, 1.0);
     } else {
         float diffuse = max(dot(normalize(v_normal), LIGHT_DIR), 0.0);
         float light = mix(AMBIENT, 1.0, diffuse);
         frag_color = vec4(u_color.rgb * light, u_color.a);
+    }
+}
+"#;
+
+/// Fullscreen-triangle vertex shader for the offscreen passes (no vertex
+/// buffer; positions derived from `gl_VertexID`, drawn with an empty VAO).
+const BLIT_VERTEX_SHADER: &str = r#"#version 150
+out vec2 v_uv;
+void main() {
+    vec2 pos = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)) * 2.0 - 1.0;
+    v_uv = pos * 0.5 + 0.5;
+    gl_Position = vec4(pos, 0.0, 1.0);
+}
+"#;
+
+/// Pass 0: phosphor persistence — new frame combined with the decayed
+/// previous phosphor surface (`max`, like phosphor that re-excites).
+/// Pass 1: 9-tap blur of the phosphor surface into the small glow target.
+const BLIT_FRAGMENT_SHADER: &str = r#"#version 150
+uniform sampler2D u_src;
+uniform sampler2D u_prev;
+uniform int u_pass;
+uniform float u_decay;
+uniform vec2 u_texel;
+in vec2 v_uv;
+out vec4 frag_color;
+void main() {
+    if (u_pass == 0) {
+        vec3 cur = texture(u_src, v_uv).rgb;
+        vec3 prev = texture(u_prev, v_uv).rgb * u_decay;
+        frag_color = vec4(max(cur, prev), 1.0);
+    } else {
+        vec2 o = u_texel * 1.6;
+        vec3 sum = texture(u_src, v_uv).rgb * 0.2;
+        sum += (texture(u_src, v_uv + vec2(o.x, 0.0)).rgb
+              + texture(u_src, v_uv - vec2(o.x, 0.0)).rgb
+              + texture(u_src, v_uv + vec2(0.0, o.y)).rgb
+              + texture(u_src, v_uv - vec2(0.0, o.y)).rgb) * 0.125;
+        sum += (texture(u_src, v_uv + o).rgb
+              + texture(u_src, v_uv - o).rgb
+              + texture(u_src, v_uv + vec2(o.x, -o.y)).rgb
+              + texture(u_src, v_uv + vec2(-o.x, o.y)).rgb) * 0.075;
+        frag_color = vec4(sum, 1.0);
     }
 }
 "#;
@@ -336,14 +524,34 @@ struct GlMesh {
     index_count: i32,
 }
 
+/// A texture + framebuffer pair used as an offscreen render target.
+struct RenderTarget {
+    tex: glow::Texture,
+    fbo: glow::Framebuffer,
+}
+
 struct GlScene {
     program: glow::Program,
     u_view_proj: Option<glow::UniformLocation>,
     u_model: Option<glow::UniformLocation>,
     u_color: Option<glow::UniformLocation>,
-    u_use_tex: Option<glow::UniformLocation>,
+    u_mode: Option<glow::UniformLocation>,
+    u_crt_a: Option<glow::UniformLocation>,
+    u_crt_b: Option<glow::UniformLocation>,
     /// One entry per prop, same order as the `PropDef` list.
     meshes: Vec<GlMesh>,
+    /// Offscreen-pass program (fullscreen triangle, no vertex buffer).
+    blit_program: glow::Program,
+    u_pass: Option<glow::UniformLocation>,
+    u_decay: Option<glow::UniformLocation>,
+    /// Core profile requires *a* VAO bound even for buffer-less draws.
+    empty_vao: glow::VertexArray,
+    /// Phosphor ping-pong pair; `phosphor_prev` indexes last frame's surface.
+    phosphor: [RenderTarget; 2],
+    phosphor_prev: usize,
+    glow_target: RenderTarget,
+    /// The additive bezel-glow quad (same geometry as the screen quad).
+    glow_mesh: GlMesh,
 }
 
 enum GlState {
@@ -372,10 +580,10 @@ impl GlScene {
         }
     }
 
-    fn new(gl: &glow::Context, props: &[PropDef]) -> Result<Self, String> {
+    unsafe fn link_program(gl: &glow::Context, vs_src: &str, fs_src: &str) -> Result<glow::Program, String> {
         unsafe {
-            let vs = Self::compile_shader(gl, glow::VERTEX_SHADER, VERTEX_SHADER)?;
-            let fs = Self::compile_shader(gl, glow::FRAGMENT_SHADER, FRAGMENT_SHADER)?;
+            let vs = Self::compile_shader(gl, glow::VERTEX_SHADER, vs_src)?;
+            let fs = Self::compile_shader(gl, glow::FRAGMENT_SHADER, fs_src)?;
             let program = gl.create_program()?;
             gl.attach_shader(program, vs);
             gl.attach_shader(program, fs);
@@ -389,78 +597,219 @@ impl GlScene {
                 gl.delete_program(program);
                 return Err(log);
             }
+            Ok(program)
+        }
+    }
+
+    unsafe fn upload_mesh(
+        gl: &glow::Context,
+        program: glow::Program,
+        mesh: &MeshData,
+    ) -> Result<GlMesh, String> {
+        unsafe {
+            let vao = gl.create_vertex_array()?;
+            let vbo = gl.create_buffer()?;
+            let ebo = gl.create_buffer()?;
+            gl.bind_vertex_array(Some(vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, bytemuck_cast(&mesh.verts), glow::STATIC_DRAW);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
+            gl.buffer_data_u8_slice(
+                glow::ELEMENT_ARRAY_BUFFER,
+                bytemuck_cast(&mesh.indices),
+                glow::STATIC_DRAW,
+            );
+            let float_size = std::mem::size_of::<f32>() as i32;
+            for (name, components, offset_floats) in
+                [("a_pos", 3, 0), ("a_normal", 3, 3), ("a_uv", 2, 6)]
+            {
+                if let Some(loc) = gl.get_attrib_location(program, name) {
+                    gl.enable_vertex_attrib_array(loc);
+                    gl.vertex_attrib_pointer_f32(
+                        loc,
+                        components,
+                        glow::FLOAT,
+                        false,
+                        VERTEX_STRIDE_BYTES,
+                        offset_floats * float_size,
+                    );
+                }
+            }
+            gl.bind_vertex_array(None);
+            Ok(GlMesh {
+                vao,
+                vbo,
+                ebo,
+                index_count: mesh.indices.len() as i32,
+            })
+        }
+    }
+
+    /// A linear-filtered, edge-clamped RGBA8 offscreen target.
+    unsafe fn create_target(gl: &glow::Context, size: [i32; 2]) -> Result<RenderTarget, String> {
+        unsafe {
+            let tex = gl.create_texture()?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA8 as i32,
+                size[0],
+                size[1],
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(None),
+            );
+            for (param, value) in [
+                (glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32),
+                (glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32),
+                (glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32),
+                (glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32),
+            ] {
+                gl.tex_parameter_i32(glow::TEXTURE_2D, param, value);
+            }
+            let fbo = gl.create_framebuffer()?;
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(tex),
+                0,
+            );
+            let status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
+            if status != glow::FRAMEBUFFER_COMPLETE {
+                return Err(format!("offscreen framebuffer incomplete: 0x{status:x}"));
+            }
+            Ok(RenderTarget { tex, fbo })
+        }
+    }
+
+    fn new(gl: &glow::Context, props: &[PropDef]) -> Result<Self, String> {
+        unsafe {
+            let program = Self::link_program(gl, VERTEX_SHADER, FRAGMENT_SHADER)?;
+            let blit_program = Self::link_program(gl, BLIT_VERTEX_SHADER, BLIT_FRAGMENT_SHADER)?;
 
             let mut meshes = Vec::with_capacity(props.len());
             for prop in props {
-                let vao = gl.create_vertex_array()?;
-                let vbo = gl.create_buffer()?;
-                let ebo = gl.create_buffer()?;
-                gl.bind_vertex_array(Some(vao));
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    bytemuck_cast(&prop.mesh.verts),
-                    glow::STATIC_DRAW,
-                );
-                gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
-                gl.buffer_data_u8_slice(
-                    glow::ELEMENT_ARRAY_BUFFER,
-                    bytemuck_cast(&prop.mesh.indices),
-                    glow::STATIC_DRAW,
-                );
-                let float_size = std::mem::size_of::<f32>() as i32;
-                for (name, components, offset_floats) in
-                    [("a_pos", 3, 0), ("a_normal", 3, 3), ("a_uv", 2, 6)]
-                {
-                    if let Some(loc) = gl.get_attrib_location(program, name) {
-                        gl.enable_vertex_attrib_array(loc);
-                        gl.vertex_attrib_pointer_f32(
-                            loc,
-                            components,
-                            glow::FLOAT,
-                            false,
-                            VERTEX_STRIDE_BYTES,
-                            offset_floats * float_size,
-                        );
-                    }
-                }
-                gl.bind_vertex_array(None);
-                meshes.push(GlMesh {
-                    vao,
-                    vbo,
-                    ebo,
-                    index_count: prop.mesh.indices.len() as i32,
-                });
+                meshes.push(Self::upload_mesh(gl, program, &prop.mesh)?);
             }
+            let glow_mesh = Self::upload_mesh(gl, program, &screen_quad())?;
 
-            // The framebuffer sampler always reads texture unit 0.
+            let empty_vao = gl.create_vertex_array()?;
+            let phosphor = [
+                Self::create_target(gl, PHOSPHOR_SIZE)?,
+                Self::create_target(gl, PHOSPHOR_SIZE)?,
+            ];
+            let glow_target = Self::create_target(gl, GLOW_SIZE)?;
+
+            // Fixed sampler units: scene u_tex=0 / u_glow=1, blit u_src=0 /
+            // u_prev=1. The blur's texel size never changes either.
             gl.use_program(Some(program));
-            if let Some(loc) = gl.get_uniform_location(program, "u_tex") {
-                gl.uniform_1_i32(Some(&loc), 0);
+            for (name, unit) in [("u_tex", 0), ("u_glow", 1)] {
+                if let Some(loc) = gl.get_uniform_location(program, name) {
+                    gl.uniform_1_i32(Some(&loc), unit);
+                }
             }
+            gl.use_program(Some(blit_program));
+            for (name, unit) in [("u_src", 0), ("u_prev", 1)] {
+                if let Some(loc) = gl.get_uniform_location(blit_program, name) {
+                    gl.uniform_1_i32(Some(&loc), unit);
+                }
+            }
+            gl.uniform_2_f32(
+                gl.get_uniform_location(blit_program, "u_texel").as_ref(),
+                1.0 / GLOW_SIZE[0] as f32,
+                1.0 / GLOW_SIZE[1] as f32,
+            );
 
             Ok(Self {
                 u_view_proj: gl.get_uniform_location(program, "u_view_proj"),
                 u_model: gl.get_uniform_location(program, "u_model"),
                 u_color: gl.get_uniform_location(program, "u_color"),
-                u_use_tex: gl.get_uniform_location(program, "u_use_tex"),
+                u_mode: gl.get_uniform_location(program, "u_mode"),
+                u_crt_a: gl.get_uniform_location(program, "u_crt_a"),
+                u_crt_b: gl.get_uniform_location(program, "u_crt_b"),
                 program,
                 meshes,
+                u_pass: gl.get_uniform_location(blit_program, "u_pass"),
+                u_decay: gl.get_uniform_location(blit_program, "u_decay"),
+                blit_program,
+                empty_vao,
+                phosphor,
+                phosphor_prev: 0,
+                glow_target,
+                glow_mesh,
             })
         }
     }
 
-    /// Draw the whole prop list. Runs inside the paint callback: viewport is
-    /// already the panel rect and scissor already clips to it, so the clear
-    /// only touches our pixels; egui_glow restores its own state afterwards.
+    /// The two offscreen passes: framebuffer + decayed previous phosphor →
+    /// current phosphor surface, then phosphor → small blurred glow target.
+    /// Returns the phosphor texture the scene pass should display. Caller
+    /// restores framebuffer/viewport/scissor.
+    unsafe fn offscreen_passes(
+        &mut self,
+        gl: &glow::Context,
+        fb_texture: glow::Texture,
+        decay: f32,
+    ) -> glow::Texture {
+        unsafe {
+            let (prev, cur) = (self.phosphor_prev, 1 - self.phosphor_prev);
+            gl.use_program(Some(self.blit_program));
+            gl.bind_vertex_array(Some(self.empty_vao));
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.phosphor[cur].fbo));
+            gl.viewport(0, 0, PHOSPHOR_SIZE[0], PHOSPHOR_SIZE[1]);
+            gl.uniform_1_i32(self.u_pass.as_ref(), 0);
+            gl.uniform_1_f32(self.u_decay.as_ref(), decay);
+            gl.active_texture(glow::TEXTURE1);
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.phosphor[prev].tex));
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, Some(fb_texture));
+            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.glow_target.fbo));
+            gl.viewport(0, 0, GLOW_SIZE[0], GLOW_SIZE[1]);
+            gl.uniform_1_i32(self.u_pass.as_ref(), 1);
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.phosphor[cur].tex));
+            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+
+            self.phosphor_prev = cur;
+            self.phosphor[cur].tex
+        }
+    }
+
+    /// Draw the frame: offscreen CRT passes, then the prop list, then the
+    /// additive bezel glow. Runs inside the paint callback: viewport is
+    /// already the panel rect and scissor already clips to it, so the final
+    /// clear only touches our pixels; egui_glow restores its own state
+    /// afterwards (the offscreen passes restore theirs via `restore_fbo` +
+    /// `viewport_px` before the scene draws).
+    #[allow(clippy::too_many_arguments)]
     fn paint(
-        &self,
+        &mut self,
         gl: &glow::Context,
         props: &[PropDef],
         view_proj: &[f32; 16],
         fb_texture: Option<glow::Texture>,
+        crt: CrtUniforms,
+        restore_fbo: Option<glow::Framebuffer>,
+        viewport_px: [i32; 4],
     ) {
         unsafe {
+            // Offscreen passes first (scissor off — they own their whole
+            // targets), then restore the on-screen state the callback got.
+            let display_tex = fb_texture.map(|fb| {
+                gl.disable(glow::SCISSOR_TEST);
+                let tex = self.offscreen_passes(gl, fb, crt.decay);
+                gl.bind_framebuffer(glow::FRAMEBUFFER, restore_fbo);
+                gl.viewport(viewport_px[0], viewport_px[1], viewport_px[2], viewport_px[3]);
+                gl.enable(glow::SCISSOR_TEST);
+                tex
+            });
+
             gl.disable(glow::BLEND);
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LESS);
@@ -473,21 +822,53 @@ impl GlScene {
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
             gl.use_program(Some(self.program));
             gl.uniform_matrix_4_f32_slice(self.u_view_proj.as_ref(), false, view_proj);
+            gl.uniform_4_f32_slice(self.u_crt_a.as_ref(), &crt.a);
+            gl.uniform_4_f32_slice(self.u_crt_b.as_ref(), &crt.b);
+            gl.active_texture(glow::TEXTURE1);
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.glow_target.tex));
+            gl.active_texture(glow::TEXTURE0);
+
             for (prop, mesh) in props.iter().zip(&self.meshes) {
-                let use_tex = prop.is_screen && fb_texture.is_some();
-                if use_tex {
-                    gl.active_texture(glow::TEXTURE0);
-                    gl.bind_texture(glow::TEXTURE_2D, fb_texture);
-                }
+                let mode = if prop.is_screen && display_tex.is_some() {
+                    gl.bind_texture(glow::TEXTURE_2D, display_tex);
+                    MODE_CRT
+                } else {
+                    MODE_SOLID
+                };
                 gl.uniform_matrix_4_f32_slice(
                     self.u_model.as_ref(),
                     false,
                     &prop.transform.to_cols_array(),
                 );
                 gl.uniform_4_f32_slice(self.u_color.as_ref(), &prop.color);
-                gl.uniform_1_i32(self.u_use_tex.as_ref(), use_tex as i32);
+                gl.uniform_1_i32(self.u_mode.as_ref(), mode);
                 gl.bind_vertex_array(Some(mesh.vao));
                 gl.draw_elements(glow::TRIANGLES, mesh.index_count, glow::UNSIGNED_INT, 0);
+            }
+
+            // Bezel glow: additive, no depth write (it's light, not a
+            // surface), only when there's a powered tube and bloom is on.
+            let bloom_strength = crt.a[3];
+            if display_tex.is_some() && bloom_strength > 0.0 {
+                gl.enable(glow::BLEND);
+                gl.blend_func(glow::ONE, glow::ONE);
+                gl.depth_mask(false);
+                gl.bind_texture(glow::TEXTURE_2D, Some(self.glow_target.tex));
+                gl.uniform_matrix_4_f32_slice(
+                    self.u_model.as_ref(),
+                    false,
+                    &glow_quad_transform().to_cols_array(),
+                );
+                gl.uniform_1_i32(self.u_mode.as_ref(), MODE_GLOW);
+                gl.bind_vertex_array(Some(self.glow_mesh.vao));
+                gl.draw_elements(
+                    glow::TRIANGLES,
+                    self.glow_mesh.index_count,
+                    glow::UNSIGNED_INT,
+                    0,
+                );
+                gl.depth_mask(true);
+                gl.disable(glow::BLEND);
             }
             gl.bind_vertex_array(None);
         }
@@ -496,10 +877,16 @@ impl GlScene {
     fn destroy(&self, gl: &glow::Context) {
         unsafe {
             gl.delete_program(self.program);
-            for mesh in &self.meshes {
+            gl.delete_program(self.blit_program);
+            gl.delete_vertex_array(self.empty_vao);
+            for mesh in self.meshes.iter().chain([&self.glow_mesh]) {
                 gl.delete_vertex_array(mesh.vao);
                 gl.delete_buffer(mesh.vbo);
                 gl.delete_buffer(mesh.ebo);
+            }
+            for target in self.phosphor.iter().chain([&self.glow_target]) {
+                gl.delete_framebuffer(target.fbo);
+                gl.delete_texture(target.tex);
             }
         }
     }
@@ -564,6 +951,10 @@ const SNAPSHOT_DELAY_FRAMES: u32 = 240;
 pub struct View3d {
     /// View → "3D Desk" toggle; off = the classic flat display.
     pub enabled: bool,
+    /// View → "CRT Settings…" window visibility.
+    pub show_settings: bool,
+    /// Live-editable CRT pass toggles/strengths (the settings window).
+    pub crt: CrtParams,
     camera: OrbitCamera,
     /// CPU-side props, loaded (glTF or placeholder) on first use.
     props: Option<Arc<Vec<PropDef>>>,
@@ -579,6 +970,8 @@ impl View3d {
     pub fn new() -> Self {
         Self {
             enabled: false,
+            show_settings: false,
+            crt: CrtParams::default(),
             camera: OrbitCamera::default(),
             props: None,
             gl_state: Arc::new(Mutex::new(GlState::Uninit)),
@@ -590,9 +983,10 @@ impl View3d {
     }
 
     /// Fill the available panel rect with the desk scene, `fb_tex` being the
-    /// per-frame `coco-fb` texture (uploaded by `step_emulation`). Dragging
-    /// orbits, scrolling zooms. Returns the rect it occupied.
-    pub fn ui(&mut self, ui: &mut egui::Ui, fb_tex: egui::TextureId) -> egui::Rect {
+    /// per-frame `coco-fb` texture (uploaded by `step_emulation`) and
+    /// `fb_lines` its height in emulated scanlines (drives the scanline
+    /// pass). Dragging orbits, scrolling zooms. Returns the rect it occupied.
+    pub fn ui(&mut self, ui: &mut egui::Ui, fb_tex: egui::TextureId, fb_lines: f32) -> egui::Rect {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, egui::Sense::drag());
         if response.dragged() {
@@ -616,6 +1010,7 @@ impl View3d {
             .to_cols_array();
         let gl_state = Arc::clone(&self.gl_state);
         let snapshot = Arc::clone(&self.snapshot);
+        let crt = self.crt.uniforms(fb_lines);
         let callback = eframe::egui_glow::CallbackFn::new(move |info, painter| {
             let gl = painter.gl();
             let mut state = gl_state.lock().unwrap();
@@ -628,8 +1023,17 @@ impl View3d {
                     }
                 };
             }
-            if let GlState::Ready(scene) = &*state {
-                scene.paint(gl, &props, &view_proj, painter.texture(fb_tex));
+            if let GlState::Ready(scene) = &mut *state {
+                let vp = info.viewport_in_pixels();
+                scene.paint(
+                    gl,
+                    &props,
+                    &view_proj,
+                    painter.texture(fb_tex),
+                    crt,
+                    painter.intermediate_fbo(),
+                    [vp.left_px, vp.from_bottom_px, vp.width_px, vp.height_px],
+                );
                 let mut snapshot = snapshot.lock().unwrap();
                 match snapshot.as_mut() {
                     Some((path, 0)) => {
@@ -646,6 +1050,44 @@ impl View3d {
             callback: Arc::new(callback),
         });
         rect
+    }
+
+    /// The "CRT" settings window (View → CRT Settings…): one toggle + one
+    /// strength slider per shader pass, edited live.
+    pub fn settings_window(&mut self, ctx: &egui::Context) {
+        if !self.show_settings {
+            return;
+        }
+        let mut open = self.show_settings;
+        egui::Window::new(crate::window_title(ctx, "CRT"))
+            .open(&mut open)
+            .resizable(false)
+            .show(ctx, |ui| {
+                let crt = &mut self.crt;
+                egui::Grid::new("crt_passes").num_columns(2).show(ui, |ui| {
+                    for (on, strength, label, max) in [
+                        (&mut crt.barrel_on, &mut crt.barrel, "Barrel curvature", 1.0),
+                        (&mut crt.scanlines_on, &mut crt.scanlines, "Scanlines", 1.0),
+                        (&mut crt.mask_on, &mut crt.mask, "Aperture grille", 1.0),
+                        (
+                            &mut crt.persistence_on,
+                            &mut crt.persistence,
+                            "Phosphor persistence",
+                            PERSISTENCE_MAX,
+                        ),
+                        (&mut crt.bloom_on, &mut crt.bloom, "Bloom / bezel glow", 1.0),
+                        (&mut crt.reflection_on, &mut crt.reflection, "Glass reflection", 1.0),
+                    ] {
+                        ui.checkbox(on, label);
+                        ui.add_enabled(*on, egui::Slider::new(strength, 0.0..=max));
+                        ui.end_row();
+                    }
+                });
+                if ui.button("Reset to defaults").clicked() {
+                    *crt = CrtParams::default();
+                }
+            });
+        self.show_settings = open;
     }
 
     /// Free the GL resources (called from `CocoApp::on_exit`, the only hook

@@ -1481,6 +1481,13 @@ impl CocoApp {
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
                     ui.checkbox(&mut self.view3d.enabled, "3D Desk (experimental)");
+                    if ui
+                        .add_enabled(self.view3d.enabled, egui::Button::new("CRT Settings…"))
+                        .clicked()
+                    {
+                        self.view3d.show_settings = !self.view3d.show_settings;
+                        ui.close();
+                    }
                     ui.separator();
                     let mut paper_open = self.paper_window.open;
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
@@ -1622,6 +1629,7 @@ impl CocoApp {
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
+        self.view3d.settings_window(ctx);
         if self.pending_disk_action.is_some() {
             // Match the dialog body to the button font (egui's default body
             // text is a touch smaller) and give the text room.
@@ -1697,7 +1705,7 @@ impl CocoApp {
             // The whole panel is the 3D viewport; pointer drags orbit the
             // camera there, so mouse-joystick mapping keeps the full rect
             // (usable, if unscaled — the flat view remains the precise one).
-            self.display_rect = self.view3d.ui(ui, tex_id);
+            self.display_rect = self.view3d.ui(ui, tex_id, self.machine.fb_height as f32);
             return;
         }
         let tex = self.texture.as_ref().unwrap();
