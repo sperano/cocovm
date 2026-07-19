@@ -223,6 +223,10 @@ struct CocoApp {
     /// machine as a physical desk with the framebuffer on a CRT face instead
     /// of the flat letterboxed image.
     view3d: view3d::View3d,
+    /// The desk's power switch ([`Self::toggle_power`]): off = emulation
+    /// paused + dark tube in the 3D view. Only the 3D view toggles it; the
+    /// flat view ignores it (its Run/Pause semantics are unchanged).
+    powered: bool,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -349,6 +353,7 @@ impl CocoApp {
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
             view3d: view3d::View3d::new(),
+            powered: true,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -905,6 +910,20 @@ impl CocoApp {
     /// starts bare, like a machine fresh out of the box. Sticky UI
     /// preferences (keyboard mode, joysticks, audio, autostart, CR→LF)
     /// survive; they belong to the app, not the machine.
+    /// The desk's power switch. Off pauses emulation and darkens the 3D
+    /// tube; on is a cold start (`Machine::power_cycle`), like flipping the
+    /// real switch — memory does not survive.
+    fn toggle_power(&mut self) {
+        if self.powered {
+            self.powered = false;
+            self.running = false;
+        } else {
+            self.machine.power_cycle();
+            self.powered = true;
+            self.running = true;
+        }
+    }
+
     fn create_vm(&mut self, config: MachineConfig, ctx: &egui::Context) -> Result<(), String> {
         let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
         let rom = load_default_rom(config.variant, &roms_dir)?;
@@ -924,6 +943,7 @@ impl CocoApp {
         // the new machine's framebuffer — including a size change, CoCo 1/2
         // and CoCo 3 framebuffers differ — on the next pass anyway.
         self.running = true; // boot straight to the prompt, like startup
+        self.powered = true;
         self.type_ahead.clear();
         self.last_update = None;
         self.field_debt = 0.0;
@@ -1702,10 +1722,32 @@ impl CocoApp {
     fn draw_display(&mut self, ui: &mut egui::Ui) {
         if self.view3d.enabled {
             let tex_id = self.texture.as_ref().unwrap().id();
+            let state = view3d::MachineView {
+                powered: self.powered,
+                cart_inserted: self.mpi.is_none() && self.cart_path.is_some(),
+                cart_interactive: self.mpi.is_none(),
+            };
             // The whole panel is the 3D viewport; pointer drags orbit the
             // camera there, so mouse-joystick mapping keeps the full rect
             // (usable, if unscaled — the flat view remains the precise one).
-            self.display_rect = self.view3d.ui(ui, tex_id, self.machine.fb_height as f32);
+            let desk = self
+                .view3d
+                .ui(ui, tex_id, self.machine.fb_height as f32, state);
+            self.display_rect = desk.rect;
+            match desk.action {
+                Some(view3d::DeskAction::TogglePower) => self.toggle_power(),
+                Some(view3d::DeskAction::ChooseCartridge) => {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("ROM Pak", &["rom", "ccc", "bin"])
+                        .pick_file()
+                    {
+                        self.view3d.begin_cart_insert(path);
+                    }
+                }
+                Some(view3d::DeskAction::InsertCartridge(path)) => self.insert_cartridge(path),
+                Some(view3d::DeskAction::EjectCartridge) => self.eject_cartridge(),
+                None => {}
+            }
             return;
         }
         let tex = self.texture.as_ref().unwrap();

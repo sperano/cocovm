@@ -857,3 +857,84 @@ fn launch_error_is_reported_not_fatal() {
     );
     harness.get_by_label_contains("could not read");
 }
+
+/// Synthetic pointer click at a screen position: hover one frame, then
+/// press/release across the following frames (egui click semantics — see the
+/// module docs). Used by the 3D-desk picking tests, whose targets are ray-
+/// picked props rather than AccessKit nodes.
+fn click_at(harness: &mut AppHarness, pos: egui::Pos2) {
+    harness.event(egui::Event::PointerMoved(pos));
+    harness.step();
+    harness.event(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.step();
+    harness.event(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    harness.step();
+    harness.step();
+}
+
+/// Clicking the desk's power switch turns the machine off (paused, dark
+/// tube) and clicking it again cold-boots it — through the same ray-picking
+/// path the mouse uses (`docs/plan-3d-world.md` task 3).
+#[test]
+fn desk_power_switch_toggles_power() {
+    let mut harness = boot_harness();
+    harness.state_mut().view3d.enabled = true;
+    harness.step();
+
+    let rect = harness.state().display_rect;
+    let pos = harness
+        .state()
+        .view3d
+        .screen_pos_of(view3d::SWITCH_WORLD, rect);
+    click_at(&mut harness, pos);
+    assert!(!harness.state().powered, "first click powers off");
+    assert!(!harness.state().running, "power off pauses emulation");
+
+    click_at(&mut harness, pos);
+    assert!(harness.state().powered, "second click powers back on");
+    assert!(harness.state().running, "power on cold-boots and runs");
+}
+
+/// Clicking the seated cartridge slides it out and, when the animation
+/// lands, ejects it through the same method the menu uses.
+#[test]
+fn desk_cartridge_click_ejects_after_animation() {
+    let mut harness = boot_harness();
+
+    // Seat a cartridge first (a scratch ROM pak on disk, like a user file).
+    let dir = TempDir::new("coco-desk-eject");
+    let rom_path = dir.path().join("scratch.ccc");
+    fs::write(&rom_path, vec![0x39; 4096]).unwrap(); // RTS-filled pak image
+    harness.state_mut().insert_cartridge(rom_path);
+    assert!(harness.state().cart_path.is_some());
+
+    harness.state_mut().view3d.enabled = true;
+    harness.step();
+
+    let rect = harness.state().display_rect;
+    let pos = harness
+        .state()
+        .view3d
+        .screen_pos_of(view3d::CART_SLOT_WORLD, rect);
+    click_at(&mut harness, pos);
+
+    // The eject fires only when the slide animation completes — step well
+    // past its duration at the harness's synthetic frame rate.
+    for _ in 0..120 {
+        harness.step();
+    }
+    assert!(
+        harness.state().cart_path.is_none(),
+        "eject animation completion must pull the cartridge"
+    );
+}

@@ -19,7 +19,7 @@
 //! experimental. egui_glow re-runs `prepare_painting` after every callback,
 //! so depth test / blend / program state set here needs no manual restore.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
@@ -68,12 +68,49 @@ const CART_POS: [f32; 3] = [0.42, CART_SIZE[1] / 2.0, 0.10];
 /// Cartridge yaw (radians) so it doesn't sit unnaturally axis-aligned.
 const CART_YAW: f32 = -0.4;
 
+/// Power switch button: width, height, depth — sits on top of the case
+/// toward the right rear. Placement is approximate until checked against
+/// case photos / the service manual; it's cosmetic, not a hardware claim.
+const SWITCH_SIZE: [f32; 3] = [0.030, 0.012, 0.025];
+const SWITCH_POS: [f32; 3] = [
+    CASE_POS[0] + 0.15,
+    CASE_SIZE[1] + SWITCH_SIZE[1] / 2.0,
+    CASE_POS[2] - 0.09,
+];
+/// The switch sinks by this much when the machine is off (pushed in).
+const SWITCH_PRESSED_OFFSET: f32 = -0.005;
+/// Test-only re-exports of pick-target centers (`ui_tests` aims clicks here).
+#[cfg(test)]
+pub(crate) const SWITCH_WORLD: [f32; 3] = SWITCH_POS;
+#[cfg(test)]
+pub(crate) const CART_SLOT_WORLD: [f32; 3] = CART_SLOT_POS;
+
+/// Cartridge-slot pose: the CoCo's cartridge port is on the right side of
+/// the case; an inserted pak sticks out of that side, long axis along X.
+const CART_SLOT_YAW: f32 = std::f32::consts::FRAC_PI_2;
+/// How deep the pak sits inside the case when inserted.
+const CART_INSERT_DEPTH: f32 = 0.05;
+const CART_SLOT_POS: [f32; 3] = [
+    CASE_SIZE[0] / 2.0 - CART_INSERT_DEPTH + CART_SIZE[2] / 2.0,
+    CASE_POS[1],
+    CASE_POS[2],
+];
+/// Insert/eject slide duration. The emulator call fires only when the
+/// animation completes — the physical layer is a veneer over the same
+/// operations the menus use (plan decision 2).
+const CART_ANIM_SECS: f32 = 0.35;
+/// Peak of the little arc the pak travels through while animating.
+const CART_ANIM_ARC: f32 = 0.06;
+
 const DESK_COLOR: [f32; 4] = [0.45, 0.32, 0.22, 1.0];
 const CASE_COLOR: [f32; 4] = [0.82, 0.80, 0.75, 1.0];
 const MONITOR_COLOR: [f32; 4] = [0.75, 0.73, 0.68, 1.0];
 const CART_COLOR: [f32; 4] = [0.25, 0.25, 0.27, 1.0];
+const SWITCH_COLOR: [f32; 4] = [0.35, 0.35, 0.36, 1.0];
 /// Room background the viewport clears to.
 const CLEAR_COLOR: [f32; 4] = [0.10, 0.11, 0.13, 1.0];
+/// How far a hovered interactive prop's color is pushed toward white.
+const HIGHLIGHT_MIX: f32 = 0.25;
 
 // ---------------------------------------------------------------------------
 // Orbit camera.
@@ -279,13 +316,69 @@ fn screen_quad() -> MeshData {
     mesh
 }
 
-struct PropDef {
-    mesh: MeshData,
-    transform: Mat4,
-    color: [f32; 4],
+/// What a prop *is* — placement, pickability, and machine-state coupling
+/// key off this.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PropKind {
+    Desk,
+    Monitor,
+    Case,
+    PowerSwitch,
+    Cartridge,
     /// The CRT face: textured with the live framebuffer and drawn unlit
     /// (emissive), like a powered tube.
+    Screen,
+}
+
+/// Object-space bounding box (from the mesh's vertices), used for picking.
+#[derive(Clone, Copy)]
+struct Aabb {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl Aabb {
+    fn of(mesh: &MeshData) -> Self {
+        let mut min = Vec3::splat(f32::MAX);
+        let mut max = Vec3::splat(f32::MIN);
+        for v in mesh.verts.chunks_exact(FLOATS_PER_VERTEX) {
+            let p = Vec3::new(v[0], v[1], v[2]);
+            min = min.min(p);
+            max = max.max(p);
+        }
+        Self { min, max }
+    }
+
+    /// Slab test in object space; returns the entry distance along the ray.
+    fn hit(&self, origin: Vec3, dir: Vec3) -> Option<f32> {
+        let inv = dir.recip();
+        let t0 = (self.min - origin) * inv;
+        let t1 = (self.max - origin) * inv;
+        let (near, far) = (t0.min(t1), t0.max(t1));
+        let t_enter = near.max_element();
+        let t_exit = far.min_element();
+        (t_enter <= t_exit && t_exit >= 0.0).then_some(t_enter.max(0.0))
+    }
+}
+
+/// Static half of a prop: geometry and base color, uploaded to the GPU once.
+/// Per-frame pose/highlight live in [`Instance`].
+struct PropDef {
+    kind: PropKind,
+    mesh: MeshData,
+    color: [f32; 4],
+    aabb: Aabb,
+}
+
+/// One drawn prop for one frame — plain data captured by the paint callback.
+struct Instance {
+    mesh_idx: usize,
+    transform: [f32; 16],
+    color: [f32; 4],
     is_screen: bool,
+    /// 0.0 = normal, 1.0 = fully white (hover feedback, scaled by
+    /// [`HIGHLIGHT_MIX`] before it gets here).
+    highlight: f32,
 }
 
 /// Directory the modeled props load from, resolved relative to the process
@@ -353,31 +446,54 @@ fn append_node(
 /// carries the framebuffer and must keep its UV mapping).
 fn build_props() -> Vec<PropDef> {
     let assets = Path::new(ASSETS3D_DIR);
-    let solid = |slug: &str, size: [f32; 3], pos: [f32; 3], yaw: f32, color: [f32; 4]| PropDef {
-        mesh: load_gltf_mesh(&assets.join(format!("{slug}.glb")))
-            .unwrap_or_else(|| cuboid(size)),
-        transform: Mat4::from_translation(Vec3::from(pos)) * Mat4::from_rotation_y(yaw),
-        color,
-        is_screen: false,
-    };
-    vec![
-        solid(
-            "desk",
-            DESK_SIZE,
-            [0.0, -DESK_SIZE[1] / 2.0, 0.0],
-            0.0,
-            DESK_COLOR,
-        ),
-        solid("monitor-cm8", MONITOR_SIZE, MONITOR_POS, 0.0, MONITOR_COLOR),
-        solid("coco3-case", CASE_SIZE, CASE_POS, 0.0, CASE_COLOR),
-        solid("cartridge", CART_SIZE, CART_POS, CART_YAW, CART_COLOR),
+    let solid = |kind: PropKind, slug: &str, size: [f32; 3], color: [f32; 4]| {
+        let mesh = load_gltf_mesh(&assets.join(format!("{slug}.glb")))
+            .unwrap_or_else(|| cuboid(size));
+        let aabb = Aabb::of(&mesh);
         PropDef {
-            mesh: screen_quad(),
-            transform: Mat4::from_translation(Vec3::from(SCREEN_POS)),
-            color: [0.0, 0.0, 0.0, 1.0], // fallback if the fb texture is gone
-            is_screen: true,
+            kind,
+            mesh,
+            color,
+            aabb,
+        }
+    };
+    let screen = screen_quad();
+    let screen_aabb = Aabb::of(&screen);
+    vec![
+        solid(PropKind::Desk, "desk", DESK_SIZE, DESK_COLOR),
+        solid(PropKind::Monitor, "monitor-cm8", MONITOR_SIZE, MONITOR_COLOR),
+        solid(PropKind::Case, "coco3-case", CASE_SIZE, CASE_COLOR),
+        solid(PropKind::PowerSwitch, "power-switch", SWITCH_SIZE, SWITCH_COLOR),
+        solid(PropKind::Cartridge, "cartridge", CART_SIZE, CART_COLOR),
+        PropDef {
+            kind: PropKind::Screen,
+            mesh: screen,
+            color: [0.0, 0.0, 0.0, 1.0], // dark tube when off / no fb texture
+            aabb: screen_aabb,
         },
     ]
+}
+
+/// Pose of the cartridge on the desk (not inserted).
+fn cart_desk_pose() -> (Vec3, f32) {
+    (Vec3::from(CART_POS), CART_YAW)
+}
+
+/// Pose of the cartridge seated in the slot.
+fn cart_slot_pose() -> (Vec3, f32) {
+    (Vec3::from(CART_SLOT_POS), CART_SLOT_YAW)
+}
+
+/// Interpolated pak pose at eased progress `t` (0 = desk, 1 = seated),
+/// travelling through a little arc.
+fn cart_anim_pose(t: f32) -> Mat4 {
+    let eased = t * t * (3.0 - 2.0 * t);
+    let (from_pos, from_yaw) = cart_desk_pose();
+    let (to_pos, to_yaw) = cart_slot_pose();
+    let mut pos = from_pos.lerp(to_pos, eased);
+    pos.y += (eased * std::f32::consts::PI).sin() * CART_ANIM_ARC;
+    let yaw = from_yaw + (to_yaw - from_yaw) * eased;
+    Mat4::from_translation(pos) * Mat4::from_rotation_y(yaw)
 }
 
 /// Where the additive bezel-glow quad sits: over the screen quad, scaled up
@@ -418,6 +534,7 @@ uniform sampler2D u_glow;  // CRT face only: blurred glow for the bloom add
 uniform int u_mode;        // 0 solid lit, 1 CRT face, 2 additive glow quad
 uniform vec4 u_crt_a;      // barrel, scanlines, mask, bloom strengths
 uniform vec4 u_crt_b;      // reflection strength, source scanline count, -, -
+uniform float u_highlight; // hover feedback: mix toward white (solid mode)
 in vec3 v_normal;
 in vec2 v_uv;
 out vec4 frag_color;
@@ -472,7 +589,8 @@ void main() {
     } else {
         float diffuse = max(dot(normalize(v_normal), LIGHT_DIR), 0.0);
         float light = mix(AMBIENT, 1.0, diffuse);
-        frag_color = vec4(u_color.rgb * light, u_color.a);
+        vec3 col = mix(u_color.rgb * light, vec3(1.0), u_highlight);
+        frag_color = vec4(col, u_color.a);
     }
 }
 "#;
@@ -541,6 +659,7 @@ struct GlScene {
     u_mode: Option<glow::UniformLocation>,
     u_crt_a: Option<glow::UniformLocation>,
     u_crt_b: Option<glow::UniformLocation>,
+    u_highlight: Option<glow::UniformLocation>,
     /// One entry per prop, same order as the `PropDef` list.
     meshes: Vec<GlMesh>,
     /// Offscreen-pass program (fullscreen triangle, no vertex buffer).
@@ -734,6 +853,7 @@ impl GlScene {
                 u_mode: gl.get_uniform_location(program, "u_mode"),
                 u_crt_a: gl.get_uniform_location(program, "u_crt_a"),
                 u_crt_b: gl.get_uniform_location(program, "u_crt_b"),
+                u_highlight: gl.get_uniform_location(program, "u_highlight"),
                 program,
                 meshes,
                 u_pass: gl.get_uniform_location(blit_program, "u_pass"),
@@ -794,7 +914,7 @@ impl GlScene {
     fn paint(
         &mut self,
         gl: &glow::Context,
-        props: &[PropDef],
+        instances: &[Instance],
         view_proj: &[f32; 16],
         fb_texture: Option<glow::Texture>,
         crt: CrtUniforms,
@@ -831,23 +951,22 @@ impl GlScene {
             gl.bind_texture(glow::TEXTURE_2D, Some(self.glow_target.tex));
             gl.active_texture(glow::TEXTURE0);
 
-            for (prop, mesh) in props.iter().zip(&self.meshes) {
-                let mode = if prop.is_screen && display_tex.is_some() {
+            for inst in instances {
+                let mesh = &self.meshes[inst.mesh_idx];
+                let mode = if inst.is_screen && display_tex.is_some() {
                     gl.bind_texture(glow::TEXTURE_2D, display_tex);
                     MODE_CRT
                 } else {
                     MODE_SOLID
                 };
-                gl.uniform_matrix_4_f32_slice(
-                    self.u_model.as_ref(),
-                    false,
-                    &prop.transform.to_cols_array(),
-                );
-                gl.uniform_4_f32_slice(self.u_color.as_ref(), &prop.color);
+                gl.uniform_matrix_4_f32_slice(self.u_model.as_ref(), false, &inst.transform);
+                gl.uniform_4_f32_slice(self.u_color.as_ref(), &inst.color);
                 gl.uniform_1_i32(self.u_mode.as_ref(), mode);
+                gl.uniform_1_f32(self.u_highlight.as_ref(), inst.highlight);
                 gl.bind_vertex_array(Some(mesh.vao));
                 gl.draw_elements(glow::TRIANGLES, mesh.index_count, glow::UNSIGNED_INT, 0);
             }
+            gl.uniform_1_f32(self.u_highlight.as_ref(), 0.0);
 
             // Bezel glow: additive, no depth write (it's light, not a
             // surface), only when there's a powered tube and bloom is on.
@@ -951,6 +1070,44 @@ fn bytemuck_cast<T: Copy>(slice: &[T]) -> &[u8] {
 const SNAPSHOT_ENV: &str = "COCO_VIEW3D_SNAPSHOT";
 const SNAPSHOT_DELAY_FRAMES: u32 = 240;
 
+/// The slice of machine state the desk mirrors, passed in by the app every
+/// frame so menu-driven changes move the props too.
+#[derive(Clone, Copy)]
+pub struct MachineView {
+    /// False = the tube is dark and emulation is paused (power switch off).
+    pub powered: bool,
+    /// A cartridge is in the (direct) port — the pak sits in the slot.
+    pub cart_inserted: bool,
+    /// False while an MPI owns the port; the desk pak is then inert.
+    pub cart_interactive: bool,
+}
+
+/// What the user physically did this frame. The app applies these through
+/// the same methods the menus use — the desk never touches the core itself.
+pub enum DeskAction {
+    TogglePower,
+    /// The empty-slot pak was clicked: open the ROM picker and, on a chosen
+    /// file, call [`View3d::begin_cart_insert`].
+    ChooseCartridge,
+    /// Insert animation finished with this file: attach the pak now.
+    InsertCartridge(PathBuf),
+    /// Eject animation finished: pull the pak now.
+    EjectCartridge,
+}
+
+pub struct DeskResponse {
+    pub rect: egui::Rect,
+    pub action: Option<DeskAction>,
+}
+
+/// Cartridge slide animation. The core call fires when the slide completes
+/// (`DeskAction::{Insert,Eject}Cartridge`), never mid-flight.
+enum CartAnim {
+    Idle,
+    Inserting { path: PathBuf, t: f32 },
+    Ejecting { t: f32 },
+}
+
 pub struct View3d {
     /// View → "3D Desk" toggle; off = the classic flat display.
     pub enabled: bool,
@@ -959,6 +1116,7 @@ pub struct View3d {
     /// Live-editable CRT pass toggles/strengths (the settings window).
     pub crt: CrtParams,
     camera: OrbitCamera,
+    cart_anim: CartAnim,
     /// CPU-side props, loaded (glTF or placeholder) on first use.
     props: Option<Arc<Vec<PropDef>>>,
     /// GPU-side scene, created inside the first paint callback and shared
@@ -966,7 +1124,7 @@ pub struct View3d {
     gl_state: Arc<Mutex<GlState>>,
     /// One-shot [`SNAPSHOT_ENV`] readback target with its frame countdown;
     /// consumed by the callback that paints frame zero of the countdown.
-    snapshot: Arc<Mutex<Option<(std::path::PathBuf, u32)>>>,
+    snapshot: Arc<Mutex<Option<(PathBuf, u32)>>>,
 }
 
 impl View3d {
@@ -976,22 +1134,36 @@ impl View3d {
             show_settings: false,
             crt: CrtParams::default(),
             camera: OrbitCamera::default(),
+            cart_anim: CartAnim::Idle,
             props: None,
             gl_state: Arc::new(Mutex::new(GlState::Uninit)),
             snapshot: Arc::new(Mutex::new(
                 std::env::var_os(SNAPSHOT_ENV)
-                    .map(|p| (std::path::PathBuf::from(p), SNAPSHOT_DELAY_FRAMES)),
+                    .map(|p| (PathBuf::from(p), SNAPSHOT_DELAY_FRAMES)),
             )),
         }
+    }
+
+    /// Start the insert slide for `path` (called by the app after its ROM
+    /// picker; the actual insert happens when the slide lands).
+    pub fn begin_cart_insert(&mut self, path: PathBuf) {
+        self.cart_anim = CartAnim::Inserting { path, t: 0.0 };
     }
 
     /// Fill the available panel rect with the desk scene, `fb_tex` being the
     /// per-frame `coco-fb` texture (uploaded by `step_emulation`) and
     /// `fb_lines` its height in emulated scanlines (drives the scanline
-    /// pass). Dragging orbits, scrolling zooms. Returns the rect it occupied.
-    pub fn ui(&mut self, ui: &mut egui::Ui, fb_tex: egui::TextureId, fb_lines: f32) -> egui::Rect {
+    /// pass). Dragging orbits, scrolling zooms; clicking interactive props
+    /// (power switch, cartridge) yields a [`DeskAction`].
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        fb_tex: egui::TextureId,
+        fb_lines: f32,
+        view: MachineView,
+    ) -> DeskResponse {
         let rect = ui.available_rect_before_wrap();
-        let response = ui.allocate_rect(rect, egui::Sense::drag());
+        let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         if response.dragged() {
             let delta = response.drag_delta();
             self.camera.yaw -= delta.x * ORBIT_RADIANS_PER_POINT;
@@ -1007,13 +1179,143 @@ impl View3d {
         }
 
         let props = Arc::clone(self.props.get_or_insert_with(|| Arc::new(build_props())));
-        let view_proj = self
-            .camera
-            .view_proj(rect.width() / rect.height())
-            .to_cols_array();
+
+        // Pose the cartridge from the *current* animation state, then
+        // advance it — completion actions fire the frame after the pak
+        // visually lands, so there's no desk-pose flicker while the app's
+        // `cart_inserted` catches up.
+        let cart_transform = match &self.cart_anim {
+            CartAnim::Inserting { t, .. } => cart_anim_pose(t.min(1.0)),
+            CartAnim::Ejecting { t } => cart_anim_pose((1.0 - t).max(0.0)),
+            CartAnim::Idle => {
+                let (pos, yaw) = if view.cart_inserted {
+                    cart_slot_pose()
+                } else {
+                    cart_desk_pose()
+                };
+                Mat4::from_translation(pos) * Mat4::from_rotation_y(yaw)
+            }
+        };
+        let mut action: Option<DeskAction> = None;
+        if !matches!(self.cart_anim, CartAnim::Idle) {
+            const MAX_ANIM_STEP_SECS: f32 = 0.1;
+            let dt = ui.input(|i| i.stable_dt).min(MAX_ANIM_STEP_SECS);
+            ui.ctx().request_repaint();
+            self.cart_anim = match std::mem::replace(&mut self.cart_anim, CartAnim::Idle) {
+                CartAnim::Inserting { path, t } if t >= 1.0 => {
+                    action = Some(DeskAction::InsertCartridge(path));
+                    CartAnim::Idle
+                }
+                CartAnim::Inserting { path, t } => CartAnim::Inserting {
+                    path,
+                    t: t + dt / CART_ANIM_SECS,
+                },
+                CartAnim::Ejecting { t } if t >= 1.0 => {
+                    action = Some(DeskAction::EjectCartridge);
+                    CartAnim::Idle
+                }
+                CartAnim::Ejecting { t } => CartAnim::Ejecting {
+                    t: t + dt / CART_ANIM_SECS,
+                },
+                CartAnim::Idle => CartAnim::Idle,
+            };
+        }
+
+        let prop_transform = |kind: PropKind| -> Mat4 {
+            match kind {
+                PropKind::Desk => {
+                    Mat4::from_translation(Vec3::new(0.0, -DESK_SIZE[1] / 2.0, 0.0))
+                }
+                PropKind::Monitor => Mat4::from_translation(Vec3::from(MONITOR_POS)),
+                PropKind::Case => Mat4::from_translation(Vec3::from(CASE_POS)),
+                PropKind::PowerSwitch => {
+                    let pressed = if view.powered {
+                        Vec3::ZERO
+                    } else {
+                        Vec3::new(0.0, SWITCH_PRESSED_OFFSET, 0.0)
+                    };
+                    Mat4::from_translation(Vec3::from(SWITCH_POS) + pressed)
+                }
+                PropKind::Cartridge => cart_transform,
+                PropKind::Screen => Mat4::from_translation(Vec3::from(SCREEN_POS)),
+            }
+        };
+
+        // Pick: cast the pointer ray at the interactive props (world-space
+        // ray transformed into each prop's object space, slab-tested against
+        // its mesh AABB); nearest hit wins.
+        let view_proj_mat = self.camera.view_proj(rect.width() / rect.height());
+        let mut hovered: Option<PropKind> = None;
+        if let Some(pointer) = response.hover_pos() {
+            let inv = view_proj_mat.inverse();
+            let ndc_x = (pointer.x - rect.left()) / rect.width() * 2.0 - 1.0;
+            let ndc_y = 1.0 - (pointer.y - rect.top()) / rect.height() * 2.0;
+            let near = inv.project_point3(Vec3::new(ndc_x, ndc_y, -1.0));
+            let far = inv.project_point3(Vec3::new(ndc_x, ndc_y, 1.0));
+            let dir = (far - near).normalize();
+            let mut best = f32::MAX;
+            for prop in props.iter() {
+                let interactive = match prop.kind {
+                    PropKind::PowerSwitch => true,
+                    PropKind::Cartridge => {
+                        view.cart_interactive && matches!(self.cart_anim, CartAnim::Idle)
+                    }
+                    _ => false,
+                };
+                if !interactive {
+                    continue;
+                }
+                let inv_model = prop_transform(prop.kind).inverse();
+                let local_origin = inv_model.transform_point3(near);
+                let local_dir = inv_model.transform_vector3(dir);
+                if let Some(t) = prop.aabb.hit(local_origin, local_dir)
+                    && t < best
+                {
+                    best = t;
+                    hovered = Some(prop.kind);
+                }
+            }
+        }
+        if hovered.is_some() {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+        }
+        if action.is_none()
+            && response.clicked()
+            && let Some(kind) = hovered
+        {
+            match kind {
+                PropKind::PowerSwitch => action = Some(DeskAction::TogglePower),
+                PropKind::Cartridge if view.cart_inserted => {
+                    self.cart_anim = CartAnim::Ejecting { t: 0.0 };
+                }
+                PropKind::Cartridge => action = Some(DeskAction::ChooseCartridge),
+                _ => {}
+            }
+        }
+
+        let instances: Vec<Instance> = props
+            .iter()
+            .enumerate()
+            .map(|(i, prop)| Instance {
+                mesh_idx: i,
+                transform: prop_transform(prop.kind).to_cols_array(),
+                color: prop.color,
+                is_screen: prop.kind == PropKind::Screen,
+                highlight: if hovered == Some(prop.kind) {
+                    HIGHLIGHT_MIX
+                } else {
+                    0.0
+                },
+            })
+            .collect();
+
+        let view_proj = view_proj_mat.to_cols_array();
         let gl_state = Arc::clone(&self.gl_state);
         let snapshot = Arc::clone(&self.snapshot);
         let crt = self.crt.uniforms(fb_lines);
+        // Powered off = dark tube: skip the framebuffer (and with it the
+        // whole CRT pass chain) so the screen renders as its solid black.
+        let fb_tex = view.powered.then_some(fb_tex);
         let callback = eframe::egui_glow::CallbackFn::new(move |info, painter| {
             let gl = painter.gl();
             let mut state = gl_state.lock().unwrap();
@@ -1030,9 +1332,9 @@ impl View3d {
                 let vp = info.viewport_in_pixels();
                 scene.paint(
                     gl,
-                    &props,
+                    &instances,
                     &view_proj,
-                    painter.texture(fb_tex),
+                    fb_tex.and_then(|id| painter.texture(id)),
                     crt,
                     painter.intermediate_fbo(),
                     [vp.left_px, vp.from_bottom_px, vp.width_px, vp.height_px],
@@ -1052,7 +1354,7 @@ impl View3d {
             rect,
             callback: Arc::new(callback),
         });
-        rect
+        DeskResponse { rect, action }
     }
 
     /// The "CRT" settings window (View → CRT Settings…): one toggle + one
@@ -1091,6 +1393,21 @@ impl View3d {
                 }
             });
         self.show_settings = open;
+    }
+
+    /// Test-only: where a world-space point lands on screen for THIS view's
+    /// camera framing `rect` — `ui_tests` aims synthetic pointer events with
+    /// it, exercising the same projection the picking path inverts.
+    #[cfg(test)]
+    pub(crate) fn screen_pos_of(&self, world: [f32; 3], rect: egui::Rect) -> egui::Pos2 {
+        let ndc = self
+            .camera
+            .view_proj(rect.width() / rect.height())
+            .project_point3(Vec3::from(world));
+        egui::pos2(
+            rect.left() + (ndc.x + 1.0) / 2.0 * rect.width(),
+            rect.top() + (1.0 - ndc.y) / 2.0 * rect.height(),
+        )
     }
 
     /// Free the GL resources (called from `CocoApp::on_exit`, the only hook
