@@ -89,7 +89,7 @@ fn constrain(draft: &mut MachineConfig) {
     draft.vdg = crate::default_vdg(draft.variant);
 }
 
-/// Shared hardware-config rows: Model radio row, conditional VDG row (CoCo 2
+/// Shared hardware-config rows: Machine combo row, conditional VDG row (CoCo 2
 /// only — see the inline comment below), RAM combo, Video radio row (PAL
 /// only for CoCo 3), Monitor radio row. Must be called inside an
 /// already-open two-column [`egui::Grid`]; `salt` distinguishes the
@@ -99,18 +99,23 @@ fn constrain(draft: &mut MachineConfig) {
 pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
-    ui.label(egui::RichText::new("Model").size(font));
-    ui.horizontal(|ui| {
-        for (variant, label) in [
-            (MachineVariant::Coco1, "CoCo 1"),
-            (MachineVariant::Coco2, "CoCo 2"),
-            (MachineVariant::Coco3, "CoCo 3"),
-        ] {
-            if ui.radio_value(&mut draft.variant, variant, label).changed() {
-                constrain(draft);
+    ui.label(egui::RichText::new("Machine").size(font));
+    egui::ComboBox::from_id_salt((salt, "machine"))
+        .selected_text(crate::machine_label(draft.variant))
+        .show_ui(ui, |ui| {
+            for variant in [
+                MachineVariant::Coco1,
+                MachineVariant::Coco2,
+                MachineVariant::Coco3,
+            ] {
+                if ui
+                    .selectable_value(&mut draft.variant, variant, crate::machine_label(variant))
+                    .changed()
+                {
+                    constrain(draft);
+                }
             }
-        }
-    });
+        });
     ui.end_row();
 
     // The VDG choice only exists on the CoCo 2 (the CoCo 1 always shipped

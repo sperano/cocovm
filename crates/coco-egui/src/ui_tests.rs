@@ -66,6 +66,24 @@ fn click_submenu(harness: &mut AppHarness, label: &str) {
     harness.step();
 }
 
+/// Select an item in the hardware form's Machine combo box: click the combo
+/// button to open the popup, then click the wanted item. The combo button
+/// exposes the selected text as its accessibility *value* (egui sets
+/// `WidgetInfo::current_text_value`, not a label), so it is addressed with
+/// `get_by_value`; the popup items are plain selectables, addressed by label.
+fn select_machine<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    current: &str,
+    target: &str,
+) {
+    harness.get_by_value(current).hover();
+    harness.step();
+    harness.get_by_value(current).click();
+    harness.step();
+    harness.step();
+    click(harness, target);
+}
+
 /// Lowest-on-screen widget labelled `label` — the open-menu copy of a label
 /// the toolbar shows too ("Pause", "Reset"): the menu popup hangs below the
 /// toolbar row.
@@ -105,7 +123,7 @@ fn new_dialog_creates_a_coco1_machine_without_panicking() {
 
     click(&mut harness, "Machine");
     click(&mut harness, "New…");
-    click(&mut harness, "CoCo 1");
+    select_machine(&mut harness, "CoCo 3", "CoCo 1");
     // The frame that processes Create draws the CentralPanel *after*
     // swapping the machine — the exact path that used to panic on the
     // framebuffer texture.
@@ -133,7 +151,7 @@ fn new_dialog_cancel_leaves_the_machine_untouched() {
     click(&mut harness, "Machine");
     click(&mut harness, "New…");
     // Editing the draft must not leak into the running machine.
-    click(&mut harness, "CoCo 2");
+    select_machine(&mut harness, "CoCo 3", "CoCo 2");
     click(&mut harness, "Cancel");
 
     let app = harness.state();
@@ -164,13 +182,13 @@ fn new_dialog_vdg_row_only_visible_for_coco2() {
         "VDG row must be absent for CoCo 3"
     );
 
-    click(&mut harness, "CoCo 2");
+    select_machine(&mut harness, "CoCo 3", "CoCo 2");
     assert!(
         harness.query_by_label(t1_label).is_some(),
         "VDG row must be present for CoCo 2"
     );
 
-    click(&mut harness, "CoCo 1");
+    select_machine(&mut harness, "CoCo 2", "CoCo 1");
     assert!(
         harness.query_by_label(t1_label).is_none(),
         "VDG row must be absent for CoCo 1"
@@ -602,7 +620,7 @@ fn manager_new_dialog_create_writes_a_definition_file() {
     assert_eq!(parsed.name, "CoCo 3");
     assert_eq!(harness.state().selected, Some(0), "Create must select the new row");
     // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
-    // form has its own "CoCo 3" *model* radio button, so the name would be
+    // form has its own "CoCo 3" Machine combo button, so the name would be
     // ambiguous between that and the list row.
     assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
 
