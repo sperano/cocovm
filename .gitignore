@@ -7,6 +7,8 @@
 # cartridge dumps (copyrighted, local only)
 /*.ccc
 /*.rom
+# 3D desk view props (scanned label art is copyrighted, local only)
+/assets3d
 # Claude Code local settings
 .claude/settings.local.json
 /disks

@@ -23,6 +23,7 @@ mod paths;
 mod paper_render;
 mod paper_view;
 mod photo_view;
+mod view3d;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -217,6 +218,11 @@ struct CocoApp {
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     paper_window: paper_view::PaperWindow,
+    /// The experimental 3D desk view (`docs/plan-3d-world.md`): when its
+    /// `enabled` flag is set (View menu), [`Self::draw_display`] renders the
+    /// machine as a physical desk with the framebuffer on a CRT face instead
+    /// of the flat letterboxed image.
+    view3d: view3d::View3d,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -342,6 +348,7 @@ impl CocoApp {
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
+            view3d: view3d::View3d::new(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -1473,6 +1480,7 @@ impl CocoApp {
                 });
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
+                    ui.checkbox(&mut self.view3d.enabled, "3D Desk (experimental)");
                     ui.separator();
                     let mut paper_open = self.paper_window.open;
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
@@ -1684,6 +1692,14 @@ impl CocoApp {
     /// VM"). Requires [`Self::step_emulation`] to have already run this
     /// frame (it uploads `self.texture`, `unwrap`ped below).
     fn draw_display(&mut self, ui: &mut egui::Ui) {
+        if self.view3d.enabled {
+            let tex_id = self.texture.as_ref().unwrap().id();
+            // The whole panel is the 3D viewport; pointer drags orbit the
+            // camera there, so mouse-joystick mapping keeps the full rect
+            // (usable, if unscaled — the flat view remains the precise one).
+            self.display_rect = self.view3d.ui(ui, tex_id);
+            return;
+        }
         let tex = self.texture.as_ref().unwrap();
         let tex_size = tex.size_vec2();
         // Aspect the displayed frame should have, independent of the buffer's
@@ -1732,7 +1748,8 @@ impl CocoApp {
 impl eframe::App for CocoApp {
     /// Write modified floppies and tape back to their files on quit — a BASIC
     /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        self.view3d.destroy(gl);
         self.flush_media();
     }
 
@@ -1979,6 +1996,12 @@ struct Cli {
     /// Capture…", which this is the CLI equivalent of).
     #[arg(long, value_name = "PATH")]
     print_capture: Option<PathBuf>,
+
+    /// Boot straight into the experimental 3D desk view (the View menu's
+    /// "3D Desk" checkbox, which this sets the initial value of —
+    /// `docs/plan-3d-world.md`).
+    #[arg(long, default_value_t = false)]
+    view_3d: bool,
 }
 
 /// Read an explicit `--rom` image as-is: a CoCo 3 image, or — for CoCo 1/2 —
@@ -2397,6 +2420,7 @@ fn main() -> eframe::Result<()> {
     let rtc = cli.rtc;
     let save_tape_wav = cli.tape_wav;
     let print_capture = cli.print_capture;
+    let view_3d = cli.view_3d;
     // Without --mpi, --cart, --disk0/--disk1/--fd502, and --rtc all want the
     // single cartridge port (clap's declarative `conflicts_with` can't
     // express "only when --mpi is absent", so this is checked by hand).
@@ -2428,6 +2452,9 @@ fn main() -> eframe::Result<()> {
             .with_inner_size([win_w, win_h])
             .with_icon(icon)
             .with_title(&window_title),
+        // egui itself never depth-tests (eframe default is 0 bits), but the
+        // 3D desk view does (`view3d.rs`).
+        depth_buffer: view3d::DEPTH_BUFFER_BITS,
         ..Default::default()
     };
     eframe::run_native(
@@ -2467,6 +2494,7 @@ fn main() -> eframe::Result<()> {
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
             }
+            app.view3d.enabled = view_3d;
             Ok(Box::new(app))
         }),
     )

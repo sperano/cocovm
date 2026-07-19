@@ -1006,6 +1006,9 @@ pub fn run() -> eframe::Result<()> {
             .with_inner_size(WINDOW_SIZE)
             .with_icon(icon)
             .with_title("CocoVM"),
+        // The per-VM viewports share this GL config; the 3D desk view
+        // (`view3d.rs`) needs a depth buffer, eframe's default is 0 bits.
+        depth_buffer: crate::view3d::DEPTH_BUFFER_BITS,
         ..Default::default()
     };
     let machines_dir = machine_def::machines_dir();

@@ -33,6 +33,13 @@ serde = { version = "1", features = ["derive"] }
 # dependency here adds no new crate to the workspace's dependency graph.
 flate2 = "1.1.9"
 gilrs = "0.11.2"
+# MIT OR Apache-2.0. Vector/matrix math for the 3D desk view's orbit camera
+# and prop transforms (`view3d.rs`, `docs/plan-3d-world.md` task 1).
+glam = "0.30"
+# MIT OR Apache-2.0. Loads modeled props (`assets3d/<slug>.glb`) for the 3D
+# desk view; every prop falls back to a placeholder box when its file is
+# absent (`view3d.rs`), so this is only exercised once real assets exist.
+gltf = "1.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 owo-colors = {version="4.3.0",  features = ["supports-colors"]}
 rfd = "0.17.2"
