@@ -134,21 +134,24 @@ pub struct CrtParams {
     pub reflection: f32,
 }
 
+// Deliberately subtle defaults (user feedback): the effect should read as
+// "a real tube", not "a CRT filter" — every pass barely visible on its own,
+// the sliders are there for anyone who wants more.
 impl Default for CrtParams {
     fn default() -> Self {
         Self {
             barrel_on: true,
-            barrel: 0.35,
+            barrel: 0.10,
             scanlines_on: true,
-            scanlines: 0.35,
+            scanlines: 0.12,
             mask_on: true,
-            mask: 0.30,
+            mask: 0.08,
             persistence_on: true,
-            persistence: 0.55,
+            persistence: 0.30,
             bloom_on: true,
-            bloom: 0.35,
+            bloom: 0.12,
             reflection_on: true,
-            reflection: 0.25,
+            reflection: 0.08,
         }
     }
 }
