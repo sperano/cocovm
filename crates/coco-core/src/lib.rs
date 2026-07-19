@@ -111,7 +111,12 @@ impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
         let mut cpu = MC6809::new();
         let mut bus = SystemBus::new(config.variant, config.memory, rom);
-        bus.gime.monitor = config.monitor;
+        // `None` (CoCo 1/2 — no monitor port) leaves the GIME's default in
+        // place; the chip field is never consulted on those variants
+        // (`legacy_palette` resolves the fixed VDG table).
+        if let Some(monitor) = config.monitor {
+            bus.gime.monitor = monitor;
+        }
         cpu.reset(&mut bus);
         Self {
             cpu,
@@ -504,13 +509,15 @@ impl Machine {
         };
         // A CoCo 3 has no VDG chip at all: CoCo-compatible text mode is the
         // GIME's own compat-text generator (`video::AlphaGenerator::Gime`),
-        // not `self.config.vdg` (which only describes a real CoCo 1/2's VDG
-        // and is forced to `Mc6847` for CoCo 3 by `MachineConfig::validate`).
+        // not `self.config.vdg` (which describes a real CoCo 1/2's chip and
+        // is `None` on CoCo 3, per `MachineConfig::validate`).
         let generator = match self.config.variant {
             MachineVariant::Coco3 => video::AlphaGenerator::Gime,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
-                VDGVariant::MC6847 => video::AlphaGenerator::Mc6847,
-                VDGVariant::MC6847T1 => video::AlphaGenerator::Mc6847T1,
+                Some(VDGVariant::MC6847T1) => video::AlphaGenerator::Mc6847T1,
+                // `None` is rejected for CoCo 1/2 by `MachineConfig::validate`;
+                // fall back to the plain chip rather than panic.
+                Some(VDGVariant::MC6847) | None => video::AlphaGenerator::Mc6847,
             },
         };
         video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);

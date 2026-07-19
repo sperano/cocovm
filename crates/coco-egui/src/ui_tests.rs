@@ -739,8 +739,8 @@ fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {
                 variant: MachineVariant::Coco2,
                 video: VideoStandard::NTSC,
                 memory: MemorySize::K64,
-                monitor: MonitorType::RGB,
-                vdg: VDGVariant::MC6847T1,
+                monitor: None,
+                vdg: Some(VDGVariant::MC6847T1),
             },
         )),
     )

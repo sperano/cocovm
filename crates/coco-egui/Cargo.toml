@@ -49,6 +49,7 @@ toml = "0.9"
 # MIT OR Apache-2.0. Blocking HTTP client for the first-run assets download
 # (`download_and_unpack_assets` in main.rs).
 ureq = "3.3.0"
+pluralizer = "0.5.0"
 
 [dev-dependencies]
 egui_kittest = { version = "0.33", features = ["eframe"] }

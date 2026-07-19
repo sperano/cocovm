@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard,
 };
 
 const BOOT_FIELDS: usize = 120;
@@ -55,15 +55,15 @@ fn main() {
         variant: MachineVariant::Coco1,
         video: VideoStandard::NTSC,
         memory: MemorySize::K64,
-        monitor: MonitorType::RGB,
-        vdg: VDGVariant::MC6847,
+        monitor: None,
+        vdg: Some(VDGVariant::MC6847),
     };
 
     boot_and_dump(base12, coco12_rom(), &format!("{dir}/coco1_mc6847.ppm"));
     boot_and_dump(
         MachineConfig {
             variant: MachineVariant::Coco2,
-            vdg: VDGVariant::MC6847T1,
+            vdg: Some(VDGVariant::MC6847T1),
             ..base12
         },
         coco12_rom(),
@@ -73,7 +73,7 @@ fn main() {
         MachineConfig {
             variant: MachineVariant::Coco3,
             memory: MemorySize::K512,
-            vdg: VDGVariant::MC6847,
+            vdg: Some(VDGVariant::MC6847),
             ..base12
         },
         try_load("coco3.rom").expect("coco3.rom").into_boxed_slice(),

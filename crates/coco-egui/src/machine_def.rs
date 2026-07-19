@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 use coco_core::{
     MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
+use pluralizer::pluralize;
 use serde::{Deserialize, Serialize};
 
 use crate::paths;
@@ -221,7 +222,11 @@ pub struct HardwareDTO {
     pub variant: MachineVariantDTO,
     pub ram: RamDTO,
     pub video: VideoStandardDTO,
-    pub monitor: MonitorDTO,
+    /// Absent ⇒ per-variant default: RGB on a CoCo 3, nothing on a CoCo 1/2
+    /// (no monitor port — RF TV only; an explicit key there fails
+    /// [`MachineConfig::validate`]).
+    #[serde(default)]
+    pub monitor: Option<MonitorDTO>,
     /// Absent ⇒ per-variant default; see [`VDGVariantDTO`].
     #[serde(default)]
     pub vdg: Option<VDGVariantDTO>,
@@ -234,18 +239,18 @@ impl HardwareDTO {
     /// Build the `[hardware]` section from a config the "New…" dialog or the
     /// manager's detail-pane form produced (`new_vm::config_form_rows`
     /// already ran [`MachineConfig::validate`]-compatible constraints on
-    /// it). `vdg` is always written explicitly here — the dialog/pane always
-    /// resolve a concrete choice, unlike a hand-written TOML file that may
-    /// omit it to take the per-variant default (see [`VDGVariantDTO`]'s doc).
-    /// `rom` is passed through as-is: the custom-ROM path isn't part of
-    /// [`MachineConfig`] and has no editor yet.
+    /// it). `monitor`/`vdg` are written exactly when the machine has the
+    /// port/chip (`Some` per the config); a CoCo 1/2 file carries no
+    /// `monitor` key and a CoCo 3 file no `vdg` key. `rom` is passed
+    /// through as-is: the custom-ROM path isn't part of [`MachineConfig`]
+    /// and has no editor yet.
     pub fn from_config(config: &MachineConfig, rom: Option<String>) -> Self {
         Self {
             variant: config.variant.into(),
             ram: config.memory.into(),
             video: config.video.into(),
-            monitor: config.monitor.into(),
-            vdg: Some(config.vdg.into()),
+            monitor: config.monitor.map(Into::into),
+            vdg: config.vdg.map(Into::into),
             rom,
         }
     }
@@ -347,9 +352,18 @@ impl MachineDef {
         let variant: MachineVariant = self.hardware.variant.into();
         let memory: MemorySize = self.hardware.ram.into();
         let video: VideoStandard = self.hardware.video.into();
-        let monitor: MonitorType = self.hardware.monitor.into();
-        let vdg: VDGVariant = match self.hardware.vdg {
-            Some(dto) => dto.into(),
+        let monitor: Option<MonitorType> = match self.hardware.monitor {
+            Some(dto) => Some(dto.into()),
+            // Absent key ⇒ the machine's own default: RGB where a monitor
+            // port exists (CoCo 3), nothing where it doesn't. An explicit
+            // key on a CoCo 1/2 flows through so `validate` rejects it.
+            None => match variant {
+                MachineVariant::Coco3 => Some(MonitorType::RGB),
+                MachineVariant::Coco1 | MachineVariant::Coco2 => None,
+            },
+        };
+        let vdg: Option<VDGVariant> = match self.hardware.vdg {
+            Some(dto) => Some(dto.into()),
             // Shared with main.rs's CLI path and new_vm.rs's `constrain` —
             // see VdgDto's doc comment and `default_vdg`'s.
             None => crate::default_vdg(variant),
@@ -616,6 +630,10 @@ pub fn load_all(dir: &Path) -> Vec<(String, Result<MachineDef, String>)> {
         results.push((stem.to_string(), load_one(&path)));
     }
     results.sort_by(|a, b| a.0.cmp(&b.0));
+    println!(
+        "Found {}",
+        pluralize("configuration", results.len() as isize, true)
+    );
     results
 }
 
@@ -689,8 +707,8 @@ pub(crate) mod tests {
                 variant: MachineVariantDTO::Coco3,
                 ram: RamDTO::K512,
                 video: VideoStandardDTO::NTSC,
-                monitor: MonitorDTO::RGB,
-                vdg: Some(VDGVariantDTO::MC6847),
+                monitor: Some(MonitorDTO::RGB),
+                vdg: None,
                 rom: Some("/path/custom.rom".to_string()),
             },
             media: MediaDTO {
@@ -753,9 +771,9 @@ monitor = "rgb"
         assert!(def.ui.aspect_correct);
         assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
 
-        // Default VDG is per-variant: CoCo 2 -> T1, else plain MC6847.
+        // Default VDG is per-variant: a CoCo 3 has none at all.
         let config = def.to_machine_config().expect("should validate");
-        assert_eq!(config.vdg, VDGVariant::MC6847);
+        assert_eq!(config.vdg, None);
     }
 
     #[test]
@@ -769,13 +787,13 @@ name = "Bare CoCo 2"
 variant = "coco2"
 ram = "64k"
 video = "ntsc"
-monitor = "rgb"
 "#;
         fs::write(dir.path().join("bare2.toml"), toml_text).unwrap();
         let loaded = load_all(dir.path());
         let def = loaded[0].1.as_ref().expect("minimal file should parse");
         let config = def.to_machine_config().expect("should validate");
-        assert_eq!(config.vdg, VDGVariant::MC6847T1);
+        assert_eq!(config.vdg, Some(VDGVariant::MC6847T1));
+        assert_eq!(config.monitor, None, "no monitor key, no monitor port");
     }
 
     #[test]
@@ -963,8 +981,8 @@ future_ui_field = 42
             variant: MachineVariant::Coco2,
             video: VideoStandard::NTSC,
             memory: MemorySize::K16,
-            monitor: MonitorType::Composite,
-            vdg: VDGVariant::MC6847T1,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847T1),
         };
         let def = MachineDef::from_config("Test CoCo 2".to_string(), None, &config);
         assert_eq!(def.hardware.vdg, Some(VDGVariantDTO::MC6847T1));

@@ -1971,11 +1971,13 @@ struct Cli {
     #[arg(long, default_value = "ntsc", value_parser = parse_video)]
     video: VideoStandard,
 
-    /// Composite vs RGB monitor cable. Real hardware drives both signals
-    /// simultaneously; this picks which one the emulated monitor decodes
-    /// (also toggleable live from the View menu).
-    #[arg(long, value_enum, default_value = "rgb")]
-    monitor: MonitorArg,
+    /// Composite vs RGB monitor cable (CoCo 3 only — a CoCo 1/2 has no
+    /// monitor port, just RF out to a TV). Real hardware drives both
+    /// signals simultaneously; this picks which one the emulated monitor
+    /// decodes (also toggleable live from the View menu). Defaults to RGB
+    /// on a CoCo 3.
+    #[arg(long, value_enum)]
+    monitor: Option<MonitorArg>,
 
     /// Also save a `.wav` of the tape audio alongside the canonical `.cas`
     /// on every tape write-back (see the "Also save tape audio (.wav)"
@@ -2243,14 +2245,15 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
 }
 
 /// Per-variant default VDG chip when no explicit choice is made: the T1
-/// (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
-/// `MachineConfig::validate` accepts there). Shared by the CLI path below,
-/// `new_vm.rs`'s `constrain`, and `machine_def.rs`'s `to_machine_config`'s
-/// `None` (omitted `[hardware].vdg`) arm — previously duplicated three ways.
-const fn default_vdg(variant: MachineVariant) -> VDGVariant {
+/// (CoCo 2B) on a CoCo 2, the plain MC6847 on a CoCo 1 (the only choice
+/// `MachineConfig::validate` accepts there), and `None` on a CoCo 3, which
+/// has no VDG at all. Shared by the CLI path below, `new_vm.rs`'s
+/// `constrain`, and `machine_def.rs`'s `to_machine_config`.
+const fn default_vdg(variant: MachineVariant) -> Option<VDGVariant> {
     match variant {
-        MachineVariant::Coco2 => VDGVariant::MC6847T1,
-        MachineVariant::Coco1 | MachineVariant::Coco3 => VDGVariant::MC6847,
+        MachineVariant::Coco2 => Some(VDGVariant::MC6847T1),
+        MachineVariant::Coco1 => Some(VDGVariant::MC6847),
+        MachineVariant::Coco3 => None,
     }
 }
 
@@ -2304,13 +2307,14 @@ fn setup_logging() {
 }
 
 fn banner() {
-    println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano",
+    println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano\n{}",
              env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "-".repeat(40)
     );
 }
 
@@ -2376,7 +2380,15 @@ fn main() -> eframe::Result<()> {
         variant,
         video: cli.video,
         memory,
-        monitor: cli.monitor.into(),
+        // An explicit --monitor on a CoCo 1/2 flows through as Some so
+        // `validate` below rejects it with the real reason (no monitor
+        // port) instead of silently ignoring the flag.
+        monitor: match variant {
+            MachineVariant::Coco3 => {
+                Some(cli.monitor.map_or(MonitorType::RGB, Into::into))
+            }
+            MachineVariant::Coco1 | MachineVariant::Coco2 => cli.monitor.map(Into::into),
+        },
         // No CLI flag for this yet; same family default as the "New…"
         // dialog and the manager's detail pane (`default_vdg`).
         vdg: default_vdg(variant),
@@ -2522,9 +2534,9 @@ mod cli_tests {
 
     #[test]
     fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
-        assert_eq!(default_vdg(MachineVariant::Coco2), VDGVariant::MC6847T1);
-        assert_eq!(default_vdg(MachineVariant::Coco1), VDGVariant::MC6847);
-        assert_eq!(default_vdg(MachineVariant::Coco3), VDGVariant::MC6847);
+        assert_eq!(default_vdg(MachineVariant::Coco2), Some(VDGVariant::MC6847T1));
+        assert_eq!(default_vdg(MachineVariant::Coco1), Some(VDGVariant::MC6847));
+        assert_eq!(default_vdg(MachineVariant::Coco3), None);
     }
 
     /// Scratch directory under `target/` holding only the ROM files a given

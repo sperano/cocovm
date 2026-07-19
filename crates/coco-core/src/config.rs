@@ -164,10 +164,15 @@ pub struct MachineConfig {
     pub memory: MemorySize,
     /// Which monitor cable is plugged in (RGB vs composite decode of the
     /// GIME's 6-bit palette values). Not a hardware register — see
-    /// [`MonitorType`].
-    pub monitor: MonitorType,
-    /// Which VDG chip is installed. See [`VDGVariant`].
-    pub vdg: VDGVariant,
+    /// [`MonitorType`]. `None` on machines with no monitor port at all:
+    /// a stock CoCo 1/2's only video output is the RF modulator into a TV
+    /// (RGB and composite ports are CoCo 3 additions), enforced by
+    /// [`Self::validate`].
+    pub monitor: Option<MonitorType>,
+    /// Which VDG chip is installed. See [`VDGVariant`]. `None` on the
+    /// CoCo 3, which has no MC6847 at all — the GIME does its own character
+    /// generation. Enforced by [`Self::validate`].
+    pub vdg: Option<VDGVariant>,
 }
 
 impl MachineConfig {
@@ -211,6 +216,12 @@ impl MachineConfig {
                         self.variant
                     ));
                 }
+                if self.monitor.is_some() {
+                    return Err(format!(
+                        "{:?} has no monitor port (RF TV output only); monitor must be None",
+                        self.variant
+                    ));
+                }
             }
             MachineVariant::Coco3 => {
                 if !matches!(
@@ -222,13 +233,31 @@ impl MachineConfig {
                         self.memory
                     ));
                 }
+                if self.monitor.is_none() {
+                    return Err(
+                        "Coco3 needs a monitor type (RGB or composite cable)".to_string()
+                    );
+                }
             }
         }
-        if self.vdg == VDGVariant::MC6847T1 && self.variant != MachineVariant::Coco2 {
-            return Err(format!(
-                "{:?} does not support VdgVariant::Mc6847T1 (only Coco2 had a T1 board)",
-                self.variant
-            ));
+        match (self.variant, self.vdg) {
+            (MachineVariant::Coco3, Some(_)) => {
+                return Err(
+                    "Coco3 has no VDG (the GIME does its own character generation); \
+                     vdg must be None"
+                        .to_string(),
+                );
+            }
+            (MachineVariant::Coco1 | MachineVariant::Coco2, None) => {
+                return Err(format!("{:?} needs a VDG chip (vdg must be set)", self.variant));
+            }
+            (MachineVariant::Coco1, Some(VDGVariant::MC6847T1)) => {
+                return Err(
+                    "Coco1 does not support VdgVariant::Mc6847T1 (only Coco2 had a T1 board)"
+                        .to_string(),
+                );
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -240,8 +269,8 @@ impl Default for MachineConfig {
             variant: MachineVariant::Coco3,
             video: VideoStandard::NTSC,
             memory: MemorySize::K512,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: Some(MonitorType::RGB),
+            vdg: None,
         }
     }
 }
@@ -261,8 +290,8 @@ mod tests {
             variant: MachineVariant::Coco3,
             video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: Some(MonitorType::RGB),
+            vdg: None,
         };
         assert!(cfg.validate().is_err());
     }
@@ -273,8 +302,8 @@ mod tests {
             variant: MachineVariant::Coco1,
             video: VideoStandard::NTSC,
             memory: MemorySize::K128,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847),
         };
         assert!(cfg.validate().is_err());
     }
@@ -291,8 +320,8 @@ mod tests {
                 variant: MachineVariant::Coco1,
                 video: VideoStandard::NTSC,
                 memory,
-                monitor: MonitorType::RGB,
-                vdg: VDGVariant::MC6847,
+                monitor: None,
+                vdg: Some(VDGVariant::MC6847),
             };
             assert!(
                 cfg.validate().is_ok(),
@@ -313,8 +342,8 @@ mod tests {
                 variant: MachineVariant::Coco2,
                 video: VideoStandard::NTSC,
                 memory,
-                monitor: MonitorType::RGB,
-                vdg: VDGVariant::MC6847,
+                monitor: None,
+                vdg: Some(VDGVariant::MC6847),
             };
             assert_eq!(
                 cfg.validate().is_ok(),
@@ -330,8 +359,8 @@ mod tests {
             variant: MachineVariant::Coco2,
             video: VideoStandard::PAL,
             memory: MemorySize::K64,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847),
         };
         assert!(cfg.validate().is_err());
     }
@@ -344,8 +373,8 @@ mod tests {
             variant: MachineVariant::Coco3,
             video: VideoStandard::PAL,
             memory: MemorySize::K512,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: Some(MonitorType::RGB),
+            vdg: None,
         };
         assert!(cfg.validate().is_ok());
     }
@@ -356,8 +385,8 @@ mod tests {
             variant: MachineVariant::Coco2,
             video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847T1,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847T1),
         };
         assert!(cfg.validate().is_ok());
     }
@@ -368,8 +397,8 @@ mod tests {
             variant: MachineVariant::Coco2,
             video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847),
         };
         assert!(cfg.validate().is_ok());
     }
@@ -380,22 +409,43 @@ mod tests {
             variant: MachineVariant::Coco1,
             video: VideoStandard::NTSC,
             memory: MemorySize::K64,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847T1,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847T1),
         };
         assert!(cfg.validate().is_err());
     }
 
     #[test]
-    fn coco3_rejects_mc6847t1() {
-        let cfg = MachineConfig {
-            variant: MachineVariant::Coco3,
+    fn coco3_rejects_any_vdg() {
+        for vdg in [VDGVariant::MC6847, VDGVariant::MC6847T1] {
+            let cfg = MachineConfig {
+                variant: MachineVariant::Coco3,
+                video: VideoStandard::NTSC,
+                memory: MemorySize::K512,
+                monitor: Some(MonitorType::RGB),
+                vdg: Some(vdg),
+            };
+            assert!(cfg.validate().is_err(), "Coco3 has no VDG, {vdg:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn coco12_rejects_monitor_and_coco3_requires_one() {
+        let mut cfg = MachineConfig {
+            variant: MachineVariant::Coco2,
             video: VideoStandard::NTSC,
-            memory: MemorySize::K512,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847T1,
+            memory: MemorySize::K64,
+            monitor: Some(MonitorType::RGB),
+            vdg: Some(VDGVariant::MC6847),
         };
-        assert!(cfg.validate().is_err());
+        assert!(cfg.validate().is_err(), "Coco2 has no monitor port");
+        cfg.monitor = None;
+        assert!(cfg.validate().is_ok());
+
+        let mut cfg = MachineConfig::default();
+        assert!(cfg.validate().is_ok());
+        cfg.monitor = None;
+        assert!(cfg.validate().is_err(), "Coco3 needs a cable choice");
     }
 
     #[test]

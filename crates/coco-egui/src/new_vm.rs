@@ -109,17 +109,23 @@ fn constrain(draft: &mut MachineConfig) {
     }
     if draft.variant != MachineVariant::Coco3 {
         draft.video = VideoStandard::NTSC;
+        // A stock CoCo 1/2's only output is the RF modulator into a TV —
+        // there is no monitor port ([`MachineConfig::validate`]).
+        draft.monitor = None;
+    } else {
+        draft.monitor = Some(draft.monitor.unwrap_or(MonitorType::RGB));
     }
     // Only runs on model-change clicks, so an explicit MC6847 pick made
     // while staying on CoCo 2 sticks; switching models re-seeds the
     // family default (the T1 "CoCo 2B" for CoCo 2, the only-possible
-    // plain MC6847 elsewhere — `MachineConfig::validate`).
+    // plain MC6847 on CoCo 1, no VDG at all on CoCo 3 —
+    // `MachineConfig::validate`).
     draft.vdg = crate::default_vdg(draft.variant);
 }
 
 /// Shared hardware-config rows, all label + combo box: Machine, conditional
 /// VDG (CoCo 2 only — see the inline comment below), RAM, Video (PAL only
-/// for CoCo 3), Monitor. Must be called inside an
+/// for CoCo 3), conditional Monitor (CoCo 3 only). Must be called inside an
 /// already-open two-column [`egui::Grid`]; `salt` distinguishes the
 /// [`egui::ComboBox`]'s persistent id when this is drawn from more than one
 /// call site in the same frame (the "New…" dialog *and* the manager's
@@ -149,14 +155,15 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
     // The VDG choice only exists on the CoCo 2 (the CoCo 1 always shipped
     // the plain MC6847; the CoCo 3 has no VDG — the GIME does its own
     // character generation), so the row is only rendered for that model;
-    // `constrain` snaps the draft back to Mc6847 for the others.
+    // `constrain` re-seeds the family default for the others.
     if draft.variant == MachineVariant::Coco2 {
         ui.label(egui::RichText::new("VDG").size(font));
+        let selected = draft.vdg.unwrap_or(VDGVariant::MC6847T1);
         egui::ComboBox::from_id_salt((salt, "vdg"))
-            .selected_text(vdg_label(draft.vdg))
+            .selected_text(vdg_label(selected))
             .show_ui(ui, |ui| {
                 for vdg in [VDGVariant::MC6847, VDGVariant::MC6847T1] {
-                    ui.selectable_value(&mut draft.vdg, vdg, vdg_label(vdg));
+                    ui.selectable_value(&mut draft.vdg, Some(vdg), vdg_label(vdg));
                 }
             });
         ui.end_row();
@@ -195,15 +202,22 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
         });
     ui.end_row();
 
-    ui.label(egui::RichText::new("Monitor").size(font));
-    egui::ComboBox::from_id_salt((salt, "monitor"))
-        .selected_text(monitor_label(draft.monitor))
-        .show_ui(ui, |ui| {
-            for monitor in [MonitorType::RGB, MonitorType::Composite] {
-                ui.selectable_value(&mut draft.monitor, monitor, monitor_label(monitor));
-            }
-        });
-    ui.end_row();
+    // Monitor cable choice exists only on the CoCo 3 (RGB and composite
+    // ports); a CoCo 1/2 outputs RF to a TV, full stop, and its config
+    // carries `monitor: None` — see `constrain` and
+    // [`MachineConfig::validate`].
+    if draft.variant == MachineVariant::Coco3 {
+        ui.label(egui::RichText::new("Monitor").size(font));
+        let selected = draft.monitor.unwrap_or(MonitorType::RGB);
+        egui::ComboBox::from_id_salt((salt, "monitor"))
+            .selected_text(monitor_label(selected))
+            .show_ui(ui, |ui| {
+                for monitor in [MonitorType::RGB, MonitorType::Composite] {
+                    ui.selectable_value(&mut draft.monitor, Some(monitor), monitor_label(monitor));
+                }
+            });
+        ui.end_row();
+    }
 }
 
 /// State of the "New…" dialog: a draft [`MachineConfig`] being edited, plus
@@ -350,14 +364,21 @@ mod tests {
             } else {
                 &[VideoStandard::NTSC]
             };
-            let vdgs: &[VDGVariant] = if variant == MachineVariant::Coco2 {
-                &[VDGVariant::MC6847, VDGVariant::MC6847T1]
+            let vdgs: &[Option<VDGVariant>] = match variant {
+                MachineVariant::Coco2 => {
+                    &[Some(VDGVariant::MC6847), Some(VDGVariant::MC6847T1)]
+                }
+                MachineVariant::Coco1 => &[Some(VDGVariant::MC6847)],
+                MachineVariant::Coco3 => &[None],
+            };
+            let monitors: &[Option<MonitorType>] = if variant == MachineVariant::Coco3 {
+                &[Some(MonitorType::RGB), Some(MonitorType::Composite)]
             } else {
-                &[VDGVariant::MC6847]
+                &[None]
             };
             for &memory in ram_choices(variant) {
                 for &video in videos {
-                    for monitor in [MonitorType::RGB, MonitorType::Composite] {
+                    for &monitor in monitors {
                         for &vdg in vdgs {
                             let config = MachineConfig {
                                 variant,
@@ -379,8 +400,9 @@ mod tests {
 
     /// Switching model away from CoCo 3 must snap GIME-only RAM and PAL back
     /// to plain-SAM-valid values (and vice versa for RAM); switching models
-    /// re-seeds the VDG family default: the T1 (CoCo 2B) on CoCo 2, the
-    /// plain MC6847 everywhere else.
+    /// re-seeds the VDG family default (T1 on CoCo 2, plain MC6847 on
+    /// CoCo 1, none on CoCo 3) and the monitor (a cable choice only where a
+    /// monitor port exists — the CoCo 3).
     #[test]
     fn constrain_draft_snaps_family_specific_fields() {
         let mut dialog = NewVmDialog::new();
@@ -388,8 +410,8 @@ mod tests {
             variant: MachineVariant::Coco3,
             video: VideoStandard::PAL,
             memory: MemorySize::K2048,
-            monitor: MonitorType::RGB,
-            vdg: VDGVariant::MC6847,
+            monitor: Some(MonitorType::Composite),
+            vdg: None,
         });
 
         dialog.draft.variant = MachineVariant::Coco2;
@@ -398,20 +420,30 @@ mod tests {
         assert_eq!(dialog.draft.video, VideoStandard::NTSC);
         assert_eq!(
             dialog.draft.vdg,
-            VDGVariant::MC6847T1,
+            Some(VDGVariant::MC6847T1),
             "CoCo 2 defaults to the T1 (CoCo 2B)"
+        );
+        assert_eq!(
+            dialog.draft.monitor, None,
+            "a CoCo 2 has no monitor port to configure"
         );
         assert!(dialog.draft.validate().is_ok());
 
         dialog.draft.variant = MachineVariant::Coco3;
         constrain(&mut dialog.draft);
         assert_eq!(dialog.draft.memory, MemorySize::K512);
-        assert_eq!(dialog.draft.vdg, VDGVariant::MC6847);
+        assert_eq!(dialog.draft.vdg, None);
+        assert_eq!(
+            dialog.draft.monitor,
+            Some(MonitorType::RGB),
+            "returning to CoCo 3 re-seeds the default cable"
+        );
         assert!(dialog.draft.validate().is_ok());
 
         dialog.draft.variant = MachineVariant::Coco1;
         constrain(&mut dialog.draft);
-        assert_eq!(dialog.draft.vdg, VDGVariant::MC6847);
+        assert_eq!(dialog.draft.vdg, Some(VDGVariant::MC6847));
+        assert_eq!(dialog.draft.monitor, None);
         assert!(dialog.draft.validate().is_ok());
     }
 
@@ -425,8 +457,8 @@ mod tests {
             variant: MachineVariant::Coco1,
             video: VideoStandard::NTSC,
             memory: MemorySize::K16,
-            monitor: MonitorType::Composite,
-            vdg: VDGVariant::MC6847,
+            monitor: None,
+            vdg: Some(VDGVariant::MC6847),
         };
         dialog.open_with(current);
         assert!(dialog.open);
