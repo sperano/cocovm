@@ -44,6 +44,27 @@ const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
     }
 }
 
+const fn vdg_label(vdg: VDGVariant) -> &'static str {
+    match vdg {
+        VDGVariant::MC6847 => "MC6847",
+        VDGVariant::MC6847T1 => "MC6847T1 (CoCo 2B)",
+    }
+}
+
+const fn video_label(video: VideoStandard) -> &'static str {
+    match video {
+        VideoStandard::NTSC => "NTSC",
+        VideoStandard::PAL => "PAL",
+    }
+}
+
+const fn monitor_label(monitor: MonitorType) -> &'static str {
+    match monitor {
+        MonitorType::RGB => "RGB",
+        MonitorType::Composite => "Composite",
+    }
+}
+
 /// `pub(crate)`: also used by `manager.rs`'s list-row subtitle ("CoCo 3 ·
 /// 512K").
 pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
@@ -89,9 +110,9 @@ fn constrain(draft: &mut MachineConfig) {
     draft.vdg = crate::default_vdg(draft.variant);
 }
 
-/// Shared hardware-config rows: Machine combo row, conditional VDG row (CoCo 2
-/// only — see the inline comment below), RAM combo, Video radio row (PAL
-/// only for CoCo 3), Monitor radio row. Must be called inside an
+/// Shared hardware-config rows, all label + combo box: Machine, conditional
+/// VDG (CoCo 2 only — see the inline comment below), RAM, Video (PAL only
+/// for CoCo 3), Monitor. Must be called inside an
 /// already-open two-column [`egui::Grid`]; `salt` distinguishes the
 /// [`egui::ComboBox`]'s persistent id when this is drawn from more than one
 /// call site in the same frame (the "New…" dialog *and* the manager's
@@ -124,10 +145,13 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
     // `constrain` snaps the draft back to Mc6847 for the others.
     if draft.variant == MachineVariant::Coco2 {
         ui.label(egui::RichText::new("VDG").size(font));
-        ui.horizontal(|ui| {
-            ui.radio_value(&mut draft.vdg, VDGVariant::MC6847, "MC6847");
-            ui.radio_value(&mut draft.vdg, VDGVariant::MC6847T1, "MC6847T1 (CoCo 2B)");
-        });
+        egui::ComboBox::from_id_salt((salt, "vdg"))
+            .selected_text(vdg_label(draft.vdg))
+            .show_ui(ui, |ui| {
+                for vdg in [VDGVariant::MC6847, VDGVariant::MC6847T1] {
+                    ui.selectable_value(&mut draft.vdg, vdg, vdg_label(vdg));
+                }
+            });
         ui.end_row();
     }
 
@@ -145,20 +169,33 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
     // CoCo 1/2 PAL timing isn't modeled (`MachineConfig::validate`);
     // `constrain` already snapped the draft back to NTSC.
     let pal_possible = draft.variant == MachineVariant::Coco3;
-    ui.horizontal(|ui| {
-        ui.radio_value(&mut draft.video, VideoStandard::NTSC, "NTSC");
-        ui.add_enabled_ui(pal_possible, |ui| {
-            ui.radio_value(&mut draft.video, VideoStandard::PAL, "PAL")
+    egui::ComboBox::from_id_salt((salt, "video"))
+        .selected_text(video_label(draft.video))
+        .show_ui(ui, |ui| {
+            ui.selectable_value(
+                &mut draft.video,
+                VideoStandard::NTSC,
+                video_label(VideoStandard::NTSC),
+            );
+            ui.add_enabled_ui(pal_possible, |ui| {
+                ui.selectable_value(
+                    &mut draft.video,
+                    VideoStandard::PAL,
+                    video_label(VideoStandard::PAL),
+                )
                 .on_disabled_hover_text("PAL is only supported on the CoCo 3");
+            });
         });
-    });
     ui.end_row();
 
     ui.label(egui::RichText::new("Monitor").size(font));
-    ui.horizontal(|ui| {
-        ui.radio_value(&mut draft.monitor, MonitorType::RGB, "RGB");
-        ui.radio_value(&mut draft.monitor, MonitorType::Composite, "Composite");
-    });
+    egui::ComboBox::from_id_salt((salt, "monitor"))
+        .selected_text(monitor_label(draft.monitor))
+        .show_ui(ui, |ui| {
+            for monitor in [MonitorType::RGB, MonitorType::Composite] {
+                ui.selectable_value(&mut draft.monitor, monitor, monitor_label(monitor));
+            }
+        });
     ui.end_row();
 }
 

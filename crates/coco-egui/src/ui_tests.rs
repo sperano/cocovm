@@ -163,10 +163,12 @@ fn new_dialog_cancel_leaves_the_machine_untouched() {
     );
 }
 
-/// The VDG radio row only exists on a CoCo 2 draft
+/// The VDG combo row only exists on a CoCo 2 draft
 /// (`MachineConfig::validate`: [`VDGVariant::MC6847T1`] is CoCo2-only) —
-/// the row is absent with CoCo 1 or CoCo 3 selected, present and
-/// selectable with CoCo 2 selected.
+/// the row is absent with CoCo 1 or CoCo 3 selected, present with CoCo 2
+/// selected. The row is probed through the combo button's accessibility
+/// *value*: a CoCo 2 draft defaults to the T1 (`default_vdg`), so its
+/// closed combo shows the T1 text.
 #[test]
 fn new_dialog_vdg_row_only_visible_for_coco2() {
     let mut harness = boot_harness();
@@ -178,19 +180,19 @@ fn new_dialog_vdg_row_only_visible_for_coco2() {
 
     // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
     assert!(
-        harness.query_by_label(t1_label).is_none(),
+        harness.query_by_value(t1_label).is_none(),
         "VDG row must be absent for CoCo 3"
     );
 
     select_machine(&mut harness, "CoCo 3", "CoCo 2");
     assert!(
-        harness.query_by_label(t1_label).is_some(),
+        harness.query_by_value(t1_label).is_some(),
         "VDG row must be present for CoCo 2"
     );
 
     select_machine(&mut harness, "CoCo 2", "CoCo 1");
     assert!(
-        harness.query_by_label(t1_label).is_none(),
+        harness.query_by_value(t1_label).is_none(),
         "VDG row must be absent for CoCo 1"
     );
 }
