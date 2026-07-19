@@ -945,11 +945,24 @@ impl eframe::App for ManagerApp {
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
         }
 
+        // ⌘N / Ctrl+N = the toolbar's "New…". Each running VM window is its
+        // own viewport with its own input stream, so this only fires with
+        // the manager window focused.
+        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
+            self.open_new_dialog();
+        }
+
         // Toolbar: the manager actions. "Settings"/"Help" are still inert
         // scaffolding.
         egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("New…").clicked() {
+                // Toolbar buttons show the shortcut on hover (inline
+                // shortcut text is a menu-row convention, not a toolbar one).
+                if ui
+                    .button("New…")
+                    .on_hover_text(ctx.format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT))
+                    .clicked()
+                {
                     self.open_new_dialog();
                 }
                 let _ = ui.button("Settings");

@@ -30,6 +30,13 @@ const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, M
 /// dialog in `main.rs`.
 const DIALOG_MARGIN: i8 = 16;
 
+/// The "New machine" shortcut, consumed by both the direct-boot Machine
+/// menu ([`crate::CocoApp`]) and the manager's toolbar: ⌘N on macOS,
+/// Ctrl+N on Windows/Linux ([`egui::Modifiers::COMMAND`] resolves to the
+/// platform's primary modifier).
+pub const NEW_MACHINE_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N);
+
 /// Spacing of [`config_form_rows`]'s two-column grid. `pub(crate)`: the
 /// manager's detail pane (`manager::draw_detail_ok`) hosts the same shared
 /// rows in its own `egui::Grid` and must use this exact value too, or the

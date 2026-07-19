@@ -56,9 +56,10 @@ fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &st
     harness.step();
 }
 
-/// [`click`] for submenu buttons, whose accessible label carries the
-/// trailing "⏵" arrow (e.g. `"MultiPak Interface ⏵"`).
-fn click_submenu(harness: &mut AppHarness, label: &str) {
+/// [`click`] matching by substring — for widgets whose accessible label
+/// carries decoration beyond the visible caption: submenu buttons ("MultiPak
+/// Interface ⏵") and menu rows with shortcut text ("New… ⌘N").
+fn click_containing<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
     harness.get_by_label_contains(label).hover();
     harness.step();
     harness.get_by_label_contains(label).click();
@@ -122,7 +123,7 @@ fn new_dialog_creates_a_coco1_machine_without_panicking() {
     assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
 
     click(&mut harness, "Machine");
-    click(&mut harness, "New…");
+    click_containing(&mut harness, "New…");
     select_machine(&mut harness, "CoCo 3", "CoCo 1");
     // The frame that processes Create draws the CentralPanel *after*
     // swapping the machine — the exact path that used to panic on the
@@ -149,7 +150,7 @@ fn new_dialog_cancel_leaves_the_machine_untouched() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    click(&mut harness, "New…");
+    click_containing(&mut harness, "New…");
     // Editing the draft must not leak into the running machine.
     select_machine(&mut harness, "CoCo 3", "CoCo 2");
     click(&mut harness, "Cancel");
@@ -174,7 +175,7 @@ fn new_dialog_vdg_row_only_visible_for_coco2() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    click(&mut harness, "New…");
+    click_containing(&mut harness, "New…");
 
     let t1_label = "MC6847T1 (CoCo 2B)";
 
@@ -194,6 +195,35 @@ fn new_dialog_vdg_row_only_visible_for_coco2() {
     assert!(
         harness.query_by_value(t1_label).is_none(),
         "VDG row must be absent for CoCo 1"
+    );
+}
+
+/// ⌘N / Ctrl+N opens the New-machine dialog without touching the menu, in
+/// both apps. `Modifiers::COMMAND` in the harness matches what
+/// `consume_shortcut` looks for on every platform, so this exercises the
+/// mac/Windows/Linux binding in one test.
+#[test]
+fn cmd_n_opens_the_new_machine_dialog() {
+    let mut harness = boot_harness();
+    assert!(harness.query_by_label("Create").is_none());
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    harness.step();
+    harness.step();
+    assert!(
+        harness.query_by_label("Create").is_some(),
+        "Cmd/Ctrl+N must open the New Machine dialog"
+    );
+
+    let mut harness = manager_harness(None, Vec::new());
+    assert!(harness.query_by_label("Create").is_none());
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    harness.step();
+    harness.step();
+    assert!(
+        harness.query_by_label("Create").is_some(),
+        "Cmd/Ctrl+N must open the manager's New Machine dialog"
     );
 }
 
@@ -368,7 +398,7 @@ fn multipak_install_slot_and_switch_flow() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    click_submenu(&mut harness, "MultiPak Interface");
+    click_containing(&mut harness,"MultiPak Interface");
     click(&mut harness, "Insert MultiPak");
     {
         let app = harness.state();
@@ -380,8 +410,8 @@ fn multipak_install_slot_and_switch_flow() {
 
     // Plug the FD-502 into slot 1 through the nested slot submenu.
     click(&mut harness, "Machine");
-    click_submenu(&mut harness, "MultiPak Interface");
-    click_submenu(&mut harness, "Slot 1");
+    click_containing(&mut harness,"MultiPak Interface");
+    click_containing(&mut harness,"Slot 1");
     click(&mut harness, "Insert FD-502");
     assert!(matches!(
         harness.state().mpi.as_ref().unwrap().slots[0],
@@ -396,13 +426,13 @@ fn multipak_install_slot_and_switch_flow() {
     // "Slot 2" is unique — the parent menu's slot entry is a submenu button
     // labelled "Slot 2 ⏵".
     click(&mut harness, "Machine");
-    click_submenu(&mut harness, "MultiPak Interface");
-    click_submenu(&mut harness, "Switch");
+    click_containing(&mut harness,"MultiPak Interface");
+    click_containing(&mut harness,"Switch");
     click(&mut harness, "Slot 2");
     assert_eq!(harness.state().mpi.as_ref().unwrap().switch, 1);
 
     click(&mut harness, "Machine");
-    click_submenu(&mut harness, "MultiPak Interface");
+    click_containing(&mut harness,"MultiPak Interface");
     click(&mut harness, "Remove MultiPak");
     let app = harness.state();
     assert!(app.mpi.is_none());
@@ -605,7 +635,7 @@ fn manager_new_dialog_create_writes_a_definition_file() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
     assert!(harness.state().entries.is_empty());
 
-    click(&mut harness, "New…");
+    click_containing(&mut harness, "New…");
     harness.get_by_label("Create"); // dialog open
 
     click(&mut harness, "Create");

@@ -968,6 +968,13 @@ impl CocoApp {
     }
 
     fn handle_input(&mut self, ctx: &egui::Context) {
+        // ⌘N / Ctrl+N = Machine → New…. Consumed before the event snapshot
+        // below so the N keypress never reaches the CoCo matrix or the
+        // symbolic type-ahead (the held modifier alone is harmless there).
+        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
+            self.new_vm.open_with(self.machine.config);
+        }
+
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
 
         // UI hotkeys (never forwarded) and clipboard paste, both keyboard-mode-agnostic.
@@ -1146,7 +1153,9 @@ impl CocoApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| {
-                    if ui.button("New…").clicked() {
+                    let new_button = egui::Button::new("New…")
+                        .shortcut_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
+                    if ui.add(new_button).clicked() {
                         self.new_vm.open_with(self.machine.config);
                         ui.close();
                     }
