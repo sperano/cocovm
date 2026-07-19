@@ -72,10 +72,15 @@ appear. Same GIME state, different glass. This is the correct causal model of
 the hardware and makes an existing subtle feature discoverable. Swapping the
 cable while running is legal (it is on real hardware) and just flips the
 config field.
-- **hw-verify before modeling the monitor roster**: CM-8 pairing is certain;
-  CM-5 lineage/compatibility (Tandy 1000 side of the catalog?) must be
-  verified before it gets a mesh and a cable. Same for any claim about which
-  software shipped on cartridge vs disk (e.g. Thexder is believed disk-only).
+- **hw-verify findings (task 5, done 2026-07-19)**: CM-8 (Cat. 26-3215) is
+  the CoCo 3's analog RGB monitor — 10-pin flat cable to a header on the
+  case **bottom** (routed through a molded groove), not a rear-panel DIN;
+  the CM-8 has no composite input. CM-5 is a Tandy 1000 TTL-RGBI/CGA
+  monitor, incompatible — **dropped from the desk roster**. Composite roster:
+  generic 13" composite CRT via the RCA jack, or TV via the RF switch box
+  (no Tandy monitor was marketed specifically as the CoCo composite one).
+  Thexder shipped on **cartridge** (Cat. 26-3072, 1987) — the demo script's
+  "insert Thexder pak" is period-accurate.
 
 ### 5. Assets: git-ignored, first-run-download pattern
 - Geometry: modeled in Blender from reference photos (user owns a real 2048K
