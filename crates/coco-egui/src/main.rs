@@ -2294,13 +2294,14 @@ fn setup_logging() {
     let vt_ok = enable_ansi_support::enable_ansi_support().is_ok();
     let use_color = vt_ok && std::io::IsTerminal::is_terminal(&std::io::stdout());
     // Leveled stdout logging, colored only when stdout is a terminal.
-    // `RUST_LOG` filters per module (e.g. `RUST_LOG=coco_egui::audio=debug`);
-    // without it, everything at `info` and above is shown.
+    // `RUST_LOG` filters per module (e.g. `RUST_LOG=info,eframe=warn` or
+    // `RUST_LOG=coco_egui::audio=debug`); without it, only `warn` and above
+    // is shown.
     tracing_subscriber::fmt()
         .with_ansi(use_color)
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
                 .from_env_lossy(),
         )
         .init();
