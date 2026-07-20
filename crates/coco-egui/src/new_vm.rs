@@ -381,8 +381,12 @@ impl NewVmDialog {
                                 self.disks = std::array::from_fn(|_| DiskChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
+                            // Width of the cartridge combo, measured so the
+                            // Disk rows below can indent their "Disk N:"
+                            // pairs to line up under Disk 0's.
+                            let mut cartridge_combo_width = 0.0;
                             ui.horizontal(|ui| {
-                                egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
+                                let combo = egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
                                     .selected_text(cartridge_label(self.cartridge))
                                     .show_ui(ui, |ui| {
                                         for choice in
@@ -395,17 +399,26 @@ impl NewVmDialog {
                                             );
                                         }
                                     });
+                                cartridge_combo_width = combo.response.rect.width();
                                 if self.cartridge == CartridgeChoice::FD502 {
                                     self.disk_combo(ui, font, 0);
                                 }
                             });
                             ui.end_row();
 
-                            // Remaining drives, one row each under Disk 0.
+                            // Remaining drives, one row each aligned under
+                            // Disk 0: the indent stands in for the
+                            // cartridge combo plus the item spacing that
+                            // separates it from the "Disk 0:" label above
+                            // (`add_space` itself adds no spacing around
+                            // the gap).
                             if self.cartridge == CartridgeChoice::FD502 {
                                 for drive in 1..crate::UI_DRIVES {
                                     ui.label("");
                                     ui.horizontal(|ui| {
+                                        ui.add_space(
+                                            cartridge_combo_width + ui.spacing().item_spacing.x,
+                                        );
                                         self.disk_combo(ui, font, drive);
                                     });
                                     ui.end_row();

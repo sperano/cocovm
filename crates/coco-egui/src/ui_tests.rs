@@ -206,6 +206,14 @@ fn new_dialog_cartridge_row_inserts_fd502() {
         harness.query_by_label("Disk 1:").is_some(),
         "FD-502 selection must reveal the Disk 1 combo"
     );
+    // Disk 1's row indents past the cartridge combo so the drive pairs
+    // stack: both "Disk N:" labels start at the same x.
+    let disk0_x = harness.get_by_label("Disk 0:").rect().min.x;
+    let disk1_x = harness.get_by_label("Disk 1:").rect().min.x;
+    assert!(
+        (disk0_x - disk1_x).abs() < 1.0,
+        "Disk 1 ({disk1_x}) must line up under Disk 0 ({disk0_x})"
+    );
     click(&mut harness, "Create");
     assert!(
         harness.state_mut().machine.bus.cart.as_disk_cart().is_some(),
