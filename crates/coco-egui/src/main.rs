@@ -238,21 +238,37 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
 /// were one or two — and the menu stays small.
 const UI_DRIVES: usize = 2;
 
-/// Status-bar drive activity LED: diameter and lit/idle colors. Lit while
-/// the drive is selected with its motor on ([`coco_core::fdc`]'s
-/// `drive_active`), like a real drive's front-panel light.
-const DRIVE_LIGHT_DIAMETER: f32 = 8.0;
-const DRIVE_LIGHT_ACTIVE: egui::Color32 = egui::Color32::from_rgb(0xE0, 0x30, 0x30);
-const DRIVE_LIGHT_IDLE: egui::Color32 = egui::Color32::from_gray(70);
+/// Status-bar drive activity indicator: a little 5¼" floppy jacket, red
+/// while the drive is selected with its motor on ([`coco_core::fdc`]'s
+/// `drive_active`, like a real drive's front-panel light), dim otherwise.
+const DRIVE_ICON_SIZE: f32 = 11.0;
+const DRIVE_ICON_ACTIVE: egui::Color32 = egui::Color32::from_rgb(0xE0, 0x30, 0x30);
+const DRIVE_ICON_IDLE: egui::Color32 = egui::Color32::from_gray(70);
+/// Corner rounding of the jacket square.
+const DRIVE_ICON_CORNER: f32 = 1.5;
 
-/// One status-bar activity LED (see [`DRIVE_LIGHT_DIAMETER`]'s doc).
+/// One status-bar activity indicator (see [`DRIVE_ICON_SIZE`]'s doc): the
+/// jacket square with the hub hole and the oblong head-access slot punched
+/// out in the panel's background color — the 5¼" silhouette.
 fn drive_activity_light(ui: &mut egui::Ui, active: bool) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(DRIVE_LIGHT_DIAMETER, DRIVE_LIGHT_DIAMETER),
+        egui::vec2(DRIVE_ICON_SIZE, DRIVE_ICON_SIZE),
         egui::Sense::hover(),
     );
-    let color = if active { DRIVE_LIGHT_ACTIVE } else { DRIVE_LIGHT_IDLE };
-    ui.painter().circle_filled(rect.center(), DRIVE_LIGHT_DIAMETER / 2.0, color);
+    let jacket = if active { DRIVE_ICON_ACTIVE } else { DRIVE_ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, DRIVE_ICON_CORNER, jacket);
+    // Hub hole, a hair above center (the slot below claims the bottom).
+    let hub = rect.center() - egui::vec2(0.0, DRIVE_ICON_SIZE * 0.08);
+    painter.circle_filled(hub, DRIVE_ICON_SIZE * 0.18, punch);
+    // Head-access slot: the short oblong under the hub.
+    let slot_width = DRIVE_ICON_SIZE * 0.16;
+    let slot = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.bottom() - DRIVE_ICON_SIZE * 0.18),
+        egui::vec2(slot_width, DRIVE_ICON_SIZE * 0.24),
+    );
+    painter.rect_filled(slot, slot_width / 2.0, punch);
 }
 
 /// Number of physical slots on a Multi-Pak Interface — re-exported from the
