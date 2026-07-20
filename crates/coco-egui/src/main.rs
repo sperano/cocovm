@@ -1680,32 +1680,36 @@ impl CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
-        if let new_vm::NewVmAction::Create(config, cartridge, disks) = self.new_vm.show(ctx) {
-            match self.create_vm(config, ctx) {
+        if let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) {
+            match self.create_vm(spec.config, ctx) {
                 Ok(()) => {
-                    // The machine booted; cartridge/disk problems (e.g.
+                    // The machine booted; cartridge/media problems (e.g.
                     // missing disk11.rom, unreadable image) are reported
                     // like a menu insert, not as a create failure.
-                    if cartridge == new_vm::CartridgeChoice::FD502 {
+                    // Blank(None) is the manager flow's auto-placed
+                    // spelling and can't be produced here.
+                    if spec.cartridge == new_vm::CartridgeChoice::FD502 {
                         if let Err(e) = self.ensure_disk_controller() {
                             self.cart_error = Some(e);
                         } else {
-                            for (drive, choice) in disks.into_iter().enumerate() {
+                            for (drive, choice) in spec.disks.into_iter().enumerate() {
                                 match choice {
-                                    new_vm::DiskChoice::File(path) => {
+                                    new_vm::MediaChoice::File(path) => {
                                         self.insert_disk(drive, path)
                                     }
-                                    new_vm::DiskChoice::Blank(Some(path)) => {
+                                    new_vm::MediaChoice::Blank(Some(path)) => {
                                         self.new_blank_disk(drive, path)
                                     }
-                                    // Blank(None) is the manager flow's
-                                    // auto-placed spelling and can't be
-                                    // produced here.
-                                    new_vm::DiskChoice::None
-                                    | new_vm::DiskChoice::Blank(None) => {}
+                                    new_vm::MediaChoice::None
+                                    | new_vm::MediaChoice::Blank(None) => {}
                                 }
                             }
                         }
+                    }
+                    match spec.tape {
+                        new_vm::MediaChoice::File(path) => self.insert_tape(path),
+                        new_vm::MediaChoice::Blank(Some(path)) => self.new_tape(path),
+                        new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
                     }
                     self.new_vm.close();
                 }

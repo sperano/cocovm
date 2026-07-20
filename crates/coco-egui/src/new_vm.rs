@@ -107,29 +107,29 @@ const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
     }
 }
 
-/// One drive's disk pick in the Cartridge row's per-drive combos, shown
-/// only with [`CartridgeChoice::FD502`]: what to mount at create time.
+/// One media pick — a drive's disk (Cartridge row, FD-502 only) or the
+/// cassette: what to mount at create time.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum DiskChoice {
+pub enum MediaChoice {
     /// Empty drive.
     #[default]
     None,
-    /// A fresh blank (0-track) image. Blank disks are file-backed (the
-    /// drive writes back to the host file): direct boot picks the backing
-    /// file with a save dialog when this is selected (`Some(path)`); the
-    /// manager auto-places `disk<N>.dsk` in the machine's artifact
-    /// directory (`None`).
+    /// A fresh blank image (0-track disk / empty tape). Blank media is
+    /// file-backed (the machine writes back to the host file): direct boot
+    /// picks the backing file with a save dialog when this is selected
+    /// (`Some(path)`); the manager auto-places a file in the machine's
+    /// artifact directory (`None`).
     Blank(Option<PathBuf>),
     /// An existing image picked with the file dialog.
     File(PathBuf),
 }
 
 /// Closed-combo text: the choice name, or the chosen file's name.
-fn disk_choice_text(disk: &DiskChoice) -> String {
-    match disk {
-        DiskChoice::None => "None".to_string(),
-        DiskChoice::Blank(None) => "Blank".to_string(),
-        DiskChoice::Blank(Some(path)) | DiskChoice::File(path) => path
+fn media_choice_text(media: &MediaChoice) -> String {
+    match media {
+        MediaChoice::None => "None".to_string(),
+        MediaChoice::Blank(None) => "Blank".to_string(),
+        MediaChoice::Blank(Some(path)) | MediaChoice::File(path) => path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| "Disk".to_string()),
@@ -141,15 +141,26 @@ fn disk_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Disk image", &["dsk", "jvc", "os9"])
 }
 
+/// Everything "Create" hands the caller besides the machine config: the
+/// post-construction inventory (cartridge, its disks, the cassette) that
+/// lives outside [`MachineConfig`] — see [`CartridgeChoice`].
+#[derive(Debug, Clone)]
+pub struct NewMachineSpec {
+    pub config: MachineConfig,
+    pub cartridge: CartridgeChoice,
+    /// Only meaningful with [`CartridgeChoice::FD502`].
+    pub disks: [MediaChoice; crate::UI_DRIVES],
+    pub tape: MediaChoice,
+}
+
 /// What the user clicked this frame, from [`NewVmDialog::show`].
 #[must_use]
 pub enum NewVmAction {
     None,
     /// "Create" was clicked; the caller should try to build this machine and
     /// either [`NewVmDialog::close`] the dialog or record the failure in
-    /// [`NewVmDialog::error`]. The per-drive [`DiskChoice`]s are only
-    /// meaningful with [`CartridgeChoice::FD502`].
-    Create(MachineConfig, CartridgeChoice, [DiskChoice; crate::UI_DRIVES]),
+    /// [`NewVmDialog::error`].
+    Create(NewMachineSpec),
 }
 
 /// Re-constrain a draft after a model change: snap RAM to the new family's
@@ -294,7 +305,9 @@ pub struct NewVmDialog {
     /// The per-drive disk drafts shown with the Cartridge combo (Disk 0
     /// inline, Disk 1 on the row below); reset to None on every open, and
     /// whenever the cartridge isn't the FD-502.
-    pub disks: [DiskChoice; crate::UI_DRIVES],
+    pub disks: [MediaChoice; crate::UI_DRIVES],
+    /// The Cassette-row draft; reset to None on every open.
+    pub tape: MediaChoice,
 }
 
 impl NewVmDialog {
@@ -306,7 +319,8 @@ impl NewVmDialog {
             show_name_field: false,
             name: String::new(),
             cartridge: CartridgeChoice::None,
-            disks: std::array::from_fn(|_| DiskChoice::None),
+            disks: std::array::from_fn(|_| MediaChoice::None),
+            tape: MediaChoice::None,
         }
     }
 
@@ -325,7 +339,8 @@ impl NewVmDialog {
         self.draft = current;
         self.error = None;
         self.cartridge = CartridgeChoice::None;
-        self.disks = std::array::from_fn(|_| DiskChoice::None);
+        self.disks = std::array::from_fn(|_| MediaChoice::None);
+        self.tape = MediaChoice::None;
         self.open = true;
     }
 
@@ -377,8 +392,12 @@ impl NewVmDialog {
                             // [`CartridgeChoice`] — and the manager's detail
                             // pane edits peripherals through its own
                             // checkboxes.
+                            ui.label(egui::RichText::new("Cassette").size(font));
+                            self.tape_combo(ui);
+                            ui.end_row();
+
                             if self.cartridge != CartridgeChoice::FD502 {
-                                self.disks = std::array::from_fn(|_| DiskChoice::None);
+                                self.disks = std::array::from_fn(|_| MediaChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
                             // Width of the cartridge combo, measured so the
@@ -447,11 +466,12 @@ impl NewVmDialog {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
                         if ui.button("Create").clicked() {
-                            action = NewVmAction::Create(
-                                self.draft,
-                                self.cartridge,
-                                self.disks.clone(),
-                            );
+                            action = NewVmAction::Create(NewMachineSpec {
+                                config: self.draft,
+                                cartridge: self.cartridge,
+                                disks: self.disks.clone(),
+                                tape: self.tape.clone(),
+                            });
                         }
                         if ui.button("Cancel").clicked() {
                             self.close();
@@ -467,6 +487,49 @@ impl NewVmDialog {
         action
     }
 
+    /// The Cassette-row combo: the same None / Blank / Select… protocol as
+    /// the disks' ([`Self::disk_combo`]) with tape semantics — Select…
+    /// accepts `.cas` and WAV, Blank is a fresh `.cas` (empty file), and
+    /// the manager flow auto-places `tape.cas` in the artifact directory.
+    fn tape_combo(&mut self, ui: &mut egui::Ui) {
+        egui::ComboBox::from_id_salt(("new_vm", "tape"))
+            .selected_text(media_choice_text(&self.tape))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(self.tape == MediaChoice::None, "None")
+                    .clicked()
+                {
+                    self.tape = MediaChoice::None;
+                }
+                if ui
+                    .selectable_label(matches!(self.tape, MediaChoice::Blank(_)), "Blank")
+                    .clicked()
+                {
+                    self.tape = if self.show_name_field {
+                        MediaChoice::Blank(None)
+                    } else {
+                        match rfd::FileDialog::new()
+                            .add_filter("Cassette image", &["cas"])
+                            .set_file_name("blank.cas")
+                            .save_file()
+                        {
+                            Some(path) => MediaChoice::Blank(Some(path)),
+                            None => MediaChoice::None,
+                        }
+                    };
+                }
+                if ui
+                    .selectable_label(matches!(self.tape, MediaChoice::File(_)), "Select…")
+                    .clicked()
+                    && let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Cassette image", &["cas", "wav"])
+                        .pick_file()
+                {
+                    self.tape = MediaChoice::File(path);
+                }
+            });
+    }
+
     /// One "Disk N:" label + combo, drawn while the FD-502 is selected
     /// (Disk 0 to the right of the Cartridge combo, the rest on rows
     /// below). "Blank" and "Select…" open native file dialogs on the spot
@@ -478,36 +541,36 @@ impl NewVmDialog {
     fn disk_combo(&mut self, ui: &mut egui::Ui, font: f32, drive: usize) {
         ui.label(egui::RichText::new(format!("Disk {drive}:")).size(font));
         egui::ComboBox::from_id_salt(("new_vm", "disk", drive))
-            .selected_text(disk_choice_text(&self.disks[drive]))
+            .selected_text(media_choice_text(&self.disks[drive]))
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_label(self.disks[drive] == DiskChoice::None, "None")
+                    .selectable_label(self.disks[drive] == MediaChoice::None, "None")
                     .clicked()
                 {
-                    self.disks[drive] = DiskChoice::None;
+                    self.disks[drive] = MediaChoice::None;
                 }
                 if ui
-                    .selectable_label(matches!(self.disks[drive], DiskChoice::Blank(_)), "Blank")
+                    .selectable_label(matches!(self.disks[drive], MediaChoice::Blank(_)), "Blank")
                     .clicked()
                 {
                     self.disks[drive] = if self.show_name_field {
-                        DiskChoice::Blank(None)
+                        MediaChoice::Blank(None)
                     } else {
                         match disk_file_dialog()
                             .set_file_name(format!("blank{drive}.dsk"))
                             .save_file()
                         {
-                            Some(path) => DiskChoice::Blank(Some(path)),
-                            None => DiskChoice::None,
+                            Some(path) => MediaChoice::Blank(Some(path)),
+                            None => MediaChoice::None,
                         }
                     };
                 }
                 if ui
-                    .selectable_label(matches!(self.disks[drive], DiskChoice::File(_)), "Select…")
+                    .selectable_label(matches!(self.disks[drive], MediaChoice::File(_)), "Select…")
                     .clicked()
                     && let Some(path) = disk_file_dialog().pick_file()
                 {
-                    self.disks[drive] = DiskChoice::File(path);
+                    self.disks[drive] = MediaChoice::File(path);
                 }
             });
     }

@@ -124,6 +124,9 @@ fn blank_disk_file(drive: usize) -> String {
     format!("disk{drive}.dsk")
 }
 
+/// [`blank_disk_file`]'s cassette sibling, for `[media].tape`.
+const BLANK_TAPE_FILE: &str = "tape.cas";
+
 /// Default display name seeded into the "New…" dialog's Name field —
 /// [`MachineConfig::default`]'s model, the same default the bare-invocation
 /// direct-boot path (`main.rs`) and the dialog's own draft start from.
@@ -366,12 +369,53 @@ impl ManagerApp {
     /// (`plan-machine-persistence.md` step 3). Save failures are reported in
     /// the dialog's own error field so it stays open for another try, the
     /// same contract `CocoApp::create_vm` follows for the direct-boot path.
-    fn create_machine(
+    /// Resolve one of the "New…" dialog's media picks to the string
+    /// recorded in the definition's `[media]` section, creating the backing
+    /// file for a Blank pick: auto-placed in `slug`'s artifact dir as
+    /// `auto_file` (recorded relative — `machine_def::resolve_media_path`)
+    /// or at the dialog's explicitly picked path. Blank media is a 0-byte
+    /// file — a blank 0-track JVC disk or an empty `.cas` tape, the same
+    /// starting point `CocoApp::{new_blank_disk, new_tape}` use; a leftover
+    /// file under a fresh slug is reused rather than clobbered. On failure
+    /// the error lands in the dialog and `None` is returned (abort create).
+    fn record_media_choice(
         &mut self,
-        config: MachineConfig,
-        cartridge: new_vm::CartridgeChoice,
-        disks: [new_vm::DiskChoice; crate::UI_DRIVES],
-    ) {
+        slug: &str,
+        choice: new_vm::MediaChoice,
+        auto_file: String,
+    ) -> Option<Option<String>> {
+        let (path, recorded) = match choice {
+            new_vm::MediaChoice::None => return Some(None),
+            new_vm::MediaChoice::File(path) => return Some(Some(path.display().to_string())),
+            new_vm::MediaChoice::Blank(Some(path)) => {
+                let recorded = path.display().to_string();
+                (path, recorded)
+            }
+            new_vm::MediaChoice::Blank(None) => {
+                let Some(root) = self.artifacts_root.clone() else {
+                    self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
+                    return None;
+                };
+                let artifact_dir = root.join(slug);
+                if let Err(e) = fs::create_dir_all(&artifact_dir) {
+                    self.new_vm.error = Some(format!("{}: {e}", artifact_dir.display()));
+                    return None;
+                }
+                (artifact_dir.join(&auto_file), auto_file)
+            }
+        };
+        match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => {
+                self.new_vm.error = Some(format!("{}: {e}", path.display()));
+                return None;
+            }
+        }
+        Some(Some(recorded))
+    }
+
+    fn create_machine(&mut self, spec: new_vm::NewMachineSpec) {
         let Some(dir) = self.machines_dir.clone() else {
             self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
             return;
@@ -393,61 +437,25 @@ impl ManagerApp {
         let slug = machine_def::unique_slug(&base, &taken);
 
         let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
-        let mut def = machine_def::MachineDef::from_config(name, created, &config);
-        def.peripherals.fd502 = cartridge == new_vm::CartridgeChoice::FD502;
+        let mut def = machine_def::MachineDef::from_config(name, created, &spec.config);
+        def.peripherals.fd502 = spec.cartridge == new_vm::CartridgeChoice::FD502;
         if def.peripherals.fd502 {
-            for (drive, choice) in disks.into_iter().enumerate() {
-                let media_slot = match drive {
-                    0 => &mut def.media.disk0,
-                    _ => &mut def.media.disk1,
+            for (drive, choice) in spec.disks.into_iter().enumerate() {
+                let Some(recorded) = self.record_media_choice(&slug, choice, blank_disk_file(drive))
+                else {
+                    return;
                 };
-                match choice {
-                    new_vm::DiskChoice::None => {}
-                    new_vm::DiskChoice::File(path) => {
-                        *media_slot = Some(path.display().to_string());
-                    }
-                    // A blank disk is file-backed (the drive writes back to
-                    // the host file). Auto-place it in the machine's
-                    // artifact dir as a 0-byte file — the same blank
-                    // 0-track JVC image `CocoApp::new_blank_disk` starts
-                    // from — recorded as a relative path
-                    // (`machine_def::resolve_media_path`). An explicitly
-                    // picked path (direct-boot spelling) is honored if it
-                    // ever reaches here.
-                    new_vm::DiskChoice::Blank(explicit) => {
-                        let (path, recorded) = match explicit {
-                            Some(path) => (path.clone(), path.display().to_string()),
-                            None => {
-                                let Some(root) = self.artifacts_root.clone() else {
-                                    self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
-                                    return;
-                                };
-                                let artifact_dir = root.join(&slug);
-                                if let Err(e) = fs::create_dir_all(&artifact_dir) {
-                                    self.new_vm.error =
-                                        Some(format!("{}: {e}", artifact_dir.display()));
-                                    return;
-                                }
-                                let file = blank_disk_file(drive);
-                                (artifact_dir.join(&file), file)
-                            }
-                        };
-                        match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-                            Ok(_) => {}
-                            // A leftover file under a fresh slug's artifact
-                            // dir: reuse it as the disk rather than
-                            // clobbering data.
-                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                            Err(e) => {
-                                self.new_vm.error = Some(format!("{}: {e}", path.display()));
-                                return;
-                            }
-                        }
-                        *media_slot = Some(recorded);
-                    }
+                match drive {
+                    0 => def.media.disk0 = recorded,
+                    _ => def.media.disk1 = recorded,
                 }
             }
         }
+        let Some(recorded) = self.record_media_choice(&slug, spec.tape, BLANK_TAPE_FILE.to_string())
+        else {
+            return;
+        };
+        def.media.tape = recorded;
 
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
@@ -1001,8 +1009,8 @@ impl eframe::App for ManagerApp {
             });
         });
 
-        if let new_vm::NewVmAction::Create(config, cartridge, disk0) = self.new_vm.show(ctx) {
-            self.create_machine(config, cartridge, disk0);
+        if let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) {
+            self.create_machine(spec);
         }
 
         // Machine list: one row per definition under `config_dir()/machines`.

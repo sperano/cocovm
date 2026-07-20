@@ -194,7 +194,7 @@ fn new_dialog_cartridge_row_inserts_fd502() {
 
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
-    select_combo(&mut harness, "None", "FD-502");
+    select_combo_at(&mut harness, "None", 1, "FD-502");
     // Selecting the FD-502 reveals the Disk 0 companion combo (default
     // None); its Blank/Select… items open native file dialogs, so a
     // headless test only exercises visibility.
@@ -224,7 +224,7 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     // Back to Cartridge = None: the Disk 0 combo disappears.
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
-    select_combo(&mut harness, "None", "FD-502");
+    select_combo_at(&mut harness, "None", 1, "FD-502");
     select_combo(&mut harness, "FD-502", "None");
     assert!(
         harness.query_by_label("Disk 0:").is_none(),
@@ -721,7 +721,7 @@ fn manager_create_with_fd502_records_the_peripheral() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New…");
-    select_combo(&mut harness, "None", "FD-502");
+    select_combo_at(&mut harness, "None", 1, "FD-502");
     click(&mut harness, "Create");
 
     assert_eq!(harness.state().entries.len(), 1);
@@ -749,11 +749,13 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     );
 
     click_containing(&mut harness, "New…");
-    select_combo(&mut harness, "None", "FD-502");
-    // Both drive combos read "None"; screen order puts Disk 0 (on the
-    // cartridge row) above Disk 1.
-    select_combo_at(&mut harness, "None", 0, "Blank");
-    // Disk 0 now reads "Blank"; the remaining "None" is Disk 1.
+    select_combo_at(&mut harness, "None", 1, "FD-502");
+    // Screen order of the "None"-valued combos: Cassette (its row sits
+    // above Cartridge), then Disk 0, then Disk 1.
+    select_combo_at(&mut harness, "None", 1, "Blank");
+    // Disk 0 now reads "Blank"; the remaining "None"s are Cassette, Disk 1.
+    select_combo_at(&mut harness, "None", 1, "Blank");
+    // And the cassette, now the only "None" left.
     select_combo(&mut harness, "None", "Blank");
     click(&mut harness, "Create");
 
@@ -762,13 +764,14 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     assert!(def.peripherals.fd502);
     assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
     assert_eq!(def.media.disk1.as_deref(), Some("disk1.dsk"));
-    for file in ["disk0.dsk", "disk1.dsk"] {
+    assert_eq!(def.media.tape.as_deref(), Some("tape.cas"));
+    for file in ["disk0.dsk", "disk1.dsk", "tape.cas"] {
         let blank = artifacts.path().join("coco-3").join(file);
         assert!(blank.is_file(), "blank image must exist at {}", blank.display());
         assert_eq!(
             fs::metadata(&blank).unwrap().len(),
             0,
-            "a fresh blank JVC image is 0 bytes (0 tracks)"
+            "fresh blank media is a 0-byte file"
         );
     }
 }
