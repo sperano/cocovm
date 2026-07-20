@@ -51,5 +51,11 @@ toml = "0.9"
 ureq = "3.3.0"
 pluralizer = "0.5.0"
 
+[features]
+# Off by default (the app ships on eframe's glow/OpenGL backend). Enabling
+# this compiles eframe's wgpu backend in; `log_renderer_info` already has
+# the matching arm reporting the wgpu adapter (backend/GPU name).
+wgpu = ["eframe/wgpu"]
+
 [dev-dependencies]
 egui_kittest = { version = "0.33", features = ["eframe"] }

@@ -2371,29 +2371,39 @@ fn ensure_assets() {
     }
 }
 
-/// Print what we can about the graphics backend eframe just created —
-/// deliberately backend-agnostic: today the only compiled backend is
-/// glow/OpenGL, but nothing here assumes it stays that way. A missing GL
-/// context (egui_kittest, a future wgpu backend) gets a neutral line
-/// instead of silence or a lie; a wgpu arm slots in here if that backend
-/// is ever enabled.
+/// Print which graphics backend eframe actually created, and on what GPU.
+///
+/// eframe has no backend-name API: `CreationContext` carries one handle per
+/// compiled backend (`gl` for glow, `wgpu_render_state` behind the `wgpu`
+/// feature) and the *presence* of a handle is the portable signal — so this
+/// matches on the handles rather than assuming a backend. Each arm then
+/// uses that backend's own introspection: wgpu's `AdapterInfo` names the
+/// API and GPU directly; glow's cached [`eframe::glow::Version`] (a safe
+/// call) distinguishes OpenGL from OpenGL ES, with only the GPU-name
+/// string needing a raw `glGetString`.
 pub(crate) fn log_renderer_info(cc: &eframe::CreationContext<'_>) {
-    use eframe::glow::HasContext as _;
-    match cc.gl.as_ref() {
-        Some(gl) => {
-            // Safety: eframe made this context current on this thread for
-            // the duration of the creation closure, and VERSION/RENDERER
-            // are valid `glGetString` enums.
-            let (version, renderer) = unsafe {
-                (
-                    gl.get_parameter_string(eframe::glow::VERSION),
-                    gl.get_parameter_string(eframe::glow::RENDERER),
-                )
-            };
-            println!("OpenGL version: {}, renderer: {}.", version, renderer);
-        }
-        None => println!("Renderer: unknown backend (no OpenGL context)."),
+    #[cfg(feature = "wgpu")]
+    if let Some(render_state) = cc.wgpu_render_state.as_ref() {
+        let info = render_state.adapter.get_info();
+        println!("Renderer: {:?} on {} ({:?}).", info.backend, info.name, info.device_type);
+        return;
     }
+    if let Some(gl) = cc.gl.as_ref() {
+        use eframe::glow::HasContext as _;
+        let api = if gl.version().is_embedded { "OpenGL ES" } else { "OpenGL" };
+        // Safety: eframe made this context current on this thread for the
+        // duration of the creation closure, and VERSION/RENDERER are valid
+        // `glGetString` enums.
+        let (version, renderer) = unsafe {
+            (
+                gl.get_parameter_string(eframe::glow::VERSION),
+                gl.get_parameter_string(eframe::glow::RENDERER),
+            )
+        };
+        println!("{} version: {}, renderer: {}.", api, version, renderer);
+        return;
+    }
+    println!("Renderer: unknown backend.");
 }
 
 fn main() -> eframe::Result<()> {
