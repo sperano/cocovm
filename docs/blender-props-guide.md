@@ -84,3 +84,25 @@ Small, incremental, always-working — same philosophy as the emulator.
 
 Reference photos: your real 2048K machine, and the manual scans the manager
 already ships in `images/` (`paths::images_dir()`).
+
+## Downloaded models (Sketchfab etc.)
+
+`tools/blender/import_downloaded_prop.py` normalizes a downloaded `.glb`
+into a prop: joins meshes, bakes its base-color texture into vertex colors
+(the app ignores textures but prefers COLOR_0), rescales/recenters to the
+prop conventions, strips the heavy texture, exports `assets3d/<slug>.glb`:
+
+    /Applications/Blender.app/Contents/MacOS/Blender --background \
+        --python tools/blender/import_downloaded_prop.py -- \
+        --input assets3d/some_download.glb --slug coco3-case [--yaw 180]
+
+If the model faces the wrong way, re-run with `--yaw`; the snapshot loop
+makes that a quick iteration.
+
+**Licensing:** `assets3d/` is git-ignored, but keep the attribution for
+anything downloaded here, in case a prop ever ships in the asset tarball:
+
+- `coco3-case.glb` (in use): "TRS-80 Color Computer 2"
+  (https://skfb.ly/6V6IL) by ericomont, licensed CC Attribution 4.0
+  (http://creativecommons.org/licenses/by/4.0/). Source download kept as
+  `assets3d/trs-80_color_computer_2.glb`.

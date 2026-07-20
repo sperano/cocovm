@@ -160,7 +160,15 @@ fn append_node(
                 .material()
                 .pbr_metallic_roughness()
                 .base_color_factor();
-            let color = [base_color[0], base_color[1], base_color[2]];
+            let material_color = [base_color[0], base_color[1], base_color[2]];
+            // Per-vertex COLOR_0 wins over the material factor — it's how
+            // textured downloads come through after the Blender import
+            // script bakes their texture to vertex colors
+            // (docs/blender-props-guide.md).
+            let vertex_colors: Vec<[f32; 3]> = reader
+                .read_colors(0)
+                .map(|c| c.into_rgb_f32().collect())
+                .unwrap_or_default();
             let base = (out.verts.len() / FLOATS_PER_VERTEX) as u32;
             let mut vertex_count = 0u32;
             for (i, pos) in positions.enumerate() {
@@ -169,6 +177,7 @@ fn append_node(
                     .get(i)
                     .map(|n| (normal_matrix * Vec3::from(*n)).normalize_or_zero())
                     .unwrap_or(Vec3::Y);
+                let color = vertex_colors.get(i).copied().unwrap_or(material_color);
                 out.push_vertex([p.x, p.y, p.z], [n.x, n.y, n.z], [0.0, 0.0], color);
                 vertex_count += 1;
             }
