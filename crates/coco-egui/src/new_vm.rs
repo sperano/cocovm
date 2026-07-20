@@ -98,18 +98,25 @@ pub enum CartridgeChoice {
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
     FD502,
-    /// MultiPak Interface, slots empty — except that any Disk row picks
-    /// imply an FD-502 in the last slot, the same convention the CLI's
-    /// --mpi and `launch_machine` follow.
+    /// MultiPak Interface; the dialog then shows its four Slot rows, and
+    /// the Disk rows only once a slot holds the FD-502.
     MPI,
 }
 
-impl CartridgeChoice {
-    /// Whether this cartridge brings floppy drives, i.e. whether the
-    /// dialog shows the Disk rows: directly (FD-502) or via the implied
-    /// last-slot FD-502 (MPI).
-    pub fn has_drives(self) -> bool {
-        matches!(self, CartridgeChoice::FD502 | CartridgeChoice::MPI)
+/// One MultiPak slot's pick in the dialog's Slot rows (shown while the
+/// cartridge is the MPI). At most one slot holds the FD-502 — a second
+/// disk controller would fight the first for the SCS decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SlotChoice {
+    #[default]
+    Empty,
+    FD502,
+}
+
+const fn slot_label(slot: SlotChoice) -> &'static str {
+    match slot {
+        SlotChoice::Empty => "Empty",
+        SlotChoice::FD502 => "FD-502",
     }
 }
 
@@ -163,9 +170,23 @@ fn disk_file_dialog() -> rfd::FileDialog {
 pub struct NewMachineSpec {
     pub config: MachineConfig,
     pub cartridge: CartridgeChoice,
-    /// Only meaningful when [`CartridgeChoice::has_drives`].
+    /// Only meaningful with [`CartridgeChoice::MPI`].
+    pub mpi_slots: [SlotChoice; crate::MPI_SLOT_COUNT],
+    /// Only meaningful when [`Self::has_drives`].
     pub disks: [MediaChoice; crate::UI_DRIVES],
     pub tape: MediaChoice,
+}
+
+impl NewMachineSpec {
+    /// Whether a disk controller is reachable: the bare FD-502, or one in
+    /// an MPI slot.
+    pub fn has_drives(&self) -> bool {
+        match self.cartridge {
+            CartridgeChoice::FD502 => true,
+            CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
+            CartridgeChoice::None => false,
+        }
+    }
 }
 
 /// What the user clicked this frame, from [`NewVmDialog::show`].
@@ -317,9 +338,12 @@ pub struct NewVmDialog {
     pub name: String,
     /// The Cartridge-row draft; reset to None on every open.
     pub cartridge: CartridgeChoice,
-    /// The per-drive disk drafts shown with the Cartridge combo (Disk 0
-    /// inline, Disk 1 on the row below); reset to None on every open, and
-    /// whenever the cartridge isn't the FD-502.
+    /// The MPI Slot drafts (Slot 1 inline with the Cartridge combo, the
+    /// rest on rows below); reset whenever the cartridge isn't the MPI.
+    pub mpi_slots: [SlotChoice; crate::MPI_SLOT_COUNT],
+    /// The per-drive disk drafts, shown while a disk controller is
+    /// reachable (bare FD-502, or FD-502 in an MPI slot); reset to None on
+    /// every open and whenever no controller is reachable.
     pub disks: [MediaChoice; crate::UI_DRIVES],
     /// The Cassette-row draft; reset to None on every open.
     pub tape: MediaChoice,
@@ -334,6 +358,7 @@ impl NewVmDialog {
             show_name_field: false,
             name: String::new(),
             cartridge: CartridgeChoice::None,
+            mpi_slots: [SlotChoice::Empty; crate::MPI_SLOT_COUNT],
             disks: std::array::from_fn(|_| MediaChoice::None),
             tape: MediaChoice::None,
         }
@@ -354,6 +379,7 @@ impl NewVmDialog {
         self.draft = current;
         self.error = None;
         self.cartridge = CartridgeChoice::None;
+        self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
         self.disks = std::array::from_fn(|_| MediaChoice::None);
         self.tape = MediaChoice::None;
         self.open = true;
@@ -411,7 +437,10 @@ impl NewVmDialog {
                             self.tape_combo(ui);
                             ui.end_row();
 
-                            if !self.cartridge.has_drives() {
+                            if self.cartridge != CartridgeChoice::MPI {
+                                self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
+                            }
+                            if !self.drives_available() {
                                 self.disks = std::array::from_fn(|_| MediaChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
@@ -436,29 +465,57 @@ impl NewVmDialog {
                                         }
                                     });
                                 cartridge_combo_width = combo.response.rect.width();
-                                if self.cartridge.has_drives() {
-                                    self.disk_combo(ui, font, 0);
+                                match self.cartridge {
+                                    CartridgeChoice::FD502 => self.disk_combo(ui, font, 0),
+                                    CartridgeChoice::MPI => self.slot_combo(ui, font, 0),
+                                    CartridgeChoice::None => {}
                                 }
                             });
                             ui.end_row();
 
-                            // Remaining drives, one row each aligned under
-                            // Disk 0: the indent stands in for the
+                            // Remaining Slot/Disk rows, aligned under the
+                            // inline pair: the indent stands in for the
                             // cartridge combo plus the item spacing that
-                            // separates it from the "Disk 0:" label above
+                            // separates it from the label above
                             // (`add_space` itself adds no spacing around
                             // the gap).
-                            if self.cartridge.has_drives() {
-                                for drive in 1..crate::UI_DRIVES {
-                                    ui.label("");
-                                    ui.horizontal(|ui| {
-                                        ui.add_space(
-                                            cartridge_combo_width + ui.spacing().item_spacing.x,
-                                        );
-                                        self.disk_combo(ui, font, drive);
-                                    });
-                                    ui.end_row();
+                            let indent = cartridge_combo_width + ui.spacing().item_spacing.x;
+                            let mut under_row = |dialog: &mut Self,
+                                                 ui: &mut egui::Ui,
+                                                 draw: &mut dyn FnMut(
+                                &mut Self,
+                                &mut egui::Ui,
+                            )| {
+                                ui.label("");
+                                ui.horizontal(|ui| {
+                                    ui.add_space(indent);
+                                    draw(dialog, ui);
+                                });
+                                ui.end_row();
+                            };
+                            match self.cartridge {
+                                CartridgeChoice::FD502 => {
+                                    for drive in 1..crate::UI_DRIVES {
+                                        under_row(self, ui, &mut |d, ui| {
+                                            d.disk_combo(ui, font, drive)
+                                        });
+                                    }
                                 }
+                                CartridgeChoice::MPI => {
+                                    for slot in 1..crate::MPI_SLOT_COUNT {
+                                        under_row(self, ui, &mut |d, ui| {
+                                            d.slot_combo(ui, font, slot)
+                                        });
+                                    }
+                                    if self.drives_available() {
+                                        for drive in 0..crate::UI_DRIVES {
+                                            under_row(self, ui, &mut |d, ui| {
+                                                d.disk_combo(ui, font, drive)
+                                            });
+                                        }
+                                    }
+                                }
+                                CartridgeChoice::None => {}
                             }
                         });
 
@@ -486,6 +543,7 @@ impl NewVmDialog {
                             action = NewVmAction::Create(NewMachineSpec {
                                 config: self.draft,
                                 cartridge: self.cartridge,
+                                mpi_slots: self.mpi_slots,
                                 disks: self.disks.clone(),
                                 tape: self.tape.clone(),
                             });
@@ -502,6 +560,39 @@ impl NewVmDialog {
             self.close();
         }
         action
+    }
+
+    /// [`NewMachineSpec::has_drives`] over the dialog's own drafts.
+    fn drives_available(&self) -> bool {
+        match self.cartridge {
+            CartridgeChoice::FD502 => true,
+            CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
+            CartridgeChoice::None => false,
+        }
+    }
+
+    /// One "Slot N:" label + combo (Empty / FD-502), drawn while the MPI is
+    /// selected. Claiming the FD-502 releases it from any other slot — one
+    /// disk controller max (see [`SlotChoice`]).
+    fn slot_combo(&mut self, ui: &mut egui::Ui, font: f32, slot: usize) {
+        ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
+        egui::ComboBox::from_id_salt(("new_vm", "mpi_slot", slot))
+            .selected_text(slot_label(self.mpi_slots[slot]))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(self.mpi_slots[slot] == SlotChoice::Empty, "Empty")
+                    .clicked()
+                {
+                    self.mpi_slots[slot] = SlotChoice::Empty;
+                }
+                if ui
+                    .selectable_label(self.mpi_slots[slot] == SlotChoice::FD502, "FD-502")
+                    .clicked()
+                {
+                    self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
+                    self.mpi_slots[slot] = SlotChoice::FD502;
+                }
+            });
     }
 
     /// The Cassette-row combo: the same None / Blank / Select… protocol as

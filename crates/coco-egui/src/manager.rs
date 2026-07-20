@@ -438,11 +438,12 @@ impl ManagerApp {
 
         let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
         let mut def = machine_def::MachineDef::from_config(name, created, &spec.config);
-        def.peripherals.fd502 = spec.cartridge == new_vm::CartridgeChoice::FD502;
-        // With an MPI, disk media implies the last-slot FD-502 at launch
-        // (`crate::launch_machine`), so only the mpi flag is recorded.
+        // The definition schema has no slot layout (yet): an FD-502 in an
+        // MPI slot is recorded as fd502 = true, and launch_machine re-seats
+        // it in the last slot.
+        def.peripherals.fd502 = spec.has_drives();
         def.peripherals.mpi = spec.cartridge == new_vm::CartridgeChoice::MPI;
-        if spec.cartridge.has_drives() {
+        if spec.has_drives() {
             for (drive, choice) in spec.disks.into_iter().enumerate() {
                 let Some(recorded) = self.record_media_choice(&slug, choice, blank_disk_file(drive))
                 else {

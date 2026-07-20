@@ -1713,10 +1713,12 @@ impl CocoApp {
                         }
                         new_vm::CartridgeChoice::MPI => {
                             self.insert_multipak();
-                            // Disk picks imply an FD-502 in the last slot —
-                            // the CLI's --mpi convention.
-                            if spec.disks.iter().any(|d| *d != new_vm::MediaChoice::None) {
-                                self.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
+                            for (slot, choice) in spec.mpi_slots.iter().enumerate() {
+                                if *choice == new_vm::SlotChoice::FD502 {
+                                    self.mpi_insert_fd502(slot);
+                                }
+                            }
+                            if spec.has_drives() {
                                 self.mount_dialog_disks(spec.disks);
                             }
                         }

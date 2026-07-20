@@ -221,20 +221,33 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     );
     assert!(harness.state().cart_error.is_none());
 
-    // MultiPak Interface: slots-only insert, drives implied only when a
-    // disk is picked — with none, the MPI is present but empty.
+    // MultiPak Interface: the four Slot rows appear, and the Disk rows
+    // only once an FD-502 occupies a slot.
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    for slot in 1..=4 {
+        assert!(
+            harness.query_by_label(&format!("Slot {slot}:")).is_some(),
+            "MPI selection must reveal Slot {slot}"
+        );
+    }
+    assert!(
+        harness.query_by_label("Disk 0:").is_none(),
+        "no Disk rows until an FD-502 is slotted"
+    );
+    // All four slot combos read "Empty"; Slot 1 is inline on the cartridge
+    // row (topmost), so index 1 is Slot 2.
+    select_combo_at(&mut harness, "Empty", 1, "FD-502");
     assert!(
         harness.query_by_label("Disk 0:").is_some(),
-        "MPI selection must reveal the Disk rows too"
+        "a slotted FD-502 must reveal the Disk rows"
     );
     click(&mut harness, "Create");
     assert!(harness.state().mpi.is_some(), "creating with MPI must insert one");
     assert!(
-        harness.state_mut().machine.bus.cart.as_disk_cart().is_none(),
-        "no disk picks, no implied FD-502"
+        harness.state_mut().machine.bus.cart.as_disk_cart().is_some(),
+        "the slotted FD-502 must be reachable through the MPI"
     );
 
     // Back to Cartridge = None: the Disk 0 combo disappears.
