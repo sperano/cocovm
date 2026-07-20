@@ -286,6 +286,10 @@ pub struct PeripheralsDTO {
     pub mpi: bool,
     #[serde(default)]
     pub rtc: bool,
+    /// FD-502 disk controller. Also implied at launch by `[media]`
+    /// disk0/disk1 being set, so older files without this key keep working.
+    #[serde(default)]
+    pub fd502: bool,
 }
 
 /// Default for `[ui].aspect_correct` — `bool::default()` is `false`, but the
@@ -482,7 +486,7 @@ pub fn artifacts_root() -> Option<PathBuf> {
 const TOP_LEVEL_KEYS: &[&str] = &["schema", "name", "created", "hardware", "media", "peripherals", "ui"];
 const HARDWARE_KEYS: &[&str] = &["variant", "ram", "video", "monitor", "vdg", "rom"];
 const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
-const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc"];
+const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc", "fd502"];
 const UI_KEYS: &[&str] = &["aspect_correct", "kb_mode"];
 
 /// Sections that nest under the top level, paired with their known-key
@@ -728,6 +732,7 @@ pub(crate) mod tests {
             peripherals: PeripheralsDTO {
                 mpi: true,
                 rtc: true,
+                fd502: true,
             },
             ui: UIDTO {
                 aspect_correct: false,

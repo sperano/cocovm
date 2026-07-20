@@ -1614,9 +1614,19 @@ impl CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
-        if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
+        if let new_vm::NewVmAction::Create(config, cartridge) = self.new_vm.show(ctx) {
             match self.create_vm(config, ctx) {
-                Ok(()) => self.new_vm.close(),
+                Ok(()) => {
+                    // The machine booted; a cartridge problem (e.g. missing
+                    // disk11.rom) is reported like a menu insert, not as a
+                    // create failure.
+                    if cartridge == new_vm::CartridgeChoice::Fd502
+                        && let Err(e) = self.ensure_disk_controller()
+                    {
+                        self.cart_error = Some(e);
+                    }
+                    self.new_vm.close();
+                }
                 Err(e) => self.new_vm.error = Some(e),
             }
         }
@@ -2090,11 +2100,10 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // cartridge port unless an MPI is installed.
     let mpi = def.peripherals.mpi;
     let rtc = def.peripherals.rtc;
-    let port_claims = [
-        cart_path.is_some(),
-        disk_paths[0].is_some() || disk_paths[1].is_some(),
-        rtc,
-    ]
+    // Disk media implies the controller even when the flag is off (older
+    // definition files predate `[peripherals].fd502`).
+    let fd502 = def.peripherals.fd502 || disk_paths[0].is_some() || disk_paths[1].is_some();
+    let port_claims = [cart_path.is_some(), fd502, rtc]
     .into_iter()
     .filter(|&claims| claims)
     .count();
@@ -2120,7 +2129,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         if let Some(path) = cart_path {
             app.mpi_insert_rompak(0, path);
         }
-        if disk_paths[0].is_some() || disk_paths[1].is_some() {
+        if fd502 {
             app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
         }
         if rtc {
@@ -2132,11 +2141,16 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
             }
         }
     } else if rtc {
-        // cart/disk0/disk1 (handled by the `CocoApp::new` call above, same
-        // as the CLI's non-mpi branch) and rtc are mutually exclusive here —
-        // `port_claims` already rejected any combination of them without
-        // `--mpi`.
+        // cart/fd502 (disk media is handled by the `CocoApp::new` call
+        // above, same as the CLI's non-mpi branch) and rtc are mutually
+        // exclusive here — `port_claims` already rejected any combination
+        // of them without an MPI.
         app.insert_rtc();
+    } else if fd502 && let Err(e) = app.ensure_disk_controller() {
+        // Empty-drive FD-502 from `[peripherals].fd502` alone; with disk
+        // media set, `CocoApp::new` already inserted the controller and
+        // this is a no-op Ok.
+        app.cart_error = Some(e);
     }
 
     if let Some(path) = tape_path {

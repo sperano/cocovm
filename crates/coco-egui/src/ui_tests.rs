@@ -67,12 +67,12 @@ fn click_containing<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>,
     harness.step();
 }
 
-/// Select an item in the hardware form's Machine combo box: click the combo
-/// button to open the popup, then click the wanted item. The combo button
-/// exposes the selected text as its accessibility *value* (egui sets
+/// Select an item in a form combo box (Machine, Cartridge, …): click the
+/// combo button to open the popup, then click the wanted item. The combo
+/// button exposes the selected text as its accessibility *value* (egui sets
 /// `WidgetInfo::current_text_value`, not a label), so it is addressed with
 /// `get_by_value`; the popup items are plain selectables, addressed by label.
-fn select_machine<S: 'static>(
+fn select_combo<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     current: &str,
     target: &str,
@@ -124,7 +124,7 @@ fn new_dialog_creates_a_coco1_machine_without_panicking() {
 
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
-    select_machine(&mut harness, "CoCo 3", "CoCo 1");
+    select_combo(&mut harness, "CoCo 3", "CoCo 1");
     // The frame that processes Create draws the CentralPanel *after*
     // swapping the machine — the exact path that used to panic on the
     // framebuffer texture.
@@ -145,6 +145,31 @@ fn new_dialog_creates_a_coco1_machine_without_panicking() {
     );
 }
 
+/// The Cartridge row: default None leaves the port empty; picking FD-502
+/// inserts a disk controller after the machine boots. The combo is driven
+/// by accessibility value like the Machine one ([`select_combo`]'s doc).
+#[test]
+fn new_dialog_cartridge_row_inserts_fd502() {
+    let mut harness = boot_harness();
+    assert!(harness.state_mut().machine.bus.cart.as_disk_cart().is_none());
+
+    // Default (None) leaves the port empty across a create.
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    click(&mut harness, "Create");
+    assert!(harness.state_mut().machine.bus.cart.as_disk_cart().is_none());
+
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    select_combo(&mut harness, "None", "FD-502");
+    click(&mut harness, "Create");
+    assert!(
+        harness.state_mut().machine.bus.cart.as_disk_cart().is_some(),
+        "creating with Cartridge = FD-502 must insert the disk controller"
+    );
+    assert!(harness.state().cart_error.is_none());
+}
+
 #[test]
 fn new_dialog_cancel_leaves_the_machine_untouched() {
     let mut harness = boot_harness();
@@ -152,7 +177,7 @@ fn new_dialog_cancel_leaves_the_machine_untouched() {
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
     // Editing the draft must not leak into the running machine.
-    select_machine(&mut harness, "CoCo 3", "CoCo 2");
+    select_combo(&mut harness, "CoCo 3", "CoCo 2");
     click(&mut harness, "Cancel");
 
     let app = harness.state();
@@ -185,13 +210,13 @@ fn new_dialog_vdg_row_only_visible_for_coco2() {
         "VDG row must be absent for CoCo 3"
     );
 
-    select_machine(&mut harness, "CoCo 3", "CoCo 2");
+    select_combo(&mut harness, "CoCo 3", "CoCo 2");
     assert!(
         harness.query_by_value(t1_label).is_some(),
         "VDG row must be present for CoCo 2"
     );
 
-    select_machine(&mut harness, "CoCo 2", "CoCo 1");
+    select_combo(&mut harness, "CoCo 2", "CoCo 1");
     assert!(
         harness.query_by_value(t1_label).is_none(),
         "VDG row must be absent for CoCo 1"
@@ -625,6 +650,27 @@ fn manager_list_shows_entries_and_selecting_shows_detail() {
 /// injected machines dir and adds a list row — without booting anything (the
 /// manager has no launch action at all yet, so there is nothing to assert
 /// beyond "no machine-running side effect exists to trigger").
+/// Creating from the manager with Cartridge = FD-502 records it in the
+/// definition file's `[peripherals]` section.
+#[test]
+fn manager_create_with_fd502_records_the_peripheral() {
+    let dir = TempDir::new("create-fd502");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New…");
+    select_combo(&mut harness, "None", "FD-502");
+    click(&mut harness, "Create");
+
+    assert_eq!(harness.state().entries.len(), 1);
+    assert!(harness.state().entries[0].def.peripherals.fd502);
+    let file = dir.path().join("coco-3.toml");
+    let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+    assert!(
+        contents.contains("fd502 = true"),
+        "the TOML must record the peripheral:\n{contents}"
+    );
+}
+
 #[test]
 fn manager_new_dialog_create_writes_a_definition_file() {
     let dir = TempDir::new("create");

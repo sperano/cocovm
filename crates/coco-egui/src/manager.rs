@@ -359,7 +359,7 @@ impl ManagerApp {
     /// (`plan-machine-persistence.md` step 3). Save failures are reported in
     /// the dialog's own error field so it stays open for another try, the
     /// same contract `CocoApp::create_vm` follows for the direct-boot path.
-    fn create_machine(&mut self, config: MachineConfig) {
+    fn create_machine(&mut self, config: MachineConfig, cartridge: new_vm::CartridgeChoice) {
         let Some(dir) = self.machines_dir.clone() else {
             self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
             return;
@@ -381,7 +381,8 @@ impl ManagerApp {
         let slug = machine_def::unique_slug(&base, &taken);
 
         let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
-        let def = machine_def::MachineDef::from_config(name, created, &config);
+        let mut def = machine_def::MachineDef::from_config(name, created, &config);
+        def.peripherals.fd502 = cartridge == new_vm::CartridgeChoice::Fd502;
 
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
@@ -606,6 +607,7 @@ impl ManagerApp {
         ui.label(egui::RichText::new("Peripherals").strong());
         ui.checkbox(&mut edit.def.peripherals.mpi, "MultiPak Interface");
         ui.checkbox(&mut edit.def.peripherals.rtc, "Disto RTC");
+        ui.checkbox(&mut edit.def.peripherals.fd502, "FD-502 disk controller");
 
         ui.add_space(DETAIL_SECTION_GAP);
         ui.label(egui::RichText::new("UI").strong());
@@ -934,8 +936,8 @@ impl eframe::App for ManagerApp {
             });
         });
 
-        if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
-            self.create_machine(config);
+        if let new_vm::NewVmAction::Create(config, cartridge) = self.new_vm.show(ctx) {
+            self.create_machine(config, cartridge);
         }
 
         // Machine list: one row per definition under `config_dir()/machines`.

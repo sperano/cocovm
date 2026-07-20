@@ -86,6 +86,25 @@ pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
     }
 }
 
+/// The dialog's Cartridge row. Not part of [`MachineConfig`] — the
+/// cartridge port is populated after machine construction (the same way
+/// the CLI and the Machine menu do it) — so it rides alongside the config
+/// in [`NewVmAction::Create`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CartridgeChoice {
+    #[default]
+    None,
+    /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
+    Fd502,
+}
+
+const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
+    match cartridge {
+        CartridgeChoice::None => "None",
+        CartridgeChoice::Fd502 => "FD-502",
+    }
+}
+
 /// What the user clicked this frame, from [`NewVmDialog::show`].
 #[must_use]
 pub enum NewVmAction {
@@ -93,7 +112,7 @@ pub enum NewVmAction {
     /// "Create" was clicked; the caller should try to build this machine and
     /// either [`NewVmDialog::close`] the dialog or record the failure in
     /// [`NewVmDialog::error`].
-    Create(MachineConfig),
+    Create(MachineConfig, CartridgeChoice),
 }
 
 /// Re-constrain a draft after a model change: snap RAM to the new family's
@@ -233,6 +252,8 @@ pub struct NewVmDialog {
     show_name_field: bool,
     /// The name-row draft, meaningful only when `show_name_field` is set.
     pub name: String,
+    /// The Cartridge-row draft; reset to None on every open.
+    pub cartridge: CartridgeChoice,
 }
 
 impl NewVmDialog {
@@ -243,6 +264,7 @@ impl NewVmDialog {
             error: None,
             show_name_field: false,
             name: String::new(),
+            cartridge: CartridgeChoice::None,
         }
     }
 
@@ -260,6 +282,7 @@ impl NewVmDialog {
     pub fn open_with(&mut self, current: MachineConfig) {
         self.draft = current;
         self.error = None;
+        self.cartridge = CartridgeChoice::None;
         self.open = true;
     }
 
@@ -305,6 +328,27 @@ impl NewVmDialog {
                                 ui.end_row();
                             }
                             config_form_rows(ui, "new_vm", &mut self.draft);
+
+                            // Dialog-only row (not `config_form_rows`): the
+                            // cartridge isn't part of `MachineConfig` — see
+                            // [`CartridgeChoice`] — and the manager's detail
+                            // pane edits peripherals through its own
+                            // checkboxes.
+                            ui.label(egui::RichText::new("Cartridge").size(font));
+                            egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
+                                .selected_text(cartridge_label(self.cartridge))
+                                .show_ui(ui, |ui| {
+                                    for choice in
+                                        [CartridgeChoice::None, CartridgeChoice::Fd502]
+                                    {
+                                        ui.selectable_value(
+                                            &mut self.cartridge,
+                                            choice,
+                                            cartridge_label(choice),
+                                        );
+                                    }
+                                });
+                            ui.end_row();
                         });
 
                     if let Some(error) = &self.error {
@@ -329,7 +373,7 @@ impl NewVmDialog {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
                         if ui.button("Create").clicked() {
-                            action = NewVmAction::Create(self.draft);
+                            action = NewVmAction::Create(self.draft, self.cartridge);
                         }
                         if ui.button("Cancel").clicked() {
                             self.close();
