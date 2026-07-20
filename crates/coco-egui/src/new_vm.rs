@@ -477,10 +477,9 @@ impl NewVmDialog {
                 if ui
                     .selectable_label(matches!(self.disk0, DiskChoice::File(_)), "Select…")
                     .clicked()
+                    && let Some(path) = disk_file_dialog().pick_file()
                 {
-                    if let Some(path) = disk_file_dialog().pick_file() {
-                        self.disk0 = DiskChoice::File(path);
-                    }
+                    self.disk0 = DiskChoice::File(path);
                 }
             });
     }
