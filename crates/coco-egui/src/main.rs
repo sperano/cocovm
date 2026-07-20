@@ -1620,7 +1620,7 @@ impl CocoApp {
                     // The machine booted; a cartridge problem (e.g. missing
                     // disk11.rom) is reported like a menu insert, not as a
                     // create failure.
-                    if cartridge == new_vm::CartridgeChoice::Fd502
+                    if cartridge == new_vm::CartridgeChoice::FD502
                         && let Err(e) = self.ensure_disk_controller()
                     {
                         self.cart_error = Some(e);

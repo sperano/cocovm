@@ -382,7 +382,7 @@ impl ManagerApp {
 
         let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
         let mut def = machine_def::MachineDef::from_config(name, created, &config);
-        def.peripherals.fd502 = cartridge == new_vm::CartridgeChoice::Fd502;
+        def.peripherals.fd502 = cartridge == new_vm::CartridgeChoice::FD502;
 
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {

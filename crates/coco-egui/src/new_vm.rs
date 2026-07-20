@@ -95,13 +95,13 @@ pub enum CartridgeChoice {
     #[default]
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
-    Fd502,
+    FD502,
 }
 
 const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
     match cartridge {
         CartridgeChoice::None => "None",
-        CartridgeChoice::Fd502 => "FD-502",
+        CartridgeChoice::FD502 => "FD-502",
     }
 }
 
@@ -339,7 +339,7 @@ impl NewVmDialog {
                                 .selected_text(cartridge_label(self.cartridge))
                                 .show_ui(ui, |ui| {
                                     for choice in
-                                        [CartridgeChoice::None, CartridgeChoice::Fd502]
+                                        [CartridgeChoice::None, CartridgeChoice::FD502]
                                     {
                                         ui.selectable_value(
                                             &mut self.cartridge,
