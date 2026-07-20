@@ -563,18 +563,14 @@ fn manager_window_renders_an_injected_photo() {
     harness.step();
 }
 
-/// A minimal valid `Ok` entry: a CoCo 3 default config under `name`, built
+/// A minimal valid entry: a CoCo 3 default config under `name`, built
 /// through [`machine_def::MachineDef::from_config`] like the manager's own
 /// "New…" flow does, so tests don't hand-roll a second copy of the DTO
 /// shape.
 fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
     manager::MachineEntry::new(
         slug.to_string(),
-        Ok(machine_def::MachineDef::from_config(
-            name.to_string(),
-            None,
-            &MachineConfig::default(),
-        )),
+        machine_def::MachineDef::from_config(name.to_string(), None, &MachineConfig::default()),
     )
 }
 
@@ -643,7 +639,7 @@ fn manager_new_dialog_create_writes_a_definition_file() {
     assert_eq!(harness.state().entries.len(), 1, "Create must add a list row");
     let slug = harness.state().entries[0].slug.clone();
     assert_eq!(slug, "coco-3", "slugified from the default draft name");
-    assert!(harness.state().entries[0].def.is_ok());
+    assert_eq!(harness.state().entries[0].def.name, "CoCo 3");
 
     let file = dir.path().join(format!("{slug}.toml"));
     let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
@@ -668,7 +664,7 @@ fn manager_new_dialog_create_writes_a_definition_file() {
 fn manager_detail_save_rewrites_file_and_revert_discards_edit() {
     let dir = TempDir::new("save-revert");
     let entry = sample_entry("dev-coco-3", "Dev CoCo 3");
-    let def = entry.def.clone().unwrap();
+    let def = entry.def.clone();
     machine_def::save(dir.path(), "dev-coco-3", &def).expect("seed the file the entry claims to be");
     assert!(!def.peripherals.mpi, "test assumes the sample starts without an MPI");
 
@@ -705,25 +701,6 @@ fn manager_detail_save_rewrites_file_and_revert_discards_edit() {
     assert!(after_revert.peripherals.mpi, "Revert must not touch the file");
 }
 
-/// A definition that failed to parse/validate shows its error instead of an
-/// editable form, and selecting it doesn't panic (nothing to edit, but the
-/// row must still be selectable like any other).
-#[test]
-fn manager_error_entry_shows_badge_and_is_selectable_without_panicking() {
-    let entries = vec![manager::MachineEntry::new(
-        "broken".to_string(),
-        Err("hardware/schema-3: unsupported schema".to_string()),
-    )];
-    let mut harness = manager_harness(None, entries);
-
-    harness.get_by_label("broken");
-    harness.get_by_label_contains("⚠");
-
-    click(&mut harness, "broken");
-    assert_eq!(harness.state().selected, Some(0));
-    assert_eq!(harness.state().detail_name(), None, "an Err entry has nothing to edit");
-}
-
 /// A minimal valid CoCo 2 `Ok` entry — `sample_entry`'s default is CoCo 3,
 /// so pairing this with it gives two distinct machine families for
 /// `starting_two_machines_runs_both` (`docs/plan-machine-persistence.md`
@@ -732,7 +709,7 @@ fn manager_error_entry_shows_badge_and_is_selectable_without_panicking() {
 fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {
     manager::MachineEntry::new(
         slug.to_string(),
-        Ok(machine_def::MachineDef::from_config(
+        machine_def::MachineDef::from_config(
             name.to_string(),
             None,
             &MachineConfig {
@@ -742,7 +719,7 @@ fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {
                 monitor: None,
                 vdg: Some(VDGVariant::MC6847T1),
             },
-        )),
+        ),
     )
 }
 
@@ -891,7 +868,7 @@ fn launch_error_is_reported_not_fatal() {
         &MachineConfig::default(),
     );
     def.media.disk0 = Some("/definitely/does/not/exist.dsk".to_string());
-    let entries = vec![manager::MachineEntry::new("broken-media".to_string(), Ok(def))];
+    let entries = vec![manager::MachineEntry::new("broken-media".to_string(), def)];
     let mut harness = manager_harness(None, entries);
 
     click(&mut harness, "Broken Media");

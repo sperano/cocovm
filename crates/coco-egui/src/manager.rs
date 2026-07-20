@@ -126,12 +126,12 @@ fn default_new_name() -> String {
 
 /// One machine-list entry: a slug (file stem, also the identity used for
 /// save/rename bookkeeping — `machine_def.rs` "Identity = slug") plus its
-/// parsed definition, or the error from a failed parse/validate
-/// (`machine_def::load_all`). Kept as a `Result` rather than dropping bad
-/// files so the row can show an error badge instead of hiding the machine.
+/// parsed definition. Always valid: a definition that fails to load or
+/// validate is fatal at startup (`machine_def::load_all`), so no entry
+/// carries an error.
 pub struct MachineEntry {
     pub slug: String,
-    pub def: Result<machine_def::MachineDef, String>,
+    pub def: machine_def::MachineDef,
     /// The running VM, once [`ManagerApp::start_vm`] has launched it —
     /// `None` means Stopped. Boxed: `CocoApp` is a large struct (the whole
     /// machine plus every UI dialog's state), and every `MachineEntry` pays
@@ -162,7 +162,7 @@ impl MachineEntry {
     /// callers previously wrote out the `vm`/`launch_error` fields by hand;
     /// this constructor is what keeps that from drifting as more per-entry
     /// runtime state gets added later).
-    pub(crate) fn new(slug: String, def: Result<machine_def::MachineDef, String>) -> Self {
+    pub(crate) fn new(slug: String, def: machine_def::MachineDef) -> Self {
         Self {
             slug,
             def,
@@ -371,11 +371,9 @@ impl ManagerApp {
         // Check both the in-memory list (loaded once at startup) and the
         // directory itself: `entries` misses any `<slug>.toml` written by a
         // second running instance, hand-edited in a terminal since startup
-        // (an explicit design goal — `machine_def.rs` module doc), or
-        // present on disk but absent from `entries` because `load_all`
-        // swallowed a transient `read_dir` error. Without the on-disk check,
-        // `machine_def::save`'s unconditional rename would silently
-        // overwrite that file.
+        // (an explicit design goal — `machine_def.rs` module doc). Without
+        // the on-disk check, `machine_def::save`'s unconditional rename
+        // would silently overwrite that file.
         let taken = |candidate: &str| {
             self.entries.iter().any(|e| e.slug == candidate)
                 || dir.join(format!("{candidate}.toml")).exists()
@@ -388,7 +386,7 @@ impl ManagerApp {
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
                 let index = self.entries.partition_point(|e| e.slug < slug);
-                self.entries.insert(index, MachineEntry::new(slug, Ok(def)));
+                self.entries.insert(index, MachineEntry::new(slug, def));
                 self.selected = Some(index);
                 self.edit = None; // reseeded from the new entry when the detail pane next draws
                 self.save_error = None;
@@ -447,33 +445,19 @@ impl ManagerApp {
                         .or(self.entries[i].thumbnail.as_ref());
                     draw_row_thumbnail(ui, content_height, texture);
 
-                    match &self.entries[i].def {
-                        Ok(def) => {
-                            let config = def
-                                .to_machine_config()
-                                .expect("list entries are validated on load/save");
-                            ui.vertical(|ui| {
-                                ui.label(egui::RichText::new(&def.name).strong());
-                                ui.label(format!(
-                                    "{} · {}",
-                                    crate::machine_label(config.variant),
-                                    new_vm::ram_label(config.memory),
-                                ));
-                                ui.weak(vm_status_label(&self.entries[i]));
-                            });
-                        }
-                        Err(err) => {
-                            ui.vertical(|ui| {
-                                ui.label(egui::RichText::new(&self.entries[i].slug).strong());
-                                ui.label(
-                                    egui::RichText::new(format!("⚠ {err}"))
-                                        .color(ui.visuals().error_fg_color)
-                                        .small(),
-                                )
-                                .on_hover_text(err.as_str());
-                            });
-                        }
-                    }
+                    let def = &self.entries[i].def;
+                    let config = def
+                        .to_machine_config()
+                        .expect("list entries are validated on load/save");
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new(&def.name).strong());
+                        ui.label(format!(
+                            "{} · {}",
+                            crate::machine_label(config.variant),
+                            new_vm::ram_label(config.memory),
+                        ));
+                        ui.weak(vm_status_label(&self.entries[i]));
+                    });
                 });
             })
             .response
@@ -486,21 +470,11 @@ impl ManagerApp {
         }
     }
 
-    /// Right pane for the selected entry: the edit form for an `Ok`
-    /// definition, or the error + file path for an `Err` one.
+    /// Right pane for the selected entry: its edit form.
     fn draw_detail(&mut self, ui: &mut egui::Ui, index: usize) {
         let slug = self.entries[index].slug.clone();
-        match self.entries[index].def.clone() {
-            Ok(def) => self.draw_detail_ok(ui, index, slug, def),
-            Err(err) => {
-                self.edit = None;
-                ui.heading(&slug);
-                ui.colored_label(ui.visuals().error_fg_color, &err);
-                if let Some(dir) = &self.machines_dir {
-                    ui.monospace(dir.join(format!("{slug}.toml")).display().to_string());
-                }
-            }
-        }
+        let def = self.entries[index].def.clone();
+        self.draw_detail_ok(ui, index, slug, def);
     }
 
     /// The editable form for a successfully-parsed definition. Split out of
@@ -673,7 +647,7 @@ impl ManagerApp {
         match machine_def::save(&dir, &edit.slug, &edit.def) {
             Ok(()) => {
                 edit.saved = edit.def.clone();
-                self.entries[index].def = Ok(edit.def.clone());
+                self.entries[index].def = edit.def.clone();
                 self.save_error = None;
             }
             Err(e) => self.save_error = Some(e),
@@ -691,13 +665,7 @@ impl ManagerApp {
     fn start_vm(&mut self, index: usize) {
         let entry = &mut self.entries[index];
         entry.launch_error = None;
-        let Ok(def) = &entry.def else {
-            // Unreachable via the UI (an `Err` entry's detail pane has no
-            // Start button), kept as a guard rather than a panic in case a
-            // future caller reaches this some other way.
-            return;
-        };
-        match crate::launch_machine(def, &entry.slug) {
+        match crate::launch_machine(&entry.def, &entry.slug) {
             Ok(vm) => entry.vm = Some(Box::new(vm)),
             Err(e) => entry.launch_error = Some(e),
         }
@@ -806,11 +774,7 @@ impl ManagerApp {
                 continue;
             }
             let slug = self.entries[i].slug.clone();
-            let name = self.entries[i]
-                .def
-                .as_ref()
-                .map(|d| d.name.clone())
-                .unwrap_or_else(|_| slug.clone());
+            let name = self.entries[i].def.name.clone();
             let viewport_id = egui::ViewportId::from_hash_of(("vm-window", &slug));
             let inner_size = vm_window_inner_size();
             let builder = egui::ViewportBuilder::default()
@@ -1022,19 +986,27 @@ pub fn run() -> eframe::Result<()> {
         ..Default::default()
     };
     let machines_dir = machine_def::machines_dir();
-    let entries = machines_dir
-        .as_deref()
-        .map(|dir| {
-            machine_def::load_all(dir)
+    // A machine definition that can't be read or doesn't validate is fatal:
+    // exit with the reason rather than open a manager with a silently
+    // wrong machine list (user decision 2026-07-19).
+    let entries: Vec<MachineEntry> = match machines_dir.as_deref() {
+        Some(dir) => match machine_def::load_all(dir) {
+            Ok(defs) => defs
                 .into_iter()
                 .map(|(slug, def)| MachineEntry::new(slug, def))
-                .collect()
-        })
-        .unwrap_or_default();
+                .collect(),
+            Err(e) => {
+                eprintln!("coco: cannot load machine definitions: {e}");
+                std::process::exit(1);
+            }
+        },
+        None => Vec::new(),
+    };
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            crate::log_renderer_info(cc);
             Ok(Box::new(ManagerApp::new(
                 photo_view::random(),
                 machines_dir,

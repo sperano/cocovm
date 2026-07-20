@@ -13,8 +13,9 @@
 //! kebab/lowercase strings ("512k", "mc6847t1") means internal `coco-core`
 //! refactors never silently change what's on disk, and the manager gets one
 //! `Result<_, String>` surface ([`MachineDef::to_machine_config`]) covering
-//! both TOML parse errors and `MachineConfig::validate` failures for its
-//! list-row error badge.
+//! both TOML parse errors and `MachineConfig::validate` failures. Any such
+//! failure is fatal at startup ([`load_all`]) — the app refuses to run with
+//! a config it can't fully read.
 //!
 //! `manager.rs` wires this module in for the list rows, "New…" flow, and
 //! detail/edit pane (`plan-machine-persistence.md` steps 2-4).
@@ -605,18 +606,23 @@ fn load_one(path: &Path) -> Result<MachineDef, String> {
 }
 
 /// Load every `*.toml` file directly inside `dir` (hidden files — dotfiles —
-/// skipped), keyed by slug (file stem), sorted by slug. A missing `dir`
+/// are skipped), keyed by slug (file stem), sorted by slug. A missing `dir`
 /// yields an empty list rather than an error (a fresh install has no
-/// machines yet). A bad file's error is captured per-entry, never dropped
-/// silently and never hiding the rest of the directory
-/// (`plan-machine-persistence.md` step 1).
-pub fn load_all(dir: &Path) -> Vec<(String, Result<MachineDef, String>)> {
+/// machines yet), but ANY other problem — an unreadable directory, an
+/// unreadable file, bad TOML, an unsupported schema, a config that fails
+/// [`MachineConfig::validate`] — fails the whole load: a config problem is
+/// fatal at startup by design (user decision 2026-07-19, superseding the
+/// earlier per-row error-badge behavior), never a silently degraded
+/// machine list.
+pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(_) => return Vec::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("{}: {e}", dir.display())),
     };
-    let mut results: Vec<(String, Result<MachineDef, String>)> = Vec::new();
-    for entry in entries.flatten() {
+    let mut results: Vec<(String, MachineDef)> = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("{}: {e}", dir.display()))?;
         let path = entry.path();
         if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
             continue;
@@ -627,14 +633,14 @@ pub fn load_all(dir: &Path) -> Vec<(String, Result<MachineDef, String>)> {
         if stem.starts_with('.') {
             continue;
         }
-        results.push((stem.to_string(), load_one(&path)));
+        results.push((stem.to_string(), load_one(&path)?));
     }
     results.sort_by(|a, b| a.0.cmp(&b.0));
     println!(
-        "Found {}",
-        pluralize("configuration", results.len() as isize, true)
+        "Found {}.",
+        pluralize("machine configuration", results.len() as isize, true)
     );
-    results
+    Ok(results)
 }
 
 /// Serialize `def` and write it to `<dir>/<slug>.toml`, creating `dir` if
@@ -737,11 +743,10 @@ pub(crate) mod tests {
         let def = full_def();
         save(dir.path(), "dev-coco-3", &def).expect("save should succeed");
 
-        let loaded = load_all(dir.path());
+        let loaded = load_all(dir.path()).expect("every file is valid");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].0, "dev-coco-3");
-        let loaded_def = loaded[0].1.as_ref().expect("should parse and validate");
-        assert_eq!(loaded_def, &def);
+        assert_eq!(&loaded[0].1, &def);
     }
 
     #[test]
@@ -759,9 +764,9 @@ monitor = "rgb"
 "#;
         fs::write(dir.path().join("bare.toml"), toml_text).unwrap();
 
-        let loaded = load_all(dir.path());
+        let loaded = load_all(dir.path()).expect("minimal file should parse");
         assert_eq!(loaded.len(), 1);
-        let def = loaded[0].1.as_ref().expect("minimal file should parse");
+        let def = &loaded[0].1;
         assert_eq!(def.created, None);
         assert_eq!(def.hardware.vdg, None);
         assert_eq!(def.hardware.rom, None);
@@ -789,9 +794,8 @@ ram = "64k"
 video = "ntsc"
 "#;
         fs::write(dir.path().join("bare2.toml"), toml_text).unwrap();
-        let loaded = load_all(dir.path());
-        let def = loaded[0].1.as_ref().expect("minimal file should parse");
-        let config = def.to_machine_config().expect("should validate");
+        let loaded = load_all(dir.path()).expect("minimal file should parse");
+        let config = loaded[0].1.to_machine_config().expect("should validate");
         assert_eq!(config.vdg, Some(VDGVariant::MC6847T1));
         assert_eq!(config.monitor, None, "no monitor key, no monitor port");
     }
@@ -816,17 +820,8 @@ monitor = "rgb"
         let good = full_def();
         save(dir.path(), "good", &good).unwrap();
 
-        let mut loaded = load_all(dir.path());
-        loaded.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(loaded.len(), 2);
-
-        let (slug, result) = &loaded[0];
-        assert_eq!(slug, "good");
-        assert!(result.is_ok());
-
-        let (slug, result) = &loaded[1];
-        assert_eq!(slug, "too-new");
-        let err = result.as_ref().unwrap_err();
+        let err = load_all(dir.path())
+            .expect_err("a too-new schema must fail the whole load");
         assert!(err.contains('2'), "error should name the file's schema: {err}");
         assert!(
             err.contains(&CURRENT_SCHEMA.to_string()),
@@ -853,9 +848,8 @@ monitor = "rgb"
 "#,
         )
         .unwrap();
-        let loaded = load_all(dir.path());
-        assert_eq!(loaded.len(), 1);
-        assert!(loaded[0].1.is_err());
+        let err = load_all(dir.path()).expect_err("PAL CoCo 2 must fail the load");
+        assert!(err.contains("PAL"), "error should say why: {err}");
     }
 
     #[test]
@@ -899,13 +893,8 @@ future_ui_field = 42
 "#,
         )
         .unwrap();
-        let loaded = load_all(dir.path());
+        let loaded = load_all(dir.path()).expect("unknown keys must warn, not fail");
         assert_eq!(loaded.len(), 1);
-        assert!(
-            loaded[0].1.is_ok(),
-            "unknown keys must warn, not fail: {:?}",
-            loaded[0].1
-        );
     }
 
     /// A Save must not erase keys this build doesn't understand — the
@@ -936,8 +925,8 @@ future_ui_field = 42
 "#,
         )
         .unwrap();
-        let loaded = load_all(dir.path());
-        let mut def = loaded[0].1.clone().expect("should parse despite unknown keys");
+        let loaded = load_all(dir.path()).expect("should parse despite unknown keys");
+        let mut def = loaded[0].1.clone();
 
         // A real edit through the detail pane's flow: change something the
         // form actually owns, then save.
@@ -1012,6 +1001,6 @@ future_ui_field = 42
     fn missing_dir_returns_empty_list() {
         let dir = std::env::temp_dir().join("coco-egui-machine-def-test-does-not-exist");
         let _ = fs::remove_dir_all(&dir);
-        assert!(load_all(&dir).is_empty());
+        assert!(load_all(&dir).expect("a missing dir is the first-run case").is_empty());
     }
 }

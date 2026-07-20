@@ -2308,14 +2308,22 @@ fn setup_logging() {
 }
 
 fn banner() {
-    println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano\n{}",
+    let sep = "─".repeat(76);
+    println!("{}{}{}\n{} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {}\n{}{}{}",
+            "╭".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "╮".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
              env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "-".repeat(40)
+             "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "╰".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "╯".if_supports_color(Stream::Stdout, |v| v.dimmed()),
     );
 }
 
@@ -2360,6 +2368,31 @@ fn ensure_assets() {
     match download_and_unpack_assets(&data_dir) {
         Ok(()) => println!("assets installed in {}", data_dir.display()),
         Err(e) => eprintln!("asset download failed: {e}"),
+    }
+}
+
+/// Print what we can about the graphics backend eframe just created —
+/// deliberately backend-agnostic: today the only compiled backend is
+/// glow/OpenGL, but nothing here assumes it stays that way. A missing GL
+/// context (egui_kittest, a future wgpu backend) gets a neutral line
+/// instead of silence or a lie; a wgpu arm slots in here if that backend
+/// is ever enabled.
+pub(crate) fn log_renderer_info(cc: &eframe::CreationContext<'_>) {
+    use eframe::glow::HasContext as _;
+    match cc.gl.as_ref() {
+        Some(gl) => {
+            // Safety: eframe made this context current on this thread for
+            // the duration of the creation closure, and VERSION/RENDERER
+            // are valid `glGetString` enums.
+            let (version, renderer) = unsafe {
+                (
+                    gl.get_parameter_string(eframe::glow::VERSION),
+                    gl.get_parameter_string(eframe::glow::RENDERER),
+                )
+            };
+            println!("OpenGL version: {}, renderer: {}.", version, renderer);
+        }
+        None => println!("Renderer: unknown backend (no OpenGL context)."),
     }
 }
 
@@ -2455,7 +2488,8 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            log_renderer_info(cc);
             // With --mpi, --cart/--disk0/--disk1/--fd502 target MPI slots instead of
             // the plain single-cartridge model, so the base constructor gets none of
             // them and everything is wired up afterward through the same methods the
