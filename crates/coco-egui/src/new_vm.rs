@@ -9,6 +9,8 @@
 //! `constrain` constraint behavior below lives in exactly one place no
 //! matter which caller edits the draft.
 
+use std::path::PathBuf;
+
 use coco_core::{
     MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
@@ -105,14 +107,49 @@ const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
     }
 }
 
+/// The Cartridge row's "Disk 0" companion, shown only with
+/// [`CartridgeChoice::FD502`]: what to mount in drive 0 at create time.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DiskChoice {
+    /// Empty drive.
+    #[default]
+    None,
+    /// A fresh blank (0-track) image. Blank disks are file-backed (the
+    /// drive writes back to the host file): direct boot picks the backing
+    /// file with a save dialog when this is selected (`Some(path)`); the
+    /// manager auto-places `disk0.dsk` in the machine's artifact directory
+    /// (`None`).
+    Blank(Option<PathBuf>),
+    /// An existing image picked with the file dialog.
+    File(PathBuf),
+}
+
+/// Closed-combo text: the choice name, or the chosen file's name.
+fn disk_choice_text(disk: &DiskChoice) -> String {
+    match disk {
+        DiskChoice::None => "None".to_string(),
+        DiskChoice::Blank(None) => "Blank".to_string(),
+        DiskChoice::Blank(Some(path)) | DiskChoice::File(path) => path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Disk".to_string()),
+    }
+}
+
+/// The same filter the Machine-menu disk items use.
+fn disk_file_dialog() -> rfd::FileDialog {
+    rfd::FileDialog::new().add_filter("Disk image", &["dsk", "jvc", "os9"])
+}
+
 /// What the user clicked this frame, from [`NewVmDialog::show`].
 #[must_use]
 pub enum NewVmAction {
     None,
     /// "Create" was clicked; the caller should try to build this machine and
     /// either [`NewVmDialog::close`] the dialog or record the failure in
-    /// [`NewVmDialog::error`].
-    Create(MachineConfig, CartridgeChoice),
+    /// [`NewVmDialog::error`]. The [`DiskChoice`] is only meaningful with
+    /// [`CartridgeChoice::FD502`].
+    Create(MachineConfig, CartridgeChoice, DiskChoice),
 }
 
 /// Re-constrain a draft after a model change: snap RAM to the new family's
@@ -254,6 +291,9 @@ pub struct NewVmDialog {
     pub name: String,
     /// The Cartridge-row draft; reset to None on every open.
     pub cartridge: CartridgeChoice,
+    /// The Disk 0 draft next to the Cartridge combo; reset to None on every
+    /// open, and whenever the cartridge isn't the FD-502.
+    pub disk0: DiskChoice,
 }
 
 impl NewVmDialog {
@@ -265,6 +305,7 @@ impl NewVmDialog {
             show_name_field: false,
             name: String::new(),
             cartridge: CartridgeChoice::None,
+            disk0: DiskChoice::None,
         }
     }
 
@@ -283,6 +324,7 @@ impl NewVmDialog {
         self.draft = current;
         self.error = None;
         self.cartridge = CartridgeChoice::None;
+        self.disk0 = DiskChoice::None;
         self.open = true;
     }
 
@@ -334,20 +376,28 @@ impl NewVmDialog {
                             // [`CartridgeChoice`] — and the manager's detail
                             // pane edits peripherals through its own
                             // checkboxes.
+                            if self.cartridge != CartridgeChoice::FD502 {
+                                self.disk0 = DiskChoice::None;
+                            }
                             ui.label(egui::RichText::new("Cartridge").size(font));
-                            egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
-                                .selected_text(cartridge_label(self.cartridge))
-                                .show_ui(ui, |ui| {
-                                    for choice in
-                                        [CartridgeChoice::None, CartridgeChoice::FD502]
-                                    {
-                                        ui.selectable_value(
-                                            &mut self.cartridge,
-                                            choice,
-                                            cartridge_label(choice),
-                                        );
-                                    }
-                                });
+                            ui.horizontal(|ui| {
+                                egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
+                                    .selected_text(cartridge_label(self.cartridge))
+                                    .show_ui(ui, |ui| {
+                                        for choice in
+                                            [CartridgeChoice::None, CartridgeChoice::FD502]
+                                        {
+                                            ui.selectable_value(
+                                                &mut self.cartridge,
+                                                choice,
+                                                cartridge_label(choice),
+                                            );
+                                        }
+                                    });
+                                if self.cartridge == CartridgeChoice::FD502 {
+                                    self.disk0_combo(ui, font);
+                                }
+                            });
                             ui.end_row();
                         });
 
@@ -373,7 +423,11 @@ impl NewVmDialog {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
                         if ui.button("Create").clicked() {
-                            action = NewVmAction::Create(self.draft, self.cartridge);
+                            action = NewVmAction::Create(
+                                self.draft,
+                                self.cartridge,
+                                self.disk0.clone(),
+                            );
                         }
                         if ui.button("Cancel").clicked() {
                             self.close();
@@ -387,6 +441,48 @@ impl NewVmDialog {
             self.close();
         }
         action
+    }
+
+    /// The "Disk 0:" label + combo drawn to the right of the Cartridge
+    /// combo while the FD-502 is selected. "Blank" and "Select…" open
+    /// native file dialogs on the spot (save-file and open-file
+    /// respectively) — except the manager flow's "Blank"
+    /// (`show_name_field`), which is auto-placed in the machine's artifact
+    /// directory at create time and needs no path here. A cancelled dialog
+    /// falls back to None rather than keeping a pathless choice.
+    fn disk0_combo(&mut self, ui: &mut egui::Ui, font: f32) {
+        ui.label(egui::RichText::new("Disk 0:").size(font));
+        egui::ComboBox::from_id_salt(("new_vm", "disk0"))
+            .selected_text(disk_choice_text(&self.disk0))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(self.disk0 == DiskChoice::None, "None")
+                    .clicked()
+                {
+                    self.disk0 = DiskChoice::None;
+                }
+                if ui
+                    .selectable_label(matches!(self.disk0, DiskChoice::Blank(_)), "Blank")
+                    .clicked()
+                {
+                    self.disk0 = if self.show_name_field {
+                        DiskChoice::Blank(None)
+                    } else {
+                        match disk_file_dialog().set_file_name("blank.dsk").save_file() {
+                            Some(path) => DiskChoice::Blank(Some(path)),
+                            None => DiskChoice::None,
+                        }
+                    };
+                }
+                if ui
+                    .selectable_label(matches!(self.disk0, DiskChoice::File(_)), "Select…")
+                    .clicked()
+                {
+                    if let Some(path) = disk_file_dialog().pick_file() {
+                        self.disk0 = DiskChoice::File(path);
+                    }
+                }
+            });
     }
 }
 

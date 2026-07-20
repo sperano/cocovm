@@ -162,12 +162,30 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
     select_combo(&mut harness, "None", "FD-502");
+    // Selecting the FD-502 reveals the Disk 0 companion combo (default
+    // None); its Blank/Select… items open native file dialogs, so a
+    // headless test only exercises visibility.
+    assert!(
+        harness.query_by_label("Disk 0:").is_some(),
+        "FD-502 selection must reveal the Disk 0 combo"
+    );
     click(&mut harness, "Create");
     assert!(
         harness.state_mut().machine.bus.cart.as_disk_cart().is_some(),
         "creating with Cartridge = FD-502 must insert the disk controller"
     );
     assert!(harness.state().cart_error.is_none());
+
+    // Back to Cartridge = None: the Disk 0 combo disappears.
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    select_combo(&mut harness, "None", "FD-502");
+    select_combo(&mut harness, "FD-502", "None");
+    assert!(
+        harness.query_by_label("Disk 0:").is_none(),
+        "the Disk 0 combo must vanish when the FD-502 is deselected"
+    );
+    click(&mut harness, "Cancel");
 }
 
 #[test]
@@ -429,7 +447,7 @@ fn multipak_install_slot_and_switch_flow() {
         let app = harness.state();
         let mpi = app.mpi.as_ref().expect("MPI should be installed");
         assert_eq!(mpi.switch, DEFAULT_MPI_SWITCH_SLOT);
-        assert!(mpi.slots.iter().all(|s| matches!(s, MpiSlot::Empty)));
+        assert!(mpi.slots.iter().all(|s| matches!(s, MPISlot::Empty)));
     }
     harness.get_by_label("MPI [S1:- S2:- S3:- S4:-]"); // status bar
 
@@ -440,7 +458,7 @@ fn multipak_install_slot_and_switch_flow() {
     click(&mut harness, "Insert FD-502");
     assert!(matches!(
         harness.state().mpi.as_ref().unwrap().slots[0],
-        MpiSlot::Fd502
+        MPISlot::FD502
     ));
     assert!(
         harness.state_mut().machine.bus.cart.as_disk_cart().is_some(),
@@ -668,6 +686,40 @@ fn manager_create_with_fd502_records_the_peripheral() {
     assert!(
         contents.contains("fd502 = true"),
         "the TOML must record the peripheral:\n{contents}"
+    );
+}
+
+/// Manager create with Disk 0 = Blank: a 0-byte blank image lands in the
+/// machine's artifact dir and `[media].disk0` records it by relative path.
+/// (The manager flow's Blank is the picker-free one, so this drives the
+/// whole path headlessly — direct boot's Blank opens a native save dialog.)
+#[test]
+fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
+    let machines = TempDir::new("create-blank-machines");
+    let artifacts = TempDir::new("create-blank-artifacts");
+    let mut harness = manager_harness_with_artifacts(
+        Some(machines.path().to_path_buf()),
+        Some(artifacts.path().to_path_buf()),
+        Vec::new(),
+    );
+
+    click_containing(&mut harness, "New…");
+    select_combo(&mut harness, "None", "FD-502");
+    // The cartridge combo now reads "FD-502", so "None" uniquely addresses
+    // the Disk 0 combo.
+    select_combo(&mut harness, "None", "Blank");
+    click(&mut harness, "Create");
+
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert!(def.peripherals.fd502);
+    assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
+    let blank = artifacts.path().join("coco-3").join("disk0.dsk");
+    assert!(blank.is_file(), "blank image must exist at {}", blank.display());
+    assert_eq!(
+        fs::metadata(&blank).unwrap().len(),
+        0,
+        "a fresh blank JVC image is 0 bytes (0 tracks)"
     );
 }
 

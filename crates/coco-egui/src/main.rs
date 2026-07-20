@@ -32,7 +32,7 @@ use clap::{Parser, ValueEnum};
 use coco_core::cart::{MultiPak, RomPak};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
-use coco_core::rtc::{DistoRtc, RtcTime};
+use coco_core::rtc::{DistoRtc, RTCTime};
 use coco_core::vhd::VhdImage;
 use coco_core::{
     Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
@@ -203,13 +203,13 @@ struct CocoApp {
     pending_disk_action: Option<PendingDiskAction>,
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
-    mpi: Option<MpiState>,
+    mpi: Option<MPIState>,
     /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
     /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
     new_vm: new_vm::NewVmDialog,
     /// True while a Disto RTC is plugged directly into the cartridge port
     /// (gates the "Eject Disto RTC" menu item, like `cart_path` does for ROM
-    /// paks). An RTC in a Multi-Pak slot is tracked by [`MpiSlot::DistoRtc`]
+    /// paks). An RTC in a Multi-Pak slot is tracked by [`MPISlot::DistoRTC`]
     /// instead.
     rtc_direct: bool,
     /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
@@ -261,26 +261,26 @@ const DEFAULT_RTC_SLOT: usize = 2;
 /// controller lives at the top level or nested in a slot.
 ///
 /// [`Cartridge::as_disk_cart`]: coco_core::cart::Cartridge::as_disk_cart
-enum MpiSlot {
+enum MPISlot {
     Empty,
-    RomPak(PathBuf),
-    Fd502,
-    DistoRtc,
+    ROMPak(PathBuf),
+    FD502,
+    DistoRTC,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
 /// front-panel switch points at (mirrors [`MultiPak::set_switch`]) and what's
-/// plugged into each of its 4 slots ([`MpiSlot`]).
-struct MpiState {
+/// plugged into each of its 4 slots ([`MPISlot`]).
+struct MPIState {
     switch: usize,
-    slots: [MpiSlot; MPI_SLOT_COUNT],
+    slots: [MPISlot; MPI_SLOT_COUNT],
 }
 
 /// The host's local wall clock, read once (RTC sync).
-fn host_now() -> RtcTime {
+fn host_now() -> RTCTime {
     use chrono::{Datelike, Timelike};
     let now = chrono::Local::now();
-    RtcTime {
+    RTCTime {
         year: now.year(),
         month: now.month() as u8,
         day: now.day() as u8,
@@ -422,6 +422,7 @@ impl CocoApp {
                     .to_string(),
             );
         }
+        // TODO! will need to read from config ~/.share/cocovm or something, there should be some helper for this, maybe in paths.rs
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
@@ -446,9 +447,9 @@ impl CocoApp {
         self.flush_dirty_disks();
         self.machine.insert_cartridge(Box::new(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT)));
         self.machine.power_cycle();
-        self.mpi = Some(MpiState {
+        self.mpi = Some(MPIState {
             switch: DEFAULT_MPI_SWITCH_SLOT,
-            slots: std::array::from_fn(|_| MpiSlot::Empty),
+            slots: std::array::from_fn(|_| MPISlot::Empty),
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -485,7 +486,7 @@ impl CocoApp {
                     mp.insert(slot, Box::new(pak));
                 }
                 if let Some(mpi) = &mut self.mpi {
-                    mpi.slots[slot] = MpiSlot::RomPak(path);
+                    mpi.slots[slot] = MPISlot::ROMPak(path);
                 }
                 self.machine.power_cycle();
             }
@@ -519,7 +520,7 @@ impl CocoApp {
             mp.insert(slot, Box::new(DiskCart::new(rom.into_boxed_slice())));
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::Fd502;
+            mpi.slots[slot] = MPISlot::FD502;
         }
         self.disk_paths = [None, None];
         self.machine.power_cycle();
@@ -527,7 +528,7 @@ impl CocoApp {
 
     /// Eject whatever is plugged into MPI `slot`, restoring its empty slot.
     fn mpi_eject_slot(&mut self, slot: usize) {
-        let was_fd502 = matches!(self.mpi.as_ref().map(|m| &m.slots[slot]), Some(MpiSlot::Fd502));
+        let was_fd502 = matches!(self.mpi.as_ref().map(|m| &m.slots[slot]), Some(MPISlot::FD502));
         if was_fd502 {
             self.flush_dirty_disks();
             self.disk_paths = [None, None];
@@ -536,7 +537,7 @@ impl CocoApp {
             mp.eject(slot);
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::Empty;
+            mpi.slots[slot] = MPISlot::Empty;
         }
         self.machine.power_cycle();
     }
@@ -586,7 +587,7 @@ impl CocoApp {
             mp.insert(slot, Box::new(DistoRtc::new(host_time_source())));
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::DistoRtc;
+            mpi.slots[slot] = MPISlot::DistoRTC;
         }
         self.machine.power_cycle();
     }
@@ -1215,13 +1216,13 @@ impl CocoApp {
                             ui.separator();
                             for slot in 0..MPI_SLOT_COUNT {
                                 let slot_label = match self.mpi.as_ref().map(|m| &m.slots[slot]) {
-                                    Some(MpiSlot::RomPak(p)) => format!(
+                                    Some(MPISlot::ROMPak(p)) => format!(
                                         "Slot {} ({})",
                                         slot + 1,
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
-                                    Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
-                                    Some(MpiSlot::DistoRtc) => {
+                                    Some(MPISlot::FD502) => format!("Slot {} (FD-502)", slot + 1),
+                                    Some(MPISlot::DistoRTC) => {
                                         format!("Slot {} (Disto RTC)", slot + 1)
                                     }
                                     _ => format!("Slot {}", slot + 1),
@@ -1240,7 +1241,7 @@ impl CocoApp {
                                     // — the emulated latch only ever models one controller.
                                     let fd502_here = matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
-                                        Some(MpiSlot::Fd502)
+                                        Some(MPISlot::FD502)
                                     );
                                     let fd502_elsewhere =
                                         self.machine.bus.cart.as_disk_cart().is_some() && !fd502_here;
@@ -1258,7 +1259,7 @@ impl CocoApp {
                                     // two RTCs would shadow each other at $FF50.
                                     let rtc_here = matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
-                                        Some(MpiSlot::DistoRtc)
+                                        Some(MPISlot::DistoRTC)
                                     );
                                     let rtc_elsewhere = self
                                         .machine
@@ -1279,7 +1280,7 @@ impl CocoApp {
                                     }
                                     let occupied = !matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
-                                        Some(MpiSlot::Empty)
+                                        Some(MPISlot::Empty)
                                     );
                                     if ui
                                         .add_enabled(occupied, egui::Button::new("Eject"))
@@ -1554,12 +1555,12 @@ impl CocoApp {
                         .enumerate()
                         .map(|(i, slot)| {
                             let label = match slot {
-                                MpiSlot::Empty => "-".to_string(),
-                                MpiSlot::RomPak(p) => {
+                                MPISlot::Empty => "-".to_string(),
+                                MPISlot::ROMPak(p) => {
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string()
                                 }
-                                MpiSlot::Fd502 => "FD-502".to_string(),
-                                MpiSlot::DistoRtc => "RTC".to_string(),
+                                MPISlot::FD502 => "FD-502".to_string(),
+                                MPISlot::DistoRTC => "RTC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -1614,16 +1615,27 @@ impl CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
-        if let new_vm::NewVmAction::Create(config, cartridge) = self.new_vm.show(ctx) {
+        if let new_vm::NewVmAction::Create(config, cartridge, disk0) = self.new_vm.show(ctx) {
             match self.create_vm(config, ctx) {
                 Ok(()) => {
-                    // The machine booted; a cartridge problem (e.g. missing
-                    // disk11.rom) is reported like a menu insert, not as a
-                    // create failure.
-                    if cartridge == new_vm::CartridgeChoice::FD502
-                        && let Err(e) = self.ensure_disk_controller()
-                    {
-                        self.cart_error = Some(e);
+                    // The machine booted; cartridge/disk problems (e.g.
+                    // missing disk11.rom, unreadable image) are reported
+                    // like a menu insert, not as a create failure.
+                    if cartridge == new_vm::CartridgeChoice::FD502 {
+                        match disk0 {
+                            // insert_disk/new_blank_disk ensure the
+                            // controller themselves and report failures via
+                            // cart_error.
+                            new_vm::DiskChoice::File(path) => self.insert_disk(0, path),
+                            new_vm::DiskChoice::Blank(Some(path)) => self.new_blank_disk(0, path),
+                            // Blank(None) is the manager flow's auto-placed
+                            // spelling and can't be produced here.
+                            new_vm::DiskChoice::None | new_vm::DiskChoice::Blank(None) => {
+                                if let Err(e) = self.ensure_disk_controller() {
+                                    self.cart_error = Some(e);
+                                }
+                            }
+                        }
                     }
                     self.new_vm.close();
                 }
@@ -1894,7 +1906,7 @@ fn parse_video(s: &str) -> Result<VideoStandard, String> {
 /// Composite vs RGB monitor cable. Mirrors [`MonitorType`].
 #[derive(Clone, Copy, ValueEnum)]
 enum MonitorArg {
-    Rgb,
+    RGB,
     #[value(name = "cmp", alias = "composite")]
     Composite,
 }
@@ -1902,7 +1914,7 @@ enum MonitorArg {
 impl From<MonitorArg> for MonitorType {
     fn from(m: MonitorArg) -> Self {
         match m {
-            MonitorArg::Rgb => MonitorType::RGB,
+            MonitorArg::RGB => MonitorType::RGB,
             MonitorArg::Composite => MonitorType::Composite,
         }
     }

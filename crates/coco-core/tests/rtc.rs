@@ -8,7 +8,7 @@ use std::rc::Rc;
 use coco_core::Machine;
 use coco_core::cart::{Cartridge, MultiPak};
 use coco_core::config::MachineConfig;
-use coco_core::rtc::{DistoRtc, RtcTime};
+use coco_core::rtc::{DistoRtc, RTCTime};
 use mc6809::Bus;
 
 const RTC_DATA: u16 = 0xFF50;
@@ -31,7 +31,7 @@ const CF_RESET: u8 = 0x01;
 const CF_STOP: u8 = 0x02;
 const CF_24H: u8 = 0x04;
 
-const FIXED_TIME: RtcTime = RtcTime {
+const FIXED_TIME: RTCTime = RTCTime {
     year: 2026,
     month: 7,
     day: 8,
@@ -49,7 +49,7 @@ fn fixed_rtc() -> DistoRtc {
 fn ticking_rtc() -> (DistoRtc, Rc<Cell<u8>>) {
     let seconds = Rc::new(Cell::new(0u8));
     let source = Rc::clone(&seconds);
-    let rtc = DistoRtc::new(Box::new(move || RtcTime {
+    let rtc = DistoRtc::new(Box::new(move || RTCTime {
         second: source.get(),
         ..FIXED_TIME
     }));
@@ -161,7 +161,7 @@ fn twelve_hour_mode_survives_later_cf_writes_and_reset_reads_back_clear() {
 
 #[test]
 fn twelve_hour_mode_shows_midnight_as_12_am() {
-    let mut cart = DistoRtc::new(Box::new(|| RtcTime {
+    let mut cart = DistoRtc::new(Box::new(|| RTCTime {
         hour: 0,
         ..FIXED_TIME
     }));

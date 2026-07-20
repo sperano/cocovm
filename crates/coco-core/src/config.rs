@@ -253,7 +253,7 @@ impl MachineConfig {
             }
             (MachineVariant::Coco1, Some(VDGVariant::MC6847T1)) => {
                 return Err(
-                    "Coco1 does not support VdgVariant::Mc6847T1 (only Coco2 had a T1 board)"
+                    "Coco1 does not support VDGVariant::MC6847T1 (only Coco2 had a T1 board)"
                         .to_string(),
                 );
             }

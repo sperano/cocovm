@@ -117,6 +117,11 @@ fn transport_button(ui: &mut egui::Ui, glyph: &str, enabled: bool) -> egui::Resp
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
 
+/// File name of the auto-placed blank drive-0 image the "New…" dialog's
+/// Disk 0 = Blank choice creates in the machine's artifact directory,
+/// recorded in `[media].disk0` as a relative path.
+const BLANK_DISK0_FILE: &str = "disk0.dsk";
+
 /// Default display name seeded into the "New…" dialog's Name field —
 /// [`MachineConfig::default`]'s model, the same default the bare-invocation
 /// direct-boot path (`main.rs`) and the dialog's own draft start from.
@@ -359,7 +364,12 @@ impl ManagerApp {
     /// (`plan-machine-persistence.md` step 3). Save failures are reported in
     /// the dialog's own error field so it stays open for another try, the
     /// same contract `CocoApp::create_vm` follows for the direct-boot path.
-    fn create_machine(&mut self, config: MachineConfig, cartridge: new_vm::CartridgeChoice) {
+    fn create_machine(
+        &mut self,
+        config: MachineConfig,
+        cartridge: new_vm::CartridgeChoice,
+        disk0: new_vm::DiskChoice,
+    ) {
         let Some(dir) = self.machines_dir.clone() else {
             self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
             return;
@@ -383,6 +393,53 @@ impl ManagerApp {
         let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
         let mut def = machine_def::MachineDef::from_config(name, created, &config);
         def.peripherals.fd502 = cartridge == new_vm::CartridgeChoice::FD502;
+        if def.peripherals.fd502 {
+            match disk0 {
+                new_vm::DiskChoice::None => {}
+                new_vm::DiskChoice::File(path) => {
+                    def.media.disk0 = Some(path.display().to_string());
+                }
+                // A blank disk is file-backed (the drive writes back to the
+                // host file). Auto-place it in the machine's artifact dir as
+                // a 0-byte file — the same blank 0-track JVC image
+                // `CocoApp::new_blank_disk` starts from — recorded as a
+                // relative path (`machine_def::resolve_media_path`). An
+                // explicitly picked path (direct-boot spelling) is honored
+                // if it ever reaches here.
+                new_vm::DiskChoice::Blank(explicit) => {
+                    let path = match explicit {
+                        Some(path) => path,
+                        None => {
+                            let Some(root) = self.artifacts_root.clone() else {
+                                self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
+                                return;
+                            };
+                            let artifact_dir = root.join(&slug);
+                            if let Err(e) = fs::create_dir_all(&artifact_dir) {
+                                self.new_vm.error =
+                                    Some(format!("{}: {e}", artifact_dir.display()));
+                                return;
+                            }
+                            def.media.disk0 = Some(BLANK_DISK0_FILE.to_string());
+                            artifact_dir.join(BLANK_DISK0_FILE)
+                        }
+                    };
+                    if def.media.disk0.is_none() {
+                        def.media.disk0 = Some(path.display().to_string());
+                    }
+                    match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                        Ok(_) => {}
+                        // A leftover file under a fresh slug's artifact dir:
+                        // reuse it as the disk rather than clobbering data.
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                        Err(e) => {
+                            self.new_vm.error = Some(format!("{}: {e}", path.display()));
+                            return;
+                        }
+                    }
+                }
+            }
+        }
 
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
@@ -936,8 +993,8 @@ impl eframe::App for ManagerApp {
             });
         });
 
-        if let new_vm::NewVmAction::Create(config, cartridge) = self.new_vm.show(ctx) {
-            self.create_machine(config, cartridge);
+        if let new_vm::NewVmAction::Create(config, cartridge, disk0) = self.new_vm.show(ctx) {
+            self.create_machine(config, cartridge, disk0);
         }
 
         // Machine list: one row per definition under `config_dir()/machines`.

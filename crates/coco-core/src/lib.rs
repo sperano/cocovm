@@ -67,10 +67,10 @@ enum VideoMode {
     /// Same 256×192 active area as text; lower resolutions are pixel-doubled.
     CocoGraphics,
     /// INIT0 COCO=0, $FF98 BP=0: GIME native hi-res text (40/80 columns). TODO.
-    GimeText,
+    GIMEText,
     /// INIT0 COCO=0, $FF98 BP=1: GIME native graphics (HSCREEN), up to 640-wide with
     /// a variable-size buffer. TODO(`DESIGN.md` §6).
-    GimeGraphics,
+    GIMEGraphics,
 }
 
 /// The whole emulated machine.
@@ -345,9 +345,9 @@ impl Machine {
                         VideoMode::CocoText
                     }
                 } else if g.vmode & gime::vmode::BP != 0 {
-                    VideoMode::GimeGraphics
+                    VideoMode::GIMEGraphics
                 } else {
-                    VideoMode::GimeText
+                    VideoMode::GIMEText
                 }
             }
         }
@@ -376,10 +376,10 @@ impl Machine {
                 for (i, entry) in resolved.iter_mut().enumerate() {
                     *entry = self.bus.gime.color(self.bus.gime.palette[i]);
                 }
-                video::ColorSource::GimePalette(&resolved).resolve(css)
+                video::ColorSource::GIMEPalette(&resolved).resolve(css)
             }
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
-                video::ColorSource::VdgFixed.resolve(css)
+                video::ColorSource::VDGFixed.resolve(css)
             }
         }
     }
@@ -414,8 +414,8 @@ impl Machine {
                     })
                     .collect()
             }
-            VideoMode::GimeText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
+            VideoMode::GIMEGraphics => {
                 vec!["<no text buffer: GIME graphics mode (HSCREEN, $FF98 BP=1)>".to_string()]
             }
         }
@@ -439,13 +439,13 @@ impl Machine {
                     self.legacy_display_base()
                 )
             }
-            VideoMode::GimeText => {
+            VideoMode::GIMEText => {
                 format!(
                     "video mode: GIME hi-res text, base=${:06X}",
                     self.bus.gime.video_base()
                 )
             }
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEGraphics => {
                 format!(
                     "video mode: GIME graphics (HSCREEN), base=${:06X}",
                     self.bus.gime.video_base()
@@ -459,7 +459,7 @@ impl Machine {
         match self.video_mode() {
             VideoMode::CocoText => self.render_coco_text(),
             VideoMode::CocoGraphics => self.render_coco_graphics(),
-            VideoMode::GimeText => {
+            VideoMode::GIMEText => {
                 // Blink phase is toggled by the GIME interval timer, which
                 // BASIC programs at hi-res text setup (SEB Unravelled II).
                 let blink_on = self.bus.gime.blink_state;
@@ -472,7 +472,7 @@ impl Machine {
                 self.fb_width = w as u32;
                 self.fb_height = h as u32;
             }
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEGraphics => {
                 let (w, h) = gime_video::render_graphics(
                     &self.bus.gime,
                     &self.bus.ram,
@@ -512,12 +512,12 @@ impl Machine {
         // not `self.config.vdg` (which describes a real CoCo 1/2's chip and
         // is `None` on CoCo 3, per `MachineConfig::validate`).
         let generator = match self.config.variant {
-            MachineVariant::Coco3 => video::AlphaGenerator::Gime,
+            MachineVariant::Coco3 => video::AlphaGenerator::GIME,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
-                Some(VDGVariant::MC6847T1) => video::AlphaGenerator::Mc6847T1,
+                Some(VDGVariant::MC6847T1) => video::AlphaGenerator::MC6847T1,
                 // `None` is rejected for CoCo 1/2 by `MachineConfig::validate`;
                 // fall back to the plain chip rather than panic.
-                Some(VDGVariant::MC6847) | None => video::AlphaGenerator::Mc6847,
+                Some(VDGVariant::MC6847) | None => video::AlphaGenerator::MC6847,
             },
         };
         video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);
