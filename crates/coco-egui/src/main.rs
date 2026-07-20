@@ -470,6 +470,22 @@ impl CocoApp {
     /// can't make on the caller's behalf — so this refuses instead of
     /// silently replacing the MPI, and directs the caller to
     /// [`Self::mpi_insert_fd502`] via the MultiPak submenu.
+    /// Mount the "New…" dialog's per-drive disk picks, assuming a disk
+    /// controller is already reachable (bare FD-502 or one in an MPI
+    /// slot). `insert_disk`/`new_blank_disk` report failures via
+    /// [`Self::cart_error`]. `Blank(None)` is the manager flow's
+    /// auto-placed spelling and can't be produced by the direct-boot
+    /// dialog.
+    fn mount_dialog_disks(&mut self, disks: [new_vm::MediaChoice; UI_DRIVES]) {
+        for (drive, choice) in disks.into_iter().enumerate() {
+            match choice {
+                new_vm::MediaChoice::File(path) => self.insert_disk(drive, path),
+                new_vm::MediaChoice::Blank(Some(path)) => self.new_blank_disk(drive, path),
+                new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
+            }
+        }
+    }
+
     fn ensure_disk_controller(&mut self) -> Result<(), String> {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             return Ok(());
@@ -1686,23 +1702,22 @@ impl CocoApp {
                     // The machine booted; cartridge/media problems (e.g.
                     // missing disk11.rom, unreadable image) are reported
                     // like a menu insert, not as a create failure.
-                    // Blank(None) is the manager flow's auto-placed
-                    // spelling and can't be produced here.
-                    if spec.cartridge == new_vm::CartridgeChoice::FD502 {
-                        if let Err(e) = self.ensure_disk_controller() {
-                            self.cart_error = Some(e);
-                        } else {
-                            for (drive, choice) in spec.disks.into_iter().enumerate() {
-                                match choice {
-                                    new_vm::MediaChoice::File(path) => {
-                                        self.insert_disk(drive, path)
-                                    }
-                                    new_vm::MediaChoice::Blank(Some(path)) => {
-                                        self.new_blank_disk(drive, path)
-                                    }
-                                    new_vm::MediaChoice::None
-                                    | new_vm::MediaChoice::Blank(None) => {}
-                                }
+                    match spec.cartridge {
+                        new_vm::CartridgeChoice::None => {}
+                        new_vm::CartridgeChoice::FD502 => {
+                            if let Err(e) = self.ensure_disk_controller() {
+                                self.cart_error = Some(e);
+                            } else {
+                                self.mount_dialog_disks(spec.disks);
+                            }
+                        }
+                        new_vm::CartridgeChoice::MPI => {
+                            self.insert_multipak();
+                            // Disk picks imply an FD-502 in the last slot —
+                            // the CLI's --mpi convention.
+                            if spec.disks.iter().any(|d| *d != new_vm::MediaChoice::None) {
+                                self.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
+                                self.mount_dialog_disks(spec.disks);
                             }
                         }
                     }

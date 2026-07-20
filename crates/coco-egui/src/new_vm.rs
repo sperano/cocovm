@@ -98,17 +98,32 @@ pub enum CartridgeChoice {
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
     FD502,
+    /// MultiPak Interface, slots empty — except that any Disk row picks
+    /// imply an FD-502 in the last slot, the same convention the CLI's
+    /// --mpi and `launch_machine` follow.
+    MPI,
+}
+
+impl CartridgeChoice {
+    /// Whether this cartridge brings floppy drives, i.e. whether the
+    /// dialog shows the Disk rows: directly (FD-502) or via the implied
+    /// last-slot FD-502 (MPI).
+    pub fn has_drives(self) -> bool {
+        matches!(self, CartridgeChoice::FD502 | CartridgeChoice::MPI)
+    }
 }
 
 const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
     match cartridge {
         CartridgeChoice::None => "None",
         CartridgeChoice::FD502 => "FD-502",
+        CartridgeChoice::MPI => "MultiPak Interface",
     }
 }
 
-/// One media pick — a drive's disk (Cartridge row, FD-502 only) or the
-/// cassette: what to mount at create time.
+/// One media pick — a drive's disk (Cartridge row, when the cartridge
+/// [`CartridgeChoice::has_drives`]) or the cassette: what to mount at
+/// create time.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum MediaChoice {
     /// Empty drive.
@@ -148,7 +163,7 @@ fn disk_file_dialog() -> rfd::FileDialog {
 pub struct NewMachineSpec {
     pub config: MachineConfig,
     pub cartridge: CartridgeChoice,
-    /// Only meaningful with [`CartridgeChoice::FD502`].
+    /// Only meaningful when [`CartridgeChoice::has_drives`].
     pub disks: [MediaChoice; crate::UI_DRIVES],
     pub tape: MediaChoice,
 }
@@ -396,7 +411,7 @@ impl NewVmDialog {
                             self.tape_combo(ui);
                             ui.end_row();
 
-                            if self.cartridge != CartridgeChoice::FD502 {
+                            if !self.cartridge.has_drives() {
                                 self.disks = std::array::from_fn(|_| MediaChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
@@ -408,9 +423,11 @@ impl NewVmDialog {
                                 let combo = egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
                                     .selected_text(cartridge_label(self.cartridge))
                                     .show_ui(ui, |ui| {
-                                        for choice in
-                                            [CartridgeChoice::None, CartridgeChoice::FD502]
-                                        {
+                                        for choice in [
+                                            CartridgeChoice::None,
+                                            CartridgeChoice::FD502,
+                                            CartridgeChoice::MPI,
+                                        ] {
                                             ui.selectable_value(
                                                 &mut self.cartridge,
                                                 choice,
@@ -419,7 +436,7 @@ impl NewVmDialog {
                                         }
                                     });
                                 cartridge_combo_width = combo.response.rect.width();
-                                if self.cartridge == CartridgeChoice::FD502 {
+                                if self.cartridge.has_drives() {
                                     self.disk_combo(ui, font, 0);
                                 }
                             });
@@ -431,7 +448,7 @@ impl NewVmDialog {
                             // separates it from the "Disk 0:" label above
                             // (`add_space` itself adds no spacing around
                             // the gap).
-                            if self.cartridge == CartridgeChoice::FD502 {
+                            if self.cartridge.has_drives() {
                                 for drive in 1..crate::UI_DRIVES {
                                     ui.label("");
                                     ui.horizontal(|ui| {

@@ -221,6 +221,22 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     );
     assert!(harness.state().cart_error.is_none());
 
+    // MultiPak Interface: slots-only insert, drives implied only when a
+    // disk is picked — with none, the MPI is present but empty.
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    assert!(
+        harness.query_by_label("Disk 0:").is_some(),
+        "MPI selection must reveal the Disk rows too"
+    );
+    click(&mut harness, "Create");
+    assert!(harness.state().mpi.is_some(), "creating with MPI must insert one");
+    assert!(
+        harness.state_mut().machine.bus.cart.as_disk_cart().is_none(),
+        "no disk picks, no implied FD-502"
+    );
+
     // Back to Cartridge = None: the Disk 0 combo disappears.
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
@@ -732,6 +748,26 @@ fn manager_create_with_fd502_records_the_peripheral() {
         contents.contains("fd502 = true"),
         "the TOML must record the peripheral:\n{contents}"
     );
+}
+
+/// Creating from the manager with Cartridge = MultiPak Interface records
+/// the mpi peripheral (disk media, when picked, implies the last-slot
+/// FD-502 at launch — no fd502 flag needed).
+#[test]
+fn manager_create_with_mpi_records_the_peripheral() {
+    let dir = TempDir::new("create-mpi");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New…");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    click(&mut harness, "Create");
+
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert!(def.peripherals.mpi);
+    assert!(!def.peripherals.fd502);
+    let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
+    assert!(contents.contains("mpi = true"), "TOML must record the MPI:\n{contents}");
 }
 
 /// Manager create with Disk 0 = Blank: a 0-byte blank image lands in the
