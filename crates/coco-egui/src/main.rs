@@ -247,6 +247,32 @@ const DRIVE_ICON_IDLE: egui::Color32 = egui::Color32::from_gray(70);
 /// Corner rounding of the jacket square.
 const DRIVE_ICON_CORNER: f32 = 1.5;
 
+/// Status-bar cassette activity indicator, the tape sibling of
+/// [`DRIVE_ICON_SIZE`]'s floppy: shell proportions of a compact cassette
+/// (wider than tall), red while the cassette relay is closed
+/// (CLOAD/CSAVE/`MOTOR ON`), dim otherwise.
+const TAPE_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 10.0);
+/// Corner rounding of the cassette shell.
+const TAPE_ICON_CORNER: f32 = 1.5;
+
+/// One status-bar cassette indicator (see [`TAPE_ICON_SIZE`]'s doc): the
+/// shell with the two reel hubs punched out in the panel's background
+/// color.
+fn cassette_activity_light(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(TAPE_ICON_SIZE, egui::Sense::hover());
+    let shell = if active { DRIVE_ICON_ACTIVE } else { DRIVE_ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, TAPE_ICON_CORNER, shell);
+    // The two reel hubs, side by side above the mid-line (the head window
+    // occupies a real shell's bottom edge, unreadable at this size).
+    let hub_y = rect.center().y - TAPE_ICON_SIZE.y * 0.08;
+    let hub_dx = TAPE_ICON_SIZE.x * 0.22;
+    let hub_r = TAPE_ICON_SIZE.y * 0.20;
+    painter.circle_filled(egui::pos2(rect.center().x - hub_dx, hub_y), hub_r, punch);
+    painter.circle_filled(egui::pos2(rect.center().x + hub_dx, hub_y), hub_r, punch);
+}
+
 /// One status-bar activity indicator (see [`DRIVE_ICON_SIZE`]'s doc): the
 /// jacket square with the hub hole and the oblong head-access slot punched
 /// out in the panel's background color — the 5¼" silhouette.
@@ -1632,14 +1658,15 @@ impl CocoApp {
                 if let Some(path) = &self.tape_path {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     let cassette = &self.machine.bus.cassette;
-                    // "▶" = motor running (relay closed); the counter is the
-                    // playback position in tape bytes; "*" as for floppies.
-                    let motor =
-                        if self.machine.bus.pia1.a.c2_output() { " ▶" } else { "" };
+                    // The icon reddens while the motor runs (relay closed —
+                    // CLOAD/CSAVE/MOTOR ON); the counter is the playback
+                    // position in tape bytes; "*" as for floppies.
+                    let motor = self.machine.bus.pia1.a.c2_output();
                     let (pos, len) = cassette.position();
                     ui.separator();
+                    cassette_activity_light(ui, motor);
                     ui.label(format!(
-                        "Tape: {name}{} [{pos}/{len}]{motor}",
+                        "Tape: {name}{} [{pos}/{len}]",
                         if cassette.dirty() { "*" } else { "" }
                     ));
                 }
