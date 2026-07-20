@@ -1557,8 +1557,6 @@ impl CocoApp {
                 ui.label(if self.running { "Running" } else { "Paused" });
                 ui.separator();
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
-                ui.separator();
-                ui.label(format!("cycles: {}", self.machine.cpu.cycles));
                 if let Some(path) = &self.cart_path {
                     ui.separator();
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
