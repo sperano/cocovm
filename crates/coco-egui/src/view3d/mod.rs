@@ -29,6 +29,7 @@ mod crt;
 mod gl;
 mod layout;
 mod mesh;
+mod props;
 mod shaders;
 
 pub use crt::CrtParams;
@@ -293,7 +294,7 @@ impl View3d {
         let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         self.handle_camera_input(ui, &response);
 
-        let props = Arc::clone(self.props.get_or_insert_with(|| Arc::new(mesh::build_props())));
+        let props = Arc::clone(self.props.get_or_insert_with(|| Arc::new(props::build_props())));
 
         let cart_transform = self.cart_pose(view);
         let mut action = self.advance_cart_anim(ui);
@@ -432,16 +433,26 @@ fn build_instances(
             PropKind::MonitorTv => view.composite,
             _ => true,
         })
-        .map(|(i, prop)| Instance {
-            mesh_idx: i,
-            transform: prop_transform(prop.kind).to_cols_array(),
-            color: prop.color,
-            is_screen: prop.kind == PropKind::Screen,
-            highlight: if hovered == Some(prop.kind) {
-                layout::HIGHLIGHT_MIX
+        .map(|(i, prop)| {
+            // Colors are baked into the vertices; the instance tint is
+            // identity for solids and black for the screen quad, whose
+            // solid-mode fallback is a dark (powered-off) tube.
+            let color = if prop.kind == PropKind::Screen {
+                [0.0, 0.0, 0.0, 1.0]
             } else {
-                0.0
-            },
+                [1.0, 1.0, 1.0, 1.0]
+            };
+            Instance {
+                mesh_idx: i,
+                transform: prop_transform(prop.kind).to_cols_array(),
+                color,
+                is_screen: prop.kind == PropKind::Screen,
+                highlight: if hovered == Some(prop.kind) {
+                    layout::HIGHLIGHT_MIX
+                } else {
+                    0.0
+                },
+            }
         })
         .collect()
 }

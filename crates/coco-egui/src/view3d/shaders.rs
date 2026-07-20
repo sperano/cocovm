@@ -7,11 +7,14 @@ uniform mat4 u_model;
 in vec3 a_pos;
 in vec3 a_normal;
 in vec2 a_uv;
+in vec3 a_color;
 out vec3 v_normal;
 out vec2 v_uv;
+out vec3 v_color;
 void main() {
     v_normal = mat3(u_model) * a_normal;
     v_uv = a_uv;
+    v_color = a_color;
     gl_Position = u_view_proj * u_model * vec4(a_pos, 1.0);
 }
 "#;
@@ -22,7 +25,7 @@ pub(super) const MODE_CRT: i32 = 1;
 pub(super) const MODE_GLOW: i32 = 2;
 
 pub(super) const FRAGMENT_SHADER: &str = r#"#version 150
-uniform vec4 u_color;
+uniform vec4 u_color;      // per-instance tint over the vertex color
 uniform sampler2D u_tex;   // solid: unused; CRT: phosphor; glow quad: glow
 uniform sampler2D u_glow;  // CRT face only: blurred glow for the bloom add
 uniform int u_mode;        // 0 solid lit, 1 CRT face, 2 additive glow quad
@@ -31,6 +34,7 @@ uniform vec4 u_crt_b;      // reflection strength, source scanline count, -, -
 uniform float u_highlight; // hover feedback: mix toward white (solid mode)
 in vec3 v_normal;
 in vec2 v_uv;
+in vec3 v_color;
 out vec4 frag_color;
 const vec3 LIGHT_DIR = vec3(0.35, 0.86, 0.37); // pre-normalized
 const float AMBIENT = 0.35;
@@ -83,7 +87,7 @@ void main() {
     } else {
         float diffuse = max(dot(normalize(v_normal), LIGHT_DIR), 0.0);
         float light = mix(AMBIENT, 1.0, diffuse);
-        vec3 col = mix(u_color.rgb * light, vec3(1.0), u_highlight);
+        vec3 col = mix(v_color * u_color.rgb * light, vec3(1.0), u_highlight);
         frag_color = vec4(col, u_color.a);
     }
 }

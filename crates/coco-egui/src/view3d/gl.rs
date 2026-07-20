@@ -7,7 +7,7 @@ use eframe::glow::{self, HasContext as _};
 
 use super::crt::{CrtUniforms, GLOW_SIZE, PHOSPHOR_SIZE};
 use super::layout::{CLEAR_COLOR, glow_quad_transform};
-use super::mesh::{MeshData, PropDef, VERTEX_STRIDE_BYTES, bytemuck_cast, screen_quad};
+use super::mesh::{self, MeshData, PropDef, VERTEX_STRIDE_BYTES, bytemuck_cast, screen_quad};
 use super::shaders::{
     BLIT_FRAGMENT_SHADER, BLIT_VERTEX_SHADER, FRAGMENT_SHADER, MODE_CRT, MODE_GLOW, MODE_SOLID,
     VERTEX_SHADER,
@@ -128,9 +128,12 @@ impl GlScene {
                 glow::STATIC_DRAW,
             );
             let float_size = std::mem::size_of::<f32>() as i32;
-            for (name, components, offset_floats) in
-                [("a_pos", 3, 0), ("a_normal", 3, 3), ("a_uv", 2, 6)]
-            {
+            for (name, components, offset_floats) in [
+                ("a_pos", 3, 0),
+                ("a_normal", 3, mesh::OFFSET_NORMAL),
+                ("a_uv", 2, mesh::OFFSET_UV),
+                ("a_color", 3, mesh::OFFSET_COLOR),
+            ] {
                 if let Some(loc) = gl.get_attrib_location(program, name) {
                     gl.enable_vertex_attrib_array(loc);
                     gl.vertex_attrib_pointer_f32(
