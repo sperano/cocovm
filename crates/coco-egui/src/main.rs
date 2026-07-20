@@ -238,6 +238,23 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
 /// were one or two — and the menu stays small.
 const UI_DRIVES: usize = 2;
 
+/// Status-bar drive activity LED: diameter and lit/idle colors. Lit while
+/// the drive is selected with its motor on ([`coco_core::fdc`]'s
+/// `drive_active`), like a real drive's front-panel light.
+const DRIVE_LIGHT_DIAMETER: f32 = 8.0;
+const DRIVE_LIGHT_ACTIVE: egui::Color32 = egui::Color32::from_rgb(0xE0, 0x30, 0x30);
+const DRIVE_LIGHT_IDLE: egui::Color32 = egui::Color32::from_gray(70);
+
+/// One status-bar activity LED (see [`DRIVE_LIGHT_DIAMETER`]'s doc).
+fn drive_activity_light(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(DRIVE_LIGHT_DIAMETER, DRIVE_LIGHT_DIAMETER),
+        egui::Sense::hover(),
+    );
+    let color = if active { DRIVE_LIGHT_ACTIVE } else { DRIVE_LIGHT_IDLE };
+    ui.painter().circle_filled(rect.center(), DRIVE_LIGHT_DIAMETER / 2.0, color);
+}
+
 /// Number of physical slots on a Multi-Pak Interface — re-exported from the
 /// core crate's own constant so the frontend's slot arrays can't drift from
 /// [`coco_core::cart::MultiPak`]'s.
@@ -1580,7 +1597,14 @@ impl CocoApp {
                         .as_disk_cart()
                         .and_then(|c| c.disk(drive))
                         .is_some_and(|d| d.dirty());
+                    let active = self
+                        .machine
+                        .bus
+                        .cart
+                        .as_disk_cart()
+                        .is_some_and(|c| c.drive_active(drive));
                     ui.separator();
+                    drive_activity_light(ui, active);
                     ui.label(format!("D{drive}: {name}{}", if dirty { "*" } else { "" }));
                 }
                 for drive in 0..UI_DRIVES {
@@ -1615,24 +1639,29 @@ impl CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
-        if let new_vm::NewVmAction::Create(config, cartridge, disk0) = self.new_vm.show(ctx) {
+        if let new_vm::NewVmAction::Create(config, cartridge, disks) = self.new_vm.show(ctx) {
             match self.create_vm(config, ctx) {
                 Ok(()) => {
                     // The machine booted; cartridge/disk problems (e.g.
                     // missing disk11.rom, unreadable image) are reported
                     // like a menu insert, not as a create failure.
                     if cartridge == new_vm::CartridgeChoice::FD502 {
-                        match disk0 {
-                            // insert_disk/new_blank_disk ensure the
-                            // controller themselves and report failures via
-                            // cart_error.
-                            new_vm::DiskChoice::File(path) => self.insert_disk(0, path),
-                            new_vm::DiskChoice::Blank(Some(path)) => self.new_blank_disk(0, path),
-                            // Blank(None) is the manager flow's auto-placed
-                            // spelling and can't be produced here.
-                            new_vm::DiskChoice::None | new_vm::DiskChoice::Blank(None) => {
-                                if let Err(e) = self.ensure_disk_controller() {
-                                    self.cart_error = Some(e);
+                        if let Err(e) = self.ensure_disk_controller() {
+                            self.cart_error = Some(e);
+                        } else {
+                            for (drive, choice) in disks.into_iter().enumerate() {
+                                match choice {
+                                    new_vm::DiskChoice::File(path) => {
+                                        self.insert_disk(drive, path)
+                                    }
+                                    new_vm::DiskChoice::Blank(Some(path)) => {
+                                        self.new_blank_disk(drive, path)
+                                    }
+                                    // Blank(None) is the manager flow's
+                                    // auto-placed spelling and can't be
+                                    // produced here.
+                                    new_vm::DiskChoice::None
+                                    | new_vm::DiskChoice::Blank(None) => {}
                                 }
                             }
                         }

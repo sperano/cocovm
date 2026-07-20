@@ -107,8 +107,8 @@ const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
     }
 }
 
-/// The Cartridge row's "Disk 0" companion, shown only with
-/// [`CartridgeChoice::FD502`]: what to mount in drive 0 at create time.
+/// One drive's disk pick in the Cartridge row's per-drive combos, shown
+/// only with [`CartridgeChoice::FD502`]: what to mount at create time.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum DiskChoice {
     /// Empty drive.
@@ -117,8 +117,8 @@ pub enum DiskChoice {
     /// A fresh blank (0-track) image. Blank disks are file-backed (the
     /// drive writes back to the host file): direct boot picks the backing
     /// file with a save dialog when this is selected (`Some(path)`); the
-    /// manager auto-places `disk0.dsk` in the machine's artifact directory
-    /// (`None`).
+    /// manager auto-places `disk<N>.dsk` in the machine's artifact
+    /// directory (`None`).
     Blank(Option<PathBuf>),
     /// An existing image picked with the file dialog.
     File(PathBuf),
@@ -147,9 +147,9 @@ pub enum NewVmAction {
     None,
     /// "Create" was clicked; the caller should try to build this machine and
     /// either [`NewVmDialog::close`] the dialog or record the failure in
-    /// [`NewVmDialog::error`]. The [`DiskChoice`] is only meaningful with
-    /// [`CartridgeChoice::FD502`].
-    Create(MachineConfig, CartridgeChoice, DiskChoice),
+    /// [`NewVmDialog::error`]. The per-drive [`DiskChoice`]s are only
+    /// meaningful with [`CartridgeChoice::FD502`].
+    Create(MachineConfig, CartridgeChoice, [DiskChoice; crate::UI_DRIVES]),
 }
 
 /// Re-constrain a draft after a model change: snap RAM to the new family's
@@ -291,9 +291,10 @@ pub struct NewVmDialog {
     pub name: String,
     /// The Cartridge-row draft; reset to None on every open.
     pub cartridge: CartridgeChoice,
-    /// The Disk 0 draft next to the Cartridge combo; reset to None on every
-    /// open, and whenever the cartridge isn't the FD-502.
-    pub disk0: DiskChoice,
+    /// The per-drive disk drafts shown with the Cartridge combo (Disk 0
+    /// inline, Disk 1 on the row below); reset to None on every open, and
+    /// whenever the cartridge isn't the FD-502.
+    pub disks: [DiskChoice; crate::UI_DRIVES],
 }
 
 impl NewVmDialog {
@@ -305,7 +306,7 @@ impl NewVmDialog {
             show_name_field: false,
             name: String::new(),
             cartridge: CartridgeChoice::None,
-            disk0: DiskChoice::None,
+            disks: std::array::from_fn(|_| DiskChoice::None),
         }
     }
 
@@ -324,7 +325,7 @@ impl NewVmDialog {
         self.draft = current;
         self.error = None;
         self.cartridge = CartridgeChoice::None;
-        self.disk0 = DiskChoice::None;
+        self.disks = std::array::from_fn(|_| DiskChoice::None);
         self.open = true;
     }
 
@@ -377,7 +378,7 @@ impl NewVmDialog {
                             // pane edits peripherals through its own
                             // checkboxes.
                             if self.cartridge != CartridgeChoice::FD502 {
-                                self.disk0 = DiskChoice::None;
+                                self.disks = std::array::from_fn(|_| DiskChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
                             ui.horizontal(|ui| {
@@ -395,10 +396,21 @@ impl NewVmDialog {
                                         }
                                     });
                                 if self.cartridge == CartridgeChoice::FD502 {
-                                    self.disk0_combo(ui, font);
+                                    self.disk_combo(ui, font, 0);
                                 }
                             });
                             ui.end_row();
+
+                            // Remaining drives, one row each under Disk 0.
+                            if self.cartridge == CartridgeChoice::FD502 {
+                                for drive in 1..crate::UI_DRIVES {
+                                    ui.label("");
+                                    ui.horizontal(|ui| {
+                                        self.disk_combo(ui, font, drive);
+                                    });
+                                    ui.end_row();
+                                }
+                            }
                         });
 
                     if let Some(error) = &self.error {
@@ -409,16 +421,15 @@ impl NewVmDialog {
                                 .color(ui.visuals().error_fg_color),
                         );
                     }
-
-                    ui.add_space(DIALOG_MARGIN as f32);
-                    ui.label(
-                        egui::RichText::new(
-                            "Creating a new machine replaces the current one — any \
-                             unsaved work in memory will be lost.",
-                        )
-                        .size(font)
-                        .weak(),
-                    );
+                    //ui.add_space(DIALOG_MARGIN as f32);
+                    // ui.label(
+                    //     egui::RichText::new(
+                    //         "Creating a new machine replaces the current one — any \
+                    //          unsaved work in memory will be lost.",
+                    //     )
+                    //     .size(font)
+                    //     .weak(),
+                    // );
                     ui.add_space(DIALOG_MARGIN as f32);
                     ui.horizontal(|ui| {
                         ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
@@ -426,7 +437,7 @@ impl NewVmDialog {
                             action = NewVmAction::Create(
                                 self.draft,
                                 self.cartridge,
-                                self.disk0.clone(),
+                                self.disks.clone(),
                             );
                         }
                         if ui.button("Cancel").clicked() {
@@ -443,43 +454,47 @@ impl NewVmDialog {
         action
     }
 
-    /// The "Disk 0:" label + combo drawn to the right of the Cartridge
-    /// combo while the FD-502 is selected. "Blank" and "Select…" open
-    /// native file dialogs on the spot (save-file and open-file
-    /// respectively) — except the manager flow's "Blank"
-    /// (`show_name_field`), which is auto-placed in the machine's artifact
-    /// directory at create time and needs no path here. A cancelled dialog
-    /// falls back to None rather than keeping a pathless choice.
-    fn disk0_combo(&mut self, ui: &mut egui::Ui, font: f32) {
-        ui.label(egui::RichText::new("Disk 0:").size(font));
-        egui::ComboBox::from_id_salt(("new_vm", "disk0"))
-            .selected_text(disk_choice_text(&self.disk0))
+    /// One "Disk N:" label + combo, drawn while the FD-502 is selected
+    /// (Disk 0 to the right of the Cartridge combo, the rest on rows
+    /// below). "Blank" and "Select…" open native file dialogs on the spot
+    /// (save-file and open-file respectively) — except the manager flow's
+    /// "Blank" (`show_name_field`), which is auto-placed in the machine's
+    /// artifact directory at create time and needs no path here. A
+    /// cancelled dialog falls back to None rather than keeping a pathless
+    /// choice.
+    fn disk_combo(&mut self, ui: &mut egui::Ui, font: f32, drive: usize) {
+        ui.label(egui::RichText::new(format!("Disk {drive}:")).size(font));
+        egui::ComboBox::from_id_salt(("new_vm", "disk", drive))
+            .selected_text(disk_choice_text(&self.disks[drive]))
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_label(self.disk0 == DiskChoice::None, "None")
+                    .selectable_label(self.disks[drive] == DiskChoice::None, "None")
                     .clicked()
                 {
-                    self.disk0 = DiskChoice::None;
+                    self.disks[drive] = DiskChoice::None;
                 }
                 if ui
-                    .selectable_label(matches!(self.disk0, DiskChoice::Blank(_)), "Blank")
+                    .selectable_label(matches!(self.disks[drive], DiskChoice::Blank(_)), "Blank")
                     .clicked()
                 {
-                    self.disk0 = if self.show_name_field {
+                    self.disks[drive] = if self.show_name_field {
                         DiskChoice::Blank(None)
                     } else {
-                        match disk_file_dialog().set_file_name("blank.dsk").save_file() {
+                        match disk_file_dialog()
+                            .set_file_name(format!("blank{drive}.dsk"))
+                            .save_file()
+                        {
                             Some(path) => DiskChoice::Blank(Some(path)),
                             None => DiskChoice::None,
                         }
                     };
                 }
                 if ui
-                    .selectable_label(matches!(self.disk0, DiskChoice::File(_)), "Select…")
+                    .selectable_label(matches!(self.disks[drive], DiskChoice::File(_)), "Select…")
                     .clicked()
                     && let Some(path) = disk_file_dialog().pick_file()
                 {
-                    self.disk0 = DiskChoice::File(path);
+                    self.disks[drive] = DiskChoice::File(path);
                 }
             });
     }

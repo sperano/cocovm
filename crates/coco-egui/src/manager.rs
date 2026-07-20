@@ -117,10 +117,12 @@ fn transport_button(ui: &mut egui::Ui, glyph: &str, enabled: bool) -> egui::Resp
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
 
-/// File name of the auto-placed blank drive-0 image the "New…" dialog's
-/// Disk 0 = Blank choice creates in the machine's artifact directory,
-/// recorded in `[media].disk0` as a relative path.
-const BLANK_DISK0_FILE: &str = "disk0.dsk";
+/// File name of the auto-placed blank image the "New…" dialog's
+/// Disk N = Blank choice creates in the machine's artifact directory,
+/// recorded in `[media].diskN` as a relative path.
+fn blank_disk_file(drive: usize) -> String {
+    format!("disk{drive}.dsk")
+}
 
 /// Default display name seeded into the "New…" dialog's Name field —
 /// [`MachineConfig::default`]'s model, the same default the bare-invocation
@@ -368,7 +370,7 @@ impl ManagerApp {
         &mut self,
         config: MachineConfig,
         cartridge: new_vm::CartridgeChoice,
-        disk0: new_vm::DiskChoice,
+        disks: [new_vm::DiskChoice; crate::UI_DRIVES],
     ) {
         let Some(dir) = self.machines_dir.clone() else {
             self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
@@ -394,48 +396,54 @@ impl ManagerApp {
         let mut def = machine_def::MachineDef::from_config(name, created, &config);
         def.peripherals.fd502 = cartridge == new_vm::CartridgeChoice::FD502;
         if def.peripherals.fd502 {
-            match disk0 {
-                new_vm::DiskChoice::None => {}
-                new_vm::DiskChoice::File(path) => {
-                    def.media.disk0 = Some(path.display().to_string());
-                }
-                // A blank disk is file-backed (the drive writes back to the
-                // host file). Auto-place it in the machine's artifact dir as
-                // a 0-byte file — the same blank 0-track JVC image
-                // `CocoApp::new_blank_disk` starts from — recorded as a
-                // relative path (`machine_def::resolve_media_path`). An
-                // explicitly picked path (direct-boot spelling) is honored
-                // if it ever reaches here.
-                new_vm::DiskChoice::Blank(explicit) => {
-                    let path = match explicit {
-                        Some(path) => path,
-                        None => {
-                            let Some(root) = self.artifacts_root.clone() else {
-                                self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
-                                return;
-                            };
-                            let artifact_dir = root.join(&slug);
-                            if let Err(e) = fs::create_dir_all(&artifact_dir) {
-                                self.new_vm.error =
-                                    Some(format!("{}: {e}", artifact_dir.display()));
+            for (drive, choice) in disks.into_iter().enumerate() {
+                let media_slot = match drive {
+                    0 => &mut def.media.disk0,
+                    _ => &mut def.media.disk1,
+                };
+                match choice {
+                    new_vm::DiskChoice::None => {}
+                    new_vm::DiskChoice::File(path) => {
+                        *media_slot = Some(path.display().to_string());
+                    }
+                    // A blank disk is file-backed (the drive writes back to
+                    // the host file). Auto-place it in the machine's
+                    // artifact dir as a 0-byte file — the same blank
+                    // 0-track JVC image `CocoApp::new_blank_disk` starts
+                    // from — recorded as a relative path
+                    // (`machine_def::resolve_media_path`). An explicitly
+                    // picked path (direct-boot spelling) is honored if it
+                    // ever reaches here.
+                    new_vm::DiskChoice::Blank(explicit) => {
+                        let (path, recorded) = match explicit {
+                            Some(path) => (path.clone(), path.display().to_string()),
+                            None => {
+                                let Some(root) = self.artifacts_root.clone() else {
+                                    self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
+                                    return;
+                                };
+                                let artifact_dir = root.join(&slug);
+                                if let Err(e) = fs::create_dir_all(&artifact_dir) {
+                                    self.new_vm.error =
+                                        Some(format!("{}: {e}", artifact_dir.display()));
+                                    return;
+                                }
+                                let file = blank_disk_file(drive);
+                                (artifact_dir.join(&file), file)
+                            }
+                        };
+                        match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                            Ok(_) => {}
+                            // A leftover file under a fresh slug's artifact
+                            // dir: reuse it as the disk rather than
+                            // clobbering data.
+                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                            Err(e) => {
+                                self.new_vm.error = Some(format!("{}: {e}", path.display()));
                                 return;
                             }
-                            def.media.disk0 = Some(BLANK_DISK0_FILE.to_string());
-                            artifact_dir.join(BLANK_DISK0_FILE)
                         }
-                    };
-                    if def.media.disk0.is_none() {
-                        def.media.disk0 = Some(path.display().to_string());
-                    }
-                    match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-                        Ok(_) => {}
-                        // A leftover file under a fresh slug's artifact dir:
-                        // reuse it as the disk rather than clobbering data.
-                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-                        Err(e) => {
-                            self.new_vm.error = Some(format!("{}: {e}", path.display()));
-                            return;
-                        }
+                        *media_slot = Some(recorded);
                     }
                 }
             }

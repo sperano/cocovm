@@ -85,6 +85,39 @@ fn select_combo<S: 'static>(
     click(harness, target);
 }
 
+/// [`select_combo`] disambiguated by position: among all combo buttons
+/// currently showing `current` as their value, open the `index`-th in
+/// top-to-bottom (then left-to-right) screen order. Needed once more than
+/// one drive combo shows "None" at the same time.
+fn select_combo_at<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    current: &str,
+    index: usize,
+    target: &str,
+) {
+    fn nth<'t, S>(
+        harness: &'t egui_kittest::Harness<'static, S>,
+        value: &'t str,
+        index: usize,
+    ) -> egui_kittest::Node<'t> {
+        let mut nodes: Vec<_> = harness.get_all_by_value(value).collect();
+        nodes.sort_by(|a, b| {
+            (a.rect().min.y.total_cmp(&b.rect().min.y))
+                .then(a.rect().min.x.total_cmp(&b.rect().min.x))
+        });
+        nodes
+            .into_iter()
+            .nth(index)
+            .unwrap_or_else(|| panic!("no {index}-th node with value {value:?}"))
+    }
+    nth(harness, current, index).hover();
+    harness.step();
+    nth(harness, current, index).click();
+    harness.step();
+    harness.step();
+    click(harness, target);
+}
+
 /// Lowest-on-screen widget labelled `label` — the open-menu copy of a label
 /// the toolbar shows too ("Pause", "Reset"): the menu popup hangs below the
 /// toolbar row.
@@ -168,6 +201,10 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     assert!(
         harness.query_by_label("Disk 0:").is_some(),
         "FD-502 selection must reveal the Disk 0 combo"
+    );
+    assert!(
+        harness.query_by_label("Disk 1:").is_some(),
+        "FD-502 selection must reveal the Disk 1 combo"
     );
     click(&mut harness, "Create");
     assert!(
@@ -705,8 +742,10 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
 
     click_containing(&mut harness, "New…");
     select_combo(&mut harness, "None", "FD-502");
-    // The cartridge combo now reads "FD-502", so "None" uniquely addresses
-    // the Disk 0 combo.
+    // Both drive combos read "None"; screen order puts Disk 0 (on the
+    // cartridge row) above Disk 1.
+    select_combo_at(&mut harness, "None", 0, "Blank");
+    // Disk 0 now reads "Blank"; the remaining "None" is Disk 1.
     select_combo(&mut harness, "None", "Blank");
     click(&mut harness, "Create");
 
@@ -714,13 +753,16 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     let def = &harness.state().entries[0].def;
     assert!(def.peripherals.fd502);
     assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
-    let blank = artifacts.path().join("coco-3").join("disk0.dsk");
-    assert!(blank.is_file(), "blank image must exist at {}", blank.display());
-    assert_eq!(
-        fs::metadata(&blank).unwrap().len(),
-        0,
-        "a fresh blank JVC image is 0 bytes (0 tracks)"
-    );
+    assert_eq!(def.media.disk1.as_deref(), Some("disk1.dsk"));
+    for file in ["disk0.dsk", "disk1.dsk"] {
+        let blank = artifacts.path().join("coco-3").join(file);
+        assert!(blank.is_file(), "blank image must exist at {}", blank.display());
+        assert_eq!(
+            fs::metadata(&blank).unwrap().len(),
+            0,
+            "a fresh blank JVC image is 0 bytes (0 tracks)"
+        );
+    }
 }
 
 #[test]
