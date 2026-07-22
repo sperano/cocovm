@@ -32,6 +32,14 @@ const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, M
 /// dialog in `main.rs`.
 const DIALOG_MARGIN: i8 = 16;
 
+/// Minimum size of the window's content area — roomy enough that revealing
+/// the FD-502's Disk rows or the MPI's Slot rows (with nested Disk rows)
+/// doesn't grow the window; the user may drag it larger. egui frames a
+/// window around `last_content_size` alone (`Window::min_size` and
+/// `default_size` only offer the content room, they never stretch the
+/// frame), so the dialog claims this floor itself with `set_min_size`.
+const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 440.0);
+
 /// The "New machine" shortcut, consumed by both the direct-boot Machine
 /// menu ([`crate::CocoApp`]) and the manager's toolbar: ⌘N on macOS,
 /// Ctrl+N on Windows/Linux ([`egui::Modifiers::COMMAND`] resolves to the
@@ -429,9 +437,14 @@ impl NewVmDialog {
         egui::Window::new(crate::window_title(ctx, "New Machine"))
             .open(&mut open)
             .collapsible(false)
-            .resizable(false)
+            .resizable(true)
+            .min_size(DIALOG_MIN_SIZE)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
+                // The frame only ever hugs the content (see
+                // [`DIALOG_MIN_SIZE`]), so claim the floor — and any extra
+                // room from a drag-resize — as the content's own size.
+                ui.set_min_size(DIALOG_MIN_SIZE.max(ui.available_size()));
                 egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
                     egui::Grid::new("new_vm_grid")
                         .num_columns(2)

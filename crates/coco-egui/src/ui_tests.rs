@@ -300,6 +300,35 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     click(&mut harness, "Cancel");
 }
 
+/// The dialog opens at [`new_vm::DIALOG_MIN_SIZE`] and must never grow:
+/// revealing the FD-502's Disk rows or the MPI's full Slot+Disk block has
+/// to fit inside the minimum. The window node (labelled by its title)
+/// spans the whole frame, so its rect pins both size and position.
+#[test]
+fn new_dialog_window_never_resizes_when_rows_appear() {
+    let mut harness = boot_harness();
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    let baseline = harness.get_by_label("New Machine").rect();
+
+    select_combo_at(&mut harness, "None", 1, "FD-502");
+    assert_eq!(
+        harness.get_by_label("New Machine").rect(),
+        baseline,
+        "revealing the Disk rows must not resize the window"
+    );
+
+    select_combo(&mut harness, "FD-502", "MultiPak Interface");
+    select_combo_at(&mut harness, "Empty", 0, "FD-502");
+    assert!(harness.query_by_label("Disk 0:").is_some());
+    assert_eq!(
+        harness.get_by_label("New Machine").rect(),
+        baseline,
+        "the full MPI Slot+Disk block must fit inside the dialog's minimum size"
+    );
+    click(&mut harness, "Cancel");
+}
+
 #[test]
 fn new_dialog_cancel_leaves_the_machine_untouched() {
     let mut harness = boot_harness();
