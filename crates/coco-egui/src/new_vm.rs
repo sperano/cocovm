@@ -45,6 +45,22 @@ pub const NEW_MACHINE_SHORTCUT: egui::KeyboardShortcut =
 /// two hosts render the shared form with mismatched spacing.
 pub(crate) const FORM_GRID_SPACING: [f32; 2] = [24.0, 10.0];
 
+/// Horizontal shift of a nested sub-form (the FD-502's Disk rows, the
+/// MPI's Slot rows) into its parent's combo column — each nesting level
+/// steps this much further right.
+const SUB_FORM_INDENT: f32 = 24.0;
+
+/// One outer-grid row holding an indented sub-form: an empty label cell,
+/// then the sub-form shifted [`SUB_FORM_INDENT`] into the combo column.
+fn sub_form_row(ui: &mut egui::Ui, draw: impl FnOnce(&mut egui::Ui)) {
+    ui.label("");
+    ui.horizontal(|ui| {
+        ui.add_space(SUB_FORM_INDENT);
+        draw(ui);
+    });
+    ui.end_row();
+}
+
 const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
     match variant {
         MachineVariant::Coco1 => COCO1_RAM_CHOICES,
@@ -338,8 +354,8 @@ pub struct NewVmDialog {
     pub name: String,
     /// The Cartridge-row draft; reset to None on every open.
     pub cartridge: CartridgeChoice,
-    /// The MPI Slot drafts (Slot 1 inline with the Cartridge combo, the
-    /// rest on rows below); reset whenever the cartridge isn't the MPI.
+    /// The MPI Slot drafts (indented rows under the Cartridge combo);
+    /// reset whenever the cartridge isn't the MPI.
     pub mpi_slots: [SlotChoice; crate::MPI_SLOT_COUNT],
     /// The per-drive disk drafts, shown while a disk controller is
     /// reachable (bare FD-502, or FD-502 in an MPI slot); reset to None on
@@ -444,76 +460,34 @@ impl NewVmDialog {
                                 self.disks = std::array::from_fn(|_| MediaChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
-                            // Width of the cartridge combo, measured so the
-                            // Disk rows below can indent their "Disk N:"
-                            // pairs to line up under Disk 0's.
-                            let mut cartridge_combo_width = 0.0;
-                            ui.horizontal(|ui| {
-                                let combo = egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
-                                    .selected_text(cartridge_label(self.cartridge))
-                                    .show_ui(ui, |ui| {
-                                        for choice in [
-                                            CartridgeChoice::None,
-                                            CartridgeChoice::FD502,
-                                            CartridgeChoice::MPI,
-                                        ] {
-                                            ui.selectable_value(
-                                                &mut self.cartridge,
-                                                choice,
-                                                cartridge_label(choice),
-                                            );
-                                        }
-                                    });
-                                cartridge_combo_width = combo.response.rect.width();
-                                match self.cartridge {
-                                    CartridgeChoice::FD502 => self.disk_combo(ui, font, 0),
-                                    CartridgeChoice::MPI => self.slot_combo(ui, font, 0),
-                                    CartridgeChoice::None => {}
-                                }
-                            });
+                            egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
+                                .selected_text(cartridge_label(self.cartridge))
+                                .show_ui(ui, |ui| {
+                                    for choice in [
+                                        CartridgeChoice::None,
+                                        CartridgeChoice::FD502,
+                                        CartridgeChoice::MPI,
+                                    ] {
+                                        ui.selectable_value(
+                                            &mut self.cartridge,
+                                            choice,
+                                            cartridge_label(choice),
+                                        );
+                                    }
+                                });
                             ui.end_row();
 
-                            // Remaining Slot/Disk rows, aligned under the
-                            // inline pair: the indent stands in for the
-                            // cartridge combo plus the item spacing that
-                            // separates it from the label above
-                            // (`add_space` itself adds no spacing around
-                            // the gap).
-                            let indent = cartridge_combo_width + ui.spacing().item_spacing.x;
-                            let mut under_row = |dialog: &mut Self,
-                                                 ui: &mut egui::Ui,
-                                                 draw: &mut dyn FnMut(
-                                &mut Self,
-                                &mut egui::Ui,
-                            )| {
-                                ui.label("");
-                                ui.horizontal(|ui| {
-                                    ui.add_space(indent);
-                                    draw(dialog, ui);
-                                });
-                                ui.end_row();
-                            };
+                            // The cartridge's own rows nest below it as an
+                            // indented label+combo sub-form: the FD-502's
+                            // Disk rows directly, the MPI's four Slot rows
+                            // (with the Disk rows one level deeper, under
+                            // whichever slot holds the FD-502).
                             match self.cartridge {
                                 CartridgeChoice::FD502 => {
-                                    for drive in 1..crate::UI_DRIVES {
-                                        under_row(self, ui, &mut |d, ui| {
-                                            d.disk_combo(ui, font, drive)
-                                        });
-                                    }
+                                    sub_form_row(ui, |ui| self.disk_rows(ui, font));
                                 }
                                 CartridgeChoice::MPI => {
-                                    for slot in 1..crate::MPI_SLOT_COUNT {
-                                        under_row(self, ui, &mut |d, ui| {
-                                            d.slot_combo(ui, font, slot)
-                                        });
-                                    }
-                                    if self.drives_available() {
-                                        for drive in 0..crate::UI_DRIVES {
-                                            under_row(self, ui, &mut |d, ui| {
-                                                d.disk_combo(ui, font, drive)
-                                            });
-                                        }
-                                    }
+                                    sub_form_row(ui, |ui| self.slot_rows(ui, font));
                                 }
                                 CartridgeChoice::None => {}
                             }
@@ -569,6 +543,36 @@ impl NewVmDialog {
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
             CartridgeChoice::None => false,
         }
+    }
+
+    /// The MPI's four Slot rows as their own label+combo grid; the Disk
+    /// rows nest one level deeper under whichever slot holds the FD-502.
+    fn slot_rows(&mut self, ui: &mut egui::Ui, font: f32) {
+        egui::Grid::new("new_vm_slots")
+            .num_columns(2)
+            .spacing(FORM_GRID_SPACING)
+            .show(ui, |ui| {
+                for slot in 0..crate::MPI_SLOT_COUNT {
+                    self.slot_combo(ui, font, slot);
+                    ui.end_row();
+                    if self.mpi_slots[slot] == SlotChoice::FD502 {
+                        sub_form_row(ui, |ui| self.disk_rows(ui, font));
+                    }
+                }
+            });
+    }
+
+    /// The Disk rows as their own label+combo grid, one row per drive.
+    fn disk_rows(&mut self, ui: &mut egui::Ui, font: f32) {
+        egui::Grid::new("new_vm_disks")
+            .num_columns(2)
+            .spacing(FORM_GRID_SPACING)
+            .show(ui, |ui| {
+                for drive in 0..crate::UI_DRIVES {
+                    self.disk_combo(ui, font, drive);
+                    ui.end_row();
+                }
+            });
     }
 
     /// One "Slot N:" label + combo (Empty / FD-502), drawn while the MPI is
@@ -639,8 +643,9 @@ impl NewVmDialog {
     }
 
     /// One "Disk N:" label + combo, drawn while the FD-502 is selected
-    /// (Disk 0 to the right of the Cartridge combo, the rest on rows
-    /// below). "Blank" and "Select…" open native file dialogs on the spot
+    /// (indented rows under the Cartridge combo — one level deeper when
+    /// nested under an MPI slot). "Blank" and "Select…" open native file
+    /// dialogs on the spot
     /// (save-file and open-file respectively) — except the manager flow's
     /// "Blank" (`show_name_field`), which is auto-placed in the machine's
     /// artifact directory at create time and needs no path here. A

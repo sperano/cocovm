@@ -206,13 +206,19 @@ fn new_dialog_cartridge_row_inserts_fd502() {
         harness.query_by_label("Disk 1:").is_some(),
         "FD-502 selection must reveal the Disk 1 combo"
     );
-    // Disk 1's row indents past the cartridge combo so the drive pairs
-    // stack: both "Disk N:" labels start at the same x.
+    // The Disk rows are an indented sub-form under the Cartridge combo:
+    // both "Disk N:" labels start at the same x, shifted right of the
+    // combo's left edge.
     let disk0_x = harness.get_by_label("Disk 0:").rect().min.x;
     let disk1_x = harness.get_by_label("Disk 1:").rect().min.x;
     assert!(
         (disk0_x - disk1_x).abs() < 1.0,
         "Disk 1 ({disk1_x}) must line up under Disk 0 ({disk0_x})"
+    );
+    let cartridge_combo_x = harness.get_by_value("FD-502").rect().min.x;
+    assert!(
+        disk0_x > cartridge_combo_x,
+        "Disk 0 ({disk0_x}) must indent past the Cartridge combo ({cartridge_combo_x})"
     );
     click(&mut harness, "Create");
     assert!(
@@ -236,12 +242,30 @@ fn new_dialog_cartridge_row_inserts_fd502() {
         harness.query_by_label("Disk 0:").is_none(),
         "no Disk rows until an FD-502 is slotted"
     );
-    // All four slot combos read "Empty"; Slot 1 is inline on the cartridge
-    // row (topmost), so index 1 is Slot 2.
+    // All four slot combos read "Empty", stacked top to bottom, so index 1
+    // is Slot 2.
     select_combo_at(&mut harness, "Empty", 1, "FD-502");
     assert!(
         harness.query_by_label("Disk 0:").is_some(),
         "a slotted FD-502 must reveal the Disk rows"
+    );
+    // The Disk rows nest under the slot that holds the FD-502: indented
+    // past the Slot labels, between Slot 2 and Slot 3.
+    let disk0 = harness.get_by_label("Disk 0:").rect();
+    let slot2 = harness.get_by_label("Slot 2:").rect();
+    let slot3 = harness.get_by_label("Slot 3:").rect();
+    assert!(
+        disk0.min.x > slot2.min.x,
+        "Disk 0 ({}) must indent past the Slot labels ({})",
+        disk0.min.x,
+        slot2.min.x
+    );
+    assert!(
+        disk0.min.y > slot2.min.y && disk0.min.y < slot3.min.y,
+        "Disk 0 (y {}) must sit under its owning Slot 2 (y {}), above Slot 3 (y {})",
+        disk0.min.y,
+        slot2.min.y,
+        slot3.min.y
     );
     click(&mut harness, "Create");
     assert!(harness.state().mpi.is_some(), "creating with MPI must insert one");
