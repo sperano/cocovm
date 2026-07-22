@@ -48,13 +48,15 @@ pub(crate) const FORM_GRID_SPACING: [f32; 2] = [24.0, 10.0];
 /// Horizontal shift of a nested sub-form (the FD-502's Disk rows, the
 /// MPI's Slot rows) into its parent's combo column — each nesting level
 /// steps this much further right.
-const SUB_FORM_INDENT: f32 = 24.0;
+const SUB_FORM_INDENT: f32 = 12.0;
 
 /// One outer-grid row holding an indented sub-form: an empty label cell,
 /// then the sub-form shifted [`SUB_FORM_INDENT`] into the combo column.
+/// Top-aligned (`horizontal_top`): a plain `horizontal` vertically centers
+/// the tall nested grid, opening an oversized gap above its first row.
 fn sub_form_row(ui: &mut egui::Ui, draw: impl FnOnce(&mut egui::Ui)) {
     ui.label("");
-    ui.horizontal(|ui| {
+    ui.horizontal_top(|ui| {
         ui.add_space(SUB_FORM_INDENT);
         draw(ui);
     });

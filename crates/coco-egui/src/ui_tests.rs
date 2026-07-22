@@ -215,10 +215,24 @@ fn new_dialog_cartridge_row_inserts_fd502() {
         (disk0_x - disk1_x).abs() < 1.0,
         "Disk 1 ({disk1_x}) must line up under Disk 0 ({disk0_x})"
     );
-    let cartridge_combo_x = harness.get_by_value("FD-502").rect().min.x;
+    let cartridge_combo = harness.get_by_value("FD-502").rect();
     assert!(
-        disk0_x > cartridge_combo_x,
-        "Disk 0 ({disk0_x}) must indent past the Cartridge combo ({cartridge_combo_x})"
+        disk0_x > cartridge_combo.min.x,
+        "Disk 0 ({disk0_x}) must indent past the Cartridge combo ({})",
+        cartridge_combo.min.x
+    );
+    // The vertical gap above the Disk sub-form must stay the ordinary row
+    // gap — `horizontal_top` in `sub_form_row` exists precisely because a
+    // centering wrapper once pushed the block ~14px down.
+    let disk0_combo_top = harness
+        .get_all_by_value("None")
+        .map(|n| n.rect().min.y)
+        .filter(|y| *y > cartridge_combo.max.y)
+        .fold(f32::INFINITY, f32::min);
+    let gap = disk0_combo_top - cartridge_combo.max.y;
+    assert!(
+        gap <= new_vm::FORM_GRID_SPACING[1] + 1.0,
+        "gap above Disk 0 ({gap}) must not exceed the form's row spacing"
     );
     click(&mut harness, "Create");
     assert!(
