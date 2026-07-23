@@ -186,9 +186,16 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     let mut harness = boot_harness();
     assert!(harness.state_mut().machine.bus.cart.as_disk_cart().is_none());
 
-    // Default (None) leaves the port empty across a create.
+    // Default (None) leaves the port empty across a create. The HD (VHD)
+    // rows are always visible — a bus device, not cartridge hardware.
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
+    for drive in 0..UI_DRIVES {
+        assert!(
+            harness.query_by_label(&format!("HD {drive}")).is_some(),
+            "HD {drive} row must be visible with Cartridge = None"
+        );
+    }
     click(&mut harness, "Create");
     assert!(harness.state_mut().machine.bus.cart.as_disk_cart().is_none());
 
@@ -867,12 +874,14 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     click_containing(&mut harness, "New…");
     select_combo_at(&mut harness, "None", 1, "FD-502");
     // Screen order of the "None"-valued combos: Cassette (its row sits
-    // above Cartridge), then Disk 0, then Disk 1.
+    // above Cartridge), then Disk 0, then Disk 1, then HD 0, then HD 1.
     select_combo_at(&mut harness, "None", 1, "Blank");
-    // Disk 0 now reads "Blank"; the remaining "None"s are Cassette, Disk 1.
+    // Disk 0 now reads "Blank"; remaining "None"s: Cassette, Disk 1, HDs.
     select_combo_at(&mut harness, "None", 1, "Blank");
-    // And the cassette, now the only "None" left.
-    select_combo(&mut harness, "None", "Blank");
+    // The cassette (topmost remaining "None").
+    select_combo_at(&mut harness, "None", 0, "Blank");
+    // And HD 0 (now the topmost remaining "None", above HD 1).
+    select_combo_at(&mut harness, "None", 0, "Blank");
     click(&mut harness, "Create");
 
     assert_eq!(harness.state().entries.len(), 1);
@@ -881,7 +890,9 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
     assert_eq!(def.media.disk1.as_deref(), Some("disk1.dsk"));
     assert_eq!(def.media.tape.as_deref(), Some("tape.cas"));
-    for file in ["disk0.dsk", "disk1.dsk", "tape.cas"] {
+    assert_eq!(def.media.vhd0.as_deref(), Some("hd0.vhd"));
+    assert_eq!(def.media.vhd1, None, "HD 1 stayed None");
+    for file in ["disk0.dsk", "disk1.dsk", "tape.cas", "hd0.vhd"] {
         let blank = artifacts.path().join("coco-3").join(file);
         assert!(blank.is_file(), "blank image must exist at {}", blank.display());
         assert_eq!(

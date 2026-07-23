@@ -803,6 +803,26 @@ impl CocoApp {
         }
     }
 
+    /// Create a brand-new, empty VHD image at `path` and mount it in `drive`
+    /// ([`Self::insert_vhd`]'s blank sibling): a 0-byte file is a valid
+    /// 0-sector VHD, and `VhdImage::File` extends it on write. Refuses to
+    /// overwrite an existing file. Failures land in [`Self::cart_error`].
+    fn new_vhd(&mut self, drive: usize, path: PathBuf) {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => self.insert_vhd(drive, path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.cart_error = Some(format!(
+                    "{} already exists; use Insert VHD to mount an existing image, or \
+                     choose a different name",
+                    path.display()
+                ));
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("could not create {}: {e}", path.display()));
+            }
+        }
+    }
+
     /// Eject the VHD image in `drive`. No write-back: VHD writes already hit
     /// the backing file directly.
     fn eject_vhd(&mut self, drive: usize) {
@@ -1727,6 +1747,13 @@ impl CocoApp {
                         new_vm::MediaChoice::File(path) => self.insert_tape(path),
                         new_vm::MediaChoice::Blank(Some(path)) => self.new_tape(path),
                         new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
+                    }
+                    for (drive, choice) in spec.vhds.into_iter().enumerate() {
+                        match choice {
+                            new_vm::MediaChoice::File(path) => self.insert_vhd(drive, path),
+                            new_vm::MediaChoice::Blank(Some(path)) => self.new_vhd(drive, path),
+                            new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
+                        }
                     }
                     self.new_vm.close();
                 }

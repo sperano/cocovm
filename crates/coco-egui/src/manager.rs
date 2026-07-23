@@ -127,6 +127,11 @@ fn blank_disk_file(drive: usize) -> String {
 /// [`blank_disk_file`]'s cassette sibling, for `[media].tape`.
 const BLANK_TAPE_FILE: &str = "tape.cas";
 
+/// [`blank_disk_file`]'s VHD sibling, for `[media].vhdN`.
+fn blank_vhd_file(drive: usize) -> String {
+    format!("hd{drive}.vhd")
+}
+
 /// Default display name seeded into the "New…" dialog's Name field —
 /// [`MachineConfig::default`]'s model, the same default the bare-invocation
 /// direct-boot path (`main.rs`) and the dialog's own draft start from.
@@ -460,6 +465,16 @@ impl ManagerApp {
             return;
         };
         def.media.tape = recorded;
+        for (drive, choice) in spec.vhds.into_iter().enumerate() {
+            let Some(recorded) = self.record_media_choice(&slug, choice, blank_vhd_file(drive))
+            else {
+                return;
+            };
+            match drive {
+                0 => def.media.vhd0 = recorded,
+                _ => def.media.vhd1 = recorded,
+            }
+        }
 
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {

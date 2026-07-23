@@ -38,7 +38,7 @@ const DIALOG_MARGIN: i8 = 16;
 /// window around `last_content_size` alone (`Window::min_size` and
 /// `default_size` only offer the content room, they never stretch the
 /// frame), so the dialog claims this floor itself with `set_min_size`.
-const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 440.0);
+const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 500.0);
 
 /// The "New machine" shortcut, consumed by both the direct-boot Machine
 /// menu ([`crate::CocoApp`]) and the manager's toolbar: ⌘N on macOS,
@@ -201,6 +201,10 @@ pub struct NewMachineSpec {
     /// Only meaningful when [`Self::has_drives`].
     pub disks: [MediaChoice; crate::UI_DRIVES],
     pub tape: MediaChoice,
+    /// VHD hard-disk images. Always meaningful: the VHD is a bus device
+    /// (`$FF80-$FF86`, `SystemBus::vhd`), not cartridge hardware, so the
+    /// HD rows need no controller.
+    pub vhds: [MediaChoice; crate::UI_DRIVES],
 }
 
 impl NewMachineSpec {
@@ -373,6 +377,9 @@ pub struct NewVmDialog {
     pub disks: [MediaChoice; crate::UI_DRIVES],
     /// The Cassette-row draft; reset to None on every open.
     pub tape: MediaChoice,
+    /// The HD-row (VHD) drafts; reset to None on every open. Always
+    /// shown — see [`NewMachineSpec::vhds`].
+    pub vhds: [MediaChoice; crate::UI_DRIVES],
 }
 
 impl NewVmDialog {
@@ -387,6 +394,7 @@ impl NewVmDialog {
             mpi_slots: [SlotChoice::Empty; crate::MPI_SLOT_COUNT],
             disks: std::array::from_fn(|_| MediaChoice::None),
             tape: MediaChoice::None,
+            vhds: std::array::from_fn(|_| MediaChoice::None),
         }
     }
 
@@ -408,6 +416,7 @@ impl NewVmDialog {
         self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
         self.disks = std::array::from_fn(|_| MediaChoice::None);
         self.tape = MediaChoice::None;
+        self.vhds = std::array::from_fn(|_| MediaChoice::None);
         self.open = true;
     }
 
@@ -506,6 +515,15 @@ impl NewVmDialog {
                                 }
                                 CartridgeChoice::None => {}
                             }
+
+                            // The VHD hard disks, below the removable
+                            // media. Always shown, no cartridge required —
+                            // see [`NewMachineSpec::vhds`].
+                            for drive in 0..crate::UI_DRIVES {
+                                ui.label(egui::RichText::new(format!("HD {drive}")).size(font));
+                                self.vhd_combo(ui, drive);
+                                ui.end_row();
+                            }
                         });
 
                     if let Some(error) = &self.error {
@@ -535,6 +553,7 @@ impl NewVmDialog {
                                 mpi_slots: self.mpi_slots,
                                 disks: self.disks.clone(),
                                 tape: self.tape.clone(),
+                                vhds: self.vhds.clone(),
                             });
                         }
                         if ui.button("Cancel").clicked() {
@@ -653,6 +672,49 @@ impl NewVmDialog {
                         .pick_file()
                 {
                     self.tape = MediaChoice::File(path);
+                }
+            });
+    }
+
+    /// One "HD N"-row combo — the VHD hard-disk image for `drive`, with
+    /// the disks' None / Blank / Select… protocol ([`Self::disk_combo`]).
+    /// A blank is a 0-byte file: `VhdImage::File` extends on write, so no
+    /// preallocation is needed.
+    fn vhd_combo(&mut self, ui: &mut egui::Ui, drive: usize) {
+        egui::ComboBox::from_id_salt(("new_vm", "vhd", drive))
+            .selected_text(media_choice_text(&self.vhds[drive]))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(self.vhds[drive] == MediaChoice::None, "None")
+                    .clicked()
+                {
+                    self.vhds[drive] = MediaChoice::None;
+                }
+                if ui
+                    .selectable_label(matches!(self.vhds[drive], MediaChoice::Blank(_)), "Blank")
+                    .clicked()
+                {
+                    self.vhds[drive] = if self.show_name_field {
+                        MediaChoice::Blank(None)
+                    } else {
+                        match rfd::FileDialog::new()
+                            .add_filter("VHD image", &["vhd"])
+                            .set_file_name(format!("blank{drive}.vhd"))
+                            .save_file()
+                        {
+                            Some(path) => MediaChoice::Blank(Some(path)),
+                            None => MediaChoice::None,
+                        }
+                    };
+                }
+                if ui
+                    .selectable_label(matches!(self.vhds[drive], MediaChoice::File(_)), "Select…")
+                    .clicked()
+                    && let Some(path) = rfd::FileDialog::new()
+                        .add_filter("VHD image", &["vhd"])
+                        .pick_file()
+                {
+                    self.vhds[drive] = MediaChoice::File(path);
                 }
             });
     }
