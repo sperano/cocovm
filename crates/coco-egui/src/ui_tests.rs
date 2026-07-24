@@ -56,6 +56,16 @@ fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &st
     harness.step();
 }
 
+/// [`click`] with the secondary button — opens the machine-list rows'
+/// context menu.
+fn right_click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
+    harness.get_by_label(label).hover();
+    harness.step();
+    harness.get_by_label(label).click_secondary();
+    harness.step();
+    harness.step();
+}
+
 /// [`click`] matching by substring — for widgets whose accessible label
 /// carries decoration beyond the visible caption: submenu buttons ("MultiPak
 /// Interface ⏵") and menu rows with shortcut text ("New… ⌘N").
@@ -845,6 +855,70 @@ fn manager_list_shows_entries_and_selecting_shows_detail() {
         harness.state().detail_name(),
         Some("Alpha CoCo 3"),
         "switching rows must reseed the draft, not keep editing the old one"
+    );
+}
+
+/// Right-clicking a list row opens its context menu *without* moving the
+/// visual selection — the menu's items act on the row under the cursor, not
+/// on `selected` (user decision 2026-07-23). The one exception is "Show
+/// config", whose whole job is to select; it (like every pick) also closes
+/// the menu.
+#[test]
+fn manager_row_right_click_opens_context_menu_without_selecting() {
+    let entries = vec![sample_entry("alpha", "Alpha CoCo 3"), sample_entry("beta", "Beta CoCo 3")];
+    let mut harness = manager_harness(None, entries);
+    assert!(harness.query_by_label("Show config").is_none(), "menu must start closed");
+
+    click(&mut harness, "Alpha CoCo 3");
+    assert_eq!(harness.state().selected, Some(0));
+
+    right_click(&mut harness, "Beta CoCo 3");
+    assert_eq!(
+        harness.state().selected,
+        Some(0),
+        "right-click must leave the selection cue where it was"
+    );
+
+    click(&mut harness, "Show config");
+    assert_eq!(
+        harness.state().selected,
+        Some(1),
+        "Show config selects the right-clicked row, not the old selection"
+    );
+    assert!(harness.query_by_label("Show config").is_none(), "picking an item closes the menu");
+}
+
+/// The context menu's "Delete…" asks for confirmation first: Cancel keeps
+/// the machine untouched; Delete removes the list row and its `<slug>.toml`,
+/// and the selection follows the surviving row as indices shift.
+#[test]
+fn manager_row_context_menu_delete_confirms_and_removes() {
+    let dir = TempDir::new("ctx-delete");
+    let entries = vec![sample_entry("alpha", "Alpha CoCo 3"), sample_entry("beta", "Beta CoCo 3")];
+    for entry in &entries {
+        machine_def::save(dir.path(), &entry.slug, &entry.def).expect("seed definition files");
+    }
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), entries);
+
+    click(&mut harness, "Beta CoCo 3");
+    assert_eq!(harness.state().selected, Some(1));
+
+    right_click(&mut harness, "Alpha CoCo 3");
+    click(&mut harness, "Delete…");
+    click(&mut harness, "Cancel");
+    assert_eq!(harness.state().entries.len(), 2, "Cancel must keep the machine");
+    assert!(dir.path().join("alpha.toml").exists(), "Cancel must keep the definition file");
+
+    right_click(&mut harness, "Alpha CoCo 3");
+    click(&mut harness, "Delete…");
+    click(&mut harness, "Delete");
+    assert_eq!(harness.state().entries.len(), 1);
+    assert!(!dir.path().join("alpha.toml").exists(), "the definition file must be removed");
+    assert!(dir.path().join("beta.toml").exists(), "only the confirmed machine is deleted");
+    assert_eq!(
+        harness.state().detail_name(),
+        Some("Beta CoCo 3"),
+        "the selection must follow the surviving row as indices shift"
     );
 }
 

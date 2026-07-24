@@ -54,6 +54,14 @@ const ROW_MARGIN: f32 = 8.0;
 /// Corner rounding of a list row's selection/hover frame.
 const ROW_CORNER_RADIUS: f32 = 4.0;
 
+/// Hover text of the always-disabled Suspend action (detail-pane button and
+/// row context-menu item alike) — the *heavy* freeze that ships with the
+/// save-states milestone (`docs/plan-save-states.md`); the disabled control
+/// teaches the model before the feature exists.
+const SUSPEND_DISABLED_HOVER: &str =
+    "Freeze this machine to disk and free it — resume later, even after \
+     quitting or on another computer. Coming with save-states.";
+
 /// List-row / detail-pane status labels. Never persisted
 /// (`plan-machine-persistence.md` "Decisions" — "Runtime status … is never
 /// persisted"): purely a function of [`MachineEntry::vm`] at draw time, see
@@ -335,6 +343,16 @@ pub struct ManagerApp {
     /// Message from the last failed Save, shown under the Save/Revert row
     /// until the next attempt or a fresh selection.
     save_error: Option<String>,
+    /// Slug of the entry a context menu's "Delete…" was clicked for — a
+    /// confirmation modal ([`Self::draw_delete_confirmation`]) shows while
+    /// this is `Some`. Slug, not index: rows can shift under a pending
+    /// confirmation (another instance's file picked up on a future reload,
+    /// a Create landing before it alphabetically), and deleting the wrong
+    /// row is the one mistake this dialog exists to prevent.
+    pending_delete: Option<String>,
+    /// Message from the last failed delete, shown inside the confirmation
+    /// modal (which stays open for another try or a Cancel).
+    delete_error: Option<String>,
     /// The "New…" dialog, reused from the direct-boot flow
     /// (`new_vm::NewVmDialog::new_for_manager` turns its Name row on).
     /// `pub(crate)`: `ui_tests.rs` seeds ROM Pak picks directly — the
@@ -362,6 +380,8 @@ impl ManagerApp {
             selected: None,
             edit: None,
             save_error: None,
+            pending_delete: None,
+            delete_error: None,
             new_vm: new_vm::NewVmDialog::new_for_manager(),
         }
     }
@@ -586,10 +606,47 @@ impl ManagerApp {
             .rect;
 
         let click_id = ui.id().with(("machine_row", i));
-        if ui.interact(frame_rect, click_id, egui::Sense::click()).clicked() {
+        let response = ui.interact(frame_rect, click_id, egui::Sense::click());
+        if response.clicked() {
             self.selected = Some(i);
             self.save_error = None;
         }
+        // Per-row context menu. Its items act on the row under the cursor
+        // (this `i`), never on `self.selected` — right-click deliberately
+        // does not move the selection cue (user decision 2026-07-23); only
+        // "Show config" moves it, because showing the detail pane *is*
+        // selecting.
+        response.context_menu(|ui| {
+            let has_vm = self.entries[i].vm.is_some();
+            if ui.add_enabled(!has_vm, egui::Button::new("Start")).clicked() {
+                self.start_vm(i);
+                ui.close();
+            }
+            let _ = ui
+                .add_enabled(false, egui::Button::new("Suspend"))
+                .on_disabled_hover_text(SUSPEND_DISABLED_HOVER);
+            if ui.add_enabled(has_vm, egui::Button::new("Reset")).clicked() {
+                if let Some(vm) = self.entries[i].vm.as_mut() {
+                    vm.machine.reset();
+                }
+                ui.close();
+            }
+            if ui.add_enabled(has_vm, egui::Button::new("Stop")).clicked() {
+                self.stop_vm(i);
+                ui.close();
+            }
+            ui.separator();
+            if ui.button("Show config").clicked() {
+                self.selected = Some(i);
+                self.save_error = None;
+                ui.close();
+            }
+            ui.separator();
+            if ui.button("Delete…").clicked() {
+                self.pending_delete = Some(self.entries[i].slug.clone());
+                ui.close();
+            }
+        });
     }
 
     /// Right pane for the selected entry: its edit form.
@@ -669,16 +726,9 @@ impl ManagerApp {
             }
 
             ui.add_space(TRANSPORT_GROUP_GAP);
-            // Suspend is the *heavy* freeze — dump the whole machine to disk
-            // and resume much later, even on another computer. It ships with
-            // the save-states milestone (`docs/plan-save-states.md`); the
-            // disabled button teaches the model before the feature exists.
             let _ = ui
                 .add_enabled(false, egui::Button::new("Suspend"))
-                .on_disabled_hover_text(
-                    "Freeze this machine to disk and free it — resume later, even after \
-                     quitting or on another computer. Coming with save-states.",
-                );
+                .on_disabled_hover_text(SUSPEND_DISABLED_HOVER);
             if ui
                 .add_enabled(is_running.is_some(), egui::Button::new("Reset"))
                 .on_hover_text("Press the machine's reset button — the machine stays on")
@@ -803,6 +853,96 @@ impl ManagerApp {
         if let Some(mut vm) = self.entries[index].vm.take() {
             vm.flush_media();
         }
+    }
+
+    /// The confirmation modal behind the context menu's "Delete…"
+    /// ([`ManagerApp::pending_delete`]), drawn once per `update()`. Esc,
+    /// Cancel, and a click outside all dismiss without deleting; the confirm
+    /// button reads "Stop and Delete" when the machine is running, since
+    /// deleting stops it first. A failed delete reports its error inside the
+    /// modal and leaves it open.
+    fn draw_delete_confirmation(&mut self, ctx: &egui::Context) {
+        let Some(slug) = self.pending_delete.clone() else {
+            return;
+        };
+        let Some(index) = self.entries.iter().position(|e| e.slug == slug) else {
+            // The row vanished under the pending confirmation (see
+            // `pending_delete`'s doc) — nothing left to delete.
+            self.pending_delete = None;
+            return;
+        };
+        let running = self.entries[index].vm.is_some();
+        let name = self.entries[index].def.name.clone();
+        let mut dismissed = false;
+        let modal = egui::Modal::new(egui::Id::new("confirm_delete_machine")).show(ctx, |ui| {
+            ui.heading(format!("Delete “{name}”?"));
+            ui.add_space(DETAIL_SECTION_GAP);
+            ui.label(
+                "The machine's definition is removed. Its disk, tape, and other \
+                 media files stay on disk.",
+            );
+            if running {
+                ui.label(
+                    egui::RichText::new(
+                        "This machine is running — it will be shut down first, like \
+                         flipping the power switch; unsaved work inside it is lost.",
+                    )
+                    .strong(),
+                );
+            }
+            if let Some(err) = &self.delete_error {
+                ui.colored_label(ui.visuals().error_fg_color, err);
+            }
+            ui.add_space(DETAIL_SECTION_GAP);
+            ui.horizontal(|ui| {
+                let confirm = if running { "Stop and Delete" } else { "Delete" };
+                if ui.button(confirm).clicked() {
+                    self.delete_machine(index);
+                }
+                if ui.button("Cancel").clicked() {
+                    dismissed = true;
+                }
+            });
+        });
+        if dismissed || modal.should_close() {
+            self.pending_delete = None;
+            self.delete_error = None;
+        }
+    }
+
+    /// Confirmed delete of `entries[index]`: stop its VM if one is running
+    /// (same flush contract as the Stop button), remove its `<slug>.toml`,
+    /// and drop the row. Media/artifact files are deliberately left on disk
+    /// (the modal says so). Failure lands in [`Self::delete_error`] with the
+    /// entry kept, so the still-open modal can retry or cancel.
+    fn delete_machine(&mut self, index: usize) {
+        let Some(dir) = self.machines_dir.clone() else {
+            self.delete_error = Some(NO_CONFIG_DIR.to_string());
+            return;
+        };
+        let path = dir.join(format!("{}.toml", self.entries[index].slug));
+        // A file already gone (deleted externally since startup) is fine —
+        // the goal state "no definition on disk" is reached either way.
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                self.delete_error = Some(format!("{}: {e}", path.display()));
+                return;
+            }
+        }
+        self.stop_vm(index);
+        self.entries.remove(index);
+        match self.selected {
+            Some(s) if s == index => {
+                self.selected = None;
+                self.edit = None;
+            }
+            Some(s) if s > index => self.selected = Some(s - 1),
+            _ => {}
+        }
+        self.pending_delete = None;
+        self.delete_error = None;
     }
 
     /// Snapshot `entries[index]`'s running VM screen into its artifact dir
@@ -1091,6 +1231,7 @@ impl eframe::App for ManagerApp {
             }
         });
 
+        self.draw_delete_confirmation(ctx);
         self.refresh_due_thumbnails();
         self.draw_running_vms(ctx);
     }
