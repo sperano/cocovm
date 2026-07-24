@@ -18,11 +18,15 @@ use serde::{Deserialize, Serialize};
 pub const STROBE_BASE: u16 = 0xFFC0;
 pub const STROBE_LAST: u16 = 0xFFDF;
 
-/// $FF00–$FF5F: PIA0, PIA1, and cart SCS* — decoded by the bus, not `Sam`
-/// itself (`Sam::map` only reports that this range is I/O).
+/// $FF00–$FF7E: PIA0, PIA1, cart SCS* ($FF40–$FF5F), and the cart SCS*
+/// extension some cartridges decode ($FF60–$FF7E, e.g. the Sound/Speech
+/// Cartridge's $FF7D/$FF7E — `docs/cartridges.md` "Carts can decode
+/// addresses outside SCS") — decoded by the bus, not `Sam` itself (`Sam::map`
+/// only reports that this range is I/O).
 const IO_BASE: u16 = 0xFF00;
-/// $FF60–$FFBF: no GIME on these machines — open bus.
-const OPEN_BUS_BASE: u16 = 0xFF60;
+/// $FF7F–$FFBF: no GIME (hence no MPI-style `$FF7F` decode either) on these
+/// machines — open bus.
+const OPEN_BUS_BASE: u16 = 0xFF7F;
 const OPEN_BUS_LAST: u16 = 0xFFBF;
 
 /// $8000–$9FFF: Extended Color BASIC ROM window.
@@ -61,10 +65,11 @@ pub enum SamTarget {
     RomBas(usize),
     /// Offset from $C000 into the cartridge CTS* ROM window.
     Cart(usize),
-    /// PIA0 ($FF00–$FF1F), PIA1 ($FF20–$FF3F), cart SCS* ($FF40–$FF5F), or a
-    /// SAM control strobe ($FFC0–$FFDF) — the bus decodes further by address.
+    /// PIA0 ($FF00–$FF1F), PIA1 ($FF20–$FF3F), cart SCS* ($FF40–$FF5F) plus
+    /// its extension ($FF60–$FF7E), or a SAM control strobe ($FFC0–$FFDF) —
+    /// the bus decodes further by address.
     Io,
-    /// $FF60–$FFBF: no GIME registers exist on these machines.
+    /// $FF7F–$FFBF: no GIME registers exist on these machines.
     OpenBus,
 }
 
@@ -142,10 +147,10 @@ impl Sam {
             return SamTarget::Io; // $FFC0-$FFDF: SAM control strobes.
         }
         if (OPEN_BUS_BASE..=OPEN_BUS_LAST).contains(&addr) {
-            return SamTarget::OpenBus; // $FF60-$FFBF.
+            return SamTarget::OpenBus; // $FF7F-$FFBF.
         }
         if addr >= IO_BASE {
-            return SamTarget::Io; // $FF00-$FF5F: PIA0/PIA1/cart SCS.
+            return SamTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
         }
         if self.ty && self.is_64k() {
             // All-RAM mode extends the RAM decode through $FEFF.

@@ -52,7 +52,7 @@ fn cb1_falling_flag_first_appears_at_fs_falling_line_not_before() {
     let mut b = bus();
     // Default CRB ($FF03=0): falling edge selected, matching stock BASIC's
     // $34/$35 ROM setup.
-    let falling_line = VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco3);
+    let falling_line = VideoStandard::NTSC.fs_falling_line(MachineVariant::Coco3);
     for _ in 0..falling_line {
         b.hsync(); // drives CA1 only; CB1 must stay untouched all field
         assert_eq!(
@@ -76,8 +76,8 @@ fn cb1_rising_edge_selected_polls_high_at_fs_rising_line() {
     // control register (reg 3), unaffected by DDR_ACCESS, so its bit 7 can be
     // polled directly without disturbing port B's data/DDR access mode.
     b.write(PIA0_CRB, cr::C1_EDGE_HIGH);
-    let falling_line = VideoStandard::Ntsc.fs_falling_line(MachineVariant::Coco3);
-    let rising_line = VideoStandard::Ntsc.fs_rising_line(MachineVariant::Coco3);
+    let falling_line = VideoStandard::NTSC.fs_falling_line(MachineVariant::Coco3);
+    let rising_line = VideoStandard::NTSC.fs_rising_line(MachineVariant::Coco3);
     for line in 0..rising_line {
         b.hsync();
         if line == falling_line {
