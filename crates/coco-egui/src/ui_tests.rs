@@ -893,6 +893,67 @@ fn manager_create_with_mpi_records_the_peripheral() {
     assert!(contents.contains("mpi = true"), "TOML must record the MPI:\n{contents}");
 }
 
+/// Cartridge = Disto RTC: creating plugs the clock into the port (direct)
+/// or the chosen MPI slot — fully UI-driven, no file dialog involved.
+#[test]
+fn new_dialog_rtc_choice_inserts_the_clock() {
+    let mut harness = boot_harness();
+
+    // Straight in the port.
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    select_combo_at(&mut harness, "None", 1, "Disto RTC");
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().cart_error, None);
+    assert!(harness.state().rtc_direct, "the RTC must sit in the port");
+    assert!(harness.state_mut().machine.bus.cart.as_disto_rtc().is_some());
+
+    // Slotted in the MPI: Slot 3 (index 2 among the "Empty" combos).
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    select_combo_at(&mut harness, "Empty", 2, "Disto RTC");
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().cart_error, None);
+    assert!(harness.state().mpi.is_some(), "creating with MPI must insert one");
+    assert!(
+        matches!(harness.state().mpi.as_ref().unwrap().slots[2], MPISlot::DistoRTC),
+        "the clock must land in the chosen slot"
+    );
+    assert!(harness.state_mut().machine.bus.cart.as_disto_rtc().is_some());
+}
+
+/// Manager create with a Disto RTC — in the port or slotted — records
+/// `peripherals.rtc` (the schema keeps no slot layout; launch re-seats a
+/// slotted clock in its default slot).
+#[test]
+fn manager_create_with_rtc_records_the_peripheral() {
+    let dir = TempDir::new("create-rtc");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New…");
+    select_combo_at(&mut harness, "None", 1, "Disto RTC");
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert!(def.peripherals.rtc && !def.peripherals.mpi);
+    let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
+    assert!(contents.contains("rtc = true"), "TOML must record the RTC:\n{contents}");
+
+    // Slotted: rtc = true alongside mpi = true. Seeded directly — the
+    // detail pane behind the dialog shows its own "MultiPak Interface" /
+    // "Disto RTC" checkboxes, so the popup items' labels are ambiguous
+    // for the click helpers here.
+    click_containing(&mut harness, "New…");
+    harness.state_mut().new_vm.name = "slotted".to_string();
+    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::MPI;
+    harness.state_mut().new_vm.mpi_slots[0] = new_vm::SlotChoice::RTC;
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().entries.len(), 2);
+    let def = &harness.state().entries[1].def;
+    assert!(def.peripherals.rtc && def.peripherals.mpi);
+}
+
 /// Manager create with a ROM Pak — in the port or in an MPI slot — records
 /// `[media].cart`; two slotted paks exceed what the schema can represent
 /// and must fail the create. Picks are seeded directly (native file

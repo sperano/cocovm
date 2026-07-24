@@ -127,14 +127,18 @@ pub enum CartridgeChoice {
     /// A program ROM Pak image plugged straight into the port; picked with
     /// a file dialog on selection.
     RomPak(PathBuf),
+    /// Disto RTC plugged straight into the port. No boot ROM — pairs with
+    /// a VHD boot; for RTC + floppies use an MPI slot.
+    RTC,
     /// MultiPak Interface; the dialog then shows its four Slot rows, and
     /// the Disk rows only once a slot holds the FD-502.
     MPI,
 }
 
 /// One MultiPak slot's pick in the dialog's Slot rows (shown while the
-/// cartridge is the MPI). At most one slot holds the FD-502 — a second
-/// disk controller would fight the first for the SCS decode. ROM Paks
+/// cartridge is the MPI). At most one slot holds the FD-502 (a second
+/// disk controller would fight the first for the SCS decode) and at most
+/// one the Disto RTC (two would shadow each other at `$FF50`). ROM Paks
 /// carry no such conflict: any number of slots may hold one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum SlotChoice {
@@ -143,6 +147,8 @@ pub enum SlotChoice {
     FD502,
     /// A program ROM Pak image in this slot (see [`CartridgeChoice::RomPak`]).
     RomPak(PathBuf),
+    /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
+    RTC,
 }
 
 fn slot_label(slot: &SlotChoice) -> String {
@@ -150,6 +156,7 @@ fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::Empty => "Empty".to_string(),
         SlotChoice::FD502 => "FD-502".to_string(),
         SlotChoice::RomPak(path) => pak_file_name(path),
+        SlotChoice::RTC => "Disto RTC".to_string(),
     }
 }
 
@@ -158,6 +165,7 @@ fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::None => "None".to_string(),
         CartridgeChoice::FD502 => "FD-502".to_string(),
         CartridgeChoice::RomPak(path) => pak_file_name(path),
+        CartridgeChoice::RTC => "Disto RTC".to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),
     }
 }
@@ -234,7 +242,7 @@ impl NewMachineSpec {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
-            CartridgeChoice::None | CartridgeChoice::RomPak(_) => false,
+            CartridgeChoice::None | CartridgeChoice::RomPak(_) | CartridgeChoice::RTC => false,
         }
     }
 }
@@ -519,7 +527,9 @@ impl NewVmDialog {
                                 CartridgeChoice::MPI => {
                                     sub_form_row(ui, |ui| self.slot_rows(ui, font));
                                 }
-                                CartridgeChoice::None | CartridgeChoice::RomPak(_) => {}
+                                CartridgeChoice::None
+                                | CartridgeChoice::RomPak(_)
+                                | CartridgeChoice::RTC => {}
                             }
 
                             // The VHD hard disks, below the removable
@@ -581,7 +591,7 @@ impl NewVmDialog {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
-            CartridgeChoice::None | CartridgeChoice::RomPak(_) => false,
+            CartridgeChoice::None | CartridgeChoice::RomPak(_) | CartridgeChoice::RTC => false,
         }
     }
 
@@ -645,6 +655,12 @@ impl NewVmDialog {
                     self.cartridge = CartridgeChoice::RomPak(path);
                 }
                 if ui
+                    .selectable_label(self.cartridge == CartridgeChoice::RTC, "Disto RTC")
+                    .clicked()
+                {
+                    self.cartridge = CartridgeChoice::RTC;
+                }
+                if ui
                     .selectable_label(self.cartridge == CartridgeChoice::MPI, "MultiPak Interface")
                     .clicked()
                 {
@@ -653,10 +669,10 @@ impl NewVmDialog {
             });
     }
 
-    /// One "Slot N:" label + combo (Empty / FD-502 / ROM Pak…), drawn while
-    /// the MPI is selected. Claiming the FD-502 releases it from any other
-    /// slot — one disk controller max (see [`SlotChoice`]); ROM Paks may
-    /// fill any number of slots.
+    /// One "Slot N:" label + combo (Empty / FD-502 / ROM Pak… / Disto RTC),
+    /// drawn while the MPI is selected. Claiming the FD-502 or the RTC
+    /// releases it from any other slot — one of each max (see
+    /// [`SlotChoice`]); ROM Paks may fill any number of slots.
     fn slot_combo(&mut self, ui: &mut egui::Ui, font: f32, slot: usize) {
         ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
         egui::ComboBox::from_id_salt(("new_vm", "mpi_slot", slot))
@@ -688,6 +704,18 @@ impl NewVmDialog {
                     && let Some(path) = rom_pak_file_dialog().pick_file()
                 {
                     self.mpi_slots[slot] = SlotChoice::RomPak(path);
+                }
+                if ui
+                    .selectable_label(self.mpi_slots[slot] == SlotChoice::RTC, "Disto RTC")
+                    .clicked()
+                {
+                    // One clock max: two would shadow each other at $FF50.
+                    for other in &mut self.mpi_slots {
+                        if *other == SlotChoice::RTC {
+                            *other = SlotChoice::Empty;
+                        }
+                    }
+                    self.mpi_slots[slot] = SlotChoice::RTC;
                 }
             });
     }

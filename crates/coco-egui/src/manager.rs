@@ -451,6 +451,11 @@ impl ManagerApp {
         // it in the last slot.
         def.peripherals.fd502 = spec.has_drives();
         def.peripherals.mpi = spec.cartridge == new_vm::CartridgeChoice::MPI;
+        // Like fd502: the schema has no slot layout, so a slotted RTC is
+        // recorded as rtc = true and launch_machine re-seats it in its
+        // default slot.
+        def.peripherals.rtc = spec.cartridge == new_vm::CartridgeChoice::RTC
+            || spec.mpi_slots.contains(&new_vm::SlotChoice::RTC);
         // A ROM Pak — in the port or slotted in the MPI — is recorded as
         // [media].cart. The schema holds a single pak and no slot layout
         // (launch_machine re-seats a slotted one in slot 0), so more than

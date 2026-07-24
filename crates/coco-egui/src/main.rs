@@ -1725,6 +1725,7 @@ impl CocoApp {
                     match spec.cartridge {
                         new_vm::CartridgeChoice::None => {}
                         new_vm::CartridgeChoice::RomPak(path) => self.insert_cartridge(path),
+                        new_vm::CartridgeChoice::RTC => self.insert_rtc(),
                         new_vm::CartridgeChoice::FD502 => {
                             if let Err(e) = self.ensure_disk_controller() {
                                 self.cart_error = Some(e);
@@ -1740,6 +1741,7 @@ impl CocoApp {
                                     new_vm::SlotChoice::RomPak(path) => {
                                         self.mpi_insert_rompak(slot, path.clone());
                                     }
+                                    new_vm::SlotChoice::RTC => self.mpi_insert_rtc(slot),
                                     new_vm::SlotChoice::Empty => {}
                                 }
                             }
