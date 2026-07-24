@@ -124,24 +124,32 @@ pub struct FieldScan {
     /// skipped — a mid-frame COCO flip waits for the next field, like MAME's
     /// `m_legacy_video`.
     pub legacy: bool,
-    /// Physical address of the current data row's first byte. Seeded from the
-    /// vertical-offset registers; advances by the current line's live pitch
-    /// once per LPR lines (MAME `record_full_body_scanline`).
-    row_base: usize,
+    /// Address of the current data row's first byte: physical (from the
+    /// vertical-offset registers) for GIME-native fields, the 16-bit logical
+    /// SAM page base for legacy fields (read through the bus/MMU). Advances
+    /// by the current line's live pitch once per LPR lines (MAME
+    /// `record_full_body_scanline`).
+    pub(crate) row_base: usize,
     /// Scan line within the current data row: the smooth-scroll phase and,
     /// in text modes, the glyph row index — one shared counter, like MAME's
     /// `m_line_in_row`.
-    line_in_row: usize,
+    pub(crate) line_in_row: usize,
 }
 
 impl FieldScan {
-    /// Latch the per-field register group (MAME `new_frame`).
+    /// Latch the per-field register group (MAME `new_frame`). Legacy fields
+    /// seed from the SAM-compat page base with `line_in_row` 0 (MAME:
+    /// `m_line_in_row = COCO ? 0 : vsc`).
     pub fn latch(g: &GIME, legacy: bool) -> Self {
         let vsc = (g.vertical_scroll & 0x0F) as usize;
         let lpr = g.lines_per_row();
         Self {
             legacy,
-            row_base: g.video_base(),
+            row_base: if legacy {
+                g.sam_display_base() as usize
+            } else {
+                g.video_base()
+            },
             line_in_row: if legacy || vsc >= lpr { 0 } else { vsc },
         }
     }

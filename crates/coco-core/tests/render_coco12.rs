@@ -263,6 +263,38 @@ fn sample_cell(
     out
 }
 
+/// [`sample_cell`] for the CoCo 3, whose legacy modes render on the
+/// canonical 640×240 raster: non-wide 512 px body behind a 64 px border
+/// (native pixels doubled, so a cell pixel spans 2 canvas px — the left one
+/// is sampled), body top at row 25 (LPF=%00).
+fn sample_cell_canonical(
+    fb: &[u8],
+    row: usize,
+    col: usize,
+    on_color: [u8; 4],
+    off_color: [u8; 4],
+) -> [[bool; CELL_W]; CELL_H] {
+    use coco_core::raster::{CANVAS_W, NON_WIDE_BORDER_X};
+    const TOP: usize = 25;
+    let mut out = [[false; CELL_W]; CELL_H];
+    for (cy, row_out) in out.iter_mut().enumerate() {
+        for (cx, bit) in row_out.iter_mut().enumerate() {
+            let x = NON_WIDE_BORDER_X + (col * CELL_W + cx) * 2;
+            let y = TOP + row * CELL_H + cy;
+            let i = (y * CANVAS_W + x) * 4;
+            let p: [u8; 4] = fb[i..i + 4].try_into().unwrap();
+            *bit = if p == on_color {
+                true
+            } else if p == off_color {
+                false
+            } else {
+                panic!("unexpected colour {p:?} at cell ({row},{col}) px ({cx},{cy})");
+            };
+        }
+    }
+    out
+}
+
 /// Decode a raw font row byte array into the same bit-grid shape
 /// [`sample_cell`] produces (leftmost pixel = bit mask `0x80 >> col`,
 /// matching `video.rs::blit_cell`).
@@ -447,7 +479,7 @@ fn coco3_compat_text_draws_gime_font_not_either_vdg_font() {
     m.bus.write(COCO3_SCREEN_BASE, CODE_O);
     m.run_field();
 
-    let cell = sample_cell(&m.framebuffer, 0, 0, GIME_WHITE_RGBA, GIME_BLACK_RGBA);
+    let cell = sample_cell_canonical(&m.framebuffer, 0, 0, GIME_WHITE_RGBA, GIME_BLACK_RGBA);
 
     assert_eq!(
         cell,
@@ -476,7 +508,7 @@ fn coco3_compat_text_true_lowercase_uses_gime_lowercase_font() {
     // True lowercase swaps fg/bg relative to the normal non-inverse mapping:
     // "on" pixels draw in the background colour (black), "off" pixels in
     // the foreground colour (white) — see `video.rs::resolve_alpha_cell`.
-    let cell = sample_cell(&m.framebuffer, 0, 0, GIME_BLACK_RGBA, GIME_WHITE_RGBA);
+    let cell = sample_cell_canonical(&m.framebuffer, 0, 0, GIME_BLACK_RGBA, GIME_WHITE_RGBA);
     assert_eq!(
         cell,
         glyph_bits(&GIME_LOWER_A_GLYPH),

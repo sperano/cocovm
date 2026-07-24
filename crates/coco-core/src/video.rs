@@ -239,6 +239,117 @@ fn resolve_alpha_cell(
     }
 }
 
+/// PIA1 $FF22 bit 6 (GM2) and bit 5 (GM1), used by the CoCo 3 legacy border
+/// rule below.
+const VDG_GM2: u8 = 0x40;
+const VDG_GM1: u8 = 0x20;
+
+/// GIME 6-bit colour values the CoCo 3 legacy border resolves to (MAME
+/// `gime.cpp` `update_border`, legacy branch).
+const BORDER6_BLACK: u8 = 0x00;
+const BORDER6_GREEN: u8 = 0x12;
+const BORDER6_ORANGE: u8 = 0x26;
+const BORDER6_WHITE: u8 = 0x3F;
+
+/// The CoCo 3 legacy-mode border colour as a GIME 6-bit value, from the live
+/// $FF22 (MAME `gime.cpp` `update_border`): graphics borders are green
+/// (CSS=0) or white (CSS=1); the GM2-without-GM1 text variant borders green
+/// or orange; every other text/semigraphics mode borders black. (The CoCo
+/// 1/2 path resolves its border from the fixed VDG palette instead — see
+/// [`vdg_graphics_border_index`]/[`TEXT_BORDER_INDEX`].)
+pub fn legacy_border_value(ff22: u8) -> u8 {
+    let css = ff22 & VDG_CSS != 0;
+    if ff22 & VDG_AG != 0 {
+        if css { BORDER6_WHITE } else { BORDER6_GREEN }
+    } else if ff22 & VDG_GM2 != 0 && ff22 & VDG_GM1 == 0 {
+        if css { BORDER6_ORANGE } else { BORDER6_GREEN }
+    } else {
+        BORDER6_BLACK
+    }
+}
+
+/// Paint one scan line of the legacy 32-column text screen into `out`
+/// (an active-area pixel span), duplicating each native pixel `xscale`
+/// times. `row_bytes` is the 32 screen bytes of the current character row;
+/// `glyph_row` the scan line within it (`0..CELL_H`). Cell resolution
+/// (alpha vs SG4, inverse, true lowercase) matches [`render_text`], which
+/// shares [`resolve_alpha_cell`].
+pub fn paint_legacy_text_line(
+    row_bytes: &[u8],
+    palette: &[[u8; 4]; PALETTE_LEN],
+    generator: AlphaGenerator,
+    ff22: u8,
+    glyph_row: usize,
+    xscale: usize,
+    out: &mut [u8],
+) {
+    let fg = palette[TEXT_FG_INDEX];
+    let bg = palette[TEXT_BG_INDEX];
+    let mut x = 0;
+    for col in 0..COLS {
+        let code = row_bytes.get(col).copied().unwrap_or(0);
+        if code & SEMIGRAPHICS_BIT != 0 {
+            // Semigraphics 4: upper blocks on rows 0..CELL_H/2, lower below.
+            let on = palette[((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize];
+            let off = palette[SG4_OFF_INDEX];
+            let bottom = glyph_row >= CELL_H / 2;
+            for cx in 0..CELL_W {
+                let right = cx >= CELL_W / 2;
+                let block = match (bottom, right) {
+                    (false, false) => SG4_UPPER_LEFT,
+                    (false, true) => SG4_UPPER_RIGHT,
+                    (true, false) => SG4_LOWER_LEFT,
+                    (true, true) => SG4_LOWER_RIGHT,
+                };
+                let color = if code & block != 0 { on } else { off };
+                paint_px(out, &mut x, xscale, color);
+            }
+        } else {
+            let (cell_fg, cell_bg, glyph) = resolve_alpha_cell(generator, ff22, code, fg, bg);
+            let bits = glyph.get(glyph_row).copied().unwrap_or(0);
+            for cx in 0..CELL_W {
+                let color = if bits & (0x80 >> cx) != 0 { cell_fg } else { cell_bg };
+                paint_px(out, &mut x, xscale, color);
+            }
+        }
+    }
+}
+
+/// Paint one scan line of a legacy VDG graphics (PMODE) row into `out` (an
+/// active-area pixel span). `row_data` is the current RAM row's bytes;
+/// each logical pixel is duplicated `xscale` times (`xscale` already folds
+/// the mode's own doubling into the canvas width).
+pub fn paint_legacy_graphics_line(
+    row_data: &[u8],
+    mode: &VdgGraphicsMode,
+    colors: &[[u8; 4]],
+    xscale: usize,
+    out: &mut [u8],
+) {
+    let pixels_per_byte = 8 / mode.bpp;
+    let mask = (1u8 << mode.bpp) - 1;
+    let mut x = 0;
+    for bx in 0..mode.bytes_per_row {
+        let byte = row_data.get(bx).copied().unwrap_or(0);
+        for j in 0..pixels_per_byte {
+            // Pixels are packed MSB-first within the byte.
+            let shift = 8 - mode.bpp * (j + 1);
+            let value = ((byte >> shift) & mask) as usize;
+            let color = colors[value.min(colors.len() - 1)];
+            paint_px(out, &mut x, xscale, color);
+        }
+    }
+}
+
+/// Write one native pixel as `xscale` canvas pixels at `*x`, advancing it.
+fn paint_px(out: &mut [u8], x: &mut usize, xscale: usize, color: [u8; 4]) {
+    for px in out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
+    {
+        px.copy_from_slice(&color);
+    }
+    *x += xscale;
+}
+
 /// Render the text screen (`SCREEN_LEN` bytes) into `fb` (`FB_W*FB_H*4` bytes).
 ///
 /// `palette` is the resolved 16-entry GIME palette (RGBA). Each byte is either an
