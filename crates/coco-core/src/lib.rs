@@ -24,6 +24,7 @@ pub mod keyboard;
 pub mod orch90;
 pub mod pia;
 pub mod printer;
+pub mod raster;
 pub mod rom_db;
 pub mod rs232;
 pub mod rtc;
@@ -129,6 +130,13 @@ pub struct Machine {
     /// multiplier the end-of-line GIME timer tick uses. Meaningful only once a
     /// line has begun; initialized to 0.
     line_budget: u32,
+    /// Per-field video scanout state (CoCo 3 only), latched at the top of each
+    /// field like MAME `new_frame`: the legacy-vs-GIME switch, the video base,
+    /// and the smooth-scroll seed. `None` until the first field's first
+    /// scanline completes. GIME-native fields paint the canonical raster line
+    /// by line through this ([`gime_video::paint_scanline`]); legacy fields
+    /// keep the whole-frame snapshot path in [`Machine::render_field`].
+    field_scan: Option<gime_video::FieldScan>,
 }
 
 /// Cap on buffered audio samples (~8 fields); beyond this the buffer resets
@@ -183,6 +191,7 @@ impl Machine {
             line: 0,
             line_cycles_spent: 0,
             line_budget: 0,
+            field_scan: None,
         }
     }
 
@@ -419,6 +428,7 @@ impl Machine {
         if self.line == fs_rising_line {
             self.bus.fs_rising();
         }
+        self.render_scanline();
         // One speaker sample per scanline (~15.7 kHz), self-capping when
         // nothing drains it.
         if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
@@ -613,33 +623,79 @@ impl Machine {
         }
     }
 
-    /// Render one video field into `framebuffer`, dispatching on the current mode.
+    /// Paint the current scanline of the canonical raster (Option B,
+    /// `docs/plan-per-scanline-video.md`), called from [`Machine::end_of_line`]
+    /// at every line so mid-frame register writes take effect on the next line.
+    ///
+    /// At line 0 the per-field register group is latched (MAME `new_frame`):
+    /// the INIT0 COCO switch, the video base, and the smooth-scroll seed —
+    /// one line-time later than MAME's field start, within the plan's
+    /// line-granular contract. Only GIME-native fields (CoCo 3, COCO=0) paint
+    /// here; legacy fields keep the whole-frame path in
+    /// [`Machine::render_field`], and CoCo 1/2 has no GIME to latch at all.
+    fn render_scanline(&mut self) {
+        if self.config.variant != MachineVariant::Coco3 {
+            return;
+        }
+        if self.line == 0 {
+            let legacy = self.bus.gime.init0 & gime::init0::COCO != 0;
+            self.field_scan = Some(gime_video::FieldScan::latch(&self.bus.gime, legacy));
+            if !legacy {
+                self.framebuffer.resize(
+                    raster::CANVAS_W * raster::CANVAS_H * BYTES_PER_PIXEL,
+                    0,
+                );
+                self.fb_width = raster::CANVAS_W as u32;
+                self.fb_height = raster::CANVAS_H as u32;
+            }
+        }
+        let row = self.line as usize;
+        let Some(scan) = self.field_scan.as_mut() else {
+            return;
+        };
+        if scan.legacy || row >= raster::CANVAS_H {
+            return; // legacy field, or blanking lines 240..262
+        }
+        // Blink phase is toggled by the GIME interval timer, which BASIC
+        // programs at hi-res text setup (SEB Unravelled II).
+        let blink_on = self.bus.gime.blink_state;
+        gime_video::paint_scanline(
+            &self.bus.gime,
+            &self.bus.ram,
+            scan,
+            blink_on,
+            row,
+            &mut self.framebuffer,
+        );
+    }
+
+    /// Current scanline within the field (`0..lines_per_field`): the canonical
+    /// raster row being painted (rows ≥ 240 are vertical blanking). Exposed
+    /// for scanline-timed tests and debug UI.
+    pub fn scanline(&self) -> u32 {
+        self.line
+    }
+
+    /// Render one video field into `framebuffer` at field end. Only legacy
+    /// (VDG-compatible) fields render here — a whole-frame snapshot, the
+    /// pre-Option-B behaviour. GIME-native fields were already painted line
+    /// by line ([`Machine::render_scanline`]) and are complete by the time
+    /// the field wraps. Which path a field uses follows the field-latched
+    /// COCO switch, not the live registers (MAME `m_legacy_video`).
     fn render_field(&mut self) {
-        match self.video_mode() {
-            VideoMode::CocoText => self.render_coco_text(),
-            VideoMode::CocoGraphics => self.render_coco_graphics(),
-            VideoMode::GimeText => {
-                // Blink phase is toggled by the GIME interval timer, which
-                // BASIC programs at hi-res text setup (SEB Unravelled II).
-                let blink_on = self.bus.gime.blink_state;
-                let (w, h) = gime_video::render_text(
-                    &self.bus.gime,
-                    &self.bus.ram,
-                    blink_on,
-                    &mut self.framebuffer,
-                );
-                self.fb_width = w as u32;
-                self.fb_height = h as u32;
-            }
-            VideoMode::GimeGraphics => {
-                let (w, h) = gime_video::render_graphics(
-                    &self.bus.gime,
-                    &self.bus.ram,
-                    &mut self.framebuffer,
-                );
-                self.fb_width = w as u32;
-                self.fb_height = h as u32;
-            }
+        let legacy_field = self
+            .field_scan
+            .as_ref()
+            .map_or(true, |scan| scan.legacy);
+        if !legacy_field {
+            return;
+        }
+        // Legacy dispatch is the VDG A/G bit alone — even if a mid-field COCO
+        // flip makes `video_mode()` read GIME-native, this field stays legacy.
+        if self.bus.pia1.b.output & video::VDG_AG != 0 {
+            self.render_coco_graphics();
+        } else {
+            self.render_coco_text();
         }
     }
 
