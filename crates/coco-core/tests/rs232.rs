@@ -244,11 +244,13 @@ fn eprom_window_decodes_12_bits_and_wraps() {
 
 // ---- Multi-Pak Interface routing ---------------------------------------------
 
-/// Through an MPI the ACIA is reachable only while its slot is SCS-selected
-/// (`MultiPak::read/write` route to `scs_slot()` only) — the documented
-/// limitation from the plan's risk list.
+/// Through an MPI the ACIA stays reachable regardless of the slot select:
+/// the 6551 decodes the full address bus in the `$FF60-$FF7E` extension
+/// window, which the MPI does not switch (only SCS*/CTS*/CART* are
+/// per-slot; address and data buses are common to every slot, so
+/// `MultiPak::read/write` broadcast this range).
 #[test]
-fn mpi_routes_acia_registers_by_scs_slot() {
+fn mpi_extension_window_ignores_the_slot_select() {
     let mut bus = bus();
     let mut mp = MultiPak::new(0);
     mp.insert(0, Box::new(DeluxeRs232::new()));
@@ -258,9 +260,9 @@ fn mpi_routes_acia_registers_by_scs_slot() {
     assert_eq!(bus.read(ACIA_COMMAND), command::DTR);
 
     // Move the select register to slot 2 (both SCS and CTS fields): the
-    // pak in slot 0 is no longer addressed.
+    // pak in slot 0 still answers — the extension window is not switched.
     bus.write(0xFF7F, mpi::SWITCH_VALUES[2]);
-    assert_eq!(bus.read(ACIA_COMMAND), IO_OPEN_BUS);
+    assert_eq!(bus.read(ACIA_COMMAND), command::DTR);
 }
 
 /// CART* through the MPI follows the CTS slot select, like `rom_read` and

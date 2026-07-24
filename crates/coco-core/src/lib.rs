@@ -3,6 +3,7 @@
 //! See `DESIGN.md` §1.
 
 pub mod acia6551;
+pub mod ay8913;
 pub mod bitbanger;
 pub mod bus;
 pub mod cart;
@@ -25,12 +26,13 @@ pub mod rs232;
 pub mod rtc;
 pub mod sam;
 pub mod serial;
+pub mod ssc;
 pub mod video;
 pub mod vhd;
 pub mod wd1773;
 
 pub use bus::SystemBus;
-pub use config::{MachineConfig, MachineVariant, MemorySize, VdgVariant, VideoStandard};
+pub use config::{MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 pub use gime::{GIME, MonitorType};
 
 use mc6809::{Bus, MC6809};
@@ -513,8 +515,8 @@ impl Machine {
         let generator = match self.config.variant {
             MachineVariant::Coco3 => video::AlphaGenerator::Gime,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
-                VdgVariant::Mc6847 => video::AlphaGenerator::Mc6847,
-                VdgVariant::Mc6847T1 => video::AlphaGenerator::Mc6847T1,
+                VDGVariant::MC6847 => video::AlphaGenerator::Mc6847,
+                VDGVariant::MC6847T1 => video::AlphaGenerator::Mc6847T1,
             },
         };
         video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);

@@ -85,6 +85,16 @@ pub trait Cartridge {
     fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
         None
     }
+    /// Downcast to the [`crate::ssc::Ssc`] Sound/Speech Cartridge, if that's
+    /// what this cartridge is — mirrors [`Cartridge::as_disk_cart`]/
+    /// [`Cartridge::as_multipak`]: tests and any future debug tooling reach
+    /// direct AY-3-8913 register access
+    /// ([`crate::ssc::Ssc::ay_write`]/[`crate::ssc::Ssc::ay_read`]) behind
+    /// the trait object, bypassing the `$FF7D`/`$FF7E` host-byte protocol
+    /// (see `crate::ssc`'s module doc comment).
+    fn as_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
+        None
+    }
     /// Read the Multi-Pak Interface's own select register (`$FF7F`). Not
     /// routed through [`Cartridge::read`]/[`Cartridge::write`]: those carry
     /// the SCS I/O window ($FF40-$FF5F), and `$FF7F` must reach the MPI
@@ -102,6 +112,24 @@ pub trait Cartridge {
     /// from the front-panel switch and forwards the reset to all 4 slots;
     /// every other cartridge has nothing reset-sensitive to do.
     fn reset(&mut self) {}
+    /// The cartridge's own analog audio output for this sample tick, in the
+    /// same amplitude convention as
+    /// [`SystemBus::sound_sample`](crate::bus::SystemBus::sound_sample) (0.0
+    /// silence, full scale comparable to that method's other sources).
+    /// Default: silent — most cartridges (ROM paks, the FD-502, the VHD
+    /// interface) have no audio output of their own. The Sound/Speech
+    /// Cartridge ([`crate::ssc::Ssc`]) is the one device that overrides
+    /// this.
+    ///
+    /// Called exactly once per `sound_sample`, regardless of whether the
+    /// CoCo's sound mux currently selects the cartridge input: some devices
+    /// (the SSC's Sound Activity Circuit) need to observe their own output
+    /// continuously, independent of what's actually reaching the speaker.
+    /// Takes `&mut self` because that continuous observation is itself
+    /// stateful (an envelope follower).
+    fn audio_sample(&mut self) -> f32 {
+        0.0
+    }
 }
 
 /// No cartridge inserted.
@@ -363,13 +391,41 @@ impl MultiPak {
     }
 }
 
+/// Standard SCS* window (`$FF40-$FF5F`): routed only to the SCS-selected
+/// slot, same as `CART*`/`CTS*` follow the CTS-selected slot. The `$FF60-
+/// $FF7E` extension some carts decode (`docs/cartridges.md` "Carts can
+/// decode addresses outside SCS") is NOT switched by the MPI — the address
+/// and data buses are common to every slot, only SCS*/CTS*/CART* are
+/// per-slot — so it's handled separately below.
+const SCS_BASE: u16 = 0xFF40;
+const SCS_LAST: u16 = 0xFF5F;
+
 impl Cartridge for MultiPak {
     fn read(&mut self, addr: u16) -> u8 {
-        self.slots[self.scs_slot()].read(addr)
+        if (SCS_BASE..=SCS_LAST).contains(&addr) {
+            return self.slots[self.scs_slot()].read(addr);
+        }
+        // $FF60-$FF7E: broadcast to every slot and return the first
+        // non-open-bus response. Real hardware would bus-fight if two
+        // plugged-in carts both decoded the same extension address; in
+        // practice at most one ever does.
+        self.slots
+            .iter_mut()
+            .map(|slot| slot.read(addr))
+            .find(|&val| val != IO_OPEN_BUS)
+            .unwrap_or(IO_OPEN_BUS)
     }
 
     fn write(&mut self, addr: u16, val: u8) {
-        self.slots[self.scs_slot()].write(addr, val);
+        if (SCS_BASE..=SCS_LAST).contains(&addr) {
+            self.slots[self.scs_slot()].write(addr, val);
+            return;
+        }
+        // $FF60-$FF7E: every slot sees the write (see `read`'s comment) —
+        // whichever cart(s) decode this address react to it.
+        for slot in &mut self.slots {
+            slot.write(addr, val);
+        }
     }
 
     fn rom_read(&mut self, addr: u16) -> u8 {
@@ -433,6 +489,11 @@ impl Cartridge for MultiPak {
         self.slots.iter_mut().find_map(|slot| slot.as_disto_rtc())
     }
 
+    fn as_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
+        self.slots.iter_mut().find_map(|slot| slot.as_ssc())
+    }
+
+
     fn control_read(&mut self) -> u8 {
         self.select | mpi::READBACK_OR_MASK
     }
@@ -441,6 +502,13 @@ impl Cartridge for MultiPak {
         // A write replaces the entire byte — no nibble merge (spec).
         self.select = val;
         self.switch_blocked = true;
+    }
+
+    /// All 4 slots' audio outputs are wire-summed through the MPI's shared
+    /// analog bus, same as a real passive backplane — every slot, not just
+    /// the SCS/CTS-selected one(s).
+    fn audio_sample(&mut self) -> f32 {
+        self.slots.iter_mut().map(|slot| slot.audio_sample()).sum()
     }
 
     /// Reloads `select` from the front-panel switch and lifts any software

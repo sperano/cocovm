@@ -23,6 +23,9 @@ enable-ansi-support = "0.3.1"
 # MIT OR Apache-2.0. Per-user config/data directories: XDG on Linux & macOS,
 # native convention on Windows (`paths.rs`).
 etcetera = "0.11.0"
+# MIT OR Apache-2.0. serde derives for the machine-definition DTOs
+# (`machine_def.rs`); coco-core already depends on serde without `derive`.
+serde = { version = "1", features = ["derive"] }
 # Both MIT OR Apache-2.0 (GPL-3.0-or-later-compatible); see
 # `paper_export.rs`'s module doc comment for the PNG/PDF dependency
 # rationale (T6). `flate2` is already resolved transitively via `image`'s
@@ -40,6 +43,9 @@ tar = "0.4.46"
 # level tags; subscriber initialized once in main.rs.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# MIT OR Apache-2.0. Human-editable machine-definition file format
+# (`machine_def.rs`), read/written under `config_dir()/machines/<slug>.toml`.
+toml = "0.9"
 # MIT OR Apache-2.0. Blocking HTTP client for the first-run assets download
 # (`download_and_unpack_assets` in main.rs).
 ureq = "3.3.0"

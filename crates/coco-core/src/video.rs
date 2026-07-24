@@ -168,7 +168,7 @@ pub fn decode_alpha_char(code: u8) -> char {
 }
 
 /// Which character-generator ROM is actually driving CoCo-compatible text
-/// mode. Distinct from [`crate::config::VdgVariant`]: that's "which VDG chip
+/// mode. Distinct from [`crate::config::VDGVariant`]: that's "which VDG chip
 /// is this CoCo 1/2" and doesn't apply to a CoCo 3 at all — a real CoCo 3 has
 /// no VDG; the GIME does its own compat-text generation with its own font
 /// ROM ([`crate::font_gime::GIME_LOWRES_FONT`]), which happens to share the
