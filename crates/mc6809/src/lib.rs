@@ -14,6 +14,8 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+pub mod disasm;
+
 /// The CPU's view of the outside world.
 ///
 /// `read` takes `&mut self` deliberately: reads can have side effects (PIA flags,

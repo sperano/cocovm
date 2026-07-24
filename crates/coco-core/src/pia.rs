@@ -131,6 +131,28 @@ impl MC6821 {
         }
     }
 
+    /// Side-effect-free read for the debugger ([`crate::SystemBus::peek`]): the
+    /// value [`MC6821::read`] would return for `reg`, but WITHOUT clearing the
+    /// Cx1/Cx2 interrupt flags. `a_input`/`b_input` are the freshly sampled
+    /// input-pin states — the bus recomputes them the same way a real read
+    /// refreshes `PiaPort::input` first.
+    pub fn peek(&self, reg: u8, a_input: u8, b_input: u8) -> u8 {
+        match reg & 0x03 {
+            0 => Self::peek_side(&self.a, a_input),
+            1 => self.a.control,
+            2 => Self::peek_side(&self.b, b_input),
+            _ => self.b.control,
+        }
+    }
+
+    fn peek_side(port: &PiaPort, input: u8) -> u8 {
+        if port.control & cr::DDR_ACCESS != 0 {
+            (port.output & port.ddr) | (input & !port.ddr)
+        } else {
+            port.ddr
+        }
+    }
+
     /// Write one of the 4 PIA registers (`addr & 0x03`).
     pub fn write(&mut self, reg: u8, val: u8) {
         match reg & 0x03 {

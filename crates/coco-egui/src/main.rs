@@ -8,11 +8,13 @@
 //!   semantics, like MAME). The default.
 //! - Symbolic — the character you type is injected via the CoCo keys that produce it.
 //!
-//! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`);
-//! the debugger panels are still TODO.
+//! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`).
+//! F11 toggles the interactive debugger (Controls/Registers/Disassembly/Memory/
+//! Stack/Hardware panels — `debugger.rs`, `docs/plan-debugger.md` §3).
 
 mod about;
 mod audio;
+mod debugger;
 mod joy;
 mod kbd_help;
 mod machine_def;
@@ -227,6 +229,10 @@ struct CocoApp {
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     paper_window: paper_view::PaperWindow,
+    /// The interactive debugger (`docs/plan-debugger.md` §3): breakpoints,
+    /// watchpoints, and the Controls/Registers/Disassembly/Memory/Stack/
+    /// Hardware panel cluster, toggled with F11.
+    debugger: debugger::DebuggerPanel,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -398,6 +404,7 @@ impl CocoApp {
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
+            debugger: debugger::DebuggerPanel::new(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -1138,6 +1145,7 @@ impl CocoApp {
                     }
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
                     egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
+                    egui::Key::F11 => self.debugger.open = !self.debugger.open,
                     _ => {}
                 },
                 egui::Event::Paste(text) => self.enqueue_text(text),
@@ -1259,17 +1267,29 @@ impl CocoApp {
         if self.running {
             // Run however many fields the wall clock owes us (real-time pacing),
             // stepping type-ahead per field so paste timing is refresh-agnostic.
+            // Routed through the debugger so an enabled breakpoint/watchpoint
+            // pauses the emulator cleanly instead of running straight through
+            // it — a no-op when no breakpoints/watchpoints are set (the
+            // common case), since `DebuggerPanel::run_field` then always
+            // completes the field, same as `Machine::run_field` directly.
             for _ in 0..self.fields_due() {
                 if self.type_ahead.is_active() {
                     self.type_ahead.advance(&mut self.machine.bus.keyboard);
                 }
-                self.machine.run_field();
+                if !self.debugger.run_field(&mut self.machine) {
+                    self.running = false;
+                    break;
+                }
             }
             let sample_rate = self.machine.audio_sample_rate();
             self.audio.push_samples(self.machine.take_audio(), sample_rate);
             ctx.request_repaint();
         } else {
             self.last_update = None;
+            // Drop any fields owed to the wall clock while paused (debugger
+            // pause included), so resuming doesn't instantly "catch up" on
+            // the paused interval — a clean pause, not just a frozen screen.
+            self.field_debt = 0.0;
         }
 
         let image = egui::ColorImage::from_rgba_unmultiplied(
@@ -1718,6 +1738,8 @@ impl CocoApp {
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
                     ui.separator();
+                    ui.checkbox(&mut self.debugger.open, "Debugger (F11)");
+                    ui.separator();
                     let mut paper_open = self.paper_window.open;
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
                         self.toggle_paper_window();
@@ -1861,6 +1883,7 @@ impl CocoApp {
         if self.show_about {
             about::window(ctx, &mut self.show_about);
         }
+        self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
         if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
             match self.create_vm(config, ctx) {
                 Ok(()) => self.new_vm.close(),

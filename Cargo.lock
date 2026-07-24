@@ -768,6 +768,7 @@ dependencies = [
  "flate2",
  "gilrs",
  "image",
+ "mc6809",
  "owo-colors",
  "rfd",
  "serde",

@@ -10,6 +10,7 @@ pub mod cart;
 pub mod cassette;
 pub mod cassette_wav;
 pub mod config;
+pub mod debug;
 pub mod dmp105;
 mod dmp105_font;
 pub mod fdc;
@@ -100,17 +101,65 @@ pub struct Machine {
     /// and resamples to the host rate. Self-capping so headless use (tests,
     /// no audio sink) doesn't grow it unboundedly.
     audio_buffer: Vec<f32>,
-    /// True when the previous `run_cycles` iteration burned a HALT* cycle
-    /// instead of stepping. The MC6809 recognizes interrupts only at
+    /// True when the previous [`Machine::step_cpu_unit`] call burned a HALT*
+    /// cycle instead of stepping. The MC6809 recognizes interrupts only at
     /// instruction-end boundaries, so the first instruction after HALT*
     /// releases must execute before a pending NMI/IRQ/FIRQ is serviced (see
-    /// [`Machine::run_cycles`]).
+    /// [`Machine::step_cpu_unit`]).
     prev_halted: bool,
+    /// Current scanline within the field, in `0..lines_per_field`. Was the
+    /// `for line in 0..lines` counter local to the old `run_field`; hoisting it
+    /// (with `line_cycles_spent`/`line_budget`) into the machine is what makes
+    /// execution resumable at instruction granularity. 0 at construction and
+    /// after every completed field.
+    line: u32,
+    /// CPU cycles executed in the current scanline so far. Was `spent` inside
+    /// the old `run_cycles`. Reset to 0 at each scanline boundary; the
+    /// invariant after any completed `step_instruction` is
+    /// `line_cycles_spent < line_budget` (mid-line) or `== 0` (just crossed
+    /// into a new line/field).
+    line_cycles_spent: u32,
+    /// This scanline's cycle budget, sampled once at the line's start (when
+    /// `line_cycles_spent == 0`) exactly like the old `run_field` sampled
+    /// `cycles_per_field()/lines` at the top of each loop iteration — so a
+    /// mid-field speed poke only takes effect on the next line. Also the
+    /// multiplier the end-of-line GIME timer tick uses. Meaningful only once a
+    /// line has begun; initialized to 0.
+    line_budget: u32,
 }
 
 /// Cap on buffered audio samples (~8 fields); beyond this the buffer resets
 /// rather than growing (headless runs never drain it).
 const AUDIO_BUFFER_CAP: usize = 8 * 262;
+
+/// What a single [`Machine::step_instruction`] advanced. Both fields are
+/// reported because one call can retire an instruction (or burn a HALT* cycle)
+/// AND cross a scanline/field boundary in the same step — the debugger's
+/// `run_until` needs the CPU action for its trace ring and the field flag for
+/// its stop condition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StepEvent {
+    /// What the CPU did this step.
+    pub kind: StepKind,
+    /// True when this step completed a video field: the per-scanline trailer
+    /// for the field's last line ran, `line` wrapped back to 0, and the
+    /// framebuffer was rendered — exactly the point the old `run_field`
+    /// returned.
+    pub field_complete: bool,
+}
+
+/// The CPU action a [`Machine::step_instruction`] performed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepKind {
+    /// One instruction retired, consuming `cycles` bus cycles.
+    Instruction {
+        /// Bus cycles the instruction consumed.
+        cycles: u32,
+    },
+    /// One HALT* cycle was burned (the cartridge holds the bus low); the CPU
+    /// did not advance and no instruction retired.
+    HaltCycle,
+}
 
 impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
@@ -128,6 +177,9 @@ impl Machine {
             graphics_scratch: Vec::new(),
             audio_buffer: Vec::new(),
             prev_halted: false,
+            line: 0,
+            line_cycles_spent: 0,
+            line_budget: 0,
         }
     }
 
@@ -157,6 +209,25 @@ impl Machine {
     /// Execute one CPU instruction; returns cycles consumed.
     pub fn step(&mut self) -> u32 {
         self.cpu.step(&mut self.bus)
+    }
+
+    /// The scanline within the current field (`0..lines_per_field`) execution
+    /// is currently parked at — the debugger's status bar and its "Step
+    /// Scanline" control (`docs/plan-debugger.md` §3) are the only consumers;
+    /// everything inside the crate uses the private `line` field directly.
+    pub fn current_scanline(&self) -> u32 {
+        self.line
+    }
+
+    /// Write one byte through the CPU's logical address space, with full
+    /// side effects (unlike [`SystemBus::peek`], which is read-only by
+    /// design) — the debugger's memory/register editors use this while the
+    /// machine is paused, e.g. to poke a byte in the CoCo-logical memory
+    /// view. Real hardware has no side-effect-free write; a debugger editing
+    /// memory is expected to trip the same PIA/GIME register semantics a
+    /// running program's own store would.
+    pub fn poke(&mut self, addr: u16, val: u8) {
+        self.bus.write(addr, val);
     }
 
     /// Re-run the CPU reset sequence (re-fetches the reset vector from ROM). Does
@@ -190,6 +261,12 @@ impl Machine {
         self.bus.pia0 = pia::MC6821::new();
         self.bus.pia1 = pia::MC6821::new();
         self.prev_halted = false;
+        // Restart the field scan from the top — power-on is a fresh field.
+        // (After any completed `run_field` these are already 0, so this only
+        // matters if the machine was power-cycled mid partial step.)
+        self.line = 0;
+        self.line_cycles_spent = 0;
+        self.line_budget = 0;
         self.reset();
     }
 
@@ -219,47 +296,74 @@ impl Machine {
     /// this is what breaks the stock ROM out of its idle loop and runs
     /// BASIC's housekeeping. Video scanout is filled at the end (`§6`).
     pub fn run_field(&mut self) {
-        let lines = self.config.video.lines_per_field();
-        let fs_falling_line = self.config.video.fs_falling_line(self.config.variant);
-        let fs_rising_line = self.config.video.fs_rising_line(self.config.variant);
-        for line in 0..lines {
-            // Sampled per line so a mid-field speed poke takes effect promptly.
-            let cycles_per_line = self.cycles_per_field() / lines;
-            self.run_cycles(cycles_per_line);
-            self.bus.hsync();
-            if line == fs_falling_line {
-                self.bus.fs_falling();
-            }
-            if line == fs_rising_line {
-                self.bus.fs_rising();
-            }
-            // One speaker sample per scanline (~15.7 kHz), self-capping when
-            // nothing drains it.
-            if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
-                self.audio_buffer.clear();
-            }
-            self.audio_buffer.push(self.bus.sound_sample());
-            // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4
-            // ticks per normal-speed CPU cycle, 2 per double-speed cycle —
-            // TINS=0 counts horizontal syncs (1 per line). No such timer exists
-            // on the plain-SAM path (CoCo 1/2) — the GIME stays completely inert
-            // there (`docs/coco12-plan.md` Phase 4).
-            if self.config.variant == MachineVariant::Coco3 {
-                let ticks = if self.bus.gime.timer_is_fast() {
-                    let per_cycle =
-                        FAST_TIMER_TICKS_PER_CPU_CYCLE / if self.bus.gime.cpu_fast { 2 } else { 1 };
-                    cycles_per_line * per_cycle
-                } else {
-                    1
-                };
-                self.bus.gime.tick_timer(ticks);
-            }
-        }
-        self.render_field();
+        // Resumable equivalent of the old nested scanline/cycle loops: drive
+        // `step_instruction` from wherever the machine is parked until a field
+        // completes. On a fresh machine (or right after any previous field —
+        // both leave `line`/`line_cycles_spent` at 0) this is exactly one full
+        // field from line 0, byte-for-byte identical to the pre-refactor loop.
+        while !self.step_instruction().field_complete {}
     }
 
-    /// Step instructions until at least `budget` cycles elapse, delivering any
-    /// pending interrupt before each instruction.
+    /// Execute exactly one instruction (or one burned HALT* cycle) with full
+    /// fidelity — peripheral ticks, NMI/FIRQ/IRQ servicing, and, when this step
+    /// crosses the current scanline's cycle budget, the per-line trailer
+    /// (hsync, the two field-sync edges at their lines, one audio sample, the
+    /// GIME timer tick) and the field wrap (render + `field_complete`). This is
+    /// the single primitive `run_field` and the debugger's `run_until` are both
+    /// built on; the two together reproduce the old `run_field`/`run_cycles`
+    /// nested loops one step at a time.
+    ///
+    /// Ordering is load-bearing and preserved exactly from the old code (see
+    /// [`Machine::step_cpu_unit`] and [`Machine::end_of_line`]): the per-line
+    /// trailer runs immediately after the instruction that pushes the line over
+    /// budget, in the same call, before any instruction of the next line.
+    pub fn step_instruction(&mut self) -> StepEvent {
+        let lines = self.config.video.lines_per_field();
+        loop {
+            // Sample this line's budget once, at its start — same point the old
+            // `run_field` sampled `cycles_per_field()/lines`.
+            if self.line_cycles_spent == 0 {
+                self.line_budget = self.cycles_per_field() / lines;
+            }
+            // Mirror `run_cycles`' `while spent < budget`: run one CPU unit if
+            // the line still has budget. For real video timing `line_budget` is
+            // always well above one instruction, so this branch always runs;
+            // the `else` only guards a degenerate zero-budget line.
+            if self.line_cycles_spent < self.line_budget {
+                let (cycles, was_instruction) = self.step_cpu_unit();
+                self.line_cycles_spent += cycles;
+                let kind = if was_instruction {
+                    StepKind::Instruction { cycles }
+                } else {
+                    StepKind::HaltCycle
+                };
+                // `run_cycles` exits when spent >= budget; `run_field` then runs
+                // the per-line trailer. A single CPU unit (≤ ~20 cycles) can
+                // cross at most one ~57-cycle line boundary, so one trailer
+                // suffices.
+                let field_complete = if self.line_cycles_spent >= self.line_budget {
+                    let done = self.end_of_line();
+                    self.line_cycles_spent = 0;
+                    done
+                } else {
+                    false
+                };
+                return StepEvent { kind, field_complete };
+            }
+            // Degenerate zero-budget line (never reached for real timing): no
+            // CPU unit to run — do the trailer and continue to the next line so
+            // every call still makes forward progress.
+            let field_complete = self.end_of_line();
+            self.line_cycles_spent = 0;
+            if field_complete {
+                return StepEvent { kind: StepKind::HaltCycle, field_complete: true };
+            }
+        }
+    }
+
+    /// One iteration of the old `run_cycles` inner loop: burn a HALT* cycle or
+    /// execute one instruction, then tick the per-cycle peripherals. Returns
+    /// `(cycles, was_instruction)`.
     ///
     /// The cartridge HALT* line has priority over everything (MC6809 pin
     /// behaviour): while a device holds it — the FD-502's sector-transfer
@@ -272,29 +376,74 @@ impl Machine {
     /// pending NMI/IRQ/FIRQ is serviced. Skipping this lets the completion NMI
     /// of an FD-502 sector read preempt the DSKCON copy loop's `STB ,X+` that
     /// stores the sector's final byte — dropping one byte per sector on load.
-    fn run_cycles(&mut self, budget: u32) {
-        let mut spent = 0u32;
-        while spent < budget {
-            let cycles = if self.bus.halt_asserted() {
-                self.prev_halted = true;
-                1
-            } else {
-                // Coming straight out of HALT, run one instruction before
-                // acknowledging interrupts (they stay pending for next loop).
-                if !self.prev_halted {
-                    self.bus.poll_cart_interrupt();
-                    if self.bus.take_nmi() {
-                        self.cpu.nmi(&mut self.bus);
-                    }
-                    self.service_interrupts();
+    fn step_cpu_unit(&mut self) -> (u32, bool) {
+        let (cycles, was_instruction) = if self.bus.halt_asserted() {
+            self.prev_halted = true;
+            (1, false)
+        } else {
+            // Coming straight out of HALT, run one instruction before
+            // acknowledging interrupts (they stay pending for next loop).
+            if !self.prev_halted {
+                self.bus.poll_cart_interrupt();
+                if self.bus.take_nmi() {
+                    self.cpu.nmi(&mut self.bus);
                 }
-                self.prev_halted = false;
-                self.cpu.step(&mut self.bus)
+                self.service_interrupts();
+            }
+            self.prev_halted = false;
+            (self.cpu.step(&mut self.bus), true)
+        };
+        self.bus.cart.tick(cycles);
+        self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
+        self.bus.bitbanger.tick(cycles, self.bus.pia1_tx_mark());
+        (cycles, was_instruction)
+    }
+
+    /// The per-scanline trailer from the old `run_field` loop body, run after
+    /// the current line's cycle budget is spent: horizontal sync, the two
+    /// field-sync edges when `line` matches, one speaker sample, and the GIME
+    /// interval-timer tick. Advances `line`; at the end of the field it wraps
+    /// to 0, renders the framebuffer, and returns `true`.
+    fn end_of_line(&mut self) -> bool {
+        let lines = self.config.video.lines_per_field();
+        let fs_falling_line = self.config.video.fs_falling_line(self.config.variant);
+        let fs_rising_line = self.config.video.fs_rising_line(self.config.variant);
+        self.bus.hsync();
+        if self.line == fs_falling_line {
+            self.bus.fs_falling();
+        }
+        if self.line == fs_rising_line {
+            self.bus.fs_rising();
+        }
+        // One speaker sample per scanline (~15.7 kHz), self-capping when
+        // nothing drains it.
+        if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
+            self.audio_buffer.clear();
+        }
+        self.audio_buffer.push(self.bus.sound_sample());
+        // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4 ticks
+        // per normal-speed CPU cycle, 2 per double-speed cycle — TINS=0 counts
+        // horizontal syncs (1 per line). No such timer exists on the plain-SAM
+        // path (CoCo 1/2) — the GIME stays completely inert there
+        // (`docs/coco12-plan.md` Phase 4). `line_budget` is this line's sampled
+        // cycle count — the old loop's `cycles_per_line`.
+        if self.config.variant == MachineVariant::Coco3 {
+            let ticks = if self.bus.gime.timer_is_fast() {
+                let per_cycle =
+                    FAST_TIMER_TICKS_PER_CPU_CYCLE / if self.bus.gime.cpu_fast { 2 } else { 1 };
+                self.line_budget * per_cycle
+            } else {
+                1
             };
-            self.bus.cart.tick(cycles);
-            self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
-            self.bus.bitbanger.tick(cycles, self.bus.pia1_tx_mark());
-            spent += cycles;
+            self.bus.gime.tick_timer(ticks);
+        }
+        self.line += 1;
+        if self.line >= lines {
+            self.line = 0;
+            self.render_field();
+            true
+        } else {
+            false
         }
     }
 
