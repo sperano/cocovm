@@ -34,6 +34,9 @@ fn boot_harness() -> AppHarness {
             None,
             [None, None],
             [None, None],
+            std::array::from_fn(|_| None),
+            false,
+            false,
             false,
         )
     });

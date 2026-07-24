@@ -13,6 +13,7 @@ pub mod config;
 pub mod debug;
 pub mod dmp105;
 mod dmp105_font;
+pub mod drivewire;
 pub mod fdc;
 mod font6847;
 mod font_gime;
@@ -28,8 +29,8 @@ pub mod rtc;
 pub mod sam;
 pub mod serial;
 pub mod ssc;
-pub mod video;
 pub mod vhd;
+pub mod video;
 pub mod wd1773;
 
 pub use bus::SystemBus;
@@ -396,6 +397,7 @@ impl Machine {
         self.bus.cart.tick(cycles);
         self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
         self.bus.bitbanger.tick(cycles, self.bus.pia1_tx_mark());
+        self.bus.cycle_clock = self.bus.cycle_clock.wrapping_add(u64::from(cycles));
         (cycles, was_instruction)
     }
 
@@ -697,7 +699,8 @@ impl Machine {
         }
 
         let base = self.legacy_display_base();
-        self.graphics_scratch.resize(mode.bytes_per_row * mode.rows, 0);
+        self.graphics_scratch
+            .resize(mode.bytes_per_row * mode.rows, 0);
         for (i, byte) in self.graphics_scratch.iter_mut().enumerate() {
             *byte = self.bus.read(base.wrapping_add(i as u16));
         }
@@ -713,7 +716,13 @@ impl Machine {
             }
         };
         let colors = &colors[..indices.len()];
-        video::render_graphics(&self.graphics_scratch, &mode, colors, border, &mut self.framebuffer);
+        video::render_graphics(
+            &self.graphics_scratch,
+            &mode,
+            colors,
+            border,
+            &mut self.framebuffer,
+        );
     }
 
     /// Restore the fixed legacy-mode framebuffer geometry after a GIME-native

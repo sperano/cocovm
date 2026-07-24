@@ -30,8 +30,10 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::{Datelike, Timelike};
 use clap::{Parser, ValueEnum};
 use coco_core::cart::{MultiPak, RomPak};
+use coco_core::drivewire::{self, DwImage, DwTime};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::rtc::{DistoRtc, RtcTime};
@@ -180,6 +182,10 @@ struct CocoApp {
     /// `disk_paths`, VHD writes hit the backing file directly — there is no
     /// in-memory dirty state and so nothing to write back on eject/exit.
     vhd_paths: [Option<PathBuf>; UI_DRIVES],
+    /// Source paths of the DriveWire disk images mounted in the four drives
+    /// the UI exposes (status bar, eject menu items). Like `vhd_paths`, writes
+    /// hit the backing file directly.
+    dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
     /// Source path of the mounted cassette tape (.cas), if any — the
     /// write-back target for recordings, like `disk_paths` for floppies.
     tape_path: Option<PathBuf>,
@@ -366,12 +372,16 @@ impl CocoApp {
     /// `launch_machine` (`plan-machine-persistence.md` step 5), which builds
     /// VMs from inside `ManagerApp::update` where no `CreationContext`
     /// exists at all.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         config: MachineConfig,
         rom: Box<[u8]>,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
         vhd_paths: [Option<PathBuf>; UI_DRIVES],
+        dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
+        becker_enabled: bool,
+        hdbdos_mode: bool,
         save_tape_wav: bool,
     ) -> Self {
         let mut app = Self {
@@ -393,6 +403,7 @@ impl CocoApp {
             cart_error: None,
             disk_paths: [None, None],
             vhd_paths: [None, None],
+            dw_paths: std::array::from_fn(|_| None),
             tape_path: None,
             save_tape_wav,
             print_capture_path: None,
@@ -418,6 +429,16 @@ impl CocoApp {
             if let Some(path) = path {
                 app.insert_vhd(drive, path);
             }
+        }
+        if becker_enabled {
+            app.enable_drivewire(hdbdos_mode);
+            for (drive, path) in dw_paths.into_iter().enumerate() {
+                if let Some(path) = path {
+                    app.insert_dw_disk(drive, path);
+                }
+            }
+        } else {
+            app.dw_paths = std::array::from_fn(|_| None);
         }
         app
     }
@@ -891,6 +912,66 @@ impl CocoApp {
     fn eject_vhd(&mut self, drive: usize) {
         self.machine.bus.vhd.eject(drive);
         self.vhd_paths[drive] = None;
+    }
+
+    /// Enable the Becker port ($FF41/$FF42) with a real wall clock, optionally
+    /// in HDB-DOS sector addressing mode. Idempotent — if already enabled, does
+    /// nothing. Failures land in [`Self::cart_error`].
+    fn enable_drivewire(&mut self, hdbdos_mode: bool) {
+        self.machine.bus.enable_drivewire();
+        if let Some(ref mut dw) = self.machine.bus.drivewire {
+            dw.set_hdbdos_mode(hdbdos_mode);
+            // Inject real wall clock from the host.
+            dw.set_clock(Box::new(|| {
+                let now = chrono::Local::now();
+                DwTime {
+                    year: now.year() as u16,
+                    month: now.month() as u8,
+                    day: now.day() as u8,
+                    hour: now.hour() as u8,
+                    minute: now.minute() as u8,
+                    second: now.second() as u8,
+                }
+            }));
+        }
+    }
+
+    /// Disable the Becker port, ejecting all mounted DriveWire images and
+    /// clearing the path tracking.
+    fn disable_drivewire(&mut self) {
+        self.machine.bus.drivewire = None;
+        self.dw_paths = std::array::from_fn(|_| None);
+    }
+
+    /// Mount the DriveWire image at `path` in `drive`. Like VHD, writes hit the
+    /// backing file directly. Failures land in [`Self::cart_error`].
+    fn insert_dw_disk(&mut self, drive: usize, path: PathBuf) {
+        let result = (|| -> Result<(), String> {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .map_err(|e| format!("could not open {}: {e}", path.display()))?;
+            if let Some(ref mut dw) = self.machine.bus.drivewire {
+                dw.mount(drive, DwImage::File(file));
+                self.dw_paths[drive] = Some(path);
+            } else {
+                return Err("Becker port not enabled".to_string());
+            }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.cart_error = Some(e);
+        }
+    }
+
+    /// Eject the DriveWire image in `drive`. No write-back: writes already hit
+    /// the backing file directly.
+    fn eject_dw_disk(&mut self, drive: usize) {
+        if let Some(ref mut dw) = self.machine.bus.drivewire {
+            dw.eject(drive);
+        }
+        self.dw_paths[drive] = None;
     }
 
     /// Mount the tape at `path` (.cas decoded bytes, or a .wav recording
@@ -1649,6 +1730,53 @@ impl CocoApp {
                         }
                     }
                     ui.separator();
+                    ui.menu_button("DriveWire", |ui| {
+                        let becker_enabled = self.machine.bus.drivewire.is_some();
+                        if ui
+                            .selectable_label(becker_enabled, "Enable Becker port ($FF41/$FF42)")
+                            .clicked()
+                        {
+                            if becker_enabled {
+                                self.disable_drivewire();
+                            } else {
+                                self.enable_drivewire(false);
+                            }
+                        }
+                        if becker_enabled {
+                            ui.separator();
+                            if let Some(ref mut dw) = self.machine.bus.drivewire {
+                                let mut hdbdos = dw.hdbdos_mode();
+                                if ui.checkbox(&mut hdbdos, "HDB-DOS mode").changed() {
+                                    dw.set_hdbdos_mode(hdbdos);
+                                }
+                            }
+                            ui.separator();
+                            for drive in 0..drivewire::DRIVE_COUNT {
+                                if ui.button(format!("Mount DW{drive}…")).clicked() {
+                                    ui.close();
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("Disk image", &["dsk", "os9", "img", "vhd"])
+                                        .pick_file()
+                                    {
+                                        self.insert_dw_disk(drive, path);
+                                    }
+                                }
+                                let label = match &self.dw_paths[drive] {
+                                    Some(p) => format!(
+                                        "Eject DW{drive} ({})",
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                    ),
+                                    None => format!("Eject DW{drive}"),
+                                };
+                                let mounted = self.dw_paths[drive].is_some();
+                                if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+                                    self.eject_dw_disk(drive);
+                                    ui.close();
+                                }
+                            }
+                        }
+                    });
+                    ui.separator();
                     if ui.button("Insert Tape…").clicked() {
                         ui.close();
                         if let Some(path) = rfd::FileDialog::new()
@@ -1858,6 +1986,20 @@ impl CocoApp {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     ui.separator();
                     ui.label(format!("VHD{drive}: {name}"));
+                }
+                if let Some(ref dw) = self.machine.bus.drivewire {
+                    for drive in 0..drivewire::DRIVE_COUNT {
+                        let Some(path) = &self.dw_paths[drive] else {
+                            continue;
+                        };
+                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                        let dirty = dw.dirty(drive);
+                        ui.separator();
+                        ui.label(format!(
+                            "DW{drive}: {name}{}",
+                            if dirty { "*" } else { "" }
+                        ));
+                    }
                 }
                 if let Some(path) = &self.tape_path {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
@@ -2210,6 +2352,34 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     vhd1: Option<PathBuf>,
 
+    /// Enable the Becker port ($FF41/$FF42) for DriveWire disk access,
+    /// hosting up to 4 virtual disk images. Implied by any --dw0/--dw1/--dw2/--dw3.
+    #[arg(long, default_value_t = false)]
+    becker: bool,
+
+    /// DriveWire disk image for drive 0 (`.dsk`/`.os9`/`.img`/`.vhd`); implies
+    /// --becker. A bus-level device independent of the cartridge slot, like VHD.
+    #[arg(long, value_name = "PATH")]
+    dw0: Option<PathBuf>,
+
+    /// DriveWire disk image for drive 1 (see `--dw0`).
+    #[arg(long, value_name = "PATH")]
+    dw1: Option<PathBuf>,
+
+    /// DriveWire disk image for drive 2 (see `--dw0`).
+    #[arg(long, value_name = "PATH")]
+    dw2: Option<PathBuf>,
+
+    /// DriveWire disk image for drive 3 (see `--dw0`).
+    #[arg(long, value_name = "PATH")]
+    dw3: Option<PathBuf>,
+
+    /// Enable HDB-DOS sector addressing mode on the DriveWire server (implies
+    /// --becker): flat addressing for DECB format images instead of per-drive
+    /// LSNs.
+    #[arg(long, default_value_t = false)]
+    hdbdos: bool,
+
     /// Insert the FD-502 disk controller with empty drives, so Disk BASIC
     /// boots and blank disks can be added (and DSKINI'd) from the menu.
     /// Implied by --disk0/--disk1.
@@ -2382,13 +2552,37 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         );
     }
 
-    // No definition field for this UI preference yet (`machine_def.rs`'s
-    // schema doc); matches the CLI's own `--tape-wav` default of off.
+    // No definition field for these UI preferences yet (`machine_def.rs`'s
+    // schema doc); matches the CLI defaults — `--tape-wav` off, no DriveWire
+    // disks, Becker port disabled, HDB-DOS off.
     let save_tape_wav = false;
+    let dw_paths = std::array::from_fn(|_| None);
+    let becker_enabled = false;
+    let hdbdos_mode = false;
     let mut app = if mpi {
-        CocoApp::new(config, rom, None, [None, None], vhd_paths, save_tape_wav)
+        CocoApp::new(
+            config,
+            rom,
+            None,
+            [None, None],
+            vhd_paths,
+            dw_paths,
+            becker_enabled,
+            hdbdos_mode,
+            save_tape_wav,
+        )
     } else {
-        CocoApp::new(config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
+        CocoApp::new(
+            config,
+            rom,
+            cart_path.clone(),
+            disk_paths.clone(),
+            vhd_paths,
+            dw_paths,
+            becker_enabled,
+            hdbdos_mode,
+            save_tape_wav,
+        )
     };
 
     if mpi {
@@ -2680,6 +2874,9 @@ fn main() -> eframe::Result<()> {
     let cart_path = cli.cart;
     let disk_paths = [cli.disk0, cli.disk1];
     let vhd_paths = [cli.vhd0, cli.vhd1];
+    let dw_paths = [cli.dw0, cli.dw1, cli.dw2, cli.dw3];
+    let becker_enabled = cli.becker || dw_paths.iter().any(|p| p.is_some());
+    let hdbdos_mode = cli.hdbdos;
     let fd502 = cli.fd502;
     let rtc = cli.rtc;
     let ssc = cli.ssc;
@@ -2728,9 +2925,29 @@ fn main() -> eframe::Result<()> {
             // them and everything is wired up afterward through the same methods the
             // MultiPak menu uses.
             let mut app = if mpi {
-                CocoApp::new(config, rom, None, [None, None], vhd_paths, save_tape_wav)
+                CocoApp::new(
+                    config,
+                    rom,
+                    None,
+                    [None, None],
+                    vhd_paths,
+                    dw_paths,
+                    becker_enabled,
+                    hdbdos_mode,
+                    save_tape_wav,
+                )
             } else {
-                CocoApp::new(config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
+                CocoApp::new(
+                    config,
+                    rom,
+                    cart_path.clone(),
+                    disk_paths.clone(),
+                    vhd_paths,
+                    dw_paths,
+                    becker_enabled,
+                    hdbdos_mode,
+                    save_tape_wav,
+                )
             };
             if mpi {
                 app.insert_multipak();

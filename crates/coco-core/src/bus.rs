@@ -10,6 +10,7 @@ use crate::bitbanger::{self, BitBanger};
 use crate::cart::{Cartridge, EmptySlot};
 use crate::cassette::Cassette;
 use crate::config::{MachineVariant, MemorySize};
+use crate::drivewire::DwServer;
 use crate::gime::{self, GIME};
 use crate::joystick::Joysticks;
 use crate::keyboard::Keyboard;
@@ -31,6 +32,13 @@ const CART_BASE: u16 = 0xFF40;
 // carts that don't claim an address in the extension range fall through to
 // their own open-bus default, same as any unclaimed SCS address.
 const CART_LAST: u16 = 0xFF7E;
+/// Becker-port status register: read-only, `DwServer::status_read()`.
+/// Writes are swallowed while the Becker port is enabled. Intercepts
+/// ahead of cartridge dispatch — see `SystemBus::becker_read`/`becker_write`.
+const BECKER_STATUS: u16 = 0xFF41;
+/// Becker-port data register: read pops a `DwServer` reply byte, write
+/// feeds a client byte into the DriveWire protocol state machine.
+const BECKER_DATA: u16 = 0xFF42;
 // TODO: MAME gates the whole $FF40-$FF5F SCS window on GIME INIT0 MC2
 // ("standard SCS" width control); not modeled here — every cartridge always
 // sees the full window regardless of MC2.
@@ -125,6 +133,11 @@ pub struct SystemBus {
     pub pia1: MC6821,
     pub cart: Box<dyn Cartridge>,
     pub vhd: Vhd,
+    /// The Becker-port DriveWire server ($FF41/$FF42). `None` = Becker
+    /// disabled — $FF41/$FF42 fall through to cartridge dispatch exactly as
+    /// before. Public like `vhd` so the frontend and tests reach it
+    /// directly (mount images, enable HDB-DOS mode, etc.).
+    pub drivewire: Option<DwServer>,
     pub keyboard: Keyboard,
     pub joysticks: Joysticks,
     pub cassette: Cassette,
@@ -133,6 +146,13 @@ pub struct SystemBus {
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
     kbd_line_low: bool,
+    /// Monotonic CPU-cycle counter, incremented once per CPU unit in
+    /// `Machine::step_cpu_unit` by that unit's cycle cost; used
+    /// only to timestamp Becker-port DriveWire writes for `DwServer`'s
+    /// transaction timeout — NOT a general-purpose scheduling clock, and NOT
+    /// reset by [`SystemBus::new`]/power-on since it only needs to be
+    /// monotonic, not meaningful in absolute terms.
+    pub(crate) cycle_clock: u64,
     /// Last sampled level of the cartridge's level-driven CART* interrupt
     /// ([`Cartridge::cart_interrupt`]), so [`SystemBus::poll_cart_interrupt`]
     /// acts only on transitions.
@@ -161,15 +181,26 @@ impl SystemBus {
             pia1: MC6821::new(),
             cart: Box::new(EmptySlot),
             vhd: Vhd::new(),
+            drivewire: None,
             keyboard: Keyboard::new(),
             joysticks: Joysticks::new(),
             cassette: Cassette::new(),
             bitbanger: BitBanger::new(),
             io_enabled: true,
             kbd_line_low: false,
+            cycle_clock: 0,
             prev_cart_int: false,
             watch: None,
             watch_hit: None,
+        }
+    }
+
+    /// Enable the Becker port, if not already enabled. Idempotent — does
+    /// nothing if a `DwServer` is already installed (so re-enabling doesn't
+    /// discard mounted images or protocol state).
+    pub fn enable_drivewire(&mut self) {
+        if self.drivewire.is_none() {
+            self.drivewire = Some(DwServer::new());
         }
     }
 
@@ -530,7 +561,47 @@ impl SystemBus {
         self.rom.get(off).copied().unwrap_or(OPEN_BUS)
     }
 
+    /// Becker-port read intercept ($FF41/$FF42): `Some` when the Becker port
+    /// is enabled and `addr` is one of the two registers, in which case the
+    /// caller must return it directly — this takes precedence over
+    /// cartridge dispatch (`CART_BASE..=CART_LAST`) on every I/O decode
+    /// path, GIME and plain-SAM alike (MAME installs Becker handlers over
+    /// the cart range). `None` otherwise, so the caller falls through to its
+    /// normal decode (cartridge included).
+    fn becker_read(&mut self, addr: u16) -> Option<u8> {
+        let dw = self.drivewire.as_mut()?;
+        match addr {
+            BECKER_STATUS => Some(dw.status_read()),
+            BECKER_DATA => Some(dw.data_read()),
+            _ => None,
+        }
+    }
+
+    /// Becker-port write intercept: `true` when the Becker port is enabled
+    /// and `addr` was one of the two registers (handled — including $FF41,
+    /// which is swallowed), so the caller must not fall through to its
+    /// normal decode. `false` otherwise.
+    fn becker_write(&mut self, addr: u16, val: u8) -> bool {
+        if self.drivewire.is_none() {
+            return false;
+        }
+        match addr {
+            BECKER_STATUS => true, // writes swallowed while Becker is enabled
+            BECKER_DATA => {
+                let cycle = self.cycle_clock;
+                self.drivewire.as_mut().unwrap().data_write(val, cycle);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn io_read(&mut self, addr: u16) -> u8 {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if let Some(v) = self.becker_read(addr) {
+            return v;
+        }
         match addr {
             IO_BASE..=PIA0_LAST => {
                 // Refresh port A's input pins (keyboard rows + joystick
@@ -565,6 +636,11 @@ impl SystemBus {
     }
 
     fn io_write(&mut self, addr: u16, val: u8) {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if self.becker_write(addr, val) {
+            return;
+        }
         match addr {
             IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
             PIA1_BASE..=PIA1_LAST => {
@@ -692,8 +768,11 @@ impl SystemBus {
         }
 
         let write_result = self.vhd_image_mut(drive).write_at(offset, &buf);
-        self.vhd.drives[drive].status =
-            if write_result.is_ok() { vhd::status::OK } else { vhd::status::IO_ERROR };
+        self.vhd.drives[drive].status = if write_result.is_ok() {
+            vhd::status::OK
+        } else {
+            vhd::status::IO_ERROR
+        };
     }
 
     /// FLUSH (`vhd::command::FLUSH`): flush the backing file to disk. Mapping
@@ -701,15 +780,21 @@ impl SystemBus {
     /// implementation's own extension, not a separately verified MAME fact.
     fn vhd_flush(&mut self, drive: usize) {
         let flush_result = self.vhd_image_mut(drive).flush();
-        self.vhd.drives[drive].status =
-            if flush_result.is_ok() { vhd::status::OK } else { vhd::status::IO_ERROR };
+        self.vhd.drives[drive].status = if flush_result.is_ok() {
+            vhd::status::OK
+        } else {
+            vhd::status::IO_ERROR
+        };
     }
 
     /// The image mounted in `drive`, for the command bodies above. Panics if
     /// called on an unmounted drive — every call site is guarded by
     /// `vhd_execute_command`'s own mounted check first.
     fn vhd_image_mut(&mut self, drive: usize) -> &mut vhd::VhdImage {
-        self.vhd.drives[drive].image.as_mut().expect("checked mounted")
+        self.vhd.drives[drive]
+            .image
+            .as_mut()
+            .expect("checked mounted")
     }
 
     // ---- Plain-SAM path (CoCo 1/2, no GIME) --------------------------------
@@ -773,6 +858,11 @@ impl SystemBus {
     /// control strobes (read-only in effect — a strobe read falls through to
     /// open bus, matching the plan's memory map).
     fn sam_io_read(&mut self, addr: u16) -> u8 {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if let Some(v) = self.becker_read(addr) {
+            return v;
+        }
         match addr {
             IO_BASE..=PIA0_LAST => {
                 self.pia0.a.input = self.pia0_pa_pins();
@@ -789,6 +879,11 @@ impl SystemBus {
     }
 
     fn sam_io_write(&mut self, addr: u16, val: u8) {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if self.becker_write(addr, val) {
+            return;
+        }
         match addr {
             IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
             PIA1_BASE..=PIA1_LAST => {
