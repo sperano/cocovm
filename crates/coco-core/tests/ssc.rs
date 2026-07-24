@@ -11,6 +11,10 @@ use coco_core::ssc::{Ssc, cmd, group, ram, reg as ssc_reg, terminator, timing};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
+/// Generator step for `sound_probe` (the AY drain is call-count based, so
+/// this only feeds the (absent) crystal generators).
+const PROBE_DT: f64 = 1.0 / 62_866.0;
+
 const FF7D: u16 = ssc_reg::RESET;
 const FF7E: u16 = ssc_reg::DATA;
 
@@ -216,13 +220,13 @@ fn silence(ssc: &mut Ssc) {
     ssc.ay_write(ay_reg::VOL_A, 0);
 }
 
-/// Advance the cart's clock and pump `count` `sound_sample` calls, returning
+/// Advance the cart's clock and pump `count` `sound_probe` calls, returning
 /// the last sample.
 fn pump(b: &mut SystemBus, count: u32) -> f32 {
     let mut last = 0.0;
     for _ in 0..count {
         b.cart.tick(100);
-        last = b.sound_sample();
+        last = b.sound_probe(PROBE_DT)[0];
     }
     last
 }
@@ -269,7 +273,7 @@ fn sac_tracks_activity_even_when_the_mux_is_not_on_the_cartridge() {
     let mut heard_cart_audio = false;
     for _ in 0..2_000 {
         b.cart.tick(100);
-        if b.sound_sample() > 0.0 {
+        if b.sound_probe(PROBE_DT)[0] > 0.0 {
             heard_cart_audio = true;
         }
     }

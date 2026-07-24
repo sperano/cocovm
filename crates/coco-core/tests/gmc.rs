@@ -20,7 +20,7 @@ const PSG_REG: u16 = 0xFF41;
 const MPI_SELECT: u16 = 0xFF7F;
 
 /// One scanline's wall time at the default NTSC timing — the cadence
-/// `Machine::run_field` drives `audio_tick` at.
+/// `Machine::flush_line_audio` drives `generator_sample` at (one grid slot).
 const LINE_DT: f64 = 1.0 / (262.0 * 60.0);
 
 /// A banked image with `banks` 16K pages, where every byte of page `n` is
@@ -128,8 +128,7 @@ fn ff41_reaches_the_psg_and_the_speaker_mix() {
     // tone counters run into their audible phase first.
     let mut heard = false;
     for _ in 0..262 {
-        b.cart.audio_tick(LINE_DT);
-        if b.sound_sample() > 0.0 {
+        if b.sound_probe(LINE_DT)[0] > 0.0 {
             heard = true;
         }
     }
@@ -140,8 +139,7 @@ fn ff41_reaches_the_psg_and_the_speaker_mix() {
         b.write(PSG_REG, cmd);
     }
     for _ in 0..262 {
-        b.cart.audio_tick(LINE_DT);
-        assert_eq!(b.sound_sample(), 0.0, "muted PSG must be silent");
+        assert_eq!(b.sound_probe(LINE_DT)[0], 0.0, "muted PSG must be silent");
     }
 }
 
@@ -157,7 +155,7 @@ fn machine_mixes_gmc_audio_into_the_field_samples() {
     m.run_field();
     m.run_field();
     assert!(
-        m.take_audio().any(|s| s > 0.0),
+        m.take_audio().any(|s| s[0] > 0.0),
         "the un-initialized PSG's hum must show up in the field's samples"
     );
 }
@@ -203,7 +201,7 @@ fn autostarted_cart_code_plays_a_tone_through_the_speaker() {
     let mut programmed = false;
     for _ in 0..MAX_FIELDS {
         m.run_field();
-        let samples: Vec<f32> = m.take_audio().collect();
+        let samples: Vec<f32> = m.take_audio().map(|s| s[0]).collect();
         if samples.iter().all(|&s| s <= LONE_TONE_LEVEL) {
             programmed = true;
             let loud = samples.iter().filter(|&&s| s > LONE_TONE_LEVEL * 0.5).count();
@@ -244,8 +242,7 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
     }
     let mut heard = false;
     for _ in 0..262 {
-        b.cart.audio_tick(LINE_DT);
-        if b.sound_sample() > 0.0 {
+        if b.sound_probe(LINE_DT)[0] > 0.0 {
             heard = true;
         }
     }
@@ -257,7 +254,6 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
         b.write(PSG_REG, cmd);
     }
     for _ in 0..262 {
-        b.cart.audio_tick(LINE_DT);
-        assert_eq!(b.sound_sample(), 0.0, "selected slot's PSG must mute");
+        assert_eq!(b.sound_probe(LINE_DT)[0], 0.0, "selected slot's PSG must mute");
     }
 }
