@@ -205,6 +205,15 @@ struct CocoApp {
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
     mpi: Option<MpiState>,
+    /// State of the inserted Deluxe RS-232 Program Pak, if any: which host
+    /// endpoint its serial line is wired to (the core's trait object can't
+    /// describe itself to menu labels, so the frontend tracks it — same
+    /// rationale as [`MpiSlot`]). `None` means the slot holds something else.
+    rs232: Option<Rs232Endpoint>,
+    /// Listen address for the RS-232 pak's TCP endpoint, edited in the menu
+    /// and applied when "TCP" is (re)selected — not live-rebound on each
+    /// keystroke.
+    rs232_tcp_addr: String,
     /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
     /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
     new_vm: new_vm::NewVmDialog,
@@ -282,6 +291,45 @@ struct MpiState {
     slots: [MpiSlot; MPI_SLOT_COUNT],
 }
 
+/// Which host backend the Deluxe RS-232 pak's serial line is plugged into
+/// (menu labels / status bar; the live endpoint object lives inside the
+/// core's [`coco_core::rs232::DeluxeRs232`]).
+enum Rs232Endpoint {
+    /// TX loops straight back to RX — the pak's inert power-on default.
+    Loopback,
+    /// TCP listener at this address; a host terminal connects with
+    /// `nc`/`telnet`.
+    Tcp(String),
+    /// Unix pseudo-terminal; the string is the slave device path a host
+    /// terminal program opens (e.g. `screen /dev/ttys009 9600`).
+    Pty(String),
+}
+
+impl Rs232Endpoint {
+    /// Short status-bar/menu description of where the wire goes.
+    fn label(&self) -> String {
+        match self {
+            Rs232Endpoint::Loopback => "loopback".to_string(),
+            Rs232Endpoint::Tcp(addr) => format!("tcp {addr}"),
+            Rs232Endpoint::Pty(path) => format!("pty {path}"),
+        }
+    }
+}
+
+/// Default listen address for the RS-232 pak's TCP endpoint: localhost, port
+/// 6551 after the ACIA part number.
+const RS232_TCP_DEFAULT_ADDR: &str = "127.0.0.1:6551";
+
+/// Menu selection handed to [`CocoApp::rs232_set_endpoint`] — the *request*
+/// (bind parameters live in the app state), as opposed to
+/// [`Rs232Endpoint`], the record of what's actually bound.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rs232EndpointKind {
+    Loopback,
+    Tcp,
+    Pty,
+}
+
 /// The host's local wall clock, read once (RTC sync).
 fn host_now() -> RtcTime {
     use chrono::{Datelike, Timelike};
@@ -345,6 +393,8 @@ impl CocoApp {
             print_capture_lf: false,
             pending_disk_action: None,
             mpi: None,
+            rs232: None,
+            rs232_tcp_addr: RS232_TCP_DEFAULT_ADDR.to_string(),
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
@@ -386,6 +436,7 @@ impl CocoApp {
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
+                self.rs232 = None; // ...and any RS-232 pak
                 self.rtc_direct = false; // ... and any directly-plugged RTC
             }
             Err(e) => {
@@ -403,7 +454,71 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
+        self.rs232 = None;
         self.rtc_direct = false;
+    }
+
+    /// Insert a Deluxe RS-232 Program Pak into the cartridge slot
+    /// (cold-restart gated, like plain cartridge insertion). Starts on the
+    /// inert loopback endpoint; pick TCP/PTY from the pak's submenu. If a
+    /// pak EPROM dump is present at `roms/rs232.rom` it is installed in the
+    /// CTS window; the pak is fully usable ROM-less otherwise (OS-9 drivers
+    /// and `PEEK`/`POKE` code drive the ACIA registers directly).
+    fn insert_rs232(&mut self) {
+        self.flush_dirty_disks();
+        let mut pak = coco_core::rs232::DeluxeRs232::new();
+        let rom_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/rs232.rom");
+        if let Ok(bytes) = std::fs::read(&rom_path) {
+            pak.set_eprom(&bytes);
+        }
+        self.machine.insert_cartridge(Box::new(pak));
+        self.machine.power_cycle();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None;
+        self.rs232 = Some(Rs232Endpoint::Loopback);
+    }
+
+    /// Wire the inserted RS-232 pak to a freshly bound endpoint of `kind`
+    /// (the menu's Loopback/TCP/PTY selection). Binding failures (port in
+    /// use, pty exhaustion) land in [`Self::cart_error`] and leave the
+    /// current endpoint in place.
+    fn rs232_set_endpoint(&mut self, kind: Rs232EndpointKind) {
+        let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() else {
+            return;
+        };
+        match kind {
+            Rs232EndpointKind::Loopback => {
+                pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
+                self.rs232 = Some(Rs232Endpoint::Loopback);
+            }
+            Rs232EndpointKind::Tcp => match coco_core::serial::TcpEndpoint::bind(&self.rs232_tcp_addr)
+            {
+                Ok(ep) => {
+                    // Show the address actually bound, so ":0" (OS-assigned
+                    // port) displays usably.
+                    let addr = ep
+                        .local_addr()
+                        .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
+                    pak.set_endpoint(Box::new(ep));
+                    self.rs232 = Some(Rs232Endpoint::Tcp(addr));
+                }
+                Err(e) => {
+                    self.cart_error =
+                        Some(format!("could not listen on {}: {e}", self.rs232_tcp_addr));
+                }
+            },
+            Rs232EndpointKind::Pty => match coco_core::serial::PtyEndpoint::new() {
+                Ok(ep) => {
+                    let path = ep.path().to_string();
+                    pak.set_endpoint(Box::new(ep));
+                    self.rs232 = Some(Rs232Endpoint::Pty(path));
+                }
+                Err(e) => {
+                    self.cart_error = Some(format!("could not open a pty: {e}"));
+                }
+            },
+        }
     }
 
     /// Plug the Sound/Speech Cartridge into the cartridge slot (cold-restart
@@ -417,6 +532,7 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // plugging straight into the port removes any MPI
+        self.rs232 = None;
     }
 
     /// Make sure the inserted cartridge is the FD-502 disk controller,
@@ -453,6 +569,7 @@ impl CocoApp {
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rs232 = None;
         self.rtc_direct = false;
         Ok(())
     }
@@ -471,6 +588,7 @@ impl CocoApp {
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rs232 = None;
         self.rtc_direct = false;
     }
 
@@ -961,6 +1079,7 @@ impl CocoApp {
         self.tape_path = None;
         self.pending_disk_action = None;
         self.mpi = None;
+        self.rs232 = None;
         self.rtc_direct = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "coco-rs — {}",
@@ -1348,6 +1467,83 @@ impl CocoApp {
                         }
                     });
                     ui.separator();
+                    ui.menu_button("Deluxe RS-232 Pak", |ui| {
+                        let installed = self.rs232.is_some();
+                        // Like "Insert Cartridge…": the pak plugs straight
+                        // into the port, so an installed MPI blocks it.
+                        if ui
+                            .add_enabled(
+                                direct_port && !installed,
+                                egui::Button::new("Insert Deluxe RS-232 Pak"),
+                            )
+                            .clicked()
+                        {
+                            self.insert_rs232();
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(installed, egui::Button::new("Remove Deluxe RS-232 Pak"))
+                            .clicked()
+                        {
+                            self.eject_cartridge();
+                            ui.close();
+                        }
+                        // Re-read instead of reusing `installed`: a Remove
+                        // click above already cleared `self.rs232` this same
+                        // frame.
+                        let current = match &self.rs232 {
+                            Some(Rs232Endpoint::Loopback) => Some(Rs232EndpointKind::Loopback),
+                            Some(Rs232Endpoint::Tcp(_)) => Some(Rs232EndpointKind::Tcp),
+                            Some(Rs232Endpoint::Pty(_)) => Some(Rs232EndpointKind::Pty),
+                            None => None,
+                        };
+                        if let Some(current) = current {
+                            ui.separator();
+                            ui.label("Wire the serial line to:");
+                            if ui
+                                .selectable_label(
+                                    current == Rs232EndpointKind::Loopback,
+                                    "Loopback",
+                                )
+                                .clicked()
+                            {
+                                self.rs232_set_endpoint(Rs232EndpointKind::Loopback);
+                            }
+                            let tcp_label = match &self.rs232 {
+                                Some(Rs232Endpoint::Tcp(addr)) => format!("TCP ({addr})"),
+                                _ => "TCP".to_string(),
+                            };
+                            if ui
+                                .selectable_label(current == Rs232EndpointKind::Tcp, tcp_label)
+                                .clicked()
+                            {
+                                self.rs232_set_endpoint(Rs232EndpointKind::Tcp);
+                            }
+                            ui.horizontal(|ui| {
+                                ui.label("Listen address:");
+                                ui.text_edit_singleline(&mut self.rs232_tcp_addr);
+                            });
+                            let pty_label = match &self.rs232 {
+                                Some(Rs232Endpoint::Pty(path)) => format!("PTY ({path})"),
+                                _ => "PTY".to_string(),
+                            };
+                            if ui
+                                .selectable_label(current == Rs232EndpointKind::Pty, pty_label)
+                                .clicked()
+                            {
+                                self.rs232_set_endpoint(Rs232EndpointKind::Pty);
+                            }
+                            if let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() {
+                                ui.separator();
+                                ui.label(format!(
+                                    "TX {} bytes / RX {} bytes",
+                                    pak.tx_bytes(),
+                                    pak.rx_bytes()
+                                ));
+                            }
+                        }
+                    });
+                    ui.separator();
                     // Disto RTC: directly in the port here, or via a MultiPak
                     // slot submenu above when an MPI is installed.
                     if ui
@@ -1584,6 +1780,17 @@ impl CocoApp {
                     ui.separator();
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     ui.label(format!("Cart: {name}"));
+                }
+                if let Some(endpoint) = &self.rs232 {
+                    ui.separator();
+                    // ↑/↓ = bytes out to / in from the host endpoint.
+                    let (tx, rx) = self
+                        .machine
+                        .bus
+                        .cart
+                        .as_deluxe_rs232()
+                        .map_or((0, 0), |pak| (pak.tx_bytes(), pak.rx_bytes()));
+                    ui.label(format!("RS-232 [{}] ↑{tx} ↓{rx}", endpoint.label()));
                 }
                 if let Some(mpi) = &self.mpi {
                     ui.separator();

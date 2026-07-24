@@ -2,6 +2,7 @@
 //! No UI dependencies, so it can be unit-tested and boot a ROM without a window.
 //! See `DESIGN.md` §1.
 
+pub mod acia6551;
 pub mod ay8913;
 pub mod bitbanger;
 pub mod bus;
@@ -21,8 +22,10 @@ pub mod keyboard;
 pub mod pia;
 pub mod printer;
 pub mod rom_db;
+pub mod rs232;
 pub mod rtc;
 pub mod sam;
+pub mod serial;
 pub mod ssc;
 pub mod video;
 pub mod vhd;
@@ -279,6 +282,7 @@ impl Machine {
                 // Coming straight out of HALT, run one instruction before
                 // acknowledging interrupts (they stay pending for next loop).
                 if !self.prev_halted {
+                    self.bus.poll_cart_interrupt();
                     if self.bus.take_nmi() {
                         self.cpu.nmi(&mut self.bus);
                     }

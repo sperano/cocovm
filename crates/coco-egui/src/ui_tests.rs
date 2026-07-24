@@ -432,6 +432,44 @@ fn disk_controller_confirmation_can_be_cancelled() {
     );
 }
 
+/// Machine ▸ Deluxe RS-232 Pak ▸ Insert plugs the pak in on the loopback
+/// endpoint, reachable behind the trait object, and the status bar reports
+/// it; Remove restores the empty slot.
+#[test]
+fn rs232_menu_inserts_and_removes_the_pak() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "Machine");
+    // Not `click_submenu`: its substring match would also hit the
+    // "Insert/Remove Deluxe RS-232 Pak" items once hovering opens the
+    // submenu, so match the arrow-suffixed label exactly.
+    click(&mut harness, "Deluxe RS-232 Pak ⏵");
+    click(&mut harness, "Insert Deluxe RS-232 Pak");
+    {
+        let app = harness.state_mut();
+        assert!(matches!(app.rs232, Some(Rs232Endpoint::Loopback)));
+        assert!(
+            app.machine.bus.cart.as_deluxe_rs232().is_some(),
+            "the pak must be reachable behind the trait object"
+        );
+    }
+    harness.step();
+    assert!(
+        harness.query_by_label("RS-232 [loopback] ↑0 ↓0").is_some(),
+        "status bar should describe the pak and its endpoint"
+    );
+
+    click(&mut harness, "Machine");
+    // Not `click_submenu`: its substring match would also hit the
+    // "Insert/Remove Deluxe RS-232 Pak" items once hovering opens the
+    // submenu, so match the arrow-suffixed label exactly.
+    click(&mut harness, "Deluxe RS-232 Pak ⏵");
+    click(&mut harness, "Remove Deluxe RS-232 Pak");
+    let app = harness.state_mut();
+    assert!(app.rs232.is_none());
+    assert!(app.machine.bus.cart.as_deluxe_rs232().is_none());
+}
+
 /// The manager window scaffold: toolbar buttons present (and inert), the
 /// machine-list panel and photo pane laid out without a photo injected.
 #[test]

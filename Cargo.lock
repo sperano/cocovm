@@ -748,6 +748,7 @@ dependencies = [
 name = "coco-core"
 version = "0.5.0"
 dependencies = [
+ "libc",
  "mc6809",
  "serde",
 ]

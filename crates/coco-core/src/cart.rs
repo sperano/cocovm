@@ -34,6 +34,17 @@ pub trait Cartridge {
     fn cart_line_ties_q(&self) -> bool {
         false
     }
+    /// Current level of the CART* interrupt line as driven by the device:
+    /// true = asserted (the active-low pin held low). The level counterpart
+    /// to [`Cartridge::cart_line_ties_q`]'s Q-burst: a cartridge with a real
+    /// interrupt source — the Deluxe RS-232's 6551 ACIA IRQ output — holds
+    /// this while its interrupt condition stands, and
+    /// `SystemBus::poll_cart_interrupt` converts the transitions into the
+    /// PIA1 CB1 edge and GIME EI0 raise that the shared physical pin feeds.
+    /// Default: never asserted.
+    fn cart_interrupt(&mut self) -> bool {
+        false
+    }
     /// Advance the cartridge's internal clocks by `cycles` CPU cycles. Called
     /// by the machine loop after every instruction (and once per burned cycle
     /// while the CPU is halted, so a device can pace work — the FDC's DRQ
@@ -59,6 +70,13 @@ pub trait Cartridge {
     /// the frontend reaches individual slots (insert/eject/switch) behind the
     /// trait object.
     fn as_multipak(&mut self) -> Option<&mut MultiPak> {
+        None
+    }
+    /// Downcast to the Deluxe RS-232 pak, if that's what this cartridge is —
+    /// how the frontend swaps host endpoints and reads the TX/RX activity
+    /// counters behind the trait object (same pattern as
+    /// [`Cartridge::as_disk_cart`]).
+    fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
         None
     }
     /// Downcast to the Disto real-time clock, if that's what this cartridge
@@ -418,6 +436,13 @@ impl Cartridge for MultiPak {
         self.slots[self.cts_slot()].cart_line_ties_q()
     }
 
+    /// CART* follows the CTS slot select, same as [`MultiPak::rom_read`] and
+    /// [`MultiPak::cart_line_ties_q`] — the three lines the MPI switches
+    /// together (MAME `coco_multi.cpp` header comment).
+    fn cart_interrupt(&mut self) -> bool {
+        self.slots[self.cts_slot()].cart_interrupt()
+    }
+
     /// Every slot's clock runs regardless of selection (MAME ticks all 4
     /// devices every call), so this advances all 4 rather than just the
     /// selected one(s).
@@ -452,6 +477,12 @@ impl Cartridge for MultiPak {
 
     fn as_multipak(&mut self) -> Option<&mut MultiPak> {
         Some(self)
+    }
+
+    fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
+        self.slots
+            .iter_mut()
+            .find_map(|slot| slot.as_deluxe_rs232())
     }
 
     fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {

@@ -133,6 +133,10 @@ pub struct SystemBus {
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
     kbd_line_low: bool,
+    /// Last sampled level of the cartridge's level-driven CART* interrupt
+    /// ([`Cartridge::cart_interrupt`]), so [`SystemBus::poll_cart_interrupt`]
+    /// acts only on transitions.
+    prev_cart_int: bool,
 }
 
 impl SystemBus {
@@ -153,6 +157,7 @@ impl SystemBus {
             bitbanger: BitBanger::new(),
             io_enabled: true,
             kbd_line_low: false,
+            prev_cart_int: false,
         }
     }
 
@@ -299,6 +304,28 @@ impl SystemBus {
     /// Consume a pending NMI edge (the FD-502 gates FDC INTRQ onto NMI).
     pub fn take_nmi(&mut self) -> bool {
         self.cart.take_nmi()
+    }
+
+    /// Sample the level-driven CART* interrupt ([`Cartridge::cart_interrupt`],
+    /// e.g. the Deluxe RS-232's 6551 ACIA IRQ) and convert transitions into
+    /// what the shared physical pin feeds: PIA1 CB1 sees the line level itself
+    /// — CART* is active-low, so asserted = CB1 low, and the PIA latches
+    /// whichever edge its control register selects — while the GIME EI0
+    /// source is raised on the falling (assert) edge only, its hardwired
+    /// trigger (GIME border/cart sources are falling-edge, per Lomont; same
+    /// treatment as the `cart_line_ties_q` Q-burst in [`SystemBus::hsync`]).
+    /// Polled per-instruction from `Machine::run_cycles` so serial-interrupt
+    /// latency isn't quantized to scanlines.
+    pub fn poll_cart_interrupt(&mut self) {
+        let level = self.cart.cart_interrupt();
+        if level == self.prev_cart_int {
+            return;
+        }
+        self.prev_cart_int = level;
+        self.pia1.b.set_c1(!level);
+        if level && self.variant == MachineVariant::Coco3 {
+            self.gime.raise(gime::intr::EI0);
+        }
     }
 
     /// Horizontal-sync line: the GIME HS pin idles high and pulses low for 16
