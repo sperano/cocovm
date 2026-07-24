@@ -330,7 +330,7 @@ fn new_dialog_rom_pak_choice_inserts_the_pak() {
     let mut harness = boot_harness();
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
-    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::RomPak(pak.clone());
+    harness.state_mut().new_vm.form.cartridge = new_vm::CartridgeChoice::RomPak(pak.clone());
     click(&mut harness, "Create");
     assert_eq!(harness.state().cart_error, None);
     assert_eq!(harness.state().cart_path.as_deref(), Some(pak.as_path()));
@@ -340,7 +340,7 @@ fn new_dialog_rom_pak_choice_inserts_the_pak() {
     click(&mut harness, "Machine");
     click_containing(&mut harness, "New…");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
-    harness.state_mut().new_vm.mpi_slots[2] = new_vm::SlotChoice::RomPak(pak.clone());
+    harness.state_mut().new_vm.form.mpi_slots[2] = new_vm::SlotChoice::RomPak(pak.clone());
     click(&mut harness, "Create");
     assert_eq!(harness.state().cart_error, None);
     assert!(harness.state().mpi.is_some(), "creating with MPI must insert one");
@@ -440,7 +440,7 @@ fn new_dialog_vdg_row_only_visible_for_coco2() {
 /// `consume_shortcut` looks for on every platform, so this exercises the
 /// mac/Windows/Linux binding in one test.
 #[test]
-fn cmd_n_opens_the_new_machine_dialog() {
+fn cmd_n_triggers_new_machine_in_both_flows() {
     let mut harness = boot_harness();
     assert!(harness.query_by_label("Create").is_none());
 
@@ -452,16 +452,22 @@ fn cmd_n_opens_the_new_machine_dialog() {
         "Cmd/Ctrl+N must open the New Machine dialog"
     );
 
-    let mut harness = manager_harness(None, Vec::new());
-    assert!(harness.query_by_label("Create").is_none());
+    // The manager has no dialog: Cmd/Ctrl+N creates a machine on the spot
+    // (same instant-create as the toolbar's "New…").
+    let dir = TempDir::new("cmd-n-manager");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+    assert!(harness.state().entries.is_empty());
 
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
     harness.step();
     harness.step();
-    assert!(
-        harness.query_by_label("Create").is_some(),
-        "Cmd/Ctrl+N must open the manager's New Machine dialog"
+    assert_eq!(
+        harness.state().entries.len(),
+        1,
+        "Cmd/Ctrl+N must create a machine immediately in the manager"
     );
+    assert_eq!(harness.state().selected, Some(0));
+    assert!(dir.path().join("coco-3.toml").is_file());
 }
 
 #[test]
@@ -719,8 +725,10 @@ fn disk_controller_confirmation_can_be_cancelled() {
     );
 }
 
-/// The manager window scaffold: toolbar buttons present (and inert), the
-/// machine-list panel and photo pane laid out without a photo injected.
+/// The manager window scaffold: toolbar buttons present, the machine-list
+/// panel and photo pane laid out without a photo injected. This harness has
+/// no machines dir (no home), so "New…" must report that instead of
+/// creating or panicking.
 #[test]
 fn manager_window_shows_its_toolbar() {
     let mut harness =
@@ -731,14 +739,15 @@ fn manager_window_shows_its_toolbar() {
     for label in ["New…", "Settings", "Help"] {
         harness.get_by_label(label);
     }
-    // The buttons are scaffolding: clicking must be a no-op, not a panic.
-    // (Same hover-then-click convention as `click`, which is typed for the
-    // CocoApp harness.)
     harness.get_by_label("New…").hover();
     harness.step();
     harness.get_by_label("New…").click();
     harness.step();
     harness.step();
+    assert!(
+        harness.state().entries.is_empty(),
+        "no config dir: New… must fail gracefully, not add a row"
+    );
 }
 
 /// The divider between the machine list and the photo pane must be
@@ -922,20 +931,18 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
     );
 }
 
-/// "New…" opens the dialog; "Create" writes a `.toml` definition to the
-/// injected machines dir and adds a list row — without booting anything (the
-/// manager has no launch action at all yet, so there is nothing to assert
-/// beyond "no machine-running side effect exists to trigger").
-/// Creating from the manager with Cartridge = FD-502 records it in the
-/// definition file's `[peripherals]` section.
+/// "New…" creates the machine immediately; picking Cartridge = FD-502 in
+/// the detail pane's form auto-saves `[peripherals].fd502` into the
+/// definition file — no Save button involved.
 #[test]
-fn manager_create_with_fd502_records_the_peripheral() {
+fn manager_edit_with_fd502_records_the_peripheral() {
     let dir = TempDir::new("create-fd502");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New…");
+    // Pane combos showing "None": Cassette (its row sits above Cartridge),
+    // then Cartridge, then the HDs — Cartridge is second.
     select_combo_at(&mut harness, "None", 1, "FD-502");
-    click(&mut harness, "Create");
 
     assert_eq!(harness.state().entries.len(), 1);
     assert!(harness.state().entries[0].def.peripherals.fd502);
@@ -947,17 +954,15 @@ fn manager_create_with_fd502_records_the_peripheral() {
     );
 }
 
-/// Creating from the manager with Cartridge = MultiPak Interface records
-/// the mpi peripheral (disk media, when picked, implies the last-slot
-/// FD-502 at launch — no fd502 flag needed).
+/// Cartridge = MultiPak Interface in the pane records the mpi peripheral
+/// (no slotted FD-502 → no fd502 flag).
 #[test]
-fn manager_create_with_mpi_records_the_peripheral() {
+fn manager_edit_with_mpi_records_the_peripheral() {
     let dir = TempDir::new("create-mpi");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New…");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
-    click(&mut harness, "Create");
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
@@ -997,85 +1002,86 @@ fn new_dialog_rtc_choice_inserts_the_clock() {
     assert!(harness.state_mut().machine.bus.cart.as_disto_rtc().is_some());
 }
 
-/// Manager create with a Disto RTC — in the port or slotted — records
-/// `peripherals.rtc` (the schema keeps no slot layout; launch re-seats a
-/// slotted clock in its default slot).
+/// A Disto RTC — in the port or slotted — records `peripherals.rtc` (the
+/// schema keeps no slot layout; launch re-seats a slotted clock in its
+/// default slot). Fully UI-driven through the pane's combos.
 #[test]
-fn manager_create_with_rtc_records_the_peripheral() {
+fn manager_edit_with_rtc_records_the_peripheral() {
     let dir = TempDir::new("create-rtc");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New…");
     select_combo_at(&mut harness, "None", 1, "Disto RTC");
-    click(&mut harness, "Create");
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
     assert!(def.peripherals.rtc && !def.peripherals.mpi);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(contents.contains("rtc = true"), "TOML must record the RTC:\n{contents}");
 
-    // Slotted: rtc = true alongside mpi = true. Seeded directly — the
-    // detail pane behind the dialog shows its own "MultiPak Interface" /
-    // "Disto RTC" checkboxes, so the popup items' labels are ambiguous
-    // for the click helpers here.
+    // Slotted, on a second machine: rtc = true alongside mpi = true.
     click_containing(&mut harness, "New…");
-    harness.state_mut().new_vm.name = "slotted".to_string();
-    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::MPI;
-    harness.state_mut().new_vm.mpi_slots[0] = new_vm::SlotChoice::RTC;
-    click(&mut harness, "Create");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    select_combo_at(&mut harness, "Empty", 0, "Disto RTC");
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
     assert!(def.peripherals.rtc && def.peripherals.mpi);
 }
 
-/// Manager create with a ROM Pak — in the port or in an MPI slot — records
-/// `[media].cart`; two slotted paks exceed what the schema can represent
-/// and must fail the create. Picks are seeded directly (native file
-/// dialogs, see `new_dialog_rom_pak_choice_inserts_the_pak`).
+/// A ROM Pak — in the port or in an MPI slot — records `[media].cart`; two
+/// slotted paks exceed what the schema can represent, so that change is
+/// refused with an inline error and nothing is saved. Picks are seeded on
+/// the edit form directly (native file dialogs, see
+/// `new_dialog_rom_pak_choice_inserts_the_pak`).
 #[test]
-fn manager_create_with_rom_pak_records_the_cart() {
+fn manager_edit_with_rom_pak_records_the_cart() {
     let pak = PathBuf::from("/paks/game.ccc");
     let dir = TempDir::new("create-rompak");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New…");
-    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::RomPak(pak.clone());
-    click(&mut harness, "Create");
+    harness.state_mut().edit_form_mut().expect("pane form seeded").cartridge =
+        new_vm::CartridgeChoice::RomPak(pak.clone());
+    harness.step();
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
     assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
     assert!(!def.peripherals.mpi && !def.peripherals.fd502);
 
-    // Slotted: recorded the same way, alongside mpi = true.
+    // Slotted, on a second machine: recorded the same way, alongside
+    // mpi = true.
     click_containing(&mut harness, "New…");
-    harness.state_mut().new_vm.name = "slotted".to_string();
-    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::MPI;
-    harness.state_mut().new_vm.mpi_slots[1] = new_vm::SlotChoice::RomPak(pak.clone());
-    click(&mut harness, "Create");
+    {
+        let form = harness.state_mut().edit_form_mut().expect("pane form seeded");
+        form.cartridge = new_vm::CartridgeChoice::MPI;
+        form.mpi_slots[1] = new_vm::SlotChoice::RomPak(pak.clone());
+    }
+    harness.step();
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
     assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
     assert!(def.peripherals.mpi);
 
-    // Two slotted paks cannot be represented in the schema: create fails
-    // with an inline error instead of silently dropping one.
-    click_containing(&mut harness, "New…");
-    harness.state_mut().new_vm.name = "two paks".to_string();
-    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::MPI;
-    harness.state_mut().new_vm.mpi_slots[0] = new_vm::SlotChoice::RomPak(pak.clone());
-    harness.state_mut().new_vm.mpi_slots[3] = new_vm::SlotChoice::RomPak(pak);
-    click(&mut harness, "Create");
-    assert_eq!(harness.state().entries.len(), 2, "the create must be refused");
+    // Two slotted paks cannot be represented in the schema: the change is
+    // refused with an inline error instead of silently dropping one, and
+    // the definition keeps the single recorded pak.
+    harness.state_mut().edit_form_mut().expect("pane form seeded").mpi_slots[3] =
+        new_vm::SlotChoice::RomPak(pak);
+    harness.step();
     harness.get_by_label_contains("a single ROM Pak");
-    click(&mut harness, "Cancel");
+    assert_eq!(
+        harness.state().entries[1].def.media.cart.as_deref(),
+        Some("/paks/game.ccc"),
+        "the definition must keep the single recorded pak"
+    );
 }
 
-/// Manager create with Disk 0 = Blank: a 0-byte blank image lands in the
-/// machine's artifact dir and `[media].disk0` records it by relative path.
-/// (The manager flow's Blank is the picker-free one, so this drives the
-/// whole path headlessly — direct boot's Blank opens a native save dialog.)
+/// Disk 0 = Blank in the pane: a 0-byte blank image lands in the machine's
+/// artifact dir the moment it's picked, and `[media].disk0` records it by
+/// relative path. (The manager flow's Blank is the picker-free one, so this
+/// drives the whole path headlessly — direct boot's Blank opens a native
+/// save dialog.)
 #[test]
-fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
+fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
     let machines = TempDir::new("create-blank-machines");
     let artifacts = TempDir::new("create-blank-artifacts");
     let mut harness = manager_harness_with_artifacts(
@@ -1088,14 +1094,15 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     select_combo_at(&mut harness, "None", 1, "FD-502");
     // Screen order of the "None"-valued combos: Cassette (its row sits
     // above Cartridge), then Disk 0, then Disk 1, then HD 0, then HD 1.
+    // A picked Blank is auto-placed on the spot and its combo then shows
+    // the placed file's name, so it leaves the "None" pool immediately.
     select_combo_at(&mut harness, "None", 1, "Blank");
-    // Disk 0 now reads "Blank"; remaining "None"s: Cassette, Disk 1, HDs.
+    // Disk 0 now reads "disk0.dsk"; remaining "None"s: Cassette, Disk 1, HDs.
     select_combo_at(&mut harness, "None", 1, "Blank");
     // The cassette (topmost remaining "None").
     select_combo_at(&mut harness, "None", 0, "Blank");
     // And HD 0 (now the topmost remaining "None", above HD 1).
     select_combo_at(&mut harness, "None", 0, "Blank");
-    click(&mut harness, "Create");
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
@@ -1116,80 +1123,123 @@ fn manager_create_with_blank_disk0_places_it_in_the_artifact_dir() {
     }
 }
 
+/// "New…" creates a definition file *immediately* — default name under a
+/// uniquified slug, saved, selected, no dialog and no Create button (macOS
+/// System-Settings-style, user decision 2026-07-24). A second "New…"
+/// uniquifies against the first.
 #[test]
-fn manager_new_dialog_create_writes_a_definition_file() {
+fn manager_new_creates_a_definition_file_immediately() {
     let dir = TempDir::new("create");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
     assert!(harness.state().entries.is_empty());
 
     click_containing(&mut harness, "New…");
-    harness.get_by_label("Create"); // dialog open
 
-    click(&mut harness, "Create");
-
-    assert_eq!(harness.state().entries.len(), 1, "Create must add a list row");
+    assert_eq!(harness.state().entries.len(), 1, "New… must add a list row on the spot");
+    assert!(harness.query_by_label("Create").is_none(), "no dialog is involved");
     let slug = harness.state().entries[0].slug.clone();
-    assert_eq!(slug, "coco-3", "slugified from the default draft name");
+    assert_eq!(slug, "coco-3", "slugified from the default name");
     assert_eq!(harness.state().entries[0].def.name, "CoCo 3");
 
     let file = dir.path().join(format!("{slug}.toml"));
     let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
     let parsed: machine_def::MachineDef =
-        toml::from_str(&contents).expect("Create must write a parseable definition");
+        toml::from_str(&contents).expect("New… must write a parseable definition");
     assert_eq!(parsed.name, "CoCo 3");
-    assert_eq!(harness.state().selected, Some(0), "Create must select the new row");
+    assert_eq!(harness.state().selected, Some(0), "New… must select the new row");
     // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
     // form has its own "CoCo 3" Machine combo button, so the name would be
     // ambiguous between that and the list row.
     assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
 
-    assert!(
-        harness.query_by_label("Create").is_none(),
-        "the dialog should close after a successful Create"
-    );
+    click_containing(&mut harness, "New…");
+    assert_eq!(harness.state().entries.len(), 2);
+    assert_eq!(harness.state().entries[1].slug, "coco-3-2", "second default uniquifies");
+    assert!(dir.path().join("coco-3-2.toml").is_file());
 }
 
-/// Editing a hardware field and saving rewrites the definition file; Revert
-/// discards the in-progress edit instead of writing it.
+/// Editing in the detail pane saves immediately — there are no Save/Revert
+/// buttons anymore (auto-save, user decision 2026-07-24) — while merely
+/// selecting a row must not rewrite its file.
 #[test]
-fn manager_detail_save_rewrites_file_and_revert_discards_edit() {
-    let dir = TempDir::new("save-revert");
+fn manager_detail_edits_save_immediately() {
+    let dir = TempDir::new("auto-save");
     let entry = sample_entry("dev-coco-3", "Dev CoCo 3");
-    let def = entry.def.clone();
-    machine_def::save(dir.path(), "dev-coco-3", &def).expect("seed the file the entry claims to be");
-    assert!(!def.peripherals.mpi, "test assumes the sample starts without an MPI");
+    machine_def::save(dir.path(), "dev-coco-3", &entry.def)
+        .expect("seed the file the entry claims to be");
+    assert!(entry.def.ui.aspect_correct, "test assumes the sample starts aspect-corrected");
 
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
-    click(&mut harness, "Dev CoCo 3");
-    harness.get_by_label("Save"); // clean draft: no "*" yet
-    assert!(harness.query_by_label("Save*").is_none());
-
-    click(&mut harness, "MultiPak Interface"); // toggle a peripheral checkbox
-    harness.get_by_label("Save*"); // now dirty
-
-    click(&mut harness, "Save*");
-    assert!(
-        harness.query_by_label("Save*").is_none(),
-        "a clean save must drop the dirty indicator"
-    );
     let file = dir.path().join("dev-coco-3.toml");
+    let before = fs::read_to_string(&file).unwrap();
+
+    click(&mut harness, "Dev CoCo 3");
+    harness.step();
+    assert!(harness.query_by_label("Save").is_none(), "auto-save: no Save button");
+    assert!(harness.query_by_label("Revert").is_none(), "auto-save: no Revert button");
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        before,
+        "selecting a row must not rewrite its definition"
+    );
+
+    click(&mut harness, "4:3 aspect correction");
     let saved: machine_def::MachineDef =
         toml::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-    assert!(saved.peripherals.mpi, "Save must persist the toggled checkbox");
-
-    // Toggle it off again without saving, then revert: the in-memory draft
-    // must go back to the saved (mpi = true) state, and the file — which
-    // Revert never touches — must be untouched too.
-    click(&mut harness, "MultiPak Interface");
-    harness.get_by_label("Save*");
-    click(&mut harness, "Revert");
     assert!(
-        harness.query_by_label("Save*").is_none(),
-        "Revert must restore the clean (saved) draft"
+        !saved.ui.aspect_correct,
+        "the toggle must reach the file without any Save click"
     );
-    let after_revert: machine_def::MachineDef =
-        toml::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-    assert!(after_revert.peripherals.mpi, "Revert must not touch the file");
+    assert!(!harness.state().entries[0].def.ui.aspect_correct);
+}
+
+/// Committing a new name (focus leaves the Name field) saves it and
+/// migrates the slug: `<slug>.toml` and the artifact directory follow the
+/// display name. Nothing else persists the slug — relative `[media]`
+/// entries name files *inside* the artifact dir — so a rename is exactly
+/// those two filesystem moves.
+#[test]
+fn manager_rename_migrates_definition_file_and_artifact_dir() {
+    let machines = TempDir::new("rename-machines");
+    let artifacts = TempDir::new("rename-artifacts");
+    let entry = sample_entry("alpha", "Alpha");
+    machine_def::save(machines.path(), "alpha", &entry.def).expect("seed the definition");
+    fs::create_dir_all(artifacts.path().join("alpha")).unwrap();
+    fs::write(artifacts.path().join("alpha").join("disk0.dsk"), b"").unwrap();
+
+    let mut harness = manager_harness_with_artifacts(
+        Some(machines.path().to_path_buf()),
+        Some(artifacts.path().to_path_buf()),
+        vec![entry],
+    );
+    click(&mut harness, "Alpha");
+
+    // Type into the Name field — the pane's only text input; by-value
+    // lookup would be ambiguous with the list row's own "Alpha" label —
+    // and commit with Enter: the TextEdit surrenders focus, which is the
+    // commit signal.
+    let name_field = || harness.get_by_role(egui::accesskit::Role::TextInput);
+    name_field().focus();
+    harness.step();
+    harness.get_by_role(egui::accesskit::Role::TextInput).type_text(" Two");
+    harness.step();
+    assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
+    harness.key_press(egui::Key::Enter);
+    harness.step();
+    harness.step(); // commit frame, then the deferred migration frame
+    harness.step();
+
+    assert_eq!(harness.state().entries[0].slug, "alpha-two");
+    assert_eq!(harness.state().entries[0].def.name, "Alpha Two");
+    assert!(machines.path().join("alpha-two.toml").is_file());
+    assert!(!machines.path().join("alpha.toml").exists());
+    assert!(
+        artifacts.path().join("alpha-two").join("disk0.dsk").is_file(),
+        "the artifact dir must follow the slug"
+    );
+    assert!(!artifacts.path().join("alpha").exists());
+    assert_eq!(harness.state().selected, Some(0), "selection follows the renamed row");
+    assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
 }
 
 /// A minimal valid CoCo 2 `Ok` entry — `sample_entry`'s default is CoCo 3,

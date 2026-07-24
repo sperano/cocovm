@@ -1,13 +1,13 @@
-//! "Machine → New…" dialog: pick a machine model and its parameters, then
-//! cold-start a fresh VM from the resulting [`MachineConfig`]. The dialog
-//! only *builds* the config — swapping the running machine (and writing back
-//! dirty media first) is `CocoApp::create_vm`'s job, so this module stays a
-//! pure view over a draft config.
+//! The machine form — model, RAM, cartridge, media, UI preferences — and
+//! the direct-boot "Machine → New…" dialog around it.
 //!
-//! [`config_form_rows`] — the Model/VDG/RAM/Video/Monitor grid rows — is
-//! shared with the manager's detail pane (`manager::draw_detail`), so the
-//! `constrain` constraint behavior below lives in exactly one place no
-//! matter which caller edits the draft.
+//! [`MachineForm`] holds the full editable draft and draws every row; it
+//! never touches a machine or a file itself. Two hosts drive it: the
+//! [`NewVmDialog`] window (direct boot: pick everything, then Create
+//! cold-starts a fresh VM via `CocoApp::create_vm`), and the manager's
+//! detail pane (`manager::draw_detail_ok`), which hosts the same form over
+//! a saved machine definition and auto-saves each change. The `constrain`
+//! rules below therefore live in exactly one place no matter who edits.
 
 use std::path::PathBuf;
 
@@ -38,7 +38,7 @@ const DIALOG_MARGIN: i8 = 16;
 /// window around `last_content_size` alone (`Window::min_size` and
 /// `default_size` only offer the content room, they never stretch the
 /// frame), so the dialog claims this floor itself with `set_min_size`.
-const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 500.0);
+const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 560.0);
 
 /// The "New machine" shortcut, consumed by both the direct-boot Machine
 /// menu ([`crate::CocoApp`]) and the manager's toolbar: ⌘N on macOS,
@@ -233,6 +233,11 @@ pub struct NewMachineSpec {
     /// (`$FF80-$FF86`, `SystemBus::vhd`), not cartridge hardware, so the
     /// HD rows need no controller.
     pub vhds: [MediaChoice; crate::UI_DRIVES],
+    /// The Display row: the created window's starting 4:3 aspect
+    /// correction (F9 keeps toggling it live afterwards).
+    pub aspect_correct: bool,
+    /// The Keyboard row: the starting keyboard mode (F12 keeps toggling).
+    pub kb_mode: crate::KbMode,
 }
 
 impl NewMachineSpec {
@@ -381,213 +386,135 @@ pub fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig
     }
 }
 
-/// State of the "New…" dialog: a draft [`MachineConfig`] being edited, plus
-/// the error from the last failed create attempt (e.g. a missing ROM set),
-/// shown inline until the dialog closes or the next attempt.
-pub struct NewVmDialog {
-    open: bool,
-    draft: MachineConfig,
-    pub error: Option<String>,
-    /// Whether the "Name" row is drawn (the manager's flow needs a display
-    /// name; `CocoApp`'s direct-boot flow doesn't — swapping the running
-    /// machine doesn't rename anything).
-    show_name_field: bool,
-    /// The name-row draft, meaningful only when `show_name_field` is set.
-    pub name: String,
-    /// The Cartridge-row draft; reset to None on every open.
+/// The full machine form both hosts draw: the hardware rows
+/// ([`config_form_rows`]), then Cassette, Cartridge (with the nested
+/// MPI-slot and Disk sub-rows), the HD rows, and the UI rows
+/// (Display/Keyboard). The "New…" dialog ([`NewVmDialog`]) collects it into
+/// a [`NewMachineSpec`] on Create; the manager's detail pane
+/// (`manager::draw_detail_ok`) auto-saves it back into the machine's
+/// definition on every change — but the rows, ordering, and constraint
+/// rules live here exactly once.
+pub struct MachineForm {
+    /// Distinguishes the combos' persistent egui ids between hosts — the
+    /// "New…" dialog and the manager's detail pane can be visible at once.
+    salt: &'static str,
+    /// Manager flow: a "Blank" media pick auto-places its file in the
+    /// machine's artifact directory ([`MediaChoice::Blank`]`(None)`); the
+    /// direct-boot dialog instead picks the backing file with a save dialog
+    /// on the spot.
+    auto_place_blanks: bool,
+    pub config: MachineConfig,
+    /// The Cartridge-row pick.
     pub cartridge: CartridgeChoice,
-    /// The MPI Slot drafts (indented rows under the Cartridge combo);
+    /// The MPI Slot picks (indented rows under the Cartridge combo);
     /// reset whenever the cartridge isn't the MPI.
     pub mpi_slots: [SlotChoice; crate::MPI_SLOT_COUNT],
-    /// The per-drive disk drafts, shown while a disk controller is
-    /// reachable (bare FD-502, or FD-502 in an MPI slot); reset to None on
-    /// every open and whenever no controller is reachable.
+    /// The per-drive disk picks, shown while a disk controller is
+    /// reachable (bare FD-502, or FD-502 in an MPI slot); reset whenever no
+    /// controller is reachable.
     pub disks: [MediaChoice; crate::UI_DRIVES],
-    /// The Cassette-row draft; reset to None on every open.
+    /// The Cassette-row pick.
     pub tape: MediaChoice,
-    /// The HD-row (VHD) drafts; reset to None on every open. Always
-    /// shown — see [`NewMachineSpec::vhds`].
+    /// The HD-row (VHD) picks. Always shown — see [`NewMachineSpec::vhds`].
     pub vhds: [MediaChoice; crate::UI_DRIVES],
+    /// The Display row: 4:3 aspect correction (`[ui].aspect_correct`).
+    pub aspect_correct: bool,
+    /// The Keyboard row (`[ui].kb_mode`).
+    pub kb_mode: crate::KbMode,
 }
 
-impl NewVmDialog {
-    pub fn new() -> Self {
+impl MachineForm {
+    /// An all-defaults form. `salt` and `auto_place_blanks` are per-host
+    /// constants — see the field docs.
+    pub fn new(salt: &'static str, auto_place_blanks: bool) -> Self {
         Self {
-            open: false,
-            draft: MachineConfig::default(),
-            error: None,
-            show_name_field: false,
-            name: String::new(),
+            salt,
+            auto_place_blanks,
+            config: MachineConfig::default(),
             cartridge: CartridgeChoice::None,
             mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
             disks: std::array::from_fn(|_| MediaChoice::None),
             tape: MediaChoice::None,
             vhds: std::array::from_fn(|_| MediaChoice::None),
+            // The same starting values `CocoApp::new` boots with and
+            // `machine_def::UIDTO::default()` records.
+            aspect_correct: true,
+            kb_mode: crate::KbMode::Positional,
         }
     }
 
-    /// [`Self::new`] with the "Name" row enabled, for the manager's "New…"
-    /// flow (`manager.rs`).
-    pub fn new_for_manager() -> Self {
-        Self {
-            show_name_field: true,
-            ..Self::new()
-        }
-    }
-
-    /// Open the dialog with the draft seeded from `current` (the running
-    /// machine's config), so "New…" defaults to "same machine again".
-    pub fn open_with(&mut self, current: MachineConfig) {
-        self.draft = current;
-        self.error = None;
+    /// Reset every pick besides the hardware `config` and the UI rows to
+    /// its default — the dialog reopens as "same machine again, nothing
+    /// mounted".
+    fn reset_inventory(&mut self) {
         self.cartridge = CartridgeChoice::None;
         self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
         self.disks = std::array::from_fn(|_| MediaChoice::None);
         self.tape = MediaChoice::None;
         self.vhds = std::array::from_fn(|_| MediaChoice::None);
-        self.open = true;
     }
 
-    /// [`Self::open_with`] that also seeds the "New Machine" title row —
-    /// the manager's "New…" flow, which has no "running machine" to default
-    /// from, so both the config and the display name are given explicitly.
-    pub fn open_new(&mut self, config: MachineConfig, name: impl Into<String>) {
-        self.name = name.into();
-        self.open_with(config);
-    }
+    /// All form rows. Must be called inside an already-open two-column
+    /// [`egui::Grid`] with [`FORM_GRID_SPACING`], like [`config_form_rows`].
+    pub fn rows(&mut self, ui: &mut egui::Ui) {
+        let font = ui.style().text_styles[&egui::TextStyle::Button].size;
+        config_form_rows(ui, self.salt, &mut self.config);
 
-    pub fn close(&mut self) {
-        self.open = false;
-        self.error = None;
-    }
+        // Form-only rows (not `config_form_rows`): the cartridge and media
+        // aren't part of `MachineConfig` — see [`CartridgeChoice`].
+        ui.label(egui::RichText::new("Cassette").size(font));
+        self.tape_combo(ui);
+        ui.end_row();
 
-    /// Draw the dialog if open. Returns [`NewVmAction::Create`] on the frame
-    /// "Create" is clicked; the dialog stays open so a failure can be shown
-    /// inline (the caller closes it on success).
-    pub fn show(&mut self, ctx: &egui::Context) -> NewVmAction {
-        if !self.open {
-            return NewVmAction::None;
+        if self.cartridge != CartridgeChoice::MPI {
+            self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
         }
-        let mut action = NewVmAction::None;
-        let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
-        let mut open = self.open;
-        egui::Window::new(crate::window_title(ctx, "New Machine"))
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .min_size(DIALOG_MIN_SIZE)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                // The frame only ever hugs the content (see
-                // [`DIALOG_MIN_SIZE`]), so claim the floor — and any extra
-                // room from a drag-resize — as the content's own size.
-                ui.set_min_size(DIALOG_MIN_SIZE.max(ui.available_size()));
-                egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
-                    egui::Grid::new("new_vm_grid")
-                        .num_columns(2)
-                        .spacing(FORM_GRID_SPACING)
-                        .show(ui, |ui| {
-                            if self.show_name_field {
-                                let name_label =
-                                    ui.label(egui::RichText::new("Name").size(font));
-                                ui.text_edit_singleline(&mut self.name)
-                                    .labelled_by(name_label.id);
-                                ui.end_row();
-                            }
-                            config_form_rows(ui, "new_vm", &mut self.draft);
-
-                            // Dialog-only row (not `config_form_rows`): the
-                            // cartridge isn't part of `MachineConfig` — see
-                            // [`CartridgeChoice`] — and the manager's detail
-                            // pane edits peripherals through its own
-                            // checkboxes.
-                            ui.label(egui::RichText::new("Cassette").size(font));
-                            self.tape_combo(ui);
-                            ui.end_row();
-
-                            if self.cartridge != CartridgeChoice::MPI {
-                                self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
-                            }
-                            if !self.drives_available() {
-                                self.disks = std::array::from_fn(|_| MediaChoice::None);
-                            }
-                            ui.label(egui::RichText::new("Cartridge").size(font));
-                            self.cartridge_combo(ui);
-                            ui.end_row();
-
-                            // The cartridge's own rows nest below it as an
-                            // indented label+combo sub-form: the FD-502's
-                            // Disk rows directly, the MPI's four Slot rows
-                            // (with the Disk rows one level deeper, under
-                            // whichever slot holds the FD-502).
-                            match self.cartridge {
-                                CartridgeChoice::FD502 => {
-                                    sub_form_row(ui, |ui| self.disk_rows(ui, font));
-                                }
-                                CartridgeChoice::MPI => {
-                                    sub_form_row(ui, |ui| self.slot_rows(ui, font));
-                                }
-                                CartridgeChoice::None
-                                | CartridgeChoice::RomPak(_)
-                                | CartridgeChoice::RTC => {}
-                            }
-
-                            // The VHD hard disks, below the removable
-                            // media. Always shown, no cartridge required —
-                            // see [`NewMachineSpec::vhds`].
-                            for drive in 0..crate::UI_DRIVES {
-                                ui.label(egui::RichText::new(format!("HD {drive}")).size(font));
-                                self.vhd_combo(ui, drive);
-                                ui.end_row();
-                            }
-                        });
-
-                    if let Some(error) = &self.error {
-                        ui.add_space(DIALOG_MARGIN as f32 / 2.0);
-                        ui.label(
-                            egui::RichText::new(error)
-                                .size(font)
-                                .color(ui.visuals().error_fg_color),
-                        );
-                    }
-                    //ui.add_space(DIALOG_MARGIN as f32);
-                    // ui.label(
-                    //     egui::RichText::new(
-                    //         "Creating a new machine replaces the current one — any \
-                    //          unsaved work in memory will be lost.",
-                    //     )
-                    //     .size(font)
-                    //     .weak(),
-                    // );
-                    ui.add_space(DIALOG_MARGIN as f32);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-                        if ui.button("Create").clicked() {
-                            action = NewVmAction::Create(Box::new(NewMachineSpec {
-                                config: self.draft,
-                                cartridge: self.cartridge.clone(),
-                                mpi_slots: self.mpi_slots.clone(),
-                                disks: self.disks.clone(),
-                                tape: self.tape.clone(),
-                                vhds: self.vhds.clone(),
-                            }));
-                        }
-                        if ui.button("Cancel").clicked() {
-                            self.close();
-                        }
-                    });
-                });
-            });
-        // `open` only goes false via the title-bar close box; `self.close()`
-        // inside the body must not be resurrected by writing `open` back.
-        if !open {
-            self.close();
+        if !self.drives_available() {
+            self.disks = std::array::from_fn(|_| MediaChoice::None);
         }
-        action
+        ui.label(egui::RichText::new("Cartridge").size(font));
+        self.cartridge_combo(ui);
+        ui.end_row();
+
+        // The cartridge's own rows nest below it as an indented label+combo
+        // sub-form: the FD-502's Disk rows directly, the MPI's four Slot
+        // rows (with the Disk rows one level deeper, under whichever slot
+        // holds the FD-502).
+        match self.cartridge {
+            CartridgeChoice::FD502 => {
+                sub_form_row(ui, |ui| self.disk_rows(ui, font));
+            }
+            CartridgeChoice::MPI => {
+                sub_form_row(ui, |ui| self.slot_rows(ui, font));
+            }
+            CartridgeChoice::None | CartridgeChoice::RomPak(_) | CartridgeChoice::RTC => {}
+        }
+
+        // The VHD hard disks, below the removable media. Always shown, no
+        // cartridge required — see [`NewMachineSpec::vhds`].
+        for drive in 0..crate::UI_DRIVES {
+            ui.label(egui::RichText::new(format!("HD {drive}")).size(font));
+            self.vhd_combo(ui, drive);
+            ui.end_row();
+        }
+
+        // UI preferences, the `[ui]` section's fields: the launched
+        // window's *starting* state; F9/F12 keep working as live toggles.
+        ui.label(egui::RichText::new("Display").size(font));
+        ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
+        ui.end_row();
+
+        ui.label(egui::RichText::new("Keyboard").size(font));
+        ui.horizontal(|ui| {
+            for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {
+                ui.radio_value(&mut self.kb_mode, mode, mode.label());
+            }
+        });
+        ui.end_row();
     }
 
-    /// [`NewMachineSpec::has_drives`] over the dialog's own drafts.
-    fn drives_available(&self) -> bool {
+    /// [`NewMachineSpec::has_drives`] over the form's own picks.
+    pub fn drives_available(&self) -> bool {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
@@ -598,7 +525,7 @@ impl NewVmDialog {
     /// The MPI's four Slot rows as their own label+combo grid; the Disk
     /// rows nest one level deeper under whichever slot holds the FD-502.
     fn slot_rows(&mut self, ui: &mut egui::Ui, font: f32) {
-        egui::Grid::new("new_vm_slots")
+        egui::Grid::new((self.salt, "slots"))
             .num_columns(2)
             .spacing(FORM_GRID_SPACING)
             .show(ui, |ui| {
@@ -614,7 +541,7 @@ impl NewVmDialog {
 
     /// The Disk rows as their own label+combo grid, one row per drive.
     fn disk_rows(&mut self, ui: &mut egui::Ui, font: f32) {
-        egui::Grid::new("new_vm_disks")
+        egui::Grid::new((self.salt, "disks"))
             .num_columns(2)
             .spacing(FORM_GRID_SPACING)
             .show(ui, |ui| {
@@ -629,7 +556,7 @@ impl NewVmDialog {
     /// (like the media combos' Select…); a cancelled dialog keeps the
     /// previous choice.
     fn cartridge_combo(&mut self, ui: &mut egui::Ui) {
-        egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
+        egui::ComboBox::from_id_salt((self.salt, "cartridge"))
             .selected_text(cartridge_label(&self.cartridge))
             .show_ui(ui, |ui| {
                 if ui
@@ -675,7 +602,7 @@ impl NewVmDialog {
     /// [`SlotChoice`]); ROM Paks may fill any number of slots.
     fn slot_combo(&mut self, ui: &mut egui::Ui, font: f32, slot: usize) {
         ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
-        egui::ComboBox::from_id_salt(("new_vm", "mpi_slot", slot))
+        egui::ComboBox::from_id_salt((self.salt, "mpi_slot", slot))
             .selected_text(slot_label(&self.mpi_slots[slot]))
             .show_ui(ui, |ui| {
                 if ui
@@ -725,7 +652,7 @@ impl NewVmDialog {
     /// accepts `.cas` and WAV, Blank is a fresh `.cas` (empty file), and
     /// the manager flow auto-places `tape.cas` in the artifact directory.
     fn tape_combo(&mut self, ui: &mut egui::Ui) {
-        egui::ComboBox::from_id_salt(("new_vm", "tape"))
+        egui::ComboBox::from_id_salt((self.salt, "tape"))
             .selected_text(media_choice_text(&self.tape))
             .show_ui(ui, |ui| {
                 if ui
@@ -738,7 +665,7 @@ impl NewVmDialog {
                     .selectable_label(matches!(self.tape, MediaChoice::Blank(_)), "Blank")
                     .clicked()
                 {
-                    self.tape = if self.show_name_field {
+                    self.tape = if self.auto_place_blanks {
                         MediaChoice::Blank(None)
                     } else {
                         match rfd::FileDialog::new()
@@ -768,7 +695,7 @@ impl NewVmDialog {
     /// A blank is a 0-byte file: `VhdImage::File` extends on write, so no
     /// preallocation is needed.
     fn vhd_combo(&mut self, ui: &mut egui::Ui, drive: usize) {
-        egui::ComboBox::from_id_salt(("new_vm", "vhd", drive))
+        egui::ComboBox::from_id_salt((self.salt, "vhd", drive))
             .selected_text(media_choice_text(&self.vhds[drive]))
             .show_ui(ui, |ui| {
                 if ui
@@ -781,7 +708,7 @@ impl NewVmDialog {
                     .selectable_label(matches!(self.vhds[drive], MediaChoice::Blank(_)), "Blank")
                     .clicked()
                 {
-                    self.vhds[drive] = if self.show_name_field {
+                    self.vhds[drive] = if self.auto_place_blanks {
                         MediaChoice::Blank(None)
                     } else {
                         match rfd::FileDialog::new()
@@ -817,7 +744,7 @@ impl NewVmDialog {
     /// choice.
     fn disk_combo(&mut self, ui: &mut egui::Ui, font: f32, drive: usize) {
         ui.label(egui::RichText::new(format!("Disk {drive}:")).size(font));
-        egui::ComboBox::from_id_salt(("new_vm", "disk", drive))
+        egui::ComboBox::from_id_salt((self.salt, "disk", drive))
             .selected_text(media_choice_text(&self.disks[drive]))
             .show_ui(ui, |ui| {
                 if ui
@@ -830,7 +757,7 @@ impl NewVmDialog {
                     .selectable_label(matches!(self.disks[drive], MediaChoice::Blank(_)), "Blank")
                     .clicked()
                 {
-                    self.disks[drive] = if self.show_name_field {
+                    self.disks[drive] = if self.auto_place_blanks {
                         MediaChoice::Blank(None)
                     } else {
                         match disk_file_dialog()
@@ -850,6 +777,111 @@ impl NewVmDialog {
                     self.disks[drive] = MediaChoice::File(path);
                 }
             });
+    }
+}
+
+/// State of the direct-boot "New…" dialog: the [`MachineForm`] being
+/// edited, plus the error from the last failed create attempt (e.g. a
+/// missing ROM set), shown inline until the dialog closes or the next
+/// attempt. The manager doesn't use this dialog at all — its "New…" creates
+/// a default machine on the spot and edits it in the detail pane, which
+/// hosts the same [`MachineForm`].
+pub struct NewVmDialog {
+    open: bool,
+    pub error: Option<String>,
+    pub form: MachineForm,
+}
+
+impl NewVmDialog {
+    pub fn new() -> Self {
+        Self {
+            open: false,
+            error: None,
+            form: MachineForm::new("new_vm", false),
+        }
+    }
+
+    /// Open the dialog with the form seeded from the running machine —
+    /// config and UI preferences — so "New…" defaults to "same machine
+    /// again", with nothing mounted.
+    pub fn open_with(&mut self, current: MachineConfig, aspect_correct: bool, kb_mode: crate::KbMode) {
+        self.form.reset_inventory();
+        self.form.config = current;
+        self.form.aspect_correct = aspect_correct;
+        self.form.kb_mode = kb_mode;
+        self.error = None;
+        self.open = true;
+    }
+
+    pub fn close(&mut self) {
+        self.open = false;
+        self.error = None;
+    }
+
+    /// Draw the dialog if open. Returns [`NewVmAction::Create`] on the frame
+    /// "Create" is clicked; the dialog stays open so a failure can be shown
+    /// inline (the caller closes it on success).
+    pub fn show(&mut self, ctx: &egui::Context) -> NewVmAction {
+        if !self.open {
+            return NewVmAction::None;
+        }
+        let mut action = NewVmAction::None;
+        let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
+        let mut open = self.open;
+        egui::Window::new(crate::window_title(ctx, "New Machine"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .min_size(DIALOG_MIN_SIZE)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                // The frame only ever hugs the content (see
+                // [`DIALOG_MIN_SIZE`]), so claim the floor — and any extra
+                // room from a drag-resize — as the content's own size.
+                ui.set_min_size(DIALOG_MIN_SIZE.max(ui.available_size()));
+                egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
+                    egui::Grid::new("new_vm_grid")
+                        .num_columns(2)
+                        .spacing(FORM_GRID_SPACING)
+                        .show(ui, |ui| {
+                            self.form.rows(ui);
+                        });
+
+                    if let Some(error) = &self.error {
+                        ui.add_space(DIALOG_MARGIN as f32 / 2.0);
+                        ui.label(
+                            egui::RichText::new(error)
+                                .size(font)
+                                .color(ui.visuals().error_fg_color),
+                        );
+                    }
+                    ui.add_space(DIALOG_MARGIN as f32);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                        if ui.button("Create").clicked() {
+                            action = NewVmAction::Create(Box::new(NewMachineSpec {
+                                config: self.form.config,
+                                cartridge: self.form.cartridge.clone(),
+                                mpi_slots: self.form.mpi_slots.clone(),
+                                disks: self.form.disks.clone(),
+                                tape: self.form.tape.clone(),
+                                vhds: self.form.vhds.clone(),
+                                aspect_correct: self.form.aspect_correct,
+                                kb_mode: self.form.kb_mode,
+                            }));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.close();
+                        }
+                    });
+                });
+            });
+        // `open` only goes false via the title-bar close box; `self.close()`
+        // inside the body must not be resurrected by writing `open` back.
+        if !open {
+            self.close();
+        }
+        action
     }
 }
 
@@ -913,45 +945,49 @@ mod tests {
     #[test]
     fn constrain_draft_snaps_family_specific_fields() {
         let mut dialog = NewVmDialog::new();
-        dialog.open_with(MachineConfig {
-            variant: MachineVariant::Coco3,
-            video: VideoStandard::PAL,
-            memory: MemorySize::K2048,
-            monitor: Some(MonitorType::Composite),
-            vdg: None,
-        });
+        dialog.open_with(
+            MachineConfig {
+                variant: MachineVariant::Coco3,
+                video: VideoStandard::PAL,
+                memory: MemorySize::K2048,
+                monitor: Some(MonitorType::Composite),
+                vdg: None,
+            },
+            true,
+            crate::KbMode::Positional,
+        );
 
-        dialog.draft.variant = MachineVariant::Coco2;
-        constrain(&mut dialog.draft);
-        assert_eq!(dialog.draft.memory, MemorySize::K64);
-        assert_eq!(dialog.draft.video, VideoStandard::NTSC);
+        dialog.form.config.variant = MachineVariant::Coco2;
+        constrain(&mut dialog.form.config);
+        assert_eq!(dialog.form.config.memory, MemorySize::K64);
+        assert_eq!(dialog.form.config.video, VideoStandard::NTSC);
         assert_eq!(
-            dialog.draft.vdg,
+            dialog.form.config.vdg,
             Some(VDGVariant::MC6847T1),
             "CoCo 2 defaults to the T1 (CoCo 2B)"
         );
         assert_eq!(
-            dialog.draft.monitor, None,
+            dialog.form.config.monitor, None,
             "a CoCo 2 has no monitor port to configure"
         );
-        assert!(dialog.draft.validate().is_ok());
+        assert!(dialog.form.config.validate().is_ok());
 
-        dialog.draft.variant = MachineVariant::Coco3;
-        constrain(&mut dialog.draft);
-        assert_eq!(dialog.draft.memory, MemorySize::K512);
-        assert_eq!(dialog.draft.vdg, None);
+        dialog.form.config.variant = MachineVariant::Coco3;
+        constrain(&mut dialog.form.config);
+        assert_eq!(dialog.form.config.memory, MemorySize::K512);
+        assert_eq!(dialog.form.config.vdg, None);
         assert_eq!(
-            dialog.draft.monitor,
+            dialog.form.config.monitor,
             Some(MonitorType::RGB),
             "returning to CoCo 3 re-seeds the default cable"
         );
-        assert!(dialog.draft.validate().is_ok());
+        assert!(dialog.form.config.validate().is_ok());
 
-        dialog.draft.variant = MachineVariant::Coco1;
-        constrain(&mut dialog.draft);
-        assert_eq!(dialog.draft.vdg, Some(VDGVariant::MC6847));
-        assert_eq!(dialog.draft.monitor, None);
-        assert!(dialog.draft.validate().is_ok());
+        dialog.form.config.variant = MachineVariant::Coco1;
+        constrain(&mut dialog.form.config);
+        assert_eq!(dialog.form.config.vdg, Some(VDGVariant::MC6847));
+        assert_eq!(dialog.form.config.monitor, None);
+        assert!(dialog.form.config.validate().is_ok());
     }
 
     /// Re-opening seeds the draft from the running machine and clears any
@@ -967,10 +1003,10 @@ mod tests {
             monitor: None,
             vdg: Some(VDGVariant::MC6847),
         };
-        dialog.open_with(current);
+        dialog.open_with(current, false, crate::KbMode::Symbolic);
         assert!(dialog.open);
         assert!(dialog.error.is_none());
-        assert_eq!(dialog.draft.variant, MachineVariant::Coco1);
-        assert_eq!(dialog.draft.memory, MemorySize::K16);
+        assert_eq!(dialog.form.config.variant, MachineVariant::Coco1);
+        assert_eq!(dialog.form.config.memory, MemorySize::K16);
     }
 }

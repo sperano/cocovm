@@ -64,7 +64,7 @@ const STATUS_BAR_H: f32 = 22.0;
 const TYPE_HOLD_FIELDS: u8 = 2;
 const TYPE_GAP_FIELDS: u8 = 1;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KbMode {
     Positional,
     Symbolic,
@@ -1068,7 +1068,7 @@ impl CocoApp {
         // below so the N keypress never reaches the CoCo matrix or the
         // symbolic type-ahead (the held modifier alone is harmless there).
         if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
-            self.new_vm.open_with(self.machine.config);
+            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
         }
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
@@ -1252,7 +1252,7 @@ impl CocoApp {
                     let new_button = egui::Button::new("New…")
                         .shortcut_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
                     if ui.add(new_button).clicked() {
-                        self.new_vm.open_with(self.machine.config);
+                        self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
                         ui.close();
                     }
                     ui.separator();
@@ -1719,6 +1719,11 @@ impl CocoApp {
         if let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) {
             match self.create_vm(spec.config, ctx) {
                 Ok(()) => {
+                    // The new window's starting UI preferences, from the
+                    // form's Display/Keyboard rows; F9/F12 keep toggling
+                    // them live afterwards.
+                    self.aspect_correct = spec.aspect_correct;
+                    self.kb_mode = spec.kb_mode;
                     // The machine booted; cartridge/media problems (e.g.
                     // missing disk11.rom, unreadable image) are reported
                     // like a menu insert, not as a create failure.

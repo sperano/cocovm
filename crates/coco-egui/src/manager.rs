@@ -125,8 +125,8 @@ fn transport_button(ui: &mut egui::Ui, glyph: &str, enabled: bool) -> egui::Resp
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
 
-/// File name of the auto-placed blank image the "New…" dialog's
-/// Disk N = Blank choice creates in the machine's artifact directory,
+/// File name of the auto-placed blank image the detail pane's
+/// Disk N = Blank pick creates in the machine's artifact directory,
 /// recorded in `[media].diskN` as a relative path.
 fn blank_disk_file(drive: usize) -> String {
     format!("disk{drive}.dsk")
@@ -140,9 +140,10 @@ fn blank_vhd_file(drive: usize) -> String {
     format!("hd{drive}.vhd")
 }
 
-/// Default display name seeded into the "New…" dialog's Name field —
-/// [`MachineConfig::default`]'s model, the same default the bare-invocation
-/// direct-boot path (`main.rs`) and the dialog's own draft start from.
+/// Display name (and slug source) of a freshly created machine
+/// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s
+/// model, the same default the bare-invocation direct-boot path (`main.rs`)
+/// starts from.
 fn default_new_name() -> String {
     crate::machine_label(MachineConfig::default().variant).to_string()
 }
@@ -176,6 +177,13 @@ pub struct MachineEntry {
     /// When this entry's *running* VM last had its `thumbnail.png`
     /// refreshed — drives the [`THUMBNAIL_REFRESH`] crash-insurance cadence.
     last_thumbnail_write: Option<Instant>,
+    /// The machine was renamed while running, so its `<slug>.toml`/artifact
+    /// dir couldn't follow the new name yet (the running VM writes
+    /// `thumbnail.png` into the artifact dir by path — renaming under it
+    /// races). [`ManagerApp::apply_pending_renames`] migrates once the VM is
+    /// gone. Not persisted: quitting with this set leaves the stale slug
+    /// until the next rename commit.
+    rename_pending: bool,
 }
 
 impl MachineEntry {
@@ -194,6 +202,7 @@ impl MachineEntry {
             thumbnail: None,
             thumbnail_load_attempted: false,
             last_thumbnail_write: None,
+            rename_pending: false,
         }
     }
 }
@@ -303,16 +312,26 @@ fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), St
     fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))
 }
 
-/// The detail pane's working copy of the selected entry's definition
-/// (`plan-machine-persistence.md` step 4). `saved` is the last-loaded (or
-/// last-saved) snapshot, compared against `def` for the Save button's dirty
-/// indicator and restored by Revert.
-struct EditDraft {
-    /// Which entry this draft belongs to — a mismatch (a different row was
-    /// clicked) means the draft must be reseeded before it's shown again.
+/// The detail pane's working state for the selected entry: the shared
+/// [`new_vm::MachineForm`] over its definition, auto-saved on every change
+/// (macOS System Settings style — no Save/Revert, user decision
+/// 2026-07-24).
+struct EditState {
+    /// Which entry this state belongs to — a mismatch (a different row was
+    /// clicked) means it must be reseeded before it's shown again.
     slug: String,
-    saved: machine_def::MachineDef,
-    def: machine_def::MachineDef,
+    /// The Name field's draft. Unlike the form, it only commits (saves, and
+    /// migrates the slug — [`ManagerApp::commit_name`]) on focus loss/Enter,
+    /// so half-typed names aren't saved keystroke by keystroke.
+    name: String,
+    form: new_vm::MachineForm,
+    /// The definition the form's picks last packed into ([`pack_def`]) —
+    /// the auto-save baseline. Seeded from the freshly seeded form (NOT
+    /// from the entry's definition): packing normalizes (explicit `vdg`,
+    /// re-seated MPI slots, dropped conflicting flags), and merely
+    /// selecting a row must never rewrite a hand-edited file. Only a real
+    /// user change makes the repack differ from this and triggers a save.
+    packed: machine_def::MachineDef,
 }
 
 pub struct ManagerApp {
@@ -336,10 +355,12 @@ pub struct ManagerApp {
     /// module.
     pub(crate) entries: Vec<MachineEntry>,
     pub(crate) selected: Option<usize>,
-    /// The right pane's edit draft for `selected`, when it's an `Ok` entry.
-    /// `None` while nothing is selected, or the selected entry is an `Err`
-    /// (nothing to edit).
-    edit: Option<EditDraft>,
+    /// The right pane's edit state for `selected`. `None` while nothing is
+    /// selected.
+    edit: Option<EditState>,
+    /// Focus the detail pane's Name field on its next draw — set by "New…"
+    /// so the natural next gesture after creating is typing the real name.
+    focus_name: bool,
     /// Message from the last failed Save, shown under the Save/Revert row
     /// until the next attempt or a fresh selection.
     save_error: Option<String>,
@@ -353,12 +374,6 @@ pub struct ManagerApp {
     /// Message from the last failed delete, shown inside the confirmation
     /// modal (which stays open for another try or a Cancel).
     delete_error: Option<String>,
-    /// The "New…" dialog, reused from the direct-boot flow
-    /// (`new_vm::NewVmDialog::new_for_manager` turns its Name row on).
-    /// `pub(crate)`: `ui_tests.rs` seeds ROM Pak picks directly — the
-    /// "ROM Pak…" combo items open native file dialogs a headless harness
-    /// cannot drive.
-    pub(crate) new_vm: new_vm::NewVmDialog,
 }
 
 impl ManagerApp {
@@ -379,163 +394,158 @@ impl ManagerApp {
             entries,
             selected: None,
             edit: None,
+            focus_name: false,
             save_error: None,
             pending_delete: None,
             delete_error: None,
-            new_vm: new_vm::NewVmDialog::new_for_manager(),
         }
     }
 
-    /// "New…": open the dialog seeded with a default draft and display name.
-    fn open_new_dialog(&mut self) {
-        self.new_vm.open_new(MachineConfig::default(), default_new_name());
+    /// "New…" (toolbar button and ⌘N): create a default machine *right
+    /// now* — saved to disk under a uniquified slug, inserted in the list,
+    /// and selected with the Name field focused — instead of opening a
+    /// dialog. There is no Cancel; an unwanted machine is deleted like any
+    /// other (context menu → Delete…). Does NOT boot anything.
+    fn create_machine_now(&mut self) {
+        let Some(dir) = self.machines_dir.clone() else {
+            self.save_error = Some(NO_CONFIG_DIR.to_string());
+            return;
+        };
+        let name = default_new_name();
+        // Check both the in-memory list (loaded once at startup) and the
+        // directory itself: `entries` misses any `<slug>.toml` written by a
+        // second running instance or hand-placed since startup (an explicit
+        // design goal — `machine_def.rs` module doc). Without the on-disk
+        // check, `machine_def::save`'s unconditional rename would silently
+        // overwrite that file.
+        let taken = |candidate: &str| {
+            self.entries.iter().any(|e| e.slug == candidate)
+                || dir.join(format!("{candidate}.toml")).exists()
+        };
+        let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
+        let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
+        let def = machine_def::MachineDef::from_config(name, created, &MachineConfig::default());
+        match machine_def::save(&dir, &slug, &def) {
+            Ok(()) => {
+                let index = self.entries.partition_point(|e| e.slug < slug);
+                self.entries.insert(index, MachineEntry::new(slug, def));
+                self.selected = Some(index);
+                self.edit = None; // seeded from the new entry on next draw
+                self.focus_name = true;
+                self.save_error = None;
+            }
+            Err(e) => self.save_error = Some(e),
+        }
     }
 
-    /// "Create" in the "New…" dialog: build a definition from the draft
-    /// config and the Name field, uniquify its slug against the current
-    /// list, save it, and select the new row. Does NOT boot anything
-    /// (`plan-machine-persistence.md` step 3). Save failures are reported in
-    /// the dialog's own error field so it stays open for another try, the
-    /// same contract `CocoApp::create_vm` follows for the direct-boot path.
-    /// Resolve one of the "New…" dialog's media picks to the string
-    /// recorded in the definition's `[media]` section, creating the backing
-    /// file for a Blank pick: auto-placed in `slug`'s artifact dir as
-    /// `auto_file` (recorded relative — `machine_def::resolve_media_path`)
-    /// or at the dialog's explicitly picked path. Blank media is a 0-byte
-    /// file — a blank 0-track JVC disk or an empty `.cas` tape, the same
-    /// starting point `CocoApp::{new_blank_disk, new_tape}` use; a leftover
-    /// file under a fresh slug is reused rather than clobbered. On failure
-    /// the error lands in the dialog and `None` is returned (abort create).
+    /// Resolve one of the edit form's media picks to the string recorded in
+    /// the definition's `[media]` section, creating the backing file for a
+    /// Blank pick: auto-placed in `slug`'s artifact dir as `auto_file`
+    /// (recorded relative — `machine_def::resolve_media_path`). Blank media
+    /// is a 0-byte file — a blank 0-track JVC disk, an empty `.cas` tape or
+    /// `.vhd`, the same starting point `CocoApp::{new_blank_disk, new_tape}`
+    /// use; a leftover file under the same slug is reused rather than
+    /// clobbered. The pick is rewritten to `File(recorded)` afterwards so
+    /// the combo shows the placed file, not a stale "Blank".
     fn record_media_choice(
-        &mut self,
+        &self,
         slug: &str,
-        choice: new_vm::MediaChoice,
+        choice: &mut new_vm::MediaChoice,
         auto_file: String,
-    ) -> Option<Option<String>> {
-        let (path, recorded) = match choice {
-            new_vm::MediaChoice::None => return Some(None),
-            new_vm::MediaChoice::File(path) => return Some(Some(path.display().to_string())),
+    ) -> Result<Option<String>, String> {
+        let (path, recorded) = match &*choice {
+            new_vm::MediaChoice::None => return Ok(None),
+            new_vm::MediaChoice::File(path) => return Ok(Some(path.display().to_string())),
             new_vm::MediaChoice::Blank(Some(path)) => {
-                let recorded = path.display().to_string();
-                (path, recorded)
+                (path.clone(), path.display().to_string())
             }
             new_vm::MediaChoice::Blank(None) => {
                 let Some(root) = self.artifacts_root.clone() else {
-                    self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
-                    return None;
+                    return Err(NO_CONFIG_DIR.to_string());
                 };
                 let artifact_dir = root.join(slug);
-                if let Err(e) = fs::create_dir_all(&artifact_dir) {
-                    self.new_vm.error = Some(format!("{}: {e}", artifact_dir.display()));
-                    return None;
-                }
+                fs::create_dir_all(&artifact_dir)
+                    .map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
                 (artifact_dir.join(&auto_file), auto_file)
             }
         };
         match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => {
-                self.new_vm.error = Some(format!("{}: {e}", path.display()));
-                return None;
-            }
+            Err(e) => return Err(format!("{}: {e}", path.display())),
         }
-        Some(Some(recorded))
+        *choice = new_vm::MediaChoice::File(PathBuf::from(&recorded));
+        Ok(Some(recorded))
     }
 
-    fn create_machine(&mut self, spec: new_vm::NewMachineSpec) {
-        let Some(dir) = self.machines_dir.clone() else {
-            self.new_vm.error = Some(NO_CONFIG_DIR.to_string());
-            return;
-        };
-        let name = self.new_vm.name.trim();
-        let name = if name.is_empty() { default_new_name() } else { name.to_string() };
-
-        let base = machine_def::slugify(&name);
-        // Check both the in-memory list (loaded once at startup) and the
-        // directory itself: `entries` misses any `<slug>.toml` written by a
-        // second running instance, hand-edited in a terminal since startup
-        // (an explicit design goal — `machine_def.rs` module doc). Without
-        // the on-disk check, `machine_def::save`'s unconditional rename
-        // would silently overwrite that file.
-        let taken = |candidate: &str| {
-            self.entries.iter().any(|e| e.slug == candidate)
-                || dir.join(format!("{candidate}.toml")).exists()
-        };
-        let slug = machine_def::unique_slug(&base, &taken);
-
-        let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
-        let mut def = machine_def::MachineDef::from_config(name, created, &spec.config);
+    /// Pack the edit form back into a definition, starting from `base` (the
+    /// entry's current definition) so everything the form doesn't edit —
+    /// `name`, `created`, `[hardware].rom`, unknown keys — passes through
+    /// untouched. Blank media picks create their backing files here (see
+    /// [`Self::record_media_choice`]); this is the write moment, since with
+    /// auto-save every change *is* a save. Errors (an unrepresentable form,
+    /// a failed file creation) leave the definition unwritten and land in
+    /// the pane's error label.
+    fn pack_def(
+        &self,
+        base: &machine_def::MachineDef,
+        slug: &str,
+        form: &mut new_vm::MachineForm,
+    ) -> Result<machine_def::MachineDef, String> {
+        let mut def = base.clone();
+        def.hardware =
+            machine_def::HardwareDTO::from_config(&form.config, base.hardware.rom.clone());
         // The definition schema has no slot layout (yet): an FD-502 in an
-        // MPI slot is recorded as fd502 = true, and launch_machine re-seats
-        // it in the last slot.
-        def.peripherals.fd502 = spec.has_drives();
-        def.peripherals.mpi = spec.cartridge == new_vm::CartridgeChoice::MPI;
-        // Like fd502: the schema has no slot layout, so a slotted RTC is
-        // recorded as rtc = true and launch_machine re-seats it in its
-        // default slot.
-        def.peripherals.rtc = spec.cartridge == new_vm::CartridgeChoice::RTC
-            || spec.mpi_slots.contains(&new_vm::SlotChoice::RTC);
+        // MPI slot is recorded as fd502 = true, a slotted RTC as rtc = true,
+        // and launch_machine re-seats them in their default slots.
+        def.peripherals.fd502 = form.drives_available();
+        def.peripherals.mpi = form.cartridge == new_vm::CartridgeChoice::MPI;
+        def.peripherals.rtc = form.cartridge == new_vm::CartridgeChoice::RTC
+            || form.mpi_slots.contains(&new_vm::SlotChoice::RTC);
         // A ROM Pak — in the port or slotted in the MPI — is recorded as
         // [media].cart. The schema holds a single pak and no slot layout
         // (launch_machine re-seats a slotted one in slot 0), so more than
         // one slotted pak cannot be represented.
-        let mut slotted_paks = spec.mpi_slots.iter().filter_map(|slot| match slot {
+        let mut slotted_paks = form.mpi_slots.iter().filter_map(|slot| match slot {
             new_vm::SlotChoice::RomPak(path) => Some(path),
             _ => None,
         });
-        def.media.cart = match &spec.cartridge {
+        def.media.cart = match &form.cartridge {
             new_vm::CartridgeChoice::RomPak(path) => Some(path.display().to_string()),
             new_vm::CartridgeChoice::MPI => slotted_paks.next().map(|p| p.display().to_string()),
             _ => None,
         };
         if slotted_paks.next().is_some() {
-            self.new_vm.error = Some(
+            return Err(
                 "a machine definition records a single ROM Pak — leave at most one slot \
                  with a pak"
                     .to_string(),
             );
-            return;
         }
-        if spec.has_drives() {
-            for (drive, choice) in spec.disks.into_iter().enumerate() {
-                let Some(recorded) = self.record_media_choice(&slug, choice, blank_disk_file(drive))
-                else {
-                    return;
-                };
-                match drive {
-                    0 => def.media.disk0 = recorded,
-                    _ => def.media.disk1 = recorded,
-                }
+        for drive in 0..crate::UI_DRIVES {
+            let recorded =
+                self.record_media_choice(slug, &mut form.disks[drive], blank_disk_file(drive))?;
+            match drive {
+                0 => def.media.disk0 = recorded,
+                _ => def.media.disk1 = recorded,
             }
         }
-        let Some(recorded) = self.record_media_choice(&slug, spec.tape, BLANK_TAPE_FILE.to_string())
-        else {
-            return;
-        };
-        def.media.tape = recorded;
-        for (drive, choice) in spec.vhds.into_iter().enumerate() {
-            let Some(recorded) = self.record_media_choice(&slug, choice, blank_vhd_file(drive))
-            else {
-                return;
-            };
+        def.media.tape =
+            self.record_media_choice(slug, &mut form.tape, BLANK_TAPE_FILE.to_string())?;
+        for drive in 0..crate::UI_DRIVES {
+            let recorded =
+                self.record_media_choice(slug, &mut form.vhds[drive], blank_vhd_file(drive))?;
             match drive {
                 0 => def.media.vhd0 = recorded,
                 _ => def.media.vhd1 = recorded,
             }
         }
-
-        match machine_def::save(&dir, &slug, &def) {
-            Ok(()) => {
-                let index = self.entries.partition_point(|e| e.slug < slug);
-                self.entries.insert(index, MachineEntry::new(slug, def));
-                self.selected = Some(index);
-                self.edit = None; // reseeded from the new entry when the detail pane next draws
-                self.save_error = None;
-                self.new_vm.close();
-            }
-            Err(e) => self.new_vm.error = Some(e),
-        }
+        def.ui.aspect_correct = form.aspect_correct;
+        def.ui.kb_mode = match form.kb_mode {
+            crate::KbMode::Positional => machine_def::KbModeDTO::Positional,
+            crate::KbMode::Symbolic => machine_def::KbModeDTO::Symbolic,
+        };
+        Ok(def)
     }
 
     /// Left panel: the machine list. `ui.set_min_width` (rather than only
@@ -669,20 +679,36 @@ impl ManagerApp {
         def: machine_def::MachineDef,
     ) {
         if self.edit.as_ref().is_none_or(|e| e.slug != slug) {
-            // Seed `saved` normalized the same way the per-frame hardware
-            // repack below normalizes `def` (`HardwareDto::from_config`
-            // always writes an explicit `vdg` — see `normalize_hardware`'s
-            // doc). Otherwise a file that legally omits `vdg` starts the
-            // draft already dirty from mere selection, and Revert could
-            // never clear it: it would restore `saved`'s `None`, but the
-            // very next frame's repack re-normalizes `def` back to `Some`.
-            let saved = normalize_hardware(def);
-            self.edit = Some(EditDraft { slug: slug.clone(), saved: saved.clone(), def: saved });
+            let mut form = seed_form(&def);
+            // The auto-save baseline is the seeded form's own repack — see
+            // `EditState::packed`'s doc for why it must not be `def`
+            // itself. A freshly seeded form holds no Blank picks and at
+            // most one pak, so this pack can't fail or touch a file.
+            let packed = self
+                .pack_def(&def, &slug, &mut form)
+                .expect("a seeded form always packs");
+            self.edit = Some(EditState {
+                slug: slug.clone(),
+                name: def.name.clone(),
+                form,
+                packed,
+            });
             self.save_error = None;
         }
         let mut edit = self.edit.take().expect("just ensured above");
 
-        ui.add(egui::TextEdit::singleline(&mut edit.def.name).font(egui::TextStyle::Heading));
+        // The Name field commits on focus loss/Enter — not per keystroke,
+        // so "C", "Co", "CoC"… aren't each saved (and re-slugified) on the
+        // way to the real name. Everything else in the pane saves on change.
+        let name_response =
+            ui.add(egui::TextEdit::singleline(&mut edit.name).font(egui::TextStyle::Heading));
+        if self.focus_name {
+            name_response.request_focus();
+            self.focus_name = false;
+        }
+        if name_response.lost_focus() {
+            self.commit_name(index, &mut edit);
+        }
         ui.add_space(DETAIL_SECTION_GAP);
 
         // Run controls (see the transport-glyph constants' doc for the
@@ -741,89 +767,166 @@ impl ManagerApp {
             ui.add_space(TRANSPORT_GROUP_GAP);
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         });
-        if edit.def != edit.saved {
-            ui.small("Unsaved changes won't apply until this machine is saved.");
-        }
         if let Some(err) = &self.entries[index].launch_error {
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
         ui.add_space(DETAIL_SECTION_GAP);
 
-        // Hardware form: shared with the "New…" dialog (`new_vm.rs`'s
-        // `config_form_rows`) so the RAM/VDG/PAL constraint rules live in
-        // exactly one place. It edits a bare `MachineConfig`, so the DTO is
-        // unpacked into one before the grid and repacked after — `rom` (not
-        // part of `MachineConfig`) passes through untouched; there's no
-        // editor for it yet.
-        let mut config = edit.def.to_machine_config().expect("Ok entries validate on load/save");
-        egui::Grid::new(("detail_hw_grid", slug.clone()))
+        // The shared machine form — the exact rows the "New…" dialog draws
+        // (`new_vm::MachineForm`), hosted in the pane's own grid.
+        egui::Grid::new(("detail_form", slug.clone()))
             .num_columns(2)
             .spacing(new_vm::FORM_GRID_SPACING)
             .show(ui, |ui| {
-                new_vm::config_form_rows(ui, &format!("detail-{slug}"), &mut config);
+                edit.form.rows(ui);
             });
-        edit.def.hardware = machine_def::HardwareDTO::from_config(&config, edit.def.hardware.rom.clone());
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.label(egui::RichText::new("Media").strong());
-        ui.small("Read-only for now — attaching/detaching media lands in a later step.");
-        for (label, value) in media_rows(&edit.def.media) {
-            ui.horizontal(|ui| {
-                ui.label(label);
-                ui.monospace(value);
-            });
+        if self.entries[index].vm.is_some() {
+            ui.add_space(DETAIL_SECTION_GAP);
+            ui.small("Changes apply the next time this machine starts.");
         }
 
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.label(egui::RichText::new("Peripherals").strong());
-        ui.checkbox(&mut edit.def.peripherals.mpi, "MultiPak Interface");
-        ui.checkbox(&mut edit.def.peripherals.rtc, "Disto RTC");
-        ui.checkbox(&mut edit.def.peripherals.fd502, "FD-502 disk controller");
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.label(egui::RichText::new("UI").strong());
-        ui.checkbox(&mut edit.def.ui.aspect_correct, "4:3 aspect correction");
-        ui.horizontal(|ui| {
-            ui.label("Keyboard mode:");
-            ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDTO::Positional, "Positional");
-            ui.radio_value(&mut edit.def.ui.kb_mode, machine_def::KbModeDTO::Symbolic, "Symbolic");
-        });
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        let dirty = edit.def != edit.saved;
-        ui.horizontal(|ui| {
-            let save_label = if dirty { "Save*" } else { "Save" };
-            if ui.add_enabled(dirty, egui::Button::new(save_label)).clicked() {
-                self.save_draft(index, &mut edit);
+        // Auto-save: every change writes straight back to the definition
+        // file (no Save/Revert — user decision 2026-07-24; the write is
+        // atomic, `machine_def::save`). On a persistent failure this
+        // retries every frame — harmless for a tiny file, and it keeps the
+        // error label current.
+        match self.pack_def(&self.entries[index].def, &slug, &mut edit.form) {
+            Ok(new_def) => {
+                if new_def != edit.packed {
+                    let result = match self.machines_dir.clone() {
+                        Some(dir) => machine_def::save(&dir, &slug, &new_def),
+                        None => Err(NO_CONFIG_DIR.to_string()),
+                    };
+                    match result {
+                        Ok(()) => {
+                            self.entries[index].def = new_def.clone();
+                            edit.packed = new_def;
+                            self.save_error = None;
+                        }
+                        Err(e) => self.save_error = Some(e),
+                    }
+                }
             }
-            if ui.add_enabled(dirty, egui::Button::new("Revert")).clicked() {
-                edit.def = edit.saved.clone();
-                self.save_error = None;
-            }
-        });
+            Err(e) => self.save_error = Some(e),
+        }
         if let Some(err) = &self.save_error {
+            ui.add_space(DETAIL_SECTION_GAP);
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
 
         self.edit = Some(edit);
     }
 
-    /// Write `edit.def` to its TOML file (rename-migration is out of scope —
-    /// renaming only ever changes `[name]`, never the slug/file, per
-    /// `plan-machine-persistence.md` "Identity = slug") and, on success,
-    /// mark the draft clean and refresh the list-row entry it belongs to.
-    fn save_draft(&mut self, index: usize, edit: &mut EditDraft) {
-        let Some(dir) = self.machines_dir.clone() else {
-            self.save_error = Some(NO_CONFIG_DIR.to_string());
+    /// The Name field committed ([`Self::draw_detail_ok`] — focus left it):
+    /// an empty draft reverts to the saved name; a change saves immediately
+    /// under the *current* slug, then the file/artifact names follow the
+    /// new name via [`Self::migrate_slug`] — deferred to
+    /// [`Self::apply_pending_renames`] (next frame, or after Stop for a
+    /// running machine).
+    fn commit_name(&mut self, index: usize, edit: &mut EditState) {
+        let trimmed = edit.name.trim().to_string();
+        if trimmed.is_empty() || trimmed == self.entries[index].def.name {
+            edit.name = self.entries[index].def.name.clone();
             return;
+        }
+        self.entries[index].def.name = trimmed.clone();
+        edit.name = trimmed;
+        // Keep the auto-save baseline in step: the name isn't one of the
+        // form's fields, and a stale `packed.name` would make the next
+        // repack look changed and re-save redundantly.
+        edit.packed.name = self.entries[index].def.name.clone();
+        let result = match self.machines_dir.clone() {
+            Some(dir) => machine_def::save(&dir, &edit.slug, &self.entries[index].def),
+            None => Err(NO_CONFIG_DIR.to_string()),
         };
-        match machine_def::save(&dir, &edit.slug, &edit.def) {
+        match result {
             Ok(()) => {
-                edit.saved = edit.def.clone();
-                self.entries[index].def = edit.def.clone();
                 self.save_error = None;
+                self.entries[index].rename_pending = true;
             }
             Err(e) => self.save_error = Some(e),
+        }
+    }
+
+    /// Rename `entries[index]`'s `<slug>.toml` and artifact directory to
+    /// match its (already saved) display name. The slug is the identity
+    /// (`machine_def.rs` "Identity = slug") and nothing else persists it —
+    /// relative `[media]` entries name files *inside* the artifact dir —
+    /// so a rename is exactly these two filesystem moves, uniquified like
+    /// create. Only safe with the VM stopped (a running VM writes
+    /// `thumbnail.png` into the artifact dir by path); callers guard on
+    /// that. The list is re-sorted afterwards, with `selected`, the edit
+    /// state, and a pending delete all following their entry.
+    fn migrate_slug(&mut self, index: usize) {
+        self.entries[index].rename_pending = false;
+        let Some(dir) = self.machines_dir.clone() else {
+            return;
+        };
+        let old = self.entries[index].slug.clone();
+        let base = machine_def::slugify(&self.entries[index].def.name);
+        let slugs: Vec<String> = self.entries.iter().map(|e| e.slug.clone()).collect();
+        let taken = |candidate: &str| {
+            candidate != old
+                && (slugs.iter().any(|s| s == candidate)
+                    || dir.join(format!("{candidate}.toml")).exists())
+        };
+        let new = machine_def::unique_slug(&base, &taken);
+        if new == old {
+            return;
+        }
+        let old_path = dir.join(format!("{old}.toml"));
+        let new_path = dir.join(format!("{new}.toml"));
+        if let Err(e) = fs::rename(&old_path, &new_path) {
+            self.save_error = Some(format!("{}: {e}", old_path.display()));
+            return;
+        }
+        if let Some(root) = &self.artifacts_root {
+            let old_dir = root.join(&old);
+            if old_dir.exists()
+                && let Err(e) = fs::rename(&old_dir, root.join(&new))
+            {
+                // Roll the definition back under the old slug: a stale slug
+                // beats relative [media] entries resolving into a directory
+                // that no longer matches the definition's file name.
+                let _ = fs::rename(&new_path, &old_path);
+                self.save_error = Some(format!("{}: {e}", old_dir.display()));
+                return;
+            }
+        }
+        self.entries[index].slug = new.clone();
+        // Keep the list alphabetical and every slug-keyed pointer valid.
+        let selected_slug = self.selected.map(|s| self.entries[s].slug.clone());
+        let entry = self.entries.remove(index);
+        let at = self.entries.partition_point(|e| e.slug < entry.slug);
+        self.entries.insert(at, entry);
+        if let Some(slug) = selected_slug {
+            self.selected = self.entries.iter().position(|e| e.slug == slug);
+        }
+        if let Some(edit) = self.edit.as_mut()
+            && edit.slug == old
+        {
+            edit.slug = new.clone();
+        }
+        if self.pending_delete.as_deref() == Some(old.as_str()) {
+            self.pending_delete = Some(new);
+        }
+    }
+
+    /// Run once per `update()`, before any panel draws (so row indices stay
+    /// stable for the whole frame): migrate the slug of every renamed
+    /// machine whose VM is gone. Several can be pending at once (rename a
+    /// running machine, select another, rename it too…), and each
+    /// [`Self::migrate_slug`] re-sorts the list — hence re-`position` from
+    /// scratch per iteration rather than iterating indices. Terminates
+    /// because `migrate_slug` clears `rename_pending` unconditionally,
+    /// success or failure.
+    fn apply_pending_renames(&mut self) {
+        while let Some(index) = self
+            .entries
+            .iter()
+            .position(|e| e.rename_pending && e.vm.is_none())
+        {
+            self.migrate_slug(index);
         }
     }
 
@@ -1114,39 +1217,63 @@ impl ManagerApp {
     /// checks that selecting a row seeds the right draft without depending on
     /// how `egui::TextEdit` exposes its value to the accessibility tree.
     pub(crate) fn detail_name(&self) -> Option<&str> {
-        self.edit.as_ref().map(|e| e.def.name.as_str())
+        self.edit.as_ref().map(|e| e.name.as_str())
+    }
+
+    /// Mutable access to the detail pane's edit form — `ui_tests.rs` seeds
+    /// ROM Pak picks directly, since the "ROM Pak…" combo items open native
+    /// file dialogs a headless harness cannot drive.
+    pub(crate) fn edit_form_mut(&mut self) -> Option<&mut new_vm::MachineForm> {
+        self.edit.as_mut().map(|e| &mut e.form)
     }
 }
 
-/// Resolve `def.hardware.vdg`'s per-variant default and write it back
-/// explicitly, the same way `draw_detail_ok`'s per-frame hardware repack
-/// does via `HardwareDto::from_config` (it always writes a concrete `vdg`,
-/// unlike a hand-written file which may omit it — see `VdgDto`'s doc). Used
-/// to seed `EditDraft::saved` so a definition that legally omits `vdg`
-/// doesn't compare unequal to the draft `to_machine_config`/`from_config`
-/// round-trip immediately produces. A definition that fails to validate
-/// (shouldn't happen for an already-`Ok` list entry) is returned unchanged.
-fn normalize_hardware(mut def: machine_def::MachineDef) -> machine_def::MachineDef {
-    if let Ok(config) = def.to_machine_config() {
-        def.hardware = machine_def::HardwareDTO::from_config(&config, def.hardware.rom.clone());
+/// Seed the detail pane's [`new_vm::MachineForm`] from a saved definition —
+/// the inverse of [`ManagerApp::pack_def`], reconstructing the cartridge
+/// picture the same way `crate::launch_machine` mounts it: with an MPI,
+/// `[media].cart` re-seats in slot 0, the FD-502 in the last slot, the RTC
+/// in its default slot; without one, the single port shows whichever of
+/// pak/RTC/FD-502 the definition claims, in that priority (launch rejects a
+/// conflicting combination outright — seeding at least shows one of them).
+/// Disk media implies the FD-502 even when the flag is off (older files —
+/// `launch_machine`'s rule).
+fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
+    let mut form = new_vm::MachineForm::new("detail", true);
+    form.config = def.to_machine_config().expect("list entries are validated on load/save");
+    let media = &def.media;
+    let fd502 = def.peripherals.fd502 || media.disk0.is_some() || media.disk1.is_some();
+    let cart = media.cart.as_deref().map(PathBuf::from);
+    if def.peripherals.mpi {
+        form.cartridge = new_vm::CartridgeChoice::MPI;
+        if let Some(path) = cart {
+            form.mpi_slots[0] = new_vm::SlotChoice::RomPak(path);
+        }
+        if fd502 {
+            form.mpi_slots[crate::MPI_SLOT_COUNT - 1] = new_vm::SlotChoice::FD502;
+        }
+        if def.peripherals.rtc {
+            form.mpi_slots[crate::DEFAULT_RTC_SLOT] = new_vm::SlotChoice::RTC;
+        }
+    } else if let Some(path) = cart {
+        form.cartridge = new_vm::CartridgeChoice::RomPak(path);
+    } else if def.peripherals.rtc {
+        form.cartridge = new_vm::CartridgeChoice::RTC;
+    } else if fd502 {
+        form.cartridge = new_vm::CartridgeChoice::FD502;
     }
-    def
-}
-
-/// The `[media]` fields that are set, as `(row label, value)` pairs, in
-/// schema-declaration order.
-fn media_rows(media: &machine_def::MediaDTO) -> Vec<(&'static str, &str)> {
-    [
-        ("Cart", &media.cart),
-        ("Disk 0", &media.disk0),
-        ("Disk 1", &media.disk1),
-        ("VHD 0", &media.vhd0),
-        ("VHD 1", &media.vhd1),
-        ("Tape", &media.tape),
-    ]
-    .into_iter()
-    .filter_map(|(label, value)| value.as_deref().map(|v| (label, v)))
-    .collect()
+    let media_choice = |raw: &Option<String>| match raw {
+        Some(s) => new_vm::MediaChoice::File(PathBuf::from(s)),
+        None => new_vm::MediaChoice::None,
+    };
+    form.disks = [media_choice(&media.disk0), media_choice(&media.disk1)];
+    form.tape = media_choice(&media.tape);
+    form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
+    form.aspect_correct = def.ui.aspect_correct;
+    form.kb_mode = match def.ui.kb_mode {
+        machine_def::KbModeDTO::Positional => crate::KbMode::Positional,
+        machine_def::KbModeDTO::Symbolic => crate::KbMode::Symbolic,
+    };
+    form
 }
 
 impl eframe::App for ManagerApp {
@@ -1172,11 +1299,15 @@ impl eframe::App for ManagerApp {
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
         }
 
+        // Deferred slug migrations first, before any panel draws — row
+        // indices must stay stable for the whole frame.
+        self.apply_pending_renames();
+
         // ⌘N / Ctrl+N = the toolbar's "New…". Each running VM window is its
         // own viewport with its own input stream, so this only fires with
         // the manager window focused.
         if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
-            self.open_new_dialog();
+            self.create_machine_now();
         }
 
         // Toolbar: the manager actions. "Settings"/"Help" are still inert
@@ -1190,16 +1321,12 @@ impl eframe::App for ManagerApp {
                     .on_hover_text(ctx.format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT))
                     .clicked()
                 {
-                    self.open_new_dialog();
+                    self.create_machine_now();
                 }
                 let _ = ui.button("Settings");
                 let _ = ui.button("Help");
             });
         });
-
-        if let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) {
-            self.create_machine(*spec);
-        }
 
         // Machine list: one row per definition under `config_dir()/machines`.
         // `resizable` gives the draggable divider between the list and the
