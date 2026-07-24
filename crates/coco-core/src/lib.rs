@@ -24,6 +24,7 @@ pub mod keyboard;
 pub mod orch90;
 pub mod pia;
 pub mod printer;
+pub mod raster;
 pub mod rom_db;
 pub mod rs232;
 pub mod rtc;
@@ -129,6 +130,13 @@ pub struct Machine {
     /// multiplier the end-of-line GIME timer tick uses. Meaningful only once a
     /// line has begun; initialized to 0.
     line_budget: u32,
+    /// Per-field video scanout state (CoCo 3 only), latched at the top of each
+    /// field like MAME `new_frame`: the legacy-vs-GIME switch, the video base,
+    /// and the smooth-scroll seed. `None` until the first field's first
+    /// scanline completes. GIME-native fields paint the canonical raster line
+    /// by line through this ([`gime_video::paint_scanline`]); legacy fields
+    /// keep the whole-frame snapshot path in [`Machine::render_field`].
+    field_scan: Option<gime_video::FieldScan>,
 }
 
 /// Cap on buffered audio samples (~8 fields); beyond this the buffer resets
@@ -183,6 +191,7 @@ impl Machine {
             line: 0,
             line_cycles_spent: 0,
             line_budget: 0,
+            field_scan: None,
         }
     }
 
@@ -419,6 +428,7 @@ impl Machine {
         if self.line == fs_rising_line {
             self.bus.fs_rising();
         }
+        self.render_scanline();
         // One speaker sample per scanline (~15.7 kHz), self-capping when
         // nothing drains it.
         if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
@@ -613,33 +623,181 @@ impl Machine {
         }
     }
 
-    /// Render one video field into `framebuffer`, dispatching on the current mode.
+    /// Paint the current scanline of the canonical raster (Option B,
+    /// `docs/plan-per-scanline-video.md`), called from [`Machine::end_of_line`]
+    /// at every line so mid-frame register writes take effect on the next line.
+    ///
+    /// At line 0 the per-field register group is latched (MAME `new_frame`):
+    /// the INIT0 COCO switch, the video base, and the smooth-scroll seed —
+    /// one line-time later than MAME's field start, within the plan's
+    /// line-granular contract. Only GIME-native fields (CoCo 3, COCO=0) paint
+    /// here; legacy fields keep the whole-frame path in
+    /// [`Machine::render_field`], and CoCo 1/2 has no GIME to latch at all.
+    fn render_scanline(&mut self) {
+        if self.config.variant != MachineVariant::Coco3 {
+            return;
+        }
+        if self.line == 0 {
+            let legacy = self.bus.gime.init0 & gime::init0::COCO != 0;
+            self.field_scan = Some(gime_video::FieldScan::latch(&self.bus.gime, legacy));
+            self.framebuffer
+                .resize(raster::CANVAS_W * raster::CANVAS_H * BYTES_PER_PIXEL, 0);
+            self.fb_width = raster::CANVAS_W as u32;
+            self.fb_height = raster::CANVAS_H as u32;
+        }
+        let row = self.line as usize;
+        let Some(scan) = self.field_scan.as_ref() else {
+            return;
+        };
+        if row >= raster::CANVAS_H {
+            return; // blanking lines 240..262
+        }
+        if scan.legacy {
+            self.paint_legacy_scanline(row);
+            return;
+        }
+        // Blink phase is toggled by the GIME interval timer, which BASIC
+        // programs at hi-res text setup (SEB Unravelled II).
+        let blink_on = self.bus.gime.blink_state;
+        let scan = self.field_scan.as_mut().expect("checked Some above");
+        gime_video::paint_scanline(
+            &self.bus.gime,
+            &self.bus.ram,
+            scan,
+            blink_on,
+            row,
+            &mut self.framebuffer,
+        );
+    }
+
+    /// Paint one canvas row of a CoCo 3 legacy (VDG-compatible) field. Same
+    /// per-line contract as the GIME-native painter — mode bits ($FF22, SAM
+    /// V), palette/CSS, and the border are read live each line; the row
+    /// pointer and glyph-row counter carry across lines — with the legacy
+    /// data path: 16-bit logical fetches through the bus (honouring the MMU),
+    /// like the whole-field renderers did. The border follows MAME
+    /// `update_border`'s legacy rule ([`video::legacy_border_value`]), NOT
+    /// fixed black: green/white for graphics, green/orange for the
+    /// GM2-without-GM1 text variant.
+    fn paint_legacy_scanline(&mut self, row: usize) {
+        let ff22 = self.bus.pia1.b.output;
+        let border =
+            self.bus.gime.color(video::legacy_border_value(ff22));
+        let row_px = &mut self.framebuffer
+            [row * raster::CANVAS_W * BYTES_PER_PIXEL..][..raster::CANVAS_W * BYTES_PER_PIXEL];
+
+        // Vertical placement from the live LPF bits — the GIME applies LPF
+        // even in legacy modes (MAME `update_geometry`).
+        let lpf =
+            ((self.bus.gime.vres & gime::vres::LPF_MASK) >> gime::vres::LPF_SHIFT) as usize;
+        let (top, body) = raster::vertical_window(lpf);
+        if row < top || row >= top + body {
+            for px in row_px.chunks_exact_mut(BYTES_PER_PIXEL) {
+                px.copy_from_slice(&border);
+            }
+            return;
+        }
+
+        // Side borders around the 512 px active span (legacy is always
+        // non-wide: MAME `render_scanline`'s `wide = !legacy && ...`).
+        for px in row_px[..raster::NON_WIDE_BORDER_X * BYTES_PER_PIXEL]
+            .chunks_exact_mut(BYTES_PER_PIXEL)
+        {
+            px.copy_from_slice(&border);
+        }
+        for px in row_px[(raster::NON_WIDE_BORDER_X + raster::NON_WIDE_ACTIVE_W)
+            * BYTES_PER_PIXEL..]
+            .chunks_exact_mut(BYTES_PER_PIXEL)
+        {
+            px.copy_from_slice(&border);
+        }
+
+        // Live per-line mode decode: bytes to fetch and this mode's LPR.
+        let ag = ff22 & video::VDG_AG != 0;
+        let css = ff22 & video::VDG_CSS != 0;
+        let sam_video = self.bus.gime.sam_video;
+        let (row_bytes, lines_per_row) = if ag {
+            let mode = video::decode_vdg_graphics(ff22, sam_video);
+            let lpr = video::LEGACY_GFX_LINES_PER_ROW[(sam_video & 0x07) as usize];
+            (mode.bytes_per_row, lpr)
+        } else {
+            (video::COLS, video::CELL_H)
+        };
+
+        // Fetch the current data row through the bus (MMU-honouring logical
+        // reads, 16-bit wrap — the legacy renderers' existing data path).
+        let (base, line_in_row) = {
+            let scan = self.field_scan.as_ref().expect("legacy field latched");
+            (scan.row_base as u16, scan.line_in_row)
+        };
+        let mut buf = [0u8; video::COLS];
+        for (i, byte) in buf.iter_mut().take(row_bytes).enumerate() {
+            *byte = self.bus.read(base.wrapping_add(i as u16));
+        }
+
+        let palette = self.legacy_palette(css);
+        let active = &mut self.framebuffer[(row * raster::CANVAS_W
+            + raster::NON_WIDE_BORDER_X)
+            * BYTES_PER_PIXEL..][..raster::NON_WIDE_ACTIVE_W * BYTES_PER_PIXEL];
+        if ag {
+            let mode = video::decode_vdg_graphics(ff22, sam_video);
+            let indices = video::vdg_palette_indices(mode.bpp, usize::from(css));
+            let mut colors = [[0u8; 4]; video::MAX_VDG_COLORS];
+            for (slot, &reg) in colors.iter_mut().zip(indices) {
+                *slot = palette[reg];
+            }
+            let xscale = raster::NON_WIDE_ACTIVE_W / mode.logical_w;
+            video::paint_legacy_graphics_line(
+                &buf[..row_bytes],
+                &mode,
+                &colors[..indices.len()],
+                xscale,
+                active,
+            );
+        } else {
+            let generator = video::AlphaGenerator::Gime;
+            let xscale = raster::NON_WIDE_ACTIVE_W / (video::COLS * video::CELL_W);
+            video::paint_legacy_text_line(
+                &buf[..row_bytes],
+                &palette,
+                generator,
+                ff22,
+                line_in_row,
+                xscale,
+                active,
+            );
+        }
+
+        // Advance the shared vertical counter (MAME `record_full_body_scanline`).
+        let scan = self.field_scan.as_mut().expect("legacy field latched");
+        scan.line_in_row += 1;
+        if scan.line_in_row >= lines_per_row {
+            scan.line_in_row = 0;
+            scan.row_base += row_bytes;
+        }
+    }
+
+    /// Current scanline within the field (`0..lines_per_field`): the canonical
+    /// raster row being painted (rows ≥ 240 are vertical blanking). Exposed
+    /// for scanline-timed tests and debug UI.
+    pub fn scanline(&self) -> u32 {
+        self.line
+    }
+
+    /// Render one video field into `framebuffer` at field end. Only the CoCo
+    /// 1/2 renders here — a whole-frame snapshot at the fixed VDG geometry
+    /// (those machines have their own raster; the 640×240 canvas is a CoCo 3
+    /// GIME artefact). Every CoCo 3 field — GIME-native or legacy — was
+    /// already painted line by line ([`Machine::render_scanline`]) and is
+    /// complete by the time the field wraps.
     fn render_field(&mut self) {
-        match self.video_mode() {
-            VideoMode::CocoText => self.render_coco_text(),
-            VideoMode::CocoGraphics => self.render_coco_graphics(),
-            VideoMode::GimeText => {
-                // Blink phase is toggled by the GIME interval timer, which
-                // BASIC programs at hi-res text setup (SEB Unravelled II).
-                let blink_on = self.bus.gime.blink_state;
-                let (w, h) = gime_video::render_text(
-                    &self.bus.gime,
-                    &self.bus.ram,
-                    blink_on,
-                    &mut self.framebuffer,
-                );
-                self.fb_width = w as u32;
-                self.fb_height = h as u32;
-            }
-            VideoMode::GimeGraphics => {
-                let (w, h) = gime_video::render_graphics(
-                    &self.bus.gime,
-                    &self.bus.ram,
-                    &mut self.framebuffer,
-                );
-                self.fb_width = w as u32;
-                self.fb_height = h as u32;
-            }
+        if self.config.variant == MachineVariant::Coco3 {
+            return;
+        }
+        if self.bus.pia1.b.output & video::VDG_AG != 0 {
+            self.render_coco_graphics();
+        } else {
+            self.render_coco_text();
         }
     }
 

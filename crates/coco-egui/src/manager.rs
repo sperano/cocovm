@@ -44,11 +44,12 @@ const THUMBNAIL_CORNER_RADIUS: f32 = 2.0;
 /// is uploaded/when the texture's aspect doesn't exactly fill the allocated
 /// rect.
 const THUMBNAIL_PLACEHOLDER_FILL: egui::Color32 = egui::Color32::from_gray(30);
-/// Row-thumbnail aspect ratio used when no live framebuffer texture is
-/// available to read one from — a stopped machine, or a VM whose first
-/// frame hasn't uploaded a texture yet ([`draw_row_thumbnail`]). Matches the
-/// emulator's own default aspect-corrected display (`crate::TARGET_ASPECT`).
-const THUMBNAIL_FALLBACK_ASPECT: f32 = crate::TARGET_ASPECT;
+/// Row-thumbnail aspect ratio — always the emulator's own aspect-corrected
+/// display shape ([`crate::TARGET_ASPECT`]), never the framebuffer's raw
+/// pixel aspect: buffer pixels aren't square (the CoCo 3 canonical raster is
+/// 640×240 — 1:2 pixels), so drawing at the texture's own aspect would
+/// stretch the picture (`draw_row_thumbnail`).
+const THUMBNAIL_ASPECT: f32 = crate::TARGET_ASPECT;
 /// Inner padding of one list row's frame.
 const ROW_MARGIN: f32 = 8.0;
 /// Corner rounding of a list row's selection/hover frame.
@@ -208,30 +209,25 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
 /// One list row's thumbnail: the resolved preview `texture` — a live VM's
 /// framebuffer, or a stopped machine's saved [`THUMBNAIL_FILE`]; the caller
 /// resolves that priority — sized to `height` tall (see
-/// [`row_content_height`]) at the texture's own aspect ratio — correct
-/// regardless of which machine variant/GIME mode produced it, unlike a
-/// fixed ratio, and it's one extra quad reusing an already-uploaded
-/// texture, not an extra upload (`docs/plan-machine-persistence.md` step 6,
-/// "Running/paused VM" bullet). A paused VM's texture simply stops
-/// changing, so the thumbnail freezes on its last frame with no special
-/// casing needed. Falls back to [`THUMBNAIL_FALLBACK_ASPECT`] — and just the
-/// placeholder fill, no image — for a stopped machine or a VM whose first
-/// frame hasn't uploaded a texture yet. Allocates its own space (so its
-/// width, driven by whichever aspect is in play, is only known here, not by
-/// the caller) and returns the space it claimed.
+/// [`row_content_height`]) at the fixed [`THUMBNAIL_ASPECT`], the same 4:3
+/// the emulator's own display corrects to (framebuffer pixels aren't
+/// square, so the texture's raw aspect would stretch the picture). It's one
+/// extra quad reusing an already-uploaded texture, not an extra upload
+/// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM" bullet).
+/// A paused VM's texture simply stops changing, so the thumbnail freezes on
+/// its last frame with no special casing needed. With no texture — a
+/// stopped machine, or a VM whose first frame hasn't uploaded one yet —
+/// just the placeholder fill shows. Allocates its own space and returns the
+/// rect it claimed.
 fn draw_row_thumbnail(
     ui: &mut egui::Ui,
     height: f32,
     texture: Option<&egui::TextureHandle>,
 ) -> egui::Rect {
-    let aspect = texture
-        .map(|t| {
-            let size = t.size_vec2();
-            size.x / size.y
-        })
-        .filter(|aspect| aspect.is_finite() && *aspect > 0.0)
-        .unwrap_or(THUMBNAIL_FALLBACK_ASPECT);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(height * aspect, height), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(height * THUMBNAIL_ASPECT, height),
+        egui::Sense::hover(),
+    );
 
     let painter = ui.painter();
     painter.rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
