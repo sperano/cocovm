@@ -23,13 +23,20 @@ const PIA0_LAST: u16 = 0xFF1F;
 const PIA1_BASE: u16 = 0xFF20;
 const PIA1_LAST: u16 = 0xFF3F;
 const CART_BASE: u16 = 0xFF40;
-const CART_LAST: u16 = 0xFF5F;
+// $FF40-$FF5F is the "standard" SCS* window; $FF60-$FF7E is unmapped on the
+// motherboard, so some carts (the RS-232 Pak, Orchestra-90, the Sound/Speech
+// Cartridge) decode registers of their own there too — the full address bus
+// reaches the expansion connector regardless (`docs/cartridges.md` "Carts can
+// decode addresses outside SCS"). Both ranges route to `cart.read`/`write`;
+// carts that don't claim an address in the extension range fall through to
+// their own open-bus default, same as any unclaimed SCS address.
+const CART_LAST: u16 = 0xFF7E;
 // TODO: MAME gates the whole $FF40-$FF5F SCS window on GIME INIT0 MC2
 // ("standard SCS" width control); not modeled here — every cartridge always
 // sees the full window regardless of MC2.
 /// Multi-Pak Interface select register: decoded by the MPI itself (when one
 /// is inserted), never by the plugged-in cartridges' own `read`/`write` — see
-/// [`Cartridge::control_read`]. `$FF60-$FF7E` stays open bus.
+/// [`Cartridge::control_read`].
 const MPI_CONTROL_REG: u16 = 0xFF7F;
 // VHD (virtual hard disk, NitrOS-9 `emudsk`) register window — see `vhd.rs`.
 // $FF87-$FF8F stays open-bus/unmapped.
@@ -126,6 +133,10 @@ pub struct SystemBus {
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
     kbd_line_low: bool,
+    /// Last sampled level of the cartridge's level-driven CART* interrupt
+    /// ([`Cartridge::cart_interrupt`]), so [`SystemBus::poll_cart_interrupt`]
+    /// acts only on transitions.
+    prev_cart_int: bool,
     /// Debugger memory watchpoints, installed by
     /// [`crate::debug::Debugger::run_until`] only while a debugged run is in
     /// flight and cleared again afterwards. `None` on the normal run path, so
@@ -156,6 +167,7 @@ impl SystemBus {
             bitbanger: BitBanger::new(),
             io_enabled: true,
             kbd_line_low: false,
+            prev_cart_int: false,
             watch: None,
             watch_hit: None,
         }
@@ -346,6 +358,28 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
+    /// Sample the level-driven CART* interrupt ([`Cartridge::cart_interrupt`],
+    /// e.g. the Deluxe RS-232's 6551 ACIA IRQ) and convert transitions into
+    /// what the shared physical pin feeds: PIA1 CB1 sees the line level itself
+    /// — CART* is active-low, so asserted = CB1 low, and the PIA latches
+    /// whichever edge its control register selects — while the GIME EI0
+    /// source is raised on the falling (assert) edge only, its hardwired
+    /// trigger (GIME border/cart sources are falling-edge, per Lomont; same
+    /// treatment as the `cart_line_ties_q` Q-burst in [`SystemBus::hsync`]).
+    /// Polled per-instruction from `Machine::run_cycles` so serial-interrupt
+    /// latency isn't quantized to scanlines.
+    pub fn poll_cart_interrupt(&mut self) {
+        let level = self.cart.cart_interrupt();
+        if level == self.prev_cart_int {
+            return;
+        }
+        self.prev_cart_int = level;
+        self.pia1.b.set_c1(!level);
+        if level && self.variant == MachineVariant::Coco3 {
+            self.gime.raise(gime::intr::EI0);
+        }
+    }
+
     /// Horizontal-sync line: the GIME HS pin idles high and pulses low for 16
     /// of 228 pixel clocks at line end (~4.5 µs; MAME `mc6847.cpp`
     /// `TIMER_HSYNC_OFF_TIME`=212/`ON_TIME`=228). Our per-line model has no
@@ -423,11 +457,17 @@ impl SystemBus {
     /// DAC (PIA1 PA2–PA7), routed through the analog mux only when SNDEN
     /// (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are 00;
     /// mux state 01 routes cassette playback (the squared tape signal — the
-    /// key-click of a real CLOAD), 10 routes cartridge audio (not emulated,
-    /// silent), 11 is grounded; and the single-bit sound on PIA1 PB1, which
-    /// is always connected. (Tandy Service Manual mux table via MAME
-    /// `coco.cpp` `update_sound`; SEB Unravelled II $FF22/$FF23.)
-    pub fn sound_sample(&self) -> f32 {
+    /// key-click of a real CLOAD), 10 routes cartridge audio (e.g. the
+    /// Sound/Speech Cartridge's AY-3-8913 — see [`Cartridge::audio_sample`]),
+    /// 11 is grounded; and the single-bit sound on PIA1 PB1, which is always
+    /// connected. (Tandy Service Manual mux table via MAME `coco.cpp`
+    /// `update_sound`; SEB Unravelled II $FF22/$FF23.)
+    ///
+    /// Takes `&mut self`: [`Cartridge::audio_sample`] is called exactly once
+    /// per invocation regardless of mux selection (some carts need to
+    /// observe their own output continuously — the SSC's Sound Activity
+    /// Circuit), which makes this no longer a pure read of latched state.
+    pub fn sound_sample(&mut self) -> f32 {
         /// Relative loudness of the full-scale DAC vs the single-bit beeper.
         const DAC_GAIN: f32 = 0.75;
         const SINGLE_BIT_GAIN: f32 = 0.25;
@@ -438,11 +478,21 @@ impl SystemBus {
         /// output), kept below the DAC's full scale like the real attenuated
         /// tape level.
         const CASSETTE_GAIN: f32 = 0.35;
+        /// Cartridge audio through the mux: matched to the DAC's gain (the
+        /// AY-3-8913's own output is already normalized 0.0-1.0 full scale
+        /// by `Ay8913`'s DAC table, so no separate headroom scaling is
+        /// needed beyond this mux gain).
+        const CARTRIDGE_GAIN: f32 = 0.75;
         /// SEL2:SEL1 = 01: the mux's cassette input.
         const SEL_CASSETTE: u8 = 0b01;
+        /// SEL2:SEL1 = 10: the mux's cartridge input.
+        const SEL_CARTRIDGE: u8 = 0b10;
 
         let mut level = 0.0;
         let sel = u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output());
+        // Cartridge audio must be sampled unconditionally, not just when the
+        // mux happens to select it (see this method's doc comment).
+        let cart_sample = self.cart.audio_sample();
         if self.pia1.b.c2_output() && sel == 0 {
             let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
             level += DAC_GAIN * f32::from(dac) / DAC_MAX;
@@ -454,6 +504,9 @@ impl SystemBus {
             && self.cassette.input_bit()
         {
             level += CASSETTE_GAIN;
+        }
+        if self.pia1.b.c2_output() && sel == SEL_CARTRIDGE {
+            level += CARTRIDGE_GAIN * cart_sample;
         }
         if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
             level += SINGLE_BIT_GAIN;

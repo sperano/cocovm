@@ -9,11 +9,24 @@ name = "coco"
 path = "src/main.rs"
 
 [dependencies]
+# MIT OR Apache-2.0. Host local time for the Disto RTC's injected time source
+# (coco-core is deliberately std::time-free; the calendar/timezone lookup
+# lives out here — `host_time_source` in main.rs).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4.6.1", features = ["derive"] }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
 mc6809 = { path = "../mc6809" }
 eframe = "0.33"
+# MIT. Opts legacy Windows conhost into VT escape processing (no-op
+# elsewhere); called once at the top of main().
+enable-ansi-support = "0.3.1"
+# MIT OR Apache-2.0. Per-user config/data directories: XDG on Linux & macOS,
+# native convention on Windows (`paths.rs`).
+etcetera = "0.11.0"
+# MIT OR Apache-2.0. serde derives for the machine-definition DTOs
+# (`machine_def.rs`); coco-core already depends on serde without `derive`.
+serde = { version = "1", features = ["derive"] }
 # Both MIT OR Apache-2.0 (GPL-3.0-or-later-compatible); see
 # `paper_export.rs`'s module doc comment for the PNG/PDF dependency
 # rationale (T6). `flate2` is already resolved transitively via `image`'s
@@ -22,4 +35,21 @@ eframe = "0.33"
 flate2 = "1.1.9"
 gilrs = "0.11.2"
 image = { version = "0.25", default-features = false, features = ["png"] }
+owo-colors = {version="4.3.0",  features = ["supports-colors"]}
 rfd = "0.17.2"
+# MIT OR Apache-2.0. Extracts the downloaded assets tarball
+# (`unpack_assets` in main.rs); gzip half comes from `flate2` above.
+tar = "0.4.46"
+# Both MIT. Leveled, per-module-filterable logging (RUST_LOG) with colored
+# level tags; subscriber initialized once in main.rs.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# MIT OR Apache-2.0. Human-editable machine-definition file format
+# (`machine_def.rs`), read/written under `config_dir()/machines/<slug>.toml`.
+toml = "0.9"
+# MIT OR Apache-2.0. Blocking HTTP client for the first-run assets download
+# (`download_and_unpack_assets` in main.rs).
+ureq = "3.3.0"
+
+[dev-dependencies]
+egui_kittest = { version = "0.33", features = ["eframe"] }

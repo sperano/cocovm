@@ -11,7 +11,8 @@
 //! stock BASIC prompt that resolves to pure green (`#00FF00`) on black. The CSS
 //! orange colour set is TODO (`§6`); GIME native text/graphics live in `gime_video`.
 
-use crate::font6847::MC6847_FONT;
+use crate::font6847::{MC6847_FONT, MC6847T1_FONT};
+use crate::font_gime::GIME_LOWRES_FONT;
 
 /// VDG character cell: 8 pixels wide × 12 raster lines (matches the font rows).
 pub const CELL_W: usize = 8;
@@ -166,6 +167,78 @@ pub fn decode_alpha_char(code: u8) -> char {
     }
 }
 
+/// Which character-generator ROM is actually driving CoCo-compatible text
+/// mode. Distinct from [`crate::config::VDGVariant`]: that's "which VDG chip
+/// is this CoCo 1/2" and doesn't apply to a CoCo 3 at all — a real CoCo 3 has
+/// no VDG; the GIME does its own compat-text generation with its own font
+/// ROM ([`crate::font_gime::GIME_LOWRES_FONT`]), which happens to share the
+/// MC6847T1's true-lowercase semantics (MAME `gime.cpp`'s `gime_device` ctor
+/// constructs its `mc6847_friend_device` base with `is_mc6847t1 = true`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlphaGenerator {
+    /// CoCo 1/2 with the original MC6847.
+    Mc6847,
+    /// CoCo 1/2 with the MC6847T1.
+    Mc6847T1,
+    /// CoCo 3 CoCo-compatible text mode: the GIME's own generator, T1-style
+    /// lowercase semantics, [`crate::font_gime::GIME_LOWRES_FONT`] glyphs.
+    Gime,
+}
+
+/// Resolve one alphanumeric cell's glyph and (foreground, background) colours.
+///
+/// Implements MAME `mc6847.cpp`'s `character_map` ctor precisely (and, for
+/// [`AlphaGenerator::Gime`], `gime.cpp`'s equivalent, which shares the same
+/// true-lowercase logic per its `is_mc6847t1 = true` construction):
+/// - True lowercase only applies on the MC6847T1 or the GIME generator, when
+///   this character's own inverse bit is clear, PIA1 $FF22 GM0
+///   ([`VDG_GM0_INTEXT`]) is set, and the code is in `$00-$1F` — in which
+///   case the glyph comes from the selected font's lowercase section (index
+///   `0x40 + code`) and the fg/bg pair is *swapped* relative to the normal
+///   non-inverse mapping (equivalent to MAME's `raw_glyph ^ 0xFF` drawn
+///   non-inverted, in the inverse-toggle style this module already uses for
+///   [`INVERSE_BIT`]).
+/// - Codes `$20-$3F` are never affected by lowercase mode (MAME's ctor copies
+///   them unchanged into the lowercase table too).
+/// - Every other case (plain [`AlphaGenerator::Mc6847`], a lowercase-capable
+///   generator with GM0 clear, a lowercase-capable generator with this
+///   character's own inverse bit set, or code >= `$20`) draws from the
+///   normal 64-entry range of the selected font, fg/bg swapped by the
+///   inverse bit alone.
+///
+/// PIA1 $FF22 GM1 (bit 5) drives a second, lowercase-independent colour
+/// inversion on the T1 (MAME's `is_inverse2`) that is out of scope here — see
+/// the note by [`VDG_GM0_INTEXT`].
+fn resolve_alpha_cell(
+    generator: AlphaGenerator,
+    ff22: u8,
+    code: u8,
+    fg: [u8; 4],
+    bg: [u8; 4],
+) -> ([u8; 4], [u8; 4], &'static [u8; CELL_H]) {
+    let glyph_code = code & GLYPH_CODE_MASK;
+    let inverse = code & INVERSE_BIT != 0;
+    let lowercase_capable = matches!(generator, AlphaGenerator::Mc6847T1 | AlphaGenerator::Gime);
+    let true_lowercase =
+        lowercase_capable && !inverse && ff22 & VDG_GM0_INTEXT != 0 && glyph_code < 0x20;
+    if true_lowercase {
+        let glyph: &[u8; CELL_H] = match generator {
+            AlphaGenerator::Mc6847T1 => &MC6847T1_FONT[0x40 + glyph_code as usize],
+            AlphaGenerator::Gime => &GIME_LOWRES_FONT[0x40 + glyph_code as usize],
+            AlphaGenerator::Mc6847 => unreachable!("Mc6847 is never lowercase_capable"),
+        };
+        (bg, fg, glyph)
+    } else {
+        let glyph: &[u8; CELL_H] = match generator {
+            AlphaGenerator::Mc6847 => &MC6847_FONT[glyph_code as usize % GLYPH_COUNT],
+            AlphaGenerator::Mc6847T1 => &MC6847T1_FONT[glyph_code as usize % GLYPH_COUNT],
+            AlphaGenerator::Gime => &GIME_LOWRES_FONT[glyph_code as usize % GLYPH_COUNT],
+        };
+        let (cell_fg, cell_bg) = if inverse { (bg, fg) } else { (fg, bg) };
+        (cell_fg, cell_bg, glyph)
+    }
+}
+
 /// Render the text screen (`SCREEN_LEN` bytes) into `fb` (`FB_W*FB_H*4` bytes).
 ///
 /// `palette` is the resolved 16-entry GIME palette (RGBA). Each byte is either an
@@ -173,7 +246,19 @@ pub fn decode_alpha_char(code: u8) -> char {
 /// coloured from palette regs 12/13) or a semigraphics-4 block (bit 7 = 1). The
 /// stock BASIC screen stores alphanumerics inverse (bit 6 set), so the prompt is
 /// black-on-green; the blinking cursor is an SG4 cell that cycles colours.
-pub fn render_text(screen: &[u8], palette: &[[u8; 4]; PALETTE_LEN], border: [u8; 4], fb: &mut [u8]) {
+///
+/// `generator`/`ff22` select the font and (on lowercase-capable generators)
+/// true-lowercase decode — see [`resolve_alpha_cell`] and [`AlphaGenerator`].
+/// `ff22` should be PIA1 $FF22's current value; only [`VDG_GM0_INTEXT`] is
+/// consulted here.
+pub fn render_text(
+    screen: &[u8],
+    palette: &[[u8; 4]; PALETTE_LEN],
+    border: [u8; 4],
+    generator: AlphaGenerator,
+    ff22: u8,
+    fb: &mut [u8],
+) {
     debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
 
     // Border fills everything first; active cells overwrite the interior.
@@ -190,8 +275,7 @@ pub fn render_text(screen: &[u8], palette: &[[u8; 4]; PALETTE_LEN], border: [u8;
             if code & SEMIGRAPHICS_BIT != 0 {
                 blit_semigraphics4(fb, row, col, code, palette);
             } else {
-                let glyph = &MC6847_FONT[(code & GLYPH_CODE_MASK) as usize % GLYPH_COUNT];
-                let (cell_fg, cell_bg) = if code & INVERSE_BIT != 0 { (bg, fg) } else { (fg, bg) };
+                let (cell_fg, cell_bg, glyph) = resolve_alpha_cell(generator, ff22, code, fg, bg);
                 blit_cell(fb, row, col, glyph, cell_fg, cell_bg);
             }
         }
@@ -250,6 +334,17 @@ fn blit_cell(fb: &mut [u8], row: usize, col: usize, glyph: &[u8; CELL_H], fg: [u
 pub const VDG_AG: u8 = 0x80;
 /// PIA1 $FF22 bit 3: colour-set select (picks which GIME palette registers apply).
 pub const VDG_CSS: u8 = 0x08;
+
+/// PIA1 $FF22 bit 4: on the plain MC6847 this is INTEXT (external ROM
+/// character generator select, not modeled — always the internal generator
+/// here); on the MC6847T1 the SAME physical pin is wired as GM0, which in
+/// alpha mode enables true lowercase (`coco12_m.cpp` `pia1_pb_changed`: both
+/// `intext_w` and `gm0_w` are driven from `data & 0x10`). Named for its T1
+/// meaning since that's the only one with an observable effect here.
+pub const VDG_GM0_INTEXT: u8 = 0x10;
+// NOTE: PIA1 $FF22 bit 5 (GM1) drives MAME's `is_inverse2` on the T1 (a
+// second, lowercase-independent colour inversion in alpha mode). That knob
+// is a known real-hardware behaviour not modeled here.
 /// PIA1 $FF22 bits 6–4: VDG graphics-mode select (GM2–GM0).
 const VDG_GM_MASK: u8 = 0x70;
 const VDG_GM_SHIFT: u8 = 4;

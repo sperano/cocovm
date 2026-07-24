@@ -1,0 +1,59 @@
+//! Per-user application directories.
+//!
+//! Uses `etcetera`'s `choose_app_strategy`, which follows the XDG Base
+//! Directory spec on Linux *and* macOS (`~/.config/cocovm`,
+//! `~/.local/share/cocovm`, …) and the native convention on Windows
+//! (`%APPDATA%\spe\cocovm\…`).
+//! macOS deliberately gets XDG rather than `~/Library/Application Support`
+//! so the config stays where terminal users expect to edit and version it.
+
+use std::path::PathBuf;
+
+use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
+
+fn strategy() -> Result<impl AppStrategy, etcetera::HomeDirError> {
+    etcetera::choose_app_strategy(AppStrategyArgs {
+        top_level_domain: "quebec".to_string(),
+        author: "spe".to_string(),
+        app_name: "cocovm".to_string(),
+    })
+}
+
+/// Directory for user configuration (`~/.config/cocovm` on Linux/macOS).
+///
+/// Returns `None` when no home directory can be determined; the paths are
+/// not created — callers `fs::create_dir_all` before writing.
+pub fn config_dir() -> Option<PathBuf> {
+    strategy().ok().map(|s| s.config_dir())
+}
+
+/// Directory for user data such as saved disks or state
+/// (`~/.local/share/cocovm` on Linux/macOS).
+pub fn data_dir() -> Option<PathBuf> {
+    strategy().ok().map(|s| s.data_dir())
+}
+
+/// Directory for ROM assets
+/// (`~/.local/share/cocovm/roms` on Linux/macOS).
+pub fn roms_dir() -> Option<PathBuf> {
+    data_dir().map(|d| d.join("roms"))
+}
+
+/// Directory for image assets
+/// (`~/.local/share/cocovm/images` on Linux/macOS).
+pub fn images_dir() -> Option<PathBuf> {
+    data_dir().map(|d| d.join("images"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dirs_end_with_app_name() {
+        let cfg = config_dir().expect("home dir should exist in tests");
+        assert!(cfg.ends_with("cocovm"), "unexpected config dir: {cfg:?}");
+        let data = data_dir().expect("home dir should exist in tests");
+        assert!(data.ends_with("cocovm"), "unexpected data dir: {data:?}");
+    }
+}
