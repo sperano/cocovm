@@ -118,12 +118,15 @@ pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
 /// cartridge port is populated after machine construction (the same way
 /// the CLI and the Machine menu do it) — so it rides alongside the config
 /// in [`NewVmAction::Create`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum CartridgeChoice {
     #[default]
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
     FD502,
+    /// A program ROM Pak image plugged straight into the port; picked with
+    /// a file dialog on selection.
+    RomPak(PathBuf),
     /// MultiPak Interface; the dialog then shows its four Slot rows, and
     /// the Disk rows only once a slot holds the FD-502.
     MPI,
@@ -131,27 +134,44 @@ pub enum CartridgeChoice {
 
 /// One MultiPak slot's pick in the dialog's Slot rows (shown while the
 /// cartridge is the MPI). At most one slot holds the FD-502 — a second
-/// disk controller would fight the first for the SCS decode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// disk controller would fight the first for the SCS decode. ROM Paks
+/// carry no such conflict: any number of slots may hold one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum SlotChoice {
     #[default]
     Empty,
     FD502,
+    /// A program ROM Pak image in this slot (see [`CartridgeChoice::RomPak`]).
+    RomPak(PathBuf),
 }
 
-const fn slot_label(slot: SlotChoice) -> &'static str {
+fn slot_label(slot: &SlotChoice) -> String {
     match slot {
-        SlotChoice::Empty => "Empty",
-        SlotChoice::FD502 => "FD-502",
+        SlotChoice::Empty => "Empty".to_string(),
+        SlotChoice::FD502 => "FD-502".to_string(),
+        SlotChoice::RomPak(path) => pak_file_name(path),
     }
 }
 
-const fn cartridge_label(cartridge: CartridgeChoice) -> &'static str {
+fn cartridge_label(cartridge: &CartridgeChoice) -> String {
     match cartridge {
-        CartridgeChoice::None => "None",
-        CartridgeChoice::FD502 => "FD-502",
-        CartridgeChoice::MPI => "MultiPak Interface",
+        CartridgeChoice::None => "None".to_string(),
+        CartridgeChoice::FD502 => "FD-502".to_string(),
+        CartridgeChoice::RomPak(path) => pak_file_name(path),
+        CartridgeChoice::MPI => "MultiPak Interface".to_string(),
     }
+}
+
+/// Combo text for a picked ROM Pak ([`media_choice_text`]'s pak sibling).
+fn pak_file_name(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "ROM Pak".to_string())
+}
+
+/// The same filter the Machine-menu "Insert Cartridge…" item uses.
+fn rom_pak_file_dialog() -> rfd::FileDialog {
+    rfd::FileDialog::new().add_filter("ROM Pak", &["rom", "ccc", "bin"])
 }
 
 /// One media pick — a drive's disk (Cartridge row, when the cartridge
@@ -214,7 +234,7 @@ impl NewMachineSpec {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
-            CartridgeChoice::None => false,
+            CartridgeChoice::None | CartridgeChoice::RomPak(_) => false,
         }
     }
 }
@@ -226,7 +246,7 @@ pub enum NewVmAction {
     /// "Create" was clicked; the caller should try to build this machine and
     /// either [`NewVmDialog::close`] the dialog or record the failure in
     /// [`NewVmDialog::error`].
-    Create(NewMachineSpec),
+    Create(Box<NewMachineSpec>),
 }
 
 /// Re-constrain a draft after a model change: snap RAM to the new family's
@@ -391,7 +411,7 @@ impl NewVmDialog {
             show_name_field: false,
             name: String::new(),
             cartridge: CartridgeChoice::None,
-            mpi_slots: [SlotChoice::Empty; crate::MPI_SLOT_COUNT],
+            mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
             disks: std::array::from_fn(|_| MediaChoice::None),
             tape: MediaChoice::None,
             vhds: std::array::from_fn(|_| MediaChoice::None),
@@ -413,7 +433,7 @@ impl NewVmDialog {
         self.draft = current;
         self.error = None;
         self.cartridge = CartridgeChoice::None;
-        self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
+        self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
         self.disks = std::array::from_fn(|_| MediaChoice::None);
         self.tape = MediaChoice::None;
         self.vhds = std::array::from_fn(|_| MediaChoice::None);
@@ -478,27 +498,13 @@ impl NewVmDialog {
                             ui.end_row();
 
                             if self.cartridge != CartridgeChoice::MPI {
-                                self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
+                                self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
                             }
                             if !self.drives_available() {
                                 self.disks = std::array::from_fn(|_| MediaChoice::None);
                             }
                             ui.label(egui::RichText::new("Cartridge").size(font));
-                            egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
-                                .selected_text(cartridge_label(self.cartridge))
-                                .show_ui(ui, |ui| {
-                                    for choice in [
-                                        CartridgeChoice::None,
-                                        CartridgeChoice::FD502,
-                                        CartridgeChoice::MPI,
-                                    ] {
-                                        ui.selectable_value(
-                                            &mut self.cartridge,
-                                            choice,
-                                            cartridge_label(choice),
-                                        );
-                                    }
-                                });
+                            self.cartridge_combo(ui);
                             ui.end_row();
 
                             // The cartridge's own rows nest below it as an
@@ -513,7 +519,7 @@ impl NewVmDialog {
                                 CartridgeChoice::MPI => {
                                     sub_form_row(ui, |ui| self.slot_rows(ui, font));
                                 }
-                                CartridgeChoice::None => {}
+                                CartridgeChoice::None | CartridgeChoice::RomPak(_) => {}
                             }
 
                             // The VHD hard disks, below the removable
@@ -547,14 +553,14 @@ impl NewVmDialog {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
                         if ui.button("Create").clicked() {
-                            action = NewVmAction::Create(NewMachineSpec {
+                            action = NewVmAction::Create(Box::new(NewMachineSpec {
                                 config: self.draft,
-                                cartridge: self.cartridge,
-                                mpi_slots: self.mpi_slots,
+                                cartridge: self.cartridge.clone(),
+                                mpi_slots: self.mpi_slots.clone(),
                                 disks: self.disks.clone(),
                                 tape: self.tape.clone(),
                                 vhds: self.vhds.clone(),
-                            });
+                            }));
                         }
                         if ui.button("Cancel").clicked() {
                             self.close();
@@ -575,7 +581,7 @@ impl NewVmDialog {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
-            CartridgeChoice::None => false,
+            CartridgeChoice::None | CartridgeChoice::RomPak(_) => false,
         }
     }
 
@@ -609,13 +615,52 @@ impl NewVmDialog {
             });
     }
 
-    /// One "Slot N:" label + combo (Empty / FD-502), drawn while the MPI is
-    /// selected. Claiming the FD-502 releases it from any other slot — one
-    /// disk controller max (see [`SlotChoice`]).
+    /// The Cartridge-row combo. "ROM Pak…" opens a file dialog on the spot
+    /// (like the media combos' Select…); a cancelled dialog keeps the
+    /// previous choice.
+    fn cartridge_combo(&mut self, ui: &mut egui::Ui) {
+        egui::ComboBox::from_id_salt(("new_vm", "cartridge"))
+            .selected_text(cartridge_label(&self.cartridge))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(self.cartridge == CartridgeChoice::None, "None")
+                    .clicked()
+                {
+                    self.cartridge = CartridgeChoice::None;
+                }
+                if ui
+                    .selectable_label(self.cartridge == CartridgeChoice::FD502, "FD-502")
+                    .clicked()
+                {
+                    self.cartridge = CartridgeChoice::FD502;
+                }
+                if ui
+                    .selectable_label(
+                        matches!(self.cartridge, CartridgeChoice::RomPak(_)),
+                        "ROM Pak…",
+                    )
+                    .clicked()
+                    && let Some(path) = rom_pak_file_dialog().pick_file()
+                {
+                    self.cartridge = CartridgeChoice::RomPak(path);
+                }
+                if ui
+                    .selectable_label(self.cartridge == CartridgeChoice::MPI, "MultiPak Interface")
+                    .clicked()
+                {
+                    self.cartridge = CartridgeChoice::MPI;
+                }
+            });
+    }
+
+    /// One "Slot N:" label + combo (Empty / FD-502 / ROM Pak…), drawn while
+    /// the MPI is selected. Claiming the FD-502 releases it from any other
+    /// slot — one disk controller max (see [`SlotChoice`]); ROM Paks may
+    /// fill any number of slots.
     fn slot_combo(&mut self, ui: &mut egui::Ui, font: f32, slot: usize) {
         ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
         egui::ComboBox::from_id_salt(("new_vm", "mpi_slot", slot))
-            .selected_text(slot_label(self.mpi_slots[slot]))
+            .selected_text(slot_label(&self.mpi_slots[slot]))
             .show_ui(ui, |ui| {
                 if ui
                     .selectable_label(self.mpi_slots[slot] == SlotChoice::Empty, "Empty")
@@ -627,8 +672,22 @@ impl NewVmDialog {
                     .selectable_label(self.mpi_slots[slot] == SlotChoice::FD502, "FD-502")
                     .clicked()
                 {
-                    self.mpi_slots = [SlotChoice::Empty; crate::MPI_SLOT_COUNT];
+                    for other in &mut self.mpi_slots {
+                        if *other == SlotChoice::FD502 {
+                            *other = SlotChoice::Empty;
+                        }
+                    }
                     self.mpi_slots[slot] = SlotChoice::FD502;
+                }
+                if ui
+                    .selectable_label(
+                        matches!(self.mpi_slots[slot], SlotChoice::RomPak(_)),
+                        "ROM Pak…",
+                    )
+                    .clicked()
+                    && let Some(path) = rom_pak_file_dialog().pick_file()
+                {
+                    self.mpi_slots[slot] = SlotChoice::RomPak(path);
                 }
             });
     }

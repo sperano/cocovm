@@ -307,6 +307,42 @@ fn new_dialog_cartridge_row_inserts_fd502() {
     click(&mut harness, "Cancel");
 }
 
+/// Cartridge = ROM Pak: creating inserts the pak in the port (direct), or
+/// in its chosen MPI slot (slotted). The "ROM Pak…" combo item opens a
+/// native file dialog a headless harness cannot drive, so the picked path
+/// is seeded on the dialog directly (the reason `new_vm` is reachable).
+#[test]
+fn new_dialog_rom_pak_choice_inserts_the_pak() {
+    let pak = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
+    assert!(pak.is_file(), "roms/disk11.rom is required (git-ignored, local-only)");
+
+    // Straight in the port.
+    let mut harness = boot_harness();
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::RomPak(pak.clone());
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().cart_error, None);
+    assert_eq!(harness.state().cart_path.as_deref(), Some(pak.as_path()));
+    assert!(harness.state().mpi.is_none());
+
+    // Slotted in the MPI.
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "New…");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    harness.state_mut().new_vm.mpi_slots[2] = new_vm::SlotChoice::RomPak(pak.clone());
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().cart_error, None);
+    assert!(harness.state().mpi.is_some(), "creating with MPI must insert one");
+    assert!(
+        matches!(
+            &harness.state().mpi.as_ref().unwrap().slots[2],
+            MPISlot::ROMPak(p) if p == &pak
+        ),
+        "the pak must land in the chosen slot"
+    );
+}
+
 /// The dialog opens at [`new_vm::DIALOG_MIN_SIZE`] and must never grow:
 /// revealing the FD-502's Disk rows or the MPI's full Slot+Disk block has
 /// to fit inside the minimum. The window node (labelled by its title)
@@ -855,6 +891,48 @@ fn manager_create_with_mpi_records_the_peripheral() {
     assert!(!def.peripherals.fd502);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(contents.contains("mpi = true"), "TOML must record the MPI:\n{contents}");
+}
+
+/// Manager create with a ROM Pak — in the port or in an MPI slot — records
+/// `[media].cart`; two slotted paks exceed what the schema can represent
+/// and must fail the create. Picks are seeded directly (native file
+/// dialogs, see `new_dialog_rom_pak_choice_inserts_the_pak`).
+#[test]
+fn manager_create_with_rom_pak_records_the_cart() {
+    let pak = PathBuf::from("/paks/game.ccc");
+    let dir = TempDir::new("create-rompak");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New…");
+    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::RomPak(pak.clone());
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
+    assert!(!def.peripherals.mpi && !def.peripherals.fd502);
+
+    // Slotted: recorded the same way, alongside mpi = true.
+    click_containing(&mut harness, "New…");
+    harness.state_mut().new_vm.name = "slotted".to_string();
+    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::MPI;
+    harness.state_mut().new_vm.mpi_slots[1] = new_vm::SlotChoice::RomPak(pak.clone());
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().entries.len(), 2);
+    let def = &harness.state().entries[1].def;
+    assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
+    assert!(def.peripherals.mpi);
+
+    // Two slotted paks cannot be represented in the schema: create fails
+    // with an inline error instead of silently dropping one.
+    click_containing(&mut harness, "New…");
+    harness.state_mut().new_vm.name = "two paks".to_string();
+    harness.state_mut().new_vm.cartridge = new_vm::CartridgeChoice::MPI;
+    harness.state_mut().new_vm.mpi_slots[0] = new_vm::SlotChoice::RomPak(pak.clone());
+    harness.state_mut().new_vm.mpi_slots[3] = new_vm::SlotChoice::RomPak(pak);
+    click(&mut harness, "Create");
+    assert_eq!(harness.state().entries.len(), 2, "the create must be refused");
+    harness.get_by_label_contains("a single ROM Pak");
+    click(&mut harness, "Cancel");
 }
 
 /// Manager create with Disk 0 = Blank: a 0-byte blank image lands in the

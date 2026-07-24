@@ -337,7 +337,10 @@ pub struct ManagerApp {
     save_error: Option<String>,
     /// The "New…" dialog, reused from the direct-boot flow
     /// (`new_vm::NewVmDialog::new_for_manager` turns its Name row on).
-    new_vm: new_vm::NewVmDialog,
+    /// `pub(crate)`: `ui_tests.rs` seeds ROM Pak picks directly — the
+    /// "ROM Pak…" combo items open native file dialogs a headless harness
+    /// cannot drive.
+    pub(crate) new_vm: new_vm::NewVmDialog,
 }
 
 impl ManagerApp {
@@ -448,6 +451,27 @@ impl ManagerApp {
         // it in the last slot.
         def.peripherals.fd502 = spec.has_drives();
         def.peripherals.mpi = spec.cartridge == new_vm::CartridgeChoice::MPI;
+        // A ROM Pak — in the port or slotted in the MPI — is recorded as
+        // [media].cart. The schema holds a single pak and no slot layout
+        // (launch_machine re-seats a slotted one in slot 0), so more than
+        // one slotted pak cannot be represented.
+        let mut slotted_paks = spec.mpi_slots.iter().filter_map(|slot| match slot {
+            new_vm::SlotChoice::RomPak(path) => Some(path),
+            _ => None,
+        });
+        def.media.cart = match &spec.cartridge {
+            new_vm::CartridgeChoice::RomPak(path) => Some(path.display().to_string()),
+            new_vm::CartridgeChoice::MPI => slotted_paks.next().map(|p| p.display().to_string()),
+            _ => None,
+        };
+        if slotted_paks.next().is_some() {
+            self.new_vm.error = Some(
+                "a machine definition records a single ROM Pak — leave at most one slot \
+                 with a pak"
+                    .to_string(),
+            );
+            return;
+        }
         if spec.has_drives() {
             for (drive, choice) in spec.disks.into_iter().enumerate() {
                 let Some(recorded) = self.record_media_choice(&slug, choice, blank_disk_file(drive))
@@ -1029,7 +1053,7 @@ impl eframe::App for ManagerApp {
         });
 
         if let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) {
-            self.create_machine(spec);
+            self.create_machine(*spec);
         }
 
         // Machine list: one row per definition under `config_dir()/machines`.

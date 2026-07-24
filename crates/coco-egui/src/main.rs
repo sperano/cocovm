@@ -1724,6 +1724,7 @@ impl CocoApp {
                     // like a menu insert, not as a create failure.
                     match spec.cartridge {
                         new_vm::CartridgeChoice::None => {}
+                        new_vm::CartridgeChoice::RomPak(path) => self.insert_cartridge(path),
                         new_vm::CartridgeChoice::FD502 => {
                             if let Err(e) = self.ensure_disk_controller() {
                                 self.cart_error = Some(e);
@@ -1734,8 +1735,12 @@ impl CocoApp {
                         new_vm::CartridgeChoice::MPI => {
                             self.insert_multipak();
                             for (slot, choice) in spec.mpi_slots.iter().enumerate() {
-                                if *choice == new_vm::SlotChoice::FD502 {
-                                    self.mpi_insert_fd502(slot);
+                                match choice {
+                                    new_vm::SlotChoice::FD502 => self.mpi_insert_fd502(slot),
+                                    new_vm::SlotChoice::RomPak(path) => {
+                                        self.mpi_insert_rompak(slot, path.clone());
+                                    }
+                                    new_vm::SlotChoice::Empty => {}
                                 }
                             }
                             if spec.has_drives() {
