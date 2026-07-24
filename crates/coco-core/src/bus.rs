@@ -42,15 +42,6 @@ const BECKER_DATA: u16 = 0xFF42;
 // TODO: MAME gates the whole $FF40-$FF5F SCS window on GIME INIT0 MC2
 // ("standard SCS" width control); not modeled here — every cartridge always
 // sees the full window regardless of MC2.
-/// `$FF60-$FF7E`: not SCS-decoded on real hardware, but expansion-port
-/// devices there (Deluxe RS-232 `$FF68-$FF6B`, Orchestra-90 `$FF7A`/`$FF7B`)
-/// decode the full address bus themselves, so the whole window forwards to
-/// `cart.read`/`cart.write` like the SCS one. MPI caveat: [`crate::cart::MultiPak`]
-/// routes `read`/`write` to its SCS-selected slot only — an approximation,
-/// since a real MPI presents these address lines to every slot (see
-/// `MultiPak::read`).
-const EXP_IO_BASE: u16 = 0xFF60;
-const EXP_IO_LAST: u16 = 0xFF7E;
 /// Multi-Pak Interface select register: decoded by the MPI itself (when one
 /// is inserted), never by the plugged-in cartridges' own `read`/`write` — see
 /// [`Cartridge::control_read`].
@@ -634,7 +625,6 @@ impl SystemBus {
                 self.pia1.read((addr & 0x03) as u8)
             }
             CART_BASE..=CART_LAST => self.cart.read(addr),
-            EXP_IO_BASE..=EXP_IO_LAST => self.cart.read(addr),
             MPI_CONTROL_REG => self.cart.control_read(),
             VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
                 self.vhd.read_lrn_or_buffer()
@@ -673,7 +663,6 @@ impl SystemBus {
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
             }
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
-            EXP_IO_BASE..=EXP_IO_LAST => self.cart.write(addr, val),
             MPI_CONTROL_REG => self.cart.control_write(val),
             VHD_LRN_HI => self.vhd.write_lrn_hi(val),
             VHD_LRN_MID => self.vhd.write_lrn_mid(val),
