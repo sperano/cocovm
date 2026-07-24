@@ -251,11 +251,39 @@ fn display_base_after_setting_f2() {
 // ---- Open bus -------------------------------------------------------------------
 
 #[test]
-fn ff60_to_ffbf_is_open_bus_on_coco1_2() {
+fn ff7f_to_ffbf_is_open_bus_on_coco1_2() {
+    // No GIME (hence no $FF7F MPI-style register either) on these machines.
     let mut b = bus(MemorySize::K64);
-    for addr in 0xFF60u16..=0xFFBF {
+    for addr in 0xFF7Fu16..=0xFFBF {
         assert_eq!(b.read(addr), 0xFF, "addr {addr:#06x} must be open bus");
     }
+}
+
+#[test]
+fn ff60_to_ff7e_reaches_the_cart_slot_on_coco1_2() {
+    // Motherboard-unmapped, but some carts decode registers here (the
+    // Sound/Speech Cartridge's $FF7D/$FF7E, the RS-232 Pak's $FF68-$FF6B —
+    // `docs/cartridges.md`). With nothing inserted this still reads open bus
+    // ($FF via `EmptySlot`/`IO_OPEN_BUS`), same value as before this range
+    // was cart-routed, so the only way to tell the difference is a cart that
+    // actually answers.
+    let mut b = bus(MemorySize::K64);
+    for addr in 0xFF60u16..=0xFF7E {
+        assert_eq!(b.read(addr), 0xFF, "addr {addr:#06x} must read open bus with an empty slot");
+    }
+
+    // A cart that actually answers proves the extension range truly reaches
+    // `cart.read`, not just falling through to a different open-bus path.
+    struct MarkerCart;
+    impl coco_core::cart::Cartridge for MarkerCart {
+        fn read(&mut self, addr: u16) -> u8 {
+            (addr & 0xFF) as u8
+        }
+        fn write(&mut self, _addr: u16, _val: u8) {}
+    }
+    b.cart = Box::new(MarkerCart);
+    assert_eq!(b.read(0xFF7D), 0x7D);
+    assert_eq!(b.read(0xFF7E), 0x7E);
 }
 
 // ---- Speed poke -------------------------------------------------------------------

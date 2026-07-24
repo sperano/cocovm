@@ -26,6 +26,27 @@ pub trait Cartridge {
     fn rom_read(&mut self, _addr: u16) -> u8 {
         ROM_OPEN_BUS
     }
+    /// Side-effect-free twin of [`Cartridge::rom_read`] for the debugger's
+    /// disassembly/memory views ([`crate::SystemBus::peek`]). Overridden by
+    /// cartridges whose ROM read is a pure array fetch (ROM paks, the FD-502
+    /// controller ROM); the default is open bus so a device that can't read
+    /// its ROM without side effects safely reports nothing rather than
+    /// perturbing state.
+    fn rom_peek(&self, _addr: u16) -> u8 {
+        ROM_OPEN_BUS
+    }
+    /// Side-effect-free twin of [`Cartridge::read`] (the SCS* I/O window) for
+    /// [`crate::SystemBus::peek`]. Defaults to open bus: most cartridge I/O
+    /// reads (FDC status, etc.) mutate device state, so the debugger reports
+    /// open bus rather than risk a side effect.
+    fn peek(&self, _addr: u16) -> u8 {
+        IO_OPEN_BUS
+    }
+    /// Side-effect-free twin of [`Cartridge::control_read`] (`$FF7F`) for
+    /// [`crate::SystemBus::peek`].
+    fn peek_control(&self) -> u8 {
+        IO_OPEN_BUS
+    }
     /// True while this cartridge ties the expansion-port CART* line to the Q
     /// clock (~895 kHz): auto-start game paks do this so edges arrive
     /// continuously, which drives both the legacy PIA1 CB1 FIRQ path and the
@@ -35,6 +56,17 @@ pub trait Cartridge {
     /// paks (no autostart) leave this false; they rely on BASIC's cold-start
     /// probe of `$C000`/`$C001` for `'D'`,`'K'` instead.
     fn cart_line_ties_q(&self) -> bool {
+        false
+    }
+    /// Current level of the CART* interrupt line as driven by the device:
+    /// true = asserted (the active-low pin held low). The level counterpart
+    /// to [`Cartridge::cart_line_ties_q`]'s Q-burst: a cartridge with a real
+    /// interrupt source — the Deluxe RS-232's 6551 ACIA IRQ output — holds
+    /// this while its interrupt condition stands, and
+    /// `SystemBus::poll_cart_interrupt` converts the transitions into the
+    /// PIA1 CB1 edge and GIME EI0 raise that the shared physical pin feeds.
+    /// Default: never asserted.
+    fn cart_interrupt(&mut self) -> bool {
         false
     }
     /// Advance the cartridge's internal clocks by `cycles` CPU cycles. Called
@@ -60,6 +92,14 @@ pub trait Cartridge {
     fn sound_level(&self) -> f32 {
         0.0
     }
+    /// Side-effect-free peek at whether an NMI edge is currently latched,
+    /// without consuming it (unlike [`Cartridge::take_nmi`]) — the
+    /// debugger's hardware-state panel uses this to show the cart port's NMI
+    /// line without perturbing the pending edge a running program still
+    /// needs to see (`docs/plan-debugger.md` §3, "cart line states").
+    fn nmi_pending(&self) -> bool {
+        false
+    }
     /// Downcast to the FD-502 disk controller, if that's what this cartridge
     /// is — how the frontend reaches drive slots (insert/eject a floppy while
     /// the machine runs, as on real hardware) behind the trait object.
@@ -72,6 +112,13 @@ pub trait Cartridge {
     fn as_multipak(&mut self) -> Option<&mut MultiPak> {
         None
     }
+    /// Downcast to the Deluxe RS-232 pak, if that's what this cartridge is —
+    /// how the frontend swaps host endpoints and reads the TX/RX activity
+    /// counters behind the trait object (same pattern as
+    /// [`Cartridge::as_disk_cart`]).
+    fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
+        None
+    }
     /// Downcast to the Disto real-time clock, if that's what this cartridge
     /// is — how the frontend reaches the clock chip (sync to host time)
     /// behind the trait object.
@@ -82,6 +129,16 @@ pub trait Cartridge {
     /// the frontend reads the DAC latches for its level meters behind the
     /// trait object.
     fn as_orch90(&mut self) -> Option<&mut crate::orch90::Orch90> {
+        None
+    }
+    /// Downcast to the [`crate::ssc::Ssc`] Sound/Speech Cartridge, if that's
+    /// what this cartridge is — mirrors [`Cartridge::as_disk_cart`]/
+    /// [`Cartridge::as_multipak`]: tests and any future debug tooling reach
+    /// direct AY-3-8913 register access
+    /// ([`crate::ssc::Ssc::ay_write`]/[`crate::ssc::Ssc::ay_read`]) behind
+    /// the trait object, bypassing the `$FF7D`/`$FF7E` host-byte protocol
+    /// (see `crate::ssc`'s module doc comment).
+    fn as_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
         None
     }
     /// Read the Multi-Pak Interface's own select register (`$FF7F`). Not
@@ -101,6 +158,24 @@ pub trait Cartridge {
     /// from the front-panel switch and forwards the reset to all 4 slots;
     /// every other cartridge has nothing reset-sensitive to do.
     fn reset(&mut self) {}
+    /// The cartridge's own analog audio output for this sample tick, in the
+    /// same amplitude convention as
+    /// [`SystemBus::sound_sample`](crate::bus::SystemBus::sound_sample) (0.0
+    /// silence, full scale comparable to that method's other sources).
+    /// Default: silent — most cartridges (ROM paks, the FD-502, the VHD
+    /// interface) have no audio output of their own. The Sound/Speech
+    /// Cartridge ([`crate::ssc::Ssc`]) is the one device that overrides
+    /// this.
+    ///
+    /// Called exactly once per `sound_sample`, regardless of whether the
+    /// CoCo's sound mux currently selects the cartridge input: some devices
+    /// (the SSC's Sound Activity Circuit) need to observe their own output
+    /// continuously, independent of what's actually reaching the speaker.
+    /// Takes `&mut self` because that continuous observation is itself
+    /// stateful (an envelope follower).
+    fn audio_sample(&mut self) -> f32 {
+        0.0
+    }
 }
 
 /// No cartridge inserted.
@@ -227,6 +302,10 @@ impl Cartridge for RomPak {
     }
     fn write(&mut self, _addr: u16, _val: u8) {}
     fn rom_read(&mut self, addr: u16) -> u8 {
+        self.image[((addr - ROM_PAK_BASE) ^ ROM_PAK_HALF_SWAP) as usize]
+    }
+    fn rom_peek(&self, addr: u16) -> u8 {
+        // Pure array fetch — identical to `rom_read`, no side effects.
         self.image[((addr - ROM_PAK_BASE) ^ ROM_PAK_HALF_SWAP) as usize]
     }
     fn cart_line_ties_q(&self) -> bool {
@@ -362,25 +441,72 @@ impl MultiPak {
     }
 }
 
+/// Standard SCS* window (`$FF40-$FF5F`): routed only to the SCS-selected
+/// slot, same as `CART*`/`CTS*` follow the CTS-selected slot. The `$FF60-
+/// $FF7E` extension some carts decode (`docs/cartridges.md` "Carts can
+/// decode addresses outside SCS") is NOT switched by the MPI — the address
+/// and data buses are common to every slot, only SCS*/CTS*/CART* are
+/// per-slot — so it's handled separately below.
+const SCS_BASE: u16 = 0xFF40;
+const SCS_LAST: u16 = 0xFF5F;
+
 impl Cartridge for MultiPak {
     /// Routes the whole I/O window ($FF40-$FF5F and $FF60-$FF7E) to the
     /// SCS-selected slot. Approximation for the $FF60-$FF7E part: a real MPI
     /// switches only SCS*, so a device decoding raw addresses there (e.g. an
     /// Orchestra-90) responds from any slot — here it must be the SCS slot.
     fn read(&mut self, addr: u16) -> u8 {
-        self.slots[self.scs_slot()].read(addr)
+        if (SCS_BASE..=SCS_LAST).contains(&addr) {
+            return self.slots[self.scs_slot()].read(addr);
+        }
+        // $FF60-$FF7E: broadcast to every slot and return the first
+        // non-open-bus response. Real hardware would bus-fight if two
+        // plugged-in carts both decoded the same extension address; in
+        // practice at most one ever does.
+        self.slots
+            .iter_mut()
+            .map(|slot| slot.read(addr))
+            .find(|&val| val != IO_OPEN_BUS)
+            .unwrap_or(IO_OPEN_BUS)
     }
 
     fn write(&mut self, addr: u16, val: u8) {
-        self.slots[self.scs_slot()].write(addr, val);
+        if (SCS_BASE..=SCS_LAST).contains(&addr) {
+            self.slots[self.scs_slot()].write(addr, val);
+            return;
+        }
+        // $FF60-$FF7E: every slot sees the write (see `read`'s comment) —
+        // whichever cart(s) decode this address react to it.
+        for slot in &mut self.slots {
+            slot.write(addr, val);
+        }
     }
 
     fn rom_read(&mut self, addr: u16) -> u8 {
         self.slots[self.cts_slot()].rom_read(addr)
     }
 
+    fn rom_peek(&self, addr: u16) -> u8 {
+        self.slots[self.cts_slot()].rom_peek(addr)
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        self.slots[self.scs_slot()].peek(addr)
+    }
+
+    fn peek_control(&self) -> u8 {
+        self.select | mpi::READBACK_OR_MASK
+    }
+
     fn cart_line_ties_q(&self) -> bool {
         self.slots[self.cts_slot()].cart_line_ties_q()
+    }
+
+    /// CART* follows the CTS slot select, same as [`MultiPak::rom_read`] and
+    /// [`MultiPak::cart_line_ties_q`] — the three lines the MPI switches
+    /// together (MAME `coco_multi.cpp` header comment).
+    fn cart_interrupt(&mut self) -> bool {
+        self.slots[self.cts_slot()].cart_interrupt()
     }
 
     /// Every slot's clock runs regardless of selection (MAME ticks all 4
@@ -411,12 +537,24 @@ impl Cartridge for MultiPak {
         any
     }
 
+    /// Wire-OR of all 4 slots, mirroring [`MultiPak::take_nmi`] but without
+    /// consuming the edge.
+    fn nmi_pending(&self) -> bool {
+        self.slots.iter().any(|slot| slot.nmi_pending())
+    }
+
     fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
         self.slots.iter_mut().find_map(|slot| slot.as_disk_cart())
     }
 
     fn as_multipak(&mut self) -> Option<&mut MultiPak> {
         Some(self)
+    }
+
+    fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
+        self.slots
+            .iter_mut()
+            .find_map(|slot| slot.as_deluxe_rs232())
     }
 
     fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
@@ -434,6 +572,11 @@ impl Cartridge for MultiPak {
         self.slots.iter().map(|slot| slot.sound_level()).sum()
     }
 
+    fn as_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
+        self.slots.iter_mut().find_map(|slot| slot.as_ssc())
+    }
+
+
     fn control_read(&mut self) -> u8 {
         self.select | mpi::READBACK_OR_MASK
     }
@@ -442,6 +585,13 @@ impl Cartridge for MultiPak {
         // A write replaces the entire byte — no nibble merge (spec).
         self.select = val;
         self.switch_blocked = true;
+    }
+
+    /// All 4 slots' audio outputs are wire-summed through the MPI's shared
+    /// analog bus, same as a real passive backplane — every slot, not just
+    /// the SCS/CTS-selected one(s).
+    fn audio_sample(&mut self) -> f32 {
+        self.slots.iter_mut().map(|slot| slot.audio_sample()).sum()
     }
 
     /// Reloads `select` from the front-panel switch and lifts any software

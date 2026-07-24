@@ -100,7 +100,7 @@ fn sound_level_folds_the_two_latches_to_mono() {
 // ---- Through the MPI -------------------------------------------------------------
 
 #[test]
-fn mpi_routes_dac_writes_to_the_scs_selected_slot_and_sums_audio() {
+fn mpi_dac_writes_ignore_the_slot_select_and_audio_sums() {
     const ORCH_SLOT: usize = 1;
     const OTHER_SLOT: usize = 3;
     let mut b = SystemBus::new(
@@ -115,15 +115,19 @@ fn mpi_routes_dac_writes_to_the_scs_selected_slot_and_sums_audio() {
     b.write(LEFT_DAC_REG, 0xFF);
     b.write(RIGHT_DAC_REG, 0xFF);
     let level = b.cart.sound_level();
-    assert_eq!(level, 1.0, "write reached the SCS-selected slot");
+    assert_eq!(level, 1.0, "write reached the pak's DAC latches");
 
     // Analog SND is common to all slots (only SCS*/CTS*/CART* are switched):
-    // deselecting the slot silences future writes, not the held latches.
+    // deselecting the slot leaves the held latches on the wire.
     b.cart.as_multipak().unwrap().set_switch(OTHER_SLOT);
     assert_eq!(b.cart.sound_level(), 1.0, "held level still on the wire");
+    // $FF7A/$FF7B sit in the $FF60-$FF7E extension window, which the MPI
+    // does not switch either — the pak full-decodes the address bus, so a
+    // write lands regardless of the slot select.
     b.write(LEFT_DAC_REG, 0x00);
     let o = b.cart.as_orch90().unwrap();
-    assert_eq!(o.left(), 0xFF, "write to a deselected slot must not land");
+    assert_eq!(o.left(), 0x00, "write lands despite the slot select");
+    assert_eq!(b.cart.sound_level(), 0.5, "only the right DAC still held");
 }
 
 // ---- Real-ROM autostart integration ----------------------------------------------

@@ -8,33 +8,41 @@
 //!   semantics, like MAME). The default.
 //! - Symbolic — the character you type is injected via the CoCo keys that produce it.
 //!
-//! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`);
-//! the debugger panels are still TODO.
+//! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`).
+//! F11 toggles the interactive debugger (Controls/Registers/Disassembly/Memory/
+//! Stack/Hardware panels — `debugger.rs`, `docs/plan-debugger.md` §3).
 
 mod about;
 mod audio;
+mod debugger;
 mod joy;
 mod kbd_help;
+mod machine_def;
+mod manager;
 mod new_vm;
 mod orch90_meters;
 mod paper_export;
 mod paths;
 mod paper_render;
 mod paper_view;
+mod photo_view;
 
 use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::{Datelike, Timelike};
 use clap::{Parser, ValueEnum};
 use coco_core::cart::{MultiPak, RomPak};
+use coco_core::drivewire::{self, DwImage, DwTime};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::orch90::Orch90;
 use coco_core::rtc::{DistoRtc, RtcTime};
+use coco_core::ssc::Ssc;
 use coco_core::vhd::VhdImage;
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VdgVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
 };
 use eframe::egui;
 use joy::JoystickInputs;
@@ -181,6 +189,10 @@ struct CocoApp {
     /// `disk_paths`, VHD writes hit the backing file directly — there is no
     /// in-memory dirty state and so nothing to write back on eject/exit.
     vhd_paths: [Option<PathBuf>; UI_DRIVES],
+    /// Source paths of the DriveWire disk images mounted in the four drives
+    /// the UI exposes (status bar, eject menu items). Like `vhd_paths`, writes
+    /// hit the backing file directly.
+    dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
     /// Source path of the mounted cassette tape (.cas), if any — the
     /// write-back target for recordings, like `disk_paths` for floppies.
     tape_path: Option<PathBuf>,
@@ -208,6 +220,15 @@ struct CocoApp {
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
     mpi: Option<MpiState>,
+    /// State of the inserted Deluxe RS-232 Program Pak, if any: which host
+    /// endpoint its serial line is wired to (the core's trait object can't
+    /// describe itself to menu labels, so the frontend tracks it — same
+    /// rationale as [`MpiSlot`]). `None` means the slot holds something else.
+    rs232: Option<Rs232Endpoint>,
+    /// Listen address for the RS-232 pak's TCP endpoint, edited in the menu
+    /// and applied when "TCP" is (re)selected — not live-rebound on each
+    /// keystroke.
+    rs232_tcp_addr: String,
     /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
     /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
     new_vm: new_vm::NewVmDialog,
@@ -221,6 +242,10 @@ struct CocoApp {
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     paper_window: paper_view::PaperWindow,
+    /// The interactive debugger (`docs/plan-debugger.md` §3): breakpoints,
+    /// watchpoints, and the Controls/Registers/Disassembly/Memory/Stack/
+    /// Hardware panel cluster, toggled with F11.
+    debugger: debugger::DebuggerPanel,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -256,6 +281,10 @@ const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 /// slot 4, mirroring the conventional layout the `--mpi` CLI wiring builds.
 const DEFAULT_RTC_SLOT: usize = 2;
 
+/// MPI slot `--ssc` targets (slot 2): alongside --cart in slot 1, --rtc in
+/// slot 3, and the FD-502 in slot 4.
+const DEFAULT_SSC_SLOT: usize = 1;
+
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
 /// cold restart (or just the status bar / menu labels) can describe it
 /// without having to downcast the core's trait objects. The FD-502 doesn't
@@ -271,6 +300,7 @@ enum MpiSlot {
     Fd502,
     DistoRtc,
     Orch90(PathBuf),
+    Ssc,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
@@ -279,6 +309,45 @@ enum MpiSlot {
 struct MpiState {
     switch: usize,
     slots: [MpiSlot; MPI_SLOT_COUNT],
+}
+
+/// Which host backend the Deluxe RS-232 pak's serial line is plugged into
+/// (menu labels / status bar; the live endpoint object lives inside the
+/// core's [`coco_core::rs232::DeluxeRs232`]).
+enum Rs232Endpoint {
+    /// TX loops straight back to RX — the pak's inert power-on default.
+    Loopback,
+    /// TCP listener at this address; a host terminal connects with
+    /// `nc`/`telnet`.
+    Tcp(String),
+    /// Unix pseudo-terminal; the string is the slave device path a host
+    /// terminal program opens (e.g. `screen /dev/ttys009 9600`).
+    Pty(String),
+}
+
+impl Rs232Endpoint {
+    /// Short status-bar/menu description of where the wire goes.
+    fn label(&self) -> String {
+        match self {
+            Rs232Endpoint::Loopback => "loopback".to_string(),
+            Rs232Endpoint::Tcp(addr) => format!("tcp {addr}"),
+            Rs232Endpoint::Pty(path) => format!("pty {path}"),
+        }
+    }
+}
+
+/// Default listen address for the RS-232 pak's TCP endpoint: localhost, port
+/// 6551 after the ACIA part number.
+const RS232_TCP_DEFAULT_ADDR: &str = "127.0.0.1:6551";
+
+/// Menu selection handed to [`CocoApp::rs232_set_endpoint`] — the *request*
+/// (bind parameters live in the app state), as opposed to
+/// [`Rs232Endpoint`], the record of what's actually bound.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rs232EndpointKind {
+    Loopback,
+    Tcp,
+    Pty,
 }
 
 /// The host's local wall clock, read once (RTC sync).
@@ -302,13 +371,25 @@ fn host_time_source() -> coco_core::rtc::TimeSource {
 }
 
 impl CocoApp {
+    /// `CreationContext` isn't taken here (unlike most `eframe::App`
+    /// constructors): nothing in this struct's setup touches egui context
+    /// state (fonts, wgpu/glow handles), so it's a plain constructor
+    /// callable from anywhere a machine needs to be built — the direct-boot
+    /// `main()` (which does have a `CreationContext` in its `run_native`
+    /// closure but never needed to pass it in) and the CocoVM manager's
+    /// `launch_machine` (`plan-machine-persistence.md` step 5), which builds
+    /// VMs from inside `ManagerApp::update` where no `CreationContext`
+    /// exists at all.
+    #[allow(clippy::too_many_arguments)]
     fn new(
-        _cc: &eframe::CreationContext<'_>,
         config: MachineConfig,
         rom: Box<[u8]>,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
         vhd_paths: [Option<PathBuf>; UI_DRIVES],
+        dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
+        becker_enabled: bool,
+        hdbdos_mode: bool,
         save_tape_wav: bool,
     ) -> Self {
         let mut app = Self {
@@ -331,15 +412,19 @@ impl CocoApp {
             cart_error: None,
             disk_paths: [None, None],
             vhd_paths: [None, None],
+            dw_paths: std::array::from_fn(|_| None),
             tape_path: None,
             save_tape_wav,
             print_capture_path: None,
             print_capture_lf: false,
             pending_disk_action: None,
             mpi: None,
+            rs232: None,
+            rs232_tcp_addr: RS232_TCP_DEFAULT_ADDR.to_string(),
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
+            debugger: debugger::DebuggerPanel::new(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -353,6 +438,16 @@ impl CocoApp {
             if let Some(path) = path {
                 app.insert_vhd(drive, path);
             }
+        }
+        if becker_enabled {
+            app.enable_drivewire(hdbdos_mode);
+            for (drive, path) in dw_paths.into_iter().enumerate() {
+                if let Some(path) = path {
+                    app.insert_dw_disk(drive, path);
+                }
+            }
+        } else {
+            app.dw_paths = std::array::from_fn(|_| None);
         }
         app
     }
@@ -378,6 +473,7 @@ impl CocoApp {
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
+                self.rs232 = None; // ...and any RS-232 pak
                 self.rtc_direct = false; // ... and any directly-plugged RTC
             }
             Err(e) => {
@@ -424,7 +520,85 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
+        self.rs232 = None;
         self.rtc_direct = false;
+    }
+
+    /// Insert a Deluxe RS-232 Program Pak into the cartridge slot
+    /// (cold-restart gated, like plain cartridge insertion). Starts on the
+    /// inert loopback endpoint; pick TCP/PTY from the pak's submenu. If a
+    /// pak EPROM dump is present at `roms/rs232.rom` it is installed in the
+    /// CTS window; the pak is fully usable ROM-less otherwise (OS-9 drivers
+    /// and `PEEK`/`POKE` code drive the ACIA registers directly).
+    fn insert_rs232(&mut self) {
+        self.flush_dirty_disks();
+        let mut pak = coco_core::rs232::DeluxeRs232::new();
+        let rom_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/rs232.rom");
+        if let Ok(bytes) = std::fs::read(&rom_path) {
+            pak.set_eprom(&bytes);
+        }
+        self.machine.insert_cartridge(Box::new(pak));
+        self.machine.power_cycle();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None;
+        self.rs232 = Some(Rs232Endpoint::Loopback);
+    }
+
+    /// Wire the inserted RS-232 pak to a freshly bound endpoint of `kind`
+    /// (the menu's Loopback/TCP/PTY selection). Binding failures (port in
+    /// use, pty exhaustion) land in [`Self::cart_error`] and leave the
+    /// current endpoint in place.
+    fn rs232_set_endpoint(&mut self, kind: Rs232EndpointKind) {
+        let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() else {
+            return;
+        };
+        match kind {
+            Rs232EndpointKind::Loopback => {
+                pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
+                self.rs232 = Some(Rs232Endpoint::Loopback);
+            }
+            Rs232EndpointKind::Tcp => match coco_core::serial::TcpEndpoint::bind(&self.rs232_tcp_addr)
+            {
+                Ok(ep) => {
+                    // Show the address actually bound, so ":0" (OS-assigned
+                    // port) displays usably.
+                    let addr = ep
+                        .local_addr()
+                        .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
+                    pak.set_endpoint(Box::new(ep));
+                    self.rs232 = Some(Rs232Endpoint::Tcp(addr));
+                }
+                Err(e) => {
+                    self.cart_error =
+                        Some(format!("could not listen on {}: {e}", self.rs232_tcp_addr));
+                }
+            },
+            Rs232EndpointKind::Pty => match coco_core::serial::PtyEndpoint::new() {
+                Ok(ep) => {
+                    let path = ep.path().to_string();
+                    pak.set_endpoint(Box::new(ep));
+                    self.rs232 = Some(Rs232Endpoint::Pty(path));
+                }
+                Err(e) => {
+                    self.cart_error = Some(format!("could not open a pty: {e}"));
+                }
+            },
+        }
+    }
+
+    /// Plug the Sound/Speech Cartridge into the cartridge slot (cold-restart
+    /// gated, like every other direct-port cartridge swap). No file to load
+    /// and no autostart concept — unlike [`Self::insert_cartridge`]'s ROM
+    /// paks, this can't fail.
+    fn insert_ssc(&mut self) {
+        self.flush_dirty_disks();
+        self.machine.insert_cartridge(Box::new(Ssc::new()));
+        self.machine.power_cycle();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None; // plugging straight into the port removes any MPI
+        self.rs232 = None;
     }
 
     /// Make sure the inserted cartridge is the FD-502 disk controller,
@@ -461,6 +635,7 @@ impl CocoApp {
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rs232 = None;
         self.rtc_direct = false;
         Ok(())
     }
@@ -479,6 +654,7 @@ impl CocoApp {
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.rs232 = None;
         self.rtc_direct = false;
     }
 
@@ -577,6 +753,21 @@ impl CocoApp {
             mpi.slots[slot] = MpiSlot::Fd502;
         }
         self.disk_paths = [None, None];
+        self.machine.power_cycle();
+    }
+
+    /// Insert the Sound/Speech Cartridge into MPI `slot`. Mirrors
+    /// [`Self::insert_ssc`] but targets one MPI slot instead of the whole
+    /// cartridge port — any number of slots can each hold one (unlike the
+    /// FD-502's single-controller restriction).
+    fn mpi_insert_ssc(&mut self, slot: usize) {
+        self.flush_dirty_disks();
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, Box::new(Ssc::new()));
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MpiSlot::Ssc;
+        }
         self.machine.power_cycle();
     }
 
@@ -789,6 +980,66 @@ impl CocoApp {
         self.vhd_paths[drive] = None;
     }
 
+    /// Enable the Becker port ($FF41/$FF42) with a real wall clock, optionally
+    /// in HDB-DOS sector addressing mode. Idempotent — if already enabled, does
+    /// nothing. Failures land in [`Self::cart_error`].
+    fn enable_drivewire(&mut self, hdbdos_mode: bool) {
+        self.machine.bus.enable_drivewire();
+        if let Some(ref mut dw) = self.machine.bus.drivewire {
+            dw.set_hdbdos_mode(hdbdos_mode);
+            // Inject real wall clock from the host.
+            dw.set_clock(Box::new(|| {
+                let now = chrono::Local::now();
+                DwTime {
+                    year: now.year() as u16,
+                    month: now.month() as u8,
+                    day: now.day() as u8,
+                    hour: now.hour() as u8,
+                    minute: now.minute() as u8,
+                    second: now.second() as u8,
+                }
+            }));
+        }
+    }
+
+    /// Disable the Becker port, ejecting all mounted DriveWire images and
+    /// clearing the path tracking.
+    fn disable_drivewire(&mut self) {
+        self.machine.bus.drivewire = None;
+        self.dw_paths = std::array::from_fn(|_| None);
+    }
+
+    /// Mount the DriveWire image at `path` in `drive`. Like VHD, writes hit the
+    /// backing file directly. Failures land in [`Self::cart_error`].
+    fn insert_dw_disk(&mut self, drive: usize, path: PathBuf) {
+        let result = (|| -> Result<(), String> {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .map_err(|e| format!("could not open {}: {e}", path.display()))?;
+            if let Some(ref mut dw) = self.machine.bus.drivewire {
+                dw.mount(drive, DwImage::File(file));
+                self.dw_paths[drive] = Some(path);
+            } else {
+                return Err("Becker port not enabled".to_string());
+            }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.cart_error = Some(e);
+        }
+    }
+
+    /// Eject the DriveWire image in `drive`. No write-back: writes already hit
+    /// the backing file directly.
+    fn eject_dw_disk(&mut self, drive: usize) {
+        if let Some(ref mut dw) = self.machine.bus.drivewire {
+            dw.eject(drive);
+        }
+        self.dw_paths[drive] = None;
+    }
+
     /// Mount the tape at `path` (.cas decoded bytes, or a .wav recording
     /// demodulated via [`coco_core::cassette_wav::decode_wav`] — sniffed by
     /// the `RIFF` magic on the loaded bytes, not the file extension, since a
@@ -982,6 +1233,7 @@ impl CocoApp {
         self.tape_path = None;
         self.pending_disk_action = None;
         self.mpi = None;
+        self.rs232 = None;
         self.rtc_direct = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "coco-rs — {}",
@@ -1040,6 +1292,7 @@ impl CocoApp {
                     }
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
                     egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
+                    egui::Key::F11 => self.debugger.open = !self.debugger.open,
                     _ => {}
                 },
                 egui::Event::Paste(text) => self.enqueue_text(text),
@@ -1106,34 +1359,84 @@ impl CocoApp {
     fn drive_joysticks(&mut self, ctx: &egui::Context) {
         self.joysticks.apply(ctx, self.display_rect, &mut self.machine);
     }
-}
 
-impl eframe::App for CocoApp {
-    /// Write modified floppies and tape back to their files on quit — a BASIC
-    /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    /// Write modified floppies and tape back to their files — the exit
+    /// contract [`eframe::App::on_exit`] runs for the direct-boot window,
+    /// and the same one a manager-owned VM needs on Stop or on the
+    /// manager's own `on_exit` (`ManagerApp`'s `eframe::App` impl in
+    /// `manager.rs`, `docs/plan-machine-persistence.md` "one native window
+    /// per running VM").
+    fn flush_media(&mut self) {
         self.flush_dirty_disks();
         self.write_back_tape();
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Toggle Run/Pause, the same assignment the toolbar and Machine-menu
+    /// "Pause"/"Run" buttons perform in [`Self::draw_chrome`] — exposed so
+    /// the manager's detail-pane Pause/Resume button can drive a VM it
+    /// doesn't otherwise reach into (`running` has no `pub` visibility).
+    pub(crate) fn toggle_running(&mut self) {
+        self.running = !self.running;
+    }
+
+    /// Whether the VM is currently running (vs. paused) — the manager's
+    /// list-row and detail-pane status label reads this instead of the
+    /// (never-persisted) `Stopped` placeholder every row used to show.
+    pub(crate) fn is_running(&self) -> bool {
+        self.running
+    }
+
+    /// The framebuffer texture [`Self::step_emulation`] uploads every
+    /// frame — `None` only before the VM's very first frame runs. Exposed
+    /// so the manager's list-row thumbnail
+    /// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM"
+    /// bullet) can draw the *same* `TextureHandle` in a second place: one
+    /// `egui::Context` serves every viewport, so reusing the handle here
+    /// costs one extra quad, not an extra upload — and a paused VM's
+    /// texture simply stops changing, so the thumbnail naturally freezes on
+    /// its last frame with no special-casing needed.
+    pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {
+        self.texture.as_ref()
+    }
+
+    /// Advance emulation for one host frame — input, joysticks, the
+    /// wall-clock-paced field loop, audio, and the framebuffer texture
+    /// upload. Runs regardless of which chrome (if any) is drawn around the
+    /// display this frame: [`Self::window_ui`] (full native window) and the
+    /// manager's `ViewportClass::Embedded` fallback both call this before
+    /// drawing anything, so a VM keeps emulating even in the degraded
+    /// single-window case (`docs/plan-machine-persistence.md` "one native
+    /// window per running VM").
+    fn step_emulation(&mut self, ctx: &egui::Context) {
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
         if self.running {
             // Run however many fields the wall clock owes us (real-time pacing),
             // stepping type-ahead per field so paste timing is refresh-agnostic.
+            // Routed through the debugger so an enabled breakpoint/watchpoint
+            // pauses the emulator cleanly instead of running straight through
+            // it — a no-op when no breakpoints/watchpoints are set (the
+            // common case), since `DebuggerPanel::run_field` then always
+            // completes the field, same as `Machine::run_field` directly.
             for _ in 0..self.fields_due() {
                 if self.type_ahead.is_active() {
                     self.type_ahead.advance(&mut self.machine.bus.keyboard);
                 }
-                self.machine.run_field();
+                if !self.debugger.run_field(&mut self.machine) {
+                    self.running = false;
+                    break;
+                }
             }
             let sample_rate = self.machine.audio_sample_rate();
             self.audio.push_samples(self.machine.take_audio(), sample_rate);
             ctx.request_repaint();
         } else {
             self.last_update = None;
+            // Drop any fields owed to the wall clock while paused (debugger
+            // pause included), so resuming doesn't instantly "catch up" on
+            // the paused interval — a clean pause, not just a frozen screen.
+            self.field_debt = 0.0;
         }
 
         let image = egui::ColorImage::from_rgba_unmultiplied(
@@ -1147,7 +1450,19 @@ impl eframe::App for CocoApp {
             ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
         });
         texture.set(image, egui::TextureOptions::NEAREST);
+    }
 
+    /// The menu bar, toolbar, status bar, and every optional window/dialog
+    /// (keyboard help, About, the "New…" dialog, the printer-paper window,
+    /// the disk-controller confirmation, the cartridge-error banner) — every
+    /// bit of chrome around the CoCo display itself. Split out of
+    /// [`Self::window_ui`] so the manager's `ViewportClass::Embedded`
+    /// fallback can skip it entirely: drawing two apps' menu bars/status
+    /// bars into one shared `ctx` would interleave them into a single
+    /// confusing window, so that fallback shows only [`Self::draw_display`]
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM").
+    fn draw_chrome(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| {
@@ -1202,6 +1517,13 @@ impl eframe::App for CocoApp {
                         ui.close();
                     }
                     ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
+                    if ui
+                        .add_enabled(direct_port, egui::Button::new("Insert Sound/Speech Cartridge"))
+                        .clicked()
+                    {
+                        self.insert_ssc();
+                        ui.close();
+                    }
                     ui.separator();
                     ui.menu_button("MultiPak Interface", |ui| {
                         let installed = self.mpi.is_some();
@@ -1237,6 +1559,9 @@ impl eframe::App for CocoApp {
                                         slot + 1,
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
+                                    Some(MpiSlot::Ssc) => {
+                                        format!("Slot {} (Sound/Speech)", slot + 1)
+                                    }
                                     _ => format!("Slot {}", slot + 1),
                                 };
                                 ui.menu_button(slot_label, |ui| {
@@ -1299,6 +1624,10 @@ impl eframe::App for CocoApp {
                                         self.mpi_insert_rtc(slot);
                                         ui.close();
                                     }
+                                    if ui.button("Insert Sound/Speech").clicked() {
+                                        self.mpi_insert_ssc(slot);
+                                        ui.close();
+                                    }
                                     let occupied = !matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
                                         Some(MpiSlot::Empty)
@@ -1328,6 +1657,83 @@ impl eframe::App for CocoApp {
                                     }
                                 }
                             });
+                        }
+                    });
+                    ui.separator();
+                    ui.menu_button("Deluxe RS-232 Pak", |ui| {
+                        let installed = self.rs232.is_some();
+                        // Like "Insert Cartridge…": the pak plugs straight
+                        // into the port, so an installed MPI blocks it.
+                        if ui
+                            .add_enabled(
+                                direct_port && !installed,
+                                egui::Button::new("Insert Deluxe RS-232 Pak"),
+                            )
+                            .clicked()
+                        {
+                            self.insert_rs232();
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(installed, egui::Button::new("Remove Deluxe RS-232 Pak"))
+                            .clicked()
+                        {
+                            self.eject_cartridge();
+                            ui.close();
+                        }
+                        // Re-read instead of reusing `installed`: a Remove
+                        // click above already cleared `self.rs232` this same
+                        // frame.
+                        let current = match &self.rs232 {
+                            Some(Rs232Endpoint::Loopback) => Some(Rs232EndpointKind::Loopback),
+                            Some(Rs232Endpoint::Tcp(_)) => Some(Rs232EndpointKind::Tcp),
+                            Some(Rs232Endpoint::Pty(_)) => Some(Rs232EndpointKind::Pty),
+                            None => None,
+                        };
+                        if let Some(current) = current {
+                            ui.separator();
+                            ui.label("Wire the serial line to:");
+                            if ui
+                                .selectable_label(
+                                    current == Rs232EndpointKind::Loopback,
+                                    "Loopback",
+                                )
+                                .clicked()
+                            {
+                                self.rs232_set_endpoint(Rs232EndpointKind::Loopback);
+                            }
+                            let tcp_label = match &self.rs232 {
+                                Some(Rs232Endpoint::Tcp(addr)) => format!("TCP ({addr})"),
+                                _ => "TCP".to_string(),
+                            };
+                            if ui
+                                .selectable_label(current == Rs232EndpointKind::Tcp, tcp_label)
+                                .clicked()
+                            {
+                                self.rs232_set_endpoint(Rs232EndpointKind::Tcp);
+                            }
+                            ui.horizontal(|ui| {
+                                ui.label("Listen address:");
+                                ui.text_edit_singleline(&mut self.rs232_tcp_addr);
+                            });
+                            let pty_label = match &self.rs232 {
+                                Some(Rs232Endpoint::Pty(path)) => format!("PTY ({path})"),
+                                _ => "PTY".to_string(),
+                            };
+                            if ui
+                                .selectable_label(current == Rs232EndpointKind::Pty, pty_label)
+                                .clicked()
+                            {
+                                self.rs232_set_endpoint(Rs232EndpointKind::Pty);
+                            }
+                            if let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() {
+                                ui.separator();
+                                ui.label(format!(
+                                    "TX {} bytes / RX {} bytes",
+                                    pak.tx_bytes(),
+                                    pak.rx_bytes()
+                                ));
+                            }
                         }
                     });
                     ui.separator();
@@ -1415,6 +1821,53 @@ impl eframe::App for CocoApp {
                             ui.close();
                         }
                     }
+                    ui.separator();
+                    ui.menu_button("DriveWire", |ui| {
+                        let becker_enabled = self.machine.bus.drivewire.is_some();
+                        if ui
+                            .selectable_label(becker_enabled, "Enable Becker port ($FF41/$FF42)")
+                            .clicked()
+                        {
+                            if becker_enabled {
+                                self.disable_drivewire();
+                            } else {
+                                self.enable_drivewire(false);
+                            }
+                        }
+                        if becker_enabled {
+                            ui.separator();
+                            if let Some(ref mut dw) = self.machine.bus.drivewire {
+                                let mut hdbdos = dw.hdbdos_mode();
+                                if ui.checkbox(&mut hdbdos, "HDB-DOS mode").changed() {
+                                    dw.set_hdbdos_mode(hdbdos);
+                                }
+                            }
+                            ui.separator();
+                            for drive in 0..drivewire::DRIVE_COUNT {
+                                if ui.button(format!("Mount DW{drive}…")).clicked() {
+                                    ui.close();
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("Disk image", &["dsk", "os9", "img", "vhd"])
+                                        .pick_file()
+                                    {
+                                        self.insert_dw_disk(drive, path);
+                                    }
+                                }
+                                let label = match &self.dw_paths[drive] {
+                                    Some(p) => format!(
+                                        "Eject DW{drive} ({})",
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                    ),
+                                    None => format!("Eject DW{drive}"),
+                                };
+                                let mounted = self.dw_paths[drive].is_some();
+                                if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+                                    self.eject_dw_disk(drive);
+                                    ui.close();
+                                }
+                            }
+                        }
+                    });
                     ui.separator();
                     if ui.button("Insert Tape…").clicked() {
                         ui.close();
@@ -1505,6 +1958,8 @@ impl eframe::App for CocoApp {
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
                     ui.separator();
+                    ui.checkbox(&mut self.debugger.open, "Debugger (F11)");
+                    ui.separator();
                     let mut paper_open = self.paper_window.open;
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
                         self.toggle_paper_window();
@@ -1521,7 +1976,7 @@ impl eframe::App for CocoApp {
                     // so this takes effect live rather than requiring a
                     // power cycle.
                     for (mt, label) in [
-                        (MonitorType::Rgb, "RGB monitor"),
+                        (MonitorType::RGB, "RGB monitor"),
                         (MonitorType::Composite, "Composite monitor"),
                     ] {
                         if ui
@@ -1575,6 +2030,17 @@ impl eframe::App for CocoApp {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     ui.label(format!("Cart: {name}"));
                 }
+                if let Some(endpoint) = &self.rs232 {
+                    ui.separator();
+                    // ↑/↓ = bytes out to / in from the host endpoint.
+                    let (tx, rx) = self
+                        .machine
+                        .bus
+                        .cart
+                        .as_deluxe_rs232()
+                        .map_or((0, 0), |pak| (pak.tx_bytes(), pak.rx_bytes()));
+                    ui.label(format!("RS-232 [{}] ↑{tx} ↓{rx}", endpoint.label()));
+                }
                 if let Some(mpi) = &self.mpi {
                     ui.separator();
                     let slots: Vec<String> = mpi
@@ -1593,6 +2059,7 @@ impl eframe::App for CocoApp {
                                     "Orchestra-90:{}",
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                 ),
+                                MpiSlot::Ssc => "SSC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -1623,6 +2090,20 @@ impl eframe::App for CocoApp {
                     ui.separator();
                     ui.label(format!("VHD{drive}: {name}"));
                 }
+                if let Some(ref dw) = self.machine.bus.drivewire {
+                    for drive in 0..drivewire::DRIVE_COUNT {
+                        let Some(path) = &self.dw_paths[drive] else {
+                            continue;
+                        };
+                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                        let dirty = dw.dirty(drive);
+                        ui.separator();
+                        ui.label(format!(
+                            "DW{drive}: {name}{}",
+                            if dirty { "*" } else { "" }
+                        ));
+                    }
+                }
                 if let Some(path) = &self.tape_path {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     let cassette = &self.machine.bus.cassette;
@@ -1652,6 +2133,7 @@ impl eframe::App for CocoApp {
         {
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
+        self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
         if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
             match self.create_vm(config, ctx) {
                 Ok(()) => self.new_vm.close(),
@@ -1719,35 +2201,72 @@ impl eframe::App for CocoApp {
                 self.cart_error = None;
             }
         }
+    }
 
+    /// The CoCo display itself: the letterboxed, (optionally) aspect-
+    /// corrected framebuffer texture, filling whatever `ui` it's given.
+    /// Split out of [`Self::window_ui`]'s `CentralPanel` closure so the
+    /// manager's `ViewportClass::Embedded` fallback can show just this —
+    /// without the rest of [`Self::draw_chrome`] — inside a plain
+    /// `egui::Window` instead of a full-window `CentralPanel`
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM"). Requires [`Self::step_emulation`] to have already run this
+    /// frame (it uploads `self.texture`, `unwrap`ped below).
+    fn draw_display(&mut self, ui: &mut egui::Ui) {
+        let tex = self.texture.as_ref().unwrap();
+        let tex_size = tex.size_vec2();
+        // Aspect the displayed frame should have, independent of the buffer's
+        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
+        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        let aspect = if self.aspect_correct {
+            TARGET_ASPECT
+        } else {
+            tex_size.x / tex_size.y
+        };
+        // Largest rect of that aspect that fits the panel, centered (letterboxed).
+        let avail = ui.available_rect_before_wrap();
+        let mut w = avail.width();
+        let mut h = w / aspect;
+        if h > avail.height() {
+            h = avail.height();
+            w = h * aspect;
+        }
+        let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
+        let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
+        ui.put(rect, egui::Image::new(sized));
+        // Remembered for `drive_joysticks` next frame, to map pointer
+        // position to joystick axes (see the `display_rect` field doc).
+        self.display_rect = rect;
+    }
+
+    /// The full app window for one frame: emulation step, every menu/toolbar/
+    /// dialog, then the display, in that order — exactly the body
+    /// `eframe::App::update` ran before this method existed. `pub(crate)` so
+    /// the manager's per-VM immediate viewport (`manager.rs`'s
+    /// `draw_running_vms`, `ViewportClass::Default`/native case) can call it
+    /// directly on a VM it owns, reproducing the direct-boot window's full
+    /// chrome inside its own native OS window
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM"). The trait method below (kept for the direct-boot CLI path,
+    /// which stays byte-for-byte identical) just forwards here.
+    pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {
+        self.step_emulation(ctx);
+        self.draw_chrome(ctx);
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
-            .show(ctx, |ui| {
-                let tex = self.texture.as_ref().unwrap();
-                let tex_size = tex.size_vec2();
-                // Aspect the displayed frame should have, independent of the buffer's
-                // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
-                // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
-                let aspect = if self.aspect_correct {
-                    TARGET_ASPECT
-                } else {
-                    tex_size.x / tex_size.y
-                };
-                // Largest rect of that aspect that fits the panel, centered (letterboxed).
-                let avail = ui.available_rect_before_wrap();
-                let mut w = avail.width();
-                let mut h = w / aspect;
-                if h > avail.height() {
-                    h = avail.height();
-                    w = h * aspect;
-                }
-                let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
-                let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
-                ui.put(rect, egui::Image::new(sized));
-                // Remembered for `drive_joysticks` next frame, to map pointer
-                // position to joystick axes (see the `display_rect` field doc).
-                self.display_rect = rect;
-            });
+            .show(ctx, |ui| self.draw_display(ui));
+    }
+}
+
+impl eframe::App for CocoApp {
+    /// Write modified floppies and tape back to their files on quit — a BASIC
+    /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.flush_media();
+    }
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.window_ui(ctx);
     }
 }
 
@@ -1874,8 +2393,8 @@ fn parse_ram(s: &str) -> Result<MemorySize, String> {
 /// `clap` value parser for `--video`.
 fn parse_video(s: &str) -> Result<VideoStandard, String> {
     match s {
-        "ntsc" => Ok(VideoStandard::Ntsc),
-        "pal" => Ok(VideoStandard::Pal),
+        "ntsc" => Ok(VideoStandard::NTSC),
+        "pal" => Ok(VideoStandard::PAL),
         _ => Err(format!(
             "unknown video standard '{s}' (expected ntsc or pal)"
         )),
@@ -1893,7 +2412,7 @@ enum MonitorArg {
 impl From<MonitorArg> for MonitorType {
     fn from(m: MonitorArg) -> Self {
         match m {
-            MonitorArg::Rgb => MonitorType::Rgb,
+            MonitorArg::Rgb => MonitorType::RGB,
             MonitorArg::Composite => MonitorType::Composite,
         }
     }
@@ -1941,11 +2460,47 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     vhd1: Option<PathBuf>,
 
+    /// Enable the Becker port ($FF41/$FF42) for DriveWire disk access,
+    /// hosting up to 4 virtual disk images. Implied by any --dw0/--dw1/--dw2/--dw3.
+    #[arg(long, default_value_t = false)]
+    becker: bool,
+
+    /// DriveWire disk image for drive 0 (`.dsk`/`.os9`/`.img`/`.vhd`); implies
+    /// --becker. A bus-level device independent of the cartridge slot, like VHD.
+    #[arg(long, value_name = "PATH")]
+    dw0: Option<PathBuf>,
+
+    /// DriveWire disk image for drive 1 (see `--dw0`).
+    #[arg(long, value_name = "PATH")]
+    dw1: Option<PathBuf>,
+
+    /// DriveWire disk image for drive 2 (see `--dw0`).
+    #[arg(long, value_name = "PATH")]
+    dw2: Option<PathBuf>,
+
+    /// DriveWire disk image for drive 3 (see `--dw0`).
+    #[arg(long, value_name = "PATH")]
+    dw3: Option<PathBuf>,
+
+    /// Enable HDB-DOS sector addressing mode on the DriveWire server (implies
+    /// --becker): flat addressing for DECB format images instead of per-drive
+    /// LSNs.
+    #[arg(long, default_value_t = false)]
+    hdbdos: bool,
+
     /// Insert the FD-502 disk controller with empty drives, so Disk BASIC
     /// boots and blank disks can be added (and DSKINI'd) from the menu.
     /// Implied by --disk0/--disk1.
     #[arg(long, default_value_t = false)]
     fd502: bool,
+
+    /// Insert the Tandy Sound/Speech Cartridge. Without --mpi this plugs
+    /// directly into the cartridge port (conflicts with
+    /// --cart/--disk0/--disk1/--fd502/--rtc, which also want that port);
+    /// with --mpi it goes into slot 2, alongside --cart in slot 1, --rtc in
+    /// slot 3, and the FD-502 in slot 4.
+    #[arg(long, default_value_t = false)]
+    ssc: bool,
 
     /// Insert a 4-slot Tandy Multi-Pak Interface into the cartridge port
     /// instead of plugging --cart/--disk*/--fd502/--rtc directly into it:
@@ -2041,6 +2596,154 @@ fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]
     }
 }
 
+/// Build a running [`CocoApp`] from a saved machine definition
+/// (`machine_def::MachineDef`): the same steps `main()`'s CLI branch below
+/// performs — load the ROM ([`load_explicit_rom`] for an explicit
+/// `[hardware].rom`, else [`load_default_rom`] with the same `./roms`
+/// resolution the CLI path uses), mount `[media]` (cart/disks/vhds/tape,
+/// resolved with `machine_def::resolve_media_path`) and `[peripherals]`
+/// (MPI/RTC) with the same `CocoApp` methods and ordering, and enforce the
+/// same single-cartridge-port rule — but every failure is a returned `Err`
+/// here instead of a process exit, since the caller (the manager's Start
+/// button, `manager.rs`) must show it in the detail pane rather than crash
+/// the whole app (`docs/plan-machine-persistence.md` step 5). On any
+/// mount-time failure (a bad disk/VHD/cassette image, or a disk-BASIC ROM
+/// read failure inside `mpi_insert_fd502` — not just a missing path, caught
+/// early below) the partially-built VM is discarded rather than returned:
+/// callers get either a fully-mounted machine or a precise error, never a
+/// half-broken one.
+pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
+    let config = def.to_machine_config()?;
+
+    let rom = match &def.hardware.rom {
+        Some(path) => load_explicit_rom(Path::new(path)),
+        None => {
+            let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+            load_default_rom(config.variant, &roms_dir)
+        }
+    }?;
+
+    let cart_path = def
+        .media
+        .cart
+        .as_deref()
+        .map(|p| machine_def::resolve_media_path(p, slug));
+    let disk_paths = [
+        def.media.disk0.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+        def.media.disk1.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+    ];
+    let vhd_paths = [
+        def.media.vhd0.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+        def.media.vhd1.as_deref().map(|p| machine_def::resolve_media_path(p, slug)),
+    ];
+    let tape_path = def.media.tape.as_deref().map(|p| machine_def::resolve_media_path(p, slug));
+
+    // Same rule `main()`'s CLI branch enforces by hand (clap's declarative
+    // `conflicts_with` can't express "only when --mpi is absent"): cart,
+    // disk0/disk1 (which imply the FD-502), and rtc all want the single
+    // cartridge port unless an MPI is installed.
+    let mpi = def.peripherals.mpi;
+    let rtc = def.peripherals.rtc;
+    let port_claims = [
+        cart_path.is_some(),
+        disk_paths[0].is_some() || disk_paths[1].is_some(),
+        rtc,
+    ]
+    .into_iter()
+    .filter(|&claims| claims)
+    .count();
+    if !mpi && port_claims > 1 {
+        return Err(
+            "cart, disk0/disk1, and rtc all need the cartridge port; enable the MultiPak \
+             Interface peripheral to combine them"
+                .to_string(),
+        );
+    }
+
+    // No definition field for these UI preferences yet (`machine_def.rs`'s
+    // schema doc); matches the CLI defaults — `--tape-wav` off, no DriveWire
+    // disks, Becker port disabled, HDB-DOS off.
+    let save_tape_wav = false;
+    let dw_paths = std::array::from_fn(|_| None);
+    let becker_enabled = false;
+    let hdbdos_mode = false;
+    let mut app = if mpi {
+        CocoApp::new(
+            config,
+            rom,
+            None,
+            [None, None],
+            vhd_paths,
+            dw_paths,
+            becker_enabled,
+            hdbdos_mode,
+            save_tape_wav,
+        )
+    } else {
+        CocoApp::new(
+            config,
+            rom,
+            cart_path.clone(),
+            disk_paths.clone(),
+            vhd_paths,
+            dw_paths,
+            becker_enabled,
+            hdbdos_mode,
+            save_tape_wav,
+        )
+    };
+
+    if mpi {
+        app.insert_multipak();
+        if let Some(path) = cart_path {
+            app.mpi_insert_rompak(0, path);
+        }
+        if disk_paths[0].is_some() || disk_paths[1].is_some() {
+            app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
+        }
+        if rtc {
+            app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
+        }
+        for (drive, path) in disk_paths.into_iter().enumerate() {
+            if let Some(path) = path {
+                app.insert_disk(drive, path);
+            }
+        }
+    } else if rtc {
+        // cart/disk0/disk1 (handled by the `CocoApp::new` call above, same
+        // as the CLI's non-mpi branch) and rtc are mutually exclusive here —
+        // `port_claims` already rejected any combination of them without
+        // `--mpi`.
+        app.insert_rtc();
+    }
+
+    if let Some(path) = tape_path {
+        app.insert_tape(path);
+    }
+
+    // Every `insert_*`/`mpi_insert_*` helper above records its own failure
+    // in `cart_error` rather than returning a `Result` (it's designed to run
+    // from a live menu click, where the machine keeps running and a dialog
+    // reports the problem). Promote that here into the launch `Result`
+    // instead of returning a VM with a swallowed error nobody's watching
+    // for yet.
+    if let Some(err) = app.cart_error.take() {
+        return Err(err);
+    }
+
+    // The definition's [ui] preferences are the launched window's *starting*
+    // state; F9 (aspect) and F12 (keyboard mode) keep working as live
+    // toggles afterwards — the file controls where they begin, exactly like
+    // the hardware section controls the machine's construction.
+    app.aspect_correct = def.ui.aspect_correct;
+    app.kb_mode = match def.ui.kb_mode {
+        machine_def::KbModeDTO::Positional => KbMode::Positional,
+        machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,
+    };
+
+    Ok(app)
+}
+
 /// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
 /// primary-SAM path expects is Extended Color BASIC at offset 0 (8K), Color
 /// BASIC at offset [`COCO12_BAS_OFFSET`] (8K) — `docs/coco12-plan.md` "ROM
@@ -2119,6 +2822,18 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
     }
 }
 
+/// Per-variant default VDG chip when no explicit choice is made: the T1
+/// (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
+/// `MachineConfig::validate` accepts there). Shared by the CLI path below,
+/// `new_vm.rs`'s `constrain`, and `machine_def.rs`'s `to_machine_config`'s
+/// `None` (omitted `[hardware].vdg`) arm — previously duplicated three ways.
+const fn default_vdg(variant: MachineVariant) -> VDGVariant {
+    match variant {
+        MachineVariant::Coco2 => VDGVariant::MC6847T1,
+        MachineVariant::Coco1 | MachineVariant::Coco3 => VDGVariant::MC6847,
+    }
+}
+
 /// One advisory log line per loaded system ROM, checked against the
 /// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
 /// homebrew images are legitimate, but a corrupt known dump should say so.
@@ -2179,7 +2894,7 @@ fn banner() {
     );
 }
 
-const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v1.tgz";
+const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v2.tgz";
 
 /// Whether `dir` exists and contains at least one entry.
 fn dir_has_files(dir: &Path) -> bool {
@@ -2228,6 +2943,12 @@ fn main() -> eframe::Result<()> {
     banner();
     ensure_assets();
 
+    // Bare `coco` (no CLI arguments) opens the CocoVM manager window; any
+    // argument keeps the direct-boot emulator path below.
+    if std::env::args_os().len() == 1 {
+        return manager::run();
+    }
+
     let cli = Cli::parse();
     let variant = cli.machine;
     let memory = cli.ram.unwrap_or_else(|| default_ram(variant));
@@ -2236,13 +2957,9 @@ fn main() -> eframe::Result<()> {
         video: cli.video,
         memory,
         monitor: cli.monitor.into(),
-        // No CLI flag for this yet; same family defaults as the "New…"
-        // dialog — the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere
-        // (the only valid choice, `MachineConfig::validate`).
-        vdg: match variant {
-            MachineVariant::Coco2 => VdgVariant::Mc6847T1,
-            _ => VdgVariant::Mc6847,
-        },
+        // No CLI flag for this yet; same family default as the "New…"
+        // dialog and the manager's detail pane (`default_vdg`).
+        vdg: default_vdg(variant),
     };
     if let Err(e) = config.validate() {
         eprintln!("coco: invalid configuration: {e}");
@@ -2265,25 +2982,30 @@ fn main() -> eframe::Result<()> {
     let cart_path = cli.cart;
     let disk_paths = [cli.disk0, cli.disk1];
     let vhd_paths = [cli.vhd0, cli.vhd1];
+    let dw_paths = [cli.dw0, cli.dw1, cli.dw2, cli.dw3];
+    let becker_enabled = cli.becker || dw_paths.iter().any(|p| p.is_some());
+    let hdbdos_mode = cli.hdbdos;
     let fd502 = cli.fd502;
     let rtc = cli.rtc;
+    let ssc = cli.ssc;
     let save_tape_wav = cli.tape_wav;
     let print_capture = cli.print_capture;
-    // Without --mpi, --cart, --disk0/--disk1/--fd502, and --rtc all want the
-    // single cartridge port (clap's declarative `conflicts_with` can't
-    // express "only when --mpi is absent", so this is checked by hand).
+    // Without --mpi, --cart, --disk0/--disk1/--fd502, --rtc, and --ssc all
+    // want the single cartridge port (clap's declarative `conflicts_with`
+    // can't express "only when --mpi is absent", so this is checked by hand).
     let port_claims = [
         cart_path.is_some(),
         disk_paths[0].is_some() || disk_paths[1].is_some() || fd502,
         rtc,
+        ssc,
     ]
     .into_iter()
     .filter(|&claims| claims)
     .count();
     if !mpi && port_claims > 1 {
         eprintln!(
-            "coco: --cart, --disk0/--disk1/--fd502, and --rtc all need the cartridge port; \
-             combine them only with --mpi"
+            "coco: --cart, --disk0/--disk1/--fd502, --rtc, and --ssc all need the cartridge \
+             port; combine them only with --mpi"
         );
         std::process::exit(1);
     }
@@ -2305,15 +3027,35 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |cc| {
+        Box::new(move |_cc| {
             // With --mpi, --cart/--disk0/--disk1/--fd502 target MPI slots instead of
             // the plain single-cartridge model, so the base constructor gets none of
             // them and everything is wired up afterward through the same methods the
             // MultiPak menu uses.
             let mut app = if mpi {
-                CocoApp::new(cc, config, rom, None, [None, None], vhd_paths, save_tape_wav)
+                CocoApp::new(
+                    config,
+                    rom,
+                    None,
+                    [None, None],
+                    vhd_paths,
+                    dw_paths,
+                    becker_enabled,
+                    hdbdos_mode,
+                    save_tape_wav,
+                )
             } else {
-                CocoApp::new(cc, config, rom, cart_path.clone(), disk_paths.clone(), vhd_paths, save_tape_wav)
+                CocoApp::new(
+                    config,
+                    rom,
+                    cart_path.clone(),
+                    disk_paths.clone(),
+                    vhd_paths,
+                    dw_paths,
+                    becker_enabled,
+                    hdbdos_mode,
+                    save_tape_wav,
+                )
             };
             if mpi {
                 app.insert_multipak();
@@ -2326,6 +3068,9 @@ fn main() -> eframe::Result<()> {
                 if rtc {
                     app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
                 }
+                if ssc {
+                    app.mpi_insert_ssc(DEFAULT_SSC_SLOT);
+                }
                 for (drive, path) in disk_paths.into_iter().enumerate() {
                     if let Some(path) = path {
                         app.insert_disk(drive, path);
@@ -2335,6 +3080,8 @@ fn main() -> eframe::Result<()> {
                 app.cart_error = Some(e);
             } else if rtc {
                 app.insert_rtc();
+            } else if ssc {
+                app.insert_ssc();
             }
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
@@ -2371,8 +3118,8 @@ mod cli_tests {
 
     #[test]
     fn parse_video_accepts_ntsc_and_pal() {
-        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::Ntsc));
-        assert_eq!(parse_video("pal"), Ok(VideoStandard::Pal));
+        assert_eq!(parse_video("ntsc"), Ok(VideoStandard::NTSC));
+        assert_eq!(parse_video("pal"), Ok(VideoStandard::PAL));
         assert!(parse_video("secam").is_err());
     }
 
@@ -2381,6 +3128,13 @@ mod cli_tests {
         assert_eq!(default_ram(MachineVariant::Coco3), MemorySize::K512);
         assert_eq!(default_ram(MachineVariant::Coco1), MemorySize::K64);
         assert_eq!(default_ram(MachineVariant::Coco2), MemorySize::K64);
+    }
+
+    #[test]
+    fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
+        assert_eq!(default_vdg(MachineVariant::Coco2), VDGVariant::MC6847T1);
+        assert_eq!(default_vdg(MachineVariant::Coco1), VDGVariant::MC6847);
+        assert_eq!(default_vdg(MachineVariant::Coco3), VDGVariant::MC6847);
     }
 
     /// Scratch directory under `target/` holding only the ROM files a given
@@ -2494,112 +3248,4 @@ mod cli_tests {
 }
 
 #[cfg(test)]
-mod ui_tests {
-    use egui_kittest::kittest::Queryable;
-
-    use super::*;
-
-    #[test]
-    fn new_dialog_creates_a_coco1_machine_without_panicking() {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-            .expect("roms/coco3.rom is required (git-ignored, local-only)");
-        load_default_rom(MachineVariant::Coco1, &roms_dir)
-            .expect("a roms/bas1x.rom Color BASIC dump is required (git-ignored, local-only)");
-
-        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
-            CocoApp::new(
-                cc,
-                MachineConfig::default(),
-                rom,
-                None,
-                [None, None],
-                [None, None],
-                false,
-            )
-        });
-        assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
-
-        // Two steps per click: kittest delivers the press and release across
-        // successive frames, and egui fires `clicked` on the release.
-        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
-            harness.get_by_label(label).click();
-            harness.step();
-            harness.step();
-        };
-        click(&mut harness, "Machine");
-        click(&mut harness, "New…");
-        click(&mut harness, "CoCo 1");
-        // The frame that processes Create draws the CentralPanel *after*
-        // swapping the machine — the exact path that used to panic on the
-        // framebuffer texture.
-        click(&mut harness, "Create");
-
-        let app = harness.state();
-        assert_eq!(app.machine.config.variant, MachineVariant::Coco1);
-        assert_eq!(
-            app.machine.config.memory,
-            MemorySize::K64,
-            "RAM should snap to the CoCo 1/2 default when the model changes"
-        );
-        assert!(app.running, "a new VM boots running, like startup");
-        assert!(app.cart_path.is_none() && app.mpi.is_none());
-        assert!(
-            harness.query_by_label("Create").is_none(),
-            "the New Machine dialog should close after a successful create"
-        );
-    }
-
-    /// The VDG radio row only exists on a CoCo 2 draft
-    /// (`MachineConfig::validate`: [`VdgVariant::Mc6847T1`] is CoCo2-only) —
-    /// the row is absent with CoCo 1 or CoCo 3 selected, present and
-    /// selectable with CoCo 2 selected.
-    #[test]
-    fn new_dialog_vdg_row_only_visible_for_coco2() {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-            .expect("roms/coco3.rom is required (git-ignored, local-only)");
-
-        let mut harness = egui_kittest::Harness::new_eframe(|cc| {
-            CocoApp::new(
-                cc,
-                MachineConfig::default(),
-                rom,
-                None,
-                [None, None],
-                [None, None],
-                false,
-            )
-        });
-
-        // Two steps per click: kittest delivers the press and release across
-        // successive frames, and egui fires `clicked` on the release.
-        let click = |harness: &mut egui_kittest::Harness<'_, CocoApp>, label: &str| {
-            harness.get_by_label(label).click();
-            harness.step();
-            harness.step();
-        };
-        click(&mut harness, "Machine");
-        click(&mut harness, "New…");
-
-        let t1_label = "MC6847T1 (CoCo 2B)";
-
-        // Default draft is CoCo 3 (`MachineConfig::default`): row absent.
-        assert!(
-            harness.query_by_label(t1_label).is_none(),
-            "VDG row must be absent for CoCo 3"
-        );
-
-        click(&mut harness, "CoCo 2");
-        assert!(
-            harness.query_by_label(t1_label).is_some(),
-            "VDG row must be present for CoCo 2"
-        );
-
-        click(&mut harness, "CoCo 1");
-        assert!(
-            harness.query_by_label(t1_label).is_none(),
-            "VDG row must be absent for CoCo 1"
-        );
-    }
-}
+mod ui_tests;

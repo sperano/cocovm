@@ -1,7 +1,7 @@
 //! Motorola VDG character generators — the internal font ROMs of the two
 //! chips CoCo 1/2 shipped: the original MC6847 ([`MC6847_FONT`]) and the
 //! later MC6847T1 ([`MC6847T1_FONT`]), selectable per-machine via
-//! [`crate::config::VdgVariant`]. Both draw an 8×12 cell, 12 bytes per
+//! [`crate::config::VDGVariant`]. Both draw an 8×12 cell, 12 bytes per
 //! character (one per raster row), glyph occupying the low 6 bits (leftmost
 //! pixel = bit mask 0x80 >> col).
 //!

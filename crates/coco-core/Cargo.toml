@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 mc6809 = { path = "../mc6809", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
