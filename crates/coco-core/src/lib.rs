@@ -29,6 +29,7 @@ pub mod rs232;
 pub mod rtc;
 pub mod sam;
 pub mod serial;
+pub mod sn76489;
 pub mod ssc;
 pub mod vhd;
 pub mod video;
@@ -423,6 +424,11 @@ impl Machine {
         if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
             self.audio_buffer.clear();
         }
+        // Cartridge sound chips (the GMC's SN76489A) run off their own
+        // crystal, so their clocks advance in wall time per scanline —
+        // immune to the GIME double-speed poke, which stretches the
+        // CPU-cycle timebase `Cartridge::tick` runs on.
+        self.bus.cart.audio_tick(1.0 / self.audio_sample_rate());
         self.audio_buffer.push(self.bus.sound_sample());
         // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4 ticks
         // per normal-speed CPU cycle, 2 per double-speed cycle — TINS=0 counts

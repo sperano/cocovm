@@ -509,14 +509,15 @@ impl SystemBus {
     /// Circuit), which makes this no longer a pure read of latched state.
     ///
     /// Cartridge audio via [`Cartridge::sound_level`] (the Orchestra-90's
-    /// DACs) mixes in unconditionally: that cart drives its own RCA outputs,
+    /// DACs, the GMC's SN76489A) mixes in unconditionally: those carts drive
+    /// their own outputs,
     /// not the SND pin, so the mux never gates it (MAME `coco_orch90.cpp`
     /// routes the DACs to a speaker of their own, ignoring SOUND_ENABLE).
     pub fn sound_sample(&mut self) -> f32 {
         /// Relative loudness of the full-scale DAC vs the single-bit beeper.
         const DAC_GAIN: f32 = 0.75;
         const SINGLE_BIT_GAIN: f32 = 0.25;
-        /// Cartridge audio (Orchestra-90 mono fold-down) at the same
+        /// Cartridge audio (Orchestra-90 fold-down, GMC SN76489A) at the same
         /// full-scale loudness as the internal 6-bit DAC.
         const CART_GAIN: f32 = 0.75;
         /// PIA1 PB1: the single-bit sound output.

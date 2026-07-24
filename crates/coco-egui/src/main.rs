@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Timelike};
 use clap::{Parser, ValueEnum};
-use coco_core::cart::{MultiPak, RomPak};
+use coco_core::cart::{Gmc, MultiPak, RomPak};
 use coco_core::drivewire::{self, DwImage, DwTime};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
@@ -299,6 +299,7 @@ enum MpiSlot {
     RomPak(PathBuf),
     Fd502,
     DistoRtc,
+    Gmc(PathBuf),
     Orch90(PathBuf),
     Ssc,
 }
@@ -475,6 +476,34 @@ impl CocoApp {
                 self.mpi = None; // plugging straight into the port removes any MPI
                 self.rs232 = None; // ...and any RS-232 pak
                 self.rtc_direct = false; // ... and any directly-plugged RTC
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Load a Games Master Cartridge image (banked ROM + SN76489A) from
+    /// `path` and insert it. Mirrors [`Self::insert_cartridge`]'s RomPak
+    /// path exactly, including the `autostart_cart` choice — GMC games are
+    /// autostart game paks (CART* tied to Q), but the checkbox stays
+    /// authoritative like it is for plain paks.
+    fn insert_gmc(&mut self, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match Gmc::from_bytes(&bytes, self.autostart_cart) {
+            Ok(cart) => {
+                self.flush_dirty_disks();
+                self.machine.insert_cartridge(Box::new(cart));
+                self.machine.power_cycle();
+                self.cart_path = Some(path);
+                self.disk_paths = [None, None];
+                self.mpi = None; // plugging straight into the port removes any MPI
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -689,6 +718,33 @@ impl CocoApp {
                 }
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MpiSlot::RomPak(path);
+                }
+                self.machine.power_cycle();
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Load a Games Master Cartridge image into MPI `slot`. Mirrors
+    /// [`Self::mpi_insert_rompak`] — see [`Self::insert_gmc`].
+    fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match Gmc::from_bytes(&bytes, self.autostart_cart) {
+            Ok(cart) => {
+                self.flush_dirty_disks();
+                if let Some(mp) = self.machine.bus.cart.as_multipak() {
+                    mp.insert(slot, Box::new(cart));
+                }
+                if let Some(mpi) = &mut self.mpi {
+                    mpi.slots[slot] = MpiSlot::Gmc(path);
                 }
                 self.machine.power_cycle();
             }
@@ -1497,6 +1553,18 @@ impl CocoApp {
                         }
                     }
                     if ui
+                        .add_enabled(direct_port, egui::Button::new("Insert Games Master…"))
+                        .clicked()
+                    {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Games Master ROM", &["rom", "ccc", "bin"])
+                            .pick_file()
+                        {
+                            self.insert_gmc(path);
+                        }
+                    }
+                    if ui
                         .add_enabled(direct_port, egui::Button::new("Insert Orchestra-90…"))
                         .clicked()
                     {
@@ -1554,6 +1622,11 @@ impl CocoApp {
                                     Some(MpiSlot::DistoRtc) => {
                                         format!("Slot {} (Disto RTC)", slot + 1)
                                     }
+                                    Some(MpiSlot::Gmc(p)) => format!(
+                                        "Slot {} (GMC: {})",
+                                        slot + 1,
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                    ),
                                     Some(MpiSlot::Orch90(p)) => format!(
                                         "Slot {} (Orchestra-90: {})",
                                         slot + 1,
@@ -1572,6 +1645,15 @@ impl CocoApp {
                                             .pick_file()
                                         {
                                             self.mpi_insert_rompak(slot, path);
+                                        }
+                                    }
+                                    if ui.button("Insert Games Master…").clicked() {
+                                        ui.close();
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("Games Master ROM", &["rom", "ccc", "bin"])
+                                            .pick_file()
+                                        {
+                                            self.mpi_insert_gmc(slot, path);
                                         }
                                     }
                                     if ui.button("Insert Orchestra-90…").clicked() {
@@ -2055,6 +2137,10 @@ impl CocoApp {
                                 }
                                 MpiSlot::Fd502 => "FD-502".to_string(),
                                 MpiSlot::DistoRtc => "RTC".to_string(),
+                                MpiSlot::Gmc(p) => format!(
+                                    "GMC:{}",
+                                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                ),
                                 MpiSlot::Orch90(p) => format!(
                                     "Orchestra-90:{}",
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?")

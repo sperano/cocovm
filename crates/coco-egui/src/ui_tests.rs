@@ -898,3 +898,45 @@ fn launch_error_is_reported_not_fatal() {
     );
     harness.get_by_label_contains("could not read");
 }
+
+#[test]
+fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
+    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+    let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+        .expect("roms/coco3.rom is required (git-ignored, local-only)");
+
+    // A 64K banked image: every byte of 16K page `n` is 0xB0|n.
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-test-roms/gmc");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("banked.rom");
+    let mut image = vec![0u8; 4 * 16 * 1024];
+    for (n, page) in image.chunks_mut(16 * 1024).enumerate() {
+        page.fill(0xB0 | n as u8);
+    }
+    std::fs::write(&path, &image).unwrap();
+
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        CocoApp::new(
+            MachineConfig::default(),
+            rom,
+            None,
+            [None, None],
+            [None, None],
+            std::array::from_fn(|_| None),
+            false,
+            false,
+            false,
+        )
+    });
+    // Drive the app-glue directly (the menu item's click handler opens a
+    // native file dialog, which a headless test can't answer).
+    harness.state_mut().insert_gmc(path.clone());
+    harness.step();
+
+    let app = harness.state_mut();
+    assert_eq!(app.cart_path.as_deref(), Some(path.as_path()));
+    assert!(app.cart_error.is_none(), "{:?}", app.cart_error);
+    assert_eq!(app.machine.bus.cart.rom_read(0xC000), 0xB0, "bank 0 up");
+    app.machine.bus.cart.write(0xFF40, 2);
+    assert_eq!(app.machine.bus.cart.rom_read(0xC000), 0xB2, "bank latch");
+}

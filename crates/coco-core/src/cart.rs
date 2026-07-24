@@ -74,6 +74,12 @@ pub trait Cartridge {
     /// while the CPU is halted, so a device can pace work — the FDC's DRQ
     /// cadence — while it holds the HALT line).
     fn tick(&mut self, _cycles: u32) {}
+    /// Advance the cartridge's *audio* clocks by `dt` seconds of wall time.
+    /// Separate from [`Cartridge::tick`] because sound chips (the GMC's
+    /// SN76489A) run off their own crystal: a CPU-cycle timebase would let
+    /// the GIME double-speed poke retune them. Called by the machine loop
+    /// once per scanline, just before [`Cartridge::sound_level`] is sampled.
+    fn audio_tick(&mut self, _dt: f64) {}
     /// True while the cartridge holds the CPU HALT* line low (the FD-502's
     /// transfer handshake). Sampled at instruction boundaries.
     fn halt_asserted(&self) -> bool {
@@ -270,30 +276,37 @@ impl RomPak {
             return Err(RomPakError::TooLarge { len: bytes.len() });
         }
 
-        let mut image = vec![0u8; ROM_PAK_MAX_LEN].into_boxed_slice();
-        image[..bytes.len()].copy_from_slice(bytes);
-
-        // Mirror-fill the rest with MAME `coco_pak_device`'s doubling loop:
-        //   while read_length < cart_length {
-        //       len = min(read_length, cart_length - read_length);
-        //       copy buffer[0..len] to buffer[read_length..];
-        //       read_length += len;
-        //   }
-        // Each copy lands at a multiple of the image length and copies a
-        // prefix of an already-periodic buffer, so the result is byte-identical
-        // to plain repetition (`image[i % len]`) for every image size — the
-        // doubling is only an efficiency trick, kept in MAME's shape so the
-        // provenance is obvious.
-        let mut read_length = bytes.len();
-        while read_length < ROM_PAK_MAX_LEN {
-            let len = read_length.min(ROM_PAK_MAX_LEN - read_length);
-            let (src, dst) = image.split_at_mut(read_length);
-            dst[..len].copy_from_slice(&src[..len]);
-            read_length += len;
-        }
-
-        Ok(Self { image, autostart })
+        Ok(Self {
+            image: mirror_fill(bytes, ROM_PAK_MAX_LEN),
+            autostart,
+        })
     }
+}
+
+/// Copy `bytes` into a `total_len` buffer and mirror-fill the rest with MAME
+/// `cococart_slot_device::call_load`'s doubling loop:
+///   while read_length < cart_length {
+///       len = min(read_length, cart_length - read_length);
+///       copy buffer[0..len] to buffer[read_length..];
+///       read_length += len;
+///   }
+/// Each copy lands at a multiple of the image length and copies a prefix of
+/// an already-periodic buffer, so the result is byte-identical to plain
+/// repetition (`image[i % len]`) for every image size — the doubling is only
+/// an efficiency trick, kept in MAME's shape so the provenance is obvious.
+/// The slot device runs this same loop for every pak type, so [`RomPak`]
+/// (32K) and [`BankedRomPak`] (128K) share it.
+fn mirror_fill(bytes: &[u8], total_len: usize) -> Box<[u8]> {
+    let mut image = vec![0u8; total_len].into_boxed_slice();
+    image[..bytes.len()].copy_from_slice(bytes);
+    let mut read_length = bytes.len();
+    while read_length < total_len {
+        let len = read_length.min(total_len - read_length);
+        let (src, dst) = image.split_at_mut(read_length);
+        dst[..len].copy_from_slice(&src[..len]);
+        read_length += len;
+    }
+    image
 }
 
 impl Cartridge for RomPak {
@@ -310,6 +323,202 @@ impl Cartridge for RomPak {
     }
     fn cart_line_ties_q(&self) -> bool {
         self.autostart
+    }
+}
+
+/// The banked pak's CTS window: the `$FF40` latch slides a **16K** view over
+/// the image (MAME `coco_pak.cpp` `coco_pak_banked_device::get_cart_size()`
+/// = `0x4000`), unlike the plain [`RomPak`]'s fixed 32K.
+pub const BANKED_PAK_WINDOW_LEN: usize = 16 * 1024;
+
+/// Largest banked-pak image: MAME's banked cart ROM region is 128K
+/// (`coco_pak.cpp` `ROM_REGION(0x20000, ...)`), 8 banks of 16K. The bank
+/// latch wraps modulo this, so undersized images (mirror-filled to 128K,
+/// like every pak) repeat across the unused banks.
+pub const BANKED_PAK_MAX_LEN: usize = 128 * 1024;
+
+/// The bank latch address (MAME `coco_pak_banked_device::scs_write` case 0
+/// of the SCS window).
+const BANKED_PAK_BANK_REG: u16 = 0xFF40;
+
+/// Error constructing a [`BankedRomPak`] from a raw image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BankedPakError {
+    /// The image had zero bytes.
+    Empty,
+    /// The image exceeded [`BANKED_PAK_MAX_LEN`].
+    TooLarge {
+        /// The image's actual length, in bytes.
+        len: usize,
+    },
+}
+
+impl std::fmt::Display for BankedPakError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BankedPakError::Empty => write!(f, "banked ROM pak image is empty"),
+            BankedPakError::TooLarge { len } => write!(
+                f,
+                "banked ROM pak image is {len} bytes, larger than the {BANKED_PAK_MAX_LEN}-byte banked address space"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BankedPakError {}
+
+/// A banked ROM pak: the RoboCop/Predator bank-switch circuit that the Games
+/// Master Cartridge reuses (MAME `coco_pak.cpp` `coco_pak_banked_device`).
+/// A whole-byte write to `$FF40` selects which 16K page of the (up to 128K)
+/// image the external ROM window shows; the effective bank is
+/// `(latch * 16K) mod 128K` (MAME `cts_read`'s
+/// `(m_pos * 0x4000) % m_eprom->bytes()`), and the latch resets to bank 0 on
+/// the RESET* line (`device_reset`).
+pub struct BankedRomPak {
+    image: Box<[u8]>,
+    /// The raw `$FF40` latch byte (`m_pos`) — masking happens at read time,
+    /// via the modulo above.
+    bank: u8,
+    /// Whether this pak ties the CART* line to Q (see
+    /// [`Cartridge::cart_line_ties_q`]).
+    autostart: bool,
+}
+
+impl std::fmt::Debug for BankedRomPak {
+    /// Elides the 128K image body.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BankedRomPak")
+            .field("bank", &self.bank)
+            .field("autostart", &self.autostart)
+            .finish()
+    }
+}
+
+impl BankedRomPak {
+    /// Build a banked ROM pak from a raw image. Rejects empty images and
+    /// images larger than [`BANKED_PAK_MAX_LEN`]; anything in between is
+    /// mirror-filled to the full 128K (MAME loads every pak type through the
+    /// same doubling loop — see [`mirror_fill`]).
+    pub fn from_bytes(bytes: &[u8], autostart: bool) -> Result<Self, BankedPakError> {
+        if bytes.is_empty() {
+            return Err(BankedPakError::Empty);
+        }
+        if bytes.len() > BANKED_PAK_MAX_LEN {
+            return Err(BankedPakError::TooLarge { len: bytes.len() });
+        }
+        Ok(Self {
+            image: mirror_fill(bytes, BANKED_PAK_MAX_LEN),
+            bank: 0,
+            autostart,
+        })
+    }
+}
+
+impl Cartridge for BankedRomPak {
+    fn read(&mut self, _addr: u16) -> u8 {
+        IO_OPEN_BUS
+    }
+    fn write(&mut self, addr: u16, val: u8) {
+        if addr == BANKED_PAK_BANK_REG {
+            self.bank = val;
+        }
+    }
+    fn rom_read(&mut self, addr: u16) -> u8 {
+        // The 16K window mirrors identically into both halves of the 32K
+        // external map, so the GIME half-swap (see [`ROM_PAK_HALF_SWAP`])
+        // flips a bit the window mask discards — it drops out entirely.
+        let window = usize::from(addr - ROM_PAK_BASE) & (BANKED_PAK_WINDOW_LEN - 1);
+        let base = usize::from(self.bank) * BANKED_PAK_WINDOW_LEN % BANKED_PAK_MAX_LEN;
+        self.image[base + window]
+    }
+    fn cart_line_ties_q(&self) -> bool {
+        self.autostart
+    }
+    fn reset(&mut self) {
+        self.bank = 0;
+    }
+}
+
+/// The SN76489A data port: `$FF41` (MAME `coco_gmc.cpp` `scs_write` case 1).
+///
+/// ⚠ This address collides with the DriveWire Becker port's data register.
+/// MAME resolves it by intercepting Becker *ahead* of the cartridge decode,
+/// shadowing the GMC's PSG; when the Becker port lands here
+/// (`docs/plan-drivewire-becker.md`), the bus must keep that precedence and
+/// the UI must refuse to enable both at once.
+const GMC_PSG_REG: u16 = 0xFF41;
+
+/// The PSG's crystal on the GMC: 4 MHz (MAME `coco_gmc.cpp`
+/// `SN76489A(config, m_psg, 4_MHz_XTAL)`).
+const GMC_PSG_CRYSTAL_HZ: f64 = 4_000_000.0;
+
+/// John Linville's Games Master Cartridge (MAME `coco_gmc.cpp`): a
+/// [`BankedRomPak`] plus a TI SN76489A PSG for game music. `$FF40` is the
+/// ROM bank latch (inherited from the banked pak), `$FF41` writes the PSG's
+/// single command port; nothing is readable back (MAME's `scs_read` is the
+/// do-nothing base), so reads stay at the I/O window's open-bus value.
+///
+/// Audio mixes into the speaker unconditionally, not through the analog
+/// mux's SEL=10 cartridge-sound input: MAME routes the GMC's PSG to a
+/// dedicated speaker device ignoring SNDEN entirely (its mux cart-sound path
+/// is an explicit "NYI" stub), and no independent schematic settles what the
+/// real cart's SND-pin wiring expects — so we keep MAME's behaviour.
+pub struct Gmc {
+    rom: BankedRomPak,
+    psg: crate::sn76489::SN76489A,
+    /// Mean PSG level over the last [`Cartridge::audio_tick`] interval —
+    /// what [`Cartridge::sound_level`] reports.
+    level: f32,
+}
+
+impl std::fmt::Debug for Gmc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gmc")
+            .field("rom", &self.rom)
+            .field("psg", &self.psg)
+            .finish()
+    }
+}
+
+impl Gmc {
+    /// Build a GMC from a raw banked-ROM image (same size rules as
+    /// [`BankedRomPak::from_bytes`]).
+    pub fn from_bytes(bytes: &[u8], autostart: bool) -> Result<Self, BankedPakError> {
+        Ok(Self {
+            rom: BankedRomPak::from_bytes(bytes, autostart)?,
+            psg: crate::sn76489::SN76489A::new(GMC_PSG_CRYSTAL_HZ),
+            level: 0.0,
+        })
+    }
+}
+
+impl Cartridge for Gmc {
+    fn read(&mut self, _addr: u16) -> u8 {
+        IO_OPEN_BUS
+    }
+    fn write(&mut self, addr: u16, val: u8) {
+        match addr {
+            GMC_PSG_REG => self.psg.write(val),
+            _ => self.rom.write(addr, val),
+        }
+    }
+    fn rom_read(&mut self, addr: u16) -> u8 {
+        self.rom.rom_read(addr)
+    }
+    fn cart_line_ties_q(&self) -> bool {
+        self.rom.cart_line_ties_q()
+    }
+    fn audio_tick(&mut self, dt: f64) {
+        self.level = self.psg.sample(dt);
+    }
+    fn sound_level(&self) -> f32 {
+        self.level
+    }
+    /// Only the bank latch resets — the SN76489A has no reset pin, so the
+    /// PSG plays on through a warm reset until software reprograms it, as on
+    /// the real cartridge.
+    fn reset(&mut self) {
+        self.rom.reset();
     }
 }
 
@@ -515,6 +724,15 @@ impl Cartridge for MultiPak {
     fn tick(&mut self, cycles: u32) {
         for slot in &mut self.slots {
             slot.tick(cycles);
+        }
+    }
+
+    /// Like [`Cartridge::tick`], audio clocks run in every slot regardless
+    /// of selection — a sound chip's crystal doesn't stop when the slot
+    /// isn't addressed.
+    fn audio_tick(&mut self, dt: f64) {
+        for slot in &mut self.slots {
+            slot.audio_tick(dt);
         }
     }
 
