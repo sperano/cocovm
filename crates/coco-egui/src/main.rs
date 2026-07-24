@@ -33,6 +33,7 @@ use coco_core::cart::{MultiPak, RomPak};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::rtc::{DistoRtc, RtcTime};
+use coco_core::ssc::Ssc;
 use coco_core::vhd::VhdImage;
 use coco_core::{
     Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
@@ -252,6 +253,10 @@ const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 /// slot 4, mirroring the conventional layout the `--mpi` CLI wiring builds.
 const DEFAULT_RTC_SLOT: usize = 2;
 
+/// MPI slot `--ssc` targets (slot 2): alongside --cart in slot 1, --rtc in
+/// slot 3, and the FD-502 in slot 4.
+const DEFAULT_SSC_SLOT: usize = 1;
+
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
 /// cold restart (or just the status bar / menu labels) can describe it
 /// without having to downcast the core's trait objects. The FD-502 doesn't
@@ -266,6 +271,7 @@ enum MpiSlot {
     RomPak(PathBuf),
     Fd502,
     DistoRtc,
+    Ssc,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
@@ -400,6 +406,19 @@ impl CocoApp {
         self.rtc_direct = false;
     }
 
+    /// Plug the Sound/Speech Cartridge into the cartridge slot (cold-restart
+    /// gated, like every other direct-port cartridge swap). No file to load
+    /// and no autostart concept — unlike [`Self::insert_cartridge`]'s ROM
+    /// paks, this can't fail.
+    fn insert_ssc(&mut self) {
+        self.flush_dirty_disks();
+        self.machine.insert_cartridge(Box::new(Ssc::new()));
+        self.machine.power_cycle();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None; // plugging straight into the port removes any MPI
+    }
+
     /// Make sure the inserted cartridge is the FD-502 disk controller,
     /// creating one (with `roms/disk11.rom`) if something else — or nothing —
     /// is in the slot. Creating it cold-resets the machine: BASIC only probes
@@ -522,6 +541,21 @@ impl CocoApp {
             mpi.slots[slot] = MpiSlot::Fd502;
         }
         self.disk_paths = [None, None];
+        self.machine.power_cycle();
+    }
+
+    /// Insert the Sound/Speech Cartridge into MPI `slot`. Mirrors
+    /// [`Self::insert_ssc`] but targets one MPI slot instead of the whole
+    /// cartridge port — any number of slots can each hold one (unlike the
+    /// FD-502's single-controller restriction).
+    fn mpi_insert_ssc(&mut self, slot: usize) {
+        self.flush_dirty_disks();
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, Box::new(Ssc::new()));
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MpiSlot::Ssc;
+        }
         self.machine.power_cycle();
     }
 
@@ -1185,6 +1219,13 @@ impl CocoApp {
                         ui.close();
                     }
                     ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
+                    if ui
+                        .add_enabled(direct_port, egui::Button::new("Insert Sound/Speech Cartridge"))
+                        .clicked()
+                    {
+                        self.insert_ssc();
+                        ui.close();
+                    }
                     ui.separator();
                     ui.menu_button("MultiPak Interface", |ui| {
                         let installed = self.mpi.is_some();
@@ -1214,6 +1255,9 @@ impl CocoApp {
                                     Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
                                     Some(MpiSlot::DistoRtc) => {
                                         format!("Slot {} (Disto RTC)", slot + 1)
+                                    }
+                                    Some(MpiSlot::Ssc) => {
+                                        format!("Slot {} (Sound/Speech)", slot + 1)
                                     }
                                     _ => format!("Slot {}", slot + 1),
                                 };
@@ -1266,6 +1310,10 @@ impl CocoApp {
                                         .clicked()
                                     {
                                         self.mpi_insert_rtc(slot);
+                                        ui.close();
+                                    }
+                                    if ui.button("Insert Sound/Speech").clicked() {
+                                        self.mpi_insert_ssc(slot);
                                         ui.close();
                                     }
                                     let occupied = !matches!(
@@ -1551,6 +1599,7 @@ impl CocoApp {
                                 }
                                 MpiSlot::Fd502 => "FD-502".to_string(),
                                 MpiSlot::DistoRtc => "RTC".to_string(),
+                                MpiSlot::Ssc => "SSC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -1936,6 +1985,14 @@ struct Cli {
     /// Implied by --disk0/--disk1.
     #[arg(long, default_value_t = false)]
     fd502: bool,
+
+    /// Insert the Tandy Sound/Speech Cartridge. Without --mpi this plugs
+    /// directly into the cartridge port (conflicts with
+    /// --cart/--disk0/--disk1/--fd502/--rtc, which also want that port);
+    /// with --mpi it goes into slot 2, alongside --cart in slot 1, --rtc in
+    /// slot 3, and the FD-502 in slot 4.
+    #[arg(long, default_value_t = false)]
+    ssc: bool,
 
     /// Insert a 4-slot Tandy Multi-Pak Interface into the cartridge port
     /// instead of plugging --cart/--disk*/--fd502/--rtc directly into it:
@@ -2395,23 +2452,25 @@ fn main() -> eframe::Result<()> {
     let vhd_paths = [cli.vhd0, cli.vhd1];
     let fd502 = cli.fd502;
     let rtc = cli.rtc;
+    let ssc = cli.ssc;
     let save_tape_wav = cli.tape_wav;
     let print_capture = cli.print_capture;
-    // Without --mpi, --cart, --disk0/--disk1/--fd502, and --rtc all want the
-    // single cartridge port (clap's declarative `conflicts_with` can't
-    // express "only when --mpi is absent", so this is checked by hand).
+    // Without --mpi, --cart, --disk0/--disk1/--fd502, --rtc, and --ssc all
+    // want the single cartridge port (clap's declarative `conflicts_with`
+    // can't express "only when --mpi is absent", so this is checked by hand).
     let port_claims = [
         cart_path.is_some(),
         disk_paths[0].is_some() || disk_paths[1].is_some() || fd502,
         rtc,
+        ssc,
     ]
     .into_iter()
     .filter(|&claims| claims)
     .count();
     if !mpi && port_claims > 1 {
         eprintln!(
-            "coco: --cart, --disk0/--disk1/--fd502, and --rtc all need the cartridge port; \
-             combine them only with --mpi"
+            "coco: --cart, --disk0/--disk1/--fd502, --rtc, and --ssc all need the cartridge \
+             port; combine them only with --mpi"
         );
         std::process::exit(1);
     }
@@ -2454,6 +2513,9 @@ fn main() -> eframe::Result<()> {
                 if rtc {
                     app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
                 }
+                if ssc {
+                    app.mpi_insert_ssc(DEFAULT_SSC_SLOT);
+                }
                 for (drive, path) in disk_paths.into_iter().enumerate() {
                     if let Some(path) = path {
                         app.insert_disk(drive, path);
@@ -2463,6 +2525,8 @@ fn main() -> eframe::Result<()> {
                 app.cart_error = Some(e);
             } else if rtc {
                 app.insert_rtc();
+            } else if ssc {
+                app.insert_ssc();
             }
             if let Some(path) = print_capture {
                 app.start_print_capture(path);
