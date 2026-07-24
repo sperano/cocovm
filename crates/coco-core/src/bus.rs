@@ -42,6 +42,15 @@ const BECKER_DATA: u16 = 0xFF42;
 // TODO: MAME gates the whole $FF40-$FF5F SCS window on GIME INIT0 MC2
 // ("standard SCS" width control); not modeled here — every cartridge always
 // sees the full window regardless of MC2.
+/// `$FF60-$FF7E`: not SCS-decoded on real hardware, but expansion-port
+/// devices there (Deluxe RS-232 `$FF68-$FF6B`, Orchestra-90 `$FF7A`/`$FF7B`)
+/// decode the full address bus themselves, so the whole window forwards to
+/// `cart.read`/`cart.write` like the SCS one. MPI caveat: [`crate::cart::MultiPak`]
+/// routes `read`/`write` to its SCS-selected slot only — an approximation,
+/// since a real MPI presents these address lines to every slot (see
+/// `MultiPak::read`).
+const EXP_IO_BASE: u16 = 0xFF60;
+const EXP_IO_LAST: u16 = 0xFF7E;
 /// Multi-Pak Interface select register: decoded by the MPI itself (when one
 /// is inserted), never by the plugged-in cartridges' own `read`/`write` — see
 /// [`Cartridge::control_read`].
@@ -498,10 +507,18 @@ impl SystemBus {
     /// per invocation regardless of mux selection (some carts need to
     /// observe their own output continuously — the SSC's Sound Activity
     /// Circuit), which makes this no longer a pure read of latched state.
+    ///
+    /// Cartridge audio via [`Cartridge::sound_level`] (the Orchestra-90's
+    /// DACs) mixes in unconditionally: that cart drives its own RCA outputs,
+    /// not the SND pin, so the mux never gates it (MAME `coco_orch90.cpp`
+    /// routes the DACs to a speaker of their own, ignoring SOUND_ENABLE).
     pub fn sound_sample(&mut self) -> f32 {
         /// Relative loudness of the full-scale DAC vs the single-bit beeper.
         const DAC_GAIN: f32 = 0.75;
         const SINGLE_BIT_GAIN: f32 = 0.25;
+        /// Cartridge audio (Orchestra-90 mono fold-down) at the same
+        /// full-scale loudness as the internal 6-bit DAC.
+        const CART_GAIN: f32 = 0.75;
         /// PIA1 PB1: the single-bit sound output.
         const SINGLE_BIT: u8 = 0x02;
         const DAC_MAX: f32 = 63.0;
@@ -542,6 +559,7 @@ impl SystemBus {
         if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
             level += SINGLE_BIT_GAIN;
         }
+        level += CART_GAIN * self.cart.sound_level();
         level
     }
 
@@ -615,6 +633,7 @@ impl SystemBus {
                 self.pia1.read((addr & 0x03) as u8)
             }
             CART_BASE..=CART_LAST => self.cart.read(addr),
+            EXP_IO_BASE..=EXP_IO_LAST => self.cart.read(addr),
             MPI_CONTROL_REG => self.cart.control_read(),
             VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
                 self.vhd.read_lrn_or_buffer()
@@ -653,6 +672,7 @@ impl SystemBus {
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
             }
             CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            EXP_IO_BASE..=EXP_IO_LAST => self.cart.write(addr, val),
             MPI_CONTROL_REG => self.cart.control_write(val),
             VHD_LRN_HI => self.vhd.write_lrn_hi(val),
             VHD_LRN_MID => self.vhd.write_lrn_mid(val),

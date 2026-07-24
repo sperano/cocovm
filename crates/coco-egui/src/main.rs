@@ -20,6 +20,7 @@ mod kbd_help;
 mod machine_def;
 mod manager;
 mod new_vm;
+mod orch90_meters;
 mod paper_export;
 mod paths;
 mod paper_render;
@@ -36,6 +37,7 @@ use coco_core::cart::{MultiPak, RomPak};
 use coco_core::drivewire::{self, DwImage, DwTime};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
+use coco_core::orch90::Orch90;
 use coco_core::rtc::{DistoRtc, RtcTime};
 use coco_core::ssc::Ssc;
 use coco_core::vhd::VhdImage;
@@ -146,6 +148,11 @@ struct CocoApp {
     type_ahead: TypeAhead,
     show_kbd_help: bool,
     show_about: bool,
+    /// "View > Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
+    /// Stays whatever the user last set even if the cartridge is later
+    /// ejected — the window simply doesn't draw without a live `Orch90`
+    /// (see the call site in `update`).
+    show_orch90: bool,
     aspect_correct: bool,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
@@ -292,6 +299,7 @@ enum MpiSlot {
     RomPak(PathBuf),
     Fd502,
     DistoRtc,
+    Orch90(PathBuf),
     Ssc,
 }
 
@@ -392,6 +400,7 @@ impl CocoApp {
             type_ahead: TypeAhead::default(),
             show_kbd_help: false,
             show_about: false,
+            show_orch90: false,
             aspect_correct: true,
             last_update: None,
             field_debt: 0.0,
@@ -466,6 +475,35 @@ impl CocoApp {
                 self.mpi = None; // plugging straight into the port removes any MPI
                 self.rs232 = None; // ...and any RS-232 pak
                 self.rtc_direct = false; // ... and any directly-plugged RTC
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Load an Orchestra-90/CC ROM from `path` and insert it. Mirrors
+    /// [`Self::insert_cartridge`]'s RomPak path exactly, but there is no
+    /// `autostart_cart` choice to honor — [`Orch90::cart_line_ties_q`] always
+    /// autostarts, like the real pak's CART*-tied-to-Q wiring.
+    ///
+    /// [`Orch90::cart_line_ties_q`]: coco_core::cart::Cartridge::cart_line_ties_q
+    fn insert_orch90(&mut self, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match Orch90::from_rom_bytes(&bytes) {
+            Ok(cart) => {
+                self.flush_dirty_disks();
+                self.machine.insert_cartridge(Box::new(cart));
+                self.machine.power_cycle();
+                self.cart_path = Some(path);
+                self.disk_paths = [None, None];
+                self.mpi = None; // plugging straight into the port removes any MPI
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -651,6 +689,34 @@ impl CocoApp {
                 }
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MpiSlot::RomPak(path);
+                }
+                self.machine.power_cycle();
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("{}: {e}", path.display()));
+            }
+        }
+    }
+
+    /// Load an Orchestra-90/CC ROM into MPI `slot`. Mirrors
+    /// [`Self::mpi_insert_rompak`], minus the `autostart_cart` choice — see
+    /// [`Self::insert_orch90`].
+    fn mpi_insert_orch90(&mut self, slot: usize, path: PathBuf) {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                return;
+            }
+        };
+        match Orch90::from_rom_bytes(&bytes) {
+            Ok(cart) => {
+                self.flush_dirty_disks();
+                if let Some(mp) = self.machine.bus.cart.as_multipak() {
+                    mp.insert(slot, Box::new(cart));
+                }
+                if let Some(mpi) = &mut self.mpi {
+                    mpi.slots[slot] = MpiSlot::Orch90(path);
                 }
                 self.machine.power_cycle();
             }
@@ -1430,6 +1496,18 @@ impl CocoApp {
                             self.insert_cartridge(path);
                         }
                     }
+                    if ui
+                        .add_enabled(direct_port, egui::Button::new("Insert Orchestra-90…"))
+                        .clicked()
+                    {
+                        ui.close();
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Orchestra-90 ROM", &["rom", "ccc", "bin"])
+                            .pick_file()
+                        {
+                            self.insert_orch90(path);
+                        }
+                    }
                     let inserted = direct_port && self.cart_path.is_some();
                     if ui
                         .add_enabled(inserted, egui::Button::new("Eject Cartridge"))
@@ -1476,6 +1554,11 @@ impl CocoApp {
                                     Some(MpiSlot::DistoRtc) => {
                                         format!("Slot {} (Disto RTC)", slot + 1)
                                     }
+                                    Some(MpiSlot::Orch90(p)) => format!(
+                                        "Slot {} (Orchestra-90: {})",
+                                        slot + 1,
+                                        p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                    ),
                                     Some(MpiSlot::Ssc) => {
                                         format!("Slot {} (Sound/Speech)", slot + 1)
                                     }
@@ -1489,6 +1572,15 @@ impl CocoApp {
                                             .pick_file()
                                         {
                                             self.mpi_insert_rompak(slot, path);
+                                        }
+                                    }
+                                    if ui.button("Insert Orchestra-90…").clicked() {
+                                        ui.close();
+                                        if let Some(path) = rfd::FileDialog::new()
+                                            .add_filter("Orchestra-90 ROM", &["rom", "ccc", "bin"])
+                                            .pick_file()
+                                        {
+                                            self.mpi_insert_orch90(slot, path);
                                         }
                                     }
                                     // An FD-502 already installed elsewhere can't also go here
@@ -1872,6 +1964,13 @@ impl CocoApp {
                     if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
                         self.toggle_paper_window();
                     }
+                    // Only meaningful with an Orchestra-90 cartridge actually inserted
+                    // (direct port or in an MPI slot) — `as_orch90` searches both.
+                    let orch90_present = self.machine.bus.cart.as_orch90().is_some();
+                    ui.add_enabled(
+                        orch90_present,
+                        egui::Checkbox::new(&mut self.show_orch90, "Orchestra-90 Levels"),
+                    );
                     ui.separator();
                     // Swapping the monitor cable doesn't erase machine state,
                     // so this takes effect live rather than requiring a
@@ -1956,6 +2055,10 @@ impl CocoApp {
                                 }
                                 MpiSlot::Fd502 => "FD-502".to_string(),
                                 MpiSlot::DistoRtc => "RTC".to_string(),
+                                MpiSlot::Orch90(p) => format!(
+                                    "Orchestra-90:{}",
+                                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                                ),
                                 MpiSlot::Ssc => "SSC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
@@ -2024,6 +2127,11 @@ impl CocoApp {
         }
         if self.show_about {
             about::window(ctx, &mut self.show_about);
+        }
+        if self.show_orch90
+            && let Some(orch90) = self.machine.bus.cart.as_orch90()
+        {
+            orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
         self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
         if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
