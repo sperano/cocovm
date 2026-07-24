@@ -165,3 +165,75 @@ fn mode_switch_mid_field_splits_text_and_graphics() {
         "text decode below the split"
     );
 }
+
+/// The plan's flagship acceptance test, driven entirely by EMULATED code:
+/// a hand-assembled test ROM arms the GIME interval timer (TINS=0: one tick
+/// per hsync) for [`SPLIT_LINE`] lines and switches the border colour from
+/// its FIRQ handler — asserting the whole interrupt-to-video path splits
+/// the canonical raster at the right line, with no harness register pokes.
+#[test]
+fn timer_firq_from_rom_code_splits_the_border() {
+    const OLD_BORDER: u8 = 0x09;
+    const NEW_BORDER: u8 = 0x2A;
+    /// FIRQ handler location in the ROM image ($8000 + offset).
+    const ISR: u16 = 0x8040;
+
+    let mut rom = vec![0u8; 32 * 1024];
+    let program: &[u8] = &[
+        0x10, 0xCE, 0x1F, 0xF0, // LDS  #$1FF0      stack in low RAM
+        0x86, OLD_BORDER,       // LDA  #OLD_BORDER
+        0xB7, 0xFF, 0x9A,       // STA  $FF9A       border = old colour
+        0x86, 0x20,             // LDA  #intr::TMR
+        0xB7, 0xFF, 0x93,       // STA  $FF93       FIRQENR: timer source
+        0x7F, 0xFF, 0x91,       // CLR  $FF91       INIT1: TINS=0 (hsync rate)
+        0x7F, 0xFF, 0x94,       // CLR  $FF94       timer MSB = 0
+        0x86, SPLIT_LINE as u8, // LDA  #SPLIT_LINE
+        0xB7, 0xFF, 0x95,       // STA  $FF95       timer LSB (restarts count)
+        0x86, 0x10,             // LDA  #init0::FEN
+        0xB7, 0xFF, 0x90,       // STA  $FF90       INIT0: FIRQ out, COCO=0
+        0x1C, 0xAF,             // ANDCC #$AF       unmask FIRQ/IRQ
+        0x20, 0xFE,             // BRA  *           wait for the timer
+    ];
+    rom[..program.len()].copy_from_slice(program);
+    let isr: &[u8] = &[
+        0xB6, 0xFF, 0x93, // LDA  $FF93   read status (clears the latch)
+        0x86, NEW_BORDER, // LDA  #NEW_BORDER
+        0xB7, 0xFF, 0x9A, // STA  $FF9A   border = new colour
+        0x7F, 0xFF, 0x93, // CLR  $FF93   no further timer FIRQs
+        0x3B,             // RTI
+    ];
+    let isr_off = (ISR - 0x8000) as usize;
+    rom[isr_off..isr_off + isr.len()].copy_from_slice(isr);
+    // Vectors (hardwired-internal $FFE0+ region): FIRQ → ISR, RESET → $8000.
+    rom[0x7FF6..0x7FF8].copy_from_slice(&ISR.to_be_bytes());
+    rom[0x7FFE..0x8000].copy_from_slice(&0x8000u16.to_be_bytes());
+
+    let mut m = Machine::new(MachineConfig::default(), rom.into_boxed_slice());
+    finish_field(&mut m);
+
+    // Column 0 is border at every visible row (GIME-native default mode is
+    // non-wide). Exactly one old→new transition, at the timer's line — the
+    // count starts when the LSB write lands (line 0, a few instructions in)
+    // and runs SPLIT_LINE+2 hsync ticks (the 1986 reload offset), with the
+    // FIRQ handler's border write landing within the following line.
+    let old = GIME::rgb_color(OLD_BORDER);
+    let new = GIME::rgb_color(NEW_BORDER);
+    let column: Vec<[u8; 4]> = (0..CANVAS_H).map(|y| px(&m.framebuffer, 0, y)).collect();
+    assert_eq!(column[0], old, "field starts on the old border");
+    assert_eq!(column[CANVAS_H - 1], new, "field ends on the new border");
+    let transitions: Vec<usize> = (1..CANVAS_H)
+        .filter(|&y| column[y] != column[y - 1])
+        .collect();
+    assert_eq!(
+        transitions.len(),
+        1,
+        "exactly one border split, got {transitions:?}"
+    );
+    let split_row = transitions[0];
+    let expected = SPLIT_LINE as usize;
+    assert!(
+        (expected..=expected + 4).contains(&split_row),
+        "split at row {split_row}, expected within {expected}..={}",
+        expected + 4
+    );
+}
