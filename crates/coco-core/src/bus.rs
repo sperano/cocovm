@@ -10,6 +10,7 @@ use crate::bitbanger::{self, BitBanger};
 use crate::cart::{Cartridge, EmptySlot};
 use crate::cassette::Cassette;
 use crate::config::{MachineVariant, MemorySize};
+use crate::drivewire::DwServer;
 use crate::gime::{self, GIME};
 use crate::joystick::Joysticks;
 use crate::keyboard::Keyboard;
@@ -23,13 +24,27 @@ const PIA0_LAST: u16 = 0xFF1F;
 const PIA1_BASE: u16 = 0xFF20;
 const PIA1_LAST: u16 = 0xFF3F;
 const CART_BASE: u16 = 0xFF40;
-const CART_LAST: u16 = 0xFF5F;
+// $FF40-$FF5F is the "standard" SCS* window; $FF60-$FF7E is unmapped on the
+// motherboard, so some carts (the RS-232 Pak, Orchestra-90, the Sound/Speech
+// Cartridge) decode registers of their own there too — the full address bus
+// reaches the expansion connector regardless (`docs/cartridges.md` "Carts can
+// decode addresses outside SCS"). Both ranges route to `cart.read`/`write`;
+// carts that don't claim an address in the extension range fall through to
+// their own open-bus default, same as any unclaimed SCS address.
+const CART_LAST: u16 = 0xFF7E;
+/// Becker-port status register: read-only, `DwServer::status_read()`.
+/// Writes are swallowed while the Becker port is enabled. Intercepts
+/// ahead of cartridge dispatch — see `SystemBus::becker_read`/`becker_write`.
+const BECKER_STATUS: u16 = 0xFF41;
+/// Becker-port data register: read pops a `DwServer` reply byte, write
+/// feeds a client byte into the DriveWire protocol state machine.
+const BECKER_DATA: u16 = 0xFF42;
 // TODO: MAME gates the whole $FF40-$FF5F SCS window on GIME INIT0 MC2
 // ("standard SCS" width control); not modeled here — every cartridge always
 // sees the full window regardless of MC2.
 /// Multi-Pak Interface select register: decoded by the MPI itself (when one
 /// is inserted), never by the plugged-in cartridges' own `read`/`write` — see
-/// [`Cartridge::control_read`]. `$FF60-$FF7E` stays open bus.
+/// [`Cartridge::control_read`].
 const MPI_CONTROL_REG: u16 = 0xFF7F;
 // VHD (virtual hard disk, NitrOS-9 `emudsk`) register window — see `vhd.rs`.
 // $FF87-$FF8F stays open-bus/unmapped.
@@ -118,6 +133,11 @@ pub struct SystemBus {
     pub pia1: MC6821,
     pub cart: Box<dyn Cartridge>,
     pub vhd: Vhd,
+    /// The Becker-port DriveWire server ($FF41/$FF42). `None` = Becker
+    /// disabled — $FF41/$FF42 fall through to cartridge dispatch exactly as
+    /// before. Public like `vhd` so the frontend and tests reach it
+    /// directly (mount images, enable HDB-DOS mode, etc.).
+    pub drivewire: Option<DwServer>,
     pub keyboard: Keyboard,
     pub joysticks: Joysticks,
     pub cassette: Cassette,
@@ -126,6 +146,34 @@ pub struct SystemBus {
     /// Last sampled state of the GIME keyboard-interrupt input (true = some
     /// PA0–PA6 row line low). The EI1 source fires on its falling edge.
     kbd_line_low: bool,
+    /// Monotonic CPU-cycle counter, incremented once per CPU unit in
+    /// `Machine::step_cpu_unit` by that unit's cycle cost; used
+    /// only to timestamp Becker-port DriveWire writes for `DwServer`'s
+    /// transaction timeout — NOT a general-purpose scheduling clock, and NOT
+    /// reset by [`SystemBus::new`]/power-on since it only needs to be
+    /// monotonic, not meaningful in absolute terms.
+    pub(crate) cycle_clock: u64,
+    /// Current latched audio-input state (see `crate::audio`): kept in sync
+    /// by [`SystemBus::note_audio_write`] so flushes know the line-start
+    /// state without recomputing.
+    pub(crate) audio_inputs: crate::audio::AudioInputs,
+    /// Cycle-timestamped audio-input changes since the last line flush
+    /// (`Machine::flush_line_audio` drains these each scanline).
+    pub(crate) audio_events: Vec<crate::audio::AudioEvent>,
+    /// Last sampled level of the cartridge's level-driven CART* interrupt
+    /// ([`Cartridge::cart_interrupt`]), so [`SystemBus::poll_cart_interrupt`]
+    /// acts only on transitions.
+    prev_cart_int: bool,
+    /// Debugger memory watchpoints, installed by
+    /// [`crate::debug::Debugger::run_until`] only while a debugged run is in
+    /// flight and cleared again afterwards. `None` on the normal run path, so
+    /// `read`/`write` pay a single null-check and the hot path is never
+    /// regressed (`docs/plan-debugger.md` §2).
+    watch: Option<crate::debug::WatchTable>,
+    /// First watchpoint access seen since the last [`SystemBus::clear_watch_hit`];
+    /// [`SystemBus::take_watch_hit`] drains it. Only ever `Some` while `watch`
+    /// is installed.
+    watch_hit: Option<crate::debug::WatchHit>,
 }
 
 impl SystemBus {
@@ -140,12 +188,68 @@ impl SystemBus {
             pia1: MC6821::new(),
             cart: Box::new(EmptySlot),
             vhd: Vhd::new(),
+            drivewire: None,
             keyboard: Keyboard::new(),
             joysticks: Joysticks::new(),
             cassette: Cassette::new(),
             bitbanger: BitBanger::new(),
             io_enabled: true,
             kbd_line_low: false,
+            cycle_clock: 0,
+            audio_inputs: crate::audio::AudioInputs::default(),
+            audio_events: Vec::new(),
+            prev_cart_int: false,
+            watch: None,
+            watch_hit: None,
+        }
+    }
+
+    /// Enable the Becker port, if not already enabled. Idempotent — does
+    /// nothing if a `DwServer` is already installed (so re-enabling doesn't
+    /// discard mounted images or protocol state).
+    pub fn enable_drivewire(&mut self) {
+        if self.drivewire.is_none() {
+            self.drivewire = Some(DwServer::new());
+        }
+    }
+
+    /// Install the debugger's memory-watch table for the duration of a
+    /// [`crate::debug::Debugger::run_until`]. An empty table installs `None` so
+    /// even a debugged run with no watchpoints keeps the `read`/`write` fast
+    /// path. Also clears any stale hit.
+    pub fn install_watches(&mut self, table: crate::debug::WatchTable) {
+        self.watch = (!table.is_empty()).then_some(table);
+        self.watch_hit = None;
+    }
+
+    /// Remove the watch table, returning `read`/`write` to their zero-overhead
+    /// path. Called on every exit from `run_until`.
+    pub fn uninstall_watches(&mut self) {
+        self.watch = None;
+        self.watch_hit = None;
+    }
+
+    /// Forget any recorded watch hit before stepping one instruction.
+    pub fn clear_watch_hit(&mut self) {
+        self.watch_hit = None;
+    }
+
+    /// Take the first watchpoint access observed since the last
+    /// [`SystemBus::clear_watch_hit`], if any.
+    pub fn take_watch_hit(&mut self) -> Option<crate::debug::WatchHit> {
+        self.watch_hit.take()
+    }
+
+    /// Record a watchpoint access if `watch` is installed and `addr`/`kind`
+    /// match an enabled watch. Keeps the FIRST hit within a step (later
+    /// accesses in the same instruction don't overwrite it). Only reached when
+    /// `watch.is_some()`, so the None path never calls this.
+    fn note_watch(&mut self, addr: u16, kind: crate::debug::WatchKind) {
+        if self.watch_hit.is_some() {
+            return;
+        }
+        if matches!(&self.watch, Some(w) if w.matches(addr, kind)) {
+            self.watch_hit = Some(crate::debug::WatchHit { addr, kind });
         }
     }
 
@@ -294,6 +398,28 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
+    /// Sample the level-driven CART* interrupt ([`Cartridge::cart_interrupt`],
+    /// e.g. the Deluxe RS-232's 6551 ACIA IRQ) and convert transitions into
+    /// what the shared physical pin feeds: PIA1 CB1 sees the line level itself
+    /// — CART* is active-low, so asserted = CB1 low, and the PIA latches
+    /// whichever edge its control register selects — while the GIME EI0
+    /// source is raised on the falling (assert) edge only, its hardwired
+    /// trigger (GIME border/cart sources are falling-edge, per Lomont; same
+    /// treatment as the `cart_line_ties_q` Q-burst in [`SystemBus::hsync`]).
+    /// Polled per-instruction from `Machine::run_cycles` so serial-interrupt
+    /// latency isn't quantized to scanlines.
+    pub fn poll_cart_interrupt(&mut self) {
+        let level = self.cart.cart_interrupt();
+        if level == self.prev_cart_int {
+            return;
+        }
+        self.prev_cart_int = level;
+        self.pia1.b.set_c1(!level);
+        if level && self.variant == MachineVariant::Coco3 {
+            self.gime.raise(gime::intr::EI0);
+        }
+    }
+
     /// Horizontal-sync line: the GIME HS pin idles high and pulses low for 16
     /// of 228 pixel clocks at line end (~4.5 µs; MAME `mc6847.cpp`
     /// `TIMER_HSYNC_OFF_TIME`=212/`ON_TIME`=228). Our per-line model has no
@@ -365,48 +491,55 @@ impl SystemBus {
         self.pia0.b.set_c1(true);
     }
 
-    /// Instantaneous speaker level, 0.0–1.0.
-    ///
-    /// Sources mix on the CoCo 3 (it has no sound chip of its own): the 6-bit
-    /// DAC (PIA1 PA2–PA7), routed through the analog mux only when SNDEN
-    /// (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are 00;
-    /// mux state 01 routes cassette playback (the squared tape signal — the
-    /// key-click of a real CLOAD), 10 routes cartridge audio (not emulated,
-    /// silent), 11 is grounded; and the single-bit sound on PIA1 PB1, which
-    /// is always connected. (Tandy Service Manual mux table via MAME
-    /// `coco.cpp` `update_sound`; SEB Unravelled II $FF22/$FF23.)
-    pub fn sound_sample(&self) -> f32 {
-        /// Relative loudness of the full-scale DAC vs the single-bit beeper.
-        const DAC_GAIN: f32 = 0.75;
-        const SINGLE_BIT_GAIN: f32 = 0.25;
+    /// Snapshot the latched audio-affecting inputs (`crate::audio`): the
+    /// 6-bit DAC, single-bit beeper, SNDEN + mux selects, cassette relay,
+    /// and the cartridge's latched stereo outputs. (Tandy Service Manual
+    /// mux table via MAME `coco.cpp` `update_sound`; SEB Unravelled II
+    /// $FF22/$FF23. Generator-type sources — the mux-10 AY path and
+    /// crystal PSGs — are sampled at flush time instead, see
+    /// `Machine::flush_line_audio`.)
+    fn snapshot_audio_inputs(&self) -> crate::audio::AudioInputs {
         /// PIA1 PB1: the single-bit sound output.
         const SINGLE_BIT: u8 = 0x02;
-        const DAC_MAX: f32 = 63.0;
-        /// Tape playback through the mux: a square wave (the SALT detector's
-        /// output), kept below the DAC's full scale like the real attenuated
-        /// tape level.
-        const CASSETTE_GAIN: f32 = 0.35;
-        /// SEL2:SEL1 = 01: the mux's cassette input.
-        const SEL_CASSETTE: u8 = 0b01;
+        let (cart_left, cart_right) = self.cart.sound_levels();
+        crate::audio::AudioInputs {
+            dac: (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2,
+            single_bit: self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0,
+            snden: self.pia1.b.c2_output(),
+            sel: u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output()),
+            cassette_relay: self.pia1.a.c2_output(),
+            cart_left,
+            cart_right,
+        }
+    }
 
-        let mut level = 0.0;
-        let sel = u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output());
-        if self.pia1.b.c2_output() && sel == 0 {
-            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
-            level += DAC_GAIN * f32::from(dac) / DAC_MAX;
+    /// Mix one stereo sample from the CURRENT latched inputs plus one
+    /// `dt`-second generator step — the instantaneous speaker level, for
+    /// tests and level meters. The machine's real audio path renders the
+    /// event-timestamped grid instead (`Machine::flush_line_audio`); this
+    /// probe advances the generator clocks (AY drain, PSG crystals) as a
+    /// side effect exactly like one grid slot does.
+    pub fn sound_probe(&mut self, dt: f64) -> [f32; 2] {
+        let inputs = self.snapshot_audio_inputs();
+        let cassette_bit = self.cassette.playing() && self.cassette.input_bit();
+        let ay = self.cart.audio_sample();
+        let generators = self.cart.generator_sample(dt);
+        crate::audio::mix(&inputs, cassette_bit, ay, generators)
+    }
+
+    /// Record a cycle-timestamped audio event if the write that just landed
+    /// changed any latched audio input. Called on the PIA and
+    /// cartridge-window write paths only, and cheap even there: one
+    /// snapshot + compare per write.
+    fn note_audio_write(&mut self) {
+        let inputs = self.snapshot_audio_inputs();
+        if inputs != self.audio_inputs {
+            self.audio_inputs = inputs;
+            self.audio_events.push(crate::audio::AudioEvent {
+                cycle: self.cycle_clock,
+                inputs,
+            });
         }
-        if self.pia1.b.c2_output()
-            && sel == SEL_CASSETTE
-            && self.pia1.a.c2_output()
-            && self.cassette.playing()
-            && self.cassette.input_bit()
-        {
-            level += CASSETTE_GAIN;
-        }
-        if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
-            level += SINGLE_BIT_GAIN;
-        }
-        level
     }
 
     /// Read ROM for a logical address in the `$8000–$FFFF` window.
@@ -425,7 +558,47 @@ impl SystemBus {
         self.rom.get(off).copied().unwrap_or(OPEN_BUS)
     }
 
+    /// Becker-port read intercept ($FF41/$FF42): `Some` when the Becker port
+    /// is enabled and `addr` is one of the two registers, in which case the
+    /// caller must return it directly — this takes precedence over
+    /// cartridge dispatch (`CART_BASE..=CART_LAST`) on every I/O decode
+    /// path, GIME and plain-SAM alike (MAME installs Becker handlers over
+    /// the cart range). `None` otherwise, so the caller falls through to its
+    /// normal decode (cartridge included).
+    fn becker_read(&mut self, addr: u16) -> Option<u8> {
+        let dw = self.drivewire.as_mut()?;
+        match addr {
+            BECKER_STATUS => Some(dw.status_read()),
+            BECKER_DATA => Some(dw.data_read()),
+            _ => None,
+        }
+    }
+
+    /// Becker-port write intercept: `true` when the Becker port is enabled
+    /// and `addr` was one of the two registers (handled — including $FF41,
+    /// which is swallowed), so the caller must not fall through to its
+    /// normal decode. `false` otherwise.
+    fn becker_write(&mut self, addr: u16, val: u8) -> bool {
+        if self.drivewire.is_none() {
+            return false;
+        }
+        match addr {
+            BECKER_STATUS => true, // writes swallowed while Becker is enabled
+            BECKER_DATA => {
+                let cycle = self.cycle_clock;
+                self.drivewire.as_mut().unwrap().data_write(val, cycle);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn io_read(&mut self, addr: u16) -> u8 {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if let Some(v) = self.becker_read(addr) {
+            return v;
+        }
         match addr {
             IO_BASE..=PIA0_LAST => {
                 // Refresh port A's input pins (keyboard rows + joystick
@@ -460,8 +633,16 @@ impl SystemBus {
     }
 
     fn io_write(&mut self, addr: u16, val: u8) {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if self.becker_write(addr, val) {
+            return;
+        }
         match addr {
-            IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
+            IO_BASE..=PIA0_LAST => {
+                self.pia0.write((addr & 0x03) as u8, val);
+                self.note_audio_write(); // CA2/CB2 are the sound mux selects
+            }
             PIA1_BASE..=PIA1_LAST => {
                 self.pia1.write((addr & 0x03) as u8, val);
                 // Cassette record-out is a direct, unconditional tap of the DAC
@@ -470,8 +651,12 @@ impl SystemBus {
                 // CRA, which carries the motor relay) can change it.
                 let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
+                self.note_audio_write(); // DAC / PB1 / SNDEN / relay
             }
-            CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            CART_BASE..=CART_LAST => {
+                self.cart.write(addr, val);
+                self.note_audio_write(); // latched cart DACs (Orchestra-90)
+            }
             MPI_CONTROL_REG => self.cart.control_write(val),
             VHD_LRN_HI => self.vhd.write_lrn_hi(val),
             VHD_LRN_MID => self.vhd.write_lrn_mid(val),
@@ -587,8 +772,11 @@ impl SystemBus {
         }
 
         let write_result = self.vhd_image_mut(drive).write_at(offset, &buf);
-        self.vhd.drives[drive].status =
-            if write_result.is_ok() { vhd::status::OK } else { vhd::status::IO_ERROR };
+        self.vhd.drives[drive].status = if write_result.is_ok() {
+            vhd::status::OK
+        } else {
+            vhd::status::IO_ERROR
+        };
     }
 
     /// FLUSH (`vhd::command::FLUSH`): flush the backing file to disk. Mapping
@@ -596,15 +784,21 @@ impl SystemBus {
     /// implementation's own extension, not a separately verified MAME fact.
     fn vhd_flush(&mut self, drive: usize) {
         let flush_result = self.vhd_image_mut(drive).flush();
-        self.vhd.drives[drive].status =
-            if flush_result.is_ok() { vhd::status::OK } else { vhd::status::IO_ERROR };
+        self.vhd.drives[drive].status = if flush_result.is_ok() {
+            vhd::status::OK
+        } else {
+            vhd::status::IO_ERROR
+        };
     }
 
     /// The image mounted in `drive`, for the command bodies above. Panics if
     /// called on an unmounted drive — every call site is guarded by
     /// `vhd_execute_command`'s own mounted check first.
     fn vhd_image_mut(&mut self, drive: usize) -> &mut vhd::VhdImage {
-        self.vhd.drives[drive].image.as_mut().expect("checked mounted")
+        self.vhd.drives[drive]
+            .image
+            .as_mut()
+            .expect("checked mounted")
     }
 
     // ---- Plain-SAM path (CoCo 1/2, no GIME) --------------------------------
@@ -668,6 +862,11 @@ impl SystemBus {
     /// control strobes (read-only in effect — a strobe read falls through to
     /// open bus, matching the plan's memory map).
     fn sam_io_read(&mut self, addr: u16) -> u8 {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if let Some(v) = self.becker_read(addr) {
+            return v;
+        }
         match addr {
             IO_BASE..=PIA0_LAST => {
                 self.pia0.a.input = self.pia0_pa_pins();
@@ -684,14 +883,26 @@ impl SystemBus {
     }
 
     fn sam_io_write(&mut self, addr: u16, val: u8) {
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order over the SCS window.
+        if self.becker_write(addr, val) {
+            return;
+        }
         match addr {
-            IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
+            IO_BASE..=PIA0_LAST => {
+                self.pia0.write((addr & 0x03) as u8, val);
+                self.note_audio_write(); // CA2/CB2 are the sound mux selects
+            }
             PIA1_BASE..=PIA1_LAST => {
                 self.pia1.write((addr & 0x03) as u8, val);
                 let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
+                self.note_audio_write(); // DAC / PB1 / SNDEN / relay
             }
-            CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            CART_BASE..=CART_LAST => {
+                self.cart.write(addr, val);
+                self.note_audio_write(); // latched cart DACs
+            }
             crate::sam::STROBE_BASE..=crate::sam::STROBE_LAST => self.sam.write_strobe(addr),
             _ => { /* unmapped */ }
         }
@@ -711,8 +922,121 @@ fn mmu_index(addr: u16) -> (usize, usize) {
     (idx / gime::SLOTS_PER_TASK, idx % gime::SLOTS_PER_TASK)
 }
 
+// ---- Side-effect-free reads (debugger) ---------------------------------
+//
+// `peek` mirrors `Bus::read`'s address decode exactly but takes `&self` and
+// never mutates: no PIA Cx1/Cx2 flag clears, no GIME IRQ/FIRQ status ack, no
+// cartridge register side effects, and no watchpoint hook. Devices whose real
+// read mutates return a last-latched value (GIME status registers, via their
+// public `*_pending` fields) or open bus (most cartridge I/O). The debugger UI
+// uses this for its disassembly, memory, and stack views (`docs/plan-debugger.md`
+// §2).
+impl SystemBus {
+    /// Read `addr` with no side effects. Routes identically to [`Bus::read`].
+    pub fn peek(&self, addr: u16) -> u8 {
+        if self.variant != MachineVariant::Coco3 {
+            return self.sam_peek(addr);
+        }
+        if addr >= HARDWIRED_ROM_BASE {
+            return self.rom_peek(addr);
+        }
+        if self.io_enabled && addr >= IO_BASE {
+            return self.io_peek(addr);
+        }
+        if self.is_rom_window(addr) {
+            return self.rom_peek(addr);
+        }
+        let p = self.phys(addr);
+        self.ram[p]
+    }
+
+    /// Side-effect-free twin of [`SystemBus::rom_read`].
+    fn rom_peek(&self, addr: u16) -> u8 {
+        if addr < HARDWIRED_ROM_BASE && self.gime.rom_is_external(addr) {
+            return self.cart.rom_peek(addr);
+        }
+        let off = (addr - ROM_WINDOW_BASE) as usize;
+        self.rom.get(off).copied().unwrap_or(OPEN_BUS)
+    }
+
+    /// Side-effect-free twin of [`SystemBus::io_read`] (GIME I/O page).
+    fn io_peek(&self, addr: u16) -> u8 {
+        match addr {
+            IO_BASE..=PIA0_LAST => {
+                // A real read refreshes only port A's input pins; port B keeps
+                // its latched `input` (see `io_read`), so peek does the same.
+                self.pia0
+                    .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
+            }
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1
+                    .peek((addr & 0x03) as u8, self.pia1_pa_pins(), self.pia1_pb_pins())
+            }
+            CART_BASE..=CART_LAST => self.cart.peek(addr),
+            MPI_CONTROL_REG => self.cart.peek_control(),
+            VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
+                self.vhd.read_lrn_or_buffer()
+            }
+            VHD_COMMAND_STATUS => self.vhd.read_status(),
+            VHD_SELECT => OPEN_BUS,
+            INIT0_REG => self.gime.init0,
+            INIT1_REG => self.gime.init1,
+            // Read would clear these (status ack); peek reports them intact.
+            IRQENR_REG => self.gime.irq_pending,
+            FIRQENR_REG => self.gime.firq_pending,
+            TIMER_MSB_REG..=GIME_LAST => 0,
+            MMU_BASE..=MMU_LAST => {
+                let (task, slot) = mmu_index(addr);
+                self.gime.mmu[task][slot] & gime::MMU_READ_MASK
+            }
+            PALETTE_BASE..=PALETTE_LAST => self.gime.palette[(addr - PALETTE_BASE) as usize],
+            _ => OPEN_BUS,
+        }
+    }
+
+    /// Side-effect-free twin of [`SystemBus::sam_read`] (plain-SAM path).
+    fn sam_peek(&self, addr: u16) -> u8 {
+        match self.sam.map(addr) {
+            SamTarget::Ram(phys) => self
+                .sam_ram_index(phys)
+                .map(|i| self.ram[i])
+                .unwrap_or(OPEN_BUS),
+            SamTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
+            SamTarget::RomBas(off) => self
+                .rom
+                .get(SAM_BAS_ROM_OFFSET + off)
+                .copied()
+                .unwrap_or(OPEN_BUS),
+            SamTarget::Cart(off) => self.cart.rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
+            SamTarget::Io => self.sam_io_peek(addr),
+            SamTarget::OpenBus => OPEN_BUS,
+        }
+    }
+
+    /// Side-effect-free twin of [`SystemBus::sam_io_read`].
+    fn sam_io_peek(&self, addr: u16) -> u8 {
+        match addr {
+            IO_BASE..=PIA0_LAST => {
+                self.pia0
+                    .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
+            }
+            PIA1_BASE..=PIA1_LAST => {
+                self.pia1
+                    .peek((addr & 0x03) as u8, self.pia1_pa_pins(), self.pia1_pb_pins())
+            }
+            CART_BASE..=CART_LAST => self.cart.peek(addr),
+            _ => OPEN_BUS,
+        }
+    }
+}
+
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
+        // Debugger watch hook: a single null-check when no watchpoints are
+        // installed (the common case), so the hot path is unchanged.
+        if self.watch.is_some() {
+            self.note_watch(addr, crate::debug::WatchKind::Read);
+        }
         // Two independent concrete decode paths, branched once up front
         // (`docs/coco12-plan.md` Phase 2) — not a trait object, so both stay
         // cycle-honest and the GIME path is untouched by the plain-SAM one.
@@ -736,6 +1060,9 @@ impl Bus for SystemBus {
     }
 
     fn write(&mut self, addr: u16, val: u8) {
+        if self.watch.is_some() {
+            self.note_watch(addr, crate::debug::WatchKind::Write);
+        }
         if self.variant != MachineVariant::Coco3 {
             self.sam_write(addr, val);
             return;

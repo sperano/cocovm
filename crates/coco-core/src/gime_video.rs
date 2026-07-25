@@ -8,24 +8,22 @@
 //!
 //! Unlike the CoCo-compatible modes, GIME-native scanout addresses *physical*
 //! RAM directly — the vertical offset registers give the start address and the
-//! MMU is bypassed (SEB Unravelled II). Each mode renders at its native pixel
-//! size into a variable-size framebuffer and the frontend scales to fit
-//! (`video-output-architecture` Option A). Register semantics verified against
-//! SEB Unravelled II and MAME `gime.cpp`.
+//! MMU is bypassed (SEB Unravelled II). Rendering is per scanline into the
+//! canonical 640×240 raster (`raster.rs`, Option B): [`paint_scanline`] paints
+//! one canvas row from the LIVE registers plus the per-field latched state in
+//! [`FieldScan`], so mid-frame register writes take effect on the next line —
+//! except the field-latched group ($FF9D/$FF9E base, $FF9C smooth-scroll
+//! seed), which MAME `gime.cpp` `new_frame` samples once per field.
+//! Register semantics verified against SEB Unravelled II and MAME `gime.cpp`
+//! (see memory `gime-scanline-verified-facts`).
 
 use crate::font_gime::{GIME_FONT, GLYPH_ROWS};
-use crate::gime::{self, GIME, hoff, vres};
+use crate::gime::{self, GIME, hoff, vmode, vres};
+use crate::raster::{CANVAS_H, CANVAS_W, NON_WIDE_ACTIVE_W, NON_WIDE_BORDER_X, vertical_window};
 use crate::video::{BYTES_PER_PIXEL, PALETTE_LEN};
 
 /// Character cell width in pixels (fixed by the 8-bit font rows).
 pub const CHAR_W: usize = 8;
-
-/// Vertical border thickness in native lines.
-pub const BORDER_Y: usize = 16;
-/// The horizontal border scales with the active width (width ÷ 16) so every
-/// mode keeps the same border-to-picture proportion; all legal GIME widths
-/// (128–640) divide evenly.
-pub const BORDER_X_DIVISOR: usize = 16;
 
 /// Attribute-byte fields (SEB Unravelled II Fig 4).
 const ATTR_BLINK: u8 = 0x80;
@@ -50,6 +48,13 @@ const BORDER_COLOR_MASK: u8 = 0x3F;
 /// Within a row, fetch offsets wrap at 256 bytes — the horizontal-virtual
 /// "seam" (MAME `record_scanline_res`; SEB's "peculiar things" without HVEN).
 const ROW_FETCH_WRAP: usize = 0x100;
+
+/// Mask for the HRES field's low bit ($FF99 bit 2): the "wide" flag in
+/// MAME's pixel path (`render_scanline`: `wide = !legacy && (ff99 & 0x04)`).
+/// Wide modes fill the full 640 canvas px with no border; non-wide modes
+/// fill the centre 512. (MAME's `update_geometry` tests bit 3 instead, but
+/// only for field-sync timing — the emitted pixel widths follow bit 2.)
+const WIDE_HRES_MASK: usize = 0x01;
 
 /// A decoded GIME hi-res text mode.
 pub struct TextMode {
@@ -87,10 +92,18 @@ pub struct GraphicsMode {
 }
 
 /// Decode the graphics mode from the GIME video registers ($FF98/$FF99).
+///
+/// HRES=%110/%111 (128/160 bytes per row) with CRES=%00 is not a guaranteed
+/// combination (SEB Unravelled II Fig 5) and the chip does not produce a
+/// 1024/1280-px picture: MAME `gime.cpp` (cases `0x18/0x19`, `0x1c/0x1d`)
+/// aliases CRES=0 to the CRES=1 renderer there, so this decode does too.
 pub fn decode_graphics(g: &GIME) -> GraphicsMode {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
     let bytes_per_row = gime::GFX_BYTES_PER_ROW[hres];
-    let bpp = gime::GFX_BPP[(g.vres & vres::CRES_MASK) as usize];
+    let mut bpp = gime::GFX_BPP[(g.vres & vres::CRES_MASK) as usize];
+    if bytes_per_row > gime::GFX_BYTES_PER_ROW[5] && bpp == 1 {
+        bpp = 2;
+    }
     GraphicsMode {
         bytes_per_row,
         bpp,
@@ -99,9 +112,240 @@ pub fn decode_graphics(g: &GIME) -> GraphicsMode {
     }
 }
 
-/// Walks the GIME's video fetch addresses: a physical row base advancing by the
-/// row pitch, with per-byte offsets (including the $FF9F X offset ×2) wrapping
-/// at the 256-byte seam. Matches MAME `record_scanline_res` / `new_frame`.
+/// Per-field video scanout state, latched at field start — the register group
+/// MAME `gime.cpp` `new_frame` samples once per field and never re-reads
+/// mid-frame: the video base address ($FF9D/$FF9E), the INIT0 COCO
+/// legacy-vs-GIME switch, and the VSC smooth-scroll seed ($FF9C). Everything
+/// else ($FF98/$FF99 mode bits, $FF9F offset/HVEN, $FF9A border) is read live
+/// per line by [`paint_scanline`].
+pub struct FieldScan {
+    /// Field latched with INIT0 COCO set: the whole field renders on the
+    /// legacy VDG path (whole-frame, at field end) and per-line painting is
+    /// skipped — a mid-frame COCO flip waits for the next field, like MAME's
+    /// `m_legacy_video`.
+    pub legacy: bool,
+    /// Address of the current data row's first byte: physical (from the
+    /// vertical-offset registers) for GIME-native fields, the 16-bit logical
+    /// SAM page base for legacy fields (read through the bus/MMU). Advances
+    /// by the current line's live pitch once per LPR lines (MAME
+    /// `record_full_body_scanline`).
+    pub(crate) row_base: usize,
+    /// Scan line within the current data row: the smooth-scroll phase and,
+    /// in text modes, the glyph row index — one shared counter, like MAME's
+    /// `m_line_in_row`.
+    pub(crate) line_in_row: usize,
+}
+
+impl FieldScan {
+    /// Latch the per-field register group (MAME `new_frame`). Legacy fields
+    /// seed from the SAM-compat page base with `line_in_row` 0 (MAME:
+    /// `m_line_in_row = COCO ? 0 : vsc`).
+    pub fn latch(g: &GIME, legacy: bool) -> Self {
+        let vsc = (g.vertical_scroll & 0x0F) as usize;
+        let lpr = g.lines_per_row();
+        Self {
+            legacy,
+            row_base: if legacy {
+                g.sam_display_base() as usize
+            } else {
+                g.video_base()
+            },
+            line_in_row: if legacy || vsc >= lpr { 0 } else { vsc },
+        }
+    }
+}
+
+/// Resolve the 16 GIME palette registers and the $FF9A border to RGBA.
+fn resolve_colors(g: &GIME) -> ([[u8; 4]; PALETTE_LEN], [u8; 4]) {
+    let mut palette = [[0u8; 4]; PALETTE_LEN];
+    for (entry, &reg) in palette.iter_mut().zip(&g.palette) {
+        *entry = g.color(reg);
+    }
+    (palette, g.color(g.border & BORDER_COLOR_MASK))
+}
+
+/// The scan line within a character row that the underline attribute lights,
+/// per LPR — only defined for 8/9/10-line rows (SockMaster via MAME).
+fn underline_line(lines_per_row: usize) -> Option<usize> {
+    match lines_per_row {
+        8 => Some(7),
+        9 | 10 => Some(8),
+        11 => Some(9),
+        _ => None,
+    }
+}
+
+/// Fill a pixel span with one colour.
+fn fill(px: &mut [u8], color: [u8; 4]) {
+    for p in px.chunks_exact_mut(BYTES_PER_PIXEL) {
+        p.copy_from_slice(&color);
+    }
+}
+
+/// Paint one canvas row of the canonical raster from the live GIME registers
+/// plus the field-latched state in `scan`, advancing `scan`'s vertical
+/// counters on body rows. `fb` is the full `CANVAS_W`×`CANVAS_H` buffer;
+/// `row` is the canvas row (== machine scanline) to paint.
+pub fn paint_scanline(
+    g: &GIME,
+    ram: &[u8],
+    scan: &mut FieldScan,
+    blink_on: bool,
+    row: usize,
+    fb: &mut [u8],
+) {
+    debug_assert!(row < CANVAS_H);
+    let (palette, border) = resolve_colors(g);
+    let row_px = &mut fb[row * CANVAS_W * BYTES_PER_PIXEL..][..CANVAS_W * BYTES_PER_PIXEL];
+
+    // Vertical placement from the LIVE LPF bits (applies even mid-frame; the
+    // glitched %10 value is approximated, see `raster::vertical_window`).
+    let lpf = ((g.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize;
+    let (top, body) = vertical_window(lpf);
+    if row < top || row >= top + body {
+        fill(row_px, border);
+        return;
+    }
+
+    // Body row: horizontal window from the live wide flag.
+    let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
+    let wide = hres & WIDE_HRES_MASK != 0;
+    let (x0, active_w) = if wide {
+        (0, CANVAS_W)
+    } else {
+        (NON_WIDE_BORDER_X, NON_WIDE_ACTIVE_W)
+    };
+    if !wide {
+        fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
+        fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
+    }
+    let active = &mut row_px[x0 * BYTES_PER_PIXEL..][..active_w * BYTES_PER_PIXEL];
+
+    // Per-line live fetch parameters ($FF9F offset + HVEN pitch).
+    let x_offset = (g.horizontal_offset & hoff::X_MASK) as usize * 2;
+    let fetch = |i: usize| ram[(scan.row_base + ((x_offset + i) % ROW_FETCH_WRAP)) % ram.len()];
+
+    let row_bytes = if g.vmode & vmode::BP != 0 {
+        let mode = decode_graphics(g);
+        paint_graphics_row(&mode, &palette, active_w, fetch, active);
+        mode.bytes_per_row
+    } else {
+        let mode = decode_text(g);
+        paint_text_row(&mode, &palette, blink_on, scan.line_in_row, active_w, fetch, active);
+        mode.cols * if mode.attributes { 2 } else { 1 }
+    };
+
+    // Advance the shared vertical counter; the row pointer steps by the
+    // CURRENT line's live pitch once per LPR lines (MAME
+    // `record_full_body_scanline`; LPR=%111's huge count never wraps).
+    let pitch = if g.horizontal_offset & hoff::HVEN != 0 {
+        gime::HVEN_ROW_BYTES
+    } else {
+        row_bytes
+    };
+    scan.line_in_row += 1;
+    if scan.line_in_row >= g.lines_per_row() {
+        scan.line_in_row = 0;
+        scan.row_base += pitch;
+    }
+}
+
+/// Paint one text scan line into the active span, `xscale`-duplicating each
+/// native pixel to fill `active_w`.
+fn paint_text_row(
+    mode: &TextMode,
+    palette: &[[u8; 4]; PALETTE_LEN],
+    blink_on: bool,
+    line_in_row: usize,
+    active_w: usize,
+    fetch: impl Fn(usize) -> u8,
+    out: &mut [u8],
+) {
+    let bytes_per_char = if mode.attributes { 2 } else { 1 };
+    let underline = underline_line(mode.lines_per_row);
+    let native_w = mode.cols * CHAR_W;
+    let xscale = (active_w / native_w).max(1);
+
+    let mut x = 0;
+    for col in 0..mode.cols {
+        let mut code = fetch(col * bytes_per_char);
+        let (fg, bg, underlined) = if mode.attributes {
+            let attr = fetch(col * bytes_per_char + 1);
+            if attr & ATTR_BLINK != 0 && blink_on {
+                code = BLANK_CHAR;
+            }
+            (
+                palette[ATTR_FG_BASE + ((attr >> ATTR_FG_SHIFT) & ATTR_COLOR_MASK) as usize],
+                palette[(attr & ATTR_COLOR_MASK) as usize],
+                attr & ATTR_UNDERLINE != 0 && !(attr & ATTR_BLINK != 0 && blink_on),
+            )
+        } else {
+            (palette[NO_ATTR_FG], palette[NO_ATTR_BG], false)
+        };
+
+        let glyph = &GIME_FONT[(code & CHAR_CODE_MASK) as usize];
+        let row_bits = if line_in_row < GLYPH_ROWS {
+            glyph[line_in_row]
+        } else {
+            0
+        };
+        let underline_here = underlined && Some(line_in_row) == underline;
+        for cx in 0..CHAR_W {
+            let on = underline_here || row_bits & (0x80 >> cx) != 0;
+            let color = if on { fg } else { bg };
+            fill(&mut out[x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL], color);
+            x += xscale;
+        }
+    }
+}
+
+/// Paint one graphics scan line into the active span, `xscale`-duplicating
+/// each native pixel to fill `active_w`.
+fn paint_graphics_row(
+    mode: &GraphicsMode,
+    palette: &[[u8; 4]; PALETTE_LEN],
+    active_w: usize,
+    fetch: impl Fn(usize) -> u8,
+    out: &mut [u8],
+) {
+    let pixels_per_byte = 8 / mode.bpp;
+    let value_mask = (1u8 << mode.bpp) - 1;
+    let xscale = (active_w / mode.width.max(1)).max(1);
+
+    let mut x = 0;
+    for bx in 0..mode.bytes_per_row {
+        let byte = fetch(bx);
+        for j in 0..pixels_per_byte {
+            // Pixels are packed MSB-first within the byte.
+            let shift = 8 - mode.bpp * (j + 1);
+            let color = palette[((byte >> shift) & value_mask) as usize];
+            if x + xscale > active_w {
+                return; // defensive: never paint past the active span
+            }
+            fill(&mut out[x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL], color);
+            x += xscale;
+        }
+    }
+}
+
+/// Render a full GIME-native field into `fb` (resized to the canonical
+/// 640×240) from the CURRENT register latch — the whole-field equivalent of
+/// stepping [`paint_scanline`] over every visible row. Headless tests poke
+/// registers and call this; the machine loop instead paints line by line so
+/// mid-frame changes split the raster. Returns the canvas dimensions.
+pub fn render_field(g: &GIME, ram: &[u8], blink_on: bool, fb: &mut Vec<u8>) -> (usize, usize) {
+    fb.resize(CANVAS_W * CANVAS_H * BYTES_PER_PIXEL, 0);
+    let mut scan = FieldScan::latch(g, false);
+    for row in 0..CANVAS_H {
+        paint_scanline(g, ram, &mut scan, blink_on, row, fb);
+    }
+    (CANVAS_W, CANVAS_H)
+}
+
+/// Walks the GIME's video fetch addresses for the text-dump probe: a physical
+/// row base advancing by the row pitch, with per-byte offsets (including the
+/// $FF9F X offset ×2) wrapping at the 256-byte seam. Matches MAME
+/// `record_scanline_res` / `new_frame`.
 struct Scanout<'a> {
     ram: &'a [u8],
     row_base: usize,
@@ -146,43 +390,6 @@ impl<'a> Scanout<'a> {
     }
 }
 
-/// Size `fb` for an active area plus border and fill it with the border colour;
-/// returns (fb_w, fb_h).
-fn prepare_fb(
-    fb: &mut Vec<u8>,
-    active_w: usize,
-    active_h: usize,
-    border: [u8; 4],
-) -> (usize, usize) {
-    let fb_w = active_w + 2 * (active_w / BORDER_X_DIVISOR);
-    let fb_h = active_h + 2 * BORDER_Y;
-    fb.resize(fb_w * fb_h * BYTES_PER_PIXEL, 0);
-    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
-        px.copy_from_slice(&border);
-    }
-    (fb_w, fb_h)
-}
-
-/// Resolve the 16 GIME palette registers and the $FF9A border to RGBA.
-fn resolve_colors(g: &GIME) -> ([[u8; 4]; PALETTE_LEN], [u8; 4]) {
-    let mut palette = [[0u8; 4]; PALETTE_LEN];
-    for (entry, &reg) in palette.iter_mut().zip(&g.palette) {
-        *entry = g.color(reg);
-    }
-    (palette, g.color(g.border & BORDER_COLOR_MASK))
-}
-
-/// The scan line within a character row that the underline attribute lights,
-/// per LPR — only defined for 8/9/10-line rows (SockMaster via MAME).
-fn underline_line(lines_per_row: usize) -> Option<usize> {
-    match lines_per_row {
-        8 => Some(7),
-        9 | 10 => Some(8),
-        11 => Some(9),
-        _ => None,
-    }
-}
-
 /// ASCII stand-in for a GIME hi-res text character code that has no printable
 /// ASCII meaning: codes $00-$1F are accented/special glyphs, not C0 control
 /// codes (`font_gime.rs`), so they can't be rendered as their own ASCII value.
@@ -190,8 +397,8 @@ const UNPRINTABLE_CHAR: char = '.';
 
 /// Decode a GIME hi-res text field to plain ASCII strings, one per character
 /// row — a debug/probe dump, not a renderer. Shares [`decode_text`] and
-/// [`Scanout`] with [`render_text`] so the two can't drift apart; unlike
-/// [`render_text`] this ignores attribute bytes' colour/blink/underline
+/// [`Scanout`] with the real painters so the two can't drift apart; unlike
+/// [`paint_scanline`] this ignores attribute bytes' colour/blink/underline
 /// fields (only the character byte of each cell is read) and scan lines
 /// (each text row is fetched once, not once per [`TextMode::lines_per_row`]).
 ///
@@ -218,85 +425,4 @@ pub fn text_lines(g: &GIME, ram: &[u8]) -> Vec<String> {
         }
     }
     out
-}
-
-/// Render a GIME hi-res text field into `fb` (resized to fit); returns the new
-/// framebuffer dimensions. `ram` is physical memory; `blink_on` is the blink
-/// phase (blinking characters are blanked while it is true).
-pub fn render_text(g: &GIME, ram: &[u8], blink_on: bool, fb: &mut Vec<u8>) -> (usize, usize) {
-    let mode = decode_text(g);
-    let (palette, border) = resolve_colors(g);
-    let active_w = mode.cols * CHAR_W;
-    let (fb_w, fb_h) = prepare_fb(fb, active_w, mode.lines, border);
-
-    let bytes_per_char = if mode.attributes { 2 } else { 1 };
-    let underline = underline_line(mode.lines_per_row);
-    let mut scan = Scanout::new(g, ram, mode.cols * bytes_per_char, mode.lines_per_row);
-    let border_x = active_w / BORDER_X_DIVISOR;
-
-    for y in 0..mode.lines {
-        let row_start = ((BORDER_Y + y) * fb_w + border_x) * BYTES_PER_PIXEL;
-        for col in 0..mode.cols {
-            let mut code = scan.fetch(col * bytes_per_char);
-            let (fg, bg, underlined) = if mode.attributes {
-                let attr = scan.fetch(col * bytes_per_char + 1);
-                if attr & ATTR_BLINK != 0 && blink_on {
-                    code = BLANK_CHAR;
-                }
-                (
-                    palette[ATTR_FG_BASE + ((attr >> ATTR_FG_SHIFT) & ATTR_COLOR_MASK) as usize],
-                    palette[(attr & ATTR_COLOR_MASK) as usize],
-                    attr & ATTR_UNDERLINE != 0 && !(attr & ATTR_BLINK != 0 && blink_on),
-                )
-            } else {
-                (palette[NO_ATTR_FG], palette[NO_ATTR_BG], false)
-            };
-
-            let glyph = &GIME_FONT[(code & CHAR_CODE_MASK) as usize];
-            let row_bits = if scan.line_in_row < GLYPH_ROWS {
-                glyph[scan.line_in_row]
-            } else {
-                0
-            };
-            let underline_here = underlined && Some(scan.line_in_row) == underline;
-            let cell = row_start + col * CHAR_W * BYTES_PER_PIXEL;
-            for cx in 0..CHAR_W {
-                let on = underline_here || row_bits & (0x80 >> cx) != 0;
-                let color = if on { fg } else { bg };
-                let idx = cell + cx * BYTES_PER_PIXEL;
-                fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
-            }
-        }
-        scan.next_line();
-    }
-    (fb_w, fb_h)
-}
-
-/// Render a GIME graphics (HSCREEN) field into `fb` (resized to fit); returns
-/// the new framebuffer dimensions. `ram` is physical memory.
-pub fn render_graphics(g: &GIME, ram: &[u8], fb: &mut Vec<u8>) -> (usize, usize) {
-    let mode = decode_graphics(g);
-    let (palette, border) = resolve_colors(g);
-    let (fb_w, fb_h) = prepare_fb(fb, mode.width, mode.lines, border);
-
-    let mut scan = Scanout::new(g, ram, mode.bytes_per_row, g.lines_per_row());
-    let border_x = mode.width / BORDER_X_DIVISOR;
-    let pixels_per_byte = 8 / mode.bpp;
-    let value_mask = (1u8 << mode.bpp) - 1;
-
-    for y in 0..mode.lines {
-        let row_start = ((BORDER_Y + y) * fb_w + border_x) * BYTES_PER_PIXEL;
-        for bx in 0..mode.bytes_per_row {
-            let byte = scan.fetch(bx);
-            for j in 0..pixels_per_byte {
-                // Pixels are packed MSB-first within the byte.
-                let shift = 8 - mode.bpp * (j + 1);
-                let color = palette[((byte >> shift) & value_mask) as usize];
-                let idx = row_start + (bx * pixels_per_byte + j) * BYTES_PER_PIXEL;
-                fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
-            }
-        }
-        scan.next_line();
-    }
-    (fb_w, fb_h)
 }

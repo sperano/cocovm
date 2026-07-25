@@ -13,12 +13,14 @@ path = "src/main.rs"
 
 [dependencies]
 # MIT OR Apache-2.0. Host local time for the Disto RTC's injected time source
-# (coco-core is deliberately std::time-free; the calendar/timezone lookup
-# lives out here — `host_time_source` in main.rs).
+# and the DriveWire server's OP_TIME clock (coco-core is deliberately
+# std::time-free; the calendar/timezone lookup lives out here —
+# `host_time_source` in main.rs).
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4.6.1", features = ["derive"] }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
+mc6809 = { path = "../mc6809" }
 eframe = "0.33"
 # MIT. Opts legacy Windows conhost into VT escape processing (no-op
 # elsewhere); called once at the top of main().

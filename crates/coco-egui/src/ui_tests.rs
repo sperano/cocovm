@@ -34,6 +34,9 @@ fn boot_harness() -> AppHarness {
             None,
             [None, None],
             [None, None],
+            std::array::from_fn(|_| None),
+            false,
+            false,
             false,
         )
     });
@@ -723,6 +726,44 @@ fn disk_controller_confirmation_can_be_cancelled() {
         app.disk_paths[0].is_none(),
         "cancelling must not mount the disk"
     );
+}
+
+/// Machine ▸ Deluxe RS-232 Pak ▸ Insert plugs the pak in on the loopback
+/// endpoint, reachable behind the trait object, and the status bar reports
+/// it; Remove restores the empty slot.
+#[test]
+fn rs232_menu_inserts_and_removes_the_pak() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "Machine");
+    // Not `click_submenu`: its substring match would also hit the
+    // "Insert/Remove Deluxe RS-232 Pak" items once hovering opens the
+    // submenu, so match the arrow-suffixed label exactly.
+    click(&mut harness, "Deluxe RS-232 Pak ⏵");
+    click(&mut harness, "Insert Deluxe RS-232 Pak");
+    {
+        let app = harness.state_mut();
+        assert!(matches!(app.rs232, Some(Rs232Endpoint::Loopback)));
+        assert!(
+            app.machine.bus.cart.as_deluxe_rs232().is_some(),
+            "the pak must be reachable behind the trait object"
+        );
+    }
+    harness.step();
+    assert!(
+        harness.query_by_label("RS-232 [loopback] ↑0 ↓0").is_some(),
+        "status bar should describe the pak and its endpoint"
+    );
+
+    click(&mut harness, "Machine");
+    // Not `click_submenu`: its substring match would also hit the
+    // "Insert/Remove Deluxe RS-232 Pak" items once hovering opens the
+    // submenu, so match the arrow-suffixed label exactly.
+    click(&mut harness, "Deluxe RS-232 Pak ⏵");
+    click(&mut harness, "Remove Deluxe RS-232 Pak");
+    let app = harness.state_mut();
+    assert!(app.rs232.is_none());
+    assert!(app.machine.bus.cart.as_deluxe_rs232().is_none());
 }
 
 /// The manager window scaffold: toolbar buttons present, the machine-list
@@ -1424,4 +1465,46 @@ fn launch_error_is_reported_not_fatal() {
         "the failure must be recorded for the detail pane"
     );
     harness.get_by_label_contains("could not read");
+}
+
+#[test]
+fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
+    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+    let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
+        .expect("roms/coco3.rom is required (git-ignored, local-only)");
+
+    // A 64K banked image: every byte of 16K page `n` is 0xB0|n.
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-test-roms/gmc");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("banked.rom");
+    let mut image = vec![0u8; 4 * 16 * 1024];
+    for (n, page) in image.chunks_mut(16 * 1024).enumerate() {
+        page.fill(0xB0 | n as u8);
+    }
+    std::fs::write(&path, &image).unwrap();
+
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        CocoApp::new(
+            MachineConfig::default(),
+            rom,
+            None,
+            [None, None],
+            [None, None],
+            std::array::from_fn(|_| None),
+            false,
+            false,
+            false,
+        )
+    });
+    // Drive the app-glue directly (the menu item's click handler opens a
+    // native file dialog, which a headless test can't answer).
+    harness.state_mut().insert_gmc(path.clone());
+    harness.step();
+
+    let app = harness.state_mut();
+    assert_eq!(app.cart_path.as_deref(), Some(path.as_path()));
+    assert!(app.cart_error.is_none(), "{:?}", app.cart_error);
+    assert_eq!(app.machine.bus.cart.rom_read(0xC000), 0xB0, "bank 0 up");
+    app.machine.bus.cart.write(0xFF40, 2);
+    assert_eq!(app.machine.bus.cart.rom_read(0xC000), 0xB2, "bank latch");
 }

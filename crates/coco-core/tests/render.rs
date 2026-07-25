@@ -143,9 +143,11 @@ fn text_renderer_follows_sam_page_register() {
 
     let white = GIME_WHITE_RGBA;
     let mut white_pixels = 0;
-    for y in 0..FB_H {
-        for x in 0..FB_W {
-            if px(&m.framebuffer, x, y) == white {
+    let (w, h) = (m.fb_width as usize, m.fb_height as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) * BYTES_PER_PIXEL;
+            if m.framebuffer[i..i + 4] == white {
                 white_pixels += 1;
             }
         }

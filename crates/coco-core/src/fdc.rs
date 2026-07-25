@@ -563,6 +563,10 @@ impl Cartridge for DiskCart {
         self.rom.rom_read(addr)
     }
 
+    fn rom_peek(&self, addr: u16) -> u8 {
+        self.rom.rom_peek(addr)
+    }
+
     fn cart_line_ties_q(&self) -> bool {
         false
     }
@@ -581,6 +585,10 @@ impl Cartridge for DiskCart {
 
     fn take_nmi(&mut self) -> bool {
         std::mem::replace(&mut self.nmi_pending, false)
+    }
+
+    fn nmi_pending(&self) -> bool {
+        self.nmi_pending
     }
 
     fn as_disk_cart(&mut self) -> Option<&mut DiskCart> {

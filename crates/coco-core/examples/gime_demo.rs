@@ -48,7 +48,7 @@ fn main() {
         }
     }
     let mut fb = Vec::new();
-    let (w, h) = gime_video::render_text(&g, &ram, false, &mut fb);
+    let (w, h) = gime_video::render_field(&g, &ram, false, &mut fb);
     write_ppm(&format!("{dir}/text80.ppm"), &fb, w, h);
 
     // --- HSCREEN 2: 320x192x16 colour bars ---
@@ -60,6 +60,6 @@ fn main() {
             ram[base + y * 160 + bx] = c << 4 | ((c + y as u8 / 12) & 0x0F);
         }
     }
-    let (w, h) = gime_video::render_graphics(&g, &ram, &mut fb);
+    let (w, h) = gime_video::render_field(&g, &ram, false, &mut fb);
     write_ppm(&format!("{dir}/hscreen2.ppm"), &fb, w, h);
 }

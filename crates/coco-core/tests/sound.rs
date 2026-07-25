@@ -1,6 +1,17 @@
 //! Speaker output path: DAC through the analog mux (SNDEN + SEL=00) and the
 //! always-connected single-bit sound (`DESIGN.md` §7; Tandy Service Manual mux
-//! table via MAME coco.cpp).
+//! table via MAME coco.cpp), probed through the event-timestamped stereo
+//! pipeline's mixer (`SystemBus::sound_probe`; `docs/plan-audio-pipeline.md`).
+
+/// Generator step for probes; the internal sources here are all latches, so
+/// the value only feeds (absent) generator clocks.
+const PROBE_DT: f64 = 1.0 / 62_866.0;
+
+/// Both channels must carry the same mono mix for the internal sources.
+fn mono(sample: [f32; 2]) -> f32 {
+    assert_eq!(sample[0], sample[1], "internal sources are centred");
+    sample[0]
+}
 
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
@@ -43,14 +54,14 @@ fn dac_reaches_speaker_only_with_snden_and_mux_zero() {
     let mut b = bus();
     b.write(PIA1_DA, 0xFC); // DAC full scale
 
-    assert_eq!(b.sound_sample(), 0.0, "SNDEN low: silent");
+    assert_eq!(mono(b.sound_probe(PROBE_DT)), 0.0, "SNDEN low: silent");
 
     b.write(PIA1_CRB, CR_C2_HIGH); // SNDEN high
-    let loud = b.sound_sample();
+    let loud = mono(b.sound_probe(PROBE_DT));
     assert!(loud > 0.5, "SNDEN + SEL=00 routes the DAC: {loud}");
 
     b.write(PIA0_CRA, CR_C2_HIGH); // SEL1 high -> mux 01 (cassette): silent
-    assert_eq!(b.sound_sample(), 0.0, "mux away from DAC: silent");
+    assert_eq!(mono(b.sound_probe(PROBE_DT)), 0.0, "mux away from DAC: silent");
 }
 
 #[test]
@@ -58,13 +69,13 @@ fn single_bit_sound_is_always_connected() {
     let mut b = bus();
     // SNDEN low, mux irrelevant: PB1 alone must reach the speaker.
     b.write(PIA1_DB, 0x02);
-    assert!(b.sound_sample() > 0.0);
+    assert!(mono(b.sound_probe(PROBE_DT)) > 0.0);
     b.write(PIA1_DB, 0x00);
-    assert_eq!(b.sound_sample(), 0.0);
+    assert_eq!(mono(b.sound_probe(PROBE_DT)), 0.0);
 }
 
 #[test]
-fn machine_collects_one_sample_per_scanline() {
+fn machine_collects_oversample_grid_frames_per_scanline() {
     let mut m = Machine::new(
         MachineConfig::default(),
         vec![0u8; 32 * 1024].into_boxed_slice(),
@@ -72,9 +83,10 @@ fn machine_collects_one_sample_per_scanline() {
     m.bus.write(0x0000, 0x20); // BRA *
     m.bus.write(0x0001, 0xFE);
     m.run_field();
-    let lines = m.config.video.lines_per_field() as usize;
-    assert_eq!(m.take_audio().count(), lines);
+    let frames =
+        m.config.video.lines_per_field() as usize * coco_core::audio::OVERSAMPLE as usize;
+    assert_eq!(m.take_audio().count(), frames);
     // Drained: the next field starts fresh.
     m.run_field();
-    assert_eq!(m.take_audio().count(), lines);
+    assert_eq!(m.take_audio().count(), frames);
 }

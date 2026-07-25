@@ -1,14 +1,13 @@
 //! Integration coverage for the GIME-native video dispatch: booting the real ROM
 //! to the (VDG-compatible) BASIC prompt, then programming the GIME registers the
-//! way WIDTH 80 / HSCREEN do must switch `Machine::render_field` to the native
-//! renderers, resize the framebuffer to the mode's native geometry, and switch
-//! back cleanly. Register values are the ROM's own video-register images
-//! (SEB Unravelled II, tables at LE03C/LE071).
+//! way WIDTH 80 / HSCREEN do must switch the machine to per-scanline painting
+//! of the canonical 640×240 raster (Option B), and back cleanly to the VDG
+//! whole-field geometry. Register values are the ROM's own video-register
+//! images (SEB Unravelled II, tables at LE03C/LE071).
 
 use std::path::PathBuf;
 
-use coco_core::gime_video::{BORDER_X_DIVISOR, BORDER_Y};
-use coco_core::video;
+use coco_core::raster::{CANVAS_H, CANVAS_W};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -27,20 +26,13 @@ fn boot_machine() -> Machine {
     m
 }
 
-fn fb_dims(active_w: usize, active_h: usize) -> (u32, u32) {
-    (
-        (active_w + 2 * (active_w / BORDER_X_DIVISOR)) as u32,
-        (active_h + 2 * BORDER_Y) as u32,
-    )
-}
-
 #[test]
 fn width80_registers_switch_to_native_text_and_back() {
     let mut m = boot_machine();
     assert_eq!(
         (m.fb_width, m.fb_height),
-        (video::FB_W as u32, video::FB_H as u32),
-        "boots in the VDG-compatible geometry"
+        (CANVAS_W as u32, CANVAS_H as u32),
+        "CoCo 3 renders the canonical raster from boot (legacy modes too)"
     );
 
     // The ROM's WIDTH 80 register image: COCO off, BP=0 LPR=8, 80 cols with
@@ -52,14 +44,16 @@ fn width80_registers_switch_to_native_text_and_back() {
     m.bus.write(0xFF9E, 0x00);
     m.run_field();
 
-    assert_eq!((m.fb_width, m.fb_height), fb_dims(80 * 8, 192));
+    assert_eq!((m.fb_width, m.fb_height), (CANVAS_W as u32, CANVAS_H as u32));
 
-    // Back to CoCo-compatible: the framebuffer returns to the fixed VDG geometry.
+    // Back to CoCo-compatible: still the canonical canvas — one stable
+    // texture size across every CoCo 3 mode is the point of Option B.
     m.bus.write(0xFF90, 0xCC);
     m.run_field();
+    m.run_field(); // the COCO flip latches at the NEXT field start
     assert_eq!(
         (m.fb_width, m.fb_height),
-        (video::FB_W as u32, video::FB_H as u32)
+        (CANVAS_W as u32, CANVAS_H as u32)
     );
 }
 
@@ -76,9 +70,9 @@ fn hscreen2_registers_switch_to_native_graphics() {
     m.bus.write(0xFF9E, 0x00);
     m.run_field();
 
-    assert_eq!((m.fb_width, m.fb_height), fb_dims(320, 192));
+    assert_eq!((m.fb_width, m.fb_height), (CANVAS_W as u32, CANVAS_H as u32));
     assert_eq!(
         m.framebuffer.len(),
-        (m.fb_width * m.fb_height) as usize * video::BYTES_PER_PIXEL
+        (m.fb_width * m.fb_height) as usize * coco_core::video::BYTES_PER_PIXEL
     );
 }
