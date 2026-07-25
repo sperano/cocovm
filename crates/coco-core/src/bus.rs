@@ -7,7 +7,7 @@
 use mc6809::Bus;
 
 use crate::bitbanger::{self, BitBanger};
-use crate::cart::{Cartridge, EmptySlot};
+use crate::cart::Cart;
 use crate::cassette::Cassette;
 use crate::config::{MachineVariant, MemorySize};
 use crate::drivewire::DwServer;
@@ -131,7 +131,7 @@ pub struct SystemBus {
     pub sam: Sam,
     pub pia0: MC6821,
     pub pia1: MC6821,
-    pub cart: Box<dyn Cartridge>,
+    pub cart: Cart,
     pub vhd: Vhd,
     /// The Becker-port DriveWire server ($FF41/$FF42). `None` = Becker
     /// disabled — $FF41/$FF42 fall through to cartridge dispatch exactly as
@@ -179,7 +179,7 @@ impl SystemBus {
             sam: Sam::new(),
             pia0: MC6821::new(),
             pia1: MC6821::new(),
-            cart: Box::new(EmptySlot),
+            cart: Cart::default(),
             vhd: Vhd::new(),
             drivewire: None,
             keyboard: Keyboard::new(),

@@ -22,7 +22,7 @@ fn main() {
     let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
     let cart = std::fs::read(&cart_path).unwrap();
     let mut m = Machine::new(MachineConfig::default(), rom);
-    m.insert_cartridge(Box::new(RomPak::from_bytes(&cart, true).unwrap()));
+    m.insert_cartridge(RomPak::from_bytes(&cart, true).unwrap());
     m.reset();
 
     let stem = std::path::Path::new(&cart_path)

@@ -9,7 +9,7 @@ fn main() {
     let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
     let cart = std::fs::read(&cart_path).unwrap();
     let mut m = Machine::new(MachineConfig::default(), rom);
-    m.insert_cartridge(Box::new(RomPak::from_bytes(&cart, true).unwrap()));
+    m.insert_cartridge(RomPak::from_bytes(&cart, true).unwrap());
     m.reset();
 
     let stop_pulse_at: Option<u32> = std::env::args()
@@ -23,7 +23,7 @@ fn main() {
             // Swap in the same image with autostart=false: the CART line goes
             // quiet, ROM reads unchanged.
             let quiet = RomPak::from_bytes(&std::fs::read(&cart_path).unwrap(), false).unwrap();
-            m.bus.cart = Box::new(quiet);
+            m.bus.cart = quiet.into();
             println!("--- field {field}: CART line silenced");
         }
         let fs_falling_line = m.config.video.fs_falling_line(m.config.variant);

@@ -241,7 +241,7 @@ fn stop_loses_the_time_spent_stopped() {
 #[test]
 fn reads_route_through_the_machine_bus_scs_window() {
     let mut m = Machine::new(MachineConfig::default(), load_rom("coco3.rom"));
-    m.insert_cartridge(Box::new(fixed_rtc()));
+    m.insert_cartridge(fixed_rtc());
     m.power_cycle();
     m.bus.write(RTC_SELECT_DISTO4, REG_S1);
     assert_eq!(m.bus.read(RTC_DATA), 6, "S1 of :56 through the live bus");
@@ -251,7 +251,7 @@ fn reads_route_through_the_machine_bus_scs_window() {
 fn rtc_in_a_multipak_slot_answers_when_scs_selected() {
     const RTC_SLOT: usize = 2; // slot 3, the classic RTC-next-to-FD-502 spot
     let mut mpi = MultiPak::new(3);
-    mpi.insert(RTC_SLOT, Box::new(fixed_rtc()));
+    mpi.insert(RTC_SLOT, fixed_rtc());
 
     // Not SCS-selected (switch on slot 4): the empty slot answers instead.
     assert_eq!(
@@ -265,7 +265,7 @@ fn rtc_in_a_multipak_slot_answers_when_scs_selected() {
     assert_eq!(read_reg(&mut mpi, RTC_SELECT_DISTO4, REG_S1), 6);
 
     // And the frontend can still find the clock behind the MPI.
-    assert!(mpi.as_disto_rtc().is_some());
+    assert!(mpi.find_disto_rtc().is_some());
 }
 
 /// Same ROM-loading convention as `tests/cart.rs`.

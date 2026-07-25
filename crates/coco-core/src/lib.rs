@@ -287,14 +287,14 @@ impl Machine {
     /// runs at cold start, so this does not reset the machine itself — call
     /// [`Machine::power_cycle`] afterwards (a warm [`Machine::reset`] skips
     /// the cold-start cartridge probes).
-    pub fn insert_cartridge(&mut self, cart: Box<dyn cart::Cartridge>) {
-        self.bus.cart = cart;
+    pub fn insert_cartridge(&mut self, cart: impl Into<cart::Cart>) {
+        self.bus.cart = cart.into();
     }
 
     /// Remove the cartridge, restoring the empty slot. As with
     /// [`Machine::insert_cartridge`], call [`Machine::reset`] afterwards.
     pub fn eject_cartridge(&mut self) {
-        self.bus.cart = Box::new(cart::EmptySlot);
+        self.bus.cart = cart::Cart::default();
     }
 
     /// Run one video field's worth of emulation (`DESIGN.md` §4).

@@ -45,8 +45,7 @@ command protocol directly (command byte ranges, buffer LOAD/EXECUTE
 semantics, the sound-data event format), so this implementation interprets
 the protocol in `crate::ssc::Ssc::dispatch` without needing to emulate the
 TMS7040 CPU that would otherwise run it. `Ssc::ay_write`/`Ssc::ay_read` (and
-the `Cartridge::as_ssc` downcast that reaches them from a `Box<dyn
-Cartridge>`) remain available directly for tests/debugging, bypassing the
+the `Cart::as_ssc` accessor that reaches them through the cartridge enum) remain available directly for tests/debugging, bypassing the
 protocol entirely.
 
 ## `$FF7D`/`$FF7E` register semantics

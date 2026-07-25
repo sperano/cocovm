@@ -101,10 +101,10 @@ fn boot_eou_to_shell(through_mpi: bool) {
     cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
     if through_mpi {
         let mut mpi = MultiPak::new(MPI_FDC_SLOT);
-        mpi.insert(MPI_FDC_SLOT, Box::new(cart));
-        m.insert_cartridge(Box::new(mpi));
+        mpi.insert(MPI_FDC_SLOT, cart);
+        m.insert_cartridge(mpi);
     } else {
-        m.insert_cartridge(Box::new(cart));
+        m.insert_cartridge(cart);
     }
     m.bus.vhd.insert(0, VhdImage::File(vhd_file));
     m.reset();

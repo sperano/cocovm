@@ -108,7 +108,7 @@ fn bus_with_gmc() -> SystemBus {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    b.cart = Box::new(Gmc::from_bytes(&banked_image(8), true).unwrap());
+    b.cart = Gmc::from_bytes(&banked_image(8), true).unwrap().into();
     b
 }
 
@@ -153,7 +153,7 @@ fn machine_mixes_gmc_audio_into_the_field_samples() {
     );
     m.bus.write(0x0000, 0x20); // BRA *
     m.bus.write(0x0001, 0xFE);
-    m.insert_cartridge(Box::new(Gmc::from_bytes(&banked_image(8), false).unwrap()));
+    m.insert_cartridge(Gmc::from_bytes(&banked_image(8), false).unwrap());
     m.run_field();
     m.run_field();
     assert!(
@@ -194,7 +194,7 @@ fn autostarted_cart_code_plays_a_tone_through_the_speaker() {
     image[..PSG_PLAYER.len()].copy_from_slice(&PSG_PLAYER);
 
     let mut m = Machine::new(MachineConfig::default(), rom);
-    m.insert_cartridge(Box::new(Gmc::from_bytes(&image, true).unwrap()));
+    m.insert_cartridge(Gmc::from_bytes(&image, true).unwrap());
     m.reset();
 
     // Boot until the cart code has silenced the power-on hum (bounded so a
@@ -233,8 +233,8 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     let mut mp = MultiPak::new(0);
-    mp.insert(1, Box::new(Gmc::from_bytes(&banked_image(8), false).unwrap()));
-    b.cart = Box::new(mp);
+    mp.insert(1, Gmc::from_bytes(&banked_image(8), false).unwrap());
+    b.cart = mp.into();
 
     // Slot 1 (the GMC) is not SCS-selected (switch points at slot 0): the
     // mute writes must not reach it, and its hum still mixes — the SND pin

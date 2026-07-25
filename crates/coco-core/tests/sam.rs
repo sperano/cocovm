@@ -3,6 +3,7 @@
 //! (`docs/coco12-plan.md`; MAME `6883sam.cpp`). Style mirrors the GIME's own
 //! `tests/sam_video.rs` (build a `SystemBus` directly, poke strobe addresses).
 
+use coco_core::cart::Cart;
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
@@ -281,7 +282,7 @@ fn ff60_to_ff7e_reaches_the_cart_slot_on_coco1_2() {
         }
         fn write(&mut self, _addr: u16, _val: u8) {}
     }
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     assert_eq!(b.read(0xFF7D), 0x7D);
     assert_eq!(b.read(0xFF7E), 0x7E);
 }

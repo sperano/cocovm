@@ -174,8 +174,4 @@ impl Cartridge for DeluxeRs232 {
     fn reset(&mut self) {
         self.acia.hardware_reset();
     }
-
-    fn as_deluxe_rs232(&mut self) -> Option<&mut DeluxeRs232> {
-        Some(self)
-    }
 }

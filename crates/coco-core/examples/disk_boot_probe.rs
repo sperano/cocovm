@@ -87,7 +87,7 @@ fn main() {
     let mut m = Machine::new(MachineConfig::default(), rom);
     let mut cart = DiskCart::new(disk_rom);
     cart.insert_disk(0, disk);
-    m.insert_cartridge(Box::new(cart));
+    m.insert_cartridge(cart);
     m.reset();
 
     for _ in 0..BOOT_FIELDS {

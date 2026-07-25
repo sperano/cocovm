@@ -1005,10 +1005,6 @@ impl Cartridge for Ssc {
         self.ay.step(cycles * AY_CLOCK_MULTIPLIER);
     }
 
-    fn as_ssc(&mut self) -> Option<&mut Ssc> {
-        Some(self)
-    }
-
     fn reset(&mut self) {
         self.ay.reset();
         self.prev_reset_bit0 = false;

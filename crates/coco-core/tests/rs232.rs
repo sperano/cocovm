@@ -6,7 +6,7 @@
 //! MPI slot-select routing/limitation.
 
 use coco_core::acia6551::{command, status};
-use coco_core::cart::{Cartridge, EmptySlot, IO_OPEN_BUS, MultiPak, RomPak, mpi};
+use coco_core::cart::{Cart, Cartridge, EmptySlot, IO_OPEN_BUS, MultiPak, RomPak, mpi};
 use coco_core::config::{MachineVariant, MemorySize};
 use coco_core::pia::cr;
 use coco_core::rs232::DeluxeRs232;
@@ -41,7 +41,7 @@ fn bus() -> SystemBus {
 
 fn bus_with_pak() -> SystemBus {
     let mut bus = bus();
-    bus.cart = Box::new(DeluxeRs232::new());
+    bus.cart = DeluxeRs232::new().into();
     bus
 }
 
@@ -72,7 +72,7 @@ fn empty_slot_reads_open_bus_at_acia_window() {
 #[test]
 fn rom_pak_reads_open_bus_at_acia_window() {
     let mut bus = bus();
-    bus.cart = Box::new(RomPak::from_bytes(&[0xA5; 0x2000], false).unwrap());
+    bus.cart = RomPak::from_bytes(&[0xA5; 0x2000], false).unwrap().into();
     for addr in ACIA_DATA..=ACIA_CONTROL {
         assert_eq!(bus.read(addr), IO_OPEN_BUS, "addr {addr:#06X}");
     }
@@ -166,7 +166,7 @@ fn machine_loop_polls_cart_interrupt() {
         MachineConfig::default(),
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    machine.bus.cart = Box::new(DeluxeRs232::new());
+    machine.bus.cart = DeluxeRs232::new().into();
     machine.bus.write(PIA1_CRB, cr::C1_IRQ_ENABLE | cr::DDR_ACCESS);
     machine.bus.write(ACIA_CONTROL, CTL_19200_8N1);
     machine.bus.write(ACIA_COMMAND, command::DTR);
@@ -192,7 +192,7 @@ fn tcp_endpoint_round_trip_through_the_bus() {
     let mut pak = DeluxeRs232::new();
     pak.set_endpoint(Box::new(endpoint));
     let mut bus = bus();
-    bus.cart = Box::new(pak);
+    bus.cart = pak.into();
 
     let mut client = std::net::TcpStream::connect(addr).expect("connect to the pak");
     client
@@ -253,8 +253,8 @@ fn eprom_window_decodes_12_bits_and_wraps() {
 fn mpi_extension_window_ignores_the_slot_select() {
     let mut bus = bus();
     let mut mp = MultiPak::new(0);
-    mp.insert(0, Box::new(DeluxeRs232::new()));
-    bus.cart = Box::new(mp);
+    mp.insert(0, DeluxeRs232::new());
+    bus.cart = mp.into();
 
     bus.write(ACIA_COMMAND, command::DTR);
     assert_eq!(bus.read(ACIA_COMMAND), command::DTR);
@@ -282,8 +282,8 @@ fn mpi_forwards_cart_interrupt_from_cts_slot_only() {
     }
 
     let mut mp = MultiPak::new(0);
-    mp.insert(2, Box::new(AssertingCart));
-    mp.insert(3, Box::new(EmptySlot));
+    mp.insert(2, Cart::custom(AssertingCart));
+    mp.eject(3);
     mp.control_write(mpi::SWITCH_VALUES[2]);
     assert!(mp.cart_interrupt());
     mp.control_write(mpi::SWITCH_VALUES[3]);

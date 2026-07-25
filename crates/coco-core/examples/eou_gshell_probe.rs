@@ -81,7 +81,7 @@ fn main() {
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
     let mut cart = DiskCart::new(disk_rom.into_boxed_slice());
     cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
-    m.insert_cartridge(Box::new(cart));
+    m.insert_cartridge(cart);
     m.bus.vhd.insert(0, VhdImage::File(vhd_file));
     m.reset();
 

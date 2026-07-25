@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use coco_core::cart::Cartridge;
+use coco_core::cart::{Cart, Cartridge};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -79,7 +79,7 @@ fn halt_line_stops_the_cpu_and_nmi_fires_on_release() {
     let mut m = Machine::new(MachineConfig::default(), test_rom());
     let ticks = Rc::new(Cell::new(0));
     let nmi_pending = Rc::new(Cell::new(false));
-    m.insert_cartridge(Box::new(HaltCart {
+    m.insert_cartridge(Cart::custom(HaltCart {
         ticks: Rc::clone(&ticks),
         halt_from: HALT_FROM_CYCLES,
         halt_until: HALT_UNTIL_CYCLES,

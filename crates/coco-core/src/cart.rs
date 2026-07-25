@@ -1,8 +1,11 @@
 //! Cartridge port devices (FDC, ROM pack, Multi-Pak). See `DESIGN.md` §7.
 //!
-//! NOTE: a trait object (`Box<dyn Cartridge>`) is not `Serialize`, so `SystemBus`
-//! and `Machine` don't yet derive serde. For save-states (`DESIGN.md` §9) this
-//! becomes an enum or uses typetag — deferred.
+//! The cartridge in the port is stored as the closed [`Cart`] enum, not a
+//! `Box<dyn Cartridge>` trait object: the cartridge set is in-crate and
+//! finite, and an enum is what lets `SystemBus`/`Machine` derive serde for
+//! save-states (`DESIGN.md` §9). The [`Cartridge`] trait remains as the
+//! shared device interface each variant implements (and as the escape hatch
+//! for out-of-crate test doubles via [`Cart::custom`]).
 
 /// Value read from the external ROM window when nothing drives the bus:
 /// $00, matching real hardware / MAME coco3 (verified by MAME trace-diff,
@@ -105,47 +108,6 @@ pub trait Cartridge {
     /// needs to see (`docs/plan-debugger.md` §3, "cart line states").
     fn nmi_pending(&self) -> bool {
         false
-    }
-    /// Downcast to the FD-502 disk controller, if that's what this cartridge
-    /// is — how the frontend reaches drive slots (insert/eject a floppy while
-    /// the machine runs, as on real hardware) behind the trait object.
-    fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
-        None
-    }
-    /// Downcast to the [`MultiPak`], if that's what this cartridge is — how
-    /// the frontend reaches individual slots (insert/eject/switch) behind the
-    /// trait object.
-    fn as_multipak(&mut self) -> Option<&mut MultiPak> {
-        None
-    }
-    /// Downcast to the Deluxe RS-232 pak, if that's what this cartridge is —
-    /// how the frontend swaps host endpoints and reads the TX/RX activity
-    /// counters behind the trait object (same pattern as
-    /// [`Cartridge::as_disk_cart`]).
-    fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
-        None
-    }
-    /// Downcast to the Disto real-time clock, if that's what this cartridge
-    /// is — how the frontend reaches the clock chip (sync to host time)
-    /// behind the trait object.
-    fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
-        None
-    }
-    /// Downcast to the Orchestra-90, if that's what this cartridge is — how
-    /// the frontend reads the DAC latches for its level meters behind the
-    /// trait object.
-    fn as_orch90(&mut self) -> Option<&mut crate::orch90::Orch90> {
-        None
-    }
-    /// Downcast to the [`crate::ssc::Ssc`] Sound/Speech Cartridge, if that's
-    /// what this cartridge is — mirrors [`Cartridge::as_disk_cart`]/
-    /// [`Cartridge::as_multipak`]: tests and any future debug tooling reach
-    /// direct AY-3-8913 register access
-    /// ([`crate::ssc::Ssc::ay_write`]/[`crate::ssc::Ssc::ay_read`]) behind
-    /// the trait object, bypassing the `$FF7D`/`$FF7E` host-byte protocol
-    /// (see `crate::ssc`'s module doc comment).
-    fn as_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
-        None
     }
     /// Read the Multi-Pak Interface's own select register (`$FF7F`). Not
     /// routed through [`Cartridge::read`]/[`Cartridge::write`]: those carry
@@ -539,8 +501,9 @@ impl Cartridge for Gmc {
 /// MPIs have that ties all 4 slots' CART* lines together (a hardware hack,
 /// not stock behaviour) is not reproduced — CART* here strictly follows the
 /// CTS select, as spec'd.
+#[derive(Debug)]
 pub struct MultiPak {
-    slots: [Box<dyn Cartridge>; mpi::SLOT_COUNT],
+    slots: [Cart; mpi::SLOT_COUNT],
     /// The raw `$FF7F` select register (both used and forced-high unused
     /// bits — [`Cartridge::control_read`] applies [`mpi::READBACK_OR_MASK`]
     /// on the way out, so this can be compared directly against a switch
@@ -592,12 +555,7 @@ impl MultiPak {
     /// slot).
     pub fn new(switch_slot: usize) -> Self {
         Self {
-            slots: [
-                Box::new(EmptySlot),
-                Box::new(EmptySlot),
-                Box::new(EmptySlot),
-                Box::new(EmptySlot),
-            ],
+            slots: std::array::from_fn(|_| Cart::default()),
             select: mpi::SWITCH_VALUES[switch_slot],
             switch_slot,
             switch_blocked: false,
@@ -605,13 +563,13 @@ impl MultiPak {
     }
 
     /// Plug a cartridge into `slot` (0-3).
-    pub fn insert(&mut self, slot: usize, cart: Box<dyn Cartridge>) {
-        self.slots[slot] = cart;
+    pub fn insert(&mut self, slot: usize, cart: impl Into<Cart>) {
+        self.slots[slot] = cart.into();
     }
 
     /// Remove whatever is in `slot`, restoring the empty slot.
     pub fn eject(&mut self, slot: usize) {
-        self.slots[slot] = Box::new(EmptySlot);
+        self.slots[slot] = Cart::default();
     }
 
     /// Model moving the physical front-panel switch to `slot` (0-3). Updates
@@ -761,39 +719,12 @@ impl Cartridge for MultiPak {
         self.slots.iter().any(|slot| slot.nmi_pending())
     }
 
-    fn as_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
-        self.slots.iter_mut().find_map(|slot| slot.as_disk_cart())
-    }
-
-    fn as_multipak(&mut self) -> Option<&mut MultiPak> {
-        Some(self)
-    }
-
-    fn as_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
-        self.slots
-            .iter_mut()
-            .find_map(|slot| slot.as_deluxe_rs232())
-    }
-
-    fn as_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
-        self.slots.iter_mut().find_map(|slot| slot.as_disto_rtc())
-    }
-
-    fn as_orch90(&mut self) -> Option<&mut crate::orch90::Orch90> {
-        self.slots.iter_mut().find_map(|slot| slot.as_orch90())
-    }
-
     /// Sum of all 4 slots: the analog SND pin is common to every slot on a
     /// real MPI (only SCS*/CTS*/CART* are switched), so slot outputs mix on
     /// the wire regardless of selection.
     fn sound_level(&self) -> f32 {
         self.slots.iter().map(|slot| slot.sound_level()).sum()
     }
-
-    fn as_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
-        self.slots.iter_mut().find_map(|slot| slot.as_ssc())
-    }
-
 
     fn control_read(&mut self) -> u8 {
         self.select | mpi::READBACK_OR_MASK
@@ -822,5 +753,323 @@ impl Cartridge for MultiPak {
         for slot in &mut self.slots {
             slot.reset();
         }
+    }
+}
+
+/// The cartridge in the expansion port (or in a [`MultiPak`] slot), as a
+/// closed enum over every in-crate cartridge type. An enum rather than a
+/// `Box<dyn Cartridge>` so `SystemBus`/`Machine` can derive serde for
+/// save-states (`DESIGN.md` §9); dispatch to the concrete type is static
+/// (see `with_each_cart!`) and the old trait-object downcast methods are
+/// plain `match`es here ([`Cart::as_disk_cart`] etc.).
+///
+/// [`Cart::Custom`] is the one open variant: a boxed trait object for
+/// out-of-crate [`Cartridge`] implementations (integration-test doubles).
+/// It is excluded from serialization — a save-state with a custom cartridge
+/// inserted is an error, which only test rigs can hit.
+#[non_exhaustive]
+pub enum Cart {
+    /// Nothing in the port ([`EmptySlot`]).
+    Empty(EmptySlot),
+    /// Plain (up to 32K) game/utility ROM pak.
+    RomPak(RomPak),
+    /// RoboCop/Predator-style banked ROM pak.
+    BankedRomPak(BankedRomPak),
+    /// Games Master Cartridge: banked ROM + SN76489A PSG.
+    Gmc(Gmc),
+    /// FD-502 floppy disk controller. Boxed for size, like [`Cart::Ssc`].
+    DiskCart(Box<crate::fdc::DiskCart>),
+    /// Multi-Pak Interface. Boxed to break the size recursion — a
+    /// [`MultiPak`] holds four [`Cart`] slots of its own.
+    MultiPak(Box<MultiPak>),
+    /// Orchestra-90/CC stereo DAC cartridge.
+    Orch90(crate::orch90::Orch90),
+    /// Disto real-time clock.
+    DistoRtc(crate::rtc::DistoRtc),
+    /// Deluxe RS-232 Program Pak.
+    DeluxeRs232(crate::rs232::DeluxeRs232),
+    /// Sound/Speech Cartridge. Boxed for size: the AY + speech-engine state
+    /// is by far the largest cartridge (clippy `large_enum_variant`).
+    Ssc(Box<crate::ssc::Ssc>),
+    /// Out-of-crate [`Cartridge`] implementation (test doubles) — see the
+    /// type-level doc.
+    Custom(Box<dyn Cartridge>),
+}
+
+/// Dispatch `$body` over the payload of every [`Cart`] variant — the match
+/// each delegation method below expands to. Every arm resolves the
+/// [`Cartridge`] method on the concrete type (static dispatch); only the
+/// `Custom` arm stays a virtual call through the box.
+macro_rules! with_each_cart {
+    ($self:expr, $cart:ident => $body:expr) => {
+        match $self {
+            Cart::Empty($cart) => $body,
+            Cart::RomPak($cart) => $body,
+            Cart::BankedRomPak($cart) => $body,
+            Cart::Gmc($cart) => $body,
+            Cart::DiskCart($cart) => $body,
+            Cart::MultiPak($cart) => $body,
+            Cart::Orch90($cart) => $body,
+            Cart::DistoRtc($cart) => $body,
+            Cart::DeluxeRs232($cart) => $body,
+            Cart::Ssc($cart) => $body,
+            Cart::Custom($cart) => $body,
+        }
+    };
+}
+
+/// Delegation to the variant's [`Cartridge`] implementation — each method
+/// here is the enum face of the same-named trait method; see the trait for
+/// semantics.
+impl Cart {
+    /// See [`Cartridge::read`].
+    pub fn read(&mut self, addr: u16) -> u8 {
+        with_each_cart!(self, cart => cart.read(addr))
+    }
+    /// See [`Cartridge::write`].
+    pub fn write(&mut self, addr: u16, val: u8) {
+        with_each_cart!(self, cart => cart.write(addr, val))
+    }
+    /// See [`Cartridge::rom_read`].
+    pub fn rom_read(&mut self, addr: u16) -> u8 {
+        with_each_cart!(self, cart => cart.rom_read(addr))
+    }
+    /// See [`Cartridge::rom_peek`].
+    pub fn rom_peek(&self, addr: u16) -> u8 {
+        with_each_cart!(self, cart => cart.rom_peek(addr))
+    }
+    /// See [`Cartridge::peek`].
+    pub fn peek(&self, addr: u16) -> u8 {
+        with_each_cart!(self, cart => cart.peek(addr))
+    }
+    /// See [`Cartridge::peek_control`].
+    pub fn peek_control(&self) -> u8 {
+        with_each_cart!(self, cart => cart.peek_control())
+    }
+    /// See [`Cartridge::cart_line_ties_q`].
+    pub fn cart_line_ties_q(&self) -> bool {
+        with_each_cart!(self, cart => cart.cart_line_ties_q())
+    }
+    /// See [`Cartridge::cart_interrupt`].
+    pub fn cart_interrupt(&mut self) -> bool {
+        with_each_cart!(self, cart => cart.cart_interrupt())
+    }
+    /// See [`Cartridge::tick`].
+    pub fn tick(&mut self, cycles: u32) {
+        with_each_cart!(self, cart => cart.tick(cycles))
+    }
+    /// See [`Cartridge::audio_tick`].
+    pub fn audio_tick(&mut self, dt: f64) {
+        with_each_cart!(self, cart => cart.audio_tick(dt))
+    }
+    /// See [`Cartridge::halt_asserted`].
+    pub fn halt_asserted(&self) -> bool {
+        with_each_cart!(self, cart => cart.halt_asserted())
+    }
+    /// See [`Cartridge::take_nmi`].
+    pub fn take_nmi(&mut self) -> bool {
+        with_each_cart!(self, cart => cart.take_nmi())
+    }
+    /// See [`Cartridge::nmi_pending`].
+    pub fn nmi_pending(&self) -> bool {
+        with_each_cart!(self, cart => cart.nmi_pending())
+    }
+    /// See [`Cartridge::sound_level`].
+    pub fn sound_level(&self) -> f32 {
+        with_each_cart!(self, cart => cart.sound_level())
+    }
+    /// See [`Cartridge::audio_sample`].
+    pub fn audio_sample(&mut self) -> f32 {
+        with_each_cart!(self, cart => cart.audio_sample())
+    }
+    /// See [`Cartridge::control_read`].
+    pub fn control_read(&mut self) -> u8 {
+        with_each_cart!(self, cart => cart.control_read())
+    }
+    /// See [`Cartridge::control_write`].
+    pub fn control_write(&mut self, val: u8) {
+        with_each_cart!(self, cart => cart.control_write(val))
+    }
+    /// See [`Cartridge::reset`].
+    pub fn reset(&mut self) {
+        with_each_cart!(self, cart => cart.reset())
+    }
+}
+
+/// Slot searches behind the [`Cart::as_disk_cart`]-family accessors: each
+/// finds the device in whichever slot holds it. The frontend can also call
+/// these directly on a [`MultiPak`] it already has a `&mut` to.
+impl MultiPak {
+    /// The FD-502 disk controller in any slot, if one is plugged in.
+    pub fn find_disk_cart(&mut self) -> Option<&mut crate::fdc::DiskCart> {
+        self.slots.iter_mut().find_map(Cart::as_disk_cart)
+    }
+
+    /// The Deluxe RS-232 pak in any slot, if one is plugged in.
+    pub fn find_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
+        self.slots.iter_mut().find_map(Cart::as_deluxe_rs232)
+    }
+
+    /// The Disto real-time clock in any slot, if one is plugged in.
+    pub fn find_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
+        self.slots.iter_mut().find_map(Cart::as_disto_rtc)
+    }
+
+    /// The Orchestra-90 in any slot, if one is plugged in.
+    pub fn find_orch90(&mut self) -> Option<&mut crate::orch90::Orch90> {
+        self.slots.iter_mut().find_map(Cart::as_orch90)
+    }
+
+    /// The Sound/Speech Cartridge in any slot, if one is plugged in.
+    pub fn find_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
+        self.slots.iter_mut().find_map(Cart::as_ssc)
+    }
+}
+
+/// Generates one device accessor below: the `$variant` payload if that's
+/// what this cart is, else searching a [`MultiPak`]'s slots through its
+/// paired `MultiPak::$finder`. The `let` rebind deref-coerces boxed payloads
+/// ([`Cart::DiskCart`], [`Cart::Ssc`]) and reborrows plain ones alike.
+macro_rules! cart_accessor {
+    ($(#[$doc:meta])* $name:ident, $finder:ident, $variant:ident, $ty:ty) => {
+        $(#[$doc])*
+        pub fn $name(&mut self) -> Option<&mut $ty> {
+            match self {
+                Cart::$variant(cart) => {
+                    let cart: &mut $ty = cart;
+                    Some(cart)
+                }
+                Cart::MultiPak(mp) => mp.$finder(),
+                _ => None,
+            }
+        }
+    };
+}
+
+/// The old `Cartridge` trait-object downcasts, now plain matches. Each
+/// searches through a [`MultiPak`]'s slots too, so the frontend reaches a
+/// device the same way whether it sits in the port directly or in an MPI
+/// slot.
+impl Cart {
+    /// Wrap an out-of-crate [`Cartridge`] implementation (a test double) in
+    /// the [`Cart::Custom`] variant.
+    pub fn custom(cart: impl Cartridge + 'static) -> Self {
+        Cart::Custom(Box::new(cart))
+    }
+
+    /// The [`MultiPak`], if that's what is inserted — how the frontend
+    /// reaches individual slots (insert/eject/switch). Not recursive: real
+    /// MPIs cannot nest.
+    pub fn as_multipak(&mut self) -> Option<&mut MultiPak> {
+        match self {
+            Cart::MultiPak(mp) => Some(mp),
+            _ => None,
+        }
+    }
+
+    cart_accessor!(
+        /// The FD-502 disk controller, if one is inserted — how the frontend
+        /// reaches drive slots (insert/eject a floppy while the machine
+        /// runs, as on real hardware).
+        as_disk_cart, find_disk_cart, DiskCart, crate::fdc::DiskCart
+    );
+
+    cart_accessor!(
+        /// The Deluxe RS-232 pak, if one is inserted — how the frontend
+        /// swaps host endpoints and reads the TX/RX activity counters.
+        as_deluxe_rs232, find_deluxe_rs232, DeluxeRs232, crate::rs232::DeluxeRs232
+    );
+
+    cart_accessor!(
+        /// The Disto real-time clock, if one is inserted — how the frontend
+        /// reaches the clock chip (sync to host time).
+        as_disto_rtc, find_disto_rtc, DistoRtc, crate::rtc::DistoRtc
+    );
+
+    cart_accessor!(
+        /// The Orchestra-90, if one is inserted — how the frontend reads the
+        /// DAC latches for its level meters.
+        as_orch90, find_orch90, Orch90, crate::orch90::Orch90
+    );
+
+    cart_accessor!(
+        /// The [`crate::ssc::Ssc`] Sound/Speech Cartridge, if one is
+        /// inserted — tests and debug tooling reach direct AY-3-8913
+        /// register access ([`crate::ssc::Ssc::ay_write`]/
+        /// [`crate::ssc::Ssc::ay_read`]), bypassing the `$FF7D`/`$FF7E`
+        /// host-byte protocol (see `crate::ssc`'s module doc comment).
+        as_ssc, find_ssc, Ssc, crate::ssc::Ssc
+    );
+}
+
+impl Default for Cart {
+    /// An empty expansion port.
+    fn default() -> Self {
+        Cart::Empty(EmptySlot)
+    }
+}
+
+/// Manual rather than derived only because [`Cart::Custom`]'s trait object
+/// (and a few payloads that elide huge internal buffers from their own
+/// `Debug`) can't satisfy a derive bound; every payload that has a `Debug`
+/// is printed through it.
+impl std::fmt::Debug for Cart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Cart::Empty(slot) => f.debug_tuple("Empty").field(slot).finish(),
+            Cart::RomPak(pak) => f.debug_tuple("RomPak").field(pak).finish(),
+            Cart::BankedRomPak(pak) => f.debug_tuple("BankedRomPak").field(pak).finish(),
+            Cart::Gmc(gmc) => f.debug_tuple("Gmc").field(gmc).finish(),
+            Cart::DiskCart(disk) => f.debug_tuple("DiskCart").field(disk).finish(),
+            Cart::MultiPak(mp) => f.debug_tuple("MultiPak").field(mp).finish(),
+            Cart::Orch90(orch) => f.debug_tuple("Orch90").field(orch).finish(),
+            Cart::DistoRtc(rtc) => f.debug_tuple("DistoRtc").field(rtc).finish(),
+            Cart::DeluxeRs232(_) => f.write_str("DeluxeRs232"),
+            Cart::Ssc(_) => f.write_str("Ssc"),
+            Cart::Custom(_) => f.write_str("Custom"),
+        }
+    }
+}
+
+/// `From` impls so `Machine::insert_cartridge`/[`MultiPak::insert`] accept
+/// the concrete cartridge types directly (`impl Into<Cart>`).
+macro_rules! impl_from_cart {
+    ($($ty:ty => $variant:ident),* $(,)?) => {
+        $(impl From<$ty> for Cart {
+            fn from(cart: $ty) -> Self {
+                Cart::$variant(cart)
+            }
+        })*
+    };
+}
+
+impl_from_cart!(
+    EmptySlot => Empty,
+    RomPak => RomPak,
+    BankedRomPak => BankedRomPak,
+    Gmc => Gmc,
+    crate::orch90::Orch90 => Orch90,
+    crate::rtc::DistoRtc => DistoRtc,
+    crate::rs232::DeluxeRs232 => DeluxeRs232,
+);
+
+impl From<crate::fdc::DiskCart> for Cart {
+    /// Boxes the disk controller — see [`Cart::DiskCart`].
+    fn from(disk: crate::fdc::DiskCart) -> Self {
+        Cart::DiskCart(Box::new(disk))
+    }
+}
+
+impl From<crate::ssc::Ssc> for Cart {
+    /// Boxes the SSC — see [`Cart::Ssc`].
+    fn from(ssc: crate::ssc::Ssc) -> Self {
+        Cart::Ssc(Box::new(ssc))
+    }
+}
+
+impl From<MultiPak> for Cart {
+    /// Boxes the MPI — see [`Cart::MultiPak`].
+    fn from(mp: MultiPak) -> Self {
+        Cart::MultiPak(Box::new(mp))
     }
 }

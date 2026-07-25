@@ -467,10 +467,6 @@ impl Cartridge for DistoRtc {
         }
     }
 
-    fn as_disto_rtc(&mut self) -> Option<&mut DistoRtc> {
-        Some(self)
-    }
-
     // No `reset` override: the chip is battery-backed, so the RESET* line
     // doesn't touch the time or control registers.
 }
