@@ -12,7 +12,7 @@ use coco_core::video::{
     VDG_GM0_INTEXT,
 };
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard,
 };
 use mc6809::Bus;
 
@@ -32,8 +32,8 @@ fn coco2_config() -> MachineConfig {
         variant: MachineVariant::Coco2,
         video: VideoStandard::NTSC,
         memory: MemorySize::K64,
-        monitor: MonitorType::RGB,
-        vdg: VDGVariant::MC6847,
+        monitor: None,
+        vdg: Some(VDGVariant::MC6847),
     }
 }
 
@@ -43,15 +43,15 @@ fn coco1_config() -> MachineConfig {
         variant: MachineVariant::Coco1,
         video: VideoStandard::NTSC,
         memory: MemorySize::K32,
-        monitor: MonitorType::RGB,
-        vdg: VDGVariant::MC6847,
+        monitor: None,
+        vdg: Some(VDGVariant::MC6847),
     }
 }
 
 /// A CoCo 2 with the MC6847T1 installed.
 fn coco2_t1_config() -> MachineConfig {
     MachineConfig {
-        vdg: VDGVariant::MC6847T1,
+        vdg: Some(VDGVariant::MC6847T1),
         ..coco2_config()
     }
 }

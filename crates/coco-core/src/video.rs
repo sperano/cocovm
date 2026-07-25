@@ -106,8 +106,8 @@ pub fn vdg_graphics_border_index(css: bool) -> usize {
 /// (`VdgFixed` — CoCo 1/2, which has no palette registers to program). See
 /// `docs/coco12-plan.md` Phase 3.
 pub enum ColorSource<'a> {
-    GimePalette(&'a [[u8; 4]; PALETTE_LEN]),
-    VdgFixed,
+    GIMEPalette(&'a [[u8; 4]; PALETTE_LEN]),
+    VDGFixed,
 }
 
 impl ColorSource<'_> {
@@ -121,8 +121,8 @@ impl ColorSource<'_> {
     /// pre-Phase-3 behaviour exactly.
     pub fn resolve(&self, css: bool) -> [[u8; 4]; PALETTE_LEN] {
         match *self {
-            ColorSource::GimePalette(p) => *p,
-            ColorSource::VdgFixed => {
+            ColorSource::GIMEPalette(p) => *p,
+            ColorSource::VDGFixed => {
                 let mut table = VDG_FIXED_PALETTE;
                 if css {
                     table[TEXT_BG_INDEX] = VDG_FIXED_PALETTE[ALPHA_ORANGE_BG];
@@ -177,18 +177,18 @@ pub fn decode_alpha_char(code: u8) -> char {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlphaGenerator {
     /// CoCo 1/2 with the original MC6847.
-    Mc6847,
+    MC6847,
     /// CoCo 1/2 with the MC6847T1.
-    Mc6847T1,
+    MC6847T1,
     /// CoCo 3 CoCo-compatible text mode: the GIME's own generator, T1-style
     /// lowercase semantics, [`crate::font_gime::GIME_LOWRES_FONT`] glyphs.
-    Gime,
+    GIME,
 }
 
 /// Resolve one alphanumeric cell's glyph and (foreground, background) colours.
 ///
 /// Implements MAME `mc6847.cpp`'s `character_map` ctor precisely (and, for
-/// [`AlphaGenerator::Gime`], `gime.cpp`'s equivalent, which shares the same
+/// [`AlphaGenerator::GIME`], `gime.cpp`'s equivalent, which shares the same
 /// true-lowercase logic per its `is_mc6847t1 = true` construction):
 /// - True lowercase only applies on the MC6847T1 or the GIME generator, when
 ///   this character's own inverse bit is clear, PIA1 $FF22 GM0
@@ -200,7 +200,7 @@ pub enum AlphaGenerator {
 ///   [`INVERSE_BIT`]).
 /// - Codes `$20-$3F` are never affected by lowercase mode (MAME's ctor copies
 ///   them unchanged into the lowercase table too).
-/// - Every other case (plain [`AlphaGenerator::Mc6847`], a lowercase-capable
+/// - Every other case (plain [`AlphaGenerator::MC6847`], a lowercase-capable
 ///   generator with GM0 clear, a lowercase-capable generator with this
 ///   character's own inverse bit set, or code >= `$20`) draws from the
 ///   normal 64-entry range of the selected font, fg/bg swapped by the
@@ -218,21 +218,21 @@ fn resolve_alpha_cell(
 ) -> ([u8; 4], [u8; 4], &'static [u8; CELL_H]) {
     let glyph_code = code & GLYPH_CODE_MASK;
     let inverse = code & INVERSE_BIT != 0;
-    let lowercase_capable = matches!(generator, AlphaGenerator::Mc6847T1 | AlphaGenerator::Gime);
+    let lowercase_capable = matches!(generator, AlphaGenerator::MC6847T1 | AlphaGenerator::GIME);
     let true_lowercase =
         lowercase_capable && !inverse && ff22 & VDG_GM0_INTEXT != 0 && glyph_code < 0x20;
     if true_lowercase {
         let glyph: &[u8; CELL_H] = match generator {
-            AlphaGenerator::Mc6847T1 => &MC6847T1_FONT[0x40 + glyph_code as usize],
-            AlphaGenerator::Gime => &GIME_LOWRES_FONT[0x40 + glyph_code as usize],
-            AlphaGenerator::Mc6847 => unreachable!("Mc6847 is never lowercase_capable"),
+            AlphaGenerator::MC6847T1 => &MC6847T1_FONT[0x40 + glyph_code as usize],
+            AlphaGenerator::GIME => &GIME_LOWRES_FONT[0x40 + glyph_code as usize],
+            AlphaGenerator::MC6847 => unreachable!("Mc6847 is never lowercase_capable"),
         };
         (bg, fg, glyph)
     } else {
         let glyph: &[u8; CELL_H] = match generator {
-            AlphaGenerator::Mc6847 => &MC6847_FONT[glyph_code as usize % GLYPH_COUNT],
-            AlphaGenerator::Mc6847T1 => &MC6847T1_FONT[glyph_code as usize % GLYPH_COUNT],
-            AlphaGenerator::Gime => &GIME_LOWRES_FONT[glyph_code as usize % GLYPH_COUNT],
+            AlphaGenerator::MC6847 => &MC6847_FONT[glyph_code as usize % GLYPH_COUNT],
+            AlphaGenerator::MC6847T1 => &MC6847T1_FONT[glyph_code as usize % GLYPH_COUNT],
+            AlphaGenerator::GIME => &GIME_LOWRES_FONT[glyph_code as usize % GLYPH_COUNT],
         };
         let (cell_fg, cell_bg) = if inverse { (bg, fg) } else { (fg, bg) };
         (cell_fg, cell_bg, glyph)

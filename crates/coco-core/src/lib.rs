@@ -78,10 +78,10 @@ enum VideoMode {
     /// Same 256×192 active area as text; lower resolutions are pixel-doubled.
     CocoGraphics,
     /// INIT0 COCO=0, $FF98 BP=0: GIME native hi-res text (40/80 columns). TODO.
-    GimeText,
+    GIMEText,
     /// INIT0 COCO=0, $FF98 BP=1: GIME native graphics (HSCREEN), up to 640-wide with
     /// a variable-size buffer. TODO(`DESIGN.md` §6).
-    GimeGraphics,
+    GIMEGraphics,
 }
 
 /// The whole emulated machine.
@@ -186,7 +186,12 @@ impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
         let mut cpu = MC6809::new();
         let mut bus = SystemBus::new(config.variant, config.memory, rom);
-        bus.gime.monitor = config.monitor;
+        // `None` (CoCo 1/2 — no monitor port) leaves the GIME's default in
+        // place; the chip field is never consulted on those variants
+        // (`legacy_palette` resolves the fixed VDG table).
+        if let Some(monitor) = config.monitor {
+            bus.gime.monitor = monitor;
+        }
         cpu.reset(&mut bus);
         Self {
             cpu,
@@ -570,9 +575,9 @@ impl Machine {
                         VideoMode::CocoText
                     }
                 } else if g.vmode & gime::vmode::BP != 0 {
-                    VideoMode::GimeGraphics
+                    VideoMode::GIMEGraphics
                 } else {
-                    VideoMode::GimeText
+                    VideoMode::GIMEText
                 }
             }
         }
@@ -601,10 +606,10 @@ impl Machine {
                 for (i, entry) in resolved.iter_mut().enumerate() {
                     *entry = self.bus.gime.color(self.bus.gime.palette[i]);
                 }
-                video::ColorSource::GimePalette(&resolved).resolve(css)
+                video::ColorSource::GIMEPalette(&resolved).resolve(css)
             }
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
-                video::ColorSource::VdgFixed.resolve(css)
+                video::ColorSource::VDGFixed.resolve(css)
             }
         }
     }
@@ -639,8 +644,8 @@ impl Machine {
                     })
                     .collect()
             }
-            VideoMode::GimeText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
+            VideoMode::GIMEGraphics => {
                 vec!["<no text buffer: GIME graphics mode (HSCREEN, $FF98 BP=1)>".to_string()]
             }
         }
@@ -664,13 +669,13 @@ impl Machine {
                     self.legacy_display_base()
                 )
             }
-            VideoMode::GimeText => {
+            VideoMode::GIMEText => {
                 format!(
                     "video mode: GIME hi-res text, base=${:06X}",
                     self.bus.gime.video_base()
                 )
             }
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEGraphics => {
                 format!(
                     "video mode: GIME graphics (HSCREEN), base=${:06X}",
                     self.bus.gime.video_base()
@@ -811,7 +816,7 @@ impl Machine {
                 active,
             );
         } else {
-            let generator = video::AlphaGenerator::Gime;
+            let generator = video::AlphaGenerator::GIME;
             let xscale = raster::NON_WIDE_ACTIVE_W / (video::COLS * video::CELL_W);
             video::paint_legacy_text_line(
                 &buf[..row_bytes],
@@ -881,14 +886,16 @@ impl Machine {
             }
         };
         // A CoCo 3 has no VDG chip at all: CoCo-compatible text mode is the
-        // GIME's own compat-text generator (`video::AlphaGenerator::Gime`),
-        // not `self.config.vdg` (which only describes a real CoCo 1/2's VDG
-        // and is forced to `Mc6847` for CoCo 3 by `MachineConfig::validate`).
+        // GIME's own compat-text generator (`video::AlphaGenerator::GIME`),
+        // not `self.config.vdg` (which describes a real CoCo 1/2's chip and
+        // is `None` on CoCo 3, per `MachineConfig::validate`).
         let generator = match self.config.variant {
-            MachineVariant::Coco3 => video::AlphaGenerator::Gime,
+            MachineVariant::Coco3 => video::AlphaGenerator::GIME,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
-                VDGVariant::MC6847 => video::AlphaGenerator::Mc6847,
-                VDGVariant::MC6847T1 => video::AlphaGenerator::Mc6847T1,
+                Some(VDGVariant::MC6847T1) => video::AlphaGenerator::MC6847T1,
+                // `None` is rejected for CoCo 1/2 by `MachineConfig::validate`;
+                // fall back to the plain chip rather than panic.
+                Some(VDGVariant::MC6847) | None => video::AlphaGenerator::MC6847,
             },
         };
         video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);

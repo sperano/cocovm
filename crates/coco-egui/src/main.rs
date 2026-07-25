@@ -38,7 +38,7 @@ use coco_core::drivewire::{self, DwImage, DwTime};
 use coco_core::fdc::{DiskCart, JvcDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::orch90::Orch90;
-use coco_core::rtc::{DistoRtc, RtcTime};
+use coco_core::rtc::{DistoRtc, RTCTime};
 use coco_core::ssc::Ssc;
 use coco_core::vhd::VhdImage;
 use coco_core::{
@@ -71,7 +71,7 @@ const STATUS_BAR_H: f32 = 22.0;
 const TYPE_HOLD_FIELDS: u8 = 2;
 const TYPE_GAP_FIELDS: u8 = 1;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KbMode {
     Positional,
     Symbolic,
@@ -219,11 +219,11 @@ struct CocoApp {
     pending_disk_action: Option<PendingDiskAction>,
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
-    mpi: Option<MpiState>,
+    mpi: Option<MPIState>,
     /// State of the inserted Deluxe RS-232 Program Pak, if any: which host
     /// endpoint its serial line is wired to (the core's trait object can't
     /// describe itself to menu labels, so the frontend tracks it — same
-    /// rationale as [`MpiSlot`]). `None` means the slot holds something else.
+    /// rationale as [`MPISlot`]). `None` means the slot holds something else.
     rs232: Option<Rs232Endpoint>,
     /// Listen address for the RS-232 pak's TCP endpoint, edited in the menu
     /// and applied when "TCP" is (re)selected — not live-rebound on each
@@ -234,7 +234,7 @@ struct CocoApp {
     new_vm: new_vm::NewVmDialog,
     /// True while a Disto RTC is plugged directly into the cartridge port
     /// (gates the "Eject Disto RTC" menu item, like `cart_path` does for ROM
-    /// paks). An RTC in a Multi-Pak slot is tracked by [`MpiSlot::DistoRtc`]
+    /// paks). An RTC in a Multi-Pak slot is tracked by [`MPISlot::DistoRTC`]
     /// instead.
     rtc_direct: bool,
     /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
@@ -267,6 +267,65 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
 /// were one or two — and the menu stays small.
 const UI_DRIVES: usize = 2;
 
+/// Status-bar drive activity indicator: a little 5¼" floppy jacket, red
+/// while the drive is selected with its motor on ([`coco_core::fdc`]'s
+/// `drive_active`, like a real drive's front-panel light), dim otherwise.
+const DRIVE_ICON_SIZE: f32 = 11.0;
+const DRIVE_ICON_ACTIVE: egui::Color32 = egui::Color32::from_rgb(0xE0, 0x30, 0x30);
+const DRIVE_ICON_IDLE: egui::Color32 = egui::Color32::from_gray(70);
+/// Corner rounding of the jacket square.
+const DRIVE_ICON_CORNER: f32 = 1.5;
+
+/// Status-bar cassette activity indicator, the tape sibling of
+/// [`DRIVE_ICON_SIZE`]'s floppy: shell proportions of a compact cassette
+/// (wider than tall), red while the cassette relay is closed
+/// (CLOAD/CSAVE/`MOTOR ON`), dim otherwise.
+const TAPE_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 10.0);
+/// Corner rounding of the cassette shell.
+const TAPE_ICON_CORNER: f32 = 1.5;
+
+/// One status-bar cassette indicator (see [`TAPE_ICON_SIZE`]'s doc): the
+/// shell with the two reel hubs punched out in the panel's background
+/// color.
+fn cassette_activity_light(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(TAPE_ICON_SIZE, egui::Sense::hover());
+    let shell = if active { DRIVE_ICON_ACTIVE } else { DRIVE_ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, TAPE_ICON_CORNER, shell);
+    // The two reel hubs, side by side above the mid-line (the head window
+    // occupies a real shell's bottom edge, unreadable at this size).
+    let hub_y = rect.center().y - TAPE_ICON_SIZE.y * 0.08;
+    let hub_dx = TAPE_ICON_SIZE.x * 0.22;
+    let hub_r = TAPE_ICON_SIZE.y * 0.20;
+    painter.circle_filled(egui::pos2(rect.center().x - hub_dx, hub_y), hub_r, punch);
+    painter.circle_filled(egui::pos2(rect.center().x + hub_dx, hub_y), hub_r, punch);
+}
+
+/// One status-bar activity indicator (see [`DRIVE_ICON_SIZE`]'s doc): the
+/// jacket square with the hub hole and the oblong head-access slot punched
+/// out in the panel's background color — the 5¼" silhouette.
+fn drive_activity_light(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(DRIVE_ICON_SIZE, DRIVE_ICON_SIZE),
+        egui::Sense::hover(),
+    );
+    let jacket = if active { DRIVE_ICON_ACTIVE } else { DRIVE_ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, DRIVE_ICON_CORNER, jacket);
+    // Hub hole, a hair above center (the slot below claims the bottom).
+    let hub = rect.center() - egui::vec2(0.0, DRIVE_ICON_SIZE * 0.08);
+    painter.circle_filled(hub, DRIVE_ICON_SIZE * 0.18, punch);
+    // Head-access slot: the short oblong under the hub.
+    let slot_width = DRIVE_ICON_SIZE * 0.16;
+    let slot = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.bottom() - DRIVE_ICON_SIZE * 0.18),
+        egui::vec2(slot_width, DRIVE_ICON_SIZE * 0.24),
+    );
+    painter.rect_filled(slot, slot_width / 2.0, punch);
+}
+
 /// Number of physical slots on a Multi-Pak Interface — re-exported from the
 /// core crate's own constant so the frontend's slot arrays can't drift from
 /// [`coco_core::cart::MultiPak`]'s.
@@ -294,11 +353,11 @@ const DEFAULT_SSC_SLOT: usize = 1;
 /// controller lives at the top level or nested in a slot.
 ///
 /// [`Cartridge::as_disk_cart`]: coco_core::cart::Cartridge::as_disk_cart
-enum MpiSlot {
+enum MPISlot {
     Empty,
-    RomPak(PathBuf),
-    Fd502,
-    DistoRtc,
+    ROMPak(PathBuf),
+    FD502,
+    DistoRTC,
     Gmc(PathBuf),
     Orch90(PathBuf),
     Ssc,
@@ -306,10 +365,10 @@ enum MpiSlot {
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the
 /// front-panel switch points at (mirrors [`MultiPak::set_switch`]) and what's
-/// plugged into each of its 4 slots ([`MpiSlot`]).
-struct MpiState {
+/// plugged into each of its 4 slots ([`MPISlot`]).
+struct MPIState {
     switch: usize,
-    slots: [MpiSlot; MPI_SLOT_COUNT],
+    slots: [MPISlot; MPI_SLOT_COUNT],
 }
 
 /// Which host backend the Deluxe RS-232 pak's serial line is plugged into
@@ -352,10 +411,10 @@ enum Rs232EndpointKind {
 }
 
 /// The host's local wall clock, read once (RTC sync).
-fn host_now() -> RtcTime {
+fn host_now() -> RTCTime {
     use chrono::{Datelike, Timelike};
     let now = chrono::Local::now();
-    RtcTime {
+    RTCTime {
         year: now.year(),
         month: now.month() as u8,
         day: now.day() as u8,
@@ -641,6 +700,22 @@ impl CocoApp {
     /// can't make on the caller's behalf — so this refuses instead of
     /// silently replacing the MPI, and directs the caller to
     /// [`Self::mpi_insert_fd502`] via the MultiPak submenu.
+    /// Mount the "New…" dialog's per-drive disk picks, assuming a disk
+    /// controller is already reachable (bare FD-502 or one in an MPI
+    /// slot). `insert_disk`/`new_blank_disk` report failures via
+    /// [`Self::cart_error`]. `Blank(None)` is the manager flow's
+    /// auto-placed spelling and can't be produced by the direct-boot
+    /// dialog.
+    fn mount_dialog_disks(&mut self, disks: [new_vm::MediaChoice; UI_DRIVES]) {
+        for (drive, choice) in disks.into_iter().enumerate() {
+            match choice {
+                new_vm::MediaChoice::File(path) => self.insert_disk(drive, path),
+                new_vm::MediaChoice::Blank(Some(path)) => self.new_blank_disk(drive, path),
+                new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
+            }
+        }
+    }
+
     fn ensure_disk_controller(&mut self) -> Result<(), String> {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             return Ok(());
@@ -652,6 +727,7 @@ impl CocoApp {
                     .to_string(),
             );
         }
+        // TODO! will need to read from config ~/.share/cocovm or something, there should be some helper for this, maybe in paths.rs
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
@@ -677,9 +753,9 @@ impl CocoApp {
         self.flush_dirty_disks();
         self.machine.insert_cartridge(Box::new(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT)));
         self.machine.power_cycle();
-        self.mpi = Some(MpiState {
+        self.mpi = Some(MPIState {
             switch: DEFAULT_MPI_SWITCH_SLOT,
-            slots: std::array::from_fn(|_| MpiSlot::Empty),
+            slots: std::array::from_fn(|_| MPISlot::Empty),
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -717,7 +793,7 @@ impl CocoApp {
                     mp.insert(slot, Box::new(pak));
                 }
                 if let Some(mpi) = &mut self.mpi {
-                    mpi.slots[slot] = MpiSlot::RomPak(path);
+                    mpi.slots[slot] = MPISlot::ROMPak(path);
                 }
                 self.machine.power_cycle();
             }
@@ -744,7 +820,7 @@ impl CocoApp {
                     mp.insert(slot, Box::new(cart));
                 }
                 if let Some(mpi) = &mut self.mpi {
-                    mpi.slots[slot] = MpiSlot::Gmc(path);
+                    mpi.slots[slot] = MPISlot::Gmc(path);
                 }
                 self.machine.power_cycle();
             }
@@ -772,7 +848,7 @@ impl CocoApp {
                     mp.insert(slot, Box::new(cart));
                 }
                 if let Some(mpi) = &mut self.mpi {
-                    mpi.slots[slot] = MpiSlot::Orch90(path);
+                    mpi.slots[slot] = MPISlot::Orch90(path);
                 }
                 self.machine.power_cycle();
             }
@@ -806,7 +882,7 @@ impl CocoApp {
             mp.insert(slot, Box::new(DiskCart::new(rom.into_boxed_slice())));
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::Fd502;
+            mpi.slots[slot] = MPISlot::FD502;
         }
         self.disk_paths = [None, None];
         self.machine.power_cycle();
@@ -822,14 +898,14 @@ impl CocoApp {
             mp.insert(slot, Box::new(Ssc::new()));
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::Ssc;
+            mpi.slots[slot] = MPISlot::Ssc;
         }
         self.machine.power_cycle();
     }
 
     /// Eject whatever is plugged into MPI `slot`, restoring its empty slot.
     fn mpi_eject_slot(&mut self, slot: usize) {
-        let was_fd502 = matches!(self.mpi.as_ref().map(|m| &m.slots[slot]), Some(MpiSlot::Fd502));
+        let was_fd502 = matches!(self.mpi.as_ref().map(|m| &m.slots[slot]), Some(MPISlot::FD502));
         if was_fd502 {
             self.flush_dirty_disks();
             self.disk_paths = [None, None];
@@ -838,7 +914,7 @@ impl CocoApp {
             mp.eject(slot);
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::Empty;
+            mpi.slots[slot] = MPISlot::Empty;
         }
         self.machine.power_cycle();
     }
@@ -888,7 +964,7 @@ impl CocoApp {
             mp.insert(slot, Box::new(DistoRtc::new(host_time_source())));
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MpiSlot::DistoRtc;
+            mpi.slots[slot] = MPISlot::DistoRTC;
         }
         self.machine.power_cycle();
     }
@@ -1026,6 +1102,26 @@ impl CocoApp {
         })();
         if let Err(e) = result {
             self.cart_error = Some(e);
+        }
+    }
+
+    /// Create a brand-new, empty VHD image at `path` and mount it in `drive`
+    /// ([`Self::insert_vhd`]'s blank sibling): a 0-byte file is a valid
+    /// 0-sector VHD, and `VhdImage::File` extends it on write. Refuses to
+    /// overwrite an existing file. Failures land in [`Self::cart_error`].
+    fn new_vhd(&mut self, drive: usize, path: PathBuf) {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => self.insert_vhd(drive, path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.cart_error = Some(format!(
+                    "{} already exists; use Insert VHD to mount an existing image, or \
+                     choose a different name",
+                    path.display()
+                ));
+            }
+            Err(e) => {
+                self.cart_error = Some(format!("could not create {}: {e}", path.display()));
+            }
         }
     }
 
@@ -1331,6 +1427,13 @@ impl CocoApp {
     }
 
     fn handle_input(&mut self, ctx: &egui::Context) {
+        // ⌘N / Ctrl+N = Machine → New…. Consumed before the event snapshot
+        // below so the N keypress never reaches the CoCo matrix or the
+        // symbolic type-ahead (the held modifier alone is harmless there).
+        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
+            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
+        }
+
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
 
         // UI hotkeys (never forwarded) and clipboard paste, both keyboard-mode-agnostic.
@@ -1522,8 +1625,10 @@ impl CocoApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| {
-                    if ui.button("New…").clicked() {
-                        self.new_vm.open_with(self.machine.config);
+                    let new_button = egui::Button::new("New…")
+                        .shortcut_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
+                    if ui.add(new_button).clicked() {
+                        self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
                         ui.close();
                     }
                     ui.separator();
@@ -1613,26 +1718,26 @@ impl CocoApp {
                             ui.separator();
                             for slot in 0..MPI_SLOT_COUNT {
                                 let slot_label = match self.mpi.as_ref().map(|m| &m.slots[slot]) {
-                                    Some(MpiSlot::RomPak(p)) => format!(
+                                    Some(MPISlot::ROMPak(p)) => format!(
                                         "Slot {} ({})",
                                         slot + 1,
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
-                                    Some(MpiSlot::Fd502) => format!("Slot {} (FD-502)", slot + 1),
-                                    Some(MpiSlot::DistoRtc) => {
+                                    Some(MPISlot::FD502) => format!("Slot {} (FD-502)", slot + 1),
+                                    Some(MPISlot::DistoRTC) => {
                                         format!("Slot {} (Disto RTC)", slot + 1)
                                     }
-                                    Some(MpiSlot::Gmc(p)) => format!(
+                                    Some(MPISlot::Gmc(p)) => format!(
                                         "Slot {} (GMC: {})",
                                         slot + 1,
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
-                                    Some(MpiSlot::Orch90(p)) => format!(
+                                    Some(MPISlot::Orch90(p)) => format!(
                                         "Slot {} (Orchestra-90: {})",
                                         slot + 1,
                                         p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                     ),
-                                    Some(MpiSlot::Ssc) => {
+                                    Some(MPISlot::Ssc) => {
                                         format!("Slot {} (Sound/Speech)", slot + 1)
                                     }
                                     _ => format!("Slot {}", slot + 1),
@@ -1669,7 +1774,7 @@ impl CocoApp {
                                     // — the emulated latch only ever models one controller.
                                     let fd502_here = matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
-                                        Some(MpiSlot::Fd502)
+                                        Some(MPISlot::FD502)
                                     );
                                     let fd502_elsewhere =
                                         self.machine.bus.cart.as_disk_cart().is_some() && !fd502_here;
@@ -1687,7 +1792,7 @@ impl CocoApp {
                                     // two RTCs would shadow each other at $FF50.
                                     let rtc_here = matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
-                                        Some(MpiSlot::DistoRtc)
+                                        Some(MPISlot::DistoRTC)
                                     );
                                     let rtc_elsewhere = self
                                         .machine
@@ -1712,7 +1817,7 @@ impl CocoApp {
                                     }
                                     let occupied = !matches!(
                                         self.mpi.as_ref().map(|m| &m.slots[slot]),
-                                        Some(MpiSlot::Empty)
+                                        Some(MPISlot::Empty)
                                     );
                                     if ui
                                         .add_enabled(occupied, egui::Button::new("Eject"))
@@ -2105,8 +2210,6 @@ impl CocoApp {
                 ui.label(if self.running { "Running" } else { "Paused" });
                 ui.separator();
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
-                ui.separator();
-                ui.label(format!("cycles: {}", self.machine.cpu.cycles));
                 if let Some(path) = &self.cart_path {
                     ui.separator();
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
@@ -2131,21 +2234,21 @@ impl CocoApp {
                         .enumerate()
                         .map(|(i, slot)| {
                             let label = match slot {
-                                MpiSlot::Empty => "-".to_string(),
-                                MpiSlot::RomPak(p) => {
+                                MPISlot::Empty => "-".to_string(),
+                                MPISlot::ROMPak(p) => {
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string()
                                 }
-                                MpiSlot::Fd502 => "FD-502".to_string(),
-                                MpiSlot::DistoRtc => "RTC".to_string(),
-                                MpiSlot::Gmc(p) => format!(
+                                MPISlot::FD502 => "FD-502".to_string(),
+                                MPISlot::DistoRTC => "RTC".to_string(),
+                                MPISlot::Gmc(p) => format!(
                                     "GMC:{}",
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                 ),
-                                MpiSlot::Orch90(p) => format!(
+                                MPISlot::Orch90(p) => format!(
                                     "Orchestra-90:{}",
                                     p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
                                 ),
-                                MpiSlot::Ssc => "SSC".to_string(),
+                                MPISlot::Ssc => "SSC".to_string(),
                             };
                             format!("S{}:{label}", i + 1)
                         })
@@ -2165,7 +2268,14 @@ impl CocoApp {
                         .as_disk_cart()
                         .and_then(|c| c.disk(drive))
                         .is_some_and(|d| d.dirty());
+                    let active = self
+                        .machine
+                        .bus
+                        .cart
+                        .as_disk_cart()
+                        .is_some_and(|c| c.drive_active(drive));
                     ui.separator();
+                    drive_activity_light(ui, active);
                     ui.label(format!("D{drive}: {name}{}", if dirty { "*" } else { "" }));
                 }
                 for drive in 0..UI_DRIVES {
@@ -2193,14 +2303,15 @@ impl CocoApp {
                 if let Some(path) = &self.tape_path {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     let cassette = &self.machine.bus.cassette;
-                    // "▶" = motor running (relay closed); the counter is the
-                    // playback position in tape bytes; "*" as for floppies.
-                    let motor =
-                        if self.machine.bus.pia1.a.c2_output() { " ▶" } else { "" };
+                    // The icon reddens while the motor runs (relay closed —
+                    // CLOAD/CSAVE/MOTOR ON); the counter is the playback
+                    // position in tape bytes; "*" as for floppies.
+                    let motor = self.machine.bus.pia1.a.c2_output();
                     let (pos, len) = cassette.position();
                     ui.separator();
+                    cassette_activity_light(ui, motor);
                     ui.label(format!(
-                        "Tape: {name}{} [{pos}/{len}]{motor}",
+                        "Tape: {name}{} [{pos}/{len}]",
                         if cassette.dirty() { "*" } else { "" }
                     ));
                 }
@@ -2220,9 +2331,59 @@ impl CocoApp {
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
         self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
-        if let new_vm::NewVmAction::Create(config) = self.new_vm.show(ctx) {
-            match self.create_vm(config, ctx) {
-                Ok(()) => self.new_vm.close(),
+        if let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) {
+            match self.create_vm(spec.config, ctx) {
+                Ok(()) => {
+                    // The new window's starting UI preferences, from the
+                    // form's Display/Keyboard rows; F9/F12 keep toggling
+                    // them live afterwards.
+                    self.aspect_correct = spec.aspect_correct;
+                    self.kb_mode = spec.kb_mode;
+                    // The machine booted; cartridge/media problems (e.g.
+                    // missing disk11.rom, unreadable image) are reported
+                    // like a menu insert, not as a create failure.
+                    match spec.cartridge {
+                        new_vm::CartridgeChoice::None => {}
+                        new_vm::CartridgeChoice::RomPak(path) => self.insert_cartridge(path),
+                        new_vm::CartridgeChoice::RTC => self.insert_rtc(),
+                        new_vm::CartridgeChoice::FD502 => {
+                            if let Err(e) = self.ensure_disk_controller() {
+                                self.cart_error = Some(e);
+                            } else {
+                                self.mount_dialog_disks(spec.disks);
+                            }
+                        }
+                        new_vm::CartridgeChoice::MPI => {
+                            self.insert_multipak();
+                            for (slot, choice) in spec.mpi_slots.iter().enumerate() {
+                                match choice {
+                                    new_vm::SlotChoice::FD502 => self.mpi_insert_fd502(slot),
+                                    new_vm::SlotChoice::RomPak(path) => {
+                                        self.mpi_insert_rompak(slot, path.clone());
+                                    }
+                                    new_vm::SlotChoice::RTC => self.mpi_insert_rtc(slot),
+                                    new_vm::SlotChoice::Empty => {}
+                                }
+                            }
+                            if spec.has_drives() {
+                                self.mount_dialog_disks(spec.disks);
+                            }
+                        }
+                    }
+                    match spec.tape {
+                        new_vm::MediaChoice::File(path) => self.insert_tape(path),
+                        new_vm::MediaChoice::Blank(Some(path)) => self.new_tape(path),
+                        new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
+                    }
+                    for (drive, choice) in spec.vhds.into_iter().enumerate() {
+                        match choice {
+                            new_vm::MediaChoice::File(path) => self.insert_vhd(drive, path),
+                            new_vm::MediaChoice::Blank(Some(path)) => self.new_vhd(drive, path),
+                            new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
+                        }
+                    }
+                    self.new_vm.close();
+                }
                 Err(e) => self.new_vm.error = Some(e),
             }
         }
@@ -2490,7 +2651,7 @@ fn parse_video(s: &str) -> Result<VideoStandard, String> {
 /// Composite vs RGB monitor cable. Mirrors [`MonitorType`].
 #[derive(Clone, Copy, ValueEnum)]
 enum MonitorArg {
-    Rgb,
+    RGB,
     #[value(name = "cmp", alias = "composite")]
     Composite,
 }
@@ -2498,7 +2659,7 @@ enum MonitorArg {
 impl From<MonitorArg> for MonitorType {
     fn from(m: MonitorArg) -> Self {
         match m {
-            MonitorArg::Rgb => MonitorType::RGB,
+            MonitorArg::RGB => MonitorType::RGB,
             MonitorArg::Composite => MonitorType::Composite,
         }
     }
@@ -2613,11 +2774,13 @@ struct Cli {
     #[arg(long, default_value = "ntsc", value_parser = parse_video)]
     video: VideoStandard,
 
-    /// Composite vs RGB monitor cable. Real hardware drives both signals
-    /// simultaneously; this picks which one the emulated monitor decodes
-    /// (also toggleable live from the View menu).
-    #[arg(long, value_enum, default_value = "rgb")]
-    monitor: MonitorArg,
+    /// Composite vs RGB monitor cable (CoCo 3 only — a CoCo 1/2 has no
+    /// monitor port, just RF out to a TV). Real hardware drives both
+    /// signals simultaneously; this picks which one the emulated monitor
+    /// decodes (also toggleable live from the View menu). Defaults to RGB
+    /// on a CoCo 3.
+    #[arg(long, value_enum)]
+    monitor: Option<MonitorArg>,
 
     /// Also save a `.wav` of the tape audio alongside the canonical `.cas`
     /// on every tape write-back (see the "Also save tape audio (.wav)"
@@ -2730,11 +2893,10 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // cartridge port unless an MPI is installed.
     let mpi = def.peripherals.mpi;
     let rtc = def.peripherals.rtc;
-    let port_claims = [
-        cart_path.is_some(),
-        disk_paths[0].is_some() || disk_paths[1].is_some(),
-        rtc,
-    ]
+    // Disk media implies the controller even when the flag is off (older
+    // definition files predate `[peripherals].fd502`).
+    let fd502 = def.peripherals.fd502 || disk_paths[0].is_some() || disk_paths[1].is_some();
+    let port_claims = [cart_path.is_some(), fd502, rtc]
     .into_iter()
     .filter(|&claims| claims)
     .count();
@@ -2784,7 +2946,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         if let Some(path) = cart_path {
             app.mpi_insert_rompak(0, path);
         }
-        if disk_paths[0].is_some() || disk_paths[1].is_some() {
+        if fd502 {
             app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
         }
         if rtc {
@@ -2796,11 +2958,16 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
             }
         }
     } else if rtc {
-        // cart/disk0/disk1 (handled by the `CocoApp::new` call above, same
-        // as the CLI's non-mpi branch) and rtc are mutually exclusive here —
-        // `port_claims` already rejected any combination of them without
-        // `--mpi`.
+        // cart/fd502 (disk media is handled by the `CocoApp::new` call
+        // above, same as the CLI's non-mpi branch) and rtc are mutually
+        // exclusive here — `port_claims` already rejected any combination
+        // of them without an MPI.
         app.insert_rtc();
+    } else if fd502 && let Err(e) = app.ensure_disk_controller() {
+        // Empty-drive FD-502 from `[peripherals].fd502` alone; with disk
+        // media set, `CocoApp::new` already inserted the controller and
+        // this is a no-op Ok.
+        app.cart_error = Some(e);
     }
 
     if let Some(path) = tape_path {
@@ -2909,14 +3076,15 @@ fn default_ram(variant: MachineVariant) -> MemorySize {
 }
 
 /// Per-variant default VDG chip when no explicit choice is made: the T1
-/// (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
-/// `MachineConfig::validate` accepts there). Shared by the CLI path below,
-/// `new_vm.rs`'s `constrain`, and `machine_def.rs`'s `to_machine_config`'s
-/// `None` (omitted `[hardware].vdg`) arm — previously duplicated three ways.
-const fn default_vdg(variant: MachineVariant) -> VDGVariant {
+/// (CoCo 2B) on a CoCo 2, the plain MC6847 on a CoCo 1 (the only choice
+/// `MachineConfig::validate` accepts there), and `None` on a CoCo 3, which
+/// has no VDG at all. Shared by the CLI path below, `new_vm.rs`'s
+/// `constrain`, and `machine_def.rs`'s `to_machine_config`.
+const fn default_vdg(variant: MachineVariant) -> Option<VDGVariant> {
     match variant {
-        MachineVariant::Coco2 => VDGVariant::MC6847T1,
-        MachineVariant::Coco1 | MachineVariant::Coco3 => VDGVariant::MC6847,
+        MachineVariant::Coco2 => Some(VDGVariant::MC6847T1),
+        MachineVariant::Coco1 => Some(VDGVariant::MC6847),
+        MachineVariant::Coco3 => None,
     }
 }
 
@@ -2957,26 +3125,36 @@ fn setup_logging() {
     let vt_ok = enable_ansi_support::enable_ansi_support().is_ok();
     let use_color = vt_ok && std::io::IsTerminal::is_terminal(&std::io::stdout());
     // Leveled stdout logging, colored only when stdout is a terminal.
-    // `RUST_LOG` filters per module (e.g. `RUST_LOG=coco_egui::audio=debug`);
-    // without it, everything at `info` and above is shown.
+    // `RUST_LOG` filters per module (e.g. `RUST_LOG=info,eframe=warn` or
+    // `RUST_LOG=coco_egui::audio=debug`); without it, only `warn` and above
+    // is shown.
     tracing_subscriber::fmt()
         .with_ansi(use_color)
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
                 .from_env_lossy(),
         )
         .init();
 }
 
 fn banner() {
-    println!("CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} (c) 2026 Éric Spérano",
+    let sep = "─".repeat(76);
+    println!("{}{}{}\n{} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {}\n{}{}{}",
+            "╭".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "╮".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
              env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
              "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
              "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "╰".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
+             "╯".if_supports_color(Stream::Stdout, |v| v.dimmed()),
     );
 }
 
@@ -3024,6 +3202,41 @@ fn ensure_assets() {
     }
 }
 
+/// Print which graphics backend eframe actually created, and on what GPU.
+///
+/// eframe has no backend-name API: `CreationContext` carries one handle per
+/// compiled backend (`gl` for glow, `wgpu_render_state` behind the `wgpu`
+/// feature) and the *presence* of a handle is the portable signal — so this
+/// matches on the handles rather than assuming a backend. Each arm then
+/// uses that backend's own introspection: wgpu's `AdapterInfo` names the
+/// API and GPU directly; glow's cached [`eframe::glow::Version`] (a safe
+/// call) distinguishes OpenGL from OpenGL ES, with only the GPU-name
+/// string needing a raw `glGetString`.
+pub(crate) fn log_renderer_info(cc: &eframe::CreationContext<'_>) {
+    #[cfg(feature = "wgpu")]
+    if let Some(render_state) = cc.wgpu_render_state.as_ref() {
+        let info = render_state.adapter.get_info();
+        println!("Renderer: {:?} on {} ({:?}).", info.backend, info.name, info.device_type);
+        return;
+    }
+    if let Some(gl) = cc.gl.as_ref() {
+        use eframe::glow::HasContext as _;
+        let api = if gl.version().is_embedded { "OpenGL ES" } else { "OpenGL" };
+        // Safety: eframe made this context current on this thread for the
+        // duration of the creation closure, and VERSION/RENDERER are valid
+        // `glGetString` enums.
+        let (version, renderer) = unsafe {
+            (
+                gl.get_parameter_string(eframe::glow::VERSION),
+                gl.get_parameter_string(eframe::glow::RENDERER),
+            )
+        };
+        println!("{} version: {}, renderer: {}.", api, version, renderer);
+        return;
+    }
+    println!("Renderer: unknown backend.");
+}
+
 fn main() -> eframe::Result<()> {
     setup_logging();
     banner();
@@ -3042,7 +3255,15 @@ fn main() -> eframe::Result<()> {
         variant,
         video: cli.video,
         memory,
-        monitor: cli.monitor.into(),
+        // An explicit --monitor on a CoCo 1/2 flows through as Some so
+        // `validate` below rejects it with the real reason (no monitor
+        // port) instead of silently ignoring the flag.
+        monitor: match variant {
+            MachineVariant::Coco3 => {
+                Some(cli.monitor.map_or(MonitorType::RGB, Into::into))
+            }
+            MachineVariant::Coco1 | MachineVariant::Coco2 => cli.monitor.map(Into::into),
+        },
         // No CLI flag for this yet; same family default as the "New…"
         // dialog and the manager's detail pane (`default_vdg`).
         vdg: default_vdg(variant),
@@ -3113,7 +3334,8 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "coco-rs",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            log_renderer_info(cc);
             // With --mpi, --cart/--disk0/--disk1/--fd502 target MPI slots instead of
             // the plain single-cartridge model, so the base constructor gets none of
             // them and everything is wired up afterward through the same methods the
@@ -3218,9 +3440,9 @@ mod cli_tests {
 
     #[test]
     fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
-        assert_eq!(default_vdg(MachineVariant::Coco2), VDGVariant::MC6847T1);
-        assert_eq!(default_vdg(MachineVariant::Coco1), VDGVariant::MC6847);
-        assert_eq!(default_vdg(MachineVariant::Coco3), VDGVariant::MC6847);
+        assert_eq!(default_vdg(MachineVariant::Coco2), Some(VDGVariant::MC6847T1));
+        assert_eq!(default_vdg(MachineVariant::Coco1), Some(VDGVariant::MC6847));
+        assert_eq!(default_vdg(MachineVariant::Coco3), None);
     }
 
     /// Scratch directory under `target/` holding only the ROM files a given
