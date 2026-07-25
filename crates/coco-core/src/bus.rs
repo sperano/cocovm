@@ -153,6 +153,13 @@ pub struct SystemBus {
     /// reset by [`SystemBus::new`]/power-on since it only needs to be
     /// monotonic, not meaningful in absolute terms.
     pub(crate) cycle_clock: u64,
+    /// Current latched audio-input state (see `crate::audio`): kept in sync
+    /// by [`SystemBus::note_audio_write`] so flushes know the line-start
+    /// state without recomputing.
+    pub(crate) audio_inputs: crate::audio::AudioInputs,
+    /// Cycle-timestamped audio-input changes since the last line flush
+    /// (`Machine::flush_line_audio` drains these each scanline).
+    pub(crate) audio_events: Vec<crate::audio::AudioEvent>,
     /// Last sampled level of the cartridge's level-driven CART* interrupt
     /// ([`Cartridge::cart_interrupt`]), so [`SystemBus::poll_cart_interrupt`]
     /// acts only on transitions.
@@ -189,6 +196,8 @@ impl SystemBus {
             io_enabled: true,
             kbd_line_low: false,
             cycle_clock: 0,
+            audio_inputs: crate::audio::AudioInputs::default(),
+            audio_events: Vec::new(),
             prev_cart_int: false,
             watch: None,
             watch_hit: None,
@@ -482,77 +491,55 @@ impl SystemBus {
         self.pia0.b.set_c1(true);
     }
 
-    /// Instantaneous speaker level, 0.0–1.0.
-    ///
-    /// Sources mix on the CoCo 3 (it has no sound chip of its own): the 6-bit
-    /// DAC (PIA1 PA2–PA7), routed through the analog mux only when SNDEN
-    /// (PIA1 CB2) is high and the SEL2:SEL1 selects (PIA0 CB2:CA2) are 00;
-    /// mux state 01 routes cassette playback (the squared tape signal — the
-    /// key-click of a real CLOAD), 10 routes cartridge audio (e.g. the
-    /// Sound/Speech Cartridge's AY-3-8913 — see [`Cartridge::audio_sample`]),
-    /// 11 is grounded; and the single-bit sound on PIA1 PB1, which is always
-    /// connected. (Tandy Service Manual mux table via MAME `coco.cpp`
-    /// `update_sound`; SEB Unravelled II $FF22/$FF23.)
-    ///
-    /// Takes `&mut self`: [`Cartridge::audio_sample`] is called exactly once
-    /// per invocation regardless of mux selection (some carts need to
-    /// observe their own output continuously — the SSC's Sound Activity
-    /// Circuit), which makes this no longer a pure read of latched state.
-    ///
-    /// Cartridge audio via [`Cartridge::sound_level`] (the Orchestra-90's
-    /// DACs, the GMC's SN76489A) mixes in unconditionally: those carts drive
-    /// their own outputs,
-    /// not the SND pin, so the mux never gates it (MAME `coco_orch90.cpp`
-    /// routes the DACs to a speaker of their own, ignoring SOUND_ENABLE).
-    pub fn sound_sample(&mut self) -> f32 {
-        /// Relative loudness of the full-scale DAC vs the single-bit beeper.
-        const DAC_GAIN: f32 = 0.75;
-        const SINGLE_BIT_GAIN: f32 = 0.25;
-        /// Cartridge audio (Orchestra-90 fold-down, GMC SN76489A) at the same
-        /// full-scale loudness as the internal 6-bit DAC.
-        const CART_GAIN: f32 = 0.75;
+    /// Snapshot the latched audio-affecting inputs (`crate::audio`): the
+    /// 6-bit DAC, single-bit beeper, SNDEN + mux selects, cassette relay,
+    /// and the cartridge's latched stereo outputs. (Tandy Service Manual
+    /// mux table via MAME `coco.cpp` `update_sound`; SEB Unravelled II
+    /// $FF22/$FF23. Generator-type sources — the mux-10 AY path and
+    /// crystal PSGs — are sampled at flush time instead, see
+    /// `Machine::flush_line_audio`.)
+    fn snapshot_audio_inputs(&self) -> crate::audio::AudioInputs {
         /// PIA1 PB1: the single-bit sound output.
         const SINGLE_BIT: u8 = 0x02;
-        const DAC_MAX: f32 = 63.0;
-        /// Tape playback through the mux: a square wave (the SALT detector's
-        /// output), kept below the DAC's full scale like the real attenuated
-        /// tape level.
-        const CASSETTE_GAIN: f32 = 0.35;
-        /// Cartridge audio through the mux: matched to the DAC's gain (the
-        /// AY-3-8913's own output is already normalized 0.0-1.0 full scale
-        /// by `Ay8913`'s DAC table, so no separate headroom scaling is
-        /// needed beyond this mux gain).
-        const CARTRIDGE_GAIN: f32 = 0.75;
-        /// SEL2:SEL1 = 01: the mux's cassette input.
-        const SEL_CASSETTE: u8 = 0b01;
-        /// SEL2:SEL1 = 10: the mux's cartridge input.
-        const SEL_CARTRIDGE: u8 = 0b10;
+        let (cart_left, cart_right) = self.cart.sound_levels();
+        crate::audio::AudioInputs {
+            dac: (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2,
+            single_bit: self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0,
+            snden: self.pia1.b.c2_output(),
+            sel: u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output()),
+            cassette_relay: self.pia1.a.c2_output(),
+            cart_left,
+            cart_right,
+        }
+    }
 
-        let mut level = 0.0;
-        let sel = u8::from(self.pia0.b.c2_output()) << 1 | u8::from(self.pia0.a.c2_output());
-        // Cartridge audio must be sampled unconditionally, not just when the
-        // mux happens to select it (see this method's doc comment).
-        let cart_sample = self.cart.audio_sample();
-        if self.pia1.b.c2_output() && sel == 0 {
-            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
-            level += DAC_GAIN * f32::from(dac) / DAC_MAX;
+    /// Mix one stereo sample from the CURRENT latched inputs plus one
+    /// `dt`-second generator step — the instantaneous speaker level, for
+    /// tests and level meters. The machine's real audio path renders the
+    /// event-timestamped grid instead (`Machine::flush_line_audio`); this
+    /// probe advances the generator clocks (AY drain, PSG crystals) as a
+    /// side effect exactly like one grid slot does.
+    pub fn sound_probe(&mut self, dt: f64) -> [f32; 2] {
+        let inputs = self.snapshot_audio_inputs();
+        let cassette_bit = self.cassette.playing() && self.cassette.input_bit();
+        let ay = self.cart.audio_sample();
+        let generators = self.cart.generator_sample(dt);
+        crate::audio::mix(&inputs, cassette_bit, ay, generators)
+    }
+
+    /// Record a cycle-timestamped audio event if the write that just landed
+    /// changed any latched audio input. Called on the PIA and
+    /// cartridge-window write paths only, and cheap even there: one
+    /// snapshot + compare per write.
+    fn note_audio_write(&mut self) {
+        let inputs = self.snapshot_audio_inputs();
+        if inputs != self.audio_inputs {
+            self.audio_inputs = inputs;
+            self.audio_events.push(crate::audio::AudioEvent {
+                cycle: self.cycle_clock,
+                inputs,
+            });
         }
-        if self.pia1.b.c2_output()
-            && sel == SEL_CASSETTE
-            && self.pia1.a.c2_output()
-            && self.cassette.playing()
-            && self.cassette.input_bit()
-        {
-            level += CASSETTE_GAIN;
-        }
-        if self.pia1.b.c2_output() && sel == SEL_CARTRIDGE {
-            level += CARTRIDGE_GAIN * cart_sample;
-        }
-        if self.pia1.b.output & self.pia1.b.ddr & SINGLE_BIT != 0 {
-            level += SINGLE_BIT_GAIN;
-        }
-        level += CART_GAIN * self.cart.sound_level();
-        level
     }
 
     /// Read ROM for a logical address in the `$8000–$FFFF` window.
@@ -652,7 +639,10 @@ impl SystemBus {
             return;
         }
         match addr {
-            IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
+            IO_BASE..=PIA0_LAST => {
+                self.pia0.write((addr & 0x03) as u8, val);
+                self.note_audio_write(); // CA2/CB2 are the sound mux selects
+            }
             PIA1_BASE..=PIA1_LAST => {
                 self.pia1.write((addr & 0x03) as u8, val);
                 // Cassette record-out is a direct, unconditional tap of the DAC
@@ -661,8 +651,12 @@ impl SystemBus {
                 // CRA, which carries the motor relay) can change it.
                 let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
+                self.note_audio_write(); // DAC / PB1 / SNDEN / relay
             }
-            CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            CART_BASE..=CART_LAST => {
+                self.cart.write(addr, val);
+                self.note_audio_write(); // latched cart DACs (Orchestra-90)
+            }
             MPI_CONTROL_REG => self.cart.control_write(val),
             VHD_LRN_HI => self.vhd.write_lrn_hi(val),
             VHD_LRN_MID => self.vhd.write_lrn_mid(val),
@@ -895,13 +889,20 @@ impl SystemBus {
             return;
         }
         match addr {
-            IO_BASE..=PIA0_LAST => self.pia0.write((addr & 0x03) as u8, val),
+            IO_BASE..=PIA0_LAST => {
+                self.pia0.write((addr & 0x03) as u8, val);
+                self.note_audio_write(); // CA2/CB2 are the sound mux selects
+            }
             PIA1_BASE..=PIA1_LAST => {
                 self.pia1.write((addr & 0x03) as u8, val);
                 let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
                 self.cassette.record_dac(dac, self.pia1.a.c2_output());
+                self.note_audio_write(); // DAC / PB1 / SNDEN / relay
             }
-            CART_BASE..=CART_LAST => self.cart.write(addr, val),
+            CART_BASE..=CART_LAST => {
+                self.cart.write(addr, val);
+                self.note_audio_write(); // latched cart DACs
+            }
             crate::sam::STROBE_BASE..=crate::sam::STROBE_LAST => self.sam.write_strobe(addr),
             _ => { /* unmapped */ }
         }
