@@ -10,7 +10,7 @@ mod video_mode;
 use mc6809::{Bus, MC6809};
 use serde::{Deserialize, Serialize};
 
-use crate::config::{MachineConfig, MachineVariant};
+use crate::config::MachineConfig;
 use crate::{cart, gime_video, pia, sam, video, GIME};
 
 /// Framebuffer geometry: the VDG 32×16 text display plus border (`DESIGN.md` §6).

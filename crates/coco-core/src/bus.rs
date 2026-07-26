@@ -149,7 +149,7 @@ impl SystemBus {
     }
 
     /// Restore-time payload-shape validation (`docs/plan-save-states.md`):
-    /// called once by [`crate::snapshot::validate_payload_shape`], before
+    /// called once by [`crate::snapshot::restore::validate_payload_shape`], before
     /// any media is reattached. Only the cart tree needs a walk here — every
     /// other device's own restore-only checks are either self-contained at
     /// the call site (`crate::cassette::Cassette::reattach_tape`'s `bit`

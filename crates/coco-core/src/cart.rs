@@ -173,7 +173,7 @@ pub trait Cartridge {
     /// nothing to rebuild — most cartridges have no such scratch.
     fn after_restore(&mut self) {}
     /// Restore-time payload-shape validation (`docs/plan-save-states.md`):
-    /// checked once by [`crate::snapshot::validate_payload_shape`], before
+    /// checked once by [`crate::snapshot::restore::validate_payload_shape`], before
     /// any media is reattached, against index/cursor/cap-style deserialized
     /// fields this cartridge indexes its own buffers with — Rust's own
     /// bounds checks turn a bad one (from a hand-crafted payload) into a

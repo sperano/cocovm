@@ -3,7 +3,10 @@
 //! MultiPak install/slot/switch flow, save-state menu wiring, error/
 //! confirmation dialogs, the RS-232 pak, and cartridge insertion (GMC).
 
+use coco_core::MachineVariant;
 use egui_kittest::kittest::{NodeT, Queryable};
+
+use crate::rom_load::load_default_rom;
 
 use crate::machine_def::tests::TempDir;
 use crate::*;

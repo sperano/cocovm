@@ -161,7 +161,7 @@ impl Cart {
         with_each_cart!(self, cart => cart.after_restore())
     }
     /// See [`Cartridge::validate_restored`]. Called by
-    /// [`crate::snapshot::validate_payload_shape`] against the whole cart
+    /// [`crate::snapshot::restore::validate_payload_shape`] against the whole cart
     /// tree, before media reattachment.
     pub fn validate_restored(&self) -> Result<(), String> {
         with_each_cart!(self, cart => cart.validate_restored())
@@ -292,7 +292,7 @@ impl Cart {
     /// one of its own slots — not valid hardware (a real MPI's slots are
     /// passive backplane connectors, not another MPI), and reachable only
     /// from a hand-crafted payload (`docs/plan-save-states.md`).
-    /// [`crate::snapshot::validate_payload_shape`] checks this BEFORE any
+    /// [`crate::snapshot::restore::validate_payload_shape`] checks this BEFORE any
     /// [`Cart::slots_mut`] walk: that method only descends one MPI level by
     /// design, so a nested MPI would silently skip the inner slots' ROM
     /// reattachment and panic on the first read of an empty pak image.

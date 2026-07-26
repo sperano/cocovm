@@ -6,7 +6,9 @@
 
 use egui_kittest::kittest::Queryable;
 
-use coco_core::{MemorySize, VDGVariant, VideoStandard};
+use coco_core::{MachineVariant, MemorySize, VDGVariant, VideoStandard};
+
+use crate::rom_load::load_default_rom;
 
 use crate::*;
 

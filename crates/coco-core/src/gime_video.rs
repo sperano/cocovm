@@ -185,6 +185,78 @@ fn fill(px: &mut [u8], color: [u8; 4]) {
     }
 }
 
+/// True when canvas `row` falls within the active (non-border) vertical
+/// window, from the LIVE LPF bits (applies even mid-frame; the glitched %10
+/// value is approximated, see [`vertical_window`]).
+fn in_active_rows(g: &GIME, row: usize) -> bool {
+    let lpf = ((g.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize;
+    let (top, body) = vertical_window(lpf);
+    row >= top && row < top + body
+}
+
+/// Fill a body row's side borders per the LIVE wide flag ($FF99 HRES low
+/// bit), returning the active-area `(x0, width)` slice bounds within it.
+/// Wide modes fill the full `CANVAS_W` with no border; non-wide modes leave
+/// the border strips.
+fn paint_side_borders(g: &GIME, row_px: &mut [u8], border: [u8; 4]) -> (usize, usize) {
+    let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
+    let wide = hres & WIDE_HRES_MASK != 0;
+    let (x0, active_w) = if wide {
+        (0, CANVAS_W)
+    } else {
+        (NON_WIDE_BORDER_X, NON_WIDE_ACTIVE_W)
+    };
+    if !wide {
+        fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
+        fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
+    }
+    (x0, active_w)
+}
+
+/// Paint one body row's active span (text or graphics, per the LIVE $FF98 BP
+/// bit) from `row_base`/`x_offset`-derived fetch addresses. Returns the
+/// number of bytes this row consumed, for [`advance_scan`]'s pitch.
+#[allow(clippy::too_many_arguments)]
+fn paint_body_row(
+    g: &GIME,
+    ram: &[u8],
+    row_base: usize,
+    x_offset: usize,
+    palette: &[[u8; 4]; PALETTE_LEN],
+    blink_on: bool,
+    line_in_row: usize,
+    active_w: usize,
+    active: &mut [u8],
+) -> usize {
+    let fetch = |i: usize| ram[(row_base + ((x_offset + i) % ROW_FETCH_WRAP)) % ram.len()];
+    if g.vmode & vmode::BP != 0 {
+        let mode = decode_graphics(g);
+        paint_graphics_row(&mode, palette, active_w, fetch, active);
+        mode.bytes_per_row
+    } else {
+        let mode = decode_text(g);
+        paint_text_row(&mode, palette, blink_on, line_in_row, active_w, fetch, active);
+        mode.cols * if mode.attributes { 2 } else { 1 }
+    }
+}
+
+/// Advance `scan`'s shared vertical counter after painting a body row of
+/// `row_bytes` bytes: the row pointer steps by the CURRENT line's live pitch
+/// once per LPR lines (MAME `record_full_body_scanline`; LPR=%111's huge
+/// count never wraps).
+fn advance_scan(scan: &mut FieldScan, g: &GIME, row_bytes: usize) {
+    let pitch = if g.horizontal_offset & hoff::HVEN != 0 {
+        gime::HVEN_ROW_BYTES
+    } else {
+        row_bytes
+    };
+    scan.line_in_row += 1;
+    if scan.line_in_row >= g.lines_per_row() {
+        scan.line_in_row = 0;
+        scan.row_base += pitch;
+    }
+}
+
 /// Paint one canvas row of the canonical raster from the live GIME registers
 /// plus the field-latched state in `scan`, advancing `scan`'s vertical
 /// counters on body rows. `fb` is the full `CANVAS_W`×`CANVAS_H` buffer;
@@ -201,56 +273,29 @@ pub fn paint_scanline(
     let (palette, border) = resolve_colors(g);
     let row_px = &mut fb[row * CANVAS_W * BYTES_PER_PIXEL..][..CANVAS_W * BYTES_PER_PIXEL];
 
-    // Vertical placement from the LIVE LPF bits (applies even mid-frame; the
-    // glitched %10 value is approximated, see `raster::vertical_window`).
-    let lpf = ((g.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize;
-    let (top, body) = vertical_window(lpf);
-    if row < top || row >= top + body {
+    if !in_active_rows(g, row) {
         fill(row_px, border);
         return;
     }
 
-    // Body row: horizontal window from the live wide flag.
-    let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
-    let wide = hres & WIDE_HRES_MASK != 0;
-    let (x0, active_w) = if wide {
-        (0, CANVAS_W)
-    } else {
-        (NON_WIDE_BORDER_X, NON_WIDE_ACTIVE_W)
-    };
-    if !wide {
-        fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
-        fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
-    }
+    let (x0, active_w) = paint_side_borders(g, row_px, border);
     let active = &mut row_px[x0 * BYTES_PER_PIXEL..][..active_w * BYTES_PER_PIXEL];
 
-    // Per-line live fetch parameters ($FF9F offset + HVEN pitch).
+    // Per-line live fetch parameters ($FF9F offset).
     let x_offset = (g.horizontal_offset & hoff::X_MASK) as usize * 2;
-    let fetch = |i: usize| ram[(scan.row_base + ((x_offset + i) % ROW_FETCH_WRAP)) % ram.len()];
+    let row_bytes = paint_body_row(
+        g,
+        ram,
+        scan.row_base,
+        x_offset,
+        &palette,
+        blink_on,
+        scan.line_in_row,
+        active_w,
+        active,
+    );
 
-    let row_bytes = if g.vmode & vmode::BP != 0 {
-        let mode = decode_graphics(g);
-        paint_graphics_row(&mode, &palette, active_w, fetch, active);
-        mode.bytes_per_row
-    } else {
-        let mode = decode_text(g);
-        paint_text_row(&mode, &palette, blink_on, scan.line_in_row, active_w, fetch, active);
-        mode.cols * if mode.attributes { 2 } else { 1 }
-    };
-
-    // Advance the shared vertical counter; the row pointer steps by the
-    // CURRENT line's live pitch once per LPR lines (MAME
-    // `record_full_body_scanline`; LPR=%111's huge count never wraps).
-    let pitch = if g.horizontal_offset & hoff::HVEN != 0 {
-        gime::HVEN_ROW_BYTES
-    } else {
-        row_bytes
-    };
-    scan.line_in_row += 1;
-    if scan.line_in_row >= g.lines_per_row() {
-        scan.line_in_row = 0;
-        scan.row_base += pitch;
-    }
+    advance_scan(scan, g, row_bytes);
 }
 
 /// Paint one text scan line into the active span, `xscale`-duplicating each

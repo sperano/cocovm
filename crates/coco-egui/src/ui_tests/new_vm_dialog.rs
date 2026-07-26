@@ -3,7 +3,9 @@
 
 use egui_kittest::kittest::Queryable;
 
-use coco_core::MemorySize;
+use coco_core::{MachineVariant, MemorySize};
+
+use crate::rom_load::load_default_rom;
 
 use crate::machine_def::tests::TempDir;
 use crate::*;
