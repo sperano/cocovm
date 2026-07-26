@@ -13,6 +13,8 @@
 //! Measured: one full sine cycle per bit, serialized LSB first; see
 //! [`ZERO_BIT_PERIOD`]/[`ONE_BIT_PERIOD`].
 
+use serde::{Deserialize, Serialize};
+
 /// Half-cycle durations, in CPU cycles, of the tape sine the stock ROM
 /// writes — measured empirically against `roms/coco3.rom` with
 /// `examples/cassette_calibrate.rs` (modal midpoint-crossing spacings). The
@@ -65,7 +67,7 @@ pub(crate) const SYNC: u8 = 0x3C;
 
 /// One DAC level change while the motor was on: the new 6-bit level and the
 /// motor-on cycle-clock value at the moment it took effect.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transition {
     pub level: u8,
     pub cycle: u64,
@@ -75,7 +77,7 @@ pub struct Transition {
 /// byte stream is fed to PA0 bit by bit while the motor runs) or recorded
 /// over (the DAC capture is demodulated into a fresh byte stream when the
 /// recording is finalized — see [`Cassette::finalize_recording`]).
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Cassette {
     /// Motor-on cycle clock: advanced by [`Cassette::tick`] only while the
     /// motor relay (PIA1 CA2) is energized — tape position doesn't move
@@ -85,12 +87,18 @@ pub struct Cassette {
     /// Last DAC level observed, so [`Cassette::record_dac`] only appends on
     /// an actual change.
     last_level: Option<u8>,
-    /// Raw record capture: every DAC transition while the motor was on.
+    /// Raw record capture: every DAC transition while the motor was on —
+    /// the user's own in-flight recording, so this is real unsaved state
+    /// and is stored, not skipped.
     capture: Vec<Transition>,
     /// Whether a tape is mounted at all (a blank tape is an empty stream, so
     /// emptiness can't stand in for "no tape").
     mounted: bool,
-    /// The mounted tape's decoded byte stream (.cas content).
+    /// The mounted tape's decoded byte stream (.cas content). Skipped: a
+    /// mounted tape's bytes are media (commercial tapes are copyrighted),
+    /// referenced by path+hash rather than embedded in a snapshot; restored
+    /// via [`Cassette::reattach_tape`] (`docs/plan-save-states.md`).
+    #[serde(skip)]
     tape: Vec<u8>,
     /// Playback position: next byte, next bit (0–7, LSB first), and CPU
     /// cycles already spent inside the current bit's tone cycle.
@@ -127,6 +135,49 @@ impl Cassette {
 
     pub fn has_tape(&self) -> bool {
         self.mounted
+    }
+
+    /// Restore-path-only: re-inject a mounted tape's bytes after a snapshot
+    /// restore, without resetting the deserialized playback/record state
+    /// (`pos`/`bit`/`bit_elapsed`/`capture`/…) the way [`Cassette::insert_tape`]
+    /// would (`docs/plan-save-states.md`). `tape` itself is `#[serde(skip)]`
+    /// (media bytes are never embedded in a snapshot); everything else on
+    /// `self` already came back from the snapshot as-is. Errors (instead of
+    /// panicking) if the restored `pos` no longer fits the reattached tape —
+    /// the file changed shape since the snapshot was taken — or if `bit`
+    /// (an ordinary deserialized field a hand-crafted payload can set to
+    /// anything) is out of its `0..8` range: [`Cassette::current_bit_is_one`]
+    /// shifts a byte right by `bit` with no bounds check of its own, which
+    /// panics on overflow in debug builds and is unspecified in release
+    /// (`docs/plan-save-states.md`). Also confirms `pos`/`bit` consistency
+    /// exactly at end-of-tape: [`Cassette::tick`] only ever advances `pos`
+    /// in the same step that wraps `bit` back to 0, so `pos == tape.len()`
+    /// with a nonzero `bit` is itself a sign of a corrupted payload.
+    pub fn reattach_tape(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+        if self.bit >= 8 {
+            return Err(format!(
+                "cassette reattach: restored bit index {} is out of range (must be < 8)",
+                self.bit
+            ));
+        }
+        if self.pos > bytes.len() {
+            return Err(format!(
+                "cassette reattach: restored position {} is past the end of the \
+                 reattached tape ({} bytes) — the file changed since the snapshot",
+                self.pos,
+                bytes.len()
+            ));
+        }
+        if self.pos == bytes.len() && self.bit != 0 {
+            return Err(format!(
+                "cassette reattach: restored position is exactly at the end of the tape \
+                 ({} bytes) but bit index is {} (must be 0 at end-of-tape)",
+                bytes.len(),
+                self.bit
+            ));
+        }
+        self.tape = bytes;
+        Ok(())
     }
 
     /// Tape contents (the .cas file image).

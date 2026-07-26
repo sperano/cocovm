@@ -77,6 +77,27 @@ impl PaperWindow {
         self.pending_tear_off = false;
     }
 
+    /// Re-bind this window after a snapshot restore replaces the live
+    /// machine (`crate::CocoApp::load_state_from`). `Some(handle)` — the
+    /// restored bit-banger's sink came back as a live DMP-105 — drops every
+    /// cached page texture (rendered from the old machine's roll, unrelated
+    /// to the restored one) but, unlike [`Self::detach`], leaves `open`
+    /// alone, so a window the user had open stays open, now showing the
+    /// restored paper. `None` — nothing was attached at save time, or it was
+    /// a file capture (always restored as stopped) — has nothing to show, so
+    /// this just delegates to `detach`.
+    pub fn resync(&mut self, handle: Option<Dmp105Handle>) {
+        match handle {
+            Some(handle) => {
+                self.handle = Some(handle);
+                self.pages.clear();
+                self.current_page = 0;
+                self.pending_tear_off = false;
+            }
+            None => self.detach(),
+        }
+    }
+
     /// Total pages currently spanning the roll for a given [`PaperExtent`]:
     /// always at least one page shown, always at least one blank page
     /// beyond the last printed line — the same "+2 pages" rule

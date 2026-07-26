@@ -13,6 +13,8 @@
 //! [`crate::cart::Cartridge::sound_level`]. Stereo output at full sample
 //! rate is the audio-pipeline plan (`docs/plan-audio-pipeline.md`).
 
+use serde::{Deserialize, Serialize};
+
 use crate::cart::{Cartridge, IO_OPEN_BUS, RomPak, RomPakError};
 
 /// Left-channel DAC latch (write-only).
@@ -21,6 +23,7 @@ pub const LEFT_DAC_REG: u16 = 0xFF7A;
 pub const RIGHT_DAC_REG: u16 = 0xFF7B;
 
 /// The Orchestra-90/CC cartridge.
+#[derive(Serialize, Deserialize)]
 pub struct Orch90 {
     /// The 8K program ROM in the CTS window ([`RomPak`] reused for the
     /// MAME-compatible mirror-fill and half-swap indexing; its own autostart
@@ -59,6 +62,13 @@ impl Orch90 {
     /// Current right-channel latch value, for UI level meters.
     pub fn right(&self) -> u8 {
         self.right
+    }
+
+    /// Restore-path-only: re-inject the 8K program ROM after a snapshot
+    /// restore — delegates to the inner [`RomPak::reattach_image`]
+    /// (`docs/plan-save-states.md`).
+    pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), RomPakError> {
+        self.rom.reattach_image(bytes)
     }
 }
 

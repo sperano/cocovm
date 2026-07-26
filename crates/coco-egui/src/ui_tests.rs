@@ -27,10 +27,12 @@ fn boot_harness() -> AppHarness {
     let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
     let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
         .expect("roms/coco3.rom is required (git-ignored, local-only)");
+    let rom_source = RomSource::File(roms_dir.join("coco3.rom"));
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
             MachineConfig::default(),
             rom,
+            rom_source,
             None,
             [None, None],
             [None, None],
@@ -693,6 +695,66 @@ fn machine_menu_checkbox_toggles_cartridge_autostart() {
     click(&mut harness, "Machine");
     click(&mut harness, "Auto-start cartridge");
     assert!(!harness.state().autostart_cart);
+}
+
+/// The Machine menu's Save/Load State section ([`save_state`]) shows both
+/// file-dialog items and both quick-slot submenus — the section itself is
+/// mostly untestable headlessly (`rfd` opens a native dialog), so this just
+/// covers visibility/wiring; the actual save/load round trip is exercised
+/// directly through `save_state_to`/`load_state_from` below.
+#[test]
+fn machine_menu_shows_save_and_load_state_items() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "Machine");
+    harness.get_by_label("Save State…");
+    harness.get_by_label("Load State…");
+    harness.get_by_label_contains("Quick Save");
+    harness.get_by_label_contains("Quick Load");
+}
+
+/// A save-then-load round trip driven directly through
+/// `save_state_to`/`load_state_from` against a temp file (not `rfd`, which a
+/// headless test can't drive): the machine keeps running across the load,
+/// and both the save and the load show a status-bar toast.
+#[test]
+fn save_state_then_load_state_round_trip() {
+    let mut harness = boot_harness();
+    let dir = TempDir::new("save-state-roundtrip");
+    let path = dir.path().join("slot.ccstate");
+
+    assert!(harness.state().running, "boot_harness starts running");
+    harness
+        .state_mut()
+        .save_state_to(&path)
+        .unwrap_or_else(|e| panic!("save_state_to failed: {e}"));
+    assert!(path.is_file(), "save_state_to must write the .ccstate file");
+    assert!(
+        harness.state_mut().toast_message().is_some(),
+        "a successful save must show a status-bar toast"
+    );
+    harness.step();
+    harness.get_by_label_contains("State saved");
+
+    // Cloned out first (cheap — `egui::Context` is `Arc`-backed): `state_mut()`
+    // borrows all of `harness` mutably for the call below, which would
+    // conflict with a `&harness.ctx` argument evaluated in the same
+    // expression.
+    let ctx = harness.ctx.clone();
+    harness
+        .state_mut()
+        .load_state_from(&path, &ctx)
+        .unwrap_or_else(|e| panic!("load_state_from failed: {e}"));
+    assert!(
+        harness.state().running,
+        "restoring a state saved while running must leave the machine running"
+    );
+    assert!(
+        harness.state_mut().toast_message().is_some(),
+        "a successful load must show a status-bar toast"
+    );
+    harness.step();
+    harness.get_by_label_contains("State loaded");
 }
 
 #[test]
@@ -1483,10 +1545,12 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
     }
     std::fs::write(&path, &image).unwrap();
 
+    let rom_source = RomSource::File(roms_dir.join("coco3.rom"));
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
             MachineConfig::default(),
             rom,
+            rom_source,
             None,
             [None, None],
             [None, None],

@@ -103,5 +103,6 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool) {
             cap_row(ui, ARROW_ROW, WIDE_W, symbolic);
             ui.add_space(4.0);
             ui.small("F12: toggle positional/symbolic   ·   F10: show/hide this help");
+            ui.small(crate::save_state::slot_shortcuts_hint(ctx));
         });
 }

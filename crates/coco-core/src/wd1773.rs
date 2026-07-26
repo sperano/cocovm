@@ -9,6 +9,8 @@
 //! access, command dispatch) are taken from the verified spec handed to this
 //! implementation (MAME `wd_fdc.cpp`/`coco_fdc.cpp`).
 
+use serde::{Deserialize, Serialize};
+
 use crate::fdc::JvcDisk;
 
 /// Command byte top-nibble values (`cmd >> 4`). The paired members of a family
@@ -156,13 +158,13 @@ const WRITE_TRACK_BYTE_COUNT: usize = 6400;
 /// Which family of Type I step commands last ran, so a bare "Step" (no
 /// direction of its own) repeats the last Step-In/Step-Out direction — the
 /// WD1773 datasheet's documented behaviour.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum StepDirection {
     In,
     Out,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum TransferKind {
     ReadSector,
     WriteSector,
@@ -173,7 +175,7 @@ enum TransferKind {
 /// Write Track (format) mark-triggered parser state: scans the incoming
 /// byte stream for MFM address marks framed by `$F5` sync runs and
 /// terminated by `$F7` (see `mfm` module and [`feed_write_track_byte`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum FormatState {
     /// Skipping gap/filler bytes, waiting for a `$F5` sync run.
     Gap,
@@ -191,7 +193,7 @@ enum FormatState {
 
 /// An in-progress byte-paced data transfer (Type II Read/Write Sector, Type III
 /// Read Address/Write Track).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Transfer {
     kind: TransferKind,
     /// Cycles remaining until the next DRQ event ([`AWAITING_HOST_CYCLES`] while
@@ -230,7 +232,7 @@ struct Transfer {
 }
 
 /// What the controller is doing between command dispatch and completion.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum Op {
     Idle,
     /// A Type I command settling before INTRQ ([`COMMAND_SETTLE_CYCLES`]).
@@ -247,7 +249,7 @@ enum Op {
 /// [`WD1773::write_data`] take the currently-selected drive's [`JvcDisk`] (or
 /// `None`) and the DSKREG-derived side select as parameters, so the caller
 /// (`crate::fdc::DiskCart`) owns drive selection and the four drive slots.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WD1773 {
     /// Track register: the controller's belief of the current track (what
     /// Restore/Seek/verified-Step commands leave it at).
@@ -460,6 +462,67 @@ impl WD1773 {
             }
             _ => unreachable!("4-bit nibble: all 16 values are matched above"),
         }
+    }
+
+    /// Restore-only structural check, independent of any mounted disk: an
+    /// in-flight Read Sector/Read Address transfer's `index` must not exceed
+    /// its own `buf` — [`WD1773::advance_transfer`] indexes `t.buf[t.index]`
+    /// once `index < total` (already guaranteed by construction, but `index`/
+    /// `total`/`buf` are all ordinary deserialized fields a hand-crafted
+    /// payload can desync from each other). Write Sector/Write Track never
+    /// read from `buf` at all — they write straight through to the disk
+    /// image (`WD1773::write_data`) or discard, leaving `buf` empty
+    /// (`Vec::new()`) for the whole transfer — so `index` legitimately
+    /// exceeds `buf.len()` (0) for those two kinds mid transfer; not checked
+    /// here. See [`crate::fdc::DiskCart::validate_restored_transfer`] for the
+    /// disk-bound half of this check, which needs a reattached
+    /// [`JvcDisk`] and so runs later in the restore flow.
+    pub(crate) fn validate_restored(&self) -> Result<(), String> {
+        let Op::Transfer(t) = &self.op else { return Ok(()) };
+        if matches!(t.kind, TransferKind::ReadSector | TransferKind::ReadAddress) && t.index > t.buf.len()
+        {
+            return Err(format!(
+                "Transfer.index ({}) exceeds Transfer.buf length ({}) for a {:?} transfer",
+                t.index,
+                t.buf.len(),
+                t.kind
+            ));
+        }
+        Ok(())
+    }
+
+    /// Restore-only, called AFTER floppy reattachment
+    /// ([`crate::fdc::DiskCart::validate_restored_transfer`]): bound-check an
+    /// in-flight Read/Write Sector transfer's `offset`/`total` against
+    /// `disk`'s actual reattached byte length. `offset`/`total` are ordinary
+    /// deserialized fields a hand-crafted payload can set to anything;
+    /// [`JvcDisk::write_byte`]/[`JvcDisk::read_bytes`] index straight into
+    /// `data` with no bounds check of their own, so an out-of-range pair
+    /// would panic the instant the transfer resumes
+    /// (`docs/plan-save-states.md`). Read Address/Write Track transfers
+    /// never index `data` by `offset` at all (Read Address's `buf` is a
+    /// fixed 6-byte reply built at dispatch time; Write Track lays sectors
+    /// via [`JvcDisk::format_sector`], which computes its own bounded
+    /// offset), so only the two sector-transfer kinds are checked.
+    pub(crate) fn validate_transfer_bounds(&self, disk: Option<&JvcDisk>) -> Result<(), String> {
+        let Op::Transfer(t) = &self.op else { return Ok(()) };
+        if !matches!(t.kind, TransferKind::ReadSector | TransferKind::WriteSector) {
+            return Ok(());
+        }
+        let len = disk
+            .map(|d| d.bytes().len())
+            .ok_or_else(|| "in-flight sector transfer targets a drive with no disk mounted".to_string())?;
+        let end = t
+            .offset
+            .checked_add(t.total)
+            .ok_or_else(|| format!("Transfer.offset ({}) + Transfer.total ({}) overflows", t.offset, t.total))?;
+        if end > len {
+            return Err(format!(
+                "Transfer.offset ({}) + Transfer.total ({}) = {end} exceeds the mounted disk's {len} bytes",
+                t.offset, t.total
+            ));
+        }
+        Ok(())
     }
 
     fn track_readable(disk: Option<&JvcDisk>, track: u8) -> bool {

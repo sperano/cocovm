@@ -5,6 +5,7 @@
 //! peripheral registers are stubs and ROM mapping / vector fetch is TODO.
 
 use mc6809::Bus;
+use serde::{Deserialize, Serialize};
 
 use crate::bitbanger::{self, BitBanger};
 use crate::cart::Cart;
@@ -115,13 +116,22 @@ const SAM_BAS_ROM_OFFSET: usize = 0x2000;
 /// [`Cartridge::rom_read`].
 const SAM_CART_ROM_BASE: u16 = 0xC000;
 
+#[derive(Serialize, Deserialize)]
 pub struct SystemBus {
     /// Which machine this bus decodes addresses for. `Bus::read`/`Bus::write`
     /// branch on this once, up front, into two independent concrete decode
     /// paths (GIME vs plain SAM) rather than a trait object — see
     /// `docs/coco12-plan.md` Phase 2.
     pub variant: MachineVariant,
+    /// CBOR-native bytes (`#[serde(with = "serde_bytes")]`) — the single
+    /// biggest snapshot payload, up to 2 MB.
+    #[serde(with = "serde_bytes")]
     pub ram: Box<[u8]>,
+    /// Skipped: COPYRIGHTED ROM bytes never travel through a snapshot;
+    /// re-injected on restore via [`SystemBus::reattach_rom`]
+    /// (`docs/plan-save-states.md`). Deserializes to an empty `Box<[u8]>`
+    /// (every read against it falls through to `OPEN_BUS` until reattached).
+    #[serde(skip)]
     pub rom: Box<[u8]>,
     pub gime: GIME,
     /// MC6883 SAM primary memory map, used only on [`MachineVariant::Coco1`]/
@@ -168,11 +178,15 @@ pub struct SystemBus {
     /// [`crate::debug::Debugger::run_until`] only while a debugged run is in
     /// flight and cleared again afterwards. `None` on the normal run path, so
     /// `read`/`write` pay a single null-check and the hot path is never
-    /// regressed (`docs/plan-debugger.md` §2).
+    /// regressed (`docs/plan-debugger.md` §2). Skipped: debugger-only,
+    /// `None` outside a debugged run, and `Default` (`None`) is exactly
+    /// right on restore — a snapshot never resumes mid-`run_until`.
+    #[serde(skip)]
     watch: Option<crate::debug::WatchTable>,
     /// First watchpoint access seen since the last [`SystemBus::clear_watch_hit`];
     /// [`SystemBus::take_watch_hit`] drains it. Only ever `Some` while `watch`
-    /// is installed.
+    /// is installed. Skipped for the same reason as `watch`.
+    #[serde(skip)]
     watch_hit: Option<crate::debug::WatchHit>,
 }
 
@@ -202,6 +216,36 @@ impl SystemBus {
             watch: None,
             watch_hit: None,
         }
+    }
+
+    /// Restore-time fixups for `#[serde(skip)]` fields, after a snapshot
+    /// round-trip (`docs/plan-save-states.md`): `watch`/`watch_hit` are
+    /// already correct as their `Default` (`None`); `rom` is re-injected
+    /// separately via [`SystemBus::reattach_rom`] and this must be safe to
+    /// call before that happens, so it doesn't touch `rom` at all. Delegates
+    /// into the cartridge tree, whose own skipped fields (PSG lookup tables)
+    /// need rebuilding the same way.
+    pub fn after_restore(&mut self) {
+        self.cart.after_restore();
+    }
+
+    /// Restore-time payload-shape validation (`docs/plan-save-states.md`):
+    /// called once by [`crate::snapshot::validate_payload_shape`], before
+    /// any media is reattached. Only the cart tree needs a walk here — every
+    /// other device's own restore-only checks are either self-contained at
+    /// the call site (`crate::cassette::Cassette::reattach_tape`'s `bit`
+    /// check) or need reattached media themselves and so run later in the
+    /// restore flow (`crate::fdc::DiskCart::validate_restored_transfer`).
+    pub(crate) fn validate_restored(&self) -> Result<(), String> {
+        self.cart.validate_restored()
+    }
+
+    /// Restore-path-only: re-inject the internal ROM image after a snapshot
+    /// restore (`rom` is `#[serde(skip)]` — COPYRIGHTED bytes never travel
+    /// through a snapshot). Do not call this outside the restore flow; there
+    /// is no user-action equivalent to reuse (`docs/plan-save-states.md`).
+    pub fn reattach_rom(&mut self, rom: Box<[u8]>) {
+        self.rom = rom;
     }
 
     /// Enable the Becker port, if not already enabled. Idempotent — does

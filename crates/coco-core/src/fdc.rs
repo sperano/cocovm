@@ -7,6 +7,8 @@
 //! (`coco_fdc.cpp`, `wd_fdc.cpp`/`.h`, `jvc_dsk.cpp`) in the doc comments below,
 //! per the verified spec this module was built from.
 
+use serde::{Deserialize, Serialize};
+
 use crate::cart::{Cartridge, IO_OPEN_BUS, RomPak, RomPakError};
 use crate::wd1773::WD1773;
 
@@ -114,6 +116,10 @@ pub enum JvcError {
         sides: usize,
         sector_size: usize,
     },
+    /// [`JvcDisk::reattach_data`] only: the reattached file parses to a
+    /// different geometry than the snapshot recorded — it changed shape
+    /// (was reformatted, truncated, grown, …) since the snapshot was taken.
+    GeometryChanged,
 }
 
 impl std::fmt::Display for JvcError {
@@ -130,6 +136,9 @@ impl std::fmt::Display for JvcError {
                      sector_size={sector_size}"
                 )
             }
+            JvcError::GeometryChanged => {
+                write!(f, "reattached JVC image geometry doesn't match the snapshot's")
+            }
         }
     }
 }
@@ -142,7 +151,7 @@ impl std::error::Error for JvcError {}
 /// `jvc_dsk.cpp`): header length is `file_len % 256` (usually 0 — a headerless
 /// image uses every default). Two-sided images interleave
 /// track0-side0, track0-side1, track1-side0, … — see [`JvcDisk::sector_offset`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JvcDisk {
     sectors_per_track: usize,
     sides: usize,
@@ -150,6 +159,12 @@ pub struct JvcDisk {
     first_sector_id: u8,
     track_count: usize,
     header_len: usize,
+    /// Skipped: a mounted disk image's contents are media, referenced by
+    /// path+hash in the snapshot container (a later phase) rather than
+    /// embedded — floppy images can be copyrighted commercial software.
+    /// Re-injected via [`JvcDisk::reattach_data`] (`docs/plan-save-states.md`).
+    /// Deserializes to an empty `Vec` until reattached.
+    #[serde(skip)]
     data: Vec<u8>,
     write_protected: bool,
     dirty: bool,
@@ -213,6 +228,29 @@ impl JvcDisk {
             write_protected: false,
             dirty: false,
         })
+    }
+
+    /// Restore-path-only: re-inject a mounted disk's raw bytes after a
+    /// snapshot restore (`data` is `#[serde(skip)]` — mounted disk images
+    /// are media, referenced by path+hash rather than embedded, since they
+    /// can be copyrighted commercial software; `docs/plan-save-states.md`).
+    /// Re-derives geometry from `bytes` exactly like [`JvcDisk::from_bytes`]
+    /// and verifies it matches the geometry the snapshot recorded before
+    /// setting `data` — [`JvcError::GeometryChanged`] means the file changed
+    /// shape since the snapshot was taken.
+    pub fn reattach_data(&mut self, bytes: Vec<u8>) -> Result<(), JvcError> {
+        let reparsed = JvcDisk::from_bytes(bytes)?;
+        if reparsed.sectors_per_track != self.sectors_per_track
+            || reparsed.sides != self.sides
+            || reparsed.sector_size != self.sector_size
+            || reparsed.first_sector_id != self.first_sector_id
+            || reparsed.track_count != self.track_count
+            || reparsed.header_len != self.header_len
+        {
+            return Err(JvcError::GeometryChanged);
+        }
+        self.data = reparsed.data;
+        Ok(())
     }
 
     pub fn track_count(&self) -> usize {
@@ -414,6 +452,7 @@ const DSKREG_LAST: u16 = 0xFF47;
 
 /// The FD-502: a WD1773 plus DSKREG plus four drive slots, serving the Disk
 /// Extended Color BASIC ROM through the cartridge's CTS window.
+#[derive(Serialize, Deserialize)]
 pub struct DiskCart {
     rom: RomPak,
     fdc: WD1773,
@@ -461,6 +500,15 @@ impl DiskCart {
         }
     }
 
+    /// Restore-path-only: re-inject the Disk Extended Color BASIC ROM image
+    /// after a snapshot restore — delegates to the inner
+    /// [`RomPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
+    /// [`DiskCart::new`], returns a `Result` instead of panicking: a restore
+    /// path must not crash the process on a bad ROM.
+    pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), RomPakError> {
+        self.rom.reattach_image(rom)
+    }
+
     pub fn insert_disk(&mut self, drive: usize, disk: JvcDisk) {
         self.drives[drive] = Some(disk);
     }
@@ -476,6 +524,25 @@ impl DiskCart {
     /// The floppy in `drive`, if any (status display, write-back on eject).
     pub fn disk(&self, drive: usize) -> Option<&JvcDisk> {
         self.drives[drive].as_ref()
+    }
+
+    /// Mutable twin of [`DiskCart::disk`]: the snapshot restore flow uses
+    /// this to reach [`JvcDisk::reattach_data`] for whichever drives came
+    /// back from a snapshot with a disk mounted (`docs/plan-save-states.md`).
+    pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JvcDisk> {
+        self.drives[drive].as_mut()
+    }
+
+    /// Restore-only: after every mounted drive's data has been reattached
+    /// (`crate::snapshot::restore_disks`), bound-check an in-flight Read/
+    /// Write Sector transfer against the drive it currently targets (per
+    /// `dskreg`'s drive-select bits) — see
+    /// [`WD1773::validate_transfer_bounds`]. Must run AFTER reattachment:
+    /// `JvcDisk::data` is `#[serde(skip)]`, empty until then, so any earlier
+    /// check would reject every in-flight transfer, not just corrupted ones.
+    pub(crate) fn validate_restored_transfer(&self) -> Result<(), String> {
+        let disk = self.drive_index().and_then(|i| self.drives[i].as_ref());
+        self.fdc.validate_transfer_bounds(disk)
     }
 
     /// Whether `drive` is selected with its motor on — what a real drive's
@@ -589,5 +656,15 @@ impl Cartridge for DiskCart {
 
     fn nmi_pending(&self) -> bool {
         self.nmi_pending
+    }
+
+    /// Structural half of the WD1773 transfer check — see
+    /// [`WD1773::validate_restored`]. The disk-bound half
+    /// ([`DiskCart::validate_restored_transfer`]) needs floppy reattachment
+    /// first, so it isn't reachable from this trait method (called before
+    /// any media is resolved) and runs separately, later in the restore
+    /// flow.
+    fn validate_restored(&self) -> Result<(), String> {
+        self.fdc.validate_restored().map_err(|e| format!("WD1773: {e}"))
     }
 }

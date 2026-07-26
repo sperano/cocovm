@@ -42,6 +42,8 @@
 
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
+
 /// CPU clock at normal speed (`crate::CPU_HZ` in `lib.rs` — NTSC crystal /32,
 /// MAME `coco3.cpp`). Duplicated here as a private constant because
 /// `crate::CPU_HZ` is not `pub`; the value must stay in sync with `lib.rs`.
@@ -180,6 +182,7 @@ mod irq_source {
 /// A 6551 ACIA: registers, IRQ-source tracking, and a byte-level RX/TX frame
 /// timer. See the module doc for the MAME source and the deliberate
 /// byte-level timing divergence.
+#[derive(Serialize, Deserialize)]
 pub struct Acia6551 {
     /// Receive Data Register — last completed RX byte.
     rdr: u8,

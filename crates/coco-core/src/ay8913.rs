@@ -20,6 +20,8 @@
 //! real chip's channel-interaction nonlinearity. Good enough for a sound
 //! cartridge's music/SFX; not bit-accurate against a chip analyzer capture.
 
+use serde::{Deserialize, Serialize};
+
 /// Register indices (MAME `ay8910.h`'s register-id enum). Only 0–13 have any
 /// effect; 14/15 (`AY_PORTA`/`AY_PORTB`) are stored but inert — no I/O pins on
 /// the AY-3-8913.
@@ -161,7 +163,7 @@ fn build_volume_table() -> [f32; 16] {
 
 // ---- Tone channel ------------------------------------------------------------
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct ToneChannel {
     /// Internal-step down-counter toward the next square-wave toggle.
     count: u32,
@@ -173,7 +175,7 @@ struct ToneChannel {
 
 /// The single shared envelope generator (all three channels that select
 /// envelope mode read the same [`Envelope::volume`]).
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct Envelope {
     /// Internal-step counter toward the next level change.
     count: u32,
@@ -263,6 +265,7 @@ impl Envelope {
 /// The AY-3-8913 PSG: 3 tone generators, 1 noise generator, 1 envelope
 /// generator, mixed to a single mono output (see module doc's "Deviation
 /// from MAME").
+#[derive(Serialize, Deserialize)]
 pub struct Ay8913 {
     regs: [u8; reg::COUNT],
     tone: [ToneChannel; 3],
@@ -281,11 +284,18 @@ pub struct Ay8913 {
     /// `cycles` argument that isn't a multiple of 8 doesn't lose clocks.
     clock_accum: u32,
     /// Precomputed once per instance (cheap: 16 entries) — see
-    /// [`build_volume_table`].
+    /// [`build_volume_table`]. Skipped: pure construction-time scratch,
+    /// left at its `Default` (all-zero — silent, not correct) until
+    /// [`Ay8913::after_restore`] rebuilds it (`docs/plan-save-states.md`).
+    #[serde(skip)]
     dac: [f32; 16],
     /// Box-filter accumulator for [`Ay8913::drain`]: running sum of the
-    /// per-internal-step mixed output since the last drain.
+    /// per-internal-step mixed output since the last drain. Skipped:
+    /// per-drain accumulator, correctly resets to zero
+    /// (`docs/plan-save-states.md`).
+    #[serde(skip)]
     sample_sum: f32,
+    #[serde(skip)]
     sample_count: u32,
 }
 
@@ -328,6 +338,15 @@ impl Ay8913 {
         self.clock_accum = 0;
         self.sample_sum = 0.0;
         self.sample_count = 0;
+    }
+
+    /// Restore-time fixup after a snapshot round-trip
+    /// (`docs/plan-save-states.md`): rebuilds `dac`, the skipped
+    /// construction-time lookup table, via the same [`build_volume_table`]
+    /// helper [`Ay8913::new`] uses. Idempotent — safe to call even though
+    /// nothing else needs fixing up.
+    pub fn after_restore(&mut self) {
+        self.dac = build_volume_table();
     }
 
     /// Write a register through the address latch (0-15; only the low 4 bits

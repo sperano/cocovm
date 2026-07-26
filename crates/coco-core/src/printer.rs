@@ -23,6 +23,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 /// Vertical fixed-point resolution: 1/72" per unit. Not itself a hardware
 /// register — it's the finest unit that keeps every documented vertical fact
 /// in `dmp105-protocol.md` (§4 T9's 1/6"/1/8"/1/12" line-feed pitches, §5's
@@ -62,10 +64,17 @@ pub struct PaperExtent {
 /// `x` columns marked on it, via a `BTreeMap` so a frontend asking for a
 /// visible window (`dots_in_range`) gets an efficient range scan rather than
 /// a linear filter over the whole roll.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Paper {
     rows: BTreeMap<u32, Vec<u32>>,
+    /// Frontend redraw hint (the row range touched since the last
+    /// [`Paper::take_dirty`]), not paper content — skipped, `None` default
+    /// is safe: after a snapshot restore the paper window has no prior
+    /// frame to diff against anyway, so it always repaints in full
+    /// regardless of what `take_dirty` would have reported.
+    #[serde(skip)]
     dirty_min: Option<u32>,
+    #[serde(skip)]
     dirty_max: Option<u32>,
 }
 

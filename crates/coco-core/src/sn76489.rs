@@ -9,6 +9,8 @@
 //! phase verified, periodic verified" — the plain SN76489's constants are
 //! different ($4000/$01/$02, inverted) and are NOT what this implements.
 
+use serde::{Deserialize, Serialize};
+
 /// Crystal cycles per internal tone/noise tick. MAME models it as a ÷2
 /// sample clock plus the SN76489A's ÷8 `clock_divider`; the net rate is one
 /// counter step per 16 crystal cycles (4 MHz crystal → 250 kHz).
@@ -57,8 +59,25 @@ const REG_NOISE_CTRL: usize = 6;
 /// The noise generator, viewed as a 4th channel alongside tones 0-2.
 const NOISE_CHANNEL: usize = 3;
 
+/// Build the 16-entry attenuation-code amplitude lookup ([`ATTENUATION_STEP`]
+/// per code, code 15 silent) — shared by [`SN76489A::new`] and
+/// [`SN76489A::after_restore`] so construction and post-snapshot-restore
+/// rebuild can never drift apart.
+fn build_vol_table() -> [f32; 16] {
+    let mut vol_table = [0.0f32; 16];
+    let mut out = CHANNEL_FULL_SCALE;
+    for entry in vol_table.iter_mut().take(ATTENUATION_MUTE) {
+        *entry = out as f32;
+        out /= ATTENUATION_STEP;
+    }
+    vol_table
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct SN76489A {
-    /// Internal tick rate: crystal / 16.
+    /// Internal tick rate: crystal / 16. Stored (not skipped) so a restored
+    /// chip doesn't need the original crystal handed back in at rebuild time
+    /// (`docs/plan-save-states.md`).
     tick_hz: f64,
     /// Raw register file — tone periods keep all 10 bits, attenuation and
     /// noise-control registers only ever hold their low 4 bits.
@@ -80,7 +99,10 @@ pub struct SN76489A {
     /// Fractional internal ticks carried between [`SN76489A::sample`] calls,
     /// so an arbitrary host sampling cadence stays pitch-exact.
     tick_frac: f64,
-    /// Amplitude lookup for attenuation codes 0-15.
+    /// Amplitude lookup for attenuation codes 0-15. Skipped: pure
+    /// construction-time scratch, rebuilt by [`SN76489A::after_restore`]
+    /// via [`build_vol_table`] (`docs/plan-save-states.md`).
+    #[serde(skip)]
     vol_table: [f32; 16],
 }
 
@@ -105,12 +127,7 @@ impl SN76489A {
     /// initializes the chip immediately, but until it does the chip hums —
     /// exactly like the real cartridge at power-on.
     pub fn new(crystal_hz: f64) -> Self {
-        let mut vol_table = [0.0f32; 16];
-        let mut out = CHANNEL_FULL_SCALE;
-        for entry in vol_table.iter_mut().take(ATTENUATION_MUTE) {
-            *entry = out as f32;
-            out /= ATTENUATION_STEP;
-        }
+        let vol_table = build_vol_table();
         Self {
             tick_hz: crystal_hz / CRYSTAL_CYCLES_PER_TICK,
             regs: [0; 8],
@@ -128,6 +145,14 @@ impl SN76489A {
             tick_frac: 0.0,
             vol_table,
         }
+    }
+
+    /// Restore-time fixup after a snapshot round-trip
+    /// (`docs/plan-save-states.md`): rebuilds `vol_table`, the skipped
+    /// construction-time lookup table, via the same [`build_vol_table`]
+    /// helper [`SN76489A::new`] uses.
+    pub fn after_restore(&mut self) {
+        self.vol_table = build_vol_table();
     }
 
     /// A command-byte write (the GMC's `$FF41`). Decode per MAME `write()`:
