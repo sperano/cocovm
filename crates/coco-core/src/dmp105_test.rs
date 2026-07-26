@@ -1,4 +1,5 @@
 use super::*;
+use crate::dmp105_font;
 
 /// Render `paper`'s dots in `[y0, y1)` as a compact debug string: one
 /// line per row, `#`/`.` per dot column between `x0` and `x1` — a small

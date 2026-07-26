@@ -139,31 +139,8 @@ impl PaperWindow {
         }
         let mut error: Option<String> = None;
 
-        // Dirty invalidation: drop every cached page whose range intersects
-        // what changed since the last poll, forcing a re-rasterize next
-        // time that page is visible.
-        if let Some((y0, y1)) = handle.take_dirty() {
-            // Widen by the rasterizer's dot-bleed pad: a dot near a page
-            // edge also renders into the adjacent page's texture, which
-            // must be invalidated too or it keeps a stale sliver at the
-            // seam.
-            let y0 = y0.saturating_sub(paper_render::DOT_QUERY_PAD_Y_UNITS);
-            let y1 = y1.saturating_add(paper_render::DOT_QUERY_PAD_Y_UNITS);
-            let y0_in = y0 as f32 / Y_UNITS_PER_INCH as f32;
-            let y1_in = y1 as f32 / Y_UNITS_PER_INCH as f32;
-            let first_page = (y0_in / PAGE_HEIGHT_IN).floor() as u32;
-            let last_page = (y1_in / PAGE_HEIGHT_IN).floor() as u32;
-            self.pages
-                .retain(|&page, _| page < first_page || page > last_page);
-        }
-
-        // Green-bar toggle is a whole-page rendering choice: invalidate the
-        // whole cache in one shot when it changes, rather than tracking it
-        // per page.
-        if self.green_bar != self.cached_green_bar {
-            self.pages.clear();
-            self.cached_green_bar = self.green_bar;
-        }
+        self.invalidate_dirty_pages(&handle);
+        self.invalidate_on_green_bar_change();
 
         let extent = handle.paper_extent();
         let total_pages = Self::total_pages_for_extent(extent);
@@ -220,42 +197,75 @@ impl PaperWindow {
             }
 
             if self.pending_tear_off {
-                // Same confirm/cancel modal pattern as `CocoApp`'s
-                // `pending_disk_action` dialog in `main.rs`.
-                let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
-                const DIALOG_MARGIN: i8 = 16;
-                egui::Window::new(crate::window_title(ctx, "Tear off paper?"))
-                    .collapsible(false)
-                    .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .show(ctx, |ui| {
-                        egui::Frame::NONE
-                            .inner_margin(DIALOG_MARGIN)
-                            .show(ui, |ui| {
-                                ui.label(
-                                egui::RichText::new(format!(
-                                    "Tear off and discard {printed_pages} page{} of printed output?",
-                                    if printed_pages == 1 { "" } else { "s" }
-                                ))
-                                .size(font),
-                            );
-                                ui.add_space(DIALOG_MARGIN as f32);
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-                                    if ui.button("Tear Off").clicked() {
-                                        self.perform_tear_off();
-                                    }
-                                    if ui.button("Cancel").clicked() {
-                                        self.pending_tear_off = false;
-                                    }
-                                });
-                            });
-                    });
+                self.tear_off_dialog(ctx, printed_pages);
             }
 
         });
 
         error
+    }
+
+    /// Drop every cached page whose range intersects what changed since the
+    /// last poll, forcing a re-rasterize next time that page is visible.
+    fn invalidate_dirty_pages(&mut self, handle: &Dmp105Handle) {
+        let Some((y0, y1)) = handle.take_dirty() else {
+            return;
+        };
+        // Widen by the rasterizer's dot-bleed pad: a dot near a page
+        // edge also renders into the adjacent page's texture, which
+        // must be invalidated too or it keeps a stale sliver at the
+        // seam.
+        let y0 = y0.saturating_sub(paper_render::DOT_QUERY_PAD_Y_UNITS);
+        let y1 = y1.saturating_add(paper_render::DOT_QUERY_PAD_Y_UNITS);
+        let y0_in = y0 as f32 / Y_UNITS_PER_INCH as f32;
+        let y1_in = y1 as f32 / Y_UNITS_PER_INCH as f32;
+        let first_page = (y0_in / PAGE_HEIGHT_IN).floor() as u32;
+        let last_page = (y1_in / PAGE_HEIGHT_IN).floor() as u32;
+        self.pages
+            .retain(|&page, _| page < first_page || page > last_page);
+    }
+
+    /// Green-bar toggle is a whole-page rendering choice: invalidate the
+    /// whole cache in one shot when it changes, rather than tracking it per
+    /// page.
+    fn invalidate_on_green_bar_change(&mut self) {
+        if self.green_bar != self.cached_green_bar {
+            self.pages.clear();
+            self.cached_green_bar = self.green_bar;
+        }
+    }
+
+    /// Confirm/cancel modal for "Tear Off", shown when [`Self::pending_tear_off`]
+    /// is set. Same confirm/cancel modal pattern as `CocoApp`'s
+    /// `pending_disk_action` dialog in `main.rs`.
+    fn tear_off_dialog(&mut self, ctx: &egui::Context, printed_pages: u32) {
+        let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
+        const DIALOG_MARGIN: i8 = 16;
+        egui::Window::new(crate::window_title(ctx, "Tear off paper?"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Tear off and discard {printed_pages} page{} of printed output?",
+                            if printed_pages == 1 { "" } else { "s" }
+                        ))
+                        .size(font),
+                    );
+                    ui.add_space(DIALOG_MARGIN as f32);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                        if ui.button("Tear Off").clicked() {
+                            self.perform_tear_off();
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.pending_tear_off = false;
+                        }
+                    });
+                });
+            });
     }
 
     /// Everything inside the paper window: the header row (page count,
@@ -279,100 +289,7 @@ impl PaperWindow {
             ui.separator();
             ui.checkbox(&mut self.green_bar, "Green bar");
             ui.separator();
-            ui.menu_button("Export", |ui| {
-                if ui.button("Save Page as PNG…").clicked() {
-                    ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("PNG image", &["png"])
-                        .set_file_name(format!("page-{}.png", self.current_page + 1))
-                        .save_file()
-                    {
-                        let img = paper_render::rasterize(
-                            handle,
-                            self.current_page as f32 * PAGE_HEIGHT_IN,
-                            PAGE_HEIGHT_IN,
-                            RASTER_DPI,
-                            self.green_bar,
-                        );
-                        if let Err(e) = paper_export::save_png(&img, &path) {
-                            *error = Some(e);
-                        }
-                    }
-                }
-                if ui.button("Save Roll as PNG…").clicked() {
-                    ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("PNG image", &["png"])
-                        .set_file_name("roll.png")
-                        .save_file()
-                    {
-                        // The whole printed roll plus the trailing
-                        // blank page, so the image ends on a page
-                        // boundary (T6).
-                        let img = paper_render::rasterize(
-                            handle,
-                            0.0,
-                            total_pages as f32 * PAGE_HEIGHT_IN,
-                            RASTER_DPI,
-                            self.green_bar,
-                        );
-                        if let Err(e) = paper_export::save_png(&img, &path) {
-                            *error = Some(e);
-                        }
-                    }
-                }
-                ui.separator();
-                if ui
-                    .button("Save as PDF (fanfold, with tractor strips)…")
-                    .clicked()
-                {
-                    ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("PDF document", &["pdf"])
-                        .set_file_name("printout.pdf")
-                        .save_file()
-                    {
-                        let pages: Vec<_> = (0..total_pages)
-                            .map(|page| {
-                                paper_render::rasterize(
-                                    handle,
-                                    page as f32 * PAGE_HEIGHT_IN,
-                                    PAGE_HEIGHT_IN,
-                                    RASTER_DPI,
-                                    self.green_bar,
-                                )
-                            })
-                            .collect();
-                        if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
-                            *error = Some(e);
-                        }
-                    }
-                }
-                if ui.button("Save as PDF (trimmed, 8.5×11)…").clicked() {
-                    ui.close();
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("PDF document", &["pdf"])
-                        .set_file_name("printout-trimmed.pdf")
-                        .save_file()
-                    {
-                        let pages: Vec<_> = (0..total_pages)
-                            .map(|page| {
-                                let img = paper_render::rasterize(
-                                    handle,
-                                    page as f32 * PAGE_HEIGHT_IN,
-                                    PAGE_HEIGHT_IN,
-                                    RASTER_DPI,
-                                    self.green_bar,
-                                );
-                                paper_export::crop_to_trimmed_width(&img, RASTER_DPI)
-                            })
-                            .collect();
-                        if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
-                            *error = Some(e);
-                        }
-                    }
-                }
-            });
+            self.export_menu(ui, handle, total_pages, error);
             ui.separator();
             // Nothing to tear off a blank roll.
             if ui
@@ -384,6 +301,126 @@ impl PaperWindow {
         });
         ui.separator();
 
+        self.fanfold_scroll_area(ui, &ctx, handle, total_pages);
+    }
+
+    /// The header row's "Export" menu button: PNG (current page or whole
+    /// roll) and PDF (fanfold with tractor strips, or trimmed 8.5x11)
+    /// exports (T6).
+    fn export_menu(
+        &mut self,
+        ui: &mut egui::Ui,
+        handle: &Dmp105Handle,
+        total_pages: u32,
+        error: &mut Option<String>,
+    ) {
+        ui.menu_button("Export", |ui| {
+            if ui.button("Save Page as PNG…").clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PNG image", &["png"])
+                    .set_file_name(format!("page-{}.png", self.current_page + 1))
+                    .save_file()
+                {
+                    let img = paper_render::rasterize(
+                        handle,
+                        self.current_page as f32 * PAGE_HEIGHT_IN,
+                        PAGE_HEIGHT_IN,
+                        RASTER_DPI,
+                        self.green_bar,
+                    );
+                    if let Err(e) = paper_export::save_png(&img, &path) {
+                        *error = Some(e);
+                    }
+                }
+            }
+            if ui.button("Save Roll as PNG…").clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PNG image", &["png"])
+                    .set_file_name("roll.png")
+                    .save_file()
+                {
+                    // The whole printed roll plus the trailing
+                    // blank page, so the image ends on a page
+                    // boundary (T6).
+                    let img = paper_render::rasterize(
+                        handle,
+                        0.0,
+                        total_pages as f32 * PAGE_HEIGHT_IN,
+                        RASTER_DPI,
+                        self.green_bar,
+                    );
+                    if let Err(e) = paper_export::save_png(&img, &path) {
+                        *error = Some(e);
+                    }
+                }
+            }
+            ui.separator();
+            if ui
+                .button("Save as PDF (fanfold, with tractor strips)…")
+                .clicked()
+            {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PDF document", &["pdf"])
+                    .set_file_name("printout.pdf")
+                    .save_file()
+                {
+                    let pages: Vec<_> = (0..total_pages)
+                        .map(|page| {
+                            paper_render::rasterize(
+                                handle,
+                                page as f32 * PAGE_HEIGHT_IN,
+                                PAGE_HEIGHT_IN,
+                                RASTER_DPI,
+                                self.green_bar,
+                            )
+                        })
+                        .collect();
+                    if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
+                        *error = Some(e);
+                    }
+                }
+            }
+            if ui.button("Save as PDF (trimmed, 8.5×11)…").clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PDF document", &["pdf"])
+                    .set_file_name("printout-trimmed.pdf")
+                    .save_file()
+                {
+                    let pages: Vec<_> = (0..total_pages)
+                        .map(|page| {
+                            let img = paper_render::rasterize(
+                                handle,
+                                page as f32 * PAGE_HEIGHT_IN,
+                                PAGE_HEIGHT_IN,
+                                RASTER_DPI,
+                                self.green_bar,
+                            );
+                            paper_export::crop_to_trimmed_width(&img, RASTER_DPI)
+                        })
+                        .collect();
+                    if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
+                        *error = Some(e);
+                    }
+                }
+            }
+        });
+    }
+
+    /// The scrolling fanfold view: allocates one rect per page at fit-width
+    /// scale, lazily rasterizing/uploading a texture for any page that
+    /// enters the viewport-plus-[`KEEP_MARGIN_PAGES`] keep range, and
+    /// evicting cached textures for pages that fall back outside it.
+    fn fanfold_scroll_area(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        handle: &Dmp105Handle,
+        total_pages: u32,
+    ) {
         // Fit-width scaling: no horizontal scrolling at default zoom.
         let scale = ui.available_width() / (PAPER_WIDTH_IN * RASTER_DPI);
         let page_size = egui::vec2(

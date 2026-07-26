@@ -13,6 +13,9 @@
 //! - Submenu buttons expose their label with a trailing "⏵" arrow — match
 //!   them with `_contains`, not exactly.
 
+use std::fs;
+
+use coco_core::{MemorySize, VDGVariant, VideoStandard};
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;

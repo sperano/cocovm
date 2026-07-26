@@ -1,0 +1,130 @@
+//! Standalone [`MediaRef`]/[`MediaRefs`] helpers shared by the SAVE side
+//! ([`super::save`]) and LOAD side ([`super::restore`]): hashing a file into
+//! a ref, reading/opening a ref's file back with mismatch-warning bookkeeping,
+//! and the two small lookups [`super::restore::CocoApp::rebuild_cart_mirrors`]
+//! needs to turn a restored cart tree back into path-bearing UI state.
+
+use std::path::{Path, PathBuf};
+
+use coco_core::cart::Cart;
+use coco_core::snapshot::{self, MediaCheck, MediaRef, MediaRefs};
+
+use crate::{
+    Coco12RomResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, dev_roms_dir,
+};
+
+/// The recorded `mpi_slot: None` cart-ROM path, if any — shared by
+/// [`super::restore::CocoApp::rebuild_cart_mirrors`]'s direct-port `cart_path` and
+/// `rs232_eprom_path` cases.
+pub(super) fn direct_port_rom_path(media: &MediaRefs) -> Option<PathBuf> {
+    media.cart_roms.iter().find(|r| r.mpi_slot.is_none()).map(|r| r.rom.path.clone())
+}
+
+/// The [`MPISlot`] `cart` (at slot `i`) should display as, using `media` for
+/// the display path of every ROM-bearing variant.
+pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISlot {
+    let rom_path =
+        || media.cart_roms.iter().find(|r| r.mpi_slot == Some(i)).map(|r| r.rom.path.clone());
+    match cart {
+        Cart::RomPak(_) | Cart::BankedRomPak(_) => rom_path().map(MPISlot::ROMPak).unwrap_or(MPISlot::Empty),
+        Cart::Gmc(_) => rom_path().map(MPISlot::Gmc).unwrap_or(MPISlot::Empty),
+        Cart::Orch90(_) => rom_path().map(MPISlot::Orch90).unwrap_or(MPISlot::Empty),
+        Cart::DiskCart(_) => MPISlot::FD502,
+        Cart::DistoRtc(_) => MPISlot::DistoRTC,
+        Cart::Ssc(_) => MPISlot::Ssc,
+        _ => MPISlot::Empty,
+    }
+}
+
+/// Hash the file at `path` into a [`MediaRef`] (SAVE side).
+pub(super) fn hash_media_ref(path: &Path) -> Result<MediaRef, String> {
+    let sha256 = snapshot::sha256_file(path)
+        .map_err(|e| format!("could not hash {}: {e}", path.display()))?;
+    Ok(MediaRef { path: path.to_path_buf(), sha256 })
+}
+
+/// LOAD side: `mr`'s bytes if its file is present (pushing a `warnings`
+/// entry first when the hash no longer matches), or `None` if it's missing
+/// — see [`super::restore::CocoApp::resolve_media_sources`]'s doc for why a
+/// missing file isn't an error here.
+pub(super) fn read_if_present(mr: &MediaRef, role: &str, warnings: &mut Vec<String>) -> Option<Vec<u8>> {
+    match mr.verify() {
+        MediaCheck::Missing => None,
+        MediaCheck::Mismatch { .. } => {
+            warnings.push(mismatch_warning(role, mr));
+            std::fs::read(&mr.path).ok()
+        }
+        MediaCheck::Ok => std::fs::read(&mr.path).ok(),
+    }
+}
+
+/// [`read_if_present`]'s sibling for VHD/DriveWire sources, which need a
+/// read-write file handle rather than bytes.
+pub(super) fn open_if_present(mr: &MediaRef, role: &str, warnings: &mut Vec<String>) -> Option<std::fs::File> {
+    match mr.verify() {
+        MediaCheck::Missing => None,
+        MediaCheck::Mismatch { .. } => {
+            warnings.push(mismatch_warning(role, mr));
+            open_read_write(&mr.path).ok()
+        }
+        MediaCheck::Ok => open_read_write(&mr.path).ok(),
+    }
+}
+
+/// Mirrors [`crate::CocoApp::insert_vhd`]/[`crate::CocoApp::insert_dw_disk`]'s
+/// own `OpenOptions` — VHD/DriveWire writes hit the backing file directly.
+fn open_read_write(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new().read(true).write(true).open(path)
+}
+
+fn mismatch_warning(role: &str, mr: &MediaRef) -> String {
+    format!(
+        "{role} ({}) doesn't match the hash recorded in this save state; loaded anyway",
+        mr.path.display()
+    )
+}
+
+/// True if `path` is one of [`crate::RomSource::ComposedCoco12`]'s
+/// pseudo-paths ([`ROM_DB_PSEUDO_PATH_PREFIX`], built by
+/// [`crate::rom_db_pseudo_path`]) rather than a real filesystem path.
+pub(super) fn is_rom_db_pseudo_path(path: &Path) -> bool {
+    path.to_str().is_some_and(|s| s.starts_with(ROM_DB_PSEUDO_PATH_PREFIX))
+}
+
+/// [`coco_core::snapshot::MediaSources::system_rom`]: a real path reads and
+/// verifies like any other reference; a [`ROM_DB_PSEUDO_PATH_PREFIX`]
+/// pseudo-path recomposes the CoCo 1/2 flat image from [`dev_roms_dir`] and
+/// hash-compares (never "missing" purely because the pseudo-path itself
+/// isn't a real file — only when no local Color BASIC dump exists to
+/// compose from at all).
+pub(super) fn resolve_system_rom(media: &MediaRefs, warnings: &mut Vec<String>) -> Option<Box<[u8]>> {
+    let mr = media.system_rom.as_ref()?;
+    if is_rom_db_pseudo_path(&mr.path) {
+        return match compose_coco12_rom(&dev_roms_dir()) {
+            Coco12RomResult::Composed { image, .. } => {
+                let actual = snapshot::sha256_hex(&image);
+                if actual != mr.sha256 {
+                    warnings.push(format!(
+                        "system ROM ({}): local Color/Extended BASIC dumps differ from the ones \
+                         this state was saved with; loaded anyway",
+                        mr.path.display()
+                    ));
+                }
+                Some(image)
+            }
+            Coco12RomResult::NoColorBasic => None,
+        };
+    }
+    read_if_present(mr, "system ROM", warnings).map(Vec::into_boxed_slice)
+}
+
+pub(super) fn resolve_cart_roms(media: &MediaRefs, warnings: &mut Vec<String>) -> Vec<(Option<u8>, Vec<u8>)> {
+    media
+        .cart_roms
+        .iter()
+        .filter_map(|slot_ref| {
+            read_if_present(&slot_ref.rom, "cartridge ROM", warnings)
+                .map(|bytes| (slot_ref.mpi_slot, bytes))
+        })
+        .collect()
+}

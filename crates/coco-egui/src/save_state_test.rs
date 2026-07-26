@@ -1,5 +1,7 @@
 use super::*;
 use coco_core::MachineConfig;
+use coco_core::snapshot;
+use crate::{RomSource, dev_roms_dir, disk_basic_rom_path};
 
 /// Scratch directory holding only the fixture files a given test writes
 /// into it, under `target/` (git-ignored, unlike the workspace `roms/`

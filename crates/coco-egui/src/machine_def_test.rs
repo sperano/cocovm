@@ -1,4 +1,6 @@
+use super::dto::{MachineVariantDTO, MonitorDTO, RamDTO, VDGVariantDTO, VideoStandardDTO};
 use super::*;
+use std::fs;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Unique temp directory per test, cleaned up on drop so parallel tests
