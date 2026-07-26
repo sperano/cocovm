@@ -1,0 +1,278 @@
+//! The Machine menu: everything you can do to the machine itself, and
+//! everything you can plug into or mount in it.
+
+use crate::*;
+
+impl CocoApp {
+    /// The Machine menu: cartridges, the MultiPak and its slots, disk
+    /// and VHD drives, DriveWire, the cassette deck, and print capture.
+    pub(super) fn machine_menu_ui(&mut self, ui: &mut egui::Ui) {
+        let new_button = egui::Button::new("New…")
+            .shortcut_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
+        if ui.add(new_button).clicked() {
+            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
+            ui.close();
+        }
+        ui.separator();
+        let run_label = if self.running { "Pause" } else { "Run" };
+        if ui.button(run_label).clicked() {
+            self.running = !self.running;
+            ui.close();
+        }
+        if ui.button("Reset").clicked() {
+            self.machine.reset();
+            ui.close();
+        }
+        ui.separator();
+        self.draw_save_state_menu(ui);
+        ui.separator();
+        self.machine_cartridge_items(ui);
+        ui.separator();
+        ui.menu_button("MultiPak Interface", |ui| self.mpi_menu_ui(ui));
+        ui.separator();
+        ui.menu_button("Deluxe RS-232 Pak", |ui| self.rs232_menu_ui(ui));
+        ui.separator();
+        self.machine_rtc_items(ui);
+        ui.separator();
+        self.machine_disk_items(ui);
+        ui.separator();
+        self.machine_vhd_items(ui);
+        ui.separator();
+        ui.menu_button("DriveWire", |ui| self.drivewire_menu_ui(ui));
+        ui.separator();
+        self.machine_tape_items(ui);
+        ui.separator();
+        self.machine_print_items(ui);
+    }
+
+    /// Cartridges plugged straight into the port, which only makes
+    /// sense with no MultiPak installed — with one, they go in its slots.
+    fn machine_cartridge_items(&mut self, ui: &mut egui::Ui) {
+        let direct_port = self.mpi.is_none();
+        if ui
+            .add_enabled(direct_port, egui::Button::new("Insert Cartridge…"))
+            .clicked()
+        {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("ROM Pak", &["rom", "ccc", "bin"])
+                .pick_file()
+            {
+                self.insert_cartridge(path);
+            }
+        }
+        if ui
+            .add_enabled(direct_port, egui::Button::new("Insert Games Master…"))
+            .clicked()
+        {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Games Master ROM", &["rom", "ccc", "bin"])
+                .pick_file()
+            {
+                self.insert_gmc(path);
+            }
+        }
+        if ui
+            .add_enabled(direct_port, egui::Button::new("Insert Orchestra-90…"))
+            .clicked()
+        {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Orchestra-90 ROM", &["rom", "ccc", "bin"])
+                .pick_file()
+            {
+                self.insert_orch90(path);
+            }
+        }
+        let inserted = direct_port && self.cart_path.is_some();
+        if ui
+            .add_enabled(inserted, egui::Button::new("Eject Cartridge"))
+            .clicked()
+        {
+            self.eject_cartridge();
+            ui.close();
+        }
+        ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
+        if ui
+            .add_enabled(direct_port, egui::Button::new("Insert Sound/Speech Cartridge"))
+            .clicked()
+        {
+            self.insert_ssc();
+            ui.close();
+        }
+    }
+
+    /// The Disto real-time clock plugged straight into the port.
+    fn machine_rtc_items(&mut self, ui: &mut egui::Ui) {
+        let direct_port = self.mpi.is_none();
+        if ui
+            .add_enabled(
+                direct_port && !self.rtc_direct,
+                egui::Button::new("Insert Disto RTC"),
+            )
+            .clicked()
+        {
+            self.insert_rtc();
+            ui.close();
+        }
+        if ui
+            .add_enabled(self.rtc_direct, egui::Button::new("Eject Disto RTC"))
+            .clicked()
+        {
+            self.eject_rtc();
+            ui.close();
+        }
+        let rtc_present = self.machine.bus.cart.as_disto_rtc().is_some();
+        if ui
+            .add_enabled(rtc_present, egui::Button::new("Sync RTC to Host Clock"))
+            .clicked()
+        {
+            self.sync_rtc_to_host();
+            ui.close();
+        }
+    }
+
+    /// The FD-502 floppy drives: insert, format blank, and eject.
+    fn machine_disk_items(&mut self, ui: &mut egui::Ui) {
+        for drive in 0..UI_DRIVES {
+            if ui.button(format!("Insert Disk in Drive {drive}…")).clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Disk image", &["dsk", "jvc", "os9"])
+                    .pick_file()
+                {
+                    self.request_insert_disk(drive, path);
+                }
+            }
+            if ui.button(format!("New Blank Disk in Drive {drive}…")).clicked() {
+                ui.close();
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Disk image", &["dsk"])
+                    .set_file_name("untitled.dsk")
+                    .save_file()
+                {
+                    self.request_new_blank_disk(drive, path);
+                }
+            }
+            let label = match &self.disk_paths[drive] {
+                Some(p) => format!(
+                    "Eject Drive {drive} ({})",
+                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                ),
+                None => format!("Eject Drive {drive}"),
+            };
+            let mounted = self.disk_paths[drive].is_some();
+            if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+                self.eject_disk(drive);
+                ui.close();
+            }
+        }
+    }
+
+    /// The virtual hard disk drives: insert and eject.
+    fn machine_vhd_items(&mut self, ui: &mut egui::Ui) {
+        for drive in 0..UI_DRIVES {
+            if ui.button(format!("Insert VHD {drive}…")).clicked() {
+                ui.close();
+                if let Some(path) =
+                    rfd::FileDialog::new().add_filter("VHD image", &["vhd"]).pick_file()
+                {
+                    self.insert_vhd(drive, path);
+                }
+            }
+            let label = match &self.vhd_paths[drive] {
+                Some(p) => format!(
+                    "Eject VHD {drive} ({})",
+                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                ),
+                None => format!("Eject VHD {drive}"),
+            };
+            let mounted = self.vhd_paths[drive].is_some();
+            if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+                self.eject_vhd(drive);
+                ui.close();
+            }
+        }
+    }
+
+    /// The cassette deck: insert, create, rewind, and eject a tape.
+    fn machine_tape_items(&mut self, ui: &mut egui::Ui) {
+        if ui.button("Insert Tape…").clicked() {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Cassette image", &["cas", "wav"])
+                .pick_file()
+            {
+                self.insert_tape(path);
+            }
+        }
+        if ui.button("New Tape…").clicked() {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Cassette image", &["cas"])
+                .set_file_name("untitled.cas")
+                .save_file()
+            {
+                self.new_tape(path);
+            }
+        }
+        let tape_mounted = self.tape_path.is_some();
+        if ui
+            .add_enabled(tape_mounted, egui::Button::new("Rewind Tape"))
+            .clicked()
+        {
+            self.machine.bus.cassette.rewind();
+            ui.close();
+        }
+        let label = match &self.tape_path {
+            Some(p) => format!(
+                "Eject Tape ({})",
+                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+            ),
+            None => "Eject Tape".to_string(),
+        };
+        if ui.add_enabled(tape_mounted, egui::Button::new(label)).clicked() {
+            self.eject_tape();
+            ui.close();
+        }
+        ui.checkbox(&mut self.save_tape_wav, "Also save tape audio (.wav)");
+    }
+
+    /// Bit-banger print capture to a host text file.
+    fn machine_print_items(&mut self, ui: &mut egui::Ui) {
+        let capturing = self.print_capture_path.is_some();
+        if ui
+            .add_enabled(!capturing, egui::Button::new("Start Print Capture…"))
+            .clicked()
+        {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Text file", &["txt"])
+                .set_file_name("printout.txt")
+                .save_file()
+            {
+                self.start_print_capture(path);
+            }
+        }
+        let label = match &self.print_capture_path {
+            Some(p) => format!(
+                "Stop Print Capture ({})",
+                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+            ),
+            None => "Stop Print Capture".to_string(),
+        };
+        if ui
+            .add_enabled(capturing, egui::Button::new(label))
+            .clicked()
+        {
+            self.stop_print_capture();
+            ui.close();
+        }
+        ui.checkbox(&mut self.print_capture_lf, "Translate CR to LF")
+            .on_hover_text(
+                "Rewrite the CoCo's CR line endings as LF so the capture reads as \
+                 normal text. Takes effect when a capture starts.",
+            );
+    }
+}

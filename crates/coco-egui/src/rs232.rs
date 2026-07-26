@@ -21,6 +21,16 @@ impl Rs232Endpoint {
             Rs232Endpoint::Pty(path) => format!("pty {path}"),
         }
     }
+
+    /// Which backend this is, dropping the address/path it carries — what the
+    /// menu's radio rows compare against.
+    pub(crate) fn kind(&self) -> Rs232EndpointKind {
+        match self {
+            Rs232Endpoint::Loopback => Rs232EndpointKind::Loopback,
+            Rs232Endpoint::Tcp(_) => Rs232EndpointKind::Tcp,
+            Rs232Endpoint::Pty(_) => Rs232EndpointKind::Pty,
+        }
+    }
 }
 
 /// Default listen address for the RS-232 pak's TCP endpoint: localhost, port

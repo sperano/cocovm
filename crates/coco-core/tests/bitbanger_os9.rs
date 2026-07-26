@@ -127,21 +127,17 @@ fn wait_for_new_shell_prompt(m: &mut Machine, baseline: usize, max_fields: usize
     }
 }
 
-/// Boot NitrOS-9 EOU to a shell, `echo hello >/p`, and check the bit-banger
-/// decoder (retuned to [`OS9_PRINTER_BIT_PERIOD`]) captured exactly what the
-/// shell sent, with no framing errors.
-#[test]
-fn os9_echo_redirected_to_printer_is_captured() {
+/// Boots NitrOS-9 EOU (real ROM/disk/VHD assets) all the way to the shell
+/// prompt, on a scratch copy of the VHD so the checked-in image stays
+/// pristine run to run. Returns the machine and the scratch VHD path (for
+/// the caller to remove when done), or `None` (test should skip) if any
+/// asset is missing.
+fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
     /// Fields of BASIC settling before `DOS` is typed (matches
     /// `tests/vhd_boot.rs`).
     const BASIC_FIELDS: usize = 300;
     /// Upper bound on each boot-stage wait (matches `tests/vhd_boot.rs`).
     const MAX_BOOT_FIELDS: usize = 12_000;
-    /// Generous upper bound on `echo hello >/p` finishing and the shell
-    /// prompt returning: a handful of bytes at 600 baud (14,860 cycles/byte
-    /// at [`OS9_PRINTER_BIT_PERIOD`]-per-bit) is nowhere near this budget
-    /// even accounting for OS-9 scheduling overhead.
-    const MAX_PRINT_FIELDS: usize = 6_000;
 
     let (Ok(coco), Ok(disk_rom), Ok(dsk)) = (
         std::fs::read(asset("roms", "coco3.rom")),
@@ -149,12 +145,12 @@ fn os9_echo_redirected_to_printer_is_captured() {
         std::fs::read(asset("disks", "68EMU.dsk")),
     ) else {
         eprintln!("skipping NitrOS-9 /p boot test: roms/ or disks/ assets not present");
-        return;
+        return None;
     };
     let vhd_src = asset("disks", "68SDC.VHD");
     if !vhd_src.exists() {
         eprintln!("skipping NitrOS-9 /p boot test: disks/68SDC.VHD not present");
-        return;
+        return None;
     }
     // Scratch copy, as `tests/vhd_boot.rs`: EOU's startup writes to its
     // system disk and the pristine image must stay reproducible run to run.
@@ -197,6 +193,24 @@ fn os9_echo_redirected_to_printer_is_captured() {
          ($FFD9) by the shell prompt; OS9_PRINTER_BIT_PERIOD's derivation \
          assumes this"
     );
+
+    Some((m, vhd_copy))
+}
+
+/// Boot NitrOS-9 EOU to a shell, `echo hello >/p`, and check the bit-banger
+/// decoder (retuned to [`OS9_PRINTER_BIT_PERIOD`]) captured exactly what the
+/// shell sent, with no framing errors.
+#[test]
+fn os9_echo_redirected_to_printer_is_captured() {
+    /// Generous upper bound on `echo hello >/p` finishing and the shell
+    /// prompt returning: a handful of bytes at 600 baud (14,860 cycles/byte
+    /// at [`OS9_PRINTER_BIT_PERIOD`]-per-bit) is nowhere near this budget
+    /// even accounting for OS-9 scheduling overhead.
+    const MAX_PRINT_FIELDS: usize = 6_000;
+
+    let Some((mut m, vhd_copy)) = boot_eou_shell() else {
+        return;
+    };
 
     let capture = CaptureSink::new();
     m.bus.bitbanger.set_sink(Box::new(capture.clone()));

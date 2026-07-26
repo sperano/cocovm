@@ -72,15 +72,14 @@ pub(crate) use mpi::{
     DEFAULT_MPI_SWITCH_SLOT, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState,
 };
 pub(crate) use rom_load::{
-    Coco12RomResult, ROM_DB_PSEUDO_PATH_PREFIX, RomSource, dev_roms_dir, disk_basic_rom_path,
-    load_rom_with_source, rom_db_pseudo_path, rs232_eprom_default_path, compose_coco12_rom, load_default_rom, load_explicit_rom, report_rom_validation,
+    Coco12RomResult, ROM_DB_PSEUDO_PATH_PREFIX, RomSource, compose_coco12_rom, dev_roms_dir,
+    disk_basic_rom_path, load_default_rom, load_rom_with_source, report_rom_validation,
+    rom_db_pseudo_path, rs232_eprom_default_path,
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, Rs232Endpoint, Rs232EndpointKind};
 pub(crate) use startup::{banner, ensure_assets, log_renderer_info, setup_logging};
 pub(crate) use typeahead::{KbMode, TypeAhead};
-pub(crate) use widgets::{
-    UI_DRIVES, cassette_activity_light, drive_activity_light, window_title,
-};
+pub(crate) use widgets::{UI_DRIVES, cassette_activity_light, drive_activity_light, window_title};
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 pub(crate) const SCALE: f32 = 3.0;
