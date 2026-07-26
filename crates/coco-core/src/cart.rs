@@ -7,6 +7,8 @@
 //! shared device interface each variant implements (and as the escape hatch
 //! for out-of-crate test doubles via [`Cart::custom`]).
 
+use serde::{Deserialize, Serialize};
+
 /// Value read from the external ROM window when nothing drives the bus:
 /// $00, matching real hardware / MAME coco3 (verified by MAME trace-diff,
 /// 2026-07-02 — an empty slot's `LDD $C000` yields $0000, not $FFFF).
@@ -151,10 +153,27 @@ pub trait Cartridge {
     fn audio_sample(&mut self) -> f32 {
         0.0
     }
+    /// Restore-time fixups after a snapshot round-trip
+    /// (`docs/plan-save-states.md`): rebuild any `#[serde(skip)]`
+    /// construction-time scratch (lookup tables, etc.) that this cartridge's
+    /// own `Serialize`/`Deserialize` impl left at its `Default`. Default:
+    /// nothing to rebuild — most cartridges have no such scratch.
+    fn after_restore(&mut self) {}
+    /// Restore-time payload-shape validation (`docs/plan-save-states.md`):
+    /// checked once by [`crate::snapshot::validate_payload_shape`], before
+    /// any media is reattached, against index/cursor/cap-style deserialized
+    /// fields this cartridge indexes its own buffers with — Rust's own
+    /// bounds checks turn a bad one (from a hand-crafted payload) into a
+    /// panic, not a graceful error, unless this catches it first. See
+    /// `crate::ssc::Ssc`/`crate::fdc::DiskCart`'s overrides. Default:
+    /// nothing to check.
+    fn validate_restored(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// No cartridge inserted.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmptySlot;
 
 impl Cartridge for EmptySlot {
@@ -215,7 +234,13 @@ impl std::error::Error for RomPakError {}
 /// `coco_pak_device::call_load` does, so `rom_read` needs no bounds logic
 /// regardless of the original image size (fact 5). Indexing swaps the 16K
 /// halves — see [`ROM_PAK_HALF_SWAP`].
+#[derive(Serialize, Deserialize)]
 pub struct RomPak {
+    /// Skipped: COPYRIGHTED pak bytes (always a 32K mirror-fill) never
+    /// travel through a snapshot; re-injected on restore via
+    /// [`RomPak::reattach_image`] (`docs/plan-save-states.md`). Deserializes
+    /// to an empty `Box<[u8]>` until reattached.
+    #[serde(skip)]
     image: Box<[u8]>,
     /// Whether this pak ties the CART* line to Q (see
     /// [`Cartridge::cart_line_ties_q`]).
@@ -249,6 +274,23 @@ impl RomPak {
             image: mirror_fill(bytes, ROM_PAK_MAX_LEN),
             autostart,
         })
+    }
+
+    /// Restore-path-only: re-inject this pak's image after a snapshot
+    /// restore, leaving `autostart` untouched (unlike
+    /// [`RomPak::from_bytes`], which always takes a fresh value for it) — the
+    /// deserialized `autostart` is itself the restored machine state
+    /// (`docs/plan-save-states.md`). Same validation and mirror-fill as
+    /// [`RomPak::from_bytes`].
+    pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), RomPakError> {
+        if bytes.is_empty() {
+            return Err(RomPakError::Empty);
+        }
+        if bytes.len() > ROM_PAK_MAX_LEN {
+            return Err(RomPakError::TooLarge { len: bytes.len() });
+        }
+        self.image = mirror_fill(bytes, ROM_PAK_MAX_LEN);
+        Ok(())
     }
 }
 
@@ -343,7 +385,13 @@ impl std::error::Error for BankedPakError {}
 /// `(latch * 16K) mod 128K` (MAME `cts_read`'s
 /// `(m_pos * 0x4000) % m_eprom->bytes()`), and the latch resets to bank 0 on
 /// the RESET* line (`device_reset`).
+#[derive(Serialize, Deserialize)]
 pub struct BankedRomPak {
+    /// Skipped: COPYRIGHTED pak bytes (always a 128K mirror-fill) never
+    /// travel through a snapshot; re-injected on restore via
+    /// [`BankedRomPak::reattach_image`] (`docs/plan-save-states.md`).
+    /// Deserializes to an empty `Box<[u8]>` until reattached.
+    #[serde(skip)]
     image: Box<[u8]>,
     /// The raw `$FF40` latch byte (`m_pos`) — masking happens at read time,
     /// via the modulo above.
@@ -380,6 +428,21 @@ impl BankedRomPak {
             bank: 0,
             autostart,
         })
+    }
+
+    /// Restore-path-only: re-inject this pak's image after a snapshot
+    /// restore, leaving `bank`/`autostart` untouched — both are themselves
+    /// restored machine state (`docs/plan-save-states.md`). Same validation
+    /// and mirror-fill as [`BankedRomPak::from_bytes`].
+    pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
+        if bytes.is_empty() {
+            return Err(BankedPakError::Empty);
+        }
+        if bytes.len() > BANKED_PAK_MAX_LEN {
+            return Err(BankedPakError::TooLarge { len: bytes.len() });
+        }
+        self.image = mirror_fill(bytes, BANKED_PAK_MAX_LEN);
+        Ok(())
     }
 }
 
@@ -432,6 +495,7 @@ const GMC_PSG_CRYSTAL_HZ: f64 = 4_000_000.0;
 /// dedicated speaker device ignoring SNDEN entirely (its mux cart-sound path
 /// is an explicit "NYI" stub), and no independent schematic settles what the
 /// real cart's SND-pin wiring expects — so we keep MAME's behaviour.
+#[derive(Serialize, Deserialize)]
 pub struct Gmc {
     rom: BankedRomPak,
     psg: crate::sn76489::SN76489A,
@@ -454,6 +518,13 @@ impl Gmc {
             rom: BankedRomPak::from_bytes(bytes, autostart)?,
             psg: crate::sn76489::SN76489A::new(GMC_PSG_CRYSTAL_HZ),
         })
+    }
+
+    /// Restore-path-only: re-inject the banked ROM image after a snapshot
+    /// restore — delegates to the inner [`BankedRomPak::reattach_image`]
+    /// (`docs/plan-save-states.md`).
+    pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
+        self.rom.reattach_image(bytes)
     }
 }
 
@@ -483,6 +554,11 @@ impl Cartridge for Gmc {
     fn reset(&mut self) {
         self.rom.reset();
     }
+    /// Rebuilds `psg.vol_table` — pure construction-time scratch, skipped
+    /// from the snapshot (`crate::sn76489`'s `after_restore` fixup).
+    fn after_restore(&mut self) {
+        self.psg.after_restore();
+    }
 }
 
 /// Tandy Multi-Pak Interface (MPI, 26-3024): a 4-slot passive expansion
@@ -502,7 +578,7 @@ impl Cartridge for Gmc {
 /// MPIs have that ties all 4 slots' CART* lines together (a hardware hack,
 /// not stock behaviour) is not reproduced — CART* here strictly follows the
 /// CTS select, as spec'd.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MultiPak {
     slots: [Cart; mpi::SLOT_COUNT],
     /// The raw `$FF7F` select register (both used and forced-high unused
@@ -760,6 +836,26 @@ impl Cartridge for MultiPak {
             slot.reset();
         }
     }
+
+    /// Recurses into every slot — each slot's own cartridge rebuilds its own
+    /// skipped scratch, if any (`docs/plan-save-states.md`).
+    fn after_restore(&mut self) {
+        for slot in &mut self.slots {
+            slot.after_restore();
+        }
+    }
+
+    /// Recurses into every slot, prefixing whichever slot's own check fails
+    /// with its index — nesting itself (a `Cart::MultiPak` slot holding
+    /// another `Cart::MultiPak`) is rejected earlier, structurally, by
+    /// [`Cart::contains_nested_multipak`], before [`Cart::slots_mut`]/this
+    /// walk ever runs (`docs/plan-save-states.md`).
+    fn validate_restored(&self) -> Result<(), String> {
+        for (i, slot) in self.slots.iter().enumerate() {
+            slot.validate_restored().map_err(|e| format!("Multi-Pak slot {i}: {e}"))?;
+        }
+        Ok(())
+    }
 }
 
 /// The cartridge in the expansion port (or in a [`MultiPak`] slot), as a
@@ -774,6 +870,7 @@ impl Cartridge for MultiPak {
 /// It is excluded from serialization — a save-state with a custom cartridge
 /// inserted is an error, which only test rigs can hit.
 #[non_exhaustive]
+#[derive(Serialize, Deserialize)]
 pub enum Cart {
     /// Nothing in the port ([`EmptySlot`]).
     Empty(EmptySlot),
@@ -798,7 +895,12 @@ pub enum Cart {
     /// is by far the largest cartridge (clippy `large_enum_variant`).
     Ssc(Box<crate::ssc::Ssc>),
     /// Out-of-crate [`Cartridge`] implementation (test doubles) — see the
-    /// type-level doc.
+    /// type-level doc. Skipped: a boxed trait object has no serializable
+    /// shape, so serializing a machine with one inserted is a hard error
+    /// (`serde`'s generated `Err` for a skipped variant, not a panic) —
+    /// `docs/plan-save-states.md`'s documented intent, since only
+    /// integration-test rigs can ever hit this variant.
+    #[serde(skip)]
     Custom(Box<dyn Cartridge>),
 }
 
@@ -899,6 +1001,18 @@ impl Cart {
     /// See [`Cartridge::reset`].
     pub fn reset(&mut self) {
         with_each_cart!(self, cart => cart.reset())
+    }
+    /// See [`Cartridge::after_restore`]. Called by [`crate::SystemBus::after_restore`]
+    /// after a snapshot round-trip; safe to call before ROM/media
+    /// reattachment (`docs/plan-save-states.md`).
+    pub fn after_restore(&mut self) {
+        with_each_cart!(self, cart => cart.after_restore())
+    }
+    /// See [`Cartridge::validate_restored`]. Called by
+    /// [`crate::snapshot::validate_payload_shape`] against the whole cart
+    /// tree, before media reattachment.
+    pub fn validate_restored(&self) -> Result<(), String> {
+        with_each_cart!(self, cart => cart.validate_restored())
     }
 }
 
@@ -1012,6 +1126,59 @@ impl Default for Cart {
     /// An empty expansion port.
     fn default() -> Self {
         Cart::Empty(EmptySlot)
+    }
+}
+
+/// Save-state support (`docs/plan-save-states.md`): walking every cartridge
+/// reachable from the expansion port and detecting the one variant that
+/// can't be snapshotted at all.
+impl Cart {
+    /// `(mpi_slot, &mut Cart)` pairs reachable from this cart: itself with
+    /// `mpi_slot: None` if this isn't a [`MultiPak`], or its four slots
+    /// (`mpi_slot: Some(0..4)`) if it is. MPI-in-MPI doesn't exist (a
+    /// [`MultiPak`] slot is never itself a `MultiPak` — enforced structurally
+    /// nowhere else, but true of every cart this crate can construct), so one
+    /// level is always enough; the snapshot restore flow uses this to find
+    /// every ROM-bearing cartridge regardless of where it's plugged in.
+    pub fn slots_mut(&mut self) -> Vec<(Option<u8>, &mut Cart)> {
+        match self {
+            Cart::MultiPak(mp) => mp
+                .slots
+                .iter_mut()
+                .enumerate()
+                .map(|(i, cart)| (Some(i as u8), cart))
+                .collect(),
+            other => vec![(None, other)],
+        }
+    }
+
+    /// True if this cart (or, for a [`MultiPak`], any of its slots) is
+    /// [`Cart::Custom`] — an out-of-crate test double with no serializable
+    /// shape. [`crate::snapshot::save`] checks this before attempting to
+    /// encode a machine, so a test double surfaces as a clean
+    /// `SnapshotError::CustomCartNotSnapshotable` instead of a raw serde
+    /// error (`docs/plan-save-states.md`).
+    pub fn contains_custom(&self) -> bool {
+        match self {
+            Cart::Custom(_) => true,
+            Cart::MultiPak(mp) => mp.slots.iter().any(Cart::contains_custom),
+            _ => false,
+        }
+    }
+
+    /// True if this cart is a [`MultiPak`] with a `Cart::MultiPak` nested in
+    /// one of its own slots — not valid hardware (a real MPI's slots are
+    /// passive backplane connectors, not another MPI), and reachable only
+    /// from a hand-crafted payload (`docs/plan-save-states.md`).
+    /// [`crate::snapshot::validate_payload_shape`] checks this BEFORE any
+    /// [`Cart::slots_mut`] walk: that method only descends one MPI level by
+    /// design, so a nested MPI would silently skip the inner slots' ROM
+    /// reattachment and panic on the first read of an empty pak image.
+    pub fn contains_nested_multipak(&self) -> bool {
+        match self {
+            Cart::MultiPak(mp) => mp.slots.iter().any(|s| matches!(s, Cart::MultiPak(_))),
+            _ => false,
+        }
     }
 }
 

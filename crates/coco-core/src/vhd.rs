@@ -15,6 +15,8 @@
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use serde::{Deserialize, Serialize};
+
 /// Number of drives the device exposes; `$FF86` selects between them.
 pub const DRIVE_COUNT: usize = 2;
 
@@ -148,6 +150,7 @@ impl VhdImage {
 /// Per-drive register state: the 24-bit logical record number and 16-bit CPU
 /// buffer address latched by writes to `$FF80–$FF82`/`$FF84–$FF85`, the last
 /// command's outcome (`$FF83` read), and the mounted image, if any.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct VhdDrive {
     /// 24-bit logical record (sector) number; the top 8 bits of the `u32` are
     /// always 0.
@@ -155,6 +158,9 @@ pub(crate) struct VhdDrive {
     /// 16-bit CPU logical address the next transfer reads from/writes to.
     pub(crate) buffer_addr: u16,
     pub(crate) status: u8,
+    /// Skipped: an open host `File` handle. Remounted by path on restore via
+    /// [`Vhd::reattach_image`] (`docs/plan-save-states.md`).
+    #[serde(skip)]
     pub(crate) image: Option<VhdImage>,
 }
 
@@ -166,6 +172,7 @@ impl VhdDrive {
 
 /// The VHD device: two independent drives plus the shared `$FF86`
 /// drive-select latch.
+#[derive(Serialize, Deserialize)]
 pub struct Vhd {
     pub(crate) drives: [VhdDrive; DRIVE_COUNT],
     /// Raw value last written to `$FF86`. `0`/`1` select a drive; anything
@@ -219,6 +226,14 @@ impl Vhd {
         let d = &mut self.drives[drive];
         d.image = None;
         d.status = status::NO_VHD;
+    }
+
+    /// Restore-path-only: re-inject a mounted image after a snapshot
+    /// restore, WITHOUT resetting `lrn`/`buffer_addr`/`status` the way
+    /// [`Vhd::insert`] does — all three are themselves restored machine
+    /// state, exactly as deserialized (`docs/plan-save-states.md`).
+    pub fn reattach_image(&mut self, drive: usize, image: VhdImage) {
+        self.drives[drive].image = Some(image);
     }
 
     pub fn is_mounted(&self, drive: usize) -> bool {

@@ -17,6 +17,8 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use serde::{Deserialize, Serialize};
+
 /// Fixed sector size for DriveWire images: a flat file with sector N at
 /// byte offset `SECTOR_SIZE * N`, no header, no metadata (same convention
 /// as [`crate::vhd`]).
@@ -312,6 +314,14 @@ fn default_clock() -> DwTime {
     }
 }
 
+/// `#[serde(default = "...")]` for [`DwServer::clock`]: matches
+/// [`DwServer::new`]'s own default (a closure has no serializable shape, so
+/// this is what a restored server falls back to until the frontend calls
+/// [`DwServer::set_clock`] again — `docs/plan-save-states.md`).
+fn default_dw_clock() -> DwClock {
+    Box::new(default_clock)
+}
+
 /// Plain 16-bit sum of a 256-byte sector's bytes. Despite [`error::CRC`]'s
 /// name, DriveWire's "checksum" is this trivial running sum, not a CRC: all
 /// bytes 0xFF sums to `256 * 255 = 65_280`, which fits in a `u16` with no
@@ -328,6 +338,7 @@ fn checksum_of(sector: &[u8]) -> u16 {
 /// handling beyond being a normal opcode: by the time an opcode byte is
 /// parsed, whatever transaction there was has already ended (successfully,
 /// on error, or via timeout).
+#[derive(Serialize, Deserialize)]
 enum State {
     Idle,
     /// [`opcode::DWINIT`] sent; awaiting the client's 1-byte driver version
@@ -394,7 +405,12 @@ enum State {
 
 /// The DriveWire server: mounted images, the protocol state machine, and
 /// the reply FIFO the Becker-port bus wiring drains from.
+#[derive(Serialize, Deserialize)]
 pub struct DwServer {
+    /// Skipped: each mounted image can hold an open host `File` handle —
+    /// remounted by path on restore via [`DwServer::reattach`]
+    /// (`docs/plan-save-states.md`).
+    #[serde(skip)]
     drives: [Option<DwImage>; DRIVE_COUNT],
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DwServer::mount`]/[`DwServer::eject`].
@@ -402,6 +418,10 @@ pub struct DwServer {
     reply: VecDeque<u8>,
     state: State,
     hdbdos: bool,
+    /// Skipped: a closure has no serializable shape. Restored to
+    /// [`default_dw_clock`] until the frontend calls [`DwServer::set_clock`]
+    /// again (`docs/plan-save-states.md`).
+    #[serde(skip, default = "default_dw_clock")]
     clock: DwClock,
     sectors_read: u64,
     sectors_written: u64,
@@ -443,6 +463,15 @@ impl DwServer {
     pub fn eject(&mut self, drive: usize) {
         self.drives[drive] = None;
         self.dirty[drive] = false;
+    }
+
+    /// Restore-path-only: re-inject a mounted image after a snapshot
+    /// restore, WITHOUT clearing `dirty[drive]` (unlike [`DwServer::mount`])
+    /// — the restored dirty flag is itself real machine state, not reset by
+    /// remounting the same image the snapshot already had open
+    /// (`docs/plan-save-states.md`).
+    pub fn reattach(&mut self, drive: usize, image: DwImage) {
+        self.drives[drive] = Some(image);
     }
 
     pub fn is_mounted(&self, drive: usize) -> bool {

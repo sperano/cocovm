@@ -21,6 +21,8 @@
 //! every judgment call this implementation had to make where the manual
 //! doesn't fully specify behavior.
 
+use serde::{Deserialize, Serialize};
+
 use crate::ay8913::{Ay8913, mixer, reg as ay_reg};
 use crate::cart::{Cartridge, IO_OPEN_BUS};
 
@@ -292,7 +294,7 @@ const RAM_RESET_BYTE: u8 = terminator::SOUND;
 // ---- Host byte protocol: dispatch state ------------------------------------
 
 /// Which "mode" the next accepted `$FF7E` byte is interpreted in.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum Mode {
     /// Ready for a fresh top-level command byte (or plain ASCII
     /// text-to-speech data, `0x01-0x7F`, consumed and discarded).
@@ -310,7 +312,7 @@ enum Mode {
 
 /// In-progress buffer-RAM load state (see [`Mode::Loading`] and the [`ram`]
 /// module doc comment's loading-state-machine rules).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 struct Load {
     /// [`terminator::SPEECH`] or [`terminator::SOUND`], depending on which
     /// command started this load.
@@ -324,7 +326,7 @@ struct Load {
 
 /// `$AF` direct-access sub-state: alternates between expecting a register
 /// number and expecting that register's value.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum DirectMode {
     /// Next byte is a register number, unless it's [`terminator::SOUND`]
     /// (`0xFF`), which exits direct-access mode instead — the manual's "FF
@@ -342,7 +344,7 @@ enum DirectMode {
 /// running — there is no queueing or concurrent-channel scheduling here
 /// (real hardware achieves simultaneous multi-channel playback via the
 /// separate, un-timed register-string LOAD/EXECUTE mechanism instead).
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct Engine {
     /// Whether the engine is currently advancing through a stream. Cleared
     /// at end-of-stream (terminator, incomplete trailing group, or capacity
@@ -397,6 +399,7 @@ mod sac {
 ///
 /// No SP0256 speech synthesizer is modelled, so [`status::SPEECH_READY`] is
 /// always reported set (idle/ready) — see the module doc comment.
+#[derive(Serialize, Deserialize)]
 pub struct Ssc {
     ay: Ay8913,
     /// Bit 0 of the last byte written to `$FF7D`, for falling-edge detection
@@ -424,6 +427,9 @@ pub struct Ssc {
 
     // ---- Host byte protocol state (see the module doc comment) ----------
     /// Flat 8×64-byte buffer RAM — see the [`ram`] module doc comment.
+    /// `ram::SIZE` (512) exceeds serde's built-in array impl ceiling (32),
+    /// hence the small helper module (`docs/plan-save-states.md`).
+    #[serde(with = "crate::serde_util::byte_array")]
     ram: [u8; ram::SIZE],
     /// Top-level protocol dispatch state — see [`Mode`].
     mode: Mode,
@@ -1031,4 +1037,43 @@ impl Cartridge for Ssc {
         self.update_sac(out);
         out
     }
+
+    /// Rebuilds `ay.dac` — pure construction-time scratch, skipped from the
+    /// snapshot (`Ay8913::after_restore`).
+    fn after_restore(&mut self) {
+        self.ay.after_restore();
+    }
+
+    /// Restore-only: reject a mid buffer-RAM-load or mid sound-engine
+    /// snapshot whose `cursor`/`cap` don't satisfy `cursor <= cap <=
+    /// ram::SIZE` — [`Ssc::feed_load`] indexes `self.ram[load.cursor]`
+    /// once `load.cursor < load.cap`, and [`Ssc::advance_engine`] (and its
+    /// callees) index `self.ram` off `engine.cursor`/`engine.cap` the same
+    /// way, with no bounds check of their own against `ram::SIZE`
+    /// (`docs/plan-save-states.md`). `cursor`/`cap` are ordinary
+    /// deserialized fields a hand-crafted payload can set past the end of
+    /// `ram`.
+    fn validate_restored(&self) -> Result<(), String> {
+        if let Mode::Loading(load) = &self.mode {
+            check_ram_cursor_cap("Load", load.cursor, load.cap)?;
+        }
+        // An inactive engine's `cursor`/`cap` are never read (`Ssc::tick_engine`
+        // returns immediately when `!active`), so only check while active.
+        if self.engine.active {
+            check_ram_cursor_cap("Engine", self.engine.cursor, self.engine.cap)?;
+        }
+        Ok(())
+    }
+}
+
+/// Shared bound check for [`Ssc::validate_restored`]'s two cursor/cap pairs
+/// ([`Load`]/[`Engine`]): `cursor <= cap <= ram::SIZE`.
+fn check_ram_cursor_cap(name: &str, cursor: usize, cap: usize) -> Result<(), String> {
+    if cap > ram::SIZE {
+        return Err(format!("SSC: {name}.cap ({cap}) exceeds ram::SIZE ({})", ram::SIZE));
+    }
+    if cursor > cap {
+        return Err(format!("SSC: {name}.cursor ({cursor}) exceeds {name}.cap ({cap})"));
+    }
+    Ok(())
 }

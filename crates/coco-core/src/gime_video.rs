@@ -17,6 +17,8 @@
 //! Register semantics verified against SEB Unravelled II and MAME `gime.cpp`
 //! (see memory `gime-scanline-verified-facts`).
 
+use serde::{Deserialize, Serialize};
+
 use crate::font_gime::{GIME_FONT, GLYPH_ROWS};
 use crate::gime::{self, GIME, hoff, vmode, vres};
 use crate::raster::{CANVAS_H, CANVAS_W, NON_WIDE_ACTIVE_W, NON_WIDE_BORDER_X, vertical_window};
@@ -118,6 +120,7 @@ pub fn decode_graphics(g: &GIME) -> GraphicsMode {
 /// legacy-vs-GIME switch, and the VSC smooth-scroll seed ($FF9C). Everything
 /// else ($FF98/$FF99 mode bits, $FF9F offset/HVEN, $FF9A border) is read live
 /// per line by [`paint_scanline`].
+#[derive(Serialize, Deserialize)]
 pub struct FieldScan {
     /// Field latched with INIT0 COCO set: the whole field renders on the
     /// legacy VDG path (whole-frame, at field end) and per-line painting is

@@ -30,8 +30,10 @@ pub mod rom_db;
 pub mod rs232;
 pub mod rtc;
 pub mod sam;
+pub mod serde_util;
 pub mod serial;
 pub mod sn76489;
+pub mod snapshot;
 pub mod ssc;
 pub mod vhd;
 pub mod video;
@@ -42,6 +44,7 @@ pub use config::{MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoSta
 pub use gime::{GIME, MonitorType};
 
 use mc6809::{Bus, MC6809};
+use serde::{Deserialize, Serialize};
 
 /// Framebuffer geometry: the VDG 32×16 text display plus border (`DESIGN.md` §6).
 const FB_WIDTH: u32 = video::FB_W as u32;
@@ -88,25 +91,36 @@ enum VideoMode {
 ///
 /// The CPU is one field and everything else lives in `bus`, so `cpu.step(&mut bus)`
 /// borrows two disjoint fields without `Rc`/`RefCell` (`DESIGN.md` §2b).
+#[derive(Serialize, Deserialize)]
 pub struct Machine {
     pub cpu: MC6809,
     pub bus: SystemBus,
     pub config: MachineConfig,
     /// RGBA framebuffer for the active video field (`DESIGN.md` §6). Its size is
     /// mode-dependent: each renderer fills a native-size buffer and the frontend
-    /// scales to fit (`video-output-architecture` Option A).
+    /// scales to fit (`video-output-architecture` Option A). Skipped: cheap to
+    /// rebuild (it's just the render target), rebuilt to the legacy geometry by
+    /// [`Machine::after_restore`] (`docs/plan-save-states.md`).
+    #[serde(skip)]
     pub framebuffer: Vec<u8>,
+    #[serde(skip)]
     pub fb_width: u32,
+    #[serde(skip)]
     pub fb_height: u32,
     /// Scratch buffer for the VDG graphics video-RAM snapshot
     /// (`render_coco_graphics`), reused every field instead of reallocating.
+    /// Skipped: derived scratch, regrows on demand from the `Default` empty
+    /// `Vec` (`docs/plan-save-states.md`).
+    #[serde(skip)]
     graphics_scratch: Vec<u8>,
     /// Stereo speaker samples on the oversampled grid
     /// ([`audio::OVERSAMPLE`] per scanline, ~62.9 kHz on NTSC), `[left,
     /// right]`. [`Machine::flush_line_audio`] appends; the frontend drains
     /// via [`Machine::take_audio`] and resamples to the host rate.
     /// Self-capping so headless use (tests, no audio sink) doesn't grow it
-    /// unboundedly.
+    /// unboundedly. Skipped: derived scratch, regrows on demand from the
+    /// `Default` empty `Vec` (`docs/plan-save-states.md`).
+    #[serde(skip)]
     audio_buffer: Vec<[f32; 2]>,
     /// `SystemBus::cycle_clock` at the start of the scanline being executed
     /// — the left edge of the audio grid [`Machine::flush_line_audio`]
@@ -210,6 +224,38 @@ impl Machine {
             line_budget: 0,
             field_scan: None,
         }
+    }
+
+    /// Restore-time fixups for every `#[serde(skip)]` field, after a
+    /// snapshot round-trip (`docs/plan-save-states.md`): the convention is
+    /// that every skipped field is either rebuilt here or re-injected via an
+    /// explicit `reattach_*`/`set_*` call. Safe to call before any ROM/media
+    /// reattachment — this touches only derived scratch, never copyrighted
+    /// bytes or host resources.
+    ///
+    /// - `framebuffer`/`fb_width`/`fb_height`: reallocated to match the
+    ///   geometry the machine was saved in. A latched `field_scan` means a
+    ///   CoCo 3 field is in flight on the canonical raster, and the
+    ///   per-scanline painters index the canvas-sized buffer directly —
+    ///   [`Machine::render_scanline`] only re-establishes that size at
+    ///   line 0, so a mid-field restore must recreate it here or the next
+    ///   painted line indexes out of bounds. Rows painted before the save
+    ///   come back blank and repaint on the next field; execution is
+    ///   unaffected. Without a latched field the legacy geometry applies
+    ///   ([`Machine::reset_legacy_fb`]).
+    /// - `graphics_scratch`/`audio_buffer`: left as the `Default` empty
+    ///   `Vec`s from deserialization; both grow back to size on demand
+    ///   (`resize`/`push`), so there's nothing to rebuild.
+    pub fn after_restore(&mut self) {
+        if self.field_scan.is_some() {
+            self.framebuffer
+                .resize(raster::CANVAS_W * raster::CANVAS_H * BYTES_PER_PIXEL, 0);
+            self.fb_width = raster::CANVAS_W as u32;
+            self.fb_height = raster::CANVAS_H as u32;
+        } else {
+            self.reset_legacy_fb();
+        }
+        self.bus.after_restore();
     }
 
     /// Drain the speaker samples accumulated since the last call (one per

@@ -38,7 +38,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::bitbanger::PrinterSink;
+use crate::bitbanger::sink_serde::SinkState;
 use crate::dmp105_font::{self, Glyph};
 use crate::printer::{Paper, PaperExtent, X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
 
@@ -108,14 +111,14 @@ mod esc {
 }
 
 /// Character-Print vs Graphics mode (`dmp105-protocol.md` §5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Mode {
     CharacterPrint,
     Graphics,
 }
 
 /// New-line mode selected by `1B 15`/`1B 16` (`dmp105-protocol.md` §4 T11).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum NlMode {
     CrOnly,
     CrLf,
@@ -126,7 +129,7 @@ enum NlMode {
 /// exists to model direction against, so it never affects output — matching
 /// the plan's "unidirectional/bidirectional affects nothing in emulation"
 /// direction for this task.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Direction {
     Bidirectional,
     Unidirectional,
@@ -135,7 +138,7 @@ enum Direction {
 /// Print pitch (`dmp105-protocol.md` §1 Appendix G p.59). Character cell
 /// width is always [`CELL_DOTS`] dots regardless of pitch; pitch instead
 /// changes how many dots (thus inches) that fixed-width cell spans.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Pitch {
     Normal,
     Compressed,
@@ -176,7 +179,7 @@ impl Pitch {
 /// Assembly state for a not-yet-complete multi-byte escape or repeat
 /// sequence (`dmp105-protocol.md` §4: "all sequences are 2-4 bytes, fixed
 /// lengths").
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum Pending {
     None,
     /// Saw `ESC` ($1B), waiting for the selector byte.
@@ -197,7 +200,7 @@ enum Pending {
 
 /// The DMP-105 interpreter: control/escape-code state machine plus the
 /// [`Paper`] it prints onto.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dmp105 {
     mode: Mode,
     /// Live pitch setting (`1B 13`/`1B 14`/`1B 17`), always up to date even
@@ -561,6 +564,15 @@ impl Dmp105Handle {
         Self::default()
     }
 
+    /// Restore-path-only: rebuild a handle around an already-deserialized
+    /// [`Dmp105`] state (`sink_serde::SinkState::Dmp105` — see
+    /// `bitbanger.rs`), wrapping it in a fresh `Rc<RefCell<_>>`
+    /// (`docs/plan-save-states.md`). Unlike [`Dmp105Handle::new`], this
+    /// starts from real restored state rather than power-on defaults.
+    pub(crate) fn from_state(state: Dmp105) -> Self {
+        Self(Rc::new(RefCell::new(state)))
+    }
+
     /// How much paper has been printed on so far.
     pub fn paper_extent(&self) -> PaperExtent {
         self.0.borrow().paper.extent()
@@ -593,6 +605,17 @@ impl Dmp105Handle {
 impl PrinterSink for Dmp105Handle {
     fn write_byte(&mut self, b: u8) {
         self.0.borrow_mut().feed(b);
+    }
+
+    /// The whole interpreter/paper state, cloned out of the shared
+    /// `Rc<RefCell<_>>` — `Dmp105` is plain data (`Clone` derive), so this
+    /// is a deep-but-cheap snapshot (`docs/plan-save-states.md`).
+    fn snapshot(&self) -> SinkState {
+        SinkState::Dmp105(self.0.borrow().clone())
+    }
+
+    fn as_dmp105(&self) -> Option<&Dmp105Handle> {
+        Some(self)
     }
 }
 

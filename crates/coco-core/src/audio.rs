@@ -21,6 +21,8 @@
 //!   SN76489A). The cassette level is sampled once per line: its 1200/2400 Hz
 //!   square wave is far below even the line rate.
 
+use serde::{Deserialize, Serialize};
+
 /// Grid samples per scanline. 4 → ~62.9 kHz internal rate on NTSC; a named
 /// constant per the plan — bump to 8 only if a digitized-speech title
 /// measurably needs it.
@@ -47,7 +49,7 @@ const SEL_CARTRIDGE: u8 = 0b10;
 
 /// The latched audio-affecting inputs, snapshotted on every write that
 /// changes one of them (see `SystemBus::note_audio_write`).
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub(crate) struct AudioInputs {
     /// PIA1 port A bits 2–7: the 6-bit DAC (already masked by DDR, shifted).
     pub dac: u8,
@@ -67,6 +69,7 @@ pub(crate) struct AudioInputs {
 
 /// One latched-input change at a CPU-cycle timestamp (`SystemBus::cycle_clock`).
 /// `inputs` is the state FROM this cycle onward.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct AudioEvent {
     pub cycle: u64,
     pub inputs: AudioInputs,

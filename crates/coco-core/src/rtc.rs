@@ -19,13 +19,15 @@
 //! MSM6242 behavior; MAME drops these writes) sticks without the emulated
 //! clock drifting when the machine is paused or the CPU runs double-speed.
 
+use serde::{Deserialize, Serialize};
+
 use crate::cart::{Cartridge, IO_OPEN_BUS};
 
 /// A calendar timestamp fed to the RTC by the host frontend. Fields are plain
 /// binary (not BCD); `year` is the full year (e.g. 2026) — the chip exposes
 /// only `year % 100`, but keeping the century lets register writes preserve
 /// it. The weekday register is derived from the date, never stored.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RTCTime {
     pub year: i32,
     /// 1-12.
@@ -168,6 +170,22 @@ const CF_POWER_ON: u8 = cf::H24;
 /// Hour of the AM->PM crossover, for the 12-hour conversions.
 const NOON: u8 = 12;
 
+/// Placeholder time the restored default `now` closure yields until the
+/// frontend re-injects a real host time source via
+/// [`DistoRtc::set_time_source`] (`docs/plan-save-states.md`) — an
+/// obviously-fake epoch, not a guess at the real time.
+const RESTORED_PLACEHOLDER_TIME: RTCTime =
+    RTCTime { year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+
+/// `#[serde(default = "...")]` for [`MSM6242::now`]: a closure that always
+/// returns [`RESTORED_PLACEHOLDER_TIME`], standing in until
+/// [`DistoRtc::set_time_source`] re-injects the host clock the frontend owns
+/// (`now` isn't itself state — it's a closure, so it can't round-trip
+/// through a snapshot at all).
+fn default_time_source() -> TimeSource {
+    Box::new(|| RESTORED_PLACEHOLDER_TIME)
+}
+
 /// An OKI MSM6242 real-time clock: 16 nibble-wide registers (BCD digit pairs
 /// for second/minute/hour/day/month/year, a weekday counter, three control
 /// registers). Reads follow MAME `msm6242.cpp` exactly; time-register writes
@@ -178,7 +196,13 @@ const NOON: u8 = 12;
 /// can't drift from the host clock and doesn't care about emulation pauses,
 /// double-speed POKEs, or headless runs. Setting any time register just moves
 /// the offset.
+#[derive(Serialize, Deserialize)]
 pub struct MSM6242 {
+    /// Never travels through a snapshot (a closure has no serializable
+    /// shape) — skipped, restored to [`default_time_source`] until
+    /// [`MSM6242::set_time_source`]/[`DistoRtc::set_time_source`]
+    /// re-injects the real one (`docs/plan-save-states.md`).
+    #[serde(skip, default = "default_time_source")]
     now: TimeSource,
     /// Emulated-clock minus host-clock, in seconds.
     offset_secs: i64,
@@ -255,6 +279,16 @@ impl MSM6242 {
     /// The clock's current time (frontend display).
     pub fn time(&mut self) -> RTCTime {
         RTCTime::from_secs(self.current_secs())
+    }
+
+    /// Restore-path-only: re-inject the host time source after a snapshot
+    /// restore (`now` is `#[serde(skip)]` — a closure can't round-trip
+    /// through a snapshot at all; `docs/plan-save-states.md`). `offset_secs`
+    /// came back from the snapshot untouched, so plugging in the real clock
+    /// here resumes exactly where the snapshot left off, not at a fresh
+    /// zero offset the way [`MSM6242::new`] would.
+    pub fn set_time_source(&mut self, now: TimeSource) {
+        self.now = now;
     }
 
     /// Read register `reg` (0-15). Returns a nibble; the upper data bits are 0
@@ -418,6 +452,7 @@ const RTC_SELECT_ALT2: u16 = 0xFF53;
 /// the existing cartridge routing — plug it into the port directly (NitrOS-9
 /// boots from VHD without a disk controller) or into a Multi-Pak slot next to
 /// the FD-502, as the real MEB host cards did.
+#[derive(Serialize, Deserialize)]
 pub struct DistoRtc {
     rtc: MSM6242,
     address_latch: u8,
@@ -446,6 +481,13 @@ impl DistoRtc {
     /// Direct access to the clock chip (frontend set/sync UI).
     pub fn rtc(&mut self) -> &mut MSM6242 {
         &mut self.rtc
+    }
+
+    /// Restore-path-only: re-inject the host time source after a snapshot
+    /// restore — delegates into [`MSM6242::set_time_source`]
+    /// (`docs/plan-save-states.md`).
+    pub fn set_time_source(&mut self, now: TimeSource) {
+        self.rtc.set_time_source(now);
     }
 }
 

@@ -26,6 +26,7 @@ mod paths;
 mod paper_render;
 mod paper_view;
 mod photo_view;
+mod save_state;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -225,6 +226,11 @@ struct CocoApp {
     /// describe itself to menu labels, so the frontend tracks it — same
     /// rationale as [`MPISlot`]). `None` means the slot holds something else.
     rs232: Option<Rs232Endpoint>,
+    /// Source path of the Deluxe RS-232 pak's optional EPROM dump, if one was
+    /// found and installed at insert time ([`Self::insert_rs232`]) — the
+    /// save-state counterpart of `cart_path` for this one cart, since the
+    /// pak can legitimately run ROM-less (`docs/plan-deluxe-rs232.md`).
+    rs232_eprom_path: Option<PathBuf>,
     /// Listen address for the RS-232 pak's TCP endpoint, edited in the menu
     /// and applied when "TCP" is (re)selected — not live-rebound on each
     /// keystroke.
@@ -246,6 +252,15 @@ struct CocoApp {
     /// watchpoints, and the Controls/Registers/Disassembly/Memory/Stack/
     /// Hardware panel cluster, toggled with F11.
     debugger: debugger::DebuggerPanel,
+    /// Where the currently-loaded system ROM image came from, for
+    /// [`Self::save_state_to`] (`save_state.rs`) to record and re-resolve —
+    /// see [`RomSource`].
+    rom_source: RomSource,
+    /// Status-bar toast: a message plus when it was shown
+    /// ([`Self::set_toast`], `save_state.rs`), displayed for
+    /// [`save_state::TOAST_SECS`] seconds — save/load-state results today,
+    /// extensible to any other fire-and-forget confirmation later.
+    toast: Option<(String, std::time::Instant)>,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -431,6 +446,107 @@ fn host_time_source() -> coco_core::rtc::TimeSource {
     Box::new(host_now)
 }
 
+/// The DriveWire server's injected wall clock (`drivewire::DwClock`,
+/// `coco_core::drivewire` — like [`host_time_source`], coco-core itself
+/// never reads `std::time`). Shared by [`CocoApp::enable_drivewire`] and
+/// `CocoApp::load_state_from`'s restore path (`save_state.rs`) — a restored
+/// `DwServer`'s clock is `#[serde(skip)]`, same reasoning as the Disto RTC's
+/// time source.
+fn host_dw_clock() -> drivewire::DwClock {
+    Box::new(|| {
+        let now = chrono::Local::now();
+        DwTime {
+            year: now.year() as u16,
+            month: now.month() as u8,
+            day: now.day() as u8,
+            hour: now.hour() as u8,
+            minute: now.minute() as u8,
+            second: now.second() as u8,
+        }
+    })
+}
+
+/// Dev-tree ROM directory (`./roms`, git-ignored): where the direct-boot CLI
+/// path and the manager's [`launch_machine`] both default-resolve system and
+/// peripheral ROMs from. (TODO, per `Self::ensure_disk_controller`: read from
+/// a user asset dir once one exists for these — `paths::roms_dir` today only
+/// covers what `ensure_assets` downloads.)
+fn dev_roms_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms")
+}
+
+/// Where [`CocoApp::ensure_disk_controller`]/[`CocoApp::mpi_insert_fd502`]
+/// (and, for save-state hashing, [`save_state`]) read the FD-502's Disk
+/// BASIC ROM from.
+fn disk_basic_rom_path() -> PathBuf {
+    dev_roms_dir().join("disk11.rom")
+}
+
+/// Where [`CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional
+/// EPROM dump from, if present.
+fn rs232_eprom_default_path() -> PathBuf {
+    dev_roms_dir().join("rs232.rom")
+}
+
+/// Where the currently-loaded system ROM image came from — tracked so
+/// `CocoApp::save_state_to`/`CocoApp::load_state_from` (`save_state.rs`) can
+/// record and re-resolve it without a second copy of the boot-time ROM logic
+/// ([`load_default_rom`]/[`load_explicit_rom`]/[`compose_coco12_rom`]).
+enum RomSource {
+    /// Loaded verbatim from a real file: `roms/coco3.rom`, or any explicit
+    /// `--rom` (which, for CoCo 1/2, must already be the composed flat
+    /// layout — see `Cli::rom`'s doc). Hashed and re-read by path directly.
+    File(PathBuf),
+    /// A CoCo 1/2 flat image composed at boot from separate Color/Extended
+    /// Color BASIC dumps under [`dev_roms_dir`] ([`compose_coco12_rom`]) —
+    /// no single backing file. The snapshot records a pseudo-path
+    /// ([`rom_db_pseudo_path`]) instead of a real one; restore recomposes
+    /// from [`dev_roms_dir`] (the only roms dir every construction site
+    /// uses — no per-instance value to carry here) and hash-compares
+    /// against the snapshot's recorded hash.
+    ComposedCoco12,
+}
+
+/// Prefix marking a [`coco_core::snapshot::MediaRef::path`] as one of
+/// [`RomSource::ComposedCoco12`]'s pseudo-paths rather than a real
+/// filesystem path — [`coco_core::snapshot::MediaRef`]'s own doc: "never
+/// resolves or interprets it, only carries it", so this module is the only
+/// reader.
+const ROM_DB_PSEUDO_PATH_PREFIX: &str = "rom-db:";
+
+/// Build [`RomSource::ComposedCoco12`]'s pseudo-path for `variant` (CoCo 3
+/// never produces one — its system ROM is always [`RomSource::File`]).
+fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
+    let label = match variant {
+        MachineVariant::Coco1 => "coco1",
+        MachineVariant::Coco2 => "coco2",
+        MachineVariant::Coco3 => "coco3",
+    };
+    PathBuf::from(format!("{ROM_DB_PSEUDO_PATH_PREFIX}{label}"))
+}
+
+/// [`load_explicit_rom`]/[`load_default_rom`], plus the [`RomSource`] a
+/// snapshot needs to re-resolve/hash whichever path was taken — the single
+/// place `main()`'s CLI path, [`CocoApp::create_vm`], and [`launch_machine`]
+/// all get both together, so they can't drift apart.
+fn load_rom_with_source(
+    explicit: Option<&Path>,
+    variant: MachineVariant,
+    roms_dir: &Path,
+) -> Result<(Box<[u8]>, RomSource), String> {
+    match explicit {
+        Some(path) => Ok((load_explicit_rom(path)?, RomSource::File(path.to_path_buf()))),
+        None => {
+            let rom = load_default_rom(variant, roms_dir)?;
+            let source = match variant {
+                MachineVariant::Coco3 => RomSource::File(roms_dir.join("coco3.rom")),
+                MachineVariant::Coco1 | MachineVariant::Coco2 => RomSource::ComposedCoco12,
+            };
+            Ok((rom, source))
+        }
+    }
+}
+
 impl CocoApp {
     /// `CreationContext` isn't taken here (unlike most `eframe::App`
     /// constructors): nothing in this struct's setup touches egui context
@@ -445,6 +561,7 @@ impl CocoApp {
     fn new(
         config: MachineConfig,
         rom: Box<[u8]>,
+        rom_source: RomSource,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
         vhd_paths: [Option<PathBuf>; UI_DRIVES],
@@ -481,11 +598,14 @@ impl CocoApp {
             pending_disk_action: None,
             mpi: None,
             rs232: None,
+            rs232_eprom_path: None,
             rs232_tcp_addr: RS232_TCP_DEFAULT_ADDR.to_string(),
             new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
             debugger: debugger::DebuggerPanel::new(),
+            rom_source,
+            toast: None,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -535,6 +655,7 @@ impl CocoApp {
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
                 self.rs232 = None; // ...and any RS-232 pak
+                self.rs232_eprom_path = None;
                 self.rtc_direct = false; // ... and any directly-plugged RTC
             }
             Err(e) => {
@@ -610,6 +731,7 @@ impl CocoApp {
         self.disk_paths = [None, None];
         self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
         self.rs232 = None;
+        self.rs232_eprom_path = None;
         self.rtc_direct = false;
     }
 
@@ -622,16 +744,20 @@ impl CocoApp {
     fn insert_rs232(&mut self) {
         self.flush_dirty_disks();
         let mut pak = coco_core::rs232::DeluxeRs232::new();
-        let rom_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/rs232.rom");
-        if let Ok(bytes) = std::fs::read(&rom_path) {
+        let rom_path = rs232_eprom_default_path();
+        let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
             pak.set_eprom(&bytes);
-        }
+            Some(rom_path)
+        } else {
+            None
+        };
         self.machine.insert_cartridge(pak);
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None;
         self.rs232 = Some(Rs232Endpoint::Loopback);
+        self.rs232_eprom_path = eprom_path;
     }
 
     /// Wire the inserted RS-232 pak to a freshly bound endpoint of `kind`
@@ -688,6 +814,7 @@ impl CocoApp {
         self.disk_paths = [None, None];
         self.mpi = None; // plugging straight into the port removes any MPI
         self.rs232 = None;
+        self.rs232_eprom_path = None;
     }
 
     /// Make sure the inserted cartridge is the FD-502 disk controller,
@@ -729,7 +856,7 @@ impl CocoApp {
             );
         }
         // TODO! will need to read from config ~/.share/cocovm or something, there should be some helper for this, maybe in paths.rs
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
+        let path = disk_basic_rom_path();
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
@@ -742,6 +869,7 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.rs232 = None;
+        self.rs232_eprom_path = None;
         self.rtc_direct = false;
         Ok(())
     }
@@ -761,6 +889,7 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.rs232 = None;
+        self.rs232_eprom_path = None;
         self.rtc_direct = false;
     }
 
@@ -869,7 +998,7 @@ impl CocoApp {
             self.cart_error = Some("An FD-502 is already installed in another slot.".to_string());
             return;
         }
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom");
+        let path = disk_basic_rom_path();
         let rom = match std::fs::read(&path) {
             Ok(rom) => rom,
             Err(e) => {
@@ -1141,17 +1270,7 @@ impl CocoApp {
         if let Some(ref mut dw) = self.machine.bus.drivewire {
             dw.set_hdbdos_mode(hdbdos_mode);
             // Inject real wall clock from the host.
-            dw.set_clock(Box::new(|| {
-                let now = chrono::Local::now();
-                DwTime {
-                    year: now.year() as u16,
-                    month: now.month() as u8,
-                    day: now.day() as u8,
-                    hour: now.hour() as u8,
-                    minute: now.minute() as u8,
-                    second: now.second() as u8,
-                }
-            }));
+            dw.set_clock(host_dw_clock());
         }
     }
 
@@ -1358,8 +1477,8 @@ impl CocoApp {
     /// preferences (keyboard mode, joysticks, audio, autostart, CR→LF)
     /// survive; they belong to the app, not the machine.
     fn create_vm(&mut self, config: MachineConfig, ctx: &egui::Context) -> Result<(), String> {
-        let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-        let rom = load_default_rom(config.variant, &roms_dir)?;
+        let roms_dir = dev_roms_dir();
+        let (rom, rom_source) = load_rom_with_source(None, config.variant, &roms_dir)?;
 
         self.flush_dirty_disks();
         self.write_back_tape();
@@ -1370,6 +1489,7 @@ impl CocoApp {
         self.paper_window.detach();
 
         self.machine = Machine::new(config, rom);
+        self.rom_source = rom_source;
         // `self.texture` is deliberately left alone: nulling it here would
         // panic in this same frame's CentralPanel (drawn after the dialog),
         // and the per-frame `texture.set` at the top of `update` re-uploads
@@ -1387,7 +1507,9 @@ impl CocoApp {
         self.pending_disk_action = None;
         self.mpi = None;
         self.rs232 = None;
+        self.rs232_eprom_path = None;
         self.rtc_direct = false;
+        self.toast = None;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "coco-rs — {}",
             machine_label(config.variant)
@@ -1433,6 +1555,17 @@ impl CocoApp {
         // symbolic type-ahead (the held modifier alone is harmless there).
         if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
             self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
+        }
+
+        // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves
+        // it (`save_state.rs`) — same early-consume rationale as ⌘N above.
+        for slot in 0..save_state::QUICK_SLOTS {
+            if ctx.input_mut(|i| i.consume_shortcut(&save_state::save_slot_shortcut(slot))) {
+                self.quick_save(slot);
+            }
+            if ctx.input_mut(|i| i.consume_shortcut(&save_state::load_slot_shortcut(slot))) {
+                self.quick_load(slot, ctx);
+            }
         }
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
@@ -1642,6 +1775,8 @@ impl CocoApp {
                         self.machine.reset();
                         ui.close();
                     }
+                    ui.separator();
+                    self.draw_save_state_menu(ui);
                     ui.separator();
                     // Plugging straight into the port only makes sense with no MPI in the
                     // way — with one installed, cartridges go into its slots instead (below).
@@ -2316,6 +2451,10 @@ impl CocoApp {
                         if cassette.dirty() { "*" } else { "" }
                     ));
                 }
+                if let Some(toast) = self.toast_message() {
+                    ui.separator();
+                    ui.label(toast);
+                }
             });
         });
 
@@ -2794,6 +2933,14 @@ struct Cli {
     /// Capture…", which this is the CLI equivalent of).
     #[arg(long, value_name = "PATH")]
     print_capture: Option<PathBuf>,
+
+    /// Boot straight into a saved state (`.ccstate`, see the Machine menu's
+    /// "Save State…"/"Load State…"): applied last, after every other flag
+    /// above has built and mounted its own machine — the snapshot's own
+    /// config and media then replace it wholesale, so `--machine`/`--ram`/
+    /// `--cart`/etc. only matter for a fresh boot without `--state`.
+    #[arg(long, value_name = "PATH")]
+    state: Option<PathBuf>,
 }
 
 /// Read an explicit `--rom` image as-is: a CoCo 3 image, or — for CoCo 1/2 —
@@ -2865,13 +3012,9 @@ fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]
 pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
     let config = def.to_machine_config()?;
 
-    let rom = match &def.hardware.rom {
-        Some(path) => load_explicit_rom(Path::new(path)),
-        None => {
-            let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-            load_default_rom(config.variant, &roms_dir)
-        }
-    }?;
+    let explicit_rom = def.hardware.rom.as_ref().map(PathBuf::from);
+    let (rom, rom_source) =
+        load_rom_with_source(explicit_rom.as_deref(), config.variant, &dev_roms_dir())?;
 
     let cart_path = def
         .media
@@ -2920,6 +3063,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         CocoApp::new(
             config,
             rom,
+            rom_source,
             None,
             [None, None],
             vhd_paths,
@@ -2932,6 +3076,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         CocoApp::new(
             config,
             rom,
+            rom_source,
             cart_path.clone(),
             disk_paths.clone(),
             vhd_paths,
@@ -3273,13 +3418,9 @@ fn main() -> eframe::Result<()> {
         eprintln!("coco: invalid configuration: {e}");
         std::process::exit(1);
     }
-    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-    let rom = match cli.rom {
-        Some(path) => load_explicit_rom(&path),
-        None => load_default_rom(variant, &roms_dir),
-    };
-    let rom = match rom {
-        Ok(rom) => rom,
+    let roms_dir = dev_roms_dir();
+    let (rom, rom_source) = match load_rom_with_source(cli.rom.as_deref(), variant, &roms_dir) {
+        Ok(result) => result,
         Err(e) => {
             eprintln!("coco: {e}");
             eprintln!("Pass --rom <PATH> to boot a specific image.");
@@ -3298,6 +3439,7 @@ fn main() -> eframe::Result<()> {
     let ssc = cli.ssc;
     let save_tape_wav = cli.tape_wav;
     let print_capture = cli.print_capture;
+    let state_path = cli.state;
     // Without --mpi, --cart, --disk0/--disk1/--fd502, --rtc, and --ssc all
     // want the single cartridge port (clap's declarative `conflicts_with`
     // can't express "only when --mpi is absent", so this is checked by hand).
@@ -3345,6 +3487,7 @@ fn main() -> eframe::Result<()> {
                 CocoApp::new(
                     config,
                     rom,
+                    rom_source,
                     None,
                     [None, None],
                     vhd_paths,
@@ -3357,6 +3500,7 @@ fn main() -> eframe::Result<()> {
                 CocoApp::new(
                     config,
                     rom,
+                    rom_source,
                     cart_path.clone(),
                     disk_paths.clone(),
                     vhd_paths,
@@ -3391,6 +3535,21 @@ fn main() -> eframe::Result<()> {
                 app.insert_rtc();
             } else if ssc {
                 app.insert_ssc();
+            }
+            // --state loads before --print-capture starts (reversed from
+            // this function's other CLI-flag ordering): the snapshot's own
+            // config and media win outright, replacing `app.machine`
+            // wholesale (see `Cli::state`'s doc) — including its bit-banger,
+            // whose sink `CocoApp::apply_restored_machine` resets and clears
+            // `print_capture_path` unconditionally. Starting the capture
+            // AFTER that means an explicit --print-capture survives the
+            // load instead of being silently clobbered the instant the
+            // restored machine lands.
+            if let Some(path) = state_path
+                && let Err(e) = app.load_state_from(&path, &cc.egui_ctx)
+            {
+                eprintln!("coco: {e}");
+                std::process::exit(1);
             }
             if let Some(path) = print_capture {
                 app.start_print_capture(path);

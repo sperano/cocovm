@@ -16,6 +16,8 @@
 //! isn't ready for stays queued host-side (kernel socket/pty buffer),
 //! which is this model's stand-in for the sender's own pacing.
 
+use serde::{Deserialize, Serialize};
+
 use crate::acia6551::Acia6551;
 use crate::cart::{Cartridge, IO_OPEN_BUS, ROM_OPEN_BUS};
 use crate::serial::{Loopback, SerialEndpoint};
@@ -36,14 +38,31 @@ pub const EPROM_LEN: usize = 0x1000;
 /// rate (19200 baud ≈ 466 cycles/frame), so throughput is never poll-bound.
 const HOST_POLL_INTERVAL: u32 = 128;
 
+/// `#[serde(default = "...")]` for [`DeluxeRs232::endpoint`]: matches
+/// [`DeluxeRs232::new`]'s own inert default.
+fn default_endpoint() -> Box<dyn SerialEndpoint> {
+    Box::new(Loopback::new())
+}
+
 /// The Deluxe RS-232 Program Pak as a cartridge-port device.
+#[derive(Serialize, Deserialize)]
 pub struct DeluxeRs232 {
     acia: Acia6551,
+    /// Skipped: a host backend (TCP, PTY, …) is a host resource with no
+    /// serializable shape. Deserializes to a fresh [`Loopback`] via
+    /// `default_endpoint` below; the frontend re-plugs a real backend after
+    /// restore through [`DeluxeRs232::set_endpoint`]
+    /// (`docs/plan-save-states.md`).
+    #[serde(skip, default = "default_endpoint")]
     endpoint: Box<dyn SerialEndpoint>,
     /// 4K EPROM image (the BASIC `DOS`/terminal ROM), if one was provided —
     /// a real dump isn't required to use the serial port from OS-9 or from
     /// hand-written BASIC `PEEK`/`POKE` code, so the pak works ROM-less
-    /// (CTS reads answer open-bus).
+    /// (CTS reads answer open-bus). Skipped: COPYRIGHTED ROM bytes never
+    /// travel through a snapshot; `None` is the correct restored default
+    /// until the frontend re-injects it via the existing
+    /// [`DeluxeRs232::set_eprom`] (`docs/plan-save-states.md`).
+    #[serde(skip)]
     eprom: Option<Box<[u8]>>,
     /// Cycles since the endpoint was last polled (see [`HOST_POLL_INTERVAL`]).
     since_host_poll: u32,

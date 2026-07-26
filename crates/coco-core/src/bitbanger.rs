@@ -33,6 +33,8 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::rc::Rc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::dmp105::Dmp105Handle;
 
 /// PIA1 Port A bit 1 ($FF20): the TX line to the printer. 1 = mark/idle
@@ -78,6 +80,33 @@ const TOTAL_SAMPLES: u8 = DATA_BITS + 2;
 /// grow beyond what the decoder itself needs.
 pub trait PrinterSink {
     fn write_byte(&mut self, b: u8);
+
+    /// Snapshot this sink's state for serialization (see the `sink_serde`
+    /// module below) — the default, kept by every sink with no state worth
+    /// carrying across a save-state (`NoopSink`, [`CaptureSink`]), is
+    /// [`sink_serde::SinkState::Noop`].
+    fn snapshot(&self) -> sink_serde::SinkState {
+        sink_serde::SinkState::Noop
+    }
+
+    /// Downcast hook: `Some` only for a live [`Dmp105Handle`] sink, so the
+    /// frontend can re-grab the restored handle for the paper window after
+    /// `sink_serde::deserialize` rebuilds `sink` (see
+    /// [`BitBanger::dmp105_handle`]). Default: not a DMP-105 sink.
+    fn as_dmp105(&self) -> Option<&Dmp105Handle> {
+        None
+    }
+
+    /// True only for [`StoppedFileCaptureSink`] — the marker
+    /// `sink_serde::deserialize` installs in place of a live [`FileSink`]
+    /// after a snapshot restore. Lets the save-state restore flow
+    /// (`crate::snapshot::restore`) tell "print capture was active at save
+    /// time, now stopped" apart from "print capture was never active", even
+    /// though both restore to functionally the same no-op sink
+    /// (`docs/plan-save-states.md`). Default: not that marker.
+    fn was_file_capture_stopped_by_restore(&self) -> bool {
+        false
+    }
 }
 
 /// Sink used until something more interesting is plugged in via
@@ -86,6 +115,22 @@ struct NoopSink;
 
 impl PrinterSink for NoopSink {
     fn write_byte(&mut self, _b: u8) {}
+}
+
+/// Marker sink `sink_serde::deserialize` installs when the snapshot recorded
+/// [`sink_serde::SinkState::FileCapture`]: behaves exactly like [`NoopSink`]
+/// (a restored file handle is frontend-owned and can't be reopened without
+/// frontend involvement — `docs/plan-save-states.md` "on restore, capture is
+/// simply stopped"), but is a distinct type so
+/// [`PrinterSink::was_file_capture_stopped_by_restore`] can report that
+/// capture *was* running, for the snapshot restore flow's standing notes.
+struct StoppedFileCaptureSink;
+
+impl PrinterSink for StoppedFileCaptureSink {
+    fn write_byte(&mut self, _b: u8) {}
+    fn was_file_capture_stopped_by_restore(&self) -> bool {
+        true
+    }
 }
 
 /// Test/diagnostic sink: appends every decoded byte to a shared buffer.
@@ -167,10 +212,19 @@ impl PrinterSink for FileSink {
             let _ = self.file.flush();
         }
     }
+
+    /// `docs/plan-save-states.md`: "on restore, capture is simply stopped" —
+    /// the open file handle is frontend-owned and doesn't survive a
+    /// snapshot, but `sink_serde::deserialize` still needs to know a file
+    /// capture *was* active so the paper/text distinction isn't lost on the
+    /// wire (even though both currently restore to a no-op sink).
+    fn snapshot(&self) -> sink_serde::SinkState {
+        sink_serde::SinkState::FileCapture
+    }
 }
 
 /// RX state machine driven by [`BitBanger::tick`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 enum RxState {
     /// Idle at mark, hunting for the next mark→space edge (a start-bit
     /// candidate).
@@ -187,6 +241,7 @@ enum RxState {
 /// Receive-only: models what a virtual printer sees on PA1, plus the BUSY
 /// line it can drive back. See the module doc comment for the design
 /// rationale (cycle-timed ticking, mid-cell sampling, pluggable sink).
+#[derive(Serialize, Deserialize)]
 pub struct BitBanger {
     /// Cycles per bit cell — see [`DEFAULT_BIT_PERIOD`].
     bit_period: u32,
@@ -203,6 +258,11 @@ pub struct BitBanger {
     /// matching the line's idle-high convention).
     last_mark: bool,
     state: RxState,
+    /// The trait object is serialized through the small state enum in
+    /// [`sink_serde`], not directly — the DMP-105/paper state must survive
+    /// a snapshot even though the sink itself doesn't own a serializable
+    /// shape (`docs/plan-save-states.md`).
+    #[serde(with = "sink_serde")]
     sink: Box<dyn PrinterSink>,
 }
 
@@ -291,6 +351,21 @@ impl BitBanger {
         handle
     }
 
+    /// The live sink's [`Dmp105Handle`], if it is one — how the frontend
+    /// re-grabs the paper-window handle after a snapshot restore rebuilds
+    /// `sink` from `sink_serde::SinkState::Dmp105` (a `Dmp105Handle` is a
+    /// cheap `Rc` clone, so this is fine to call every frame).
+    pub fn dmp105_handle(&self) -> Option<Dmp105Handle> {
+        self.sink.as_dmp105().cloned()
+    }
+
+    /// True if this `BitBanger` just came back from a snapshot restore whose
+    /// sink was a live file capture at save time (`crate::snapshot::restore`'s
+    /// standing-notes step, `docs/plan-save-states.md`).
+    pub fn capture_was_stopped_on_restore(&self) -> bool {
+        self.sink.was_file_capture_stopped_by_restore()
+    }
+
     /// Advance the decoder by `cycles` CPU cycles with PA1 held at
     /// `pa1_mark` (true = mark/high, false = space/low) for that whole
     /// span. Called once per instruction from `Machine::run_cycles`,
@@ -363,6 +438,60 @@ impl BitBanger {
     fn sample_threshold(&self, sample: u8) -> u32 {
         let scaled = u64::from(self.bit_period) * (2 * u64::from(sample) + 1);
         (scaled / 2) as u32
+    }
+}
+
+/// `#[serde(with = "sink_serde")]` for [`BitBanger::sink`]: the trait object
+/// itself isn't `Serialize`/`Deserialize` (and shouldn't be — a serialized
+/// `Box<dyn PrinterSink>` would either need typetag machinery for a
+/// two-implementation seam or leak host file handles into the snapshot), so
+/// this maps it to and from the small [`SinkState`] enum instead
+/// (`docs/plan-save-states.md`).
+// `pub`, not `pub(crate)`: `PrinterSink` itself is public API (implemented
+// by `coco-egui`), and its `snapshot` method's return type must be at least
+// as visible as the trait or rustc's `private_interfaces` lint fires.
+pub mod sink_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::{NoopSink, PrinterSink};
+    use crate::dmp105::{Dmp105, Dmp105Handle};
+
+    /// What actually needs to survive a snapshot, per live sink kind: a
+    /// no-op sink and a file capture both restore to [`NoopSink`] (`FileSink`
+    /// holds an open host file handle, frontend-owned — "on restore, capture
+    /// is simply stopped", `docs/plan-save-states.md`), while a DMP-105 sink
+    /// carries its whole interpreter/paper state across.
+    #[derive(Serialize, Deserialize)]
+    pub enum SinkState {
+        Noop,
+        FileCapture,
+        Dmp105(Dmp105),
+    }
+
+    // `&Box<dyn PrinterSink>`, not `&dyn PrinterSink`: this is what the
+    // `#[serde(with = "sink_serde")]` codegen actually calls with (the
+    // field's declared type is `Box<dyn PrinterSink>`) — `&Box<T> -> &dyn
+    // Trait` isn't a coercion rustc applies at a plain call site, only at
+    // method-call receiver position, so narrowing the parameter here would
+    // fail to compile.
+    #[allow(clippy::borrowed_box)]
+    pub(crate) fn serialize<S: Serializer>(
+        sink: &Box<dyn PrinterSink>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        sink.snapshot().serialize(serializer)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Box<dyn PrinterSink>, D::Error> {
+        Ok(match SinkState::deserialize(deserializer)? {
+            SinkState::Noop => Box::new(NoopSink),
+            // Distinct from `SinkState::Noop`, even though both currently
+            // behave identically: see `StoppedFileCaptureSink`'s doc comment.
+            SinkState::FileCapture => Box::new(super::StoppedFileCaptureSink),
+            SinkState::Dmp105(state) => Box::new(Dmp105Handle::from_state(state)),
+        })
     }
 }
 

@@ -10,6 +10,12 @@ workspace = true
 [dependencies]
 mc6809 = { path = "../mc6809", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+# Snapshot engine (`docs/plan-machine-persistence.md` "Snapshot compatibility
+# contract"): CBOR payload, gzipped, hashed with SHA-256 — see `snapshot.rs`.
+ciborium = "0.2"
+flate2 = "1"
+sha2 = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
