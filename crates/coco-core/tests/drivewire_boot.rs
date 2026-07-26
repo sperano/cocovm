@@ -104,7 +104,7 @@ fn boot_to_hdbdos_prompt(coco: Vec<u8>, hdbdos: Vec<u8>, hdbdos_mode: bool) -> M
     const HDBDOS_BANNER: &str = "HDB-DOS";
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
-    m.insert_cartridge(Box::new(RomPak::from_bytes(&hdbdos, false).unwrap()));
+    m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
     m.bus.enable_drivewire();
     let dw = m.bus.drivewire.as_mut().unwrap();
     dw.set_hdbdos_mode(hdbdos_mode);
@@ -211,7 +211,7 @@ fn hdbdos_save_writes_through_drivewire() {
         .expect("open scratch copy read+write");
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
-    m.insert_cartridge(Box::new(RomPak::from_bytes(&hdbdos, false).unwrap()));
+    m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
     m.bus.enable_drivewire();
     let dw = m.bus.drivewire.as_mut().unwrap();
     dw.set_hdbdos_mode(true);

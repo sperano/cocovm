@@ -36,7 +36,7 @@ fn main() {
     let mut m = Machine::new(MachineConfig::default(), load_rom());
     if let Some(path) = &cart_path {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
-        m.insert_cartridge(Box::new(RomPak::from_bytes(&bytes, true).unwrap()));
+        m.insert_cartridge(RomPak::from_bytes(&bytes, true).unwrap());
         m.reset();
     }
     let out = std::io::stdout();

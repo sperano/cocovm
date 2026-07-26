@@ -3,6 +3,7 @@
 //! write-8 / read-low-6 MMU register asymmetry (`DESIGN.md` §3).
 
 use coco_core::config::BLOCK_SIZE;
+use coco_core::cart::Cart;
 use coco_core::gime::{DISABLED_MMU_BASE, MMU_READ_MASK, init0, init1};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
@@ -69,7 +70,7 @@ fn mc_16k_split_routes_upper_half_to_cartridge() {
     assert_eq!(b.read(0x8123), 0x23, "lower half stays internal");
     assert_eq!(b.read(0xC123), 0x00, "upper half is the (empty) cartridge");
 
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     assert_eq!(b.read(0xC123), 0xAA, "upper half reads the cartridge ROM");
     assert_eq!(b.read(0x8123), 0x23, "lower half still internal");
 }
@@ -77,7 +78,7 @@ fn mc_16k_split_routes_upper_half_to_cartridge() {
 #[test]
 fn mc_32k_internal_keeps_upper_half_internal() {
     let mut b = bus(MemorySize::K512);
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     // The cold-start value: MC=10 (32K internal) — what a diskless boot runs.
     b.write(0xFF90, init0::MC1);
     assert_eq!(b.read(0xC123), 0x23, "upper half reads internal ROM");
@@ -86,7 +87,7 @@ fn mc_32k_internal_keeps_upper_half_internal() {
 #[test]
 fn mc_32k_external_maps_whole_window_except_vectors() {
     let mut b = bus(MemorySize::K512);
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     b.write(0xFF90, init0::MC1 | init0::MC0);
     assert_eq!(b.read(0x8123), 0xAA, "lower half external under MC=11");
     assert_eq!(b.read(0xFDFF), 0xAA, "top of window external");
@@ -98,7 +99,7 @@ fn mc_32k_external_maps_whole_window_except_vectors() {
 #[test]
 fn hardwired_window_reads_internal_rom_with_32k_external_cart() {
     let mut b = bus(MemorySize::K512);
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     b.write(0xFF90, init0::MC1 | init0::MC0); // MC=11: 32K external
     assert_eq!(
         b.read(0x8000),
@@ -117,7 +118,7 @@ fn hardwired_window_reads_internal_rom_with_32k_external_cart() {
 #[test]
 fn hardwired_window_reads_internal_rom_even_in_all_ram_mode() {
     let mut b = bus(MemorySize::K512);
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     b.write(0xFF90, init0::MC1 | init0::MC0); // MC=11: 32K external
     b.gime.all_ram = true; // SAM TY set: ROM disabled everywhere else
     assert_eq!(
@@ -173,7 +174,7 @@ fn vector_page_follows_rom_map_when_mc3_clear() {
     // $FDFF); Sokoban keeps its palette tables there and copies them out via
     // $FE88 reads. In 32K-internal mode it reads coco3.rom offset $7Exx.
     let mut b = bus(MemorySize::K512);
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     b.write(0xFF90, 0x00); // MC3=0, MC=00: 16K internal + 16K external
     assert_eq!(b.read(0xFE88), 0xAA, "vector page reads the cartridge");
     b.write(0xFF90, init0::MC1); // MC3=0, MC=10: 32K internal
@@ -191,7 +192,7 @@ fn vector_page_follows_rom_map_when_mc3_clear() {
 #[test]
 fn vector_page_is_mapped_ram_in_all_ram_mode_when_mc3_clear() {
     let mut b = bus(MemorySize::K512);
-    b.cart = Box::new(MarkerCart);
+    b.cart = Cart::custom(MarkerCart);
     b.write(0xFF90, 0x00); // MC3=0
     b.gime.all_ram = true; // SAM TY: no ROM anywhere in the window
     b.write(0xFE88, 0x7E);

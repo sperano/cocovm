@@ -146,7 +146,7 @@ fn autostart_pak_runs_its_cart_code_via_the_firq_boot_path() {
     // test instead of hanging.
     const MAX_FIELDS: usize = 400;
     let mut m = boot_machine();
-    m.insert_cartridge(Box::new(marker_pak(true)));
+    m.insert_cartridge(marker_pak(true));
     m.reset();
 
     let mut fired = false;
@@ -167,7 +167,7 @@ fn autostart_pak_runs_its_cart_code_via_the_firq_boot_path() {
 fn non_autostart_pak_boots_to_normal_basic_and_never_runs_cart_code() {
     const FIELDS: usize = 400;
     let mut m = boot_machine();
-    m.insert_cartridge(Box::new(marker_pak(false)));
+    m.insert_cartridge(marker_pak(false));
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();
@@ -188,9 +188,9 @@ fn disk_basic_pak_integrates_at_cold_start() {
     // (`docs/cartridges.md`).
     const FIELDS: usize = 400;
     let mut m = boot_machine();
-    m.insert_cartridge(Box::new(
+    m.insert_cartridge(
         RomPak::from_bytes(&load_rom("disk11.rom"), false).unwrap(),
-    ));
+    );
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();

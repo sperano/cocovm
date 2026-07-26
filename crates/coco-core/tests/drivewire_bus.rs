@@ -7,6 +7,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use coco_core::cart::Cart;
 use coco_core::drivewire::{DwImage, SECTOR_SIZE, error, opcode};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
@@ -41,8 +42,8 @@ const MARKER_CART_READ: u8 = 0x77;
 /// A cartridge that answers a fixed marker byte on reads and records the
 /// last byte written to it. `last_write` is an `Rc<Cell<u8>>` (not a plain
 /// `Cell` field) so a test can keep an external handle to it after the
-/// `MarkerCart` itself has been moved into `SystemBus::cart` as a
-/// `Box<dyn Cartridge>`, which has no downcast.
+/// `MarkerCart` itself has been moved into `SystemBus::cart` behind
+/// `Cart::custom`, whose trait-object box has no downcast.
 struct MarkerCart {
     last_write: Rc<Cell<u8>>,
 }
@@ -104,7 +105,7 @@ fn disabled_becker_falls_through_to_cartridge() {
     assert_eq!(b.read(BECKER_DATA), coco_core::cart::IO_OPEN_BUS);
 
     let (cart, last_write) = MarkerCart::new();
-    b.cart = Box::new(cart);
+    b.cart = Cart::custom(cart);
 
     // Reads reach the cart's marker value.
     assert_eq!(b.read(BECKER_STATUS), MARKER_CART_READ);
@@ -187,7 +188,7 @@ fn becker_takes_precedence_over_cartridge() {
     let mut b = bus();
     b.enable_drivewire();
     let (cart, last_write) = MarkerCart::new();
-    b.cart = Box::new(cart);
+    b.cart = Cart::custom(cart);
 
     // $FF41/$FF42 go to Becker (idle status), not the cart's marker value.
     assert_eq!(b.read(BECKER_STATUS), 0x00);

@@ -26,7 +26,7 @@ const CLEAR_BUSY: u32 = 1_000;
 
 fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
     let mut b = SystemBus::new(variant, memory, vec![0u8; 32 * 1024].into_boxed_slice());
-    b.cart = Box::new(Ssc::new());
+    b.cart = Ssc::new().into();
     b
 }
 
@@ -125,7 +125,7 @@ fn empty_slot_still_reads_open_bus_across_ff60_to_ff7e() {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    b.cart = Box::new(EmptySlot);
+    b.cart = EmptySlot.into();
     for addr in 0xFF60u16..=0xFF7E {
         assert_eq!(b.read(addr), 0xFF, "addr {addr:#06x} must be open bus with an empty slot");
     }
@@ -148,8 +148,8 @@ fn ssc_in_a_non_scs_selected_mpi_slot_still_receives_ff7d_ff7e() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     let mut mp = MultiPak::new(3); // switch on slot 4 (index 3)
-    mp.insert(1, Box::new(Ssc::new())); // SSC lives in slot 2 (index 1)
-    b.cart = Box::new(mp);
+    mp.insert(1, Ssc::new()); // SSC lives in slot 2 (index 1)
+    b.cart = mp.into();
 
     // Re-point the SCS/CTS select at slot 0, definitely not the SSC's slot 1.
     b.write(0xFF7F, 0x00);

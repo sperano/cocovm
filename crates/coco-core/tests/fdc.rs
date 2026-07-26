@@ -924,7 +924,7 @@ fn boots_to_disk_basic_and_dir_lists_the_synthesized_file() {
     let mut m = boot_machine();
     let mut cart = DiskCart::new(load_rom("disk11.rom"));
     cart.insert_disk(0, synthesized_rsdos_disk("HELLO", "BAS"));
-    m.insert_cartridge(Box::new(cart));
+    m.insert_cartridge(cart);
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();
@@ -950,7 +950,7 @@ fn boots_to_disk_basic_and_dir_lists_the_synthesized_file() {
 fn boots_to_disk_basic_without_a_disk_inserted() {
     const FIELDS: usize = 400;
     let mut m = boot_machine();
-    m.insert_cartridge(Box::new(DiskCart::new(load_rom("disk11.rom"))));
+    m.insert_cartridge(DiskCart::new(load_rom("disk11.rom")));
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();
@@ -976,7 +976,7 @@ fn controller_added_mid_session_boots_disk_basic_after_power_cycle() {
         && !(0..16).any(|r| screen_row(&mut m, r).contains("DISK"));
     assert!(plain, "precondition: booted to non-disk BASIC");
 
-    m.insert_cartridge(Box::new(DiskCart::new(load_rom("disk11.rom"))));
+    m.insert_cartridge(DiskCart::new(load_rom("disk11.rom")));
     m.power_cycle();
     for _ in 0..FIELDS {
         m.run_field();
@@ -1074,7 +1074,7 @@ fn loadm_preserves_every_sector_byte_across_the_halt_nmi_handshake() {
     let mut m = Machine::new(MachineConfig::default(), coco);
     let mut cart = DiskCart::new(disk_rom);
     cart.insert_disk(0, synthesized_ml_disk("TESTML", LOAD_ADDR, &data));
-    m.insert_cartridge(Box::new(cart));
+    m.insert_cartridge(cart);
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();
@@ -1125,7 +1125,7 @@ fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
     let mut m = Machine::new(MachineConfig::default(), coco);
     let mut cart = DiskCart::new(disk_rom);
     cart.insert_disk(0, JvcDisk::from_bytes(Vec::new()).unwrap()); // blank, 0 tracks
-    m.insert_cartridge(Box::new(cart));
+    m.insert_cartridge(cart);
     m.reset();
     for _ in 0..BOOT_FIELDS {
         m.run_field();
@@ -1211,7 +1211,7 @@ fn nitros9_l2_boot_reaches_shell_prompt() {
     let mut m = Machine::new(MachineConfig::default(), coco);
     let mut cart = DiskCart::new(disk_rom);
     cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
-    m.insert_cartridge(Box::new(cart));
+    m.insert_cartridge(cart);
     m.reset();
     for _ in 0..BOOT_FIELDS {
         m.run_field();

@@ -22,7 +22,7 @@ fn bus_with_orch90() -> SystemBus {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    b.cart = Box::new(orch90());
+    b.cart = orch90().into();
     b
 }
 
@@ -109,8 +109,8 @@ fn mpi_dac_writes_ignore_the_slot_select_and_audio_sums() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     let mut mp = MultiPak::new(ORCH_SLOT);
-    mp.insert(ORCH_SLOT, Box::new(orch90()));
-    b.cart = Box::new(mp);
+    mp.insert(ORCH_SLOT, orch90());
+    b.cart = mp.into();
 
     b.write(LEFT_DAC_REG, 0xFF);
     b.write(RIGHT_DAC_REG, 0xFF);
@@ -170,7 +170,7 @@ fn orch90_autostarts_and_its_cart_code_drives_the_dacs() {
     // or the $FF7A/$FF7B decode breaks) fails instead of hanging.
     const MAX_FIELDS: usize = 400;
     let mut m = Machine::new(MachineConfig::default(), load_coco3_rom());
-    m.insert_cartridge(Box::new(marker_orch90()));
+    m.insert_cartridge(marker_orch90());
     m.reset();
 
     let mut latched = false;

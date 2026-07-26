@@ -346,13 +346,14 @@ const DEFAULT_SSC_SLOT: usize = 1;
 
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
 /// cold restart (or just the status bar / menu labels) can describe it
-/// without having to downcast the core's trait objects. The FD-502 doesn't
+/// without having to match on the core's [`Cart`] enum. The FD-502 doesn't
 /// carry its own disk paths here — those stay in [`CocoApp::disk_paths`]
-/// exactly as they do without an MPI, since [`Cartridge::as_disk_cart`]
+/// exactly as they do without an MPI, since [`Cart::as_disk_cart`]
 /// forwarding already makes the drive UI transparent to whether the
 /// controller lives at the top level or nested in a slot.
 ///
-/// [`Cartridge::as_disk_cart`]: coco_core::cart::Cartridge::as_disk_cart
+/// [`Cart`]: coco_core::cart::Cart
+/// [`Cart::as_disk_cart`]: coco_core::cart::Cart::as_disk_cart
 enum MPISlot {
     Empty,
     ROMPak(PathBuf),
@@ -528,7 +529,7 @@ impl CocoApp {
         match RomPak::from_bytes(&bytes, self.autostart_cart) {
             Ok(pak) => {
                 self.flush_dirty_disks();
-                self.machine.insert_cartridge(Box::new(pak));
+                self.machine.insert_cartridge(pak);
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
@@ -558,7 +559,7 @@ impl CocoApp {
         match Gmc::from_bytes(&bytes, self.autostart_cart) {
             Ok(cart) => {
                 self.flush_dirty_disks();
-                self.machine.insert_cartridge(Box::new(cart));
+                self.machine.insert_cartridge(cart);
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
@@ -587,7 +588,7 @@ impl CocoApp {
         match Orch90::from_rom_bytes(&bytes) {
             Ok(cart) => {
                 self.flush_dirty_disks();
-                self.machine.insert_cartridge(Box::new(cart));
+                self.machine.insert_cartridge(cart);
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
@@ -625,7 +626,7 @@ impl CocoApp {
         if let Ok(bytes) = std::fs::read(&rom_path) {
             pak.set_eprom(&bytes);
         }
-        self.machine.insert_cartridge(Box::new(pak));
+        self.machine.insert_cartridge(pak);
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -681,7 +682,7 @@ impl CocoApp {
     /// paks, this can't fail.
     fn insert_ssc(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(Box::new(Ssc::new()));
+        self.machine.insert_cartridge(Ssc::new());
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -733,7 +734,7 @@ impl CocoApp {
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(Box::new(DiskCart::new(rom.into_boxed_slice())));
+        self.machine.insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
         // Power cycle, not warm reset: the DK probe that links Disk BASIC
         // only runs on the ROM's cold-start path (a warm reset leaves the
         // DOS ROM unlinked and the drives dead).
@@ -751,7 +752,7 @@ impl CocoApp {
     /// front-panel switch on slot 4 ([`DEFAULT_MPI_SWITCH_SLOT`]).
     fn insert_multipak(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(Box::new(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT)));
+        self.machine.insert_cartridge(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT));
         self.machine.power_cycle();
         self.mpi = Some(MPIState {
             switch: DEFAULT_MPI_SWITCH_SLOT,
@@ -790,7 +791,7 @@ impl CocoApp {
             Ok(pak) => {
                 self.flush_dirty_disks();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
-                    mp.insert(slot, Box::new(pak));
+                    mp.insert(slot, pak);
                 }
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MPISlot::ROMPak(path);
@@ -817,7 +818,7 @@ impl CocoApp {
             Ok(cart) => {
                 self.flush_dirty_disks();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
-                    mp.insert(slot, Box::new(cart));
+                    mp.insert(slot, cart);
                 }
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MPISlot::Gmc(path);
@@ -845,7 +846,7 @@ impl CocoApp {
             Ok(cart) => {
                 self.flush_dirty_disks();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
-                    mp.insert(slot, Box::new(cart));
+                    mp.insert(slot, cart);
                 }
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MPISlot::Orch90(path);
@@ -879,7 +880,7 @@ impl CocoApp {
         };
         self.flush_dirty_disks();
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, Box::new(DiskCart::new(rom.into_boxed_slice())));
+            mp.insert(slot, DiskCart::new(rom.into_boxed_slice()));
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::FD502;
@@ -895,7 +896,7 @@ impl CocoApp {
     fn mpi_insert_ssc(&mut self, slot: usize) {
         self.flush_dirty_disks();
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, Box::new(Ssc::new()));
+            mp.insert(slot, Ssc::new());
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::Ssc;
@@ -937,7 +938,7 @@ impl CocoApp {
     /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
     fn insert_rtc(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(Box::new(DistoRtc::new(host_time_source())));
+        self.machine.insert_cartridge(DistoRtc::new(host_time_source()));
         self.machine.power_cycle();
         self.rtc_direct = true;
         self.cart_path = None;
@@ -961,7 +962,7 @@ impl CocoApp {
             return;
         }
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, Box::new(DistoRtc::new(host_time_source())));
+            mp.insert(slot, DistoRtc::new(host_time_source()));
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::DistoRTC;

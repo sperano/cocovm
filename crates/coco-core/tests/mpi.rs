@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::cart::{Cartridge, MultiPak, RomPak};
+use coco_core::cart::{Cart, Cartridge, MultiPak, RomPak};
 use coco_core::fdc::DiskCart;
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
@@ -89,7 +89,7 @@ impl Cartridge for TestCart {
 #[test]
 fn readback_after_reset_uses_the_default_switch_slot4() {
     let mut b = bus();
-    b.cart = Box::new(MultiPak::new(SWITCH_SLOT4));
+    b.cart = MultiPak::new(SWITCH_SLOT4).into();
     b.cart.reset();
     assert_eq!(b.read(MPI_CONTROL), 0xFF);
 }
@@ -97,7 +97,7 @@ fn readback_after_reset_uses_the_default_switch_slot4() {
 #[test]
 fn write_ors_the_unused_bits_high_on_readback() {
     let mut b = bus();
-    b.cart = Box::new(MultiPak::new(SWITCH_SLOT4));
+    b.cart = MultiPak::new(SWITCH_SLOT4).into();
     b.write(MPI_CONTROL, 0x10);
     assert_eq!(b.read(MPI_CONTROL), 0xDC, "0x10 | 0xCC");
 }
@@ -105,7 +105,7 @@ fn write_ors_the_unused_bits_high_on_readback() {
 #[test]
 fn write_replaces_the_whole_byte_not_a_nibble_merge() {
     let mut b = bus();
-    b.cart = Box::new(MultiPak::new(SWITCH_SLOT4));
+    b.cart = MultiPak::new(SWITCH_SLOT4).into();
     b.write(MPI_CONTROL, 0x10); // SCS slot index 0, CTS slot index 1 (physical slot 2)
     assert_eq!(b.read(MPI_CONTROL), 0xDC);
     b.write(MPI_CONTROL, 0x01); // SCS slot index 1 (physical slot 2), CTS slot index 0 (physical slot 1)
@@ -160,7 +160,7 @@ fn machine_reset_restores_switch_control_and_reloads_value() {
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     mp.control_write(0x10); // software takes over
     mp.set_switch(1); // physical slot 2 -- blocked, must not apply yet
-    m.insert_cartridge(Box::new(mp));
+    m.insert_cartridge(mp);
 
     assert_eq!(m.bus.read(MPI_CONTROL), 0xDC, "software value still in effect pre-reset");
     m.reset();
@@ -179,9 +179,9 @@ fn machine_reset_restores_switch_control_and_reloads_value() {
 fn scs_routing_follows_bits_1_0_and_tracks_changes() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
-    mp.insert(0, Box::new(TestCart::new(0xA0)));
-    mp.insert(1, Box::new(TestCart::new(0xB0)));
-    b.cart = Box::new(mp);
+    mp.insert(0, Cart::custom(TestCart::new(0xA0)));
+    mp.insert(1, Cart::custom(TestCart::new(0xB0)));
+    b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // SCS slot 0
     assert_eq!(b.read(0xFF40), 0xA0);
@@ -200,9 +200,9 @@ fn scs_routing_follows_bits_1_0_and_tracks_changes() {
 fn cts_routing_follows_bits_5_4() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
-    mp.insert(0, Box::new(RomPak::from_bytes(&[0xAA], false).unwrap()));
-    mp.insert(1, Box::new(RomPak::from_bytes(&[0xBB], false).unwrap()));
-    b.cart = Box::new(mp);
+    mp.insert(0, RomPak::from_bytes(&[0xAA], false).unwrap());
+    mp.insert(1, RomPak::from_bytes(&[0xBB], false).unwrap());
+    b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // CTS slot 0
     assert_eq!(b.cart.rom_read(0x8000), 0xAA);
@@ -218,9 +218,9 @@ fn cts_routing_follows_bits_5_4() {
 fn cart_line_ties_q_follows_cts_select_only() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
-    mp.insert(0, Box::new(RomPak::from_bytes(&[0u8], true).unwrap())); // autostart
-    mp.insert(1, Box::new(RomPak::from_bytes(&[0u8], false).unwrap())); // not autostart
-    b.cart = Box::new(mp);
+    mp.insert(0, RomPak::from_bytes(&[0u8], true).unwrap()); // autostart
+    mp.insert(1, RomPak::from_bytes(&[0u8], false).unwrap()); // not autostart
+    b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // CTS slot 0 (autostart)
     assert!(b.cart.cart_line_ties_q());
@@ -238,11 +238,11 @@ fn halt_and_nmi_are_wire_ored_across_all_slots_regardless_of_selection() {
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     let mut halting = TestCart::new(0x10);
     halting.halt = true;
-    mp.insert(1, Box::new(halting));
+    mp.insert(1, Cart::custom(halting));
     let mut nmi_cart = TestCart::new(0x20);
     nmi_cart.nmi_pending = true;
-    mp.insert(2, Box::new(nmi_cart));
-    b.cart = Box::new(mp);
+    mp.insert(2, Cart::custom(nmi_cart));
+    b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // selects slot 0 for both SCS and CTS -- neither slot 1 nor 2
     assert!(
@@ -260,9 +260,9 @@ fn tick_advances_every_slot_regardless_of_selection() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     for i in 0..4u8 {
-        mp.insert(i as usize, Box::new(TestCart::new(i)));
+        mp.insert(i as usize, Cart::custom(TestCart::new(i)));
     }
-    b.cart = Box::new(mp);
+    b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // only slot 0 is ever selected
     b.cart.tick(7);
@@ -308,8 +308,8 @@ fn mpi_with_fd502_in_slot4_and_switch_on_slot4_boots_disk_basic() {
 
     let mut m = Machine::new(MachineConfig::default(), coco);
     let mut mp = MultiPak::new(SWITCH_SLOT4);
-    mp.insert(SWITCH_SLOT4, Box::new(DiskCart::new(disk_rom)));
-    m.insert_cartridge(Box::new(mp));
+    mp.insert(SWITCH_SLOT4, DiskCart::new(disk_rom));
+    m.insert_cartridge(mp);
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();

@@ -92,8 +92,4 @@ impl Cartridge for Orch90 {
         const DAC_MAX: f32 = u8::MAX as f32;
         (f32::from(self.left) / DAC_MAX, f32::from(self.right) / DAC_MAX)
     }
-
-    fn as_orch90(&mut self) -> Option<&mut Orch90> {
-        Some(self)
-    }
 }

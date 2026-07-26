@@ -91,8 +91,7 @@ impl PrinterSink for NoopSink {
 /// Test/diagnostic sink: appends every decoded byte to a shared buffer.
 ///
 /// The buffer is an `Rc<RefCell<_>>` rather than a bare `Vec<u8>` because
-/// [`BitBanger`] owns its sink as `Box<dyn PrinterSink>` (matching
-/// `bus.rs`'s `Box<dyn Cartridge>` precedent) — once moved into
+/// [`BitBanger`] owns its sink as `Box<dyn PrinterSink>` — once moved into
 /// [`BitBanger::set_sink`] a plain `Vec` would be unreachable from the
 /// caller. Clone the sink (cheap: it's a refcounted handle to the same
 /// buffer) before moving one half in, and read `bytes()` on the other half
