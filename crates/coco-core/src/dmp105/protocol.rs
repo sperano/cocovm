@@ -164,14 +164,13 @@ impl Dmp105 {
             // Immediate feed: applies in both modes (`dmp105-protocol.md`
             // §4's "1B 5A n" row), unlike the latched-only 5B below.
             esc::FEED_IMMEDIATE => self.y = self.y.saturating_add(u32::from(ops[0])),
-            // Latched-only feed: CP mode only per the spec table; while in
-            // Graphics mode the byte is still consumed (escape parsing is
-            // mode-independent) but has no effect, matching how pitch
-            // selection is likewise inert during an active graphics run.
-            esc::FEED_LATCH => {
-                if self.mode == Mode::CharacterPrint {
-                    self.lf_pitch_units = u32::from(ops[0]);
-                }
+            // Latched-only feed: CP mode only per the spec table. In Graphics
+            // mode the guard drops this to the catch-all below, so the byte is
+            // still consumed (escape parsing is mode-independent) but has no
+            // effect, matching how pitch selection is likewise inert during an
+            // active graphics run.
+            esc::FEED_LATCH if self.mode == Mode::CharacterPrint => {
+                self.lf_pitch_units = u32::from(ops[0]);
             }
             _ => {}
         }
