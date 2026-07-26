@@ -30,7 +30,7 @@ fn main() {
     // A CoCo-ish palette: mimic the ROM's defaults loosely.
     g.palette = [0, 9, 18, 27, 36, 45, 54, 63, 0, 63, 46, 26, 12, 5, 38, 56];
 
-    let msg = b"coco-rs GIME 80-column text  ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789";
+    let msg = b"cocovm GIME 80-column text  ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789";
     for row in 0..24 {
         for col in 0..80 {
             let i = base + (row * 80 + col) * 2;

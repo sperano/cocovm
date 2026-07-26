@@ -43,7 +43,7 @@ impl CocoApp {
         // fresh-boot sibling of this one) — always reissue it, even when the
         // variant didn't change, since that's cheap and idempotent.
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "coco-rs — {}",
+            "cocovm — {}",
             machine_label(self.machine.config.variant)
         )));
 

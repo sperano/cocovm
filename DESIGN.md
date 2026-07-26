@@ -13,7 +13,7 @@ Split the pure emulator from the UI. The core must be headless so it can be
 unit-tested and run CPU conformance suites without a window.
 
 ```
-coco-rs/                 (workspace root)
+cocovm/                 (workspace root)
 ├─ crates/
 │  ├─ mc6809/            6809E CPU core. No deps. Generic over a Bus trait.
 │  ├─ coco-core/         The machine: bus, GIME, MMU, PIAs, timing. Headless.

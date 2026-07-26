@@ -266,7 +266,7 @@ impl CocoApp {
         self.rtc_direct = false;
         self.toast = None;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "coco-rs — {}",
+            "cocovm — {}",
             machine_label(config.variant)
         )));
         Ok(())

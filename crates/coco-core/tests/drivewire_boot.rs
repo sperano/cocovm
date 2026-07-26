@@ -261,7 +261,7 @@ fn hdbdos_save_writes_through_drivewire() {
     // run (mirrors vhd_boot.rs's VHD scratch-copy pattern).
     let (scratch, scratch_file) = scratch_copy(
         &blank_src,
-        "coco-rs-test-drivewire-blank02.dsk",
+        "cocovm-test-drivewire-blank02.dsk",
         "copy blank02.dsk to scratch",
     );
     let original_bytes = std::fs::read(&scratch).expect("read scratch copy");
@@ -383,7 +383,7 @@ fn nitros9_l2_boots_over_drivewire_to_shell_prompt() {
     // pattern).
     let (scratch, scratch_file) = scratch_copy(
         &dsk_src,
-        "coco-rs-test-nos9-becker.dsk",
+        "cocovm-test-nos9-becker.dsk",
         "copy nos96809l2v030300coco3_becker.dsk to scratch",
     );
 

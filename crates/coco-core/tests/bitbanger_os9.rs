@@ -154,7 +154,7 @@ fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
     }
     // Scratch copy, as `tests/vhd_boot.rs`: EOU's startup writes to its
     // system disk and the pristine image must stay reproducible run to run.
-    let vhd_copy = std::env::temp_dir().join("coco-rs-test-68SDC-bitbanger-os9.VHD");
+    let vhd_copy = std::env::temp_dir().join("cocovm-test-68SDC-bitbanger-os9.VHD");
     std::fs::copy(&vhd_src, &vhd_copy).expect("copy VHD to scratch");
     let vhd_file = std::fs::File::options()
         .read(true)
