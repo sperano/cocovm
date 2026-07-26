@@ -25,7 +25,7 @@
 //! access, so this sidesteps the auto-run without touching any DriveWire
 //! protocol code.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use coco_core::cart::RomPak;
 use coco_core::drivewire::DwImage;
@@ -36,6 +36,45 @@ fn asset(dir: &str, name: &str) -> PathBuf {
         .join("../..")
         .join(dir)
         .join(name)
+}
+
+/// Loads `roms/coco3.rom` and `roms/hdbdw3bc3.rom`, or `eprintln!`s a skip
+/// notice tagged with `label` and returns `None` if either is absent.
+fn load_roms(label: &str) -> Option<(Vec<u8>, Vec<u8>)> {
+    let (Ok(coco), Ok(hdbdos)) = (
+        std::fs::read(asset("roms", "coco3.rom")),
+        std::fs::read(asset("roms", "hdbdw3bc3.rom")),
+    ) else {
+        eprintln!("skipping {label}: roms/coco3.rom or roms/hdbdw3bc3.rom not present");
+        return None;
+    };
+    Some((coco, hdbdos))
+}
+
+/// Resolves `dir/name` under the repo root, or `eprintln!`s a skip notice
+/// tagged with `label` and returns `None` if it isn't present.
+fn require_disk_asset(dir: &str, name: &str, label: &str) -> Option<PathBuf> {
+    let path = asset(dir, name);
+    if !path.exists() {
+        eprintln!("skipping {label}: {dir}/{name} not present");
+        return None;
+    }
+    Some(path)
+}
+
+/// Copies `src` to `scratch_name` under the OS temp dir and opens the copy
+/// read+write, so a test can drive writes through DriveWire without
+/// perturbing the checked-in source asset. `copy_context` is the `expect`
+/// message for the copy step.
+fn scratch_copy(src: &Path, scratch_name: &str, copy_context: &str) -> (PathBuf, std::fs::File) {
+    let scratch = std::env::temp_dir().join(scratch_name);
+    std::fs::copy(src, &scratch).expect(copy_context);
+    let file = std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(&scratch)
+        .expect("open scratch copy read+write");
+    (scratch, file)
 }
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {
@@ -98,10 +137,6 @@ fn boot_to_hdbdos_prompt(coco: Vec<u8>, hdbdos: Vec<u8>, hdbdos_mode: bool) -> M
     /// Upper bound while waiting for the `OK` prompt: observed boot lands
     /// well under 1 poll batch (300 fields) with no disk mounted.
     const MAX_BOOT_FIELDS: usize = 6_000;
-    /// HDB-DOS's own banner, printed right after the standard Disk Extended
-    /// Color BASIC copyright block (observed directly on the decoded text
-    /// screen: "HDB-DOS 1.4 BECKER COCO 3").
-    const HDBDOS_BANNER: &str = "HDB-DOS";
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
     m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
@@ -110,12 +145,47 @@ fn boot_to_hdbdos_prompt(coco: Vec<u8>, hdbdos: Vec<u8>, hdbdos_mode: bool) -> M
     dw.set_hdbdos_mode(hdbdos_mode);
     m.reset();
 
-    let screen = wait_for(&mut m, "OK", MAX_BOOT_FIELDS);
+    wait_for_hdbdos_prompt(&mut m, MAX_BOOT_FIELDS);
+    m
+}
+
+/// Like [`boot_to_hdbdos_prompt`], but mounts `disk_file` on drive 0 *before*
+/// `reset()` — for disks (like `blank02.dsk`) with no `AUTOEXEC.BAS` to
+/// trigger the auto-run complication documented on the module doc /
+/// [`hdbdos_dir_lists_drivewire_disk`].
+fn boot_to_hdbdos_prompt_with_disk_mounted(
+    coco: Vec<u8>,
+    hdbdos: Vec<u8>,
+    hdbdos_mode: bool,
+    disk_file: std::fs::File,
+) -> Machine {
+    const MAX_BOOT_FIELDS: usize = 6_000;
+
+    let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
+    m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
+    m.bus.enable_drivewire();
+    let dw = m.bus.drivewire.as_mut().unwrap();
+    dw.set_hdbdos_mode(hdbdos_mode);
+    dw.mount(0, DwImage::File(disk_file));
+    m.reset();
+
+    wait_for_hdbdos_prompt(&mut m, MAX_BOOT_FIELDS);
+    m
+}
+
+/// Waits for the `OK` prompt and asserts the HDB-DOS banner is on screen —
+/// the shared tail of both boot helpers above.
+fn wait_for_hdbdos_prompt(m: &mut Machine, max_boot_fields: usize) {
+    /// HDB-DOS's own banner, printed right after the standard Disk Extended
+    /// Color BASIC copyright block (observed directly on the decoded text
+    /// screen: "HDB-DOS 1.4 BECKER COCO 3").
+    const HDBDOS_BANNER: &str = "HDB-DOS";
+
+    let screen = wait_for(m, "OK", max_boot_fields);
     assert!(
         screen.contains(HDBDOS_BANNER),
         "expected the HDB-DOS banner on boot; screen:\n{screen}"
     );
-    m
 }
 
 #[test]
@@ -124,18 +194,12 @@ fn hdbdos_dir_lists_drivewire_disk() {
     /// over the Becker port) settle before reading the screen.
     const DIR_FIELDS: usize = 600;
 
-    let (Ok(coco), Ok(hdbdos)) = (
-        std::fs::read(asset("roms", "coco3.rom")),
-        std::fs::read(asset("roms", "hdbdw3bc3.rom")),
-    ) else {
-        eprintln!("skipping DriveWire DIR test: roms/coco3.rom or roms/hdbdw3bc3.rom not present");
+    let Some((coco, hdbdos)) = load_roms("DriveWire DIR test") else {
         return;
     };
-    let dsk_path = asset("disks", "spetris.dsk");
-    if !dsk_path.exists() {
-        eprintln!("skipping DriveWire DIR test: disks/spetris.dsk not present");
+    let Some(dsk_path) = require_disk_asset("disks", "spetris.dsk", "DriveWire DIR test") else {
         return;
-    }
+    };
     // Read-only handle: DIR never writes, and this must not perturb the
     // checked-in asset.
     let dsk_file = std::fs::File::options()
@@ -185,47 +249,27 @@ fn hdbdos_save_writes_through_drivewire() {
     /// the screen / checking the scratch file.
     const SAVE_FIELDS: usize = 600;
 
-    let (Ok(coco), Ok(hdbdos)) = (
-        std::fs::read(asset("roms", "coco3.rom")),
-        std::fs::read(asset("roms", "hdbdw3bc3.rom")),
-    ) else {
-        eprintln!("skipping DriveWire SAVE test: roms/coco3.rom or roms/hdbdw3bc3.rom not present");
+    let Some((coco, hdbdos)) = load_roms("DriveWire SAVE test") else {
         return;
     };
-    let blank_src = asset("disks", "blank02.dsk");
-    if !blank_src.exists() {
-        eprintln!("skipping DriveWire SAVE test: disks/blank02.dsk not present");
+    let Some(blank_src) = require_disk_asset("disks", "blank02.dsk", "DriveWire SAVE test") else {
         return;
-    }
+    };
 
     // Scratch copy under the OS temp dir: SAVE writes through DriveWire to
     // this image, and the checked-in blank02.dsk must stay pristine run to
     // run (mirrors vhd_boot.rs's VHD scratch-copy pattern).
-    let scratch = std::env::temp_dir().join("coco-rs-test-drivewire-blank02.dsk");
-    std::fs::copy(&blank_src, &scratch).expect("copy blank02.dsk to scratch");
+    let (scratch, scratch_file) = scratch_copy(
+        &blank_src,
+        "coco-rs-test-drivewire-blank02.dsk",
+        "copy blank02.dsk to scratch",
+    );
     let original_bytes = std::fs::read(&scratch).expect("read scratch copy");
-    let scratch_file = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open(&scratch)
-        .expect("open scratch copy read+write");
 
-    let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
-    m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
-    m.bus.enable_drivewire();
-    let dw = m.bus.drivewire.as_mut().unwrap();
-    dw.set_hdbdos_mode(true);
     // blank02.dsk carries no AUTOEXEC.BAS (its one file is SALUT.BAS), so
     // mounting before reset doesn't trigger the auto-run complication
     // documented on hdbdos_dir_lists_drivewire_disk / the module doc.
-    dw.mount(0, DwImage::File(scratch_file));
-    m.reset();
-
-    let screen = wait_for(&mut m, "OK", 6_000);
-    assert!(
-        screen.contains("HDB-DOS"),
-        "expected the HDB-DOS banner on boot; screen:\n{screen}"
-    );
+    let mut m = boot_to_hdbdos_prompt_with_disk_mounted(coco, hdbdos, true, scratch_file);
 
     type_str(&mut m, "10 REM X");
     tap_char(&mut m, '\r');
@@ -322,34 +366,26 @@ fn nitros9_l2_boots_over_drivewire_to_shell_prompt() {
     // default and `/DD` is the current default data directory.
     const SHELL_PROMPT: &str = "{Term|02}/DD:";
 
-    let (Ok(coco), Ok(hdbdos)) = (
-        std::fs::read(asset("roms", "coco3.rom")),
-        std::fs::read(asset("roms", "hdbdw3bc3.rom")),
-    ) else {
-        eprintln!(
-            "skipping NitrOS-9/DriveWire boot test: roms/coco3.rom or roms/hdbdw3bc3.rom not present"
-        );
+    let Some((coco, hdbdos)) = load_roms("NitrOS-9/DriveWire boot test") else {
         return;
     };
-    let dsk_src = asset("disks", "nos96809l2v030300coco3_becker.dsk");
-    if !dsk_src.exists() {
-        eprintln!(
-            "skipping NitrOS-9/DriveWire boot test: disks/nos96809l2v030300coco3_becker.dsk not present"
-        );
+    let Some(dsk_src) = require_disk_asset(
+        "disks",
+        "nos96809l2v030300coco3_becker.dsk",
+        "NitrOS-9/DriveWire boot test",
+    ) else {
         return;
-    }
+    };
 
     // Scratch copy: NitrOS-9 writes to the boot disk in normal operation
     // (dirty bits etc.), and the checked-in asset must stay pristine run to
     // run (mirrors hdbdos_save_writes_through_drivewire's blank02.dsk
     // pattern).
-    let scratch = std::env::temp_dir().join("coco-rs-test-nos9-becker.dsk");
-    std::fs::copy(&dsk_src, &scratch).expect("copy nos96809l2v030300coco3_becker.dsk to scratch");
-    let scratch_file = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open(&scratch)
-        .expect("open scratch copy read+write");
+    let (scratch, scratch_file) = scratch_copy(
+        &dsk_src,
+        "coco-rs-test-nos9-becker.dsk",
+        "copy nos96809l2v030300coco3_becker.dsk to scratch",
+    );
 
     // hdbdos_mode = false: NitrOS-9's own rbdw driver takes over after the
     // boot track loads and sends true per-drive LSNs (see doc comment).

@@ -19,6 +19,8 @@
 //! - Block framing and checksum exactly match `cassette-verified-facts`:
 //!   `$55* $3C type len data… checksum`, checksum = `sum(type,len,data) & 0xFF`.
 
+use std::cmp::Reverse;
+
 use coco_core::keyboard::char_key;
 use coco_core::{Machine, MachineConfig};
 
@@ -90,7 +92,7 @@ fn main() {
     }
     println!("\ndelta histogram (delta_cycles: count), top 40 by count:");
     let mut entries: Vec<_> = hist.into_iter().collect();
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.sort_by_key(|&(_, count)| Reverse(count));
     for (delta, count) in entries.into_iter().take(40) {
         println!("{delta:6} : {count}");
     }
@@ -127,7 +129,7 @@ fn main() {
     }
     println!("\ncrossing-delta histogram, top 20:");
     let mut centries: Vec<_> = chist.into_iter().collect();
-    centries.sort_by(|a, b| b.1.cmp(&a.1));
+    centries.sort_by_key(|&(_, count)| Reverse(count));
     for (delta, count) in centries.into_iter().take(20) {
         println!("{delta:6} : {count}");
     }

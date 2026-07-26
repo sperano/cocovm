@@ -1,0 +1,127 @@
+//! The per-frame loop: crediting wall-clock time to emulated fields,
+//! running them, and getting the resulting framebuffer onto the screen.
+
+use crate::*;
+
+impl CocoApp {
+    /// Emulated fields owed for this update, from wall-clock time at the
+    /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
+    pub(crate) fn fields_due(&mut self) -> usize {
+        let now = std::time::Instant::now();
+        let dt = match self.last_update.replace(now) {
+            Some(prev) => (now - prev).as_secs_f64().min(MAX_FRAME_DT),
+            None => 0.0,
+        };
+        self.field_debt += dt * self.machine.config.video.field_rate_hz();
+        let due = (self.field_debt as usize).min(MAX_FIELDS_PER_UPDATE);
+        self.field_debt = (self.field_debt - due as f64).min(1.0);
+        due
+    }
+
+    /// Advance emulation for one host frame — input, joysticks, the
+    /// wall-clock-paced field loop, audio, and the framebuffer texture
+    /// upload. Runs regardless of which chrome (if any) is drawn around the
+    /// display this frame: [`Self::window_ui`] (full native window) and the
+    /// manager's `ViewportClass::Embedded` fallback both call this before
+    /// drawing anything, so a VM keeps emulating even in the degraded
+    /// single-window case (`docs/plan-machine-persistence.md` "one native
+    /// window per running VM").
+    pub(crate) fn step_emulation(&mut self, ctx: &egui::Context) {
+        self.handle_input(ctx);
+        self.drive_joysticks(ctx);
+
+        if self.running {
+            // Run however many fields the wall clock owes us (real-time pacing),
+            // stepping type-ahead per field so paste timing is refresh-agnostic.
+            // Routed through the debugger so an enabled breakpoint/watchpoint
+            // pauses the emulator cleanly instead of running straight through
+            // it — a no-op when no breakpoints/watchpoints are set (the
+            // common case), since `DebuggerPanel::run_field` then always
+            // completes the field, same as `Machine::run_field` directly.
+            for _ in 0..self.fields_due() {
+                if self.type_ahead.is_active() {
+                    self.type_ahead.advance(&mut self.machine.bus.keyboard);
+                }
+                if !self.debugger.run_field(&mut self.machine) {
+                    self.running = false;
+                    break;
+                }
+            }
+            let sample_rate = self.machine.audio_sample_rate();
+            self.audio.push_samples(self.machine.take_audio(), sample_rate);
+            ctx.request_repaint();
+        } else {
+            self.last_update = None;
+            // Drop any fields owed to the wall clock while paused (debugger
+            // pause included), so resuming doesn't instantly "catch up" on
+            // the paused interval — a clean pause, not just a frozen screen.
+            self.field_debt = 0.0;
+        }
+
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [
+                self.machine.fb_width as usize,
+                self.machine.fb_height as usize,
+            ],
+            &self.machine.framebuffer,
+        );
+        let texture = self.texture.get_or_insert_with(|| {
+            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
+        });
+        texture.set(image, egui::TextureOptions::NEAREST);
+    }
+
+    /// The CoCo display itself: the letterboxed, (optionally) aspect-
+    /// corrected framebuffer texture, filling whatever `ui` it's given.
+    /// Split out of [`Self::window_ui`]'s `CentralPanel` closure so the
+    /// manager's `ViewportClass::Embedded` fallback can show just this —
+    /// without the rest of [`Self::draw_chrome`] — inside a plain
+    /// `egui::Window` instead of a full-window `CentralPanel`
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM"). Requires [`Self::step_emulation`] to have already run this
+    /// frame (it uploads `self.texture`, `unwrap`ped below).
+    pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
+        let tex = self.texture.as_ref().unwrap();
+        let tex_size = tex.size_vec2();
+        // Aspect the displayed frame should have, independent of the buffer's
+        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
+        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        let aspect = if self.aspect_correct {
+            TARGET_ASPECT
+        } else {
+            tex_size.x / tex_size.y
+        };
+        // Largest rect of that aspect that fits the panel, centered (letterboxed).
+        let avail = ui.available_rect_before_wrap();
+        let mut w = avail.width();
+        let mut h = w / aspect;
+        if h > avail.height() {
+            h = avail.height();
+            w = h * aspect;
+        }
+        let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
+        let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
+        ui.put(rect, egui::Image::new(sized));
+        // Remembered for `drive_joysticks` next frame, to map pointer
+        // position to joystick axes (see the `display_rect` field doc).
+        self.display_rect = rect;
+    }
+
+    /// The full app window for one frame: emulation step, every menu/toolbar/
+    /// dialog, then the display, in that order — exactly the body
+    /// `eframe::App::update` ran before this method existed. `pub(crate)` so
+    /// the manager's per-VM immediate viewport (`manager.rs`'s
+    /// `draw_running_vms`, `ViewportClass::Default`/native case) can call it
+    /// directly on a VM it owns, reproducing the direct-boot window's full
+    /// chrome inside its own native OS window
+    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// VM"). The trait method below (kept for the direct-boot CLI path,
+    /// which stays byte-for-byte identical) just forwards here.
+    pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {
+        self.step_emulation(ctx);
+        self.draw_chrome(ctx);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+            .show(ctx, |ui| self.draw_display(ui));
+    }
+}

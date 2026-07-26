@@ -322,27 +322,49 @@ pub fn rasterize<D: DotSource>(
 
     // 1. Paper base color: already the blank fill above.
 
-    // 2. Green-bar bands, clipped to the tractor-strip-to-tractor-strip body
-    // (not the narrower print line) — a hard-edged per-scanline step, no AA.
+    // 2. Green-bar bands, clipped to the tractor-strip-to-tractor-strip body.
     if green_bar {
-        let strip_x0 = (STRIP_WIDTH_IN * dpi).round() as i64;
-        let strip_x1 = ((PAPER_WIDTH_IN - STRIP_WIDTH_IN) * dpi).round() as i64;
-        for py in 0..height_px as i64 {
-            let y_in = top_in + (py as f32 + 0.5) / dpi;
-            if is_green_band(y_in) {
-                for px in strip_x0..strip_x1 {
-                    image.set_opaque(
-                        px,
-                        py,
-                        [GREEN_BAR_COLOR[0], GREEN_BAR_COLOR[1], GREEN_BAR_COLOR[2]],
-                    );
-                }
+        paint_green_bar_bands(&mut image, top_in, dpi, height_px);
+    }
+
+    // 3. Vertical dotted perforation lines (both x positions, full height).
+    paint_vertical_perf_lines(&mut image, top_in, height_in, dpi);
+
+    // 4. Horizontal dashed page-perforation lines, full width.
+    paint_page_perf_lines(&mut image, top_in, height_in, dpi, height_px, width_px);
+
+    // 5. Sprocket holes (both strips).
+    paint_sprocket_holes(&mut image, top_in, height_in, dpi);
+
+    // 6. Ink dots (topmost).
+    paint_ink_dots(&mut image, dots, top_in, height_in, dpi);
+
+    image
+}
+
+/// Step 2: green-bar bands, clipped to the tractor-strip-to-tractor-strip
+/// body (not the narrower print line) — a hard-edged per-scanline step, no
+/// AA.
+fn paint_green_bar_bands(image: &mut RasterImage, top_in: f32, dpi: f32, height_px: u32) {
+    let strip_x0 = (STRIP_WIDTH_IN * dpi).round() as i64;
+    let strip_x1 = ((PAPER_WIDTH_IN - STRIP_WIDTH_IN) * dpi).round() as i64;
+    for py in 0..height_px as i64 {
+        let y_in = top_in + (py as f32 + 0.5) / dpi;
+        if is_green_band(y_in) {
+            for px in strip_x0..strip_x1 {
+                image.set_opaque(
+                    px,
+                    py,
+                    [GREEN_BAR_COLOR[0], GREEN_BAR_COLOR[1], GREEN_BAR_COLOR[2]],
+                );
             }
         }
     }
+}
 
-    // 3. Vertical dotted perforation lines (both x positions, full height),
-    // phased continuously from the roll's y = 0 (not reset per page).
+/// Step 3: vertical dotted perforation lines (both x positions, full
+/// height), phased continuously from the roll's y = 0 (not reset per page).
+fn paint_vertical_perf_lines(image: &mut RasterImage, top_in: f32, height_in: f32, dpi: f32) {
     let perf_radius_in = PERF_DOT_DIAMETER_IN / 2.0;
     let perf_radius_px = perf_radius_in * dpi;
     for &x_in in &[PERF_LEFT_X_IN, PERF_RIGHT_X_IN] {
@@ -358,301 +380,104 @@ pub fn rasterize<D: DotSource>(
             image.fill_circle(cx_px, cy_px, perf_radius_px, perf_rgb, 1.0);
         }
     }
+}
 
-    // 4. Horizontal dashed page-perforation lines, full width, at every
-    // POSITIVE integer multiple of PAGE_HEIGHT_IN (not at y=0 — that's the
-    // roll's start, not a perforation between two pages).
-    {
-        let line_half_in = (PAGE_PERF_LINE_THICKNESS_PX / dpi) / 2.0;
-        let n_min = (((top_in - line_half_in) / PAGE_HEIGHT_IN).floor() as i64).max(1);
-        let n_max = ((top_in + height_in + line_half_in) / PAGE_HEIGHT_IN).ceil() as i64;
-        let dash_period_in = PAGE_PERF_DASH_ON_IN + PAGE_PERF_DASH_OFF_IN;
-        let perf_rgb = [PERF_COLOR[0], PERF_COLOR[1], PERF_COLOR[2]];
-        for n in n_min..=n_max {
-            let y_in = n as f32 * PAGE_HEIGHT_IN;
-            let cy_px = (y_in - top_in) * dpi;
-            if cy_px < -PAGE_PERF_LINE_THICKNESS_PX
-                || cy_px > height_px as f32 + PAGE_PERF_LINE_THICKNESS_PX
-            {
+/// Step 4: horizontal dashed page-perforation lines, full width, at every
+/// POSITIVE integer multiple of PAGE_HEIGHT_IN (not at y=0 — that's the
+/// roll's start, not a perforation between two pages).
+fn paint_page_perf_lines(
+    image: &mut RasterImage,
+    top_in: f32,
+    height_in: f32,
+    dpi: f32,
+    height_px: u32,
+    width_px: u32,
+) {
+    let line_half_in = (PAGE_PERF_LINE_THICKNESS_PX / dpi) / 2.0;
+    let n_min = (((top_in - line_half_in) / PAGE_HEIGHT_IN).floor() as i64).max(1);
+    let n_max = ((top_in + height_in + line_half_in) / PAGE_HEIGHT_IN).ceil() as i64;
+    let dash_period_in = PAGE_PERF_DASH_ON_IN + PAGE_PERF_DASH_OFF_IN;
+    let perf_rgb = [PERF_COLOR[0], PERF_COLOR[1], PERF_COLOR[2]];
+    for n in n_min..=n_max {
+        let y_in = n as f32 * PAGE_HEIGHT_IN;
+        let cy_px = (y_in - top_in) * dpi;
+        if cy_px < -PAGE_PERF_LINE_THICKNESS_PX
+            || cy_px > height_px as f32 + PAGE_PERF_LINE_THICKNESS_PX
+        {
+            continue;
+        }
+        for px in 0..width_px as i64 {
+            let x_in = (px as f32 + 0.5) / dpi;
+            let phase = x_in.rem_euclid(dash_period_in);
+            if phase < PAGE_PERF_DASH_ON_IN {
+                image.blend_hline_pixel(px, cy_px, PAGE_PERF_LINE_THICKNESS_PX, perf_rgb, 1.0);
+            }
+        }
+    }
+}
+
+/// Step 5: sprocket holes (both strips): fill WINDOW_BG_COLOR, then the
+/// PERF_COLOR rim. Hole phase is continuous from the roll's y = 0 (see the
+/// `SPROCKET_HOLES_PER_PAGE` doc comment above).
+fn paint_sprocket_holes(image: &mut RasterImage, top_in: f32, height_in: f32, dpi: f32) {
+    let hole_radius_in = SPROCKET_HOLE_DIAMETER_IN / 2.0;
+    let hole_radius_px = hole_radius_in * dpi;
+    let bg_rgb = [WINDOW_BG_COLOR[0], WINDOW_BG_COLOR[1], WINDOW_BG_COLOR[2]];
+    let perf_rgb = [PERF_COLOR[0], PERF_COLOR[1], PERF_COLOR[2]];
+    for &x_in in &[
+        SPROCKET_HOLE_INSET_IN,
+        PAPER_WIDTH_IN - SPROCKET_HOLE_INSET_IN,
+    ] {
+        let cx_px = x_in * dpi;
+        let k_min = (((top_in - hole_radius_in - SPROCKET_HOLE_TOP_OFFSET_IN)
+            / SPROCKET_HOLE_PITCH_IN)
+            .floor()
+            .max(0.0)) as i64;
+        let k_max = ((top_in + height_in + hole_radius_in - SPROCKET_HOLE_TOP_OFFSET_IN)
+            / SPROCKET_HOLE_PITCH_IN)
+            .ceil() as i64;
+        for k in k_min..=k_max {
+            let y_in = SPROCKET_HOLE_TOP_OFFSET_IN + k as f32 * SPROCKET_HOLE_PITCH_IN;
+            if y_in < 0.0 {
                 continue;
             }
-            for px in 0..width_px as i64 {
-                let x_in = (px as f32 + 0.5) / dpi;
-                let phase = x_in.rem_euclid(dash_period_in);
-                if phase < PAGE_PERF_DASH_ON_IN {
-                    image.blend_hline_pixel(px, cy_px, PAGE_PERF_LINE_THICKNESS_PX, perf_rgb, 1.0);
-                }
-            }
-        }
-    }
-
-    // 5. Sprocket holes (both strips): fill WINDOW_BG_COLOR, then the
-    // PERF_COLOR rim. Hole phase is continuous from the roll's y = 0 (see
-    // the `SPROCKET_HOLES_PER_PAGE` doc comment above).
-    {
-        let hole_radius_in = SPROCKET_HOLE_DIAMETER_IN / 2.0;
-        let hole_radius_px = hole_radius_in * dpi;
-        let bg_rgb = [WINDOW_BG_COLOR[0], WINDOW_BG_COLOR[1], WINDOW_BG_COLOR[2]];
-        let perf_rgb = [PERF_COLOR[0], PERF_COLOR[1], PERF_COLOR[2]];
-        for &x_in in &[
-            SPROCKET_HOLE_INSET_IN,
-            PAPER_WIDTH_IN - SPROCKET_HOLE_INSET_IN,
-        ] {
-            let cx_px = x_in * dpi;
-            let k_min = (((top_in - hole_radius_in - SPROCKET_HOLE_TOP_OFFSET_IN)
-                / SPROCKET_HOLE_PITCH_IN)
-                .floor()
-                .max(0.0)) as i64;
-            let k_max = ((top_in + height_in + hole_radius_in - SPROCKET_HOLE_TOP_OFFSET_IN)
-                / SPROCKET_HOLE_PITCH_IN)
-                .ceil() as i64;
-            for k in k_min..=k_max {
-                let y_in = SPROCKET_HOLE_TOP_OFFSET_IN + k as f32 * SPROCKET_HOLE_PITCH_IN;
-                if y_in < 0.0 {
-                    continue;
-                }
-                let cy_px = (y_in - top_in) * dpi;
-                image.fill_circle(cx_px, cy_px, hole_radius_px, bg_rgb, 1.0);
-                image.draw_ring(cx_px, cy_px, hole_radius_px, SPROCKET_RIM_PX, perf_rgb, 1.0);
-            }
-        }
-    }
-
-    // 6. Ink dots (topmost): alpha-composited via repeated source-over
-    // blending, never manually deduplicated, so overlapping strikes darken
-    // naturally.
-    {
-        let dot_radius_in = DOT_DIAMETER_IN / 2.0;
-        let dot_radius_px = dot_radius_in * dpi;
-        let y0_in = top_in;
-        let y1_in = top_in + height_in;
-        // Pad the y-unit query range: a dot's center can sit just outside
-        // [y0, y1] while its rendered circle still bleeds into view (see
-        // DOT_QUERY_PAD_Y_UNITS's doc comment).
-        let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64
-            - DOT_QUERY_PAD_Y_UNITS as i64)
-            .max(0) as u32;
-        let y1_units = (y1_in * Y_UNITS_PER_INCH as f32).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;
-        for (x_units, y_units) in dots.dots_in_range(y0_units, y1_units) {
-            let x_in = PRINT_AREA_LEFT_IN + x_units as f32 / X_UNITS_PER_INCH as f32;
-            let y_in = y_units as f32 / Y_UNITS_PER_INCH as f32;
-            let cx_px = x_in * dpi;
             let cy_px = (y_in - top_in) * dpi;
-            image.fill_circle(cx_px, cy_px, dot_radius_px, INK_COLOR, DOT_CORE_ALPHA);
+            image.fill_circle(cx_px, cy_px, hole_radius_px, bg_rgb, 1.0);
+            image.draw_ring(cx_px, cy_px, hole_radius_px, SPROCKET_RIM_PX, perf_rgb, 1.0);
         }
     }
+}
 
-    image
+/// Step 6: ink dots (topmost): alpha-composited via repeated source-over
+/// blending, never manually deduplicated, so overlapping strikes darken
+/// naturally.
+fn paint_ink_dots<D: DotSource>(
+    image: &mut RasterImage,
+    dots: &D,
+    top_in: f32,
+    height_in: f32,
+    dpi: f32,
+) {
+    let dot_radius_in = DOT_DIAMETER_IN / 2.0;
+    let dot_radius_px = dot_radius_in * dpi;
+    let y0_in = top_in;
+    let y1_in = top_in + height_in;
+    // Pad the y-unit query range: a dot's center can sit just outside
+    // [y0, y1] while its rendered circle still bleeds into view (see
+    // DOT_QUERY_PAD_Y_UNITS's doc comment).
+    let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64
+        - DOT_QUERY_PAD_Y_UNITS as i64)
+        .max(0) as u32;
+    let y1_units = (y1_in * Y_UNITS_PER_INCH as f32).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;
+    for (x_units, y_units) in dots.dots_in_range(y0_units, y1_units) {
+        let x_in = PRINT_AREA_LEFT_IN + x_units as f32 / X_UNITS_PER_INCH as f32;
+        let y_in = y_units as f32 / Y_UNITS_PER_INCH as f32;
+        let cx_px = x_in * dpi;
+        let cy_px = (y_in - top_in) * dpi;
+        image.fill_circle(cx_px, cy_px, dot_radius_px, INK_COLOR, DOT_CORE_ALPHA);
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A [`DotSource`] with a fixed set of dots, for tests.
-    struct FixedDots(Vec<(u32, u32)>);
-
-    impl DotSource for FixedDots {
-        fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-            self.0
-                .iter()
-                .copied()
-                .filter(|&(_, y)| y >= y0 && y <= y1)
-                .collect()
-        }
-    }
-
-    fn empty() -> FixedDots {
-        FixedDots(Vec::new())
-    }
-
-    /// Read one pixel's RGBA as an array, panicking if out of bounds (test
-    /// helper only).
-    fn pixel(img: &RasterImage, x: u32, y: u32) -> [u8; 4] {
-        let off = (y as usize * img.width as usize + x as usize) * 4;
-        [
-            img.pixels[off],
-            img.pixels[off + 1],
-            img.pixels[off + 2],
-            img.pixels[off + 3],
-        ]
-    }
-
-    #[test]
-    fn output_dimensions_match_dpi_and_height() {
-        let dpi = 100.0;
-        let height_in = 2.0;
-        let img = rasterize(&empty(), 0.0, height_in, dpi, false);
-        assert_eq!(img.width, (PAPER_WIDTH_IN * dpi).round() as u32);
-        assert_eq!(img.height, (height_in * dpi).round() as u32);
-        assert_eq!(
-            img.pixels.len(),
-            img.width as usize * img.height as usize * 4
-        );
-    }
-
-    /// Within the print-area x-range and a y-range confined to a single
-    /// (non-green) band, a blank paper must render pure [`PAPER_COLOR`]
-    /// everywhere — no perforation lines or sprocket holes fall inside the
-    /// print-area x-range, and green-bar banding is off, so this isolates
-    /// "never any ink" cleanly (no AA blending to account for).
-    #[test]
-    fn blank_paper_in_print_area_is_pure_paper_color_no_ink() {
-        let dpi = 100.0;
-        // Comfortably inside band 0 (non-green) at every page, well clear of
-        // any horizontal page-perforation line.
-        let height_in = 0.2;
-        let img = rasterize(&empty(), 0.0, height_in, dpi, true);
-        let x0 = (PRINT_AREA_LEFT_IN * dpi).round() as u32;
-        let x1 = ((PRINT_AREA_LEFT_IN + PRINT_AREA_WIDTH_IN) * dpi).round() as u32;
-        for y in 0..img.height {
-            for x in x0..x1 {
-                assert_eq!(
-                    pixel(&img, x, y),
-                    PAPER_COLOR,
-                    "unexpected non-paper pixel at ({x},{y})"
-                );
-            }
-        }
-    }
-
-    /// A single marked dot produces an ink-colored pixel at the expected
-    /// mapped position: pick coordinates that land exactly on a pixel
-    /// center so the anti-aliased coverage is fully saturated (1.0) and the
-    /// blended color is exactly reproducible from the compositing formula.
-    #[test]
-    fn single_dot_marks_ink_at_the_mapped_pixel() {
-        let dpi = RASTER_DPI;
-        let x_units = 360; // 0.1" into the print area
-        let y_units = 72; // 1.0" down the roll
-        let dots = FixedDots(vec![(x_units, y_units)]);
-        let img = rasterize(&dots, 0.0, 2.0, dpi, false);
-
-        let x_in = PRINT_AREA_LEFT_IN + x_units as f32 / X_UNITS_PER_INCH as f32;
-        let y_in = y_units as f32 / Y_UNITS_PER_INCH as f32;
-        let px = (x_in * dpi).floor() as u32;
-        let py = (y_in * dpi).floor() as u32;
-
-        // Full coverage (dot radius > 0.5px) at the dot's own center pixel:
-        // composite(paper, ink, DOT_CORE_ALPHA) exactly.
-        let a = DOT_CORE_ALPHA;
-        let expected: [u8; 3] = std::array::from_fn(|c| {
-            (PAPER_COLOR[c] as f32 * (1.0 - a) + INK_COLOR[c] as f32 * a).round() as u8
-        });
-        let got = pixel(&img, px, py);
-        assert_eq!([got[0], got[1], got[2]], expected);
-    }
-
-    #[test]
-    fn twenty_two_sprocket_holes_per_page_same_phase_every_page() {
-        // Algebraic claim from the module doc comment.
-        assert_eq!(PAGE_HEIGHT_IN / SPROCKET_HOLE_PITCH_IN, 22.0);
-
-        // Hole k=22 (the 23rd hole, i.e. the first hole of page 2) must sit
-        // at exactly SPROCKET_HOLE_TOP_OFFSET_IN past page 2's own top,
-        // matching page 1's phase relative to its own top.
-        let page2_top = PAGE_HEIGHT_IN;
-        let hole_23_y = SPROCKET_HOLE_TOP_OFFSET_IN + 22.0 * SPROCKET_HOLE_PITCH_IN;
-        assert_eq!(hole_23_y - page2_top, SPROCKET_HOLE_TOP_OFFSET_IN);
-    }
-
-    #[test]
-    fn sprocket_holes_render_at_expected_pixel_y() {
-        let dpi = 100.0;
-        let img = rasterize(&empty(), 0.0, 1.0, dpi, false);
-        let cx = (SPROCKET_HOLE_INSET_IN * dpi).round() as u32;
-        let cy = (SPROCKET_HOLE_TOP_OFFSET_IN * dpi).round() as u32;
-        assert_eq!(
-            pixel(&img, cx, cy),
-            WINDOW_BG_COLOR,
-            "expected the first sprocket hole's fill at its center pixel"
-        );
-    }
-
-    #[test]
-    fn green_bar_band_alternates_and_resets_at_each_page_top() {
-        assert!(!is_green_band(0.0), "band 0 (page top) must be non-green");
-        assert!(
-            !is_green_band(GREEN_BAR_BAND_HEIGHT_IN - 0.01),
-            "still band 0"
-        );
-        assert!(
-            is_green_band(GREEN_BAR_BAND_HEIGHT_IN + 0.01),
-            "band 1 must be green"
-        );
-        assert!(
-            is_green_band(2.0 * GREEN_BAR_BAND_HEIGHT_IN - 0.01),
-            "still band 1"
-        );
-        assert!(
-            !is_green_band(2.0 * GREEN_BAR_BAND_HEIGHT_IN + 0.01),
-            "band 2 must be non-green again"
-        );
-
-        // Crossing into the next page resets the phase: the pixel just
-        // before PAGE_HEIGHT_IN may be green or not depending on how many
-        // bands fit, but the very first band *after* the page-top boundary
-        // must always be non-green again.
-        assert!(
-            !is_green_band(PAGE_HEIGHT_IN + 0.01),
-            "band 0 of the next page must be non-green"
-        );
-    }
-
-    /// Perforation dots/dashes are anti-aliased (the T5 spec's coverage
-    /// formula), so a pixel at a rounded-to-integer column/row won't
-    /// necessarily land exactly on a drawn circle/line's un-rounded
-    /// sub-pixel center — checking "not pure paper color" (rather than an
-    /// exact `PERF_COLOR` match) is what actually isolates "some perforation
-    /// ink landed near the expected position" without being brittle to that
-    /// rounding.
-    #[test]
-    fn vertical_perforation_lines_land_at_mapped_columns() {
-        let dpi = 100.0;
-        let img = rasterize(&empty(), 0.0, 1.0, dpi, false);
-        let left_x = (PERF_LEFT_X_IN * dpi).round() as u32;
-        let right_x = (PERF_RIGHT_X_IN * dpi).round() as u32;
-        let dot_y = (PERF_DOT_PITCH_IN * dpi).round() as u32; // second dot, k=1
-
-        assert_ne!(
-            pixel(&img, left_x, dot_y),
-            PAPER_COLOR,
-            "left perforation dot missing"
-        );
-        assert_ne!(
-            pixel(&img, right_x, dot_y),
-            PAPER_COLOR,
-            "right perforation dot missing"
-        );
-    }
-
-    #[test]
-    fn page_perforation_dash_appears_at_page_height_but_not_at_zero() {
-        let dpi = 100.0;
-        // A body x-range clear of both vertical perforation lines (at
-        // STRIP_WIDTH_IN/PAPER_WIDTH_IN-STRIP_WIDTH_IN) and the sprocket
-        // holes (further out still), so the only thing that can paint
-        // non-paper color in this x-range is a horizontal page-perforation
-        // dash.
-        let x0 = (1.0f32 * dpi).round() as u32;
-        let x1 = (8.5f32 * dpi).round() as u32;
-
-        // Render straddling the first page boundary.
-        let img = rasterize(&empty(), PAGE_HEIGHT_IN - 0.5, 1.0, dpi, false);
-        let row_at_boundary = ((PAGE_HEIGHT_IN - (PAGE_HEIGHT_IN - 0.5)) * dpi).round() as u32;
-        let has_dash_at_boundary = (x0..x1).any(|x| pixel(&img, x, row_at_boundary) != PAPER_COLOR);
-        assert!(
-            has_dash_at_boundary,
-            "expected a page-perforation dash at y = PAGE_HEIGHT_IN"
-        );
-
-        // A render range that only covers y=0 (the roll's start, not a
-        // perforation) must show no dash there.
-        let img0 = rasterize(&empty(), 0.0, 0.05, dpi, false);
-        let has_dash_at_zero = (x0..x1).any(|x| pixel(&img0, x, 0) != PAPER_COLOR);
-        assert!(
-            !has_dash_at_zero,
-            "y=0 is the roll start, not a page perforation"
-        );
-    }
-}
+#[path = "paper_render_test.rs"]
+mod tests;

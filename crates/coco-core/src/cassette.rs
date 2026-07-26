@@ -317,12 +317,20 @@ impl Cassette {
 ///
 /// Crossings of the waveform midpoint mark the tone phase; the time between
 /// consecutive *rising* crossings is one full tone cycle = one bit
-/// ([`BIT_PERIOD_THRESHOLD`] splits 1 from 0). Byte alignment is recovered
-/// the way the BIOS does it: hunt bit-by-bit for [`LEADER`] bytes then the
-/// [`SYNC`], then read the block structure (type, length, payload, checksum,
-/// trailer) byte-aligned, and go back to hunting — so a glitch between
-/// blocks only costs re-syncing on the next leader, exactly like real tape.
+/// ([`BIT_PERIOD_THRESHOLD`] splits 1 from 0) — see [`capture_to_bits`]. Byte
+/// alignment is recovered the way the BIOS does it: hunt bit-by-bit for
+/// [`LEADER`] bytes then the [`SYNC`], then read the block structure (type,
+/// length, payload, checksum, trailer) byte-aligned, and go back to hunting
+/// — see [`bits_to_bytes`] — so a glitch between blocks only costs
+/// re-syncing on the next leader, exactly like real tape.
 pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
+    bits_to_bytes(capture_to_bits(capture))
+}
+
+/// Crossing-detect a DAC transition capture into a demodulated bit stream:
+/// one entry per detected tone cycle, `None` marking a discontinuity (period
+/// too long to be a tone — a motor spin-up glitch or inter-block artifact).
+fn capture_to_bits(capture: &[Transition]) -> Vec<Option<bool>> {
     let Some(max) = capture.iter().map(|t| t.level).max() else {
         return Vec::new();
     };
@@ -331,7 +339,6 @@ pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
     }
     let mid = max / 2;
 
-    // Bit stream: None marks a discontinuity (period too long to be a tone).
     let mut bits: Vec<Option<bool>> = Vec::new();
     let mut side = capture[0].level > mid;
     // A capture that starts on the high side starts mid-cycle: count the
@@ -366,28 +373,36 @@ pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
     {
         bits.push(Some(2 * (fall - rise) <= BIT_PERIOD_THRESHOLD));
     }
+    bits
+}
 
-    /// How far through a locked (byte-aligned) block the reader is.
-    enum State {
-        /// Bit-level hunt: sliding window looking for LEADER runs, then SYNC.
-        Hunt,
-        /// Byte-aligned after a sync: `seen` bytes read so far; `total` is
-        /// type + length + payload + checksum + trailer, known once the
-        /// length byte (the second one) arrives.
-        Locked { seen: usize, total: usize },
-    }
+/// How far through a locked (byte-aligned) block [`bits_to_bytes`]'s reader is.
+enum BlockState {
+    /// Bit-level hunt: sliding window looking for LEADER runs, then SYNC.
+    Hunt,
+    /// Byte-aligned after a sync: `seen` bytes read so far; `total` is
+    /// type + length + payload + checksum + trailer, known once the
+    /// length byte (the second one) arrives.
+    Locked { seen: usize, total: usize },
+}
 
-    /// Block bytes besides the payload: type, length, checksum, trailer $55.
-    const BLOCK_OVERHEAD: usize = 4;
+/// Block bytes besides the payload: type, length, checksum, trailer $55.
+const BLOCK_OVERHEAD: usize = 4;
 
+/// Recover byte alignment from a demodulated bit stream ([`capture_to_bits`])
+/// the way the BIOS does it: hunt bit-by-bit for [`LEADER`] runs then a
+/// [`SYNC`], then read one block byte-aligned (type, length, payload,
+/// checksum, trailer) before returning to hunting. A `None` bit (a capture
+/// discontinuity) drops any in-progress hunt/lock and starts over.
+fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
     let mut out = Vec::new();
-    let mut state = State::Hunt;
+    let mut state = BlockState::Hunt;
     let mut window: u8 = 0;
     let mut window_bits = 0u32;
     let mut leader_count = 0usize;
     for bit in bits {
         let Some(bit) = bit else {
-            state = State::Hunt;
+            state = BlockState::Hunt;
             window = 0;
             window_bits = 0;
             leader_count = 0;
@@ -396,7 +411,7 @@ pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
         window = window >> 1 | u8::from(bit) << 7; // LSB arrives first
         window_bits += 1;
         match state {
-            State::Hunt => {
+            BlockState::Hunt => {
                 if window_bits < 8 {
                     continue;
                 }
@@ -408,10 +423,10 @@ pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
                     out.push(SYNC);
                     leader_count = 0;
                     window_bits = 0;
-                    state = State::Locked { seen: 0, total: usize::MAX };
+                    state = BlockState::Locked { seen: 0, total: usize::MAX };
                 }
             }
-            State::Locked { ref mut seen, ref mut total } => {
+            BlockState::Locked { ref mut seen, ref mut total } => {
                 if window_bits < 8 {
                     continue;
                 }
@@ -423,7 +438,7 @@ pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
                     *total = usize::from(window) + BLOCK_OVERHEAD;
                 }
                 if *seen >= *total {
-                    state = State::Hunt;
+                    state = BlockState::Hunt;
                 }
             }
         }

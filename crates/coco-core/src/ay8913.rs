@@ -22,6 +22,10 @@
 
 use serde::{Deserialize, Serialize};
 
+mod envelope;
+
+use envelope::Envelope;
+
 /// Register indices (MAME `ay8910.h`'s register-id enum). Only 0–13 have any
 /// effect; 14/15 (`AY_PORTA`/`AY_PORTB`) are stored but inert — no I/O pins on
 /// the AY-3-8913.
@@ -69,15 +73,6 @@ const VOL_LEVEL_MASK: u8 = 0x0F;
 /// R8/R9/R10 bit 4: 1 selects envelope mode (channel follows the shared
 /// envelope generator instead of its own fixed level).
 const VOL_ENVELOPE_MODE: u8 = 0x10;
-
-/// Envelope-shape register (R13) bit layout (MAME `ay8910.h`
-/// `envelope_t::set_shape`).
-mod shape {
-    pub const HOLD: u8 = 0x01;
-    pub const ALTERNATE: u8 = 0x02;
-    pub const ATTACK: u8 = 0x04;
-    pub const CONTINUE: u8 = 0x08;
-}
 
 /// Internal generator step clock = master clock / 8 (MAME
 /// `ay8910_device::device_start`: `stream_alloc(0, m_streams, master_clock /
@@ -169,95 +164,6 @@ struct ToneChannel {
     count: u32,
     /// Current square-wave level.
     output: bool,
-}
-
-// ---- Envelope generator -------------------------------------------------------
-
-/// The single shared envelope generator (all three channels that select
-/// envelope mode read the same [`Envelope::volume`]).
-#[derive(Clone, Copy, Default, Serialize, Deserialize)]
-struct Envelope {
-    /// Internal-step counter toward the next level change.
-    count: u32,
-    /// Current level, counting down from [`ENV_STEP_MASK`] to 0 each ramp
-    /// (signed so the "just went negative" transition — MAME's `step < 0`
-    /// check — is representable before it gets masked/clamped back into
-    /// range).
-    step: i32,
-    /// XORed with `step` to produce [`Envelope::volume`] — the mechanism
-    /// that turns a plain down-ramp into attack (rising) shapes and flips
-    /// direction for the alternating shapes (MAME `envelope_t::volume =
-    /// step ^ attack`).
-    attack: u8,
-    /// Shape bit 0 (post CONT=0 folding): stick at the final level instead
-    /// of repeating.
-    hold: bool,
-    /// Shape bit 1 (post CONT=0 folding): invert `attack` at the end of
-    /// each ramp, turning a sawtooth into a triangle.
-    alternate: bool,
-    /// Set once `hold` has stopped the ramp; while set, `step`/`attack`
-    /// don't change.
-    holding: bool,
-}
-
-impl Envelope {
-    /// Current output level, 0-15 ([`ENV_STEP_MASK`]).
-    fn volume(&self) -> u8 {
-        (self.step as u8) ^ self.attack
-    }
-
-    /// R13 write: (re)starts the envelope at the top of a fresh ramp (MAME
-    /// `envelope_t::set_shape`). CONT=0 shapes (bit 3 clear) are folded to
-    /// their CONT=1 equivalent — hold forced on, alternate following
-    /// whatever attack came out to — exactly like real AY-3-8910 silicon,
-    /// which only implements 10 of the 16 possible shape codes distinctly
-    /// (the CONT=0 codes duplicate 4 of the CONT=1 ones).
-    fn set_shape(&mut self, shape_byte: u8) {
-        self.attack = if shape_byte & shape::ATTACK != 0 { ENV_STEP_MASK as u8 } else { 0 };
-        if shape_byte & shape::CONTINUE == 0 {
-            self.hold = true;
-            self.alternate = self.attack != 0;
-        } else {
-            self.hold = shape_byte & shape::HOLD != 0;
-            self.alternate = shape_byte & shape::ALTERNATE != 0;
-        }
-        self.step = ENV_STEP_MASK;
-        self.holding = false;
-    }
-
-    /// One internal step (master_clock/8) of envelope pacing, `period`
-    /// internal steps per level (already multiplied by
-    /// [`ENVELOPE_STEP_MULTIPLIER`] by the caller).
-    fn step_once(&mut self, period: u32) {
-        if self.holding {
-            return;
-        }
-        self.count += 1;
-        if self.count < period {
-            return;
-        }
-        self.count = 0;
-        self.step -= 1;
-        if self.step >= 0 {
-            return;
-        }
-        if self.hold {
-            if self.alternate {
-                self.attack ^= ENV_STEP_MASK as u8;
-            }
-            self.holding = true;
-            self.step = 0;
-        } else {
-            // MAME re-checks `alternate` against the (still negative) `step`
-            // masked against `ENV_STEP_MASK + 1` here — always true for the
-            // only reachable negative value (-1), so this always fires when
-            // `alternate` is set, once per full ramp.
-            if self.alternate && (self.step & (ENV_STEP_MASK + 1)) != 0 {
-                self.attack ^= ENV_STEP_MASK as u8;
-            }
-            self.step &= ENV_STEP_MASK;
-        }
-    }
 }
 
 // ---- Core --------------------------------------------------------------------
@@ -499,177 +405,5 @@ impl Ay8913 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ---- Register masking ---------------------------------------------------
-
-    #[test]
-    fn tone_coarse_register_masks_to_4_bits() {
-        let mut ay = Ay8913::new();
-        ay.write_reg(reg::TONE_A_COARSE, 0xFF);
-        assert_eq!(ay.read_reg(reg::TONE_A_COARSE), 0x0F);
-    }
-
-    #[test]
-    fn noise_period_register_masks_to_5_bits() {
-        let mut ay = Ay8913::new();
-        ay.write_reg(reg::NOISE_PERIOD, 0xFF);
-        assert_eq!(ay.read_reg(reg::NOISE_PERIOD), 0x1F);
-    }
-
-    // ---- Tone generator -------------------------------------------------------
-
-    #[test]
-    fn tone_toggles_once_per_period_internal_steps() {
-        let mut ay = Ay8913::new();
-        const TONE_PERIOD: u16 = 100;
-        ay.write_reg(reg::TONE_A_FINE, (TONE_PERIOD & 0xFF) as u8);
-        ay.write_reg(reg::TONE_A_COARSE, (TONE_PERIOD >> 8) as u8);
-
-        const INTERNAL_STEPS: u32 = 10_000;
-        let mut edges = 0u32;
-        let mut prev = ay.tone[0].output;
-        for _ in 0..INTERNAL_STEPS {
-            ay.internal_step();
-            if ay.tone[0].output != prev {
-                edges += 1;
-                prev = ay.tone[0].output;
-            }
-        }
-        // A toggle happens once every TONE_PERIOD internal steps (the
-        // internal-step clock is master/8, so this is
-        // f = clock/(16*TONE_PERIOD) in master-clock terms).
-        let expected = INTERNAL_STEPS / u32::from(TONE_PERIOD);
-        assert!(
-            edges.abs_diff(expected) <= 1,
-            "edges={edges} expected={expected}"
-        );
-    }
-
-    // ---- Noise LFSR -------------------------------------------------------------
-
-    #[test]
-    fn lfsr_matches_bit0_xor_bit3_recurrence_from_seed() {
-        let mut ay = Ay8913::new();
-        assert_eq!(ay.rng, NOISE_SEED, "seed must be non-zero at power-on");
-        let mut expected = NOISE_SEED;
-        for _ in 0..32 {
-            let bit0 = expected & 1;
-            let bit3 = (expected >> 3) & 1;
-            expected = (expected >> 1) | ((bit0 ^ bit3) << 16);
-            ay.shift_noise();
-            assert_eq!(ay.rng, expected);
-        }
-    }
-
-    // ---- Envelope shapes --------------------------------------------------------
-
-    /// Runs the envelope generator for `steps` internal steps with envelope
-    /// period 1 (effective period [`ENVELOPE_STEP_MULTIPLIER`] after the
-    /// classic-AY pacing multiplier).
-    fn run_envelope(ay: &mut Ay8913, shape_byte: u8, steps: u32) -> u8 {
-        ay.write_reg(reg::ENV_FINE, 1);
-        ay.write_reg(reg::ENV_COARSE, 0);
-        ay.write_reg(reg::ENV_SHAPE, shape_byte);
-        let period = ay.env_period() * ENVELOPE_STEP_MULTIPLIER;
-        for _ in 0..steps {
-            ay.envelope.step_once(period);
-        }
-        ay.envelope.volume()
-    }
-
-    #[test]
-    fn shape_0d_attacks_then_holds_at_max() {
-        let mut ay = Ay8913::new();
-        ay.write_reg(reg::ENV_FINE, 1);
-        ay.write_reg(reg::ENV_COARSE, 0);
-        ay.write_reg(reg::ENV_SHAPE, 0x0D);
-        assert_eq!(ay.envelope.volume(), 0, "attack shape starts at the bottom");
-        // One full ramp: 16 levels * ENVELOPE_STEP_MULTIPLIER internal steps.
-        let full_ramp = 16 * ENVELOPE_STEP_MULTIPLIER;
-        let period = ay.env_period() * ENVELOPE_STEP_MULTIPLIER;
-        for _ in 0..full_ramp + 4 {
-            ay.envelope.step_once(period);
-        }
-        assert_eq!(ay.envelope.volume(), 0x0F, "0x0D holds at the max level");
-        // Holding: further steps must not change it.
-        for _ in 0..full_ramp {
-            ay.envelope.step_once(period);
-        }
-        assert_eq!(ay.envelope.volume(), 0x0F);
-    }
-
-    #[test]
-    fn shape_00_family_decays_then_holds_at_zero() {
-        let mut ay = Ay8913::new();
-        let full_ramp = 16 * ENVELOPE_STEP_MULTIPLIER;
-        assert_eq!(
-            run_envelope(&mut ay, 0x00, 0),
-            0x0F,
-            "decay shape starts at the top"
-        );
-        let v = run_envelope(&mut ay, 0x00, full_ramp + 4);
-        assert_eq!(v, 0x00, "0x00 decays to and holds at 0");
-    }
-
-    #[test]
-    fn shape_08_is_a_repeating_sawtooth() {
-        let mut ay = Ay8913::new();
-        let full_ramp = 16 * ENVELOPE_STEP_MULTIPLIER;
-        let v_start = run_envelope(&mut ay, 0x08, 0);
-        assert_eq!(v_start, 0x0F);
-        let v_mid = run_envelope(&mut ay, 0x08, full_ramp / 2);
-        assert!(v_mid < v_start, "midway through the ramp it must have decayed");
-        let v_wrapped = run_envelope(&mut ay, 0x08, full_ramp);
-        assert_eq!(
-            v_wrapped, 0x0F,
-            "one full ramp must wrap back to the top, not hold (repeating, not one-shot)"
-        );
-    }
-
-    // ---- Volume DAC table --------------------------------------------------------
-
-    #[test]
-    fn volume_table_is_monotonic_nondecreasing_and_normalized() {
-        let table = build_volume_table();
-        assert_eq!(table[0], 0.0, "quietest step must be exactly silent");
-        assert_eq!(table[15], 1.0, "loudest step must be exactly full scale");
-        for pair in table.windows(2) {
-            assert!(
-                pair[1] >= pair[0],
-                "volume table must be nondecreasing: {table:?}"
-            );
-        }
-    }
-
-    // ---- Mixer gating --------------------------------------------------------------
-
-    #[test]
-    fn mixer_disable_bits_gate_the_channel() {
-        let mut ay = Ay8913::new();
-        ay.write_reg(reg::VOL_A, 0x0F); // full scale, fixed level
-        ay.write_reg(reg::TONE_A_FINE, 4);
-        ay.write_reg(reg::TONE_A_COARSE, 0);
-
-        // Both tone and noise "disabled" (active-low bits set) forces the
-        // gate constantly true (MAME: "if both tone and noise are disabled,
-        // the output is 1, not 0") -- channel A plays its fixed level
-        // continuously.
-        ay.write_reg(reg::MIXER, 0b0000_1001);
-        ay.step(2_000 * MASTER_CLOCK_DIVIDER);
-        let constant = ay.drain();
-
-        // Tone enabled, noise still forced off: the gate now follows the
-        // ~50%-duty square wave, so the averaged output must be markedly
-        // lower than the constant case.
-        ay.write_reg(reg::MIXER, 0b0000_1000);
-        ay.step(2_000 * MASTER_CLOCK_DIVIDER);
-        let toggling = ay.drain();
-
-        assert!(
-            toggling < constant - 0.1,
-            "gating the tone in must reduce the average output: toggling={toggling} constant={constant}"
-        );
-    }
-}
+#[path = "ay8913_test.rs"]
+mod tests;

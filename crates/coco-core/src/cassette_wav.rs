@@ -207,50 +207,62 @@ fn parse_wav_chunks(bytes: &[u8]) -> Result<(WavFmt, &[u8]), WavError> {
     let mut data: Option<&[u8]> = None;
     let mut offset = RIFF_HEADER_LEN;
     while offset + CHUNK_HEADER_LEN <= bytes.len() {
-        let chunk_id: [u8; 4] = bytes[offset..offset + 4].try_into().unwrap();
-        let chunk_size =
-            u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
-        let body_start = offset + CHUNK_HEADER_LEN;
-        let body_end = body_start.checked_add(chunk_size).filter(|&e| e <= bytes.len());
-        let Some(body_end) = body_end else {
-            return Err(WavError::ChunkOverrun {
-                chunk_id,
-                offset,
-                size: chunk_size,
-                remaining: bytes.len().saturating_sub(body_start),
-            });
-        };
-        let body = &bytes[body_start..body_end];
-
+        let (chunk_id, body, next_offset) = read_chunk(bytes, offset)?;
         if &chunk_id == b"fmt " {
-            if body.len() < PCM_FMT_CHUNK_LEN {
-                return Err(WavError::FmtChunkTooShort);
-            }
-            let format_tag = u16::from_le_bytes(body[0..2].try_into().unwrap());
-            if format_tag != PCM_FORMAT_TAG {
-                return Err(WavError::UnsupportedFormatTag(format_tag));
-            }
-            let channels = u16::from_le_bytes(body[2..4].try_into().unwrap());
-            if channels == 0 {
-                return Err(WavError::NoChannels);
-            }
-            let sample_rate_hz = u32::from_le_bytes(body[4..8].try_into().unwrap());
-            let bits_per_sample = u16::from_le_bytes(body[14..16].try_into().unwrap());
-            if bits_per_sample != 8 && bits_per_sample != 16 {
-                return Err(WavError::UnsupportedBitsPerSample(bits_per_sample));
-            }
-            fmt = Some(WavFmt { channels, sample_rate_hz, bits_per_sample });
+            fmt = Some(parse_fmt_chunk(body)?);
         } else if &chunk_id == b"data" {
             data = Some(body);
         }
-        // RIFF chunks are padded to an even size; the pad byte isn't part of
-        // chunk_size.
-        offset = body_end + (chunk_size % 2);
+        offset = next_offset;
     }
 
     let fmt = fmt.ok_or(WavError::MissingFmtChunk)?;
     let data = data.ok_or(WavError::MissingDataChunk)?;
     Ok((fmt, data))
+}
+
+/// Read one chunk header (id + little-endian size) and its body at `offset`,
+/// returning `(id, body, next_offset)` — `next_offset` already accounts for
+/// RIFF's even-size chunk padding (the pad byte isn't part of the declared
+/// size).
+fn read_chunk(bytes: &[u8], offset: usize) -> Result<([u8; 4], &[u8], usize), WavError> {
+    let chunk_id: [u8; 4] = bytes[offset..offset + 4].try_into().unwrap();
+    let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+    let body_start = offset + CHUNK_HEADER_LEN;
+    let body_end = body_start.checked_add(chunk_size).filter(|&e| e <= bytes.len());
+    let Some(body_end) = body_end else {
+        return Err(WavError::ChunkOverrun {
+            chunk_id,
+            offset,
+            size: chunk_size,
+            remaining: bytes.len().saturating_sub(body_start),
+        });
+    };
+    let body = &bytes[body_start..body_end];
+    let next_offset = body_end + (chunk_size % 2);
+    Ok((chunk_id, body, next_offset))
+}
+
+/// Parse a `fmt ` chunk body into [`WavFmt`], rejecting anything this module
+/// doesn't decode (non-PCM, zero channels, unsupported sample depth).
+fn parse_fmt_chunk(body: &[u8]) -> Result<WavFmt, WavError> {
+    if body.len() < PCM_FMT_CHUNK_LEN {
+        return Err(WavError::FmtChunkTooShort);
+    }
+    let format_tag = u16::from_le_bytes(body[0..2].try_into().unwrap());
+    if format_tag != PCM_FORMAT_TAG {
+        return Err(WavError::UnsupportedFormatTag(format_tag));
+    }
+    let channels = u16::from_le_bytes(body[2..4].try_into().unwrap());
+    if channels == 0 {
+        return Err(WavError::NoChannels);
+    }
+    let sample_rate_hz = u32::from_le_bytes(body[4..8].try_into().unwrap());
+    let bits_per_sample = u16::from_le_bytes(body[14..16].try_into().unwrap());
+    if bits_per_sample != 8 && bits_per_sample != 16 {
+        return Err(WavError::UnsupportedBitsPerSample(bits_per_sample));
+    }
+    Ok(WavFmt { channels, sample_rate_hz, bits_per_sample })
 }
 
 /// Extract channel 0's samples as signed integers on a common scale,

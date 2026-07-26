@@ -58,12 +58,15 @@ fn nitros9_eou_boots_from_vhd_with_fd502_in_multipak_slot4() {
     boot_eou_to_shell(true);
 }
 
-fn boot_eou_to_shell(through_mpi: bool) {
-    /// Fields of BASIC settling before `DOS` is typed.
-    const BASIC_FIELDS: usize = 300;
-    /// Upper bound on each boot-stage wait; [`wait_for`] bails out early as
-    /// soon as its marker shows.
-    const MAX_BOOT_FIELDS: usize = 12_000;
+/// Loads the real ROM/disk/VHD assets, wires up a machine with the FD-502
+/// either bare or nested in MultiPak slot 4 per `through_mpi`, and boots it
+/// against a scratch copy of the VHD (EOU's startup writes to its system
+/// disk, and the pristine image must stay reproducible run to run — one
+/// scratch file per variant, since both boot tests run concurrently in this
+/// binary). Returns the reset machine and the scratch VHD path (for the
+/// caller to remove when done), or `None` (test should skip) if any asset is
+/// missing.
+fn setup_machine(through_mpi: bool) -> Option<(Machine, PathBuf)> {
     /// The conventional disk-controller slot (0-indexed slot 4).
     const MPI_FDC_SLOT: usize = 3;
 
@@ -73,16 +76,13 @@ fn boot_eou_to_shell(through_mpi: bool) {
         std::fs::read(asset("disks", "68EMU.dsk")),
     ) else {
         eprintln!("skipping EOU VHD boot test: roms/ or disks/ assets not present");
-        return;
+        return None;
     };
     let vhd_src = asset("disks", "68SDC.VHD");
     if !vhd_src.exists() {
         eprintln!("skipping EOU VHD boot test: disks/68SDC.VHD not present");
-        return;
+        return None;
     }
-    // Boot against a scratch copy — EOU's startup writes to its system disk,
-    // and the pristine image must stay reproducible run to run. One scratch
-    // file per variant: both boot tests run concurrently in this binary.
     let scratch_name = if through_mpi {
         "coco-rs-test-68SDC-mpi.VHD"
     } else {
@@ -108,6 +108,20 @@ fn boot_eou_to_shell(through_mpi: bool) {
     }
     m.bus.vhd.insert(0, VhdImage::File(vhd_file));
     m.reset();
+
+    Some((m, vhd_copy))
+}
+
+fn boot_eou_to_shell(through_mpi: bool) {
+    /// Fields of BASIC settling before `DOS` is typed.
+    const BASIC_FIELDS: usize = 300;
+    /// Upper bound on each boot-stage wait; [`wait_for`] bails out early as
+    /// soon as its marker shows.
+    const MAX_BOOT_FIELDS: usize = 12_000;
+
+    let Some((mut m, vhd_copy)) = setup_machine(through_mpi) else {
+        return;
+    };
 
     for _ in 0..BASIC_FIELDS {
         m.run_field();
