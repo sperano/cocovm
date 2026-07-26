@@ -29,6 +29,9 @@ Real ROMs in `./roms/` and reference PDFs in `./docs/` (this machine only).
 4. [CPU core III: interrupts, halt states, and how to test a CPU with no test suite](ch04-interrupts-and-how-to-test-a-cpu.md)
 5. [The Bus: Memory Maps, the SAM, and the GIME MMU](ch05-the-bus.md)
 6. [Time and the Scanline Loop](ch06-time-and-the-scanline-loop.md)
+7. [How a Raster Works + the Legacy VDG Text Mode](ch07-raster-and-vdg-text.md)
+8. [GIME Native Modes: Registers, Text Attributes, Graphics, Palette](ch08-gime-native-modes.md)
+9. [Advanced Video: Composite, Mid-Frame Splits, and PMODEs](ch09-splits-composite-and-pmodes.md)
 
 ---
 

@@ -152,7 +152,8 @@ by inspection instead of by squinting at decimal points.
 
 **PAL**, for comparison, at the same CPU clock (CoCo 1/2 don't support PAL
 in this emulator at all — `MachineConfig::validate` rejects the
-combination, `config.rs:213-217` — but the arithmetic is worth seeing):
+combination, `config.rs:213-217` — so every PAL row below is CoCo-3-only
+in practice, but the arithmetic is worth seeing):
 
 ```
 894_886.0 / 50.0  =  17897 cycles/field  (truncated)
@@ -162,6 +163,56 @@ combination, `config.rs:213-217` — but the arithmetic is worth seeing):
 Notice PAL's *per-line* number (57) is closer to the DESIGN.md sketch's
 "≈57" than NTSC's actual 56 is — a reminder that "same per-line both
 standards" (also from that sketch) is approximately true, not exactly.
+
+Put all four combinations — the two `VideoStandard` variants crossed with
+the two `cpu_fast` states — side by side, and the shape of the whole
+timing model falls out of two constants (`CPU_HZ` and each standard's
+`lines_per_field`/`field_rate_hz`) plus one `bool`:
+
+| Standard | Speed | `lines_per_field()` | `field_rate_hz()` | cycles/field (`hz / rate`, truncated) | cycles/line (`÷ lines`, truncated) |
+|---|---|---:|---:|---:|---:|
+| NTSC | normal | 262 | 59.94 | 14929 | **56** |
+| NTSC | fast (`POKE 65497,0`) | 262 | 59.94 | 29859 | **113** |
+| PAL | normal | 312 | 50.0 | 17897 | **57** |
+| PAL | fast | 312 | 50.0 | 35795 | **114** |
+
+A few things worth noticing once they're lined up like this rather than
+scattered across paragraphs:
+
+- **The field-rate column, not the line-count column, is what makes PAL
+  "slower per line."** PAL has *more* lines per field (312 vs. 262 — more
+  work to spread the same CPU clock across) but also a *proportionally*
+  lower field rate (50 Hz vs. 59.94 Hz — more cycles available per field to
+  spread it with), and the second effect wins by a hair: PAL fields get
+  17897 cycles to NTSC's 14929 (a bigger field budget), but that budget is
+  divided by 312 lines instead of 262 (more divisions), and 17897/312
+  narrowly out-paces 14929/262. This is exactly why "PAL horizontal rate is
+  nearly identical to NTSC's" (`DESIGN.md` §4) despite the two field rates
+  differing by 20%: the extra lines-per-field almost exactly cancels the
+  slower field rate, leaving only a 1-2 cycle/line difference — an accident
+  of how both broadcast standards were independently tuned to land near the
+  same ~15.6-15.7 kHz horizontal rate, not a coincidence this codebase
+  manufactured.
+- **Doubling speed doesn't double the line-cycle number cleanly, and
+  whether it happens to land clean is standard-dependent.** NTSC fast is
+  113, one cycle over a clean double of NTSC normal's 56 (which would be
+  112). PAL fast, by contrast, is 114 — *exactly* double PAL normal's 57.
+  Nothing in the code special-cases PAL to make that come out even; it's
+  the same double-truncation arithmetic from earlier in this section,
+  applied to different real-number inputs. NTSC's untruncated line value
+  (56.98) sits just above 56, so doubling the untruncated field value and
+  re-truncating loses less than doubling the already-truncated 56 would
+  gain — the two paths (`truncate-then-double` vs. `double-then-truncate`)
+  can disagree by one, and which side of that disagreement you land on is
+  pure floating-point accident, not something either `VideoStandard` variant
+  was tuned for.
+- **Nothing about `step_instruction` or `end_of_line` (§6.3-6.5) branches
+  on `VideoStandard` directly.** Every line of the run loop reads `line`,
+  `line_cycles_spent`, and `line_budget` — plain `u32`s that are already
+  standard-and-speed-agnostic by the time the loop sees them. All four rows
+  of this table collapse into the same three fields; `VideoStandard` and
+  `cpu_fast` only matter at the single point (`cycles_per_field`, next)
+  where the budget gets computed.
 
 **The double-speed poke.** If you ever typed `POKE 65497,0` to make BASIC
 programs (and every disk access, and the cursor blink) noticeably snappier,
@@ -216,7 +267,7 @@ changing which branch a single multiplication takes — everything else
 downstream (§6.3's `line_budget`) is unaware anything changed.** That's
 the payoff of routing every timing decision through one function instead
 of scattering `if fast { ... }` checks through the loop, and it's worth
-noticing now, because §6.9 exercise 1 has you redo this arithmetic by
+noticing now, because §6.10's exercise 6.1 has you redo this arithmetic by
 hand.
 
 ---
@@ -415,6 +466,163 @@ pub enum StepKind {
 > a discriminant) that cloning is cheaper than borrowing, so the derive
 > lets callers use them like `i32`s without a second thought.
 
+### Resumability's payoff: a live look at `Debugger::run_until`
+
+Week 16's chapter is titled "the payoff of every earlier decision," but one
+piece of that payoff already exists in this codebase today, and it's worth
+detouring into it now, while `step_instruction`'s shape is fresh, rather
+than taking on faith that "a debugger gets built on top of this." Open
+`crates/coco-core/src/debug.rs`. Its file header states the dependency
+outright:
+
+```rust
+//! Debug core: the [`Debugger`] the frontend owns and drives, plus the
+//! side-effect-free primitives the machine exposes for it (`docs/plan-debugger.md`
+//! §2). The [`Debugger`] holds PC breakpoints and memory watchpoints, runs the
+//! machine one instruction at a time via [`Machine::step_instruction`] until a
+//! stop condition trips ([`Debugger::run_until`]), and keeps an instruction
+//! trace ring for "how did I get here" / MAME trace-diffing.
+```
+
+"Runs the machine one instruction at a time via `Machine::step_instruction`"
+— that's not a metaphor, it's the literal implementation. `StopReason`
+enumerates why a run stopped (`debug.rs:83-101`):
+
+```rust
+/// Why [`Debugger::run_until`] stopped.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StopReason {
+    /// The PC reached an enabled breakpoint (before executing that
+    /// instruction).
+    Breakpoint(u16),
+    /// A memory watchpoint tripped mid-instruction.
+    Watchpoint {
+        /// The watched logical address that was accessed.
+        addr: u16,
+        /// Read vs write.
+        kind: WatchKind,
+    },
+    /// A video field completed (the machine reached a field boundary).
+    FieldComplete,
+    /// The instruction budget was exhausted without any of the above — the
+    /// run made progress but hit no stop condition.
+    Step,
+}
+```
+
+Notice `FieldComplete` sitting right there next to `Breakpoint` and
+`Watchpoint` — the debugger can stop a run exactly where `run_field` would
+have stopped it anyway, because both are reading the same `field_complete`
+flag off the same `StepEvent`. And the run loop itself
+(`debug.rs:364-407`, lightly trimmed to the control flow):
+
+```rust
+pub fn run_until(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
+    m.bus.install_watches(self.watch_table());
+    let reason = self.run_loop(m, max_instructions);
+    m.bus.uninstall_watches();
+    reason
+}
+
+fn run_loop(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
+    for i in 0..max_instructions {
+        let pc = m.cpu.pc;
+        let stop_at_bp = i > 0 && matches!(self.breakpoints.get(&pc), Some(bp) if bp.enabled);
+        if stop_at_bp {
+            let bp = self.breakpoints.get_mut(&pc).expect("just matched above");
+            bp.hits += 1;
+            return StopReason::Breakpoint(pc);
+        }
+
+        m.bus.clear_watch_hit();
+        let snapshot = self.trace_enabled.then(|| TraceEntry::capture(&m.cpu));
+        let event = m.step_instruction();
+        if let (true, Some(entry)) =
+            (matches!(event.kind, StepKind::Instruction { .. }), snapshot)
+        {
+            self.push_trace(entry);
+        }
+
+        if let Some(hit) = m.bus.take_watch_hit() {
+            if let Some(wp) = self.watchpoints.get_mut(&hit.addr) {
+                wp.hits += 1;
+            }
+            return StopReason::Watchpoint {
+                addr: hit.addr,
+                kind: hit.kind,
+            };
+        }
+        if event.field_complete {
+            return StopReason::FieldComplete;
+        }
+    }
+    StopReason::Step
+}
+```
+
+There is no second CPU loop, no shadow interpreter for "debug mode" versus
+"run mode" — `run_loop` is `for i in 0..max_instructions { ...
+m.step_instruction() ... }` with three early-exit checks bolted around the
+one call this whole chapter has been building up to. This is the entire
+reason §6.3 made a point of hoisting `line`/`line_cycles_spent`/
+`line_budget` onto `Machine` instead of leaving them as loop-local
+variables: a debugger that pauses after any single instruction needs the
+machine to *still be a valid, resumable machine* the moment it stops, and
+a resumable `step_instruction` is exactly what makes `m.step_instruction()`
+safe to call once, inspect, then call again, forever, from any external
+loop — the debugger's or yours.
+
+**Proving it, not just reading it.** Two real, verified surprises turned
+up while confirming this section against the actual code — both worth
+knowing before you build on `run_until` in week 16, and both good examples
+of why this course tells you to run things rather than trust prose. Take a
+tiny hand-assembled program — the same 13-byte "arm a field-sync IRQ, then
+spin" pattern §6.7 builds out in full — with a breakpoint set at `$8100`,
+the address the IRQ vector points at:
+
+```rust
+let mut dbg = Debugger::new();
+dbg.trace_enabled = true;
+dbg.add_breakpoint(0x8100); // the IRQ handler's entry point
+let reason = dbg.run_until(&mut m, 1_000_000);
+```
+
+Run that, and `reason` comes back `FieldComplete` — the breakpoint on the
+handler's entry address **never fires**, even though the CPU visibly runs
+that handler every field. Move the breakpoint one instruction later, to
+`$8103` (the handler's second instruction), and it fires immediately:
+`Breakpoint(0x8103)`, hit count 1, at scanline 245. The reason is exactly
+`run_loop`'s structure: it samples `pc = m.cpu.pc` *before* calling
+`step_instruction`, but interrupt recognition happens *inside*
+`step_instruction` — `step_cpu_unit` (§6.4) redirects `cpu.pc` to the
+vector target and then immediately executes that first instruction, all
+within the one call. The CPU's program counter genuinely is `$8100` for a
+moment, mid-call — but that moment is never externally observable as "the
+value of `m.cpu.pc` right before a `step_instruction` call," which is the
+only moment `run_loop` ever checks. **A breakpoint on an interrupt vector's
+target address is unreachable through this exact mechanism**, a real,
+verified gap between "where interrupts logically transfer control" and
+"where this debugger's breakpoint check happens to sample the PC." (If you
+build week 16's debugger UI, this is worth a code comment of its own —
+and a candidate fix, e.g. checking breakpoints against the *new* PC
+immediately after `service_interrupts` redirects it, is exactly the kind
+of small, real, load-bearing decision week 16 will ask you to make.)
+
+The second surprise is quieter: with `trace_enabled` on, the trace ring
+entry recorded for the very call that services the interrupt logs the PC
+*as sampled before that call* — the spin loop's address, not the handler's
+— because `TraceEntry::capture` runs before `step_instruction`, matching
+`run_loop`'s own ordering. The trace ring is an honest record of "what PC
+was about to execute when I asked," not "what instruction actually
+retired this step" — a distinction that never matters for an ordinary
+instruction (the two coincide) but does for the one step per interrupt
+where they don't. Neither surprise is a bug to fix right now — they're
+both exactly what the documented ordering promises once you trace it
+through — but neither is discoverable from reading `run_loop` alone
+without actually running it against a program that fires an interrupt,
+which is the whole reason this subsection built one instead of describing
+`run_until` in the abstract.
+
 ---
 
 ## 6.4 `step_cpu_unit`: HALT, then interrupts, then the CPU, then peripherals
@@ -601,16 +809,141 @@ not a silently confident wrong number.
 
 After sync comes video (`render_scanline`, week 7's subject — CoCo 3 native
 modes paint scanline-by-scanline through `field_scan`; legacy VDG text is a
-whole-frame snapshot taken at `render_field`), then audio
-(`flush_line_audio`, week 11 — note the self-capping `AUDIO_BUFFER_CAP`
-check right before it, so a headless test that never drains audio can't
-leak memory across a 1500-field boot like the one in §6.7), then the GIME
-timer (week 8's territory, shown here only because it lives in the trailer
-— notice it's gated on `MachineVariant::Coco3`, keeping the GIME
-"completely inert" on the CoCo 1/2 plain-SAM path, per `line += 1` finally
-advancing the scanline counter and, on wraparound, rendering the finished
-field and returning `true` — the signal `step_instruction` propagates all
-the way out to `run_field`'s `while` condition.
+whole-frame snapshot taken at `render_field`), then audio, then the GIME
+timer, and finally `line += 1` advances the scanline counter and, on
+wraparound, renders the finished field and returns `true` — the signal
+`step_instruction` propagates all the way out to `run_field`'s `while`
+condition. The last two of those deserve more than a parenthetical.
+
+### Why audio flushes once per line, not once per instruction or once per field
+
+`flush_line_audio()` (week 11's chapter in full; `crates/coco-core/src/machine/audio.rs:41`)
+is the one call in the trailer whose *placement* — not its internals —
+matters to this chapter. The core records every DAC/mux write as it
+happens, cycle-timestamped, into an event list (`SystemBus::audio_events`)
+rather than sampling the DAC register on some fixed clock; `flush_line_audio`
+is what replays those events into actual audio samples. Two placements
+were available and both are wrong:
+
+- **Once per instruction** would be correct in principle (every DAC write
+  is already timestamped precisely) but wasteful: audio only needs to be
+  *sampled* fast enough to reconstruct sound a human ear can hear — the
+  emulator targets `audio::OVERSAMPLE = 4` slots per scanline, ~62.9 kHz on
+  NTSC, already comfortably above the 20 kHz a speaker/ear cares about.
+  Rendering a new sample grid slot after every single 6809 instruction
+  would recompute that grid tens of times more often than its own output
+  resolution can distinguish.
+- **Once per field** would be too coarse: a field is ~16.7 ms, long enough
+  for a 1200 Hz cassette tone or a few-hundred-Hz music note to complete
+  several full cycles. Quantizing an entire field's worth of DAC events
+  down to one shot would flatten every waveform inside it into noise —
+  exactly the kind of "correct values, wrong time resolution" failure §6.1
+  opened this chapter with, just applied to sound instead of the CPU
+  clock.
+- **Once per line** sits at ~15.7 kHz (NTSC) — already faster than any
+  audible transition rate an 8-bit DAC or a cassette FSK tone produces —
+  and it's *free* bookkeeping in a specific sense: `end_of_line` already
+  visits every scanline boundary for `hsync`/field-sync, so hanging the
+  audio flush off the same trailer costs no separate timer, no separate
+  loop, just one more call at a boundary the code was already crossing.
+  Each line then gets oversampled ×4 internally so the *output* grid (not
+  the flush cadence) is the ~62.9 kHz a resampler downstream can work
+  with.
+
+Notice the self-capping check right before the flush call
+(`if self.audio_buffer.len() >= AUDIO_BUFFER_CAP { self.audio_buffer.clear(); }`)
+— a headless run like the ~1500-field boot test in §6.8, which never calls
+`Machine::take_audio()` to drain the buffer, would otherwise grow that
+`Vec` without bound over 25 seconds of emulated audio. `AUDIO_BUFFER_CAP`
+is sized to `8 * 262 * OVERSAMPLE` samples — about 8 fields' worth — so a
+draining consumer (the real frontend) never notices the cap, and a
+non-draining one (this chapter's tests) never leaks.
+
+### The GIME timer: rate selection, a documentation drift worth catching, and week 8's blink
+
+The `if self.config.variant == MachineVariant::Coco3` block feeds elapsed
+cycles into `gime.tick_timer(ticks)` — a 12-bit hardware countdown
+(`crates/coco-core/src/gime.rs:169-228`) that reloads and fires an
+interrupt source on every underflow:
+
+```rust
+/// 12-bit timer programmed value ($FF94 low nibble / $FF95). Zero inhibits
+/// the count; nonzero reloads (+[`TIMER_RELOAD_OFFSET`]) on each underflow.
+pub timer_reload: u16,
+/// Live countdown, in timer input clocks (INIT1 TINS selects the rate).
+pub timer_count: u16,
+```
+
+INIT1's TINS bit (`$FF91`, bit `0x20`) selects which of two clocks feeds
+that countdown — and here's a small, genuine documentation drift this
+chapter's own research surfaced, worth pointing out precisely because it's
+the kind of thing you'd otherwise only find by cross-reading two files
+that don't cite each other. `gime.rs`'s own bit-layout comment
+(`crates/coco-core/src/gime.rs:62-68`) still says:
+
+```rust
+/// INIT1 ($FF91) bit assignments (SEB Unravelled II).
+pub mod init1 {
+    /// Timer input select: 1 = ~70 ns (14.318 MHz), 0 = ~63.5 µs (horizontal rate).
+    pub const TINS: u8 = 0x20;
+```
+
+But the constant that actually converts that selection into tick counts,
+back in `machine.rs` (§6.2's `CPU_HZ` neighbor), tells a different story:
+
+```rust
+/// GIME timer input clocks per normal-speed CPU cycle with INIT1 TINS=1. The
+/// fast timer clock is 3.579545 MHz (279.365 ns — hardware-measured; MAME
+/// `gime.cpp`. SEB's "70 ns" is wrong), exactly 4× the 0.89 MHz CPU clock —
+/// and 2× the double-speed CPU clock, since the timer runs off the fixed
+/// video crystal and ignores the CPU rate. With TINS=0 the input is the
+/// ~63.5 µs horizontal sync: one tick per scanline.
+const FAST_TIMER_TICKS_PER_CPU_CYCLE: u32 = 4;
+```
+
+Read those two comments side by side: `gime.rs` still quotes SEB
+Unravelled II's "~70 ns (14.318 MHz)" for the fast clock, while
+`machine.rs` explicitly says "SEB's '70 ns' is wrong" and uses 279.365 ns
+(3.579545 MHz — the NTSC colour subcarrier itself, not the 14.318 MHz dot
+clock four times faster than it) instead, citing MAME's `gime.cpp` as the
+correction. The *behavior* isn't in question — `FAST_TIMER_TICKS_PER_CPU_CYCLE
+= 4` is what `end_of_line` actually multiplies by, and it encodes the
+corrected 279.365 ns figure (four ticks of a 3.58 MHz clock per one tick
+of the 0.895 MHz CPU clock checks out: `3.579545 / 0.894886 ≈ 4.0`) — but
+the doc *comment* on `init1::TINS` itself never got updated when that
+correction landed elsewhere in the crate. This is exactly Appendix A's
+territory (conflicting sources, tracked and reasoned about rather than
+silently picked) except this time the conflict is between two comments in
+the *same* codebase rather than two external references — a small, live
+reminder that "grep every doc comment that touches a claim" beats trusting
+the first one you find, even inside a single crate you already trust.
+
+Two more details worth carrying forward, both narrow but both load-bearing
+for later weeks:
+
+- **`TIMER_RELOAD_OFFSET: u16 = 2`** (`gime.rs:162-165`) — the 12-bit timer
+  counts the programmed value *plus two* extra ticks on every reload, a
+  fact `gime.rs` attributes to "the 1986 GIME (MAME `gime.cpp`
+  `reset_timer`); the 1987 revision uses +1." Two different silicon
+  revisions of the same chip, two different off-by-some-small-constant
+  behaviors, and this emulator picked one (the 1986 chip) and says so in
+  the comment rather than splitting the difference or guessing. If you
+  ever emulate a specific real CoCo 3 board revision precisely, this is
+  the exact line to revisit.
+- **`blink_state`** (`gime.rs:220-221`, `pub blink_state: bool`) toggles on
+  every timer underflow (`tick_timer`, `gime.rs:382-394`:
+  `self.blink_state = !self.blink_state;`). This one boolean is where
+  week 8's attribute-text blinking cursor and blinking characters come
+  from: `machine/render.rs:54` reads `self.bus.gime.blink_state` into a
+  local `blink_on` and threads it down into `gime_video::paint_scanline` →
+  `paint_text_row`, where a character's `ATTR_BLINK` bit only shows its
+  glyph "on" half the time — literally, whichever half `blink_state`
+  currently is. The GIME timer you just read the tick-rate math for isn't
+  a video feature at all from this chapter's vantage point; it's a
+  general-purpose interval timer that week 8's renderer happens to be one
+  of the consumers of. `end_of_line` is where that timer gets fed, once
+  per line, regardless of who's listening for its interrupt or reading its
+  toggling boolean.
 
 ---
 
@@ -756,9 +1089,284 @@ PIA (week 10, in depth) ahead of the GIME's native video and interrupt
 block (weeks 7-9): the thing that actually makes BASIC alive is not the
 glamorous chip.
 
+### Proof, not assertion: walking `pia_sync.rs`
+
+Everything §6.6 has claimed about edge gating and scanline placement is
+backed by a test file that needs no ROM at all —
+`crates/coco-core/tests/pia_sync.rs` builds a bare `SystemBus` and drives
+`hsync`/`fs_falling`/`fs_rising` directly. Its own header states exactly
+what it's proving:
+
+```rust
+//! PIA0 Cx1 edge-gating fidelity: CA1/CB1 flags must only latch on the
+//! control-register-selected edge (`pia::cr::C1_EDGE_HIGH`), and the field
+//! sync (CB1/VBORD) must land at its real mid-field scanlines
+//! (`config::VideoStandard::fs_falling_line`/`fs_rising_line`), not at the
+//! end of the field.
+```
+
+Two claims, two pairs of tests. **Edge selection** first
+(`pia_sync.rs:26-41`):
+
+```rust
+#[test]
+fn falling_edge_selected_port_flags_only_on_high_to_low() {
+    let mut b = bus();
+    // Default CRA ($FF01=0): C1_EDGE_HIGH clear -> falling edge selected.
+    assert_eq!(b.pia0.a.control & cr::C1_EDGE_HIGH, 0);
+    b.hsync(); // emits set_c1(false) then set_c1(true): falling edge matches
+    assert_ne!(b.pia0.a.control & cr::C1_FLAG, 0);
+}
+
+#[test]
+fn rising_edge_selected_port_flags_only_on_low_to_high() {
+    let mut b = bus();
+    b.write(PIA0_CRA, cr::C1_EDGE_HIGH); // select low->high
+    b.hsync(); // falling edge (no match) then rising edge (matches)
+    assert_ne!(b.pia0.a.control & cr::C1_FLAG, 0);
+}
+```
+
+Both tests exercise `hsync()`, not the field-sync functions — remember
+from §6.5 that `hsync()` itself calls `self.pia0.a.set_c1(false)`
+immediately followed by `self.pia0.a.set_c1(true)` every single line (the
+comment on `hsync` explains why: the emulator has no sub-scanline
+resolution, so both the falling and rising edges of the real ~4.5 µs pulse
+are emitted back-to-back rather than timed within the line). That
+back-to-back pair is exactly what makes both tests possible from one
+function call: whichever edge direction the control register selects,
+one of the two `set_c1` calls inside that single `hsync()` will match it,
+and `set_c1`'s transition check (§6.6's `PiaPort::set_c1` walkthrough)
+guarantees the *other* direction — mismatched — sets nothing. Flip
+`cr::C1_EDGE_HIGH` between the two tests and you're really just flipping
+which of `hsync`'s two back-to-back calls is the one that counts.
+
+**Scanline placement** second, the pair that pins down the exact numbers
+from §6.5's table (`pia_sync.rs:50-70`, `fs_falling` half shown; `fs_rising`
+is its mirror image against `fs_rising_line`):
+
+```rust
+#[test]
+fn cb1_falling_flag_first_appears_at_fs_falling_line_not_before() {
+    let mut b = bus();
+    // Default CRB ($FF03=0): falling edge selected, matching stock BASIC's
+    // $34/$35 ROM setup.
+    let falling_line = VideoStandard::NTSC.fs_falling_line(MachineVariant::Coco3);
+    for _ in 0..falling_line {
+        b.hsync(); // drives CA1 only; CB1 must stay untouched all field
+        assert_eq!(
+            b.pia0.b.control & cr::C1_FLAG,
+            0,
+            "CB1 flag must not appear before the field-sync falling edge"
+        );
+    }
+    b.fs_falling();
+    assert_ne!(
+        b.pia0.b.control & cr::C1_FLAG,
+        0,
+        "CB1 flag must appear exactly at the falling-edge scanline"
+    );
+}
+```
+
+Notice the shape: it doesn't just assert the flag is set *after*
+`fs_falling()` — it drives `hsync()` exactly `falling_line` (244, from the
+same `fs_falling_line` function §6.5 already introduced) times first,
+asserting *inside the loop, every iteration*, that CB1's flag stays
+clear. That loop is the test proving a negative — "nothing before line
+244 ever touches CB1" — which is a stronger and more useful claim than
+"line 244 sets it," because it's the negative half that a sloppy
+refactor (say, accidentally calling `fs_falling()` from inside `hsync()`
+by mistake) would actually violate. The companion `cb1_rising_edge_...`
+test does the analogous thing for the rising edge, with an extra twist:
+it deliberately calls `fs_falling()` at its normal line too, mid-loop,
+specifically to prove that firing the *wrong-direction* edge for this
+port's control-register setting (`cr::C1_EDGE_HIGH` selects rising here)
+still doesn't flag — the same "wrong direction never counts" guarantee
+from the edge-selection pair, now exercised at the real field-sync
+scanline rather than every hsync.
+
+Between these four tests and the `PiaPort::set_c1` code they exercise,
+§6.6's whole account of "field sync becomes an IRQ" has been demonstrated,
+not just asserted — which is exactly the property exercise 6.2 below asks
+you to break on purpose and watch fail.
+
 ---
 
-## 6.7 The lab: booting real Color BASIC, headless, in a test
+## 6.7 A synthetic boot, traced: reset vector to first field-sync IRQ
+
+§6.8 is the real thing — real Color BASIC, a real sign-on banner, a real
+`PRINT 2+2`. But that lab needs `roms/bas12.rom`, and this worktree
+genuinely doesn't have it (nor the `docs/` reference PDFs `CLAUDE.md`
+mentions — both are git-ignored, machine-local, copyrighted resources, and
+neither happens to be present here). Rather than describe a real ROM's
+cold-start sequence from memory or a disassembly this environment can't
+verify, this section builds the *smallest program that exercises the exact
+mechanism §6.6 just proved* — arm a field-sync IRQ, idle in a spin loop,
+get woken up once per field — and actually runs it, so every number below
+is a real `cargo test` result, not a prediction. It's not Color BASIC. It
+is, in miniature, the identical hardware conversation Color BASIC has with
+PIA0 every field: this is the load-bearing 13 bytes underneath the
+`BRA *` idle loop §6.6's war story described in the abstract.
+
+### The program
+
+Six instructions, split across a cold-start preamble and an interrupt
+handler — written the same way `tests/halt.rs` and `tests/speed.rs` build
+their own synthetic ROMs (§6.9's reading list), reusing several of their
+*exact* byte sequences (`LDS #$5EFF`, `BRA *`, `INC $0400`, `RTI` — all
+independently verified there already):
+
+```
+$8000  10 CE 5E FF   LDS  #$5EFF     ; arm a real stack (hygiene, matches tests/halt.rs)
+$8004  86 05         LDA  #$05       ; C1_IRQ_ENABLE (0x01) | DDR_ACCESS (0x04)
+$8006  B7 FF 03      STA  $FF03      ; PIA0 CRB: enable the CB1 (field-sync) IRQ
+$8009  1C EF         ANDCC #$EF      ; clear the I mask: unmask IRQ recognition
+$800B  20 FE         BRA  *          ; the idle loop — this IS a BRA *, literally
+
+$8100  B6 FF 02      LDA  $FF02      ; read PIA0 port B's DATA register: acks CB1
+$8103  7C 04 00      INC  $0400      ; "I'm alive" — one tick per field-sync IRQ
+$8106  3B            RTI
+```
+
+Vectors: `$FFFE`/`$FFFF` (RESET) point at `$8000`; `$FFF8`/`$FFF9` (IRQ)
+point at `$8100`. As a 32K flat image with those bytes poked in (`ROM_SIZE
+= 32 * 1024`, offsets relative to `$8000` exactly like `halt.rs::test_rom`),
+`Machine::new(MachineConfig::default(), rom)` boots it on a CoCo 3 with no
+ROM file and no license concerns anywhere near it.
+
+Walk what each line does against code you've already read this chapter:
+`LDA #$05; STA $FF03` writes PIA0's control register B — bit `0x01` is
+`cr::C1_IRQ_ENABLE`, bit `0x04` is `cr::DDR_ACCESS` (§6.6's `pia.rs`
+excerpt; `write_control`'s masking lets both land). `ANDCC #$EF` clears
+CC's I bit, unmasking IRQ recognition — the same mask `cpu.irq()`
+(§6.6) checks before actually vectoring. `BRA *` is the idle loop; once
+armed, nothing else in this program ever runs *except* in response to an
+interrupt — which is precisely stock BASIC's own idle-loop design, per
+the war story, just nine bytes shorter and with a counter standing in
+for "blink the cursor, scan the keyboard."
+
+### Watch it fail, twice, before it works
+
+Building this for real — not writing it and assuming it's right — turned
+up two genuine bugs, both worth showing rather than silently editing away,
+because both are realistic mistakes and both are direct, verified
+demonstrations of facts this chapter and the wider course already claim.
+
+**Attempt 1: forget the acknowledgment.** Drop the `LDA $FF02` line
+entirely — CRB is armed, the idle loop spins, the handler just does
+`INC $0400; RTI`. §6.6 already told you reading a PIA data register
+clears its Cx1 flag, and that this is *why* `Bus::read` takes `&mut self`
+(week 1). Skip that read and the flag PIA0 latched at line 244 is never
+cleared — so the very next instruction boundary after `RTI` restores CC
+(with I unmasked again), the CPU sees the same still-asserted IRQ line and
+re-enters the handler immediately, forever, for the rest of the run.
+Running three fields of this actually produces:
+
+```
+[no-ack] field 1: $0400 = 51
+[no-ack] field 2: $0400 = 69
+[no-ack] field 3: $0400 = 87
+```
+
+Not a frozen machine (§6.6's war story) — the opposite failure, an
+**interrupt storm**: 51 handler visits in field 1 alone (versus the 1 a
+correct handler produces), and it never recovers, growing by roughly 18
+more every subsequent field because the flag, once missed, stays latched
+across field boundaries too. Two very different bugs — "no interrupt ever
+fires" and "an interrupt fires continuously and never stops" — sit on
+opposite sides of the exact same missing line of code, which is a good
+reason to actually run a change like this rather than eyeball it.
+
+**Attempt 2: acknowledge the wrong register.** Put `LDA $FF02` back, but
+leave `CRB = $01` (just `C1_IRQ_ENABLE`, no `DDR_ACCESS`). This looks
+fixed — there's an acknowledgment read right there — and it isn't:
+
+```
+[ddr-not-set] field 1: $0400 = 40
+[ddr-not-set] field 2: $0400 = 139
+[ddr-not-set] field 3: $0400 = 238
+```
+
+Worse, not better. The reason is `MC6821::read_side` (§6.6 mentioned this
+function without showing its guard): reading register 2 (`$FF02`) only
+reaches the *data* register — the one whose read clears the Cx1
+flags — when the port's control register has `cr::DDR_ACCESS` set. With
+`DDR_ACCESS` clear, the exact same address instead reads the *data
+direction register*, a completely different piece of state that has
+nothing to do with interrupt flags, and the flag stays latched exactly as
+in attempt 1 — worse, in fact, since the extra `LDA`/branch-back overhead
+per storming round-trip changes the arithmetic (more cycles burned per
+false interrupt, so *more* of them fit before the field ends, hence 40 and
+then a faster-growing 139, 238). This is precisely the situation week 10's
+own third exercise asks you to reason about in the abstract — "why does
+the DDR exist at all — what would break if PIA registers were read/write
+plain bytes?" — except here it isn't abstract: it's a live specimen, with
+real numbers, of a "fixed" handler that silently does nothing.
+
+**Attempt 3: `CRB = $05`.** `C1_IRQ_ENABLE | DDR_ACCESS`, both bits, so
+`LDA $FF02` actually reaches the data register and clears the flag on the
+way out of the handler:
+
+```
+[working] field 1: $0400 = 1
+[working] field 2: $0400 = 2
+[working] field 3: $0400 = 3
+[working] field 4: $0400 = 4
+[working] field 5: $0400 = 5
+[working] field 6: $0400 = 6
+```
+
+Exactly one field-sync IRQ per field, every field, indefinitely — the
+$0400 counter after `run_field()` number *n* reads exactly *n*. This is
+the version worth trusting, and it's the one behind §6.3's `run_until`
+walkthrough and the histogram below.
+
+### Instructions per line, for real
+
+§6.10's exercise 6.3 asks you to histogram instructions-per-line during a
+boot; here's a worked answer using attempt 3's program, so you have a
+known-good result to check your own instrumentation against before you
+try it against real BASIC. Instrument `step_instruction` in a loop,
+bucket `StepKind::Instruction` counts by `m.current_scanline()`, run one
+field:
+
+```
+total retired instructions, field 1: 4971
+  line   0: 18 instructions
+  line   1: 19 instructions
+  line 100: 19 instructions
+  line 200: 19 instructions
+  line 242: 19 instructions
+  line 243: 19 instructions
+  line 244: 19 instructions
+  line 245: 13 instructions   <-- the IRQ detour lands here
+  line 246: 19 instructions
+  line 260: 19 instructions
+  line 261: 19 instructions
+distribution (instruction count -> how many lines had it): {13: 1, 18: 1, 19: 260}
+```
+
+Two numbers explain almost the whole histogram. `BRA` costs 3 cycles
+(6809 relative-branch timing), and NTSC's normal-speed line budget is 56
+cycles (§6.2) — `56 / 3 ≈ 18.67`, which is exactly why 260 of 262 lines
+retire 19 BRA instructions (18 full 3-cycle spins plus a partial one whose
+remaining cycles roll into the next line's budget — the same
+double-truncation arithmetic from §6.2, now visible as a histogram instead
+of a formula). Line 0 shows 18 instead of 19 because the field's first
+several instructions are the one-time `LDS`/`LDA`/`STA`/`ANDCC` preamble,
+not `BRA`, and they cost more than 3 cycles each, leaving less of line 0's
+budget for spinning. And line 245 — one line *after* the falling edge at
+244, because the interrupt is recognized at the next instruction boundary
+following the edge, not synchronously with it — drops to 13: the IRQ
+entry (pushing all eight registers) plus the three-instruction handler
+together cost far more than a `BRA`, so fewer total units fit in that
+line's fixed 56-cycle budget. Nothing here is a bug; it's §6.2's and
+§6.4's arithmetic and ordering, rendered as a number you can count.
+
+---
+
+## 6.8 The lab: booting real Color BASIC, headless, in a test
 
 `crates/coco-core/tests/coco1_boot.rs` is this week's textbook exercise —
 it drives `run_field` for real, from cold reset, against a real ROM image,
@@ -933,7 +1541,7 @@ to you today.
 
 ---
 
-## 6.8 Reading assignment
+## 6.9 Reading assignment
 
 In this order:
 
@@ -955,13 +1563,22 @@ In this order:
    read it now that you have the code underneath it; notice which parts of
    the original sketch (the ≈57 line comment, the single end-of-field
    `vsync()`) the real implementation quietly corrected.
-6. **Tests**: `crates/coco-core/tests/coco1_boot.rs` (all of it — you've
-   now read every function it calls), `tests/speed.rs`, `tests/pia_sync.rs`,
-   `tests/halt.rs`.
+6. **`crates/coco-core/src/debug.rs`, lines 340-407** (`Debugger::run_until`
+   and `run_loop`) — now that you've seen it built directly on
+   `step_instruction`, read it once more without this chapter's narration
+   and predict, before scrolling to check, what happens if two breakpoints
+   share the same address as a watchpoint.
+7. **`crates/coco-core/src/gime.rs`, lines 62-68 and 160-228** — the
+   INIT1/timer field block, side by side with `machine.rs`'s
+   `FAST_TIMER_TICKS_PER_CPU_CYCLE` comment (§6.5). Confirm the doc-comment
+   drift for yourself rather than taking this chapter's word for it.
+8. **Tests**: `crates/coco-core/tests/coco1_boot.rs` (all of it — you've
+   now read every function it calls), `tests/speed.rs`, `tests/pia_sync.rs`
+   (all four tests, now that §6.6 walked them), `tests/halt.rs`.
 
 ---
 
-## 6.9 Exercises
+## 6.10 Exercises
 
 **6.1 — The arithmetic, twice (compute).** By hand, using only `CPU_HZ =
 894_886.0` and the `VideoStandard` methods in `config.rs`, compute:
@@ -998,19 +1615,22 @@ instruction trace look completely normal the whole time? Revert your
 change and confirm `git status` shows no modified source files before you
 consider this exercise done.
 
-**6.3 — Instructions per line (build).** Add temporary instrumentation to
-`step_instruction` (or wrap it from a small standalone binary/example) that
-records how many `StepKind::Instruction` events occur between consecutive
-`field_complete == false → line` increments, and print a histogram (line
-number → instruction count) for one field. If you have `roms/bas12.rom` or
-`roms/coco3.rom` available, run it across a real boot field and look for
-lines with unusually low or high instruction counts (hint: does anything
-interesting happen to the instruction rate right around scanlines 244 and
-248?). If you don't have a ROM handy, `crates/coco-core/tests/halt.rs`'s
-`test_rom()` function builds a tiny synthetic 32K image (a counting loop
-plus an NMI handler) you can boot the same way without any copyrighted
-bytes — the histogram shape will be much more boring (one instruction cost
-repeating almost every line) but the exercise mechanics are identical.
+**6.3 — Instructions per line (build, worked answer provided).** Add
+temporary instrumentation to `step_instruction` (or wrap it from a small
+standalone binary/example) that records how many `StepKind::Instruction`
+events occur between consecutive `field_complete == false → line`
+increments, and print a histogram (line number → instruction count) for
+one field. Build §6.7's synthetic program yourself (attempt 3 — the
+working `CRB = $05` version) and check your histogram against §6.7's
+worked numbers exactly: total 4971 for field 1, 19 per line for 260 of
+262 lines, 18 at line 0, and the dip to 13 at line 245. If your numbers
+disagree, the bug is in your instrumentation, not the machine — use that
+disagreement to find it. Then, if you have `roms/bas12.rom` or
+`roms/coco3.rom` available, run the same instrumentation across a real
+boot field and compare: does the dip still land one line after the
+falling edge? Is the magnitude comparable, larger, or smaller than the
+synthetic program's, and can you explain the difference from what real
+BASIC's handler does that a 3-instruction toy handler doesn't?
 
 **6.4 — Trace the HALT-release ordering by hand (read).** Using
 `crates/coco-core/tests/halt.rs`'s `HaltCart` and its `halt_from`/
@@ -1045,6 +1665,35 @@ operating system's interrupt-driven design the GIME's own hardware
 interrupt controller was actually built around — and what would a
 GIME-native (not legacy-PIA) NitrOS-9 driver have to do differently from
 stock BASIC's handler to get a reliable per-field tick?
+
+**6.7 — Reproduce the interrupt storm yourself (build, verify by running).**
+Type in §6.7's byte listing exactly as attempt 1 (drop the `LDA $FF02`
+line from the handler, use `CRB = $01`). Run three fields and confirm you
+get 51, 69, 87 at `$0400` — the same numbers this chapter got, because the
+machine is deterministic and you're running the identical bytes. Now fix
+only the *handler*, adding `LDA $FF02` back but leaving `CRB = $01` — confirm
+you reproduce attempt 2's *worse* numbers (40, 139, 238), and explain in
+your own words, citing `MC6821::read_side`'s `DDR_ACCESS` check, why an
+acknowledgment read that looks correct does nothing. Finally set
+`CRB = $05` and confirm you get exactly `1, 2, 3, 4, 5, 6` across six
+fields. Three programs, one bit apart each time, three completely
+different failure modes (dead silence would be a fourth you have *not*
+reproduced here — that's §6.6's war story, a missing enable, not a missing
+acknowledgment; explain in one sentence why `CRB = $00` throughout would
+produce yet another distinct outcome from all three you built).
+
+**6.8 — The breakpoint that can't be hit (read).** §6.3 claims a
+breakpoint on `$8100` (an IRQ vector's target) never fires via
+`Debugger::run_until`, while one on `$8103` does. Without re-running the
+experiment, explain from `debug.rs`'s `run_loop` alone (`debug.rs:371-406`)
+exactly why: which two operations does the loop assume happen in separate
+iterations that `step_instruction` actually performs in one? Then propose,
+in a few sentences, the smallest change to `run_loop` that would let a
+breakpoint on an interrupt vector's target address fire — and identify
+one new question your fix raises (hint: what should `StopReason::Breakpoint`
+report as the "stopped" PC if the interrupt entry pushed a full 12-byte
+stack frame first — the vector target, or the instruction that was
+*about* to run before the interrupt preempted it?).
 
 ---
 

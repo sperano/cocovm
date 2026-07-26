@@ -58,6 +58,16 @@ repository are what happens when you take each device on the other side
 of the seam seriously — and the point of this course is that each of
 those devices is *also* just state, a loop, and a seam, all the way down.
 
+Take one example on faith for now (week 12 delivers the details): the
+cassette interface. Its **state** is a decoded byte stream, a playback
+position, and a motor flag. Its **loop** is "every N cycles, the current
+bit's FSK tone flips the input line." Its **seam** is a single bit that
+PIA1 hands to the CPU when the ROM polls it. A tape deck — motor
+physics, tone frequencies, the ROM's own demodulation algorithm — and it
+reduces to the same three-part shape as the CPU. When you face a new
+device in this course, your first question should always be: *what's the
+state, what's the loop, where's the seam?*
+
 ### Interpreting, not translating
 
 This emulator is an **interpreter**: every time the 6809 would execute
@@ -159,6 +169,38 @@ view — worth a bookmark now:
 If you ever POKEd `65497` for double speed: that's `$FFD9`, one of those
 SAM-compatibility strobes. By week 6 you'll know exactly what it does to
 the emulator's main loop (spoiler: it changes one integer).
+
+### Why the GIME answers to a dead chip's addresses
+
+That last row of the table — "SAM-compatibility strobes" — deserves a
+word, because it explains a pattern you'll meet all through this course.
+The CoCo 1 and 2 didn't have a GIME; they had two separate chips: the
+**MC6883 SAM** (Synchronous Address Multiplexer — memory control, video
+addressing, CPU speed) and the **MC6847 VDG** (Video Display Generator —
+the actual character and graphics output). When Tandy built the CoCo 3,
+the GIME swallowed both jobs. But thousands of programs — including the
+BASIC ROM itself — were already POKEing the SAM's registers at
+`$FFC0–$FFDF` and flipping the VDG's mode bits through PIA1. So the GIME
+keeps answering at the old addresses, imitating the old chips' behavior.
+
+The codebase mirrors the silicon's family history precisely: a real
+`Sam` type (`crates/coco-core/src/sam.rs`) is used *only* for emulated
+CoCo 1/2 machines, while the CoCo 3 path routes the same addresses into
+the GIME's own compatibility layer
+(`crates/coco-core/src/gime/sam_compat.rs`). Two implementations of one
+legacy interface — because that's what Tandy shipped. Backward
+compatibility is not a footnote in this machine; it is *why the CoCo 3
+boots into a 1980 video mode* (week 7) and why half the GIME's register
+map exists at all.
+
+One more number worth decoding while we're here: the odd CPU clock,
+0.895 MHz. The exact value in the code is 894,886 Hz (`CPU_HZ`,
+`crates/coco-core/src/machine.rs:26`) — the NTSC color subcarrier
+(3.579545 MHz) divided by 4, truncated. Like almost every home computer
+of its era, the CoCo derives *everything* — CPU, video timing, even
+cassette baud rates — from one crystal chosen for television
+compatibility. That single shared clock is why week 6 can drive the
+whole machine off one cycle counter.
 
 ---
 
@@ -271,6 +313,17 @@ the room.
 > codebase uses the `wrapping_*` family; treat a bare `+` on a `u16`
 > address as a bug when you read emulator code.
 
+> **Rust corner: `#![forbid(unsafe_code)]`.** The very first line of
+> code in `crates/mc6809/src/lib.rs` (line 11) is
+> `#![forbid(unsafe_code)]`. Unlike `#![deny(...)]`, `forbid` cannot be
+> overridden further down, even by an `#[allow]` — it is a promise the
+> whole crate is checked against: *no pointer tricks anywhere in the
+> CPU.* An emulator is exactly the kind of program where C tradition
+> reaches for casts and aliasing; this crate stakes out the opposite
+> position, and nothing in it has ever needed to walk that back. When you
+> write your own core (exercise 1.1 and onward), start with the same
+> line — it turns a class of emulator bugs into compile errors.
+
 ### Decision 3: the seam is *tiny*
 
 No `fetch_opcode`, no `dma_transfer`, no `get_keyboard`. Everything is a
@@ -350,6 +403,19 @@ PIAs, the cartridge, keyboard, cassette (see the full struct at
 ```rust
 self.cpu.step(&mut self.bus)
 ```
+
+> **Rust corner: `Box<[u8]>`, not `Vec<u8>`.** Look at how `SystemBus`
+> stores memory: `ram: Box<[u8]>` and `rom: Box<[u8]>`
+> (`crates/coco-core/src/bus.rs:46,52`). A `Vec<u8>` would also work —
+> so why the less common type? A boxed slice is a `Vec` with the
+> *growability removed*: its length is fixed at allocation, there is no
+> spare capacity field, and no code path can ever `.push()` onto it. RAM
+> size is decided once, at construction (128K, 512K, or 2MB), and the
+> type now enforces what the hardware guarantees — memory doesn't grow
+> at runtime. This is the same philosophy as the `cc` module of
+> constants in week 2: pick the type that says exactly what the hardware
+> does, no more. When you see `Box<[u8]>` in this codebase, read it as
+> "a buffer whose size is a *decision*, not a variable."
 
 and the borrow checker is *happy*, because Rust can see that `self.cpu`
 and `self.bus` are **disjoint fields** — borrowing them mutably at the
@@ -459,7 +525,91 @@ entirely in the first two crates.
 
 ---
 
-## 1.6 Reading assignment
+## 1.6 What counts as "accurate"? Fidelity is a budget
+
+Before you read another line of emulator code, you need a vocabulary
+for a question that will come up every single week: *how faithful is
+faithful enough?* Emulation fidelity is a spectrum, and every point on
+it costs implementation effort and complexity:
+
+1. **Functional** — the device produces the right *results* in the
+   right order, on its own schedule. (A disk read returns the right
+   bytes after "some" delay.)
+2. **Instruction/byte-granular** — results are right *and* time is
+   accounted at the granularity of whole instructions or whole bytes.
+3. **Cycle-accurate** — every bus cycle happens at the exact cycle the
+   real chip would produce it, including mid-instruction.
+4. **Gate-level** — you are simulating the netlist. (Nobody in this
+   course is doing this; it's how projects like Visual 6502 work.)
+
+The trap for a first-time emulator author is believing that "more
+accurate" is always better. It isn't — it's *more expensive*, and
+software only notices the difference at specific, discoverable points.
+This codebase makes its fidelity choices explicitly, and part of
+reading it well is noticing each one and asking "what would break if
+this were sloppier? what would it cost to be stricter?":
+
+| Subsystem | Fidelity chosen | Where you'll study it |
+|-----------|-----------------|----------------------|
+| CPU cycles | instruction-granular (no mid-instruction bus timing) | weeks 2, 6 |
+| Video | scanline-granular; registers re-read every line | weeks 7–9 |
+| Audio DAC | cycle-*timestamped* events, rendered per scanline | week 11 |
+| Cassette | cycle-granular FSK edges (the ROM demands it) | week 12 |
+| Floppy controller | functional state machine, byte-paced delays | week 13 |
+| Serial UART (6551) | byte-granular frames, not bit-serial | week 14 |
+
+Two things to notice in that table. First, the fidelity varies *by
+subsystem* — the cassette is modeled at cycle granularity while the FDC
+next to it is functional, because BASIC's tape loader counts cycles and
+its disk driver doesn't. Second, every choice is falsifiable: when a
+real program breaks, the fix is to climb one fidelity level exactly
+where it hurts (that's the DESIGN.md §5 philosophy — "tighten later
+only if a game needs it"). Accuracy is a budget. Spend it where
+software can tell the difference.
+
+---
+
+## 1.7 How to study with this book
+
+The syllabus calls the method *archaeology, then surgery*. Concretely,
+for every subsystem, in this order:
+
+1. **Read the tests before the implementation.** A test like
+   `reset_vector_points_into_rom` states a hardware fact in five lines;
+   the implementation spreads it across a decode chain. In this
+   codebase the tests are the specification — many encode facts
+   verified against real ROMs, MAME, or service manuals, and their
+   names say what the hardware does.
+2. **Run them.** `cargo test -p mc6809` now, `-p coco-core` from week
+   5. Watching 200 green tests is not ceremony: it establishes the
+   baseline that makes step 3 safe.
+3. **Break something on purpose.** Flip a flag computation, swap an
+   operand, delete a line. Run the tests again. *Which* test catches it
+   — and if none does, you've found a coverage hole, which is worth
+   more than a lesson that went smoothly. Several exercises in this
+   book are exactly this, with the answers verified.
+4. **Then extend.** Every "build" exercise stands on the previous
+   three steps.
+
+Practical notes for the labs:
+
+- **The PPM lab bench.** The core renders into a plain byte buffer, so
+  `crates/coco-core/examples/` can write frames to `.ppm` image files
+  with no GPU and no window. Weeks 7–9 lean on this hard.
+- **ROMs are local-only.** The `roms/` directory (real, copyrighted ROM
+  images) is git-ignored and lives only in the main checkout — clones
+  and worktrees won't have it. Tests that need a ROM either skip or
+  fail loudly when it's absent; each chapter's lab says which. Synthetic
+  ROM tests (the CPU suite, `bus_map`, `pia_sync`, most render tests)
+  need nothing.
+- **Keep a trace notebook.** From week 4 on, the single most valuable
+  debugging habit is saving instruction traces and diffing them —
+  against a reference emulator, or against your own last-known-good
+  run. Plain text files, `diff -u`, no tooling required.
+
+---
+
+## 1.8 Reading assignment
 
 In this order — earlier items make later ones legible:
 
@@ -486,7 +636,7 @@ cargo test -p mc6809
 
 ---
 
-## 1.7 Exercises
+## 1.9 Exercises
 
 **1.1 — The fetch-execute rhythm (build).** In a scratch project (not
 this repo), write the smallest possible emulator: a `FlatBus` holding
@@ -550,6 +700,30 @@ debugger problem disappears." Give the two strongest reasons this
 codebase rejects that design. (One is about honesty of the type
 signature; one is about what week 16 needs. If you find a third —
 `Cell` doesn't compose with what derive? — you're ahead of the class.)
+
+**1.6 — Grow the toy (build).** Extend your CPU from 1.1 with three more
+instructions: `LDA immediate` (`$86 nn`, 2 cycles), `LDA extended`
+(`$B6 hh ll`, 5 cycles), and `STA extended` (`$B7 hh ll`, 5 cycles), plus
+an `a: u8` register. Now write the four-instruction program that copies
+one byte from `$0400` to `$0500` and assert both the copied byte and the
+exact total cycle count. You have just written a memory-move one
+instruction shy of the real thing — and you'll find these exact opcodes,
+with these exact cycle counts, in `exec_data.rs` next week.
+
+**1.7 — Find the fidelity line (read).** Pick the cassette row and the
+FDC row from the table in §1.6. Skim the module headers of
+`crates/coco-core/src/cassette.rs` and `crates/coco-core/src/wd1773.rs`
+(headers only — the guts are weeks 12–13). Each one states its fidelity
+choice and its reason in the first comment block. Write down, in one
+sentence each, *what piece of 1980s software forced* the choice. The
+habit of asking "who notices?" is the week's real deliverable.
+
+**1.8 — One-way arrows (recall + verify).** From §1.5: which crate
+depends on which? Verify your answer mechanically — each crate's
+`Cargo.toml` `[dependencies]` section takes ten seconds to read. Then
+answer: if you wanted to reuse the `mc6809` crate in a Vectrex emulator
+(also a 6809 machine!), what would you need to bring along? (The answer
+should be pleasingly short, and it is the whole point of §1.3.)
 
 ---
 

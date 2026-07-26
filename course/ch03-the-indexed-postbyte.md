@@ -284,7 +284,7 @@ on. The disassembler makes the same call, rendered visibly, in §3.9.
 
 ---
 
-## 3.4 Five postbytes, end to end
+## 3.4 Seven postbytes, end to end
 
 You've hand-assembled indexed operands before; now trace the reverse
 direction on real postbyte values, cross-checked against the executor tests
@@ -338,6 +338,58 @@ is the EA — `$BE` lands at `$2000`, `$EF` at `$2001` — and X ends the
 instruction at `$2002`. Extra cycles: 3. Total: 5 + 3 = 8. (Verified by hand
 against the source; there's no `STD ,X++`-specific test in the suite today —
 exercise 3.7 asks you to add one.)
+
+**`$8C` — `LDA n,PCR` (8-bit).** The syllabus singles this one out, and it
+deserves the full trace rather than a summary, because the "relative to the
+*next* instruction" rule is the one detail every 6809 newcomer gets wrong
+once. `indexed.rs::pc_relative_8bit` loads the program at `$1000`:
+
+```rust
+// LDA n,PCR at $1000. Offset is from the address of the *next* instruction.
+// opcode@1000, postbyte@1001, offset@1002 -> PC=0x1003 after decode.
+// EA = 0x1003 + 0x10 = 0x1013.
+let mut s = Sys::code(0x1000, &[LDA_INDEXED, 0x8C, 0x10]);
+s.set_mem(0x1013, 0xB2);
+```
+
+Walk `self.pc` byte by byte through the three functions this passes
+through. It starts at `$1000`. `step()`'s own `fetch_u8` reads the opcode
+`$A6` and advances `pc` to `$1001` — that call lives in the dispatcher, not
+in any of the addressing code. `exec_indexed` routes `$A6` to
+`self.ea_indexed(bus)`, whose *own* `fetch_u8` (the first line of the
+function, §3.2) reads the postbyte `$8C` and advances `pc` to `$1002`; since
+bit 7 is set, it calls `ea_indexed_full`, which calls `ea_indexed_submode`
+with `mode = 0b1100`. Only *there*, inside the `0b1100` arm itself, does a
+third `fetch_u8` read the offset byte `$10` — advancing `pc` to `$1003` —
+and only *after* that fetch does the same line read `self.pc.wrapping_add
+(ofs)`. By the time `self.pc` gets used, it's already `$1003`: the address
+of whatever comes *after* this whole 3-byte instruction, not the address of
+the offset byte (`$1002`) and certainly not the opcode (`$1000`). `$1003 +
+$10 = $1013`, exactly where the test plants `$B2`. Total: base 4 + extra 1
+= 5, matching the test's `cycles == 5`.
+
+This is not a coincidence of implementation order — it's the only order
+that *can* be correct, because `self.pc` is a single field with no memory
+of "where it was two fetches ago." The rule falls out for free from fetching
+the offset *before* reading `self.pc`, and it would silently break if
+someone captured `self.pc` into a local variable before the `fetch_u8` call
+instead of after (exercise 3.9 asks you to verify exactly that, empirically).
+The 16-bit form (`$8D`, `indexed.rs::pc_relative_16bit`) is identical in
+shape — `pc` lands at `$1004` after the two-byte offset fetch, `$1004 +
+$0100 = $1104` — just with the wider fetch and a heavier bill: extra cycles
+5, the single most expensive non-indirect sub-mode in the table.
+
+**`$AB` — `LDA D,Y`.** One more accumulator-offset form, on a different
+register so it doesn't spoil exercise 3.1's `$8B`. Binary `1010_1011`:
+`sel = pb >> 5 = 0b101` → masked to `0b01` = Y; indirect clear; `mode = pb &
+0x0F = 0b1011`, `D,R`. With `Y = $3000` and `D = $0050`: `ofs = self.d()` —
+note, *not* sign-extended, unlike `A,R`/`B,R`'s `as i8 as i16 as u16` chain.
+`D,R` treats `D` as a plain unsigned 16-bit offset, so `D = $FFFF` would add
+almost 64K forward, not step one byte backward the way `A = $FF` does in
+`A,R`. EA = `$3000 + $0050 = $3050`. Extra cycles: 4, same bill as the
+16-bit constant-offset form — both fetch (or, here, already hold) a full
+16-bit value and add it in one step. Total: 4 (base) + 4 = 8, the same
+shape `indexed.rs::accumulator_d_offset` asserts for `D,X`.
 
 ---
 
@@ -598,6 +650,48 @@ it swaps via two independent `reg_read`/`reg_write` calls, so an 8↔16 `EXG`
 gets the same truncate/pad behavior for free, just by routing through the
 same `reg_write`.
 
+### `TFR` in the wild
+
+Every `TFR`/`EXG` example so far has been a hand-built test fixture. Here is
+one straight from `roms/coco3.rom`, found by disassembling forward through
+the ROM and confirmed sane by checking that ~20 instructions on either side
+all decode as plausible, non-`???` 6809 code (a static sanity check — this
+region isn't reachable from the reset-vector trace in §3.9, so unlike that
+one, treat the *addresses* as approximate and the *idiom* as the point):
+
+```text
+$82F3: 1F A9        TFR  CC,B
+$82F5: 81 98        CMPA #$98
+$82F7: 27 1D        BEQ  $8316
+$82F9: 81 97        CMPA #$97
+$82FB: 27 14        BEQ  $8311
+$82FD: 1F 9A        TFR  B,CC
+$82FF: BD AD C6     JSR  $ADC6
+```
+
+Decode the two `TFR`s by hand: `$A9` is `1010_1001` → `hi = pb >> 4 =
+0xA` (`CC`), `lo = pb & 0x0F = 0x9` (`B`) — `TFR CC,B`. `$9A` is `1001_1010`
+→ `hi = 0x9` (`B`), `lo = 0xA` (`CC`) — the exact reverse, `TFR B,CC`. Both
+registers are 8-bit, so neither transfer touches the size-mismatch rules
+above at all — this is `tfr_value`'s `_ => sv` fallthrough, a plain byte
+copy each way. That's the idiom: stash the condition codes computed by
+whatever ran just before `$82F3` into `B` (a scratch register `CMPA` won't
+touch), run two comparisons that clobber the flags checking which token
+this is, branch off on either match — and if neither hits, restore the
+*original* flags from `B` before falling into `JSR $ADC6`, which evidently
+depends on them. `TFR CC,B`/`TFR B,CC` saves and restores condition codes
+across a stretch of code that has to compute new ones of its own — 6 cycles
+each way, tying
+`PSHS CC` (`5` base `+ 1` byte `= 6`) / `PULS CC` (same) exactly on cycle
+count, but never touching the stack pointer or spending a byte of stack.
+That's worth something any time nearby code is *also* using `S`-relative
+addressing (this routine's neighbors are, a few bytes further down — `LDX
+2,S` and `STX 2,S`, both 5-bit-offset forms from §3.2) and you'd rather not
+have `PSHS`/`PULS` shift every one of those offsets out from under a value
+someone else expects to find at a fixed distance from `S`. You'll meet the
+stack-based version of this exact save/restore pattern again in week 4,
+wrapped around every interrupt.
+
 ---
 
 ## 3.8 Page prefixes: the opcode isn't always one byte
@@ -707,6 +801,130 @@ pub(super) fn decode_indexed<F: FnMut(u16) -> u8>(r: &mut Reader<F>) -> String {
 }
 ```
 
+### How `tables.rs` is organized
+
+`tables::base_entry` doesn't decide anything itself; it's a router. Its
+`match` splits `op` into ranges and hands each range to one small helper
+function, mirroring `exec.rs`'s own family split from week 2 almost
+exactly:
+
+- `0x0E`/`0x6E`/`0x7E` (`JMP`'s three addressing forms) are checked *first*
+  — spliced in ahead of the generic ranges for the same reason `step`'s own
+  `match` orders them first (§3.1's opening list): `0x0E`, `0x6E`, and `0x7E`
+  would otherwise fall inside the read-modify-write opcode ranges below and
+  get swallowed by the wrong table.
+- `0x00..=0x0F`, `0x40..=0x4F`, `0x50..=0x5F`, `0x60..=0x6F`, `0x70..=0x7F`
+  route to `rmw_entry`, which indexes one of three 16-entry mnemonic arrays
+  (`RMW_MEM`/`RMW_A`/`RMW_B`) by the opcode's low nibble — data, not code,
+  for `NEG`/`COM`/`LSR`/.../`CLR` across memory, `A`, and `B`.
+- A fixed list of miscellaneous opcodes (`NOP`, `SYNC`, the short-branch
+  range, `LEAX`/`LEAY`/`LEAS`/`LEAU`, `PSHS`/`PULS`/`PSHU`/`PULU`, `RTS`,
+  `RTI`, `SWI`, …) routes to `base_entry_misc`.
+- The remaining four ranges — load/store (`base_entry_load_store`),
+  accumulator-`A` ALU ops (`base_entry_accum_a`), accumulator-`B` ALU ops
+  (`base_entry_accum_b`), and the wide/subroutine group covering `ADDD`/
+  `SUBD`/`CMPX` plus `BSR`/`JSR` (`base_entry_wide_and_subr`) — each get
+  their own flat `match` from opcode byte straight to `Entry { mnemonic,
+  mode }`. `page10_entry`/`page11_entry` (§3.8) are the same shape again,
+  one level down, keyed on the second byte instead of the first.
+
+Every one of those helpers falls through to `ILLEGAL` on an unmatched
+opcode — the same `_ => ILLEGAL` arm repeated at the bottom of each `match`,
+which is what guarantees `???` for anything `step()` doesn't decode either,
+no matter which of the five helper functions the opcode would have routed
+through.
+
+### The render path, mode by mode
+
+Once `base_entry`/`page10_entry`/`page11_entry` hand back an `Entry {
+mnemonic, mode }`, exactly one function turns `mode` into an operand
+string — `render`, in `disasm.rs`:
+
+```rust
+fn render<F: FnMut(u16) -> u8>(
+    r: &mut Reader<F>,
+    raw_byte: u8,
+    entry: Entry,
+) -> (&'static str, String) {
+    let operand = match entry.mode {
+        Mode::Inherent => {
+            if entry.mnemonic == "???" {
+                format!("${raw_byte:02X}")
+            } else {
+                String::new()
+            }
+        }
+        Mode::Imm8 => format!("#${:02X}", r.u8()),
+        Mode::Imm16 => format!("#${:04X}", r.u16()),
+        Mode::Direct => format!("${:02X}", r.u8()),
+        Mode::Extended => format!("${:04X}", r.u16()),
+        Mode::Indexed => indexed::decode_indexed(r),
+        Mode::Rel8 => {
+            let offset = r.u8() as i8 as i16 as u16;
+            format!("${:04X}", r.cur.wrapping_add(offset))
+        }
+        Mode::Rel16 => {
+            let offset = r.u16();
+            format!("${:04X}", r.cur.wrapping_add(offset))
+        }
+        Mode::RegPair => {
+            let pb = r.u8();
+            format!("{},{}", reg_name(pb >> 4), reg_name(pb & 0x0F))
+        }
+        Mode::StackS => format_stack_mask(r.u8(), true),
+        Mode::StackU => format_stack_mask(r.u8(), false),
+    };
+    (entry.mnemonic, operand)
+}
+```
+
+Eleven `Mode` variants, eleven arms, no fallback needed because `Mode` is an
+`enum` — the match is exhaustive at compile time (leave one variant
+unhandled and this file doesn't build; a Rust guarantee `step()`'s `match`
+on a bare `u8` opcode can't get for free, since `u8` has 256 values and no
+enum-style exhaustiveness check). Two arms are worth a second look because
+they reuse machinery from earlier sections instead of inventing their own:
+
+- **`Mode::Rel8`/`Mode::Rel16`** resolve a branch offset to an absolute
+  target the same way `exec.rs`'s branch handling does — fetch the offset,
+  sign-extend it (the `as i8 as i16 as u16` chain from §3.3's Rust corner,
+  here rendering a jump target instead of an effective address), and add it
+  to `r.cur` — the reader's cursor *after* the offset bytes are consumed,
+  the disassembler's equivalent of `self.pc` after the operand fetch. It's
+  the identical "relative to the next instruction" rule from `n,PCR`
+  (§3.4), just applied to whole-instruction targets instead of an indexed
+  EA — which is exactly why `LBNE $F7AE` in §3.9's ROM excerpt could be
+  hand-verified with the same arithmetic exercise 3.8 asks for.
+- **`Mode::StackS`/`Mode::StackU`** call `format_stack_mask`, which walks
+  the exact same `stack_mask` bits from §3.6 — `CC`, `A`, `B`, `DP`, `X`,
+  `Y`, `OTHER_STACK_PTR`, `PC`, in that order — and joins whichever are set
+  into a comma list:
+
+  ```rust
+  fn format_stack_mask(mask: u8, is_s_op: bool) -> String {
+      let mut regs: Vec<&str> = Vec::with_capacity(8);
+      if mask & stack_mask::CC != 0 { regs.push("CC"); }
+      // ... A, B, DP, X, Y in the same shape ...
+      if mask & stack_mask::OTHER_STACK_PTR != 0 {
+          regs.push(if is_s_op { "U" } else { "S" });
+      }
+      if mask & stack_mask::PC != 0 { regs.push("PC"); }
+      regs.join(",")
+  }
+  ```
+
+  `is_s_op` is the disassembler's `to_s`/`from_s` — the exact same
+  `OTHER_STACK_PTR`-means-a-different-register trick from §3.6, decided once
+  by which mnemonic (`PSHS`/`PULS` vs `PSHU`/`PULU`) is being rendered
+  rather than by which stack the CPU would actually touch, since the
+  disassembler never touches any stack at all.
+  `stack_transfer.rs::pulu_partial_mask` confirms mask `$16` (`A|B|X =
+  $02|$04|$10`) renders as `A,B,X` through this exact function — the
+  same `A,B,X` string §3.9's ROM excerpt shows for `PSHS A,B,X` at `$8C37`
+  (mask also `$16`), since `format_stack_mask` doesn't care which of the
+  four stack mnemonics called it except for the `OTHER_STACK_PTR` bit,
+  which this mask doesn't set.
+
 Two rendering choices worth knowing before you read a disassembly listing:
 
 - **Constant offsets render in signed decimal, not hex.** `format!
@@ -790,7 +1008,84 @@ requirement in disguise.
 
 ---
 
-## 3.10 Reading assignment
+## 3.10 The complete postbyte reference
+
+Everything above walked specific bytes forward, from encoding to meaning.
+This section runs the other direction — a reference for building a postbyte
+from an assembly-language addressing form, the way you'd do it by hand
+before an assembler existed. Two formulas cover every legal postbyte:
+
+**5-bit form** (bit 7 clear): `byte = (rr << 5) | n5`, where `rr` is 2 bits
+(`00`=X, `01`=Y, `10`=U, `11`=S) and `n5` is the 5-bit field holding a signed
+offset in range **-16 to +15** (two's complement over 5 bits: `n5 = offset`
+for `0 <= offset <= 15`, `n5 = offset + 32` for `-16 <= offset < 0`).
+
+**Full form** (bit 7 set): `byte = $80 | (rr << 5) | (i << 4) | mmmm`, where
+`i` is `1` for indirect and `mmmm` is the 4-bit sub-mode from the §3.3
+table. The `rr` field means the same thing in both forms — this is exactly
+`postbyte::REG_SHIFT` from §3.2 applied identically regardless of which
+layout the rest of the byte uses.
+
+**Worked recipe: `LEAY 3,S`.** No indirect (plain constant offset small
+enough for the 5-bit form), register S (`rr = 11`), offset `+3`
+(`n5 = 3`). `byte = (0b11 << 5) | 3 = 0b1100011 = $63`. Double-check against
+the table below by decoding it back: `$63 = 0110_0011`, bit 7 clear, `rr =
+pb >> 5 = 0b011` → masked to `11` = S, `n = pb & 0x1F = 0b00011 = 3`, sign
+bit (`0x10`) clear ⇒ `+3`. Round-trips cleanly.
+
+**Worked recipe: `LEAY [10,U]`.** This one *must* use the full form, because
+it's indirect, and the 5-bit form (§3.2) has no indirect bit at all —
+regardless of whether `10` would otherwise fit the 5-bit range. Full form:
+`rr = 10` (U), `i = 1`, `mmmm = 0b1000` (`n,R`, 8-bit). `byte = $80 | (0b10
+<< 5) | (1 << 4) | 0b1000 = $80 | $40 | $10 | $08 = $D8`. The offset itself,
+`$0A` (10 decimal), is a separate operand byte that follows the postbyte —
+the postbyte only ever encodes *which* sub-mode and *which* register, never
+the offset's value once it's wider than 5 bits.
+
+The full sixteen-row table, for register **X** (`rr = 00`). For Y, U, or S,
+add `$20`, `$40`, or `$60` respectively to *both* columns — the register
+field is the same three bits regardless of sub-mode, so the addend is
+constant across every row (verified above: `,Y` is `$A4`, `,U+` is `$C0`,
+`,S` is `$E4` — all §3.3's plain-`,R` byte `$84` or the auto-inc byte `$80`
+plus exactly the row's own `rr` addend):
+
+| `mmmm` | Assembly (`R` = X here) | Legal indirect on real silicon? | X direct | X indirect |
+|---|---|---|---|---|
+| `0000` | `,R+` | **No** | `$80` | `$90`† |
+| `0001` | `,R++` | Yes | `$81` | `$91` |
+| `0010` | `,-R` | **No** | `$82` | `$92`† |
+| `0011` | `,--R` | Yes | `$83` | `$93` |
+| `0100` | `,R` | Yes | `$84` | `$94` |
+| `0101` | `B,R` | Yes | `$85` | `$95` |
+| `0110` | `A,R` | Yes | `$86` | `$96` |
+| `0111` | reserved | — | `$87` | `$97` |
+| `1000` | `n,R` (8-bit) | Yes | `$88` | `$98` |
+| `1001` | `n,R` (16-bit) | Yes | `$89` | `$99` |
+| `1010` | reserved | — | `$8A` | `$9A` |
+| `1011` | `D,R` | Yes | `$8B` | `$9B` |
+| `1100` | `n,PCR` (8-bit) | Yes | `$8C` | `$9C` |
+| `1101` | `n,PCR` (16-bit) | Yes | `$8D` | `$9D` |
+| `1110` | reserved | — | `$8E` | `$9E` |
+| `1111` | `[n]` extended | *is* indirect | `$8F`‡ | `$9F` |
+
+† The datasheet calls `,R+`/`,-R` combined with the indirect bit undefined;
+this codebase's decoder doesn't special-case it (§3.3), so `$90`/`$92`
+still execute — just not as anything a real assembler would ever emit.
+‡ `$8F` isn't a documented assembler form at all: mode `1111` *means*
+"extended indirect," so the only legal encoding sets the indirect bit
+(`$9F`). `$8F` is what the code does if you hand-construct it anyway —
+`ea_indexed_submode`'s `0b1111` arm still runs (`fetch_u16`, no wrap), just
+without the pointer dereference `[...]` implies.
+
+Every hex byte in this table is either lifted directly from a test you've
+already read (`$80`-`$8D`, `$94`, `$98`, `$9F`, `$A4`, `$C0`, `$E4`) or
+computed from the same formula those bytes confirm (`$8E`-`$8F`, `$90`-
+`$93`, `$95`-`$97`, `$99`-`$9E`) — nothing here is asserted without a
+verified anchor point.
+
+---
+
+## 3.11 Reading assignment
 
 In this order: **`lib.rs:76-105`** (`postbyte`/`stack_mask`, load-bearing for
 everything below); **`addressing.rs:30-192`** (`ea_indexed` through
@@ -813,7 +1108,7 @@ cargo test -p mc6809 --test disasm rom_reset_entry_point
 
 ---
 
-## 3.11 Exercises
+## 3.12 Exercises
 
 **3.1 — Hand-decode three postbytes (recall).** Without running anything,
 decode indexed postbytes `$8B`, `$F4`, and `$9F` by hand: register field,
@@ -871,6 +1166,41 @@ sequence in §3.9's rendered example, compute the target address of `8C3D:
 condition nibble, the 16-bit offset, and the address it's relative to
 (which is *not* `$8C3D`). Show your arithmetic and confirm it lands on
 `$F7AE`.
+
+**3.9 — Sabotage `n,PCR` (sabotage, verified).** In `ea_indexed_submode`'s
+`0b1100` arm (8-bit `n,PCR`), capture `self.pc` into a local *before*
+calling `self.fetch_u8(bus)` instead of after, and add that captured value
+to the offset instead of the post-fetch `self.pc`. Predict what breaks —
+which specific byte address does the EA land on now, and why is it exactly
+one less than correct? Then run `cargo test -p mc6809 --test indexed
+pc_relative` and confirm: this change fails `pc_relative_8bit` while
+leaving `pc_relative_16bit` completely untouched (the two arms don't share
+code, so sabotaging one has zero blast radius on the other — the same
+independence exercise 3.4 explores for the auto inc/dec arms). Revert
+before moving on.
+
+**3.10 — Hand-encode from §3.10's table (build/recall).** Using only the
+two formulas in §3.10 (no peeking at `disasm/indexed.rs`), compute the
+postbyte for `LDA [7,Y]` (7 fits the 5-bit signed range, but *indirect*
+forms must use the 8-bit-offset full form, never the 5-bit form — why, in
+one sentence, citing §3.2?) and for `LDA ,S--`. That second one is a trap:
+re-read §3.3's sixteen-arm table before answering — does `,S--`
+(*post*-decrement) exist on the 6809 at all, or have you conflated it with
+`,--S` (*pre*-decrement, which does)? The four auto forms cover exactly
+post-increment-by-1/2 and pre-decrement-by-1/2 — no pre-increment, no
+post-decrement, on any register. Write the one valid postbyte in hex, then
+verify by disassembling it; explain in a sentence why the other one isn't
+encodable at all rather than just being illegal.
+
+**3.11 — Extend the `TFR`/`EXG` ROM window (read).** §3.7's `TFR CC,B`/
+`TFR B,CC` example didn't come from the reset-vector trace in §3.9, so its
+surrounding addresses weren't independently confirmed by an existing test
+the way `$8C1B`-`$8C41` is. Write a small program against
+`mc6809::disasm::disassemble` (or extend an existing test) that reads
+`roms/coco3.rom`, disassembles a 20-instruction window starting at `$82E8`,
+and asserts none of them come out as `???` — the same static plausibility
+check this chapter used by hand, made repeatable. (Local machine only:
+needs `roms/coco3.rom`, per this repo's `CLAUDE.md`.)
 
 ---
 

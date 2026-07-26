@@ -494,6 +494,54 @@ was there; step 5 is the one line that makes RMW a *write* instead of a
 `ASR`, `ROL`, `DEC`, `INC`, `TST`, `CLR` — is this same five-step shape with
 a different `op_nibble` and, for `TST` alone, step 5 skipped.
 
+### A third trace: `ADDA <$40`, watching `DP` do its job
+
+Both traces so far used extended addressing, where the address is just the
+two bytes after the opcode — `DP` never enters the picture. To see §2.3's
+"why `DP` exists" claim actually happen, trace `ADDA <$40` (opcode `$9B`,
+the direct-mode row of `exec_alu8`) with `DP = $05` already loaded (say, by
+an earlier `LDA #$05` / `TFR A,DP` sequence — TFR/EXG are next week, but
+imagine it done), `A = $0F` going in, and `$0540` holding `$01`.
+
+1. **Fetch and dispatch.** `step()` fetches `$9B`; it's in `exec_alu8`'s
+   `|`-chain, so `step` calls `self.exec_alu8(bus, 0x9B)`, matching:
+   `let m = self.read_direct8(bus); self.a = self.add8(self.a, m, 0); 4`.
+2. **`read_direct8` computes the address — this is the step extended mode
+   never has.** It calls `ea_direct(bus)`: `let lo = self.fetch_u8(bus) as
+   u16;` fetches the single operand byte `$40` and advances `PC` past it
+   (two bytes total consumed, not three — direct mode is one byte shorter
+   than extended, exactly §2.3's cost argument). Then
+   `((self.dp as u16) << 8) | lo` does the concatenation:
+   `self.dp = 0x05` becomes `0x0500` after the shift, ORed with `lo = 0x40`
+   gives `ea = 0x0540`. Notice this is *not* addition — `DP` occupies the
+   high byte and the operand occupies the low byte, with no carry possible
+   between them; `DP:offset` is a literal byte concatenation, not `DP * 256
+   + offset`'s arithmetic cousin doing anything different, just phrased the
+   way the datasheet phrases it.
+3. **Read.** `bus.read(0x0540)` returns `$01`.
+4. **Apply `add8`.** `self.a = self.add8(0x0F, 0x01, 0)`. By hand:
+   `sum = 0x10`, `r = 0x10`. Half-carry: `(0x0F & 0x0F) + (0x01 & 0x0F) =
+   0x10`, which is `> 0x0F` — `H` sets, the classic low-nibble-rolls-over
+   case from a `$0F`-ending byte. `C`: `sum = 0x10`, not `> 0xFF` — clear.
+   `V`: `(0x0F ^ 0x10) & (0x01 ^ 0x10) & 0x80 = 0x1F & 0x11 & 0x80 = 0` —
+   clear. `N`: `r & 0x80 = 0` — clear. `Z`: `r != 0` — clear.
+5. **Cycles.** `4`, the direct-mode row's literal — one less than extended's
+   `5`, because there's one fewer address byte to fetch, and paid for by the
+   `DP` concatenation instead.
+
+Total: `A` goes from `$0F` to `$10`, flags land at
+`(H, N, Z, V, C) = (true, false, false, false, false)`, 4 cycles charged,
+`PC` advanced by exactly two bytes (opcode plus the one operand byte). This
+trace was checked the same way as the second: `Sys::code(0x0000, &[0x9B,
+0x40])` with `s.cpu.dp = 0x05`, `s.cpu.a = 0x0F`, `$0540` pre-loaded to
+`$01` produces exactly `a == 0x10`, `cycles == 4`,
+`flags == (true, false, false, false, false)`. Change `DP` to `$06` with
+nothing else touched and the exact same instruction reads `$0640` instead —
+the byte at the old address is simply not visited. That's the whole point
+of a *direct page* register: the one-byte operand is cheap precisely because
+it's relative to something the program controls, not because the hardware
+is doing anything clever with it.
+
 ---
 
 ## 2.5 Flag computation as shared primitives
@@ -552,6 +600,194 @@ no; the arm never assigns `sub8`'s return value anywhere:
 
 `A` is untouched; only the flags `sub8` sets as a side effect survive.
 
+### Why CMP feels different from SUB, but isn't
+
+You've written this a thousand times, scanning a string for its terminator:
+
+```asm
+        CMPA  #$0D
+        BEQ   found_cr
+```
+
+It doesn't *feel* like arithmetic. It feels like a primitive comparison
+operator — the assembly equivalent of `if (a == 0x0D)`. But you now know
+exactly what `CMPA` is: `self.sub8(self.a, m, 0)` with the return value
+thrown away. There is no separate "compare" circuit on the 6809, and there
+is no separate `cmp8` function in this emulator either — `CMPA #$0D` and
+`SUBA #$0D` run *the exact same Rust function* on *the exact same inputs*
+and leave *the exact same flags*. The only difference between the two
+instructions, anywhere in this codebase, is one line: whether the arm writes
+`sub8`'s return value back into `self.a` or lets it fall on the floor. Every
+conditional branch you've ever chained after a `CMP` — `BEQ`, `BNE`, `BLO`,
+`BHI`, `BLT`, `BGT`, `BLE`, `BGE` — is reading flags that a plain `SUB` would
+have produced identically; "compare-and-branch" on the 6809 is compositionally
+just "subtract-and-branch-on-the-leftover-flags," and now you can see why
+in the source instead of taking the datasheet's word for it.
+
+One more thing falls out of this once you notice `sub8`'s `borrow_in`
+parameter: `CMPA` always calls it with `0`, never with the carry flag —
+there is no "compare with borrow" instruction on the 6809, the way `SBCA`
+exists alongside `SUBA`. That's not a gap; it's because you never need one.
+For a quantity that's already 16 bits, `CMPD`/`CMPX`/`CMPY`/`CMPU`/`CMPS`
+compare the whole thing in one shot (`sub16`, no separate borrow-in either —
+see below). For a wider multi-byte comparison you'd chain by hand, subtract
+low bytes with `SUBB` and high bytes with `SBCA`, then read the flags off
+the *last* subtraction — but at that point you're computing a real
+difference you intend to keep, so you reach for `SBC`, not `CMP`, precisely
+because you already know `CMP` is only ever the zero-borrow-in,
+throw-away-the-result case.
+
+### `exec_alu8`, in full
+
+Section 2.2 showed you individual arms from `exec_alu8` scattered across
+`step`'s dispatch comment. Here's the whole function
+(`crates/mc6809/src/exec/exec_data.rs:46`) — six operations (`ADD`, `ADC`,
+`SUB`, `SBC`, `CMP`, and their `A`/`B` variants) across three addressing
+modes, thirty opcode bytes, and not one of them does anything but shuffle
+arguments into `add8`/`sub8`:
+
+```rust
+pub(super) fn exec_alu8(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
+    match opcode {
+        // ADDA
+        0x8B => { let m = self.fetch_u8(bus);        self.a = self.add8(self.a, m, 0); 2 }
+        0x9B => { let m = self.read_direct8(bus);    self.a = self.add8(self.a, m, 0); 4 }
+        0xBB => { let m = self.read_extended8(bus);  self.a = self.add8(self.a, m, 0); 5 }
+        // ADDB
+        0xCB => { let m = self.fetch_u8(bus);        self.b = self.add8(self.b, m, 0); 2 }
+        0xDB => { let m = self.read_direct8(bus);    self.b = self.add8(self.b, m, 0); 4 }
+        0xFB => { let m = self.read_extended8(bus);  self.b = self.add8(self.b, m, 0); 5 }
+
+        // ADCA
+        0x89 => { let c = self.cc & cc::CARRY; let m = self.fetch_u8(bus);       self.a = self.add8(self.a, m, c); 2 }
+        0x99 => { let c = self.cc & cc::CARRY; let m = self.read_direct8(bus);   self.a = self.add8(self.a, m, c); 4 }
+        0xB9 => { let c = self.cc & cc::CARRY; let m = self.read_extended8(bus); self.a = self.add8(self.a, m, c); 5 }
+        // ADCB
+        0xC9 => { let c = self.cc & cc::CARRY; let m = self.fetch_u8(bus);       self.b = self.add8(self.b, m, c); 2 }
+        0xD9 => { let c = self.cc & cc::CARRY; let m = self.read_direct8(bus);   self.b = self.add8(self.b, m, c); 4 }
+        0xF9 => { let c = self.cc & cc::CARRY; let m = self.read_extended8(bus); self.b = self.add8(self.b, m, c); 5 }
+
+        // SUBA
+        0x80 => { let m = self.fetch_u8(bus);        self.a = self.sub8(self.a, m, 0); 2 }
+        0x90 => { let m = self.read_direct8(bus);    self.a = self.sub8(self.a, m, 0); 4 }
+        0xB0 => { let m = self.read_extended8(bus);  self.a = self.sub8(self.a, m, 0); 5 }
+        // SUBB
+        0xC0 => { let m = self.fetch_u8(bus);        self.b = self.sub8(self.b, m, 0); 2 }
+        0xD0 => { let m = self.read_direct8(bus);    self.b = self.sub8(self.b, m, 0); 4 }
+        0xF0 => { let m = self.read_extended8(bus);  self.b = self.sub8(self.b, m, 0); 5 }
+
+        // SBCA
+        0x82 => { let c = self.cc & cc::CARRY; let m = self.fetch_u8(bus);       self.a = self.sub8(self.a, m, c); 2 }
+        0x92 => { let c = self.cc & cc::CARRY; let m = self.read_direct8(bus);   self.a = self.sub8(self.a, m, c); 4 }
+        0xB2 => { let c = self.cc & cc::CARRY; let m = self.read_extended8(bus); self.a = self.sub8(self.a, m, c); 5 }
+        // SBCB
+        0xC2 => { let c = self.cc & cc::CARRY; let m = self.fetch_u8(bus);       self.b = self.sub8(self.b, m, c); 2 }
+        0xD2 => { let c = self.cc & cc::CARRY; let m = self.read_direct8(bus);   self.b = self.sub8(self.b, m, c); 4 }
+        0xF2 => { let c = self.cc & cc::CARRY; let m = self.read_extended8(bus); self.b = self.sub8(self.b, m, c); 5 }
+
+        // CMPA (result discarded, flags only)
+        0x81 => { let m = self.fetch_u8(bus);        self.sub8(self.a, m, 0); 2 }
+        0x91 => { let m = self.read_direct8(bus);    self.sub8(self.a, m, 0); 4 }
+        0xB1 => { let m = self.read_extended8(bus);  self.sub8(self.a, m, 0); 5 }
+        // CMPB
+        0xC1 => { let m = self.fetch_u8(bus);        self.sub8(self.b, m, 0); 2 }
+        0xD1 => { let m = self.read_direct8(bus);    self.sub8(self.b, m, 0); 4 }
+        0xF1 => { let m = self.read_extended8(bus);  self.sub8(self.b, m, 0); 5 }
+
+        _ => unreachable!("exec_alu8 called for opcode {opcode:#04X}"),
+    }
+}
+```
+
+Read it as a grid, not a list: six row-groups (`ADD`/`ADC`/`SUB`/`SBC`/`CMP`,
+doubled for `A` and `B`), three columns each (immediate/direct/extended —
+indexed is missing on purpose; it's routed through `exec_indexed` instead,
+next week's territory). Every cell differs from its neighbors in exactly one
+axis at a time: move down a row and the addressing-mode fetch changes
+(`fetch_u8` → `read_direct8` → `read_extended8`); move to the `ADC`/`SBC`
+rows and a `let c = self.cc & cc::CARRY;` appears before the fetch; move to
+the `CMP` rows and the assignment back to `self.a`/`self.b` disappears. No
+cell contains logic that isn't one of those three axis changes — everything
+that could vary *does* vary along a named axis, and nothing else does. This
+is what "the flags live in `add8`/`sub8`, not in the opcode handlers" looks
+like at full scale, not just in the one CMPA line quoted above.
+
+### BIT is to AND as CMP is to SUB
+
+The same discard trick shows up one function over, for a different family.
+`exec_logic8` (`crates/mc6809/src/exec/exec_data.rs:140`) handles
+`AND`/`OR`/`EOR`/`BIT` across immediate, direct, indexed, and extended — the
+first place in this chapter you'll see the indexed rows' shape, even before
+next week's `ea_indexed` is explained: each one returns an `(ea, ic)` pair,
+an address and its extra cycle cost, exactly parallel to extended mode's
+single `ea`:
+
+```rust
+pub(super) fn exec_logic8(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
+    match opcode {
+        // ANDA
+        0x84 => { let m = self.fetch_u8(bus);        self.a &= m; self.set_nz8(self.a); 2 }
+        0x94 => { let m = self.read_direct8(bus);    self.a &= m; self.set_nz8(self.a); 4 }
+        0xA4 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.a &= m; self.set_nz8(self.a); 4 + ic }
+        0xB4 => { let m = self.read_extended8(bus);  self.a &= m; self.set_nz8(self.a); 5 }
+        // ANDB
+        0xC4 => { let m = self.fetch_u8(bus);        self.b &= m; self.set_nz8(self.b); 2 }
+        0xD4 => { let m = self.read_direct8(bus);    self.b &= m; self.set_nz8(self.b); 4 }
+        0xE4 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.b &= m; self.set_nz8(self.b); 4 + ic }
+        0xF4 => { let m = self.read_extended8(bus);  self.b &= m; self.set_nz8(self.b); 5 }
+
+        // ORA
+        0x8A => { let m = self.fetch_u8(bus);        self.a |= m; self.set_nz8(self.a); 2 }
+        0x9A => { let m = self.read_direct8(bus);    self.a |= m; self.set_nz8(self.a); 4 }
+        0xAA => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.a |= m; self.set_nz8(self.a); 4 + ic }
+        0xBA => { let m = self.read_extended8(bus);  self.a |= m; self.set_nz8(self.a); 5 }
+        // ORB
+        0xCA => { let m = self.fetch_u8(bus);        self.b |= m; self.set_nz8(self.b); 2 }
+        0xDA => { let m = self.read_direct8(bus);    self.b |= m; self.set_nz8(self.b); 4 }
+        0xEA => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.b |= m; self.set_nz8(self.b); 4 + ic }
+        0xFA => { let m = self.read_extended8(bus);  self.b |= m; self.set_nz8(self.b); 5 }
+
+        // EORA
+        0x88 => { let m = self.fetch_u8(bus);        self.a ^= m; self.set_nz8(self.a); 2 }
+        0x98 => { let m = self.read_direct8(bus);    self.a ^= m; self.set_nz8(self.a); 4 }
+        0xA8 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.a ^= m; self.set_nz8(self.a); 4 + ic }
+        0xB8 => { let m = self.read_extended8(bus);  self.a ^= m; self.set_nz8(self.a); 5 }
+        // EORB
+        0xC8 => { let m = self.fetch_u8(bus);        self.b ^= m; self.set_nz8(self.b); 2 }
+        0xD8 => { let m = self.read_direct8(bus);    self.b ^= m; self.set_nz8(self.b); 4 }
+        0xE8 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.b ^= m; self.set_nz8(self.b); 4 + ic }
+        0xF8 => { let m = self.read_extended8(bus);  self.b ^= m; self.set_nz8(self.b); 5 }
+
+        // BITA (A AND m, discard result)
+        0x85 => { let m = self.fetch_u8(bus);        self.set_nz8(self.a & m); 2 }
+        0x95 => { let m = self.read_direct8(bus);    self.set_nz8(self.a & m); 4 }
+        0xA5 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.set_nz8(self.a & m); 4 + ic }
+        0xB5 => { let m = self.read_extended8(bus);  self.set_nz8(self.a & m); 5 }
+        // BITB
+        0xC5 => { let m = self.fetch_u8(bus);        self.set_nz8(self.b & m); 2 }
+        0xD5 => { let m = self.read_direct8(bus);    self.set_nz8(self.b & m); 4 }
+        0xE5 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read(ea); self.set_nz8(self.b & m); 4 + ic }
+        0xF5 => { let m = self.read_extended8(bus);  self.set_nz8(self.b & m); 5 }
+
+        _ => unreachable!("exec_logic8 called for opcode {opcode:#04X}"),
+    }
+}
+```
+
+Look at the last two row-groups. `BITA`/`BITB` are not a fourth logic
+operation sitting next to `AND`/`OR`/`EOR` — they're `AND` with the same
+discard-the-result move you just read on `CMP`. `0x85 => { let m =
+self.fetch_u8(bus); self.set_nz8(self.a & m); 2 }` computes `self.a & m` and
+feeds it straight to `set_nz8` without ever assigning it anywhere, exactly
+the way `CMPA`'s arm fed `sub8`'s return value nowhere. The 6809 assembly
+idiom this powers is just as familiar as the `CMP`/`BEQ` pair: `BITA #$80` /
+`BMI negative_bit_set` to test one bit of `A` without disturbing it — you
+already knew `BIT` "doesn't change A," and now you know exactly why: the
+`&` happens, the flags get set from it, and the computed byte has nowhere to
+go. `AND`/`OR`/`EOR` all call `set_nz8`, so — per §2.5's convention below —
+every one of these arms clears `V` and leaves `C`/`H` untouched, whether or
+not the result gets written anywhere.
+
 ### Half-carry and why it exists at all
 
 `H` (bit 3 carry, from `(a & 0x0F) + (m & 0x0F) + carry_in > 0x0F`) has
@@ -606,6 +842,43 @@ which — unusually — touch `Z` and *nothing else*, not even `N`. Three
 closely related helpers, each named for exactly the flags it touches;
 picking the right one is picking the right datasheet row.
 
+### The 16-bit echo: `ADDD`/`SUBD`/`CMPX`
+
+Everything in this section has a 16-bit twin, and it's worth seeing once so
+you believe it's the same idea and not a coincidence. `exec_16bit`
+(`crates/mc6809/src/exec/exec_data.rs:194-208`) opens with `ADDD`/`SUBD`/
+`CMPX`:
+
+```rust
+// ADDD
+0xC3 => { let m = self.fetch_u16(bus);       let r = self.add16(self.d(), m); self.set_d(r); 4 }
+0xD3 => { let m = self.read_direct16(bus);   let r = self.add16(self.d(), m); self.set_d(r); 6 }
+0xE3 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); let r = self.add16(self.d(), m); self.set_d(r); 6 + ic }
+0xF3 => { let m = self.read_extended16(bus); let r = self.add16(self.d(), m); self.set_d(r); 7 }
+// SUBD
+0x83 => { let m = self.fetch_u16(bus);       let r = self.sub16(self.d(), m); self.set_d(r); 4 }
+0x93 => { let m = self.read_direct16(bus);   let r = self.sub16(self.d(), m); self.set_d(r); 6 }
+0xA3 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); let r = self.sub16(self.d(), m); self.set_d(r); 6 + ic }
+0xB3 => { let m = self.read_extended16(bus); let r = self.sub16(self.d(), m); self.set_d(r); 7 }
+// CMPX (result discarded)
+0x8C => { let m = self.fetch_u16(bus);       self.sub16(self.x, m); 4 }
+0x9C => { let m = self.read_direct16(bus);   self.sub16(self.x, m); 6 }
+0xAC => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); self.sub16(self.x, m); 6 + ic }
+0xBC => { let m = self.read_extended16(bus); self.sub16(self.x, m); 7 }
+```
+
+`CMPX` is `sub16` with its result unused, at exactly the byte and line
+position you'd predict having just read `CMPA`. `add16`/`sub16`
+(`alu.rs:254`, `alu.rs:264`) are `add8`/`sub8` widened to `u16`: same carry
+rule (`sum > 0xFFFF` instead of `> 0xFF`), same signed-overflow XOR-and-mask
+rule against bit 15 instead of bit 7, same N/Z convention — with one thing
+quietly missing. Neither has an `H` parameter, because no 16-bit instruction
+on the 6809 needs a nibble-carry flag; `DAA` only ever operates on `A`,
+never on `D` as a whole, so there is nothing 16-bit for half-carry to serve.
+The rest of `exec_16bit` — `LDX`/`STX`/`LDU`/`STU`, elided here — is the
+same load/store shape you already read in full for `LDD`/`STD` back in
+§2.2's `exec_load_store`; nothing new happens there either.
+
 ### `DAA`: the payoff for `H`
 
 `daa()` (`alu.rs:178`) is the one place `H` gets read back:
@@ -638,6 +911,67 @@ ripple into the high nibble (`msn > 8 && lsn > 9`). The doc comment is honest
 about one gap — *"V is left undefined (untouched here)"* — matching real
 6809 silicon, where `DAA`'s effect on `V` is undocumented and the code
 doesn't invent a value for it.
+
+Walk it against the datasheet rules with the two cases the codebase itself
+tests, `crates/mc6809/tests/interrupts.rs:83` and `:94` (yes, that file —
+more on the filename in §2.8). First, a plain BCD add with no carry chain:
+`$64 + $27` in packed BCD is "64 + 27 = 91," and binary addition gets you
+partway there. The test drives it by loading the *already-added* binary sum
+straight into `A` and running `DAA` alone:
+
+```rust
+#[test]
+fn daa_adjusts_bcd_sum() {
+    // $64 + $27 = binary $8B; DAA -> BCD $91.
+    let mut s = Sys::code(0x0000, &[0x19]);
+    s.cpu.a = 0x8B;
+    let cycles = s.step();
+    assert_eq!(s.cpu.a, 0x91);
+    assert_eq!(cycles, 2);
+    assert_eq!(s.cpu.cc & cc::CARRY, 0);
+}
+```
+
+Trace `daa()` by hand against `a = 0x8B` with a fresh CC (`H = 0`, `C = 0`,
+the state `Sys::code` starts from). `lsn = 0xB` (11), `msn = 0x8`. Low-nibble
+test: `H` is clear, but `lsn = 11 > 9` — the digit itself is out of BCD
+range — so `corr |= 0x06`. High-nibble test: `C` is clear, `msn = 8` is not
+`> 9`, and the ripple case needs `msn > 8` (`8 > 8` is false) — so the high
+nibble gets **no** correction. `corr` stays `0x06`. `result = 0x8B + 0x06 =
+0x91` — exactly BCD "91," exactly what the test asserts, and `corr & 0x60 ==
+0` so `C` stays clear, matching the third assertion. This is the ordinary
+case: one BCD digit spilled past 9 during the binary add, `DAA` nudges only
+that digit back into range, no carry out of the byte.
+
+Now the case where the whole byte overflows BCD range — decimal 100 doesn't
+fit in two BCD digits, so the correction has to produce a carry:
+
+```rust
+#[test]
+fn daa_produces_carry() {
+    let mut s = Sys::code(0x0000, &[0x19]);
+    s.cpu.a = 0x9A;
+    s.step();
+    assert_eq!(s.cpu.a, 0x00); // 0x9A + 0x66 = 0x100
+    assert_ne!(s.cpu.cc & cc::CARRY, 0);
+    assert_ne!(s.cpu.cc & cc::ZERO, 0);
+}
+```
+
+`a = 0x9A`: `lsn = 0xA` (10), `msn = 0x9`. Low-nibble test: `lsn = 10 > 9` —
+`corr |= 0x06`. High-nibble test: this time it's the *third* clause that
+fires — `msn > 8` (`9 > 8`, true) **and** `lsn > 9` (`10 > 9`, true) — the
+low-nibble correction is about to carry into the high nibble, so the high
+correction has to apply too, even though `msn` itself isn't `> 9` yet:
+`corr |= 0x60`. `corr = 0x66`. `result = 0x9A + 0x66 = 0x100`, truncated to a
+`u8` by `wrapping_add`: `0x00` — exactly the test's comment. `corr & 0x60 !=
+0`, so `set_carry(true)` fires: two BCD digits' worth of value overflowed the
+byte, and the carry out is the only place that "hundreds" digit can go —
+precisely how a multi-byte BCD add chains `DAA` after `DAA` across bytes on
+real hardware, carry flag feeding the next byte's `ADCA`. `result == 0`
+also trips `Z`, matching the test's last assertion for a reason that has
+nothing to do with the carry chain — it's just what `0x9A + 0x66` happens to
+wrap to this time.
 
 ---
 
@@ -811,6 +1145,51 @@ all agree three different ways, you've found a fact worth trusting
 completely — matching that three-way agreement is the bar for tests you
 write yourself this week.
 
+A second one, this time confirming the BIT-is-AND-and-discard claim from
+§2.5 rather than a flag formula — `bita_sets_flags_without_changing_a` from
+`crates/mc6809/tests/logic_rmw.rs:67`:
+
+```rust
+#[test]
+fn bita_sets_flags_without_changing_a() {
+    let mut s = Sys::code(0x0000, &[0x85, 0x80]); // BITA #$80
+    s.cpu.a = 0xC0;
+    s.step();
+    assert_eq!(s.cpu.a, 0xC0); // unchanged
+    assert_eq!(flags(&s), (false, true, false, false, false)); // 0xC0 & 0x80 = 0x80
+}
+```
+
+The test's own name states the claim it exists to pin down: *unchanged*.
+Trace it against `exec_logic8`'s `0x85` arm from §2.5:
+`self.set_nz8(self.a & m)`. `self.a & m = 0xC0 & 0x80 = 0x80` — bit 7 set,
+so `N` sets; the value isn't zero, so `Z` clears; `set_nz8` unconditionally
+clears `V`; `C`/`H` are untouched by `set_nz8` and start clear on a fresh
+`Sys`, so they read clear. `(false, true, false, false, false)` — matches.
+And the assertion that actually matters for this test's *point*,
+`assert_eq!(s.cpu.a, 0xC0)`, isn't testing a flag formula at all — it's
+testing that `exec_logic8`'s `0x85` arm never contains an `self.a = ...`
+anywhere, the same "look for the absent assignment" reading you did by eye
+on `CMPA`'s arm in §2.5, now automated into something CI runs on every
+commit.
+
+One filename oddity worth flagging while you're in the test directory: the
+two `DAA` tests walked in §2.5 live in `tests/interrupts.rs`, not a
+`tests/daa.rs` or `tests/misc_inherent.rs` you might expect from the opcode
+map. The file's own header comment says why — it bundles "the misc inherent
+ops (ORCC/ANDCC/SEX/ABX/MUL/DAA) and the interrupt / halt subsystem"
+together, two unrelated corners of the ISA that happen to share one thing:
+neither fits cleanly into the load/store, ALU, logic, indexed, 16-bit, or
+RMW families this chapter organizes around. Test file boundaries in this
+codebase generally track the `exec_*` family split you learned in §2.2, but
+not perfectly — when a test's contents don't match its filename's obvious
+guess, that's a signal about the *code's* organization, not a bug in the
+tests. `exec_misc_inherent` (§2.2's dispatch table, the `0x1A | 0x1C | 0x1D
+| 0x3A | 0x3D | 0x19` arm) is exactly this leftover-bin shape in the
+executor too — `DAA` sits in a family function named for having nothing
+else in common with its neighbors beyond "not big enough to deserve its own
+arm."
+
 ---
 
 ## 2.9 Reading assignment
@@ -911,6 +1290,31 @@ passing.) In a sentence or two: reconcile the "only one consumer" fact from
 difference between "how many things in the ISA *use* a flag's value" and
 "how many tests exist to pin down a flag's *correctness*"? Revert before
 continuing.
+
+**2.8 — Sabotage: weaken `DAA`'s low-nibble test (sabotage, verified).** In
+`daa()`, change `if self.cc & cc::HALF_CARRY != 0 || lsn > 9` to just
+`if self.cc & cc::HALF_CARRY != 0` (drop the `|| lsn > 9` clause; leave the
+high-nibble `if` alone). Using §2.5's two worked traces
+(`daa_adjusts_bcd_sum`, `$8B → $91`, and `daa_produces_carry`, `$9A → $00`
+with carry), predict by hand — with `H` clear on a freshly-loaded `Sys`, the
+way both tests set it up — what `corr` each one now computes, and whether
+each test's `assert_eq!` on `s.cpu.a` still holds. Then run
+`cargo test -p mc6809 --test interrupts` and check both predictions.
+(Verified for this chapter: **both** `daa_adjusts_bcd_sum` and
+`daa_produces_carry` fail — for `$8B`, `corr` drops to `0x00` and `A` stays
+`$8B` instead of correcting to `$91`; for `$9A`, only the high-nibble
+`0x60` still fires, giving `corr = 0x60` and `A = 0xFA` instead of wrapping
+to `$00` with carry.) Revert before continuing.
+
+**2.9 — Trace `SUBB <$20`, direct mode, a third way (build).** Following
+§2.4's third trace, write out every step for `SUBB <$20` (opcode `$D0`)
+with `DP = $10`, `B = $05`, and `$1020` holding `$08`. Predict the effective
+address by hand (DP:offset concatenation, not addition), predict all five
+flags from `sub8`'s rule in §2.5, and predict the cycle count before
+checking `exec_alu8`'s `0xD0` arm. Then write a `Sys`-based test to confirm.
+(Hint: this is a borrow case — `B` ends up smaller than it started, and one
+flag in particular should surprise you if you expected subtraction to
+behave like addition's mirror image on `H`.)
 
 ---
 
