@@ -73,7 +73,7 @@ fn main() {
     let disk_rom = std::fs::read(asset("roms", "disk11.rom")).expect("disk11.rom");
     let dsk = std::fs::read(asset("disks", "68EMU.dsk")).expect("68EMU.dsk");
     let vhd_src = asset("disks", "68SDC.VHD");
-    let vhd_copy = std::env::temp_dir().join("coco-rs-eou-probe.VHD");
+    let vhd_copy = std::env::temp_dir().join("cocovm-eou-probe.VHD");
     std::fs::copy(&vhd_src, &vhd_copy).expect("copy VHD");
     let vhd_file =
         std::fs::File::options().read(true).write(true).open(&vhd_copy).expect("open VHD");

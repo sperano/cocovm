@@ -405,7 +405,7 @@ pub fn run() -> eframe::Result<()> {
         None => Vec::new(),
     };
     eframe::run_native(
-        "coco-rs",
+        "cocovm",
         options,
         Box::new(move |cc| {
             crate::log_renderer_info(cc);

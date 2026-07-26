@@ -132,7 +132,7 @@ fn main() -> eframe::Result<()> {
     boot::exit_on_cartridge_port_conflict(&cli);
 
     eframe::run_native(
-        "coco-rs",
+        "cocovm",
         boot::native_options(variant),
         Box::new(move |cc| {
             log_renderer_info(cc);

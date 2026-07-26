@@ -65,7 +65,7 @@ pub(crate) fn native_options(variant: MachineVariant) -> eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([img_h * TARGET_ASPECT, img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H])
             .with_icon(icon)
-            .with_title(format!("coco-rs — {}", machine_label(variant))),
+            .with_title(format!("cocovm — {}", machine_label(variant))),
         ..Default::default()
     }
 }

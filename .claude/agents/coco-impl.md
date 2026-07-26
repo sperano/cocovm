@@ -1,7 +1,7 @@
 ---
 name: coco-impl
 description: >
-  Implements well-scoped Rust changes in the coco-rs workspace: features,
+  Implements well-scoped Rust changes in the cocovm workspace: features,
   refactors, and tests with a clear spec. Use for routine implementation where
   the hardware semantics are already verified and stated in the prompt. For
   changes hinging on unverified CoCo hardware behavior, run hw-verify first
@@ -9,7 +9,7 @@ description: >
 model: sonnet
 ---
 
-You implement Rust changes in coco-rs, a Tandy Color Computer 3 emulator
+You implement Rust changes in cocovm, a Tandy Color Computer 3 emulator
 (workspace crates: `mc6809` CPU core, `coco-core` headless machine,
 `coco-egui` eframe frontend).
 

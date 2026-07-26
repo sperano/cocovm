@@ -1,7 +1,7 @@
 ---
 name: quick-check
 description: >
-  Fast mechanical verification of the coco-rs workspace: runs build, tests,
+  Fast mechanical verification of the cocovm workspace: runs build, tests,
   clippy, fmt and reports results. Use after edits land to confirm the tree
   is green, or to bisect which suite broke. Cheap — prefer it over doing
   these runs in an expensive context.
@@ -9,7 +9,7 @@ tools: Bash, Read
 model: haiku
 ---
 
-You verify the coco-rs Rust workspace. Run, in order, from the repo root:
+You verify the cocovm Rust workspace. Run, in order, from the repo root:
 
 1. `cargo test --workspace 2>&1 | grep -E "^test result|FAILED|panicked|error\["`
 2. `cargo clippy --workspace --all-targets 2>&1 | grep -E "^(warning|error)" | sort | uniq -c`

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Trace-diff coco-rs against MAME (or two coco-rs traces) instruction-by-instruction.
+"""Trace-diff cocovm against MAME (or two cocovm traces) instruction-by-instruction.
 
 Both sides log CPU pre-instruction state (PC + A B X Y U S DP CC). This tool
 auto-aligns the two streams (MAME's trace usually omits the reset entry that
-coco-rs logs, so there is a small leading offset), finds the first full-state
+cocovm logs, so there is a small leading offset), finds the first full-state
 divergence, and enumerates every distinct divergence "site" grouped by the PC
 of the producing instruction so interrupt noise and cascades collapse into a
 few classes.
 
 Producing the two traces
 ------------------------
-coco-rs (interrupts OFF, deterministic cold start):
+cocovm (interrupts OFF, deterministic cold start):
     cargo run -q -p coco-core --example trace -- <N> > coco.trace
 
 MAME (register-augmented tracelog, stops at first IRQ vector so the window is
@@ -35,7 +35,7 @@ from collections import OrderedDict
 
 FIELDS = ["PC", "A", "B", "X", "Y", "U", "S", "DP", "CC"]
 
-# coco-rs:  "8C1D:  A=00 B=00 X=0000 Y=0000 U=0000 S=0000 DP=00 CC=50"
+# cocovm:  "8C1D:  A=00 B=00 X=0000 Y=0000 U=0000 S=0000 DP=00 CC=50"
 COCO_RE = re.compile(
     r"^([0-9A-Fa-f]{2,4}):\s+A=(..) B=(..) X=(....) Y=(....) "
     r"U=(....) S=(....) DP=(..) CC=(..)"
@@ -106,7 +106,7 @@ def diff_fields(ra, rb):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("left", help="coco-rs (or any) trace")
+    ap.add_argument("left", help="cocovm (or any) trace")
     ap.add_argument("right", help="MAME (or any) trace")
     ap.add_argument("--context", type=int, default=10,
                     help="instructions of agreeing context before first divergence")

@@ -1,4 +1,4 @@
-# Idiomatic Rust review — coco-rs (2026-07-01)
+# Idiomatic Rust review — cocovm (2026-07-01)
 
 Produced by an automated review pass over the whole workspace (not a diff review).
 Clippy was clean on `--all-targets` at the time of review.

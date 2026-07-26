@@ -84,9 +84,9 @@ fn setup_machine(through_mpi: bool) -> Option<(Machine, PathBuf)> {
         return None;
     }
     let scratch_name = if through_mpi {
-        "coco-rs-test-68SDC-mpi.VHD"
+        "cocovm-test-68SDC-mpi.VHD"
     } else {
-        "coco-rs-test-68SDC.VHD"
+        "cocovm-test-68SDC.VHD"
     };
     let vhd_copy = std::env::temp_dir().join(scratch_name);
     std::fs::copy(&vhd_src, &vhd_copy).expect("copy VHD to scratch");

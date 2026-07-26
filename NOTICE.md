@@ -1,6 +1,6 @@
 # Third-party / licensing notices
 
-coco-rs — a Tandy Color Computer 3 emulator.
+cocovm — a Tandy Color Computer 3 emulator.
 Copyright (C) 2026 Éric Spérano
 
 Licensing is per crate:

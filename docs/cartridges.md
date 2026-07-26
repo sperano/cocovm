@@ -1,6 +1,6 @@
 # How CoCo Cartridges Work
 
-Notes for implementing cartridge support in coco-rs. Hardware claims are cited
+Notes for implementing cartridge support in cocovm. Hardware claims are cited
 against the local reference PDFs (`docs/`); file-format and banking conventions
 that only exist in the emulator community are marked as such.
 
@@ -163,7 +163,7 @@ XRoar accepts both extensions for ROM carts). Consequences:
   `-no-cart-autorun`), since a minority of carts (notably the disk controller)
   must not autostart.
 
-## 4. Implications for coco-rs
+## 4. Implications for cocovm
 
 Current state (`crates/coco-core/src/cart.rs`, `bus.rs`): the `Cartridge`
 trait has `read`/`write`, and `SystemBus` routes only `CART_BASE..=CART_LAST`

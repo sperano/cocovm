@@ -211,7 +211,7 @@ fn scratch_path(name: &str) -> std::path::PathBuf {
     static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "coco-rs-bitbanger-test-{}-{n}-{name}",
+        "cocovm-bitbanger-test-{}-{n}-{name}",
         std::process::id()
     ))
 }
