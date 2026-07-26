@@ -1,6 +1,9 @@
 .DS_Store
 /target
 /docs/*.pdf
+# in-flight plan docs — working notes, never committed
+/docs/plan-*.md
+/docs/*-plan.md
 /roms/*
 # stray MAME run log
 /error.log
