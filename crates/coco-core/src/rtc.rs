@@ -26,7 +26,7 @@ use crate::cart::{Cartridge, IO_OPEN_BUS};
 /// only `year % 100`, but keeping the century lets register writes preserve
 /// it. The weekday register is derived from the date, never stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RtcTime {
+pub struct RTCTime {
     pub year: i32,
     /// 1-12.
     pub month: u8,
@@ -42,7 +42,7 @@ pub struct RtcTime {
 
 /// Host clock injected into the RTC — typically "read the host's local time",
 /// but tests inject fixed or hand-advanced closures for determinism.
-pub type TimeSource = Box<dyn FnMut() -> RtcTime>;
+pub type TimeSource = Box<dyn FnMut() -> RTCTime>;
 
 // ---- Civil-calendar <-> seconds conversion ---------------------------------
 // Days-from-civil / civil-from-days after Howard Hinnant's public-domain
@@ -80,7 +80,7 @@ fn civil_from_days(days: i64) -> (i32, u8, u8) {
     (y as i32, m as u8, d as u8)
 }
 
-impl RtcTime {
+impl RTCTime {
     /// Seconds since the 1970-01-01 00:00:00 epoch (proleptic Gregorian).
     /// Out-of-range month/day (a partially-written register file mid-`setime`)
     /// are clamped into the calendar rather than rejected — the running clock
@@ -178,7 +178,7 @@ const NOON: u8 = 12;
 /// can't drift from the host clock and doesn't care about emulation pauses,
 /// double-speed POKEs, or headless runs. Setting any time register just moves
 /// the offset.
-pub struct Msm6242 {
+pub struct MSM6242 {
     now: TimeSource,
     /// Emulated-clock minus host-clock, in seconds.
     offset_secs: i64,
@@ -192,9 +192,9 @@ pub struct Msm6242 {
     reg_cf: u8,
 }
 
-impl std::fmt::Debug for Msm6242 {
+impl std::fmt::Debug for MSM6242 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Msm6242")
+        f.debug_struct("MSM6242")
             .field("offset_secs", &self.offset_secs)
             .field("held", &self.held)
             .field("stopped", &self.stopped)
@@ -205,7 +205,7 @@ impl std::fmt::Debug for Msm6242 {
     }
 }
 
-impl Msm6242 {
+impl MSM6242 {
     pub fn new(now: TimeSource) -> Self {
         Self {
             now,
@@ -248,19 +248,19 @@ impl Msm6242 {
     }
 
     /// Set the clock outright (frontend "sync to host" / initial seeding).
-    pub fn set_time(&mut self, time: RtcTime) {
+    pub fn set_time(&mut self, time: RTCTime) {
         self.commit_secs(time.to_secs());
     }
 
     /// The clock's current time (frontend display).
-    pub fn time(&mut self) -> RtcTime {
-        RtcTime::from_secs(self.current_secs())
+    pub fn time(&mut self) -> RTCTime {
+        RTCTime::from_secs(self.current_secs())
     }
 
     /// Read register `reg` (0-15). Returns a nibble; the upper data bits are 0
     /// (MAME: the 4-bit chip's bus returns the value zero-extended).
     pub fn read(&mut self, reg: u8) -> u8 {
-        let t = RtcTime::from_secs(self.visible_secs());
+        let t = RTCTime::from_secs(self.visible_secs());
         match reg {
             REG_S1 => t.second % 10,
             REG_S10 => t.second / 10,
@@ -358,7 +358,7 @@ impl Msm6242 {
     /// Replace one BCD digit of the running time (real-chip behavior; NitrOS-9
     /// `setime` writes the file digit by digit, usually under HOLD).
     fn write_time_digit(&mut self, reg: u8, val: u8) {
-        let mut t = RtcTime::from_secs(self.visible_secs());
+        let mut t = RTCTime::from_secs(self.visible_secs());
         match reg {
             REG_S1 => t.second = t.second / 10 * 10 + val,
             REG_S10 => t.second = val * 10 + t.second % 10,
@@ -388,7 +388,7 @@ impl Msm6242 {
         self.commit_secs(t.to_secs());
     }
 
-    /// Inverse of [`Msm6242::display_hour`]: what to store for an hour written
+    /// Inverse of [`MSM6242::display_hour`]: what to store for an hour written
     /// in the current mode.
     fn stored_hour(&self, hour: u8, pm: bool) -> u8 {
         if self.reg_cf & cf::H24 != 0 {
@@ -413,13 +413,13 @@ const RTC_SELECT: u16 = 0xFF51;
 const RTC_SELECT_ALT: u16 = 0xFF52;
 const RTC_SELECT_ALT2: u16 = 0xFF53;
 
-/// The Disto MEB real-time clock as a cartridge-port device: an [`Msm6242`]
+/// The Disto MEB real-time clock as a cartridge-port device: an [`MSM6242`]
 /// behind a one-byte address latch at `$FF50-$FF53` in the SCS window. Rides
 /// the existing cartridge routing — plug it into the port directly (NitrOS-9
 /// boots from VHD without a disk controller) or into a Multi-Pak slot next to
 /// the FD-502, as the real MEB host cards did.
 pub struct DistoRtc {
-    rtc: Msm6242,
+    rtc: MSM6242,
     address_latch: u8,
 }
 
@@ -438,13 +438,13 @@ impl DistoRtc {
     /// set.
     pub fn new(now: TimeSource) -> Self {
         Self {
-            rtc: Msm6242::new(now),
+            rtc: MSM6242::new(now),
             address_latch: 0,
         }
     }
 
     /// Direct access to the clock chip (frontend set/sync UI).
-    pub fn rtc(&mut self) -> &mut Msm6242 {
+    pub fn rtc(&mut self) -> &mut MSM6242 {
         &mut self.rtc
     }
 }
@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn weekday_matches_known_dates() {
         // 1970-01-01 Thursday, 2026-07-08 Wednesday.
-        let t = RtcTime {
+        let t = RTCTime {
             year: 1970,
             month: 1,
             day: 1,
@@ -503,7 +503,7 @@ mod tests {
             second: 0,
         };
         assert_eq!(t.weekday(), 4);
-        let t = RtcTime {
+        let t = RTCTime {
             year: 2026,
             month: 7,
             day: 8,
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn to_secs_from_secs_round_trip() {
-        let t = RtcTime {
+        let t = RTCTime {
             year: 2026,
             month: 7,
             day: 8,
@@ -524,6 +524,6 @@ mod tests {
             minute: 34,
             second: 56,
         };
-        assert_eq!(RtcTime::from_secs(t.to_secs()), t);
+        assert_eq!(RTCTime::from_secs(t.to_secs()), t);
     }
 }

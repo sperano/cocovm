@@ -3,6 +3,7 @@
 //! See `DESIGN.md` §1.
 
 pub mod acia6551;
+pub mod audio;
 pub mod ay8913;
 pub mod bitbanger;
 pub mod bus;
@@ -77,10 +78,10 @@ enum VideoMode {
     /// Same 256×192 active area as text; lower resolutions are pixel-doubled.
     CocoGraphics,
     /// INIT0 COCO=0, $FF98 BP=0: GIME native hi-res text (40/80 columns). TODO.
-    GimeText,
+    GIMEText,
     /// INIT0 COCO=0, $FF98 BP=1: GIME native graphics (HSCREEN), up to 640-wide with
     /// a variable-size buffer. TODO(`DESIGN.md` §6).
-    GimeGraphics,
+    GIMEGraphics,
 }
 
 /// The whole emulated machine.
@@ -100,11 +101,20 @@ pub struct Machine {
     /// Scratch buffer for the VDG graphics video-RAM snapshot
     /// (`render_coco_graphics`), reused every field instead of reallocating.
     graphics_scratch: Vec<u8>,
-    /// Speaker samples, one per scanline (~15.7 kHz — the horizontal rate).
-    /// `run_field` appends; the frontend drains via [`Machine::take_audio`]
-    /// and resamples to the host rate. Self-capping so headless use (tests,
-    /// no audio sink) doesn't grow it unboundedly.
-    audio_buffer: Vec<f32>,
+    /// Stereo speaker samples on the oversampled grid
+    /// ([`audio::OVERSAMPLE`] per scanline, ~62.9 kHz on NTSC), `[left,
+    /// right]`. [`Machine::flush_line_audio`] appends; the frontend drains
+    /// via [`Machine::take_audio`] and resamples to the host rate.
+    /// Self-capping so headless use (tests, no audio sink) doesn't grow it
+    /// unboundedly.
+    audio_buffer: Vec<[f32; 2]>,
+    /// `SystemBus::cycle_clock` at the start of the scanline being executed
+    /// — the left edge of the audio grid [`Machine::flush_line_audio`]
+    /// renders at the line's end.
+    audio_line_start: u64,
+    /// The latched audio-input state at that same line start (events since
+    /// then live in `SystemBus::audio_events`).
+    audio_line_inputs: audio::AudioInputs,
     /// True when the previous [`Machine::step_cpu_unit`] call burned a HALT*
     /// cycle instead of stepping. The MC6809 recognizes interrupts only at
     /// instruction-end boundaries, so the first instruction after HALT*
@@ -139,9 +149,9 @@ pub struct Machine {
     field_scan: Option<gime_video::FieldScan>,
 }
 
-/// Cap on buffered audio samples (~8 fields); beyond this the buffer resets
-/// rather than growing (headless runs never drain it).
-const AUDIO_BUFFER_CAP: usize = 8 * 262;
+/// Cap on buffered audio grid samples (~8 fields); beyond this the buffer
+/// resets rather than growing (headless runs never drain it).
+const AUDIO_BUFFER_CAP: usize = 8 * 262 * audio::OVERSAMPLE as usize;
 
 /// What a single [`Machine::step_instruction`] advanced. Both fields are
 /// reported because one call can retire an instruction (or burn a HALT* cycle)
@@ -176,7 +186,12 @@ impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
         let mut cpu = MC6809::new();
         let mut bus = SystemBus::new(config.variant, config.memory, rom);
-        bus.gime.monitor = config.monitor;
+        // `None` (CoCo 1/2 — no monitor port) leaves the GIME's default in
+        // place; the chip field is never consulted on those variants
+        // (`legacy_palette` resolves the fixed VDG table).
+        if let Some(monitor) = config.monitor {
+            bus.gime.monitor = monitor;
+        }
         cpu.reset(&mut bus);
         Self {
             cpu,
@@ -187,6 +202,8 @@ impl Machine {
             fb_height: FB_HEIGHT,
             graphics_scratch: Vec::new(),
             audio_buffer: Vec::new(),
+            audio_line_start: 0,
+            audio_line_inputs: audio::AudioInputs::default(),
             prev_halted: false,
             line: 0,
             line_cycles_spent: 0,
@@ -197,13 +214,62 @@ impl Machine {
 
     /// Drain the speaker samples accumulated since the last call (one per
     /// scanline, i.e. lines-per-field × field-rate ≈ 15.7 kHz).
-    pub fn take_audio(&mut self) -> std::vec::Drain<'_, f32> {
+    pub fn take_audio(&mut self) -> std::vec::Drain<'_, [f32; 2]> {
         self.audio_buffer.drain(..)
     }
 
-    /// The audio sample rate matching [`Machine::take_audio`]'s stream.
+    /// The audio sample rate matching [`Machine::take_audio`]'s stream: the
+    /// oversampled grid rate, [`audio::OVERSAMPLE`] × the scanline rate.
     pub fn audio_sample_rate(&self) -> f64 {
+        self.line_rate() * f64::from(audio::OVERSAMPLE)
+    }
+
+    /// Scanlines per second (~15.7 kHz NTSC) — the audio grid's line clock.
+    fn line_rate(&self) -> f64 {
         self.config.video.lines_per_field() as f64 * self.config.video.field_rate_hz()
+    }
+
+    /// Render the scanline that just executed to [`audio::OVERSAMPLE`]
+    /// stereo grid samples (`docs/plan-audio-pipeline.md`).
+    ///
+    /// Latched inputs replay from the cycle-timestamped events the bus
+    /// recorded during the line: each grid slot holds the state in effect
+    /// at its start (a level change mid-slot lands on the next slot — grid
+    /// resolution, the documented quantization). Generators are sampled
+    /// per slot: the mux-gated cartridge input
+    /// ([`cart::Cartridge::audio_sample`] — the AY drains a quarter-line
+    /// of accumulated output) and the crystal PSG pair
+    /// ([`cart::Cartridge::generator_sample`], wall-clock `dt` so the GIME
+    /// double-speed poke can't retune them). The cassette level is sampled
+    /// once per line — its 1200/2400 Hz square wave is far below even the
+    /// line rate.
+    fn flush_line_audio(&mut self) {
+        let line_start = self.audio_line_start;
+        let line_end = self.bus.cycle_clock;
+        self.audio_line_start = line_end;
+        // A HALT-free line spans `line_budget` cycles; keep the real span so
+        // event timestamps land in the right slot even on odd lines.
+        let span = line_end.saturating_sub(line_start).max(1);
+        let slot_dt = 1.0 / self.audio_sample_rate();
+        let cassette_bit = self.bus.cassette.playing() && self.bus.cassette.input_bit();
+
+        let events = std::mem::take(&mut self.bus.audio_events);
+        let mut inputs = self.audio_line_inputs;
+        let mut cursor = 0;
+        for k in 0..u64::from(audio::OVERSAMPLE) {
+            let slot_start = line_start + span * k / u64::from(audio::OVERSAMPLE);
+            while cursor < events.len() && events[cursor].cycle <= slot_start {
+                inputs = events[cursor].inputs;
+                cursor += 1;
+            }
+            let ay = self.bus.cart.audio_sample();
+            let generators = self.bus.cart.generator_sample(slot_dt);
+            self.audio_buffer
+                .push(audio::mix(&inputs, cassette_bit, ay, generators));
+        }
+        // Events in the final slot's tail take effect from the next line's
+        // first slot: the bus's current state is the next line's start state.
+        self.audio_line_inputs = self.bus.audio_inputs;
     }
 
     /// The CPU clock (the private `CPU_HZ` constant above) for callers
@@ -429,17 +495,12 @@ impl Machine {
             self.bus.fs_rising();
         }
         self.render_scanline();
-        // One speaker sample per scanline (~15.7 kHz), self-capping when
-        // nothing drains it.
+        // Render this line's audio to the oversampled stereo grid,
+        // self-capping when nothing drains it.
         if self.audio_buffer.len() >= AUDIO_BUFFER_CAP {
             self.audio_buffer.clear();
         }
-        // Cartridge sound chips (the GMC's SN76489A) run off their own
-        // crystal, so their clocks advance in wall time per scanline —
-        // immune to the GIME double-speed poke, which stretches the
-        // CPU-cycle timebase `Cartridge::tick` runs on.
-        self.bus.cart.audio_tick(1.0 / self.audio_sample_rate());
-        self.audio_buffer.push(self.bus.sound_sample());
+        self.flush_line_audio();
         // GIME interval timer: TINS=1 counts the fixed 3.58 MHz clock — 4 ticks
         // per normal-speed CPU cycle, 2 per double-speed cycle — TINS=0 counts
         // horizontal syncs (1 per line). No such timer exists on the plain-SAM
@@ -514,9 +575,9 @@ impl Machine {
                         VideoMode::CocoText
                     }
                 } else if g.vmode & gime::vmode::BP != 0 {
-                    VideoMode::GimeGraphics
+                    VideoMode::GIMEGraphics
                 } else {
-                    VideoMode::GimeText
+                    VideoMode::GIMEText
                 }
             }
         }
@@ -545,10 +606,10 @@ impl Machine {
                 for (i, entry) in resolved.iter_mut().enumerate() {
                     *entry = self.bus.gime.color(self.bus.gime.palette[i]);
                 }
-                video::ColorSource::GimePalette(&resolved).resolve(css)
+                video::ColorSource::GIMEPalette(&resolved).resolve(css)
             }
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
-                video::ColorSource::VdgFixed.resolve(css)
+                video::ColorSource::VDGFixed.resolve(css)
             }
         }
     }
@@ -583,8 +644,8 @@ impl Machine {
                     })
                     .collect()
             }
-            VideoMode::GimeText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
+            VideoMode::GIMEGraphics => {
                 vec!["<no text buffer: GIME graphics mode (HSCREEN, $FF98 BP=1)>".to_string()]
             }
         }
@@ -608,13 +669,13 @@ impl Machine {
                     self.legacy_display_base()
                 )
             }
-            VideoMode::GimeText => {
+            VideoMode::GIMEText => {
                 format!(
                     "video mode: GIME hi-res text, base=${:06X}",
                     self.bus.gime.video_base()
                 )
             }
-            VideoMode::GimeGraphics => {
+            VideoMode::GIMEGraphics => {
                 format!(
                     "video mode: GIME graphics (HSCREEN), base=${:06X}",
                     self.bus.gime.video_base()
@@ -755,7 +816,7 @@ impl Machine {
                 active,
             );
         } else {
-            let generator = video::AlphaGenerator::Gime;
+            let generator = video::AlphaGenerator::GIME;
             let xscale = raster::NON_WIDE_ACTIVE_W / (video::COLS * video::CELL_W);
             video::paint_legacy_text_line(
                 &buf[..row_bytes],
@@ -825,14 +886,16 @@ impl Machine {
             }
         };
         // A CoCo 3 has no VDG chip at all: CoCo-compatible text mode is the
-        // GIME's own compat-text generator (`video::AlphaGenerator::Gime`),
-        // not `self.config.vdg` (which only describes a real CoCo 1/2's VDG
-        // and is forced to `Mc6847` for CoCo 3 by `MachineConfig::validate`).
+        // GIME's own compat-text generator (`video::AlphaGenerator::GIME`),
+        // not `self.config.vdg` (which describes a real CoCo 1/2's chip and
+        // is `None` on CoCo 3, per `MachineConfig::validate`).
         let generator = match self.config.variant {
-            MachineVariant::Coco3 => video::AlphaGenerator::Gime,
+            MachineVariant::Coco3 => video::AlphaGenerator::GIME,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
-                VDGVariant::MC6847 => video::AlphaGenerator::Mc6847,
-                VDGVariant::MC6847T1 => video::AlphaGenerator::Mc6847T1,
+                Some(VDGVariant::MC6847T1) => video::AlphaGenerator::MC6847T1,
+                // `None` is rejected for CoCo 1/2 by `MachineConfig::validate`;
+                // fall back to the plain chip rather than panic.
+                Some(VDGVariant::MC6847) | None => video::AlphaGenerator::MC6847,
             },
         };
         video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);

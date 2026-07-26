@@ -5,3 +5,8 @@ members = ["crates/mc6809", "crates/coco-core", "crates/coco-egui"]
 [workspace.package]
 version = "0.5.0"
 license = "GPL-3.0-or-later"
+
+[workspace.lints.clippy]
+# Chip and signal names are spelled ALL CAPS everywhere in this codebase
+# (MC6809, GIME, RGB, NTSC) — see CLAUDE.md.
+upper_case_acronyms = "allow"

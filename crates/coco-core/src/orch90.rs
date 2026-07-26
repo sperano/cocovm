@@ -85,10 +85,11 @@ impl Cartridge for Orch90 {
         true
     }
 
-    /// Mono fold-down of the two latches, 0.0–1.0 (Tier 1: the stereo image
-    /// is preserved in the latches but collapsed for the mono pipeline).
-    fn sound_level(&self) -> f32 {
-        const DAC_SUM_MAX: f32 = u8::MAX as f32 * 2.0;
-        (f32::from(self.left) + f32::from(self.right)) / DAC_SUM_MAX
+    /// The two DAC latches as a true stereo pair, 0.0–1.0 per channel
+    /// (Tier 2: the event-timestamped pipeline carries them separately, so
+    /// left/right writes hard-pan and hold exactly between writes).
+    fn sound_levels(&self) -> (f32, f32) {
+        const DAC_MAX: f32 = u8::MAX as f32;
+        (f32::from(self.left) / DAC_MAX, f32::from(self.right) / DAC_MAX)
     }
 }

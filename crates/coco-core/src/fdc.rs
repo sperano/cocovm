@@ -478,6 +478,12 @@ impl DiskCart {
         self.drives[drive].as_ref()
     }
 
+    /// Whether `drive` is selected with its motor on — what a real drive's
+    /// front-panel light shows. Drives the status bar's activity LED.
+    pub fn drive_active(&self, drive: usize) -> bool {
+        self.motor_on() && self.drive_index() == Some(drive)
+    }
+
     fn drive_index(&self) -> Option<usize> {
         selected_drive(self.dskreg)
     }

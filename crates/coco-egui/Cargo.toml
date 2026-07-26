@@ -4,6 +4,9 @@ version.workspace = true
 edition = "2024"
 license.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "coco"
 path = "src/main.rs"
@@ -51,6 +54,13 @@ toml = "0.9"
 # MIT OR Apache-2.0. Blocking HTTP client for the first-run assets download
 # (`download_and_unpack_assets` in main.rs).
 ureq = "3.3.0"
+pluralizer = "0.5.0"
+
+[features]
+# Off by default (the app ships on eframe's glow/OpenGL backend). Enabling
+# this compiles eframe's wgpu backend in; `log_renderer_info` already has
+# the matching arm reporting the wgpu adapter (backend/GPU name).
+wgpu = ["eframe/wgpu"]
 
 [dev-dependencies]
 egui_kittest = { version = "0.33", features = ["eframe"] }

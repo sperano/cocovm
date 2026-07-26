@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 
 use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
+    Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard,
 };
 use mc6809::Bus;
 
@@ -61,8 +61,8 @@ fn boot_machine() -> Option<(Machine, Vec<u8>)> {
         variant: MachineVariant::Coco2,
         video: VideoStandard::NTSC,
         memory: MemorySize::K64,
-        monitor: MonitorType::RGB,
-        vdg: VDGVariant::MC6847,
+        monitor: None,
+        vdg: Some(VDGVariant::MC6847),
     };
     config
         .validate()

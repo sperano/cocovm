@@ -88,8 +88,17 @@ Decisions:
    dot — all stopped for now). Selection state in `ManagerApp`.
 3. "New…" toolbar button drives the existing `new_vm.rs` dialog, but the
    Create action writes a definition file and inserts a row (does NOT boot).
+   *(Superseded 2026-07-24: the manager no longer opens a dialog at all —
+   "New…"/⌘N creates a default machine on the spot, selects it, and focuses
+   the Name field. The dialog remains for the direct-boot flow only.)*
 4. Selected row → right pane becomes the detail/edit form (photo stays for
    empty selection, per the mock); Save writes the TOML.
+   *(Superseded 2026-07-24: macOS System-Settings model — the pane hosts the
+   shared `new_vm::MachineForm` (same rows as the New dialog, plus
+   Display/Keyboard) and every change auto-saves; no Save/Revert. The Name
+   field commits on focus loss/Enter, and a committed rename migrates the
+   slug: `<slug>.toml` + artifact dir follow the name, deferred while the VM
+   runs.)*
 5. Launch = build `MachineConfig` from the def, mount media, run — the same
    code path `main()`'s CLI branch uses today (refactored to be callable from
    both).

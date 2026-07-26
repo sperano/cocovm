@@ -6,7 +6,7 @@
 //! MPI slot-select routing/limitation.
 
 use coco_core::acia6551::{command, status};
-use coco_core::cart::{Cart, Cartridge, EmptySlot, IO_OPEN_BUS, MultiPak, RomPak, mpi};
+use coco_core::cart::{Cart, Cartridge, IO_OPEN_BUS, MultiPak, RomPak, mpi};
 use coco_core::config::{MachineVariant, MemorySize};
 use coco_core::pia::cr;
 use coco_core::rs232::DeluxeRs232;

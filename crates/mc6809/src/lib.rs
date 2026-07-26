@@ -9,7 +9,6 @@
 //! prefix pages, indexed addressing, and interrupts are TODO.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::upper_case_acronyms)]
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

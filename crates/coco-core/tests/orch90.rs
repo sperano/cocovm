@@ -72,29 +72,29 @@ fn cart_audio_reaches_the_speaker_regardless_of_mux_state() {
     // to their own speaker, ignoring SOUND_ENABLE). Fresh bus: SNDEN low,
     // SEL=00 — the internal DAC path is silent either way.
     let mut b = bus_with_orch90();
-    assert_eq!(b.sound_sample(), 0.0, "latches power on at 0: silent");
+    assert_eq!(b.sound_probe(PROBE_DT), [0.0; 2], "latches power on at 0: silent");
 
     b.write(LEFT_DAC_REG, 0xFF);
     b.write(RIGHT_DAC_REG, 0xFF);
-    let full = b.sound_sample();
-    assert!(full > 0.5, "full-scale L+R with SNDEN low: {full}");
+    let [full_l, full_r] = b.sound_probe(PROBE_DT);
+    assert!(full_l > 0.5, "full-scale L with SNDEN low: {full_l}");
+    assert_eq!(full_l, full_r, "equal latches are centred");
 
-    // Mono fold-down: one channel at full scale is half the level of both.
+    // True stereo: zeroing one DAC silences ONLY that channel (hard pan) —
+    // the plan's stereo acceptance test.
     b.write(RIGHT_DAC_REG, 0x00);
-    let half = b.sound_sample();
-    assert!(
-        (half - full / 2.0).abs() < f32::EPSILON,
-        "left-only ({half}) should be half of L+R ({full})"
-    );
+    let [l, r] = b.sound_probe(PROBE_DT);
+    assert_eq!(l, full_l, "left channel unchanged");
+    assert_eq!(r, 0.0, "right channel silent");
 }
 
 #[test]
-fn sound_level_folds_the_two_latches_to_mono() {
+fn sound_levels_reports_the_two_latches_as_a_stereo_pair() {
     let mut o = orch90();
     o.write(LEFT_DAC_REG, 0xFF);
-    assert_eq!(o.sound_level(), 0.5);
+    assert_eq!(o.sound_levels(), (1.0, 0.0));
     o.write(RIGHT_DAC_REG, 0xFF);
-    assert_eq!(o.sound_level(), 1.0);
+    assert_eq!(o.sound_levels(), (1.0, 1.0));
 }
 
 // ---- Through the MPI -------------------------------------------------------------
@@ -114,20 +114,23 @@ fn mpi_dac_writes_ignore_the_slot_select_and_audio_sums() {
 
     b.write(LEFT_DAC_REG, 0xFF);
     b.write(RIGHT_DAC_REG, 0xFF);
-    let level = b.cart.sound_level();
-    assert_eq!(level, 1.0, "write reached the pak's DAC latches");
+    assert_eq!(
+        b.cart.sound_levels(),
+        (1.0, 1.0),
+        "write reached the pak's DAC latches"
+    );
 
     // Analog SND is common to all slots (only SCS*/CTS*/CART* are switched):
     // deselecting the slot leaves the held latches on the wire.
     b.cart.as_multipak().unwrap().set_switch(OTHER_SLOT);
-    assert_eq!(b.cart.sound_level(), 1.0, "held level still on the wire");
+    assert_eq!(b.cart.sound_levels(), (1.0, 1.0), "held level still on the wire");
     // $FF7A/$FF7B sit in the $FF60-$FF7E extension window, which the MPI
     // does not switch either — the pak full-decodes the address bus, so a
     // write lands regardless of the slot select.
     b.write(LEFT_DAC_REG, 0x00);
     let o = b.cart.as_orch90().unwrap();
     assert_eq!(o.left(), 0x00, "write lands despite the slot select");
-    assert_eq!(b.cart.sound_level(), 0.5, "only the right DAC still held");
+    assert_eq!(b.cart.sound_levels(), (0.0, 1.0), "only the right DAC still held");
 }
 
 // ---- Real-ROM autostart integration ----------------------------------------------
@@ -140,6 +143,10 @@ fn load_coco3_rom() -> Box<[u8]> {
 }
 
 /// Values the synthetic pak program latches into each channel.
+/// Generator step for `sound_probe` (the Orch-90 has no crystal generators —
+/// its DACs are latches, so this value is inert here).
+const PROBE_DT: f64 = 1.0 / 62_866.0;
+
 const LEFT_MARKER: u8 = 0xA5;
 const RIGHT_MARKER: u8 = 0x5A;
 
@@ -183,6 +190,6 @@ fn orch90_autostarts_and_its_cart_code_drives_the_dacs() {
     // And the mono fold-down of those latches is audible in the field's
     // sample stream.
     m.run_field();
-    let audible = m.take_audio().any(|s| s > 0.0);
+    let audible = m.take_audio().any(|s| s[0] > 0.0 || s[1] > 0.0);
     assert!(audible, "latched DACs produced no audio samples");
 }

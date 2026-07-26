@@ -77,12 +77,17 @@ pub trait Cartridge {
     /// while the CPU is halted, so a device can pace work — the FDC's DRQ
     /// cadence — while it holds the HALT line).
     fn tick(&mut self, _cycles: u32) {}
-    /// Advance the cartridge's *audio* clocks by `dt` seconds of wall time.
-    /// Separate from [`Cartridge::tick`] because sound chips (the GMC's
-    /// SN76489A) run off their own crystal: a CPU-cycle timebase would let
-    /// the GIME double-speed poke retune them. Called by the machine loop
-    /// once per scanline, just before [`Cartridge::sound_level`] is sampled.
-    fn audio_tick(&mut self, _dt: f64) {}
+    /// Sample the cartridge's crystal-clocked sound generators (the GMC's
+    /// SN76489A) over the next `dt` seconds of wall time, returning the
+    /// (left, right) level pair, 0.0–1.0 per channel. Wall time — not CPU
+    /// cycles — because these chips run off their own crystal: a CPU-cycle
+    /// timebase would let the GIME double-speed poke retune them. Called
+    /// once per audio grid slot ([`crate::audio::OVERSAMPLE`] per scanline)
+    /// and mixed unconditionally: such carts drive their own outputs, not
+    /// the mux-gated SND pin.
+    fn generator_sample(&mut self, _dt: f64) -> (f32, f32) {
+        (0.0, 0.0)
+    }
     /// True while the cartridge holds the CPU HALT* line low (the FD-502's
     /// transfer handshake). Sampled at instruction boundaries.
     fn halt_asserted(&self) -> bool {
@@ -93,13 +98,15 @@ pub trait Cartridge {
     fn take_nmi(&mut self) -> bool {
         false
     }
-    /// Instantaneous audio level this cartridge drives onto the expansion
-    /// port's analog SND pin, 0.0–1.0 (0.0 = silent, the default for carts
-    /// with no audio hardware). Sampled by `SystemBus::sound_sample` once
-    /// per scanline alongside the internal DAC/beeper sources; the caller
-    /// applies its own gain before mixing.
-    fn sound_level(&self) -> f32 {
-        0.0
+    /// The cartridge's LATCHED (left, right) output levels, 0.0–1.0 per
+    /// channel — the Orchestra-90's write-only DAC pair. Unlike
+    /// [`Cartridge::generator_sample`] these only change on a bus write, so
+    /// the bus snapshots them into a timestamped [`crate::audio::AudioEvent`]
+    /// after every cartridge-window write instead of polling; between writes
+    /// the level holds exactly. Mixed unconditionally (own outputs, not the
+    /// SND pin).
+    fn sound_levels(&self) -> (f32, f32) {
+        (0.0, 0.0)
     }
     /// Side-effect-free peek at whether an NMI edge is currently latched,
     /// without consuming it (unlike [`Cartridge::take_nmi`]) — the
@@ -428,9 +435,6 @@ const GMC_PSG_CRYSTAL_HZ: f64 = 4_000_000.0;
 pub struct Gmc {
     rom: BankedRomPak,
     psg: crate::sn76489::SN76489A,
-    /// Mean PSG level over the last [`Cartridge::audio_tick`] interval —
-    /// what [`Cartridge::sound_level`] reports.
-    level: f32,
 }
 
 impl std::fmt::Debug for Gmc {
@@ -449,7 +453,6 @@ impl Gmc {
         Ok(Self {
             rom: BankedRomPak::from_bytes(bytes, autostart)?,
             psg: crate::sn76489::SN76489A::new(GMC_PSG_CRYSTAL_HZ),
-            level: 0.0,
         })
     }
 }
@@ -470,11 +473,9 @@ impl Cartridge for Gmc {
     fn cart_line_ties_q(&self) -> bool {
         self.rom.cart_line_ties_q()
     }
-    fn audio_tick(&mut self, dt: f64) {
-        self.level = self.psg.sample(dt);
-    }
-    fn sound_level(&self) -> f32 {
-        self.level
+    fn generator_sample(&mut self, dt: f64) -> (f32, f32) {
+        let level = self.psg.sample(dt);
+        (level, level)
     }
     /// Only the bank latch resets — the SN76489A has no reset pin, so the
     /// PSG plays on through a warm reset until software reprograms it, as on
@@ -687,11 +688,13 @@ impl Cartridge for MultiPak {
 
     /// Like [`Cartridge::tick`], audio clocks run in every slot regardless
     /// of selection — a sound chip's crystal doesn't stop when the slot
-    /// isn't addressed.
-    fn audio_tick(&mut self, dt: f64) {
-        for slot in &mut self.slots {
-            slot.audio_tick(dt);
-        }
+    /// isn't addressed — and the outputs wire-sum on the MPI's shared
+    /// analog bus.
+    fn generator_sample(&mut self, dt: f64) -> (f32, f32) {
+        self.slots.iter_mut().fold((0.0, 0.0), |(l, r), slot| {
+            let (sl, sr) = slot.generator_sample(dt);
+            (l + sl, r + sr)
+        })
     }
 
     /// Wire-OR of all 4 slots: any device — e.g. an FD-502 in a
@@ -719,11 +722,14 @@ impl Cartridge for MultiPak {
         self.slots.iter().any(|slot| slot.nmi_pending())
     }
 
-    /// Sum of all 4 slots: the analog SND pin is common to every slot on a
+    /// Sum of all 4 slots: the analog bus is common to every slot on a
     /// real MPI (only SCS*/CTS*/CART* are switched), so slot outputs mix on
     /// the wire regardless of selection.
-    fn sound_level(&self) -> f32 {
-        self.slots.iter().map(|slot| slot.sound_level()).sum()
+    fn sound_levels(&self) -> (f32, f32) {
+        self.slots.iter().fold((0.0, 0.0), |(l, r), slot| {
+            let (sl, sr) = slot.sound_levels();
+            (l + sl, r + sr)
+        })
     }
 
     fn control_read(&mut self) -> u8 {
@@ -858,9 +864,9 @@ impl Cart {
     pub fn tick(&mut self, cycles: u32) {
         with_each_cart!(self, cart => cart.tick(cycles))
     }
-    /// See [`Cartridge::audio_tick`].
-    pub fn audio_tick(&mut self, dt: f64) {
-        with_each_cart!(self, cart => cart.audio_tick(dt))
+    /// See [`Cartridge::generator_sample`].
+    pub fn generator_sample(&mut self, dt: f64) -> (f32, f32) {
+        with_each_cart!(self, cart => cart.generator_sample(dt))
     }
     /// See [`Cartridge::halt_asserted`].
     pub fn halt_asserted(&self) -> bool {
@@ -874,9 +880,9 @@ impl Cart {
     pub fn nmi_pending(&self) -> bool {
         with_each_cart!(self, cart => cart.nmi_pending())
     }
-    /// See [`Cartridge::sound_level`].
-    pub fn sound_level(&self) -> f32 {
-        with_each_cart!(self, cart => cart.sound_level())
+    /// See [`Cartridge::sound_levels`].
+    pub fn sound_levels(&self) -> (f32, f32) {
+        with_each_cart!(self, cart => cart.sound_levels())
     }
     /// See [`Cartridge::audio_sample`].
     pub fn audio_sample(&mut self) -> f32 {

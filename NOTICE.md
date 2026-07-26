@@ -61,6 +61,14 @@ GPL-compatible; the attribution below satisfies its notice requirement.
 > ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 > POSSIBILITY OF SUCH DAMAGE.
 
+## 3D model attribution
+
+- "TRS-80 Color Computer 2" (https://skfb.ly/6V6IL) by **ericomont**,
+  licensed under Creative Commons Attribution 4.0
+  (http://creativecommons.org/licenses/by/4.0/). Not yet committed to the
+  repo or the assets tarball; whenever it ships or is rendered in-app,
+  this credit must also be shown to the user (e.g. the About window).
+
 ## Local, git-ignored assets (not distributed)
 
 - `roms/` — copyrighted Tandy/Microsoft ROM images (`coco3.rom`, `disk11.rom`).

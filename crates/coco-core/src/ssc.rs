@@ -371,8 +371,9 @@ struct Engine {
 // `audio_sample` call regardless of whether the CoCo's sound mux is actually
 // listening to the cartridge (MAME `coco_ssc.cpp` `sac_update`; time
 // constants below are tuned for MAME's own ~44.1 kHz-ish audio-stream
-// sampling rate, which we do not match — see [`Ssc::audio_sample`]'s doc
-// comment).
+// sampling rate — the audio grid's ~62.9 kHz call rate is close enough
+// that the same constants serve, and much closer than the old
+// once-per-scanline 15.7 kHz rate was).
 mod sac {
     /// One-pole DC-blocking high-pass filter coefficient:
     /// `y = ALPHA * (y_prev + x - x_prev)`.
