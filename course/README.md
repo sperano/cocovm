@@ -32,6 +32,9 @@ Real ROMs in `./roms/` and reference PDFs in `./docs/` (this machine only).
 7. [How a Raster Works + the Legacy VDG Text Mode](ch07-raster-and-vdg-text.md)
 8. [GIME Native Modes: Registers, Text Attributes, Graphics, Palette](ch08-gime-native-modes.md)
 9. [Advanced Video: Composite, Mid-Frame Splits, and PMODEs](ch09-splits-composite-and-pmodes.md)
+10. [The PIAs, the Keyboard Matrix, and the Joystick ADC-by-Comparator](ch10-pias-keyboard-joystick.md)
+11. [Sound: from a 6-bit DAC to your speakers](ch11-sound.md)
+12. [The Cassette: FSK Modems, 1980 Edition](ch12-cassette.md)
 
 ---
 
