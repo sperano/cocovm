@@ -85,7 +85,7 @@ consequence directly:
 /// that's the only direction a virtual printer needs.
 ```
 
-Two constants pin down the pins (`crates/coco-core/src/bitbanger.rs:44-49`):
+Two constants pin down the pins ([`crates/coco-core/src/bitbanger.rs:44-49`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L44-L49)):
 
 ```rust
 pub const TX_PIN: u8 = 0x02;
@@ -100,7 +100,7 @@ this chapter adds no new hardware primitive, only a new *use* of one.
 The bus doesn't hand `BitBanger::tick` a raw PIA register — it computes
 what a receiver watching the physical wire would see, accounting for
 whether the pin is even configured as an output yet
-(`crates/coco-core/src/bus/pins.rs:85-99`):
+([`crates/coco-core/src/bus/pins.rs:85-99`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs#L85-L99)):
 
 ```rust
 /// PA1 ($FF20) as the bit-banger's TX line sees it: mark (idle-high)
@@ -134,7 +134,7 @@ in the output register.
 cycle delta and PA1's level held constant across that delta. It is an
 edge-triggered async receiver — the same shape as a real UART's start-bit
 hunt — implemented as a two-state enum
-(`crates/coco-core/src/bitbanger.rs:226-237`):
+([`crates/coco-core/src/bitbanger.rs:226-237`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L226-L237)):
 
 ```rust
 enum RxState {
@@ -149,7 +149,7 @@ enum RxState {
 }
 ```
 
-and the tick function itself (`crates/coco-core/src/bitbanger.rs:375-432`,
+and the tick function itself ([`crates/coco-core/src/bitbanger.rs:375-432`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L375-L432),
 elided only where the doc comments already quoted above repeat):
 
 ```rust
@@ -209,7 +209,7 @@ bit. `TOTAL_SAMPLES = DATA_BITS + 2 = 10`.
 
 Every sample happens at the *middle* of its bit cell, not at its edge —
 `sample_threshold` computes `(0.5 + k)` bit-times for sample `k`
-(`crates/coco-core/src/bitbanger.rs:434-441`):
+([`crates/coco-core/src/bitbanger.rs:434-441`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L434-L441)):
 
 ```rust
 /// CPU-cycle offset of sample `sample` (0-indexed) after the start-bit
@@ -231,7 +231,7 @@ wrong side of a transition; sampling at the *center* buys a full half a
 bit-time of slack before that happens, and that slack is largest exactly
 where you need it — at the *last* bit of a 10-bit frame, where drift has
 had the longest time to accumulate. Two tests exercise this directly
-(`crates/coco-core/src/bitbanger_test.rs:101-121`): building a frame
+([`crates/coco-core/src/bitbanger_test.rs:101-121`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs#L101-L121)): building a frame
 2% faster or 2% slower than the decoder's configured rate still decodes
 cleanly, because "by bit 9 (9.5 bit-times in) accumulated drift is under
 0.19 bit-times, well inside the 0.5 bit-time margin each mid-cell sample
@@ -302,7 +302,7 @@ two things fall out with no special-case code at all:
   the ROM's cycle-counted delay loop, so it *exactly* doubles the
   effective baud — the delay loop still counts the same number of
   (now-faster) cycles. Test `double_rate_bit_period_decodes`
-  (`crates/coco-core/src/bitbanger_test.rs:150-158`) configures the
+  ([`crates/coco-core/src/bitbanger_test.rs:150-158`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs#L150-L158)) configures the
   decoder at half the default period and confirms a byte sent at that
   rate still decodes — proving the relationship is pure arithmetic, with
   "no special-cased fast mode."
@@ -310,7 +310,7 @@ two things fall out with no special-case code at all:
 ### A driver that doesn't play along: NitrOS-9
 
 Not every piece of CoCo software shares Color BASIC's obliviousness to
-clock speed. `tests/bitbanger_os9.rs`'s module doc comment records a
+clock speed. [`tests/bitbanger_os9.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_os9.rs)'s module doc comment records a
 genuinely surprising empirical finding, arrived at by instrumenting the
 decoder's raw edge timings during a real NitrOS-9 boot rather than
 disassembling the OS-9 driver:
@@ -342,7 +342,7 @@ device drivers, two opposite policies for the same hardware fact — and
 the emulator's decoder doesn't encode either policy; it just counts
 whatever cycles actually elapse, which is why it can decode both without
 being told which driver it's listening to. The test itself
-(`crates/coco-core/tests/bitbanger_os9.rs:204-237`) boots the real EOU
+([`crates/coco-core/tests/bitbanger_os9.rs:204-237`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_os9.rs#L204-L237)) boots the real EOU
 disk images to a shell, runs `echo hello >/p`, retunes the decoder to
 `2 * DEFAULT_BIT_PERIOD`, and asserts the captured bytes are exactly
 `b"hello \r"` with zero framing errors — a second, independently-written
@@ -366,7 +366,7 @@ real printer's 134-byte receive buffer assert BUSY per-byte? only when
 nearly full?) is marked INFERRED, not VERIFIED, in `dmp105-protocol.md`
 — the manual documents the polarity and the existence of a 134-character
 buffer but never states the exact byte-count trigger. The wire is real
-and tested (`tests/bitbanger.rs`'s three bus-level tests confirm PB0
+and tested ([`tests/bitbanger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger.rs)'s three bus-level tests confirm PB0
 reads 0 by default and reflects `set_busy`), but no code path currently
 drives it from print volume — a virtual printer in this emulator is
 always "ready," which is a fidelity choice that would only bite if a
@@ -559,7 +559,7 @@ cycles = 10 * 6 * 16 * 894886 / 1843200
        = 466.08...  ->  466
 ```
 
-and the test confirms it exactly (`crates/coco-core/src/acia6551_test.rs:41-52`):
+and the test confirms it exactly ([`crates/coco-core/src/acia6551_test.rs:41-52`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551_test.rs#L41-L52)):
 
 ```rust
 const EXPECTED_CYCLES: u32 = 466; // 10 * 6 * 16 * 894_886 / 1_843_200
@@ -579,7 +579,7 @@ derive the 9600-baud case yourself (divider 12) and predict the truncated
 cycle count before checking it against a test you write.
 
 The transmit and receive sides run near-identical timers
-(`crates/coco-core/src/acia6551/frame.rs`). Transmit is worth reading
+([`crates/coco-core/src/acia6551/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551/frame.rs)). Transmit is worth reading
 closely because of *when* it fires TDRE, which is easy to get backwards:
 
 ```rust
@@ -851,7 +851,7 @@ This is the function week 6 named but deferred: `poll_cart_interrupt`,
 called once per instruction from `step_cpu_unit` (the very function §6.3
 walked you through), samples this level and converts a *change* into
 what the physical CART* pin actually feeds — PIA1's CB1 input
-(`crates/coco-core/src/bus/sync.rs:52-62`):
+([`crates/coco-core/src/bus/sync.rs:52-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs#L52-L62)):
 
 ```rust
 /// Sample the level-driven CART* interrupt (e.g. the Deluxe RS-232's 6551
@@ -878,7 +878,7 @@ pub fn poll_cart_interrupt(&mut self) {
 is active-low on the real connector, so an *asserted* level (`true`)
 must drive CB1 *low* (`false`) — hence the `!`. `set_c1` is the same PIA
 primitive week 10 introduced for horizontal and field sync
-(`crates/coco-core/src/pia.rs:66-85`); it only latches the CB1 flag on a
+([`crates/coco-core/src/pia.rs:66-85`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs#L66-L85)); it only latches the CB1 flag on a
 genuine transition whose direction matches PIA1's control-register edge
 selection, exactly as it did for HS/FS pulses. `Pia::irq()` — the
 "either side is asserting" OR you saw wired into `SystemBus::firq_asserted`
@@ -898,7 +898,7 @@ two different cartridges asserting it for two different reasons.
 
 ### Watching the whole chain fire
 
-`tests/rs232.rs`'s `rx_irq_fires_firq_via_pia1_cb1` drives every layer of
+[`tests/rs232.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/rs232.rs)'s `rx_irq_fires_firq_via_pia1_cb1` drives every layer of
 this in one test, with comments that read as a script for exactly the
 chain just described:
 
@@ -1255,7 +1255,7 @@ manual never transcribes their bitmaps at all — only the ASCII range
 
 ### End to end: `LLIST` through the whole stack
 
-`tests/dmp105_boot.rs` is the integration test that proves every layer
+[`tests/dmp105_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/dmp105_boot.rs) is the integration test that proves every layer
 of this chapter's first two rungs plus this section actually compose:
 boot the real `coco3.rom`, attach a `Dmp105Handle` as the bit-banger's
 sink, type a one-line program, `LLIST` it, and check the paper picked up
@@ -1303,7 +1303,7 @@ cartridge you're about to read about — implements one trait,
 `Cartridge`. DESIGN.md named this seam back before any of it existed:
 "make `Cartridge` a trait so a WD1773 floppy controller, plain ROM packs,
 and the Multi-Pak slot all plug in." Read the trait's full surface
-(`crates/coco-core/src/cart.rs:35–186`, doc comments trimmed for space)
+([`crates/coco-core/src/cart.rs:35–186`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L35-L186), doc comments trimmed for space)
 to see exactly how many different kinds of "cartridge" it has learned to
 express since that sentence was written:
 
@@ -1380,7 +1380,7 @@ new layer: a trait object has no fixed, known-in-advance shape that
 time, every concrete type that could be behind the pointer. An enum
 *is* that closed list, spelled out. `Cart::Custom` is the deliberate
 escape hatch for out-of-crate test doubles (you saw one, `TestCart`, in
-`tests/mpi.rs`) — and it's excluded from serialization entirely
+[`tests/mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)) — and it's excluded from serialization entirely
 (`#[serde(skip)]`), so a save-state attempted with a test double plugged
 in fails cleanly (`Cart::contains_custom` checks for exactly this before
 `crate::snapshot::save` ever tries).
@@ -1493,7 +1493,7 @@ recognizes the disk controller ROM specifically by its `'D'`,`'K'`
 signature bytes at `$C000`/`$C001`, and a human typing `EXEC &HE010`
 reaches an arbitrary cartridge's entry point manually.
 
-`tests/cart.rs` proves this whole chain fires against the real ROM, not
+[`tests/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs) proves this whole chain fires against the real ROM, not
 a synthetic stub — one autostart test, one negative control:
 
 ```rust
@@ -1587,7 +1587,7 @@ single "active slot" concept. `HALT*`/`NMI*`/`tick`, by contrast, reach
 *every* slot regardless of selection — the trait doc on `MultiPak::tick`
 says it outright: "a device doesn't stop just because it isn't currently
 addressed." An FD-502 sitting in slot 4 can still hold HALT* even while
-the select register currently points SCS/CTS at slot 1; `tests/mpi.rs`'s
+the select register currently points SCS/CTS at slot 1; [`tests/mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)'s
 `halt_and_nmi_are_wire_ored_across_all_slots_regardless_of_selection`
 proves exactly this with a synthetic `TestCart`.
 
@@ -1619,7 +1619,7 @@ The front-panel switch controls `$FF7F` — until software writes to
 `$FF7F` itself, at which point the switch is *locked out*: turning the
 physical dial afterward still records the new position (so the next
 reset picks it up) but has no live effect until RESET* actually fires.
-`tests/mpi.rs`'s `software_write_blocks_the_switch_until_the_next_reset`
+[`tests/mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)'s `software_write_blocks_the_switch_until_the_next_reset`
 walks exactly this sequence: a software write to slot 0, then
 `set_switch(1)` (recorded but inert), confirmed still reading slot 0's
 value, then `reset()`, which both restores switch control *and* reloads
@@ -1660,7 +1660,7 @@ fn mirror_fill(bytes: &[u8], total_len: usize) -> Box<[u8]> {
 }
 ```
 
-`tests/cart.rs`'s `mirror_fill_equals_plain_repetition_for_any_size` is
+[`tests/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)'s `mirror_fill_equals_plain_repetition_for_any_size` is
 the test that turns the comment's claim into a checked fact: for a
 deliberately non-power-of-two size (5000 bytes), every one of the 32K
 window's bytes equals `bytes[i % LEN]` — proving the doubling loop, kept
@@ -1685,7 +1685,7 @@ fn rom_read(&mut self, addr: u16) -> u8 {
 }
 ```
 
-`tests/cart.rs`'s `full_32k_image_maps_cts_half_first` checks the
+[`tests/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)'s `full_32k_image_maps_cts_half_first` checks the
 consequence directly: `rom_read(0xC000)` (the byte a `JMP $C000`
 autostart landing would execute first) returns `bytes[0x0000]` — file
 offset zero — while `rom_read(0x8000)` returns `bytes[0x4000]`, the file's
@@ -1746,7 +1746,7 @@ notes MAME routes the GMC's PSG to a dedicated speaker device, ignoring
 the SNDEN/mux path "entirely," with no independent schematic settling
 what the real cartridge's SND-pin wiring should do instead — so this
 model keeps MAME's behavior rather than inventing a mux-gated path with
-no evidence behind it). `tests/gmc.rs`'s `bank_latch_pages_the_16k_window`
+no evidence behind it). [`tests/gmc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gmc.rs)'s `bank_latch_pages_the_16k_window`
 confirms the inherited banking behaves exactly like a standalone
 `BankedRomPak` — writing each of 8 bank values to `$FF40` and checking
 `rom_read($C000)` returns that bank's marker byte — while a separate MPI
@@ -1760,22 +1760,22 @@ while a *different* slot answers the register writes.
 
 In this order:
 
-1. **`crates/coco-core/src/bitbanger.rs`, whole file** — the module doc
+1. **[`crates/coco-core/src/bitbanger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs), whole file** — the module doc
    comment first, then `tick`/`sample_threshold`. You have every fact
    needed to hand-derive the baud table in §14.2 from this file alone.
-2. **`crates/coco-core/src/acia6551.rs` and its `frame.rs`/`registers.rs`/
-   `irq.rs` submodules** — read the module doc comment's "byte-level
+2. **[`crates/coco-core/src/acia6551.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551.rs) and its [`frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551/frame.rs)/[`registers.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551/registers.rs)/
+   [`irq.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551/irq.rs) submodules** — read the module doc comment's "byte-level
    timing divergence" section slowly; it's the chapter's clearest single
    statement of the fidelity-is-a-budget philosophy applied to a chip
    this course hasn't met before.
-3. **`crates/coco-core/src/rs232.rs`** — small enough to read whole in
+3. **[`crates/coco-core/src/rs232.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rs232.rs)** — small enough to read whole in
    one sitting; it's the chapter's best example of "a cartridge is just
    a chip wired to a bus," reusing every mechanism §14.6 names.
-4. **`crates/coco-core/src/dmp105.rs` and `dmp105/protocol.rs`** — read
+4. **[`crates/coco-core/src/dmp105.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105.rs) and [`dmp105/protocol.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105/protocol.rs)** — read
    `feed`/`dispatch_cp`/`execute_repeat` together; the recursion-avoidance
    comment on `execute_repeat` is worth re-reading after you've seen the
    regression test that motivated it.
-5. **`crates/coco-core/src/cart.rs` and `cart/cart_enum.rs`** (elective) —
+5. **[`crates/coco-core/src/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs) and [`cart/cart_enum.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart/cart_enum.rs)** (elective) —
    the trait first, then `with_each_cart!`; compare against
    `BitBanger`'s `Box<dyn PrinterSink>` to feel the difference between
    "closed set, needs serde" and "open set, extended by consumers."
@@ -1788,17 +1788,17 @@ cargo test -p coco-core --test bitbanger rs232 dmp105_boot cart mpi gmc
 ```
 
 The last two integration tests in that second line (`bitbanger_boot`,
-`bitbanger_os9`, `dmp105_boot`, and the real-ROM tests inside `cart.rs`/
-`mpi.rs`) need `roms/coco3.rom` (and `bitbanger_os9.rs` additionally needs
+`bitbanger_os9`, `dmp105_boot`, and the real-ROM tests inside [`cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)/
+[`mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)) need `roms/coco3.rom` (and [`bitbanger_os9.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_os9.rs) additionally needs
 `roms/disk11.rom` plus disk images under `disks/`) — none of which ship
 in this repository or in a fresh worktree; they're git-ignored and
 present only on the machine this course was authored on. Every one of
 those tests checks for the asset and prints `eprintln!("skipping ...")`
 and returns cleanly if it's missing, rather than failing — you'll see
 that pattern (`load_rom()`/`try_load_rom()` returning `Option`) at the
-top of each file. The pure unit and bus-level tests (`bitbanger_test.rs`,
-`acia6551_test.rs`, `serial_test.rs`, `dmp105_test.rs`, the synthetic
-parts of `tests/cart.rs`/`tests/mpi.rs`/`tests/gmc.rs`) need nothing and
+top of each file. The pure unit and bus-level tests ([`bitbanger_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs),
+[`acia6551_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551_test.rs), [`serial_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/serial_test.rs), [`dmp105_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105_test.rs), the synthetic
+parts of [`tests/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)/[`tests/mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)/[`tests/gmc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gmc.rs)) need nothing and
 will run regardless.
 
 ---
@@ -1843,7 +1843,7 @@ directly (see `dmp105_test.rs`'s `feed_str` helper for the pattern) —
 assert on `dmp.x` and `dmp.y` after the sequence.
 
 **14.3 — Sabotage: break false-start rejection (sabotage, verified).**
-In `crates/coco-core/src/bitbanger.rs`, find the `if pa1_mark {
+In [`crates/coco-core/src/bitbanger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs), find the `if pa1_mark {
 false_start = true; break; }` guard inside `tick`'s `START_SAMPLE` arm
 (§14.2 quotes it in full) and change the condition so the check never
 fires (for instance, replace `pa1_mark` with the literal `false`). Run
@@ -1861,7 +1861,7 @@ tests pass again and `git status` is clean.
 
 **14.4 — Build: an elongated-mode DMP-105 test (build).** `1B 0E`/`1B
 0F` (start/end elongation) are already implemented (`esc::ELONGATE_START`/
-`esc::ELONGATE_END` in `dmp105/protocol.rs`) but exercise it yourself:
+`esc::ELONGATE_END` in [`dmp105/protocol.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105/protocol.rs)) but exercise it yourself:
 write a new test in the shape of `dmp105_test.rs`'s existing tests that
 feeds `ESC $0E`, one glyph, `ESC $0F`, another glyph, and asserts the
 *second* glyph's cell starts exactly `2 * normal_cell_width()` after the
@@ -1874,7 +1874,7 @@ extension, not a hardware claim) — implemented as a one-shot flag that
 clears itself after the next `print_glyph` call. Test it the same way.
 
 **14.5 — Read/predict: an MPI test (read/predict).** Read
-`tests/mpi.rs`'s `write_replaces_the_whole_byte_not_a_nibble_merge` test
+[`tests/mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)'s `write_replaces_the_whole_byte_not_a_nibble_merge` test
 (quoted context: it writes `0x10` to `$FF7F`, then `0x01`) without
 running it, and predict, before checking: what does `mp.scs_slot()`
 return after each write, and what does `mp.cts_slot()` return after the

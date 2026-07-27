@@ -23,7 +23,7 @@ addressing is first on the list, ahead of interrupts:
 >    u32 extra_cycles)` and get it bulletproof — a large fraction of all
 >    instructions route through it.
 
-Look at how many opcodes cash that check in `crates/mc6809/src/exec.rs`
+Look at how many opcodes cash that check in [`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)
 alone: `LEAX`/`LEAY`/`LEAS`/`LEAU`, indexed `LDA`/`STA`/`LDB`/`STB`/`LDD`/
 `STD`, every indexed 8-bit ALU op (`ADD`/`ADC`/`SUB`/`SBC`/`CMP` for both
 accumulators), indexed `AND`/`OR`/`EOR`/`BIT`, indexed `JMP`/`JSR`, and — via
@@ -39,7 +39,7 @@ instructions later. That's why it earns a whole week of undivided attention.
 ## 3.2 The decode tree: one bit decides everything
 
 Here are the field masks the whole chapter hangs off, from
-`crates/mc6809/src/lib.rs:76-90`:
+[`crates/mc6809/src/lib.rs:76-90`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76-L90):
 
 ```rust
 /// Field masks for the indexed-addressing postbyte (`1 rr i mmmm`).
@@ -70,7 +70,7 @@ mod postbyte {
 > don't overlap bit patterns for free.
 
 Every indexed postbyte starts with one branch, in `ea_indexed`
-(`crates/mc6809/src/addressing.rs:58-67`):
+([`crates/mc6809/src/addressing.rs:58-67`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L58-L67)):
 
 ```rust
 pub(crate) fn ea_indexed(&mut self, bus: &mut impl Bus) -> (u16, u32) {
@@ -89,7 +89,7 @@ Bit 7 of the postbyte splits the entire addressing mode into two unrelated
 layouts. If it's clear, the *whole remaining byte* — all 7 bits — is spent
 on `0 rr nnnnn`: a 2-bit register select and a 5-bit signed offset, nothing
 held in reserve. `ea_indexed_offset5` decodes exactly that
-(`addressing.rs:71-81`):
+([`addressing.rs:71-81`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L71-L81)):
 
 ```rust
 fn ea_indexed_offset5(&mut self, pb: u8) -> (u16, u32) {
@@ -122,7 +122,7 @@ offset whenever it can: shortest encoding and fastest execution both.
 ## 3.3 The full form: register, indirect bit, then sixteen sub-modes
 
 When bit 7 *is* set, `ea_indexed_full` takes over
-(`addressing.rs:85-96`):
+([`addressing.rs:85-96`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L85-L96)):
 
 ```rust
 fn ea_indexed_full(&mut self, bus: &mut impl Bus, pb: u8) -> (u16, u32) {
@@ -154,7 +154,7 @@ set the indirect bit on a `,R+` postbyte and you get a second fetch anyway.
 Worth knowing if you ever chase a compatibility bug in this exact corner.
 
 Now the sub-mode table itself, `ea_indexed_submode`
-(`addressing.rs:100-171`), quoted whole because every case matters and you
+([`addressing.rs:100-171`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L100-L171)), quoted whole because every case matters and you
 will refer back to this constantly:
 
 ```rust
@@ -288,13 +288,13 @@ on. The disassembler makes the same call, rendered visibly, in §3.9.
 
 You've hand-assembled indexed operands before; now trace the reverse
 direction on real postbyte values, cross-checked against the executor tests
-in `crates/mc6809/tests/indexed.rs`.
+in [`crates/mc6809/tests/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs).
 
 **`$05` — `LDA 5,X`.** Binary `0000_0101`. Bit 7 is clear, so this is the
 5-bit form: `rr = 00` (X), `n = 00101 = 5`, sign bit (`0x10`) clear ⇒ offset
 `+5`. Decoder path: `ea_indexed` → `ea_indexed_offset5`. EA = `X + 5`. Extra
 cycles: 1. With `X = $2000`, EA = `$2005` — exactly
-`indexed.rs::offset5_positive`, which loads `$42` from `$2005` and asserts
+[`indexed.rs::offset5_positive`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs), which loads `$42` from `$2005` and asserts
 `cycles == 5` (base 4 for `LDA` indexed + 1).
 
 **`$80` — `LDA ,X+`.** Binary `1000_0000`. Bit 7 set: `sel = pb >> 5 = 0b100`
@@ -302,7 +302,7 @@ cycles: 1. With `X = $2000`, EA = `$2005` — exactly
 `ea_indexed_full` → `ea_indexed_submode` case `0b0000`. With `X = $2000`,
 this reads X's *current* value as the EA and only then writes `X+1` back —
 the mechanics §3.5 examines in detail. Extra cycles: 2. Total: 4 + 2 = 6,
-matching `indexed.rs::auto_increment_by_one`.
+matching [`indexed.rs::auto_increment_by_one`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs).
 
 **`$98` — `LDA [16,X]`.** Binary `1001_1000`. `sel = pb >> 5 = 0b100` → X;
 indirect bit `0x10` — is it set? `0x98 = 0b1001_1000`; bit 4 (value `0x10`)
@@ -311,7 +311,7 @@ sub-mode: fetch one more byte (`$10` = 16 decimal), EA-before-indirection =
 `X + 16`, extra so far = 1. Then `ea_indexed_full` sees the indirect bit,
 does a second bus read — `bus.read_u16(ea)` — to fetch the *real* pointer
 from that address, and adds `INDIRECT_CYCLES = 3`. Total extra: 1 + 3 = 4.
-Grand total: 4 (base) + 4 = 8, matching `indexed.rs::indirect_8bit_offset`
+Grand total: 4 (base) + 4 = 8, matching [`indexed.rs::indirect_8bit_offset`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs)
 exactly (it asserts `cycles == 8` with the comment `// 4 + (1 + 3)`).
 
 **`$99` — `LDA [256,X]`.** Binary `1001_1001` — one bit past `$98`. Same
@@ -325,7 +325,7 @@ total: 4 (base) + 7 = 11. There's no executor test pinning this exact
 combination in `indexed.rs`, but it's not a new rule — it's the `1001` row
 and the indirect-bit rule from §3.3 composed, the same composition the
 `indirect_8bit_offset` test already exercises for the `1000` row. The
-disassembler side *is* directly tested: `disasm_indexed.rs::indirect_16bit_offset`
+disassembler side *is* directly tested: [`disasm_indexed.rs::indirect_16bit_offset`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm_indexed.rs)
 confirms the rendering, `[256,X]`, at `len == 4` (opcode, postbyte, two
 offset bytes).
 
@@ -342,7 +342,7 @@ exercise 3.7 asks you to add one.)
 **`$8C` — `LDA n,PCR` (8-bit).** The syllabus singles this one out, and it
 deserves the full trace rather than a summary, because the "relative to the
 *next* instruction" rule is the one detail every 6809 newcomer gets wrong
-once. `indexed.rs::pc_relative_8bit` loads the program at `$1000`:
+once. [`indexed.rs::pc_relative_8bit`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs) loads the program at `$1000`:
 
 ```rust
 // LDA n,PCR at $1000. Offset is from the address of the *next* instruction.
@@ -374,7 +374,7 @@ of "where it was two fetches ago." The rule falls out for free from fetching
 the offset *before* reading `self.pc`, and it would silently break if
 someone captured `self.pc` into a local variable before the `fetch_u8` call
 instead of after (exercise 3.9 asks you to verify exactly that, empirically).
-The 16-bit form (`$8D`, `indexed.rs::pc_relative_16bit`) is identical in
+The 16-bit form (`$8D`, [`indexed.rs::pc_relative_16bit`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs)) is identical in
 shape — `pc` lands at `$1004` after the two-byte offset fetch, `$1004 +
 $0100 = $1104` — just with the wider fetch and a heavier bill: extra cycles
 5, the single most expensive non-indirect sub-mode in the table.
@@ -389,7 +389,7 @@ almost 64K forward, not step one byte backward the way `A = $FF` does in
 `A,R`. EA = `$3000 + $0050 = $3050`. Extra cycles: 4, same bill as the
 16-bit constant-offset form — both fetch (or, here, already hold) a full
 16-bit value and add it in one step. Total: 4 (base) + 4 = 8, the same
-shape `indexed.rs::accumulator_d_offset` asserts for `D,X`.
+shape [`indexed.rs::accumulator_d_offset`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs) asserts for `D,X`.
 
 ---
 
@@ -464,7 +464,7 @@ verify it here rather than assume it.
 ## 3.6 PSH/PUL: masks, order, and the "other" stack pointer
 
 The register-mask postbyte for `PSHS`/`PULS`/`PSHU`/`PULU` gets its own
-bitflag module, `crates/mc6809/src/lib.rs:95-105`:
+bitflag module, [`crates/mc6809/src/lib.rs:95-105`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L95-L105):
 
 ```rust
 mod stack_mask {
@@ -520,13 +520,13 @@ Three things to notice, all load-bearing:
   byte, then the high byte — but since every `push8` *pre-decrements* `sp`,
   the byte pushed second lands at the lower address. Net effect: high byte
   at the lower address, big-endian in memory, matching `Bus::write_u16` from
-  Chapter 1. `stack.rs::pshs_16bit_is_big_endian` pins this down.
+  Chapter 1. [`stack.rs::pshs_16bit_is_big_endian`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) pins this down.
 - **`OTHER_STACK_PTR` (`0x40`) is context-dependent.** The same bit means "U"
   for `PSHS`/`PULS` and "S" for `PSHU`/`PULU` — the entire reason for the
   `other` local, computed once from `to_s`. It's the one mask bit whose
   *meaning*, not just value, depends on which opcode you used.
 
-`stack.rs::pshs_can_push_and_pull_u_via_bit6` exercises that third bullet
+[`stack.rs::pshs_can_push_and_pull_u_via_bit6`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) exercises that third bullet
 directly — walk it, because it's the only test in the suite that drives
 `OTHER_STACK_PTR`. The program is `PSHS U` (`$34 $40`) followed by `PULS U`
 (`$35 $40`), with `S = $2000` and `U = $1234` going in:
@@ -559,9 +559,9 @@ stack instead.
 so CC comes off first and PC last, exactly as the module doc states: "push
 order is PC, U/S, Y, X, DP, B, A, CC (highest address first), so CC ends up
 on top." Cost for both directions is `PUSH_PULL_BASE_CYCLES` (`5`,
-`lib.rs:108`) plus one cycle per byte transferred — pushing all eight items
+[`lib.rs:108`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L108)) plus one cycle per byte transferred — pushing all eight items
 costs `5 + 12` (PC, the "other" pointer, X, and Y are 2 bytes each; DP, B, A,
-CC are 1 byte each), exactly what `stack.rs::pshs_all_registers_cost_17`
+CC are 1 byte each), exactly what [`stack.rs::pshs_all_registers_cost_17`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs)
 asserts.
 
 > **Rust corner: an `FnMut` closure capturing a generic `&mut` parameter.**
@@ -577,7 +577,7 @@ asserts.
 `take_interrupt` (next week's reading) reuses `psh` directly —
 `self.psh(bus, 0xFF, true)` for a full NMI/IRQ/SWI frame, `self.psh(bus,
 PC_CC_MASK, true)` for FIRQ's PC+CC-only frame, where `PC_CC_MASK =
-stack_mask::PC | stack_mask::CC` (`lib.rs:111`). Every interrupt frame is
+stack_mask::PC | stack_mask::CC` ([`lib.rs:111`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L111)). Every interrupt frame is
 the exact same `psh` you just read, called with a different mask.
 
 ---
@@ -585,7 +585,7 @@ the exact same `psh` you just read, called with a different mask.
 ## 3.7 TFR/EXG: nibble codes and the size-mismatch rules
 
 `TFR`/`EXG` share one postbyte shape, a nibble pair, with its own selector
-codes (`crates/mc6809/src/lib.rs:63-74`):
+codes ([`crates/mc6809/src/lib.rs:63-74`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L63-L74)):
 
 ```rust
 mod regsel {
@@ -615,7 +615,7 @@ regardless of size, per `exec.rs`'s `exec_control_transfer`:
 
 The interesting part is what happens when source and destination sizes
 don't match, which the datasheet documents but which is easy to get subtly
-wrong. `crates/mc6809/src/regs.rs`:
+wrong. [`crates/mc6809/src/regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs):
 
 ```rust
 pub(crate) fn tfr_value(&self, src: u8, dst: u8) -> u16 {
@@ -637,13 +637,13 @@ Three documented rules, one function:
 
 | Transfer | Rule | Test |
 |---|---|---|
-| 16-bit → 8-bit | destination gets the low byte; `reg_write`'s `value as u8` truncates | `regs.rs::tfr_16_to_8_takes_lsb` (`TFR X,A` with `X=$1234` ⇒ `A=$34`) |
-| `A`/`B` → 16-bit | high byte forced to `$FF` | `stack.rs::tfr_accumulator_to_16_sets_ff_high` (`TFR A,X` with `A=$7F` ⇒ `X=$FF7F`) |
-| `CC`/`DP` → 16-bit | both bytes duplicate the source byte | `stack.rs::tfr_cc_to_16_duplicates_byte` (`TFR CC,X` with `CC=$42` ⇒ `X=$4242`) |
+| 16-bit → 8-bit | destination gets the low byte; `reg_write`'s `value as u8` truncates | [`regs.rs::tfr_16_to_8_takes_lsb`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) (`TFR X,A` with `X=$1234` ⇒ `A=$34`) |
+| `A`/`B` → 16-bit | high byte forced to `$FF` | [`stack.rs::tfr_accumulator_to_16_sets_ff_high`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) (`TFR A,X` with `A=$7F` ⇒ `X=$FF7F`) |
+| `CC`/`DP` → 16-bit | both bytes duplicate the source byte | [`stack.rs::tfr_cc_to_16_duplicates_byte`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) (`TFR CC,X` with `CC=$42` ⇒ `X=$4242`) |
 
 Notice the 16→8 truncation isn't handled inside `tfr_value` at all — its
 `_ => sv` arm returns the full 16-bit source unchanged, and it's the generic
-`reg_write` (week 2 territory, `regs.rs:32-46`) that does `self.a = value as
+`reg_write` (week 2 territory, [`regs.rs:32-46`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs#L32-L46)) that does `self.a = value as
 u8` for an 8-bit destination. The size-mismatch *rule* lives in `tfr_value`;
 the *mechanism* lives in `reg_write`. `EXG` doesn't call `tfr_value` at all —
 it swaps via two independent `reg_read`/`reg_write` calls, so an 8↔16 `EXG`
@@ -767,7 +767,7 @@ second, independent lookup keyed on the second byte.
 
 ## 3.9 The disassembler: table-driven, and never allowed to lie about length
 
-`crates/mc6809/src/disasm.rs` is a pure function over a byte reader — no CPU
+[`crates/mc6809/src/disasm.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm.rs) is a pure function over a byte reader — no CPU
 struct, no side effects, just `fn disassemble(read: &mut impl FnMut(u16) ->
 u8, pc: u16) -> Insn`. Its module doc states its one governing rule plainly:
 
@@ -918,7 +918,7 @@ they reuse machinery from earlier sections instead of inventing their own:
   by which mnemonic (`PSHS`/`PULS` vs `PSHU`/`PULU`) is being rendered
   rather than by which stack the CPU would actually touch, since the
   disassembler never touches any stack at all.
-  `stack_transfer.rs::pulu_partial_mask` confirms mask `$16` (`A|B|X =
+  [`stack_transfer.rs::pulu_partial_mask`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/stack_transfer.rs) confirms mask `$16` (`A|B|X =
   $02|$04|$10`) renders as `A,B,X` through this exact function — the
   same `A,B,X` string §3.9's ROM excerpt shows for `PSHS A,B,X` at `$8C37`
   (mask also `$16`), since `format_stack_mask` doesn't care which of the
@@ -930,7 +930,7 @@ Two rendering choices worth knowing before you read a disassembly listing:
 - **Constant offsets render in signed decimal, not hex.** `format!
   ("{offset},{reg}")` with `offset: i16` — so postbyte `$88 $10` (8-bit
   offset `$10`) disassembles as `16,X`, not `$10,X`, and `$88 $FF`
-  disassembles as `-1,X`. `disasm_indexed.rs::offset8_positive` and
+  disassembles as `-1,X`. [`disasm_indexed.rs::offset8_positive`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm_indexed.rs) and
   `::offset16_negative` pin this down. Only the extended-indirect address
   (`[$XXXX]`) stays hex, since it's an absolute address, not an offset.
 - **Illegal opcodes still consume the right number of bytes.** The base-page
@@ -1087,14 +1087,14 @@ verified anchor point.
 
 ## 3.11 Reading assignment
 
-In this order: **`lib.rs:76-105`** (`postbyte`/`stack_mask`, load-bearing for
-everything below); **`addressing.rs:30-192`** (`ea_indexed` through
+In this order: **[`lib.rs:76-105`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76-L105)** (`postbyte`/`stack_mask`, load-bearing for
+everything below); **[`addressing.rs:30-192`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L30-L192)** (`ea_indexed` through
 `ea_indexed_submode` — read it twice, once for shape, once sub-mode by
-sub-mode with the §3.3 table open); **`stack.rs`** (`psh`/`pul`, under 80
-lines); **`regs.rs`** (`reg_read`/`reg_write`/`tfr_value`); **`exec.rs:58-194`**
-(`exec_page10`/`exec_page11`); then **`disasm.rs`**, **`disasm/tables.rs`**,
-**`disasm/indexed.rs`** in that order — data first, rendering logic last;
-finally **`tests/disasm/rom_and_scan.rs`**, for the disassembler pointed at
+sub-mode with the §3.3 table open); **[`stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs)** (`psh`/`pul`, under 80
+lines); **[`regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs)** (`reg_read`/`reg_write`/`tfr_value`); **[`exec.rs:58-194`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L58-L194)**
+(`exec_page10`/`exec_page11`); then **[`disasm.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm.rs)**, **[`disasm/tables.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/tables.rs)**,
+**[`disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs)** in that order — data first, rendering logic last;
+finally **[`tests/disasm/rom_and_scan.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/rom_and_scan.rs)**, for the disassembler pointed at
 real, ungenerated ROM bytes instead of hand-picked fixtures.
 
 Then run, and read while they run:
@@ -1114,13 +1114,13 @@ cargo test -p mc6809 --test disasm rom_reset_entry_point
 decode indexed postbytes `$8B`, `$F4`, and `$9F` by hand: register field,
 indirect bit, sub-mode, resulting assembly syntax, and total extra cycle
 cost (sub-mode extra, plus 3 more if the indirect bit is set). Then check
-every part of your answer against `crates/mc6809/src/disasm/indexed.rs` —
+every part of your answer against [`crates/mc6809/src/disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs) —
 run the byte through `disassemble` if you want the operand string, and trace
 `ea_indexed_submode` by hand for the cycle math. Get the bit arithmetic
 wrong at least once before you get it right; that's the point.
 
 **3.2 — `LEAX ,--Y`, both halves (build).** Write a test in the style of
-`crates/mc6809/tests/indexed.rs` for `LEAX ,--Y` (opcode `$31`) that asserts
+[`crates/mc6809/tests/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs) for `LEAX ,--Y` (opcode `$31`) that asserts
 *two* things: the computed effective address (loaded into `X`) *and* the
 post-instruction value of `Y`. Pick a starting `Y` where forgetting the
 decrement, or decrementing by 1 instead of 2, gives a different, plausible

@@ -15,7 +15,7 @@ Strip away the mystique first. An emulator is three things:
 
 1. **State.** A handful of plain variables that mirror the registers and
    memories of the real chips. The entire CPU of the machine you grew up
-   with is this struct — this is real code from `crates/mc6809/src/lib.rs`,
+   with is this struct — this is real code from [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs),
    not a simplification:
 
    ```rust
@@ -184,10 +184,10 @@ BASIC ROM itself — were already POKEing the SAM's registers at
 keeps answering at the old addresses, imitating the old chips' behavior.
 
 The codebase mirrors the silicon's family history precisely: a real
-`Sam` type (`crates/coco-core/src/sam.rs`) is used *only* for emulated
+`Sam` type ([`crates/coco-core/src/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs)) is used *only* for emulated
 CoCo 1/2 machines, while the CoCo 3 path routes the same addresses into
 the GIME's own compatibility layer
-(`crates/coco-core/src/gime/sam_compat.rs`). Two implementations of one
+([`crates/coco-core/src/gime/sam_compat.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/sam_compat.rs)). Two implementations of one
 legacy interface — because that's what Tandy shipped. Backward
 compatibility is not a footnote in this machine; it is *why the CoCo 3
 boots into a 1980 video mode* (week 7) and why half the GIME's register
@@ -195,7 +195,7 @@ map exists at all.
 
 One more number worth decoding while we're here: the odd CPU clock,
 0.895 MHz. The exact value in the code is 894,886 Hz (`CPU_HZ`,
-`crates/coco-core/src/machine.rs:26`) — the NTSC color subcarrier
+[`crates/coco-core/src/machine.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L26)) — the NTSC color subcarrier
 (3.579545 MHz) divided by 4, truncated. Like almost every home computer
 of its era, the CoCo derives *everything* — CPU, video timing, even
 cassette baud rates — from one crystal chosen for television
@@ -206,7 +206,7 @@ whole machine off one cycle counter.
 
 ## 1.3 Load-bearing abstraction #1: the `Bus` trait
 
-Here is the seam, in full, from `crates/mc6809/src/lib.rs:29`:
+Here is the seam, in full, from [`crates/mc6809/src/lib.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L29):
 
 ```rust
 /// The CPU's view of the outside world.
@@ -257,7 +257,7 @@ is free to have honest read side effects with no ceremony. When a read
 must *not* have side effects — the debugger's memory viewer hovering
 over `$FF02` had better not eat a pending interrupt — the codebase
 provides a separate, explicitly side-effect-free `peek()` path
-(`crates/coco-core/src/bus/peek.rs`, week 16). Two functions, two
+([`crates/coco-core/src/bus/peek.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/peek.rs), week 16). Two functions, two
 contracts, both visible in the type signatures.
 
 ### Decision 2: the CPU is *generic* over the bus
@@ -314,7 +314,7 @@ the room.
 > address as a bug when you read emulator code.
 
 > **Rust corner: `#![forbid(unsafe_code)]`.** The very first line of
-> code in `crates/mc6809/src/lib.rs` (line 11) is
+> code in [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L11) (line 11) is
 > `#![forbid(unsafe_code)]`. Unlike `#![deny(...)]`, `forbid` cannot be
 > overridden further down, even by an `#[allow]` — it is a promise the
 > whole crate is checked against: *no pointer tricks anywhere in the
@@ -378,7 +378,7 @@ serialization. Hold that thought for two paragraphs.
 ### The fix: partition the state along the borrow
 
 The solution in this codebase is structural, from
-`crates/coco-core/src/machine.rs:61`:
+[`crates/coco-core/src/machine.rs:61`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L61):
 
 ```rust
 /// The whole emulated machine.
@@ -398,7 +398,7 @@ pub struct Machine {
 
 `SystemBus` is "everything that isn't the CPU": RAM, ROM, GIME, both
 PIAs, the cartridge, keyboard, cassette (see the full struct at
-`crates/coco-core/src/bus.rs:37`). Now the step is:
+[`crates/coco-core/src/bus.rs:37`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L37)). Now the step is:
 
 ```rust
 self.cpu.step(&mut self.bus)
@@ -406,7 +406,7 @@ self.cpu.step(&mut self.bus)
 
 > **Rust corner: `Box<[u8]>`, not `Vec<u8>`.** Look at how `SystemBus`
 > stores memory: `ram: Box<[u8]>` and `rom: Box<[u8]>`
-> (`crates/coco-core/src/bus.rs:46,52`). A `Vec<u8>` would also work —
+> ([`crates/coco-core/src/bus.rs:46`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L46), [`crates/coco-core/src/bus.rs:52`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L52)). A `Vec<u8>` would also work —
 > so why the less common type? A boxed slice is a `Vec` with the
 > *growability removed*: its length is fixed at allocation, there is no
 > spare capacity field, and no code path can ever `.push()` onto it. RAM
@@ -446,7 +446,7 @@ renderer needs the GIME's registers, the RAM it scans out of, and the
 framebuffer it paints into — three references, two of them living
 inside `self.bus`, all at once. Same solution, one level down: borrow
 disjoint *fields* rather than the whole struct. Real call, from
-`crates/coco-core/src/machine/render.rs:56`:
+[`crates/coco-core/src/machine/render.rs:56`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L56):
 
 ```rust
 gime_video::paint_scanline(
@@ -496,14 +496,14 @@ early constraint paying compound interest.
 > RAM and GIME registers, so persisting it would bloat every snapshot
 > for nothing. Deciding "essential vs derived" for every field is
 > exactly the kind of judgment you'll practice in week 16; the comments
-> on the skipped fields in `machine.rs:70-95` show the reasoning
+> on the skipped fields in [`machine.rs:70-95`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L70-L95) show the reasoning
 > spelled out per field.
 
 ---
 
 ## 1.5 Why three crates
 
-The workspace (`Cargo.toml` at the repo root) splits the project into
+The workspace ([`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/Cargo.toml) at the repo root) splits the project into
 three crates, and the boundaries are the two seams you just learned:
 
 ```
@@ -521,7 +521,7 @@ crates/
   audio into a `Vec<[f32; 2]>`, and never opens a window. This is why
   the repository can have a test that *boots the real BASIC ROM, types
   `PRINT 2+2`, and asserts on the pixels* — in CI, with no GPU
-  (`crates/coco-core/tests/coco1_boot.rs:93`; you'll step through it in
+  ([`crates/coco-core/tests/coco1_boot.rs:93`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L93); you'll step through it in
   week 6). The frontier between "emulator" and "app" is exactly the
   frontier between "testable in CI" and "needs a human with a monitor."
 - **`coco-egui` changes fastest and matters least** — menus, textures,
@@ -573,7 +573,7 @@ subsystem* — the cassette is modeled at cycle granularity while the FDC
 next to it is functional, because BASIC's tape loader counts cycles and
 its disk driver doesn't. Second, every choice is falsifiable: when a
 real program breaks, the fix is to climb one fidelity level exactly
-where it hurts (that's the DESIGN.md §5 philosophy — "tighten later
+where it hurts (that's the [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 philosophy — "tighten later
 only if a game needs it"). Accuracy is a budget. Spend it where
 software can tell the difference.
 
@@ -604,7 +604,7 @@ for every subsystem, in this order:
 Practical notes for the labs:
 
 - **The PPM lab bench.** The core renders into a plain byte buffer, so
-  `crates/coco-core/examples/` can write frames to `.ppm` image files
+  [`crates/coco-core/examples/`](https://github.com/sperano/cocovm/tree/main/crates/coco-core/examples) can write frames to `.ppm` image files
   with no GPU and no window. Weeks 7–9 lean on this hard.
 - **ROMs are local-only.** The `roms/` directory (real, copyrighted ROM
   images) is git-ignored and lives only in the main checkout — clones
@@ -623,16 +623,16 @@ Practical notes for the labs:
 
 In this order — earlier items make later ones legible:
 
-1. **`DESIGN.md`, all of it.** It's the map for the entire course, and
+1. **[`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md), all of it.** It's the map for the entire course, and
    unusually, it was written *before* the code and then annotated as
    reality corrected it (look for the "Correction (2026-07…)" notes —
    e.g. the discovery that the CoCo 3 boots into a VDG-compatible mode,
    §6). Reading a design document *with its corrections* is a rare
    chance to watch design survive contact with hardware.
-2. **`crates/mc6809/src/lib.rs`, lines 1–199** — the Bus trait, the CC
+2. **[`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L1-L199), lines 1–199** — the Bus trait, the CC
    bit masks, the vector constants, the `MC6809` struct, and `reset()`.
-   Don't chase into `exec.rs` yet; that's next week.
-3. **`crates/coco-core/src/machine.rs`, lines 61–135** — the `Machine`
+   Don't chase into [`exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs) yet; that's next week.
+3. **[`crates/coco-core/src/machine.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L61-L135), lines 61–135** — the `Machine`
    struct. You now know enough to read every doc comment on it, even
    where it references weeks you haven't had (that's what the course
    is for).
@@ -722,7 +722,7 @@ with these exact cycle counts, in `exec_data.rs` next week.
 
 **1.7 — Find the fidelity line (read).** Pick the cassette row and the
 FDC row from the table in §1.6. Skim the module headers of
-`crates/coco-core/src/cassette.rs` and `crates/coco-core/src/wd1773.rs`
+[`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs) and [`crates/coco-core/src/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773.rs)
 (headers only — the guts are weeks 12–13). Each one states its fidelity
 choice and its reason in the first comment block. Write down, in one
 sentence each, *what piece of 1980s software forced* the choice. The

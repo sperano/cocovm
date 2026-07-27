@@ -25,7 +25,7 @@ takes over, the GIME's own font replaces the MC6847's, and the video
 hardware starts reading physical RAM directly instead of going through the
 16-bit logical addresses the CPU sees. This chapter is that register file:
 what each bit means, what a legal combination looks like, and how
-`crates/coco-core/src/gime_video.rs` turns eight bytes of registers plus a
+[`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs) turns eight bytes of registers plus a
 block of RAM into pixels.
 
 One boundary to hold in your head from the start, because the codebase
@@ -63,7 +63,7 @@ currently in HSCREEN 2." If you want to know the mode, you read `$FF98` and
 | `$FF9F` | horizontal offset | [`hoff`] | HVEN + X-scroll, ×2 |
 
 All eight are implemented as plain fields on the `GIME` struct
-(`crates/coco-core/src/gime.rs:169-228`), and the bit layouts live in small
+([`crates/coco-core/src/gime.rs:169-228`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L169-L228)), and the bit layouts live in small
 constant modules right above it:
 
 ```rust
@@ -83,7 +83,7 @@ pub mod vmode {
 }
 ```
 
-(`crates/coco-core/src/gime.rs:70-83`.) That's the whole of `$FF98`: one
+([`crates/coco-core/src/gime.rs:70-83`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L70-L83).) That's the whole of `$FF98`: one
 mode bit (`BP`), two composite-monitor bits you'll meet properly in week 9
 (`BPI`, `MOCH` — this chapter only needs to know they exist and don't affect
 RGB output), a field-rate bit, and a 3-bit `LPR` field packed into the low
@@ -107,7 +107,7 @@ pub mod vres {
 }
 ```
 
-(`gime.rs:85-99`.) Notice the overloading in the doc comment: `CRES` means
+([`gime.rs:85-99`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L85-L99).) Notice the overloading in the doc comment: `CRES` means
 "how many bits per pixel" in graphics mode and "attributes on/off" in text
 mode. Same two bits, same register, opposite meaning, switched by `VMODE`
 bit 7. This is exactly the kind of "the datasheet says it depends" fact
@@ -141,7 +141,7 @@ pub const GFX_BYTES_PER_ROW: [usize; 8] = [16, 20, 32, 40, 64, 80, 128, 160];
 pub const GFX_BPP: [usize; 4] = [1, 2, 4, 4];
 ```
 
-(`gime.rs:110-133`.) Two footnotes worth flagging immediately because
+([`gime.rs:110-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L110-L133).) Two footnotes worth flagging immediately because
 they'll bite you in the exercises if you don't know them going in:
 
 1. **The SEB Unravelled II reference book's `LPR` table is wrong** — it
@@ -201,10 +201,10 @@ pub fn video_base(&self) -> usize {
 }
 ```
 
-(`gime.rs:263-269`.) The write side confirms the byte order — high byte
+([`gime.rs:263-269`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L263-L269).) The write side confirms the byte order — high byte
 first, matching the register naming (`VOFFSET1_REG` at `$FF9D` shifts left
 8, `VOFFSET0_REG` at `$FF9E` sets the low byte), from
-`crates/coco-core/src/bus/io.rs:136-143`:
+[`crates/coco-core/src/bus/io.rs:137-143`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L137-L143):
 
 ```rust
 VOFFSET1_REG => {
@@ -219,7 +219,7 @@ VOFFSET0_REG => {
 **Why physical, not logical?** Think back to week 5: the MMU exists
 precisely so a 64K CPU can address up to 2 megabytes of installed RAM (128K
 stock, 512K as Tandy actually shipped, 2048K as the GIME's MMU architecture
-permits — `crates/coco-core/src/config.rs:114-115`), by remapping 8K
+permits — [`crates/coco-core/src/config.rs:114-115`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L114-L115)), by remapping 8K
 windows on demand. A hi-res graphics screen at `HSCREEN 4` occupies 30,720
 bytes (you'll compute this exactly in the exercises) — under four 8K MMU
 slots. If the video hardware could only read through the CPU's *current*
@@ -279,7 +279,7 @@ pub mod hoff {
 }
 ```
 
-(`gime.rs:101-108`.) With `HVEN` clear, every displayed row is exactly as
+([`gime.rs:101-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L101-L108).) With `HVEN` clear, every displayed row is exactly as
 wide as the mode needs (say, 80 bytes for `HSCREEN 3`), and the low 7 bits
 of `$FF9F` (×2, giving an even byte count) shift the *fetch* start within
 that row — smooth horizontal scrolling within the visible row's own bytes.
@@ -302,14 +302,14 @@ fn advance_scan(scan: &mut FieldScan, g: &GIME, row_bytes: usize) {
 }
 ```
 
-(`gime_video.rs:247-258`, abbreviated.) And the fetch itself wraps at that
+([`gime_video.rs:247-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L247-L258), abbreviated.) And the fetch itself wraps at that
 256-byte boundary no matter what:
 
 ```rust
 let fetch = |i: usize| ram[(row_base + ((x_offset + i) % ROW_FETCH_WRAP)) % ram.len()];
 ```
 
-(`gime_video.rs:231`, where `ROW_FETCH_WRAP = 0x100`.) That modulo is not
+([`gime_video.rs:231`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L231), where `ROW_FETCH_WRAP = 0x100`.) That modulo is not
 conditioned on `HVEN` — it always wraps every fetch offset at 256 bytes
 within the row, even when `HVEN` is off and the row is narrower than that.
 SEB Unravelled II calls this "peculiar things happen" without `HVEN`
@@ -324,7 +324,7 @@ Time to put the whole table to use on bytes that are not synthetic test
 values — this is the *actual* register image Super Extended Color BASIC
 writes when you type `WIDTH 80`, verbatim from the ROM's own data table
 (SEB Unravelled II, disassembly listing at `$E044`–`$E04B`, confirmed
-byte-for-byte against `crates/coco-core/tests/gime_modes.rs`'s replay of
+byte-for-byte against [`crates/coco-core/tests/gime_modes.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gime_modes.rs)'s replay of
 the same sequence):
 
 | Register | Value | 
@@ -386,7 +386,7 @@ const ATTR_COLOR_MASK: u8 = 0x07;
 const ATTR_FG_BASE: usize = 8;
 ```
 
-(`gime_video.rs:30-36`.) One byte, four fields: bit 7 blink, bit 6
+([`gime_video.rs:30-36`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L30-L36).) One byte, four fields: bit 7 blink, bit 6
 underline, bits 5–3 a 3-bit foreground colour (0–7, added to `ATTR_FG_BASE`
 = 8 to land in palette registers 8–15), bits 2–0 a 3-bit background colour
 (0–7, palette registers 0–7 directly — no offset needed since it's already
@@ -406,7 +406,7 @@ const NO_ATTR_FG: usize = 1;
 
 Legacy VDG text (week 7) drew glyphs from `font6847.rs`, an MC6847-derived
 table, 8×12. GIME-native text draws from a completely different table —
-`crates/coco-core/src/font_gime.rs`, `GIME_FONT`: 128 glyphs, each exactly
+[`crates/coco-core/src/font_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font_gime.rs), `GIME_FONT`: 128 glyphs, each exactly
 8 rows tall, 8 pixels wide. The header comment is precise about what "128
 glyphs" covers:
 
@@ -450,7 +450,7 @@ fn underline_line(lines_per_row: usize) -> Option<usize> {
 }
 ```
 
-(`gime_video.rs:172-179`.) An underline is one specific scanline — the
+([`gime_video.rs:172-179`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L172-L179).) An underline is one specific scanline — the
 second-to-last or last row of the cell, depending on how tall the cell is —
 forced fully lit regardless of the glyph's own pixels. For `LPR = 8` (the
 `WIDTH 80` case above), that's row index 7: the very bottom scanline of the
@@ -464,11 +464,11 @@ Bit 7 of the attribute byte marks a character as blinking. Whether it's
 *currently* visible or blanked is not decided per-character or per-frame by
 the renderer — it's one shared boolean, `blink_state`, toggled elsewhere by
 the GIME's 12-bit interval timer every time it underflows
-(`crates/coco-core/src/gime.rs:378-394`, `tick_timer`, briefly: each
+([`crates/coco-core/src/gime.rs:378-394`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L378-L394), `tick_timer`, briefly: each
 underflow flips `blink_state` and reloads). The timer itself, its reload
 math, and its interrupt wiring are week 6's clock and (in more depth) a
 later chapter's subject — what matters here is only the one line at the
-call site, `crates/coco-core/src/machine/render.rs:52-54`:
+call site, [`crates/coco-core/src/machine/render.rs:52-54`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L52-L54):
 
 ```rust
 // Blink phase is toggled by the GIME interval timer, which BASIC
@@ -486,7 +486,7 @@ if attr & ATTR_BLINK != 0 && blink_on {
 }
 ```
 
-`tests/gime_irq.rs`'s `rom_programs_the_timer_and_blink_phase_toggles` (not
+[`tests/gime_irq.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gime_irq.rs)'s `rom_programs_the_timer_and_blink_phase_toggles` (not
 walked in depth here — it belongs with week 6/11's timer material) confirms
 the real ROM programs the timer with `$FFFF` at cold start specifically so
 blinking works the instant a program sets the blink attribute, without
@@ -571,7 +571,7 @@ fn paint_text_row(
 }
 ```
 
-(`gime_video.rs:303-348`.) Walk it in the order it executes:
+([`gime_video.rs:303-348`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L303-L348).) Walk it in the order it executes:
 
 1. **`bytes_per_char`** is 1 or 2 depending on whether this mode has
    attributes — everything downstream indexes `fetch` in units of this
@@ -650,7 +650,7 @@ pub fn decode_graphics(g: &GIME) -> GraphicsMode {
 }
 ```
 
-(`gime_video.rs:102-115`.) That `if` is not decorative — it's a
+([`gime_video.rs:102-115`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L102-L115).) That `if` is not decorative — it's a
 documented hardware quirk. `HRES = %110`/`%111` (128/160 bytes per row)
 combined with `CRES = %00` (1 bpp) is, per SEB Unravelled II Figure 5, "not
 a guaranteed combination": the chip does not actually produce a
@@ -695,7 +695,7 @@ fn paint_graphics_row(
 }
 ```
 
-(`gime_video.rs:352-377`.) Compare its shape to `paint_text_row` — same
+([`gime_video.rs:352-377`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L352-L377).) Compare its shape to `paint_text_row` — same
 `xscale` idea, same `fetch`/`fill` vocabulary — but the inner loop is pure
 bit arithmetic instead of a font lookup, because a graphics pixel *is* its
 own palette index; there's no glyph between the byte and the screen.
@@ -841,7 +841,7 @@ pub fn rgb_color(value: u8) -> [u8; 4] {
 }
 ```
 
-(`crates/coco-core/src/gime/palette.rs:56-62`.) Six bits, three channels,
+([`crates/coco-core/src/gime/palette.rs:56-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L56-L62).) Six bits, three channels,
 two bits each — hence "`RGBrgb`": the *high* half of each channel's 2-bit
 value comes from one bit group (bits 5, 4, 3 — capital `RGB`), the *low*
 half from another (bits 2, 1, 0 — lowercase `rgb`). SEB Unravelled II
@@ -900,8 +900,8 @@ fn resolve_colors(g: &GIME) -> ([[u8; 4]; PALETTE_LEN], [u8; 4]) {
 }
 ```
 
-(`gime_video.rs:162-168`.) `paint_scanline` calls this once, at the top of
-every scanline (`gime_video.rs:273`), converting all sixteen palette
+([`gime_video.rs:162-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L162-L168).) `paint_scanline` calls this once, at the top of
+every scanline ([`gime_video.rs:273`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L273)), converting all sixteen palette
 registers plus the border to resolved RGBA up front, then hands the
 resulting sixteen-entry array down into whichever of `paint_text_row` /
 `paint_graphics_row` the mode selects — which is why those functions take
@@ -953,7 +953,7 @@ resolves to writes at fixed register pairs (background/foreground for
 whichever mode is active per Figure 13 above) rather than a general
 register+value pair like `PALETTE`.
 
-`crates/coco-core/examples/palette_trace.rs` is a small debugging harness
+[`crates/coco-core/examples/palette_trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/palette_trace.rs) is a small debugging harness
 built around exactly this fact — it boots a cartridge, single-steps the
 machine, and logs every change to `bus.gime.palette` together with the PC
 that caused it, specifically to let you watch a real program's palette
@@ -997,7 +997,7 @@ pub struct FieldScan {
 }
 ```
 
-(`gime_video.rs:117-140`, doc comment and fields.) `legacy` is the `INIT0
+([`gime_video.rs:117-140`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L117-L140), doc comment and fields.) `legacy` is the `INIT0
 COCO` bit's value *at the moment the field started* — if a program flips
 into or out of CoCo-compatible mode mid-field, the switch doesn't take
 effect until the *next* field begins, so a field never has to answer "am I
@@ -1018,7 +1018,7 @@ pub fn latch(g: &GIME, legacy: bool) -> Self {
 }
 ```
 
-(`gime_video.rs:146-158`.) That guard — `vsc >= lpr` falls back to 0 — is
+([`gime_video.rs:146-158`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L146-L158).) That guard — `vsc >= lpr` falls back to 0 — is
 what §8.7's `vertical_scroll_starts_field_mid_character_row` test exercises:
 setting `$FF9C` to a value the current `LPR` can't honour (say, scrolling 5
 lines into a 3-line-per-row cell) doesn't panic or wrap, it's simply
@@ -1037,7 +1037,7 @@ advancing happens every line, using whatever `$FF98`/`$FF9F` say *right
 now*.
 
 The machine loop's own call site pins down exactly when "field start"
-means, in scanline terms — `crates/coco-core/src/machine/render.rs:29-40`:
+means, in scanline terms — [`crates/coco-core/src/machine/render.rs:29-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L29-L40):
 
 ```rust
 pub(super) fn render_scanline(&mut self) {
@@ -1070,14 +1070,14 @@ function that does the freezing. What you don't yet know — and won't,
 until next week — is what a program can *do* with that knowledge: a
 horizontal border-colour split timed off a scanline-count interrupt, a
 mid-field `HSCREEN` mode change, or any of the raster tricks that made CoCo
-3 demos worth watching. `tests/scanline_split.rs`, next week's material, is
+3 demos worth watching. [`tests/scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs), next week's material, is
 where that story is told through actual 6809 code running in ROM.
 
 ---
 
 ## 8.6 The lab: `gime_demo.rs`
 
-`crates/coco-core/examples/gime_demo.rs` is a from-scratch harness — no
+[`crates/coco-core/examples/gime_demo.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/gime_demo.rs) is a from-scratch harness — no
 ROM, no ROM-derived RAM state, just a `GIME` struct configured directly
 from Rust and a block of RAM you fill by hand. It exercises exactly the two
 paths this chapter covered: an 80-column attribute text screen, and an
@@ -1172,7 +1172,7 @@ per row.
 
 ## 8.7 Reading the tests: `render_gime.rs`, predicted and checked
 
-`crates/coco-core/tests/render_gime.rs` is deterministic, ROM-free coverage
+[`crates/coco-core/tests/render_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_gime.rs) is deterministic, ROM-free coverage
 for everything this chapter has walked through — decode functions, RAM
 scanout, attribute colours, blink, underline, bit unpacking. Read three of
 them the way the test file itself was meant to be read: predict the pixel,
@@ -1264,7 +1264,7 @@ mode's own byte width.
 
 ## 8.8 `gime_modes.rs`: the real ROM, honestly
 
-`crates/coco-core/tests/gime_modes.rs` is the test this chapter's syllabus
+[`crates/coco-core/tests/gime_modes.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gime_modes.rs) is the test this chapter's syllabus
 entry calls out by name — it boots the actual `coco3.rom`, runs it to the
 BASIC prompt, then pokes the *exact* register sequences from §8.1 and
 §8.3's worked examples (the `WIDTH 80` and `HSCREEN 2` images, verbatim)
@@ -1317,7 +1317,7 @@ substantive work: everything this test *checks* (framebuffer stays
 CoCo 3 mode is the point of Option B," per the test's own comment) is a
 narrower claim than what §8.1's worked example already walked by hand
 (exactly which columns, colours, and physical address those bytes
-produce). `tests/gime_irq.rs`'s ROM-dependent blink test from §8.2 is in
+produce). [`tests/gime_irq.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gime_irq.rs)'s ROM-dependent blink test from §8.2 is in
 the same position — real, valuable, and unavailable in a `roms/`-less
 tree; don't let a missing fixture read as a missing feature.
 
@@ -1327,23 +1327,23 @@ tree; don't let a missing fixture read as a missing feature.
 
 In this order:
 
-1. **`crates/coco-core/src/gime.rs`, lines 42–228.** The register constant
+1. **[`crates/coco-core/src/gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs), lines 42–228.** The register constant
    modules (`init0`, `init1`, `vmode`, `vres`, `hoff`, `intr`), the lookup
    tables (`LPF_LINES`, `LPR_LINES`, `TEXT_COLS`, `GFX_BYTES_PER_ROW`,
    `GFX_BPP`), and the `GIME` struct's video-relevant fields. Everything in
    §8.1 lives here.
-2. **`crates/coco-core/src/gime_video.rs`, in full (477 lines).** `decode_text`
+2. **[`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs), in full (477 lines).** `decode_text`
    and `decode_graphics` first, then `FieldScan` and `resolve_colors`, then
    `paint_scanline` and its two callees. This is the chapter's centre of
    gravity; read the module doc comment at the top again once you've read
    the rest — it will make more sense the second time.
-3. **`crates/coco-core/src/gime/palette.rs`, in full.** Read `rgb_color`
+3. **[`crates/coco-core/src/gime/palette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs), in full.** Read `rgb_color`
    against §8.4's worked example with a calculator in hand; don't just
    trust the chapter's arithmetic.
-4. **`crates/coco-core/src/font_gime.rs`, lines 1–17 and skim the table.**
+4. **[`crates/coco-core/src/font_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font_gime.rs), lines 1–17 and skim the table.**
    You don't need to memorize glyph bitmaps — notice the shape (128
    entries, 8 rows each) and the `$00`–`$1F` special-character note.
-5. **`crates/coco-core/tests/render_gime.rs`, in full.** Predict every test
+5. **[`crates/coco-core/tests/render_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_gime.rs), in full.** Predict every test
    this chapter didn't walk (there are eleven more) before reading its
    assertions.
 
@@ -1399,7 +1399,7 @@ decimal bytes and as a count of 8K MMU blocks (week 5) it would take to
 map the whole screen into the CPU's logical space at once.
 
 **8.3 — Sabotage `paint_text_row`'s foreground base, and watch it fail
-(build + verify).** In `crates/coco-core/src/gime_video.rs`, change:
+(build + verify).** In [`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs), change:
 
 ```rust
 const ATTR_FG_BASE: usize = 8;
@@ -1473,7 +1473,7 @@ the screen." You already have every piece of machinery week 9 needs —
 `FieldScan`'s latched-versus-live split (§8.5), the fact that
 `paint_scanline` re-reads mode, palette, and border fresh every line — you
 just haven't yet seen a real 6809 program *use* that machinery on purpose.
-`tests/scanline_split.rs` has the receipts: a timer-driven FIRQ handler
+[`tests/scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs) has the receipts: a timer-driven FIRQ handler
 splitting the border colour mid-field, verified against a real interrupt
 firing from real ROM code. You'll also finally learn what composite output
 actually is — not a simplified RGB, but a genuinely different palette

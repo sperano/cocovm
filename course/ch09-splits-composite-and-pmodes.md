@@ -33,7 +33,7 @@ That's also why the real GIME needed no mode switch for this at all. The
 chip drives an RGB output pin *and* a composite output pin simultaneously,
 all the time — it's the monitor cable, not a GIME register, that decides
 which signal the phosphors respond to. `MonitorType` in this codebase is
-purely an emulator/UI choice (`crates/coco-core/src/gime/palette.rs:8-17`)
+purely an emulator/UI choice ([`crates/coco-core/src/gime/palette.rs:8-17`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L8-L17))
 threaded in through `MachineConfig`, not something CoCo software can read or
 set:
 
@@ -50,7 +50,7 @@ pub enum MonitorType {
 }
 ```
 
-You pick a monitor once, when you configure the machine (`crates/coco-core/src/config.rs:167-171`,
+You pick a monitor once, when you configure the machine ([`crates/coco-core/src/config.rs:167-171`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L167-L171),
 `Option<MonitorType>`, `None` on machines with no monitor port at all — a
 detail the CoCo 1/2 chapters will use). The GIME itself never finds out.
 
@@ -60,7 +60,7 @@ Start with the easy half, because it sets up the contrast. Each GIME palette
 register is 6 bits, laid out `RGBrgb` — a high bit and a low bit per
 channel, giving four intensity levels (`0, 1, 2, 3`) per channel. RGB output
 is a direct, arithmetic unpack — no lookup table, no hardware quirks, just
-bit-picking and a fixed scale (`palette.rs:56-62`):
+bit-picking and a fixed scale ([`palette.rs:56-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L56-L62)):
 
 ```rust
 /// Convert a 6-bit GIME palette value to RGBA. The register format is
@@ -98,7 +98,7 @@ circuit. You cannot derive it from the `RGBrgb` bit layout with arithmetic;
 there is no clean function from "6-bit register value" to "NTSC composite
 colour" the way `rgb_color` is a clean function from "6-bit register value"
 to RGB voltage. So the codebase doesn't try. It ships the actual measured
-result, ripped from MAME's own hand-calibrated table (`palette.rs:19-44`,
+result, ripped from MAME's own hand-calibrated table ([`palette.rs:19-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L19-L44),
 comment preserved verbatim because the provenance matters):
 
 ```rust
@@ -118,7 +118,7 @@ const COMPOSITE_PALETTE: [u32; 64] = [
 ];
 ```
 
-`0xRRGGBB` packed 32-bit words, unpacked by shifting (`palette.rs:48-50`):
+`0xRRGGBB` packed 32-bit words, unpacked by shifting ([`palette.rs:48-50`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L48-L50)):
 
 ```rust
 /// Unpack an `0xRRGGBB` composite-table entry into RGBA, matching
@@ -140,7 +140,7 @@ fn unpack_rgb(v: u32) -> [u8; 4] {
 > source (MAME's own `rgb_t` does exactly this) rather than reshaping it.
 
 `GIME::color` is the dispatcher — the *only* place `MonitorType` is ever
-consulted (`palette.rs:69-87`):
+consulted ([`palette.rs:69-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L69-L87)):
 
 ```rust
 /// Resolve a 6-bit GIME palette value to RGBA through the currently
@@ -235,7 +235,7 @@ rotate every hue by half the colour wheel — 180°, not some smaller angle.
 That's worth stating precisely because an earlier pass at this material
 claimed "roughly a 120° hue shift" for palette value `0x01` under BPI. The
 actual test data doesn't support that number. `composite_decode_hue_and_bpi`
-(`tests/composite.rs:28-38`):
+([`tests/composite.rs:28-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L28-L38)):
 
 ```rust
 #[test]
@@ -286,7 +286,7 @@ if self.vmode & vmode::MOCH != 0 {
 }
 ```
 
-`composite_moch_averages_channels` (`tests/composite.rs:40-50`) nails down
+`composite_moch_averages_channels` ([`tests/composite.rs:40-50`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L40-L50)) nails down
 the exact arithmetic, including the truncation, because "average" is
 ambiguous until you specify the rounding:
 
@@ -310,7 +310,7 @@ but it's exactly the kind of off-by-a-hair detail that a bit-exact
 trace-diff against MAME (week 4's testing philosophy) would catch and a
 "looks about right" implementation would let through silently. `MonitorType::RGB`
 never looks at `MOCH` or `BPI` at all — `rgb_monitor_ignores_bpi_and_moch`
-(`tests/composite.rs:52-60`) sets both bits and asserts the RGB path is
+([`tests/composite.rs:52-60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L52-L60)) sets both bits and asserts the RGB path is
 unaffected, which is really a test of the `match` in `color()`: RGB's arm
 returns immediately, full stop, before either flag is ever read.
 
@@ -330,7 +330,7 @@ whatever stray colour the wrong decode produced instead — black, green, red,
 yellow, something plausible-looking but *wrong*, and wrong in a way that's
 easy to miss if you never happen to boot NitrOS-9 with a composite monitor
 selected. The regression test that guards this is `eou_greyscale_regression`
-(`tests/composite.rs:62-85`), and it's worth reading end to end because it
+([`tests/composite.rs:62-85`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L62-L85)), and it's worth reading end to end because it
 encodes exactly the property real software depended on — achromatic *and*
 monotonically brighter — not just "matches these four hex triples":
 
@@ -426,9 +426,9 @@ split**, and it was one of the CoCo demo scene's bread-and-butter tricks
 (more of §9.12, once you've seen the mechanism).
 
 The machine loop already had everything this needs, because week 6 built it
-that way: `end_of_line()` (`crates/coco-core/src/machine/run.rs:130-172`)
+that way: `end_of_line()` ([`crates/coco-core/src/machine/run.rs:130-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130-L172))
 calls `self.render_scanline()` — one canvas row — **every single scanline**,
-not once per field. The per-scanline dispatcher (`machine/render.rs:29-64`)
+not once per field. The per-scanline dispatcher ([`machine/render.rs:29-64`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L29-L64))
 is what you actually extend this week:
 
 ```rust
@@ -477,7 +477,7 @@ rest of the field.**
 
 ### `FieldScan`: the latch, made a value
 
-`FieldScan` (`gime_video.rs:117-159`) is that freeze, reified as a struct
+`FieldScan` ([`gime_video.rs:117-159`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L117-L159)) is that freeze, reified as a struct
 instead of scattered `if self.line == 0` checks:
 
 ```rust
@@ -521,7 +521,7 @@ row starts (`row_base`, seeded from `$FF9D/$FF9E` or the SAM page — the
 field-latched video base), and how far into the current character/pixel row
 the scan is (`line_in_row`, seeded from the `$FF9C` scroll nibble — the
 smooth-scroll seed). `row_base` and `line_in_row` aren't just latched once
-and left alone, though — `advance_scan` (`gime_video.rs:247-258`) mutates
+and left alone, though — `advance_scan` ([`gime_video.rs:247-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L247-L258)) mutates
 them every body row, stepping the row pointer forward by the *current*
 line's live pitch once `line_in_row` wraps past the *current* live LPR. That
 split — origin frozen at field start, cursor advancing live thereafter — is
@@ -544,13 +544,13 @@ whole frame.
 
 ## 9.9 Four registers, four tests
 
-`tests/scanline_split.rs` earns its "best-named test file in the repo"
+[`tests/scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs) earns its "best-named test file in the repo"
 reputation (course README, week 9) by testing this taxonomy one register
 class at a time, against a machine running a **zero-filled ROM** — reset
 vector points at `$0000`, which decodes to a harmless `NEG` loop, so
 scanlines advance at a known, deterministic pace with nothing in ROM
 touching a single video register. Every test pokes `m.bus.gime` fields
-directly from the harness instead. The shared setup (`tests/scanline_split.rs:29-55`):
+directly from the harness instead. The shared setup ([`tests/scanline_split.rs:29-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs#L29-L55)):
 
 ```rust
 /// $FF9D/$FF9E value → physical $8000.
@@ -633,7 +633,7 @@ top row (painted while `border` was still `0x09`) and bottom row (painted
 after the write) genuinely differ within the *same* framebuffer. Nothing
 special had to be built for this — `paint_side_borders` and the "not in the
 active window" fill both call `resolve_colors(g)` fresh, every line
-(`gime_video.rs:161-168`, §8's code, unmodified), and `resolve_colors` reads
+([`gime_video.rs:161-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L161-L168), §8's code, unmodified), and `resolve_colors` reads
 `g.border` straight off the live `GIME`. Liveness here isn't a feature that
 was added; it's what happens when nothing was added to *prevent* it.
 
@@ -666,7 +666,7 @@ Same shape, different register — and it matters that it's a different
 one level of indirection (video RAM holds an *index*, the palette register
 holds the *colour* that index currently means). `resolve_colors` rebuilds
 the whole 16-entry resolved-colour array from `g.palette` on every single
-call to `paint_scanline` (`gime_video.rs:264-273`), so this test is really
+call to `paint_scanline` ([`gime_video.rs:264-273`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L264-L273)), so this test is really
 checking that indirection is re-resolved, not cached, per line — a palette
 that a demo cycles every scanline (a classic "more than 16 colours on
 screen" trick, §9.12) needs exactly this property to work at all.
@@ -762,7 +762,7 @@ fn mode_switch_mid_field_splits_text_and_graphics() {
 
 `$FF98`'s BP bit (graphics/text select) is in the *live* group, same as the
 border — `paint_body_row` re-checks `g.vmode & vmode::BP` on every call
-(`gime_video.rs:220-241`), dispatching to `paint_graphics_row` or
+([`gime_video.rs:220-241`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L220-L241)), dispatching to `paint_graphics_row` or
 `paint_text_row` fresh each line. So a program can flip from a graphics
 canvas to a text status bar partway down the screen, and the emulator does
 exactly what the register file says to do, one line at a time, with no
@@ -783,7 +783,7 @@ and writing a register directly — useful for isolating one register class,
 but it sidesteps the actual mechanism a real raster-split demo used: **an
 interrupt handler**, running as ordinary 6809 code, timed by the GIME's own
 interval timer. `timer_firq_from_rom_code_splits_the_border`
-(`tests/scanline_split.rs:174-239`) is the test that proves the whole path —
+([`tests/scanline_split.rs:174-239`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs#L174-L239)) is the test that proves the whole path —
 timer hardware, interrupt controller, FIRQ delivery, and the live-register
 raster split — works end to end, with **zero harness register pokes**. It
 hand-assembles a tiny ROM and lets the emulated CPU do everything.
@@ -826,7 +826,7 @@ what arms it):
 
 - `STA $FF93` with `intr::TMR` (`0x20`) in A writes **FIRQENR**, the
   per-source FIRQ enable register — "when the timer underflows, route it to
-  FIRQ, not just IRQ." (`GIME::write_firq_enable`, `gime.rs:311-314`.)
+  FIRQ, not just IRQ." (`GIME::write_firq_enable`, [`gime.rs:311-314`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L311-L314).)
 - `CLR $FF91` writes **INIT1** to zero — among other things, clears `TINS`
   (`init1::TINS`, bit 5), selecting the *slow* timer clock: one tick per
   horizontal sync, not the fast ~70 ns clock. One tick per scanline is
@@ -834,11 +834,11 @@ what arms it):
 - `CLR $FF94` / `LDA #SPLIT_LINE` + `STA $FF95` load the 12-bit timer value
   — MSB first (zero, since `SPLIT_LINE` fits in one byte), LSB second. Both
   `write_timer_msb` and `write_timer_lsb` call `restart_timer()`
-  (`gime.rs:346-370`), so the **second** write (the LSB) is what actually
+  ([`gime.rs:346-370`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L346-L370)), so the **second** write (the LSB) is what actually
   (re)starts the countdown, seeded from whatever the MSB write already
   latched into the top nibble.
 - `STA $FF90` writes **INIT0** with `init0::FEN` (`0x10`) set — the master
-  FIRQ-output-enable gate. `GIME::firq_asserted()` (`gime.rs:341-344`)
+  FIRQ-output-enable gate. `GIME::firq_asserted()` ([`gime.rs:341-344`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L341-L344))
   requires *both* this bit and a nonzero `firq_pending`; without it, the
   timer could underflow all day and never reach the CPU.
 - `ANDCC #$AF` clears bits `0x50` of CC — `cc::IRQ_MASK` (`0x10`) and
@@ -867,7 +867,7 @@ enable register it was a moment ago in the setup code — same address, two
 different jobs, and this is the exact "reads have side effects" story week 1
 promised would come back (`Bus::read` takes `&mut self` specifically because
 of registers like this one). `GIME::read_firq_status`
-(`gime.rs:322-325`) is `std::mem::take(&mut self.firq_pending)`: reading it
+([`gime.rs:322-325`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L322-L325)) is `std::mem::take(&mut self.firq_pending)`: reading it
 returns the latched bits *and* zeroes them in the same motion. This ISR
 doesn't even look at the value it read (the very next instruction
 overwrites A) — the read exists purely for its side effect, acknowledging
@@ -875,7 +875,7 @@ the interrupt so the CPU's FIRQ line drops and `RTI` doesn't just re-enter
 the handler instantly. `STA $FF9A` is the actual raster-split write: border
 becomes `NEW_BORDER` (`0x2A`), live, effective starting the *next* scanline
 exactly like every test in §9.9. `CLR $FF93` writes zero through
-`write_firq_enable` (`gime.rs:311-314`), which does two things at once —
+`write_firq_enable` ([`gime.rs:311-314`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L311-L314)), which does two things at once —
 `self.firq_enable = 0` (no source can raise FIRQ anymore) and, per that
 function's own doc comment, `self.firq_pending &= val` also re-clears
 pending (a documented hardware anomaly: writing `0` to an enable bit clears
@@ -936,9 +936,9 @@ predicting the exact instruction-cycle timing by hand. The tolerance window
 delays: the timer's countdown doesn't start the instant the CPU boots, it
 starts when the `$FF95` write executes — a handful of instructions into the
 setup program, itself already partway through line 0. From there,
-`tick_timer` (`gime.rs:382-394`) counts down from `SPLIT_LINE + TIMER_RELOAD_OFFSET`
+`tick_timer` ([`gime.rs:382-394`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L382-L394)) counts down from `SPLIT_LINE + TIMER_RELOAD_OFFSET`
 (the reload always adds the hardware's documented `+2` "reload offset" —
-`gime.rs:162-165` — on top of the programmed value), one tick per `end_of_line`
+[`gime.rs:162-165`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L162-L165) — on top of the programmed value), one tick per `end_of_line`
 call since `TINS` selects the horizontal-sync rate. That's `SPLIT_LINE + 2`
 scanlines of countdown before the FIRQ source even latches — and then the
 CPU still has to notice it (interrupts are recognized at instruction
@@ -1028,7 +1028,7 @@ strobes, `$FFC0–$FFC5` (or, on a CoCo 3, the GIME's SAM-compatibility
 overlay at the same addresses). BASIC always programs matching `GM`/`V`
 pairs when you type `PMODE n`, so on stock software the two axes always
 agree and this split is invisible. But the split is real, and the module
-doc comment says so plainly (`video/graphics.rs:1-11`):
+doc comment says so plainly ([`video/graphics.rs:1-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L1-L11)):
 
 ```rust
 //! All VDG graphics modes scan out into the same 256×192 active area as text, so
@@ -1218,7 +1218,7 @@ fn four_color_maps_two_bit_values_and_doubles_width() {
 pixels; `0b00_01_10_11` for `CG6` (2 bits/pixel) packs four 2-bit pixel
 values, `00`, `01`, `10`, `11`, left to right within one byte — and both
 follow the same "MSB first" rule the unpacking loop encodes directly
-(`video/graphics.rs:119-132`):
+([`video/graphics.rs:119-132`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L119-L132)):
 
 ```rust
 pub fn paint_legacy_graphics_line(
@@ -1272,7 +1272,7 @@ Pixel *values* out of `paint_legacy_graphics_line` are small integers — `0`
 or `1` for two-colour modes, `0..3` for four-colour — and those integers are
 indices, exactly like GIME-native graphics. What they index into depends on
 bit depth and `CSS`, per SEB Unravelled II's Figure 13, reproduced directly
-as two small compile-time tables (`video/graphics.rs:34-39`):
+as two small compile-time tables ([`video/graphics.rs:34-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L34-L39)):
 
 ```rust
 /// Palette-register indices for 2-colour modes, indexed by CSS (SEB Fig 13):
@@ -1304,7 +1304,7 @@ compatibility path routes those *same* eight palette-register indices
 (`0–7` for four-colour modes, `8–11` for two-colour) through its own 16
 programmable registers, exactly the registers you already know from GIME-
 native modes and from `PALETTE`. `Machine::legacy_palette`
-(`machine/video_mode.rs:62-75`) is the one place that branches on variant:
+([`machine/video_mode.rs:62-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L62-L75)) is the one place that branches on variant:
 
 ```rust
 pub(super) fn legacy_palette(&self, css: bool) -> [[u8; 4]; video::PALETTE_LEN] {
@@ -1340,7 +1340,7 @@ bit-for-bit identical hardware behaviour on both machines.
 
 One more asymmetry is worth pointing out before moving on, because it
 connects straight back to §9.8–9.11's split mechanism. `Machine::paint_legacy_scanline`
-(`machine/render.rs:75-171`) is the CoCo 3's **per-line** legacy renderer —
+([`machine/render.rs:75-171`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L75-L171)) is the CoCo 3's **per-line** legacy renderer —
 called from the very same `render_scanline` dispatcher as the GIME-native
 path, once per canvas row, reading `$FF22` and `sam_video` fresh every
 single line:
@@ -1377,7 +1377,7 @@ dispatch, no per-line anything. `Machine::render_field` skips straight past
 for a CoCo 3 (`if self.config.variant == MachineVariant::Coco3 { return; }`)
 and only does real work for the older machines, and what it does is render
 the *entire* field in one shot at field end, from a single snapshot read
-through the bus (`machine/render.rs:229-279`):
+through the bus ([`machine/render.rs:229-279`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L229-L279)):
 
 ```rust
 fn render_coco_graphics(&mut self) {
@@ -1479,34 +1479,34 @@ exactly what would have to change to close that gap too.
 
 In this order:
 
-1. **`crates/coco-core/src/gime/palette.rs`, all of it** (88 lines) — both
+1. **[`crates/coco-core/src/gime/palette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs), all of it** (88 lines) — both
    composite tables, `unpack_rgb`, `rgb_color`, `GIME::color`. Small enough
    to read in one sitting; everything in §9.1–9.7 traces back to this file.
-2. **`crates/coco-core/tests/composite.rs`, all of it** — five focused unit
+2. **[`crates/coco-core/tests/composite.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs), all of it** — five focused unit
    tests plus the `eou_greyscale_regression` war story. Run it and watch
    every assertion you just read pass:
    ```
    cargo test -p coco-core --test composite
    ```
-3. **`crates/coco-core/src/gime_video.rs`, `FieldScan` and `paint_scanline`**
-   (`gime_video.rs:117–299`) — re-read `advance_scan` in particular; it's
+3. **[`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs), `FieldScan` and `paint_scanline`**
+   ([`gime_video.rs:117–299`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L117-L299)) — re-read `advance_scan` in particular; it's
    the one function that's *not* purely "live" or purely "latched," and
    understanding why (cursor advances live, origin frozen) is the key to
-   the fourth `scanline_split.rs` test.
-4. **`crates/coco-core/tests/scanline_split.rs`, all of it** — five tests,
+   the fourth [`scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs) test.
+4. **[`crates/coco-core/tests/scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs), all of it** — five tests,
    the whole chapter's central claim made executable:
    ```
    cargo test -p coco-core --test scanline_split
    ```
-5. **`crates/coco-core/src/video/graphics.rs`, all of it** (178 lines) —
+5. **[`crates/coco-core/src/video/graphics.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs), all of it** (178 lines) —
    `decode_vdg_graphics`, the palette-index tables, the MSB-first unpacker.
-6. **`crates/coco-core/tests/sam_video.rs`** and **`tests/render_graphics.rs`**,
+6. **[`crates/coco-core/tests/sam_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam_video.rs)** and **[`tests/render_graphics.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_graphics.rs)**,
    all of both — the SAM V-strobe tests and the PMODE-decode worked
    examples.
    ```
    cargo test -p coco-core --test sam_video --test render_graphics
    ```
-7. **`crates/coco-core/src/machine/render.rs`**, all of it — `render_scanline`,
+7. **[`crates/coco-core/src/machine/render.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs)**, all of it — `render_scanline`,
    `paint_legacy_scanline`, and the contrast with the CoCo 1/2 whole-field
    `render_coco_graphics`/`render_coco_text`.
 

@@ -53,14 +53,14 @@ The scanline is the natural unit that satisfies both at once: it's small
 enough to schedule video and audio work accurately (a real CoCo's picture
 changes within a field, not just between fields — think of a screen split
 effect, week 9's subject), and a whole field's worth of scanlines is
-exactly the quantum the host's 60 Hz repaint wants. `DESIGN.md` §4 states
-this design choice up front, and `crates/coco-core/src/machine/run.rs` is
+exactly the quantum the host's 60 Hz repaint wants. [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4 states
+this design choice up front, and [`crates/coco-core/src/machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs) is
 where it actually lives. This chapter reads that file end to end.
 
 > One clarifying note before we start: you will also see a method called
-> plain `Machine::step()` (`crates/coco-core/src/machine.rs:241`) used in a
-> few places — `examples/trace.rs`, `tests/boot.rs`,
-> `tests/snapshot_roundtrip.rs`. It is *not* the loop this chapter is
+> plain `Machine::step()` ([`crates/coco-core/src/machine.rs:241`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L241)) used in a
+> few places — [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs), [`tests/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs),
+> [`tests/snapshot_roundtrip.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_roundtrip.rs). It is *not* the loop this chapter is
 > about. It's a one-line wrapper around `cpu.step(&mut self.bus)` with none
 > of the scanline/interrupt/peripheral bookkeeping — useful for raw
 > instruction-trace tooling that wants the CPU alone, dangerous for
@@ -75,7 +75,7 @@ where it actually lives. This chapter reads that file end to end.
 Before reading a single line of the loop, get the arithmetic in your head,
 because the code is going to look like magic otherwise.
 
-**The CPU clock.** From `crates/coco-core/src/machine.rs:24-26`:
+**The CPU clock.** From [`crates/coco-core/src/machine.rs:24-26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L24-L26):
 
 ```rust
 /// NTSC CPU clock at normal speed: the 28.636363 MHz crystal / 32 (MAME
@@ -89,7 +89,7 @@ It comes from dividing the NTSC colorburst-derived crystal (28.636363 MHz —
 four times the 3.579545 MHz NTSC colour subcarrier) by 32.
 
 **Field rate and lines per field.** From
-`crates/coco-core/src/config.rs:48-63`:
+[`crates/coco-core/src/config.rs:48-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L48-L63):
 
 ```rust
 impl VideoStandard {
@@ -120,7 +120,7 @@ compatibility with monochrome broadcasting — a detail 1980s engineers
 inherited and 2026 emulator authors still have to type correctly).
 
 Now put the two together the way `Machine::run.rs`'s `cycles_per_field`
-does (`crates/coco-core/src/machine/run.rs:185-195`, walked in full in
+does ([`crates/coco-core/src/machine/run.rs:185-195`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L185-L195), walked in full in
 §6.2's next section) — cycles per field is just clock ÷ field rate:
 
 ```
@@ -131,13 +131,13 @@ And cycles per *line* is that, divided by lines per field. This is where
 you have to be careful, because the code does two separate truncating
 integer divisions, not one clean one — `cycles_per_field()` truncates to a
 `u32` first, and *that* truncated value is what gets divided by
-`lines_per_field()` (`run.rs:48`, quoted in §6.3):
+`lines_per_field()` ([`run.rs:48`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L48), quoted in §6.3):
 
 ```
 14929 / 262  =  56.98...  →  truncated: 56 cycles/line
 ```
 
-**56, not 57.** `DESIGN.md` §4's sketch says "≈ 57 @ 0.895 MHz" as a
+**56, not 57.** [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4's sketch says "≈ 57 @ 0.895 MHz" as a
 back-of-envelope approximation (`894886 / 15734 Hz` horizontal rate ≈ 56.9,
 same ballpark) — close enough for a design sketch, but the actual emulator
 arithmetic, run through the real constants with the real truncation the
@@ -152,7 +152,7 @@ by inspection instead of by squinting at decimal points.
 
 **PAL**, for comparison, at the same CPU clock (CoCo 1/2 don't support PAL
 in this emulator at all — `MachineConfig::validate` rejects the
-combination, `config.rs:213-217` — so every PAL row below is CoCo-3-only
+combination, [`config.rs:213-217`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L213-L217) — so every PAL row below is CoCo-3-only
 in practice, but the arithmetic is worth seeing):
 
 ```
@@ -187,7 +187,7 @@ scattered across paragraphs:
   17897 cycles to NTSC's 14929 (a bigger field budget), but that budget is
   divided by 312 lines instead of 262 (more divisions), and 17897/312
   narrowly out-paces 14929/262. This is exactly why "PAL horizontal rate is
-  nearly identical to NTSC's" (`DESIGN.md` §4) despite the two field rates
+  nearly identical to NTSC's" ([`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4) despite the two field rates
   differing by 20%: the extra lines-per-field almost exactly cancels the
   slower field rate, leaving only a 1-2 cycle/line difference — an accident
   of how both broadcast standards were independently tuned to land near the
@@ -217,7 +217,7 @@ scattered across paragraphs:
 **The double-speed poke.** If you ever typed `POKE 65497,0` to make BASIC
 programs (and every disk access, and the cursor blink) noticeably snappier,
 you were flipping the CoCo 3's SAM-compatible R1 speed-select strobe. The
-test that pins this down, `crates/coco-core/tests/speed.rs:1-9` (its `use`
+test that pins this down, [`crates/coco-core/tests/speed.rs:1-9`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/speed.rs#L1-L9) (its `use`
 lines omitted below):
 
 ```rust
@@ -236,11 +236,11 @@ care that you touched the address, not what byte you wrote — week 5's
 `65497`/`65495`, that's `$FFD9`/`$FFD7` — and `$FFD7` is R0, which SEB
 Unravelled II's Figure 8 documents as *wired but inert* on real hardware.
 This emulator models that inertness faithfully (`r1_strobes_latch_cpu_speed_and_r0_is_inert`,
-`speed.rs:12-25`, writes `R0_SET` last and asserts speed is still off) —
+[`speed.rs:12-25`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/speed.rs#L12-L25), writes `R0_SET` last and asserts speed is still off) —
 so if you go hunting for the "real" off-poke, `$FFD8`/65496 is the one
 that actually does something here, not 65495.
 
-Once `cpu_fast` is set, `cycles_per_field` (`run.rs:185-195`) picks it up:
+Once `cpu_fast` is set, `cycles_per_field` ([`run.rs:185-195`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L185-L195)) picks it up:
 
 ```rust
 fn cycles_per_field(&self) -> u32 {
@@ -260,7 +260,7 @@ Doubling `CPU_HZ` and re-running the same division gives
 `(894_886.0 * 2.0) / 59.94 = 29859` cycles/field, `29859 / 262 = 113`
 cycles/line — a hair over exactly double 56 (112) for the same
 double-truncation reason as before, but close enough that
-`tests/speed.rs::speed_poke_doubles_cycles_per_field` asserts the ratio
+[`tests/speed.rs::speed_poke_doubles_cycles_per_field`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/speed.rs) asserts the ratio
 lands in `1.9..=2.1` rather than pinning an exact integer. **The whole
 "double speed" feature, from the emulator's point of view, is one `bool`
 changing which branch a single multiplication takes — everything else
@@ -274,7 +274,7 @@ hand.
 
 ## 6.3 The loop anatomy: `run_field`, `step_instruction`, resumability
 
-Open `crates/coco-core/src/machine/run.rs`. The file-level doc comment
+Open [`crates/coco-core/src/machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs). The file-level doc comment
 tells you the shape before you read a line of code:
 
 ```rust
@@ -285,7 +285,7 @@ tells you the shape before you read a line of code:
 
 `run_field` — the function everything in this course calls to make the
 machine do anything — is almost insultingly short
-(`run.rs:20-27`):
+([`run.rs:20-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L20-L27)):
 
 ```rust
 pub fn run_field(&mut self) {
@@ -310,7 +310,7 @@ was refactored into a single-instruction-granularity primitive on purpose.
 ### Why hoist the loop counters into fields?
 
 Look at what moved out of the old nested loops and into `Machine` itself
-(`crates/coco-core/src/machine.rs:109-134`), with their doc comments quoted
+([`crates/coco-core/src/machine.rs:109-127`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L109-L127)), with their doc comments quoted
 in full because each one earns its keep:
 
 ```rust
@@ -351,7 +351,7 @@ built on top of, ten weeks before you build the debugger.
 
 ### `step_instruction`, in full
 
-`run.rs:42-84`:
+[`run.rs:42-84`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L42-L84):
 
 ```rust
 pub fn step_instruction(&mut self) -> StepEvent {
@@ -416,7 +416,7 @@ instruction might need to see.
 
 ### `StepEvent`/`StepKind`: what one call reports
 
-`crates/coco-core/src/machine.rs:137-164`:
+[`crates/coco-core/src/machine.rs:137-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L137-L164):
 
 ```rust
 /// What a single [`Machine::step_instruction`] advanced. Both fields are
@@ -472,7 +472,7 @@ Week 16's chapter is titled "the payoff of every earlier decision," but one
 piece of that payoff already exists in this codebase today, and it's worth
 detouring into it now, while `step_instruction`'s shape is fresh, rather
 than taking on faith that "a debugger gets built on top of this." Open
-`crates/coco-core/src/debug.rs`. Its file header states the dependency
+[`crates/coco-core/src/debug.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs). Its file header states the dependency
 outright:
 
 ```rust
@@ -486,7 +486,7 @@ outright:
 
 "Runs the machine one instruction at a time via `Machine::step_instruction`"
 — that's not a metaphor, it's the literal implementation. `StopReason`
-enumerates why a run stopped (`debug.rs:83-101`):
+enumerates why a run stopped ([`debug.rs:83-101`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L83-L101)):
 
 ```rust
 /// Why [`Debugger::run_until`] stopped.
@@ -514,7 +514,7 @@ Notice `FieldComplete` sitting right there next to `Breakpoint` and
 `Watchpoint` — the debugger can stop a run exactly where `run_field` would
 have stopped it anyway, because both are reading the same `field_complete`
 flag off the same `StepEvent`. And the run loop itself
-(`debug.rs:364-407`, lightly trimmed to the control flow):
+([`debug.rs:364-407`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L364-L407), lightly trimmed to the control flow):
 
 ```rust
 pub fn run_until(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
@@ -628,7 +628,7 @@ which is the whole reason this subsection built one instead of describing
 ## 6.4 `step_cpu_unit`: HALT, then interrupts, then the CPU, then peripherals
 
 `step_instruction` calls one private helper per "unit" of work,
-`run.rs:86-123`:
+[`run.rs:86-123`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L86-L123):
 
 ```rust
 /// One iteration of the old `run_cycles` inner loop: burn a HALT* cycle or
@@ -727,7 +727,7 @@ priority, not just code convenience:
 
 ## 6.5 `end_of_line`: the per-scanline trailer
 
-`run.rs:130-172`, the function `step_instruction` calls the instant a
+[`run.rs:130-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130-L172), the function `step_instruction` calls the instant a
 line's cycle budget is exhausted:
 
 ```rust
@@ -782,7 +782,7 @@ get the field-sync pulses — and unlike a naive "one big vsync pulse at the
 very end of the field" design, the CoCo's field sync is genuinely **two
 separate edges**, falling and rising, sitting mid-field on real NTSC
 timing. `config.rs` pins the exact scanline numbers, derived from MAME's
-own timing constants (`config.rs:65-111`):
+own timing constants ([`config.rs:65-111`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L65-L111)):
 
 | Edge | NTSC, CoCo 3 | NTSC, CoCo 1/2 | Source |
 |------|:---:|:---:|---|
@@ -817,7 +817,7 @@ condition. The last two of those deserve more than a parenthetical.
 
 ### Why audio flushes once per line, not once per instruction or once per field
 
-`flush_line_audio()` (week 11's chapter in full; `crates/coco-core/src/machine/audio.rs:41`)
+`flush_line_audio()` (week 11's chapter in full; [`crates/coco-core/src/machine/audio.rs:41`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs#L41))
 is the one call in the trailer whose *placement* — not its internals —
 matters to this chapter. The core records every DAC/mux write as it
 happens, cycle-timestamped, into an event list (`SystemBus::audio_events`)
@@ -863,7 +863,7 @@ non-draining one (this chapter's tests) never leaks.
 
 The `if self.config.variant == MachineVariant::Coco3` block feeds elapsed
 cycles into `gime.tick_timer(ticks)` — a 12-bit hardware countdown
-(`crates/coco-core/src/gime.rs:169-228`) that reloads and fires an
+([`crates/coco-core/src/gime.rs:169-228`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L169-L228)) that reloads and fires an
 interrupt source on every underflow:
 
 ```rust
@@ -879,7 +879,7 @@ that countdown — and here's a small, genuine documentation drift this
 chapter's own research surfaced, worth pointing out precisely because it's
 the kind of thing you'd otherwise only find by cross-reading two files
 that don't cite each other. `gime.rs`'s own bit-layout comment
-(`crates/coco-core/src/gime.rs:62-68`) still says:
+([`crates/coco-core/src/gime.rs:62-68`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L62-L68)) still says:
 
 ```rust
 /// INIT1 ($FF91) bit assignments (SEB Unravelled II).
@@ -921,7 +921,7 @@ the first one you find, even inside a single crate you already trust.
 Two more details worth carrying forward, both narrow but both load-bearing
 for later weeks:
 
-- **`TIMER_RELOAD_OFFSET: u16 = 2`** (`gime.rs:162-165`) — the 12-bit timer
+- **`TIMER_RELOAD_OFFSET: u16 = 2`** ([`gime.rs:162-165`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L162-L165)) — the 12-bit timer
   counts the programmed value *plus two* extra ticks on every reload, a
   fact `gime.rs` attributes to "the 1986 GIME (MAME `gime.cpp`
   `reset_timer`); the 1987 revision uses +1." Two different silicon
@@ -930,11 +930,11 @@ for later weeks:
   the comment rather than splitting the difference or guessing. If you
   ever emulate a specific real CoCo 3 board revision precisely, this is
   the exact line to revisit.
-- **`blink_state`** (`gime.rs:220-221`, `pub blink_state: bool`) toggles on
-  every timer underflow (`tick_timer`, `gime.rs:382-394`:
+- **`blink_state`** ([`gime.rs:220-221`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L220-L221), `pub blink_state: bool`) toggles on
+  every timer underflow (`tick_timer`, [`gime.rs:382-394`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L382-L394):
   `self.blink_state = !self.blink_state;`). This one boolean is where
   week 8's attribute-text blinking cursor and blinking characters come
-  from: `machine/render.rs:54` reads `self.bus.gime.blink_state` into a
+  from: [`machine/render.rs:54`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L54) reads `self.bus.gime.blink_state` into a
   local `blink_on` and threads it down into `gime_video::paint_scanline` →
   `paint_text_row`, where a character's `ATTR_BLINK` bit only shows its
   glyph "on" half the time — literally, whichever half `blink_state`
@@ -954,7 +954,7 @@ for later weeks:
 Two chips can each independently want the CPU's attention, and the 6809
 has exactly two maskable interrupt pins (IRQ, FIRQ) to receive them on.
 Real hardware solves this the way you'd solve it with two switches and one
-light bulb: wire them in parallel. `crates/coco-core/src/bus/sync.rs:10-26`:
+light bulb: wire them in parallel. [`crates/coco-core/src/bus/sync.rs:11-26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs#L11-L26):
 
 ```rust
 /// True when any interrupt source is holding the CPU IRQ line low.
@@ -980,7 +980,7 @@ pub fn firq_asserted(&self) -> bool {
 `pia0.irq()` is already `true`, which is harmless here since neither call
 has side effects worth skipping), and the CPU never learns *which* source
 asserted the line, exactly as on real silicon: an interrupt pin is a
-level, not a labeled event. `service_interrupts` (`run.rs:174-183`,
+level, not a labeled event. `service_interrupts` ([`run.rs:174-183`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L174-L183),
 called from `step_cpu_unit`) is what actually delivers it:
 
 ```rust
@@ -1005,7 +1005,7 @@ boundary and offers the CPU a chance to act on it.
 
 The PIA side of the wire needs one more piece: turning a *level* (field
 sync is a physical line that goes low then high) into a *latched flag*
-the CPU can poll and clear by reading a register. `crates/coco-core/src/pia.rs:66-85`:
+the CPU can poll and clear by reading a register. [`crates/coco-core/src/pia.rs:66-85`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs#L66-L85):
 
 ```rust
 /// Drive the Cx1 line to `level`, latching the Cx1 flag only on a real
@@ -1030,11 +1030,11 @@ pub fn set_c1(&mut self, level: bool) {
 }
 ```
 
-`bus.fs_falling()` (`sync.rs:119-125`) calls `self.pia0.b.set_c1(false)` at
+`bus.fs_falling()` ([`sync.rs:119-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs#L119-L125)) calls `self.pia0.b.set_c1(false)` at
 line 244 (CoCo 3 NTSC); if PIA0's control register B has selected the
 falling edge (the stock ROM's default — `cr::C1_EDGE_HIGH` clear), the Cx1
 flag bit latches, and `PiaPort::irq()` (a private helper checked by the
-public `MC6821::irq()`, `pia.rs:181-183`) now reports true until something
+public `MC6821::irq()`, [`pia.rs:181-183`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs#L181-L183)) now reports true until something
 *reads* PIA0's port-B data register, which (week 10 has the full story)
 clears the flag as a side effect of the read — the very fact that forced
 `Bus::read` to take `&mut self` back in week 1. That's the whole chain,
@@ -1044,7 +1044,7 @@ four function calls deep: `end_of_line` → `bus.fs_falling()` →
 
 ### The war story
 
-Here's the discovery `DESIGN.md` §4 documents under a dated implementation
+Here's the discovery [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4 documents under a dated implementation
 note, and it's worth telling as what it actually was: a debugging session
 where an emulator that was doing everything *correctly* still produced a
 machine that looked *dead*.
@@ -1093,7 +1093,7 @@ glamorous chip.
 
 Everything §6.6 has claimed about edge gating and scanline placement is
 backed by a test file that needs no ROM at all —
-`crates/coco-core/tests/pia_sync.rs` builds a bare `SystemBus` and drives
+[`crates/coco-core/tests/pia_sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs) builds a bare `SystemBus` and drives
 `hsync`/`fs_falling`/`fs_rising` directly. Its own header states exactly
 what it's proving:
 
@@ -1106,7 +1106,7 @@ what it's proving:
 ```
 
 Two claims, two pairs of tests. **Edge selection** first
-(`pia_sync.rs:26-41`):
+([`pia_sync.rs:26-41`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs#L26-L41)):
 
 ```rust
 #[test]
@@ -1142,7 +1142,7 @@ guarantees the *other* direction — mismatched — sets nothing. Flip
 which of `hsync`'s two back-to-back calls is the one that counts.
 
 **Scanline placement** second, the pair that pins down the exact numbers
-from §6.5's table (`pia_sync.rs:50-70`, `fs_falling` half shown; `fs_rising`
+from §6.5's table ([`pia_sync.rs:50-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs#L50-L70), `fs_falling` half shown; `fs_rising`
 is its mirror image against `fs_rising_line`):
 
 ```rust
@@ -1212,7 +1212,7 @@ PIA0 every field: this is the load-bearing 13 bytes underneath the
 ### The program
 
 Six instructions, split across a cold-start preamble and an interrupt
-handler — written the same way `tests/halt.rs` and `tests/speed.rs` build
+handler — written the same way [`tests/halt.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/halt.rs) and [`tests/speed.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/speed.rs) build
 their own synthetic ROMs (§6.9's reading list), reusing several of their
 *exact* byte sequences (`LDS #$5EFF`, `BRA *`, `INC $0400`, `RTI` — all
 independently verified there already):
@@ -1368,21 +1368,21 @@ line's fixed 56-cycle budget. Nothing here is a bug; it's §6.2's and
 
 ## 6.8 The lab: booting real Color BASIC, headless, in a test
 
-`crates/coco-core/tests/coco1_boot.rs` is this week's textbook exercise —
+[`crates/coco-core/tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs) is this week's textbook exercise —
 it drives `run_field` for real, from cold reset, against a real ROM image,
 with no window, no GPU, and no human. Walk it top to bottom.
 
-**Loading the ROM.** `try_load` (`coco1_boot.rs:28-33`) reads
+**Loading the ROM.** `try_load` ([`coco1_boot.rs:28-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L28-L33)) reads
 `roms/bas12.rom` relative to the workspace root — Color BASIC 1.2, the
 CoCo 1's ROM, *without* Extended Color BASIC. `boot_machine`
-(`coco1_boot.rs:38-59`) composes a 32K flat image: `$FF` open-bus filler
+([`coco1_boot.rs:38-59`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L38-L59)) composes a 32K flat image: `$FF` open-bus filler
 for the low 8K (where Extended BASIC would live), the real `bas12.rom`
 bytes at the high 8K (`$A000-$BFFF`), then constructs a `Machine` with
 `MachineVariant::Coco1`, `VideoStandard::NTSC`, `MemorySize::K32`, no
 monitor (a CoCo 1 has no RGB/composite port — RF only), `VDGVariant::MC6847`.
 
 **Driving time.** The test's core loop is almost embarrassingly plain
-(`coco1_boot.rs:109-117`):
+([`coco1_boot.rs:109-117`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L109-L117)):
 
 ```rust
 const MAX_FIELDS: usize = 1500;
@@ -1403,8 +1403,8 @@ for boot" hook exists or is needed; `run_field` is the entire API surface
 a caller needs to make time pass correctly, sync pulses and all.
 
 **Reading the screen without a framebuffer.** `screen_contains`
-(`coco1_boot.rs:61-63`) calls `m.text_screen_lines()`
-(`crates/coco-core/src/machine/video_mode.rs:92-112`), which does *not*
+([`coco1_boot.rs:61-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L61-L63)) calls `m.text_screen_lines()`
+([`crates/coco-core/src/machine/video_mode.rs:92-112`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L92-L112)), which does *not*
 read the RGBA framebuffer at all — it walks the legacy VDG text screen
 directly out of RAM, through the bus (honouring the MMU, though a CoCo 1
 has none), decoding each byte with the same `video::decode_alpha_char`
@@ -1432,7 +1432,7 @@ pub fn text_screen_lines(&mut self) -> Vec<String> {
 }
 ```
 
-This is the headless-testability payoff `DESIGN.md` and week 1 promised:
+This is the headless-testability payoff [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) and week 1 promised:
 "the machine you can PEEK" is available to a `#[test]` function exactly as
 it was available to your own `PEEK` statements at the BASIC prompt, no
 pixels or GPU required — 32 columns × 16 rows of decoded ASCII, straight
@@ -1441,7 +1441,7 @@ out of RAM.
 **Typing.** Once the sign-on banner and `OK` prompt appear, the test types
 `PRINT 2+2` by driving the actual keyboard matrix (week 10's subject),
 holding each key down for 3 fields and released for 3 more
-(`tap_char`/`type_line`, `coco1_boot.rs:69-90`) — long enough for the ROM's
+(`tap_char`/`type_line`, [`coco1_boot.rs:69-90`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L69-L90)) — long enough for the ROM's
 own debounced scan loop, running off the very field-sync interrupt §6.6
 just explained, to see it:
 
@@ -1545,36 +1545,36 @@ to you today.
 
 In this order:
 
-1. **`crates/coco-core/src/machine/run.rs`, the whole file.** It's under
+1. **[`crates/coco-core/src/machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs), the whole file.** It's under
    200 lines and it's the one file this entire chapter is a guided tour
    of — read it again now, cold, without this chapter open next to it, and
    see how much you can narrate from memory.
-2. **`crates/coco-core/src/bus/sync.rs`, the whole file.** Small, dense,
+2. **[`crates/coco-core/src/bus/sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs), the whole file.** Small, dense,
    and the one place the wired-OR interrupt model and all four sync
    entry points (`hsync`, `fs_falling`, `fs_rising`, `poll_cart_interrupt`)
    live side by side.
-3. **`crates/coco-core/src/machine.rs`, lines 96-135 and 137-164** — the
+3. **[`crates/coco-core/src/machine.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs), lines 96-135 and 137-164** — the
    hoisted scanline-state fields and `StepEvent`/`StepKind`, now that
    you've seen every place they get read and written.
-4. **`crates/coco-core/src/config.rs`, lines 48-112** — `VideoStandard`'s
+4. **[`crates/coco-core/src/config.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs), lines 48-112** — `VideoStandard`'s
    four constant-returning methods; confirm you can derive every number in
    §6.2 from this file plus `CPU_HZ` alone.
-5. **`DESIGN.md` §4**, in full, including the 2026-07 implementation note —
+5. **[`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4**, in full, including the 2026-07 implementation note —
    read it now that you have the code underneath it; notice which parts of
    the original sketch (the ≈57 line comment, the single end-of-field
    `vsync()`) the real implementation quietly corrected.
-6. **`crates/coco-core/src/debug.rs`, lines 340-407** (`Debugger::run_until`
+6. **[`crates/coco-core/src/debug.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs), lines 340-407** (`Debugger::run_until`
    and `run_loop`) — now that you've seen it built directly on
    `step_instruction`, read it once more without this chapter's narration
    and predict, before scrolling to check, what happens if two breakpoints
    share the same address as a watchpoint.
-7. **`crates/coco-core/src/gime.rs`, lines 62-68 and 160-228** — the
+7. **[`crates/coco-core/src/gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs), lines 62-68 and 160-228** — the
    INIT1/timer field block, side by side with `machine.rs`'s
    `FAST_TIMER_TICKS_PER_CPU_CYCLE` comment (§6.5). Confirm the doc-comment
    drift for yourself rather than taking this chapter's word for it.
-8. **Tests**: `crates/coco-core/tests/coco1_boot.rs` (all of it — you've
-   now read every function it calls), `tests/speed.rs`, `tests/pia_sync.rs`
-   (all four tests, now that §6.6 walked them), `tests/halt.rs`.
+8. **Tests**: [`crates/coco-core/tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs) (all of it — you've
+   now read every function it calls), [`tests/speed.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/speed.rs), [`tests/pia_sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs)
+   (all four tests, now that §6.6 walked them), [`tests/halt.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/halt.rs).
 
 ---
 
@@ -1586,7 +1586,7 @@ In this order:
 double speed (the `POKE 65497,0` state). Show your truncation at each
 step — the code performs two separate integer truncations, not one — and
 check your final numbers against §6.2's derivation and against
-`tests/speed.rs`'s `speed_poke_doubles_cycles_per_field` (it doesn't print
+[`tests/speed.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/speed.rs)'s `speed_poke_doubles_cycles_per_field` (it doesn't print
 the exact numbers, but you now know how to recompute what it's asserting
 about). State, in one sentence, why the code truncates twice instead of
 computing `cycles_per_field as f64 / lines as f64` and truncating once —
@@ -1595,7 +1595,7 @@ speed (it doesn't, for 14929/262 vs. an un-truncated 14929.09/262; find an
 input where it would).
 
 **6.2 — Silence the field-sync IRQ (sabotage, verify by running tests).**
-In `crates/coco-core/src/bus/sync.rs`, comment out the one line inside
+In [`crates/coco-core/src/bus/sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs), comment out the one line inside
 `fs_falling` that actually does anything (`self.pia0.b.set_c1(false);`),
 leaving the GIME `VBORD`-raising branch untouched. This doesn't need real
 ROMs to prove itself wrong: run
@@ -1633,7 +1633,7 @@ synthetic program's, and can you explain the difference from what real
 BASIC's handler does that a 3-instruction toy handler doesn't?
 
 **6.4 — Trace the HALT-release ordering by hand (read).** Using
-`crates/coco-core/tests/halt.rs`'s `HaltCart` and its `halt_from`/
+[`crates/coco-core/tests/halt.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/halt.rs)'s `HaltCart` and its `halt_from`/
 `halt_until` cycle window as the concrete scenario, write out, instruction
 by instruction, what `step_cpu_unit` does on: (a) the last cycle while
 still halted, (b) the exact call where `halt_asserted()` first returns
@@ -1657,7 +1657,7 @@ handler's first instruction executes." Check both against `run.rs` and
 **6.6 — The asymmetric edge (essay, four sentences max).** `fs_falling`
 raises the GIME's `VBORD` interrupt source in addition to latching PIA0
 CB1; `fs_rising` only latches PIA0 CB1 and ties into no GIME source at
-all (`sync.rs:127-133`'s doc comment: "No GIME border source is tied to
+all ([`sync.rs:127-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs#L127-L133)'s doc comment: "No GIME border source is tied to
 this edge"). Given that stock BASIC polls the *falling* edge and the doc
 comments mention NitrOS-9 as an example of software that polls the
 *rising* edge instead, what does this asymmetry tell you about which
@@ -1685,7 +1685,7 @@ produce yet another distinct outcome from all three you built).
 **6.8 — The breakpoint that can't be hit (read).** §6.3 claims a
 breakpoint on `$8100` (an IRQ vector's target) never fires via
 `Debugger::run_until`, while one on `$8103` does. Without re-running the
-experiment, explain from `debug.rs`'s `run_loop` alone (`debug.rs:371-406`)
+experiment, explain from `debug.rs`'s `run_loop` alone ([`debug.rs:371-407`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L371-L407))
 exactly why: which two operations does the loop assume happen in separate
 iterations that `step_instruction` actually performs in one? Then propose,
 in a few sentences, the smallest change to `run_loop` that would let a

@@ -16,7 +16,7 @@ exact screen you stared at as a kid.*
 ## 7.1 Why this is where video finally starts
 
 Quick recap of the machinery already built, because this chapter plugs
-directly into it. Week 6's `end_of_line()` (`crates/coco-core/src/machine/run.rs:130`)
+directly into it. Week 6's `end_of_line()` ([`crates/coco-core/src/machine/run.rs:130`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130))
 runs once per scanline, in cycle-accurate lockstep with the CPU:
 
 ```rust
@@ -36,7 +36,7 @@ pub(super) fn end_of_line(&mut self) -> bool {
 }
 ```
 
-`render_scanline()` (`crates/coco-core/src/machine/render.rs:29`) was already
+`render_scanline()` ([`crates/coco-core/src/machine/render.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L29)) was already
 called every line in week 6 — you just didn't look inside it, because inside
 it was, functionally, nothing yet: geometry bookkeeping with no pixels. This
 week that changes. By the end of this chapter, calling it 192 times (once
@@ -83,7 +83,7 @@ electronics "start a new line now." After the last scanline the beam is
 blanked and steered all the way back to the top-left: **vertical sync**
 (vsync), meaning "start a new field now." One complete top-to-bottom sweep
 is a **field**; NTSC does 262 scanlines per field, roughly 59.94 of them
-every second (`crates/coco-core/src/config.rs:52`, `:60` — you derived this
+every second ([`crates/coco-core/src/config.rs:52`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L52), [`:60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L60) — you derived this
 exact number in week 6).
 
 Not every one of those 262 lines carries a picture. The beam needs time to
@@ -118,7 +118,7 @@ The array is a flat `Vec<u8>`, and the convention this codebase uses —
 practically universal in graphics work — is **RGBA**: four bytes per pixel,
 red, green, blue, alpha (opacity; always `0xFF`, fully opaque, since this
 emulator never needs transparency). `BYTES_PER_PIXEL` is `4`
-(`crates/coco-core/src/video.rs:40`). A single white pixel is the four bytes
+([`crates/coco-core/src/video.rs:40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L40)). A single white pixel is the four bytes
 `[0xFF, 0xFF, 0xFF, 0xFF]`; black is `[0x00, 0x00, 0x00, 0xFF]`; the pure
 green you'll see so much of this chapter is `[0x00, 0xFF, 0x00, 0xFF]`.
 
@@ -150,7 +150,7 @@ arithmetic of 2D graphics as this codebase practices it. There is no more
 "graphics math" to learn; everything else is bookkeeping about *which*
 color to write at *which* offset.
 
-Here it is verbatim, from the actual renderer (`crates/coco-core/src/video/text.rs:260`):
+Here it is verbatim, from the actual renderer ([`crates/coco-core/src/video/text.rs:260`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L260)):
 
 ```rust
 fn blit_cell(fb: &mut [u8], row: usize, col: usize, glyph: &[u8; CELL_H], fg: [u8; 4], bg: [u8; 4]) {
@@ -204,7 +204,7 @@ the frontend. The codebase's answer, for the CoCo 3, is one fixed-size
 canvas that every video mode — this week's legacy text, next week's GIME
 native text/graphics, week 9's advanced modes — renders into. The whole
 module is 40 lines; read it in full
-(`crates/coco-core/src/raster.rs`):
+([`crates/coco-core/src/raster.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs)):
 
 ```rust
 //! Canonical 640×240 raster geometry (Option B, `docs/plan-per-scanline-video.md`).
@@ -267,7 +267,7 @@ non-wide, which is why `paint_legacy_scanline` (below) unconditionally uses
 > **Rust corner: `chunks_exact_mut` for a run of identical pixels.** The
 > integer scale this section keeps mentioning — 256 native pixels stretched
 > to fill 512 canvas pixels — is implemented by one small function, `paint_px`
-> (`crates/coco-core/src/video.rs:148`):
+> ([`crates/coco-core/src/video.rs:148`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L148)):
 > ```rust
 > fn paint_px(out: &mut [u8], x: &mut usize, xscale: usize, color: [u8; 4]) {
 >     for px in out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
@@ -316,7 +316,7 @@ it can produce. A CoCo 1 or 2 has no GIME and no such unification; those
 machines render into their own fixed, smaller buffer
 (`video::FB_W`/`FB_H`, 288×224 — you'll see it in §7.4) via a whole-field
 snapshot rather than the per-scanline canonical path. That split is set up
-in `crates/coco-core/src/machine.rs:17-18` (`FB_WIDTH`/`FB_HEIGHT` default
+in [`crates/coco-core/src/machine.rs:17-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L17-L18) (`FB_WIDTH`/`FB_HEIGHT` default
 to the VDG geometry) and in `machine/render.rs`'s two entry points,
 `render_scanline` (CoCo 3 only, early-returns otherwise) and `render_field`
 (CoCo 1/2 only, early-returns for CoCo 3). This chapter's worked examples
@@ -344,7 +344,7 @@ pedagogically: this is week 7, GIME-native is week 8.
 
 ### 7.4.1 How the machine decides which path it's on
 
-`Machine::video_mode()` (`crates/coco-core/src/machine/video_mode.rs:19`) is
+`Machine::video_mode()` ([`crates/coco-core/src/machine/video_mode.rs:19`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L19)) is
 the dispatcher — read it in full, it's short and it's the map of the entire
 video subsystem for weeks 7–9:
 
@@ -390,12 +390,12 @@ wider screen — which is precisely the fact this section opened with.
 ### 7.4.2 The screen byte, bit by bit
 
 The legacy text screen is 512 bytes — `COLS * ROWS = 32 * 16`
-(`crates/coco-core/src/video.rs:29-43`) — living in RAM at a base address
+([`crates/coco-core/src/video.rs:29-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L29-L43)) — living in RAM at a base address
 the SAM (or, on CoCo 3, the GIME's SAM-compatibility page register) points
 at (default `$0400`, the address every CoCo BASIC programmer memorized).
 Each byte is a **character cell** that packs three independent things,
 decoded by three named bit masks
-(`crates/coco-core/src/video/text.rs:16-18`):
+([`crates/coco-core/src/video/text.rs:16-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L16-L18)):
 
 ```rust
 const SEMIGRAPHICS_BIT: u8 = 0x80; // bit 7 — 1 = semigraphics 4, 0 = alphanumeric
@@ -414,14 +414,14 @@ const GLYPH_CODE_MASK: u8 = 0x3F;  // bits 5-0 — alphanumeric glyph code
 ```
 
 If bit 7 is 0, this is a plain text cell: bits 5–0 select one of 64 glyphs
-(`decode_alpha_char`, `crates/coco-core/src/video/text.rs:37`, maps code
+(`decode_alpha_char`, [`crates/coco-core/src/video/text.rs:37`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L37), maps code
 `$00-$1F` to `'@'..'_'` and `$20-$3F` to a second copy of the ASCII block
 from space upward), and bit 6 flips foreground and background for that one
 cell. If bit 7 is 1, none of that applies — the byte switches to an
 entirely different interpretation, semigraphics-4, covered in §7.6.
 
 > **Rust corner: `usize` on the framebuffer side, `u16` on the bus side.**
-> `paint_legacy_scanline` (`crates/coco-core/src/machine/render.rs:75`)
+> `paint_legacy_scanline` ([`crates/coco-core/src/machine/render.rs:75`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L75))
 > straddles two address spaces with two different integer types, and the
 > boundary between them is exactly where the cast lives:
 > ```rust
@@ -478,7 +478,7 @@ Color BASIC ROM fills the entire 512-byte text screen with the *inverse*
 form of every character it prints — bit 6 set on every single screen byte,
 always, not just for a blinking cursor or a highlighted word. Feed that
 fact into `resolve_alpha_cell`
-(`crates/coco-core/src/video/text.rs:88-116`), the function every text
+([`crates/coco-core/src/video/text.rs:88-116`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L88-L116)), the function every text
 pixel in this codebase routes through:
 
 ```rust
@@ -509,7 +509,7 @@ green** — with the green being what "background" resolves to and the black
 letters being "foreground," inverted onto the page by that one bit, on
 every cell, all the time. This is the single strangest fact this chapter
 teaches, and it is exactly correct: go boot the real ROM (or read
-`tests/coco1_boot.rs` from week 6) and check for yourself that every
+[`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs) from week 6) and check for yourself that every
 non-blank screen byte has bit 6 set.
 
 ---
@@ -524,7 +524,7 @@ one at some point when a glyph looks wrong.
 
 ### 7.5.1 The MC6847's internal ROM, as a Rust array
 
-`MC6847_FONT` (`crates/coco-core/src/font6847.rs:37`) has 64 entries — one
+`MC6847_FONT` ([`crates/coco-core/src/font6847.rs:37`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font6847.rs#L37)) has 64 entries — one
 per glyph code — each a `[u8; 12]`: twelve bytes, one per raster row of the
 8×12 character cell. Here is the entry for `'A'` (glyph code `$01`, the
 second row of the table):
@@ -584,7 +584,7 @@ cramped even though it's only a 32×16 grid.
 
 ### 7.5.2 Two more fonts, same shape, different rows
 
-`MC6847T1_FONT` (`font6847.rs:112`) is 96 entries: the same 64
+`MC6847T1_FONT` ([`font6847.rs:112`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font6847.rs#L112)) is 96 entries: the same 64
 uppercase/symbol glyphs (index 0–63, same code space, same meaning), *plus*
 32 more (index 64–95) that only exist on the newer T1 chip — true lowercase
 letters, reached only through the special path in §7.5.3. Compare the T1's
@@ -601,7 +601,7 @@ Same six strokes, shifted two rows higher in the cell. That's not
 cosmetic — the T1 needed rows 8–11 free for lowercase **descenders** (the
 tails on 'g', 'j', 'p', 'q', 'y' that dip below the baseline), so its
 uppercase glyphs had to move up to make room. `GIME_LOWRES_FONT`
-(`crates/coco-core/src/font_gime.rs:162`) — the *third* font, the one a
+([`crates/coco-core/src/font_gime.rs:162`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font_gime.rs#L162)) — the *third* font, the one a
 real CoCo 3 actually uses for this mode, since there's no VDG chip on the
 board at all — follows the same T1-style layout (rows 1–8, lowercase with
 descenders in 64–95):
@@ -624,7 +624,7 @@ logic, the CoCo 3's GIME compat generator) has a second, genuinely
 different mode: **true lowercase**, which redirects those same low codes to
 a *different* set of glyphs entirely — actual lowercase letterforms with
 descenders — instead of just inverting the uppercase ones. `AlphaGenerator`
-(`crates/coco-core/src/video/text.rs:54-62`) names the three chips this
+([`crates/coco-core/src/video/text.rs:54-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L54-L62)) names the three chips this
 codebase can emulate:
 
 ```rust
@@ -640,7 +640,7 @@ pub enum AlphaGenerator {
 ```
 
 and the gate that decides whether true lowercase kicks in, from
-`resolve_alpha_cell` (`text.rs:97-99`):
+`resolve_alpha_cell` ([`text.rs:97-99`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L97-L99)):
 
 ```rust
 let lowercase_capable = matches!(generator, AlphaGenerator::MC6847T1 | AlphaGenerator::GIME);
@@ -688,7 +688,7 @@ one-liner program you typed as a kid to draw a blocky mountain or invader —
 no `PMODE`, no `SCREEN`, just `PRINT` with the right character codes.
 
 The bit layout, from the same byte, reusing bits you haven't spent yet
-(`crates/coco-core/src/video/text.rs:22-28`):
+([`crates/coco-core/src/video/text.rs:22-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L22-L28)):
 
 ```rust
 const SG4_COLOR_SHIFT: u8 = 4;
@@ -718,8 +718,8 @@ Bits 6–4 pick one of GIME palette registers 0–7 as the "lit" colour for
 cell, not per block); bits 3–0 are a four-block on/off pattern; an unlit
 block always draws palette register 8 (which resolves to black in
 CoCo-compatible mode). The paint loop
-(`crates/coco-core/src/video/text.rs:167-182`, and the whole-field twin
-`blit_semigraphics4` at `:238`) is a direct transcription of that diagram:
+([`crates/coco-core/src/video/text.rs:167-182`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L167-L182), and the whole-field twin
+`blit_semigraphics4` at [`:238`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L238)) is a direct transcription of that diagram:
 
 ```rust
 if code & SEMIGRAPHICS_BIT != 0 {
@@ -773,7 +773,7 @@ colour. Something still has to turn "palette register 4" into an actual
 RGBA value, and on the CoCo 3 that something is the GIME, even while it's
 imitating a VDG that (on real CoCo 1/2 hardware) never had programmable
 palette registers at all. `TEXT_BG_INDEX`/`TEXT_FG_INDEX`
-(`crates/coco-core/src/video.rs:47-48`) name which two of the GIME's
+([`crates/coco-core/src/video.rs:47-48`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L47-L48)) name which two of the GIME's
 sixteen palette registers this mode reads:
 
 ```rust
@@ -787,7 +787,7 @@ what a real MC6847-plus-analog-video-chip pairing would do, just with the
 GIME standing in as the analog part. The important design point, already
 flagged in the module doc: **these colours are data, programmed by the
 ROM at boot, not hardcoded anywhere in the renderer.** `legacy_palette`
-(`crates/coco-core/src/machine/video_mode.rs:62`) proves it — on a CoCo 3
+([`crates/coco-core/src/machine/video_mode.rs:62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L62)) proves it — on a CoCo 3
 it snapshots all sixteen live palette registers through `GIME::color`
 every field; it never special-cases index 12 or 13:
 
@@ -809,7 +809,7 @@ pub(super) fn legacy_palette(&self, css: bool) -> [[u8; 4]; video::PALETTE_LEN] 
 ```
 
 Register-to-RGBA conversion itself is `GIME::rgb_color`
-(`crates/coco-core/src/gime/palette.rs:56-62`), and it's small enough to
+([`crates/coco-core/src/gime/palette.rs:56-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L56-L62)), and it's small enough to
 read in one breath:
 
 ```rust
@@ -842,7 +842,7 @@ B = chan(3, 0): bit3=0, bit0=0 → v = 0b00 = 0 → B = 0
 
 `rgb_color(0x12) = [0x00, 0xFF, 0x00, 0xFF]` — pure green, `#00FF00`. That's
 `legacy_border_value`'s `BORDER6_GREEN` constant
-(`crates/coco-core/src/video/text.rs:126`), used for the border of legacy
+([`crates/coco-core/src/video/text.rs:126`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L126)), used for the border of legacy
 *graphics* modes; the plain-text border (this week's mode) instead resolves
 `BORDER6_BLACK = 0x00`, which by the same arithmetic is trivially
 `[0, 0, 0, 0xFF]` — confirming DESIGN.md's claim that the boot screen has a
@@ -851,7 +851,7 @@ palette register is likewise pure black — which is exactly why several of
 this chapter's tests (§7.9) can leave a palette entry untouched and rely on
 it reading as black rather than garbage.
 
-`legacy_border_value` (`text.rs:136-145`) is worth reading once for what it
+`legacy_border_value` ([`text.rs:136-145`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L136-L145)) is worth reading once for what it
 tells you about the CoCo's overall visual design language: text borders
 black; graphics borders green (or white with CSS set) — real hardware
 colour-codes the border by mode, a detail no photo of a "green screen"
@@ -884,9 +884,9 @@ pixel in this codebase is opaque anyway. Any image viewer, ImageMagick, or
 `ffmpeg -i frame.ppm frame.png` reads it instantly.
 
 Two examples in this crate use exactly this pattern:
-`crates/coco-core/examples/demo_frames.rs` (dumps periodic frames while
+[`crates/coco-core/examples/demo_frames.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/demo_frames.rs) (dumps periodic frames while
 running an injected demo binary) and
-`crates/coco-core/examples/vdg_font_probe.rs` (boots all three text
+[`crates/coco-core/examples/vdg_font_probe.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/vdg_font_probe.rs) (boots all three text
 generators — CoCo 1, CoCo 2/T1, CoCo 3 — and dumps one PPM each, for
 eyeballing "square O vs. rounded O vs. GIME O" side by side). **Be aware,
 if you try them here:** both require real ROM images —
@@ -943,7 +943,7 @@ exercises with answers." Three worth stepping through slowly.
 
 ### 7.9.1 Geometry: `border_and_active_area_use_their_colors`
 
-(`crates/coco-core/tests/render.rs:52`)
+([`crates/coco-core/tests/render.rs:50`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render.rs#L50))
 
 ```rust
 #[test]
@@ -973,7 +973,7 @@ to "the formula from §7.2.2, executed" as a test can get.
 
 ### 7.9.2 The semigraphics-4 quadrant test
 
-(`crates/coco-core/tests/render.rs:165`)
+([`crates/coco-core/tests/render.rs:165`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render.rs#L165))
 
 ```rust
 const SG4: u8 = 0x80 | (3 << 4) | 0b1001; // upper-left (0x08) + lower-right (0x01)
@@ -996,7 +996,7 @@ you'd expect from the bit-layout diagram in §7.6, and nowhere else.
 
 ### 7.9.3 A CoCo 3 specifically: `coco3_compat_text_draws_gime_font_not_either_vdg_font`
 
-(`crates/coco-core/tests/render_coco12/coco3_compat_text.rs:60`)
+([`crates/coco-core/tests/render_coco12/coco3_compat_text.rs:60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_coco12/coco3_compat_text.rs#L60))
 
 This one is the payoff test for §7.4's whole "no VDG chip exists on a CoCo
 3" claim. It boots a *real* `Machine` (not a bare call to `render_text`),
@@ -1057,26 +1057,26 @@ font" — the two `assert_ne!`s are doing as much work as the `assert_eq!`.
 
 In this order:
 
-1. `crates/coco-core/src/raster.rs` (all 40 lines) — the canonical canvas,
+1. [`crates/coco-core/src/raster.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs) (all 40 lines) — the canonical canvas,
    §7.3's entire subject.
-2. `crates/coco-core/src/video.rs` — module-level doc, then `ColorSource`
+2. [`crates/coco-core/src/video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs) — module-level doc, then `ColorSource`
    and its `resolve` method (§7.7's CoCo 1/2 vs. CoCo 3 split).
-3. `crates/coco-core/src/video/text.rs` — the whole file; it's 271 lines
+3. [`crates/coco-core/src/video/text.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs) — the whole file; it's 271 lines
    and every one of them was excerpted or explained somewhere in this
    chapter. Read `resolve_alpha_cell` twice.
-4. `crates/coco-core/src/font6847.rs`'s module doc and the first ten
+4. [`crates/coco-core/src/font6847.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font6847.rs)'s module doc and the first ten
    entries of `MC6847_FONT`; then skim `font_gime.rs`'s doc comment (the
    `GIME_FONT` vs. `GIME_LOWRES_FONT` distinction: hi-res 40/80-column text
    uses the former, next week; this week's legacy mode uses the latter).
-5. `crates/coco-core/src/machine/video_mode.rs` and
-   `crates/coco-core/src/machine/render.rs` — `video_mode()`,
+5. [`crates/coco-core/src/machine/video_mode.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs) and
+   [`crates/coco-core/src/machine/render.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs) — `video_mode()`,
    `paint_legacy_scanline`, and (briefly, for contrast) `render_coco_text`/
    `render_coco_graphics`, the CoCo 1/2 whole-field path.
-6. `crates/coco-core/src/gime/palette.rs` — just `rgb_color`; ignore the
+6. [`crates/coco-core/src/gime/palette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs) — just `rgb_color`; ignore the
    composite tables entirely, they're week 9.
-7. Tests: `crates/coco-core/tests/render.rs` in full (185 lines); skim
-   `crates/coco-core/tests/render_coco12/` (`mc6847_fonts.rs`,
-   `coco3_compat_text.rs`, `common.rs`'s two `sample_cell*` helpers).
+7. Tests: [`crates/coco-core/tests/render.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render.rs) in full (185 lines); skim
+   `crates/coco-core/tests/render_coco12/` ([`mc6847_fonts.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_coco12/mc6847_fonts.rs),
+   [`coco3_compat_text.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_coco12/coco3_compat_text.rs), [`common.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_coco12/common.rs)'s two `sample_cell*` helpers).
 
 Run the whole suite while you read:
 
@@ -1101,7 +1101,7 @@ low nibble. Check your colour assignment (which quadrant/glyph pixels are
 `resolve_alpha_cell`/`paint_legacy_text_line`.
 
 **7.2 — Sabotage and observe (sabotage, verified).** In
-`crates/coco-core/src/video/text.rs`'s `resolve_alpha_cell` (line 98–99),
+[`crates/coco-core/src/video/text.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs)'s `resolve_alpha_cell` (line 98–99),
 change
 
 ```rust

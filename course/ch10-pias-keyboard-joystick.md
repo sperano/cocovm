@@ -16,7 +16,7 @@ finger on a keycap to a character on the screen, and explain why the CoCo's
 
 ## 10.1 The chip that mediates almost all I/O
 
-Open `crates/coco-core/src/pia.rs`. Its header comment is the whole chapter
+Open [`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs). Its header comment is the whole chapter
 in five lines:
 
 ```rust
@@ -200,7 +200,7 @@ instructions use **negative offsets** — `-4,X` through `-1,X` — to reach
 `$FF1C`–`$FF1F`. Those aren't PIA1 registers. `$FF00`–`$FF03` is PIA0's real
 address, but the chip only decodes two address lines (`addr & 0x03`); every
 other address bit is unwired, so PIA0 also answers at `$FF04`, `$FF08`, …
-all the way to `$FF1C`–`$FF1F`. `bus/regs.rs` documents exactly this:
+all the way to `$FF1C`–`$FF1F`. [`bus/regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/regs.rs) documents exactly this:
 
 ```rust
 // I/O page device ranges (`DESIGN.md` §3). PIA0/PIA1 mirror every 4 bytes.
@@ -209,7 +209,7 @@ pub(super) const PIA0_LAST: u16 = 0xFF1F;
 pub(super) const PIA1_BASE: u16 = 0xFF20;
 ```
 
-and `io_read`/`io_write` (`crates/coco-core/src/bus/io.rs:61,100`) mask every
+and `io_read`/`io_write` ([`crates/coco-core/src/bus/io.rs:61,100`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L61-L100)) mask every
 address in `IO_BASE..=PIA0_LAST` down to `addr & 0x03` before dispatching to
 the PIA. The ROM's author knew this and used it: with X already pointing at
 PIA1, `-4,X` through `-1,X` reach PIA0's last mirror for free, saving four
@@ -370,7 +370,7 @@ interrupt and then separately "acknowledge" it — reading the data is
 simultaneously *getting the value that changed* and *telling the chip you
 got it*.
 
-This is exactly why `Bus::read` in `crates/mc6809/src/lib.rs` takes
+This is exactly why `Bus::read` in [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs) takes
 `&mut self` (week 1, §1.3): `LDA $FF02` looks, syntactically, like a pure
 load — but on real hardware and in this emulator it mutates `PiaPort.control`.
 If `read` took `&self`, this method would need `Cell` or `RefCell` to
@@ -411,7 +411,7 @@ you learned about `&mut self` reads in week 1 was this exact chip.
 
 ## 10.4 The interrupt story completed: two heartbeats
 
-Week 6 (§6, `bus/sync.rs`) introduced the field-sync-on-PIA0-CB1 IRQ path as
+Week 6 (§6, [`bus/sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs)) introduced the field-sync-on-PIA0-CB1 IRQ path as
 the thing that breaks stock BASIC out of its idle loop; this section is
 where you learn exactly *how* the PIA turns a raster timing event into a
 CPU interrupt, and what the ROM does about it.
@@ -462,7 +462,7 @@ BASIC doesn't enable CA1's interrupt; it only polls it (more on that
 below).
 
 Field sync is the other heartbeat, and it's `Machine::run_field`
-(`crates/coco-core/src/machine/run.rs:132-139`, week 6's file) that fires
+([`crates/coco-core/src/machine/run.rs:132-139`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L132-L139), week 6's file) that fires
 it at the right line, not `hsync` itself:
 
 ```rust
@@ -893,7 +893,7 @@ pub fn compare(&self, stick: usize, axis: usize, dac: u8) -> bool {
 ```
 
 and how the bus assembles the comparator bit onto PA7 every time port A is
-read (`bus/pins.rs:14-27`):
+read ([`bus/pins.rs:14-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs#L14-L27)):
 
 ```rust
 pub(super) fn pia0_pa_pins(&self) -> u8 {
@@ -996,7 +996,7 @@ this exact fact, verified.
 
 ## 10.7 The pins composition: one byte, many devices
 
-Step back and look at `bus/pins.rs` as a whole. Its header names what it
+Step back and look at [`bus/pins.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs) as a whole. Its header names what it
 is plainly:
 
 ```rust
@@ -1208,7 +1208,7 @@ Four tests, across three files, each teaching a fact this chapter has
 already walked through in the source — now watch them assert it.
 
 **`sense_pulls_row_low_only_for_strobed_column`**
-(`crates/coco-core/tests/keyboard.rs:13-26`) is exactly the §10.5 trace,
+([`crates/coco-core/tests/keyboard.rs:13-26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/keyboard.rs#L13-L26)) is exactly the §10.5 trace,
 written as a test instead of prose:
 
 ```rust
@@ -1239,7 +1239,7 @@ thing Color BASIC's cold-start code does after `KEYIN`'s caller checks for
 *any* pending keystroke before paying for a full column-by-column scan).
 
 **`falling_edge_selected_port_flags_only_on_high_to_low`**
-(`crates/coco-core/tests/pia_sync.rs:26-33`) exercises §10.4's edge logic
+([`crates/coco-core/tests/pia_sync.rs:26-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs#L26-L33)) exercises §10.4's edge logic
 through the real bus entry point, `hsync()`, rather than `PiaPort::set_c1`
 directly:
 
@@ -1259,12 +1259,12 @@ it's asserting that the whole per-scanline call sequence in `hsync()`
 (§10.4) produces the flag stock BASIC's default control-register setup
 expects, not just that `set_c1` in isolation obeys its contract (that
 narrower claim is `pia::tests::falling_edge_selected_flags_only_on_high_to_low`,
-colocated in `pia.rs` itself via `#[path = "pia_test.rs"] mod tests;`). Two
+colocated in [`pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs) itself via `#[path = "pia_test.rs"] mod tests;`). Two
 tests, two altitudes, both needed — the sabotage exercise below will show
 you exactly why the difference matters.
 
 **`cb1_falling_flag_first_appears_at_fs_falling_line_not_before`**
-(`crates/coco-core/tests/pia_sync.rs:50-70`) checks a fact that's easy to
+([`crates/coco-core/tests/pia_sync.rs:50-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs#L50-L70)) checks a fact that's easy to
 get subtly wrong: the field-sync flag must appear at the *real* scanline
 the field-sync pulse occurs, not merely "eventually, sometime during the
 field":
@@ -1299,7 +1299,7 @@ confusing `fs_falling_line` with some other line count) would fail on
 some iteration well before the loop even reaches `fs_falling()`.
 
 **`fire_buttons_pull_rows_low_regardless_of_strobe`**
-(`crates/coco-core/tests/joystick_bus.rs:65-79`) is §10.6's "buttons bypass
+([`crates/coco-core/tests/joystick_bus.rs:65-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/joystick_bus.rs#L65-L79)) is §10.6's "buttons bypass
 the strobe" claim, verified through the real bus:
 
 ```rust
@@ -1344,21 +1344,21 @@ what the strobe register says.
 
 In this order:
 
-1. **`crates/coco-core/src/pia.rs`**, the whole file (188 lines) — you've
+1. **[`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs)**, the whole file (188 lines) — you've
    now seen nearly every line quoted in this chapter, but read it once
    more start to finish without the surrounding narration, and check that
    you can predict what each function does before reading its body.
-2. **`crates/coco-core/src/keyboard.rs`** and **`crates/coco-core/src/joystick.rs`**
+2. **[`crates/coco-core/src/keyboard.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/keyboard.rs)** and **[`crates/coco-core/src/joystick.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/joystick.rs)**
    — both short; read the module doc comments first, then `sense`/`compare`/
    `button_rows` closely.
-3. **`crates/coco-core/src/bus/pins.rs`** and the PIA-relevant parts of
-   **`crates/coco-core/src/bus/sync.rs`** (`hsync`, `fs_falling`, `fs_rising`
+3. **[`crates/coco-core/src/bus/pins.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs)** and the PIA-relevant parts of
+   **[`crates/coco-core/src/bus/sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs)** (`hsync`, `fs_falling`, `fs_rising`
    — skip the GIME/cartridge interrupt plumbing around them, that's weeks
    8/13's territory).
-4. **`crates/coco-core/src/bus/io.rs`**, the `IO_BASE..=PIA0_LAST`/
+4. **[`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)**, the `IO_BASE..=PIA0_LAST`/
    `PIA1_BASE..=PIA1_LAST` match arms in `io_read`/`io_write` only.
-5. Tests: `crates/coco-core/src/pia_test.rs`, `tests/pia_sync.rs`,
-   `tests/joystick_bus.rs` in full; skim `tests/keyboard.rs` (see the
+5. Tests: [`crates/coco-core/src/pia_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia_test.rs), [`tests/pia_sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs),
+   [`tests/joystick_bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/joystick_bus.rs) in full; skim [`tests/keyboard.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/keyboard.rs) (see the
    caveat above about the ROM-dependent tests).
 
 ```
@@ -1381,7 +1381,7 @@ is that result exactly? Check your table against `sense`'s source — you
 should be able to predict all eight rows without running any code.
 
 **10.2 — Sabotage the edge match, run the suite, revert precisely
-(sabotage).** In `crates/coco-core/src/pia.rs`, inside `PiaPort::set_c1`,
+(sabotage).** In [`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs), inside `PiaPort::set_c1`,
 change
 
 ```rust
@@ -1434,7 +1434,7 @@ implementing the core-side half of week 15's frontend feature.)
 **10.4 — Read and predict a `pia_sync` test (read + predict).** Without
 running it, predict the output of this modification to
 `cb1_rising_edge_selected_polls_high_at_fs_rising_line`
-(`tests/pia_sync.rs:72-98`): what happens if you delete the
+([`tests/pia_sync.rs:72-98`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs#L72-L98)): what happens if you delete the
 `b.fs_falling()` call inside the loop (line 84) entirely, leaving
 `falling_line` computed but unused? Does the test still pass? Does the
 *assertion inside the loop* (`no flag before the rising-edge scanline`)

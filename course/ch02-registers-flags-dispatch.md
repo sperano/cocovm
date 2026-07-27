@@ -15,7 +15,7 @@ emulator to check.*
 Chapter 1 already showed you the whole CPU struct, because there's no way to
 talk about the `Bus` trait without it. Read it again, now looking at the
 fields you skimmed past — `a`, `b`, `x`, `y`, `u`, `s`, `pc`, `dp`, `cc` — from
-`crates/mc6809/src/lib.rs:139`:
+[`crates/mc6809/src/lib.rs:139`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L139):
 
 ```rust
 pub struct MC6809 {
@@ -47,7 +47,7 @@ system do less work than you'd expect: a recurring choice in this codebase.
 There is no `d: u16` field, and that's worth noticing. `D` on real 6809
 silicon isn't a separate storage cell; it's `A` and `B` read and written as
 one 16-bit unit, A the high byte. The struct doesn't pretend otherwise — it
-stores `a` and `b` independently and computes `D` on demand (`lib.rs:167`):
+stores `a` and `b` independently and computes `D` on demand ([`lib.rs:167`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L167)):
 
 ```rust
 /// Accumulator `D` is the `A:B` pair (A high, B low).
@@ -70,7 +70,7 @@ A and B are always two registers wearing one costume.
 
 CC is the other register not stored as eight separate booleans, for the same
 reason: real 6809 code reads and writes it as a byte too (`TFR CC,A`,
-`PSHS CC`, `ORCC #$50`). The bit layout, from `lib.rs:47`:
+`PSHS CC`, `ORCC #$50`). The bit layout, from [`lib.rs:47`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L47):
 
 ```rust
 /// Condition Code register bit masks. CC = `E F H I N Z V C`.
@@ -113,7 +113,7 @@ an array: `const OPCODES: [fn(&mut Cpu); 256] = [...]`, indexed by the fetched
 byte. That's the classic table-driven design, and it's a fine choice for the
 6502 (256 opcodes, one addressing mode each, done). The 6809 doesn't get that
 table here. Instead, `MC6809::step` is one large `match` on the opcode byte,
-and the match arms *are* the dispatch table (`crates/mc6809/src/exec.rs:30`):
+and the match arms *are* the dispatch table ([`crates/mc6809/src/exec.rs:30`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L30)):
 
 ```rust
 pub fn step(&mut self, bus: &mut impl Bus) -> u32 {
@@ -232,7 +232,7 @@ A word about the doc comment on `step` versus the one at the top of `lib.rs`.
 `lib.rs` still opens with a stale banner — *"STATUS: skeleton... only a few
 opcodes are decoded"* — left over from an early milestone and never updated.
 The comment that actually describes what you just read is on `step` itself
-(`exec.rs:12`): *"This is the complete 6809 user-mode ISA; only a handful of
+([`exec.rs:12`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L12)): *"This is the complete 6809 user-mode ISA; only a handful of
 illegal opcodes remain undecoded and are treated as 2-cycle NOPs during
 bring-up."* When a file-level comment and a function-level comment disagree,
 trust the one attached to the code you're actually looking at. This crate has
@@ -266,7 +266,7 @@ silently — miss this ordering and `JMP` compiles fine and silently becomes
 ### Family functions: one `step`, eleven helpers
 
 Each `exec_*` function owns a contiguous slice of the opcode map and nothing
-else. `exec_load_store` (`crates/mc6809/src/exec/exec_data.rs:11`) only ever
+else. `exec_load_store` ([`crates/mc6809/src/exec/exec_data.rs:11`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L11)) only ever
 sees `LDA`/`LDB`/`STA`/`STB`/`LDD`/`STD`:
 
 ```rust
@@ -302,7 +302,7 @@ buy something this course cares about more: open one file, search for an
 opcode byte, and land in code whose surrounding context *is* its
 documentation — family grouping, addressing-mode comments, the cycle-count
 table in the comment above each arm. Transparency over compactness, exactly
-as `DESIGN.md` frames it — the right trade for a CPU you're going to read,
+as [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) frames it — the right trade for a CPU you're going to read,
 trace, and debug for fifteen more weeks.
 
 ---
@@ -311,8 +311,8 @@ trace, and debug for fifteen more weeks.
 
 Three of the 6809's addressing modes are simple enough to cover this week —
 the postbyte-driven indexed mode is next week's hardest 200 lines. All three
-live in `crates/mc6809/src/addressing.rs`, and all three route through two
-tiny primitives at the top of the file (`addressing.rs:7`):
+live in [`crates/mc6809/src/addressing.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs), and all three route through two
+tiny primitives at the top of the file ([`addressing.rs:7`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L7)):
 
 ```rust
 pub(crate) fn fetch_u8(&mut self, bus: &mut impl Bus) -> u8 {
@@ -340,7 +340,7 @@ bytes come from the *instruction stream* at `PC`, not an arbitrary address).
 `exec_load_store`: `0x86 => { let ea = self.fetch_u8(bus); ... }` for
 `LDA #$42`.
 
-**Direct** addressing (`addressing.rs:20`):
+**Direct** addressing ([`addressing.rs:20`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L20)):
 
 ```rust
 /// Direct-mode effective address: `DP:operand_byte`.
@@ -358,10 +358,10 @@ fetch and one byte shorter than extended, so hot variables and
 frequently-touched I/O pages get put where `DP` reaches. The emulator reads
 `self.dp`, shifts it into the high byte, and ORs in the fetched low byte —
 nothing clever. Whatever `DP` holds (BASIC leaves it at `$00`; reset sets it
-there per `lib.rs:178`, `self.dp = 0`) is exactly what direct mode uses,
+there per [`lib.rs:178`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L178), `self.dp = 0`) is exactly what direct mode uses,
 bug-for-bug identical to hardware.
 
-**Extended** addressing (`addressing.rs:26`) is the least surprising mode
+**Extended** addressing ([`addressing.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L26)) is the least surprising mode
 in the instruction set:
 
 ```rust
@@ -374,7 +374,7 @@ pub(crate) fn ea_extended(&mut self, bus: &mut impl Bus) -> u16 {
 A full 16-bit address, fetched straight from the instruction stream. `ea_direct`
 and `ea_extended` both return an address — they do not read memory *at* that
 address themselves. Reading is a separate step, bundled by four small helpers
-right below them (`addressing.rs:173`):
+right below them ([`addressing.rs:173`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L173)):
 
 ```rust
 pub(crate) fn read_direct8(&mut self, bus: &mut impl Bus) -> u8 {
@@ -549,7 +549,7 @@ is doing anything clever with it.
 Here's a fact about 6809 flags that's easy to miss from the datasheet's
 per-instruction tables but obvious once you read the code: `ADD`, `ADC`,
 `SUB`, `SBC`, and `CMP` don't each have their own flag logic. They share two
-functions, `add8` and `sub8` (`crates/mc6809/src/alu.rs:202`):
+functions, `add8` and `sub8` ([`crates/mc6809/src/alu.rs:202`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L202)):
 
 ```rust
 /// 8-bit add with carry-in: `a + m + carry_in`. Sets H, N, Z, V, C per the
@@ -586,7 +586,7 @@ pub(crate) fn add8(&mut self, a: u8, m: u8, carry_in: u8) -> u8 {
 where `c` is the *current* carry flag, fetched right before the call:
 `let c = self.cc & cc::CARRY;`. That single `carry_in` parameter is the
 entire difference between `ADD` and `ADC` — one function, one flag formula,
-two callers (`exec/exec_data.rs:49-64`). The trick generalizes: `carry_in`
+two callers ([`exec/exec_data.rs:49-64`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L49-L64)). The trick generalizes: `carry_in`
 doubles as borrow-in for `sub8`, so `SUBA` is `self.sub8(self.a, m, 0)` and
 `SBCA` is `self.sub8(self.a, m, c)`. `CMPA` computes the same subtraction as
 `SUBA` and throws the result away: `self.sub8(self.a, m, 0);`, return value
@@ -641,7 +641,7 @@ throw-away-the-result case.
 
 Section 2.2 showed you individual arms from `exec_alu8` scattered across
 `step`'s dispatch comment. Here's the whole function
-(`crates/mc6809/src/exec/exec_data.rs:46`) — six operations (`ADD`, `ADC`,
+([`crates/mc6809/src/exec/exec_data.rs:46`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L46)) — six operations (`ADD`, `ADC`,
 `SUB`, `SBC`, `CMP`, and their `A`/`B` variants) across three addressing
 modes, thirty opcode bytes, and not one of them does anything but shuffle
 arguments into `add8`/`sub8`:
@@ -715,7 +715,7 @@ like at full scale, not just in the one CMPA line quoted above.
 ### BIT is to AND as CMP is to SUB
 
 The same discard trick shows up one function over, for a different family.
-`exec_logic8` (`crates/mc6809/src/exec/exec_data.rs:140`) handles
+`exec_logic8` ([`crates/mc6809/src/exec/exec_data.rs:140`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L140)) handles
 `AND`/`OR`/`EOR`/`BIT` across immediate, direct, indexed, and extended — the
 first place in this chapter you'll see the indexed rows' shape, even before
 next week's `ea_indexed` is explained: each one returns an `(ea, ic)` pair,
@@ -814,7 +814,7 @@ sign differs from the minuend"* — as `(a ^ m) & (a ^ r) & 0x80 != 0`.
 Check it against something you already know: `$7F + $01` must set `V` (a
 positive byte overflowing into negative territory). `a = 0x7F`, `m = 0x01`,
 `r = 0x80`. `a ^ r = 0xFF`, `m ^ r = 0x81`. AND: `0x81` — bit 7 set, `V`
-fires. Exactly the case in `tests/alu.rs::adda_signed_overflow`, walked
+fires. Exactly the case in [`tests/alu.rs::adda_signed_overflow`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/alu.rs), walked
 through in §2.8.
 
 ### The "load clears V" convention
@@ -823,7 +823,7 @@ Loads, stores, and logic operations don't compute a signed-overflow condition
 at all — there's no subtraction or addition to overflow. But the 6809
 datasheet still specifies `V = 0` after every `LD`/`ST`/`AND`/`OR`/`EOR`.
 That convention lives in one small function, `set_nz8`
-(`crates/mc6809/src/alu.rs:36`):
+([`crates/mc6809/src/alu.rs:36`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L36)):
 
 ```rust
 /// Set N and Z from an 8-bit result and clear V (the LD/ST/logic convention;
@@ -836,8 +836,8 @@ pub(crate) fn set_nz8(&mut self, value: u8) {
 
 Every `LDA`/`LDB`/`STA`/`STB` arm from §2.4 calls `set_nz8`, never
 `set_nz8_only` directly — that's how `V` ends up cleared after a load without
-every arm saying so. Compare `set_nz16` (`alu.rs:63`, same shape, 16-bit) used
-by `LDD`/`LDX`/`LDY`, and `set_z16` (`alu.rs:43`) used only by `LEAX`/`LEAY`,
+every arm saying so. Compare `set_nz16` ([`alu.rs:63`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L63), same shape, 16-bit) used
+by `LDD`/`LDX`/`LDY`, and `set_z16` ([`alu.rs:43`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L43)) used only by `LEAX`/`LEAY`,
 which — unusually — touch `Z` and *nothing else*, not even `N`. Three
 closely related helpers, each named for exactly the flags it touches;
 picking the right one is picking the right datasheet row.
@@ -846,7 +846,7 @@ picking the right one is picking the right datasheet row.
 
 Everything in this section has a 16-bit twin, and it's worth seeing once so
 you believe it's the same idea and not a coincidence. `exec_16bit`
-(`crates/mc6809/src/exec/exec_data.rs:194-208`) opens with `ADDD`/`SUBD`/
+([`crates/mc6809/src/exec/exec_data.rs:194-208`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L194-L208)) opens with `ADDD`/`SUBD`/
 `CMPX`:
 
 ```rust
@@ -869,7 +869,7 @@ you believe it's the same idea and not a coincidence. `exec_16bit`
 
 `CMPX` is `sub16` with its result unused, at exactly the byte and line
 position you'd predict having just read `CMPA`. `add16`/`sub16`
-(`alu.rs:254`, `alu.rs:264`) are `add8`/`sub8` widened to `u16`: same carry
+([`alu.rs:254`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L254), [`alu.rs:264`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L264)) are `add8`/`sub8` widened to `u16`: same carry
 rule (`sum > 0xFFFF` instead of `> 0xFF`), same signed-overflow XOR-and-mask
 rule against bit 15 instead of bit 7, same N/Z convention — with one thing
 quietly missing. Neither has an `H` parameter, because no 16-bit instruction
@@ -881,7 +881,7 @@ same load/store shape you already read in full for `LDD`/`STD` back in
 
 ### `DAA`: the payoff for `H`
 
-`daa()` (`alu.rs:178`) is the one place `H` gets read back:
+`daa()` ([`alu.rs:178`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L178)) is the one place `H` gets read back:
 
 ```rust
 pub(crate) fn daa(&mut self) -> u32 {
@@ -913,7 +913,7 @@ about one gap — *"V is left undefined (untouched here)"* — matching real
 doesn't invent a value for it.
 
 Walk it against the datasheet rules with the two cases the codebase itself
-tests, `crates/mc6809/tests/interrupts.rs:83` and `:94` (yes, that file —
+tests, [`crates/mc6809/tests/interrupts.rs:83`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs#L83) and [`:94`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs#L94) (yes, that file —
 more on the filename in §2.8). First, a plain BCD add with no carry chain:
 `$64 + $27` in packed BCD is "64 + 27 = 91," and binary addition gets you
 partway there. The test drives it by loading the *already-added* binary sum
@@ -980,9 +980,9 @@ wrap to this time.
 Section 2.2 flagged that the RMW opcode range (`NEG`/`COM`/`LSR`/`ROR`/
 `ASR`/`ASL`/`ROL`/`DEC`/`INC`/`TST`/`CLR`) encodes addressing mode in the high
 nibble and operation in the low nibble. `exec_rmw`
-(`crates/mc6809/src/exec/exec_data.rs:236`) reads the high nibble (via the
+([`crates/mc6809/src/exec/exec_data.rs:236`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L236)) reads the high nibble (via the
 opcode range it's matched under) and hands the low nibble to a second-level
-dispatcher, `rmw_apply` (`alu.rs:156`):
+dispatcher, `rmw_apply` ([`alu.rs:156`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L156)):
 
 ```rust
 /// Dispatch an 8-bit read-modify-write op by the opcode's low nibble and
@@ -1029,7 +1029,7 @@ unwanted bus write (harmless to RAM, a real bug against a write-sensitive I/O
 register). `rmw_apply` handles this by returning `m` completely unchanged for
 the `TST` nibble (`0xD`) — the transform is the identity function — but the
 caller still has to know not to write it back, and does, explicitly, in all
-three memory-operand arms of `exec_rmw` (`exec/exec_data.rs:243`):
+three memory-operand arms of `exec_rmw` ([`exec/exec_data.rs:243`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L243)):
 
 ```rust
 // Direct
@@ -1052,7 +1052,7 @@ indistinguishable when there's no bus in between.
 
 ### `ASL`/`ROL`'s overflow bit, decoded
 
-`asl8` and `rol8` (`alu.rs:133`, `alu.rs:142`) both compute `V` the same
+`asl8` and `rol8` ([`alu.rs:133`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L133), [`alu.rs:142`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L142)) both compute `V` the same
 non-obvious way:
 
 ```rust
@@ -1083,7 +1083,7 @@ the sign bit, so the overflow test doesn't need to know about carry-in.
 
 You've now read enough arms to notice the pattern: every single one ends in
 an integer literal — `2`, `4`, `5`, `6 + ic` — or delegates to a function that
-returns one. That number is the *entire* timing model. `DESIGN.md` §5 states
+returns one. That number is the *entire* timing model. [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 states
 the policy directly:
 
 > Don't try to be cycle-*exact* mid-instruction at first; instruction-granular
@@ -1099,7 +1099,7 @@ builds — a scanline loop that runs instructions until roughly 57 cycles have
 elapsed, then does video/audio/timer work — because nothing downstream needs
 to know that cycle 3 specifically is when the address bus becomes valid. The
 moment something *would* need that (a demo whose raster trick depends on
-exact sub-instruction bus timing) is called out in `DESIGN.md` as a
+exact sub-instruction bus timing) is called out in [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) as a
 deliberately deferred scope, not an oversight. `self.cycles: u64` — "the
 machine's clock" from chapter 1 — is simply the running total of these
 per-instruction numbers.
@@ -1111,7 +1111,7 @@ per-instruction numbers.
 The `mc6809` test suite isn't incidental — it's written so that reading one
 test file after reading the source teaches you the same flag rules a second
 way: concretely, with real numbers. Take `adda_signed_overflow` from
-`crates/mc6809/tests/alu.rs:57`:
+[`crates/mc6809/tests/alu.rs:57`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/alu.rs#L57):
 
 ```rust
 #[test]
@@ -1125,7 +1125,7 @@ fn adda_signed_overflow() {
 }
 ```
 
-`Sys` (`crates/mc6809/tests/common/mod.rs:7`) formalizes the week-1 exercise's
+`Sys` ([`crates/mc6809/tests/common/mod.rs:7`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/common/mod.rs#L7)) formalizes the week-1 exercise's
 `FlatBus`-backed toy: a real `MC6809` wired to a real `FlatBus`, `Sys::code`
 loading a byte program and pointing `PC` at it, `s.step()` calling
 `self.cpu.step(&mut self.bus)` directly. `0x8B` is `ADDA` immediate (§2.5's
@@ -1147,7 +1147,7 @@ write yourself this week.
 
 A second one, this time confirming the BIT-is-AND-and-discard claim from
 §2.5 rather than a flag formula — `bita_sets_flags_without_changing_a` from
-`crates/mc6809/tests/logic_rmw.rs:67`:
+[`crates/mc6809/tests/logic_rmw.rs:67`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/logic_rmw.rs#L67):
 
 ```rust
 #[test]
@@ -1174,7 +1174,7 @@ on `CMPA`'s arm in §2.5, now automated into something CI runs on every
 commit.
 
 One filename oddity worth flagging while you're in the test directory: the
-two `DAA` tests walked in §2.5 live in `tests/interrupts.rs`, not a
+two `DAA` tests walked in §2.5 live in [`tests/interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs), not a
 `tests/daa.rs` or `tests/misc_inherent.rs` you might expect from the opcode
 map. The file's own header comment says why — it bundles "the misc inherent
 ops (ORCC/ANDCC/SEX/ABX/MUL/DAA) and the interrupt / halt subsystem"
@@ -1196,20 +1196,20 @@ arm."
 
 In this order:
 
-1. **`crates/mc6809/src/exec.rs`, all of it** — the `step` match, then each
+1. **[`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs), all of it** — the `step` match, then each
    `exec_*` family function, until you can say for any opcode byte on your
    instruction card which family it lands in and why.
-2. **`crates/mc6809/src/exec/exec_data.rs`, all of it** — the bulk of the
+2. **[`crates/mc6809/src/exec/exec_data.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs), all of it** — the bulk of the
    ISA's byte count. Read `exec_load_store`/`exec_alu8` closely; skim
    `exec_indexed`/`exec_16bit` (indexed addressing is next week; the 16-bit
    ops are §2.5's primitives applied to `u16`).
-3. **`crates/mc6809/src/alu.rs`, all of it** — the shortest, densest file in
+3. **[`crates/mc6809/src/alu.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs), all of it** — the shortest, densest file in
    the crate: every flag rule in the ISA lives here exactly once.
-4. **`crates/mc6809/src/addressing.rs`, lines 1–57 plus 173–192** — the
+4. **[`crates/mc6809/src/addressing.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs), lines [1–57](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L1-L57) plus [173–192](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L173-L192)** — the
    `fetch_*`/`ea_*`/`read_*` helpers; skip the indexed postbyte decoder in
    the middle, that's next week.
-5. **The tests** — `tests/loads.rs`, `tests/alu.rs`, `tests/logic_rmw.rs`,
-   `tests/common/mod.rs` — a second explanation of §2.5–2.6, in numbers
+5. **The tests** — [`tests/loads.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/loads.rs), [`tests/alu.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/alu.rs), [`tests/logic_rmw.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/logic_rmw.rs),
+   [`tests/common/mod.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/common/mod.rs) — a second explanation of §2.5–2.6, in numbers
    instead of formulas.
 
 Run the suite and watch these specific files' worth of tests pass:
@@ -1259,7 +1259,7 @@ against `SystemBus` on real hardware even though no `mc6809` test notices.
 Revert before continuing.
 
 **2.5 — Read: why a `match`, not a table (read).** Re-read §2.2's
-family-function split against `DESIGN.md` §5's framing of the indexed
+family-function split against [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5's framing of the indexed
 postbyte as "the hardest part." In three to five sentences: why does routing
 a large fraction of the ISA through one `ea_indexed` function (next week)
 make the `match`-as-table design *more* attractive, not less, than a
@@ -1270,7 +1270,7 @@ need to return?)
 **2.6 — Recall: the CC layout (recall).** From memory, write the eight CC
 bits in order (`E F H I N Z V C`) with their hex masks, and name the one
 ALU-visible flag whose only consumer this week is a single non-arithmetic
-instruction. Check against `cc` in `lib.rs:47` and §2.5's `DAA` discussion.
+instruction. Check against `cc` in [`lib.rs:47`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L47) and §2.5's `DAA` discussion.
 
 **2.7 — Sabotage: delete `add8`'s half-carry line (sabotage, verified —
 broader than you'd guess).** In `alu.rs`, remove just the

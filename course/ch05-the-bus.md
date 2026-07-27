@@ -35,7 +35,7 @@ generations with genuinely different chips doing the deciding:
   logical slots, each independently pointed at any 8K physical block in
   up to 2 MB of RAM.
 
-Both live in `crates/coco-core/src/bus.rs`, inside one struct,
+Both live in [`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), inside one struct,
 `SystemBus`, which is what actually implements the `Bus` trait from
 week 1:
 
@@ -55,7 +55,7 @@ pub struct SystemBus {
     // ...
 }
 ```
-*(`crates/coco-core/src/bus.rs:36-110`, trimmed to the fields this
+*([`crates/coco-core/src/bus.rs:36-110`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L36-L110), trimmed to the fields this
 chapter needs.)*
 
 Notice both `gime: GIME` and `sam: Sam` are always present, on every
@@ -75,7 +75,7 @@ chooses between the two decoders in §5.4.
 
 Before the branch tables, internalize the *order of precedence*, because
 several device ranges physically overlap and the order is the whole
-story. Here is the real function, `crates/coco-core/src/bus.rs:267-294`,
+story. Here is the real function, [`crates/coco-core/src/bus.rs:267-294`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L267-L294),
 for the CoCo 3 path (the `variant != Coco3` branch peels off to a
 completely different function, §5.5):
 
@@ -133,7 +133,7 @@ that, once true, ends the search:
 4. **Everything else** falls through to `phys(addr)` — the MMU (or the
    fixed disabled-MMU map) translating into `self.ram`.
 
-`write` (`bus.rs:296-315`) walks the identical four tiers with one
+`write` ([`bus.rs:296-315`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L296-L315)) walks the identical four tiers with one
 asymmetry worth flagging now and expanding in §5.10's neighbor: writes to
 tier 1 are simply dropped (`$FFE0–$FFFF` isn't backed by RAM at all —
 there's no "write-through" concept there), and writes that fall through
@@ -163,7 +163,7 @@ address even while the CPU can't read it back.
 `$FF00–$FFFF` is fixed on every CoCo — it never moves regardless of
 MMU or ROM-mapping state (only the hardwired-vector carve-out inside it
 does anything unusual, and that's tier 1 above). Here is the complete
-map as `crates/coco-core/src/bus/io.rs`'s `io_read`/`io_write` actually
+map as [`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)'s `io_read`/`io_write` actually
 dispatch it — not just DESIGN.md's summary, the literal `match` arms:
 
 | Range | Device | Notes |
@@ -191,13 +191,13 @@ source cold:
 
 - **`addr & 0x03`** is how both PIA read/write arms pick a register —
   `io_read`'s `IO_BASE..=PIA0_LAST => { ...; self.pia0.read((addr &
-  0x03) as u8) }` (`bus/io.rs:61-66`). A real 6821 only decodes its
+  0x03) as u8) }` ([`bus/io.rs:61-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L61-L66)). A real 6821 only decodes its
   bottom two address lines; every other line is "don't care," which is
   why `$FF00`, `$FF04`, `$FF08`, … all reach the *same* register. This
   isn't a shortcut the emulator took — it's literally how the chip's
   address pins are wired.
 - **Most GIME video/timer registers are write-only on real hardware.**
-  `io_read`'s `TIMER_MSB_REG..=GIME_LAST => 0` arm (`bus/io.rs:83`)
+  `io_read`'s `TIMER_MSB_REG..=GIME_LAST => 0` arm ([`bus/io.rs:83`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L83))
   isn't a stub; a real GIME's video registers genuinely don't drive the
   data bus on a read. If you ever wrote 6809 assembly that tried to
   read-modify-write `$FF98`, that bug is not your emulator's fault —
@@ -225,7 +225,7 @@ IO_BASE..=PIA0_LAST => {
     self.pia0.read((addr & 0x03) as u8)
 }
 ```
-*(`bus/io.rs:61-66`)*
+*([`bus/io.rs:61-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L61-L66))*
 
 `pia0_pa_pins` is the function that does the computing:
 
@@ -245,7 +245,7 @@ pub(super) fn pia0_pa_pins(&self) -> u8 {
     pa
 }
 ```
-*(`bus/pins.rs:14-27`)*
+*([`bus/pins.rs:14-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs#L14-L27))*
 
 That single byte on PIA0 port A is doing three unrelated jobs at once —
 keyboard row sense, joystick fire buttons, and the joystick's analog
@@ -263,7 +263,7 @@ pub(super) fn pia1_pa_pins(&self) -> u8 {
     if self.cassette.input_bit() { 0xFF } else { !CASSETTE_IN }
 }
 ```
-*(`bus/pins.rs:33-40`)*
+*([`bus/pins.rs:33-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs#L33-L40))*
 
 **Pattern 2: some writes fan out to more than one device.** Cassette
 *output* is the mirror image of cassette input, and it doesn't live
@@ -283,7 +283,7 @@ PIA1_BASE..=PIA1_LAST => {
     self.note_audio_write(); // DAC / PB1 / SNDEN / relay
 }
 ```
-*(`bus/io.rs:104-113`)*
+*([`bus/io.rs:104-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L104-L113))*
 
 Every single PIA1 write — even one that has nothing to do with the
 cassette, like flipping a completely unrelated control bit — re-derives
@@ -303,7 +303,7 @@ VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
 VHD_COMMAND_STATUS => self.vhd.read_status(),
 VHD_SELECT => OPEN_BUS, // always open bus, unconditionally (spec)
 ```
-*(`bus/io.rs:74-78`, read side)*
+*([`bus/io.rs:74-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L74-L78), read side)*
 
 Three LRN (logical record number) bytes, two buffer-pointer bytes, one
 command/status register, and one drive-select register that — per the
@@ -329,7 +329,7 @@ pub(super) fn io_read(&mut self, addr: u16) -> u8 {
     }
 }
 ```
-*(`bus/io.rs:54-60`, abbreviated)*
+*([`bus/io.rs:54-60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L54-L60), abbreviated)*
 
 ```rust
 pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
@@ -341,7 +341,7 @@ pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
     }
 }
 ```
-*(`bus/io.rs:26-33`)*
+*([`bus/io.rs:26-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L26-L33))*
 
 `becker_read` returns `None` — "not my address, or the Becker port isn't
 even enabled" — and lets the caller fall through to the ordinary
@@ -368,7 +368,7 @@ something fancier:
 /// `docs/coco12-plan.md` Phase 2.
 pub variant: MachineVariant,
 ```
-*(`bus.rs:38-42`)*
+*([`bus.rs:38-42`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L38-L42))*
 
 Think about the alternative designs and why each loses:
 
@@ -390,7 +390,7 @@ Think about the alternative designs and why each loses:
 - **One unified decode function with `if variant == Coco3 { ... } else {
   ... }` sprinkled through every tier.** This is what you'd get if you
   tried to *merge* `sam_read` and the CoCo 3 `read` body into one
-  function "to avoid duplication." Read `bus/sam_path.rs`'s own module
+  function "to avoid duplication." Read [`bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)'s own module
   doc comment for why the codebase explicitly rejected this:
 
   ```rust
@@ -400,7 +400,7 @@ Think about the alternative designs and why each loses:
   //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
   //! touches `self.gime` — no MMU translate, no interrupt raises, no timer.
   ```
-  *(`bus/sam_path.rs:1-7`)*
+  *([`bus/sam_path.rs:1-7`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs#L1-L7))*
 
   The two chips don't just have different registers — they have
   **differently shaped decode algorithms**: the SAM resolves a whole
@@ -426,7 +426,7 @@ wearing the same 64K clothes.
 ## 5.5 The CoCo 1/2 path: `Sam::map` and the strobe registers
 
 The MC6883 SAM predates the GIME by half a decade and does its whole job
-in one function, `Sam::map` (`crates/coco-core/src/sam.rs:140-176`):
+in one function, `Sam::map` ([`crates/coco-core/src/sam.rs:140-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs#L140-L176)):
 
 ```rust
 pub fn map(&self, addr: u16) -> SamTarget {
@@ -462,7 +462,7 @@ pub fn map(&self, addr: u16) -> SamTarget {
 ```
 
 One function, one `enum` result (`SamTarget`), no separate tiers to
-re-check on every call — `bus/sam_path.rs`'s `sam_read`/`sam_write` just
+re-check on every call — [`bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)'s `sam_read`/`sam_write` just
 `match` on what `map` handed back and act. Structurally simpler than the
 CoCo 3 path because the hardware genuinely is simpler: no MMU, no
 independent ROM-map stage — the SAM's handful of latched bits collapse
@@ -514,7 +514,7 @@ pub fn write_strobe(&mut self, addr: u16) {
     }
 }
 ```
-*(`crates/coco-core/src/sam.rs:119-136`)*
+*([`crates/coco-core/src/sam.rs:119-136`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs#L119-L136))*
 
 Sixteen bits, sixteen pairs, 32 addresses: V0–V2 (`$FFC0–$FFC5`), F0–F6
 (`$FFC6–$FFD3`), P1 (`$FFD4`/`$FFD5`), R0 (`$FFD6`/`$FFD7`), R1
@@ -551,7 +551,7 @@ compatibility overlay next.
 > returns instead of folded into the arithmetic.
 
 The CoCo 3's GIME keeps an independent copy of this exact even/odd idea
-for backward compatibility — you'll meet `gime/sam_compat.rs`'s version
+for backward compatibility — you'll meet [`gime/sam_compat.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/sam_compat.rs)'s version
 in §5.7, right after §5.6 covers the ROM window's own banking tricks,
 which the SAM (as you just saw) doesn't have at all.
 
@@ -585,7 +585,7 @@ pub fn rom_is_external(&self, addr: u16) -> bool {
     }
 }
 ```
-*(`gime.rs:288-300`; `EXTERNAL_ROM_BASE = 0xC000`)*
+*([`gime.rs:288-300`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L288-L300); `EXTERNAL_ROM_BASE = 0xC000`)*
 
 | `MC1` | `MC0` | Mapping | What the emulator does |
 |:-:|:-:|---|---|
@@ -606,7 +606,7 @@ The power-on/cold-start state matters enough to name: `INIT0` resets to
 `$00` (which is `MC=00`, 16K+16K split — an *empty* cartridge slot until
 BASIC's own cold-start code runs), and that cold-start code immediately
 writes `MC1` alone (`MC=10`, 32K internal) before jumping into the upper
-half of ROM — you traced exactly this in `tests/boot.rs`'s
+half of ROM — you traced exactly this in [`tests/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs)'s
 `cold_start_configures_rom_and_jumps_into_upper_half`, and §5.13 walks
 the reset sequence that leads up to it. A diskless CoCo 3 runs entirely
 out of `coco3.rom` because BASIC *chose* `MC=10`, not because that's
@@ -654,7 +654,7 @@ fn rom_read(&mut self, addr: u16) -> u8 {
     self.rom.get(off).copied().unwrap_or(OPEN_BUS)
 }
 ```
-*(`bus.rs:252-258`)*
+*([`bus.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L252-L258))*
 
 The practical consequence: **no cartridge, however aggressively it
 banks itself in, can ever own the reset vector.** A power-up CoCo 3
@@ -708,7 +708,7 @@ fn mc_32k_external_maps_whole_window_except_vectors() {
     assert_eq!(b.read(0xFFFE), 0xFE, "vectors always internal ROM");
 }
 ```
-*(`tests/bus_map.rs:79-95`)*
+*([`tests/bus_map.rs:79-95`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L79-L95))*
 
 The first proves `MC=10`'s "cold-start" behavior directly: even with a
 `MarkerCart` installed and ready to answer `0xAA`, `$C123` reads
@@ -746,7 +746,7 @@ pub fn write_sam(&mut self, addr: u16) {
     }
 }
 ```
-*(`crates/coco-core/src/gime/sam_compat.rs:44-70`, elided to the bits
+*([`crates/coco-core/src/gime/sam_compat.rs:44-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/sam_compat.rs#L44-L70), elided to the bits
 that matter here)*
 
 If you ever typed `POKE 65497,0` on a real CoCo 3 to get double speed
@@ -788,14 +788,14 @@ pub const TASK_COUNT: usize = 2;
 /// Logical 8K slots per task (the 64K CPU space / 8K).
 pub const SLOTS_PER_TASK: usize = 8;
 ```
-*(`gime.rs:20-23`)*
+*([`gime.rs:20-23`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L20-L23))*
 
 ```rust
 pub mmu: [[u8; SLOTS_PER_TASK]; TASK_COUNT],
 pub task: usize,
 pub mmu_enabled: bool,
 ```
-*(`gime.rs:174-176`)*
+*([`gime.rs:174-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L174-L176))*
 
 `$FFA0–$FFA7` decode to `mmu[0][0..8]`, `$FFA8–$FFAF` to `mmu[1][0..8]`.
 The decode is arithmetic, not a match arm per register:
@@ -807,7 +807,7 @@ fn mmu_index(addr: u16) -> (usize, usize) {
     (idx / gime::SLOTS_PER_TASK, idx % gime::SLOTS_PER_TASK)
 }
 ```
-*(`bus.rs:262-265`)*
+*([`bus.rs:262-265`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L262-L265))*
 
 ### The translation itself
 
@@ -823,7 +823,7 @@ pub fn translate(&self, addr: u16) -> usize {
     }
 }
 ```
-*(`gime.rs:241-249`, `BLOCK_SHIFT = 13`, i.e. `log2(8192)`)*
+*([`gime.rs:241-249`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L241-L249), `BLOCK_SHIFT = 13`, i.e. `log2(8192)`)*
 
 This is the formula the syllabus wants you fluent in: **`phys = (block
 << 13) | (addr & 0x1FFF)`**. `addr >> 13` picks which of the eight
@@ -847,7 +847,7 @@ fn phys(&self, addr: u16) -> usize {
     self.gime.translate(addr) % self.ram.len()
 }
 ```
-*(`bus.rs:220-228`)*
+*([`bus.rs:220-228`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L220-L228))*
 
 That `% self.ram.len()` is not a cosmetic bounds-check — it is the whole
 mechanism by which a 128K or 512K machine survives block numbers that
@@ -859,7 +859,7 @@ treatment of exactly what that means for a small machine.
 > means "someone forgot to bounds-check and is papering over it." Here
 > it's the opposite: the modulo *is* the documented hardware behaviour
 > (DESIGN.md §3 calls it "the mask relocates it to the top 64K"), and
-> `tests/bus_map.rs`'s `small_machine_aliases_high_window_into_top_blocks`
+> [`tests/bus_map.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs)'s `small_machine_aliases_high_window_into_top_blocks`
 > pins the exact aliasing a 128K machine produces. When you see
 > deliberate wraparound arithmetic in emulator code, look for the
 > comment or test that says *why* — it's very often "this is what the
@@ -878,7 +878,7 @@ built? Because interrupt vectors have to be reachable no matter what
 task is active or what's banked into the rest of the address space —
 BASIC keeps its interrupt trampolines here specifically so an interrupt
 firing mid-context-switch still lands on working code. `is_rom_window`
-(`bus.rs:234-242`) makes the corresponding read-side promise: when MC3
+([`bus.rs:234-242`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L234-L242)) makes the corresponding read-side promise: when MC3
 is set, `$FE00–$FEFF` is *never* treated as ROM either, even if the rest
 of the `$8000+` window currently is — it's unconditionally the constant
 RAM page. When MC3 is clear, that page just follows the ordinary
@@ -961,7 +961,7 @@ secondhand.)
 
 `coco-core` doesn't run OS-9 — it implements the hardware primitive OS-9
 and BASIC both rode, and that primitive is exactly what
-`tests/bus_map.rs` pins down, one register write at a time:
+[`tests/bus_map.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs) pins down, one register write at a time:
 
 ```rust
 #[test]
@@ -984,7 +984,7 @@ fn init1_selects_second_task_set() {
     assert_eq!(b.ram[7 * BLOCK_SIZE], 0x77);
 }
 ```
-*(`tests/bus_map.rs:230-248`, walked in full in §5.14)*
+*([`tests/bus_map.rs:230-248`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L230-L248), walked in full in §5.14)*
 
 The second test is the one that matters here: it leaves task 0's slot 0
 completely unprogrammed (still `0` from `GIME::default()`), programs
@@ -1095,7 +1095,7 @@ aliasing artifact of a smaller board:
 | 1024K  | 128       | `0x00–0x7F`      | 7                 | confirmed real config          |
 | 2048K  | 256       | `0x00–0xFF`      | 8 (full register) | confirmed real config          |
 
-`MemorySize::blocks()` (`config.rs:155-157`) reports exactly these block
+`MemorySize::blocks()` ([`config.rs:155-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L155-L157)) reports exactly these block
 counts (`bytes() / BLOCK_SIZE`), but — same observation as above —
 nothing in `SystemBus`/`GIME` ever consults `blocks()` to reject an
 out-of-range MMU write; the emulator lets you write any of the 256
@@ -1126,7 +1126,7 @@ fn small_machine_aliases_high_window_into_top_blocks() {
     assert_eq!(b.ram[DISABLED_MMU_BASE % b.ram.len()], 0xCD);
 }
 ```
-*(`tests/bus_map.rs:212-228`)*
+*([`tests/bus_map.rs:212-228`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L212-L228))*
 
 The first establishes the baseline on a 512K machine, where `$70000` is
 a perfectly ordinary in-range address and `DISABLED_MMU_BASE` needs no
@@ -1161,8 +1161,8 @@ MMU_BASE..=MMU_LAST => {
     self.gime.mmu[task][slot] & gime::MMU_READ_MASK
 }
 ```
-*(`bus/io.rs:146-149` and `:84-87`; `MMU_READ_MASK = 0x3F`,
-`gime.rs:40`)*
+*([`bus/io.rs:146-149`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L146-L149) and [`:84-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L84-L87); `MMU_READ_MASK = 0x3F`,
+[`gime.rs:40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L40))*
 
 Be precise about what "modeled" means here, because `gime.rs`'s own
 module header is stale and will mislead you if you trust the prose over
@@ -1173,10 +1173,10 @@ the code:
 //! ($FF98–$FF9F) are modelled; native scanout lives in `gime_video`. The timer,
 //! GIME-sourced interrupts, and the write-8/read-6 register asymmetry are TODO.
 ```
-*(`gime.rs:1-5`, emphasis on the last clause)*
+*([`gime.rs:1-5`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L1-L5), emphasis on the last clause)*
 
 That comment says the asymmetry is *still TODO* — but `MMU_READ_MASK`
-exists, is applied on every MMU register read, and `tests/bus_map.rs`
+exists, is applied on every MMU register read, and [`tests/bus_map.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs)
 has a passing test, `mmu_register_write_8_read_low_6`, proving the
 low-6-bits behaviour works today:
 
@@ -1189,7 +1189,7 @@ fn mmu_register_write_8_read_low_6() {
     assert_eq!(b.read(0xFFA3), MMU_READ_MASK); // only low 6 read back
 }
 ```
-*(`tests/bus_map.rs:252-258`)*
+*([`tests/bus_map.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L252-L258))*
 
 The comment is simply out of date;
 someone implemented the feature and didn't update the file banner.
@@ -1246,9 +1246,9 @@ returns.
 | Constant | Value | Where it fires |
 |---|---|---|
 | `bus::regs::OPEN_BUS` | `0xFF` | The I/O page's final catch-all (`io_read`'s `_ => OPEN_BUS`); `VHD_SELECT` unconditionally; a ROM image shorter than the window it's mapped into (`rom.get(off).copied().unwrap_or(OPEN_BUS)` in `rom_read`, §5.6). |
-| `sam::SamTarget::OpenBus` region | `0xFF` | CoCo 1/2 only: `$FF7F–$FFBF`, the range that would be GIME registers on a CoCo 3 but simply doesn't exist without one (`tests/sam.rs`'s `ff7f_to_ffbf_is_open_bus_on_coco1_2`). |
-| plain-SAM small-RAM reads | `0xFF` | `sam_path.rs`'s `sam_ram_index` returns `None` for an address past the installed RAM size on a 4K/16K/32K machine; the caller's `.unwrap_or(OPEN_BUS)` supplies `0xFF` (`tests/sam.rs`'s `small_ram_reads_open_bus_and_drops_writes_past_installed_size`). |
-| `cart::IO_OPEN_BUS` | `0xFF` | The cartridge's `$FF40–$FF7E` (`SCS*`) window when no cartridge is installed — "floats high, like an unstrobed PIA input pin" (`cart.rs:30-32`). |
+| `sam::SamTarget::OpenBus` region | `0xFF` | CoCo 1/2 only: `$FF7F–$FFBF`, the range that would be GIME registers on a CoCo 3 but simply doesn't exist without one ([`tests/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam.rs)'s `ff7f_to_ffbf_is_open_bus_on_coco1_2`). |
+| plain-SAM small-RAM reads | `0xFF` | `sam_path.rs`'s `sam_ram_index` returns `None` for an address past the installed RAM size on a 4K/16K/32K machine; the caller's `.unwrap_or(OPEN_BUS)` supplies `0xFF` ([`tests/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam.rs)'s `small_ram_reads_open_bus_and_drops_writes_past_installed_size`). |
+| `cart::IO_OPEN_BUS` | `0xFF` | The cartridge's `$FF40–$FF7E` (`SCS*`) window when no cartridge is installed — "floats high, like an unstrobed PIA input pin" ([`cart.rs:30-32`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L30-L32)). |
 | `vhd`'s local `OPEN_BUS` | `0xFF` | VHD registers that don't answer while their drive is deselected. |
 | `cart::ROM_OPEN_BUS` | **`0x00`** | The cartridge's `$C000–$FDFF` (`CTS*`) window when no cartridge is installed. |
 
@@ -1265,7 +1265,7 @@ pub const ROM_OPEN_BUS: u8 = 0x00;
 /// drives the bus: floats high, like an unstrobed PIA input pin.
 pub const IO_OPEN_BUS: u8 = 0xFF;
 ```
-*(`cart.rs:25-32`)*
+*([`cart.rs:25-32`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L25-L32))*
 
 Notice what the doc comments do and don't claim. `IO_OPEN_BUS` gets a
 one-line electrical rationale ("floats high, like an unstrobed PIA
@@ -1302,7 +1302,7 @@ fn rom_peek(&self, _addr: u16) -> u8 {
     ROM_OPEN_BUS
 }
 ```
-*(`cart.rs:47-55`)*
+*([`cart.rs:47-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L47-L55))*
 
 This is the same `read`-vs-`peek` split week 1 introduced for PIA
 interrupt flags, applied to cartridges: a debugger memory view that
@@ -1320,7 +1320,7 @@ that specific region of the bus.
 
 **CoCo 3**: one 32K image, `coco3.rom`, loaded whole and mapped
 verbatim — `SystemBus::rom_read` computes `off = addr - 0x8000` and
-indexes straight into it (`bus.rs:252-258`). This is the ROM you saw
+indexes straight into it ([`bus.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L252-L258)). This is the ROM you saw
 every time you turned your CoCo 3 on: Super Extended Color BASIC,
 occupying the full `$8000–$FFFF` window when INIT0's `MC1:MC0` bits
 select 32K-internal (the machine's cold-start default, and why
@@ -1336,7 +1336,7 @@ range. `Sam::map` reflects the chip boundary directly as two separate
 `SamTarget` variants (`RomExt`/`RomBas`, §5.5) rather than one flat
 image, but at load time `coco-egui` and the test suite still need
 *something* to hand `SystemBus::new` for that missing half. The
-approach, verified in `tests/coco1_boot.rs`:
+approach, verified in [`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs):
 
 ```rust
 /// Compose a Color-BASIC-only flat image: `OPEN_BUS_FILLER` for the extbas
@@ -1348,7 +1348,7 @@ fn boot_machine() -> Option<(Machine, Vec<u8>)> {
     // ...
 }
 ```
-*(`tests/coco1_boot.rs:26,38-46`; `BAS_OFFSET = 8*1024`,
+*([`tests/coco1_boot.rs:26,38-46`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs); `BAS_OFFSET = 8*1024`,
 `OPEN_BUS_FILLER = 0xFF`)*
 
 `0xFF` isn't arbitrary — it's what an empty, unconnected bus line reads
@@ -1393,7 +1393,7 @@ pub fn validate(file_name: &str, bytes: &[u8]) -> Validation {
     }
 }
 ```
-*(`rom_db.rs:38-91`, elided)*
+*([`rom_db.rs:38-91`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rom_db.rs#L38-L91), elided)*
 
 `identify` checks content (size + CRC32) against every known ROM
 *regardless of the claimed file name* — so a `coco3.rom` that's
@@ -1413,7 +1413,7 @@ not errors to reject.
 ## 5.13 Reset, traced end to end
 
 Every decode rule in this chapter converges on one address the very
-first instant the machine exists. `Machine::new` (`machine.rs:167-176`):
+first instant the machine exists. `Machine::new` ([`machine.rs:167-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L167-L176)):
 
 ```rust
 pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
@@ -1427,7 +1427,7 @@ pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
 }
 ```
 
-`cpu.reset` (`crates/mc6809/src/lib.rs:177-183`):
+`cpu.reset` ([`crates/mc6809/src/lib.rs:177-183`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L177-L183)):
 
 ```rust
 pub fn reset(&mut self, bus: &mut impl Bus) {
@@ -1464,7 +1464,7 @@ Walk `bus.read_u16(0xFFFE)` through everything you now know:
 5. `coco3.rom` offset `0xFFFE - 0x8000 = 0x7FFE`, the last two bytes of
    the 32K image.
 
-`tests/boot.rs`'s `reset_vector_points_into_rom` pins the real values:
+[`tests/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs)'s `reset_vector_points_into_rom` pins the real values:
 
 ```rust
 const RESET_ENTRY: u16 = 0x8C1B;
@@ -1477,7 +1477,7 @@ fn reset_vector_points_into_rom() {
     assert_eq!(m.cpu.pc, RESET_ENTRY);
 }
 ```
-*(`tests/boot.rs:13,27-35`)*
+*([`tests/boot.rs:13,27-35`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs))*
 
 `coco3.rom[0x7FFE..0x7FFF] = {0x8C, 0x1B}` — the vector *stored* at the
 very end of the ROM image points to `$8C1B`, an address near the
@@ -1502,7 +1502,7 @@ it, the MMU-disabled RAM tier would have answered for everything below
 
 ## 5.14 Four worked examples from `bus_map.rs`
 
-`tests/bus_map.rs` is, deliberately, the single best teaching artifact
+[`tests/bus_map.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs) is, deliberately, the single best teaching artifact
 for this chapter — every test builds a `SystemBus` directly against a
 *synthetic* ROM, `marked_rom()`, whose every byte equals its own
 low-address byte:
@@ -1536,7 +1536,7 @@ fn mc_16k_split_routes_upper_half_to_cartridge() {
     assert_eq!(b.read(0x8123), 0x23, "lower half still internal");
 }
 ```
-*(`tests/bus_map.rs:65-76`)*
+*([`tests/bus_map.rs:65-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L65-L76))*
 
 `MarkerCart` is a two-line fake cartridge that always answers `0xAA` on
 its ROM window (`rom_read`) — a reminder that the `Cartridge` trait
@@ -1544,7 +1544,7 @@ its ROM window (`rom_read`) — a reminder that the `Cartridge` trait
 that swapping it in a test is exactly how you exercise the "what if
 external ROM is present" branch of `GIME::rom_is_external` without ever
 touching a real cartridge image. At power-on, `INIT0`'s `MC1:MC0` bits
-are `00`, which `rom_is_external` (`gime.rs:294-300`, §5.6's full table)
+are `00`, which `rom_is_external` ([`gime.rs:294-300`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L294-L300), §5.6's full table)
 maps to "16K internal + 16K external": `$8000–$BFFF` still reads
 `marked_rom` (you can see the low byte pass straight through, `0x8123 →
 0x23`), but `$C000–$FDFF` routes to `self.cart.rom_read` instead —
@@ -1568,7 +1568,7 @@ fn constant_page_fe00_is_ram_when_mc3_set() {
     assert_eq!(b.read(0xFDFF), marked_rom()[0xFDFF - 0x8000]);
 }
 ```
-*(`tests/bus_map.rs:150-166`)*
+*([`tests/bus_map.rs:150-166`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L150-L166))*
 
 This is §5.7's MC3 rule made concrete: with `MC3` set, `$FE00` and
 `$FEFF` round-trip a write/read exactly like plain RAM — `phys()`'s
@@ -1604,7 +1604,7 @@ fn init1_selects_second_task_set() {
     assert_eq!(b.ram[7 * BLOCK_SIZE], 0x77);
 }
 ```
-*(`tests/bus_map.rs:230-248`)*
+*([`tests/bus_map.rs:230-248`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L230-L248))*
 
 The first test programs *only* `$FFA0` (task 0, slot 0) and enables the
 MMU; a write to logical `$0000` — slot 0 of the 64K window — lands at
@@ -1637,7 +1637,7 @@ fn small_machine_aliases_high_window_into_top_blocks() {
     assert_eq!(b.ram[DISABLED_MMU_BASE % b.ram.len()], 0xCD);
 }
 ```
-*(`tests/bus_map.rs:212-228`; walked in full, with the hand-worked
+*([`tests/bus_map.rs:212-228`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L212-L228); walked in full, with the hand-worked
 arithmetic behind the second test, in §5.9)*
 
 Two RAM sizes, one logical address, two different physical
@@ -1654,28 +1654,28 @@ on every single `cargo test` run, not just by hand.
 
 In this order:
 
-1. **`crates/coco-core/src/bus.rs`, whole file** — you've now seen most
+1. **[`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), whole file** — you've now seen most
    of it in fragments; read it start to finish once so the four-tier
    decode order in `read`/`write` sits in your head as one continuous
    shape, not four separate quotes.
-2. **`crates/coco-core/src/bus/io.rs`** — the full I/O dispatch. Cross
+2. **[`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)** — the full I/O dispatch. Cross
    the table in §5.3 off against every `match` arm as you go; find the
    one register this chapter didn't mention (there's at least one).
-3. **`crates/coco-core/src/bus/pins.rs`** — short, and it recasts every
+3. **[`crates/coco-core/src/bus/pins.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs)** — short, and it recasts every
    PIA "read" you'll do from week 10 onward: nothing is stored, it's all
    computed fresh from other devices' state at the moment of access.
-4. **`crates/coco-core/src/gime.rs`, lines 1–70 and 230–300** — the
+4. **[`crates/coco-core/src/gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs), lines 1–70 and 230–300** — the
    register bit constants (skim; you'll be back for these in week 8)
    and `translate`/`write_init0`/`write_init1`/`rom_is_external` in
    full.
-5. **`crates/coco-core/src/sam.rs`, whole file** — short enough to read
+5. **[`crates/coco-core/src/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs), whole file** — short enough to read
    end to end, and doing so makes explicit just how much simpler the
    CoCo 1/2 memory story is next to the GIME's.
-6. **`crates/coco-core/src/bus/sam_path.rs`** — the thin adapter that
+6. **[`crates/coco-core/src/bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)** — the thin adapter that
    turns `Sam::map`'s `SamTarget` into actual reads and writes; note
    how little code it takes once `Sam::map` has already done the real
    work.
-7. **`crates/coco-core/src/cart.rs`, lines 1–70** — the `Cartridge`
+7. **[`crates/coco-core/src/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L1-L70), lines 1–70** — the `Cartridge`
    trait and its two open-bus constants (§5.11); a preview of week 13
    that only takes a few minutes now.
 8. **`docs/cartridges.md`** — a tracked, in-repo reference doc (not one
@@ -1691,7 +1691,7 @@ with no real ROM required:
 cargo test -p coco-core --test bus_map --test sam
 ```
 
-(`tests/boot.rs` and `tests/coco1_boot.rs` need real ROM dumps in
+([`tests/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs) and [`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs) need real ROM dumps in
 `./roms/` — run them too if you have that directory populated; if not,
 `coco1_boot.rs` skips itself with a message rather than failing.)
 
@@ -1755,7 +1755,7 @@ at §5.3, write down what device or register lives at `$FF00`, `$FF20`,
 to. Then check yourself against the table.
 
 **5.5 — Read the test, predict the result (read + predict).** Before
-running anything, predict what this test from `tests/sam.rs` asserts,
+running anything, predict what this test from [`tests/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam.rs) asserts,
 address by address, and *why* — in particular, explain in one sentence
 why the assertion about `$BFFE` at the end is necessary for the test to
 mean what it claims:
@@ -1841,7 +1841,7 @@ DESIGN.md's confirmed-real-config table) rather than the same kind of
 
 Everything in this chapter answers "what does address X touch" for a
 *static* snapshot of the machine's registers. Week 6 asks the next
-question: *when*. `run_field()` (`machine/run.rs`) is the loop that
+question: *when*. `run_field()` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)) is the loop that
 actually drives the CPU forward one instruction at a time, converts
 elapsed CPU cycles into scanlines, and decides when hsync and vsync
 fire — the heartbeat that makes "double-speed poke" mean something more

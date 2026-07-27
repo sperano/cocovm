@@ -55,7 +55,7 @@ that keeps it.
 
 ---
 
-## 16.2 The debugger core: `coco-core/src/debug.rs`
+## 16.2 The debugger core: [`coco-core/src/debug.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs)
 
 Open the module doc first, because it states the whole design in four
 sentences:
@@ -71,7 +71,7 @@ sentences:
 
 Notice what is *not* here: no second CPU loop, no "debug build" of the
 machine, no shadow interpreter. `Debugger` is a plain struct the frontend
-owns (`crates/coco-egui/src/debugger.rs` holds one), separate from
+owns ([`crates/coco-egui/src/debugger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs) holds one), separate from
 `Machine` entirely — debug state doesn't live in the thing you'd serialize
 into a save state, which matters later in this chapter. Three pieces of
 state live in it:
@@ -220,7 +220,7 @@ use, not with whether it's theoretically available.**
 
 ### The trace ring, home at last
 
-Chapter 4 built `TraceEntry` and a text format matching `examples/trace.rs`
+Chapter 4 built `TraceEntry` and a text format matching [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)
 specifically for trace-diffing against MAME/XRoar when the CPU had no bugs
 to blame and no reference test suite to check against. It now lives here,
 unchanged in spirit:
@@ -240,7 +240,7 @@ pub struct TraceEntry {
 }
 ```
 
-with a `format()` that matches `examples/trace.rs`'s `log_state` exactly —
+with a `format()` that matches [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)'s `log_state` exactly —
 verified by a test, `trace_entry_format_is_exact`, that hand-builds a CPU
 state and checks the output string byte for byte:
 
@@ -274,7 +274,7 @@ watchpoints, an opt-in cost: "a plain 'run' doesn't want" a snapshot taken
 every single instruction), and `export_trace()` turns the whole ring into
 text in the exact same format for pasting into a `diff` against a reference
 trace — the same workflow chapter 4 built, now reachable from inside a
-running session instead of only from a standalone `examples/trace.rs`
+running session instead of only from a standalone [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)
 binary.
 
 > **Rust corner: `VecDeque` as a bounded ring buffer.** A `Vec` can act as a
@@ -292,7 +292,7 @@ binary.
 
 ## 16.3 `run_until`: the whole run loop, and the ch06 quirk it inherits
 
-Here is the entire run loop, `debug.rs:371-407`, with nothing trimmed:
+Here is the entire run loop, [`debug.rs:371-407`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L371-L407), with nothing trimmed:
 
 ```rust
 fn run_loop(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
@@ -388,7 +388,7 @@ and not an oversight.
 
 Chapter 6 found this by actually running a program, not by reading code —
 worth restating here because this chapter is where the finding was always
-headed. `step_cpu_unit` (`machine/run.rs`, quoted in full below) redirects
+headed. `step_cpu_unit` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs), quoted in full below) redirects
 `cpu.pc` to an interrupt vector's target *and* executes that handler's first
 instruction inside a single call:
 
@@ -517,7 +517,7 @@ careful."
 
 ### The twin contract
 
-`bus/peek.rs` states the discipline in its module doc:
+[`bus/peek.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/peek.rs) states the discipline in its module doc:
 
 ```rust
 //! `peek` mirrors `Bus::read`'s address decode exactly but takes `&self` and
@@ -627,7 +627,7 @@ fn peek_matches_read_for_ram_and_rom() {
 
 ### The discipline: every debugger view goes through `peek`
 
-`coco-egui/src/debugger.rs`'s module doc states this as a hard rule, not a
+[`coco-egui/src/debugger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs)'s module doc states this as a hard rule, not a
 suggestion:
 
 ```rust
@@ -670,7 +670,7 @@ writes don't have — and shouldn't have — an equivalent notion.
 
 ## 16.5 The debugger UI, panel by panel
 
-`crates/coco-egui/src/debugger.rs` and its six submodules
+[`crates/coco-egui/src/debugger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs) and its six submodules
 (`controls.rs`, `registers.rs`, `disasm.rs`, `memory.rs`, `stack.rs`,
 `hardware.rs`) are the part of this codebase you'd actually click on. The
 module doc frames the whole thing as one discipline applied consistently:
@@ -895,7 +895,7 @@ labeled, updating live, for free, the instant you pause.
 
 ## 16.6 Save states: the `.ccstate` container, byte by byte
 
-`crates/coco-core/src/snapshot.rs` states the container format in one line
+[`crates/coco-core/src/snapshot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot.rs) states the container format in one line
 of ASCII art:
 
 ```text
@@ -1208,7 +1208,7 @@ fixture forever.
 
 ## 16.9 Restore: re-injecting what serde could never carry
 
-`snapshot::restore` (`crates/coco-core/src/snapshot/restore.rs`) turns a
+`snapshot::restore` ([`crates/coco-core/src/snapshot/restore.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/restore.rs)) turns a
 decoded `SnapshotPayload` plus caller-supplied `MediaSources` bytes into a
 live `Machine`, in nine explicitly ordered, explicitly documented steps —
 worth reading the doc comment on `restore` itself as a checklist, because
@@ -1235,7 +1235,7 @@ reference has been resolved) rebuilds the cheap-to-derive skipped fields —
 framebuffer geometry, audio scratch buffers, the SN76489/AY-3-8913 PSGs'
 lookup tables — but it cannot, by construction, reach into the frontend and
 hand back a live resource the *core* never owned. That's the frontend's job,
-and `coco-egui/src/save_state/restore.rs`'s
+and [`coco-egui/src/save_state/restore.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/save_state/restore.rs)'s
 `reinject_host_only_resources` does exactly it, right after
 `self.machine = restored.machine`:
 
@@ -1298,7 +1298,7 @@ self.type_ahead.clear();
 ```
 
 `field_debt` is week 15's fractional wall-clock accumulator
-(`app/frame.rs`): every real-time frame adds `dt * field_rate_hz()` to it,
+([`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)): every real-time frame adds `dt * field_rate_hz()` to it,
 and the app runs as many whole fields as that debt covers, keeping the
 fractional remainder for next time — the mechanism that decouples "how often
 the host repaints" from "how many emulated fields have actually run," so a
@@ -1332,7 +1332,7 @@ lives in a bug report attachment, and gets loaded back in by a build that
 might be months newer than the one that wrote it. Every one of those paths
 is an opportunity for the bytes to have been altered — by corruption, by a
 well-meaning hex-editor experiment, or by someone deliberately probing for a
-crash. `snapshot_engine/hostile_payload.rs` is the test file that takes that
+crash. [`snapshot_engine/hostile_payload.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_engine/hostile_payload.rs) is the test file that takes that
 seriously: instead of only testing "does a save I just made load back
 correctly," it constructs specific malformed inputs and asserts the failure
 mode is always a typed `SnapshotError`, never a panic.
@@ -1411,7 +1411,7 @@ explicitly rather than assuming.
 
 ## 16.11 Lockstep: determinism as a testable property
 
-`crates/coco-core/tests/snapshot_engine/lockstep.rs` (and its phase-1
+[`crates/coco-core/tests/snapshot_engine/lockstep.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_engine/lockstep.rs) (and its phase-1
 sibling, `snapshot_roundtrip.rs`) test something more fundamental than "does
 loading crash" — they test that a save/restore cycle is *invisible* to the
 machine's own execution. The concept: boot the real ROM, run it for a while,
@@ -1565,11 +1565,11 @@ error — unless someone remembers to add it and a test catches the gap.
 **No `Rc<RefCell<...>>` in the machine's state tree.**
 *Bought:* `#[derive(Serialize, Deserialize)]` on `Machine` working at all —
 this chapter's entire save-state system exists because this rule was set on
-day one, not retrofitted (DESIGN.md §9 says exactly this: "nearly free if
+day one, not retrofitted ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §9 says exactly this: "nearly free if
 you avoid `Rc`/`RefCell`/raw pointers... and miserable to retrofit"). *Cost:*
 every place a subsystem needs several fields of `self` at once — GIME video
 scanout needing the GIME's registers, RAM, and the framebuffer
-simultaneously (chapter 1, `render.rs:56`) — pays for it in destructuring
+simultaneously (chapter 1, [`render.rs:56`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L56)) — pays for it in destructuring
 boilerplate (`let SystemBus { gime, ram, .. } = &mut self.bus;`) or free
 functions taking exactly the disjoint borrows they need instead of `&mut
 self` methods, spread across every rendering chapter (7 through 9). And the
@@ -1611,7 +1611,7 @@ doing it; `psh`'s own byte-accurate return value is computed and then
 discarded every time `take_interrupt` calls it. As chapter 4 put it: "an
 externally-delivered interrupt is, as far as this CPU crate's clock is
 concerned, free." That's not a bug hiding — it's a direct, named consequence
-of the instruction-granular choice DESIGN.md §5 states as policy from the
+of the instruction-granular choice [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 states as policy from the
 start, and it's exactly where a trace-diff against real MAME (which *does*
 cost this) would start disagreeing on cycle counts while still agreeing on
 every register value. Nothing this course's own software needs has ever
@@ -1644,7 +1644,7 @@ breakpoint on an interrupt vector's target address structurally unreachable
 breakpointable" turned out to be in tension, and this codebase chose
 resumability; the gap is the receipt.
 
-**Fidelity as an explicit, subsystem-by-subsystem budget (DESIGN.md's
+**Fidelity as an explicit, subsystem-by-subsystem budget ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md)'s
 table, chapter 1).**
 *Bought:* effort spent exactly where real software would notice — cycle-
 timestamped audio events because the DAC's actual output waveform depends on
@@ -1657,7 +1657,7 @@ be asked to run, made without the ability to test against all CoCo software
 that has ever existed. The bet has held for this course's test suite and
 every real-ROM boot test in it; it is not, and cannot be, a proof it will
 hold for the next program someone points this emulator at. "Tighten later
-only if a game needs it" (DESIGN.md §5) is a genuinely good policy for
+only if a game needs it" ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5) is a genuinely good policy for
 managing effort — and it is also, honestly, a promise that some future bug
 report will read "this fidelity line was in the wrong place for this one
 piece of software," and someone will have to move it.
@@ -1679,10 +1679,10 @@ There is no week 17. Three honest directions from here, in ascending order
 of commitment:
 
 1. **Write your own core against the same `Bus` trait.** The two-method
-   contract in `crates/mc6809/src/lib.rs` is the entire interface a machine
+   contract in [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs) is the entire interface a machine
    needs to implement to reuse this project's CPU. Nothing in `mc6809`
    knows a CoCo exists — exercise 1.8 already made you verify this
-   mechanically by reading `Cargo.toml`. Build a `FlatBus`-shaped toy for a
+   mechanically by reading [`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/Cargo.toml). Build a `FlatBus`-shaped toy for a
    different memory map and you have a second machine.
 2. **Port to another 6809 machine.** The Vectrex and the Dragon (a
    British CoCo-compatible-but-not-quite competitor) both ran the MC6809.
@@ -1713,19 +1713,19 @@ thing a table of contents can never teach on its own.
 
 In this order:
 
-1. `crates/coco-core/src/debug.rs`, all of it — small enough to read in one
+1. [`crates/coco-core/src/debug.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs), all of it — small enough to read in one
    sitting, and every line of it has now been explained in this chapter.
-2. `crates/coco-core/src/bus/peek.rs`, all of it, side by side with
-   `crates/coco-core/src/bus.rs`'s `io_read`/`sam_io_read` — for every I/O
+2. [`crates/coco-core/src/bus/peek.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/peek.rs), all of it, side by side with
+   [`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs)'s `io_read`/`sam_io_read` — for every I/O
    region, ask "what would `read` have mutated here, and how does `peek`
    avoid it?"
-3. `crates/coco-egui/src/debugger.rs` and its six submodules — skim first
-   for the panel layout, then reread `controls.rs`'s four step primitives
+3. [`crates/coco-egui/src/debugger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs) and its six submodules — skim first
+   for the panel layout, then reread [`controls.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger/controls.rs)'s four step primitives
    slowly; they're the part of this chapter most worth typing out by hand.
-4. `crates/coco-core/src/snapshot.rs`'s module doc, twice — once before
+4. [`crates/coco-core/src/snapshot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot.rs)'s module doc, twice — once before
    reading any of `snapshot/`'s five files, once after, to notice how much
    of the second reading was already explained by the first.
-5. `crates/coco-core/tests/snapshot_engine/hostile_payload.rs`, all of it —
+5. [`crates/coco-core/tests/snapshot_engine/hostile_payload.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_engine/hostile_payload.rs), all of it —
    this is the file in this whole course most worth reading as a security
    document, not just a test file.
 
@@ -1745,7 +1745,7 @@ of copyrighted software to prove.
 ## 16.16 Exercises
 
 **16.1 — `peek` vs. `read`, by address (read + recall).** Using
-`bus/peek.rs`'s `io_peek` match arms, list every `$FF00–$FFBF` sub-range
+[`bus/peek.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/peek.rs)'s `io_peek` match arms, list every `$FF00–$FFBF` sub-range
 where `peek` and `read` return *different logic paths* (not necessarily
 different byte values on a given call, but a genuinely different code path
 — e.g. `IRQENR_REG`/`FIRQENR_REG` reading a latched field instead of
@@ -1781,7 +1781,7 @@ interrupt, and why. Then check yourself against §16.3 and `debug.rs`'s own
 doc comment on `run_until`.
 
 **16.4 — Sabotage `hostile_payload.rs`'s defense, verified (sabotage +
-run).** In `crates/coco-core/src/snapshot/restore.rs`, find
+run).** In [`crates/coco-core/src/snapshot/restore.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/restore.rs), find
 `validate_payload_shape` and comment out (don't delete — you'll revert by
 uncommenting) the line `machine.bus.validate_restored().map_err(...)?;`.
 Run `cargo test -p coco-core --test snapshot_engine` and record exactly
@@ -1811,7 +1811,7 @@ Revert your change once you've proven the point, unless you were explicitly
 asked to keep it.
 
 **16.6 — Lockstep, read and predict (read + predict).** Before running
-anything, predict: if you take `snapshot_engine/lockstep.rs`'s
+anything, predict: if you take [`snapshot_engine/lockstep.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_engine/lockstep.rs)'s
 `full_round_trip_continues_trace_identically` test and change
 `WARMUP_STEPS` from `200_000` to `0` (save immediately after boot, before
 BASIC's cold-start has done anything), does the test still pass? Write down

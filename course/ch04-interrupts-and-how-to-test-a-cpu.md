@@ -81,7 +81,7 @@ is taken.
 ### Byte-by-byte, with real addresses
 
 Don't take "twelve bytes" and "three bytes" on faith — here are the actual
-addresses, taken directly from `tests/interrupts.rs`'s own setup (`s.cpu.s =
+addresses, taken directly from [`tests/interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs)'s own setup (`s.cpu.s =
 0x2000` before the interrupt fires).
 
 **Full frame** — `IRQ`, `NMI`, `SWI`, `SWI2`, `SWI3` (`S` before: `$2000`):
@@ -159,7 +159,7 @@ The partial frame's mask is `PC_CC_MASK = stack_mask::PC | stack_mask::CC`
 — just those two bits, why only three bytes move.
 
 > **Rust corner: closures that borrow explicitly, not by capture.** `psh`'s
-> inner helper, from `crates/mc6809/src/stack.rs`:
+> inner helper, from [`crates/mc6809/src/stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs):
 > ```rust
 > let mut push8 = |sp: &mut u16, v: u8, n: &mut u32| {
 >     *sp = sp.wrapping_sub(1);
@@ -327,7 +327,7 @@ difference between "fast" and "everything else."
 There's no `match`-based priority table anywhere in `mc6809` itself — each
 of `nmi()`/`firq()`/`irq()` is an independent entry point, and *priority is
 enforced by whoever calls them, in the order they're called*: a bus-level
-decision (`crates/coco-core/src/machine/run.rs`'s `service_interrupts`
+decision ([`crates/coco-core/src/machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)'s `service_interrupts`
 checks `FIRQ` before `IRQ`, `NMI` is polled separately ahead of both — week
 6). The CPU crate expresses masking, a per-line property encoded in `CC`;
 priority, an ordering property, is the bus's job, because only the bus
@@ -338,7 +338,7 @@ knows which devices are asserting which lines at all.
 All three software interrupts push the full frame — there's no "fast `SWI`"
 the way there's a fast `IRQ`. What differs is prefix bytes and mask
 behavior. `SWI` is a plain one-byte opcode (`$3F`), dispatched straight out
-of `step`'s top-level match (`exec.rs:266`, inside `exec_interrupt_halt`,
+of `step`'s top-level match ([`exec.rs:266`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L266), inside `exec_interrupt_halt`,
 quoted in §4.1). `SWI2`/`SWI3` are page-prefixed — `$10 3F` and `$11 3F` —
 decoded one level down, inside the prefix-page handlers:
 
@@ -415,11 +415,11 @@ fn load_s(&mut self, v: u16) {
 }
 ```
 
-`LDS` in all four addressing-mode forms (`exec.rs:160-163`) calls `load_s`;
-so does `LEAS` (`exec/exec_data.rs:105`); so does `TFR`/`EXG` targeting `S`
-(`regs.rs:38`, inside `reg_write`); and so does the indexed-addressing auto
+`LDS` in all four addressing-mode forms ([`exec.rs:160-163`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L160-L163)) calls `load_s`;
+so does `LEAS` ([`exec/exec_data.rs:105`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L105)); so does `TFR`/`EXG` targeting `S`
+([`regs.rs:38`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs#L38), inside `reg_write`); and so does the indexed-addressing auto
 inc/dec form that names `S` as the pointer being written back
-(`addressing.rs:41-47`, `set_index_reg`) — `,S++` and friends genuinely
+([`addressing.rs:41-47`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L41-L47), `set_index_reg`) — `,S++` and friends genuinely
 mutate `S` through the postbyte, not just through `LDS`. Four call sites,
 one arming flag, one clearing site (`reset`, which sets `nmi_armed = false`
 alongside masking `I` and `F`). Add a new instruction that can write `S`
@@ -544,7 +544,7 @@ to put a real number on it — and an honest limit on how far that number can
 be pushed with only this codebase as a source.
 
 The one piece of hard currency the code gives you is `PUSH_PULL_BASE_CYCLES
-= 5` (`lib.rs:108`), the constant `psh`/`pul` add to their per-byte cost.
+= 5` ([`lib.rs:108`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L108)), the constant `psh`/`pul` add to their per-byte cost.
 Run it against the full frame: `5 + 12 bytes = 17`. Compare that to `SWI`'s
 hard-coded, datasheet-matching total of **19** cycles (§4.1). The two
 numbers are close but not equal — `SWI` also has to fetch its own opcode
@@ -612,7 +612,7 @@ exactly how `SWI`/`SWI2`/`SWI3`/`RTI`/`CWAI`/`SYNC` get their hard-coded
 costs onto the clock, because those six are *opcodes*, decoded and executed
 through `step()` like any other instruction. `nmi()`, `irq()`, and `firq()`
 are not opcodes — they're public methods the machine calls directly from
-outside `step()` (`crates/coco-core/src/machine/run.rs:111,178,181`, week
+outside `step()` ([`crates/coco-core/src/machine/run.rs:111,178,181`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs), week
 6), and `take_interrupt`'s body — the function every one of them shares —
 never once mentions `self.cycles`. `psh`'s own return value, the one thing
 in this whole file that *does* compute a byte-accurate cost, is discarded
@@ -620,7 +620,7 @@ every time `take_interrupt` calls it (`self.psh(bus, 0xFF, true);` — no
 assignment, no `+=`, nothing). An externally-delivered interrupt is, as far
 as this CPU crate's clock is concerned, free.
 
-Is that a bug? Not obviously — it's the same policy `DESIGN.md` §5 states
+Is that a bug? Not obviously — it's the same policy [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 states
 outright for the rest of the core ("don't try to be cycle-*exact*
 mid-instruction at first; instruction-granular cycle counts are enough").
 Nothing in this codebase currently needs sub-instruction interrupt latency:
@@ -709,7 +709,7 @@ rare-condition bug (`SBC` with carry-in in the one edge case you didn't
 check) can sit dormant for months and corrupt a save state at the worst
 moment.
 
-`DESIGN.md` §5 lays out the three-legged reply to this, and this codebase
+[`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 lays out the three-legged reply to this, and this codebase
 takes each leg seriously:
 
 ### Leg 1 — trace-diff against a reference emulator
@@ -781,7 +781,7 @@ fn push_trace(&mut self, entry: TraceEntry) {
 > natural expiry-by-age. `Vec` would work functionally but degrade to
 > `O(n)` per eviction; `VecDeque` doesn't.
 
-`examples/trace.rs` (71 lines) walks a real boot and emits one formatted
+[`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs) (71 lines) walks a real boot and emits one formatted
 line per retired instruction in that same shape, via a `format()` method
 shared with the live trace ring so there's exactly one format to keep in
 sync:
@@ -1020,7 +1020,7 @@ own, and the fact that nothing in this stretch of code executes `ANDCC`.
 
 The second leg is running an existing, independent test *program* — one
 that doesn't know or care what emulator it's running on — and trusting its
-verdict. `DESIGN.md` §5 names a concrete one:
+verdict. [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 names a concrete one:
 [flexemu's `cputest.txt`](https://github.com/aladur/flexemu/blob/master/src/tools/cputest.txt)
 by W. Schwotzer, tested on a real SGS-Thomson EF6809P processor. It's
 worth looking at what's actually in that file rather than trusting the
@@ -1094,7 +1094,7 @@ running this file's raw machine code against it today would `JSR` into
 uninitialized memory and immediately go off into the weeds. That gap —
 not test coverage, not addressing modes, just "this file assumes an
 operating system this crate doesn't have" — is the one real obstacle
-between `DESIGN.md`'s recommendation and an actual `cargo test`.
+between [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md)'s recommendation and an actual `cargo test`.
 
 It's a small gap to close, though, and precisely because the CPU crate
 already has everything needed: a `Bus` is just `read`/`write`, and a test
@@ -1114,7 +1114,7 @@ the test program from running off the rails when it tries to act polite
 about its own results.
 
 This is still undone — there is no `cputest.txt` in this repository's tree
-today, and no such harness. `DESIGN.md` §5's recommendation stands
+today, and no such harness. [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5's recommendation stands
 un-executed. That's a real, specific gap, and it's exactly the kind this
 course wants you to be able to name precisely (a five-address I/O stub,
 not a rewrite) rather than wave at vaguely. Exercise 4.10 is this project,
@@ -1123,7 +1123,7 @@ scoped down to a size you can actually finish in one sitting.
 ### Leg 3 — hand-written corner tests
 
 The third leg you can inspect directly right now: `crates/mc6809/tests/
-interrupts.rs`, `indexed.rs`, `stack.rs`, and friends — tests written by a
+interrupts.rs`, [`indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs), [`stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs), and friends — tests written by a
 human who read the datasheet (or the reference PDFs in `docs/`) and
 encoded known-tricky corners as assertions: indexed postbyte submodes
 (week 3), `TFR`/`EXG` register encodings, `FIRQ`-vs-`IRQ` stacking,
@@ -1145,7 +1145,7 @@ industrial scale — it doesn't replace the other two.
 ## 4.6 Reading three real tests
 
 Everything in §4.1 and §4.4 is provable, not assertable-on-faith — here are
-three tests from `crates/mc6809/tests/interrupts.rs`, walked line by line:
+three tests from [`crates/mc6809/tests/interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs), walked line by line:
 one for the partial frame (§4.1), one for `CWAI`'s state machine (§4.4),
 one for `SYNC`'s (§4.4 again).
 
@@ -1309,21 +1309,21 @@ up close.
 
 ## 4.7 Reading assignment
 
-1. **`crates/mc6809/src/lib.rs`, lines 110–260** — vector constants, `State`
+1. **[`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L110-L260), lines 110–260** — vector constants, `State`
    enum, `nmi_armed`'s doc comment, `reset()`, `load_s()`,
    `nmi()`/`irq()`/`firq()`, `take_interrupt()`: the entire interrupt
    subsystem in one contiguous read.
-2. **`crates/mc6809/src/exec.rs`** — `exec_interrupt_halt`
+2. **[`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)** — `exec_interrupt_halt`
    (`SWI`/`RTI`/`CWAI`/`SYNC`) and the `SWI2`/`SWI3` arms inside
    `exec_page10`/`exec_page11`.
-3. **`crates/mc6809/src/stack.rs`**, all 76 lines — `psh`/`pul` back every
+3. **[`crates/mc6809/src/stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs)**, all 76 lines — `psh`/`pul` back every
    frame here, plus `PSHS`/`PULS` from week 3.
-4. **`crates/mc6809/tests/interrupts.rs`**, all of it — every test in it is
+4. **[`crates/mc6809/tests/interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs)**, all of it — every test in it is
    a claim this chapter makes, turned into an assertion.
-5. **`DESIGN.md` §5**, the testing-strategy paragraphs.
-6. **`crates/coco-core/src/debug.rs`**, around line 186 (`Debugger` and its
+5. **[`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5**, the testing-strategy paragraphs.
+6. **[`crates/coco-core/src/debug.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs)**, around line 186 (`Debugger` and its
    `trace` field) plus `TraceEntry` and `export_trace`.
-7. **`crates/coco-core/examples/trace.rs`**, the whole file (71 lines).
+7. **[`crates/coco-core/examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)**, the whole file (71 lines).
 8. *Optional, this machine only:* `docs/super-extended-basic-unravelled.pdf`
    Appendix B, starting at `$C000` — the disassembly §4.5's worked example
    is cross-checked against. Every line quoted from it in this chapter is
@@ -1355,11 +1355,11 @@ looking anything up: a 6809 executes `SYNC` with `CC`'s `I` bit set, then an
 `IRQ` line asserts. Does the CPU (a) stay halted forever, (b) service the
 interrupt anyway, or (c) wake up and resume at the instruction after
 `SYNC` without servicing it? Write down your answer, read `irq()`
-(`lib.rs:200-211`) to check it, then run
+([`lib.rs:200-211`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L200-L211)) to check it, then run
 `sync_halts_and_idles_until_interrupt` to see it asserted live.
 
 **4.3 — Sabotage the E flag (sabotage, then verify for real).** In
-`crates/mc6809/src/lib.rs`, change `firq()`'s call — `self.take_interrupt(bus,
+[`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs), change `firq()`'s call — `self.take_interrupt(bus,
 VECTOR_FIRQ, true, true, false)` — so the last argument is `true` (make
 `FIRQ` claim the full frame). Predict which test(s) in `interrupts.rs` fail
 and why, *before* running `cargo test -p mc6809 --test interrupts`. Then run
@@ -1404,7 +1404,7 @@ CoCo — an operating system's syscall vector) benefits from an exception
 that leaves the caller's interrupt posture completely alone?
 
 **4.7 — Sabotage the CWAI fast path (sabotage, then verify for real).** In
-`take_interrupt` (`crates/mc6809/src/lib.rs`), delete the
+`take_interrupt` ([`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs)), delete the
 `if self.state != State::Waiting { ... }` guard around the frame-stacking
 half of the function, but keep its *body* — i.e. always stack the frame,
 unconditionally, on every call. Predict which test in `interrupts.rs` fails
@@ -1461,7 +1461,7 @@ in miniature, without needing a real assembler or the actual test file.
 
 Week 5 leaves the CPU crate behind — `mc6809` mostly just sits there,
 correct, generic over whatever `Bus` you hand it. We open
-`coco-core/src/bus.rs` and ask the question this chapter's vector table
+[`coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs) and ask the question this chapter's vector table
 quietly assumed an answer to: when the CPU reads `$FFFE`, what actually
 intercepts that read before it becomes a plain RAM access? That's the
 decode order — hardwired vectors first, then the I/O page, then ROM, then

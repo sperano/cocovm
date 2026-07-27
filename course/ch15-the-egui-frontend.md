@@ -41,7 +41,7 @@ impl eframe::App for CocoApp {
 }
 ```
 
-(`crates/coco-egui/src/app.rs:323-325` — this is the *entire* trait
+([`crates/coco-egui/src/app.rs:323-325`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L323-L325) — this is the *entire* trait
 implementation; everything else in the file is plain `impl CocoApp`
 methods.) Every widget you see on screen is a **function call that returns
 a response**, made fresh, every single frame:
@@ -52,7 +52,7 @@ if ui.button("Reset").clicked() {
 }
 ```
 
-(`crates/coco-egui/src/chrome/toolbar.rs:13-15`.) There is no `Button`
+([`crates/coco-egui/src/chrome/toolbar.rs:13-15`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar.rs#L13-L15).) There is no `Button`
 object living anywhere between frames. `ui.button("Reset")` draws a button
 at the current layout position, checks this frame's input for a click
 inside its rect, and returns a `Response` whose `.clicked()` you inspect
@@ -64,7 +64,7 @@ this frame. There is nothing to hide, remove, or destroy.
 This has a consequence you need to internalize before anything else in this
 chapter makes sense: **all state lives in your struct, never in the
 framework.** `self.running`, `self.aspect_correct`, `self.kb_mode` — every
-one of `CocoApp`'s ~35 fields (`crates/coco-egui/src/app.rs:11-131`) is the
+one of `CocoApp`'s ~35 fields ([`crates/coco-egui/src/app.rs:11-131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L131)) is the
 *entire* durable memory of the UI. A checkbox doesn't remember whether it's
 checked; you do:
 
@@ -72,7 +72,7 @@ checked; you do:
 ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
 ```
 
-(`crates/coco-egui/src/chrome/menu_bar.rs:43`.) `ui.checkbox` takes a
+([`crates/coco-egui/src/chrome/menu_bar.rs:43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L43).) `ui.checkbox` takes a
 `&mut bool`, draws the box in whichever state that bool currently holds,
 and — if clicked this frame — flips it in place before returning. The
 "widget" and the "model" were never two things to synchronize; there was
@@ -108,7 +108,7 @@ does not matter here.
 ## 15.2 The per-frame loop: `step_emulation` and `field_debt`
 
 Everything about advancing the emulator by wall-clock time lives in one
-function, `CocoApp::step_emulation` (`crates/coco-egui/src/app/frame.rs`).
+function, `CocoApp::step_emulation` ([[`crates/coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)).
 Read it in full — it's short enough to hold in your head, and it is the
 single most important function in this chapter:
 
@@ -153,7 +153,7 @@ audio those fields generated into the sound ring (week 11 owns that ring;
 framebuffer as a texture. `window_ui` (the trait method's actual body) calls
 this, then draws the menu/toolbar/status chrome, then draws the display —
 in that order, every frame, no exceptions
-(`crates/coco-egui/src/app/frame.rs:120-126`).
+([`crates/coco-egui/src/app/frame.rs:120-126`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L120-L126)).
 
 The one piece worth stopping on is `self.fields_due()` — the answer to "how
 many times do I call `run_field` *this* call to `update()`?"
@@ -161,7 +161,7 @@ many times do I call `run_field` *this* call to `update()`?"
 ### Why you can't just run one field per repaint
 
 The naive design is "one `update()` call, one emulated field." It is wrong,
-and DESIGN.md flagged this back in week 6 (§4): "don't trust egui's repaint
+and [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) flagged this back in week 6 (§4): "don't trust egui's repaint
 cadence for emulation timing." Two failure modes, both real:
 
 - **A 144 Hz gaming monitor.** eframe repaints roughly at your monitor's
@@ -191,7 +191,7 @@ pub(crate) fn fields_due(&mut self) -> usize {
 }
 ```
 
-(`crates/coco-egui/src/app/frame.rs:9-19`.) Walk it exactly once, slowly:
+([`crates/coco-egui/src/app/frame.rs:9-19`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L9-L19).) Walk it exactly once, slowly:
 
 1. **Measure real elapsed time** since the previous call, `dt`, in seconds.
    The very first call after `(re)start` has no previous instant
@@ -199,7 +199,7 @@ pub(crate) fn fields_due(&mut self) -> usize {
    emulator doesn't try to "catch up" on the time before it existed.
 2. **Convert `dt` to fields owed**, at the machine's own field rate
    (`VideoStandard::field_rate_hz()` — NTSC 59.94 Hz, PAL 50.0 Hz,
-   `crates/coco-core/src/config.rs:58-61`, week 6), and *add* that to
+   [`crates/coco-core/src/config.rs:58-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L58-L61), week 6), and *add* that to
    `field_debt` — a fractional running balance, not reset each call.
 3. **Run the whole fields owed**, `due = floor(field_debt)`, capped at
    `MAX_FIELDS_PER_UPDATE`.
@@ -231,7 +231,7 @@ A field runs roughly every *other* repaint — never every repaint — because
 each individual 120 Hz tick only owes half a field. Averaged out, that's
 one field roughly every 16.68 ms: 59.94 Hz, exactly the CoCo's real rate,
 regardless of the display refreshing at 120 Hz. This is precisely the
-`field_debt` doc comment's promise (`crates/coco-egui/src/app.rs:28-31`):
+`field_debt` doc comment's promise ([`crates/coco-egui/src/app.rs:28-31`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L28-L31)):
 "120 Hz displays no longer run the CoCo at double speed." Try the same
 table at 60 Hz (`dt ≈ 0.01667`) and you'll see `due` is 1 on almost every
 call, with a small amount of jitter back and forth because 60 Hz repaints
@@ -252,7 +252,7 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 ```
 
-(`crates/coco-egui/src/main.rs:88-93`.) Both exist to prevent the same
+([`crates/coco-egui/src/main.rs:88-93`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L88-L93).) Both exist to prevent the same
 disease: **the spiral of death.** Imagine there were no cap on fields per
 update. Your host stalls for a second — a window manager hiccup, a
 laptop waking from sleep, whatever. `field_debt` jumps to roughly 60. The
@@ -358,11 +358,11 @@ texture is scaled up or down, sample the nearest source pixel, don't
 blend neighbors" — this is what keeps the CoCo's blocky low-res pixels
 crisp instead of blurry when stretched to fill a modern monitor; the
 alternative, `LINEAR`, is what the manager's list-row *photo* thumbnails
-use instead (`crates/coco-egui/src/manager.rs:310`), because a photograph
+use instead ([`crates/coco-egui/src/manager.rs:310`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L310)), because a photograph
 benefits from smoothing and a 288-pixel-wide CoCo screen does not.
 
 That's the upload. The draw is `draw_display`
-(`crates/coco-egui/src/app/frame.rs:83-108`), and it's arithmetic, not
+([`crates/coco-egui/src/app/frame.rs:83-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L83-L108)), and it's arithmetic, not
 graphics API calls:
 
 ```rust
@@ -393,7 +393,7 @@ call in the whole program — draw one textured quad, sized to `rect`. Every
 line above it is deciding what `rect` should *be*. This is the entirety of
 "3D graphics" in this codebase: one 2D rectangle, textured, no shaders you
 write, no vertex buffers you manage, no camera, no lighting. egui and its
-backend (glow/OpenGL, or optionally wgpu — see `Cargo.toml`'s `[features]`)
+backend (glow/OpenGL, or optionally wgpu — see [[`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml)](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml)'s `[features]`)
 handle turning "draw this rect with this texture" into actual draw calls;
 this file never touches that layer.
 
@@ -454,7 +454,7 @@ whole payoff of computing `aspect` *before* the fit logic runs, as a
 mode-agnostic scalar, rather than hard-coding "stretch to 4:3" into the
 layout math itself (the doc comment on `draw_display` calls this out
 explicitly: "This keeps the frontend mode-agnostic — any renderer's buffer
-size fits" — `crates/coco-egui/src/app/frame.rs:86-88`).
+size fits" — [`crates/coco-egui/src/app/frame.rs:86-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L86-L88)).
 
 ### Why the pixels aren't square in the first place
 
@@ -464,10 +464,10 @@ One more number worth internalizing, from `main.rs`'s own doc comment:
 > framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
 > is stretched horizontally to this ratio so pixels are ~3% wider than
 > tall, as on real hardware.
-> (`crates/coco-egui/src/main.rs:84-87`)
+> ([`crates/coco-egui/src/main.rs:84-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L84-L87))
 
 That 288×224 figure is `coco_core::video::FB_W`/`FB_H` — the CoCo 1/2
-legacy VDG canvas (`crates/coco-core/src/video.rs:34-38`: 256×192 active
+legacy VDG canvas ([`crates/coco-core/src/video.rs:34-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L34-L38): 256×192 active
 area plus a 16-pixel border on every side). `4/3 ÷ (288/224) ≈ 1.037` — a
 3.7% horizontal stretch, matching the "~3%" in the comment. This is not an
 emulator quirk to apologize for: real NTSC CoCos drove non-square pixels
@@ -496,7 +496,7 @@ immediate mode buys you.
 ## 15.4 Input routing: two keyboards, one matrix
 
 Host input enters through one function per frame, `CocoApp::handle_input`
-(`crates/coco-egui/src/app/input.rs:25-43`), called at the very top of
+([`crates/coco-egui/src/app/input.rs:25-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L25-L43)), called at the very top of
 `step_emulation` — before any field runs, so the matrix state a field sees
 is this frame's, not last frame's:
 
@@ -539,7 +539,7 @@ position*, MAME's convention: press the host key that sits where a real
 CoCo key would sit, and whatever letter is actually printed on the CoCo key
 underneath is what appears — SHIFT state included, exactly as the ROM's
 own scan-and-shift logic (week 10) decides it. `key_to_pos`
-(`crates/coco-egui/src/keymap.rs:5-43`) is a flat match from
+([`crates/coco-egui/src/keymap.rs:5-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L5-L43)) is a flat match from
 `egui::Key` to the `(row, col)` `Pos` type week 10 defined:
 
 ```rust
@@ -554,7 +554,7 @@ specific matrix rows every field (week 10's `sense()`), not ASCII
 characters, and it expects "the key at this physical spot" to behave
 identically to a real keyboard regardless of what glyph a modern OS thinks
 that key produces. `drive_matrix_positionally`
-(`crates/coco-egui/src/app/input.rs:115-135`) sets SHIFT/CTRL/ALT straight
+([`crates/coco-egui/src/app/input.rs:115-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L115-L135)) sets SHIFT/CTRL/ALT straight
 from egui's `Modifiers` and then walks every keyboard event, setting each
 mapped `Pos` true or false to match `pressed` — a direct, continuous
 mirror of host key state onto CoCo matrix state, field after field.
@@ -569,7 +569,7 @@ pressed, independent of physical key position. Because a host keystroke
 and a CoCo matrix press aren't a 1:1 timing match — see the `TypeAhead`
 discussion below — symbolic input doesn't drive the matrix directly at
 all; it *queues* taps: `queue_symbolic_taps`
-(`crates/coco-egui/src/app/input.rs:94-110`) turns `Event::Text` and
+([`crates/coco-egui/src/app/input.rs:94-110`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L94-L110)) turns `Event::Text` and
 control keys into `(Pos, bool)` entries pushed onto
 `self.type_ahead.queue`.
 
@@ -577,7 +577,7 @@ Both modes share one more wrinkle: **joystick keys are contested
 territory.** When a joystick port is set to `JoySource::Keys` (arrows for
 axes, Z/X for fire), those six keys must stop reaching the CoCo keyboard
 matrix entirely, in *either* mode — `is_joystick_key`
-(`crates/coco-egui/src/keymap.rs:66-76`) is consulted by both
+([`crates/coco-egui/src/keymap.rs:66-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L66-L76)) is consulted by both
 `drive_matrix_positionally` and `queue_symbolic_taps` before they'll honor
 an arrow key, so the two consumers (keyboard emulation, joystick emulation)
 never fight over the same physical key.
@@ -590,7 +590,7 @@ host frame at a time), because a real key press needs to survive across
 multiple 60 Hz `KEYIN` scans of the ROM to register at all; a press and
 release confined to a single field can land entirely between two scans and
 simply vanish (§10.8's exact framing). `TYPE_HOLD_FIELDS = 2` and
-`TYPE_GAP_FIELDS = 1` (`crates/coco-egui/src/main.rs:100-102`) are the
+`TYPE_GAP_FIELDS = 1` ([`crates/coco-egui/src/main.rs:100-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L100-L102)) are the
 tuned constants: hold each synthesized keypress for two fields (safely
 longer than one scan interval), then release for one field before the next
 tap starts, so two identical consecutive characters — `"AA"` — read as two
@@ -624,7 +624,7 @@ self.audio.push_samples(self.machine.take_audio(), sample_rate);
 ```
 
 `self.machine.take_audio()` drains the per-field-rendered sample grid week
-11 built (`coco-core/src/audio.rs`, `machine/audio.rs` — cycle-timestamped
+11 built ([`coco-core/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs), [`machine/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs) — cycle-timestamped
 DAC events rendered once per scanline into a ~63 kHz oversampled grid).
 `self.audio.push_samples` hands those samples to the *host* audio chain
 week 11 also fully covered: the DC blocker, the Butterworth low-pass, the
@@ -644,7 +644,7 @@ Run the bare `coco` binary with no arguments and you don't get a single
 booted machine — you get the **manager**: a VirtualBox/Parallels-style
 window listing every machine you've defined, with Start/Pause/Stop
 controls and a detail pane for editing hardware and media
-(`crates/coco-egui/src/manager.rs`, module doc comment). This is a genuinely
+([`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs), module doc comment). This is a genuinely
 different kind of code from everything else in this course: not emulation
 at all, but *application state that happens to manage emulators* — worth
 studying because it's the shape any serious frontend eventually needs
@@ -655,7 +655,7 @@ discipline from week 1 (§1.4) in a completely different setting.
 
 A machine is a small, human-editable TOML file,
 `config_dir()/machines/<slug>.toml` — never a database, never a binary
-format. `MachineDef` (`crates/coco-egui/src/machine_def.rs:49-76`) is a
+format. `MachineDef` ([`crates/coco-egui/src/machine_def.rs:49-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L49-L76)) is a
 **DTO** (Data Transfer Object — a struct whose only job is to mirror an
 external file format field-for-field, kept deliberately separate from the
 `coco_core::MachineConfig` the program actually runs on):
@@ -694,7 +694,7 @@ whatever `coco-core`'s enum discriminants happen to be this week.
 forward compatibility you'll want to imitate: any TOML key `load_one`
 doesn't recognize (top level, or one level into a known section) is logged
 via `tracing::warn!` *and* stashed in this field
-(`crates/coco-egui/src/machine_def/io.rs:69-90`, `extract_unknown`) rather
+([`crates/coco-egui/src/machine_def/io.rs:69-90`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L69-L90), `extract_unknown`) rather
 than silently dropped. When the definition is saved back out —
 `merge_unknown` — those unrecognized keys are folded back into the freshly
 serialized table before it hits disk. The consequence: a newer build that
@@ -705,7 +705,7 @@ of the same program wrote.
 
 ### Atomic saves: tmp, then rename
 
-`machine_def::save` (`crates/coco-egui/src/machine_def/io.rs:189-209`)
+`machine_def::save` ([`crates/coco-egui/src/machine_def/io.rs:189-209`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L189-L209))
 never writes the final file directly:
 
 ```rust
@@ -722,7 +722,7 @@ those two calls leaves either the untouched old file or the fully-written
 platform this program targets is atomic with respect to a concurrent
 reader: a reader either sees the file before the rename or after, never
 mid-write. This exact pattern reappears verbatim for thumbnail PNGs
-(`write_thumbnail_png`, `crates/coco-egui/src/manager.rs:181-198`) — the
+(`write_thumbnail_png`, [`crates/coco-egui/src/manager.rs:181-198`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L181-L198)) — the
 manager applies the same crash-safety discipline to *every* file it writes
 on the user's behalf, not just the one that would be embarrassing to lose.
 
@@ -730,27 +730,27 @@ on the user's behalf, not just the one that would be embarrassing to lose.
 
 A machine's filename stem — its **slug** — is its persistent identity, not
 its display name (`plan-machine-persistence.md`'s "Identity = slug," quoted
-in the module doc). `slugify` (`crates/coco-egui/src/machine_def.rs:137-156`)
+in the module doc). `slugify` ([`crates/coco-egui/src/machine_def.rs:137-156`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L137-L156))
 lowercases, keeps `[a-z0-9]`, collapses everything else to single dashes;
 `unique_slug` appends `-2`, `-3`, … until a candidate isn't taken. Renaming
 a machine (`ManagerApp::migrate_slug`,
-`crates/coco-egui/src/manager/lifecycle.rs:99-152`) is consequently exactly
+[`crates/coco-egui/src/manager/lifecycle.rs:99-152`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L99-L152)) is consequently exactly
 two filesystem moves — `<old>.toml` → `<new>.toml`, and its artifact
 directory alongside it — with a rollback if the second move fails partway
 (the definition file is renamed back rather than left pointing at a
 directory that no longer matches its own name). Relative `[media]` paths
 inside a definition resolve *against the slug's own artifact directory*
-(`resolve_media_path`, `crates/coco-egui/src/machine_def.rs:193-202`), which
+(`resolve_media_path`, [`crates/coco-egui/src/machine_def.rs:193-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L193-L202)), which
 is precisely why the rename has to move that directory too: a disk image
 referenced as `"disk0.dsk"` means a different absolute file the instant the
 slug changes, unless the artifact directory moves with it.
 
 ### Start/Stop, and where the running machine actually lives
 
-`MachineEntry` (`crates/coco-egui/src/manager.rs:102-133`) is one row: a
+`MachineEntry` ([`crates/coco-egui/src/manager.rs:102-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L102-L133)) is one row: a
 slug, a parsed `MachineDef`, and — the only field that changes what's
 *running* — `pub vm: Option<Box<CocoApp>>`. Stopped is `None`; Start
-(`ManagerApp::start_vm`, `crates/coco-egui/src/manager/lifecycle.rs:69-76`)
+(`ManagerApp::start_vm`, [`crates/coco-egui/src/manager/lifecycle.rs:69-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L69-L76))
 calls `crate::launch_machine`, the manager's counterpart to the CLI's
 `boot::boot_app` (both build a `CocoApp` from a config plus a set of
 mounted media — `launch.rs`'s module doc names the CLI path as its
@@ -775,7 +775,7 @@ string in `entry.launch_error` on failure, leaving `vm` untouched at
 
 ### One native OS window per running VM
 
-`draw_running_vms` (`crates/coco-egui/src/manager/vm_windows.rs:45-120`) is
+`draw_running_vms` ([`crates/coco-egui/src/manager/vm_windows.rs:45-120`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L45-L120)) is
 called once per `ManagerApp::update`, after the manager's own panels, and
 opens one **immediate viewport** — a real, separate native OS window — per
 entry with a live VM:
@@ -838,7 +838,7 @@ definitions, on **three** occasions: an explicit Stop, the manager's own
 `on_exit` (so quitting with VMs still running doesn't lose their preview),
 and — the interesting one — a periodic refresh every `THUMBNAIL_REFRESH =
 30` seconds while a VM is running
-(`refresh_due_thumbnails`, `crates/coco-egui/src/manager/thumbnails.rs:36-55`).
+(`refresh_due_thumbnails`, [`crates/coco-egui/src/manager/thumbnails.rs:36-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L36-L55)).
 That periodic write exists purely as **crash insurance**: if the process is
 force-killed (a real OS crash, not a graceful Stop), the on-exit write
 never runs — but the *previous* 30-second refresh already left something
@@ -856,7 +856,7 @@ if all_black && final_path.exists() {
 }
 ```
 
-(`crates/coco-egui/src/manager.rs:183-187`.) A blanked screen — a mode
+([`crates/coco-egui/src/manager.rs:183-187`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L183-L187).) A blanked screen — a mode
 switch mid-boot, `CLS 0`, the moment right after a machine's cold reset
 before the ROM has painted anything — would otherwise clobber a genuinely
 useful preview with a solid black square the *next* time the 30-second
@@ -876,7 +876,7 @@ you to find both halves of that guarantee by breaking one of them.
 Every attachable device — cartridges, floppies, VHDs, DriveWire disks,
 cassette, the printer bit-banger — gets its own file under
 `crates/coco-egui/src/media/`, all `impl CocoApp` methods, all following
-the same shape. `media/disk.rs` is the clearest one to learn the pattern
+the same shape. [`media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs) is the clearest one to learn the pattern
 from, because floppies are the only media type with real in-memory dirty
 state to manage (VHD and DriveWire images write straight through to their
 backing file on every command; there's nothing to flush).
@@ -891,7 +891,7 @@ The pattern, in order:
   > Creating it cold-resets the machine: BASIC only probes for Disk BASIC
   > at cold start. Swapping a floppy in an already-present controller does
   > NOT reset, like on real hardware.
-  > (`crates/coco-egui/src/media/disk.rs:9-11`)
+  > ([`crates/coco-egui/src/media/disk.rs:9-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L9-L11))
 
   This is the frontend enforcing a real hardware constraint your ROM
   archaeology in week 13 already uncovered from the other side: the DK
@@ -923,7 +923,7 @@ following the thread since Chapter 14's closing paragraph: this is also
 where that chapter's loose end gets tied off — the DMP-105's protocol and
 fixed-point paper coordinates were week 14's; the actual scrolling
 "Printer Paper" window a user watches fill up while `LLIST` runs
-(`crates/coco-egui/src/paper_view.rs`) is `coco-egui` UI state built on top
+([`crates/coco-egui/src/paper_view.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/paper_view.rs)) is `coco-egui` UI state built on top
 of it, one more example of a device (`Dmp105Handle`) attached and detached
 by the same request-then-mount discipline as a floppy.
 
@@ -934,7 +934,7 @@ by the same request-then-mount discipline as a floppy.
 Everything you've read so far in this chapter — menus, dialogs, the
 manager's list, the running-VM viewports — has a real automated test suite,
 and none of it opens a visible window or needs a human at a monitor. That's
-`egui_kittest` (`Cargo.toml`: `egui_kittest = { version = "0.33", features
+`egui_kittest` ([`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml): `egui_kittest = { version = "0.33", features
 = ["eframe"] }`), and it works by running egui's *real* layout and input
 logic against a headless backend, then exposing the result as an
 **AccessKit** accessibility tree — the same structured tree a screen reader
@@ -942,7 +942,7 @@ would consume — which tests query by label instead of by pixel coordinate.
 
 ### Booting a harness
 
-`ui_tests/harness.rs` is the shared infrastructure every test file in
+[`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs) is the shared infrastructure every test file in
 `ui_tests/` imports. Booting a direct-boot app harness looks like this:
 
 ```rust
@@ -1029,7 +1029,7 @@ always hangs below the toolbar row that opened it.
 ### Reading one real test
 
 `ui_tests::manager_window::manager_row_context_menu_delete_confirms_and_removes`
-(`crates/coco-egui/src/ui_tests/manager_window.rs:156-184`) is worth
+([`crates/coco-egui/src/ui_tests/manager_window.rs:156-184`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L156-L184)) is worth
 reading start to finish as a script, because it reads like the exact
 sequence of clicks a human tester would perform, in English:
 
@@ -1129,27 +1129,27 @@ checkout with real ROMs present, all 115 tests should pass.
 
 In this order:
 
-1. **`crates/coco-egui/src/main.rs:1-102`** — the crate's module list (a
+1. **[`crates/coco-egui/src/main.rs:1-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L102)** — the crate's module list (a
    map of everything this chapter did and didn't cover) and the constants
    block: `SCALE`, `TARGET_ASPECT`, `MAX_FIELDS_PER_UPDATE`, `MAX_FRAME_DT`,
    `TYPE_HOLD_FIELDS`/`TYPE_GAP_FIELDS`.
-2. **`crates/coco-egui/src/app.rs`** — the `CocoApp` struct in full; read
+2. **[`crates/coco-egui/src/app.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs)** — the `CocoApp` struct in full; read
    every field's doc comment once, even the ones this chapter didn't
    discuss (week 16 owns several of them: `debugger`, and everything
-   `save_state.rs`-adjacent).
-3. **`crates/coco-egui/src/app/frame.rs`** — `fields_due`, `step_emulation`,
+   [`save_state.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/save_state.rs)-adjacent).
+3. **[`crates/coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)** — `fields_due`, `step_emulation`,
    `draw_display`, `window_ui`, in full. This is the file to reread when
    anything about timing or the display feels wrong later in the course.
-4. **`crates/coco-egui/src/app/input.rs`** and **`keymap.rs`** — every
+4. **[`crates/coco-egui/src/app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs)** and **[`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs)** — every
    function in both files is short; read them all, not just the excerpts
    above.
-5. **`crates/coco-egui/src/manager.rs`**, **`manager/lifecycle.rs`**, and
-   **`manager/vm_windows.rs`** — the module doc comment at the top of
-   `manager.rs` first, then the three files in that order.
-6. **`crates/coco-egui/src/media/disk.rs`** in full — then skim
-   `media/tape.rs` and note everywhere it *differs* from the disk pattern.
-7. **`crates/coco-egui/src/ui_tests/harness.rs`** in full, then
-   **`crates/coco-egui/src/ui_tests/manager_window.rs`** — read every test
+5. **[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs)**, **[`manager/lifecycle.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs)**, and
+   **[`manager/vm_windows.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs)** — the module doc comment at the top of
+   [`manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) first, then the three files in that order.
+6. **[`crates/coco-egui/src/media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs)** in full — then skim
+   [`media/tape.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/tape.rs) and note everywhere it *differs* from the disk pattern.
+7. **[`crates/coco-egui/src/ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)** in full, then
+   **[`crates/coco-egui/src/ui_tests/manager_window.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs)** — read every test
    in the file as if it were a QA script, not code.
 
 Run the suite and read the failures, not just the pass count:
@@ -1188,7 +1188,7 @@ which line is responsible for it not trying to make up the remainder
 (≈5 fields) over the next several calls either?
 
 **15.3 — Sabotage the thumbnail crash-insurance heuristic (sabotage,
-verify by running the suite).** Open `crates/coco-egui/src/manager.rs` and
+verify by running the suite).** Open [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and
 find `write_thumbnail_png`'s skip check:
 
 ```rust
@@ -1211,7 +1211,7 @@ confirm the tree is clean.
 
 **15.4 — Build: a 2× turbo toggle (build; describe your design, running
 the real GUI to confirm is optional).** Add a "2× Turbo" checkbox to the
-View menu (`chrome/menu_bar.rs`'s `view_menu_ui`) that, when checked, runs
+View menu ([`chrome/menu_bar.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs)'s `view_menu_ui`) that, when checked, runs
 the emulator at double real-time speed — a CoCo BASIC program that normally
 takes 10 seconds should take about 5. Sketch the field where the toggle's
 boolean state should live (which struct — `CocoApp`, and why not somewhere
@@ -1228,14 +1228,14 @@ problem?
 **15.5 — Read and predict a kittest test (read/predict, then verify by
 running it).** Without running anything yet, read
 `ui_tests::manager_window::manager_rename_migrates_definition_file_and_artifact_dir`
-(`crates/coco-egui/src/ui_tests/manager_window.rs:262-303`) end to end and
+([`crates/coco-egui/src/ui_tests/manager_window.rs:262-303`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L262-L303)) end to end and
 write down, in order: (a) what `harness.state().entries[0].slug` equals
 immediately after `name_field().focus()` and typing `" Two"` but *before*
 `harness.key_press(egui::Key::Enter)`; (b) why the test calls
 `harness.step()` **three** times after the Enter key press, when most of
 this chapter's helpers only ever call it once or twice in a row — tie your
 answer to `ManagerApp::apply_pending_renames`'s doc comment
-(`manager/lifecycle.rs:154-161`) and the `rename_pending` field it
+([`manager/lifecycle.rs:154-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L154-L161)) and the `rename_pending` field it
 consumes. Then run `cargo test -p coco-egui ui_tests::manager_window` (this
 one needs no ROM) and confirm your prediction against the passing test.
 
@@ -1243,11 +1243,11 @@ one needs no ROM) and confirm your prediction against the passing test.
 reading source only (no running), the full path a modified floppy takes
 from a BASIC `SAVE"PROG"` inside the emulator to bytes landing back on the
 host filesystem: which `coco-core` type first notices the disk is dirty
-(week 13), which `media/disk.rs` function is the *only* place that checks
+(week 13), which [`media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs) function is the *only* place that checks
 `.dirty()` before touching the filesystem, and which three distinct
 call sites in `CocoApp`/`ManagerApp` eventually reach that function
 (eject, a controller swap, and — two of them — an application exit).
-Then explain in one sentence why VHD images (`media/disk.rs`'s
+Then explain in one sentence why VHD images ([`media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs)'s
 `insert_vhd`/`eject_vhd`) need none of this machinery at all.
 
 **15.7 — Essay, three sentences max (essay).** A colleague, new to

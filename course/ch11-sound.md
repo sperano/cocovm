@@ -66,8 +66,8 @@ table you memorized in week 1):
   GIME answering to the dead SAM's addresses in week 1 — cheap hardware
   reusing cheap hardware.
 
-Here is the exact table this codebase encodes (`crates/coco-core/src/bus/audio_bridge.rs:15-28`,
-`crates/coco-core/src/audio.rs:82-114` — both quoted in full in §11.3):
+Here is the exact table this codebase encodes ([`crates/coco-core/src/bus/audio_bridge.rs:15-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/audio_bridge.rs#L15-L28),
+[`crates/coco-core/src/audio.rs:82-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs#L82-L114) — both quoted in full in §11.3):
 
 | SNDEN (PIA1 CB2) | SEL2:SEL1 (PIA0 CB2:CA2) | Mux routes... |
 |---|---|---|
@@ -158,7 +158,7 @@ timestamped events into a fixed-size grid of samples
 
 ### `AudioInputs`: everything the mux could be looking at, right now
 
-From `crates/coco-core/src/audio.rs:50-68`:
+From [`crates/coco-core/src/audio.rs:50-68`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs#L50-L68):
 
 ```rust
 /// The latched audio-affecting inputs, snapshotted on every write that
@@ -193,7 +193,7 @@ values a write sets and holds; §11.10 returns to this distinction).
 
 ### The snapshot function and the write hook
 
-`crates/coco-core/src/bus/audio_bridge.rs:15-28`, building the snapshot
+[`crates/coco-core/src/bus/audio_bridge.rs:15-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/audio_bridge.rs#L15-L28), building the snapshot
 straight from PIA state:
 
 ```rust
@@ -221,10 +221,10 @@ output reads as whatever floats on that bit, not as program-intended
 data, and the DDR mask is what keeps un-configured pins from leaking
 garbage into the mix. `0xFC` then keeps only bits 2–7 (the DAC's six
 wires), and `>> 2` slides them down to a 0–63 value — `DAC_MAX` in
-`audio.rs` is exactly `63.0`, the top of that range.
+[`audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs) is exactly `63.0`, the top of that range.
 
 And `note_audio_write`, the hook that actually turns "the mux state
-changed" into a **timestamped event** (`bus/audio_bridge.rs:48-57`):
+changed" into a **timestamped event** ([`bus/audio_bridge.rs:48-57`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/audio_bridge.rs#L48-L57)):
 
 ```rust
 pub(super) fn note_audio_write(&mut self) {
@@ -258,7 +258,7 @@ small.
 Given an `AudioInputs` snapshot (plus the cassette bit and any generator
 samples — the sources this section doesn't event-timestamp), `mix`
 computes one stereo sample. This is the mux table from §11.1, as code
-(`crates/coco-core/src/audio.rs:82-114`):
+([`crates/coco-core/src/audio.rs:82-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs#L82-L114)):
 
 ```rust
 pub(crate) fn mix(inputs: &AudioInputs, cassette_bit: bool, ay: f32, generators: (f32, f32)) -> [f32; 2] {
@@ -305,7 +305,7 @@ unconditionally too, because the Orchestra-90 and GMC/SSC carts drive
 their own RCA jacks, not the CoCo's internal SND pin (you'll see a test
 proving exactly this in §11.10). The gain constants
 (`DAC_GAIN = 0.75`, `SINGLE_BIT_GAIN = 0.25`, `CASSETTE_GAIN = 0.35`, and
-so on, all named at the top of `audio.rs`) are relative loudness
+so on, all named at the top of [`audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs)) are relative loudness
 calibration, not hardware facts — someone had to decide the DAC and the
 beeper shouldn't compete at equal volume, and the file's comments record
 the reasoning per constant rather than leaving magic numbers to guess at.
@@ -318,9 +318,9 @@ always-summed latched/generator paths — two different mux positions for
 
 This is where the timestamped log becomes a fixed-rate stream. Called
 once per scanline, from the per-line trailer you read in week 6
-(`crates/coco-core/src/machine/run.rs:147`, inside `end_of_line`), the
+([`crates/coco-core/src/machine/run.rs:147`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L147), inside `end_of_line`), the
 function renders **`OVERSAMPLE` grid slots** — four, in this codebase —
-per line, from `crates/coco-core/src/machine/audio.rs:41-68`:
+per line, from [`crates/coco-core/src/machine/audio.rs:41-68`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs#L41-L68):
 
 ```rust
 pub(super) fn flush_line_audio(&mut self) {
@@ -374,7 +374,7 @@ reconstruction of a piecewise-constant signal, accurate to one grid
 slot's worth of cycles (roughly 14 cycles per slot at 56 cycles/line ÷ 4
 — good enough that a change lands in the right ~1/4-scanline window, not
 exact to the cycle, which is the resolution `OVERSAMPLE` buys you and the
-doc comment at the top of `audio.rs` calls "grid resolution... not
+doc comment at the top of [`audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs) calls "grid resolution... not
 interpolation").
 
 Generators (the AY's accumulator, crystal-clocked PSGs) are sampled
@@ -399,7 +399,7 @@ to grid resolution" behavior the module doc promises.
 ### `take_audio` and the self-capping buffer
 
 The frontend drains this buffer once per UI update
-(`crates/coco-core/src/machine/audio.rs:12-14`):
+([`crates/coco-core/src/machine/audio.rs:12-14`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs#L12-L14)):
 
 ```rust
 pub fn take_audio(&mut self) -> std::vec::Drain<'_, [f32; 2]> {
@@ -412,8 +412,8 @@ pub fn take_audio(&mut self) -> std::vec::Drain<'_, [f32; 2]> {
 nothing ever calls `take_audio`? Headless tests, trace tooling, anything
 that runs fields without a sound sink attached would otherwise grow this
 `Vec` forever. `machine.rs` guards against exactly that
-(`crates/coco-core/src/machine.rs:38`, checked in `end_of_line` just
-before `flush_line_audio` runs, `run.rs:144-146`):
+([`crates/coco-core/src/machine.rs:38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L38), checked in `end_of_line` just
+before `flush_line_audio` runs, [`run.rs:144-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L144-L146)):
 
 ```rust
 const AUDIO_BUFFER_CAP: usize = 8 * 262 * crate::audio::OVERSAMPLE as usize;
@@ -445,7 +445,7 @@ without becoming a leak.
 
 Chapter 6 taught you a habit: when a comment gives you a round number,
 recompute it from the actual constants and see if it agrees. Time to
-apply that habit here, because `audio.rs`'s own doc comment invites it:
+apply that habit here, because [`audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs)'s own doc comment invites it:
 
 ```rust
 /// Grid samples per scanline. 4 → ~62.9 kHz internal rate on NTSC; a named
@@ -454,7 +454,7 @@ apply that habit here, because `audio.rs`'s own doc comment invites it:
 pub const OVERSAMPLE: u32 = 4;
 ```
 
-The actual rate, per `crates/coco-core/src/machine/audio.rs:16-24`:
+The actual rate, per [`crates/coco-core/src/machine/audio.rs:16-24`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs#L16-L24):
 
 ```rust
 /// The audio sample rate matching [`Machine::take_audio`]'s stream: the
@@ -526,9 +526,9 @@ low-latency driver calling back every few milliseconds, could be
 whatever your OS decided today. You do not control when that callback
 fires, and it must never be kept waiting.
 
-So `coco-egui/src/audio.rs` has two producers-and-one-consumer running on
+So [`coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs) has two producers-and-one-consumer running on
 two different threads, connected by exactly one piece of shared state
-(`crates/coco-egui/src/audio.rs:158-181`):
+([`crates/coco-egui/src/audio.rs:158-181`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L158-L181)):
 
 ```rust
 pub struct AudioOutput {
@@ -592,7 +592,7 @@ each case.
 > (§11.9, §11.10), layered on top.
 
 > **Rust corner: the audio callback must never block long.** Look at
-> `lock()` in `crates/coco-egui/src/audio.rs:344-346`:
+> `lock()` in [`crates/coco-egui/src/audio.rs:344-346`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L344-L346):
 > `ring.lock().unwrap_or_else(PoisonError::into_inner)` — recovering from
 > mutex poisoning instead of propagating a panic across the thread
 > boundary. Why bother? Because a `Mutex::lock()` that panics on a
@@ -616,7 +616,7 @@ each case.
 
 ## 11.6 Artifact one: DC offset, and the one-pole blocker
 
-Time to leave the core crate and walk `coco-egui/src/audio.rs`'s DSP
+Time to leave the core crate and walk [`coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs)'s DSP
 chain artifact by artifact, in the order `push_samples` applies them.
 
 Think about what the CoCo's 6-bit DAC actually outputs when a program
@@ -645,7 +645,7 @@ session, not edge cases.
 
 The fix is a **DC blocker** — a filter that lets everything through
 except "the part of the signal that isn't changing." Here's the whole
-thing (`crates/coco-egui/src/audio.rs:56-70`):
+thing ([`crates/coco-egui/src/audio.rs:56-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L56-L70)):
 
 ```rust
 struct DcBlocker {
@@ -684,7 +684,7 @@ term is what turns "kill DC entirely, and also thin out the bass" into
 "kill DC, and roughly leave everything above some low cutoff frequency
 alone." The comment on the constant gives you the cutoff formula without
 requiring you to derive the z-transform yourself
-(`crates/coco-egui/src/audio.rs:32-37`):
+([`crates/coco-egui/src/audio.rs:32-37`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L32-L37)):
 
 ```rust
 /// One-pole DC-blocker feedback coefficient (`y[n] = x[n] - x[n-1] + R*y[n-1]`).
@@ -708,7 +708,7 @@ and the cutoff rises (more aggressive, but starts eating real bass) — the
 that trade.
 
 `audio_test.rs` proves both halves of the promise directly
-(`crates/coco-egui/src/audio_test.rs:54-75`): a constant input converges
+([`crates/coco-egui/src/audio_test.rs:54-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio_test.rs#L54-L75)): a constant input converges
 to near-zero within 2,000 samples (the DC-killing behavior), and an
 already-centered alternating signal (`+1, -1, +1, -1, ...` — no DC
 component at all) stays bounded near its own amplitude rather than
@@ -777,7 +777,7 @@ struct LowPass {
 }
 ```
 
-(`crates/coco-egui/src/audio.rs:72-114`; `design()` builds the five
+([`crates/coco-egui/src/audio.rs:72-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L72-L114); `design()` builds the five
 coefficients from a cutoff frequency and the Butterworth `Q` — the
 "RBJ cookbook" the comment cites is a well-known standard reference for
 exactly these formulas, and this codebase doesn't re-derive them, just
@@ -843,7 +843,7 @@ directly on the Nyquist-folding scenario: alternating `+1/-1` at the
 *source* rate is, by construction, exactly the fold-back material a
 naive decimation to 48 kHz would turn into garbage — and the test asserts
 the filtered output is crushed to near-zero, while a constant DC input
-passes through at unit gain (`crates/coco-egui/src/audio_test.rs:77-98`).
+passes through at unit gain ([`crates/coco-egui/src/audio_test.rs:77-98`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio_test.rs#L77-L98)).
 Read both assertions together: a low-pass has to do two things
 simultaneously — kill the high stuff, leave DC/low stuff alone — and the
 test checks both, in one function.
@@ -900,7 +900,7 @@ impl Resampler {
 }
 ```
 
-(`crates/coco-egui/src/audio.rs:120-153`.) `pos` is the fractional
+([`crates/coco-egui/src/audio.rs:120-153`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L120-L153).) `pos` is the fractional
 read-position into `input`, in *input-frame units* — not an index, a real
 number. `step = source_rate / device_rate` (≈1.309 for 62.8 kHz →
 48 kHz) is how far `pos` advances per output frame: since `step > 1`
@@ -976,7 +976,7 @@ while buf.len() > self.ring_cap {
 ```
 
 `ring_cap` is computed once, at stream-open time
-(`crates/coco-egui/src/audio.rs:231`): `(device_rate * RING_BUFFER_SECS)
+([`crates/coco-egui/src/audio.rs:231`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L231)): `(device_rate * RING_BUFFER_SECS)
 as usize`, with `RING_BUFFER_SECS = 0.25` — a quarter-second of buffered
 audio, at the device's own rate. Two design choices here, and both are
 about **what happens when producer and consumer drift out of sync**,
@@ -1057,7 +1057,7 @@ let [l, r] = match buf.pop_front() {
 };
 ```
 
-(`crates/coco-egui/src/audio.rs:237-257`.) `held` tracks the last real
+([`crates/coco-egui/src/audio.rs:237-257`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L237-L257).) `held` tracks the last real
 frame that was actually popped; on an underrun, instead of outputting
 `held` unchanged (the "stuck tone" failure) or zero (the "click" failure),
 it's multiplied by `decay` — a number just under 1.0 — and *that*
@@ -1112,7 +1112,7 @@ possible "more than one channel" upgrade: two independent 8-bit
 resistor-ladder DACs (the same R-2R idea as the CoCo's own 6-bit DAC,
 just wider and doubled), one per stereo channel, each a write-only
 latch with no logic behind it at all
-(`crates/coco-core/src/orch90.rs:75-105`):
+([`crates/coco-core/src/orch90.rs:75-105`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/orch90.rs#L75-L105)):
 
 ```rust
 impl Cartridge for Orch90 {
@@ -1146,7 +1146,7 @@ you saw it consumed directly inside `AudioInputs.cart_left/cart_right`
 back in §11.3, and — per the mix function you already read — it sums
 into the mix **unconditionally**, ignoring SNDEN/SEL entirely, because
 the Orch-90 drives its own RCA jacks, not the CoCo's internal SND pin.
-`crates/coco-core/tests/orch90.rs`'s
+[`crates/coco-core/tests/orch90.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/orch90.rs)'s
 `cart_audio_reaches_the_speaker_regardless_of_mux_state` test proves
 exactly that bypass, and the `mpi_dac_writes_ignore_the_slot_select_and_audio_sums`
 test shows the flip side: through a MultiPak, deselecting the Orch-90's
@@ -1163,7 +1163,7 @@ generators plus one noise channel**, each with its own 4-bit attenuator,
 all clocked by the cart's own crystal rather than the CPU's timing loops
 — real oscillators, not "whatever the software pokes." Each tone channel
 is a down-counter that flips a flip-flop on expiry
-(`crates/coco-core/src/sn76489.rs:242-255`):
+([`crates/coco-core/src/sn76489.rs:242-255`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sn76489.rs#L242-L255)):
 
 ```rust
 fn tick(&mut self) {
@@ -1208,7 +1208,7 @@ Two "taps" (fixed bit positions read before the shift) are XORed
 together (`tap1 != tap2` is exactly XOR for booleans) and the result
 becomes the new top bit after the register shifts right by one; the
 output — the noise waveform itself — is just the LFSR's bottom bit,
-read every tick (`level()`, `crates/coco-core/src/sn76489.rs:281-284`:
+read every tick (`level()`, [`crates/coco-core/src/sn76489.rs:281-284`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sn76489.rs#L281-L284):
 `if self.lfsr & 1 != 0 { sum += self.volume[NOISE_CHANNEL] }`). The
 comment on `shift_lfsr` explains the two noise modes this produces:
 "white" noise XORs both taps (genuinely broadband-sounding hiss), while
@@ -1233,7 +1233,7 @@ re-writing a volume register every few milliseconds. The envelope is one
 shared unit (the module doc: "all three channels that select envelope
 mode... read the same `Envelope::volume`") driven by a 4-bit shape
 register that a real chip decodes into one of ten distinct ramp shapes
-(`crates/coco-core/src/ay8913/envelope.rs:54-65`):
+([`crates/coco-core/src/ay8913/envelope.rs:54-65`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/ay8913/envelope.rs#L54-L65)):
 
 ```rust
 pub(super) fn set_shape(&mut self, shape_byte: u8) {
@@ -1286,7 +1286,7 @@ event-timestamping). Step back and look at what each *file* is testing
 as a whole, because the two files test different layers of the same
 pipeline on purpose.
 
-**`crates/coco-core/tests/sound.rs`** tests the **mux and the mix
+**[`crates/coco-core/tests/sound.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sound.rs)** tests the **mux and the mix
 function**, at the bus level, with no scanline loop involved —
 `SystemBus::sound_probe` (§11.3's `mix` wrapper, meant for exactly this:
 "an instantaneous speaker level, for tests and level meters") lets a test
@@ -1302,7 +1302,7 @@ OVERSAMPLE` frames land in the buffer per field, and a second field
 produces exactly the same count after a drain, proving `take_audio` truly
 empties the buffer rather than leaving stragglers.
 
-**`crates/coco-core/tests/audio_grid.rs`** tests the thing `sound_probe`
+**[`crates/coco-core/tests/audio_grid.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/audio_grid.rs)** tests the thing `sound_probe`
 *can't*: **sub-scanline timing**. Its own module doc says so directly —
 "sub-scanline DAC timing must land in the right grid slot, and a level
 pulse entirely inside one scanline... must reach the grid" — and its
@@ -1323,7 +1323,7 @@ chapter's own exercise (§11.14, exercise 3) by breaking the exact
 mechanism that makes it pass and watching both `audio_grid` tests fail
 with the precise diagnostic the sabotage predicts.
 
-**`crates/coco-core/tests/orch90.rs`** is worth one honest note before
+**[`crates/coco-core/tests/orch90.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/orch90.rs)** is worth one honest note before
 you run it yourself: six of its seven tests need nothing but a
 zero-filled ROM image and pass in any checkout, including a bare clone
 with no `roms/` directory. The seventh,
@@ -1344,18 +1344,18 @@ in practice rather than take it on faith.
 
 In this order:
 
-1. **`crates/coco-core/src/audio.rs`, all of it** (115 lines) — the
+1. **[`crates/coco-core/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs), all of it** (115 lines) — the
    module doc's two-paragraph summary, `OVERSAMPLE` and the gain
    constants, `AudioInputs`, `AudioEvent`, and `mix`. Small enough to
    read start to finish in one sitting; everything else in this chapter
    builds on it.
-2. **`crates/coco-core/src/bus/audio_bridge.rs`** — `snapshot_audio_inputs`,
+2. **[`crates/coco-core/src/bus/audio_bridge.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/audio_bridge.rs)** — `snapshot_audio_inputs`,
    `note_audio_write`, `sound_probe`.
-3. **`crates/coco-core/src/machine/audio.rs`** — `flush_line_audio`,
-   `take_audio`, `audio_sample_rate`. Read it next to `machine/run.rs`'s
-   `end_of_line` (`run.rs:130-172`) so you see exactly where in the
+3. **[`crates/coco-core/src/machine/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs)** — `flush_line_audio`,
+   `take_audio`, `audio_sample_rate`. Read it next to [`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)'s
+   `end_of_line` ([`run.rs:130-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130-L172)) so you see exactly where in the
    per-line trailer it's called.
-4. **`crates/coco-egui/src/audio.rs`, all of it** — the whole host chain
+4. **[`crates/coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs), all of it** — the whole host chain
    in one file: `DcBlocker`, `LowPass`, `Resampler`, `AudioOutput`, and
    `push_samples`. Read the module doc first; it previews every artifact
    this chapter walked in two short paragraphs.
@@ -1368,9 +1368,9 @@ In this order:
    ```
 
    (The second command runs `coco-egui`'s unit tests filtered to the
-   `audio` module — `crates/coco-egui/src/audio_test.rs`, gated in via
+   `audio` module — [`crates/coco-egui/src/audio_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio_test.rs), gated in via
    `#[cfg(test)] #[path = "audio_test.rs"] mod tests;` at the bottom of
-   `audio.rs`. It builds `cpal` and its platform audio backends, so
+   [`audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs). It builds `cpal` and its platform audio backends, so
    expect a slower first compile than `coco-core`'s suites.)
 
 ---
@@ -1380,14 +1380,14 @@ In this order:
 **11.1 — Derive the grid rate (recall + math).** Without looking back at
 §11.4, recompute the audio grid's sample rate from first principles: you
 need `VideoStandard::NTSC`'s `lines_per_field()` and `field_rate_hz()`
-(week 6 gave you both; they're also in `crates/coco-core/src/config.rs`)
+(week 6 gave you both; they're also in [`crates/coco-core/src/config.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs))
 and `audio::OVERSAMPLE`. Show the two multiplications. Then do the same
 for PAL (`lines_per_field() = 312`, `field_rate_hz() = 50.0`) — is PAL's
 grid rate higher or lower than NTSC's, and does that match your intuition
 about why (fewer fields per second, but how many more lines per field)?
 
 **11.2 — Sabotage the event grid, verified (sabotage — run the actual
-suite).** In `crates/coco-core/src/machine/audio.rs`, inside
+suite).** In [`crates/coco-core/src/machine/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs), inside
 `flush_line_audio`, find this line:
 
 ```rust
@@ -1419,14 +1419,14 @@ low-pass/resampler stage. Using §11.6's explanation of what a DC level
 filter removes, answer in your own words: (a) what would change about
 the *loudness headroom* available to real audio content, quantitatively
 if you can estimate it from the DAC's mux-gain constants in
-`crates/coco-core/src/audio.rs`; (b) what would you *hear*, specifically,
+[`crates/coco-core/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs); (b) what would you *hear*, specifically,
 at the moment a program first enables SNDEN or writes a new steady DAC
 level after a period of silence — connect this to what §11.6 called "a
 sudden voltage step." Don't run the code for this one; the point is
 building the intuition without a scope or an ear on hand.
 
 **11.4 — Change `OVERSAMPLE`, predicted then checked (build).** In
-`crates/coco-core/src/audio.rs`, change `OVERSAMPLE` from `4` to `2`.
+[`crates/coco-core/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs), change `OVERSAMPLE` from `4` to `2`.
 Before running anything, predict: (a) the new grid rate (redo exercise
 11.1's math); (b) which specific assertion in
 `dac_write_mid_line_splits_the_grid_slots` you'd now expect to behave
@@ -1439,7 +1439,7 @@ against your prediction. Revert the constant back to `4` when done and
 confirm `git status` is clean.
 
 **11.5 — Read the threading boundary (read).** Open
-`crates/coco-egui/src/audio.rs` and answer, citing line numbers: (a)
+[`crates/coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs) and answer, citing line numbers: (a)
 which method runs on the UI thread and which runs on the audio callback
 thread — how do you know, from the code, without external documentation?
 (b) name every operation the callback thread performs while holding the
@@ -1452,7 +1452,7 @@ does that design choice demonstrate about how optional hardware should
 fail?
 
 **11.6 — Add a square-wave test tone (build).** Add a `#[test]` to
-`crates/coco-core/tests/sound.rs` (or a new test file) that: configures
+[`crates/coco-core/tests/sound.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sound.rs) (or a new test file) that: configures
 the DAC path exactly like `dac_reaches_speaker_only_with_snden_and_mux_zero`'s
 `bus()` helper, then alternates `PIA1_DA` between `0xFC` (full scale) and
 `0x00` every 16 CPU cycles for several full field's worth of scanlines,

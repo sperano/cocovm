@@ -157,7 +157,7 @@ const ONE_BIT_LOW: u32 = 227;
 ### From cycles to Hertz, and back
 
 Emulator code, as you know from week 1, thinks in CPU cycles, not seconds.
-The CoCo's clock is `CPU_HZ = 894_886.0` (`crates/coco-core/src/machine.rs:26`
+The CoCo's clock is `CPU_HZ = 894_886.0` ([`crates/coco-core/src/machine.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L26)
 — the NTSC color subcarrier 3.579545 MHz divided by 4, the same constant
 ch. 1 introduced). Converting a period in cycles to a frequency is just
 `CPU_HZ / period_cycles`:
@@ -850,7 +850,7 @@ const MOTOR_SPINUP_CYCLES: u32 = 65536 * 8;
 `65536 * 8 = 524288` cycles — do the conversion to seconds yourself
 (524288 / 894886) and you get **≈ 0.586 s**, matching the comment's "~0.5
 s" and the codebase's own test comment ("spin-up (~0.5 s = 524288
-cycles)", `tests/cassette.rs:58`). It's not a coincidence that this is
+cycles)", [`tests/cassette.rs:58`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs#L58)). It's not a coincidence that this is
 also exactly `512 * 1024` — the ROM's own delay loop is `65536` iterations
 of an 8-cycle inner body, and this constant is that loop transcribed
 literally, cycle-accurate, not a rounded-off "about half a second."
@@ -926,7 +926,7 @@ timing, for exactly what reason. The only remaining source of truth is
 the ROM's own bytes, executing.
 
 So the answer was: run the real ROM, make it actually `CSAVE` something,
-and watch. That's what `examples/cassette_calibrate.rs` is for:
+and watch. That's what [`examples/cassette_calibrate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/cassette_calibrate.rs) is for:
 
 ```rust
 // crates/coco-core/examples/cassette_calibrate.rs:51-65 (excerpt)
@@ -1192,7 +1192,7 @@ that you understand what machinery is being exercised.
 
 ## 12.10 Reading the tests
 
-`crates/coco-core/tests/cassette.rs` splits cleanly into two halves: tests
+[`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs) splits cleanly into two halves: tests
 that need nothing but the `Cassette`/`cassette_wav` API (no ROM, always
 run), and one end-to-end test against the real `roms/coco3.rom`. Running
 the file confirms exactly that split:
@@ -1218,7 +1218,7 @@ a hypothetical. Notice: `csave_rewind_cload_round_trips_a_basic_program`
 still shows `... ok`. It isn't skipped by `#[ignore]`; it's a normal test
 that runs, checks for the ROM at `../../roms/coco3.rom`, prints a message
 to `stderr` when it's absent, and returns early — a pattern you've seen
-before in this course (`tests/coco1_boot.rs`, week 6) and will see again
+before in this course ([`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs), week 6) and will see again
 in disks and serial (weeks 13–14). This worktree has no `roms/`
 directory, so that's the only test in the file that can't fully exercise
 itself here; every other test needs nothing more than the code you've
@@ -1335,7 +1335,7 @@ bottom, without help.
 
 It needs `roms/coco3.rom`, which this worktree doesn't have, so — as
 confirmed by actually running it above — it currently exercises only its
-own early-return path here. `crates/coco-core/tests/coco2_boot/cassette.rs`
+own early-return path here. [`crates/coco-core/tests/coco2_boot/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco2_boot/cassette.rs)
 runs the near-identical scenario against a CoCo 2 boot (`extbas11.rom` +
 `bas12.rom`) instead, specifically as a regression guard that the same
 `Cassette`/PIA1 wiring works correctly on the plain-SAM bus path (§5, week
@@ -1375,21 +1375,21 @@ reason).
 
 In this order:
 
-1. **`crates/coco-core/src/cassette.rs`, the whole file (~451 lines).**
+1. **[`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs), the whole file (~451 lines).**
    Read the module header first, then the constants block (lines 1–66),
    then `Cassette::tick`/`input_bit` (playback, §12.5), then
    `record_dac`/`demodulate`/`capture_to_bits`/`bits_to_bytes`
    (recording, §12.6). By now every doc comment in this file should read
    as a claim you can verify, not a fact to take on faith.
-2. **`crates/coco-core/src/cassette_wav.rs`** — skim the constants and
+2. **[`crates/coco-core/src/cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette_wav.rs)** — skim the constants and
    `synthesize_wav` closely, `decode_wav`'s chunk-parsing machinery more
    lightly (it's ordinary defensive file-format parsing; the interesting
    part is the polarity-guessing in §12.9).
-3. **`crates/coco-core/examples/cassette_calibrate.rs`** — read it as a
+3. **[`crates/coco-core/examples/cassette_calibrate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/cassette_calibrate.rs)** — read it as a
    measurement instrument, not application code. Notice what it captures
    (raw DAC transitions) versus what it computes from that capture (two
    different histograms), and connect that back to §12.8.
-4. **`crates/coco-core/tests/cassette.rs`** — you've now read every test
+4. **[`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs)** — you've now read every test
    in it in §12.10; re-read `playback_waveform_demodulates_back_to_the_same_bytes`
    once more end to end without stopping, and confirm you can predict
    what `demodulate(&capture)` returns before you reach the assertion.
@@ -1540,7 +1540,7 @@ state machine, that the CPU talks to instead of bit-banging. You'll meet
 a **HALT/NMI handshake** that week 6 quietly set up for
 (`step_cpu_unit`'s HALT check, which you've now read the exact call site
 of, right next to the two cassette/cartridge `tick` calls in
-`machine/run.rs`), and you'll see the same "functional, not cycle-exact"
+[`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)), and you'll see the same "functional, not cycle-exact"
 fidelity choice this chapter's tape made — but for a completely different
 reason: not because you can't derive the exact behavior, but because
 disk software, unlike the cassette ROM you just spent a whole chapter
