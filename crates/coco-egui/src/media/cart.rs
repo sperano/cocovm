@@ -161,6 +161,7 @@ impl CocoApp {
                         Some(format!("could not listen on {}: {e}", self.rs232_tcp_addr));
                 }
             },
+            #[cfg(unix)]
             Rs232EndpointKind::Pty => match coco_core::serial::PtyEndpoint::new() {
                 Ok(ep) => {
                     let path = ep.path().to_string();

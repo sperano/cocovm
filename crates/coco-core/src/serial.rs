@@ -245,7 +245,9 @@ impl PtyEndpoint {
         // just-opened PTY master fd; `buf` is a valid buffer of the given
         // length for the duration of the call.
         unsafe {
-            let mut buf = [0i8; 128];
+            // `c_char` signedness is ABI-specific (i8 on x86-64/Apple,
+            // u8 on aarch64 Linux), so the buffer must use the alias.
+            let mut buf = [0 as libc::c_char; 128];
             if libc::ptsname_r(master_fd, buf.as_mut_ptr(), buf.len()) != 0 {
                 return Err(io::Error::last_os_error());
             }

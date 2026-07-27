@@ -57,12 +57,15 @@ impl CocoApp {
             ui.text_edit_singleline(&mut self.rs232_tcp_addr);
         });
 
-        let pty_label = match &self.rs232 {
-            Some(Rs232Endpoint::Pty(path)) => format!("PTY ({path})"),
-            _ => "PTY".to_string(),
-        };
-        if ui.selectable_label(selected(Rs232EndpointKind::Pty), pty_label).clicked() {
-            self.rs232_set_endpoint(Rs232EndpointKind::Pty);
+        #[cfg(unix)]
+        {
+            let pty_label = match &self.rs232 {
+                Some(Rs232Endpoint::Pty(path)) => format!("PTY ({path})"),
+                _ => "PTY".to_string(),
+            };
+            if ui.selectable_label(selected(Rs232EndpointKind::Pty), pty_label).clicked() {
+                self.rs232_set_endpoint(Rs232EndpointKind::Pty);
+            }
         }
     }
 

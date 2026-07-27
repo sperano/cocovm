@@ -8,7 +8,9 @@ pub(crate) enum Rs232Endpoint {
     /// `nc`/`telnet`.
     Tcp(String),
     /// Unix pseudo-terminal; the string is the slave device path a host
-    /// terminal program opens (e.g. `screen /dev/ttys009 9600`).
+    /// terminal program opens (e.g. `screen /dev/ttys009 9600`). No PTYs on
+    /// Windows, so the variant (and its menu row) only exists on Unix.
+    #[cfg(unix)]
     Pty(String),
 }
 
@@ -18,6 +20,7 @@ impl Rs232Endpoint {
         match self {
             Rs232Endpoint::Loopback => "loopback".to_string(),
             Rs232Endpoint::Tcp(addr) => format!("tcp {addr}"),
+            #[cfg(unix)]
             Rs232Endpoint::Pty(path) => format!("pty {path}"),
         }
     }
@@ -28,6 +31,7 @@ impl Rs232Endpoint {
         match self {
             Rs232Endpoint::Loopback => Rs232EndpointKind::Loopback,
             Rs232Endpoint::Tcp(_) => Rs232EndpointKind::Tcp,
+            #[cfg(unix)]
             Rs232Endpoint::Pty(_) => Rs232EndpointKind::Pty,
         }
     }
@@ -44,5 +48,6 @@ pub(crate) const RS232_TCP_DEFAULT_ADDR: &str = "127.0.0.1:6551";
 pub(crate) enum Rs232EndpointKind {
     Loopback,
     Tcp,
+    #[cfg(unix)]
     Pty,
 }
