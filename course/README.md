@@ -35,6 +35,8 @@ Real ROMs in `./roms/` and reference PDFs in `./docs/` (this machine only).
 10. [The PIAs, the Keyboard Matrix, and the Joystick ADC-by-Comparator](ch10-pias-keyboard-joystick.md)
 11. [Sound: from a 6-bit DAC to your speakers](ch11-sound.md)
 12. [The Cassette: FSK Modems, 1980 Edition](ch12-cassette.md)
+13. [Disks: the WD1773 State Machine, and Three Ways to Store Bytes](ch13-disks.md)
+14. [Serial: Bit-Banging, a Real UART, a Printer — and the Cartridge System](ch14-serial-printers-carts.md)
 
 ---
 
@@ -59,7 +61,7 @@ Everything in an emulator is downstream of one function:
   (monomorphization = zero cost, testable against a flat 64K array).
 - **The borrow-checker strategy** (DESIGN.md §2b): `Machine { cpu, bus }` as
   two disjoint fields; destructuring `SystemBus` to get disjoint borrows
-  during scanout. Why there is no `Rc<RefCell<…>>` anywhere in the core, and
+  during scanout. Why there is no `Rc<RefCell<…>>` in the machine's state tree, and
   what that buys later (save states, week 16).
 - Workspace layout: why three crates (DESIGN.md §1).
 

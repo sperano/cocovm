@@ -423,6 +423,16 @@ same time aliases nothing. No `Rc`. No `RefCell`. No unsafe. The
 machine is a plain tree of owned values, and one struct boundary placed
 exactly along the borrow line makes the whole architecture compile.
 
+(For the record-keepers: the *machine state tree* holds that rule
+absolutely. A couple of host-facing edges bend it — a printer capture
+sink is a shared `Rc<RefCell<Vec<u8>>>` handle, and the PTY code that
+bridges the emulated serial port to your terminal makes `libc` calls in
+`unsafe` blocks. Both live at the boundary where the emulator meets the
+host, both are excluded from save states, and week 14 examines each
+one. The lesson survives contact with reality: shared ownership is
+banned from the state you snapshot, and tolerated only where the host
+forces it.)
+
 That's the design rule to take away: **in Rust, you partition state by
 who needs to borrow what simultaneously — not by what "belongs
 together" conceptually.** On paper, the CPU and the GIME are peers; in
