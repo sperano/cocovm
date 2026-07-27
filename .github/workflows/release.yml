@@ -4,6 +4,10 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to build and attach binaries to"
+        required: true
 
 permissions:
   contents: write
@@ -12,6 +16,8 @@ jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +35,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       # Native libraries needed by cpal (ALSA), gilrs (udev) and
       # winit/glutin/rfd (X11/Wayland/xkb).
@@ -59,7 +67,7 @@ jobs:
       - name: Package (macOS/Linux)
         if: runner.os != 'Windows'
         run: |
-          STAGE=cocovm-${GITHUB_REF_NAME}-${{ matrix.target }}
+          STAGE=cocovm-${RELEASE_TAG}-${{ matrix.target }}
           mkdir "$STAGE"
           cp "target/${{ matrix.target }}/release/coco" LICENSE NOTICE.md "$STAGE/"
           tar -czf "$STAGE.tar.gz" "$STAGE"
@@ -69,7 +77,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $stage = "cocovm-$env:GITHUB_REF_NAME-${{ matrix.target }}"
+          $stage = "cocovm-$env:RELEASE_TAG-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/coco.exe", "LICENSE", "NOTICE.md" -Destination $stage
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
@@ -78,4 +86,5 @@ jobs:
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: ${{ env.ARCHIVE }}
