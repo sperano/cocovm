@@ -37,6 +37,12 @@ Real ROMs in `./roms/` and reference PDFs in `./docs/` (this machine only).
 12. [The Cassette: FSK Modems, 1980 Edition](ch12-cassette.md)
 13. [Disks: the WD1773 State Machine, and Three Ways to Store Bytes](ch13-disks.md)
 14. [Serial: Bit-Banging, a Real UART, a Printer — and the Cartridge System](ch14-serial-printers-carts.md)
+15. [The egui Frontend: Pixels, Keys, and Real Time](ch15-the-egui-frontend.md)
+16. [The Debugger and Save States: the Payoff of Every Earlier Decision](ch16-debugger-and-save-states.md)
+
+Plus the self-study [Appendices A–D](appendices.md): emulating without complete
+documentation, ROM licensing and provenance, deferred scope, and the tooling
+lab bench.
 
 ---
 
