@@ -1,0 +1,81 @@
+name: Release binaries
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Native libraries needed by cpal (ALSA), gilrs (udev) and
+      # winit/glutin/rfd (X11/Wayland/xkb).
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libudev-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release -p coco-egui --target ${{ matrix.target }}
+
+      - name: Package (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          STAGE=cocovm-${GITHUB_REF_NAME}-${{ matrix.target }}
+          mkdir "$STAGE"
+          cp "target/${{ matrix.target }}/release/coco" LICENSE NOTICE.md "$STAGE/"
+          tar -czf "$STAGE.tar.gz" "$STAGE"
+          echo "ARCHIVE=$STAGE.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = "cocovm-$env:GITHUB_REF_NAME-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/coco.exe", "LICENSE", "NOTICE.md" -Destination $stage
+          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
+          "ARCHIVE=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
