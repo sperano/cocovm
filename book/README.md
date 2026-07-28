@@ -3,11 +3,11 @@
 **Reference codebase:** this repository (`cocovm`) — a Tandy Color Computer 1/2/3
 emulator in Rust (~52k lines: `mc6809`, `coco-core`, `coco-egui`).
 
-**Who this course is for.** You are an experienced programmer who knows Rust well
-(but not necessarily its advanced corners), knows 6809 assembly reasonably
-well, and grew up with a CoCo 3 — so you know what the machine *does*, but not
-all the details of the GIME, VDG, SAM, and PIAs do it, and you have never written an emulator
-or done modern graphics programming. Every chapter assumes exactly that student.
+**Who this course is for.** Experienced programmers who know Rust well (but not
+necessarily its advanced corners), know 6809 assembly reasonably well, and are
+familiar with what a CoCo 3 *does* without knowing all the details of how the
+GIME, VDG, SAM, and PIAs do it — and who have never written an emulator or done
+modern graphics programming. Every chapter assumes exactly that background.
 
 **How the course works.** One class per week, 16 weeks, six parts. Each week
 has: required reading (specific source files and tests — the tests *are* the
@@ -19,7 +19,8 @@ which test catches it, then extend it.
 **Standing tools.** `cargo test -p <crate>` per chapter;
 `crates/coco-core/examples/` for visual demos (they write PPM files — no GPU
 needed); [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) is the architecture document the whole course hangs off.
-Real ROMs in `./roms/` and reference PDFs in `./docs/` (this machine only).
+Real ROMs in `./roms/` and reference PDFs in `./docs/` (git-ignored, and
+present only on a machine whose owner has obtained them independently).
 
 **Chapters written so far:**
 
@@ -168,8 +169,8 @@ and annotate the first 10 lines against the SEB Unravelled listing.
   `$FF90` GIME, `$FFA0` MMU, `$FFB0` palette, `$FFC0` SAM strobes.
 - **Two machines, two paths**: the CoCo 3 GIME path vs the CoCo 1/2 SAM path
   ([`bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)), branched once at entry. The SAM's write-only strobe
-  registers (write to an even address clears a bit, odd sets it) — your
-  first "weird hardware" moment.
+  registers (write to an even address clears a bit, odd sets it) — the
+  course's first "weird hardware" moment.
 - The GIME MMU ([`gime.rs:235`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L235)): 8K slots, two task sets, `phys = block<<13 |
   addr&0x1FFF`; the write-8-bits/read-6-bits asymmetry ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §3).
 - ROM composition per variant (`config.rs`, `rom_db.rs` CRC validation);
@@ -213,9 +214,10 @@ instructions-per-line during boot.
 
 ## Part III — Video: the GIME at last (weeks 7–9)
 
-You asked to "start with the GIME" — here is why it's week 7, not week 1:
-nothing the GIME does is visible until a CPU (weeks 2–4) executes ROM code
-over a bus (week 5) on a clock (week 6). Now it pays off all at once.
+The GIME is the obvious chip to want to start with — here is why it arrives in
+week 7, not week 1: nothing the GIME does is visible until a CPU (weeks 2–4)
+executes ROM code over a bus (week 5) on a clock (week 6). Now it pays off all
+at once.
 
 ### Week 7 — How a raster works + the legacy VDG text mode
 
@@ -286,7 +288,7 @@ questions they force.*
   emulator-author's view.
 - Legacy VDG *graphics* (PMODEs): GM bits from PIA1 `$FF22` × SAM V-bits
   cadence ([`video/graphics.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs), test `sam_video.rs`) — the CoCo 1/2 modes
-  you POKEd at as a kid, finally explained.
+  a generation of BASIC programmers POKEd at, finally explained.
 
 **Reading:** [`gime/palette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs), [`video/graphics.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs); tests [`composite.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs),
 [`scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs), [`sam_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam_video.rs).
@@ -334,7 +336,7 @@ what would break if PIA registers were read/write plain bytes?
   CA2/CB2): DAC vs cassette vs cartridge sound. Why event-timestamping beats
   sampling the DAC register per-sample.
 - The host side ([`coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs)): cross-thread ring buffer
-  (`Arc<Mutex<VecDeque>>` — your first concurrency in the course), DC
+  (`Arc<Mutex<VecDeque>>` — the first concurrency in the course), DC
   blocker (`y[n]=x[n]-x[n-1]+0.995·y[n-1]`), Butterworth low-pass before
   decimation, linear-interpolation resampler, underrun fade instead of
   clicks. Each of these exists because of an audible artifact — the chapter

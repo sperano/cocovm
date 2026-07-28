@@ -236,7 +236,7 @@ better-verified than any single secondary document, because they've been
 cross-checked against thousands of pieces of real software for decades.
 That doesn't make them infallible — Case 1 above shows this project siding
 with MAME's *source code* over two other documents, not over MAME's word
-alone — but it does make "does a reference emulator agree with me" a
+alone — but it does make "does a reference emulator agree?" a
 cheap, high-value check to run before trusting your own reading of a
 register description.
 
@@ -269,14 +269,14 @@ is why every ROM-dependent claim in this appendix and the next two is
 either (a) read directly out of source comments that themselves cite MAME
 or the datasheet, or (b) explicitly marked as unrun. This is not a gap
 specific to this worktree — it's the normal condition for a fresh clone,
-a CI runner, or a contributor who hasn't bought the same reference
-material you have, and the project's whole [`rom_db.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rom_db.rs) + [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md)
+a CI runner, or a contributor who hasn't obtained the same reference
+material, and the project's whole [`rom_db.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rom_db.rs) + [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md)
 apparatus (Appendix B) exists precisely so the *code* still works and is
 still auditable under that condition. Writing this appendix without local
 PDFs or ROMs is, in a small way, a test of whether the codebase's own
 provenance discipline is sufficient on its own — and for everything cited
 above, it was: every fact traces to a comment, a test, or [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md), not
-to a PDF this session had to trust on faith.
+to a PDF that had to be taken on faith.
 
 ### The method, distilled
 
@@ -345,7 +345,7 @@ is an accurate account of *this project's* choices, not legal advice.
 > permissive code may be combined into a GPL work), never the reverse —
 > keep `mc6809` free of GPL-licensed code.
 
-This mirrors the workspace boundary you already know from `ch01`
+This mirrors the workspace boundary established in `ch01`
 (`mc6809` depends on nothing, knows only the `Bus` trait): the *licensing*
 boundary and the *dependency* boundary are the same boundary. `crates/
 mc6809/LICENSE-MIT` and `crates/mc6809/LICENSE-APACHE` sit inside that
@@ -935,7 +935,7 @@ leading up to it without having to have started a file trace in advance.
 ### The debugger as a tool
 
 One paragraph, since the debugger's design is the subject of its own
-material ([`course/README.md`](https://github.com/sperano/cocovm/blob/main/course/README.md)'s Part VI, "the debugger and save states"):
+material ([`book/README.md`](https://github.com/sperano/cocovm/blob/main/book/README.md)'s Part VI, "the debugger and save states"):
 the piece worth knowing as you reach for it in day-to-day debugging is
 `peek()` ([`crates/coco-core/src/bus/peek.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/peek.rs)) — a side-effect-free twin of
 `Bus::read()` that the debugger's memory and register views use so that

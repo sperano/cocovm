@@ -7,37 +7,86 @@ you will know why the reset vector is the one address that can never be
 banked away, and you will have watched a one-line reordering break four
 tests for a reason you can explain in a sentence.*
 
-Weeks 1–4 built a CPU that can execute anything, provided something on
-the other end of `Bus::read`/`write` answers honestly. This week builds
-that something. `mc6809` doesn't know a CoCo exists; from here on,
-`coco-core`'s `SystemBus` is the entire outside world as far as the CPU
-can tell — one flat 64K address space that, depending on four bits in a
-register you're about to meet, might be RAM, might be one of two ROMs,
-might be a chip register that clears itself when read, or might be
-nothing at all.
+Weeks 1 through 4 built a CPU that will execute anything put in front of
+it, provided something on the other end of `Bus::read` and `Bus::write`
+answers honestly. For four weeks that something has been a stub: a flat
+64K array in the test harness, with no ROM, no devices, and no opinions
+whatsoever about which addresses mean what. This week builds the real
+thing.
+
+It is worth being precise about how much rides on it. The `mc6809` crate
+does not know a CoCo exists; from here on, `coco-core`'s `SystemBus` is
+the entire outside world as far as the CPU can tell. One flat 64K address
+space that, depending on a handful of bits in registers you are about to
+meet, might be RAM, might be one of two different ROMs, might be a chip
+register that clears itself the instant it is read, or might be nothing
+at all — no chip driving the data bus, and a value that comes back
+anyway.
+
+That last possibility is a useful early warning about the character of
+this chapter. A memory map looks, on a poster, like a tidy partition of
+the address space into labelled boxes. The real thing is not a partition.
+The boxes overlap, several of them move under software control, one of
+them is nailed down so hard that nothing in the machine can move it, and
+the hardware resolves the ambiguity by strict priority rather than by
+tidiness. Getting that priority order right is most of the intellectual
+work in this chapter; the rest is a long, mechanical walk through the
+I/O page, one device range at a time.
+
+There is also a fork in the road here that the earlier chapters didn't
+have. The CoCo 1, the CoCo 2 and the CoCo 3 all run the same CPU, but
+they decide what an address means with completely different silicon, and
+this codebase carries two independent decoders as a direct consequence.
+Section 5.5 tells the older, simpler story; §§5.6–5.10 tell the newer,
+more elaborate one; and §5.4, in between, is the argument for why the two
+are deliberately never merged.
 
 ---
 
 ## 5.1 Two chips, one seam
 
 The CPU only ever calls `bus.read(addr)` or `bus.write(addr, val)` with a
-16-bit `addr`. Everything this chapter covers is the answer to "which
-physical byte, or which chip register, does that address actually name?"
-— and the honest answer is "it depends," because the CoCo shipped in two
-generations with genuinely different chips doing the deciding:
+16-bit `addr`. It has no other vocabulary — week 1 made that a deliberate
+design decision, and the payoff arrives now, because it means the entire
+memory system of the machine can be understood as the answer to exactly
+one question: which physical byte, or which chip register, does that
+16-bit number actually name?
 
-- **CoCo 1 and CoCo 2**: a MC6883 **SAM** (Synchronous Address
-  Multiplexer) holds a handful of latched bits and maps the 64K space to
-  ROM, RAM, or the I/O page in one lookup. No MMU — what you see is what
-  you get, banked only by a single P1 bit for 64K machines.
-- **CoCo 3**: the **GIME** absorbs the SAM's job (in a compatibility
-  layer, so old software still works) and adds a real MMU: eight 8K
-  logical slots, each independently pointed at any 8K physical block in
-  up to 2 MB of RAM.
+The honest answer is "it depends," and it depends on more than you might
+expect. It depends on which model of CoCo is being emulated, because the
+two generations put entirely different chips in charge of deciding. It
+depends on bits that software can change at any moment, so the same
+address can name two different things a microsecond apart. And it depends
+on a priority order among overlapping ranges, so knowing every individual
+rule is not enough — you also have to know which rule wins.
 
-Both live in [`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), inside one struct,
-`SystemBus`, which is what actually implements the `Bus` trait from
-week 1:
+Start with the generational split, because it is the coarsest of the
+three dependencies and the one that structures the rest of the chapter.
+The CoCo 1 and CoCo 2 delegate the decision to an MC6883 SAM, the
+Synchronous Address Multiplexer introduced in week 1's tour of the
+machine. The SAM holds a handful of latched bits and maps the 64K space
+to ROM, RAM, or the I/O page in a single lookup. There is no MMU
+anywhere in that picture: what the CPU sees is what the board has, banked
+only by a single `P1` bit that swaps the upper half of RAM into the lower
+half on 64K machines.
+
+The CoCo 3 replaces both halves of that arrangement with the GIME. It
+absorbs the SAM's job — in a compatibility layer, so that software
+written for the older machines keeps working — and then adds the feature
+that actually distinguishes the machine: a real memory management unit.
+Eight logical 8K slots, each independently pointed at any 8K physical
+block in up to 2 MB of RAM, with two complete sets of those eight
+registers so that an entire 64K view can be swapped in a single write.
+Sections 5.7 and 5.8 are devoted to that mechanism and to what real
+software did with it.
+
+Both chips live in the same file,
+[`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), and — more surprisingly — inside
+the same struct. `SystemBus` is the type that actually implements the
+`Bus` trait from week 1, which makes it the concrete thing sitting on the
+far side of the CPU's seam. Read the field list below less as a data
+structure and more as an inventory of the machine: nearly every field is
+a device that gets its own chapter later in the course.
 
 ```rust
 pub struct SystemBus {
@@ -58,26 +107,59 @@ pub struct SystemBus {
 *([`crates/coco-core/src/bus.rs:36-110`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L36-L110), trimmed to the fields this
 chapter needs.)*
 
-Notice both `gime: GIME` and `sam: Sam` are always present, on every
-machine. A CoCo 1 allocates a `GIME` it never looks at; a CoCo 3
-allocates a `Sam` it never looks at. That's a few dozen wasted bytes in
-exchange for something worth more: `SystemBus` is one concrete type, so
-there is no generic parameter and no `dyn` anything standing between the
-CPU's hot path and a memory access, and — the payoff you'll recognize
-from week 1 — a single `#[derive(Serialize, Deserialize)]` covers the
-whole thing for save states, with no "which variant am I" branching
-required at (de)serialization time. You'll see exactly how the CPU
-chooses between the two decoders in §5.4.
+The first field, `variant`, is the machine's identity, and everything
+else in the struct is either memory or a device. `ram` and `rom` are the
+two `Box<[u8]>` buffers week 1 dissected. Then come the decode chips,
+then the two PIAs, then the cartridge slot and the virtual hard disk, and
+in the full declaration a further dozen fields covering the keyboard,
+joysticks, cassette, serial port, and the debugger's watchpoint table.
+
+Notice that both `gime: GIME` and `sam: Sam` are present unconditionally,
+on every machine. A CoCo 1 allocates a `GIME` it will never once look at;
+a CoCo 3 allocates a `Sam` it will never once look at. Two decode chips
+that never coexisted in any real machine are both sitting in the struct
+at the same time, which looks like waste until you price the
+alternatives.
+
+What it buys is that `SystemBus` is a single concrete type. There is no
+generic parameter, no trait object, and no enum-of-machines standing
+between the CPU's hottest path and a memory access — `bus.read(addr)`
+compiles to a direct call every time, exactly as week 1's discussion of
+monomorphization promised. Just as importantly, and this is the payoff
+you'll recognize from week 1's argument about trees versus graphs, a
+single `#[derive(Serialize, Deserialize)]` covers the whole thing for
+save states. Nothing has to ask "which variant am I" at serialization
+time, because there is only ever one shape of struct to write out. A few
+dozen bytes of unused device state is a cheap price for that, and it is
+paid once at construction rather than per access.
+
+What remains is the mechanism by which the CPU picks between the two
+decoders on any given access, and the ordered set of rules each decoder
+applies once chosen. The next section takes the second of those first,
+because the ordering is the part that most repays being internalized
+before any of the individual rules.
 
 ---
 
 ## 5.2 Decode order: what wins when address ranges overlap
 
-Before the branch tables, internalize the *order of precedence*, because
-several device ranges physically overlap and the order is the whole
-story. Here is the real function, [`crates/coco-core/src/bus.rs:267-294`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L267-L294),
-for the CoCo 3 path (the `variant != Coco3` branch peels off to a
-completely different function, §5.5):
+The temptation, faced with a memory map, is to start memorizing ranges.
+Resist it for a few pages, because the ranges are the easy part and they
+are all written down in §5.3's table anyway. The part that has to be in
+your head first is the *order of precedence*, for the simple reason that
+several device ranges physically overlap and a rule that lists a range
+without saying who wins the overlap is not a rule at all. `$FFFE`, the
+reset vector, is inside the I/O page, inside the ROM window, and inside
+whatever the MMU happens to be mapping. Three plausible answers; the
+machine has exactly one.
+
+Here is the function that decides, in full, from
+[`crates/coco-core/src/bus.rs:267-294`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L267-L294). This is the CoCo 3 path; the
+`variant != Coco3` branch near the top peels off to an entirely
+different function that §5.5 takes apart separately. Read it once for
+shape before reading it for detail — what you should notice is that it is
+nothing but a stack of guarded early returns, each one narrower in scope
+than the one below it:
 
 ```rust
 impl Bus for SystemBus {
@@ -112,59 +194,165 @@ impl Bus for SystemBus {
 }
 ```
 
-Four tiers, checked strictly top to bottom, each one a *precondition*
-that, once true, ends the search:
+Strip away the debugger hook at the top and the variant branch below it,
+and what's left is four tiers, checked strictly top to bottom. Each tier
+is a *precondition* rather than a partition: once its condition is true,
+the search ends there and no lower tier is ever consulted, whether or not
+the address also falls inside that lower tier's range.
 
-1. **`$FFE0–$FFFF` — hardwired internal ROM.** `HARDWIRED_ROM_BASE =
-   0xFFE0`. This is checked *before* the I/O-page test even though
-   `$FFE0` is numerically inside `$FF00–$FFFF` too. If it weren't first,
-   the six 6809 hardware vectors — including the reset vector at
-   `$FFFE` — would be swallowed by the I/O-page branch below and read
-   back as unmapped I/O garbage. §5.13 traces exactly this address
-   through reset; exercise 5.6 asks you to justify the ordering from
-   first principles.
-2. **`$FF00–$FFBF` — the I/O page**, gated by `io_enabled` (a debugger
-   convenience, always `true` on a running machine). Below `$FFE0`, so
-   it never contests the hardwired vectors.
-3. **The ROM window**, `is_rom_window(addr)` — `$8000–$FDFF`, gated on
-   whether ROM is currently mapped in at all (SAM/GIME "map type" bit)
-   and on the `$FE00–$FEFF` MC3 special case (§5.7). §5.6 is a full
-   deep-dive on what happens *inside* this tier once it's entered.
-4. **Everything else** falls through to `phys(addr)` — the MMU (or the
-   fixed disabled-MMU map) translating into `self.ram`.
+The first tier is `$FFE0–$FFFF`, hardwired to internal ROM. The constant
+is `HARDWIRED_ROM_BASE = 0xFFE0`, and the striking thing about it is that
+it is checked *before* the I/O-page test even though `$FFE0` is
+numerically inside `$FF00–$FFFF` as well. That ordering is not a stylistic
+preference. If the I/O test came first, the six 6809 hardware vectors —
+including the reset vector at `$FFFE` — would be swallowed by the
+I/O-page branch and read back as unmapped I/O garbage, and the machine
+would never execute a single useful instruction. Section 5.13 traces
+exactly this address through reset, and exercise 5.6 asks you to justify
+the ordering from first principles rather than from the code.
 
-`write` ([`bus.rs:296-315`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L296-L315)) walks the identical four tiers with one
-asymmetry worth flagging now and expanding in §5.10's neighbor: writes to
-tier 1 are simply dropped (`$FFE0–$FFFF` isn't backed by RAM at all —
-there's no "write-through" concept there), and writes that fall through
-tier 3 (the ROM window when ROM *is* mapped) land on the RAM sitting
-underneath it, not on the ROM itself — because ROM is read-only silicon
-and the physical translation via `phys()` still resolves to a real RAM
-address even while the CPU can't read it back.
+The constant's own doc comment is worth reading in full, because it does
+something a range table never can — it says what the range is immune
+*to*, and cites the evidence, from
+[`crates/coco-core/src/bus/regs.rs:85-92`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/regs.rs#L85-L92):
 
-> **Rust corner: precedence as a stack of early returns.** Notice there
-> is no `match` here, no priority field, no sorted list of ranges —
-> just four `if ... return` statements in a fixed order. This is a
-> common Rust idiom for "first matching rule wins": each guard either
-> returns immediately or falls through to the next. It reads
-> top-to-bottom exactly the way the silicon's own priority encoder
-> would, which is the point — when you're modeling a decode order that
-   *is* meaningfully ordered (not just a disjoint partition), resist the
-   urge to reach for a `match` on address ranges; a `match` implies the
-   arms are mutually exclusive, and here `$FFE0` legitimately belongs to
-   two overlapping ranges. The early-return chain makes the overlap and
-   its resolution visible in the code, not hidden behind arm ordering
-   that a future editor could silently reshuffle.
+```rust
+/// `$FFE0–$FFFF` — the top 32 bytes of the `$8000–$FFFF` window, including the
+/// 6809 hardware vectors — is hardwired to internal ROM on every read,
+/// regardless of INIT0 MC1:MC0, the SAM TY map-type bit (`$FFDE`/`$FFDF`,
+/// all-RAM mode), MMU state, or any inserted cartridge. MAME `coco3.cpp:53-58`
+/// documents this as verified by William Astle's real-hardware test, which
+/// refutes SEB Unravelled II p.28's claim that this range aliases `$BFFx`.
+/// Writes here are dropped (`SystemBus::write`) — it isn't backed by RAM.
+pub(super) const HARDWIRED_ROM_BASE: u16 = 0xFFE0;
+```
+
+Four separate mechanisms are named there as unable to touch this range,
+and every one of them is a mechanism this chapter goes on to build. Note
+also the shape of the citation: MAME's source, a real-hardware test by a
+named person, and an explicit statement that a published reference book
+gets this wrong. That is what a hardware claim looks like when someone
+has actually checked, and it is the standard the rest of this chapter
+holds its own claims to.
+
+The second tier is the I/O page itself, `$FF00–$FFBF`, gated on
+`io_enabled`. That flag is a debugger convenience and is always `true` on
+a running machine, so for now read the condition as simply "the address is
+at or above `$FF00`." Because tier 1 already returned for everything from
+`$FFE0` up, this tier can never contest the hardwired vectors no matter
+how its range is written.
+
+The third tier is the ROM window, and it is the only one of the four
+whose condition is a function call rather than a comparison:
+`is_rom_window(addr)` covers `$8000–$FDFF`, but gated on whether ROM is
+currently mapped in at all — the SAM's map-type bit, or the GIME's
+equivalent — and with a special case for the `$FE00–$FEFF` page that
+§5.7 unpacks. Section 5.6 is a full deep dive into what happens *inside*
+this tier once it has been entered, because "ROM" turns out to mean one
+of two entirely different chips depending on two bits in `INIT0`.
+
+The fourth tier is everything else, which is to say ordinary memory.
+`phys(addr)` runs the MMU translation — or the fixed map used when the
+MMU is switched off — and the result indexes straight into `self.ram`.
+Most accesses a running machine makes land here, which is a good reminder
+that the exotic tiers above are exceptions carved out of an otherwise
+simple story.
+
+Writes walk the identical four tiers, and it's worth seeing them side by
+side rather than taking the symmetry on trust, from
+[`crates/coco-core/src/bus.rs:296-315`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L296-L315):
+
+```rust
+    fn write(&mut self, addr: u16, val: u8) {
+        if self.watch.is_some() {
+            self.note_watch(addr, crate::debug::WatchKind::Write);
+        }
+        if self.variant != MachineVariant::Coco3 {
+            self.sam_write(addr, val);
+            return;
+        }
+        // $FFE0–$FFFF is ROM, not RAM: writes there are dropped.
+        if addr >= HARDWIRED_ROM_BASE {
+            return;
+        }
+        if self.io_enabled && addr >= IO_BASE {
+            self.io_write(addr, val);
+            return;
+        }
+        // ROM is read-only; writes to the ROM window reach the RAM mapped beneath it.
+        let p = self.phys(addr);
+        self.ram[p] = val;
+    }
+```
+
+Two asymmetries jump out, and both are hardware facts rather than
+conveniences. Tier 1 has become a bare `return` with no side effect at
+all: `$FFE0–$FFFF` isn't backed by RAM anywhere in the machine, so there
+is nothing for a write to land on and no "write-through" concept to
+implement. A program that stores to the reset vector is not making a
+mistake the emulator needs to report; it is simply doing something the
+silicon quietly ignores.
+
+The second asymmetry is more interesting, and it is the reason the ROM
+tier has no counterpart in `write` at all. On the read side, an address
+in a mapped ROM window returns a ROM byte. On the write side, that same
+address falls straight through to `phys()` and lands on the RAM sitting
+physically underneath the ROM overlay. ROM is read-only silicon, but the
+RAM behind it is real, still addressable by the MMU, and still there when
+the ROM is later switched out. Software can therefore write a byte to
+`$C000`, read `$C000` back, and get a completely different value — not
+because the write failed, but because the read and the write resolved to
+two different chips. Section 5.14's second worked example demonstrates
+exactly this, and §5.5 shows that the CoCo 1/2 path deliberately does
+*not* behave this way.
+
+> **Rust corner: precedence as a stack of early returns.** Notice what
+> isn't in either function. There is no `match` on address ranges, no
+> priority field on a device record, no sorted list of decoders consulted
+> in turn. There are four `if ... return` statements in a fixed order,
+> and that is the entire dispatch mechanism. This is a common Rust idiom
+> for "first matching rule wins": each guard either returns immediately
+> or falls through to the next, and the order in the source *is* the
+> semantics.
+>
+> The reason to prefer it here, over the `match` that a Rust programmer's
+> instincts might reach for first, is that a `match` carries an implicit
+> promise its arms are mutually exclusive. Here they emphatically are
+> not: `$FFE0` legitimately belongs to two of the four ranges, and a
+> reader needs to see which one wins. Written as a `match`, that fact
+> would be buried in arm ordering — invisible to anyone skimming, and
+> silently reshuffled the first time someone tidies the arms into
+> numerical order. Written as early returns, the overlap and its
+> resolution are both on the page. Reach for a `match` when the arms
+> really do partition the space, and for an ordered guard chain when they
+> genuinely contest it.
+
+With the priority order established, the individual ranges can be taken
+one at a time — starting with the busiest 256 bytes in the machine.
 
 ---
 
 ## 5.3 The I/O page, wall to wall
 
-`$FF00–$FFFF` is fixed on every CoCo — it never moves regardless of
-MMU or ROM-mapping state (only the hardwired-vector carve-out inside it
-does anything unusual, and that's tier 1 above). Here is the complete
-map as [`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)'s `io_read`/`io_write` actually
-dispatch it — not just DESIGN.md's summary, the literal `match` arms:
+Of the 65,536 addresses the 6809 can name, 256 of them account for every
+conversation the CPU ever has with a device. `$FF00–$FFFF` is the I/O
+page, and it is the one region of the address map that is fixed on every
+CoCo ever built: it does not move when the MMU is reprogrammed, it does
+not move when ROM is switched in or out, and it is the same page on a
+CoCo 1 as on a CoCo 3. The only unusual thing inside it is the
+hardwired-vector carve-out at the top, which is tier 1 from the previous
+section and which the table below marks accordingly.
+
+That stability is what makes the I/O page worth learning as a unit. Every
+week of this course from here on lands somewhere in this table — the
+keyboard in week 10, the sound DAC in week 11, the cassette in week 12,
+the disk controller in week 13, the serial port in week 14 — and each of
+those chapters will assume the address is already familiar. Week 1
+introduced a short version of this map, seven rows deep, as a bookmark.
+Here is the complete one, taken not from DESIGN.md's summary but from
+the literal `match` arms that
+[`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)'s `io_read` and `io_write`
+dispatch on:
 
 | Range | Device | Notes |
 |---|---|---|
@@ -186,36 +374,58 @@ dispatch it — not just DESIGN.md's summary, the literal `match` arms:
 | `$FFC0–$FFDF` | SAM-compatibility strobes | Write-only, even/odd set-clear pairs. §5.4/§5.5. |
 | `$FFE0–$FFFF` | Hardwired internal ROM | Tier 1 from §5.2 — bypasses everything else on this table. |
 
-Two details worth internalizing because they trip people up reading the
-source cold:
+Two details in that table trip people up when reading the source cold,
+and both are worth internalizing now because they recur in every device
+chapter that follows.
 
-- **`addr & 0x03`** is how both PIA read/write arms pick a register —
-  `io_read`'s `IO_BASE..=PIA0_LAST => { ...; self.pia0.read((addr &
-  0x03) as u8) }` ([`bus/io.rs:61-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L61-L66)). A real 6821 only decodes its
-  bottom two address lines; every other line is "don't care," which is
-  why `$FF00`, `$FF04`, `$FF08`, … all reach the *same* register. This
-  isn't a shortcut the emulator took — it's literally how the chip's
-  address pins are wired.
-- **Most GIME video/timer registers are write-only on real hardware.**
-  `io_read`'s `TIMER_MSB_REG..=GIME_LAST => 0` arm ([`bus/io.rs:83`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L83))
-  isn't a stub; a real GIME's video registers genuinely don't drive the
-  data bus on a read. If you ever wrote 6809 assembly that tried to
-  read-modify-write `$FF98`, that bug is not your emulator's fault —
-  it's period-accurate.
+The first is the expression `addr & 0x03`, which is how both PIA arms
+pick which of four registers an access names — `io_read`'s
+`IO_BASE..=PIA0_LAST => { ...; self.pia0.read((addr & 0x03) as u8) }`
+([`bus/io.rs:61-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L61-L66)). A PIA has exactly four registers, so
+it decodes exactly two address lines, and every other line reaching the
+chip is a "don't care" that no internal logic ever examines. The
+consequence is that `$FF00`, `$FF04`, `$FF08`, and every other address in
+`$FF00–$FF1F` whose bottom two bits are zero all reach the *same*
+register. That mirroring is not a shortcut the emulator took to save a
+match arm; it is a literal description of how the chip's address pins are
+wired, and software of the period cheerfully relied on it.
+
+The second is that most GIME video and timer registers are write-only on
+real hardware, which is why `io_read` disposes of the entire
+`$FF94–$FF9F` span with a single arm returning zero
+(`TIMER_MSB_REG..=GIME_LAST => 0`, [`bus/io.rs:83`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L83)). That arm looks
+like an unfinished stub and is nothing of the kind: a real GIME's video
+registers genuinely do not drive the data bus when read, so the value the
+CPU sees is whatever the bus happens to supply. Anyone who has written
+6809 assembly that tries to read-modify-write `$FF98` — load the current
+mode byte, set one bit, store it back — will recognize the resulting
+bug immediately, and the important thing to understand is that it is not
+the emulator's bug. It is period-accurate. Note that the emulator does
+keep the written value — `io_write`'s `VMODE_REG => self.gime.vmode =
+val` arm latches it into the `GIME` struct, where week 8's renderer will
+read it — so the information is not lost. It is simply not available to
+the 6809 through a bus read, which is exactly the situation on the real
+chip.
 
 ### Walking the dispatch: PIA, cassette, cart, VHD
 
-The table above tells you *where* each device lives; it's worth reading
-the actual dispatch once so the *shape* of a device match arm is
-familiar before weeks 10–13 dig into any one of them individually. Three
-patterns recur across almost every arm in `io_read`/`io_write`.
+The table above says *where* each device lives. Reading the dispatch
+itself is a different exercise: it tells you what the *shape* of a device
+match arm is, and that shape is remarkably consistent across a set of
+devices that have almost nothing else in common. Weeks 10 through 14 dig
+into these devices one at a time, and each of those chapters will go
+faster if the arm's structure is already familiar. Three patterns recur
+across nearly every arm in `io_read` and `io_write`, and one worked
+example of each is enough to recognize the rest.
 
-**Pattern 1: input pins are computed, not stored.** A PIA is a dumb
-20-pin chip — it latches whatever voltage is on its input pins at the
-moment of a read, plus a direction register per pin. In this emulator
-nothing *pushes* a live voltage into `pia0`/`pia1` between accesses; the
-bus computes the right byte on demand, immediately before handing the
-read to the PIA:
+The first pattern is that a device's *input pins are computed at the
+moment of access, not stored between accesses*. A PIA is a deliberately
+dumb chip: it latches whatever voltage happens to be on its input pins
+when the CPU reads it, and it holds a direction register saying which
+pins are inputs in the first place. Nothing in this emulator pushes a
+live voltage into `pia0` or `pia1` between accesses — no per-cycle update,
+no device pumping values in. Instead the bus computes the right byte on
+demand, immediately before handing the read to the PIA:
 
 ```rust
 IO_BASE..=PIA0_LAST => {
@@ -227,7 +437,12 @@ IO_BASE..=PIA0_LAST => {
 ```
 *([`bus/io.rs:61-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L61-L66))*
 
-`pia0_pa_pins` is the function that does the computing:
+The interesting half of that arm is the assignment on the first line, not
+the `read` call on the second. `self.pia0.a.input` is being overwritten
+with a freshly computed byte on every single read, so whatever was in it
+before is irrelevant — the PIA is not remembering its inputs, it is being
+told them. `pia0_pa_pins` is the function that does the computing, and it
+reaches into three unrelated devices to do it:
 
 ```rust
 pub(super) fn pia0_pa_pins(&self) -> u8 {
@@ -247,15 +462,26 @@ pub(super) fn pia0_pa_pins(&self) -> u8 {
 ```
 *([`bus/pins.rs:14-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs#L14-L27))*
 
-That single byte on PIA0 port A is doing three unrelated jobs at once —
-keyboard row sense, joystick fire buttons, and the joystick's analog
-comparator bit — because on real hardware, that's exactly what's wired
-to those eight pins. You'll spend week 10 inside `keyboard.rs` and
-`joystick.rs`; for now, the lesson is structural: **a PIA's "input"
-isn't state the PIA owns, it's a snapshot the bus takes of everything
-else in the machine, taken fresh on every single read.** PIA1's port A
-gets the same treatment for the cassette input line, at the opposite
-extreme of complexity — one bit, one device:
+That single byte on PIA0 port A is doing three unrelated jobs at once.
+Bits 0 through 6 report which keys are pressed in whichever keyboard
+column PIA0's port B is currently strobing. Those same bits get pulled
+low by joystick fire buttons regardless of the strobe, which is why the
+`&= !button_rows()` line comes second and unconditionally. And bit 7,
+`COMPARATOR_BIT`, is an analog comparator output: high while the six-bit
+DAC value read out of PIA1 sits at or below the joystick potentiometer
+that the two `c2_output()` select lines have chosen. Three subsystems,
+one byte, because on the real board that is exactly what is wired to
+those eight pins.
+
+Week 10 spends its time inside `keyboard.rs` and `joystick.rs` and will
+make sense of the individual pieces. The lesson to take from it now is
+structural rather than electrical. A PIA's "input" is not state that the
+PIA owns and maintains; it is a snapshot the bus takes of everything else
+in the machine, recomputed from scratch on every single read. Nothing can
+go stale, because nothing is ever stored. PIA1's port A gets the same
+treatment for the cassette input line, at the opposite extreme of
+complexity — one bit, one device, and a function short enough to quote
+whole:
 
 ```rust
 pub(super) fn pia1_pa_pins(&self) -> u8 {
@@ -265,11 +491,19 @@ pub(super) fn pia1_pa_pins(&self) -> u8 {
 ```
 *([`bus/pins.rs:33-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs#L33-L40))*
 
-**Pattern 2: some writes fan out to more than one device.** Cassette
-*output* is the mirror image of cassette input, and it doesn't live
-behind its own address at all — it's tapped directly off whatever PIA1
-write just happened, because the DAC and the cassette relay share the
-same physical port:
+Note the polarity: a set cassette bit produces `0xFF`, and a clear one
+produces `!CASSETTE_IN`, which is `0xFE` — every bit high except bit 0.
+Unused CoCo input pins float high, so "all ones except the one bit we
+actually model" is the honest answer rather than a lazy one. Week 12 will
+care intensely about the timing of that single bit; this week only cares
+that it is computed rather than stored, exactly like PIA0's far busier
+port A.
+
+The second pattern is that *some writes fan out to more than one device*.
+Cassette output is the mirror image of cassette input, and it does not
+live behind an address of its own at all. It is tapped directly off
+whatever PIA1 write just happened, because the six-bit sound DAC and the
+cassette recording circuit are physically the same port pins:
 
 ```rust
 PIA1_BASE..=PIA1_LAST => {
@@ -285,16 +519,24 @@ PIA1_BASE..=PIA1_LAST => {
 ```
 *([`bus/io.rs:104-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L104-L113))*
 
-Every single PIA1 write — even one that has nothing to do with the
-cassette, like flipping a completely unrelated control bit — re-derives
-the current 6-bit DAC value and feeds it to `cassette.record_dac`,
-because from the cassette's perspective *any* PIA1 write might have
-just changed the analog level it's supposed to be recording. Week 11
-and week 12 build on exactly this tap.
+Every single PIA1 write re-derives the current six-bit DAC value and
+feeds it to `cassette.record_dac`, including writes that have nothing
+apparently to do with the cassette. The comment explains why in one
+clause: any of the four PIA1 registers can change what the recording
+circuit sees. A write to the output register obviously can. So can a
+write to the data-direction register, since a pin switched from input to
+output starts driving whatever the output register already held — which
+is why the mask is `output & ddr` rather than `output` alone. And so can
+a write to the control register, because that is where the cassette motor
+relay lives. From the cassette's point of view there is no such thing as
+an irrelevant PIA1 write, so the emulator does not try to guess which
+ones matter. Weeks 11 and 12 both build directly on this tap.
 
-**Pattern 3: a device group with its own small sub-dispatch.** VHD
-(`$FF80–$FF86`, NitrOS-9's virtual hard disk) is a good miniature of
-"one device, several registers, one line of dispatch each":
+The third pattern is *a device group with its own small sub-dispatch*.
+Where the PIAs mirror four registers across a 32-byte range, other
+devices claim a short run of consecutive addresses and give each one its
+own line. The virtual hard disk at `$FF80–$FF86` — NitrOS-9's `emudsk`
+device, week 13's material — is a compact example of the shape:
 
 ```rust
 VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
@@ -305,17 +547,26 @@ VHD_SELECT => OPEN_BUS, // always open bus, unconditionally (spec)
 ```
 *([`bus/io.rs:74-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L74-L78), read side)*
 
-Three LRN (logical record number) bytes, two buffer-pointer bytes, one
-command/status register, and one drive-select register that — per the
-device's own spec, not a stub — always reads back open bus regardless
-of what's written to it. §5.11 collects every open-bus convention in
-the codebase, VHD's included, into one place.
+Seven addresses, four behaviours. Three of them are the bytes of a
+*logical record number*, the sector index the host is being asked to
+fetch, and two more are a pointer to the buffer the result should land
+in; all five share one read arm because reading any of them returns the
+same thing. `$FF83` is the command and status register, the address that
+makes something actually happen. And `$FF86`, the drive-select register,
+always reads back open bus no matter what has been written to it — which,
+again, is the device's own specification rather than an unimplemented
+stub. Section 5.11 collects every open-bus convention in the codebase,
+VHD's included, into one place, because "reads back a fixed value nothing
+wrote" turns out to be a surprisingly common answer.
 
-**Precedence, again.** One more overlap worth naming before you meet
-the rest of the cart range in week 13: the Becker port ($FF41/$FF42,
-DriveWire-over-serial) sits *inside* the cartridge's `$FF40–$FF7E`
-range, and both `io_read` and `sam_read`'s I/O sub-decode check it
-*first*, unconditionally:
+One overlap inside the I/O page deserves naming before week 13 meets the
+rest of the cartridge range, because it is the precedence question from
+§5.2 recurring at a smaller scale. The Becker port — `$FF41` and `$FF42`,
+the DriveWire-over-serial interface — sits *inside* the cartridge's
+`$FF40–$FF7E` range. Two devices, two addresses, one range, and both
+`io_read` and the plain-SAM path's I/O sub-decode resolve it the same
+way: check the Becker port first, unconditionally, before the cartridge
+is offered the address at all.
 
 ```rust
 pub(super) fn io_read(&mut self, addr: u16) -> u8 {
@@ -331,6 +582,13 @@ pub(super) fn io_read(&mut self, addr: u16) -> u8 {
 ```
 *([`bus/io.rs:54-60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L54-L60), abbreviated)*
 
+The comment cites MAME's handler-installation order as the reason, which
+is a specific and checkable claim rather than an appeal to plausibility:
+MAME installs the Becker handlers over the top of the cartridge window,
+so whichever emulator you compare against, the same address resolves the
+same way. The intercept itself returns an `Option`, and that choice is
+what lets one function answer two different questions at once:
+
 ```rust
 pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
     let dw = self.drivewire.as_mut()?;
@@ -343,12 +601,27 @@ pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
 ```
 *([`bus/io.rs:26-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L26-L33))*
 
-`becker_read` returns `None` — "not my address, or the Becker port isn't
-even enabled" — and lets the caller fall through to the ordinary
-cartridge decode underneath it. This is the exact same "first matching
-rule wins, but only when it actually matches" idea from §5.2's Rust
-corner, applied one level down and inside a single device's own address
-range rather than across the whole 64K.
+The first line does the heavy lifting. `self.drivewire.as_mut()?` uses
+the question-mark operator on an `Option`, so if no DriveWire server is
+installed the function returns `None` immediately and the `match` below
+never runs. A `None` result therefore means one of two things — "not my
+address" or "the Becker port isn't enabled on this machine" — and the
+caller does not have to distinguish them, because the response is the
+same either way: fall through to the ordinary cartridge decode
+underneath. Only a `Some` diverts the access.
+
+This is the same "first matching rule wins, but only when it actually
+matches" idea as §5.2's Rust corner, applied one level down and inside a
+single device's address range rather than across the whole 64K. It is
+also a small demonstration of why the four-tier chain up top is not
+merely a stylistic choice: precedence between overlapping claimants is a
+recurring structural problem in a memory map, and it wants a recurring
+structural answer.
+
+That is the I/O page end to end, on the CoCo 3. The remaining question
+from §5.1 is how the machine gets into `io_read` in the first place —
+what happens on the other side of that `variant` check at the top of
+`read`.
 
 ---
 
@@ -370,49 +643,67 @@ pub variant: MachineVariant,
 ```
 *([`bus.rs:38-42`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L38-L42))*
 
-Think about the alternative designs and why each loses:
+Three other designs suggest themselves, and it's worth walking each one
+far enough to see where it fails, because the reasoning generalizes well
+beyond this particular fork.
 
-- **A `dyn Decoder` trait object**, one impl per variant. This is the
-  "obvious" OOP move, and it's wrong here for the same reason week 1's
-  `impl Bus` beat `dyn Bus` on the CPU's hot path: every single memory
-  access — several per instruction, tens of millions per second of
-  emulated time — would pay a vtable indirection for a decision that is
-  *already known and fixed* the moment the machine is constructed. The
-  variant never changes mid-run.
-- **Generic `SystemBus<V: Variant>`.** Monomorphization would give you
-  the speed back, but now `Machine` itself needs a type parameter, it
-  infects every function signature that touches a `Machine`, and (the
-  quieter cost) `#[derive(Serialize, Deserialize)]` for save states gets
-  much less pleasant to write once the concrete type of `Machine` isn't
-  singular. Week 16 leans hard on `Machine` being one plain, ordinary
-  struct; a generic bus would tax every chapter after this one to save
-  a branch that costs nothing.
-- **One unified decode function with `if variant == Coco3 { ... } else {
-  ... }` sprinkled through every tier.** This is what you'd get if you
-  tried to *merge* `sam_read` and the CoCo 3 `read` body into one
-  function "to avoid duplication." Read [`bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)'s own module
-  doc comment for why the codebase explicitly rejected this:
+The first is a `dyn Decoder` trait object, one implementation per
+variant, stored in a field and called polymorphically. This is the
+obvious object-oriented move, and it loses here for precisely the reason
+week 1's `impl Bus` beat `dyn Bus` on the CPU's hot path. Every memory
+access — several per instruction, tens of millions per second of emulated
+time — would pay a vtable indirection to re-answer a question that was
+settled the moment the machine was constructed. The variant cannot change
+mid-run. Paying anything at all, repeatedly, for a constant is the wrong
+trade, and a predictable branch on a field the CPU cache has held hot for
+the last million accesses is about as close to free as a runtime check
+gets.
 
-  ```rust
-  //! Plain-SAM path (CoCo 1/2, no GIME): `Sam::map` does the whole-address
-  //! decode (RAM/ROM/cart/I/O/open-bus) in one step, unlike the GIME path's
-  //! separate ROM-window/I/O-page/MMU layers, so there's no need for
-  //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
-  //! touches `self.gime` — no MMU translate, no interrupt raises, no timer.
-  ```
-  *([`bus/sam_path.rs:1-7`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs#L1-L7))*
+The second is a generic `SystemBus<V: Variant>`, which would recover the
+speed through monomorphization. The cost this time is not performance but
+contagion. `Machine` would need a type parameter, and so would every
+function signature that touches a `Machine`, in the core and the frontend
+and the test suite alike. The quieter cost is the one week 16 would pay:
+`#[derive(Serialize, Deserialize)]` for save states is pleasant precisely
+because `Machine` is one plain, ordinary, singular type. Introduce a type
+parameter and every snapshot has to know which instantiation produced it.
+That is a tax levied on every chapter after this one, in exchange for
+eliminating a branch that costs nothing.
 
-  The two chips don't just have different registers — they have
-  **differently shaped decode algorithms**: the SAM resolves a whole
-  address to a target in one `match` (§5.5); the GIME needs multiple
-  ordered tiers because it has ROM-mapping and MMU translation as
-  separate, independently-configurable stages. Forcing them into one
-  function would mean the CoCo 1/2 path pays mental (and possibly
-  runtime) overhead for machinery it fundamentally doesn't have, for the
-  sake of a code-reuse ideal the two chips don't actually share. **A
-  little duplication that mirrors two genuinely different pieces of
-  hardware is more honest than a unification that papers over the
-  difference.**
+The third temptation is the strongest, because it appeals to a genuine
+engineering virtue: merge `sam_read` and the CoCo 3 `read` body into one
+function and sprinkle `if variant == Coco3` through the tiers, on the
+grounds that duplication is bad. The codebase rejected this explicitly,
+and said why in the module doc comment of the file that would have
+disappeared,
+[`bus/sam_path.rs:1-7`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs#L1-L7):
+
+```rust
+//! Plain-SAM path (CoCo 1/2, no GIME): `Sam::map` does the whole-address
+//! decode (RAM/ROM/cart/I/O/open-bus) in one step, unlike the GIME path's
+//! separate ROM-window/I/O-page/MMU layers, so there's no need for
+//! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
+//! touches `self.gime` — no MMU translate, no interrupt raises, no timer.
+```
+
+The claim in that comment is stronger than "these two chips have
+different registers," which would be an argument for a shared function
+with different constants. The claim is that they have differently *shaped
+decode algorithms*. The SAM resolves an entire address to a target in a
+single `match`, as §5.5 is about to show. The GIME needs multiple ordered
+tiers because ROM mapping and MMU translation are separate,
+independently configurable stages that can each be reprogrammed without
+touching the other. There is no shared skeleton to factor out; there is
+only one algorithm and a second, unrelated algorithm.
+
+Forcing them into one function would mean the CoCo 1/2 path carries
+machinery it fundamentally does not have — a `phys()` call it must skip,
+an MMU it must not consult, a `rom_enabled()` gate that means something
+different — for the sake of a code-reuse ideal the two chips never
+shared. A little duplication that mirrors two genuinely different pieces
+of hardware is more honest than a unification that papers over the
+difference, and it is also easier to change later, because a fix to one
+decoder cannot possibly break the other.
 
 This is the same "load-bearing abstraction" instinct from week 1,
 applied in the opposite direction: there, one seam (`Bus`) was worth
@@ -425,8 +716,22 @@ wearing the same 64K clothes.
 
 ## 5.5 The CoCo 1/2 path: `Sam::map` and the strobe registers
 
-The MC6883 SAM predates the GIME by half a decade and does its whole job
-in one function, `Sam::map` ([`crates/coco-core/src/sam.rs:140-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs#L140-L176)):
+It would be reasonable to skip the older machines entirely — this is a
+CoCo 3 emulator first, and the GIME is where the interesting hardware
+is. Two things argue against skipping. The first is that the CoCo 1/2
+decoder is small enough to hold in your head all at once, which makes it
+an excellent warm-up for the GIME's four tiers: everything the next
+several sections do in stages, this one does in a single pass, and seeing
+the simple version first makes the elaborate version legible. The second
+is that the GIME did not replace the SAM so much as swallow it. Half of
+§5.7 is the CoCo 3 imitating the chip you are about to read, and the
+imitation only makes sense once you know what is being imitated.
+
+The MC6883 SAM predates the GIME by half a decade and does its entire job
+in one function. Read `Sam::map` below with two questions in mind: where
+does it return early, and what does the return value carry? Both answers
+matter more than the arithmetic
+([`crates/coco-core/src/sam.rs:140-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs#L140-L176)):
 
 ```rust
 pub fn map(&self, addr: u16) -> SamTarget {
@@ -461,16 +766,73 @@ pub fn map(&self, addr: u16) -> SamTarget {
 }
 ```
 
-One function, one `enum` result (`SamTarget`), no separate tiers to
-re-check on every call — [`bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)'s `sam_read`/`sam_write` just
-`match` on what `map` handed back and act. Structurally simpler than the
-CoCo 3 path because the hardware genuinely is simpler: no MMU, no
-independent ROM-map stage — the SAM's handful of latched bits collapse
-straight to one target per address. Notice too that the SAM's ROM decode
-is completely **fixed**: `EXT_ROM_BASE..=EXT_ROM_LAST` and
-`BAS_ROM_BASE..=BAS_ROM_LAST` are constants, not something a register can
-reprogram. §5.6 is entirely about the CoCo 3 giving up exactly that
-fixedness in exchange for two extra configuration bits.
+The early returns come first, and they encode the same principle §5.2
+spent so long on: some things win regardless. The vector mirror at
+`$FFE0` and above returns ROM before anything else is considered, which
+is this machine's version of the hardwired-vector rule — different
+constant, different implementation, identical purpose. Then the strobe
+range, then the open-bus hole where a CoCo 3 would have its GIME
+registers and this machine has nothing at all, then the rest of the I/O
+page. Only after all four of those does the map consult a single bit of
+chip state, `self.ty`, and only then does the `match` on address ranges
+run.
+
+The `match` itself is the whole ROM decode, and the striking thing about
+it is that it is made of constants. `EXT_ROM_BASE..=EXT_ROM_LAST` and
+`BAS_ROM_BASE..=BAS_ROM_LAST` are fixed at compile time; no register in
+the machine can move them. Extended Color BASIC is at `$8000`, Color
+BASIC is at `$A000`, the cartridge is at `$C000`, and that is simply
+where those chips are. The only thing `TY` can do is take the whole
+arrangement away at once, replacing it with RAM. Section 5.6 is entirely
+about the CoCo 3 giving up that fixedness in exchange for two
+configuration bits — and, as the price of the trade, needing a whole
+extra decode tier to express the result.
+
+One function, one enum result, no separate tiers to re-check on each
+access. [`bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)'s `sam_read` and `sam_write` do nothing but
+`match` on what `map` handed back and act on it. The structure is simpler
+than the CoCo 3 path because the hardware genuinely is simpler: no MMU,
+no independently configurable ROM-map stage, just a handful of latched
+bits collapsing straight to one target per address.
+
+The write side is where the difference from the CoCo 3 shows up most
+sharply, and it is short enough to read whole
+([`bus/sam_path.rs:46-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs#L46-L63)):
+
+```rust
+    pub(super) fn sam_write(&mut self, addr: u16, val: u8) {
+        match self.sam.map(addr) {
+            SamTarget::Ram(phys) => {
+                if let Some(i) = self.sam_ram_index(phys) {
+                    self.ram[i] = val;
+                }
+            }
+            // ROM/cart/open-bus targets: while TY=0 writes to $8000-$FEFF do
+            // not write through to the RAM underneath (MAME gates
+            // write-through on TY) — there's no RAM there at all in our
+            // model, so these are simply dropped.
+            SamTarget::RomExt(_)
+            | SamTarget::RomBas(_)
+            | SamTarget::Cart(_)
+            | SamTarget::OpenBus => {}
+            SamTarget::Io => self.sam_io_write(addr, val),
+        }
+    }
+```
+
+Compare that to the CoCo 3's `write` from §5.2, where a store into the
+ROM window falls through to the RAM mapped physically beneath it. Here,
+four of the six targets are handled by a single empty block: the write
+is dropped entirely, with nothing underneath to catch it. The comment
+gives both the hardware reason and the modelling reason, which are
+usefully distinct. MAME gates ROM-window write-through on the `TY` bit,
+so on real hardware in ROM mode there is no write-through either; and in
+this emulator's model there is not even a RAM byte at that physical
+address to write to, because a CoCo 1/2's RAM is indexed essentially by
+CPU address — plus the single `P1` bank bit — rather than through a
+physical space the CPU sees a shifting window onto. The same programmer
+action, a `STA` into the ROM window, silently does nothing on one machine
+and quietly modifies hidden RAM on the other.
 
 > **Rust corner: an `enum` as a decode result.** `SamTarget` — `Ram`,
 > `RomExt`, `RomBas`, `Cart`, `Io`, `OpenBus` — is a textbook use of an
@@ -484,7 +846,7 @@ fixedness in exchange for two extra configuration bits.
 > pattern — "decode to an enum, then match exhaustively" — recurs
 > throughout this codebase; get comfortable reading it now.
 
-### The strobe registers: your first "weird hardware" interface
+### The strobe registers: a first "weird hardware" interface
 
 Here's the detail that startles people who've only ever programmed
 against friendly memory-mapped registers: `$FFC0–$FFDF` isn't sixteen
@@ -569,6 +931,15 @@ already seen (`coco3.rom`), or an external cartridge's ROM arriving over
 the `CTS*` pin. This is the tier-3 decode from §5.2 opened up.
 
 ### The four states
+
+Two bits give four combinations, and the mapping from combination to
+behaviour is not a tidy encoding of two independent choices — it is a
+table Tandy chose, with one redundant entry. The function that implements
+it is six lines long, but its doc comment is the more valuable half,
+because it names the source (the ROM-map table in SEB Unravelled II) and
+then adds the one fact the table does not cover: what the cold-start code
+actually writes, and why that explains the behaviour of every diskless
+CoCo 3 ever switched on.
 
 ```rust
 /// True when `addr` in the ROM window maps to the *external* (cartridge)
@@ -666,23 +1037,36 @@ reset.
 
 ### The 512 bytes `CTS*` can't reach
 
-One more consequence worth internalizing, because it explains a real,
-documented CoCo 3 quirk: `CTS*`'s external window stops at `$FDFF`, not
-`$FFFF`. A "16K" cartridge ROM logically spans `$C000–$FFFF`, but the
-GIME only ever asserts `CTS*` for `$C000–$FDFF` — `0x1E00` bytes short
-of a full 16K (`$FE00–$FFFF` is 512 bytes the cartridge bus simply
-cannot see, ever, regardless of MC1:MC0). Recall from §5.2 tier 3 that
-`$FE00–$FEFF` is the MC3-gated constant-RAM page, and `$FFE0–$FFFF` is
-the hardwired vector tier — between the two, that leaves exactly
-`$FE00–$FEFF` as a *maybe*: with `MC3` clear, that page "follows the
-normal map like the rest of the `$8000+` window" (the doc comment on
-`CONSTANT_RAM_BASE`), which for an external-ROM cartridge means it reads
-as the **tail of the cartridge's own ROM image**, even though `CTS*`
-itself never fires for it — the emulator's `is_rom_window`/`rom_read`
-just keep applying the same MC1:MC0 rule uninterrupted through `$FEFF`.
-This is the *only* way a Program Pak's last `$200` bytes of image data
-are addressable at all, and real software depends on it: Sokoban keeps
-its palette tables there and copies them out via `$FE88` reads, because
+One further consequence is worth working through slowly, because it
+explains a real, documented CoCo 3 quirk that looks at first like an
+off-by-one bug in the emulator. The `CTS*` window stops at `$FDFF`, not
+at `$FFFF`. A "16K" cartridge ROM logically spans `$C000–$FFFF`, which is
+16,384 bytes, but the GIME only ever asserts `CTS*` across
+`$C000–$FDFF`, which is 512 bytes short of that. Those last 512 bytes —
+`$FE00` through `$FFFF` — are addresses the cartridge connector's select
+line simply never fires for, regardless of how `MC1:MC0` are programmed.
+
+Now split that 512 bytes in two, using rules already established. The top
+32 bytes, `$FFE0–$FFFF`, are tier 1: hardwired internal ROM, immune to
+everything, never available to a cartridge under any circumstances. The
+`$FF00–$FFDF` span below it holds the I/O page proper and the
+SAM-compatibility strobes, all of it tier 2. That leaves
+`$FE00–$FEFF`, the page §5.2 flagged as MC3-gated, as the only part of
+the missing 512 bytes whose fate is still open. With `MC3` set it is
+pinned to constant RAM and the question is closed. With `MC3` clear, the
+doc comment on `CONSTANT_RAM_BASE` says the page "follows the normal map
+like the rest of the `$8000+` window."
+
+Follow that through for a cartridge. "The normal map" here means the
+`MC1:MC0` rule, and `is_rom_window` together with `rom_read` keep
+applying it uninterrupted through `$FEFF` — the code has no special case
+that stops at `$FDFF`, because the *emulator* is modelling the address
+decode rather than the physical select line. So under an external-ROM
+setting with `MC3` clear, `$FE00–$FEFF` reads as the tail of the
+cartridge's own ROM image, even though `CTS*` never fires for it. This
+is the only way a Program Pak's last 512 bytes of image data are
+addressable at all, and real software depends on it: Sokoban keeps its
+palette tables there and copies them out via `$FE88` reads, because
 `$FDFF` really is the last byte `CTS*` reaches and the pak's linker put
 data past it anyway.
 
@@ -725,13 +1109,24 @@ tier 3 decided.
 
 ## 5.7 The GIME MMU: 8K slots and two task sets
 
-The GIME's compatibility layer for `$FFC0–$FFDF` is a *second*,
-separate implementation of the same even/odd strobe convention —
-deliberately not shared code with `sam.rs` (its own module doc comment
-says so explicitly, "so the CoCo 3 path stays completely untouched").
-It only implements the strobes the CoCo 3 actually uses — V0–V2, F0–F6,
-R1, TY — and explicitly does *not* model P1, M0, M1, or the CoCo 1/2 R0
-pair, because those don't do anything on real CoCo 3 hardware:
+This section has two subjects, and it takes them in the order the address
+map does. First the CoCo 3's imitation of the chip §5.5 just dismantled,
+which occupies `$FFC0–$FFDF` and is mostly a matter of historical
+obligation. Then the register range immediately below it, `$FFA0–$FFAF`,
+which is the reason anyone bought a CoCo 3 in the first place. The
+juxtaposition is not accidental: the GIME's designers put a
+backward-compatibility shim and the machine's headline new feature
+sixteen bytes apart, and both were reached by exactly the same kind of
+store instruction.
+
+The compatibility layer is a *second*, separate implementation of the
+same even/odd strobe convention, deliberately not shared with `sam.rs`.
+Its own module doc comment says so explicitly, in the same terms §5.4
+used: the duplication exists so the CoCo 3 path stays completely
+untouched by anything the CoCo 1/2 path does. It implements only the
+strobes the CoCo 3 actually honours — V0–V2, F0–F6, R1, and TY — and
+deliberately does not model P1, M0, M1, or the CoCo 1/2 `R0` pair,
+because on real CoCo 3 hardware those addresses do nothing:
 
 ```rust
 pub fn write_sam(&mut self, addr: u16) {
@@ -749,15 +1144,16 @@ pub fn write_sam(&mut self, addr: u16) {
 *([`crates/coco-core/src/gime/sam_compat.rs:44-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/sam_compat.rs#L44-L70), elided to the bits
 that matter here)*
 
-If you ever typed `POKE 65497,0` on a real CoCo 3 to get double speed
-and `POKE 65496,0` to put it back, decimal 65497 and 65496 are
-`$FFD9`/`$FFD8` — exactly `SAM_R1_SET`/`SAM_R1_CLEAR` above. If you also
-remember an *older* pair, `POKE 65495,0`/`POKE 65494,0` (`$FFD7`/
-`$FFD6`, the SAM's own `R0` strobe from §5.5's list), the CoCo 3's
-`write_sam` has **no arm at all** for those two addresses — they fall
-straight through the `match`'s `_ => {}` catch-all with no effect
-whatsoever, not even latched into an unused field (the GIME struct has
-no `r0`-equivalent field to latch into). That matches the real chip:
+`POKE 65497,0` was the CoCo 3's standard double-speed poke, with
+`POKE 65496,0` to put the machine back: decimal 65497 and 65496 are
+`$FFD9`/`$FFD8` — exactly `SAM_R1_SET`/`SAM_R1_CLEAR` above. The
+*older* pair from the CoCo 1/2 era, `POKE 65495,0`/`POKE 65494,0`
+(`$FFD7`/`$FFD6`, the SAM's own `R0` strobe from §5.5's list), fares
+differently on a CoCo 3: `write_sam` has **no arm at all** for those two
+addresses — they fall straight through the `match`'s `_ => {}` catch-all
+with no effect whatsoever, not even latched into an unused field (the
+GIME struct has no `r0`-equivalent field to latch into). That matches
+the real chip:
 SEB Unravelled II's own register figure lists only `R1` as active on
 the GIME. The CoCo 1/2 `R0` pair being "address-dependent" (nominally
 fast for ROM fetches, slow for RAM) was already a soft-edged feature on
@@ -765,22 +1161,45 @@ the original SAM; the GIME's designers apparently decided one clean,
 unconditional double-speed bit was enough and didn't bother wiring the
 old pair through at all.
 
-That's `$FFC0–$FFDF` handled — SAM compatibility, present but a
-sideshow. The GIME's actual headline feature lives at `$FFA0–$FFAF`:
-a real **MMU**.
+That is `$FFC0–$FFDF` handled: SAM compatibility, present and faithful,
+but a sideshow. Sixteen bytes lower down sits the register range that
+justifies the whole chip.
 
 ### The mental model
 
-Split the CPU's 64K logical space into eight 8K windows (`$0000–$1FFF`,
-`$2000–$3FFF`, … `$E000–$FFFF`). The MMU holds, per window, an 8-bit
-**physical block number** — which 8K chunk of up to 2 MB of installed
-RAM that window currently shows. Sixteen registers, `$FFA0–$FFAF`,
-because there are *two independent sets* of eight — "task 0" and "task
-1" — and one bit elsewhere (`INIT1` TR) picks which set is active.
-Software can prepare task 1's mapping while task 0 is running, then
-switch the whole 64K view over in a single register write — no per-slot
-reprogramming needed for a context switch. §5.8 is the whole story of
-what real software actually did with that trick.
+The problem the MMU exists to solve is stated most clearly as a
+contradiction. The 6809 has sixteen address lines and can therefore name
+65,536 bytes, full stop — there is no wider addressing mode, no segment
+register, no bank byte anywhere in the instruction set. A CoCo 3 shipped
+with 128K or 512K of RAM, and could be upgraded further. Those two facts
+cannot both be accommodated without something standing between the CPU's
+address pins and the memory chips, rewriting addresses in flight. That
+something is the MMU, and every design decision in it follows from
+keeping the rewrite cheap enough to happen on every single bus cycle.
+
+The mechanism is a lookup table with eight entries. Split the CPU's 64K
+logical space into eight 8K windows — `$0000–$1FFF`, `$2000–$3FFF`, and
+so on up to `$E000–$FFFF` — and give each window one byte of storage
+holding a *physical block number*, meaning which 8K chunk of installed
+RAM that window is currently showing. An access to a logical address
+looks up its window's block number, and the block number supplies the
+high bits of the physical address while the address's own low bits pass
+through untouched. Eight bytes of state, and the entire 64K view of
+memory is described.
+
+Sixteen registers occupy `$FFA0–$FFAF` rather than eight, because the
+GIME provides two complete and independent sets of those eight bytes,
+conventionally called task 0 and task 1. A single bit elsewhere — `TR` in
+`INIT1` — decides which set is live. Software can therefore program task
+1's entire mapping at leisure while task 0 is still running, then switch
+the whole 64K view across in one register write, with no per-slot
+reprogramming and no window of inconsistency in between. Section 5.8 is
+the story of what real software did with that.
+
+All of that structure shows up in the source as two constants and three
+fields. The constants are the ones the rest of the code computes from,
+rather than open-coded 2s and 8s scattered around
+([`gime.rs:20-23`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L20-L23)):
 
 ```rust
 /// Number of MMU task register sets ($FFA0–A7 and $FFA8–AF).
@@ -788,17 +1207,29 @@ pub const TASK_COUNT: usize = 2;
 /// Logical 8K slots per task (the 64K CPU space / 8K).
 pub const SLOTS_PER_TASK: usize = 8;
 ```
-*([`gime.rs:20-23`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L20-L23))*
+
+The state itself is correspondingly small. Note that the register file is
+a two-dimensional array indexed exactly the way the hardware is described
+— by task, then by slot — rather than a flat sixteen-byte array with the
+task folded into the index. The type says what the chip is
+([`gime.rs:174-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L174-L176)):
 
 ```rust
 pub mmu: [[u8; SLOTS_PER_TASK]; TASK_COUNT],
 pub task: usize,
 pub mmu_enabled: bool,
 ```
-*([`gime.rs:174-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L174-L176))*
 
-`$FFA0–$FFA7` decode to `mmu[0][0..8]`, `$FFA8–$FFAF` to `mmu[1][0..8]`.
-The decode is arithmetic, not a match arm per register:
+Three fields: the sixteen register bytes, which of the two sets is
+currently selected, and whether the MMU is switched on at all. That last
+one matters more than it looks, and §5.9 comes back to it — a CoCo 3
+powers up with the MMU *disabled*, which is how a machine with a memory
+management unit manages to boot software that has never heard of one.
+
+Getting from an address in `$FFA0–$FFAF` to a slot in that array is
+arithmetic rather than a match arm per register, for the same reason
+§5.5's strobe decode was arithmetic: the mapping is perfectly regular, so
+computing beats enumerating.
 
 ```rust
 /// Decode an `$FFA0–$FFAF` MMU register address to `(task, slot)`.
@@ -810,6 +1241,16 @@ fn mmu_index(addr: u16) -> (usize, usize) {
 *([`bus.rs:262-265`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L262-L265))*
 
 ### The translation itself
+
+Everything above is setup. The function below is the MMU — the actual
+address rewrite, performed on every access that reaches tier 4 of §5.2's
+decode, which is to say on the overwhelming majority of all memory
+accesses a CoCo 3 ever makes. It is nine lines long and contains no
+loops, no lookups beyond one array index, and no branches beyond the
+enable check. That economy is worth noticing rather than skimming past:
+address translation on this machine is a shift, a mask, an array index
+and an OR, and any model that needed more machinery than that would be
+modelling something the GIME doesn't do:
 
 ```rust
 /// Translate a CPU logical address to a physical RAM offset.
@@ -825,17 +1266,41 @@ pub fn translate(&self, addr: u16) -> usize {
 ```
 *([`gime.rs:241-249`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L241-L249), `BLOCK_SHIFT = 13`, i.e. `log2(8192)`)*
 
-This is the formula the syllabus wants you fluent in: **`phys = (block
-<< 13) | (addr & 0x1FFF)`**. `addr >> 13` picks which of the eight
-8K windows the address falls in (equivalently, `& 7` — the top three
-bits of a 16-bit address beyond bit 13 don't exist, so the mask is
-almost decorative, but it's there for defense-in-depth); `addr & 0x1FFF`
-is the byte offset *within* that 8K window, preserved unchanged into the
-physical address; `block << 13` places that offset at the right spot in
-physical memory. A block number can be anywhere in `0..=255` — the GIME
-addresses a full 2 MB (`256 × 8K`) even though Tandy only ever shipped
-up to 512K — which is why `SystemBus::phys` finishes the job with a
-modulo against whatever RAM is actually installed:
+One formula is worth becoming fluent in, because the rest of this chapter
+and a good deal of week 8 assume it: `phys = (block << 13) | (addr &
+0x1FFF)`. Take its three pieces in turn. `addr >> 13` picks which of the
+eight 8K windows the address falls in; shifting a 16-bit value right by
+thirteen leaves only three bits, so the `& (SLOTS_PER_TASK - 1)` mask
+alongside it can never actually change the answer and is there purely as
+defence in depth. `addr & 0x1FFF` is the byte offset *within* that 8K
+window, and it passes into the physical address completely unchanged —
+the MMU relocates blocks, never bytes within them. And `block << 13`
+puts that offset at the right place in physical memory.
+
+Work one example by hand, because the formula is much easier to trust
+once you've done it once. Suppose the active task's slot 5 holds block
+`$07`, and the CPU reads logical `$A123`. The slot index is `$A123 >> 13`,
+which is 5, so slot 5's contents apply. The in-block offset is `$A123 &
+$1FFF`, which is `$0123`. And the block base is `$07 << 13`, which is
+`$E000`. The byte actually read is physical `$E123`. Notice that the
+low thirteen bits of the answer are identical to the low thirteen bits of
+the question; the MMU only ever changed the high end.
+
+The `else` branch deserves as much attention as the `if`. When the MMU is
+disabled, `translate` doesn't fall back to an identity map — it ORs the
+whole 64K logical space into a fixed physical window starting at
+`DISABLED_MMU_BASE`, which is `0x70000`. The GIME does not have an "MMU
+off" mode in the sense of "no translation"; it has a hardwired
+translation that puts the CPU's 64K at the top of a 512K space. Section
+5.9 shows why that particular constant, and what it does to a machine
+that doesn't have 512K to put it in.
+
+A block number can be anything in `0..=255`, since it is a full byte.
+That means the GIME can address a full 2 MB of physical space, `256 × 8K`,
+even though Tandy never shipped a machine with more than 512K in it.
+Nothing stops software from programming a block number that points past
+the end of the RAM actually installed, so `SystemBus::phys` finishes the
+job by folding the result back into range:
 
 ```rust
 fn phys(&self, addr: u16) -> usize {
@@ -870,21 +1335,63 @@ treatment of exactly what that means for a small machine.
 
 ### MC3: the one address range the MMU can't touch
 
-One wrinkle sits inside `phys` before the MMU is even consulted: when
-`INIT0` bit `MC3` is set, `$FE00–$FEFF` is **pinned** to physical
-`$7FE00` regardless of what the active task's MMU slot says. Why would
-you want a 256-byte page immune to the very banking mechanism you just
-built? Because interrupt vectors have to be reachable no matter what
-task is active or what's banked into the rest of the address space —
-BASIC keeps its interrupt trampolines here specifically so an interrupt
-firing mid-context-switch still lands on working code. `is_rom_window`
-([`bus.rs:234-242`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L234-L242)) makes the corresponding read-side promise: when MC3
-is set, `$FE00–$FEFF` is *never* treated as ROM either, even if the rest
-of the `$8000+` window currently is — it's unconditionally the constant
-RAM page. When MC3 is clear, that page just follows the ordinary
-ROM/RAM map like any other byte in the window (§5.6 walked exactly this
-case for an external cartridge); §5.14's second worked example walks
-both states through `bus_map.rs`.
+One wrinkle sits inside `phys` and gets checked before the MMU is
+consulted at all. When bit `MC3` of `INIT0` is set, the page
+`$FE00–$FEFF` is pinned to physical `$7FE00` no matter what the active
+task's slot 7 register says. Two hundred and fifty-six bytes of the
+address space are simply exempt from the banking mechanism the previous
+few pages were spent building.
+
+The reason is worth reasoning out rather than accepting, because it is
+the same reason tier 1 exists and it generalizes to every system with
+both interrupts and banked memory. An interrupt can arrive at any
+instruction boundary, including the boundary in the middle of a
+context switch, when the address space is halfway between two
+configurations. Whatever code the interrupt vectors into has to be
+present in the CPU's view of memory at that instant, and the only way to
+guarantee that across arbitrary MMU programming is to make one region
+unbankable. BASIC keeps its interrupt trampolines in this page for
+exactly that reason: a jump table at a fixed address that is always
+there, whichever task is active and whatever else has been swapped
+underneath it.
+
+The read side has to make the matching promise, or the guarantee would be
+half a guarantee. `is_rom_window` is where it lives
+([`crates/coco-core/src/bus.rs:234-242`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L234-L242)):
+
+```rust
+    fn is_rom_window(&self, addr: u16) -> bool {
+        if !self.gime.rom_enabled() {
+            return false;
+        }
+        if (CONSTANT_RAM_BASE..=CONSTANT_RAM_LAST).contains(&addr) {
+            return self.gime.init0 & gime::init0::MC3 == 0;
+        }
+        (ROM_WINDOW_BASE..CONSTANT_RAM_BASE).contains(&addr)
+    }
+```
+
+Read the three returns in order, because between them they are the whole
+of tier 3. The first says that if ROM is not currently mapped — that is,
+if the SAM-compatible all-RAM bit is set, the same `TY` bit §5.5
+introduced — then nothing in the window is ROM, full stop. The second
+handles the constant page: inside `$FE00–$FEFF`, the address is ROM if
+and only if `MC3` is clear, which is the exact complement of the rule in
+`phys`. Set `MC3` and the page is unconditionally RAM on both the read
+and the write side; clear it and the page follows the ordinary ROM/RAM
+map like any other byte in the window, which is the case §5.6 traced
+through to a cartridge's last 512 bytes. The third return is the
+straightforward one: everything from `$8000` up to but not including
+`$FE00` is ROM whenever ROM is mapped at all.
+
+Note the deliberate asymmetry between the two functions. `phys` decides
+where a byte *is*; `is_rom_window` decides whether the CPU is allowed to
+see ROM there instead. They consult the same bit and must agree about
+it, and the fact that agreement is spread across two functions in two
+different tiers is exactly the sort of thing a test suite exists to pin
+down. Section 5.14's second worked example walks both states through
+`bus_map.rs`, and exercise 5.3 asks you to write the companion test for
+the case that example doesn't cover.
 
 ---
 
@@ -1061,7 +1568,7 @@ check against a secondary source, not a MAME trace-diff — DESIGN.md's
 harder verification. Exercise 5.10 asks you to extend the same table to
 a 512K machine.
 
-I verified the two-way aliasing directly rather than trust the
+The two-way aliasing has been verified directly rather than left to the
 arithmetic on paper alone: a temporary test that enabled the MMU on a
 128K machine, programmed one slot to block `$00` and a second slot to
 block `$30`, wrote a marker through the first slot, and read it back
@@ -1231,15 +1738,24 @@ not an inconsistency to paper over.
 
 ### What "open bus" means
 
-No chip is driving the data bus for that address. On a real 6809 system
-the CPU still reads *something* — whatever charge happens to be sitting
-on the bus lines, typically pulled toward a resting state by the bus's
-own passive electrical characteristics — and different bus segments on
-the CoCo rest at different levels. The emulator can't (and shouldn't try
-to) model the analog physics; instead, each region that can go
-unanswered picks a **fixed, documented stand-in value**, matched to what
-real hardware (or MAME, where the local docs are silent) actually
-returns.
+*Open bus* names the situation where no chip is driving the data bus for
+the address the CPU just put on the address lines. Every other read in
+this chapter has an answer because some device answers it; this is the
+case where nothing does. The CPU has no way to know that. It asserts an
+address, waits its documented number of cycles, and latches whatever
+voltage the eight data lines happen to be sitting at.
+
+On a real 6809 system that voltage is not nothing. It is whatever charge
+remains on the bus lines, pulled toward a resting state by the bus's own
+passive electrical characteristics, and different bus segments on the
+CoCo rest at different levels depending on what is wired to them. An
+emulator cannot model that analog behaviour honestly and should not
+pretend to try. What it can do instead is pick a fixed, documented
+stand-in value for each region that can go unanswered, chosen to match
+what real hardware returns — or what MAME returns, where the local
+reference documents are silent. The interesting consequence, and the
+reason this section exists, is that those stand-in values are not all the
+same.
 
 ### Every open-bus constant in the codebase
 
@@ -1278,11 +1794,12 @@ and matched it." Resist the temptation, reading or writing emulator
 code, to invent a plausible-sounding electrical explanation you haven't
 actually verified — "matches the trace" is a complete and honest reason
 on its own, and it's a stronger claim than a guessed rationale would be.
-You met the identical instinct in §5.14's first worked example:
-`mc_16k_split_routes_upper_half_to_cartridge` asserts `b.read(0xC123) ==
-0x00` for an empty cartridge slot — that `0x00`, not `0xFF`, is
-`ROM_OPEN_BUS` doing
-exactly what its comment says.
+Section 5.14's first worked example puts the same instinct to work in a
+test rather than a comment: `mc_16k_split_routes_upper_half_to_cartridge`
+asserts that `b.read(0xC123)` is `0x00` with an empty cartridge slot. A
+reader who assumed all open bus reads as `0xFF` would take that assertion
+for a typo. It is `ROM_OPEN_BUS` doing precisely what its comment says,
+pinned by a test so that nobody can later "fix" it into consistency.
 
 ### The debugger already assumes you'll get this wrong
 
@@ -1316,27 +1833,45 @@ that specific region of the bus.
 
 ## 5.12 ROM composition and CRC validation
 
+Every section so far has treated `self.rom` as a given: a `Box<[u8]>`
+that exists, is the right length, and contains the right bytes. That is a
+comfortable assumption inside a decode function and an unsafe one
+everywhere else. ROM images arrive as files on somebody's disk, they
+arrive under names that may or may not describe their contents, and on
+the older machines they do not arrive as a single file at all. This
+section is about the seam between "a file the user supplied" and "the
+array `rom_read` indexes into," which turns out to be a place where two
+generations of hardware once again disagree.
+
 ### Two very different ROM stories
 
-**CoCo 3**: one 32K image, `coco3.rom`, loaded whole and mapped
-verbatim — `SystemBus::rom_read` computes `off = addr - 0x8000` and
-indexes straight into it ([`bus.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L252-L258)). This is the ROM you saw
-every time you turned your CoCo 3 on: Super Extended Color BASIC,
-occupying the full `$8000–$FFFF` window when INIT0's `MC1:MC0` bits
-select 32K-internal (the machine's cold-start default, and why
-`PEEK` above 32767 on a diskless CoCo 3 always read ROM, never open
-cartridge bus — §5.6 has the full four-state table for every other
-combination of those two bits).
+The CoCo 3's story is the simple one. There is a single 32K image,
+`coco3.rom`, loaded whole and mapped verbatim: `SystemBus::rom_read`
+computes `off = addr - 0x8000` and indexes straight into it
+([`bus.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L252-L258)). One file, one array, one subtraction. That image
+is Super Extended Color BASIC, and it is what came up every time a
+CoCo 3 was switched on, occupying the whole `$8000–$FFFF` window whenever
+`INIT0`'s `MC1:MC0` bits select 32K-internal. Since that is what the
+cold-start code writes, it is also the reason `PEEK` above 32767 on a
+diskless CoCo 3 always returned a ROM byte and never open cartridge bus.
+Section 5.6 has the full four-state table for every other combination of
+those two bits.
 
-**CoCo 1/2**: no single "the ROM." Real machines shipped multiple
-separate mask ROM chips — Extended Color BASIC at `$8000–$9FFF`, plain
-Color BASIC at `$A000–$BFFF` — and a machine with only Color BASIC
-installed (many did) simply has *nothing* answering the Extended BASIC
-range. `Sam::map` reflects the chip boundary directly as two separate
-`SamTarget` variants (`RomExt`/`RomBas`, §5.5) rather than one flat
-image, but at load time `coco-egui` and the test suite still need
-*something* to hand `SystemBus::new` for that missing half. The
-approach, verified in [`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs):
+The CoCo 1/2 story has no single "the ROM" at all. Real machines shipped
+several separate mask ROM chips — Extended Color BASIC answering
+`$8000–$9FFF`, plain Color BASIC answering `$A000–$BFFF` — and a machine
+with only Color BASIC installed, which many were, has literally nothing
+responding in the Extended BASIC range. `Sam::map` reflects that chip
+boundary directly, returning two distinct `SamTarget` variants
+(`RomExt` and `RomBas`, §5.5) rather than pretending there is one flat
+image.
+
+But `SystemBus::new` takes exactly one `Box<[u8]>`, and the plain-SAM
+read path indexes into it with a fixed offset for the Color BASIC half.
+So something has to compose a single array out of however many ROM files
+are actually present, and decide what to put where a chip is missing.
+[`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs) does the minimal version of this, and the choice
+of filler byte is the interesting part:
 
 ```rust
 /// Compose a Color-BASIC-only flat image: `OPEN_BUS_FILLER` for the extbas
@@ -1351,10 +1886,19 @@ fn boot_machine() -> Option<(Machine, Vec<u8>)> {
 *([`tests/coco1_boot.rs:26,38-46`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs); `BAS_OFFSET = 8*1024`,
 `OPEN_BUS_FILLER = 0xFF`)*
 
-`0xFF` isn't arbitrary — it's what an empty, unconnected bus line reads
-as (§5.11's whole subject), the same convention `bus.rs`'s own
-`OPEN_BUS: u8 = 0xFF` constant uses for every other unmapped range in
-this chapter's table. A test that boots this composed image
+`0xFF` is not an arbitrary padding byte. It is what an empty,
+unconnected bus line reads as, which is §5.11's whole subject, and it is
+the same value `bus.rs`'s own `OPEN_BUS` constant supplies for every
+other unmapped range in this chapter's table. Filling the missing chip's
+address range with open-bus bytes means the composed image behaves the
+same way the real machine does: the addresses are there, they answer, and
+what they answer is "nothing is here."
+
+The payoff is that the emulator does not need to know whether Extended
+BASIC is installed. Nothing branches on it, no configuration flag records
+it, and `Sam::map` decodes the `RomExt` range identically either way. The
+absence is represented as data rather than as a case. A test that boots
+this composed image
 (`ty0_reads_rom_at_extbas_and_bas_windows`-adjacent coverage, and
 `coco1_boot.rs` proper) proves the machine boots into the plain "COLOR
 BASIC" banner, not "EXTENDED COLOR BASIC" — because `$8000–$9FFF`
@@ -1412,8 +1956,18 @@ not errors to reject.
 
 ## 5.13 Reset, traced end to end
 
-Every decode rule in this chapter converges on one address the very
-first instant the machine exists. `Machine::new` ([`machine.rs:167-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L167-L176)):
+Every decode rule in this chapter converges on one address at the very
+first instant the machine exists, and it is worth following that single
+address all the way through, because it exercises tier 1, the ROM
+mapping, the endianness convention from week 1, and the power-on register
+state, all before a single instruction has executed. If any one of those
+is wrong, the machine does not boot; if all of them are right, the CoCo 3
+is already running real code.
+
+Construction is where it starts. `Machine::new` builds a CPU and a bus,
+applies whatever monitor setting the configuration asked for, and then —
+the line that matters here — resets the CPU while the bus is already
+alive and answering ([`machine.rs:167-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L167-L176)):
 
 ```rust
 pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
@@ -1427,7 +1981,12 @@ pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
 }
 ```
 
-`cpu.reset` ([`crates/mc6809/src/lib.rs:177-183`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L177-L183)):
+That ordering is a requirement, not a convenience. `MC6809::reset` does
+not invent a starting program counter; it *reads* one out of memory, so
+the bus has to be fully constructed and the ROM already attached before
+reset is allowed to run. Here is the whole of it, from week 4's
+territory, unchanged
+([`crates/mc6809/src/lib.rs:177-183`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L177-L183)):
 
 ```rust
 pub fn reset(&mut self, bus: &mut impl Bus) {
@@ -1719,9 +2278,9 @@ about which addresses are members of *both* ranges). Then run
 `cargo test -p coco-core --test bus_map` and check yourself — you should
 see four failures, all reading back `0xFF` (open bus) at addresses in
 `$FFE0–$FFFF` where a ROM byte was expected. Revert the change and
-confirm the suite is green again. (This is not a hypothetical: making
-exactly this edit and reverting it is how this chapter's own author
-verified the claim before writing it down.)
+confirm the suite is green again. (This is not a hypothetical: the four
+failures above were observed by making exactly this edit and reverting
+it, before the claim was written down here.)
 
 **5.2 — MMU arithmetic (drill).** Using `phys = (block << 13) | (addr &
 0x1FFF)`:

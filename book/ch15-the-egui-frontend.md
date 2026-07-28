@@ -6,218 +6,556 @@ into a `Vec<[f32; 2]>`, and has never once opened a window. This week you
 finally look at the other side of the seam: `coco-egui`, the ~9,000-line
 crate that turns that headless machine into something you can sit in front
 of. The good news, and the whole point of this chapter: there is far less
-"graphics programming" here than you fear. By the end you will have read
-every line that touches a GPU in this entire codebase — there are perhaps a
-dozen of them — and spent the rest of your time on arithmetic (letterboxing,
-frame pacing) and plain application state (menus, a VM manager, media
-attach/eject). If you know Rust and you know what the CoCo 3 did, you
-already have everything you need for this chapter except one new idea:
+"graphics programming" here than the phrase suggests. By the end you will
+have read every line that touches a GPU in this entire codebase — there are
+perhaps a dozen of them — and spent the rest of your time on arithmetic
+(letterboxing, frame pacing) and plain application state (menus, a VM
+manager, media attach/eject). Rust plus a working picture of what the CoCo 3
+did covers everything this chapter needs except one new idea:
 immediate-mode GUI, which §15.1 builds from nothing.*
+
+---
+
+For fourteen weeks the emulator has been a machine with no face. That was
+deliberate, and week 1 (§1.5) spelled out the reason: a core that never
+opens a window is a core that can be tested by a robot, in continuous
+integration, on a build agent with no display attached. The price of that
+discipline is that the emulator has, until now, only ever been observable
+through assertions and `.ppm` dumps. This week pays the discipline off by
+building the face — and discovering that, because the core was designed
+this way from the start, the face is almost embarrassingly thin.
+
+Three separate anxieties tend to attach themselves to the phrase "now write
+the frontend," and it is worth defusing all three before opening a file.
+The first is that GUI programming means learning a large framework's object
+model. It does not, here: the framework this crate uses has no object model
+to learn, and §15.1 explains why in about two pages. The second is that
+displaying a picture means graphics programming — shaders, vertex buffers,
+a render pipeline. It does not: §15.3 shows the two lines in this entire
+repository that talk to a GPU, and then spends its remaining pages on
+sixth-grade arithmetic about rectangles. The third is that connecting a
+60 Hz emulated machine to a host that redraws at some unrelated rate is a
+concurrency problem. It is not: §15.2 solves it with one `f64` field and
+four lines of code, single-threaded, and the solution is one of the most
+transferable ideas in this book.
+
+What is genuinely new this week is a category of code the course has not
+touched at all. Everything so far has been *emulation*: a data sheet says a
+chip does X, so the code does X, and a test proves it. From §15.6 onward
+this chapter is about *application design* — a manager window that lists
+saved machines, a file format that survives being edited by a future
+version of itself, a write-back discipline for media that has to be crash-
+safe. None of it is emulation, all of it is the kind of code a serious
+emulator eventually grows, and it exercises the same borrow-checker
+strategy week 1 established, in a setting that has nothing to do with a
+6809.
+
+There is one honest omission. This chapter deliberately walks past two
+directories, `debugger/` and `save_state/`, without opening them. They are
+week 16's material, and you will see their call sites here — a `run_field`
+that routes through a breakpoint check, a keyboard shortcut that quick-
+saves a slot — without needing to know what is behind them yet.
 
 ---
 
 ## 15.1 Immediate mode, from zero
 
-If you've done any GUI programming before, it was almost certainly
-**retained-mode**: Qt, the DOM, Swing, Cocoa. You construct a tree of widget
-*objects* once — a `QPushButton`, a `<div>`, a `JLabel` — the framework
-retains that tree for the life of the window, and from then on you *mutate*
-it: `button.setText("Pause")`, `label.textContent = "42"`. The framework
-watches for changes to the tree and figures out what to repaint. Your
-program's UI state and the framework's widget tree are two separate things
-that you're responsible for keeping in sync — and "my button and my model
-disagree" is a whole category of bug retained-mode UI is famous for.
+Every idea in this chapter rests on a single unfamiliar one, so it comes
+first, and it comes with nothing assumed. If the model of GUI programming
+in your head is the one nearly everyone acquires first, the code in this
+crate will look wrong until the model is replaced. Half an hour of careful
+reading here saves a great deal of confusion later.
 
-egui (and `eframe`, the thin windowing/backend layer around it that this
-crate is actually built on) is **immediate-mode**. There is no persistent
-widget tree at all. Instead, your `eframe::App` implements one method,
-called once per frame:
+Anyone who has written a GUI before almost certainly wrote a
+*retained-mode* one. Qt, the browser DOM, Swing, Cocoa, WPF, GTK — they all
+work the same way at heart. You construct a tree of widget *objects* once:
+a `QPushButton`, a `<div>`, a `JLabel`. The framework retains that tree for
+the life of the window, holding onto every node, and from then on your
+program's job is to *mutate* it. `button.setText("Pause")`.
+`label.textContent = "42"`. `checkbox.setChecked(true)`. The framework
+watches for changes and works out what region of the screen needs
+repainting.
+
+The consequence of that design is that a retained-mode program contains two
+copies of the truth. There is the application's own state — a boolean field
+somewhere that says whether the emulator is running — and there is the
+framework's widget tree, which holds a button whose caption says "Pause" or
+"Run". Nothing keeps them in agreement except code you write. "The button
+and the model disagree" is such a common failure that entire architectural
+patterns (MVC, MVVM, data binding, observables, reactive stores) exist
+mostly to automate the reconciliation. Those patterns work. They are also a
+lot of machinery to introduce in order to solve a problem the framework
+created.
+
+egui takes the other road. It is an *immediate-mode* GUI, and the crate
+here is actually built on `eframe`, the thin windowing and backend layer
+that wraps egui, opens a native window, and drives the event loop. In
+immediate mode there is no persistent widget tree at all. Instead, your
+`eframe::App` implements one method, called once per frame:
 
 ```rust
-impl eframe::App for CocoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.window_ui(ctx);
     }
-}
 ```
 
-([`crates/coco-egui/src/app.rs:323-325`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L323-L325) — this is the *entire* trait
-implementation; everything else in the file is plain `impl CocoApp`
-methods.) Every widget you see on screen is a **function call that returns
-a response**, made fresh, every single frame:
+That is the *entire* trait implementation — three lines at
+[`crates/coco-egui/src/app.rs:323-325`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L323-L325), forwarding to a plain inherent
+method. Everything else in that file is ordinary `impl CocoApp`. There is
+no widget registration, no event handler installation, no constructor that
+builds a layout. The window is whatever `update` draws this time around,
+and `update` runs again from scratch on the next frame.
+
+Every widget you see on screen, then, is not an object but a *function call
+that returns a response*, made fresh, every single frame:
 
 ```rust
-if ui.button("Reset").clicked() {
-    self.machine.reset();
-}
+                if ui.button("Reset").clicked() {
+                    self.machine.reset();
+                }
 ```
 
-([`crates/coco-egui/src/chrome/toolbar.rs:13-15`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar.rs#L13-L15).) There is no `Button`
-object living anywhere between frames. `ui.button("Reset")` draws a button
-at the current layout position, checks this frame's input for a click
-inside its rect, and returns a `Response` whose `.clicked()` you inspect
-immediately. Next frame, if this code path runs again, egui draws the
-*same* button again from scratch. If you don't call `ui.button(...)` this
-frame — because, say, a menu is closed — the button simply doesn't exist
-this frame. There is nothing to hide, remove, or destroy.
+That is the Reset button of the real toolbar, at
+[`crates/coco-egui/src/chrome/toolbar.rs:13-15`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar.rs#L13-L15). Read it as three
+things happening inside one expression. `ui.button("Reset")` draws a button
+at whatever the current layout position happens to be, then checks this
+frame's input for a click that landed inside the rectangle it just drew,
+then returns a `Response` describing what it found. `.clicked()` asks that
+response one question. The `if` acts on the answer, immediately, in the
+same statement — which is why the style is called immediate mode.
 
-This has a consequence you need to internalize before anything else in this
-chapter makes sense: **all state lives in your struct, never in the
-framework.** `self.running`, `self.aspect_correct`, `self.kb_mode` — every
-one of `CocoApp`'s ~35 fields ([`crates/coco-egui/src/app.rs:11-131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L131)) is the
-*entire* durable memory of the UI. A checkbox doesn't remember whether it's
-checked; you do:
+There is no `Button` object living anywhere between frames. Next frame, if
+this code path runs again, egui draws the same button again from scratch,
+having retained nothing about it. And if this code path does *not* run —
+because a menu is closed, or a piece of hardware is not installed — the
+button simply does not exist this frame. There is nothing to hide, nothing
+to remove, nothing to destroy, and nothing to leak.
+
+### All state lives in your struct
+
+The consequence that has to be internalized before anything else in this
+chapter makes sense is this: *the framework remembers nothing about your
+application, so your application must remember everything.*
+
+Look at the checkbox that toggles aspect correction, in the View menu:
 
 ```rust
-ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
+        ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
 ```
 
-([`crates/coco-egui/src/chrome/menu_bar.rs:43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L43).) `ui.checkbox` takes a
-`&mut bool`, draws the box in whichever state that bool currently holds,
-and — if clicked this frame — flips it in place before returning. The
-"widget" and the "model" were never two things to synchronize; there was
-only ever one bool, and the checkbox is a temporary lens onto it that exists
-for the duration of one function call.
+([`crates/coco-egui/src/chrome/menu_bar.rs:43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L43).) The signature is the
+whole lesson. `ui.checkbox` takes a `&mut bool` — a mutable borrow of a
+field that belongs to `CocoApp`. It draws the box in whichever state that
+bool currently holds, and, if the click landed on it this frame, it flips
+the bool in place before returning. The widget and the model were never two
+things needing synchronization; there was only ever one bool, and the
+checkbox is a temporary lens onto it that exists for the duration of one
+function call and then evaporates.
+
+Scale that up and you have `CocoApp` itself: roughly thirty-five fields
+([`crates/coco-egui/src/app.rs:11-131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L131)) that between them constitute the
+*entire* durable memory of the user interface. `self.running`,
+`self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
+`self.cart_path` — read that struct and you have read every fact the UI
+knows about itself. Nothing is hiding in a framework's internals. There is
+no equivalent of "ask the widget what it currently says," because there is
+no widget to ask between frames.
+
+### Widgets that only exist some frames
+
+Immediate mode's most useful property is one that has no retained-mode
+equivalent at all: a widget that is not drawn does not exist, and *not
+drawing it* is just an ordinary `if` in ordinary Rust. The status bar makes
+this concrete. Here is the whole thing:
+
+```rust
+    pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(if self.running { "Running" } else { "Paused" });
+                ui.separator();
+                ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
+                self.cart_status(ui);
+                self.rs232_status(ui);
+                self.mpi_status(ui);
+                self.disk_status(ui);
+                self.vhd_status(ui);
+                self.drivewire_status(ui);
+                self.tape_status(ui);
+                if let Some(toast) = self.toast_message() {
+                    ui.separator();
+                    ui.label(toast);
+                }
+            });
+        });
+    }
+```
+
+([`crates/coco-egui/src/chrome/status_bar.rs:5-24`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L5-L24).) The first label
+is a conditional expression, not two labels one of which is hidden: whether
+the bar says "Running" or "Paused" is decided fresh, sixty times a second,
+by reading a bool. The seven `*_status` calls are where it gets
+interesting. Each one is written like this:
+
+```rust
+    fn cart_status(&self, ui: &mut egui::Ui) {
+        let Some(path) = &self.cart_path else { return };
+        ui.separator();
+        ui.label(format!("Cart: {}", file_name(path)));
+    }
+```
+
+([`crates/coco-egui/src/chrome/status_bar.rs:26-30`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L26-L30).) With no
+cartridge inserted, the function returns before drawing anything, and the
+status bar this frame simply has no cartridge section — no separator, no
+label, no reserved space that has to be collapsed. Eject the cartridge and
+the section is gone on the very next frame, with no teardown code, no
+`removeChild`, no visibility flag, and no possibility of an orphaned widget
+lingering because someone forgot to destroy it. In a retained-mode
+framework this same behaviour is a lifecycle problem; here it is an early
+`return`.
+
+The same trick governs entire windows. Everything optional the app can
+show — keyboard help, the About box, the Orchestra-90 level meters, the
+debugger, the "New…" dialog, the printer paper window, two error banners —
+is drawn by one function whose body is a list of conditions:
+
+```rust
+    pub(crate) fn windows_ui(&mut self, ctx: &egui::Context) {
+        if self.show_kbd_help {
+            let symbolic = self.kb_mode == KbMode::Symbolic;
+            kbd_help::window(ctx, &mut self.show_kbd_help, symbolic);
+        }
+        if self.show_about {
+            about::window(ctx, &mut self.show_about);
+        }
+        if self.show_orch90
+            && let Some(orch90) = self.machine.bus.cart.as_orch90()
+        {
+            orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
+        }
+        self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
+        self.new_vm_dialog_ui(ctx);
+        if let Some(err) = self.paper_window.ui(ctx) {
+            self.cart_error = Some(err);
+        }
+        self.disk_controller_prompt_ui(ctx);
+        self.cart_error_ui(ctx);
+    }
+```
+
+([`crates/coco-egui/src/chrome/windows.rs:5-25`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/windows.rs#L5-L25).) The Orchestra-90
+branch is the one worth dwelling on, because it demonstrates a subtlety
+that catches people. It requires two conditions: the user has asked for the
+meters *and* an Orchestra-90 cartridge is actually present in the machine
+right now. Those two facts live in completely different places — one is a
+UI preference on `CocoApp`, the other is a question asked of the emulated
+cartridge slot — and immediate mode lets them be combined in a plain
+boolean expression at the moment of drawing, with no subscription, no
+listener, and no invalidation.
+
+That in turn explains a field doc comment that would otherwise read as an
+oversight:
+
+> "View > Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
+> Stays whatever the user last set even if the cartridge is later
+> ejected — the window simply doesn't draw without a live `Orch90`
+> (see the call site in `update`).
+> ([`crates/coco-egui/src/app.rs:19-23`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L19-L23))
+
+Ejecting the cartridge does not have to reach over and clear
+`show_orch90`. There is no window object to close. The preference keeps its
+value, the window stops being drawn because its guard is false, and if the
+cartridge is reinserted the window reappears exactly as the user left it.
+A retained-mode version of this would need explicit close-on-eject logic,
+plus explicit restore-on-insert logic if you wanted the same behaviour, and
+those two pieces of code would be in different files from each other.
+
+The View menu shows the third variation on the theme — a control that
+exists but is disabled:
+
+```rust
+        let orch90_present = self.machine.bus.cart.as_orch90().is_some();
+        ui.add_enabled(
+            orch90_present,
+            egui::Checkbox::new(&mut self.show_orch90, "Orchestra-90 Levels"),
+        );
+```
+
+([`crates/coco-egui/src/chrome/menu_bar.rs:53-57`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L53-L57).) "Enabled" is not
+a property set on a persistent object and later unset; it is an argument
+passed to a function that is called again next frame with a freshly
+computed value. Insert an Orchestra-90 cartridge and the menu item becomes
+clickable on the next frame, because the next frame recomputes
+`orch90_present`. Nobody has to remember to re-enable it.
+
+> **Rust corner — closures, and why the UI code nests.** Every panel in the
+> excerpts above is built by passing a closure to a `show` method:
+> `TopBottomPanel::bottom("status_bar").show(ctx, |ui| { … })`. The closure
+> receives a `&mut egui::Ui`, egui's cursor into the layout, and everything
+> the closure draws lands inside that panel. This shape is what lets an
+> immediate-mode API express containment without a tree of parent and child
+> objects: "inside this panel" literally means "inside these braces."
+>
+> The Rust consequence is worth noticing, because it explains the shape of
+> essentially every function in this crate. Those closures capture `self`
+> by unique (mutable) reference — they have to, since they call
+> `self.cart_status(ui)` and mutate `self.aspect_correct`. That means no
+> *other* live borrow of `self` may exist for the closure's duration.
+> Nearly all of the frontend's methods therefore take `&mut self`, do their
+> work through field accesses, and hand out no long-lived references. When
+> a borrow conflict does arise the answer is always the same one week 1
+> taught in §1.4: split the state, or move the piece you need out of the
+> struct and put it back afterwards. §15.6 shows exactly that manoeuvre
+> applied to a whole running virtual machine.
 
 ### Why an emulator loves this
 
-Now connect this to everything weeks 1–14 built. `Machine::run_field`
-already redraws the *entire* CoCo screen every 1/60th of a second, from
-scratch, whether or not anything changed — that's just what a raster
-display is (week 6, week 7). An immediate-mode GUI does exactly the same
-thing for the *window around* that screen: redraw everything, every frame,
-from current state. The two halves of this program share a philosophy
-before you write a line connecting them. There is no "damage tracking," no
-"only redraw the status bar if the disk light changed" — you couldn't
-introduce that bug if you tried, because there's no persistent tree to
-selectively update. This is also precisely why `coco-core` staying headless
-(week 1, §1.5) was free: the core was already built to be re-rendered
-wholesale every field; handing that buffer to an immediate-mode frontend
-that also re-renders everything every frame is not a mismatch to bridge,
-it's the same idea twice.
+Now connect all of that to what weeks 1–14 built, because the fit is
+better than coincidence.
 
-The cost, to be honest about it, is CPU: real work happens every frame
-whether or not the screen visibly changed (a paused, idle CoCo still walks
-every menu-bar `ui.menu_button` call 60 times a second while the window has
-focus). For an app this size, on modern hardware, that cost is
-unmeasurable. It would matter in a 10,000-widget enterprise dashboard; it
-does not matter here.
+`Machine::run_field` already redraws the *entire* CoCo screen every 1/60th
+of a second, from scratch, whether or not anything on it changed. That is
+not an implementation choice this codebase made; it is simply what a raster
+display is (week 6, week 7). A CRT does not know which pixels changed. It
+sweeps the whole frame, every frame, forever, and the emulator models that
+faithfully by rendering every scanline of every field.
+
+An immediate-mode GUI does exactly the same thing for the *window around*
+that screen: redraw everything, every frame, from current state. The two
+halves of this program share a philosophy before you write a single line
+connecting them. There is no damage tracking, no dirty-rectangle
+bookkeeping, no "only repaint the status bar if the disk light changed."
+You could not introduce that class of bug if you tried, because there is no
+persistent tree to selectively update and therefore nothing to update
+incorrectly.
+
+This is also precisely why keeping `coco-core` headless (week 1, §1.5) cost
+nothing at integration time. A core built to be re-rendered wholesale every
+field, handed to a frontend that also re-renders everything every frame, is
+not a mismatch to be bridged with an adapter layer. It is the same idea
+twice, and the seam between them turns out to be a byte buffer and a
+function call.
+
+The cost, to be honest about it, is CPU time spent on work that produced no
+visible change. A paused, idle CoCo still walks every `ui.menu_button` call
+in the menu bar sixty times a second while the window has focus, still
+formats the status bar's strings, still asks the cartridge slot whether an
+Orchestra-90 is present. For an application of this size on modern hardware
+that cost is unmeasurable — the emulated machine's own field rendering
+dwarfs it. It would matter in a ten-thousand-widget enterprise dashboard.
+It does not matter here, and §15.2 shows that the frontend has an explicit
+lever for the one case where it might: while paused, the app stops asking
+for repaints at all.
+
+That lever is the per-frame loop, which is where this chapter goes next.
 
 ---
 
 ## 15.2 The per-frame loop: `step_emulation` and `field_debt`
 
+Immediate mode answers "what gets drawn." It says nothing at all about
+"how much emulated time should pass between one drawing and the next," and
+that second question is where naive emulator frontends go wrong — usually
+in a way that is invisible on the developer's own machine and catastrophic
+on somebody else's. This section is the answer, and it is short enough to
+memorize.
+
 Everything about advancing the emulator by wall-clock time lives in one
-function, `CocoApp::step_emulation` ([[`crates/coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)).
-Read it in full — it's short enough to hold in your head, and it is the
-single most important function in this chapter:
+function, `CocoApp::step_emulation`. Its doc comment states the contract:
+
+> Advance emulation for one host frame — input, joysticks, the
+> wall-clock-paced field loop, audio, and the framebuffer texture
+> upload. Runs regardless of which chrome (if any) is drawn around the
+> display this frame: [`Self::window_ui`] (full native window) and the
+> manager's `ViewportClass::Embedded` fallback both call this before
+> drawing anything, so a VM keeps emulating even in the degraded
+> single-window case.
+> ([`crates/coco-egui/src/app/frame.rs:21-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L21-L28))
+
+Hold onto the second half of that — "runs regardless of which chrome is
+drawn around the display" — because §15.6 collects on it. For now, read the
+function in full. It is the single most important one in this chapter, and
+short enough to hold in your head at once:
 
 ```rust
-pub(crate) fn step_emulation(&mut self, ctx: &egui::Context) {
-    self.handle_input(ctx);
-    self.drive_joysticks(ctx);
+    pub(crate) fn step_emulation(&mut self, ctx: &egui::Context) {
+        self.handle_input(ctx);
+        self.drive_joysticks(ctx);
 
-    if self.running {
-        for _ in 0..self.fields_due() {
-            if self.type_ahead.is_active() {
-                self.type_ahead.advance(&mut self.machine.bus.keyboard);
+        if self.running {
+            // Run however many fields the wall clock owes us (real-time pacing),
+            // stepping type-ahead per field so paste timing is refresh-agnostic.
+            // Routed through the debugger so an enabled breakpoint/watchpoint
+            // pauses the emulator cleanly instead of running straight through
+            // it — a no-op when no breakpoints/watchpoints are set (the
+            // common case), since `DebuggerPanel::run_field` then always
+            // completes the field, same as `Machine::run_field` directly.
+            for _ in 0..self.fields_due() {
+                if self.type_ahead.is_active() {
+                    self.type_ahead.advance(&mut self.machine.bus.keyboard);
+                }
+                if !self.debugger.run_field(&mut self.machine) {
+                    self.running = false;
+                    break;
+                }
             }
-            if !self.debugger.run_field(&mut self.machine) {
-                self.running = false;
-                break;
-            }
+            let sample_rate = self.machine.audio_sample_rate();
+            self.audio.push_samples(self.machine.take_audio(), sample_rate);
+            ctx.request_repaint();
+        } else {
+            self.last_update = None;
+            // Drop any fields owed to the wall clock while paused (debugger
+            // pause included), so resuming doesn't instantly "catch up" on
+            // the paused interval — a clean pause, not just a frozen screen.
+            self.field_debt = 0.0;
         }
-        let sample_rate = self.machine.audio_sample_rate();
-        self.audio.push_samples(self.machine.take_audio(), sample_rate);
-        ctx.request_repaint();
-    } else {
-        self.last_update = None;
-        self.field_debt = 0.0;
-    }
 
-    let image = egui::ColorImage::from_rgba_unmultiplied(
-        [self.machine.fb_width as usize, self.machine.fb_height as usize],
-        &self.machine.framebuffer,
-    );
-    let texture = self.texture.get_or_insert_with(|| {
-        ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
-    });
-    texture.set(image, egui::TextureOptions::NEAREST);
-}
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [
+                self.machine.fb_width as usize,
+                self.machine.fb_height as usize,
+            ],
+            &self.machine.framebuffer,
+        );
+        let texture = self.texture.get_or_insert_with(|| {
+            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
+        });
+        texture.set(image, egui::TextureOptions::NEAREST);
+    }
 ```
 
-Five things happen here, in order, every time `update()` runs: read host
-input, drive the joysticks, run zero-or-more emulated fields, push whatever
-audio those fields generated into the sound ring (week 11 owns that ring;
-§15.5 below is the one-paragraph pointer), and upload the resulting
-framebuffer as a texture. `window_ui` (the trait method's actual body) calls
-this, then draws the menu/toolbar/status chrome, then draws the display —
-in that order, every frame, no exceptions
-([`crates/coco-egui/src/app/frame.rs:120-126`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L120-L126)).
+([`crates/coco-egui/src/app/frame.rs:29-72`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L29-L72).) Five things happen, in
+this order, every time the host asks for a frame. Host input is read and
+routed into the emulated keyboard matrix. The joysticks are polled and
+their pot values written. Zero or more *emulated fields* are run. Whatever
+audio those fields generated is pushed into the sound ring. And the
+resulting framebuffer is uploaded as a texture.
 
-The one piece worth stopping on is `self.fields_due()` — the answer to "how
-many times do I call `run_field` *this* call to `update()`?"
+The ordering is not incidental. Input is read *before* any field runs, so
+the matrix state a field observes is this frame's, not last frame's — a key
+pressed and released quickly still reaches the ROM's keyboard scan in the
+right field. The texture upload happens *after* the loop and, crucially,
+*outside* the `if self.running` block: a paused emulator still uploads its
+last framebuffer every frame, which is what keeps the picture on screen
+while nothing advances.
+
+Two of the five deserve pointers rather than explanation, because earlier
+chapters own them. `self.debugger.run_field(&mut self.machine)` is week
+16's material; for now, take the comment at its word that with no
+breakpoints set it behaves exactly like calling `Machine::run_field`
+directly, and that a `false` return means "a breakpoint tripped, pause the
+machine" — which is why the loop assigns `self.running = false` and breaks
+rather than continuing. `self.audio.push_samples(...)` is week 11's, and
+§15.5 below is its one-paragraph pointer.
+
+`ctx.request_repaint()` is worth a sentence of its own, since it sits
+inside the `running` branch and nowhere else. It tells egui not to go idle,
+because there will be something new to draw next frame — which is exactly
+true of a running emulator and exactly false of a paused one. A paused CoCo therefore
+stops driving repaints, and the frontend's per-frame cost — the one §15.1
+was honest about — drops to whatever the windowing system asks for anyway.
+
+The one piece left is `self.fields_due()`, the answer to the question this
+section exists for: how many times does `run_field` run during *this* call?
 
 ### Why you can't just run one field per repaint
 
-The naive design is "one `update()` call, one emulated field." It is wrong,
-and [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) flagged this back in week 6 (§4): "don't trust egui's repaint
-cadence for emulation timing." Two failure modes, both real:
+The obvious design is "one `update()` call, one emulated field." It is
+wrong, and this is not a subtle wrongness discovered late — DESIGN.md
+flagged it back in §4 with the instruction "don't trust egui's repaint
+cadence for emulation timing," prescribing a real-time accumulator that
+runs whole emulated fields while the accumulated delta exceeds a field
+period ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md)). Two failure modes force that, and both are
+routine rather than exotic.
 
-- **A 144 Hz gaming monitor.** eframe repaints roughly at your monitor's
-  refresh rate. One field per repaint on a 144 Hz display runs the CoCo
-  at 144 emulated fields per second — 2.4× real speed. Every game and
-  every timing-sensitive BASIC program breaks.
-- **A window drag, a slow debugger breakpoint, or the OS just being busy.**
-  If `update()` isn't called for 400 ms and then is, "one field" makes the
-  CoCo simply *lose* 400 ms of wall-clock time — audio glitches, the field
-  sync IRQ (week 6) that stock BASIC idles on falls behind, and the tape
-  motor (week 12), which times its own mechanics in real seconds, drifts.
+The first is a fast display. eframe repaints roughly at the host display's
+refresh rate, and that rate is not 60 Hz on a great deal of modern
+hardware. On a 144 Hz gaming monitor, one field per repaint runs the CoCo
+at 144 emulated fields per second — 2.4 times real speed. Every game
+becomes unplayable, every piece of music plays sharp and fast, and every
+BASIC program that measures time by counting interrupts measures it wrong.
+The emulator is not slightly off; it is running a different machine.
 
-The fix is the **`field_debt` accumulator**, and it's genuinely just one
-small function:
+The second is any interruption at all. Drag the window, hit a debugger
+breakpoint, let the operating system schedule something else for a moment,
+and `update()` might not be called for 400 ms. Under "one field per
+repaint," the emulated machine simply *loses* those 400 ms of wall-clock
+time. Audio, which is being consumed by a sound device at a fixed rate on
+another thread, glitches. The 60 Hz field-sync interrupt (week 6) that
+stock BASIC idles on falls behind. And the cassette motor (week 12), which
+models its own mechanics in real seconds, drifts out of step with the tape
+data it is supposed to be pulling past the head.
+
+The fix is a *field-debt accumulator*, and it is genuinely one small
+function:
 
 ```rust
-pub(crate) fn fields_due(&mut self) -> usize {
-    let now = std::time::Instant::now();
-    let dt = match self.last_update.replace(now) {
-        Some(prev) => (now - prev).as_secs_f64().min(MAX_FRAME_DT),
-        None => 0.0,
-    };
-    self.field_debt += dt * self.machine.config.video.field_rate_hz();
-    let due = (self.field_debt as usize).min(MAX_FIELDS_PER_UPDATE);
-    self.field_debt = (self.field_debt - due as f64).min(1.0);
-    due
-}
+    pub(crate) fn fields_due(&mut self) -> usize {
+        let now = std::time::Instant::now();
+        let dt = match self.last_update.replace(now) {
+            Some(prev) => (now - prev).as_secs_f64().min(MAX_FRAME_DT),
+            None => 0.0,
+        };
+        self.field_debt += dt * self.machine.config.video.field_rate_hz();
+        let due = (self.field_debt as usize).min(MAX_FIELDS_PER_UPDATE);
+        self.field_debt = (self.field_debt - due as f64).min(1.0);
+        due
+    }
 ```
 
-([`crates/coco-egui/src/app/frame.rs:9-19`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L9-L19).) Walk it exactly once, slowly:
+([`crates/coco-egui/src/app/frame.rs:9-19`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L9-L19).) Walk it exactly once,
+slowly, because every line is load-bearing.
 
-1. **Measure real elapsed time** since the previous call, `dt`, in seconds.
-   The very first call after `(re)start` has no previous instant
-   (`self.last_update` was `None`), so it credits zero elapsed time — the
-   emulator doesn't try to "catch up" on the time before it existed.
-2. **Convert `dt` to fields owed**, at the machine's own field rate
-   (`VideoStandard::field_rate_hz()` — NTSC 59.94 Hz, PAL 50.0 Hz,
-   [`crates/coco-core/src/config.rs:58-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L58-L61), week 6), and *add* that to
-   `field_debt` — a fractional running balance, not reset each call.
-3. **Run the whole fields owed**, `due = floor(field_debt)`, capped at
-   `MAX_FIELDS_PER_UPDATE`.
-4. **Carry the fraction forward.** Subtract only the whole fields just paid
-   out, so a debt of `2.7` fields becomes `0.7` — not zero. That `0.7`
-   is still owed next call, and *will* trigger a field once enough more
-   time accumulates on top of it. No time is silently thrown away by the
-   act of rounding down, ever — except by the deliberate `.min(1.0)` at the
-   very end, which we'll come back to.
+1. **Measure real elapsed time.** `dt` is the wall-clock seconds since the
+   previous call. The very first call after a start or a resume has no
+   previous instant — `self.last_update` was `None` — so it credits zero
+   elapsed time. The emulator does not try to catch up on time that passed
+   before it existed.
+2. **Convert `dt` into fields owed.** The conversion factor is the
+   machine's own field rate, `VideoStandard::field_rate_hz()`, which is
+   59.94 for NTSC and 50.0 for PAL ([`crates/coco-core/src/config.rs:58-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L58-L63),
+   week 6). That product is *added* to `field_debt`, which is a running
+   fractional balance and is never reset at the top of the call.
+3. **Pay out the whole fields owed.** `due` is `floor(field_debt)`, capped
+   at `MAX_FIELDS_PER_UPDATE`.
+4. **Carry the fraction forward.** Subtract only the whole fields actually
+   paid out, so a debt of 2.7 fields becomes 0.7 rather than zero. That 0.7
+   is still owed, and *will* trigger a field once enough further time piles
+   on top of it. No time is silently discarded by the act of rounding down
+   — except by the deliberate `.min(1.0)` at the very end, which we will
+   come back to and which is a policy decision rather than an accident.
 
-This is the whole idea: **decouple emulation speed from repaint cadence by
-never asking "how many repaints happened" and always asking "how much
-wall-clock time elapsed."**
+The idea in one sentence: *decouple emulation speed from repaint cadence by
+never asking how many repaints happened and always asking how much
+wall-clock time elapsed.* That sentence generalizes far beyond emulators.
+Any simulation that must advance at a fixed rate while being driven by an
+event loop at some other rate wants this function, and games have been
+writing versions of it for decades.
+
+> **Rust corner — `Option::replace`, a swap in one expression.**
+> `self.last_update.replace(now)` does two things at once: it stores `now`
+> into the `Option` field, and it returns whatever was there before, as an
+> `Option<Instant>`. The `match` immediately below consumes that return
+> value. The whole "remember the current time, and also tell me the
+> previous one" transaction is therefore a single expression with no
+> temporary variable and no window in which the field holds a stale value.
+>
+> Written the long way it would be three statements — read the old value,
+> write the new one, then branch on the old — and it would be entirely
+> possible to get the order wrong and read back the value just written.
+> `replace` is one of a small family of `Option` methods (`take`, `replace`,
+> `get_or_insert_with`, `is_none_or`) that this crate leans on heavily;
+> `get_or_insert_with` shows up in the texture upload above, `take` runs
+> the manager's viewport loop in §15.6, and `is_none_or` paces the
+> thumbnail refresh. Learning the family pays off quickly when reading Rust
+> that manipulates optional state.
 
 ### Working the numbers: a 120 Hz monitor
 
-Concretely, on a 120 Hz display calling `update()` roughly every 8.33 ms,
-against NTSC's 59.94 Hz field rate:
+Abstract accumulator arguments are unconvincing; arithmetic is not. Take a
+120 Hz display, which calls `update()` roughly every 8.33 ms, against
+NTSC's 59.94 Hz field rate:
 
 | Call | `dt` (s) | `field_debt` before | `+= dt·59.94` | `due` | `field_debt` after |
 |------|---------:|---------------------:|--------------:|------:|--------------------:|
@@ -227,21 +565,40 @@ against NTSC's 59.94 Hz field rate:
 | 4    | 0.00833  | 0.4985                | 0.9980        | 0     | 0.9980               |
 | 5    | 0.00833  | 0.9980                | 1.4975        | 1     | 0.4975               |
 
-A field runs roughly every *other* repaint — never every repaint — because
-each individual 120 Hz tick only owes half a field. Averaged out, that's
-one field roughly every 16.68 ms: 59.94 Hz, exactly the CoCo's real rate,
-regardless of the display refreshing at 120 Hz. This is precisely the
-`field_debt` doc comment's promise ([`crates/coco-egui/src/app.rs:28-31`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L28-L31)):
-"120 Hz displays no longer run the CoCo at double speed." Try the same
-table at 60 Hz (`dt ≈ 0.01667`) and you'll see `due` is 1 on almost every
-call, with a small amount of jitter back and forth because 60 Hz repaints
-and 59.94 Hz fields aren't *quite* the same rate either — the accumulator
-absorbs that drift the same way, one fractional field at a time, instead of
-ever needing a special case.
+A field runs roughly every *other* repaint, and never every repaint,
+because each individual 120 Hz tick only owes half a field. Averaged out
+that is one field every 16.68 ms: 59.94 Hz, exactly the CoCo's real rate,
+on a display refreshing at twice that. Three of the five calls above did no
+emulation at all and merely re-uploaded the same texture, which is the
+correct behaviour — the CoCo genuinely had nothing new to show yet.
+
+This is precisely what the `field_debt` doc comment promises:
+
+> Fractional emulated fields owed to the wall clock (`DESIGN.md` §4):
+> fields run when it reaches 1, the remainder carries over. This decouples
+> emulation speed from the host refresh rate (120 Hz displays no longer
+> run the CoCo at double speed).
+> ([`crates/coco-egui/src/app.rs:28-31`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L28-L31))
+
+Run the same table at 60 Hz, where `dt ≈ 0.01667`, and something subtler
+shows up. Each call adds about 0.999 fields of debt, so `due` is 1 on
+almost every call — but not quite every call, because 60 and 59.94 are not
+the same number. Roughly every thousand frames the accumulator falls a
+whisker short of 1.0 and that frame runs no field at all, which is exactly
+right: a 60 Hz host really does tick slightly faster than an NTSC CoCo's
+field rate, and the machine really should drop one field per thousand to
+stay honest. The accumulator absorbs that drift the same way it absorbs
+everything else, one fractional field at a time, with no special case
+anywhere in the code for "host rate close to but not equal to field rate."
+
+That is the mark of a good design: the awkward case and the easy case go
+down the same code path.
 
 ### The two guardrails, and the spiral of death
 
-Two constants sit right next to `field_debt`'s owner in `main.rs`:
+An accumulator that faithfully remembers every field it is owed has a
+failure mode of its own, and it is a bad one. Two constants sit next to
+`field_debt`'s definition to prevent it:
 
 ```rust
 /// Cap on emulated fields run in one UI update: catches up after short host
@@ -253,177 +610,269 @@ pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 ```
 
 ([`crates/coco-egui/src/main.rs:88-93`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L88-L93).) Both exist to prevent the same
-disease: **the spiral of death.** Imagine there were no cap on fields per
-update. Your host stalls for a second — a window manager hiccup, a
-laptop waking from sleep, whatever. `field_debt` jumps to roughly 60. The
-next `update()` call dutifully tries to run 60 fields *before* returning
-control to the UI. But running 60 fields of CPU emulation, video scanout,
-and audio rendering takes real wall-clock time too — say it takes 200 ms on
-this machine. During those 200 ms, *more* real time has elapsed than the
-frame accounted for, so `field_debt` is already non-zero again by the time
-you check next. If the emulator can't emulate fields faster than real time
-allows (true on a loaded system, or a debug build, or a slow machine), the
-backlog never shrinks — it grows every single update, the UI stops
-responding to input because it's permanently "catching up," and the
-program is functionally hung while still burning 100% CPU. That's the
-spiral: falling behind makes you fall further behind, forever.
+disease, which has a name: *the spiral of death*.
 
-`MAX_FIELDS_PER_UPDATE = 8` breaks the spiral by refusing to try to catch up
-past a bounded amount of work per frame — the excess is simply not run this
-call. `MAX_FRAME_DT = 0.25` attacks the same problem from the other end: a
-genuinely enormous gap (the window was minimized for ten minutes) is
-clamped to a quarter of a second's worth of *credited* time before it ever
-reaches `field_debt`, so the accumulator never even sees the huge number in
-the first place.
+Imagine there were no cap on fields per update. The host stalls for a
+second — a window manager hiccup, a laptop waking from sleep, an antivirus
+scanner, whatever. `field_debt` jumps to roughly 60. The next `update()`
+call dutifully tries to run 60 fields *before* returning control to the UI.
+But running 60 fields of CPU emulation, video scanout and audio rendering
+takes real wall-clock time too. Say it takes 200 ms on this machine. During
+those 200 ms, more real time has elapsed than the frame accounted for, so
+`field_debt` is already non-zero again by the time the next call measures
+it.
 
-Now look again at the last line of `fields_due`:
+That is survivable if the emulator is comfortably faster than real time,
+which it usually is. It is not survivable if it is not — on a loaded
+system, in a debug build, on a slow machine, or with a demanding cartridge
+attached. Then the backlog never shrinks. It grows every single update. The
+UI stops responding to input because it is permanently "catching up," the
+window will not even close, and the program is functionally hung while
+burning an entire core. That is the spiral: falling behind makes you fall
+further behind, forever, and the only exit is a signal from outside.
+
+`MAX_FIELDS_PER_UPDATE = 8` breaks the spiral by refusing to attempt more
+than a bounded amount of catch-up work per frame. Whatever cannot be run
+this call is simply not run this call. `MAX_FRAME_DT = 0.25` attacks the
+same problem from the opposite end: a genuinely enormous gap — the window
+was minimized for ten minutes, the laptop lid was shut — is clamped to a
+quarter of a second's worth of *credited* time before it ever reaches
+`field_debt`. The accumulator never even sees the huge number.
+
+### Throwing away time on purpose
+
+Now look again at the last line of `fields_due`, which does something the
+walkthrough above deliberately deferred:
 
 ```rust
-self.field_debt = (self.field_debt - due as f64).min(1.0);
+        self.field_debt = (self.field_debt - due as f64).min(1.0);
 ```
 
-Notice this clamps the *carried-over remainder* to at most `1.0`, not just
-the amount paid out. Work through the 250 ms-stall example: suppose
-`field_debt` was `0.997` and a 200 ms gap arrives (under the 250 ms cap, so
-uncredited-clamping doesn't even kick in). That adds `0.2 × 59.94 ≈ 11.99`
-fields of debt, for a total of `12.985`. `due` is capped at `8`. After
-subtracting, `12.985 − 8 = 4.985` fields would still be owed — nearly five
-more fields' worth of "catch-up" pressure sitting in the accumulator,
-which would otherwise make the *next several* frames also run at the
-8-field cap, extending the visible slowdown well past the original stall.
-The `.min(1.0)` throws that extra backlog away outright: after any update,
-at most one field's worth of fractional debt survives, ever. A stall costs
-you smoothness for exactly one clamped burst of up to 8 fields, and then
-the clock is caught up to "now" — not caught up to "everything you
-missed." This is a deliberate, opinionated policy: **prefer time perceived
-as real over exact accounting of missed field count.** An emulator that
-insisted on running every field it was ever "owed" would, after any real
-stall, visibly fast-forward through the backlog — CoCo-native BASIC
-programs sound and look wrong sped up, so the codebase chooses to drop the
-excess instead.
+Notice what is clamped. It is not the amount paid out; it is the
+*carried-over remainder*. At most one field's worth of fractional debt
+survives any call to this function, ever.
 
-Pausing gets its own paragraph in the `else` branch: `self.last_update` is
-reset to `None` and `field_debt` to `0.0`. Without this, a debugger
-breakpoint held for ten seconds would otherwise be interpreted, on
-resuming, as ten seconds of owed field time — the emulator would burst
-through hundreds of fields the instant you hit Continue. Resetting both
-means resuming is a clean restart of the pacing clock, not a catch-up.
+Work through a concrete stall to see why that matters. Suppose
+`field_debt` was 0.997 and a 200 ms gap arrives — under the 250 ms cap, so
+`MAX_FRAME_DT` does not clamp it. That adds 0.2 × 59.94 ≈ 11.99 fields of
+debt, for a total of 12.985. `due` is computed as 12, then capped to 8, so
+eight fields run. Subtracting gives 4.985 fields still nominally owed:
+nearly five more fields of catch-up pressure sitting in the accumulator,
+which would make the *next several* frames also run at the eight-field cap,
+extending the visible slowdown well past the original stall.
+
+The `.min(1.0)` throws that backlog away outright. A stall costs you
+smoothness for exactly one clamped burst of up to eight fields, and then
+the clock is caught up to "now" — not to "everything you missed."
+
+This is an opinionated policy, and it is worth naming rather than
+absorbing silently: *prefer time perceived as real over exact accounting of
+missed field count.* An emulator that insisted on running every field it
+was ever owed would, after any real stall, visibly fast-forward through the
+backlog. Sound plays at the wrong pitch, sprites teleport, a BASIC
+program's screen output scrolls past faster than it was ever meant to. The
+codebase chooses to drop the excess instead, on the grounds that a
+half-second of missing history is less objectionable than a half-second of
+wrong-speed playback. Different emulators make this call differently; what
+matters is making it deliberately, in one line, where a reader can find it.
+
+Pausing gets its own treatment in the `else` branch, and for the same
+reason. `self.last_update` is reset to `None` and `field_debt` to `0.0`.
+Without this, a debugger breakpoint held for ten seconds would be
+interpreted on resume as ten seconds of owed field time, and the emulator
+would burst through hundreds of fields the instant you hit Continue —
+undoing the entire point of having stopped. Resetting both makes resuming a
+clean restart of the pacing clock rather than a catch-up. The comment in
+the source puts it exactly right: this is "a clean pause, not just a frozen
+screen."
 
 > **Rust corner — why `f64`, not `f32`, for `field_debt`.** `field_debt`
 > accumulates a tiny fractional remainder *every single frame*, potentially
-> for hours of continuous play. `f32` has roughly 7 decimal digits of
-> precision; accumulated rounding error across millions of additions to a
-> `f32` would eventually visibly drift the emulator's timing (the same
-> failure mode as summing many small `f32` deltas in any long-running
-> simulation). `f64`'s ~15-16 digits push that drift far below anything a
-> human — or a tape-loader's timing tolerance — could ever notice. When you
-> see an accumulator meant to run for a program's entire lifetime, reach for
-> `f64` by default; reserve `f32` for values recomputed fresh each frame
-> (like the framebuffer's pixel geometry in §15.3) where error can't build up.
+> for hours of continuous play. `f32` carries roughly seven decimal digits
+> of precision; accumulated rounding error across millions of additions to
+> an `f32` would eventually drift the emulator's timing visibly, which is
+> the same failure mode as summing many small `f32` deltas in any
+> long-running simulation. `f64`'s fifteen-to-sixteen digits push that
+> drift far below anything a human — or a tape loader's timing tolerance —
+> could ever notice.
+>
+> The general rule to take away: when you see an accumulator meant to run
+> for a program's entire lifetime, reach for `f64` by default. Reserve
+> `f32` for values recomputed fresh each frame, like the framebuffer's
+> pixel geometry in §15.3, where error has no opportunity to build up
+> because nothing is carried forward.
+
+With timing settled, the picture itself is next — and it is smaller than
+the timing was.
 
 ---
 
 ## 15.3 Graphics programming, demystified
 
-Here is the section that fulfils the syllabus's promise. The *entire*
-GPU-facing surface of this program is: one texture upload per frame, and
-one textured rectangle drawn over it. You already read the upload half at
-the bottom of `step_emulation` above — reread it now that you know why it
-runs unconditionally, every frame, whether or not the CoCo's screen
-actually changed (immediate mode, again: there's no "did the pixels
-change" check, because there's no retained copy to compare against):
+This is the section that fulfils the chapter opener's promise. The *entire*
+GPU-facing surface of this program consists of one texture upload per
+frame and one textured rectangle drawn over it. Everything else that looks
+like graphics is arithmetic, and by the end of this section you will have
+read all of it.
+
+You already read the upload half at the bottom of `step_emulation`. Reread
+it now, knowing why it runs unconditionally, every frame, whether or not
+the CoCo's screen actually changed — immediate mode again: there is no
+"did the pixels change" check, because there is no retained copy to compare
+against.
 
 ```rust
-let image = egui::ColorImage::from_rgba_unmultiplied(
-    [self.machine.fb_width as usize, self.machine.fb_height as usize],
-    &self.machine.framebuffer,
-);
-let texture = self.texture.get_or_insert_with(|| {
-    ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
-});
-texture.set(image, egui::TextureOptions::NEAREST);
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [
+                self.machine.fb_width as usize,
+                self.machine.fb_height as usize,
+            ],
+            &self.machine.framebuffer,
+        );
+        let texture = self.texture.get_or_insert_with(|| {
+            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
+        });
+        texture.set(image, egui::TextureOptions::NEAREST);
 ```
 
-`self.machine.framebuffer` is the plain `Vec<u8>` of RGBA bytes week 7
-taught you to render into — the exact same buffer the headless PPM-writing
-examples in `coco-core/examples/` dump to disk. `ColorImage::from_rgba_unmultiplied`
-just wraps that byte slice with its width/height as a CPU-side image
-description; no GPU interaction has happened yet. `get_or_insert_with`
-allocates a GPU texture handle exactly *once*, the first frame — every
-frame after that reuses the same handle. `texture.set(...)` is the one line
-in this entire crate that actually crosses into GPU territory: it uploads
-this frame's bytes into that already-allocated texture, replacing last
-frame's contents. `egui::TextureOptions::NEAREST` tells the GPU "when this
-texture is scaled up or down, sample the nearest source pixel, don't
-blend neighbors" — this is what keeps the CoCo's blocky low-res pixels
-crisp instead of blurry when stretched to fill a modern monitor; the
-alternative, `LINEAR`, is what the manager's list-row *photo* thumbnails
-use instead ([`crates/coco-egui/src/manager.rs:310`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L310)), because a photograph
-benefits from smoothing and a 288-pixel-wide CoCo screen does not.
+Four steps, and only one of them involves a GPU. `self.machine.framebuffer`
+is the plain `Vec<u8>` of RGBA bytes that week 7 taught you to render into
+— the exact same buffer the headless PPM-writing examples in
+`coco-core/examples/` dump to disk, with no frontend involved at all.
+`ColorImage::from_rgba_unmultiplied` wraps that byte slice together with
+its width and height into a CPU-side image description; nothing has crossed
+into graphics-driver territory yet. `get_or_insert_with` allocates a GPU
+texture handle exactly *once*, on the first frame the app ever draws, and
+every frame after that reuses the same handle. And `texture.set(...)` is
+the one line in this entire crate that actually crosses into GPU territory:
+it uploads this frame's bytes into the already-allocated texture, replacing
+last frame's contents.
 
-That's the upload. The draw is `draw_display`
-([`crates/coco-egui/src/app/frame.rs:83-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L83-L108)), and it's arithmetic, not
-graphics API calls:
+`egui::TextureOptions::NEAREST` is the option that makes the picture look
+right, and it deserves a paragraph because it is the only piece of graphics
+vocabulary this chapter needs. When a texture is drawn at a size other than
+its native pixel dimensions — and it always is, since a 640-pixel-wide CoCo
+canvas is being stretched across a 1341-pixel-wide rectangle — the hardware
+has to decide what colour to put at each destination pixel. *Nearest*
+sampling picks the single closest source pixel and uses it unchanged.
+*Linear* sampling blends the neighbouring source pixels together. For a
+CoCo screen, nearest is the only defensible choice: it keeps the machine's
+chunky low-resolution pixels crisp and square-edged when magnified, exactly
+as a real set's phosphor blocks appeared, instead of smearing them into a
+soft blur that no CoCo owner ever saw.
+
+The frontend does use linear sampling — twice, and both times for
+photographs rather than emulated screens. The manager's decorative photo
+pane uploads with `TextureOptions::LINEAR`
+([`crates/coco-egui/src/manager.rs:308-311`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L308-L311)), and so does a stopped
+machine's saved screen thumbnail when it is loaded back from its PNG
+([`crates/coco-egui/src/manager/thumbnails.rs:76-80`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L76-L80)). Both are being
+scaled *down* into a small area rather than up, and a photograph shrunk
+with nearest sampling looks harsh and aliased. Same API, opposite choice,
+for a reason you can state in one sentence — which is what makes it worth
+knowing rather than memorizing.
+
+### One rectangle, and the arithmetic that places it
+
+That is the upload. The draw is `draw_display`, and it is arithmetic rather
+than graphics API calls:
 
 ```rust
-pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
-    let tex = self.texture.as_ref().unwrap();
-    let tex_size = tex.size_vec2();
-    let aspect = if self.aspect_correct {
-        TARGET_ASPECT
-    } else {
-        tex_size.x / tex_size.y
-    };
-    let avail = ui.available_rect_before_wrap();
-    let mut w = avail.width();
-    let mut h = w / aspect;
-    if h > avail.height() {
-        h = avail.height();
-        w = h * aspect;
+    pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
+        let tex = self.texture.as_ref().unwrap();
+        let tex_size = tex.size_vec2();
+        // Aspect the displayed frame should have, independent of the buffer's
+        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
+        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        let aspect = if self.aspect_correct {
+            TARGET_ASPECT
+        } else {
+            tex_size.x / tex_size.y
+        };
+        // Largest rect of that aspect that fits the panel, centered (letterboxed).
+        let avail = ui.available_rect_before_wrap();
+        let mut w = avail.width();
+        let mut h = w / aspect;
+        if h > avail.height() {
+            h = avail.height();
+            w = h * aspect;
+        }
+        let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
+        let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
+        ui.put(rect, egui::Image::new(sized));
+        // Remembered for `drive_joysticks` next frame, to map pointer
+        // position to joystick axes (see the `display_rect` field doc).
+        self.display_rect = rect;
     }
-    let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
-    let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
-    ui.put(rect, egui::Image::new(sized));
-    self.display_rect = rect;
-}
 ```
 
-`ui.put(rect, egui::Image::new(sized))` is the second and last GPU-facing
-call in the whole program — draw one textured quad, sized to `rect`. Every
-line above it is deciding what `rect` should *be*. This is the entirety of
-"3D graphics" in this codebase: one 2D rectangle, textured, no shaders you
-write, no vertex buffers you manage, no camera, no lighting. egui and its
-backend (glow/OpenGL, or optionally wgpu — see [[`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml)](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml)'s `[features]`)
-handle turning "draw this rect with this texture" into actual draw calls;
-this file never touches that layer.
+([`crates/coco-egui/src/app/frame.rs:83-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L83-L108).) Find
+`ui.put(rect, egui::Image::new(sized))` in the middle of that. It is the
+second and last GPU-facing call in the whole program: draw one textured
+quad, sized to `rect`. Every line above it exists to decide what `rect`
+should *be*, and the line below it merely records the answer.
+
+This is the entirety of "3D graphics" in this codebase — one 2D rectangle,
+textured. No shaders that you write. No vertex buffers that you manage. No
+camera, no projection matrix, no lighting model, no render pass. egui and
+its backend turn "draw this rect with this texture" into actual draw calls,
+and this file never touches that layer. Which backend, incidentally, is a
+build-time choice: the crate ships on eframe's glow (OpenGL) backend by
+default, with an optional `wgpu` feature that compiles eframe's wgpu
+backend in instead ([`crates/coco-egui/Cargo.toml:59-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml#L59-L63)). The startup
+banner prints which one is live ([`crates/coco-egui/src/startup.rs:102-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/startup.rs#L102-L125)),
+and nothing in this chapter changes between them.
+
+The final line, `self.display_rect = rect`, is the one piece of state
+`draw_display` leaves behind, and it is there for a non-obvious consumer:
+
+> Letterboxed display rect from the last frame's `CentralPanel`, used to map
+> pointer position to joystick axes. One frame stale (see `drive_joysticks`).
+> ([`crates/coco-egui/src/app.rs:37-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L37-L39))
+
+Mouse-as-joystick needs to convert "the pointer is at this window position"
+into "the stick is this far right and this far down," and that conversion
+needs to know where inside the window the CoCo picture actually is. Since
+`drive_joysticks` runs at the *top* of `step_emulation` and `draw_display`
+runs at the *bottom* of the frame, the rect the joystick code reads is
+always one frame old. The doc comment says so plainly rather than
+pretending otherwise. At sixty frames a second, a mouse-driven joystick
+reading a 16 ms-old rectangle is indistinguishable from one reading a fresh
+rectangle, and the alternative — restructuring the frame so layout happens
+before input — would be a large change to buy nothing.
 
 ### Letterboxing, worked with real numbers
 
-The rest is the "largest rectangle of a given aspect ratio that fits inside
-a panel, centered" problem — the same problem that puts black bars around
-a widescreen movie on an old 4:3 television, just computed in the other
-direction. Trace the algorithm:
+The remaining arithmetic solves a problem with a name everyone already
+knows from television: fit the largest rectangle of a given aspect ratio
+inside a panel, centered, and leave the rest blank. It is the same problem
+that puts black bars above and below a widescreen film on a 4:3 set, and
+the same one that puts bars at the sides of a 4:3 broadcast on a widescreen
+set. Trace the algorithm as four steps:
 
 1. Decide the *target aspect ratio*, independent of the texture's actual
-   pixel dimensions: `TARGET_ASPECT = 4.0 / 3.0` when aspect correction is
-   on (real NTSC picture shape), or the texture's own raw `width/height`
-   when it's off.
-2. Assume the available panel's *full width* first: `h = w / aspect`.
+   pixel dimensions. That is `TARGET_ASPECT = 4.0 / 3.0` when aspect
+   correction is on — the real shape of an NTSC picture — or the texture's
+   own raw width-over-height when correction is off.
+2. Assume the panel's *full width* first, and derive the height that aspect
+   demands: `h = w / aspect`.
 3. If that guess is *taller* than the panel, the width assumption was
-   wrong — clamp to the panel's full height instead and recompute `w` from
-   that: `w = h * aspect`.
-4. Center the resulting `w × h` rectangle in the panel. Whatever's left
-   over on the unconstrained axis is the letterbox (or pillarbox) margin —
-   `ui.put` never draws anything there; it stays whatever `CentralPanel`'s
-   background fill is (`egui::Color32::BLACK`, set in `window_ui`).
+   wrong. Clamp to the panel's full height instead and recompute the width
+   from it: `w = h * aspect`.
+4. Center the resulting `w × h` rectangle in the panel. Whatever is left
+   over on the unconstrained axis is the letterbox (or pillarbox) margin.
+   `ui.put` never draws anything there, so it stays whatever the
+   `CentralPanel`'s background fill is — `egui::Color32::BLACK`, set where
+   the panel is created in `window_ui`.
 
-Now plug in the numbers the syllabus asked for: a CoCo 3's canonical
-640×240 raster canvas (`raster::CANVAS_W`/`CANVAS_H`, week 7), inside a
+Now plug in real numbers. Take a CoCo 3 running in a GIME-native mode, so
+its canvas is the canonical 640×240 raster (`raster::CANVAS_W` and
+`CANVAS_H`, [`crates/coco-core/src/raster.rs:15-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L15-L18), week 7), inside a
 1920×1080 window. Subtract the fixed chrome heights `coco-egui` reserves —
-`MENU_BAR_H` (22) + `TOOLBAR_H` (30) + `STATUS_BAR_H` (22) = 74 px — leaving
-a `CentralPanel` of roughly **1920 × 1006**.
+`MENU_BAR_H` at 22, `TOOLBAR_H` at 30 and `STATUS_BAR_H` at 22, totalling
+74 pixels — and the `CentralPanel` is roughly **1920 × 1006**.
 
-**Aspect-corrected** (`aspect = 4/3 ≈ 1.3333`):
+**Aspect-corrected**, so `aspect = 4/3 ≈ 1.3333`:
 
 ```
 w = 1920                  (try full width)
@@ -432,33 +881,38 @@ h = 1920 / 1.3333 = 1440  (taller than the 1006 available!)
   w = 1006 × 1.3333 = 1341.3
 ```
 
-Final rect: **1341 × 1006**, centered — pillarboxed, with roughly
-`(1920 − 1341.3) / 2 ≈ 289` px of black bar on the left and right. Height
-was the binding constraint.
+The final rectangle is **1341 × 1006**, centered. Height was the binding
+constraint, so the leftover space is horizontal: roughly
+`(1920 − 1341.3) / 2 ≈ 289` pixels of black bar down each side. That is
+pillarboxing.
 
-**Aspect-uncorrected** (`aspect = tex_size.x / tex_size.y = 640/240 ≈
-2.6667` — the raw, non-square-pixel shape of the canvas itself):
+**Aspect-uncorrected**, so `aspect = tex_size.x / tex_size.y = 640/240 ≈
+2.6667` — the raw, non-square-pixel shape of the canvas itself:
 
 ```
 w = 1920                 (try full width)
 h = 1920 / 2.6667 = 720  (fits inside 1006 — no clamp needed)
 ```
 
-Final rect: **1920 × 720**, centered — letterboxed, with roughly
-`(1006 − 720) / 2 ≈ 143` px of black bar on top and bottom. Width was the
-binding constraint this time, the opposite branch of the `if`.
+The final rectangle is **1920 × 720**, centered. Width was the binding
+constraint this time, the `if` did not fire, and the leftover space is
+vertical: roughly `(1006 − 720) / 2 ≈ 143` pixels of black bar top and
+bottom. That is letterboxing.
 
-Two different final rectangles, same algorithm, same source texture — the
-only thing that changed was which `aspect` value was fed in. This is the
-whole payoff of computing `aspect` *before* the fit logic runs, as a
-mode-agnostic scalar, rather than hard-coding "stretch to 4:3" into the
-layout math itself (the doc comment on `draw_display` calls this out
-explicitly: "This keeps the frontend mode-agnostic — any renderer's buffer
-size fits" — [`crates/coco-egui/src/app/frame.rs:86-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L86-L88)).
+Two different final rectangles, same algorithm, same source texture. The
+only thing that changed between them was which `aspect` value was fed in.
+That is the whole payoff of computing `aspect` *before* the fit logic runs,
+as a mode-agnostic scalar, rather than hard-coding "stretch to 4:3" into
+the layout math. The doc comment says so directly: "This keeps the frontend
+mode-agnostic — any renderer's buffer size fits"
+([`crates/coco-egui/src/app/frame.rs:86-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L86-L88)). A CoCo 1 in a legacy VDG
+mode hands this function a 288×224 buffer instead of a 640×240 one and
+needs no code change whatsoever, because the function never assumed a size.
 
 ### Why the pixels aren't square in the first place
 
-One more number worth internalizing, from `main.rs`'s own doc comment:
+One more number is worth internalizing, and it comes from `main.rs`'s own
+doc comment on `TARGET_ASPECT`:
 
 > Physical aspect the CoCo frame fills on an NTSC set (4:3). The
 > framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
@@ -466,205 +920,525 @@ One more number worth internalizing, from `main.rs`'s own doc comment:
 > tall, as on real hardware.
 > ([`crates/coco-egui/src/main.rs:84-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L84-L87))
 
-That 288×224 figure is `coco_core::video::FB_W`/`FB_H` — the CoCo 1/2
-legacy VDG canvas ([`crates/coco-core/src/video.rs:34-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L34-L38): 256×192 active
-area plus a 16-pixel border on every side). `4/3 ÷ (288/224) ≈ 1.037` — a
-3.7% horizontal stretch, matching the "~3%" in the comment. This is not an
-emulator quirk to apologize for: real NTSC CoCos drove non-square pixels
-onto a 4:3 tube exactly this way, because the hardware's dot clock and the
-television's physical aspect ratio were never designed to agree pixel-for-
-pixel. `TARGET_ASPECT` is the frontend choosing to reproduce that
-historical mismatch rather than "fix" it into square pixels no CoCo owner
-ever actually saw.
+That 288×224 figure is `coco_core::video::FB_W` and `FB_H` — the CoCo 1
+and 2 legacy VDG canvas, which is a 256×192 active area plus a 16-pixel
+border on every side ([`crates/coco-core/src/video.rs:33-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L33-L38)). Do the
+division: `4/3 ÷ (288/224) ≈ 1.037`, a 3.7% horizontal stretch, which
+matches the "~3%" the comment claims.
 
-One curiosity worth a passing note, precisely because it demonstrates
-immediate mode's forgiving nature: `boot::native_options` (the function
-that picks the *initial* OS window size before any frame has run) computes
-that starting height from `coco_core::video::FB_H` — the fixed 224-pixel
-legacy figure — for *every* machine variant, including a CoCo 3 whose real
-canvas is 640×240. That's an approximation, not a bug: the number only
-seeds the window's starting size. `draw_display` never consults it —
-every frame it re-reads `ui.available_rect_before_wrap()` fresh and
-recomputes the fit from scratch. Get the initial guess wrong and the worst
-that happens is the user sees one frame's worth of a slightly mis-sized
-window before the very next layout pass corrects it. There is no persisted
-layout state to get *permanently* wrong — which is, again, exactly what
-immediate mode buys you.
+This is not an emulator quirk to apologize for. Real NTSC CoCos drove
+non-square pixels onto a 4:3 tube in exactly this way, because the
+hardware's dot clock and the television's physical aspect ratio were never
+designed to agree pixel for pixel — the dot clock came from the colour
+subcarrier (week 1, §1.2), and the tube's shape came from a broadcast
+standard set decades earlier. `TARGET_ASPECT` is the frontend choosing to
+reproduce that historical mismatch rather than "fix" it into square pixels
+that no CoCo owner ever actually saw. Turning aspect correction off with F9
+is the other choice, and it is the right one when comparing a screenshot
+against a reference emulator pixel for pixel.
+
+### The initial window size, and why getting it wrong is harmless
+
+There is a small curiosity here that is worth a look precisely because it
+demonstrates how forgiving immediate mode is about mistakes. Here is the
+function that picks the *initial* operating-system window size, before any
+frame has ever run:
+
+```rust
+pub(crate) fn native_options(variant: MachineVariant) -> eframe::NativeOptions {
+    // Size for the aspect-corrected (wider) image so it always fits; the
+    // uncorrected image is narrower and simply leaves margin.
+    let img_h = coco_core::video::FB_H as f32 * SCALE;
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
+        .expect("embedded icon PNG is valid");
+    eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([img_h * TARGET_ASPECT, img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H])
+            .with_icon(icon)
+            .with_title(format!("cocovm — {}", machine_label(variant))),
+        ..Default::default()
+    }
+}
+```
+
+([`crates/coco-egui/src/boot.rs:58-71`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/boot.rs#L58-L71).) Notice the input:
+`coco_core::video::FB_H`, the fixed 224-pixel legacy figure, multiplied by
+`SCALE` — for *every* machine variant, including a CoCo 3 whose native
+canvas is 240 rows tall rather than 224. The manager's own per-VM window
+does the identical thing
+([`crates/coco-egui/src/manager/vm_windows.rs:23-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L23-L28)), deliberately, with a
+comment saying it uses "the same formula `main()` uses for the direct-boot
+window."
+
+That is an approximation, and it is not a bug, because of what the number
+is *for*. It seeds the window's starting size and nothing else.
+`draw_display` never consults it. Every single frame, that function re-reads
+`ui.available_rect_before_wrap()` and recomputes the fit from scratch. Get
+the initial guess wrong and the worst outcome is that the very first frame
+shows a picture with slightly more letterbox margin than a perfectly
+computed window would have had — and the user, who is free to resize the
+window anyway, will never know.
+
+Sit with the counterfactual for a moment, because it is the real lesson. In
+a retained-mode framework, an initial layout is frequently something that
+must be *corrected* later: you compute a size, build a widget tree around
+it, and if the size was wrong you now need invalidation, relayout, and
+possibly a resize handler that undoes assumptions the constructor made.
+Here there is no persisted layout state to get permanently wrong, because
+layout is not persisted at all. It is recomputed from the current window
+size sixty times a second, forever. An initial guess is a *guess*, in the
+plainest sense, and the next frame overwrites it.
 
 ---
 
 ## 15.4 Input routing: two keyboards, one matrix
 
-Host input enters through one function per frame, `CocoApp::handle_input`
-([`crates/coco-egui/src/app/input.rs:25-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L25-L43)), called at the very top of
+Getting pixels out of the emulator is half the seam. Getting keystrokes in
+is the other half, and it is the more interesting half, because a modern
+host keyboard and a 1980 matrix keyboard disagree about what a keystroke
+even *is*. This section is about that disagreement and the two
+incompatible ways this crate resolves it.
+
+Host input enters through one function per frame, called at the very top of
 `step_emulation` — before any field runs, so the matrix state a field sees
 is this frame's, not last frame's:
 
 ```rust
-pub(crate) fn handle_input(&mut self, ctx: &egui::Context) {
-    self.consume_app_shortcuts(ctx);
+    pub(crate) fn handle_input(&mut self, ctx: &egui::Context) {
+        self.consume_app_shortcuts(ctx);
 
-    let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
-    self.handle_hotkeys_and_paste(&events);
-    if self.kb_mode == KbMode::Symbolic {
-        self.queue_symbolic_taps(&events);
-    }
+        let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
+        self.handle_hotkeys_and_paste(&events);
+        if self.kb_mode == KbMode::Symbolic {
+            self.queue_symbolic_taps(&events);
+        }
 
-    if self.type_ahead.is_active() {
-        return;
+        // While a paste / type-ahead burst is draining it owns the matrix, in either
+        // mode, so replayed taps aren't clobbered by the per-frame positional writes.
+        // (The taps themselves advance once per *emulated field*, in `update`.)
+        if self.type_ahead.is_active() {
+            return;
+        }
+        if self.kb_mode == KbMode::Positional {
+            self.drive_matrix_positionally(&events, mods);
+        }
     }
-    if self.kb_mode == KbMode::Positional {
-        self.drive_matrix_positionally(&events, mods);
+```
+
+([`crates/coco-egui/src/app/input.rs:25-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L25-L43).) `ctx.input(|i| ...)` is
+egui's own read of this frame's raw events — every key press and release,
+every mouse move, every paste since the last frame — handed to you inside a
+closure. This function copies out the two things it needs and leaves
+immediately, which is deliberate: with the events cloned into a local
+`Vec`, the four consumers below can each iterate the whole list
+independently, in order, without holding anything borrowed from the context
+while they mutate `self`.
+
+Four things then happen with that list, in a specific order, and the order
+encodes a priority. App-level shortcuts go first and are *consumed*, so
+they never reach the CoCo at all. Hotkeys and clipboard paste go second.
+Symbolic-mode text queuing goes third. And direct matrix driving goes last
+— only in positional mode, and only when no paste or type-ahead burst is
+still draining.
+
+### Shortcuts the CoCo never sees
+
+The first stage is the one that decides which keystrokes belong to the
+application rather than to the emulated machine:
+
+```rust
+    pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
+        // ⌘N / Ctrl+N = Machine → New….
+        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
+            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
+        }
+        // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves
+        // it (`save_state.rs`).
+        for slot in 0..save_state::QUICK_SLOTS {
+            if ctx.input_mut(|i| i.consume_shortcut(&save_state::save_slot_shortcut(slot))) {
+                self.quick_save(slot);
+            }
+            if ctx.input_mut(|i| i.consume_shortcut(&save_state::load_slot_shortcut(slot))) {
+                self.quick_load(slot, ctx);
+            }
+        }
     }
+```
+
+([`crates/coco-egui/src/app/input.rs:49-64`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L49-L64).) The word doing the work
+is `consume_shortcut`, and its doc comment on the enclosing function
+explains why it must run first: these shortcuts are "consumed before the
+event snapshot `handle_input` takes, so the keypress never reaches the CoCo
+matrix or the symbolic type-ahead." Pressing ⌘N opens the New Machine
+dialog; it does not also type an `N` into BASIC. The quick-save and
+quick-load slots are week 16's feature, wired up here.
+
+The second stage handles keys the application claims without consuming, plus
+the clipboard:
+
+```rust
+    pub(crate) fn handle_hotkeys_and_paste(&mut self, events: &[egui::Event]) {
+        for ev in events {
+            match ev {
+                egui::Event::Key { key, pressed: true, repeat: false, .. } => match key {
+                    egui::Key::F12 => {
+                        let next = match self.kb_mode {
+                            KbMode::Positional => KbMode::Symbolic,
+                            KbMode::Symbolic => KbMode::Positional,
+                        };
+                        self.set_mode(next);
+                    }
+                    egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
+                    egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
+                    egui::Key::F11 => self.debugger.open = !self.debugger.open,
+                    _ => {}
+                },
+                egui::Event::Paste(text) => self.enqueue_text(text),
+                _ => {}
+            }
+        }
+    }
+```
+
+([`crates/coco-egui/src/app/input.rs:70-90`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L70-L90).) Two details repay a second
+look. The pattern `pressed: true, repeat: false` means these toggles fire
+once per physical press and ignore the operating system's auto-repeat —
+holding F9 down does not strobe aspect correction on and off forty times a
+second. And `Event::Paste` is a single event regardless of platform,
+because, as the function's own doc comment notes, egui and eframe normalise
+the platform paste shortcut — ⌘V on macOS, Ctrl+V elsewhere — into one
+event. The frontend never has to know which operating system it is on.
+
+### Positional versus symbolic: two philosophies, one matrix
+
+`coco-egui` ships two entirely different answers to the question "which
+CoCo key does this host keypress mean?", switchable live with F12, because
+the two answers serve goals that cannot both be satisfied at once.
+
+*Positional* mode, the default, maps physical key *location* to matrix
+*position*, which is MAME's convention. Press the host key that sits where
+a real CoCo key would sit, and whatever letter is printed on the CoCo key
+underneath is what appears — including shift behaviour, exactly as the
+ROM's own scan-and-shift logic (week 10) decides it. The map is a flat
+`match` from `egui::Key` to the `(row, col)` `Pos` type week 10 defined:
+
+```rust
+        K::A => (0, 1), K::B => (0, 2), K::C => (0, 3), K::D => (0, 4),
+```
+
+...through to the punctuation block, where the mapping stops being obvious:
+
+```rust
+        K::Minus => (5, 2),      // CoCo ':'
+        K::Semicolon => (5, 3),  // CoCo ';'
+        K::Comma => (5, 4),      // CoCo ','
+        K::Equals => (5, 5),     // CoCo '-'
+        K::Period => (5, 6),     // CoCo '.'
+        K::Slash => (5, 7),      // CoCo '/'
+```
+
+([`crates/coco-egui/src/keymap.rs:5-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L5-L43).) Read those comments
+carefully: pressing the host's minus key produces a colon on the CoCo,
+because the CoCo's colon key sits where a US keyboard's minus key sits.
+That looks like a bug and is the whole point. Positional mode promises
+physical correspondence, not glyph correspondence.
+
+Positional is what a game wants. An arcade-style CoCo game reads specific
+matrix rows every field (week 10's `sense()`), not ASCII characters, and it
+expects "the key at this physical spot" to behave identically to a real
+keyboard regardless of what glyph a modern operating system thinks that key
+produces. The implementation is a direct, continuous mirror:
+
+```rust
+    pub(crate) fn drive_matrix_positionally(&mut self, events: &[egui::Event], mods: egui::Modifiers) {
+        let joystick_keys = self.joysticks.keys_active();
+        let kb = &mut self.machine.bus.keyboard;
+        kb.set(kbd::SHIFT, mods.shift);
+        kb.set(kbd::CTRL, mods.ctrl);
+        kb.set(kbd::ALT, mods.alt);
+        for ev in events {
+            if let egui::Event::Key { key, physical_key, pressed, .. } = ev {
+                let k = physical_key.unwrap_or(*key);
+                if k == egui::Key::F12 {
+                    continue;
+                }
+                if joystick_keys && is_joystick_key(k) {
+                    continue;
+                }
+                if let Some(pos) = key_to_pos(k) {
+                    kb.set(pos, *pressed);
+                }
+            }
+        }
+    }
+```
+
+([`crates/coco-egui/src/app/input.rs:115-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L115-L135).) The three modifier
+lines are set from egui's `Modifiers` snapshot rather than from events,
+because a modifier is a *level*, not an edge — what matters is whether
+Shift is down right now, not whether it was pressed this frame. Then every
+key event sets its mapped position true or false to match `pressed`. Note
+`physical_key.unwrap_or(*key)`: the physical key is preferred where egui
+can supply it, which is what makes positional mode behave the same on a
+French AZERTY keyboard as on a US QWERTY one. And F12 is skipped
+explicitly, since it belongs to the mode toggle rather than to the CoCo.
+
+*Symbolic* mode maps the character you actually typed to whichever CoCo key
+and shift state *produces* that character. That is `kbd::char_key`, which
+week 10 already walked in detail (§10.8), including the way it corrects for
+the CoCo's inverted shift convention where unshifted keys show uppercase.
+Symbolic is what you want for *typing*: paste a BASIC listing, or type at
+the prompt on a non-US layout, and the letters that appear match the
+letters you pressed, independent of physical key position.
+
+Symbolic mode does not drive the matrix directly at all. Instead it
+*queues*:
+
+```rust
+    pub(crate) fn queue_symbolic_taps(&mut self, events: &[egui::Event]) {
+        let joystick_keys = self.joysticks.keys_active();
+        for ev in events {
+            match ev {
+                egui::Event::Text(text) => self.enqueue_text(text),
+                egui::Event::Key { key, pressed: true, .. } => {
+                    if joystick_keys && is_joystick_key(*key) {
+                        continue;
+                    }
+                    if let Some(pos) = control_key_pos(*key) {
+                        self.type_ahead.queue.push_back((pos, false));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+```
+
+([`crates/coco-egui/src/app/input.rs:94-110`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L94-L110).) Text events go through
+`enqueue_text`, which is the shared path for both typed characters and
+clipboard pastes:
+
+```rust
+    pub(crate) fn enqueue_text(&mut self, text: &str) {
+        for c in text.chars() {
+            if let Some(entry) = kbd::char_key(c) {
+                self.type_ahead.queue.push_back(entry);
+            }
+        }
+    }
+```
+
+([`crates/coco-egui/src/app/input.rs:17-23`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L17-L23).) Characters with no CoCo
+key at all are silently skipped rather than substituted — pasting text
+containing an em-dash or an accented vowel drops those characters instead
+of injecting something wrong. Keys that produce no text, like Enter and the
+arrows, do not arrive as `Event::Text` and so are handled separately by
+`control_key_pos` ([`crates/coco-egui/src/keymap.rs:46-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L46-L61)), a second,
+much smaller map for exactly that set.
+
+Switching between the two modes is not free, and the code that does it is
+one of those five-line functions that prevents a bug you would otherwise
+spend an evening on:
+
+```rust
+    pub(crate) fn set_mode(&mut self, mode: KbMode) {
+        if mode != self.kb_mode {
+            self.kb_mode = mode;
+            self.machine.bus.keyboard.release_all();
+            self.type_ahead.clear();
+        }
+    }
+```
+
+([`crates/coco-egui/src/app/input.rs:7-13`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L7-L13).) Positional mode holds keys
+down for as long as the host key is held. If the mode changes while a key
+is down, the release event will be interpreted by the *new* mode — which,
+in symbolic mode, ignores releases entirely — and that matrix position
+would stay stuck down forever, with BASIC repeating a character until the
+end of time. `release_all` makes the mode switch a clean slate, and
+`type_ahead.clear()` does the same for any queue mid-drain.
+
+### Contested keys: the joystick problem
+
+Both modes share one more wrinkle, and it is the kind of detail that only
+shows up once two features exist at the same time. When a joystick port is
+set to `JoySource::Keys` — arrows for the axes, Z and X for the fire
+buttons — those six keys must stop reaching the CoCo keyboard matrix
+entirely, in *either* mode. Otherwise pressing right to steer also types a
+character, and the game's own keyboard handler sees input the player never
+meant to give it.
+
+The arbitration is one predicate, consulted by both consumers:
+
+```rust
+/// Keys claimed by `joy::JoySource::Keys` (arrows for the axes, Z/X for the fire
+/// buttons) once a joystick port uses that source — these stop reaching the CoCo
+/// keyboard matrix so the two consumers don't fight over the same physical keys.
+pub(crate) fn is_joystick_key(key: egui::Key) -> bool {
+    matches!(
+        key,
+        egui::Key::ArrowUp
+            | egui::Key::ArrowDown
+            | egui::Key::ArrowLeft
+            | egui::Key::ArrowRight
+            | egui::Key::Z
+            | egui::Key::X
+    )
 }
 ```
 
-`ctx.input(|i| ...)` is egui's own read of this frame's raw events — every
-key press/release, mouse move, paste, etc. since the last frame — handed to
-you as a plain `Vec` you're free to iterate over multiple times. Four
-things happen with it, in order: app-level shortcuts (⌘N, quick-save/load
-slots — these never reach the CoCo at all), hotkeys and clipboard paste
-(F9/F10/F11/F12, `Event::Paste`), symbolic-mode text queuing, and finally
-— only in positional mode, and only when no paste/type-ahead burst is
-still draining — direct matrix driving.
+([`crates/coco-egui/src/keymap.rs:63-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L63-L76).) You saw it guarded by
+`if joystick_keys && is_joystick_key(...) { continue; }` in both
+`drive_matrix_positionally` and `queue_symbolic_taps` above. One predicate,
+two call sites, one rule: whoever owns a physical key owns it exclusively.
+That is a pattern worth stealing whenever two subsystems can both plausibly
+claim the same input.
 
-### Positional vs. symbolic: two philosophies, one matrix
+### `TypeAhead` as a lock
 
-`coco-egui` ships two entirely different answers to "which CoCo key does
-this host keypress mean?", switchable live with F12
-(`CocoApp::set_mode`), because the two answers serve incompatible goals.
+Chapter 10 already walked `TypeAhead::advance` in full — the hold-and-gap
+state machine that drains queued taps one emulated *field* at a time rather
+than one host frame at a time. The reason, from §10.8, is that a real key
+press has to survive across multiple 60 Hz `KEYIN` scans of the ROM to
+register at all; a press and release confined to a single field can land
+entirely between two scans and simply vanish. The tuned constants are
+`TYPE_HOLD_FIELDS = 2` and `TYPE_GAP_FIELDS = 1`
+([`crates/coco-egui/src/main.rs:100-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L100-L102)): hold each synthesized keypress
+for two fields, safely longer than one scan interval, then release for one
+field before the next tap begins, so that two identical consecutive
+characters — the `"AA"` in a pasted `DATA` statement — read as two separate
+keystrokes instead of one long hold that the ROM's own debouncing (week 10)
+would collapse into a single `A`.
 
-**Positional** (the default) maps *physical key location* to *matrix
-position*, MAME's convention: press the host key that sits where a real
-CoCo key would sit, and whatever letter is actually printed on the CoCo key
-underneath is what appears — SHIFT state included, exactly as the ROM's
-own scan-and-shift logic (week 10) decides it. `key_to_pos`
-([`crates/coco-egui/src/keymap.rs:5-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L5-L43)) is a flat match from
-`egui::Key` to the `(row, col)` `Pos` type week 10 defined:
+What is new to *this* chapter is how the rest of the application treats
+that queue: as a lock on the keyboard matrix. The predicate is trivial:
 
 ```rust
-K::A => (0, 1), K::B => (0, 2), K::C => (0, 3), K::D => (0, 4),
-// ...
-K::Minus => (5, 2),      // CoCo ':'
-K::Semicolon => (5, 3),  // CoCo ';'
+    /// True while taps are still queued or a tap is mid hold/gap — i.e. a paste or
+    /// type-ahead burst is still draining and owns the keyboard matrix.
+    pub(crate) fn is_active(&self) -> bool {
+        !self.queue.is_empty() || !matches!(self.phase, TypePhase::Idle)
+    }
 ```
 
-Positional mode is what a game wants: an arcade-style CoCo game reads
-specific matrix rows every field (week 10's `sense()`), not ASCII
-characters, and it expects "the key at this physical spot" to behave
-identically to a real keyboard regardless of what glyph a modern OS thinks
-that key produces. `drive_matrix_positionally`
-([`crates/coco-egui/src/app/input.rs:115-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L115-L135)) sets SHIFT/CTRL/ALT straight
-from egui's `Modifiers` and then walks every keyboard event, setting each
-mapped `Pos` true or false to match `pressed` — a direct, continuous
-mirror of host key state onto CoCo matrix state, field after field.
+([`crates/coco-egui/src/typeahead.rs:41-45`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/typeahead.rs#L41-L45).) It is checked in exactly
+one place for this purpose: `handle_input`'s early return, quoted at the
+top of this section. While a paste or a symbolic-typed burst is still
+draining, positional input is suppressed outright, in *both* keyboard
+modes.
 
-**Symbolic** maps *the character you actually typed* to whichever CoCo key
-(and shift state) *produces that character* — `kbd::char_key`, which
-week 10 already walked in detail (§10.8: it corrects for the CoCo's
-inverted shift convention, where unshifted keys show uppercase). This is
-what you want for *typing*: paste a BASIC listing, or type at the prompt on
-a non-US keyboard layout, and the letters that appear match the letters you
-pressed, independent of physical key position. Because a host keystroke
-and a CoCo matrix press aren't a 1:1 timing match — see the `TypeAhead`
-discussion below — symbolic input doesn't drive the matrix directly at
-all; it *queues* taps: `queue_symbolic_taps`
-([`crates/coco-egui/src/app/input.rs:94-110`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L94-L110)) turns `Event::Text` and
-control keys into `(Pos, bool)` entries pushed onto
-`self.type_ahead.queue`.
+Think about what happens without that gate. The type-ahead queue writes a
+matrix position true, expecting it to stay true for two whole fields. But
+`drive_matrix_positionally` runs once per *host frame*, and on a 144 Hz
+display that is more than twice per field. It would set every mapped
+position to match the host's current key state — which, for the key
+type-ahead is currently synthesizing, is *not pressed*, because the user's
+finger is nowhere near it. The synthesized keypress would be cancelled
+milliseconds after it started, and pastes would drop characters
+unpredictably, more often on faster displays. Handing the queue
+uncontested ownership of the matrix for its whole draining run is the fix,
+and it costs two lines.
 
-Both modes share one more wrinkle: **joystick keys are contested
-territory.** When a joystick port is set to `JoySource::Keys` (arrows for
-axes, Z/X for fire), those six keys must stop reaching the CoCo keyboard
-matrix entirely, in *either* mode — `is_joystick_key`
-([`crates/coco-egui/src/keymap.rs:66-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L66-L76)) is consulted by both
-`drive_matrix_positionally` and `queue_symbolic_taps` before they'll honor
-an arrow key, so the two consumers (keyboard emulation, joystick emulation)
-never fight over the same physical key.
-
-### `TypeAhead`: why a queue, and why it's not new material here
-
-Chapter 10 already walked `TypeAhead::advance` in full — the hold/gap state
-machine that drains queued taps one emulated *field* at a time (not one
-host frame at a time), because a real key press needs to survive across
-multiple 60 Hz `KEYIN` scans of the ROM to register at all; a press and
-release confined to a single field can land entirely between two scans and
-simply vanish (§10.8's exact framing). `TYPE_HOLD_FIELDS = 2` and
-`TYPE_GAP_FIELDS = 1` ([`crates/coco-egui/src/main.rs:100-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L100-L102)) are the
-tuned constants: hold each synthesized keypress for two fields (safely
-longer than one scan interval), then release for one field before the next
-tap starts, so two identical consecutive characters — `"AA"` — read as two
-separate keystrokes rather than one long hold that the ROM's own
-debouncing (week 10) would collapse into a single `A`.
-
-What's new to this chapter is *how the rest of the app treats the queue as
-a lock*. `TypeAhead::is_active()` — non-empty queue, or a tap mid-hold/gap
-— is checked in exactly one place, `handle_input`'s early return quoted
-above: while a paste or symbolic-typed burst is still draining, positional
-input is suppressed outright, in *both* keyboard modes. Without that gate,
-a per-frame positional key-matrix write racing against a per-*field*
-type-ahead tap would stomp on it unpredictably — the queue needs
-uncontested ownership of the matrix for its whole draining run. Advancing
-the queue itself only happens inside `step_emulation`'s field loop
-(`if self.type_ahead.is_active() { self.type_ahead.advance(...) }`,
-quoted in §15.2) — once per *emulated field*, never once per host frame —
-which is exactly why paste timing stays correct on a 240 Hz gaming monitor
-and a 30 Hz remote desktop session alike: it's paced by `field_debt`, the
-same accumulator that paces everything else.
+Advancing the queue happens in only one place too, and it is inside
+`step_emulation`'s field loop rather than anywhere in `handle_input`:
+`if self.type_ahead.is_active() { self.type_ahead.advance(...) }`, quoted
+back in §15.2. Once per *emulated field*, never once per host frame. That
+single placement decision is why paste timing stays correct on a 240 Hz
+gaming monitor and a 30 Hz remote desktop session alike — it is paced by
+`field_debt`, the same accumulator that paces everything else in the
+machine.
 
 ---
 
 ## 15.5 Audio: one paragraph
 
+Audio genuinely does deserve one paragraph here, and the brevity is a
+feature: week 11 built the entire chain, and repeating it would be padding.
 `step_emulation` ends its `running` branch with two lines:
 
 ```rust
-let sample_rate = self.machine.audio_sample_rate();
-self.audio.push_samples(self.machine.take_audio(), sample_rate);
+            let sample_rate = self.machine.audio_sample_rate();
+            self.audio.push_samples(self.machine.take_audio(), sample_rate);
 ```
 
 `self.machine.take_audio()` drains the per-field-rendered sample grid week
-11 built ([`coco-core/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs), [`machine/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs) — cycle-timestamped
-DAC events rendered once per scanline into a ~63 kHz oversampled grid).
-`self.audio.push_samples` hands those samples to the *host* audio chain
-week 11 also fully covered: the DC blocker, the Butterworth low-pass, the
-linear-interpolation resampler down to the device's real output rate, the
-cross-thread ring buffer a `cpal` callback drains, and the underrun fade
-that replaces a click with silence when the ring runs dry. Nothing about
-that chain changes in this chapter — `AudioOutput::push_samples` is simply
-the one call site where the per-frame loop hands it fresh work, at exactly
-the cadence `field_debt` decided fields should run. If you want the "why"
-behind any of it, that's Chapter 11, not this one.
+11 built — cycle-timestamped DAC events rendered once per scanline into an
+oversampled grid ([`coco-core/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs),
+[`machine/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/audio.rs)). `self.audio.push_samples` hands those samples to
+the host audio chain week 11 also covered in full: the DC blocker, the
+Butterworth low-pass that prevents the decimation from folding
+above-Nyquist content back into the audible band, the resampler down to the
+device's real output rate, the cross-thread ring buffer a `cpal` callback
+drains, and the underrun fade that replaces a click with silence when the
+ring runs dry. Nothing about any of that changes in this chapter.
+
+What *is* this chapter's business is the seam itself, and the audio
+module's own doc comment describes it in one sentence worth quoting:
+
+> The device runs on its own high-priority thread and pulls frames out of a
+> `Mutex<VecDeque<[f32; 2]>>` that `push_samples` (called once per `update()`
+> on the UI thread) fills. There is no synchronisation beyond that mutex —
+> audio and video are independently paced, exactly like a real CoCo's TV and
+> speaker.
+> ([`crates/coco-egui/src/audio.rs:6-10`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L6-L10))
+
+That last clause is the design in miniature. The frontend does not try to
+keep audio and video in lockstep, because the hardware never did: a real
+CoCo's speaker and a real CoCo's television were driven by the same
+machine but synchronized by nothing except both being fed from the same
+clock. Here, `field_debt` decides how many fields run, those fields
+generate however many samples they generate, and `push_samples` hands them
+over at exactly that cadence. The ring buffer absorbs the jitter. Nothing
+blocks, nothing waits, and there is no second thread in the emulator to
+reason about — only in `cpal`, on the consuming side.
+
+For the "why" behind any of the filtering, that is Chapter 11, not this
+one.
 
 ---
 
 ## 15.6 The VM manager: machines as data
 
-Run the bare `coco` binary with no arguments and you don't get a single
-booted machine — you get the **manager**: a VirtualBox/Parallels-style
-window listing every machine you've defined, with Start/Pause/Stop
-controls and a detail pane for editing hardware and media
-([`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs), module doc comment). This is a genuinely
-different kind of code from everything else in this course: not emulation
-at all, but *application state that happens to manage emulators* — worth
-studying because it's the shape any serious frontend eventually needs
-around a headless core, and because it exercises the borrow-checker
-discipline from week 1 (§1.4) in a completely different setting.
+Everything up to here has been the emulator's own window. This section is
+about a second window entirely — and about a category of code the course
+has not touched in fourteen weeks.
+
+Run the bare `coco` binary with no arguments and you do not get a booted
+machine at all. You get the *manager*: a window in the style of VirtualBox
+or Parallels, listing every machine you have defined, with Start, Pause and
+Stop controls and a detail pane for editing hardware and attached media.
+The dispatch is three lines in `main()` — "bare `coco` (no CLI arguments)
+opens the CocoVM manager window; any argument keeps the direct-boot
+emulator path" ([`crates/coco-egui/src/main.rs:110-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L110-L114)) — and everything
+downstream of it is in [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its
+submodules.
+
+This is worth studying for two reasons that have nothing to do with the
+6809. First, it is the shape any serious frontend eventually needs around a
+headless core, and the problems it solves — persistence, identity,
+crash-safety, forward compatibility — are the same problems in any
+application that saves the user's work. Second, it exercises the
+borrow-checker discipline from week 1 (§1.4) in a setting where no
+hardware is involved at all, which is the best possible evidence that the
+discipline was a general design principle rather than an emulator trick.
 
 ### Machine definitions as data, not code
 
-A machine is a small, human-editable TOML file,
-`config_dir()/machines/<slug>.toml` — never a database, never a binary
-format. `MachineDef` ([`crates/coco-egui/src/machine_def.rs:49-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L49-L76)) is a
-**DTO** (Data Transfer Object — a struct whose only job is to mirror an
-external file format field-for-field, kept deliberately separate from the
-`coco_core::MachineConfig` the program actually runs on):
+A machine is a small, human-editable TOML file at
+`config_dir()/machines/<slug>.toml`. Not a database. Not a binary format.
+Not a serialized object graph. A file you can open in a text editor,
+understand, and fix.
+
+The type mirroring that file is `MachineDef`:
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MachineDef {
+    /// Must equal [`CURRENT_SCHEMA`] to load; see that constant's doc.
     pub schema: u32,
+    /// Display name — the manager list row's title.
     pub name: String,
+    /// Informational only (e.g. an ISO date); never interpreted.
     #[serde(default)]
     pub created: Option<String>,
     pub hardware: HardwareDTO,
@@ -674,271 +1448,609 @@ pub struct MachineDef {
     pub peripherals: PeripheralsDTO,
     #[serde(default)]
     pub ui: UIDTO,
-    #[serde(skip)]
-    pub unknown: toml::Table,
-}
 ```
 
-Why a separate DTO instead of `#[derive(Serialize)]` on `MachineConfig`
-itself? Because an internal `coco-core` refactor (renaming a variant,
-restructuring a field) would otherwise silently change what's written to
-disk, breaking every user's saved machine out from under them with no
-warning. The DTO is a deliberate translation seam: `to_machine_config`
-converts DTO → real config (running `MachineConfig::validate` along the
-way, so an invalid hardware combination — a CoCo 2 asked for PAL, say —
-fails at load with one clear error instead of at boot with a confusing
-one), and it reads friendly strings on disk ("512k", "mc6847t1") instead of
-whatever `coco-core`'s enum discriminants happen to be this week.
+([`crates/coco-egui/src/machine_def.rs:49-64`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L49-L64).) It is deliberately a
+*DTO* — a Data Transfer Object, meaning a struct whose only job is to
+mirror an external data format field for field and be converted to and from
+the types the program actually runs on. It is kept separate from
+`coco_core::MachineConfig`, the type the emulator is actually built from.
 
-`unknown` deserves a look, because it's a small, well-engineered piece of
-forward compatibility you'll want to imitate: any TOML key `load_one`
-doesn't recognize (top level, or one level into a known section) is logged
-via `tracing::warn!` *and* stashed in this field
-([`crates/coco-egui/src/machine_def/io.rs:69-90`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L69-L90), `extract_unknown`) rather
-than silently dropped. When the definition is saved back out —
-`merge_unknown` — those unrecognized keys are folded back into the freshly
-serialized table before it hits disk. The consequence: a newer build that
-adds a `[hardware].turbo_multiplier` key, opened and re-saved by an older
-build that doesn't know about it yet, doesn't erase that key. Editing a
-machine's name in the manager must never destroy a setting a future version
-of the same program wrote.
+Why not just put `#[derive(Serialize, Deserialize)]` on `MachineConfig` and
+save that? The module doc gives the reason, and it is a good one: an
+internal `coco-core` refactor — renaming an enum variant, restructuring a
+field, splitting one config into two — would otherwise silently change what
+is written to disk, breaking every user's saved machines out from under
+them, with no compiler error and no warning. The DTO is a deliberate
+translation seam. It reads friendly strings on disk (`"512k"`,
+`"mc6847t1"`) rather than whatever `coco-core`'s enum discriminants happen
+to serialize as this week, and its `to_machine_config` runs
+`MachineConfig::validate` along the way — so an invalid hardware
+combination, a CoCo 2 asked for PAL, say, fails at load with one clear
+error rather than at boot with a confusing one.
+
+Every `#[serde(default)]` on that struct is a small forward-compatibility
+promise too: a definition file with no `[media]` section at all is not an
+error, it is a machine with no media.
+
+### Surviving a newer version of yourself
+
+The last field of `MachineDef` is the one worth imitating, and it solves a
+problem most configuration formats simply lose to:
+
+```rust
+    #[serde(skip)]
+    pub unknown: toml::Table,
+```
+
+([`crates/coco-egui/src/machine_def.rs:74-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L74-L75).) Any TOML key the
+loader does not recognize — at the top level, or one level into a known
+section — is both logged via `tracing::warn!` and stashed in this field
+rather than silently dropped. The collection is a plain double loop:
+
+```rust
+fn extract_unknown(table: &toml::Table) -> toml::Table {
+    let mut unknown = toml::Table::new();
+    for (key, value) in table {
+        if !TOP_LEVEL_KEYS.contains(&key.as_str()) {
+            unknown.insert(key.clone(), value.clone());
+        }
+    }
+```
+
+([`crates/coco-egui/src/machine_def/io.rs:69-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L69-L75).) When the definition
+is written back out, `merge_unknown` folds those keys into the freshly
+serialized table before it hits disk
+([`crates/coco-egui/src/machine_def/io.rs:99-118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L99-L118)).
+
+The consequence is the thing to remember. Suppose a future build adds a
+`[hardware].turbo_multiplier` key. A user sets it, then opens the same
+machine in an older build that has never heard of it, changes the machine's
+name, and saves. Without `unknown`, the older build would write out only
+the keys it knows and the turbo setting would be gone — destroyed by an
+unrelated edit, with no error and no way to notice until the newer build
+was run again. With it, the key survives untouched.
+
+Distinguish that from the *schema* number, which is handled the opposite
+way. An unrecognized key is forward-compatible and merely warned about; an
+unrecognized schema number is fatal, because it means the shape of the file
+itself may have changed and no key-level reasoning is safe
+([`crates/coco-egui/src/machine_def.rs:36-41`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L36-L41)). Additive changes are
+tolerated; structural ones are refused. That is exactly the right split.
 
 ### Atomic saves: tmp, then rename
 
-`machine_def::save` ([`crates/coco-egui/src/machine_def/io.rs:189-209`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L189-L209))
-never writes the final file directly:
+`machine_def::save` never writes the final file directly:
 
 ```rust
-let tmp_path = dir.join(format!("{slug}.toml.tmp"));
-let final_path = dir.join(format!("{slug}.toml"));
-fs::write(&tmp_path, text).map_err(...)?;
-fs::rename(&tmp_path, &final_path).map_err(...)?;
+    let tmp_path = dir.join(format!("{slug}.toml.tmp"));
+    let final_path = dir.join(format!("{slug}.toml"));
+    fs::write(&tmp_path, text).map_err(|e| format!("{}: {e}", tmp_path.display()))?;
+    fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))?;
 ```
 
-Write the complete new contents to a sibling `.tmp` file first, then
-`rename` it over the real path. A crash, power loss, or `kill -9` between
-those two calls leaves either the untouched old file or the fully-written
-`.tmp` — never a half-written `<slug>.toml`, because `rename` on every
-platform this program targets is atomic with respect to a concurrent
-reader: a reader either sees the file before the rename or after, never
-mid-write. This exact pattern reappears verbatim for thumbnail PNGs
-(`write_thumbnail_png`, [`crates/coco-egui/src/manager.rs:181-198`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L181-L198)) — the
-manager applies the same crash-safety discipline to *every* file it writes
-on the user's behalf, not just the one that would be embarrassing to lose.
+([`crates/coco-egui/src/machine_def/io.rs:204-207`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L204-L207).) The complete new
+contents go to a sibling `.tmp` file first, and only then is that file
+renamed over the real path.
+
+The property this buys is worth stating precisely, because "atomic" gets
+used loosely. A crash, a power loss, or a `kill -9` at *any* instant during
+this sequence leaves the filesystem holding either the untouched old file
+or the fully-written temporary one. It can never leave a half-written
+`<slug>.toml`, because a rename over an existing path is atomic with
+respect to a concurrent reader on every platform this program targets: a
+reader either observes the file before the rename or after it, never
+during. Writing in place has no such guarantee — a process killed halfway
+through `fs::write` leaves a truncated file that will not parse, and the
+user's machine definition is gone.
+
+The same pattern appears verbatim for thumbnail PNGs a few paragraphs
+below. The manager applies this discipline to *every* file it writes on the
+user's behalf, not merely to the one that would be most embarrassing to
+lose, which is the right instinct: the discipline is cheap enough that
+deciding case by case costs more thought than it saves.
 
 ### The slug is the identity
 
-A machine's filename stem — its **slug** — is its persistent identity, not
-its display name (`plan-machine-persistence.md`'s "Identity = slug," quoted
-in the module doc). `slugify` ([`crates/coco-egui/src/machine_def.rs:137-156`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L137-L156))
-lowercases, keeps `[a-z0-9]`, collapses everything else to single dashes;
-`unique_slug` appends `-2`, `-3`, … until a candidate isn't taken. Renaming
-a machine (`ManagerApp::migrate_slug`,
-[`crates/coco-egui/src/manager/lifecycle.rs:99-152`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L99-L152)) is consequently exactly
-two filesystem moves — `<old>.toml` → `<new>.toml`, and its artifact
-directory alongside it — with a rollback if the second move fails partway
-(the definition file is renamed back rather than left pointing at a
-directory that no longer matches its own name). Relative `[media]` paths
-inside a definition resolve *against the slug's own artifact directory*
-(`resolve_media_path`, [`crates/coco-egui/src/machine_def.rs:193-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L193-L202)), which
-is precisely why the rename has to move that directory too: a disk image
-referenced as `"disk0.dsk"` means a different absolute file the instant the
-slug changes, unless the artifact directory moves with it.
+A machine's filename stem — its *slug* — is its persistent identity, not
+its display name. Renaming a machine from "Alpha" to "Alpha Two" changes
+what the list row says; it also has to change what the file is called, and
+those are two different operations with different failure modes.
 
-### Start/Stop, and where the running machine actually lives
+`slugify` lowercases, keeps `[a-z0-9]`, collapses every run of other
+characters to a single dash, trims leading and trailing dashes, and falls
+back to `"machine"` if nothing survives
+([`crates/coco-egui/src/machine_def.rs:137-156`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L137-L156)). Collisions are then
+resolved by a function that is pleasingly boring:
 
-`MachineEntry` ([`crates/coco-egui/src/manager.rs:102-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L102-L133)) is one row: a
-slug, a parsed `MachineDef`, and — the only field that changes what's
-*running* — `pub vm: Option<Box<CocoApp>>`. Stopped is `None`; Start
-(`ManagerApp::start_vm`, [`crates/coco-egui/src/manager/lifecycle.rs:69-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L69-L76))
-calls `crate::launch_machine`, the manager's counterpart to the CLI's
-`boot::boot_app` (both build a `CocoApp` from a config plus a set of
-mounted media — `launch.rs`'s module doc names the CLI path as its
-sibling), and stores `Some(Box::new(vm))` on success or records the failure
-string in `entry.launch_error` on failure, leaving `vm` untouched at
-`None`. Stop (`stop_vm`) writes a final thumbnail, then flushes dirty media
-(the same `flush_media` — write back modified disks and tape — that
-`CocoApp::on_exit` runs for the direct-boot window) and drops the `Box`.
+```rust
+pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {
+    if !taken(base) {
+        return base.to_string();
+    }
+    let mut suffix = 2u32;
+    loop {
+        let candidate = format!("{base}-{suffix}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+```
+
+([`crates/coco-egui/src/machine_def.rs:161-173`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L161-L173).) The `taken` predicate is
+passed in rather than hard-coded, and the call sites are where the care
+shows. Creating a machine checks *both* the in-memory list and the
+directory on disk, because the in-memory list would miss a `<slug>.toml`
+written by a second running instance or placed there by hand since startup
+([`crates/coco-egui/src/manager/lifecycle.rs:41-45`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L41-L45)). Without the
+on-disk half of that check, `save`'s unconditional rename would silently
+overwrite somebody else's file.
+
+Renaming is therefore exactly two filesystem moves: `<old>.toml` to
+`<new>.toml`, and the machine's artifact directory alongside it. If the
+second move fails partway, the first is rolled back — the definition file
+is renamed back rather than left pointing at a directory that no longer
+matches its own name
+([`crates/coco-egui/src/manager/lifecycle.rs:99-152`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L99-L152)). The comment
+on that rollback states the priority plainly: "a stale slug beats relative
+[media] entries resolving into a directory that no longer matches the
+definition's file name."
+
+Why the artifact directory has to follow at all comes down to one function.
+Relative `[media]` paths inside a definition resolve *against the slug's
+own artifact directory* ([`crates/coco-egui/src/machine_def.rs:193-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L193-L202)),
+so a disk image referenced as `"disk0.dsk"` means a different absolute file
+the instant the slug changes. Move the definition without moving the
+directory and every relative media path in it silently points at nothing.
+
+There is one more subtlety, and it is the sort of thing that only appears
+once a feature meets a real user. A machine cannot be renamed on disk while
+its VM is running, because the running VM writes `thumbnail.png` into the
+artifact directory by path, and renaming out from under it races. So a
+rename requested while running merely sets a flag, and a separate pass
+picks it up later:
+
+```rust
+    pub(super) fn apply_pending_renames(&mut self) {
+        while let Some(index) = self
+            .entries
+            .iter()
+            .position(|e| e.rename_pending && e.vm.is_none())
+        {
+            self.migrate_slug(index);
+        }
+    }
+```
+
+([`crates/coco-egui/src/manager/lifecycle.rs:162-170`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L162-L170).) It runs once per
+`update()`, before any panel draws, so row indices stay stable for the
+whole frame — and it re-searches from scratch each iteration rather than
+iterating indices, because each `migrate_slug` re-sorts the list
+alphabetically underneath it. The loop terminates because `migrate_slug`
+clears `rename_pending` unconditionally, on success or failure. Exercise
+15.5 asks you to connect this deferral to a kittest test that has to step
+three frames instead of two.
+
+### Start, Stop, and where the running machine lives
+
+One row of the list is one `MachineEntry`: a slug, a parsed `MachineDef`,
+and — the only field that changes what is actually *running* —
+
+```rust
+    pub vm: Option<Box<CocoApp>>,
+```
+
+That one field is [`crates/coco-egui/src/manager.rs:109`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L109), inside the struct at
+[`crates/coco-egui/src/manager.rs:102-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L102-L133). Stopped is `None`.
+Everything else about the row's runtime status is derived from that one
+field rather than stored:
+
+```rust
+fn vm_status_label(entry: &MachineEntry) -> &'static str {
+    match &entry.vm {
+        Some(vm) if vm.is_running() => STATUS_RUNNING,
+        Some(_) => STATUS_PAUSED,
+        None => STATUS_STOPPED,
+    }
+}
+```
+
+([`crates/coco-egui/src/manager.rs:158-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L158-L164).) Three states, computed
+fresh at draw time, never persisted — the constants' doc comment says so
+explicitly. This is §15.1's lesson applied to application state rather than
+widgets: do not store what you can compute, because stored copies go stale
+and computed ones cannot.
+
+Starting is short:
+
+```rust
+    pub(super) fn start_vm(&mut self, index: usize) {
+        let entry = &mut self.entries[index];
+        entry.launch_error = None;
+        match crate::launch_machine(&entry.def, &entry.slug) {
+            Ok(vm) => entry.vm = Some(Box::new(vm)),
+            Err(e) => entry.launch_error = Some(e),
+        }
+    }
+```
+
+([`crates/coco-egui/src/manager/lifecycle.rs:69-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L69-L76).) `launch_machine`
+is the manager's counterpart to the CLI's `boot::boot_app`; both build a
+`CocoApp` from a config plus a set of mounted media, and the two modules'
+doc comments name each other as siblings
+([`crates/coco-egui/src/launch.rs:29-42`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L29-L42)). The important difference is
+error handling: the CLI path prints and exits, while this one must return
+an `Err` for the detail pane to display, since crashing the manager because
+one machine's disk image is missing would be absurd. On failure `vm` is
+left untouched at `None`, so a failed Start leaves a Stopped row rather
+than a half-constructed one.
+
+Stopping is shorter still:
+
+```rust
+    pub(super) fn stop_vm(&mut self, index: usize) {
+        self.write_entry_thumbnail(index);
+        if let Some(mut vm) = self.entries[index].vm.take() {
+            vm.flush_media();
+        }
+    }
+```
+
+([`crates/coco-egui/src/manager/lifecycle.rs:83-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L83-L88).) Write a final
+thumbnail, flush dirty media — the same `flush_media` that
+`CocoApp::on_exit` runs for the direct-boot window — and drop the `Box`.
+Dropping it is what shuts the machine down; there is no `shutdown()`
+method, because Rust's ownership already provides one.
 
 > **Rust corner — `Option<Box<CocoApp>>`, not `Option<CocoApp>`.**
-> `CocoApp` is a large struct: the whole `Machine` (CPU, RAM, GIME, both
-> PIAs, every optional cartridge device) plus every UI dialog's own state
-> (the debugger panel, the "New…" form, the paper window…). Every
-> `MachineEntry` in the list pays the size of this field regardless of
-> whether that machine is running — including entries for machines that
-> are, and always will be, `Stopped`. Boxing puts the actual `CocoApp` on
-> the heap and leaves only a pointer-sized `Option<Box<_>>` inline in
-> `MachineEntry`, so a manager listing fifty stopped machines carries fifty
-> small `None`s, not fifty machine-sized empty slots. This is the general
-> rule for "occasionally-present, expensive-to-hold" fields in Rust: box
-> the payload, keep the container thin.
+> `CocoApp` is a large struct. It contains the whole `Machine` (CPU, RAM,
+> the GIME, both PIAs, every optional cartridge device) plus every UI
+> dialog's own state: the debugger panel, the "New…" form, the paper
+> window, and thirty-odd more fields. With `Option<CocoApp>`, every
+> `MachineEntry` in the list would pay the full size of that struct
+> regardless of whether the machine is running — including entries for
+> machines that are, and always will be, stopped, since `Option<T>` is at
+> least as large as `T`.
+>
+> Boxing puts the actual `CocoApp` on the heap and leaves only a
+> pointer-sized `Option<Box<_>>` inline in the entry, so a manager listing
+> fifty stopped machines carries fifty small `None`s rather than fifty
+> machine-sized empty slots. This is the general rule for
+> occasionally-present, expensive-to-hold fields in Rust: box the payload
+> and keep the container thin. The `vm` field's own doc comment states the
+> rationale in one sentence, which is the right place for it.
 
 ### One native OS window per running VM
 
-`draw_running_vms` ([`crates/coco-egui/src/manager/vm_windows.rs:45-120`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L45-L120)) is
-called once per `ManagerApp::update`, after the manager's own panels, and
-opens one **immediate viewport** — a real, separate native OS window — per
-entry with a live VM:
+`draw_running_vms` is called once per `ManagerApp::update`, after the
+manager's own panels, and opens one *immediate viewport* — a real,
+separate, native operating-system window — for every entry with a live VM.
+The loop's core is three lines:
 
 ```rust
-let mut vm = self.entries[i].vm.take().expect("checked Some above");
-let mut close_requested = false;
-ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
-    if class == egui::ViewportClass::Embedded {
-        vm.step_emulation(child_ctx);
-        // ...a plain egui::Window fallback, display only, no chrome...
-    } else {
-        vm.window_ui(child_ctx);
-        if child_ctx.input(|i| i.viewport().close_requested()) {
-            close_requested = true;
-        }
-    }
-});
-self.entries[i].vm = Some(vm);
+            let mut vm = self.entries[i].vm.take().expect("checked Some above");
+            let mut close_requested = false;
+            ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
 ```
 
-`egui::ViewportId::from_hash_of(("vm-window", &slug))` gives each VM's
-window a stable identity across frames, so egui reuses the *same* OS
-window rather than destroying and recreating it every update — the
-manager's version of the same "identity persists, widgets don't"
-discipline §15.1 opened with, just applied to whole windows instead of
-buttons. On a backend with real multi-window support, `class` is the
-default kind and the *entire* direct-boot experience — menu bar, toolbar,
-status bar, the display — runs unmodified inside this child viewport via
-the very same `window_ui` this chapter has been reading all along. On a
-backend without it (`ViewportClass::Embedded` — kittest, for headless
-testing, is exactly this case), the fallback deliberately shows *only*
-`draw_display`'s bare screen inside a small anchored `egui::Window`,
-because drawing two independent sets of menu bars/status bars into one
-shared `ctx` would visually interleave them into one confusing mess.
+([`crates/coco-egui/src/manager/vm_windows.rs:64-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L64-L66).) The
+`viewport_id` above it is
+`egui::ViewportId::from_hash_of(("vm-window", &slug))`, which gives each
+VM's window a stable identity across frames. That stability is what makes
+egui reuse the *same* operating-system window rather than destroying and
+recreating one every update — the manager's version of the same "identity
+persists, widgets don't" discipline §15.1 opened with, applied to whole
+windows instead of buttons. The slug, once again, is the identity.
+
+The closure receives a `class` telling it what kind of viewport it actually
+got, and branches. On a backend with real multi-window support it takes the
+straightforward path:
+
+```rust
+                } else {
+                    vm.window_ui(child_ctx);
+                    if child_ctx.input(|i| i.viewport().close_requested()) {
+                        close_requested = true;
+                    }
+                }
+            });
+
+            self.entries[i].vm = Some(vm);
+            if close_requested {
+                to_stop.push(i);
+            }
+```
+
+([`crates/coco-egui/src/manager/vm_windows.rs:104-116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L104-L116).) That single
+`vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
+§15.3 established. The *entire* direct-boot experience — menu bar, toolbar,
+status bar, the letterboxed display, every dialog — runs unmodified inside
+this child viewport, through the very same `window_ui` this chapter has
+been reading all along. There is no second implementation of the emulator
+window for the manager to maintain, and no risk of the two drifting apart,
+because there is only one.
+
+The other branch is the degraded case, and it exists because not every
+backend can open real child windows — kittest, the headless test backend
+§15.8 covers, is exactly this case. There, `class` is
+`ViewportClass::Embedded` and the fallback deliberately shows *only* the
+bare display:
+
+```rust
+                    vm.step_emulation(child_ctx);
+```
+
+followed by an anchored `egui::Window` whose body is just
+`vm.draw_display(ui)`
+([`crates/coco-egui/src/manager/vm_windows.rs:78-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L78-L100)). Two decisions
+in that fallback are worth reading the comments for. It skips
+`draw_chrome` entirely because drawing two independent sets of menu bars
+and status bars into one shared context would interleave them into a single
+confusing window. And it caps the window at
+`EMBEDDED_FALLBACK_SIZE = 320×240` rather than the native window's full
+size, because — as the comment records, "found the hard way, via a kittest
+regression" — a window that large, even anchored to a corner, spans most of
+a modest canvas and silently eats clicks meant for the manager's own panels
+underneath ([`crates/coco-egui/src/manager/vm_windows.rs:8-17`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L8-L17)).
+
+Notice, finally, that the fallback still calls `step_emulation`. This is
+the promise `step_emulation`'s doc comment made back in §15.2, now
+collected: the VM keeps emulating even in the degraded single-window case,
+because emulation was deliberately separated from the drawing of chrome.
 
 > **Rust corner — `.take()` to split a borrow, one level up from week 1.**
-> Look at that snippet again: `self.entries[i].vm.take()` moves the
+> Look at that loop again. `self.entries[i].vm.take()` moves the
 > `Box<CocoApp>` out of the entry *before* the closure runs, into a local
-> `vm` the closure captures by unique reference — with the entry's own slot
-> left holding `None` for the closure's whole duration, then restored
-> afterward (`self.entries[i].vm = Some(vm)`). Why not just borrow
-> `&mut self.entries[i].vm` directly inside the closure? Because the
-> closure also needs to push onto `to_stop: Vec<usize>`, a plain local, and
-> — more importantly — the surrounding loop is iterating `self.entries` by
-> index and will look at `self.entries[i]` again right after the viewport
-> call returns; holding a live borrow of `self` for the whole closure body
-> would collide with that. This is the exact move from Chapter 1, §1.4
-> (`Machine { cpu, bus }` as disjoint fields so `cpu.step(&mut bus)`
-> compiles) recurring in ordinary application code: when the borrow
-> checker won't let you hand out two overlapping mutable views of the same
-> owner, take the piece you need *out*, use it standalone, and put it back.
+> `vm` the closure captures by unique reference, leaving the entry's slot
+> holding `None` for the closure's whole duration — and then restores it
+> afterwards with `self.entries[i].vm = Some(vm)`.
+>
+> Why not simply borrow `&mut self.entries[i].vm` inside the closure? The
+> function's own doc comment answers it: close requests are collected into
+> a plain local `Vec<usize>` and applied *after* the loop, because
+> `stop_vm` needs `&mut self.entries[i]`, which would conflict with the
+> `vm` the loop is already holding out of that same slot. Holding a live
+> borrow of `self` across the closure body would collide with the
+> surrounding loop's own indexing of `self.entries`.
+>
+> This is the exact move from Chapter 1, §1.4 — `Machine { cpu, bus }` as
+> disjoint fields so that `cpu.step(&mut bus)` compiles — recurring in
+> ordinary application code with no hardware anywhere in sight. When the
+> borrow checker will not let you hand out two overlapping mutable views of
+> the same owner, take the piece you need *out*, use it standalone, and put
+> it back. The `expect("checked Some above")` is honest about the one
+> invariant that makes it safe: the loop already skipped entries whose `vm`
+> is `None`.
 
 ### Thumbnails: crash insurance, not a feature
 
-Every stopped row shows a small preview of the machine's last screen. That
-preview is a plain PNG, `<artifact-dir>/<slug>/thumbnail.png`, written by
-`write_thumbnail_png` with the same tmp-then-rename atomicity as machine
-definitions, on **three** occasions: an explicit Stop, the manager's own
-`on_exit` (so quitting with VMs still running doesn't lose their preview),
-and — the interesting one — a periodic refresh every `THUMBNAIL_REFRESH =
-30` seconds while a VM is running
-(`refresh_due_thumbnails`, [`crates/coco-egui/src/manager/thumbnails.rs:36-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L36-L55)).
-That periodic write exists purely as **crash insurance**: if the process is
-force-killed (a real OS crash, not a graceful Stop), the on-exit write
-never runs — but the *previous* 30-second refresh already left something
-useful on disk, so the next launch shows a recent screen instead of a
-placeholder or nothing at all.
+Every stopped row shows a small preview of that machine's last screen. The
+preview is a plain PNG at `<artifact-dir>/<slug>/thumbnail.png`, written
+with the same temporary-file-then-rename atomicity as machine definitions,
+on three separate occasions.
+
+Two of them are obvious: an explicit Stop, and the manager's own `on_exit`,
+which writes a final preview for every entry before flushing its media
+([`crates/coco-egui/src/manager.rs:295-305`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L295-L305)) — quitting with VMs still
+running is, as the comment says, "the most common way a stopped row would
+otherwise lose its saved thumbnail." The third is the interesting one:
+
+```rust
+    pub(super) fn refresh_due_thumbnails(&mut self) {
+        if self.artifacts_root.is_none() {
+            return;
+        }
+        for i in 0..self.entries.len() {
+            if self.entries[i].vm.is_none() {
+                continue;
+            }
+            let due = self.entries[i]
+                .last_thumbnail_write
+                .is_none_or(|last| last.elapsed() >= THUMBNAIL_REFRESH);
+            if due {
+                self.write_entry_thumbnail(i);
+            }
+        }
+    }
+```
+
+([`crates/coco-egui/src/manager/thumbnails.rs:40-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L40-L55).) Every running
+VM gets its thumbnail rewritten every `THUMBNAIL_REFRESH`, which is 30
+seconds. That periodic write exists purely as *crash insurance*. If the
+process is force-killed — a real operating-system crash, not a graceful
+Stop — the on-exit write never runs, but the previous 30-second refresh
+already left something useful on disk, so the next launch shows a recent
+screen instead of a placeholder. `is_none_or` handles the first write for
+free: an entry that has never been written is due immediately, so even a
+machine started five seconds before the crash has a preview.
 
 One small heuristic keeps that safety net from actively hurting you:
 
 ```rust
-let all_black = rgba
-    .chunks_exact(4)
-    .all(|px| px[0] == 0 && px[1] == 0 && px[2] == 0);
-if all_black && final_path.exists() {
-    return Ok(());
-}
+    let all_black = rgba
+        .chunks_exact(4)
+        .all(|px| px[0] == 0 && px[1] == 0 && px[2] == 0);
+    if all_black && final_path.exists() {
+        return Ok(());
+    }
 ```
 
-([`crates/coco-egui/src/manager.rs:183-187`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L183-L187).) A blanked screen — a mode
-switch mid-boot, `CLS 0`, the moment right after a machine's cold reset
-before the ROM has painted anything — would otherwise clobber a genuinely
-useful preview with a solid black square the *next* time the 30-second
-timer fires, purely by bad luck of when the snapshot landed. Skipping the
-write when the frame is uniformly black *and* a previous thumbnail already
-exists keeps that one unlucky moment from erasing a better picture that's
-already on disk; the `final_path.exists()` half of that condition matters
-too — the *very first* thumbnail a brand-new machine ever writes must still
-land even if that first frame happens to be black, since skipping then
-would leave the row with no preview at all. §15.11's sabotage exercise asks
-you to find both halves of that guarantee by breaking one of them.
+([`crates/coco-egui/src/manager.rs:183-188`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L183-L188).) Consider what a
+periodic snapshot is exposed to. The CoCo's screen is genuinely, uniformly
+black at plenty of legitimate moments: during a mode switch mid-boot, right
+after a `CLS 0`, in the instant following a cold reset before the ROM has
+painted anything. If the 30-second timer happens to fire during one of
+those, a useful preview would be clobbered by a solid black square through
+sheer bad luck of timing.
+
+Skipping the write when the frame is uniformly black *and* a previous
+thumbnail already exists prevents that. The second half of the condition
+matters just as much as the first: the *very first* thumbnail a brand-new
+machine ever writes must still land even if that first frame happens to be
+black, since skipping it then would leave the row with no preview at all
+and no obvious way to ever get one. Two clauses, two distinct guarantees,
+and §15.11's sabotage exercise asks you to find both of them by breaking
+one.
 
 ---
 
 ## 15.7 Media UI pattern: `disk.rs` as the exemplar
 
-Every attachable device — cartridges, floppies, VHDs, DriveWire disks,
-cassette, the printer bit-banger — gets its own file under
-`crates/coco-egui/src/media/`, all `impl CocoApp` methods, all following
-the same shape. [`media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs) is the clearest one to learn the pattern
-from, because floppies are the only media type with real in-memory dirty
-state to manage (VHD and DriveWire images write straight through to their
-backing file on every command; there's nothing to flush).
+The `media/` directory is where the frontend meets every device weeks 12
+through 14 built. Cartridges, floppies, virtual hard disks, DriveWire
+disks, the cassette deck, the printer bit-banger — each gets its own file,
+each file is nothing but `impl CocoApp` methods, and all of them follow the
+same shape. Learn the shape once from the clearest example and you can read
+any of the others cold.
 
-The pattern, in order:
+[`media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs) is that example, because floppies are the only media
+type with real in-memory dirty state to manage. VHD and DriveWire images
+write straight through to their backing file on every command, so there is
+nothing to flush and nothing to lose; a floppy image lives entirely in
+memory until somebody decides to write it back, which means every question
+about *when* to write it back has to be answered explicitly.
 
-- **Ensure the controller exists.** `ensure_disk_controller` inserts a
-  `DiskCart` (week 13) if the cartridge slot is empty or holds something
-  else, loading `roms/disk11.rom` and — crucially — **power-cycling**, not
-  warm-resetting, the machine:
+**Ensure the controller exists.** Before a floppy can be mounted, an FD-502
+has to be in the cartridge slot. `ensure_disk_controller` inserts one (week
+13), loading `roms/disk11.rom` — and then does something that looks
+excessive until you know the ROM:
 
-  > Creating it cold-resets the machine: BASIC only probes for Disk BASIC
-  > at cold start. Swapping a floppy in an already-present controller does
-  > NOT reset, like on real hardware.
-  > ([`crates/coco-egui/src/media/disk.rs:9-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L9-L11))
+```rust
+        self.machine.insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
+        // Power cycle, not warm reset: the DK probe that links Disk BASIC
+        // only runs on the ROM's cold-start path (a warm reset leaves the
+        // DOS ROM unlinked and the drives dead).
+        self.machine.power_cycle();
+```
 
-  This is the frontend enforcing a real hardware constraint your ROM
-  archaeology in week 13 already uncovered from the other side: the DK
-  probe that links Disk BASIC into the language only runs on the cold-start
-  path, so *inserting the controller* must be a power cycle even though
-  *swapping a disk in it* must not be.
-- **Insert acts, write-back protects.** `insert_disk` writes back whatever
-  was already in the target drive *before* mounting the new image
-  (`self.write_back_disk(drive)` — never silently discard unsaved changes
-  to what's being ejected), then mounts the new one and records its source
-  path in `self.disk_paths[drive]`.
-- **Dirty tracking lives in the device, not the frontend.** `write_back_disk`
-  asks the mounted `JvcDisk` itself, `disk.dirty()` (week 13), before
-  touching the filesystem at all — the frontend never guesses whether a
-  disk changed; it defers entirely to the device that actually knows.
-  Failure lands in `self.cart_error` and the in-memory disk is left mounted
-  and still dirty, so a later retry (or the next `flush_dirty_disks` on
-  exit) can succeed without losing the edit.
-- **Eject always writes back first**, exactly like ejecting a real floppy
-  from a real drive after the OS has finished with it — `eject_disk` calls
-  `write_back_disk` before `cart.eject_disk(drive)`, never after.
+([`crates/coco-egui/src/media/disk.rs:51-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L51-L55).) The function's own doc
+comment states the rule from the user's side: "Creating it cold-resets the
+machine: BASIC only probes for Disk BASIC at cold start. Swapping a floppy
+in an already-present controller does NOT reset, like on real hardware"
+([`crates/coco-egui/src/media/disk.rs:9-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L9-L11)).
 
-Every other media file in the directory — `cart.rs`, `tape.rs`,
-`drivewire.rs`, `printer.rs` — repeats this shape with the specifics that
-device demands (a cartridge has no "dirty" concept at all; a cassette's
-write-back optionally also synthesizes a `.wav`, per week 12). If you
-understand `disk.rs`, you can read any of them cold. And if you've been
-following the thread since Chapter 14's closing paragraph: this is also
-where that chapter's loose end gets tied off — the DMP-105's protocol and
-fixed-point paper coordinates were week 14's; the actual scrolling
-"Printer Paper" window a user watches fill up while `LLIST` runs
-([`crates/coco-egui/src/paper_view.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/paper_view.rs)) is `coco-egui` UI state built on top
-of it, one more example of a device (`Dmp105Handle`) attached and detached
-by the same request-then-mount discipline as a floppy.
+This is the frontend enforcing a real hardware constraint that week 13's
+ROM archaeology already uncovered from the other side. The DK probe that
+links Disk BASIC into the language runs only on the cold-start path, so
+*inserting the controller* must be a power cycle — while *swapping a disk
+in it* must not be, because on real hardware you did not power-cycle a CoCo
+to change floppies. Two superficially similar operations, opposite
+behaviour, and the difference is dictated by the ROM rather than by
+convenience. Because a power cycle destroys unsaved state, the menu path
+does not do it silently: `request_insert_disk` parks the action behind a
+confirmation dialog when the controller is not present yet, and acts
+immediately when it is ([`crates/coco-egui/src/media/disk.rs:64-73`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L64-L73)).
+
+**Insert acts, write-back protects.** `insert_disk` mounts the new image —
+but not before dealing with whatever was already there. The sequence is
+`ensure_disk_controller`, read the file, parse it as a `JvcDisk`, then
+`self.write_back_disk(drive)` with the comment "whatever was in the drive
+first", and only then `cart.insert_disk(drive, disk)`
+([`crates/coco-egui/src/media/disk.rs:86-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L86-L102)). Unsaved changes to the
+outgoing floppy are never silently discarded. Note also the ordering with
+respect to failure: the file is read and parsed *before* anything is
+disturbed, so a corrupt image leaves the previously mounted disk exactly
+where it was.
+
+**Dirty tracking lives in the device, not the frontend.** The single
+function that decides whether a floppy needs saving is this one:
+
+```rust
+    pub(crate) fn write_back_disk(&mut self, drive: usize) {
+        let Some(path) = self.disk_paths[drive].clone() else {
+            return;
+        };
+        let Some(cart) = self.machine.bus.cart.as_disk_cart() else {
+            return;
+        };
+        let Some(disk) = cart.disk(drive) else {
+            return;
+        };
+        if !disk.dirty() {
+            return;
+        }
+        if let Err(e) = std::fs::write(&path, disk.bytes()) {
+            self.cart_error = Some(format!("could not save {}: {e}", path.display()));
+        }
+    }
+```
+
+([`crates/coco-egui/src/media/disk.rs:146-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L146-L162).) Four guard clauses and
+one write. The frontend never guesses whether a disk changed; it asks the
+mounted `JvcDisk` itself via `disk.dirty()` (week 13), deferring entirely
+to the device that actually knows. That is the correct division: the
+frontend knows *where* the image came from, the device knows *whether* it
+changed, and neither pretends to know the other's business.
+
+Failure is handled by not pretending it succeeded. The error lands in
+`self.cart_error` — which §15.1 showed becoming a dismissible banner purely
+by virtue of being `Some` — and the in-memory disk is left mounted and
+still dirty. A later retry, or the next `flush_dirty_disks` on exit, can
+therefore still succeed without the user having lost the edit. Compare that
+to clearing the dirty flag optimistically: a full disk or a read-only
+filesystem would then silently eat somebody's afternoon of BASIC.
+
+**Eject always writes back first.** `eject_disk` calls `write_back_disk`
+before `cart.eject_disk(drive)`, never after
+([`crates/coco-egui/src/media/disk.rs:135-141`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L135-L141)) — exactly like ejecting
+a real floppy from a real drive after the operating system has finished
+with it, and for exactly the same reason.
+
+The contrast that proves the pattern is `insert_vhd` and `eject_vhd` in the
+very same file. Their doc comments explain that a VHD is a bus-level device
+independent of the cartridge slot: "no controller to ensure, no machine
+reset, and no write-back on eject/replace (VHD command execution writes
+straight through to the backing file)"
+([`crates/coco-egui/src/media/disk.rs:171-175`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L171-L175)). Every step of the
+floppy dance exists because of a specific property of floppies, and a
+device without those properties skips every step. Exercise 15.6 asks you to
+state that in one sentence after tracing the chain yourself.
+
+Every other file in the directory repeats this shape with whatever
+specifics its device demands. A cartridge has no dirty concept at all. A
+cassette's write-back optionally also synthesizes a `.wav` alongside the
+canonical `.cas`, per week 12. This directory is also where the loose end
+from Chapter 14's closing paragraph finally gets tied off: the DMP-105's
+protocol and fixed-point paper coordinates were week 14's material, while
+the scrolling "Printer Paper" window a user watches fill up during an
+`LLIST` ([`crates/coco-egui/src/paper_view.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/paper_view.rs)) is `coco-egui` UI state
+built on top of it — one more device attached and detached by the same
+request-then-mount discipline as a floppy.
 
 ---
 
 ## 15.8 Testing the UI headlessly: kittest
 
-Everything you've read so far in this chapter — menus, dialogs, the
-manager's list, the running-VM viewports — has a real automated test suite,
-and none of it opens a visible window or needs a human at a monitor. That's
-`egui_kittest` ([`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml): `egui_kittest = { version = "0.33", features
-= ["eframe"] }`), and it works by running egui's *real* layout and input
-logic against a headless backend, then exposing the result as an
-**AccessKit** accessibility tree — the same structured tree a screen reader
-would consume — which tests query by label instead of by pixel coordinate.
+Everything in this chapter so far — menus, dialogs, the manager's list, the
+running-VM viewports — has a real automated test suite, and none of it
+opens a visible window or needs a human at a monitor. That claim deserves
+scepticism, because "GUI testing" has a deserved reputation for
+flakiness, so this section explains exactly how it works and what it costs.
+
+The tool is `egui_kittest`, a dev-dependency
+([`crates/coco-egui/Cargo.toml:65-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml#L65-L66)). It runs egui's *real* layout and
+input logic against a headless backend — the same code that would run in
+front of a user, not a mock — and then exposes the result as an *AccessKit*
+accessibility tree. AccessKit is the structured representation a screen
+reader consumes: a tree of nodes, each with a role (button, checkbox, text
+input) and a label. Tests query that tree by label rather than by pixel
+coordinate, which turns out to change everything about how durable they
+are.
+
+The test module's own doc comment opens with a list headed "Interaction
+conventions discovered the hard way," and it is worth reading before the
+code, because each line is a bug somebody already paid for:
+
+> - Clicks hover on one frame and press/release on the next: egui routes a
+>   press using the previous frame's hit-test data, so a press with no
+>   prior hover misses windows that were (re)anchored this frame.
+> - Menus close on *any* item click (egui's default menu close behavior),
+>   so every menu interaction reopens the menu from the bar.
+> - Submenu buttons expose their label with a trailing "⏵" arrow — match
+>   them with `_contains`, not exactly.
+> ([`crates/coco-egui/src/ui_tests.rs:7-14`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests.rs#L7-L14))
 
 ### Booting a harness
 
@@ -952,30 +2064,74 @@ pub(super) fn boot_harness() -> AppHarness {
         .expect("roms/coco3.rom is required (git-ignored, local-only)");
     let rom_source = RomSource::File(roms_dir.join("coco3.rom"));
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
-        CocoApp::new(MachineConfig::default(), rom, rom_source, None,
-                     [None, None], [None, None], std::array::from_fn(|_| None),
-                     false, false, false)
+        CocoApp::new(
+            MachineConfig::default(),
+            rom,
+            rom_source,
+            None,
+            [None, None],
+            [None, None],
+            std::array::from_fn(|_| None),
+            false,
+            false,
+            false,
+        )
     });
+    // Room for the full Machine menu: egui only puts on-screen widgets in
+    // the AccessKit tree, so a too-small viewport hides the lower items.
     harness.set_size(egui::vec2(1024.0, 768.0));
     harness.step();
     harness
 }
 ```
 
+([`crates/coco-egui/src/ui_tests/harness.rs:20-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L20-L44).) Three things in
+there are worth calling out.
+
 `Harness::new_eframe` takes the same `CocoApp::new` constructor the real
-`boot_app` calls, no test-only shortcuts. `harness.step()` is one simulated
-frame — it runs `update()` exactly like a real event loop would, and it's
-called manually, exactly once per unit of simulated time, so a test
-controls pacing precisely instead of hoping timing works out. The comment
-on `set_size` is worth remembering as a category of headless-testing gotcha
+`boot_app` calls, with the same ten arguments, and no test-only shortcuts.
+There is no `CocoApp::new_for_testing`. Whatever the harness exercises is
+what the application does.
+
+`harness.step()` is one simulated frame. It runs `update()` exactly as a
+real event loop would, and it is called *manually*, exactly once per unit
+of simulated time. That is the property that makes these tests
+deterministic where GUI tests usually are not: nothing happens between
+steps, so a test controls pacing precisely instead of sleeping and hoping.
+
+And the comment on `set_size` names a category of headless-testing gotcha
 that has nothing to do with emulation: egui only puts *currently visible*
-widgets into the AccessKit tree, so a viewport too small to show the whole
-Machine menu would make its lower items simply un-queryable — not
-disabled, not hidden by a flag, just never laid out this frame. The manager
-harness (`manager_harness`) does the same dance with `ManagerApp::new`,
-injecting `machines_dir`/`artifacts_root` as `None` or a temp directory —
-**never** the real user config/data directories — precisely so tests can't
-read or write a developer's actual saved machines.
+widgets into the AccessKit tree. A viewport too small to show the whole
+Machine menu makes its lower items simply un-queryable — not disabled, not
+hidden behind a flag, just never laid out this frame, and therefore absent
+from the tree the test searches. The failure looks like "the menu item does
+not exist," which sends you hunting in the wrong file.
+
+The manager harness does the same dance with `ManagerApp::new`, and adds
+one discipline the direct-boot harness does not need:
+
+```rust
+pub(super) fn manager_harness_with_artifacts(
+    machines_dir: Option<PathBuf>,
+    artifacts_root: Option<PathBuf>,
+    entries: Vec<manager::MachineEntry>,
+) -> ManagerHarness {
+    let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
+        manager::ManagerApp::new(None, machines_dir, artifacts_root, entries)
+    });
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+    harness
+}
+```
+
+([`crates/coco-egui/src/ui_tests/harness.rs:204-215`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L204-L215).) Both directory
+paths are *injected* — as `None`, or as a temporary directory — and never
+the real user configuration or data directories. That injection is why
+`ManagerApp::new` takes them as parameters at all rather than calling
+`machine_def::machines_dir()` itself; the production call site passes the
+real ones in `manager::run`. A test suite that could read or delete a
+developer's actual saved machines would be a test suite nobody runs twice.
 
 ### Interaction: hover, step, click, step, step
 
@@ -991,102 +2147,152 @@ pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>,
 }
 ```
 
-Hover, step a frame, click, step twice more. This mirrors how egui itself
-recognizes a click: it's not a single instantaneous event but a state
-transition egui's own input handling notices *between* frames — hovering
-first (so any hover-triggered layout, like a button's highlight, has
-happened before the press lands), then a press-and-release pair that egui
-fires `clicked()` for on release, and finally an extra settle frame so
-whatever the click *caused* (a menu opening, a row becoming selected) is
-fully reflected in the tree before the test's next assertion reads it.
-Skipping any of these steps is the single most common way a kittest test
-becomes flaky — not because the application logic is wrong, but because
-the test asserted on a tree state that egui hadn't finished producing yet.
+([`crates/coco-egui/src/ui_tests/harness.rs:50-56`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L50-L56).) Hover, step a
+frame, click, step twice more. Each beat exists for a reason the module doc
+listed above.
+
+The hover comes first because, as that doc says, egui routes a press using
+the *previous* frame's hit-test data — so a press with no prior hover
+misses windows that were anchored or re-anchored this frame. The step
+between hover and click lets that hit-test data become current. The click
+itself is a press and a release, and egui fires `clicked()` on the release.
+And the two trailing steps let whatever the click *caused* — a menu
+opening, a row becoming selected, a modal appearing — be fully reflected in
+the accessibility tree before the test's next assertion reads it.
+
+Skipping any of these beats is the single most common way a kittest test
+becomes flaky, and the failure is misleading: the application logic is
+fine, and the test merely asserted on a tree state egui had not finished
+producing.
 
 ### Why label-based queries beat coordinates
 
 `harness.get_by_label("Reset")` finds the one accessible node whose
-AccessKit label is exactly `"Reset"` and panics if there's zero or more
-than one match — it is, deliberately, as strict as `unwrap()`. Compare
-that to a coordinate-based test (`harness.click_at(egui::pos2(340.0,
-22.0))`): it would work today, and silently start clicking the *wrong
-thing* the day anyone reorders a menu, resizes a toolbar, or changes a
-font. A label-based test survives exactly the kind of refactor this
-codebase does constantly (recall the module-splitting mentioned in this
-repo's own commit history) because it asserts on *meaning* — "the control
-labeled Reset" — not on *where that meaning happened to render this week*.
-It's the UI-testing analogue of asserting on a register's value rather
-than on a specific memory address holding it.
+AccessKit label is exactly `"Reset"`, and panics if there is either no
+match or more than one. It is deliberately as strict as `unwrap()`.
 
-Two helpers handle the inevitable label collisions AccessKit users always
-hit: `click_containing` matches by substring, for labels decorated with
-extra text a submenu arrow or shortcut hint adds ("MultiPak Interface ⏵",
-"New… ⌘N"); `lowest_by_label`/`click_in_menu` disambiguate a menu-popup
-copy of a label the toolbar *also* shows ("Pause" appears in both places at
-once) by picking whichever matching node is lowest on screen — the popup
-always hangs below the toolbar row that opened it.
+Compare that to a coordinate-based test — something like clicking at
+position (340, 22). It would pass today. It would silently start clicking
+the *wrong thing* the day anyone reorders a menu, resizes the toolbar,
+changes a font, or adds an item above the one being targeted. And nothing
+about the failure would point at the cause: the test would exercise some
+other control and assert on state that control never touched.
+
+A label-based test survives exactly the kind of refactor this codebase does
+constantly — the module-splitting visible throughout its own commit history
+— because it asserts on *meaning*: "the control labeled Reset." Not on
+where that meaning happened to render this week. It is the UI-testing
+analogue of asserting on a register's value rather than on a specific
+memory address that happens to hold it.
+
+Strictness has a cost, of course, which is that label collisions must be
+handled explicitly rather than papered over. Three helpers do that.
+`click_containing` matches by substring, for labels carrying decoration the
+visible caption does not show — a submenu's trailing "⏵", or a menu row's
+shortcut hint ("New… ⌘N"). `lowest_by_label` and `click_in_menu`
+disambiguate a menu-popup copy of a label that the toolbar *also* shows —
+"Pause" appears in both places at once — by picking whichever matching node
+sits lowest on screen, since a popup always hangs below the toolbar row
+that opened it. And for the genuinely intentional duplicates there is:
+
+```rust
+pub(super) fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, S>, label: &str) -> bool {
+    harness.get_all_by_label(label).next().is_some()
+}
+```
+
+([`crates/coco-egui/src/ui_tests/harness.rs:222-224`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L222-L224).) Its doc comment
+names the case exactly: a status word like "Running" is deliberately shown
+twice at once, once weakly in the list row and once strongly in the detail
+pane header, both driven by the same `vm_status_label` from §15.6. Asserting
+that it exists is right; asserting that it exists *once* would be asserting
+on a layout decision.
+
+There is one more addressing wrinkle worth knowing, because it is the kind
+of thing that costs an hour if nobody wrote it down. A combo box does not
+expose its current selection as a label at all — egui sets it as the
+accessibility *value* instead — so `select_combo` addresses the combo
+button with `get_by_value` and the popup items, which are plain
+selectables, with `get_by_label`
+([`crates/coco-egui/src/ui_tests/harness.rs:79-95`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L79-L95)). Role, label, and
+value are three different axes of the accessibility tree, and knowing which
+one a widget uses is most of the skill in writing these tests.
 
 ### Reading one real test
 
-`ui_tests::manager_window::manager_row_context_menu_delete_confirms_and_removes`
+`manager_row_context_menu_delete_confirms_and_removes`
 ([`crates/coco-egui/src/ui_tests/manager_window.rs:156-184`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L156-L184)) is worth
-reading start to finish as a script, because it reads like the exact
-sequence of clicks a human tester would perform, in English:
+reading start to finish, because it reads like the exact sequence of clicks
+a human tester would perform, written in something very close to English:
 
 ```rust
-click(&mut harness, "Beta CoCo 3");
-assert_eq!(harness.state().selected, Some(1));
+    click(&mut harness, "Beta CoCo 3");
+    assert_eq!(harness.state().selected, Some(1));
 
-right_click(&mut harness, "Alpha CoCo 3");
-click(&mut harness, "Delete…");
-click(&mut harness, "Cancel");
-assert_eq!(harness.state().entries.len(), 2, "Cancel must keep the machine");
-assert!(dir.path().join("alpha.toml").exists(), "Cancel must keep the definition file");
+    right_click(&mut harness, "Alpha CoCo 3");
+    click(&mut harness, "Delete…");
+    click(&mut harness, "Cancel");
+    assert_eq!(harness.state().entries.len(), 2, "Cancel must keep the machine");
+    assert!(dir.path().join("alpha.toml").exists(), "Cancel must keep the definition file");
 
-right_click(&mut harness, "Alpha CoCo 3");
-click(&mut harness, "Delete…");
-click(&mut harness, "Delete");
-assert_eq!(harness.state().entries.len(), 1);
-assert!(!dir.path().join("alpha.toml").exists(), "the definition file must be removed");
-assert!(dir.path().join("beta.toml").exists(), "only the confirmed machine is deleted");
-assert_eq!(harness.state().detail_name(), Some("Beta CoCo 3"),
-    "the selection must follow the surviving row as indices shift");
+    right_click(&mut harness, "Alpha CoCo 3");
+    click(&mut harness, "Delete…");
+    click(&mut harness, "Delete");
+    assert_eq!(harness.state().entries.len(), 1);
+    assert!(!dir.path().join("alpha.toml").exists(), "the definition file must be removed");
+    assert!(dir.path().join("beta.toml").exists(), "only the confirmed machine is deleted");
+    assert_eq!(
+        harness.state().detail_name(),
+        Some("Beta CoCo 3"),
+        "the selection must follow the surviving row as indices shift"
+    );
 ```
 
-Select Beta. Right-click Alpha — this must *not* move the selection cue
-(a real user decision the code comment cites: the context menu acts on the
-row under the cursor, not on whatever's currently selected). Open Delete…,
-click Cancel — nothing changes, the file survives. Right-click Alpha
-again, Delete…, this time confirm — the row and its `.toml` are both gone,
-and because Alpha sat at index 0 and Beta was selected at index 1, the
-selection must shift down to stay pointed at Beta, not silently point at
-whatever now occupies index 1. `harness.state()` — plain field access into
-the real `ManagerApp` the harness owns — is how a test looks past the UI
-entirely into the actual model state, the same way you'd inspect
-`Machine` fields directly in a `coco-core` test rather than trying to OCR a
-rendered screen.
+Select Beta. Right-click Alpha — and note that this must *not* move the
+selection, a real user-facing decision the code comment cites: the context
+menu acts on the row under the cursor, not on whatever happens to be
+selected. Open Delete…, click Cancel, and confirm that nothing changed and
+the file survives. Then right-click Alpha again, Delete…, and this time
+confirm: the row and its `.toml` are both gone, Beta's file is untouched,
+and — the assertion that would be easy to forget to write — the selection
+has followed Beta down from index 1 to index 0 rather than silently
+pointing at whatever now occupies index 1.
 
-> **Rust corner — one function, two apps.** `click<S: 'static>(harness:
-> &mut egui_kittest::Harness<'static, S>, label: &str)` is generic over
-> `S`, the app type the harness wraps — this exact function drives both
-> `CocoApp` harnesses and `manager::ManagerApp` harnesses with no
-> duplication, because `Harness<'static, S>`'s hover/step/click methods
-> don't care what `S` is; they only need it to satisfy `Queryable`'s bound
-> (`'static`, imported from `egui_kittest::kittest`). This is the same
-> monomorphization story from Chapter 1's `Bus` trait (§1.3): the compiler
+`harness.state()` is the other half of what makes these tests readable.
+It is plain field access into the real `ManagerApp` the harness owns, which
+lets a test look past the user interface entirely and inspect the actual
+model — the same way you would inspect `Machine` fields directly in a
+`coco-core` test rather than trying to read pixels off a rendered screen.
+The user interface is driven like a user drives it; the assertions are made
+where the truth lives.
+
+> **Rust corner — one function, two apps.** Look at the signature again:
+> `click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str)`.
+> It is generic over `S`, the app type the harness wraps, and this exact
+> function drives both `CocoApp` harnesses and `manager::ManagerApp`
+> harnesses with no duplication — because `Harness<'static, S>`'s
+> hover/step/click methods do not care what `S` is. They only need it to
+> satisfy the `Queryable` trait's `'static` bound.
+>
+> This is the same monomorphization story from Chapter 1's `Bus` trait
+> (§1.3), arriving from a completely different direction. The compiler
 > emits one specialized copy of `click` for `S = CocoApp` and another for
-> `S = manager::ManagerApp`, so there's no runtime cost to sharing this
-> helper across two otherwise-unrelated app types — you get code reuse in
-> *test* code the exact same way the CPU crate got it in production code.
+> `S = manager::ManagerApp`, so sharing this helper across two otherwise
+> unrelated app types costs nothing at run time. Generic code paid off in
+> the CPU crate's hot loop; here it pays off in test code, where the
+> benefit is not speed but the absence of a second, subtly divergent copy
+> of the click sequence.
 
 ---
 
 ## 15.9 Running the suite — an honest report
 
-`cargo test -p coco-egui`, run in this worktree, which — like every
-worktree that isn't the main checkout — has no `roms/` directory (git-
-ignored, local-only, per the project's own convention). Here is exactly
-what happened, not a sanitized summary:
+A chapter that claims a test suite exists owes you the actual output,
+including the parts that do not pass. Here is `cargo test -p coco-egui`,
+run in a worktree which — like every worktree that is not the main checkout
+— has no `roms/` directory, since ROM images are git-ignored and local-only
+by the project's own convention. This is what happened, not a sanitized
+summary:
 
 ```
 test result: FAILED. 80 passed; 35 failed; 0 ignored; 0 measured; 0 filtered out
@@ -1123,6 +2329,15 @@ have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
 checkout with real ROMs present, all 115 tests should pass.
 
+The split is itself worth a moment's reflection, because it is the same
+line week 1 drew, showing up in the test results. The tests that need a
+copyrighted ROM are exactly the tests that need a *machine*; the tests that
+need only the application — its file format, its list management, its
+arithmetic — need nothing but the repository. Anyone can clone this project
+and immediately run eighty meaningful tests. That is not an accident of
+packaging; it is what keeping the frontend's own logic separable from the
+emulated hardware buys.
+
 ---
 
 ## 15.10 Reading assignment
@@ -1148,7 +2363,8 @@ In this order:
    [`manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) first, then the three files in that order.
 6. **[`crates/coco-egui/src/media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs)** in full — then skim
    [`media/tape.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/tape.rs) and note everywhere it *differs* from the disk pattern.
-7. **[`crates/coco-egui/src/ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)** in full, then
+7. **[`crates/coco-egui/src/ui_tests.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests.rs)**'s module doc, then
+   **[`crates/coco-egui/src/ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)** in full, then
    **[`crates/coco-egui/src/ui_tests/manager_window.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs)** — read every test
    in the file as if it were a QA script, not code.
 
@@ -1192,9 +2408,9 @@ verify by running the suite).** Open [`crates/coco-egui/src/manager.rs`](https:/
 find `write_thumbnail_png`'s skip check:
 
 ```rust
-if all_black && final_path.exists() {
-    return Ok(());
-}
+    if all_black && final_path.exists() {
+        return Ok(());
+    }
 ```
 
 Using `Edit`, remove the `&& final_path.exists()` clause, leaving just
