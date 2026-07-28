@@ -19,7 +19,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use eframe::egui;
 
@@ -44,12 +43,13 @@ const LIST_MAX_WIDTH: f32 = 520.0;
 /// Corner rounding of the row thumbnail placeholder itself — distinct from
 /// [`ROW_CORNER_RADIUS`], the row's own selection/hover frame.
 const THUMBNAIL_CORNER_RADIUS: f32 = 2.0;
-/// Fill of the row thumbnail placeholder — shown as a stopped machine's
-/// whole thumbnail (until its saved [`THUMBNAIL_FILE`] loads, if one
-/// exists), and as a running one's letterbox background before its texture
-/// is uploaded/when the texture's aspect doesn't exactly fill the allocated
-/// rect.
-const THUMBNAIL_PLACEHOLDER_FILL: egui::Color32 = egui::Color32::from_gray(30);
+/// Fill of the row thumbnail placeholder — a powered-off machine's whole
+/// preview (black, like the screen of a machine with no power — the state
+/// model's own rule), a suspended one's backdrop until its saved
+/// [`THUMBNAIL_FILE`] loads, and a running one's letterbox background
+/// before its texture is uploaded/when the texture's aspect doesn't exactly
+/// fill the allocated rect.
+const THUMBNAIL_PLACEHOLDER_FILL: egui::Color32 = egui::Color32::BLACK;
 /// Row-thumbnail aspect ratio — always the emulator's own aspect-corrected
 /// display shape ([`crate::TARGET_ASPECT`]), never the framebuffer's raw
 /// pixel aspect: buffer pixels aren't square (the CoCo 3 canonical raster is
@@ -61,39 +61,46 @@ const ROW_MARGIN: f32 = 8.0;
 /// Corner rounding of a list row's selection/hover frame.
 const ROW_CORNER_RADIUS: f32 = 4.0;
 
-/// Hover text of the always-disabled Suspend action (detail-pane button and
-/// row context-menu item alike) — the *heavy* freeze that ships with the
-/// save-states milestone (`docs/plan-save-states.md`); the disabled control
-/// teaches the model before the feature exists.
-const SUSPEND_DISABLED_HOVER: &str =
-    "Freeze this machine to disk and free it — resume later, even after \
-     quitting or on another computer. Coming with save-states.";
+/// Hover text of the Suspend transport button (and the row context-menu
+/// item) — the *heavy* freeze built on the save-states engine
+/// (`docs/plan-save-states.md`).
+const SUSPEND_HOVER: &str =
+    "Suspend the machine — freeze it to disk; resume later, even after \
+     quitting the manager.";
 
-/// List-row / detail-pane status labels. Never persisted
+/// List-row / detail-pane status labels for the three machine states
+/// (Powered Off / Running / Suspended). Not stored in the definition file
 /// (`plan-machine-persistence.md` "Decisions" — "Runtime status … is never
-/// persisted"): purely a function of [`MachineEntry::vm`] at draw time, see
-/// [`vm_status_label`].
+/// persisted"): a function of [`MachineEntry::vm`] and
+/// [`MachineEntry::suspended`] at draw time (Suspended's persistence is the
+/// [`SUSPEND_STATE_FILE`] itself), see [`vm_status_label`].
 const STATUS_RUNNING: &str = "Running";
-const STATUS_PAUSED: &str = "Paused";
-const STATUS_STOPPED: &str = "Stopped";
+const STATUS_SUSPENDED: &str = "Suspended";
+const STATUS_POWERED_OFF: &str = "Powered Off";
 
 /// Vertical gap between sections of the detail pane.
 const DETAIL_SECTION_GAP: f32 = 12.0;
 
 /// Cassette-deck transport glyphs (all in egui's documented built-in emoji
-/// set, `egui/src/lib.rs` "special emojis"). The deck metaphor is applied
-/// only to the machine's *execution* — run, freeze, power off — where it's
-/// honest; disk-level Suspend and the console Reset button deliberately stay
-/// ordinary labeled buttons outside the transport row (user decision
-/// 2026-07-16, after the "light pause vs dump-to-disk suspend" discussion —
-/// state model in `docs/plan-machine-persistence.md`).
+/// set, `egui/src/lib.rs` "special emojis"). The deck covers exactly the
+/// three machine states: ▶ powers on / resumes, ⏸ suspends (the freeze IS
+/// the deck's pause now — the light in-memory pause was removed with the
+/// three-state model, user decision 2026-07-27), ⏹ powers off. Only the
+/// console Reset stays an ordinary labeled button outside the transport
+/// row.
 pub(crate) const PLAY_GLYPH: &str = "▶";
-pub(crate) const PAUSE_GLYPH: &str = "⏸";
+pub(crate) const SUSPEND_GLYPH: &str = "⏸";
 pub(crate) const STOP_GLYPH: &str = "⏹";
 
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
+
+/// [`NO_CONFIG_DIR`]'s sibling for [`ManagerApp::artifacts_root`] — a
+/// different directory (`machine_def::artifacts_root` under
+/// `paths::data_dir`), reported by Suspend/Resume, which cannot work
+/// without somewhere to keep the frozen state.
+const NO_DATA_DIR: &str = "no data directory available";
 
 /// One machine-list entry: a slug (file stem, also the identity used for
 /// save/rename bookkeeping — `machine_def.rs` "Identity = slug") plus its
@@ -104,26 +111,33 @@ pub struct MachineEntry {
     pub slug: String,
     pub def: machine_def::MachineDef,
     /// The running VM, once [`ManagerApp::start_vm`] has launched it —
-    /// `None` means Stopped. Boxed: `CocoApp` is a large struct (the whole
+    /// `None` means Powered Off (or Suspended with its window closed, see
+    /// [`Self::suspended`]). Boxed: `CocoApp` is a large struct (the whole
     /// machine plus every UI dialog's state), and every `MachineEntry` pays
     /// its size even when stopped.
     pub vm: Option<Box<CocoApp>>,
-    /// Message from the last failed Start, shown in the detail pane until
-    /// the next Start attempt or a fresh selection — the launch-time analog
-    /// of [`ManagerApp::save_error`].
+    /// Whether this machine is Suspended — frozen to its artifact dir's
+    /// [`SUSPEND_STATE_FILE`]. The file is the persistent truth
+    /// ([`ManagerApp::new`] seeds this flag from its existence); the flag is
+    /// just the per-frame mirror so drawing never stats the filesystem.
+    /// While suspended the VM object may still be alive (paused, window
+    /// open) or already dropped (window closed) — both draw as Suspended.
+    pub(crate) suspended: bool,
+    /// The transport row's error channel: the message from the last failed
+    /// Start, Suspend, or Resume, shown in the detail pane until the next
+    /// attempt or a fresh selection — the lifecycle analog of
+    /// [`ManagerApp::save_error`].
     pub launch_error: Option<String>,
-    /// Saved-preview texture for a *stopped* machine (its artifact dir's
-    /// [`THUMBNAIL_FILE`]), loaded lazily on first row draw. Pure cache —
-    /// never required state; a missing/undecodable file just leaves the
-    /// placeholder. `pub(crate)` for `ui_tests.rs` assertions.
+    /// Saved-preview texture for a *suspended* machine whose VM window is
+    /// closed (its artifact dir's [`THUMBNAIL_FILE`], written at suspend
+    /// time), loaded lazily on first row draw. Pure cache — never required
+    /// state; a missing/undecodable file just leaves the placeholder.
+    /// `pub(crate)` for `ui_tests.rs` assertions.
     pub(crate) thumbnail: Option<egui::TextureHandle>,
     /// Whether a [`Self::thumbnail`] load was already attempted, so a
     /// machine with no thumbnail file doesn't retry the filesystem every
     /// frame. Cleared (with `thumbnail`) whenever a fresh PNG is written.
     thumbnail_load_attempted: bool,
-    /// When this entry's *running* VM last had its `thumbnail.png`
-    /// refreshed — drives the [`THUMBNAIL_REFRESH`] crash-insurance cadence.
-    last_thumbnail_write: Option<Instant>,
     /// The machine was renamed while running, so its `<slug>.toml`/artifact
     /// dir couldn't follow the new name yet (the running VM writes
     /// `thumbnail.png` into the artifact dir by path — renaming under it
@@ -145,34 +159,47 @@ impl MachineEntry {
             slug,
             def,
             vm: None,
+            suspended: false,
             launch_error: None,
             thumbnail: None,
             thumbnail_load_attempted: false,
-            last_thumbnail_write: None,
             rename_pending: false,
         }
     }
 }
 
-/// The status [`MachineEntry::vm`] implies right now — never persisted, see
-/// [`STATUS_RUNNING`]'s doc.
+/// The three-state status `entry` implies right now — see
+/// [`STATUS_RUNNING`]'s doc. A VM alive but not executing *without* the
+/// suspended flag (the debugger sitting at a breakpoint) still reads
+/// Running: debugger pause is a debugging condition, not a lifecycle state.
 fn vm_status_label(entry: &MachineEntry) -> &'static str {
-    match &entry.vm {
-        Some(vm) if vm.is_running() => STATUS_RUNNING,
-        Some(_) => STATUS_PAUSED,
-        None => STATUS_STOPPED,
+    if entry.suspended {
+        STATUS_SUSPENDED
+    } else if entry.vm.is_some() {
+        STATUS_RUNNING
+    } else {
+        STATUS_POWERED_OFF
     }
 }
 
-/// File name of a stopped machine's saved screen preview, inside its
-/// artifact directory (`machine_def::artifacts_root()/<slug>`).
+/// File name of a suspended machine's saved screen preview, inside its
+/// artifact directory (`machine_def::artifacts_root()/<slug>`) — written at
+/// suspend time so the row keeps showing the frozen frame after the VM
+/// window closes (and across manager restarts).
 const THUMBNAIL_FILE: &str = "thumbnail.png";
 
-/// How often a running VM's `thumbnail.png` is refreshed on disk. Stop and
-/// manager-exit both do a final write regardless — this periodic one is
-/// crash insurance, so a force-killed process still shows a recent preview
-/// on the next launch instead of nothing.
-const THUMBNAIL_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
+/// File name of a suspended machine's frozen state (the save-states
+/// `.ccstate` format — `coco_core::snapshot` via `CocoApp::save_state_to`),
+/// inside its artifact directory. Its existence IS the persistent Suspended
+/// state: written by Suspend, deleted by Resume (resuming discards the
+/// frozen copy, VirtualBox-style) and by Stop (powering off a suspended
+/// machine discards it too).
+const SUSPEND_STATE_FILE: &str = "suspended.ccstate";
+
+/// `<artifacts_root>/<slug>/suspended.ccstate`.
+fn suspend_state_path(artifacts_root: &Path, slug: &str) -> PathBuf {
+    artifacts_root.join(slug).join(SUSPEND_STATE_FILE)
+}
 
 /// Write `rgba` (`w`×`h`) as `dir/thumbnail.png`. Same tmp-then-rename
 /// pattern as `machine_def::save`, so a crash mid-write can never leave a
@@ -231,9 +258,10 @@ pub struct ManagerApp {
     machines_dir: Option<PathBuf>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
-    /// [`THUMBNAIL_FILE`] lives under `<root>/<slug>`. Injected like
-    /// `machines_dir` so tests use a temp dir, never the real data dir;
-    /// `None` disables thumbnail persistence entirely.
+    /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
+    /// `<root>/<slug>`. Injected like `machines_dir` so tests use a temp
+    /// dir, never the real data dir; `None` disables thumbnail persistence
+    /// and Suspend/Resume entirely (they error with [`NO_DATA_DIR`]).
     artifacts_root: Option<PathBuf>,
     /// `pub(crate)`: `ui_tests.rs` asserts on the list contents directly —
     /// `ManagerApp` lives in this module, so plain private fields (as
@@ -265,13 +293,21 @@ pub struct ManagerApp {
 impl ManagerApp {
     /// `photo`, `machines_dir`, `artifacts_root`, and `entries` are all
     /// injected (rather than loaded here) so tests can construct the manager
-    /// without touching the user's real config/data directories.
+    /// without touching the user's real config/data directories. Each
+    /// entry's Suspended flag is seeded here from its
+    /// [`SUSPEND_STATE_FILE`]'s existence — the one startup moment the
+    /// filesystem is the only record of the state.
     pub fn new(
         photo: Option<Photo>,
         machines_dir: Option<PathBuf>,
         artifacts_root: Option<PathBuf>,
-        entries: Vec<MachineEntry>,
+        mut entries: Vec<MachineEntry>,
     ) -> Self {
+        if let Some(root) = &artifacts_root {
+            for entry in &mut entries {
+                entry.suspended = suspend_state_path(root, &entry.slug).is_file();
+            }
+        }
         Self {
             photo,
             photo_texture: None,
@@ -294,12 +330,12 @@ impl eframe::App for ManagerApp {
     /// (`docs/plan-machine-persistence.md` "Lifetime rule"); this mirrors
     /// `CocoApp::on_exit`'s own contract for each of them.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        for i in 0..self.entries.len() {
-            // Final preview before the write-back: quitting with VMs still
-            // running is the most common way a stopped row would otherwise
-            // lose its saved thumbnail.
-            self.write_entry_thumbnail(i);
-            if let Some(vm) = self.entries[i].vm.as_mut() {
+        // Quit is the power switch for running VMs (user decision
+        // 2026-07-27 — no auto-suspend on quit); a suspended VM's state and
+        // preview are already on disk from suspend time, so neither needs
+        // anything written here.
+        for entry in &mut self.entries {
+            if let Some(vm) = entry.vm.as_mut() {
                 vm.flush_media();
             }
         }
@@ -358,7 +394,6 @@ impl eframe::App for ManagerApp {
         });
 
         self.draw_delete_confirmation(ctx);
-        self.refresh_due_thumbnails();
         self.draw_running_vms(ctx);
     }
 }

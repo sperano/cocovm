@@ -10,8 +10,9 @@
 //! [`DebuggerPanel`] owns the `coco_core::debug::Debugger` (breakpoints,
 //! watchpoints, trace ring) and is the single entry point `CocoApp::update`
 //! drives the per-field run loop through ([`DebuggerPanel::run_field`]) so a
-//! tripped breakpoint or watchpoint pauses the emulator the same way the
-//! Run/Pause button does, rather than needing a second "why did we stop"
+//! tripped breakpoint or watchpoint pauses the emulator through the same
+//! `running` flag the debugger's own Run/Pause control drives, rather than
+//! needing a second "why did we stop"
 //! flag. Every read view (disassembly, memory, stack) goes through
 //! [`coco_core::SystemBus::peek`] — never `read` — so simply having the
 //! debugger open can never perturb PIA/GIME/cart state (`docs/plan-debugger.md`
@@ -132,7 +133,8 @@ impl DebuggerPanel {
     /// actually completes (matching `Machine::run_field`'s contract exactly
     /// when no breakpoint/watchpoint is set — the common case) or a
     /// breakpoint/watchpoint trips, in which case this returns `false` so the
-    /// caller can pause (`self.running = false`), same as clicking Pause.
+    /// caller can pause (`self.running = false`), same as the debugger
+    /// panel's own Pause control.
     pub fn run_field(&mut self, machine: &mut Machine) -> bool {
         for _ in 0..MAX_CHAINED_RUNS {
             match self.core.run_until(machine, RUN_BUDGET) {

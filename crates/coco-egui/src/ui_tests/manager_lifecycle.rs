@@ -1,7 +1,9 @@
-//! Manager VM lifecycle tests: launching honors `[ui]` prefs, Start/Pause/
-//! Resume/Stop end-to-end through the detail-pane transport buttons
-//! (including thumbnail capture), two machines running side by side, and a
-//! broken media reference reporting instead of panicking.
+//! Manager VM lifecycle tests: launching honors `[ui]` prefs, the
+//! three-state model (Powered Off / Running / Suspended) end-to-end through
+//! the detail-pane transport buttons — including suspend's screenshot +
+//! `suspended.ccstate` persistence and resume-from-disk — two machines
+//! running side by side, and a broken media reference reporting instead of
+//! panicking.
 
 use egui_kittest::kittest::Queryable;
 
@@ -31,28 +33,28 @@ fn launch_honors_ui_settings() {
     );
 }
 
-/// Start opens the definition's own VM (`entries[0].vm` goes from `None` to
-/// `Some`) and the row/detail status text follows: Stopped → Running on
-/// Start, Running → Paused on Pause, back to Running on Resume, and to
-/// Stopped (with `vm` dropped) on Stop. Exercises the actual detail-pane
-/// buttons end-to-end, including `manager::draw_running_vms`'s
-/// `ViewportClass::Embedded` fallback and the `CocoApp::step_emulation`/
-/// `draw_display` split `main.rs`'s `window_ui` refactor introduced — a
+/// The three-state round trip through the actual detail-pane transport
+/// buttons: Powered Off → (▶) Running → (⏸) Suspended — screenshot +
+/// `suspended.ccstate` written, VM paused in place — → (▶) Running again
+/// (frozen state discarded) → (⏹) Powered Off. Exercises
+/// `manager::draw_running_vms`'s `ViewportClass::Embedded` fallback and the
+/// `CocoApp::step_emulation`/`draw_display` split along the way — a
 /// regression here would mean that split broke a running VM, not just the
 /// manager's bookkeeping around it.
 #[test]
-fn start_button_launches_and_stop_button_stops() {
-    let artifacts = TempDir::new("thumbnails");
+fn transport_buttons_walk_the_three_states() {
+    let artifacts = TempDir::new("suspend-transport");
     let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
     let mut harness =
         manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
     assert!(harness.state().entries[0].vm.is_none());
-    assert!(label_exists(&harness, "Stopped"));
+    assert!(label_exists(&harness, "Powered Off"));
 
     click(&mut harness, manager::PLAY_GLYPH);
-    assert!(harness.state().entries[0].vm.is_some(), "Start must launch the VM");
+    assert!(harness.state().entries[0].vm.is_some(), "Play must launch the VM");
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Running"));
     // One more step so `step_emulation` (which uploads the framebuffer
@@ -64,39 +66,227 @@ fn start_button_launches_and_stop_button_stops() {
         "a running VM must have an uploaded framebuffer texture for the row thumbnail to show"
     );
 
-    click(&mut harness, manager::PAUSE_GLYPH);
-    assert!(!harness.state().entries[0].vm.as_ref().unwrap().is_running());
-    assert!(label_exists(&harness, "Paused"));
-
-    click(&mut harness, manager::PLAY_GLYPH);
-    assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
-    assert!(label_exists(&harness, "Running"));
-
-    // Console-side controls next to the transport: Reset restarts the
-    // machine but leaves it running (the console button, not a deck
-    // control); Suspend exists but is disabled until save-states land.
+    // Reset is the console button, not a deck control: machine stays on.
     click(&mut harness, "Reset");
     assert!(
         harness.state().entries[0].vm.as_ref().unwrap().is_running(),
         "Reset must leave the machine on"
     );
-    harness.get_by_label("Suspend");
+
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    {
+        let entry = &harness.state().entries[0];
+        assert!(entry.suspended, "Suspend must mark the entry");
+        assert!(entry.vm.is_some(), "Suspend must NOT drop the VM (window stays open)");
+        assert!(!entry.vm.as_ref().unwrap().is_running(), "Suspend must pause emulation");
+    }
+    assert!(state_file.is_file(), "Suspend must freeze the machine to disk");
+    assert!(
+        artifacts.path().join("dev-coco-3").join("thumbnail.png").exists(),
+        "Suspend must capture the screen preview"
+    );
+    assert!(label_exists(&harness, "Suspended"));
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    {
+        let entry = &harness.state().entries[0];
+        assert!(!entry.suspended);
+        assert!(entry.vm.as_ref().unwrap().is_running(), "Play must resume emulation");
+    }
+    assert!(!state_file.exists(), "resuming must discard the frozen state");
+    assert!(label_exists(&harness, "Running"));
 
     click(&mut harness, manager::STOP_GLYPH);
     assert!(harness.state().entries[0].vm.is_none(), "Stop must drop the VM");
-    assert!(label_exists(&harness, "Stopped"));
-
-    // Stop captured the machine's last screen as thumbnail.png in its
-    // artifact dir, and the next frame's row draw loads it back as the
-    // stopped entry's cached preview texture.
-    assert!(
-        artifacts.path().join("dev-coco-3").join("thumbnail.png").exists(),
-        "Stop must write the stopped machine's screen preview"
-    );
+    assert!(label_exists(&harness, "Powered Off"));
     harness.step();
     assert!(
+        harness.state().entries[0].thumbnail.is_none(),
+        "a powered-off row must not show a saved preview — it is black"
+    );
+}
+
+/// Suspend → close the VM window → resume: the frozen state survives the VM
+/// object being dropped and restores byte-for-byte from `suspended.ccstate`.
+/// The marker is a byte poked into physical RAM the booted machine never
+/// maps (a 128K CoCo 3's default MMU task only reaches the upper 64K), so
+/// the machine can't disturb it between the poke and the suspend.
+#[test]
+fn resume_after_window_close_restores_the_frozen_state() {
+    const MARKER_ADDR: usize = 0x1234;
+    const MARKER: u8 = 0xAB;
+    let artifacts = TempDir::new("suspend-resume-disk");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, manager::PLAY_GLYPH);
+    harness.state_mut().entries[0].vm.as_mut().unwrap().machine.bus.ram[MARKER_ADDR] = MARKER;
+
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    assert!(state_file.is_file());
+
+    // The window-close path for a suspended machine — the exact production
+    // branch (`vm_windows::close_vm_window`): the VM object is dropped, the
+    // frozen state stays.
+    harness.state_mut().close_vm_window(0);
+    assert!(harness.state().entries[0].vm.is_none());
+    assert!(state_file.is_file(), "closing a suspended window must keep the frozen state");
+    harness.step();
+    assert!(label_exists(&harness, "Suspended"));
+    assert!(
         harness.state().entries[0].thumbnail.is_some(),
-        "the stopped row must reload the saved preview as its thumbnail"
+        "a window-closed suspended row must show its suspend-time screenshot"
+    );
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    let entry = &harness.state().entries[0];
+    assert!(!entry.suspended);
+    let vm = entry.vm.as_ref().expect("resume must relaunch the VM");
+    assert!(vm.is_running());
+    assert_eq!(
+        vm.machine.bus.ram[MARKER_ADDR], MARKER,
+        "resume must restore the frozen machine, not boot a fresh one"
+    );
+    assert!(!state_file.exists(), "resuming must discard the frozen state");
+}
+
+/// A `suspended.ccstate` already on disk at startup seeds the entry as
+/// Suspended ([`manager::ManagerApp::new`]) — the state survives quitting
+/// the manager. A file that then fails to restore (garbage here) reports in
+/// the detail pane and leaves the machine Suspended, its frozen copy
+/// untouched.
+#[test]
+fn startup_seeds_suspended_from_disk_and_failed_resume_keeps_it() {
+    let artifacts = TempDir::new("suspend-startup");
+    let machine_dir = artifacts.path().join("dev-coco-3");
+    std::fs::create_dir_all(&machine_dir).unwrap();
+    let state_file = machine_dir.join("suspended.ccstate");
+    std::fs::write(&state_file, b"not a ccstate").unwrap();
+
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    assert!(harness.state().entries[0].suspended);
+
+    click(&mut harness, "Dev CoCo 3");
+    assert!(label_exists(&harness, "Suspended"));
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    let entry = &harness.state().entries[0];
+    assert!(entry.suspended, "a failed restore must keep the machine Suspended");
+    assert!(entry.vm.is_none(), "a failed restore must not leave a half-launched VM");
+    // Specifically the snapshot decoder's own error — proving the relaunch
+    // succeeded and it was the *restore* that failed, not `start_vm` (which
+    // would record a ROM/media error instead and pass these asserts for
+    // the wrong reason).
+    assert!(
+        entry.launch_error.as_deref().is_some_and(|e| e.contains("not a CoCo save state")),
+        "the restore failure must reach the detail pane; got {:?}",
+        entry.launch_error
+    );
+    assert!(state_file.is_file(), "the frozen state must survive a failed resume");
+}
+
+/// A suspended VM's window is display-only all the way down to *input*:
+/// `draw_running_vms` runs only the framebuffer-texture upload for it,
+/// never `step_emulation`, whose `handle_input` would leave app shortcuts
+/// (quick-load ⌘1 replacing the frozen machine wholesale!) and keyboard/
+/// joystick writes live on a machine whose on-disk frozen copy they'd
+/// silently diverge from. F9 (the aspect toggle) is the cheapest
+/// observable of that whole class: it must bounce off a suspended VM and
+/// work again once resumed.
+#[test]
+fn suspended_vm_window_ignores_input() {
+    let artifacts = TempDir::new("suspend-input-gate");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    let before = harness.state().entries[0].vm.as_ref().unwrap().aspect_correct;
+
+    harness.key_press(egui::Key::F9);
+    harness.step();
+    assert_eq!(
+        harness.state().entries[0].vm.as_ref().unwrap().aspect_correct,
+        before,
+        "a suspended VM's window must not process app shortcuts"
+    );
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    harness.key_press(egui::Key::F9);
+    harness.step();
+    assert_eq!(
+        harness.state().entries[0].vm.as_ref().unwrap().aspect_correct,
+        !before,
+        "a resumed VM's window processes shortcuts again"
+    );
+}
+
+/// The VM window's close box, driven through the real UI (the embedded
+/// fallback's `egui::Window` close button): on a Running machine it is the
+/// power switch; on a Suspended one it only drops the VM object, keeping
+/// the frozen state on disk. Guards `draw_running_vms`'s close-request
+/// wiring end to end — the other suspend tests call `close_vm_window`
+/// directly.
+#[test]
+fn window_close_powers_off_running_but_preserves_suspended() {
+    let artifacts = TempDir::new("suspend-window-close");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Close window");
+    assert!(
+        harness.state().entries[0].vm.is_none(),
+        "closing a running VM's window is the power switch"
+    );
+    assert!(label_exists(&harness, "Powered Off"));
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    assert!(state_file.is_file());
+    click(&mut harness, "Close window");
+    let entry = &harness.state().entries[0];
+    assert!(entry.vm.is_none(), "closing a suspended VM's window drops the VM object");
+    assert!(entry.suspended, "…but the machine stays Suspended");
+    assert!(state_file.is_file(), "…and the frozen state survives");
+}
+
+/// Stop on a suspended, window-closed machine is the power switch: the
+/// frozen state and the row preview are both discarded.
+#[test]
+fn stop_on_suspended_machine_discards_the_frozen_state() {
+    let artifacts = TempDir::new("suspend-stop");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    harness.state_mut().close_vm_window(0);
+    harness.step();
+
+    click(&mut harness, manager::STOP_GLYPH);
+    let entry = &harness.state().entries[0];
+    assert!(!entry.suspended);
+    assert!(entry.vm.is_none());
+    assert!(!state_file.exists(), "Stop must discard the frozen state");
+    assert!(label_exists(&harness, "Powered Off"));
+    harness.step();
+    assert!(
+        harness.state().entries[0].thumbnail.is_none(),
+        "a powered-off row must not keep the stale screenshot"
     );
 }
 

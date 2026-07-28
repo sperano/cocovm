@@ -6,10 +6,6 @@ impl CocoApp {
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let run_label = if self.running { "Pause" } else { "Run" };
-                if ui.button(run_label).clicked() {
-                    self.running = !self.running;
-                }
                 if ui.button("Reset").clicked() {
                     self.machine.reset();
                 }

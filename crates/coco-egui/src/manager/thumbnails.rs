@@ -1,19 +1,20 @@
-//! Preview-thumbnail cache management: writing a running VM's framebuffer
-//! out to its artifact directory on a cadence, and lazily loading a stopped
+//! Preview-thumbnail cache management: writing a VM's framebuffer out to
+//! its artifact directory at suspend time, and lazily loading a suspended
 //! machine's saved preview into a texture for the list row. See
 //! [`super::write_thumbnail_png`] for the on-disk format/write contract.
 
 use eframe::egui;
 
-use super::{ManagerApp, THUMBNAIL_FILE, THUMBNAIL_REFRESH};
+use super::{ManagerApp, THUMBNAIL_FILE};
 
 impl ManagerApp {
-    /// Snapshot `entries[index]`'s running VM screen into its artifact dir
+    /// Snapshot `entries[index]`'s live VM screen into its artifact dir
     /// (see [`super::write_thumbnail_png`]) and invalidate the row's cached preview
-    /// texture so the next draw reloads the fresh file. No-op for a stopped
-    /// entry or when no artifact root exists. Capture happens between update
-    /// frames, so the framebuffer always holds a whole rendered field —
-    /// never a torn, mid-render frame.
+    /// texture so the next draw reloads the fresh file — the screenshot
+    /// half of Suspend (`super::lifecycle`'s `suspend_vm`). No-op for an
+    /// entry with no VM or when no artifact root exists. Capture happens
+    /// between update frames, so the framebuffer always holds a whole
+    /// rendered field — never a torn, mid-render frame.
     pub(super) fn write_entry_thumbnail(&mut self, index: usize) {
         let Some(root) = &self.artifacts_root else {
             return;
@@ -30,37 +31,17 @@ impl ManagerApp {
         }
         entry.thumbnail = None;
         entry.thumbnail_load_attempted = false;
-        entry.last_thumbnail_write = Some(std::time::Instant::now());
     }
 
-    /// [`THUMBNAIL_REFRESH`] cadence for every running VM — called once per
-    /// `update()`. The first write happens right after Start
-    /// (`last_thumbnail_write` starts `None`), so even a young machine has
-    /// an on-disk preview if the process dies.
-    pub(super) fn refresh_due_thumbnails(&mut self) {
-        if self.artifacts_root.is_none() {
-            return;
-        }
-        for i in 0..self.entries.len() {
-            if self.entries[i].vm.is_none() {
-                continue;
-            }
-            let due = self.entries[i]
-                .last_thumbnail_write
-                .is_none_or(|last| last.elapsed() >= THUMBNAIL_REFRESH);
-            if due {
-                self.write_entry_thumbnail(i);
-            }
-        }
-    }
-
-    /// Lazily load a stopped entry's saved [`THUMBNAIL_FILE`] into a texture
-    /// the first time its row draws (and again after
-    /// [`Self::write_entry_thumbnail`] invalidates the cache). Failures just
+    /// Lazily load a suspended, window-closed entry's saved
+    /// [`THUMBNAIL_FILE`] into a texture the first time its row draws (and
+    /// again after [`Self::write_entry_thumbnail`] invalidates the cache).
+    /// Only suspended machines show a saved preview — a powered-off row is
+    /// deliberately black — so nothing else ever loads one. Failures just
     /// leave the placeholder — the preview is a cache, never required state.
     pub(super) fn ensure_row_thumbnail(&mut self, ctx: &egui::Context, index: usize) {
         let entry = &mut self.entries[index];
-        if entry.vm.is_some() || entry.thumbnail_load_attempted {
+        if entry.vm.is_some() || !entry.suspended || entry.thumbnail_load_attempted {
             return;
         }
         entry.thumbnail_load_attempted = true;

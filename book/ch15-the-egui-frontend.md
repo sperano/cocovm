@@ -100,7 +100,7 @@ immediate mode there is no persistent widget tree at all. Instead, your
 ```
 
 That is the *entire* trait implementation — three lines at
-[`crates/coco-egui/src/app.rs:323-325`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L323-L325), forwarding to a plain inherent
+[`crates/coco-egui/src/app.rs:326-328`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L326-L328), forwarding to a plain inherent
 method. Everything else in that file is ordinary `impl CocoApp`. There is
 no widget registration, no event handler installation, no constructor that
 builds a layout. The window is whatever `update` draws this time around,
@@ -116,7 +116,7 @@ that returns a response*, made fresh, every single frame:
 ```
 
 That is the Reset button of the real toolbar, at
-[`crates/coco-egui/src/chrome/toolbar.rs:13-15`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar.rs#L13-L15). Read it as three
+[`crates/coco-egui/src/chrome/toolbar.rs:9-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar.rs#L9-L11). Read it as three
 things happening inside one expression. `ui.button("Reset")` draws a button
 at whatever the current layout position happens to be, then checks this
 frame's input for a click that landed inside the rectangle it just drew,
@@ -172,8 +172,6 @@ this concrete. Here is the whole thing:
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(if self.running { "Running" } else { "Paused" });
-                ui.separator();
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 self.cart_status(ui);
                 self.rs232_status(ui);
@@ -191,10 +189,10 @@ this concrete. Here is the whole thing:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:5-24`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L5-L24).) The first label
-is a conditional expression, not two labels one of which is hidden: whether
-the bar says "Running" or "Paused" is decided fresh, sixty times a second,
-by reading a bool. The seven `*_status` calls are where it gets
+([`crates/coco-egui/src/chrome/status_bar.rs:5-22`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L5-L22).) The toast at the
+end is a conditional widget, not a label that gets shown and hidden:
+whether the bar ends with a toast is decided fresh, sixty times a second,
+by asking `toast_message()`. The seven `*_status` calls are where it gets
 interesting. Each one is written like this:
 
 ```rust
@@ -205,7 +203,7 @@ interesting. Each one is written like this:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:26-30`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L26-L30).) With no
+([`crates/coco-egui/src/chrome/status_bar.rs:24-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L24-L28).) With no
 cartridge inserted, the function returns before drawing anything, and the
 status bar this frame simply has no cartridge section — no separator, no
 label, no reserved space that has to be collapsed. Eject the cartridge and
@@ -547,9 +545,10 @@ writing versions of it for decades.
 > `replace` is one of a small family of `Option` methods (`take`, `replace`,
 > `get_or_insert_with`, `is_none_or`) that this crate leans on heavily;
 > `get_or_insert_with` shows up in the texture upload above, `take` runs
-> the manager's viewport loop in §15.6, and `is_none_or` paces the
-> thumbnail refresh. Learning the family pays off quickly when reading Rust
-> that manipulates optional state.
+> the manager's viewport loop in §15.6, and `is_none_or` decides when the
+> detail pane's edit state must be reseeded for a newly selected row.
+> Learning the family pays off quickly when reading Rust that manipulates
+> optional state.
 
 ### Working the numbers: a 120 Hz monitor
 
@@ -764,9 +763,9 @@ soft blur that no CoCo owner ever saw.
 The frontend does use linear sampling — twice, and both times for
 photographs rather than emulated screens. The manager's decorative photo
 pane uploads with `TextureOptions::LINEAR`
-([`crates/coco-egui/src/manager.rs:308-311`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L308-L311)), and so does a stopped
+([`crates/coco-egui/src/manager.rs:345-348`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L345-L348)), and so does a suspended
 machine's saved screen thumbnail when it is loaded back from its PNG
-([`crates/coco-egui/src/manager/thumbnails.rs:76-80`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L76-L80)). Both are being
+([`crates/coco-egui/src/manager/thumbnails.rs:57-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L57-L61)). Both are being
 scaled *down* into a small area rather than up, and a photograph shrunk
 with nearest sampling looks harsh and aliased. Same API, opposite choice,
 for a reason you can state in one sentence — which is what makes it worth
@@ -1405,8 +1404,9 @@ has not touched in fourteen weeks.
 
 Run the bare `coco` binary with no arguments and you do not get a booted
 machine at all. You get the *manager*: a window in the style of VirtualBox
-or Parallels, listing every machine you have defined, with Start, Pause and
-Stop controls and a detail pane for editing hardware and attached media.
+or Parallels, listing every machine you have defined, with a deck-style
+transport — power on, suspend to disk, power off — and a detail pane for
+editing hardware and attached media.
 The dispatch is three lines in `main()` — "bare `coco` (no CLI arguments)
 opens the CocoVM manager window; any argument keeps the direct-boot
 emulator path" ([`crates/coco-egui/src/main.rs:110-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L110-L114)) — and everything
@@ -1584,7 +1584,7 @@ passed in rather than hard-coded, and the call sites are where the care
 shows. Creating a machine checks *both* the in-memory list and the
 directory on disk, because the in-memory list would miss a `<slug>.toml`
 written by a second running instance or placed there by hand since startup
-([`crates/coco-egui/src/manager/lifecycle.rs:41-45`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L41-L45)). Without the
+([`crates/coco-egui/src/manager/lifecycle.rs:44-48`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L44-L48)). Without the
 on-disk half of that check, `save`'s unconditional rename would silently
 overwrite somebody else's file.
 
@@ -1593,7 +1593,7 @@ Renaming is therefore exactly two filesystem moves: `<old>.toml` to
 second move fails partway, the first is rolled back — the definition file
 is renamed back rather than left pointing at a directory that no longer
 matches its own name
-([`crates/coco-egui/src/manager/lifecycle.rs:99-152`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L99-L152)). The comment
+([`crates/coco-egui/src/manager/lifecycle.rs:213-266`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L213-L266)). The comment
 on that rollback states the priority plainly: "a stale slug beats relative
 [media] entries resolving into a directory that no longer matches the
 definition's file name."
@@ -1607,24 +1607,28 @@ directory and every relative media path in it silently points at nothing.
 
 There is one more subtlety, and it is the sort of thing that only appears
 once a feature meets a real user. A machine cannot be renamed on disk while
-its VM is running, because the running VM writes `thumbnail.png` into the
-artifact directory by path, and renaming out from under it races. So a
-rename requested while running merely sets a flag, and a separate pass
-picks it up later:
+its VM is running — the running VM writes `thumbnail.png` into the
+artifact directory by path, and renaming out from under it races — nor
+while it is *suspended*, for a subtler reason: the frozen
+`suspended.ccstate` records its media by absolute, pre-rename path (week
+16's `MediaRefs`), so moving the artifact directory under it would make
+the frozen state unrestorable. So a rename requested in either state
+merely sets a flag, and a separate pass picks it up once the machine is
+powered off:
 
 ```rust
     pub(super) fn apply_pending_renames(&mut self) {
         while let Some(index) = self
             .entries
             .iter()
-            .position(|e| e.rename_pending && e.vm.is_none())
+            .position(|e| e.rename_pending && e.vm.is_none() && !e.suspended)
         {
             self.migrate_slug(index);
         }
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:162-170`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L162-L170).) It runs once per
+([`crates/coco-egui/src/manager/lifecycle.rs:279-287`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L279-L287).) It runs once per
 `update()`, before any panel draws, so row indices stay stable for the
 whole frame — and it re-searches from scratch each iteration rather than
 iterating indices, because each `migrate_slug` re-sorts the list
@@ -1633,35 +1637,48 @@ clears `rename_pending` unconditionally, on success or failure. Exercise
 15.5 asks you to connect this deferral to a kittest test that has to step
 three frames instead of two.
 
-### Start, Stop, and where the running machine lives
+### Start, Suspend, Stop: where the machine lives
 
-One row of the list is one `MachineEntry`: a slug, a parsed `MachineDef`,
-and — the only field that changes what is actually *running* —
+A machine is always in exactly one of three states — **Powered Off**,
+**Running**, or **Suspended** (frozen to disk, resumable later, even after
+quitting the manager) — and one row of the list is one `MachineEntry`: a
+slug, a parsed `MachineDef`, and two fields that between them encode that
+state. The first changes what is actually *executing*:
 
 ```rust
     pub vm: Option<Box<CocoApp>>,
 ```
 
-That one field is [`crates/coco-egui/src/manager.rs:109`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L109), inside the struct at
-[`crates/coco-egui/src/manager.rs:102-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L102-L133). Stopped is `None`.
-Everything else about the row's runtime status is derived from that one
-field rather than stored:
+That field is [`crates/coco-egui/src/manager.rs:118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L118), inside the struct at
+[`crates/coco-egui/src/manager.rs:110-148`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L110-L148). Powered Off is `None`. The
+second, `suspended: bool`, mirrors something that lives on disk: a
+suspended machine's whole frozen state is a `suspended.ccstate` file in
+its artifact directory (written by week 16's save-state engine), and *the
+file's existence is the state* — the flag is only a per-frame cache so
+drawing never has to stat the filesystem, seeded from the file when the
+manager starts. The status label is derived from the pair rather than
+stored:
 
 ```rust
 fn vm_status_label(entry: &MachineEntry) -> &'static str {
-    match &entry.vm {
-        Some(vm) if vm.is_running() => STATUS_RUNNING,
-        Some(_) => STATUS_PAUSED,
-        None => STATUS_STOPPED,
+    if entry.suspended {
+        STATUS_SUSPENDED
+    } else if entry.vm.is_some() {
+        STATUS_RUNNING
+    } else {
+        STATUS_POWERED_OFF
     }
 }
 ```
 
-([`crates/coco-egui/src/manager.rs:158-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L158-L164).) Three states, computed
-fresh at draw time, never persisted — the constants' doc comment says so
-explicitly. This is §15.1's lesson applied to application state rather than
-widgets: do not store what you can compute, because stored copies go stale
-and computed ones cannot.
+([`crates/coco-egui/src/manager.rs:175-183`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L175-L183).) Three states, computed
+fresh at draw time; the only one with any persistence is Suspended, and
+its persistence is the state file itself, not a status field in the
+definition. This is §15.1's lesson applied to application state rather
+than widgets: do not store what you can compute, because stored copies go
+stale and computed ones cannot — and when something genuinely must
+persist, make the artifact itself the truth rather than a second record of
+it.
 
 Starting is short:
 
@@ -1676,7 +1693,7 @@ Starting is short:
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:69-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L69-L76).) `launch_machine`
+([`crates/coco-egui/src/manager/lifecycle.rs:72-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L72-L79).) `launch_machine`
 is the manager's counterpart to the CLI's `boot::boot_app`; both build a
 `CocoApp` from a config plus a set of mounted media, and the two modules'
 doc comments name each other as siblings
@@ -1684,25 +1701,58 @@ doc comments name each other as siblings
 error handling: the CLI path prints and exits, while this one must return
 an `Err` for the detail pane to display, since crashing the manager because
 one machine's disk image is missing would be absurd. On failure `vm` is
-left untouched at `None`, so a failed Start leaves a Stopped row rather
-than a half-constructed one.
+left untouched at `None`, so a failed Start leaves a Powered Off row
+rather than a half-constructed one.
 
-Stopping is shorter still:
+Suspend is the transport's ⏸, enabled only while Running, and it composes
+three things this chapter and the next already own: capture the screen as
+the row's preview (`write_entry_thumbnail`), freeze the whole machine to
+`suspended.ccstate` with week 16's `save_state_to` (which flushes dirty
+media as part of its own contract), and stop the clock in place
+(`set_running(false)`) — in that order, so the screenshot is exactly the
+frozen frame ([`crates/coco-egui/src/manager/lifecycle.rs:91-116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L91-L116)).
+The window stays open as a display-only viewing port (§ below), and
+closing it merely drops the `Box` — the state is already safe on disk.
+Play on a suspended machine (`resume_vm`,
+[`crates/coco-egui/src/manager/lifecycle.rs:130-159`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L130-L159)) either
+un-pauses the still-alive VM or, if the window was closed, launches fresh
+and restores the frozen state over it — and, either way, *deletes* the
+state file, because the running machine immediately diverges from the
+frozen copy and a stale file would misreport Suspended after the next
+power-off. A failed restore keeps the file and the Suspended state: the
+frozen copy is still the truth.
+
+Stopping is the power switch:
 
 ```rust
     pub(super) fn stop_vm(&mut self, index: usize) {
-        self.write_entry_thumbnail(index);
         if let Some(mut vm) = self.entries[index].vm.take() {
             vm.flush_media();
+        }
+        let entry = &mut self.entries[index];
+        entry.suspended = false;
+        entry.thumbnail = None;
+        entry.thumbnail_load_attempted = false;
+        if let Some(root) = &self.artifacts_root {
+            let dir = root.join(&entry.slug);
+            for file in [SUSPEND_STATE_FILE, THUMBNAIL_FILE] {
+                if let Err(e) = fs::remove_file(dir.join(file))
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::warn!("could not remove {file} for '{}': {e}", entry.slug);
+                }
+            }
         }
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:83-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L83-L88).) Write a final
-thumbnail, flush dirty media — the same `flush_media` that
-`CocoApp::on_exit` runs for the direct-boot window — and drop the `Box`.
-Dropping it is what shuts the machine down; there is no `shutdown()`
-method, because Rust's ownership already provides one.
+([`crates/coco-egui/src/manager/lifecycle.rs:173-191`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L173-L191).) Flush dirty
+media — the same `flush_media` that `CocoApp::on_exit` runs for the
+direct-boot window — drop the `Box`, and discard both halves of any frozen
+state: the `.ccstate` and the screenshot, since a powered-off row shows a
+black preview, never a stale picture. Dropping the `Box` is what shuts the
+machine down; there is no `shutdown()` method, because Rust's ownership
+already provides one.
 
 > **Rust corner — `Option<Box<CocoApp>>`, not `Option<CocoApp>`.**
 > `CocoApp` is a large struct. It contains the whole `Machine` (CPU, RAM,
@@ -1731,11 +1781,12 @@ The loop's core is three lines:
 
 ```rust
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
+            let suspended = self.entries[i].suspended;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:64-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L64-L66).) The
+([`crates/coco-egui/src/manager/vm_windows.rs:64-67`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L64-L67).) The
 `viewport_id` above it is
 `egui::ViewportId::from_hash_of(("vm-window", &slug))`, which gives each
 VM's window a stable identity across frames. That stability is what makes
@@ -1745,8 +1796,8 @@ persists, widgets don't" discipline §15.1 opened with, applied to whole
 windows instead of buttons. The slug, once again, is the identity.
 
 The closure receives a `class` telling it what kind of viewport it actually
-got, and branches. On a backend with real multi-window support it takes the
-straightforward path:
+got, and branches. On a backend with real multi-window support, a Running
+machine takes the straightforward path:
 
 ```rust
                 } else {
@@ -1763,7 +1814,7 @@ straightforward path:
             }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:104-116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L104-L116).) That single
+([`crates/coco-egui/src/manager/vm_windows.rs:135-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L135-L146).) That single
 `vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
 §15.3 established. The *entire* direct-boot experience — menu bar, toolbar,
 status bar, the letterboxed display, every dialog — runs unmodified inside
@@ -1772,7 +1823,19 @@ been reading all along. There is no second implementation of the emulator
 window for the manager to maintain, and no risk of the two drifting apart,
 because there is only one.
 
-The other branch is the degraded case, and it exists because not every
+A *Suspended* machine whose window is still open takes a middle branch
+([`crates/coco-egui/src/manager/vm_windows.rs:112-134`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L112-L134)):
+just the framebuffer-texture upload plus the display — no chrome, and no
+`step_emulation` either, since its `handle_input` would keep the
+quick-load/quick-save shortcuts and keyboard/joystick writes live. The
+window becomes a viewing port onto the frozen frame, never a control
+surface — a full chrome would leave Reset, Load State, disk mounts, and
+the debugger's own Run/Step pointed at a machine whose on-disk frozen copy
+they would silently diverge from, and one stray click later, Play would
+"resume" (and discard the state file of) a machine that no longer matches
+what the user froze.
+
+The last branch is the degraded case, and it exists because not every
 backend can open real child windows — kittest, the headless test backend
 §15.8 covers, is exactly this case. There, `class` is
 `ViewportClass::Embedded` and the fallback deliberately shows *only* the
@@ -1782,9 +1845,10 @@ bare display:
                     vm.step_emulation(child_ctx);
 ```
 
-followed by an anchored `egui::Window` whose body is just
-`vm.draw_display(ui)`
-([`crates/coco-egui/src/manager/vm_windows.rs:78-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L78-L100)). Two decisions
+(for a Running machine — a suspended one gets the same
+texture-upload-only gating here as in the native branch), followed by an
+anchored `egui::Window` whose body is just `vm.draw_display(ui)`
+([`crates/coco-egui/src/manager/vm_windows.rs:82-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L82-L108)). Two decisions
 in that fallback are worth reading the comments for. It skips
 `draw_chrome` entirely because drawing two independent sets of menu bars
 and status bars into one shared context would interleave them into a single
@@ -1809,11 +1873,13 @@ because emulation was deliberately separated from the drawing of chrome.
 >
 > Why not simply borrow `&mut self.entries[i].vm` inside the closure? The
 > function's own doc comment answers it: close requests are collected into
-> a plain local `Vec<usize>` and applied *after* the loop, because
-> `stop_vm` needs `&mut self.entries[i]`, which would conflict with the
-> `vm` the loop is already holding out of that same slot. Holding a live
-> borrow of `self` across the closure body would collide with the
-> surrounding loop's own indexing of `self.entries`.
+> a plain local `Vec<usize>` and applied *after* the loop with
+> `close_vm_window` — the power switch for a Running machine, a mere
+> VM-object drop for a Suspended one — because that needs
+> `&mut self.entries[i]`, which would conflict with the `vm` the loop is
+> already holding out of that same slot. Holding a live borrow of `self`
+> across the closure body would collide with the surrounding loop's own
+> indexing of `self.entries`.
 >
 > This is the exact move from Chapter 1, §1.4 — `Machine { cpu, bus }` as
 > disjoint fields so that `cpu.step(&mut bus)` compiles — recurring in
@@ -1824,49 +1890,28 @@ because emulation was deliberately separated from the drawing of chrome.
 > invariant that makes it safe: the loop already skipped entries whose `vm`
 > is `None`.
 
-### Thumbnails: crash insurance, not a feature
+### Thumbnails: the suspend-time screenshot
 
-Every stopped row shows a small preview of that machine's last screen. The
-preview is a plain PNG at `<artifact-dir>/<slug>/thumbnail.png`, written
-with the same temporary-file-then-rename atomicity as machine definitions,
-on three separate occasions.
+Each machine's row preview is a direct statement of its state. A Running
+machine shows its live framebuffer — the very texture §15.3 uploaded,
+drawn a second time in a smaller rectangle, one extra quad and no extra
+upload. A Powered Off machine shows plain black, like the screen of a
+machine with no power. And a Suspended one shows the *frozen frame*: at
+suspend time, `write_entry_thumbnail`
+([`crates/coco-egui/src/manager/thumbnails.rs:18-34`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L18-L34)) captures the
+framebuffer as a plain PNG at `<artifact-dir>/<slug>/thumbnail.png` —
+written with the same temporary-file-then-rename atomicity as machine
+definitions — so the row keeps showing that exact frame after the VM
+window closes, and even across manager restarts. Powering off deletes it
+along with the state file; the screenshot has no meaning without the
+frozen machine it depicts.
 
-Two of them are obvious: an explicit Stop, and the manager's own `on_exit`,
-which writes a final preview for every entry before flushing its media
-([`crates/coco-egui/src/manager.rs:295-305`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L295-L305)) — quitting with VMs still
-running is, as the comment says, "the most common way a stopped row would
-otherwise lose its saved thumbnail." The third is the interesting one:
+While the suspended VM object is still alive its (unchanging) live texture
+serves as the preview for free; the PNG is loaded back lazily, only once
+the object is gone
+([`crates/coco-egui/src/manager/thumbnails.rs:42-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L42-L62)).
 
-```rust
-    pub(super) fn refresh_due_thumbnails(&mut self) {
-        if self.artifacts_root.is_none() {
-            return;
-        }
-        for i in 0..self.entries.len() {
-            if self.entries[i].vm.is_none() {
-                continue;
-            }
-            let due = self.entries[i]
-                .last_thumbnail_write
-                .is_none_or(|last| last.elapsed() >= THUMBNAIL_REFRESH);
-            if due {
-                self.write_entry_thumbnail(i);
-            }
-        }
-    }
-```
-
-([`crates/coco-egui/src/manager/thumbnails.rs:40-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L40-L55).) Every running
-VM gets its thumbnail rewritten every `THUMBNAIL_REFRESH`, which is 30
-seconds. That periodic write exists purely as *crash insurance*. If the
-process is force-killed — a real operating-system crash, not a graceful
-Stop — the on-exit write never runs, but the previous 30-second refresh
-already left something useful on disk, so the next launch shows a recent
-screen instead of a placeholder. `is_none_or` handles the first write for
-free: an entry that has never been written is due immediately, so even a
-machine started five seconds before the crash has a preview.
-
-One small heuristic keeps that safety net from actively hurting you:
+One small heuristic in the PNG writer deserves attention:
 
 ```rust
     let all_black = rgba
@@ -1877,22 +1922,21 @@ One small heuristic keeps that safety net from actively hurting you:
     }
 ```
 
-([`crates/coco-egui/src/manager.rs:183-188`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L183-L188).) Consider what a
-periodic snapshot is exposed to. The CoCo's screen is genuinely, uniformly
-black at plenty of legitimate moments: during a mode switch mid-boot, right
-after a `CLS 0`, in the instant following a cold reset before the ROM has
-painted anything. If the 30-second timer happens to fire during one of
-those, a useful preview would be clobbered by a solid black square through
-sheer bad luck of timing.
+([`crates/coco-egui/src/manager.rs:211-216`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L211-L216).) Consider what a
+screen capture is exposed to. The CoCo's screen is genuinely, uniformly
+black at plenty of legitimate moments: during a mode switch, right after a
+`CLS 0`, in the instant following a reset before the ROM has painted
+anything. Suspend during one of those — on a machine suspended and resumed
+before, so a useful screenshot already exists — and that preview would be
+clobbered by a solid black square through sheer bad luck of timing.
 
 Skipping the write when the frame is uniformly black *and* a previous
 thumbnail already exists prevents that. The second half of the condition
-matters just as much as the first: the *very first* thumbnail a brand-new
-machine ever writes must still land even if that first frame happens to be
-black, since skipping it then would leave the row with no preview at all
-and no obvious way to ever get one. Two clauses, two distinct guarantees,
-and §15.11's sabotage exercise asks you to find both of them by breaking
-one.
+matters just as much as the first: the *very first* thumbnail a machine
+ever writes must still land even if that frame happens to be black, since
+skipping it then would leave the row with no preview at all. Two clauses,
+two distinct guarantees, and §15.11's sabotage exercise asks you to find
+both of them by breaking one.
 
 ---
 
@@ -2191,7 +2235,7 @@ handled explicitly rather than papered over. Three helpers do that.
 visible caption does not show — a submenu's trailing "⏵", or a menu row's
 shortcut hint ("New… ⌘N"). `lowest_by_label` and `click_in_menu`
 disambiguate a menu-popup copy of a label that the toolbar *also* shows —
-"Pause" appears in both places at once — by picking whichever matching node
+"Reset" appears in both places at once — by picking whichever matching node
 sits lowest on screen, since a popup always hangs below the toolbar row
 that opened it. And for the genuinely intentional duplicates there is:
 
@@ -2403,7 +2447,7 @@ calls? Which single line of `fields_due` is responsible for the emulator
 which line is responsible for it not trying to make up the remainder
 (≈5 fields) over the next several calls either?
 
-**15.3 — Sabotage the thumbnail crash-insurance heuristic (sabotage,
+**15.3 — Sabotage the thumbnail keep-previous heuristic (sabotage,
 verify by running the suite).** Open [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and
 find `write_thumbnail_png`'s skip check:
 
@@ -2451,7 +2495,7 @@ immediately after `name_field().focus()` and typing `" Two"` but *before*
 `harness.step()` **three** times after the Enter key press, when most of
 this chapter's helpers only ever call it once or twice in a row — tie your
 answer to `ManagerApp::apply_pending_renames`'s doc comment
-([`manager/lifecycle.rs:154-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L154-L161)) and the `rename_pending` field it
+([`manager/lifecycle.rs:268-278`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L268-L278)) and the `rename_pending` field it
 consumes. Then run `cargo test -p coco-egui ui_tests::manager_window` (this
 one needs no ROM) and confirm your prediction against the passing test.
 

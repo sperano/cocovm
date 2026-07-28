@@ -4,13 +4,17 @@
 //! (`manager::detail`).
 
 use std::fs;
+use std::path::PathBuf;
 
 use coco_core::MachineConfig;
 use eframe::egui;
 
 use crate::machine_def;
 
-use super::{MachineEntry, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR};
+use super::{
+    suspend_state_path, MachineEntry, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, NO_DATA_DIR,
+    SUSPEND_STATE_FILE, THUMBNAIL_FILE,
+};
 
 /// Display name (and slug source) of a freshly created machine
 /// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s
@@ -58,14 +62,13 @@ impl ManagerApp {
         }
     }
 
-    /// Detail pane's Start button: launch `entries[index]`'s *saved*
+    /// Play on a Powered Off machine: launch `entries[index]`'s *saved*
     /// definition (`crate::launch_machine`) — not the in-progress edit
     /// draft, which may hold changes the user hasn't saved yet (the small
     /// note next to the button in [`super::detail`]'s `draw_detail_ok` is
-    /// the only warning about that). A stopped entry always has `vm: None`,
-    /// so this only ever replaces `None` with `Some`; an entry that's
-    /// already running has no Start button to click (see the `is_running`
-    /// match in `draw_detail_ok`).
+    /// the only warning about that). A powered-off entry always has
+    /// `vm: None`, so this only ever replaces `None` with `Some`; callers
+    /// route a Running or Suspended entry elsewhere ([`Self::resume_vm`]).
     pub(super) fn start_vm(&mut self, index: usize) {
         let entry = &mut self.entries[index];
         entry.launch_error = None;
@@ -75,16 +78,124 @@ impl ManagerApp {
         }
     }
 
-    /// Stop button (and the VM window's own close box, via
-    /// [`super::vm_windows`]'s `draw_running_vms`): flush dirty disks/tape
-    /// back to their files — the same exit contract `CocoApp::on_exit` runs
-    /// for the direct-boot window — then drop the VM, returning the row to
-    /// Stopped.
-    pub(super) fn stop_vm(&mut self, index: usize) {
+    /// Suspend (the ⏸ transport button, Running machines only): freeze the
+    /// machine to disk and pause it in place. Order matters — the
+    /// screenshot first (the row preview must show the exact frozen frame),
+    /// then the state file (`CocoApp::save_state_to`, which flushes dirty
+    /// media itself as part of its contract), then the pause. A failed save
+    /// aborts the whole suspend: the machine stays Running and the error
+    /// lands in the transport row's error label (`launch_error` — same
+    /// label Start uses). The VM window deliberately stays open; closing it
+    /// is the user's choice ([`super::vm_windows`] just drops the VM object
+    /// for a suspended entry, the state being safe on disk).
+    pub(super) fn suspend_vm(&mut self, index: usize) {
+        let Some(path) = self.suspend_state_path_for(index) else {
+            self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
+            return;
+        };
+        if self.entries[index].vm.is_none() {
+            return;
+        }
         self.write_entry_thumbnail(index);
+        if let Some(dir) = path.parent()
+            && let Err(e) = fs::create_dir_all(dir)
+        {
+            self.entries[index].launch_error = Some(format!("{}: {e}", dir.display()));
+            return;
+        }
+        let entry = &mut self.entries[index];
+        let vm = entry.vm.as_mut().expect("checked Some above");
+        match vm.save_state_to(&path) {
+            Ok(()) => {
+                vm.set_running(false);
+                entry.suspended = true;
+                entry.launch_error = None;
+            }
+            Err(e) => entry.launch_error = Some(e),
+        }
+    }
+
+    /// Play on a Suspended machine: bring it back to Running. Two shapes —
+    /// the VM object may still be alive (suspend never closes the window),
+    /// in which case resuming is just un-pausing; or the window was closed
+    /// (VM dropped), in which case a fresh launch restores the frozen state
+    /// over itself (`CocoApp::load_state_from` replaces the machine
+    /// wholesale, so what the launch booted is irrelevant — it only has to
+    /// succeed). Either way a successful resume deletes the
+    /// [`super::SUSPEND_STATE_FILE`]: the running machine immediately
+    /// diverges from the frozen copy, and a stale file would misreport
+    /// Suspended after the next power-off. A failed relaunch/restore keeps
+    /// the file and the Suspended state — the frozen copy is still the
+    /// truth, and the error shows in the transport row.
+    pub(super) fn resume_vm(&mut self, index: usize) {
+        let Some(path) = self.suspend_state_path_for(index) else {
+            self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
+            return;
+        };
+        if self.entries[index].vm.is_none() {
+            self.start_vm(index);
+            let entry = &mut self.entries[index];
+            let Some(vm) = entry.vm.as_mut() else {
+                return; // launch failed; start_vm already recorded the error
+            };
+            if let Err(e) = vm.load_state_from(&path) {
+                entry.vm = None;
+                entry.launch_error = Some(e);
+                return;
+            }
+        }
+        let entry = &mut self.entries[index];
+        entry.vm.as_mut().expect("alive or just restored").set_running(true);
+        entry.suspended = false;
+        entry.launch_error = None;
+        if let Err(e) = fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            // The machine IS running; a leftover state file is only a
+            // misleading label after the next power-off — worth a warning,
+            // not worth failing the resume.
+            tracing::warn!("could not remove {}: {e}", path.display());
+        }
+    }
+
+    /// Stop — the power switch (⏹ button, row context menu, and a *running*
+    /// VM window's close box via [`super::vm_windows`]'s
+    /// `close_vm_window`): flush dirty disks/tape back to their files —
+    /// the same exit contract `CocoApp::on_exit` runs for the direct-boot
+    /// window — then drop the VM, returning the row to Powered Off. On a
+    /// Suspended machine (VM alive or not) this also discards the frozen
+    /// state file — powering off is explicitly "throw the saved state
+    /// away". The saved screenshot is deleted along with it (not just the
+    /// cached texture): a powered-off machine has no preview, and a stale
+    /// PNG left behind would resurface via `write_thumbnail_png`'s
+    /// keep-previous-on-black rule as a *previous power cycle's* screen the
+    /// next time Suspend fires during a blanked display.
+    pub(super) fn stop_vm(&mut self, index: usize) {
         if let Some(mut vm) = self.entries[index].vm.take() {
             vm.flush_media();
         }
+        let entry = &mut self.entries[index];
+        entry.suspended = false;
+        entry.thumbnail = None;
+        entry.thumbnail_load_attempted = false;
+        if let Some(root) = &self.artifacts_root {
+            let dir = root.join(&entry.slug);
+            for file in [SUSPEND_STATE_FILE, THUMBNAIL_FILE] {
+                if let Err(e) = fs::remove_file(dir.join(file))
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::warn!("could not remove {file} for '{}': {e}", entry.slug);
+                }
+            }
+        }
+    }
+
+    /// `entries[index]`'s [`SUSPEND_STATE_FILE`] path — `None` when no
+    /// artifact root exists (no home directory), which disables
+    /// Suspend/Resume outright. Returns an owned path so callers keep their
+    /// `&mut self` freedom.
+    fn suspend_state_path_for(&self, index: usize) -> Option<PathBuf> {
+        Some(suspend_state_path(self.artifacts_root.as_deref()?, &self.entries[index].slug))
     }
 
     /// Rename `entries[index]`'s `<slug>.toml` and artifact directory to
@@ -92,10 +203,13 @@ impl ManagerApp {
     /// (`machine_def.rs` "Identity = slug") and nothing else persists it —
     /// relative `[media]` entries name files *inside* the artifact dir —
     /// so a rename is exactly these two filesystem moves, uniquified like
-    /// create. Only safe with the VM stopped (a running VM writes
-    /// `thumbnail.png` into the artifact dir by path); callers guard on
-    /// that. The list is re-sorted afterwards, with `selected`, the edit
-    /// state, and a pending delete all following their entry.
+    /// create. Only safe with the machine Powered Off — a running VM writes
+    /// `thumbnail.png` into the artifact dir by path, and a *suspended*
+    /// machine's `suspended.ccstate` records the media's absolute
+    /// pre-rename paths (`save_state_to`'s `MediaRefs`), so moving the
+    /// directory under it would make the frozen state unrestorable; callers
+    /// guard on both. The list is re-sorted afterwards, with `selected`,
+    /// the edit state, and a pending delete all following their entry.
     fn migrate_slug(&mut self, index: usize) {
         self.entries[index].rename_pending = false;
         let Some(dir) = self.machines_dir.clone() else {
@@ -153,8 +267,11 @@ impl ManagerApp {
 
     /// Run once per `update()`, before any panel draws (so row indices stay
     /// stable for the whole frame): migrate the slug of every renamed
-    /// machine whose VM is gone. Several can be pending at once (rename a
-    /// running machine, select another, rename it too…), and each
+    /// machine that is Powered Off — not running AND not suspended, since a
+    /// suspended machine's frozen state pins the artifact dir's old path
+    /// (see [`Self::migrate_slug`]'s doc); its rename stays pending until
+    /// the next power-off. Several can be pending at once (rename a running
+    /// machine, select another, rename it too…), and each
     /// [`Self::migrate_slug`] re-sorts the list — hence re-`position` from
     /// scratch per iteration rather than iterating indices. Terminates
     /// because `migrate_slug` clears `rename_pending` unconditionally,
@@ -163,7 +280,7 @@ impl ManagerApp {
         while let Some(index) = self
             .entries
             .iter()
-            .position(|e| e.rename_pending && e.vm.is_none())
+            .position(|e| e.rename_pending && e.vm.is_none() && !e.suspended)
         {
             self.migrate_slug(index);
         }
@@ -172,9 +289,11 @@ impl ManagerApp {
     /// The confirmation modal behind the context menu's "Delete…"
     /// ([`ManagerApp::pending_delete`]), drawn once per `update()`. Esc,
     /// Cancel, and a click outside all dismiss without deleting; the confirm
-    /// button reads "Stop and Delete" when the machine is running, since
-    /// deleting stops it first. A failed delete reports its error inside the
-    /// modal and leaves it open.
+    /// button reads "Stop and Delete" when the machine is running (deleting
+    /// stops it first), and a suspended machine gets its own warning that
+    /// the frozen state is discarded — the modal's "media files stay on
+    /// disk" promise would otherwise read as covering it. A failed delete
+    /// reports its error inside the modal and leaves it open.
     pub(super) fn draw_delete_confirmation(&mut self, ctx: &egui::Context) {
         let Some(slug) = self.pending_delete.clone() else {
             return;
@@ -185,7 +304,8 @@ impl ManagerApp {
             self.pending_delete = None;
             return;
         };
-        let running = self.entries[index].vm.is_some();
+        let suspended = self.entries[index].suspended;
+        let running = self.entries[index].vm.is_some() && !suspended;
         let name = self.entries[index].def.name.clone();
         let mut dismissed = false;
         let modal = egui::Modal::new(egui::Id::new("confirm_delete_machine")).show(ctx, |ui| {
@@ -200,6 +320,15 @@ impl ManagerApp {
                     egui::RichText::new(
                         "This machine is running — it will be shut down first, like \
                          flipping the power switch; unsaved work inside it is lost.",
+                    )
+                    .strong(),
+                );
+            }
+            if suspended {
+                ui.label(
+                    egui::RichText::new(
+                        "This machine is suspended — deleting discards its frozen \
+                         state.",
                     )
                     .strong(),
                 );

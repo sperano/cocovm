@@ -37,11 +37,11 @@ impl ManagerApp {
     /// after the manager's own panels.
     ///
     /// Close requests (the native window's close box, or the embedded
-    /// fallback's `egui::Window` close button) are collected into a list and
-    /// applied with [`Self::stop_vm`] after the loop — `stop_vm` needs
-    /// `&mut self.entries[i]`, which would conflict with the `vm` this loop
-    /// already holds taken out of that same slot for the duration of the
-    /// viewport closure.
+    /// fallback's `egui::Window` close button) are collected into a list
+    /// and applied with [`Self::close_vm_window`] after the loop — deferred
+    /// because it needs `&mut self.entries[i]`, which would conflict with
+    /// the `vm` this loop already holds taken out of that same slot for
+    /// the duration of the viewport closure.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
         let mut to_stop: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
@@ -62,6 +62,7 @@ impl ManagerApp {
             // `self` — so no `self` borrow is held across the closure at
             // all here).
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
+            let suspended = self.entries[i].suspended;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {
@@ -73,9 +74,16 @@ impl ManagerApp {
                     // would interleave two independent sets of panels into
                     // one window. Show just the VM's display in a plain
                     // `egui::Window` instead; full chrome only exists as its
-                    // own native OS window. The VM still runs:
-                    // `step_emulation` is unconditional either way.
-                    vm.step_emulation(child_ctx);
+                    // own native OS window. A running VM still emulates —
+                    // display-only means no chrome, not no execution — while
+                    // a suspended one gets the same input gating as the
+                    // native suspended branch below: texture upload only,
+                    // never `handle_input`.
+                    if suspended {
+                        vm.upload_framebuffer_texture(child_ctx);
+                    } else {
+                        vm.step_emulation(child_ctx);
+                    }
                     let mut open = true;
                     // Anchored, and capped at `EMBEDDED_FALLBACK_SIZE`
                     // rather than the native window's full
@@ -101,6 +109,29 @@ impl ManagerApp {
                     if !open {
                         close_requested = true;
                     }
+                } else if suspended {
+                    // A suspended machine's window is a *viewing port onto
+                    // the frozen frame*, never a control surface: the full
+                    // chrome would leave Reset, Load State, disk mounts,
+                    // and the debugger's own Run/Step live on a machine
+                    // whose on-disk frozen copy they'd silently diverge
+                    // from — one stray click and the alive-resume path
+                    // would "resume" a machine that no longer matches what
+                    // the user froze (then delete the state file on top).
+                    // So: display only, same shape as `window_ui` minus
+                    // `draw_chrome` — and minus `step_emulation` too, whose
+                    // `handle_input` would keep the ⌘1/⌘⇧1 quick-load/save
+                    // shortcuts and keyboard/joystick writes live on the
+                    // frozen machine through the same divergence hole. Only
+                    // the texture upload runs, keeping the frozen frame on
+                    // screen.
+                    vm.upload_framebuffer_texture(child_ctx);
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+                        .show(child_ctx, |ui| vm.draw_display(ui));
+                    if child_ctx.input(|i| i.viewport().close_requested()) {
+                        close_requested = true;
+                    }
                 } else {
                     vm.window_ui(child_ctx);
                     if child_ctx.input(|i| i.viewport().close_requested()) {
@@ -115,7 +146,22 @@ impl ManagerApp {
             }
         }
         for i in to_stop {
-            self.stop_vm(i);
+            self.close_vm_window(i);
+        }
+    }
+
+    /// The VM window's close box: the power switch for a Running machine
+    /// ([`Self::stop_vm`]), but for a Suspended one merely drops the VM
+    /// object — the frozen state and screenshot are already on disk from
+    /// suspend time, and the display-only suspended window (above) has no
+    /// control that could have dirtied media since, so there is nothing to
+    /// flush. `pub(crate)` so `ui_tests` closes windows through the exact
+    /// production path instead of re-implementing this branch.
+    pub(crate) fn close_vm_window(&mut self, index: usize) {
+        if self.entries[index].suspended {
+            self.entries[index].vm = None;
+        } else {
+            self.stop_vm(index);
         }
     }
 }
