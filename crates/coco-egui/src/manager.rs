@@ -81,11 +81,11 @@ const STATUS_POWERED_OFF: &str = "Powered Off";
 /// Vertical gap between sections of the detail pane.
 const DETAIL_SECTION_GAP: f32 = 12.0;
 
-/// Cassette-deck transport glyphs 
+/// Cassette-deck transport glyphs
 pub(crate) const PLAY_GLYPH: &str = "▶";
 pub(crate) const SUSPEND_GLYPH: &str = "⏸";
 pub(crate) const STOP_GLYPH: &str = "⏹";
-pub(crate) const RESET_GLYPH: &str = "↻"; 
+pub(crate) const RESET_GLYPH: &str = "↻";
 
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).

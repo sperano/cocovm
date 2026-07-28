@@ -66,8 +66,8 @@ fn transport_buttons_walk_the_three_states() {
         "a running VM must have an uploaded framebuffer texture for the row thumbnail to show"
     );
 
-    // Reset is the console button, not a deck control: machine stays on.
-    click(&mut harness, "Reset");
+    // Reset (↻) restarts the machine but leaves it on.
+    click(&mut harness, manager::RESET_GLYPH);
     assert!(
         harness.state().entries[0].vm.as_ref().unwrap().is_running(),
         "Reset must leave the machine on"

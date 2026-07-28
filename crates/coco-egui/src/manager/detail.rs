@@ -185,10 +185,11 @@ impl ManagerApp {
     /// Run controls (see the transport-glyph constants' doc): the fat
     /// deck-style transport covers the three machine states — ▶ powers on
     /// (or resumes a suspended machine), ⏸ suspends, ⏹ powers off — with
-    /// the console Reset as an ordinary labeled button after it. State is
-    /// copied out before the buttons so the click handlers below can freely
-    /// call `&mut self` methods (`start_vm`/`resume_vm`/`suspend_vm`/
-    /// `stop_vm`) without fighting a borrow of `self.entries[index]`.
+    /// the console Reset (↻) as a fourth transport-style button after it.
+    /// State is copied out before the buttons so the click handlers below
+    /// can freely call `&mut self` methods (`start_vm`/`resume_vm`/
+    /// `suspend_vm`/`stop_vm`) without fighting a borrow of
+    /// `self.entries[index]`.
     fn draw_transport_row(&mut self, ui: &mut egui::Ui, index: usize) {
         let suspended = self.entries[index].suspended;
         let vm_alive = self.entries[index].vm.is_some();
@@ -228,15 +229,16 @@ impl ManagerApp {
             {
                 self.stop_vm(index);
             }
-            const RESET_HOVER: &str = "Press the machine's reset button ";
-            if transport_button(ui, RESET_GLYPH, running) 
+            const RESET_HOVER: &str = "Press the machine's reset button";
+            if transport_button(ui, RESET_GLYPH, running)
                 .on_hover_text(RESET_HOVER)
                 .on_disabled_hover_text(RESET_HOVER)
-                .clicked() && let Some(vm) = self.entries[index].vm.as_mut() 
+                .clicked()
+                && let Some(vm) = self.entries[index].vm.as_mut()
             {
                 vm.machine.reset();
             }
-                
+
             ui.add_space(TRANSPORT_GROUP_GAP);
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         });
