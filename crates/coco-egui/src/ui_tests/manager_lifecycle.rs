@@ -5,7 +5,7 @@
 //! running side by side, and a broken media reference reporting instead of
 //! panicking.
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
 use crate::*;
@@ -36,7 +36,9 @@ fn launch_honors_ui_settings() {
 /// The three-state round trip through the actual detail-pane transport
 /// buttons: Powered Off → (▶) Running → (⏸) Suspended — screenshot +
 /// `suspended.ccstate` written, VM paused in place — → (▶) Running again
-/// (frozen state discarded) → (⏹) Powered Off. Exercises
+/// (frozen state discarded) → (⏹) Powered Off, with a (↻) Reset along the
+/// way that must leave the machine Running, and Reset's Running-only
+/// enable gate pinned at both off-states. Exercises
 /// `manager::draw_running_vms`'s `ViewportClass::Embedded` fallback and the
 /// `CocoApp::step_emulation`/`draw_display` split along the way — a
 /// regression here would mean that split broke a running VM, not just the
@@ -52,8 +54,12 @@ fn transport_buttons_walk_the_three_states() {
     click(&mut harness, "Dev CoCo 3");
     assert!(harness.state().entries[0].vm.is_none());
     assert!(label_exists(&harness, "Powered Off"));
+    assert!(
+        harness.get_by_label("Reset").accesskit_node().is_disabled(),
+        "Reset must be disabled on a powered-off machine"
+    );
 
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     assert!(harness.state().entries[0].vm.is_some(), "Play must launch the VM");
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Running"));
@@ -67,13 +73,13 @@ fn transport_buttons_walk_the_three_states() {
     );
 
     // Reset (↻) restarts the machine but leaves it on.
-    click(&mut harness, manager::RESET_GLYPH);
+    click(&mut harness, "Reset");
     assert!(
         harness.state().entries[0].vm.as_ref().unwrap().is_running(),
         "Reset must leave the machine on"
     );
 
-    click(&mut harness, manager::SUSPEND_GLYPH);
+    click(&mut harness, "Suspend");
     {
         let entry = &harness.state().entries[0];
         assert!(entry.suspended, "Suspend must mark the entry");
@@ -86,8 +92,12 @@ fn transport_buttons_walk_the_three_states() {
         "Suspend must capture the screen preview"
     );
     assert!(label_exists(&harness, "Suspended"));
+    assert!(
+        harness.get_by_label("Reset").accesskit_node().is_disabled(),
+        "Reset must be disabled on a suspended machine"
+    );
 
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     {
         let entry = &harness.state().entries[0];
         assert!(!entry.suspended);
@@ -96,7 +106,7 @@ fn transport_buttons_walk_the_three_states() {
     assert!(!state_file.exists(), "resuming must discard the frozen state");
     assert!(label_exists(&harness, "Running"));
 
-    click(&mut harness, manager::STOP_GLYPH);
+    click(&mut harness, "Stop");
     assert!(harness.state().entries[0].vm.is_none(), "Stop must drop the VM");
     assert!(label_exists(&harness, "Powered Off"));
     harness.step();
@@ -122,10 +132,10 @@ fn resume_after_window_close_restores_the_frozen_state() {
     let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     harness.state_mut().entries[0].vm.as_mut().unwrap().machine.bus.ram[MARKER_ADDR] = MARKER;
 
-    click(&mut harness, manager::SUSPEND_GLYPH);
+    click(&mut harness, "Suspend");
     assert!(state_file.is_file());
 
     // The window-close path for a suspended machine — the exact production
@@ -141,7 +151,7 @@ fn resume_after_window_close_restores_the_frozen_state() {
         "a window-closed suspended row must show its suspend-time screenshot"
     );
 
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     let entry = &harness.state().entries[0];
     assert!(!entry.suspended);
     let vm = entry.vm.as_ref().expect("resume must relaunch the VM");
@@ -174,7 +184,7 @@ fn startup_seeds_suspended_from_disk_and_failed_resume_keeps_it() {
     click(&mut harness, "Dev CoCo 3");
     assert!(label_exists(&harness, "Suspended"));
 
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     let entry = &harness.state().entries[0];
     assert!(entry.suspended, "a failed restore must keep the machine Suspended");
     assert!(entry.vm.is_none(), "a failed restore must not leave a half-launched VM");
@@ -206,8 +216,8 @@ fn suspended_vm_window_ignores_input() {
         manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
 
     click(&mut harness, "Dev CoCo 3");
-    click(&mut harness, manager::PLAY_GLYPH);
-    click(&mut harness, manager::SUSPEND_GLYPH);
+    click(&mut harness, "Play");
+    click(&mut harness, "Suspend");
     let before = harness.state().entries[0].vm.as_ref().unwrap().aspect_correct;
 
     harness.key_press(egui::Key::F9);
@@ -218,7 +228,7 @@ fn suspended_vm_window_ignores_input() {
         "a suspended VM's window must not process app shortcuts"
     );
 
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     harness.key_press(egui::Key::F9);
     harness.step();
     assert_eq!(
@@ -243,7 +253,7 @@ fn window_close_powers_off_running_but_preserves_suspended() {
     let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     click(&mut harness, "Close window");
     assert!(
         harness.state().entries[0].vm.is_none(),
@@ -251,8 +261,8 @@ fn window_close_powers_off_running_but_preserves_suspended() {
     );
     assert!(label_exists(&harness, "Powered Off"));
 
-    click(&mut harness, manager::PLAY_GLYPH);
-    click(&mut harness, manager::SUSPEND_GLYPH);
+    click(&mut harness, "Play");
+    click(&mut harness, "Suspend");
     assert!(state_file.is_file());
     click(&mut harness, "Close window");
     let entry = &harness.state().entries[0];
@@ -272,12 +282,12 @@ fn stop_on_suspended_machine_discards_the_frozen_state() {
     let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
-    click(&mut harness, manager::PLAY_GLYPH);
-    click(&mut harness, manager::SUSPEND_GLYPH);
+    click(&mut harness, "Play");
+    click(&mut harness, "Suspend");
     harness.state_mut().close_vm_window(0);
     harness.step();
 
-    click(&mut harness, manager::STOP_GLYPH);
+    click(&mut harness, "Stop");
     let entry = &harness.state().entries[0];
     assert!(!entry.suspended);
     assert!(entry.vm.is_none());
@@ -304,11 +314,11 @@ fn starting_two_machines_runs_both() {
     let mut harness = manager_harness(None, entries);
 
     click(&mut harness, "Dev CoCo 3");
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     assert!(harness.state().entries[0].vm.is_some());
 
     click(&mut harness, "Dev CoCo 2");
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
     assert!(harness.state().entries[1].vm.is_some());
 
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
@@ -340,7 +350,7 @@ fn launch_error_is_reported_not_fatal() {
     let mut harness = manager_harness(None, entries);
 
     click(&mut harness, "Broken Media");
-    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Play");
 
     assert!(
         harness.state().entries[0].vm.is_none(),
