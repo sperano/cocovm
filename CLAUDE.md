@@ -1,10 +1,7 @@
-This is the early project coco emulator in rust using egui
-
-I want to build a super nice emulator juste like Virutal][, but For the Coco!
-I'd like you to help me design it? 
-How we would have the cpu loop, the display, the i/o, the memory, etc.
-
-I'd like to start with emulating the GIME?
+CocoVM: a Tandy Color Computer (CoCo 1/2/3) emulator in Rust + egui, aiming
+for Virtual ][-level polish. Workspace: `crates/mc6809` (CPU),
+`crates/coco-core` (headless machine), `crates/coco-egui` (frontend + VM
+manager). `book/` is a 16-chapter course built from this codebase.
 
 ## Local resources (git-ignored — copyrighted, present only on this machine)
 
