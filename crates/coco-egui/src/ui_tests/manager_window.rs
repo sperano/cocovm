@@ -13,7 +13,7 @@ use super::harness::*;
 
 /// The manager window scaffold: toolbar buttons present, the machine-list
 /// panel and photo pane laid out without a photo injected. This harness has
-/// no machines dir (no home), so "New…" must report that instead of
+/// no machines dir (no home), so "New" must report that instead of
 /// creating or panicking.
 #[test]
 fn manager_window_shows_its_toolbar() {
@@ -22,17 +22,17 @@ fn manager_window_shows_its_toolbar() {
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
-    for label in ["New…", "Settings", "Help"] {
+    for label in ["New", "Settings", "Help"] {
         harness.get_by_label(label);
     }
-    harness.get_by_label("New…").hover();
+    harness.get_by_label("New").hover();
     harness.step();
-    harness.get_by_label("New…").click();
+    harness.get_by_label("New").click();
     harness.step();
     harness.step();
     assert!(
         harness.state().entries.is_empty(),
-        "no config dir: New… must fail gracefully, not add a row"
+        "no config dir: New must fail gracefully, not add a row"
     );
 }
 
@@ -183,9 +183,9 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
     );
 }
 
-/// "New…" creates a definition file *immediately* — default name under a
+/// "New" creates a definition file *immediately* — default name under a
 /// uniquified slug, saved, selected, no dialog and no Create button (macOS
-/// System-Settings-style, user decision 2026-07-24). A second "New…"
+/// System-Settings-style, user decision 2026-07-24). A second "New"
 /// uniquifies against the first.
 #[test]
 fn manager_new_creates_a_definition_file_immediately() {
@@ -193,9 +193,9 @@ fn manager_new_creates_a_definition_file_immediately() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
     assert!(harness.state().entries.is_empty());
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
 
-    assert_eq!(harness.state().entries.len(), 1, "New… must add a list row on the spot");
+    assert_eq!(harness.state().entries.len(), 1, "New must add a list row on the spot");
     assert!(harness.query_by_label("Create").is_none(), "no dialog is involved");
     let slug = harness.state().entries[0].slug.clone();
     assert_eq!(slug, "coco-3", "slugified from the default name");
@@ -204,15 +204,15 @@ fn manager_new_creates_a_definition_file_immediately() {
     let file = dir.path().join(format!("{slug}.toml"));
     let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
     let parsed: machine_def::MachineDef =
-        toml::from_str(&contents).expect("New… must write a parseable definition");
+        toml::from_str(&contents).expect("New must write a parseable definition");
     assert_eq!(parsed.name, "CoCo 3");
-    assert_eq!(harness.state().selected, Some(0), "New… must select the new row");
+    assert_eq!(harness.state().selected, Some(0), "New must select the new row");
     // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
     // form has its own "CoCo 3" Machine combo button, so the name would be
     // ambiguous between that and the list row.
     assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     assert_eq!(harness.state().entries.len(), 2);
     assert_eq!(harness.state().entries[1].slug, "coco-3-2", "second default uniquifies");
     assert!(dir.path().join("coco-3-2.toml").is_file());

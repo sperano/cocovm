@@ -11,7 +11,7 @@ use crate::*;
 
 use super::harness::*;
 
-/// "New…" creates the machine immediately; picking Cartridge = FD-502 in
+/// "New" creates the machine immediately; picking Cartridge = FD-502 in
 /// the detail pane's form auto-saves `[peripherals].fd502` into the
 /// definition file — no Save button involved.
 #[test]
@@ -19,7 +19,7 @@ fn manager_edit_with_fd502_records_the_peripheral() {
     let dir = TempDir::new("create-fd502");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     // Pane combos showing "None": Cassette (its row sits above Cartridge),
     // then Cartridge, then the HDs — Cartridge is second.
     select_combo_at(&mut harness, "None", 1, "FD-502");
@@ -41,7 +41,7 @@ fn manager_edit_with_mpi_records_the_peripheral() {
     let dir = TempDir::new("create-mpi");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
 
     assert_eq!(harness.state().entries.len(), 1);
@@ -60,7 +60,7 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     let dir = TempDir::new("create-rtc");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "Disto RTC");
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
@@ -69,7 +69,7 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     assert!(contents.contains("rtc = true"), "TOML must record the RTC:\n{contents}");
 
     // Slotted, on a second machine: rtc = true alongside mpi = true.
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
     select_combo_at(&mut harness, "Empty", 0, "Disto RTC");
     assert_eq!(harness.state().entries.len(), 2);
@@ -88,7 +88,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     let dir = TempDir::new("create-rompak");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     harness.state_mut().edit_form_mut().expect("pane form seeded").cartridge =
         new_vm::CartridgeChoice::RomPak(pak.clone());
     harness.step();
@@ -99,7 +99,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
 
     // Slotted, on a second machine: recorded the same way, alongside
     // mpi = true.
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     {
         let form = harness.state_mut().edit_form_mut().expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
@@ -140,7 +140,7 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
         Vec::new(),
     );
 
-    click_containing(&mut harness, "New…");
+    click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "FD-502");
     // Screen order of the "None"-valued combos: Cassette (its row sits
     // above Cartridge), then Disk 0, then Disk 1, then HD 0, then HD 1.

@@ -30,6 +30,7 @@ mod detail;
 mod lifecycle;
 mod list;
 mod thumbnails;
+mod toolbar;
 mod vm_windows;
 
 /// Manager window size at first open.
@@ -321,22 +322,9 @@ impl eframe::App for ManagerApp {
             self.create_machine_now();
         }
 
-        // Toolbar: the manager actions. "Settings"/"Help" are still inert
-        // scaffolding.
+        // Toolbar: the manager actions (`toolbar.rs`).
         egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                // Toolbar buttons show the shortcut on hover (inline
-                // shortcut text is a menu-row convention, not a toolbar one).
-                if ui
-                    .button("New…")
-                    .on_hover_text(ctx.format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT))
-                    .clicked()
-                {
-                    self.create_machine_now();
-                }
-                let _ = ui.button("Settings");
-                let _ = ui.button("Help");
-            });
+            self.draw_toolbar(ui);
         });
 
         // Machine list: one row per definition under `config_dir()/machines`.
