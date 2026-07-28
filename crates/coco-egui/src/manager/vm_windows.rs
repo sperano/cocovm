@@ -74,9 +74,16 @@ impl ManagerApp {
                     // would interleave two independent sets of panels into
                     // one window. Show just the VM's display in a plain
                     // `egui::Window` instead; full chrome only exists as its
-                    // own native OS window. The VM still runs:
-                    // `step_emulation` is unconditional either way.
-                    vm.step_emulation(child_ctx);
+                    // own native OS window. A running VM still emulates —
+                    // display-only means no chrome, not no execution — while
+                    // a suspended one gets the same input gating as the
+                    // native suspended branch below: texture upload only,
+                    // never `handle_input`.
+                    if suspended {
+                        vm.upload_framebuffer_texture(child_ctx);
+                    } else {
+                        vm.step_emulation(child_ctx);
+                    }
                     let mut open = true;
                     // Anchored, and capped at `EMBEDDED_FALLBACK_SIZE`
                     // rather than the native window's full
@@ -112,10 +119,13 @@ impl ManagerApp {
                     // would "resume" a machine that no longer matches what
                     // the user froze (then delete the state file on top).
                     // So: display only, same shape as `window_ui` minus
-                    // `draw_chrome`. `step_emulation` still runs — a paused
-                    // VM steps no fields, but the texture upload keeps the
-                    // frozen frame on screen.
-                    vm.step_emulation(child_ctx);
+                    // `draw_chrome` — and minus `step_emulation` too, whose
+                    // `handle_input` would keep the ⌘1/⌘⇧1 quick-load/save
+                    // shortcuts and keyboard/joystick writes live on the
+                    // frozen machine through the same divergence hole. Only
+                    // the texture upload runs, keeping the frozen frame on
+                    // screen.
+                    vm.upload_framebuffer_texture(child_ctx);
                     egui::CentralPanel::default()
                         .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
                         .show(child_ctx, |ui| vm.draw_display(ui));

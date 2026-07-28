@@ -58,6 +58,17 @@ impl CocoApp {
             self.field_debt = 0.0;
         }
 
+        self.upload_framebuffer_texture(ctx);
+    }
+
+    /// Upload the framebuffer as `self.texture` — [`Self::step_emulation`]'s
+    /// final step, and the ONLY part of it a *suspended* VM's window runs
+    /// (`manager::vm_windows`): a frozen machine must keep its picture on
+    /// screen without `handle_input`/`drive_joysticks`, which would leave
+    /// the quick-load/quick-save shortcuts, type-ahead, and keyboard/
+    /// joystick writes live on a machine whose on-disk frozen copy they'd
+    /// silently diverge from.
+    pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
         let image = egui::ColorImage::from_rgba_unmultiplied(
             [
                 self.machine.fb_width as usize,

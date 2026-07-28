@@ -190,6 +190,44 @@ fn startup_seeds_suspended_from_disk_and_failed_resume_keeps_it() {
     assert!(state_file.is_file(), "the frozen state must survive a failed resume");
 }
 
+/// A suspended VM's window is display-only all the way down to *input*:
+/// `draw_running_vms` runs only the framebuffer-texture upload for it,
+/// never `step_emulation`, whose `handle_input` would leave app shortcuts
+/// (quick-load ⌘1 replacing the frozen machine wholesale!) and keyboard/
+/// joystick writes live on a machine whose on-disk frozen copy they'd
+/// silently diverge from. F9 (the aspect toggle) is the cheapest
+/// observable of that whole class: it must bounce off a suspended VM and
+/// work again once resumed.
+#[test]
+fn suspended_vm_window_ignores_input() {
+    let artifacts = TempDir::new("suspend-input-gate");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    let before = harness.state().entries[0].vm.as_ref().unwrap().aspect_correct;
+
+    harness.key_press(egui::Key::F9);
+    harness.step();
+    assert_eq!(
+        harness.state().entries[0].vm.as_ref().unwrap().aspect_correct,
+        before,
+        "a suspended VM's window must not process app shortcuts"
+    );
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    harness.key_press(egui::Key::F9);
+    harness.step();
+    assert_eq!(
+        harness.state().entries[0].vm.as_ref().unwrap().aspect_correct,
+        !before,
+        "a resumed VM's window processes shortcuts again"
+    );
+}
+
 /// The VM window's close box, driven through the real UI (the embedded
 /// fallback's `egui::Window` close button): on a Running machine it is the
 /// power switch; on a Suspended one it only drops the VM object, keeping

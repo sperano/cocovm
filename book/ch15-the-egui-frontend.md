@@ -1814,7 +1814,7 @@ machine takes the straightforward path:
             }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:125-136`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L125-L136).) That single
+([`crates/coco-egui/src/manager/vm_windows.rs:135-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L135-L146).) That single
 `vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
 §15.3 established. The *entire* direct-boot experience — menu bar, toolbar,
 status bar, the letterboxed display, every dialog — runs unmodified inside
@@ -1824,13 +1824,16 @@ window for the manager to maintain, and no risk of the two drifting apart,
 because there is only one.
 
 A *Suspended* machine whose window is still open takes a middle branch
-([`crates/coco-egui/src/manager/vm_windows.rs:105-124`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L105-L124)): the same
-`step_emulation` + display, but no chrome at all. The window becomes a
-viewing port onto the frozen frame, never a control surface — the full
-chrome would leave Reset, Load State, disk mounts, and the debugger's own
-Run/Step live on a machine whose on-disk frozen copy they would silently
-diverge from, and one stray click later, Play would "resume" (and discard
-the state file of) a machine that no longer matches what the user froze.
+([`crates/coco-egui/src/manager/vm_windows.rs:112-134`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L112-L134)):
+just the framebuffer-texture upload plus the display — no chrome, and no
+`step_emulation` either, since its `handle_input` would keep the
+quick-load/quick-save shortcuts and keyboard/joystick writes live. The
+window becomes a viewing port onto the frozen frame, never a control
+surface — a full chrome would leave Reset, Load State, disk mounts, and
+the debugger's own Run/Step pointed at a machine whose on-disk frozen copy
+they would silently diverge from, and one stray click later, Play would
+"resume" (and discard the state file of) a machine that no longer matches
+what the user froze.
 
 The last branch is the degraded case, and it exists because not every
 backend can open real child windows — kittest, the headless test backend
@@ -1842,9 +1845,10 @@ bare display:
                     vm.step_emulation(child_ctx);
 ```
 
-followed by an anchored `egui::Window` whose body is just
-`vm.draw_display(ui)`
-([`crates/coco-egui/src/manager/vm_windows.rs:79-101`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L79-L101)). Two decisions
+(for a Running machine — a suspended one gets the same
+texture-upload-only gating here as in the native branch), followed by an
+anchored `egui::Window` whose body is just `vm.draw_display(ui)`
+([`crates/coco-egui/src/manager/vm_windows.rs:82-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L82-L108)). Two decisions
 in that fallback are worth reading the comments for. It skips
 `draw_chrome` entirely because drawing two independent sets of menu bars
 and status bars into one shared context would interleave them into a single
