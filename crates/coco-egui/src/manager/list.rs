@@ -17,15 +17,35 @@ impl ManagerApp {
     /// which disables the resize drag (`SidePanel::resizable` docs).
     pub(super) fn draw_machine_list(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(ui.available_width());
-        if self.entries.is_empty() {
+        if !self.entries.is_empty() {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                for i in 0..self.entries.len() {
+                    self.draw_machine_row(ui, i);
+                }
+            });
+        }
+        self.deselect_on_empty_click(ui);
+    }
+
+    /// The panel space left below the last row: clicking it clears the
+    /// selection, bringing the photo pane back (the manager's "click the
+    /// desktop to deselect" gesture). The edit state is dropped too, so the
+    /// next selection reseeds fresh — same as switching rows. Sensing only
+    /// clicks leaves the `SidePanel` divider's *drag* untouched even where
+    /// the two regions overlap (egui resolves click and drag hits per
+    /// sense — `manager_list_divider_is_draggable` guards this).
+    fn deselect_on_empty_click(&mut self, ui: &mut egui::Ui) {
+        let remaining = ui.available_size_before_wrap();
+        if remaining.y <= 0.0 {
             return;
         }
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            for i in 0..self.entries.len() {
-                self.draw_machine_row(ui, i);
-            }
-        });
+        let (_, response) = ui.allocate_exact_size(remaining, egui::Sense::click());
+        if response.clicked() && self.selected.is_some() {
+            self.selected = None;
+            self.edit = None;
+            self.save_error = None;
+        }
     }
 
     /// One machine-list row: placeholder thumbnail + name/subtitle/status

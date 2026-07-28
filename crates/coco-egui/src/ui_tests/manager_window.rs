@@ -119,6 +119,33 @@ fn manager_list_shows_entries_and_selecting_shows_detail() {
     );
 }
 
+/// Clicking the empty space below the last list row clears the selection —
+/// the detail pane gives way to the photo pane again. Positional click: the
+/// empty area is no accessible node, so this drives the pointer directly
+/// (same primitives as the divider-drag test) at a point well below the
+/// single row but inside the list panel.
+#[test]
+fn manager_click_below_the_list_clears_the_selection() {
+    let entries = vec![sample_entry("alpha", "Alpha CoCo 3")];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Alpha CoCo 3");
+    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(harness.state().detail_name(), Some("Alpha CoCo 3"));
+
+    let empty_spot = egui::pos2(100.0, 650.0);
+    harness.hover_at(empty_spot);
+    harness.step();
+    harness.drag_at(empty_spot);
+    harness.step();
+    harness.drop_at(empty_spot);
+    harness.step();
+    harness.step();
+
+    assert_eq!(harness.state().selected, None, "empty-space click must deselect");
+    assert_eq!(harness.state().detail_name(), None, "detail draft must be dropped");
+}
+
 /// Right-clicking a list row opens its context menu *without* moving the
 /// visual selection — the menu's items act on the row under the cursor, not
 /// on `selected` (user decision 2026-07-23). The one exception is "Show
