@@ -12,7 +12,7 @@ use crate::{machine_def, new_vm};
 
 use super::{
     vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, PLAY_GLYPH,
-    STOP_GLYPH, SUSPEND_GLYPH, SUSPEND_HOVER,
+    RESET_GLYPH, STOP_GLYPH, SUSPEND_GLYPH, SUSPEND_HOVER,
 };
 
 /// [`ManagerApp::record_media_choice`]'s auto-placed cassette file name, for
@@ -228,17 +228,15 @@ impl ManagerApp {
             {
                 self.stop_vm(index);
             }
-
-            ui.add_space(TRANSPORT_GROUP_GAP);
-            if ui
-                .add_enabled(running, egui::Button::new("Reset"))
-                .on_hover_text("Press the machine's reset button — the machine stays on")
-                .clicked()
-                && let Some(vm) = self.entries[index].vm.as_mut()
+            const RESET_HOVER: &str = "Press the machine's reset button ";
+            if transport_button(ui, RESET_GLYPH, running) 
+                .on_hover_text(RESET_HOVER)
+                .on_disabled_hover_text(RESET_HOVER)
+                .clicked() && let Some(vm) = self.entries[index].vm.as_mut() 
             {
                 vm.machine.reset();
             }
-
+                
             ui.add_space(TRANSPORT_GROUP_GAP);
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         });

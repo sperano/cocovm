@@ -81,16 +81,11 @@ const STATUS_POWERED_OFF: &str = "Powered Off";
 /// Vertical gap between sections of the detail pane.
 const DETAIL_SECTION_GAP: f32 = 12.0;
 
-/// Cassette-deck transport glyphs (all in egui's documented built-in emoji
-/// set, `egui/src/lib.rs` "special emojis"). The deck covers exactly the
-/// three machine states: ▶ powers on / resumes, ⏸ suspends (the freeze IS
-/// the deck's pause now — the light in-memory pause was removed with the
-/// three-state model, user decision 2026-07-27), ⏹ powers off. Only the
-/// console Reset stays an ordinary labeled button outside the transport
-/// row.
+/// Cassette-deck transport glyphs 
 pub(crate) const PLAY_GLYPH: &str = "▶";
 pub(crate) const SUSPEND_GLYPH: &str = "⏸";
 pub(crate) const STOP_GLYPH: &str = "⏹";
+pub(crate) const RESET_GLYPH: &str = "↻"; 
 
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).
