@@ -12,7 +12,7 @@ use crate::{machine_def, new_vm};
 
 use super::{
     vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, PLAY_GLYPH,
-    STOP_GLYPH, SUSPEND_GLYPH, SUSPEND_HOVER,
+    RESET_GLYPH, STOP_GLYPH, SUSPEND_GLYPH, SUSPEND_HOVER,
 };
 
 /// [`ManagerApp::record_media_choice`]'s auto-placed cassette file name, for
@@ -34,17 +34,28 @@ fn blank_vhd_file(drive: usize) -> String {
 /// Fat transport-button geometry: minimum button size and glyph point size.
 const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(56.0, 40.0);
 const TRANSPORT_GLYPH_SIZE: f32 = 24.0;
-/// Gap separating the transport trio from the console Reset button and the
-/// status label.
+/// Gap separating the transport row from the status label.
 const TRANSPORT_GROUP_GAP: f32 = 12.0;
 
-/// One fat transport button ([`TRANSPORT_BUTTON_SIZE`]).
-fn transport_button(ui: &mut egui::Ui, glyph: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled(
+/// One fat transport button ([`TRANSPORT_BUTTON_SIZE`]). `label` is the
+/// accessible name (what a screen reader announces and what `ui_tests`
+/// address nodes by) — without it the name would be the raw glyph, and
+/// "clockwise open circle arrow" is nobody's idea of a Reset button.
+fn transport_button(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    label: &str,
+    enabled: bool,
+) -> egui::Response {
+    let response = ui.add_enabled(
         enabled,
         egui::Button::new(egui::RichText::new(glyph).size(TRANSPORT_GLYPH_SIZE))
             .min_size(TRANSPORT_BUTTON_SIZE),
-    )
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label)
+    });
+    response
 }
 
 /// Seed the detail pane's [`new_vm::MachineForm`] from a saved definition —
@@ -182,13 +193,14 @@ impl ManagerApp {
         }
     }
 
-    /// Run controls (see the transport-glyph constants' doc): the fat
-    /// deck-style transport covers the three machine states — ▶ powers on
+    /// Run controls: the fat deck-style transport covers the three machine
+    /// states — ▶ powers on
     /// (or resumes a suspended machine), ⏸ suspends, ⏹ powers off — with
-    /// the console Reset as an ordinary labeled button after it. State is
-    /// copied out before the buttons so the click handlers below can freely
-    /// call `&mut self` methods (`start_vm`/`resume_vm`/`suspend_vm`/
-    /// `stop_vm`) without fighting a borrow of `self.entries[index]`.
+    /// the console Reset (↻) as a fourth transport-style button after it.
+    /// State is copied out before the buttons so the click handlers below
+    /// can freely call `&mut self` methods (`start_vm`/`resume_vm`/
+    /// `suspend_vm`/`stop_vm`) without fighting a borrow of
+    /// `self.entries[index]`.
     fn draw_transport_row(&mut self, ui: &mut egui::Ui, index: usize) {
         let suspended = self.entries[index].suspended;
         let vm_alive = self.entries[index].vm.is_some();
@@ -200,7 +212,7 @@ impl ManagerApp {
             // from any starting state.
             let play_hover =
                 if suspended { "Resume the machine from its frozen state" } else { "Start the machine" };
-            if transport_button(ui, PLAY_GLYPH, !running)
+            if transport_button(ui, PLAY_GLYPH, "Play", !running)
                 .on_hover_text(play_hover)
                 .on_disabled_hover_text("The machine is already running")
                 .clicked()
@@ -211,7 +223,7 @@ impl ManagerApp {
                     self.start_vm(index);
                 }
             }
-            if transport_button(ui, SUSPEND_GLYPH, running)
+            if transport_button(ui, SUSPEND_GLYPH, "Suspend", running)
                 .on_hover_text(SUSPEND_HOVER)
                 .on_disabled_hover_text(SUSPEND_HOVER)
                 .clicked()
@@ -221,18 +233,17 @@ impl ManagerApp {
             const STOP_HOVER: &str =
                 "Shut down the machine — like flipping the power switch; \
                  unsaved work inside it (and any suspended state) is lost";
-            if transport_button(ui, STOP_GLYPH, vm_alive || suspended)
+            if transport_button(ui, STOP_GLYPH, "Stop", vm_alive || suspended)
                 .on_hover_text(STOP_HOVER)
                 .on_disabled_hover_text(STOP_HOVER)
                 .clicked()
             {
                 self.stop_vm(index);
             }
-
-            ui.add_space(TRANSPORT_GROUP_GAP);
-            if ui
-                .add_enabled(running, egui::Button::new("Reset"))
-                .on_hover_text("Press the machine's reset button — the machine stays on")
+            const RESET_HOVER: &str = "Press the machine's reset button";
+            if transport_button(ui, RESET_GLYPH, "Reset", running)
+                .on_hover_text(RESET_HOVER)
+                .on_disabled_hover_text(RESET_HOVER)
                 .clicked()
                 && let Some(vm) = self.entries[index].vm.as_mut()
             {
