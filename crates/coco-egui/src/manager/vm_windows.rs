@@ -37,13 +37,11 @@ impl ManagerApp {
     /// after the manager's own panels.
     ///
     /// Close requests (the native window's close box, or the embedded
-    /// fallback's `egui::Window` close button) are collected into a list and
-    /// applied after the loop — for a Running machine the close box IS the
-    /// power switch ([`Self::stop_vm`]); for a Suspended one it merely
-    /// drops the VM object, the frozen state staying on disk. Deferred
-    /// because `stop_vm` needs `&mut self.entries[i]`, which would conflict
-    /// with the `vm` this loop already holds taken out of that same slot
-    /// for the duration of the viewport closure.
+    /// fallback's `egui::Window` close button) are collected into a list
+    /// and applied with [`Self::close_vm_window`] after the loop — deferred
+    /// because it needs `&mut self.entries[i]`, which would conflict with
+    /// the `vm` this loop already holds taken out of that same slot for
+    /// the duration of the viewport closure.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
         let mut to_stop: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
@@ -64,6 +62,7 @@ impl ManagerApp {
             // `self` — so no `self` borrow is held across the closure at
             // all here).
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
+            let suspended = self.entries[i].suspended;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {
@@ -103,6 +102,26 @@ impl ManagerApp {
                     if !open {
                         close_requested = true;
                     }
+                } else if suspended {
+                    // A suspended machine's window is a *viewing port onto
+                    // the frozen frame*, never a control surface: the full
+                    // chrome would leave Reset, Load State, disk mounts,
+                    // and the debugger's own Run/Step live on a machine
+                    // whose on-disk frozen copy they'd silently diverge
+                    // from — one stray click and the alive-resume path
+                    // would "resume" a machine that no longer matches what
+                    // the user froze (then delete the state file on top).
+                    // So: display only, same shape as `window_ui` minus
+                    // `draw_chrome`. `step_emulation` still runs — a paused
+                    // VM steps no fields, but the texture upload keeps the
+                    // frozen frame on screen.
+                    vm.step_emulation(child_ctx);
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+                        .show(child_ctx, |ui| vm.draw_display(ui));
+                    if child_ctx.input(|i| i.viewport().close_requested()) {
+                        close_requested = true;
+                    }
                 } else {
                     vm.window_ui(child_ctx);
                     if child_ctx.input(|i| i.viewport().close_requested()) {
@@ -117,17 +136,22 @@ impl ManagerApp {
             }
         }
         for i in to_stop {
-            if self.entries[i].suspended {
-                // Closing a *suspended* machine's window is not the power
-                // switch — the frozen state is already safe on disk
-                // (`save_state_to` flushed dirty media as part of Suspend,
-                // and the paused machine can't have dirtied anything
-                // since), so just drop the VM object; the row keeps showing
-                // its suspend-time screenshot.
-                self.entries[i].vm = None;
-            } else {
-                self.stop_vm(i);
-            }
+            self.close_vm_window(i);
+        }
+    }
+
+    /// The VM window's close box: the power switch for a Running machine
+    /// ([`Self::stop_vm`]), but for a Suspended one merely drops the VM
+    /// object — the frozen state and screenshot are already on disk from
+    /// suspend time, and the display-only suspended window (above) has no
+    /// control that could have dirtied media since, so there is nothing to
+    /// flush. `pub(crate)` so `ui_tests` closes windows through the exact
+    /// production path instead of re-implementing this branch.
+    pub(crate) fn close_vm_window(&mut self, index: usize) {
+        if self.entries[index].suspended {
+            self.entries[index].vm = None;
+        } else {
+            self.stop_vm(index);
         }
     }
 }

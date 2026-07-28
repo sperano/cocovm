@@ -128,9 +128,11 @@ impl CocoApp {
             ui.close();
             if let Some(path) =
                 rfd::FileDialog::new().add_filter("CoCo save state", &["ccstate"]).pick_file()
-                && let Err(e) = self.load_state_from(&path, ui.ctx())
             {
-                self.cart_error = Some(e);
+                match self.load_state_from(&path) {
+                    Ok(()) => self.refresh_window_title(ui.ctx()),
+                    Err(e) => self.cart_error = Some(e),
+                }
             }
         }
         ui.menu_button("Quick Save", |ui| {
@@ -182,8 +184,9 @@ impl CocoApp {
             self.cart_error = Some("no data directory found for quick-save slots".to_string());
             return;
         };
-        if let Err(e) = self.load_state_from(&path, ctx) {
-            self.cart_error = Some(e);
+        match self.load_state_from(&path) {
+            Ok(()) => self.refresh_window_title(ctx),
+            Err(e) => self.cart_error = Some(e),
         }
     }
 }

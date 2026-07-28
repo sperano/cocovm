@@ -96,6 +96,12 @@ pub(crate) const STOP_GLYPH: &str = "⏹";
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
 
+/// [`NO_CONFIG_DIR`]'s sibling for [`ManagerApp::artifacts_root`] — a
+/// different directory (`machine_def::artifacts_root` under
+/// `paths::data_dir`), reported by Suspend/Resume, which cannot work
+/// without somewhere to keep the frozen state.
+const NO_DATA_DIR: &str = "no data directory available";
+
 /// One machine-list entry: a slug (file stem, also the identity used for
 /// save/rename bookkeeping — `machine_def.rs` "Identity = slug") plus its
 /// parsed definition. Always valid: a definition that fails to load or
@@ -117,9 +123,10 @@ pub struct MachineEntry {
     /// While suspended the VM object may still be alive (paused, window
     /// open) or already dropped (window closed) — both draw as Suspended.
     pub(crate) suspended: bool,
-    /// Message from the last failed Start, shown in the detail pane until
-    /// the next Start attempt or a fresh selection — the launch-time analog
-    /// of [`ManagerApp::save_error`].
+    /// The transport row's error channel: the message from the last failed
+    /// Start, Suspend, or Resume, shown in the detail pane until the next
+    /// attempt or a fresh selection — the lifecycle analog of
+    /// [`ManagerApp::save_error`].
     pub launch_error: Option<String>,
     /// Saved-preview texture for a *suspended* machine whose VM window is
     /// closed (its artifact dir's [`THUMBNAIL_FILE`], written at suspend
@@ -251,9 +258,10 @@ pub struct ManagerApp {
     machines_dir: Option<PathBuf>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
-    /// [`THUMBNAIL_FILE`] lives under `<root>/<slug>`. Injected like
-    /// `machines_dir` so tests use a temp dir, never the real data dir;
-    /// `None` disables thumbnail persistence entirely.
+    /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
+    /// `<root>/<slug>`. Injected like `machines_dir` so tests use a temp
+    /// dir, never the real data dir; `None` disables thumbnail persistence
+    /// and Suspend/Resume entirely (they error with [`NO_DATA_DIR`]).
     artifacts_root: Option<PathBuf>,
     /// `pub(crate)`: `ui_tests.rs` asserts on the list contents directly —
     /// `ManagerApp` lives in this module, so plain private fields (as

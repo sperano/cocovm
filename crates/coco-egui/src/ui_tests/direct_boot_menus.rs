@@ -269,14 +269,9 @@ fn save_state_then_load_state_round_trip() {
     harness.step();
     harness.get_by_label_contains("State saved");
 
-    // Cloned out first (cheap — `egui::Context` is `Arc`-backed): `state_mut()`
-    // borrows all of `harness` mutably for the call below, which would
-    // conflict with a `&harness.ctx` argument evaluated in the same
-    // expression.
-    let ctx = harness.ctx.clone();
     harness
         .state_mut()
-        .load_state_from(&path, &ctx)
+        .load_state_from(&path)
         .unwrap_or_else(|e| panic!("load_state_from failed: {e}"));
     assert!(
         harness.state().running,

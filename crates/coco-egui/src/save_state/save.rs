@@ -16,12 +16,19 @@ impl CocoApp {
     /// Flush dirty media first (so path+hash refs describe the on-disk
     /// truth — [`snapshot::save`]'s own contract), build [`MediaRefs`] from
     /// the paths this app already tracks, and write the encoded `.ccstate`
-    /// bytes to `path`.
+    /// bytes to `path` — tmp-then-rename, the same pattern as
+    /// `machine_def::save` and `manager::write_thumbnail_png`, so a crash
+    /// or full disk mid-write can never leave a truncated state file behind
+    /// (a torn `suspended.ccstate` would read as a phantom Suspended
+    /// machine on the manager's next launch).
     pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
         self.flush_media();
         let media = self.build_media_refs()?;
         let bytes = snapshot::save(&self.machine, &media).map_err(|e| e.to_string())?;
-        std::fs::write(path, bytes)
+        let tmp_path = path.with_extension("ccstate.tmp");
+        std::fs::write(&tmp_path, bytes)
+            .map_err(|e| format!("could not write {}: {e}", tmp_path.display()))?;
+        std::fs::rename(&tmp_path, path)
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
         self.set_toast("State saved".to_string());
         Ok(())

@@ -25,11 +25,12 @@ impl CocoApp {
     /// frontend state a snapshot can't carry on its own — see
     /// [`Self::apply_restored_machine`]. Version/magic/media errors surface
     /// verbatim (by design, per `docs/plan-save-states.md` — they're already
-    /// user-showable). Takes `ctx` (every call site already has one — the
-    /// menu/quick-slot paths through a `ui`, the CLI `--state` path through
-    /// `eframe`'s `CreationContext`) so a cross-variant load can update the
-    /// window title, mirroring [`CocoApp::create_vm`]'s own.
-    pub(crate) fn load_state_from(&mut self, path: &Path, ctx: &egui::Context) -> Result<(), String> {
+    /// user-showable). Deliberately does NOT touch the window title: the
+    /// caller's `egui::Context` may belong to a different viewport than the
+    /// machine's own window (the manager's resume path runs on the MANAGER
+    /// window's context), so direct-boot call sites reissue the title
+    /// themselves via [`Self::refresh_window_title`].
+    pub(crate) fn load_state_from(&mut self, path: &Path) -> Result<(), String> {
         let bytes =
             std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
         let payload = snapshot::load(&bytes).map_err(|e| e.to_string())?;
@@ -38,15 +39,6 @@ impl CocoApp {
         let restored = snapshot::restore(payload, sources).map_err(|e| e.to_string())?;
         self.apply_restored_machine(restored, &media, &mut notes);
 
-        // The restored machine may be a different variant than whatever was
-        // running before the load (`create_vm`'s own title update is the
-        // fresh-boot sibling of this one) — always reissue it, even when the
-        // variant didn't change, since that's cheap and idempotent.
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "cocovm — {}",
-            machine_label(self.machine.config.variant)
-        )));
-
         let mut toast = "State loaded".to_string();
         if !notes.is_empty() {
             toast.push_str(": ");
@@ -54,6 +46,24 @@ impl CocoApp {
         }
         self.set_toast(toast);
         Ok(())
+    }
+
+    /// Reissue the machine window's title for the current variant — the
+    /// restored machine may be a different variant than whatever ran before
+    /// a load ([`CocoApp::create_vm`]'s own title update is the fresh-boot
+    /// sibling; reissuing when the variant didn't change is cheap and
+    /// idempotent). Split out of [`Self::load_state_from`] because
+    /// `ctx.send_viewport_cmd` targets the context's *current* viewport:
+    /// the manager's resume path runs on the manager window's root context
+    /// and must never retitle it, while every direct-boot call site
+    /// (`boot.rs`'s `--state`, the Machine menu's Load State/quick-load) IS
+    /// the machine's own window and calls this right after a successful
+    /// load.
+    pub(crate) fn refresh_window_title(&self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "cocovm — {}",
+            machine_label(self.machine.config.variant)
+        )));
     }
 
     /// Resolve a decoded payload's [`MediaRefs`] into [`MediaSources`] for

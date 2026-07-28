@@ -81,7 +81,7 @@ impl ManagerApp {
                         .vm
                         .as_deref()
                         .and_then(CocoApp::framebuffer_texture)
-                        .or(if entry.suspended { entry.thumbnail.as_ref() } else { None });
+                        .or(entry.thumbnail.as_ref().filter(|_| entry.suspended));
                     draw_row_thumbnail(ui, content_height, texture);
 
                     let def = &self.entries[i].def;
@@ -115,7 +115,9 @@ impl ManagerApp {
     /// (this `i`), never on `self.selected` — right-click deliberately
     /// does not move the selection cue (user decision 2026-07-23); only
     /// "Show config" moves it, because showing the detail pane *is*
-    /// selecting.
+    /// selecting. One exception, [`Self::select_row_on_error`]: a lifecycle
+    /// action that *failed* selects the row, because the error renders only
+    /// in the detail pane and a silent no-op would be the alternative.
     fn draw_row_context_menu(&mut self, response: egui::Response, i: usize) {
         response.context_menu(|ui| {
             // Same enablement as the detail pane's transport row
@@ -127,10 +129,11 @@ impl ManagerApp {
             let start_label = if suspended { "Resume" } else { "Start" };
             if ui.add_enabled(!running, egui::Button::new(start_label)).clicked() {
                 if suspended {
-                    self.resume_vm(i, ui.ctx());
+                    self.resume_vm(i);
                 } else {
                     self.start_vm(i);
                 }
+                self.select_row_on_error(i);
                 ui.close();
             }
             if ui
@@ -139,6 +142,7 @@ impl ManagerApp {
                 .clicked()
             {
                 self.suspend_vm(i);
+                self.select_row_on_error(i);
                 ui.close();
             }
             if ui.add_enabled(running, egui::Button::new("Reset")).clicked() {
@@ -163,6 +167,18 @@ impl ManagerApp {
                 ui.close();
             }
         });
+    }
+
+    /// After a context-menu lifecycle action: if it recorded a
+    /// [`super::MachineEntry::launch_error`], select the row so the detail
+    /// pane (the error's only rendering surface) shows why nothing
+    /// happened — see [`Self::draw_row_context_menu`]'s doc for why this is
+    /// the one exception to "right-click never selects".
+    fn select_row_on_error(&mut self, i: usize) {
+        if self.entries[i].launch_error.is_some() {
+            self.selected = Some(i);
+            self.save_error = None;
+        }
     }
 }
 

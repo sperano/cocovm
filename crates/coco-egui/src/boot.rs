@@ -89,11 +89,12 @@ pub(crate) fn boot_app(
     // `print_capture_path` unconditionally. Starting the capture AFTER that
     // means an explicit --print-capture survives the load instead of being
     // silently clobbered the instant the restored machine lands.
-    if let Some(path) = cli.state
-        && let Err(e) = app.load_state_from(&path, &cc.egui_ctx)
-    {
-        eprintln!("coco: {e}");
-        std::process::exit(1);
+    if let Some(path) = cli.state {
+        if let Err(e) = app.load_state_from(&path) {
+            eprintln!("coco: {e}");
+            std::process::exit(1);
+        }
+        app.refresh_window_title(&cc.egui_ctx);
     }
     if let Some(path) = cli.print_capture {
         app.start_print_capture(path);

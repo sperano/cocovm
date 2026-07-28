@@ -128,10 +128,12 @@ fn resume_after_window_close_restores_the_frozen_state() {
     click(&mut harness, manager::SUSPEND_GLYPH);
     assert!(state_file.is_file());
 
-    // The window-close path for a suspended machine: the VM object is
-    // dropped, the frozen state stays (`draw_running_vms`'s suspended
-    // branch does exactly this assignment).
-    harness.state_mut().entries[0].vm = None;
+    // The window-close path for a suspended machine — the exact production
+    // branch (`vm_windows::close_vm_window`): the VM object is dropped, the
+    // frozen state stays.
+    harness.state_mut().close_vm_window(0);
+    assert!(harness.state().entries[0].vm.is_none());
+    assert!(state_file.is_file(), "closing a suspended window must keep the frozen state");
     harness.step();
     assert!(label_exists(&harness, "Suspended"));
     assert!(
@@ -176,8 +178,49 @@ fn startup_seeds_suspended_from_disk_and_failed_resume_keeps_it() {
     let entry = &harness.state().entries[0];
     assert!(entry.suspended, "a failed restore must keep the machine Suspended");
     assert!(entry.vm.is_none(), "a failed restore must not leave a half-launched VM");
-    assert!(entry.launch_error.is_some(), "the failure must reach the detail pane");
+    // Specifically the snapshot decoder's own error — proving the relaunch
+    // succeeded and it was the *restore* that failed, not `start_vm` (which
+    // would record a ROM/media error instead and pass these asserts for
+    // the wrong reason).
+    assert!(
+        entry.launch_error.as_deref().is_some_and(|e| e.contains("not a CoCo save state")),
+        "the restore failure must reach the detail pane; got {:?}",
+        entry.launch_error
+    );
     assert!(state_file.is_file(), "the frozen state must survive a failed resume");
+}
+
+/// The VM window's close box, driven through the real UI (the embedded
+/// fallback's `egui::Window` close button): on a Running machine it is the
+/// power switch; on a Suspended one it only drops the VM object, keeping
+/// the frozen state on disk. Guards `draw_running_vms`'s close-request
+/// wiring end to end — the other suspend tests call `close_vm_window`
+/// directly.
+#[test]
+fn window_close_powers_off_running_but_preserves_suspended() {
+    let artifacts = TempDir::new("suspend-window-close");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, "Close window");
+    assert!(
+        harness.state().entries[0].vm.is_none(),
+        "closing a running VM's window is the power switch"
+    );
+    assert!(label_exists(&harness, "Powered Off"));
+
+    click(&mut harness, manager::PLAY_GLYPH);
+    click(&mut harness, manager::SUSPEND_GLYPH);
+    assert!(state_file.is_file());
+    click(&mut harness, "Close window");
+    let entry = &harness.state().entries[0];
+    assert!(entry.vm.is_none(), "closing a suspended VM's window drops the VM object");
+    assert!(entry.suspended, "…but the machine stays Suspended");
+    assert!(state_file.is_file(), "…and the frozen state survives");
 }
 
 /// Stop on a suspended, window-closed machine is the power switch: the
@@ -193,7 +236,7 @@ fn stop_on_suspended_machine_discards_the_frozen_state() {
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, manager::PLAY_GLYPH);
     click(&mut harness, manager::SUSPEND_GLYPH);
-    harness.state_mut().entries[0].vm = None; // window closed
+    harness.state_mut().close_vm_window(0);
     harness.step();
 
     click(&mut harness, manager::STOP_GLYPH);

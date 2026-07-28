@@ -194,26 +194,36 @@ impl ManagerApp {
         let vm_alive = self.entries[index].vm.is_some();
         let running = vm_alive && !suspended;
         ui.horizontal(|ui| {
+            // Each button also explains itself while disabled
+            // (`on_disabled_hover_text` — a disabled `Response` never shows
+            // the plain hover), so the transport teaches the state model
+            // from any starting state.
             let play_hover =
                 if suspended { "Resume the machine from its frozen state" } else { "Start the machine" };
-            if transport_button(ui, PLAY_GLYPH, !running).on_hover_text(play_hover).clicked() {
+            if transport_button(ui, PLAY_GLYPH, !running)
+                .on_hover_text(play_hover)
+                .on_disabled_hover_text("The machine is already running")
+                .clicked()
+            {
                 if suspended {
-                    self.resume_vm(index, ui.ctx());
+                    self.resume_vm(index);
                 } else {
                     self.start_vm(index);
                 }
             }
             if transport_button(ui, SUSPEND_GLYPH, running)
                 .on_hover_text(SUSPEND_HOVER)
+                .on_disabled_hover_text(SUSPEND_HOVER)
                 .clicked()
             {
                 self.suspend_vm(index);
             }
+            const STOP_HOVER: &str =
+                "Shut down the machine — like flipping the power switch; \
+                 unsaved work inside it (and any suspended state) is lost";
             if transport_button(ui, STOP_GLYPH, vm_alive || suspended)
-                .on_hover_text(
-                    "Shut down the machine — like flipping the power switch; \
-                     unsaved work inside it (and any suspended state) is lost",
-                )
+                .on_hover_text(STOP_HOVER)
+                .on_disabled_hover_text(STOP_HOVER)
                 .clicked()
             {
                 self.stop_vm(index);
