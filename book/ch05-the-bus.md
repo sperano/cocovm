@@ -7,7 +7,7 @@ you will know why the reset vector is the one address that can never be
 banked away, and you will have watched a one-line reordering break four
 tests for a reason you can explain in a sentence.*
 
-Weeks 1 through 4 built a CPU that will execute anything put in front of
+Chapters 1 through 4 built a CPU that will execute anything put in front of
 it, provided something on the other end of `Bus::read` and `Bus::write`
 answers honestly. For four weeks that something has been a stub: a flat
 64K array in the test harness, with no ROM, no devices, and no opinions
@@ -16,16 +16,16 @@ thing.
 
 It is worth being precise about how much rides on it. The `mc6809` crate
 does not know a CoCo exists; from here on, `coco-core`'s `SystemBus` is
-the entire outside world as far as the CPU can tell. One flat 64K address
-space that, depending on a handful of bits in registers you are about to
-meet, might be RAM, might be one of two different ROMs, might be a chip
-register that clears itself the instant it is read, or might be nothing
-at all — no chip driving the data bus, and a value that comes back
-anyway.
+the entire outside world as far as the CPU can tell. It is one flat 64K
+address space that, depending on a handful of bits in registers you are
+about to meet, might be RAM, might be one of two different ROMs, might be
+a chip register that clears itself the instant it is read, or might be
+nothing at all — no chip driving the data bus, and a value that comes
+back anyway.
 
 That last possibility is a useful early warning about the character of
 this chapter. A memory map looks, on a poster, like a tidy partition of
-the address space into labelled boxes. The real thing is not a partition.
+the address space into labeled boxes. The real thing is not a partition.
 The boxes overlap, several of them move under software control, one of
 them is nailed down so hard that nothing in the machine can move it, and
 the hardware resolves the ambiguity by strict priority rather than by
@@ -34,7 +34,7 @@ work in this chapter; the rest is a long, mechanical walk through the
 I/O page, one device range at a time.
 
 There is also a fork in the road here that the earlier chapters didn't
-have. The CoCo 1, the CoCo 2 and the CoCo 3 all run the same CPU, but
+have. The CoCo 1, the CoCo 2, and the CoCo 3 all run the same CPU, but
 they decide what an address means with completely different silicon, and
 this codebase carries two independent decoders as a direct consequence.
 Section 5.5 tells the older, simpler story; §§5.6–5.10 tell the newer,
@@ -46,7 +46,7 @@ are deliberately never merged.
 ## 5.1 Two chips, one seam
 
 The CPU only ever calls `bus.read(addr)` or `bus.write(addr, val)` with a
-16-bit `addr`. It has no other vocabulary — week 1 made that a deliberate
+16-bit `addr`. It has no other vocabulary — Chapter 1 made that a deliberate
 design decision, and the payoff arrives now, because it means the entire
 memory system of the machine can be understood as the answer to exactly
 one question: which physical byte, or which chip register, does that
@@ -63,7 +63,7 @@ rule is not enough — you also have to know which rule wins.
 Start with the generational split, because it is the coarsest of the
 three dependencies and the one that structures the rest of the chapter.
 The CoCo 1 and CoCo 2 delegate the decision to an MC6883 SAM, the
-Synchronous Address Multiplexer introduced in week 1's tour of the
+Synchronous Address Multiplexer introduced in Chapter 1's tour of the
 machine. The SAM holds a handful of latched bits and maps the 64K space
 to ROM, RAM, or the I/O page in a single lookup. There is no MMU
 anywhere in that picture: what the CPU sees is what the board has, banked
@@ -83,7 +83,7 @@ software did with it.
 Both chips live in the same file,
 [`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), and — more surprisingly — inside
 the same struct. `SystemBus` is the type that actually implements the
-`Bus` trait from week 1, which makes it the concrete thing sitting on the
+`Bus` trait from Chapter 1, which makes it the concrete thing sitting on the
 far side of the CPU's seam. Read the field list below less as a data
 structure and more as an inventory of the machine: nearly every field is
 a device that gets its own chapter later in the course.
@@ -109,7 +109,7 @@ chapter needs.)*
 
 The first field, `variant`, is the machine's identity, and everything
 else in the struct is either memory or a device. `ram` and `rom` are the
-two `Box<[u8]>` buffers week 1 dissected. Then come the decode chips,
+two `Box<[u8]>` buffers Chapter 1 dissected. Then come the decode chips,
 then the two PIAs, then the cartridge slot and the virtual hard disk, and
 in the full declaration a further dozen fields covering the keyboard,
 joysticks, cassette, serial port, and the debugger's watchpoint table.
@@ -124,9 +124,9 @@ alternatives.
 What it buys is that `SystemBus` is a single concrete type. There is no
 generic parameter, no trait object, and no enum-of-machines standing
 between the CPU's hottest path and a memory access — `bus.read(addr)`
-compiles to a direct call every time, exactly as week 1's discussion of
+compiles to a direct call every time, exactly as Chapter 1's discussion of
 monomorphization promised. Just as importantly, and this is the payoff
-you'll recognize from week 1's argument about trees versus graphs, a
+you'll recognize from Chapter 1's argument about trees versus graphs, a
 single `#[derive(Serialize, Deserialize)]` covers the whole thing for
 save states. Nothing has to ask "which variant am I" at serialization
 time, because there is only ever one shape of struct to write out. A few
@@ -136,7 +136,7 @@ paid once at construction rather than per access.
 What remains is the mechanism by which the CPU picks between the two
 decoders on any given access, and the ordered set of rules each decoder
 applies once chosen. The next section takes the second of those first,
-because the ordering is the part that most repays being internalized
+because the ordering is the part that most rewards being internalized
 before any of the individual rules.
 
 ---
@@ -201,7 +201,7 @@ the search ends there and no lower tier is ever consulted, whether or not
 the address also falls inside that lower tier's range.
 
 The first tier is `$FFE0–$FFFF`, hardwired to internal ROM. The constant
-is `HARDWIRED_ROM_BASE = 0xFFE0`, and the striking thing about it is that
+is `HARDWIRED_ROM_BASE = 0xFFE0`, and what is striking about it is that
 it is checked *before* the I/O-page test even though `$FFE0` is
 numerically inside `$FF00–$FFFF` as well. That ordering is not a stylistic
 preference. If the I/O test came first, the six 6809 hardware vectors —
@@ -227,15 +227,15 @@ something a range table never can — it says what the range is immune
 pub(super) const HARDWIRED_ROM_BASE: u16 = 0xFFE0;
 ```
 
-Four separate mechanisms are named there as unable to touch this range,
-and every one of them is a mechanism this chapter goes on to build. Note
-also the shape of the citation: MAME's source, a real-hardware test by a
-named person, and an explicit statement that a published reference book
-gets this wrong. That is what a hardware claim looks like when someone
-has actually checked, and it is the standard the rest of this chapter
-holds its own claims to.
+That comment names four separate mechanisms, none of which can touch
+this range, and every one of them is a mechanism this chapter goes on to
+build. Note also the shape of the citation: MAME's source, a
+real-hardware test by a named person, and an explicit statement that a
+published reference book gets this wrong. That is what a hardware claim
+looks like when someone has actually checked, and it is the standard the
+rest of this chapter holds its own claims to.
 
-The second tier is the I/O page itself, `$FF00–$FFBF`, gated on
+The second tier is the I/O page itself, `$FF00–$FFDF`, gated on
 `io_enabled`. That flag is a debugger convenience and is always `true` on
 a running machine, so for now read the condition as simply "the address is
 at or above `$FF00`." Because tier 1 already returned for everything from
@@ -345,9 +345,9 @@ section and which the table below marks accordingly.
 
 That stability is what makes the I/O page worth learning as a unit. Every
 week of this course from here on lands somewhere in this table — the
-keyboard in week 10, the sound DAC in week 11, the cassette in week 12,
-the disk controller in week 13, the serial port in week 14 — and each of
-those chapters will assume the address is already familiar. Week 1
+keyboard in Chapter 10, the sound DAC in Chapter 11, the cassette in Chapter 12,
+the disk controller in Chapter 13, the serial port in Chapter 14 — and each of
+those chapters will assume the address is already familiar. Chapter 1
 introduced a short version of this map, seven rows deep, as a bookmark.
 Here is the complete one, taken not from DESIGN.md's summary but from
 the literal `match` arms that
@@ -368,9 +368,9 @@ dispatch on:
 | `$FF93` | FIRQENR | FIRQ twin of `$FF92`. |
 | `$FF94`/`$FF95` | Timer MSB/LSB | 12-bit interval timer; write-only (reads as 0 on hardware). |
 | `$FF96`/`$FF97` | reserved | Unused on the GIME. |
-| `$FF98`–`$FF9F` | GIME video: VMODE, VRES, BORDER, VBANK, VSCROLL, VOFFSET1/0, HOFFSET | Week 8 territory; write-only like the timer regs (`io.rs`'s `TIMER_MSB_REG..=GIME_LAST => 0` catch-all). |
+| `$FF98`–`$FF9F` | GIME video: VMODE, VRES, BORDER, VBANK, VSCROLL, VOFFSET1/0, HOFFSET | Chapter 8 territory; write-only like the timer regs (`io.rs`'s `TIMER_MSB_REG..=GIME_LAST => 0` catch-all). |
 | `$FFA0–$FFAF` | MMU task registers | `$FFA0–$FFA7` = task 0 slots 0–7, `$FFA8–$FFAF` = task 1 slots 0–7. §5.7/§5.8. |
-| `$FFB0–$FFBF` | Palette | 16 registers, 6-bit RGB each. Week 8. |
+| `$FFB0–$FFBF` | Palette | 16 registers, 6-bit RGB each. Chapter 8. |
 | `$FFC0–$FFDF` | SAM-compatibility strobes | Write-only, even/odd set-clear pairs. §5.4/§5.5. |
 | `$FFE0–$FFFF` | Hardwired internal ROM | Tier 1 from §5.2 — bypasses everything else on this table. |
 
@@ -399,8 +399,8 @@ registers genuinely do not drive the data bus when read, so the value the
 CPU sees is whatever the bus happens to supply. Anyone who has written
 6809 assembly that tries to read-modify-write `$FF98` — load the current
 mode byte, set one bit, store it back — will recognize the resulting
-bug immediately, and the important thing to understand is that it is not
-the emulator's bug. It is period-accurate. Note that the emulator does
+bug immediately. The important thing to understand is that it is not the
+emulator's bug. It is period-accurate. Note that the emulator does
 keep the written value — `io_write`'s `VMODE_REG => self.gime.vmode =
 val` arm latches it into the `GIME` struct, where week 8's renderer will
 read it — so the information is not lost. It is simply not available to
@@ -412,7 +412,7 @@ chip.
 The table above says *where* each device lives. Reading the dispatch
 itself is a different exercise: it tells you what the *shape* of a device
 match arm is, and that shape is remarkably consistent across a set of
-devices that have almost nothing else in common. Weeks 10 through 14 dig
+devices that have almost nothing else in common. Chapters 10 through 14 dig
 into these devices one at a time, and each of those chapters will go
 faster if the arm's structure is already familiar. Three patterns recur
 across nearly every arm in `io_read` and `io_write`, and one worked
@@ -473,7 +473,7 @@ that the two `c2_output()` select lines have chosen. Three subsystems,
 one byte, because on the real board that is exactly what is wired to
 those eight pins.
 
-Week 10 spends its time inside `keyboard.rs` and `joystick.rs` and will
+Chapter 10 spends its time inside `keyboard.rs` and `joystick.rs` and will
 make sense of the individual pieces. The lesson to take from it now is
 structural rather than electrical. A PIA's "input" is not state that the
 PIA owns and maintains; it is a snapshot the bus takes of everything else
@@ -494,7 +494,7 @@ pub(super) fn pia1_pa_pins(&self) -> u8 {
 Note the polarity: a set cassette bit produces `0xFF`, and a clear one
 produces `!CASSETTE_IN`, which is `0xFE` — every bit high except bit 0.
 Unused CoCo input pins float high, so "all ones except the one bit we
-actually model" is the honest answer rather than a lazy one. Week 12 will
+actually model" is the honest answer rather than a lazy one. Chapter 12 will
 care intensely about the timing of that single bit; this week only cares
 that it is computed rather than stored, exactly like PIA0's far busier
 port A.
@@ -520,8 +520,8 @@ PIA1_BASE..=PIA1_LAST => {
 *([`bus/io.rs:104-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L104-L113))*
 
 Every single PIA1 write re-derives the current six-bit DAC value and
-feeds it to `cassette.record_dac`, including writes that have nothing
-apparently to do with the cassette. The comment explains why in one
+feeds it to `cassette.record_dac`, including writes with no apparent
+connection to the cassette. The comment explains why in one
 clause: any of the four PIA1 registers can change what the recording
 circuit sees. A write to the output register obviously can. So can a
 write to the data-direction register, since a pin switched from input to
@@ -530,13 +530,13 @@ is why the mask is `output & ddr` rather than `output` alone. And so can
 a write to the control register, because that is where the cassette motor
 relay lives. From the cassette's point of view there is no such thing as
 an irrelevant PIA1 write, so the emulator does not try to guess which
-ones matter. Weeks 11 and 12 both build directly on this tap.
+ones matter. Chapters 11 and 12 both build directly on this tap.
 
 The third pattern is *a device group with its own small sub-dispatch*.
 Where the PIAs mirror four registers across a 32-byte range, other
 devices claim a short run of consecutive addresses and give each one its
 own line. The virtual hard disk at `$FF80–$FF86` — NitrOS-9's `emudsk`
-device, week 13's material — is a compact example of the shape:
+device, Chapter 13's material — is a compact example of the shape:
 
 ```rust
 VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
@@ -547,7 +547,7 @@ VHD_SELECT => OPEN_BUS, // always open bus, unconditionally (spec)
 ```
 *([`bus/io.rs:74-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L74-L78), read side)*
 
-Seven addresses, four behaviours. Three of them are the bytes of a
+Seven addresses, three behaviors. Three of the addresses are the bytes of a
 *logical record number*, the sector index the host is being asked to
 fetch, and two more are a pointer to the buffer the result should land
 in; all five share one read arm because reading any of them returns the
@@ -559,7 +559,7 @@ stub. Section 5.11 collects every open-bus convention in the codebase,
 VHD's included, into one place, because "reads back a fixed value nothing
 wrote" turns out to be a surprisingly common answer.
 
-One overlap inside the I/O page deserves naming before week 13 meets the
+One overlap inside the I/O page deserves naming before Chapter 13 meets the
 rest of the cartridge range, because it is the precedence question from
 §5.2 recurring at a smaller scale. The Becker port — `$FF41` and `$FF42`,
 the DriveWire-over-serial interface — sits *inside* the cartridge's
@@ -650,7 +650,7 @@ beyond this particular fork.
 The first is a `dyn Decoder` trait object, one implementation per
 variant, stored in a field and called polymorphically. This is the
 obvious object-oriented move, and it loses here for precisely the reason
-week 1's `impl Bus` beat `dyn Bus` on the CPU's hot path. Every memory
+Chapter 1's `impl Bus` beat `dyn Bus` on the CPU's hot path. Every memory
 access — several per instruction, tens of millions per second of emulated
 time — would pay a vtable indirection to re-answer a question that was
 settled the moment the machine was constructed. The variant cannot change
@@ -663,7 +663,7 @@ The second is a generic `SystemBus<V: Variant>`, which would recover the
 speed through monomorphization. The cost this time is not performance but
 contagion. `Machine` would need a type parameter, and so would every
 function signature that touches a `Machine`, in the core and the frontend
-and the test suite alike. The quieter cost is the one week 16 would pay:
+and the test suite alike. The quieter cost is the one Chapter 16 would pay:
 `#[derive(Serialize, Deserialize)]` for save states is pleasant precisely
 because `Machine` is one plain, ordinary, singular type. Introduce a type
 parameter and every snapshot has to know which instantiation produced it.
@@ -705,7 +705,7 @@ of hardware is more honest than a unification that papers over the
 difference, and it is also easier to change later, because a fix to one
 decoder cannot possibly break the other.
 
-This is the same "load-bearing abstraction" instinct from week 1,
+This is the same "load-bearing abstraction" instinct from Chapter 1,
 applied in the opposite direction: there, one seam (`Bus`) was worth
 generalizing because every device behind it really does share one
 two-method contract. Here, two decoders are worth *not* generalizing
@@ -824,15 +824,15 @@ Compare that to the CoCo 3's `write` from §5.2, where a store into the
 ROM window falls through to the RAM mapped physically beneath it. Here,
 four of the six targets are handled by a single empty block: the write
 is dropped entirely, with nothing underneath to catch it. The comment
-gives both the hardware reason and the modelling reason, which are
+gives both the hardware reason and the modeling reason, which are
 usefully distinct. MAME gates ROM-window write-through on the `TY` bit,
 so on real hardware in ROM mode there is no write-through either; and in
 this emulator's model there is not even a RAM byte at that physical
 address to write to, because a CoCo 1/2's RAM is indexed essentially by
 CPU address — plus the single `P1` bank bit — rather than through a
-physical space the CPU sees a shifting window onto. The same programmer
-action, a `STA` into the ROM window, silently does nothing on one machine
-and quietly modifies hidden RAM on the other.
+physical space that the CPU views through a shifting window. The same
+programmer action, a `STA` into the ROM window, silently does nothing on
+one machine and quietly modifies hidden RAM on the other.
 
 > **Rust corner: an `enum` as a decode result.** `SamTarget` — `Ram`,
 > `RomExt`, `RomBas`, `Cart`, `Io`, `OpenBus` — is a textbook use of an
@@ -850,10 +850,10 @@ and quietly modifies hidden RAM on the other.
 
 Here's the detail that startles people who've only ever programmed
 against friendly memory-mapped registers: `$FFC0–$FFDF` isn't sixteen
-independent bit-fields you read and write like normal bytes. It's 16
-*pairs* of write-only addresses. **The data byte you write is completely
-ignored — only the address matters**, and within each pair, the *even*
-address clears one specific bit and the *odd* address sets it:
+independent bit-fields you read and write like normal bytes. It's
+sixteen *pairs* of write-only addresses. **The data byte you write is
+completely ignored — only the address matters**, and within each pair,
+the *even* address clears one specific bit and the *odd* address sets it:
 
 ```rust
 /// Apply a SAM control-strobe write ($FFC0–$FFDF): the even address in
@@ -898,7 +898,7 @@ means the SAM needs no data-bus latch at all for these bits, just an
 address decoder wired straight to sixteen flip-flops. It's cheaper
 silicon at the cost of software ergonomics, and it is not unique to the
 SAM: you'll meet the same even/odd convention again in the GIME's own
-compatibility overlay next.
+compatibility overlay.
 
 > **Rust corner: deriving two facts from one number.** `(addr -
 > STROBE_BASE) / 2` and `(addr - STROBE_BASE) & 1` pull the "which bit"
@@ -933,12 +933,12 @@ the `CTS*` pin. This is the tier-3 decode from §5.2 opened up.
 ### The four states
 
 Two bits give four combinations, and the mapping from combination to
-behaviour is not a tidy encoding of two independent choices — it is a
+behavior is not a tidy encoding of two independent choices — it is a
 table Tandy chose, with one redundant entry. The function that implements
 it is six lines long, but its doc comment is the more valuable half,
 because it names the source (the ROM-map table in SEB Unravelled II) and
 then adds the one fact the table does not cover: what the cold-start code
-actually writes, and why that explains the behaviour of every diskless
+actually writes, and why that explains the behavior of every diskless
 CoCo 3 ever switched on.
 
 ```rust
@@ -977,7 +977,7 @@ The power-on/cold-start state matters enough to name: `INIT0` resets to
 `$00` (which is `MC=00`, 16K+16K split — an *empty* cartridge slot until
 BASIC's own cold-start code runs), and that cold-start code immediately
 writes `MC1` alone (`MC=10`, 32K internal) before jumping into the upper
-half of ROM — you traced exactly this in [`tests/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs)'s
+half of ROM — you'll trace exactly this in [`tests/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs)'s
 `cold_start_configures_rom_and_jumps_into_upper_half`, and §5.13 walks
 the reset sequence that leads up to it. A diskless CoCo 3 runs entirely
 out of `coco3.rom` because BASIC *chose* `MC=10`, not because that's
@@ -1011,10 +1011,10 @@ on an elaborate cartridge.
 
 Notice `rom_is_external`'s doc comment: "the CPU vectors stay internal —
 the bus handles those separately." Even under `MC=11` — the whole
-`$8000–$FDFF` *and* the rest of the window handed to an external
-cartridge — tier 1 from §5.2 (`HARDWIRED_ROM_BASE`) still intercepts
-`$FFE0–$FFFF` before `rom_read` is ever asked whether the address is
-external. `rom_read` itself encodes the boundary explicitly:
+`$8000–$FDFF` window handed to an external cartridge — tier 1 from §5.2
+(`HARDWIRED_ROM_BASE`) still intercepts `$FFE0–$FFFF` before `rom_read`
+is ever asked whether the address is external. `rom_read` itself encodes
+the boundary explicitly:
 
 ```rust
 fn rom_read(&mut self, addr: u16) -> u8 {
@@ -1046,7 +1046,7 @@ at `$FFFF`. A "16K" cartridge ROM logically spans `$C000–$FFFF`, which is
 `$FE00` through `$FFFF` — are addresses the cartridge connector's select
 line simply never fires for, regardless of how `MC1:MC0` are programmed.
 
-Now split that 512 bytes in two, using rules already established. The top
+Now split those 512 bytes in two, using rules already established. The top
 32 bytes, `$FFE0–$FFFF`, are tier 1: hardwired internal ROM, immune to
 everything, never available to a cartridge under any circumstances. The
 `$FF00–$FFDF` span below it holds the I/O page proper and the
@@ -1060,7 +1060,7 @@ like the rest of the `$8000+` window."
 Follow that through for a cartridge. "The normal map" here means the
 `MC1:MC0` rule, and `is_rom_window` together with `rom_read` keep
 applying it uninterrupted through `$FEFF` — the code has no special case
-that stops at `$FDFF`, because the *emulator* is modelling the address
+that stops at `$FDFF`, because the *emulator* is modeling the address
 decode rather than the physical select line. So under an external-ROM
 setting with `MC3` clear, `$FE00–$FEFF` reads as the tail of the
 cartridge's own ROM image, even though `CTS*` never fires for it. This
@@ -1102,7 +1102,7 @@ under this mode, exactly as the table above says. The second flips to
 the cartridge — `0xAA` at both ends — while `$FFFE` in the very same
 test, on the very same bus, still reads `marked_rom`'s `0xFE`. One
 `SystemBus`, one `read` call each time, two completely different answers
-seven bytes apart (`$FDFF` vs `$FFFE`), because tier 1 doesn't care what
+511 bytes apart (`$FDFF` vs `$FFFE`), because tier 1 doesn't care what
 tier 3 decided.
 
 ---
@@ -1124,9 +1124,9 @@ same even/odd strobe convention, deliberately not shared with `sam.rs`.
 Its own module doc comment says so explicitly, in the same terms §5.4
 used: the duplication exists so the CoCo 3 path stays completely
 untouched by anything the CoCo 1/2 path does. It implements only the
-strobes the CoCo 3 actually honours — V0–V2, F0–F6, R1, and TY — and
-deliberately does not model P1, M0, M1, or the CoCo 1/2 `R0` pair,
-because on real CoCo 3 hardware those addresses do nothing:
+strobes the CoCo 3 actually honors — V0–V2, F0–F6, R1, and TY — and
+does not model P1, M0, M1, or the CoCo 1/2 `R0` pair, because on real
+CoCo 3 hardware those addresses do nothing:
 
 ```rust
 pub fn write_sam(&mut self, addr: u16) {
@@ -1153,13 +1153,12 @@ differently on a CoCo 3: `write_sam` has **no arm at all** for those two
 addresses — they fall straight through the `match`'s `_ => {}` catch-all
 with no effect whatsoever, not even latched into an unused field (the
 GIME struct has no `r0`-equivalent field to latch into). That matches
-the real chip:
-SEB Unravelled II's own register figure lists only `R1` as active on
-the GIME. The CoCo 1/2 `R0` pair being "address-dependent" (nominally
-fast for ROM fetches, slow for RAM) was already a soft-edged feature on
-the original SAM; the GIME's designers apparently decided one clean,
-unconditional double-speed bit was enough and didn't bother wiring the
-old pair through at all.
+the real chip: SEB Unravelled II's own register figure lists only `R1` as
+active on the GIME. The CoCo 1/2 `R0` pair being "address-dependent"
+(nominally fast for ROM fetches, slow for RAM) was already a soft-edged
+feature on the original SAM; the GIME's designers apparently decided one
+clean, unconditional double-speed bit was enough and didn't bother
+wiring the old pair through at all.
 
 That is `$FFC0–$FFDF` handled: SAM compatibility, present and faithful,
 but a sideshow. Sixteen bytes lower down sits the register range that
@@ -1250,7 +1249,7 @@ loops, no lookups beyond one array index, and no branches beyond the
 enable check. That economy is worth noticing rather than skimming past:
 address translation on this machine is a shift, a mask, an array index
 and an OR, and any model that needed more machinery than that would be
-modelling something the GIME doesn't do:
+modeling something the GIME doesn't do:
 
 ```rust
 /// Translate a CPU logical address to a physical RAM offset.
@@ -1267,18 +1266,18 @@ pub fn translate(&self, addr: u16) -> usize {
 *([`gime.rs:241-249`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L241-L249), `BLOCK_SHIFT = 13`, i.e. `log2(8192)`)*
 
 One formula is worth becoming fluent in, because the rest of this chapter
-and a good deal of week 8 assume it: `phys = (block << 13) | (addr &
+and a good deal of Chapter 8 assume it: `phys = (block << 13) | (addr &
 0x1FFF)`. Take its three pieces in turn. `addr >> 13` picks which of the
 eight 8K windows the address falls in; shifting a 16-bit value right by
 thirteen leaves only three bits, so the `& (SLOTS_PER_TASK - 1)` mask
 alongside it can never actually change the answer and is there purely as
-defence in depth. `addr & 0x1FFF` is the byte offset *within* that 8K
+defense in depth. `addr & 0x1FFF` is the byte offset *within* that 8K
 window, and it passes into the physical address completely unchanged —
 the MMU relocates blocks, never bytes within them. And `block << 13`
 puts that offset at the right place in physical memory.
 
 Work one example by hand, because the formula is much easier to trust
-once you've done it once. Suppose the active task's slot 5 holds block
+after you've done it once. Suppose the active task's slot 5 holds block
 `$07`, and the CPU reads logical `$A123`. The slot index is `$A123 >> 13`,
 which is 5, so slot 5's contents apply. The in-block offset is `$A123 &
 $1FFF`, which is `$0123`. And the block base is `$07 << 13`, which is
@@ -1316,20 +1315,20 @@ fn phys(&self, addr: u16) -> usize {
 
 That `% self.ram.len()` is not a cosmetic bounds-check — it is the whole
 mechanism by which a 128K or 512K machine survives block numbers that
-would otherwise point off the end of physical RAM. §5.9 is a full
-treatment of exactly what that means for a small machine.
+would otherwise point off the end of physical RAM. Section 5.9 is a
+full treatment of exactly what that means for a small machine.
 
 > **Rust corner: `%` as intentional hardware fidelity, not a bug
 > smell.** In application code, an unexplained `%` on an index usually
 > means "someone forgot to bounds-check and is papering over it." Here
-> it's the opposite: the modulo *is* the documented hardware behaviour
+> it's the opposite: the modulo *is* the documented hardware behavior
 > (DESIGN.md §3 calls it "the mask relocates it to the top 64K"), and
 > [`tests/bus_map.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs)'s `small_machine_aliases_high_window_into_top_blocks`
 > pins the exact aliasing a 128K machine produces. When you see
 > deliberate wraparound arithmetic in emulator code, look for the
 > comment or test that says *why* — it's very often "this is what the
 > chip does," not an oversight. Contrast with `wrapping_add` from
-> week 1's `Bus::read_u16`: same instinct (embrace fixed-width
+> Chapter 1's `Bus::read_u16`: same instinct (embrace fixed-width
 > wraparound instead of fighting it), different operator, same reason
 > a `checked_*` or panicking method would be *wrong* here.
 
@@ -1342,7 +1341,7 @@ task's slot 7 register says. Two hundred and fifty-six bytes of the
 address space are simply exempt from the banking mechanism the previous
 few pages were spent building.
 
-The reason is worth reasoning out rather than accepting, because it is
+The reason is worth working out rather than accepting, because it is
 the same reason tier 1 exists and it generalizes to every system with
 both interrupts and banked memory. An interrupt can arrive at any
 instruction boundary, including the boundary in the middle of a
@@ -1411,7 +1410,7 @@ out the theory behind the two register sets in almost the same words
 this chapter has been using: each set may be allocated to a different
 "task," and switching between them is nothing more than flipping
 `INIT1` bit 0 — but the manual is emphatic about what that switch does
-*not* do for you. Paraphrasing its warning: swapping task sets **does
+*not* do for you. To paraphrase its warning: swapping task sets **does
 nothing to preserve the CPU's registers**, and if an interrupt lands
 mid-switch, or the currently active stack pointer or program counter
 happens to live in a page that just got swapped out from under it, the
@@ -1447,7 +1446,7 @@ or a system call always lands on stable, unbanked kernel code with
 nothing more than an `INIT1` bit-flip needed to reach it. The **other**
 task register set is the one that actually changes: each time OS-9's
 scheduler dispatches a different process, it copies that process's own
-8-block memory map into the currently-inactive register set — while the
+8-block memory map into the currently inactive register set — while the
 *other* set (wherever the previous process or the kernel currently
 sits) keeps running completely undisturbed — and only then flips the
 task-select bit. The new process's entire 64K view becomes live in one
@@ -1551,12 +1550,13 @@ physical 8K blocks. Compute `phys` for a few MMU block numbers by hand:
 | `$3F` | `$7E000` | `$1E000` |
 
 Block `$30` and block `$00` land on the *identical* physical offset.
-So do `$31`/`$01`, and every other pair sixteen apart — because `0x20000
+So do `$31`/`$01`, and any two block numbers that differ by a multiple of
+sixteen — because `0x20000
 / 0x2000 = 16` exactly, `% self.ram.len()` on a 128K machine is
 arithmetically identical to `block % 16`. This is precisely the
 behavior an independently published reference (Chris Lomont's CoCo
 hardware notes) documents from the real chip: on a 128K machine, MMU
-pages `$00`–`$2F` are copies of pages `$30`–`$3F` — there is no 512K
+pages `$00`–`$2F` are copies of the sixteen pages `$30`–`$3F` — there is no 512K
 worth of distinct physical storage behind the low block numbers, so the
 GIME's own address decoder (or, faithfully, this codebase's plain
 modulo) simply wraps. Nobody wrote a "128K special case" into
@@ -1569,12 +1569,12 @@ harder verification. Exercise 5.10 asks you to extend the same table to
 a 512K machine.
 
 The two-way aliasing has been verified directly rather than left to the
-arithmetic on paper alone: a temporary test that enabled the MMU on a
-128K machine, programmed one slot to block `$00` and a second slot to
-block `$30`, wrote a marker through the first slot, and read it back
-through the second (and vice versa) passed against the real code before
-being deleted — the two block numbers really do address the same bytes,
-both ways, exactly as the table predicts.
+arithmetic on paper alone. A temporary test enabled the MMU on a 128K
+machine, programmed one slot to block `$00` and a second slot to block
+`$30`, wrote a marker through the first slot, and read it back through
+the second, and vice versa. It passed against the real code before being
+deleted — the two block numbers really do address the same bytes, both
+ways, exactly as the table predicts.
 
 `DISABLED_MMU_BASE = 0x7_0000` (§5.7's fixed "MMU off" map) is itself
 block `$38` in this scheme (`0x70000 / 0x2000 = 0x38`) — which lines up
@@ -1685,7 +1685,7 @@ the code:
 That comment says the asymmetry is *still TODO* — but `MMU_READ_MASK`
 exists, is applied on every MMU register read, and [`tests/bus_map.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs)
 has a passing test, `mmu_register_write_8_read_low_6`, proving the
-low-6-bits behaviour works today:
+low-6-bits behavior works today:
 
 ```rust
 #[test]
@@ -1698,8 +1698,8 @@ fn mmu_register_write_8_read_low_6() {
 ```
 *([`tests/bus_map.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L252-L258))*
 
-The comment is simply out of date;
-someone implemented the feature and didn't update the file banner.
+The comment is simply out of date; someone implemented the feature and
+didn't update the file banner.
 **Trust the code and the tests over prose comments when they disagree —
 comments don't get exercised by `cargo test`.** This is a useful
 lesson independent of this specific chip: doc comments describe intent
@@ -1720,7 +1720,7 @@ memory upgrades provide. For an emulator whose job is running real
 software reproducibly and passing a deterministic test suite, "always
 read back 0 in the top two bits" is a defensible simplification of
 "unpredictable analog noise" — software that depended on the *specific*
-garbage value would be relying on undefined behaviour on real hardware
+garbage value would be relying on undefined behavior on real hardware
 too. But it is a simplification, and now you know exactly where it is
 if you ever need to model a specific real machine's readback more
 faithfully.
@@ -1749,7 +1749,7 @@ On a real 6809 system that voltage is not nothing. It is whatever charge
 remains on the bus lines, pulled toward a resting state by the bus's own
 passive electrical characteristics, and different bus segments on the
 CoCo rest at different levels depending on what is wired to them. An
-emulator cannot model that analog behaviour honestly and should not
+emulator cannot model that analog behavior honestly and should not
 pretend to try. What it can do instead is pick a fixed, documented
 stand-in value for each region that can go unanswered, chosen to match
 what real hardware returns — or what MAME returns, where the local
@@ -1797,13 +1797,14 @@ on its own, and it's a stronger claim than a guessed rationale would be.
 Section 5.14's first worked example puts the same instinct to work in a
 test rather than a comment: `mc_16k_split_routes_upper_half_to_cartridge`
 asserts that `b.read(0xC123)` is `0x00` with an empty cartridge slot. A
-reader who assumed all open bus reads as `0xFF` would take that assertion
-for a typo. It is `ROM_OPEN_BUS` doing precisely what its comment says,
-pinned by a test so that nobody can later "fix" it into consistency.
+reader who assumed open bus always reads back `0xFF` would take that
+assertion for a typo. It is `ROM_OPEN_BUS` doing precisely what its
+comment says, pinned by a test so that nobody can later "fix" it into
+consistency.
 
 ### The debugger already assumes you'll get this wrong
 
-One more place open bus shows up, foreshadowing week 16: every
+One more place open bus shows up, foreshadowing Chapter 16: every
 `Cartridge` method has a side-effect-free `peek` twin —
 `rom_peek`/`peek`/`peek_control` — and every one of *those* defaults to
 open bus rather than trying to guess a "probably harmless" real value:
@@ -1821,7 +1822,7 @@ fn rom_peek(&self, _addr: u16) -> u8 {
 ```
 *([`cart.rs:47-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L47-L55))*
 
-This is the same `read`-vs-`peek` split week 1 introduced for PIA
+This is the same `read`-vs-`peek` split Chapter 1 introduced for PIA
 interrupt flags, applied to cartridges: a debugger memory view that
 can't safely read a device's ROM without a side effect reports open bus
 rather than risk corrupting the machine it's supposed to be inspecting
@@ -1901,18 +1902,18 @@ absence is represented as data rather than as a case. A test that boots
 this composed image
 (`ty0_reads_rom_at_extbas_and_bas_windows`-adjacent coverage, and
 `coco1_boot.rs` proper) proves the machine boots into the plain "COLOR
-BASIC" banner, not "EXTENDED COLOR BASIC" — because `$8000–$9FFF`
-genuinely reads back `$FF` bytes, which don't disassemble into working
-BASIC startup code, so the ROM's own startup sequence detects the
-absence and skips straight to the Color BASIC banner. `coco-egui`'s
-`compose_coco12_rom` does the general version of this same layout at
-runtime, picking whichever `extbas*.rom`/`bas*.rom` files are present
-and filling the gap the same way when they aren't.
+BASIC" banner, not "EXTENDED COLOR BASIC". The reason is that
+`$8000–$9FFF` genuinely reads back `$FF` bytes, which don't disassemble
+into working BASIC startup code, so the ROM's own startup sequence
+detects the absence and skips straight to the Color BASIC banner.
+`coco-egui`'s `compose_coco12_rom` does the general version of this same
+layout at runtime, picking whichever `extbas*.rom`/`bas*.rom` files are
+present and filling the gap the same way when they aren't.
 
 ### Knowing what you actually loaded
 
 Before any of this, you generally want to know *which* dump you've got
-— homebrew patches and mislabeled files are common in the wild.
+— homebrew patches and mislabelled files are common in the wild.
 `rom_db.rs` keeps a manifest of every known-good CoCo ROM (copied from
 MAME's own romset definitions) and validates by content, not filename:
 
@@ -1959,7 +1960,7 @@ not errors to reject.
 Every decode rule in this chapter converges on one address at the very
 first instant the machine exists, and it is worth following that single
 address all the way through, because it exercises tier 1, the ROM
-mapping, the endianness convention from week 1, and the power-on register
+mapping, the endianness convention from Chapter 1, and the power-on register
 state, all before a single instruction has executed. If any one of those
 is wrong, the machine does not boot; if all of them are right, the CoCo 3
 is already running real code.
@@ -1984,7 +1985,7 @@ pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
 That ordering is a requirement, not a convenience. `MC6809::reset` does
 not invent a starting program counter; it *reads* one out of memory, so
 the bus has to be fully constructed and the ROM already attached before
-reset is allowed to run. Here is the whole of it, from week 4's
+reset is allowed to run. Here is the whole of it, from Chapter 4's
 territory, unchanged
 ([`crates/mc6809/src/lib.rs:177-183`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L177-L183)):
 
@@ -2000,7 +2001,7 @@ pub fn reset(&mut self, bus: &mut impl Bus) {
 
 Walk `bus.read_u16(0xFFFE)` through everything you now know:
 
-1. `read_u16` (week 1's default trait method) issues two big-endian
+1. `read_u16` (Chapter 1's default trait method) issues two big-endian
    `read` calls: `read(0xFFFE)` then `read(0xFFFF)`.
 2. Each hits `SystemBus::read`. `variant == Coco3` (default config), so
    we're in the GIME path, not `sam_read`.
@@ -2038,7 +2039,7 @@ fn reset_vector_points_into_rom() {
 ```
 *([`tests/boot.rs:13,27-35`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/boot.rs))*
 
-`coco3.rom[0x7FFE..0x7FFF] = {0x8C, 0x1B}` — the vector *stored* at the
+`coco3.rom[0x7FFE..=0x7FFF] = {0x8C, 0x1B}` — the vector *stored* at the
 very end of the ROM image points to `$8C1B`, an address near the
 *start* of the mapped ROM (offset `0x0C1B`). That's completely ordinary
 for a 6809 reset vector: the vector table lives at the top of the
@@ -2046,13 +2047,13 @@ address space by architecture convention, but nothing says the code it
 points to has to live near there too. `PC = 0x8C1B` after `reset()`
 returns is your first, cleanest proof that decode order, ROM mapping,
 and the hardwired-vector carve-out are all wired correctly before a
-single instruction has executed. `cold_start_configures_rom_and_jumps
-_into_upper_half` (same file) carries the trace five instructions
-further: the cold-start code immediately does `ORCC`, then `LDA
-#$0A / STA $FF90` — writing `INIT0` with `MC1` and `MC3` set (32K
-internal ROM, constant vector page — the `MC=10` row of §5.6's table) —
-then `CLR $FF91`, then jumps to `$C000`, now reading the *upper* half of
-the same 32K image. That INIT0 write is what makes tier 3
+single instruction has executed.
+`cold_start_configures_rom_and_jumps_into_upper_half` (same file) carries
+the trace five instructions further: the cold-start code immediately does
+`ORCC`, then `LDA #$0A / STA $FF90` — writing `INIT0` with `MC1` and
+`MC3` set (32K internal ROM, constant vector page — the `MC=10` row of
+§5.6's table) — then `CLR $FF91`, then jumps to `$C000`, now reading the
+*upper* half of the same 32K image. That INIT0 write is what makes tier 3
 (`is_rom_window`) start returning results that actually matter — before
 it, the MMU-disabled RAM tier would have answered for everything below
 `$FFE0`.
@@ -2074,8 +2075,8 @@ fn marked_rom() -> Box<[u8]> {
 
 That trick means any test can assert on the exact ROM offset a read
 resolved to just by checking the returned byte — no need to track real
-BASIC opcodes. Four examples here, chosen to each exercise a different
-tier from §5.2 (§5.6 and §5.9 walked two more pairs of tests each, right
+BASIC opcodes. Four examples here, each chosen to exercise a different
+tier from §5.2 (§5.6 and §5.9 each walked another pair of tests, right
 where those concepts were introduced — the ROM-window MC1:MC0 states and
 the 128K/512K sizing tests, respectively).
 
@@ -2099,7 +2100,7 @@ fn mc_16k_split_routes_upper_half_to_cartridge() {
 
 `MarkerCart` is a two-line fake cartridge that always answers `0xAA` on
 its ROM window (`rom_read`) — a reminder that the `Cartridge` trait
-(week 13 territory) is the same kind of narrow seam as `Bus` itself, and
+(Chapter 13 territory) is the same kind of narrow seam as `Bus` itself, and
 that swapping it in a test is exactly how you exercise the "what if
 external ROM is present" branch of `GIME::rom_is_external` without ever
 touching a real cartridge image. At power-on, `INIT0`'s `MC1:MC0` bits
@@ -2133,11 +2134,11 @@ This is §5.7's MC3 rule made concrete: with `MC3` set, `$FE00` and
 `$FEFF` round-trip a write/read exactly like plain RAM — `phys()`'s
 special case routes them to `CONSTANT_RAM_PHYS = 0x7FE00` regardless of
 any MMU state — while the byte one address lower, `$FDFF`, is *outside*
-the pinned page and still obeys the ordinary ROM-window rule: the second
+the pinned page and still obeys the ordinary ROM-window rule. The second
 half of the test writes to it and confirms the write was silently
-dropped, because `$FDFF` is still ROM (`MC1` selects 32K-internal, so
-the write to it has no effect and the subsequent read still returns
-`marked_rom`'s value). One test, two adjacent addresses, two entirely
+dropped, because `$FDFF` is still ROM: `MC1` selects 32K-internal, so
+the write has no effect and the subsequent read still returns
+`marked_rom`'s value. One test, two adjacent addresses, two entirely
 different memory semantics, decided by three bits.
 
 ### Example 3: enabling the MMU and switching task sets
@@ -2173,7 +2174,7 @@ task sets" — §5.8's whole subject — programming task 1's slot 0 to block
 7, leaving task 0's slot 0 completely unprogrammed, flipping `INIT1`'s
 `TR` bit, and confirming both that `gime.task` actually became `1` and
 that the *same* logical address `$0000` now resolves through the
-newly-active task's mapping instead. If you ever need to convince
+newly active task's mapping instead. If you ever need to convince
 yourself the "context switch by flipping one bit" claim from §5.7/§5.8
 is real and not aspirational prose, this pair of tests is the proof.
 
@@ -2217,14 +2218,14 @@ In this order:
    of it in fragments; read it start to finish once so the four-tier
    decode order in `read`/`write` sits in your head as one continuous
    shape, not four separate quotes.
-2. **[`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)** — the full I/O dispatch. Cross
-   the table in §5.3 off against every `match` arm as you go; find the
+2. **[`crates/coco-core/src/bus/io.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs)** — the full I/O dispatch. Check
+   every `match` arm off against the table in §5.3 as you go; find the
    one register this chapter didn't mention (there's at least one).
 3. **[`crates/coco-core/src/bus/pins.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/pins.rs)** — short, and it recasts every
-   PIA "read" you'll do from week 10 onward: nothing is stored, it's all
+   PIA "read" you'll do from Chapter 10 onward: nothing is stored, it's all
    computed fresh from other devices' state at the moment of access.
 4. **[`crates/coco-core/src/gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs), lines 1–70 and 230–300** — the
-   register bit constants (skim; you'll be back for these in week 8)
+   register bit constants (skim; you'll be back for these in Chapter 8)
    and `translate`/`write_init0`/`write_init1`/`rom_is_external` in
    full.
 5. **[`crates/coco-core/src/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs), whole file** — short enough to read
@@ -2235,7 +2236,7 @@ In this order:
    how little code it takes once `Sam::map` has already done the real
    work.
 7. **[`crates/coco-core/src/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L1-L70), lines 1–70** — the `Cartridge`
-   trait and its two open-bus constants (§5.11); a preview of week 13
+   trait and its two open-bus constants (§5.11); a preview of Chapter 13
    that only takes a few minutes now.
 8. **`docs/cartridges.md`** — a tracked, in-repo reference doc (not one
    of the gitignored copyrighted PDFs) covering the physical cartridge
@@ -2294,7 +2295,7 @@ it, before the claim was written down here.)
    (c) On a 512K machine (64 physical blocks), what actually happens if
    slot 3 is programmed to block `200`? Compute the aliased physical
    address for logical `$6000` and name the `SystemBus` function
-   responsible for that behaviour.
+   responsible for that behavior.
 
 **5.3 — Write the MC3 test the chapter didn't (build).** §5.14's second
 worked example proved MC3 pins `$FE00–$FEFF` to constant RAM *while ROM
@@ -2353,11 +2354,11 @@ sends both `0b00` and `0b01` to the same wildcard arm. Write a
 `bus_map.rs`-style test that programs `INIT0` with `MC0` alone (`MC1`
 clear) and asserts the ROM window behaves identically to power-on
 (`INIT0 = $00`): internal ROM below `$C000`, cartridge above it. Then
-write the mirror-image test for `MC1` set: confirm `MC0` still doesn't
-matter (`MC=10` and — hypothetically — an `MC=11`-adjacent `MC1`-alone
-state are *not* the same thing, unlike the `MC1`-clear case; make sure
-your test is actually distinguishing the right pair of states before
-you trust it).
+write the opposite test for `MC1` set: confirm `MC0` *does* matter now —
+`MC=10` keeps the whole window on internal ROM while `MC=11` hands it
+to the cartridge, so the probe that read identically in the `MC1`-clear
+case must read differently here (make sure your test is actually
+distinguishing that pair of states before you trust it).
 
 **5.8 — Two open-bus values, one sentence each (recall + sabotage).**
 Name the two constants from §5.11 that answer an empty cartridge slot,
@@ -2399,7 +2400,7 @@ DESIGN.md's confirmed-real-config table) rather than the same kind of
 ## What's next
 
 Everything in this chapter answers "what does address X touch" for a
-*static* snapshot of the machine's registers. Week 6 asks the next
+*static* snapshot of the machine's registers. Chapter 6 asks the next
 question: *when*. `run_field()` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)) is the loop that
 actually drives the CPU forward one instruction at a time, converts
 elapsed CPU cycles into scanlines, and decides when hsync and vsync
@@ -2407,5 +2408,5 @@ fire — the heartbeat that makes "double-speed poke" mean something more
 concrete than "the `cpu_fast` bit you learned to flip in §5.5 is now
 `true`." You already know exactly which register that poke sets
 (`$FFD8`/`$FFD9`, §5.5) and exactly what a scanline eventually reads out
-of RAM through the bus you just mastered (weeks 7–9); next week is what
+of RAM through the bus you just mastered (Chapters 7–9); next week is what
 ties the *rate* at which any of that happens back to a wall clock.

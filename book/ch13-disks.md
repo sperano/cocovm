@@ -1,23 +1,23 @@
 # Chapter 13 — Disks: the WD1773 State Machine, and Three Ways to Store Bytes
 
 *Week 13. Goal: device protocol emulation in the large. Every chapter since
-week 5 has been about hardware the CoCo *had*: chips soldered to the board,
+Chapter 5 has been about hardware the CoCo *had*: chips soldered to the board,
 with a fixed job. This week is different — it's about a *job* (get a
 256-byte sector from a spinning disk, or from something pretending to be
 one, into the CPU's hands) implemented three separate times in this
 codebase, by three devices that share nothing except the job. By the end
 you'll know the WD1773 floppy controller's command state machine well
 enough to trace a sector read byte by byte, you'll finally see the payoff
-of week 6's HALT-before-interrupt promise, and you'll have a vocabulary —
+of Chapter 6's HALT-before-interrupt promise, and you'll have a vocabulary —
 real chip, register interface, wire protocol — for classifying every
-storage device an emulator author is likely to meet afterwards.*
+storage device an emulator author is likely to meet.*
 
 ---
 
 Every device in this course so far has been self-contained in a
-particular way. Give the 6809 a clock and a bus and its behaviour
+particular way. Give the 6809 a clock and a bus and its behavior
 follows. Give the GIME a register file and a block of RAM and it will
-paint a screen. Even the cassette deck of week 12, for all its analogue
+paint a screen. Even the cassette deck of Chapter 12, for all its analogue
 trappings, turns out to be a waveform computed from an array of bytes the
 emulator already holds. Storage breaks that pattern, because the bytes
 have to come from somewhere the emulated machine cannot see: a file on a
@@ -25,9 +25,9 @@ host operating system that postdates the hardware by decades. Building
 that bridge is this week's work, and the interesting part is that the
 CoCo world never settled on one way to do it.
 
-Most emulator codebases have exactly one storage path, which makes its
-design choices read like *the* way to do it rather than like choices at
-all. This one has three, and the differences between them are not
+Most emulator codebases have exactly one storage path, which makes that
+path's design choices read like *the* way to do it rather than like
+choices at all. This one has three, and the differences between them are not
 accidents of authorship. Section 13.1 turns those differences into a
 vocabulary, and the rest of the chapter earns it a line of code at a
 time.
@@ -46,7 +46,7 @@ loop. Correctness lives in the seams between those four things, and week
 the debt.
 
 The practical news is better than that sounds. The command state machine,
-the byte pacing, the image geometry and the format-stream parser are all
+the byte pacing, the image geometry, and the format-stream parser are all
 exercised by tests that need nothing but this repository — no ROM images,
 no disk images — so most of §13.13's lab work runs in any checkout.
 
@@ -88,8 +88,8 @@ that spectrum, side by side, for the same machine:
    emulator, the "PC" is just in-process Rust, but the protocol doesn't
    know that). Because the two ends can't see each other's state, every
    transaction needs framing, a checksum, and a timeout — problems neither
-   the WD1773 nor VHD have to solve, because on real hardware, the WD1773
-   *is* physically wired to the drive, and VHD is a polite fiction that
+   the WD1773 nor VHD has to solve: on real hardware the WD1773 *is*
+   physically wired to the drive, and VHD is a polite fiction that
    assumes the same.
 
 Put them in one sentence: the WD1773 emulates *inertia* (a real chip with
@@ -99,8 +99,8 @@ be misheard). Every storage device you will ever add to an emulator — a
 CD-ROM, a cartridge flash chip, a modern USB mass-storage class handler —
 is a point somewhere in that same triangle. Once you've read this chapter,
 you'll be able to say which corner it's closest to before you write a line
-of code, and that answers most of the hard design questions up front:
-does it need a byte-pacing timer? Does it need a checksum? Does it need a
+of code, and that answers most of the hard design questions up front.
+Does it need a byte-pacing timer? Does it need a checksum? Does it need a
 timeout state?
 
 One more thing worth noticing before we go byte-by-byte: these three
@@ -113,7 +113,7 @@ controller is just another expansion-port device, indistinguishable in
 principle from a ROM pak. VHD is *not* a `Cartridge` at all: its seven
 registers, `$FF80`–`$FF86`, are decoded directly inside `SystemBus`'s own
 `io_read`/`io_write` ([`crates/coco-core/src/bus/io.rs:74-78,119-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L74-L78,L119-L125)),
-alongside the GIME's own registers — MAME wired it straight into the
+alongside the GIME's registers — MAME wired it straight into the
 CoCo 3's motherboard I/O decode, no expansion port involved. DriveWire is
 stranger still: its two registers, `$FF41`/`$FF42`, sit *inside* the
 cartridge port's address range but are intercepted a layer *above*
@@ -128,7 +128,7 @@ and the answer already tells you which corner of the triangle you're in.
 
 Start with the module's own fidelity statement, because it sets the rules
 for everything that follows ([`crates/coco-core/src/wd1773.rs:1-14`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773.rs#L1-L14)):
-"Modelled functionally rather than cycle-exact: command completion and
+"Modeled functionally rather than cycle-exact: command completion and
 byte transfers are paced by `WD1773::tick` against fixed cycle counts
 (spec: 'model FUNCTIONALLY, not cycle-exact'), not the real chip's
 per-command timing tables. Register semantics (status bit layout, side
@@ -165,7 +165,7 @@ window ([`crates/coco-core/src/fdc/disk_cart.rs:77-80`](https://github.com/spera
 
 `$FF48` is two registers sharing one address: write it and you're loading
 the *command* register (dispatch — §13.3–13.6); read it and you get the
-*status* register, next. `$FF49`/`$FF4A` are the track and sector
+*status* register. `$FF49`/`$FF4A` are the track and sector
 registers — plain latches software pokes directly to name a target, no
 side effects. `$FF4B` is the data register, and it has real consequences
 on every access: writing it during a Write Sector/Write Track transfer
@@ -214,7 +214,7 @@ each one is a fact about the *cartridge* rather than the chip. Before
 every command dispatch, `set_double_density` pushes DSKREG's density bit
 into the controller, because on real hardware that bit reaches the chip as
 a pin it samples rather than a register it owns — §13.8 has the bit and
-§13.6 has the one command whose behaviour turns on it. The selected drive
+§13.6 has the one command whose behavior turns on it. The selected drive
 and side are then resolved *fresh on every single access*, out of DSKREG,
 and handed in as ordinary parameters, because a real WD1773 has no idea
 which of four drives it is wired to either; that resolution is the
@@ -239,7 +239,7 @@ That probe is why the machine's sign-on message changes the moment a disk
 controller is plugged in. The integration test in
 [`tests/fdc/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/boot.rs)
 inserts a `DiskCart`, resets, and asserts the screen reads `DISK EXTENDED
-COLOR BASIC`, where the cartridge-less boot test in
+COLOR BASIC`, while the cartridge-less boot test in
 [`tests/alive.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/alive.rs)
 asserts plain `EXTENDED COLOR BASIC`. Same ROM, same reset, one extra
 word — because the cold-start code found a signature at a fixed address
@@ -266,7 +266,7 @@ and jumped into it.
 > borrow checker see the whole `DiskCart` as borrowed instead of just this
 > one field."
 >
-> That is week 1's partitioning lesson turning up one more level down, and
+> That is Chapter 1's partitioning lesson turning up one more level down, and
 > in a slightly different disguise. Section 1.4 drew a struct boundary
 > between `cpu` and `bus` so that `cpu.step(&mut bus)` could borrow two
 > disjoint fields at once. Here the two fields that must be borrowed
@@ -312,7 +312,7 @@ pub struct WD1773 {
 }
 ```
 
-Two fields are worth pausing on before you read another line, because
+Two of these fields deserve a pause before you read another line, because
 they carry the module's most subtle correctness argument.
 
 **`track` vs. `physical_track`.** The WD1773 datasheet distinguishes the
@@ -338,11 +338,11 @@ the doc comment attached to the field:
     pub drq: bool,
 ```
 
-Hold that thought — it's the first thread of §13.7's HALT/NMI story, and
-it's a perfect example of a fact you cannot derive from the WD1773's own
-datasheet: it only makes sense once you know what DSKREG (a *different*
-chip, on the FD-502 cartridge, not the WD1773 itself) does with the DRQ
-line the instant boot code touches it.
+Hold that thought: it is the first thread of §13.7's HALT/NMI story, and
+a perfect example of a fact you cannot derive from the WD1773's own
+datasheet. The default only makes sense once you know what DSKREG (a
+*different* chip, on the FD-502 cartridge, not the WD1773 itself) does
+with the DRQ line the instant boot code touches it.
 
 ### The status register: two chips' worth of bits in one byte
 
@@ -385,7 +385,7 @@ plainly rather than pretending otherwise.
 Reading the status register has a side effect real software depends on:
 it clears INTRQ (`pub fn read_status(&mut self, ...) -> u8 { let s =
 self.status_byte(...); self.intrq = false; s }`). This is the exact same
-pattern you learned in week 1 and met concretely in week 10 (reading a
+pattern you learned in Chapter 1 and met concretely in Chapter 10 (reading a
 PIA's data register clears its interrupt flag): a *read* changes state,
 which is precisely why `Bus::read` takes `&mut self`. INTRQ-clear-on-
 status-read is how DECB's disk driver acknowledges "yes, I saw the
@@ -481,23 +481,23 @@ Three facts worth reading twice here. First: **Force Interrupt (Type IV)
 runs even while `busy`** — the `if self.busy { return; }` guard sits
 *after* the Force Interrupt check, not before, because Force Interrupt is
 how a driver cancels a command that's stuck. Second: **every other command
-written while `busy` is simply dropped** — no queue, no error, nothing;
+written while `busy` is dropped outright** — no queue, no error, nothing;
 the comment says so ("spec"), and it matches the real chip. Third: the
 four status flags are cleared unconditionally at the top of every fresh
 dispatch, before the type-specific code runs — a Type I command clears
 CRC_ERROR and WRITE_PROTECT just as readily as a Type II one, even though
 neither is relevant to a seek, because that's what "starting a new
-command" means to the real register. One more habit worth noticing: the
+command" means to the real register. One more habit to notice: the
 exhaustive `match` ends in `_ => unreachable!("4-bit nibble: all 16
 values are matched above")` — `type_nibble` comes from `cmd >> 4` on a
-`u8`, so it's provably in `0..16`, and the message is a *proof*, not
-defensive programming, that the match is total.
+`u8`, so it's provably in `0..16`, and the message states a *proof* that
+the match is total rather than a piece of defensive programming.
 
 ### Restore, Seek, and the settle delay
 
-Restore always drives the head to physical track 0 — the WD1773's
-equivalent of "home"; Seek drives it to whatever's already sitting in the
-data register. Both functions are nearly identical ([`command.rs:110-128`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/command.rs#L110-L128)):
+Restore always drives the head to physical track 0, the WD1773's
+equivalent of "home"; Seek drives it to whatever is already sitting in
+the data register. Both functions are nearly identical ([`command.rs:110-128`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/command.rs#L110-L128)):
 
 ```rust
     fn start_seek(&mut self, cmd: u8, disk: Option<&mut JvcDisk>) {
@@ -516,8 +516,8 @@ instead of read from `self.data`. Both immediately move `physical_track`
 *and* `track` to the target — there is no non-updating variant of either
 — and both leave `op` in `Op::SettlingTypeOne`, a fixed 64-cycle delay
 (`COMMAND_SETTLE_CYCLES`) before `WD1773::tick` sets `intrq = true` and
-returns to `Idle` (quoted in full in §13.7). The V (verify) bit, if set,
-checks the target track actually exists on the mounted image —
+returns to `Idle` (quoted in full in §13.4). The V (verify) bit, if set,
+checks that the target track actually exists on the mounted image —
 `track_readable` is nothing more than "is this track number less than
 the image's track count" — and sets RECORD_NOT_FOUND if it doesn't, but
 the command still completes with INTRQ either way: RNF is a status flag
@@ -527,9 +527,9 @@ to be polled, not a different completion path.
 
 Bare `Step` (`$2`/`$3`) has no direction bits of its own — it repeats
 whichever direction the *last* Step-In or Step-Out used, which is real
-WD1773 behavior, not an emulator convenience: `start_step` takes an
+WD1773 behavior, not an emulator convenience. `start_step` takes an
 `Option<StepDirection>` (`Some` for Step-In/Step-Out, `None` for bare
-Step), updates `self.last_step_direction` only when given one, then
+Step) and updates `self.last_step_direction` only when given one, then
 always moves by that remembered direction —
 `self.physical_track.saturating_add(1)` or `saturating_sub(1)`.
 
@@ -567,9 +567,9 @@ what a cancelled transfer was doing
     }
 ```
 
-Four lines of body, and two distinct behaviours packed into them. The
+Four lines of body, and two distinct behaviors packed into them. The
 unconditional part is the cancellation: `busy` drops, `op` returns to
-`Idle`, and whatever transfer was in flight simply ceases to exist —
+`Idle`, and whatever transfer was in flight ceases to exist —
 there is no partial-completion bookkeeping, no half-written sector to
 unwind, because the real chip's abort is equally blunt. The conditional
 part is the interrupt. Bit 3 of the low nibble, named `IMMEDIATE_INTRQ`
@@ -590,7 +590,7 @@ chip that has never run a command at all and confirms INTRQ rises anyway
 — Force Interrupt is not "abort the current command," it's "assert the
 completion signal, whether or not there was anything to complete."
 
-That second behaviour is more useful than it sounds, and the test suite
+That second behavior is more useful than it sounds, and the test suite
 itself is the proof. Look at how the DSKREG tests read a marker byte off
 whichever drive is currently selected
 ([`tests/fdc/common.rs:39-51`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/common.rs#L39-L51)):
@@ -697,8 +697,8 @@ runs a fixed ~54-cycle delay of its own before it even arms the
 HALT-based collection loop — and if the emulator's first DRQ arrived
 *before* that 54-cycle window closed (as it did with the naive "pace
 every byte the same" version this comment describes), the ROM would
-simply never notice, the byte would count as lost, and the boot would
-print `FAILED`. You'll walk the regression test that pins this exact
+never notice, the byte would count as lost, and the boot would print
+`FAILED`. You'll walk the regression test that pins this exact
 fact in §13.7.
 
 ### The transfer, one byte at a time
@@ -810,8 +810,8 @@ t.buf[t.index]`, `self.drq = true`). If the CPU hasn't collected the
 *previous* byte by the time the next one is ready — `self.drq` is still
 `true` when this fires — that's a real overrun, and the WD1773's own
 documented behavior is exactly what the comment says: **flag it and keep
-going**, don't stall the transfer waiting for a slow driver. The `!
-t.first_byte` exemption exists because `drq`'s reset-state default is
+going**, don't stall the transfer waiting for a slow driver. The
+`!t.first_byte` exemption exists because `drq`'s reset-state default is
 `true` (§13.2) — without excluding the very first byte of a *fresh*
 command, that stale leftover `true` would spuriously accuse the command's
 own first byte of being an overrun before the driver ever had a chance to
@@ -821,7 +821,7 @@ read anything.
 
 That elided block in the middle of `advance_read_transfer` is the one
 piece of this function that cannot be derived from the WD1773's own
-behaviour, and it is worth restoring in full because it answers a question
+behavior, and it is worth restoring in full because it answers a question
 every emulator author eventually has to ask about every input: *when do
 you sample it?* ([`transfer.rs:110-127`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/transfer.rs#L110-L127)):
 
@@ -854,7 +854,7 @@ The WD1773 has no side-select pin. Side is chosen *outside* the
 controller, by a bit in DSKREG driving the drive's head-select line, and
 the controller reads whatever surface happens to be under the head at the
 moment the data field spins past it. There is no latch inside the chip
-for a driver's earlier intention to have been recorded in.
+in which a driver's earlier intention could have been recorded.
 
 Software noticed. The doc comment on the regression test spells out which
 software and what it costs
@@ -881,11 +881,11 @@ does the software make."
 The test that pins it is a small, exact reproduction of the driver's
 sequence ([`tests/fdc/wd1773.rs:133-166`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs#L133-L166)).
 It builds a two-sided image whose (track 0, sector 1) is filled with
-`0xAA` on side 0 and `0x55` on side 1 — so the byte that comes back names
-the side that answered — writes the Read Sector command with side 0
-selected, then ticks the full first-byte latency with side *1* passed in,
-modelling DSKREG flipping during the ID-address-mark search. The
-assertion is one byte:
+`0xAA` on side 0 and `0x55` on side 1, so the byte that comes back names
+the side that answered. The test then writes the Read Sector command with
+side 0 selected and ticks the full first-byte latency with side *1*
+passed in, modeling DSKREG flipping during the ID-address-mark search.
+The assertion is one byte:
 
 ```rust
     assert_eq!(
@@ -910,7 +910,7 @@ neither is the latch.
 
 [`tests/fdc/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs) drives exactly this loop, one byte at a time, and
 doubles as the clearest possible description of the read-sector protocol
-in prose form ([`tests/fdc/wd1773.rs:49-77`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs#L49-L77)):
+([`tests/fdc/wd1773.rs:49-77`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs#L49-L77)):
 
 ```rust
 #[test]
@@ -946,7 +946,7 @@ fn read_sector_delivers_256_correct_bytes_paced_by_drq_then_intrq() {
 
 `index_pattern_disk()` ([`tests/fdc/common.rs:55-58`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/common.rs#L55-L58)) builds a track whose
 sector 1 contains the bytes `0, 1, 2, …, 255` in order, so this single
-test simultaneously proves *pacing* (one `tick` per byte, at the right
+test proves *pacing* (one `tick` per byte, at the right
 interval), *ordering* (the value read really is byte `expected`), and the
 *INTRQ-trails-DRQ* guarantee, all at once — three separate hardware facts
 that would be three separate tests in a less careful codebase.
@@ -976,16 +976,17 @@ rule (a third half, in [`machine/run.rs`](https://github.com/sperano/cocovm/blob
 
 [`tests/fdc/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs)'s
 `read_sector_first_byte_waits_out_the_driver_setup_delay` exists purely
-to pin the fact `FIRST_BYTE_LATENCY_CYCLES`'s doc comment describes. It
-issues the same Read Sector command, ticks a 70-cycle
-`DRIVER_SETUP_DELAY` (standing in for NitrOS-9's real ~54-cycle `Delay2`)
-and asserts DRQ is *still* low at that point — no byte may have arrived
-yet — then collects all 256 bytes the way the HALT loop actually does:
-`while !wd.drq { wd.tick(DRQ_INTERVAL, ...) }`, spinning until each DRQ
-rather than assuming a fixed latency. This is the regression test for the
-bug the doc comment narrates: before the fix, the first byte was paced
-at one plain `DRQ_INTERVAL_CYCLES` (30 cycles), landing *inside* the
-54-cycle setup window, and the driver's own NMI handler reported the
+to pin the fact that `FIRST_BYTE_LATENCY_CYCLES`'s doc comment describes.
+It issues the same Read Sector command, ticks a 70-cycle
+`DRIVER_SETUP_DELAY` (standing in for NitrOS-9's real ~54-cycle
+`Delay2`), and asserts DRQ is *still* low at that point — no byte may
+have arrived yet — then collects all 256 bytes the way the HALT loop
+actually does: `while !wd.drq { wd.tick(DRQ_INTERVAL, ...) }`, spinning
+until each DRQ rather than assuming a fixed latency. This is the
+regression test for the bug the doc comment narrates: before the fix, the
+first byte was paced at one plain `DRQ_INTERVAL_CYCLES` (30 cycles),
+landing *inside* the 54-cycle setup window, and the driver's own NMI
+handler reported the
 resulting lost byte as `E$Read`.
 
 ### The m bit: one command, a whole track
@@ -1039,7 +1040,7 @@ completed transfer of every kind passes through
     }
 ```
 
-Three decisions in that continuation are worth reading deliberately.
+Three decisions in that continuation repay a slow read.
 First, the *sector register itself* advances — `self.sector =
 next_sector`, a value software can read back at `$FF4A` afterwards to
 learn where the run stopped. The chip is not keeping a private counter;
@@ -1091,9 +1092,9 @@ begins ([`command.rs:189-223`](https://github.com/sperano/cocovm/blob/main/crate
 completes on the spot (`status_write_protect = true; busy = false; intrq
 = true; op = Idle`) with no transfer ever armed; otherwise it looks up
 `sector_offset` exactly like Read Sector and starts a `Transfer` — except
-with `buf: Vec::new()`, since a Write Sector transfer never stages bytes
-the way a Read does; there's nothing to stage, since the bytes are coming
-*from* the CPU. Instead, the DRQ event on the write side just requests
+with `buf: Vec::new()`, because a Write Sector transfer never stages
+bytes the way a Read does; there's nothing to stage, since the bytes are
+coming *from* the CPU. Instead, the DRQ event on the write side requests
 the next byte and waits — literally waits, with no timeout of its own
 ([`transfer.rs:139-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/transfer.rs#L139-L146), `self.drq = true; t.remaining =
 AWAITING_HOST_CYCLES;`).
@@ -1162,9 +1163,9 @@ fn write_sector_to_a_write_protected_image_sets_status_and_does_not_transfer() {
 The shape is the tell: `!wd.busy` is asserted *immediately* after
 `write_command` returns, with no `tick()` call in between at all.
 Write-protect isn't a transfer that starts and then fails partway — it's
-detected at dispatch time, before `busy` is ever set past the point where
-a transfer would begin, and the pre-existing image byte (`0xAA`) proves
-nothing touched it.
+detected at dispatch time, and the command ends before a transfer would
+ever begin. The pre-existing image byte (`0xAA`) proves nothing touched
+it.
 
 ---
 
@@ -1176,10 +1177,10 @@ commands that deal with the *track* as a physical object rather than as a
 container of sectors, and they are where the abstraction of "a disk is an
 array of 256-byte blocks" finally leaks. One of them asks the media what
 is written on it; the other writes the media's own structure from
-scratch. Type III has two commands this emulator implements (Read Track,
-the third, is an unconditional not-found — "optional, RNF is
-acceptable," the dispatch comment says — track reads aren't modeled at
-all).
+scratch. Only two of Type III's three commands are implemented here: Read
+Track answers with an unconditional not-found — "optional, RNF is
+acceptable," the dispatch comment says — since track reads aren't modeled
+at all.
 
 ### Read Address: six bytes, no data field
 
@@ -1222,7 +1223,7 @@ isn't modeled). Worth remembering as a general lesson: "the sector
 register is deliberately left alone (spec: 'not needed')" — Read
 Address, unlike Read/Write Sector, never touches `self.sector`, because
 the whole point of the command is to discover addressing information,
-not to act on an already-known one.
+not to act on information it already has.
 
 Notice how much of that reply is *inferred* rather than read. On real
 media the six bytes come off the platter: they are literally the next ID
@@ -1264,7 +1265,7 @@ through `write_data` exactly like a Write Sector byte would, but instead
 of writing straight to the disk image, a `WriteTrack` transfer routes each
 byte through a small parser when `format_enabled` (the density bit DSKREG
 carried at dispatch time, §13.8) is set — single-density (FM) streams are
-still just discarded, since this emulator's parser only understands MFM
+discarded outright, since this emulator's parser only understands MFM
 control-byte conventions ([`transfer.rs:60-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/transfer.rs#L60-L62), abridged):
 
 ```rust
@@ -1277,7 +1278,7 @@ control-byte conventions ([`transfer.rs:60-62`](https://github.com/sperano/cocov
 The parser itself is a small hand-rolled state machine, one byte in, one
 state transition out, recognizing the MFM control bytes `SYNC = $F5`,
 `ID_AM = $FE`, `DATA_AM = $FB`/`DELETED_DATA_AM = $F8`, and
-`WRITE_CRC = $F7` ([`transfer.rs:14-37,191-291`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/transfer.rs#L14-L37,L191-L291)). Its states form a small
+`WRITE_CRC = $F7` ([`transfer.rs:14-37,191-291`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773/transfer.rs#L14-L37,L191-L291)). Its states form a short
 chain: `Gap` waits for a run of `$F5` sync bytes; `Sync` then dispatches
 on the byte immediately following the run — `$FE` starts gathering a
 4-byte ID field (`IdField`), `$FB`/`$F8` starts gathering the sector's
@@ -1392,7 +1393,7 @@ cannot execute another instruction while a byte isn't ready; the WD1773's
 own DRQ line, wired through this one gate, stops the clock for it. The
 moment `read_data` clears DRQ (§13.2), HALT\* releases and the CPU resumes
 — for exactly as long as it takes to loop back to the next `LDA $FF4B`,
-at which point DRQ is very likely still low again and it re-halts. An
+at which point DRQ is very likely low again and the CPU re-halts. An
 entire 256-byte transfer can happen inside what *looks* like a handful of
 instructions, because most of the wall-clock time isn't CPU time — it's
 HALT time, and the CPU isn't running.
@@ -1405,8 +1406,8 @@ to remember the *previous* value of exactly the signal it's watching, and
 that signal is a two-input AND, not a chip register. And the first rule
 above — "a high INTRQ clears DSKREG's halt-enable bit" — is what lets a
 driver stop halting once a command has genuinely completed, without
-having to explicitly write DSKREG itself; real hardware behavior (MAME's
-`update_lines`), not an emulator convenience.
+having to explicitly write DSKREG itself. That is real hardware behavior
+(MAME's `update_lines`), not an emulator convenience.
 [`tests/fdc/dskreg.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/dskreg.rs)'s `intrq_high_clears_dskreg_halt_enable` pins it
 directly: arm halt-enable, clear DRQ via a data-register read (asserting
 HALT\*), then Force-Interrupt with I3 set to raise INTRQ, and confirm
@@ -1420,10 +1421,9 @@ implementations — every cartridge *can* hold the CPU's HALT line and gate
 an NMI, but on a stock CoCo 3 only the FD-502 ever does. `SystemBus`
 exposes them one level up as plain one-line forwards
 (`self.cart.halt_asserted()`, `self.cart.take_nmi()`,
-[`bus/sync.rs:28-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs#L28-L38)), and this is where week 6's `step_cpu_unit` finally
-gets its full
-explanation. Read the doc comment first — it's dense, and every clause
-answers a question the earlier chapters deliberately left open
+[`bus/sync.rs:28-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs#L28-L38)), and this is where Chapter 6's `step_cpu_unit` finally
+gets its full explanation. Read the doc comment first — it's dense, and
+every clause answers a question the earlier chapters deliberately left open
 ([`machine/run.rs:86-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L86-L100)):
 
 ```rust
@@ -1474,13 +1474,13 @@ And the implementation that keeps that promise ([`machine/run.rs:101-123`](https
 
 Walk the two branches slowly, because the ordering inside the `else`
 branch is the entire point. While `halt_asserted()` is true, the function
-does nothing but burn one cycle, mark `prev_halted = true`, and — crucially
-— still ticks `self.bus.cart` with that one cycle, every single iteration.
-This is why HALT time isn't wasted time from the *cartridge's* point of
-view: the WD1773's own `tick` (§13.4) is what eventually clears DRQ (by
-delivering the next byte) and releases HALT\* in the first place — the
-cartridge has to keep running precisely *because* it's the thing holding
-the CPU still.
+does nothing but burn one cycle, mark `prev_halted = true`, and —
+crucially — still tick `self.bus.cart` with that one cycle, every single
+iteration. This is why HALT time isn't wasted time from the *cartridge's*
+point of view: the WD1773's own `tick` (§13.4) is what eventually clears
+DRQ (by delivering the next byte) and releases HALT\* in the first place
+— the cartridge has to keep running precisely *because* it's the thing
+holding the CPU still.
 
 The moment `halt_asserted()` goes false, we're in the `else` branch — and
 `prev_halted` gates whether interrupts get serviced *this* call. On the
@@ -1553,9 +1553,9 @@ know anything about a WD1773, DSKREG, or DRQ — it just asserts HALT\*
 between two fixed cycle counts (`halt_from..halt_until`, both plain
 `Cell<u32>` cycle counts the test controls) and raises one NMI edge the
 instant HALT\* releases, exactly the shape `update_lines` produces from
-the real chip. The test's assertions, across two `run_field()` calls,
-check four separate hardware facts in one place: the CPU actually stops during the
-halt window (the loop counter barely moves); the cartridge keeps getting
+the real chip. The test's assertions, across two `run_field()` calls, check
+four separate hardware facts in one place: the CPU actually stops during
+the halt window (the loop counter barely moves); the cartridge keeps getting
 ticked *while* the CPU is halted (`ticks.get()` reaches the release point
 even though the CPU itself made almost no progress); no NMI vectors while
 still halted; and the pending NMI vectors exactly once, consumed, the
@@ -1638,8 +1638,8 @@ For drives 0–2, bit 6 set means "side 1." For drive 3 — which, by
 `selected_drive`'s own logic, is *only* ever selected when bit 6 is the
 thing selecting it — that same bit means something else entirely (the
 drive-select itself), so `selected_side` explicitly excludes it: side is
-always 0 for drive 3 in this emulator, because there's no remaining bit
-left to carry a side-select for it. [`tests/fdc/dskreg.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/dskreg.rs)'s
+always 0 for drive 3 in this emulator, because there's no bit left to
+carry a side-select for it. [`tests/fdc/dskreg.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/dskreg.rs)'s
 `drive_select_priority_bit2_then_bit1_then_bit0_then_bit6` exercises the
 priority chain directly: it mounts a differently-marked disk in all four
 slots, then walks four DSKREG values — `DRIVE2|DRIVE1|DRIVE0` (bit 2
@@ -1671,8 +1671,8 @@ real cartridge schematic would show as separate ICs and switches.
 
 Every disk image this emulator mounts is a `JvcDisk`
 ([`crates/coco-core/src/fdc/jvc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/fdc/jvc.rs)) — the de facto standard format for
-CoCo emulators, named for Jeff Vavasour: about as close to "no format at
-all" as a disk image gets. **A headerless JVC image is just the raw
+CoCo emulators, named for Jeff Vavasour, and about as close to "no format
+at all" as a disk image gets. **A headerless JVC image is just the raw
 sector bytes, in order, with nothing describing its own shape.** Geometry
 comes either from an optional short header, or — if there's no header —
 from defaults plus one clever heuristic.
@@ -1714,7 +1714,7 @@ the image uses — 1, on nearly every real CoCo disk), times the sector
 size, plus however many header bytes sit in front of the whole thing.
 `sector_id.checked_sub(self.first_sector_id)?` is worth a second look too:
 if the requested sector ID is *below* the image's first sector ID, the
-subtraction would underflow a `usize` — `checked_sub` turns that into a
+subtraction would underflow a `u8` — `checked_sub` turns that into a
 clean `None` via the `?` operator instead of panicking or wrapping to a
 huge, wrong offset. [`tests/fdc/image_geometry.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/image_geometry.rs)'s
 `two_sided_image_interleaves_track0_side0_track0_side1_track1_side0`
@@ -1731,14 +1731,14 @@ proper JVC image's data region is always a whole number of 256-byte
 blocks; whatever's left over at the front is the header." A header can be
 0 to 5 bytes, and each byte you *do* supply overrides exactly one
 default: sectors/track (18, the RS-DOS standard), sides (1), sector-size
-code (1, meaning `128 << 1 = 256`), first sector ID (1) — and a 5th byte
-this implementation doesn't support at all: a nonzero attribute-byte flag
-(some JVC variants prepend an extra byte to every sector) is rejected
-outright (`JvcError::AttributeBytesUnsupported`) rather than silently
-misreading the geometry. Most real CoCo disk images in the wild are
-headerless (`header_len == 0`, an exact multiple of 256 bytes) and rely
-on every one of those five defaults, which happen to describe a standard
-single-sided 35-track RS-DOS disk.
+code (1, meaning `128 << 1 = 256`), first sector ID (1). The fifth byte
+this implementation doesn't support at all: a nonzero attribute-byte
+flag, which some JVC variants use to prepend an extra byte to every
+sector, is rejected outright (`JvcError::AttributeBytesUnsupported`)
+rather than silently misreading the geometry. Most real CoCo disk images
+in the wild are headerless (`header_len == 0`, an exact multiple of 256
+bytes) and rely on every one of those four defaults, which happen to
+describe a standard single-sided 35-track RS-DOS disk.
 
 ### Two policies for bad input, in one file
 
@@ -1770,11 +1770,13 @@ pub enum JvcError {
 ```
 
 `InvalidGeometry` carries every input to the decision, not just a message,
-which is a habit worth stealing: an error that reports `file_len=184320,
+which is a habit worth stealing: an error that reports `file_len=143360,
 sectors_per_track=18, sides=1, sector_size=256` lets a user work out for
-themselves that they have an 80-track image being read as something else,
-where "invalid geometry" alone would send them to a forum. `GeometryChanged`
-belongs to week 16's material and is a nice illustration of the same
+themselves that their file is 560 sectors long, which is no whole number
+of 18-sector tracks — they have a 16-sector-per-track image (an Apple II
+`.dsk`, say) being read as a CoCo one, whereas "invalid geometry" alone
+would send them to a forum. `GeometryChanged`
+belongs to Chapter 16's material and is a nice illustration of the same
 principle applied to time rather than to shape: a snapshot records the
 geometry it saw, and if the file on disk has been reformatted since, the
 restore refuses rather than resuming a transfer into an image that has
@@ -1797,7 +1799,7 @@ if it can't be interpreted the honest thing is to say so, loudly, before
 anything else happens. Formatting a sector is an *emulated* operation
 being driven by 6809 code, and the real FD-502 has no channel through
 which to report "that sector ID is not one this drive can lay down" — the
-write head simply writes flux that no subsequent read will recognize.
+write head writes flux that no subsequent read will recognize.
 Inventing an error there would be inventing hardware. When you're deciding
 how strict a component should be, ask which side of the emulation boundary
 the caller is standing on, and give the emulated side exactly the failure
@@ -1851,12 +1853,12 @@ fn sniff_os9_sides(bytes: &[u8], file_len: usize) -> Option<usize> {
 
 Four independent checks, all of which have to pass before this function
 returns `Some`, and each rejects a specific way a non-OS-9 (or corrupted)
-image could accidentally look plausible: `DD.SPT` has to equal the same
-18 this parser already assumes elsewhere (a genuine OS-9 disk formatted
-with a different geometry falls back to the naive defaults, since "trust
-a sniffed geometry this crate can't otherwise represent" isn't an
-option); `DD.TOT * 256` has to equal the file's actual length exactly (a
-corrupted or truncated LSN0 fails here); and the implied track count has
+image could accidentally look plausible. `DD.SPT` has to equal the same
+18 this parser already assumes elsewhere, since a genuine OS-9 disk
+formatted with a different geometry falls back to the naive defaults —
+"trust a sniffed geometry this crate can't otherwise represent" isn't an
+option. `DD.TOT * 256` has to equal the file's actual length exactly, so
+a corrupted or truncated LSN0 fails here. And the implied track count has
 to divide evenly and land inside the range MAME's own floppy geometry
 table allows, which is precisely what rejects a "disk-shaped-but-not-
 floppy" image like an oversized `cocosdc` dump that happens to also be a
@@ -1896,12 +1898,12 @@ disk and skips gracefully with an `eprintln!` if
 coco-core --test fdc` in a checkout that has no `roms/`
 directory at all proves the split cleanly: 29 tests pass outright, and
 exactly 11 fail, every one of them in [`fdc/dskreg.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/dskreg.rs) or [`fdc/boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/boot.rs),
-both of which construct a `DiskCart` via `DiskCart::new(load_rom
-("disk11.rom"))` — and `load_rom` panics with a plain "cannot read" error
-the moment that file doesn't exist, no graceful skip. If you run this
-suite yourself without `roms/disk11.rom` present, that's the failure
-you should expect, and it tells you nothing about the WD1773 or JVC code
-itself.
+both of which construct a `DiskCart` via
+`DiskCart::new(load_rom("disk11.rom"))` — and `load_rom` panics with a
+plain "cannot read" error the moment that file doesn't exist, no
+graceful skip. If you run this suite yourself without `roms/disk11.rom`
+present, that's the failure you should expect, and it tells you nothing
+about the WD1773 or JVC code itself.
 
 ---
 
@@ -1912,8 +1914,7 @@ protocol is *work*, because the chip has physical constraints the
 software has to respect. VHD exists to show what's left once you remove
 every one of those constraints. It isn't real 1980s hardware — MAME's
 authors invented it, purely as an emulator convenience ([`vhd.rs:1-13`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs#L1-L13)),
-and gave NitrOS-9's `emudsk.asm` driver a reason to exist by writing a
-driver against it.
+and NitrOS-9's `emudsk.asm` driver exists only because they did.
 
 The whole device is seven registers, and they fit in a table small enough
 to hold in your head — which, against the four WD1773 registers plus
@@ -1932,7 +1933,7 @@ The command vocabulary is three bytes wide — `READ = 0x00`, `WRITE =
 `NO_VHD = 0x02`, `IO_ERROR = 0x05`, `UNKNOWN_COMMAND = 0xFE`, and
 `POWER_ON = 0xFF`, the state a freshly mounted drive reports before any
 command has run. The LRN is VHD's word for "sector number," 24 bits of
-it — one bit shy of 17 million sectors, or four gigabytes at 256 bytes
+it — just shy of 17 million sectors, or four gigabytes at 256 bytes
 each, which is a great deal more storage than any CoCo could plausibly
 attach.
 
@@ -1959,7 +1960,7 @@ guarded only by "is a drive currently selected" — no state machine, no
 `Op` enum, no `Transfer` struct tracking progress through a multi-step
 protocol, because there *is* no multi-step protocol on the register side.
 A write that arrives while `$FF86` holds anything other than `0` or `1`
-is simply dropped, and dropped silently: `selected_drive()` returns
+is dropped, and dropped silently: `selected_drive()` returns
 `None`, the `if let` doesn't fire, and the byte is gone. There is nowhere
 for it to have been stored, because the LRN lives inside a drive rather
 than in the device.
@@ -1989,7 +1990,7 @@ treated as low-confidence until confirmed against real hardware or MAME's
 device reset code."
 
 Every emulator contains guesses. What distinguishes a maintainable one is
-whether the guesses are *labelled*, because an unlabelled guess is
+whether the guesses are *labeled*, because an unlabeled guess is
 indistinguishable from a verified fact six months later, and the person
 chasing a bug through this code will waste a day proving something nobody
 ever claimed. Writing "low-confidence until confirmed" costs one sentence
@@ -2030,7 +2031,7 @@ each of those calls goes through the *full* MMU-translated bus path,
 exactly as if the CPU itself had executed 256 `STA` instructions, but
 without spending a single CPU cycle to do it. This isn't a shortcut that
 skips the memory model — the transfer still respects the MMU, still
-wraps at 64K (`buffer_addr.wrapping_add(i as u16)`), still would hit
+wraps at 64K (`buffer_addr.wrapping_add(i as u16)`), and would still hit
 whatever's actually mapped into that logical address range — the *only*
 thing missing is time and byte-by-byte handshaking. The doc comment on
 the write path calls out one more piece of hardware-accurate ordering
@@ -2048,7 +2049,7 @@ worth noticing even in a device this simple:
 Even a device with "zero ceremony" still has *one* piece of ordering that
 matters — the CPU bus read that fetches the sector data could, in
 principle, land back on the VHD's own registers (if a program pointed the
-buffer address at `$FF80`–`$FF86` itself), and MAME's own implementation
+buffer address at `$FF80`–`$FF86` itself), and MAME's implementation
 order is what this codebase matches. "Simple" and "order-independent"
 aren't the same claim.
 
@@ -2072,9 +2073,9 @@ addition, not something MAME's hardware model needed:
 
 A program that (accidentally or maliciously) points its buffer address at
 `$FF83` itself would, without this guard, trigger `vhd_execute_command`
-*from inside* its own byte-copy loop — Rust doesn't have a stack overflow
-guard for "logically reentering the same mutable-state function," so this
-is an emulator-author's own defensive addition, guarding only command
+*from inside* its own byte-copy loop. Rust has no stack-overflow guard
+for "logically reentering the same mutable-state function," so this is an
+emulator author's own defensive addition, guarding only command
 *execution* (register writes during a transfer are unaffected), not a
 hardware fact translated from a datasheet.
 
@@ -2101,7 +2102,7 @@ for "VHD is broken."
 ## 13.11 DriveWire: a protocol, not a chip
 
 The third corner of the triangle isn't local hardware at all — the
-module doc comment says what it actually is plainly ([`drivewire.rs:1-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire.rs#L1-L18)):
+module doc comment states plainly what it actually is ([`drivewire.rs:1-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire.rs#L1-L18)):
 
 ```rust
 //! DriveWire 4 — an in-process implementation of the *server* side of the
@@ -2111,11 +2112,11 @@ module doc comment says what it actually is plainly ([`drivewire.rs:1-18`](https
 ```
 
 On a real CoCo, DriveWire is a serial cable running from the "Becker
-port" (a modest hardware hack — later, on real machines, a genuine serial
-adapter) to a PC, and a *server program* on that PC — the DriveWire
+port" (a modest hardware hack, later a genuine serial adapter on real
+machines) to a PC, and a *server program* on that PC — the DriveWire
 server — holds the actual `.dsk` files and answers requests over the
 wire. That server is a real, still-actively-used piece of the CoCo
-community's infrastructure today: it's how people run NitrOS-9 or HDB-DOS
+community's infrastructure: it's how people run NitrOS-9 or HDB-DOS
 on original hardware with modern storage, no floppy drive required. This
 codebase implements the server side entirely in Rust, in-process — the
 "wire" is just a Becker-port register pair, and the "PC" is the same
@@ -2162,7 +2163,7 @@ would otherwise answer every read with a recognizable byte: `$FF41`/
 outside the two Becker registers, still inside the cartridge's own range
 — reach the marker cartridge's fixed reply.
 
-`enable_drivewire()` is worth noting too: DriveWire, unlike a `DiskCart`,
+`enable_drivewire()` deserves a mention too: DriveWire, unlike a `DiskCart`,
 isn't a cartridge you insert; it's a bus-level feature you switch on
 ([`bus.rs:173-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L173-L176)). When `self.drivewire: Option<DwServer>` is `None`,
 `becker_read`'s `self.drivewire.as_mut()?` short-circuits before the
@@ -2198,7 +2199,7 @@ Walk a plain `READ` transaction (`opcode::READ`, not the checksum-
 verified `READEX` variant) through this machine byte by byte. `feed`
 dispatches purely on `self.state` ([`drivewire/protocol.rs:107-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/protocol.rs#L107-L125)), one
 byte in, one state transition out — the same shape as the Write Track
-parser in §13.6. Byte 1 (the opcode) arrives while `State::Idle`, and
+parser in §13.6. Byte 1 (the opcode) arrives in `State::Idle`, and
 `handle_opcode` routes `READ`/`REREAD` to `self.state =
 State::AwaitReadHeader { ex: false, buf: Vec::with_capacity(HEADER_LEN)
 }`. Bytes 2–5 are the 4-byte header — drive number, then a 24-bit
@@ -2231,10 +2232,10 @@ at a time from `$FF41`/`$FF42`: `status_read()` reports whether *any*
 reply byte is queued, and `data_read()` pops one. Five bytes sent
 (opcode + 4-byte header), 259 bytes received (status + 256 data + 2-byte
 checksum) — the whole transaction, from the CPU's point of view, is a
-loop polling `$FF41` and reading `$FF42` whenever it's nonzero, no
-different in spirit from polling the WD1773's DRQ bit, except there's no
-chip-level pacing at all: every reply byte is already sitting in the
-queue the instant the header's last byte arrives.
+loop polling `$FF41` and reading `$FF42` whenever it's nonzero. That is
+no different in spirit from polling the WD1773's DRQ bit, except that
+there's no chip-level pacing at all: every reply byte is already sitting
+in the queue the instant the header's last byte arrives.
 
 ### One LSN space, or several: HDB-DOS mode
 
@@ -2259,8 +2260,8 @@ history worth knowing
 ```
 
 In plain DriveWire mode the wire drive byte selects a mount slot and the
-LSN indexes within that slot's image, which is what you'd design if you
-were designing it today. HDB-DOS mode ignores the drive byte entirely and
+LSN indexes within that slot's image, which is what anyone would design
+from scratch today. HDB-DOS mode ignores the drive byte entirely and
 carves one flat sector space into fixed-size slices instead:
 `HDBDOS_SECTORS_PER_DISK` is 630, and the constant's doc comment names
 the arithmetic behind that number — "35 tracks × 18 sectors/track, a
@@ -2294,8 +2295,8 @@ fn checksum_of(sector: &[u8]) -> u16 {
 }
 ```
 
-The wire protocol's own error code is called `CRC` (`0xF3`), a name that
-survives from whatever DriveWire's original authors decided to call it
+The wire protocol's own error code is called `CRC` (`0xF3`), a name
+inherited from whatever DriveWire's original authors decided to call it
 decades ago — but the actual algorithm behind it is the plainest checksum
 imaginable, no polynomial, no table, nothing collision-resistant about
 it. This is the honest cost of the "distance" corner of the triangle made
@@ -2313,8 +2314,8 @@ touching the image at all.
 
 A plain `READ` puts the burden of verification on the client. The server
 sends its status byte, 256 data bytes, and its own two-byte sum, and
-considers the transaction finished; if the client's arithmetic disagrees
-it retries with `REREAD`, which has identical wire behaviour and exists
+considers the transaction finished; if the client's arithmetic disagrees,
+it retries with `REREAD`, which has identical wire behavior and exists
 purely so the two ends can tell a retry from a fresh request. The
 `READEX` family inverts that. The server sends 256 bytes with no status
 byte in front of them, waits for the *client's* checksum, compares, and
@@ -2352,18 +2353,17 @@ driver is already committed — it has issued a READEX and will pull
 exactly 256 data bytes off the wire before it sends anything back — and a
 server that reported the error by sending fewer bytes would leave the two
 ends permanently disagreeing about where the next transaction starts.
-Reporting the failure one byte
-late, in the slot the protocol reserved for it, is strictly better than
-reporting it early and desynchronizing the stream. That constraint has no
-analogue anywhere in §13.2–13.10: the WD1773 can just set a status bit
-and stop, because nothing is counting its bytes from the other end of a
-cable.
+Reporting the failure one byte late, in the slot the protocol reserved
+for it, is strictly better than reporting it early and desynchronizing
+the stream. That constraint has no analogue anywhere in §13.2–13.10: the
+WD1773 can just set a status bit and stop, because nothing is counting
+its bytes from the other end of a cable.
 
 ### The timeout: recovering from a byte that never arrives
 
 The last problem unique to this corner of the triangle: what happens if
 the client sends a `READ` opcode, starts a header, and then — client
-crash, cable pulled, whatever — simply never sends the rest? A real chip
+crash, cable pulled, whatever — never sends the rest? A real chip
 doesn't have this problem (there's no "the wire went quiet mid-command"
 state for a WD1773; the CPU is the one driving every access).
 
@@ -2412,7 +2412,7 @@ still mid-flight, the server gives up on it — resets to `Idle` — before
 parsing the new byte, so an abandoned transaction can't wedge the server
 into permanently misreading every future byte as leftover payload from a
 conversation that's over. `cycle.wrapping_sub(prev)`, not a bare
-subtraction, is the same defensive habit you've seen since week 1:
+subtraction, is the same defensive habit you've seen since Chapter 1:
 correct under `u64` wraparound, where a bare `-` would panic in a debug
 build the one time it mattered.
 
@@ -2425,15 +2425,15 @@ build the one time it mattered.
 > exactly the data that state needs, and no other data*:
 > `AwaitReadHeader { ex: bool, buf: Vec<u8> }` can't accidentally be
 > inspected for a WRITE body's partial buffer, because there is no field
-> for one — the compiler's exhaustiveness check on `match state { ... }`
-> forces every state to be handled. Same "make the type say what's true"
-> discipline as `Box<[u8]>` in week 1, applied to *control flow*.
+> for one. The compiler's exhaustiveness check on `match state { ... }`
+> then forces every state to be handled. Same "make the type say what's true"
+> discipline as `Box<[u8]>` in Chapter 1, applied to *control flow*.
 
 > **Rust corner: injecting the outside world through a boxed closure.**
-> `coco-core` is headless (week 1's crate-boundary argument), but
+> `coco-core` is headless (Chapter 1's crate-boundary argument), but
 > `opcode::TIME` needs *some* notion of wall-clock time:
 > `pub type DwClock = Box<dyn FnMut() -> DwTime + Send>;` is a trait
-> object over *any* closure with that signature — `coco-egui`, which
+> object over *any* closure with that signature. `coco-egui`, which
 > knows how to ask the OS for the time, constructs one and hands it to
 > `DwServer::set_clock`; `coco-core` itself only ever uses
 > `default_clock`, a fixed stand-in date, so tests stay reproducible
@@ -2455,7 +2455,7 @@ Every module in this chapter states the same fidelity choice in its own
 words, and it's worth collecting them side by side now that you've read
 the code behind each one:
 
-- WD1773: "Modelled functionally rather than cycle-exact: command
+- WD1773: "Modeled functionally rather than cycle-exact: command
   completion and byte transfers are paced by `tick()` against fixed cycle
   counts... not the real chip's per-command timing tables."
 - Type I settle delay: "Not a hardware timing figure — real seeks take
@@ -2489,10 +2489,10 @@ What would notice? Software that assumes seeking N tracks takes
 proportionally longer than seeking 1 (some copy-protection schemes timed
 exactly this, historically, to detect an emulator or a modified drive) —
 this emulator's fixed 64-cycle settle for every seek regardless of
-distance would make such a check trivially fail. Likewise, anything that
-reads the gap *between* sectors deliberately, or depends on a specific
-rotational position rather than "whichever sector I asked for,
-eventually" — this emulator has no notion of rotational position at all;
+distance would make such a check trivially fail. Likewise anything that
+reads the gap *between* sectors deliberately, or that depends on a
+specific rotational position rather than "whichever sector I asked for,
+eventually": this emulator has no notion of rotational position at all;
 `sector_offset` answers instantly and correctly regardless of where a
 real head would physically be. Those are explicitly out of scope, the
 same way [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md)'s fidelity philosophy frames every choice in this
@@ -2519,7 +2519,7 @@ In this order:
    `update_lines`, the exact mechanism §13.7 walks.
 5. **[`crates/coco-core/src/machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs), `step_cpu_unit`** — reread it
    now that you know what's on the other side of `halt_asserted`. This is
-   the payoff of week 6's setup; read it slowly.
+   the payoff of Chapter 6's setup; read it slowly.
 6. **[`crates/coco-core/src/fdc/jvc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/fdc/jvc.rs)** — geometry, the sector-offset
    formula, and the OS-9 sniff (§13.9).
 7. **[`crates/coco-core/src/vhd.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs) and [`crates/coco-core/src/bus/
@@ -2566,8 +2566,8 @@ by hand: which drive is selected, what side, is the motor on, is
 halt-enable armed, is density/NMI-enable set? Check your answer against
 `selected_drive`/`selected_side`/the `dskreg` bit constants. Then decode
 `$40` alone (bit 6 only, nothing else set) two different ways — once
-pretending drive 0, 1, or 2 is also concurrently selected by another bit,
-and once as written (no other drive-select bit set) — and explain in one
+pretending drive 0, 1, or 2 is also selected by another bit, and once as
+written (no other drive-select bit set) — and explain in one
 sentence why the second case means something completely different from
 the first, even though bit 6 itself never changes value.
 
@@ -2580,8 +2580,8 @@ DRQ_INTERVAL_CYCLES`), both computed from it — but the *test* file,
 [`tests/fdc/common.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/common.rs), mirrors the pacing as independent literal
 constants (`DRQ_INTERVAL: u32 = 30`, and `FIRST_BYTE_LATENCY`/
 `CRC_TRAILER` derived from *that* copy), not by importing the real ones.
-Run `cargo test -p coco-core --test fdc` and `cargo test -p coco-core
---test halt` and `cargo test -p coco-core --test drivewire_bus`. Confirm:
+Run `cargo test -p coco-core --test fdc`, `cargo test -p coco-core
+--test halt`, and `cargo test -p coco-core --test drivewire_bus`. Confirm:
 exactly five *additional* tests fail in [`fdc/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs) (beyond whatever
 already fails for missing ROMs in your checkout) —
 `read_sector_delivers_256_correct_bytes_paced_by_drq_then_intrq`,
@@ -2603,7 +2603,7 @@ shows a clean tree again.
 `JvcDisk` API, write a new test in [`tests/fdc/image_geometry.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/image_geometry.rs) for a
 geometry this file doesn't already cover: an explicit 4-byte header
 (`sectors_per_track=10, sides=1, size_code=0` → 128-byte sectors,
-`first_sector_id=5`) and confirm `sector_offset` resolves sector IDs 5
+`first_sector_id=5`). Confirm that `sector_offset` resolves sector IDs 5
 through 14 correctly and rejects 4 and 15 (headerless images can't
 express a non-default `first_sector_id`, which is why this needs an
 explicit header). This needs no ROM and runs in any checkout. If you
@@ -2642,8 +2642,8 @@ self.dskreg & dskreg::HALT_ENABLE != 0`) side by side. The test writes
 `dskreg::HALT_ENABLE` to `$FF40`, asserts `halt_asserted()` is still
 *false*, then reads `$FF4B` (clearing DRQ as a side effect) and asserts
 it's now *true*. Predict, before running it: what would this test's two
-assertions become — which one would flip, and why — if `WD1773::
-default()`'s `drq` field were changed from `true` to `false`? (Recall
+assertions become — which one would flip, and why — if
+`WD1773::default()`'s `drq` field were changed from `true` to `false`? (Recall
 `drq`'s reset-state doc comment from §13.2 before you answer, and connect
 it explicitly to what "spuriously assert HALT" would mean for a freshly
 reset machine that hasn't issued a single disk command yet.) Then run
@@ -2663,19 +2663,19 @@ least one design decision from each of §13.2–13.11 (a pacing constant, a
 register-only command, a checksum/timeout pair) that you would or
 wouldn't reuse for it, and justify each choice in terms of what real
 software talking to that device would actually notice — the same
-"who notices?" habit week 1's fidelity-budget exercise asked you to
+"who notices?" habit Chapter 1's fidelity-budget exercise asked you to
 build.
 
 ---
 
 ## What's next
 
-You've now closed the loop week 6 opened: the HALT-before-interrupt
+You've now closed the loop Chapter 6 opened: the HALT-before-interrupt
 ordering in `step_cpu_unit` wasn't an arbitrary implementation detail —
 it's the exact shape a real 6809's instruction-boundary interrupt
 recognition forces once a device (the FD-502) is allowed to stop the CPU
 mid-loop. Notice, too, that this chapter's fidelity story rhymes with
-week 12's cassette chapter while landing in the opposite place: the tape
+Chapter 12's cassette chapter while landing in the opposite place: the tape
 ROM counted cycles, so the cassette model had to be cycle-accurate; Disk
 BASIC's driver counts *bytes*, not cycles, so the disk model only had to
 be byte-paced — "functional, not cycle-exact" isn't a lower standard,
@@ -2683,13 +2683,13 @@ it's the standard the actual software being emulated demands, discovered
 the same way every fidelity decision in this course has been: by finding
 the ROM code that would notice, and matching exactly that.
 
-Week 14 stays in Part V and finishes the storage-and-serial story, but
+Chapter 14 stays in Part V and finishes the storage-and-serial story, but
 narrows scope in a specific way worth naming now: DriveWire's *wire
 protocol* — opcodes, checksums, transactions — was this week's material,
 because it's fundamentally a storage question. How that protocol's bytes
 actually travel between a CoCo and a PC — bit-banged GPIO timing, a real
 6551 UART, a dot-matrix printer's control codes — belongs to a different
 question entirely (how do two chips exchange *arbitrary* bytes, not
-specifically disk sectors), and that's week 14's subject: the bitbanger,
+specifically disk sectors), and that's Chapter 14's subject: the bitbanger,
 the ACIA 6551, and the DMP-105 printer, three rungs of the same serial
 ladder DriveWire happened to ride on without ever needing to know it.

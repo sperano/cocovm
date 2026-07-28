@@ -5,7 +5,7 @@ read `MC6809::step()` end to end and watched every opcode land somewhere in
 one big `match`. This week you go back into that `match` and open the one
 addressing mode that got skipped: indexed. You'll also finish the
 subroutine/stack group (`PSH`/`PUL`/`TFR`/`EXG`) and meet the disassembler,
-which mirrors everything you learn here byte-for-byte. Week 4 closes out the
+which mirrors everything you learn here byte-for-byte. Chapter 4 closes out the
 CPU with interrupts — which, not coincidentally, push a stack frame using the
 exact `psh` function you'll read today.*
 
@@ -13,7 +13,7 @@ exact `psh` function you'll read today.*
 
 Most of the 6809's addressing modes announce themselves in the opcode itself.
 `LDA #$0A` is `$86`, immediate. `LDA <$40` is `$96`, direct. `LDA $0400` is
-`$B6`, extended. Week 2 walked all three, and in each case the opcode byte
+`$B6`, extended. Chapter 2 walked all three, and in each case the opcode byte
 told the dispatcher everything it needed to know about where the operand
 would come from; the bytes that followed were nothing but data. Decode was a
 single `match` arm, and the arm knew its own answer.
@@ -22,7 +22,7 @@ Indexed addressing does not work that way, and the difference is the whole
 subject of this chapter. There is exactly one indexed `LDA` opcode — `$A6` —
 and it does not say which register the address is built from, whether an
 offset is involved, how wide that offset is, whether a register gets modified
-as a side effect, or whether the address computed is the address you want or
+as a side effect, or whether the computed address is the address you want or
 merely a pointer to it. All of that lives in the byte *after* the opcode, a
 byte the 6809 literature calls the *postbyte*. One byte, eight bits, and
 something on the order of a hundred distinct meanings packed into them.
@@ -39,16 +39,16 @@ everything at once.
 
 This week stays entirely inside the `mc6809` crate. No new device, no new
 seam, nothing that touches the CoCo. What you get instead is the last
-genuinely intricate piece of the CPU, plus two smaller encodings that work the
-same way (`PSH`/`PUL`'s register mask and `TFR`/`EXG`'s nibble pair), plus the
-disassembler — which is both this chapter's answer key and the first component
-of the debugger that week 16 assembles.
+genuinely intricate piece of the CPU, two smaller encodings that work the
+same way (`PSH`/`PUL`'s register mask and `TFR`/`EXG`'s nibble pair), and
+finally the disassembler — which is both this chapter's answer key and the
+first component of the debugger that Chapter 16 assembles.
 
 ---
 
 ## 3.1 Why 200 lines get a whole week
 
-Before opening any code, it's worth establishing that the difficulty here is
+Before opening any code, it helps to establish that the difficulty here is
 not a matter of taste. DESIGN.md ranks the CPU's hard parts "in order of
 pain," and indexed addressing is first on the list, ahead of interrupts:
 
@@ -62,7 +62,7 @@ pain," and indexed addressing is first on the list, ahead of interrupts:
 "A large fraction" is doing a lot of work in that sentence, so it's worth
 making the number concrete. Search the executor for calls to `ea_indexed` and
 you will find forty-six of them across two files. Look at how many opcodes
-cash that check in [`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)
+make good on that claim in [`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)
 alone: `LEAX`/`LEAY`/`LEAS`/`LEAU`, indexed `LDA`/`STA`/`LDB`/`STB`/`LDD`/
 `STD`, every indexed 8-bit ALU op (`ADD`/`ADC`/`SUB`/`SBC`/`CMP` for both
 accumulators), indexed `AND`/`OR`/`EOR`/`BIT`, indexed `JMP`/`JSR`, and — via
@@ -73,10 +73,10 @@ function wrong and you don't break one instruction — you break a fraction of
 the ISA at once, in ways that only show up as wrong pixels several
 instructions later. That's why it earns a whole week of undivided attention.
 
-Forty-six call sites actually undercounts the opcodes involved, because one of
+Forty-six call sites actually undercount the opcodes involved, because one of
 those call sites serves an entire sixteen-opcode range at once. The
 read-modify-write group — `NEG`, `COM`, `LSR`, `ROR`, `ASR`, `ASL`, `ROL`,
-`DEC`, `INC`, `TST`, `CLR`, all of which you met in week 2 — handles its
+`DEC`, `INC`, `TST`, `CLR`, all of which you met in Chapter 2 — handles its
 indexed forms in a single arm, from
 [`exec/exec_data.rs:252-259`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L252-L259):
 
@@ -92,8 +92,8 @@ indexed forms in a single arm, from
             }
 ```
 
-That arm is the shape every indexed opcode in the crate follows, so it is
-worth reading slowly even though its subject is last week's material. The call
+That arm is the shape every indexed opcode in the crate follows, so read it
+slowly even though its subject is last week's material. The call
 to `ea_indexed` returns two things at once, destructured into `ea` and `ic`:
 the effective address, and the number of *extra* cycles the postbyte cost
 beyond the instruction's own base price. The address goes to the bus, the ALU
@@ -113,7 +113,7 @@ perfectly plausible address that isn't the right one. The program keeps
 running. Whatever was at the wrong address gets used as if it were correct.
 The failure surfaces thousands of instructions later, in a subsystem that has
 nothing to do with addressing, as a character in the wrong place on the screen
-or a disk sector that checksums wrong. Week 4's trace-diffing exists largely to
+or a disk sector that checksums wrong. Chapter 4's trace-diffing exists largely to
 catch exactly this class of bug, and the cheapest way to avoid needing it is to
 get this week's 200 lines right the first time.
 
@@ -122,7 +122,7 @@ get this week's 200 lines right the first time.
 ## 3.2 The decode tree: one bit decides everything
 
 Everything in this chapter hangs off a handful of named bit masks, so those
-come first. They live in their own little module, deliberately kept away from
+come first. They live in their own little module, deliberately separate from
 the decoder that uses them, in
 [`crates/mc6809/src/lib.rs:76-90`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76-L90):
 
@@ -156,15 +156,15 @@ the indirect bit is the one field whose meaning includes a price.
 > **Rust corner: a private module as a bitflag namespace.** `postbyte` isn't
 > a `struct` or an `enum` — it's a bare `mod` holding `pub const` bytes, not
 > `pub` itself (visible only inside this crate). No derive, no trait, just
-> named constants grouped under one path (`postbyte::INDIRECT`) — a name
-> instead of a bare `0x10`, without designing a `bitflags`-style type for a
-> mask consumed in exactly one file. `regsel` (§3.7) and `stack_mask` (§3.6)
+> named constants grouped under one path (`postbyte::INDIRECT`). That buys a
+> name instead of a bare `0x10` without designing a `bitflags`-style type for
+> a mask consumed in exactly one file. `regsel` (§3.7) and `stack_mask` (§3.6)
 > use the same trick. When bits need to compose (`OR`ed together, tested
 > with `&`), plain `u8` constants serve better than an enum would — enums
 > don't overlap bit patterns for free.
 
-With the vocabulary in place, here is the branch that splits the whole
-addressing mode in two, in `ea_indexed`
+With the vocabulary in place, here is the branch in `ea_indexed` where the
+whole addressing mode forks
 ([`crates/mc6809/src/addressing.rs:58-67`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L58-L67)):
 
 ```rust
@@ -226,7 +226,7 @@ For the two PC-relative sub-modes it is the whole semantics of the mode, and
 ### Which register is `rr`?
 
 Both postbyte layouts carry the same 2-bit register field in the same place,
-and both hand it to the same tiny pair of helpers
+and both hand it to one tiny pair of helpers
 ([`addressing.rs:30-48`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L30-L48)):
 
 ```rust
@@ -308,7 +308,7 @@ at all. Exercise 3.3 asks you to state that argument in your own words, and
 exercise 3.10 sets a trap that only springs if you haven't internalized it.
 
 The 5-bit form costs 1 extra cycle. Only one sub-mode in the entire table is
-cheaper — plain `,R` with no offset at all, which costs nothing — so among
+cheaper: plain `,R` with no offset at all, which costs nothing. So among
 forms that actually carry an offset, this is as cheap as indexed addressing
 gets, and it is also the shortest, since the offset rides inside the postbyte
 instead of following it. Shortest encoding and fastest execution both, which
@@ -322,7 +322,7 @@ cheap.
 ## 3.3 The full form: register, indirect bit, then sixteen sub-modes
 
 When bit 7 *is* set, control passes to `ea_indexed_full`, and this is the
-function worth memorizing — not for its length, which is nine lines, but for
+function worth memorizing — not for its length, which is a dozen lines, but for
 its shape, which explains why the sixteen sub-modes below it can afford to
 ignore indirection entirely
 ([`addressing.rs:85-96`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L85-L96)):
@@ -342,7 +342,7 @@ ignore indirection entirely
     }
 ```
 
-Read that shape carefully — it's the whole chapter in five lines. The
+Read that shape carefully — it's the whole chapter in five statements. The
 sub-mode decoder computes an address and an extra-cycle count exactly as if
 indirection didn't exist. *Then*, regardless of which sub-mode ran, the
 indirect bit — if set — treats whatever address the sub-mode produced as a
@@ -350,15 +350,15 @@ indirect bit — if set — treats whatever address the sub-mode produced as a
 effective address, billed at 3 extra cycles (`postbyte::INDIRECT_CYCLES`).
 
 Indirection, in other words, isn't its own sub-mode. It's a post-processing
-step layered uniformly on top of any sub-mode's result. This is worth dwelling
-on because it is the single largest simplification in the decoder. A design
+step layered uniformly on top of any sub-mode's result. That deserves dwelling
+on, because it is the single largest simplification in the decoder. A design
 that treated indirection as part of the sub-mode table would need roughly
 twice as many arms, each duplicating its non-indirect twin's arithmetic and
 then adding a dereference. Instead the table has one arm per addressing form,
 and the dereference is written once, in the caller, three lines long.
 
 That uniformity glosses over one datasheet nuance, and the code is honest
-about it rather than silent. Real hardware documents only some sub-modes as
+about it rather than silent. The datasheet documents only some sub-modes as
 indirectable, and calls `,R+`/`,-R` — the single-step auto increment and
 decrement forms — undefined in combination with indirect. The comments in the
 sub-mode table below say so explicitly. But the code doesn't special-case the
@@ -366,10 +366,10 @@ restriction: set the indirect bit on a `,R+` postbyte and you get a second
 fetch anyway. That is a deliberate choice, not an oversight, and the same
 choice is mirrored on the disassembler side, where
 [`disasm_indexed.rs::indirect_auto_increment_by_two`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm_indexed.rs)
-carries a comment making the parallel explicit. Worth knowing if you ever
-chase a compatibility bug in this exact corner; a real assembler will never
-emit such a postbyte, so the only way to reach it is hand-assembled bytes or
-data being executed by mistake.
+carries a comment making the parallel explicit. Keep it in mind if you ever
+chase a compatibility bug in this exact corner: a real assembler will never
+emit such a postbyte, so the only ways to reach it are hand-assembled bytes or
+data executed by mistake.
 
 Now the sub-mode table itself, `ea_indexed_submode`
 ([`addressing.rs:100-171`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L100-L171)), quoted whole because every case matters and you
@@ -488,7 +488,7 @@ consequence is that `D = $FFFF` in `D,R` adds 65535 to the register rather
 than subtracting one. Since address arithmetic wraps at 16 bits, those two
 descriptions happen to name the same address, which is a coincidence worth
 noticing but not worth relying on: the *code paths* are genuinely different,
-and a 6309-style widening of the register file would break the coincidence.
+and a 6309-style widening of the register file would break it.
 
 The fourth shape is *PC plus a signed offset*, arms `0b1100` and `0b1101`.
 Structurally identical to the third shape, except that the base register is
@@ -511,7 +511,7 @@ the real chip leaves undefined: fall back to a plain register read, charge no
 extra cycles, consume no operand bytes, move on. The disassembler makes the
 same call and renders it visibly, as §3.9 shows.
 
-`sel` is the raw `rr` field, still shifted but not yet masked; `index_reg`
+`sel` is the raw `rr` field, shifted into place but not yet masked; `index_reg`
 masks it down to 2 bits itself (`sel & 0b11`), which is why both this
 function and `ea_indexed_offset5` can hand it the same unmasked value from
 different shift origins. The full table, matching the real source arm for arm
@@ -562,7 +562,7 @@ have already been fetched — "the address of the *next* instruction," exactly a
 the 6809 datasheet defines PC-relative, and §3.4 walks the arithmetic. And the
 extended-indirect row's parenthetical, "register ignored," means what it says:
 `$9F`, `$BF`, `$DF`, and `$FF` as postbytes all do the same thing, because the
-`rr` field is never consulted in that arm. Four encodings, one behaviour.
+`rr` field is never consulted in that arm. Four encodings, one behavior.
 
 > **Rust corner: `as i8 as i16 as u16`.** This triple cast, used for every
 > signed offset above, is doing real work, not decoration. `self.b as i8`
@@ -605,7 +605,7 @@ postbyte values, cross-checked against the executor tests in
 
 Six of the seven traces use indexed `LDA`, opcode `$A6`, so that the postbyte
 is the only thing that varies. Here is the arm that runs them, along with its
-neighbours, from
+neighbors, from
 [`exec/exec_data.rs:103-116`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L103-L116):
 
 ```rust
@@ -629,7 +629,7 @@ Every base cost quoted below comes from that excerpt. Eight-bit loads and
 stores are 4; sixteen-bit `LDD` and `STD` are 5; the four `LEA` opcodes are
 also 4, and they are the family that makes this section's arithmetic directly
 observable, since `LEAX` writes the computed effective address into `X` where a
-test can read it directly. Everything else is `+ ic`, the postbyte's own bill.
+test can read it. Everything else is `+ ic`, the postbyte's own bill.
 
 The first four arms deserve a passing note even though they are not this
 section's subject: `LEAX` and `LEAY` set the `Z` flag from the result while
@@ -719,8 +719,8 @@ once. [`indexed.rs::pc_relative_8bit`](https://github.com/sperano/cocovm/blob/ma
     s.set_mem(0x1013, 0xB2);
 ```
 
-Walk `self.pc` byte by byte through the three functions this passes
-through. It starts at `$1000`. `step()`'s own `fetch_u8` reads the opcode
+Walk `self.pc` byte by byte through the three functions the instruction
+passes through. It starts at `$1000`. `step()`'s own `fetch_u8` reads the opcode
 `$A6` and advances `pc` to `$1001` — that call lives in the dispatcher, not
 in any of the addressing code. `exec_indexed` routes `$A6` to
 `self.ea_indexed(bus)`, whose *own* `fetch_u8` (the first line of the
@@ -728,12 +728,12 @@ function, §3.2) reads the postbyte `$8C` and advances `pc` to `$1002`; since
 bit 7 is set, it calls `ea_indexed_full`, which calls `ea_indexed_submode`
 with `mode = 0b1100`. Only *there*, inside the `0b1100` arm itself, does a
 third `fetch_u8` read the offset byte `$10` — advancing `pc` to `$1003` —
-and only *after* that fetch does the same line read `self.pc.wrapping_add
-(ofs)`. By the time `self.pc` gets used, it's already `$1003`: the address
-of whatever comes *after* this whole 3-byte instruction, not the address of
-the offset byte (`$1002`) and certainly not the opcode (`$1000`). `$1003 +
-$10 = $1013`, exactly where the test plants `$B2`. Total: base 4 + extra 1
-= 5, matching the test's `cycles == 5`.
+and only *after* that fetch does the same line read
+`self.pc.wrapping_add(ofs)`. By the time `self.pc` gets used, it is already
+`$1003`: the address of whatever comes *after* this whole 3-byte instruction,
+not the address of the offset byte (`$1002`) and certainly not the opcode
+(`$1000`). `$1003 + $10 = $1013`, exactly where the test plants `$B2`.
+Total: base 4 + extra 1 = 5, matching the test's `cycles == 5`.
 
 This is not a coincidence of implementation order — it's the only order
 that *can* be correct, because `self.pc` is a single field with no memory
@@ -752,7 +752,7 @@ reaches a nearby constant by writing `LDA table,PCR` computes the constant's
 address from wherever the instruction happens to be executing, so the same
 bytes work correctly whether the routine is assembled at `$1000` or relocated
 to `$3F00` at load time. On a machine whose memory map moves under software
-control — which, once week 5 introduces the GIME's MMU, describes the CoCo 3
+control — which, once Chapter 5 introduces the GIME's MMU, describes the CoCo 3
 precisely — that property is worth the extra cycle. Note also that the
 disassembler renders these operands as raw signed offsets rather than resolved
 addresses: [`disasm_indexed.rs::pc_relative_8bit`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm_indexed.rs)
@@ -833,17 +833,17 @@ lines of straight-line code, and the ordering of "compute," "write back,"
 The tests make the distinction visible in a way the source alone does not.
 [`indexed.rs::auto_increment_by_one`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs)
 sets `X = $2000`, plants `$AA` at `$2000`, and asserts both that `A` ends up
-holding `$AA` *and* that `X` ends up at `$2001`. Its neighbour
+holding `$AA` *and* that `X` ends up at `$2001`. Its neighbor
 `auto_decrement_by_one` sets the same `X = $2000`, plants `$CC` at `$1FFF`,
 and asserts `A == 0xCC` with `X == 0x1FFF`. Two tests, four assertions, and
-between them they nail down both halves of both behaviours. Assert only the
+between them they nail down both halves of both behaviors. Assert only the
 loaded value and a decoder that decremented twice would still pass; assert
 only the register and a decoder that returned the wrong EA would still pass.
 This is the pattern exercise 3.2 asks you to reproduce for `LEAX ,--Y`.
 
 The by-1 and by-2 forms share their ordering exactly — `0b0000`/`0b0001`
 are both "old value, then increment"; `0b0010`/`0b0011` are both "decrement,
-then new value" — they differ only in the constant passed to
+then new value" — and they differ only in the constant passed to
 `wrapping_add`/`wrapping_sub` and in the extra-cycle count (2 vs 3, one more
 cycle for the second byte of the step). That's not an accident of encoding:
 `,R++`/`,--R` exist specifically for 16-bit registers (`X`/`Y`/`U`/`S`) and
@@ -910,7 +910,7 @@ the program has established a stack pointer would push a twelve-byte register
 frame through whatever garbage `S` happens to contain, corrupting memory the
 program has not yet had a chance to claim.
 
-Week 4 builds `take_interrupt` and the `nmi_armed` check that guards it, so the
+Chapter 4 builds `take_interrupt` and the `nmi_armed` check that guards it, so the
 consequences belong there rather than here. What belongs here is the
 observation that this is what a hardware-derived invariant looks like when it
 lands in code: not a comment saying "be careful with S," but a specific field
@@ -928,9 +928,9 @@ deliberately arms NMI routes through it:
     }
 ```
 
-Three call sites in this chapter route through it, one for each item in the doc
+Three call sites in this chapter reach it, one for each item in the doc
 comment's list. `exec_indexed`'s `LEAS` arm in §3.4 calls `self.load_s(ea)`
-where its `LEAX` neighbour writes `self.x = ea` directly. `reg_write`'s `S` arm
+where its `LEAX` neighbor writes `self.x = ea` directly. `reg_write`'s `S` arm
 in §3.7 calls `self.load_s(value)` where every other 16-bit register gets a
 plain assignment. And `set_index_reg`'s fourth arm, above, does the same for the
 auto increment and decrement modes. Three files, one invariant, maintained by
@@ -947,10 +947,10 @@ the same: which callers use it, and are there any that should?
 The ordering discipline is the property `LEAX ,--Y` (exercise 3.2) and `STD ,X++`
 (exercise 3.7) ask you to pin down with a test: you can't assert the right
 answer for either mode without knowing which value shows up as the EA *and*
-which value ends up in the register afterward, and they don't always match
+which value ends up in the register afterward, and the two don't always match
 the "pointer arithmetic first vs. use first" intuition that anyone arriving
-from C's `*p++`/`*--p` brings along — the 6809 rule is symmetric with C, but
-it is worth verifying here rather than assuming.
+from C's `*p++`/`*--p` brings along. The 6809 rule is symmetric with C, but
+verify it here rather than assuming it.
 
 ---
 
@@ -977,11 +977,11 @@ mod stack_mask {
 ```
 
 Seven of the eight constants are unremarkable. The eighth has a doc comment
-twice as long as any of its neighbours, and that comment is the section's
-punchline; hold it for a moment.
+twice as long as any of its neighbors, and that comment is the section's
+punchline; hold that thought for a moment.
 
 There are four opcodes in this family — `PSHS`, `PULS`, `PSHU`, `PULU` — and
-they compile down to just two functions, distinguished by a boolean.
+they collapse into just two functions, distinguished by a boolean.
 [`crates/mc6809/src/stack.rs:26-47`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs#L26-L47)
 implements the push, and the same function serves every explicit stack opcode
 *and* the interrupt-frame code you'll read in full next week:
@@ -1166,7 +1166,7 @@ One structural note worth carrying forward: `pul`'s `self.s` write goes through
 a plain assignment here, not through `load_s`, and the same is true of the
 final write-back line. That is a place where the `nmi_armed` invariant from §3.5
 and this function's mechanics touch, and it is left as an observation rather
-than a claim — week 4 is where interrupt arming gets its full treatment and
+than a claim — Chapter 4 is where interrupt arming gets its full treatment and
 where the question of which writes to `S` should count as "program action"
 belongs.
 
@@ -1329,11 +1329,11 @@ because the 8-bit codes all start at `0x8`. `reg_read` promotes every 8-bit
 register to `u16` so that one function can return one type — the promotion is
 zero-extension, which matters in a moment. And `reg_write` truncates on the way
 back down with `value as u8`, which is where the 16-to-8 transfer rule actually
-lives, as opposed to where you would expect to find it.
+lives, rather than in `tfr_value`, where you would expect to find it.
 
 The `S` arm of `reg_write` calls `load_s` rather than assigning, which is the
 `nmi_armed` coupling from §3.5 showing up again — this is the "TFR/EXG" item in
-that field's list of triggers. The invalid arms are worth a glance too:
+that field's list of triggers. The invalid arms deserve a glance too:
 `reg_read` returns `0xFFFF` for a reserved code, `reg_write` silently does
 nothing. Neither panics. An emulator that panicked on a reserved register code
 would be an emulator that a corrupted byte stream could crash, which is not a
@@ -1397,7 +1397,7 @@ size-mismatch *rule* lives in `tfr_value`; the *mechanism* lives in
 
 `EXG` swaps via two independent `reg_read`/`reg_write` calls and never touches
 `tfr_value`, which raises an obvious question: does an 8↔16 `EXG` get the
-documented behaviour, or does it get whatever falls out?
+documented behavior, or does it get whatever falls out?
 
 Half of it falls out correctly. The truncation direction is handled by
 `reg_write`, which both instructions share, so `EXG A,X` puts `X`'s low byte
@@ -1417,10 +1417,10 @@ both instructions inherit it, and neither can drift from the other.
 
 Every `TFR`/`EXG` example so far has been a hand-built test fixture. Here is
 one straight from `roms/coco3.rom`, found by disassembling forward through
-the ROM and confirmed sane by checking that ~20 instructions on either side
-all decode as plausible, non-`???` 6809 code (a static sanity check — this
+the ROM and confirmed sane by checking that about 20 instructions on either
+side all decode as plausible, non-`???` 6809 code (a static sanity check: this
 region isn't reachable from the reset-vector trace in §3.9, so unlike that
-one, treat the *addresses* as approximate and the *idiom* as the point):
+trace, treat the *addresses* as approximate and the *idiom* as the point):
 
 ```text
 $82F3: 1F A9        TFR  CC,B
@@ -1441,12 +1441,12 @@ copy each way.
 
 That's the idiom: stash the condition codes computed by
 whatever ran just before `$82F3` into `B` (a scratch register `CMPA` won't
-touch), run two comparisons that clobber the flags checking which token
-this is, branch off on either match — and if neither hits, restore the
+touch), run two comparisons that clobber the flags while checking which
+token this is, branch off on either match — and if neither hits, restore the
 *original* flags from `B` before falling into `JSR $ADC6`, which evidently
-depends on them. `TFR CC,B`/`TFR B,CC` saves and restores condition codes
-across a stretch of code that has to compute new ones of its own — 6 cycles
-each way, tying
+depends on them. The `TFR CC,B`/`TFR B,CC` pair saves and restores condition
+codes across a stretch of code that has to compute new ones of its own — 6
+cycles each way, tying
 `PSHS CC` (`5` base `+ 1` byte `= 6`) / `PULS CC` (same) exactly on cycle
 count, but never touching the stack pointer or spending a byte of stack.
 
@@ -1459,7 +1459,7 @@ concrete illustration of something this course will keep running into: on a
 machine this tight, the choice between two equally priced instructions is
 usually made by a constraint that has nothing to do with either one's stated
 purpose. You'll meet the stack-based version of this exact save/restore
-pattern again in week 4, wrapped around every interrupt.
+pattern again in Chapter 4, wrapped around every interrupt.
 
 ---
 
@@ -1483,7 +1483,7 @@ dispatcher treats them that way structurally, not just semantically. From
 
 Two arms, two function calls, no decoding of any kind at this level. The
 base-page `match` recognizes `$10` and `$11` the same way it recognizes `NOP` —
-as opcodes with a behaviour — and that behaviour happens to be "decode another
+as opcodes with a behavior — and that behavior happens to be "decode another
 opcode."
 
 `exec_page10` and `exec_page11` are complete second dispatch layers — each
@@ -1528,7 +1528,7 @@ the base page. Page 10 is, to a first approximation, "the base page but with Y
 where X was, and S where U was." `$11` is the same shape, smaller: just
 `CMPU`/`CMPS` and `SWI3`.
 
-Two things are worth internalizing from this arrangement.
+Two things about this arrangement should stick.
 
 The first is that the base-page `match` never sees `op2`. It fetches exactly one
 byte, recognizes it as a page selector, and hands the rest of the instruction to
@@ -1582,12 +1582,12 @@ is the subject of the next section.
 
 ## 3.9 The disassembler: table-driven, and never allowed to lie about length
 
-A disassembler is an odd thing to build in week 3 of a CPU course. It executes
+A disassembler is an odd thing to build in Chapter 3 of a CPU course. It executes
 nothing, it is needed by nothing that runs, and the machine boots perfectly
 well without it. It earns its place for two reasons. It is the answer key for
 everything in this chapter — every postbyte you hand-decode can be checked
 against it in one line of Rust — and it is the first piece of the debugger,
-which week 16 assembles into a window with a disassembly pane.
+which Chapter 16 assembles into a window with a disassembly pane.
 
 [`crates/mc6809/src/disasm.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm.rs) is a pure function over a byte reader — no CPU
 struct, no side effects, just `fn disassemble(read: &mut impl FnMut(u16) ->
@@ -1603,10 +1603,10 @@ whole arrangement maintainable. There is no shared source of truth that both
 modules consult; there is an authority and a mirror. When they disagree, the
 executor is right by definition and the disassembler has a bug. Any other
 arrangement — a shared table, a code generator, a macro that emits both — would
-have to be correct about the *executor's* behaviour including its illegal-opcode
-fallbacks, which is a harder thing to be correct about than following it.
+have to be correct about the *executor's* behavior, illegal-opcode fallbacks
+included, which is a harder thing to get right than mirroring it.
 
-The split that makes this maintainable in practice: *which mnemonic and mode
+One split makes this workable in practice. *Which mnemonic and mode
 opcode X has* is data (`tables::base_entry`/`page10_entry`/`page11_entry`, plus
 small per-nibble arrays for the RMW and branch-condition groups); *how to
 render mode Y into an operand string* is one shared function per mode
@@ -1660,7 +1660,7 @@ Compare that against `ea_indexed_submode`'s `_ => (self.index_reg(sel), 0)`.
 Both consume zero extra bytes; both fall back to the plain register. The
 executor's version is silent about it because a running CPU has nobody to tell;
 the disassembler's version is loud about it because a human is reading the
-output. Same behaviour, different obligation.
+output. Same behavior, different obligation.
 
 ### The reader, and why `len` is the product
 
@@ -1725,7 +1725,7 @@ governing rule as a per-instruction contract.
 
 `tables::base_entry` doesn't decide anything itself; it's a router. Its
 `match` splits `op` into ranges and hands each range to one small helper
-function, mirroring `exec.rs`'s own family split from week 2 almost
+function, mirroring `exec.rs`'s own family split from Chapter 2 almost
 exactly:
 
 - `0x0E`/`0x6E`/`0x7E` (`JMP`'s three addressing forms) are checked *first*
@@ -1748,7 +1748,7 @@ exactly:
   mode }`. `page10_entry`/`page11_entry` (§3.8) are the same shape again,
   one level down, keyed on the second byte instead of the first.
 
-The "data, not code" claim in the second bullet is worth seeing, since it is the
+The "data, not code" claim in the second bullet deserves a look, since it is the
 clearest example in the file of a table that really is a table
 ([`disasm/tables.rs:14-29`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/tables.rs#L14-L29)):
 
@@ -1774,8 +1774,8 @@ fn rmw_entry(nibble: u8, table: &[&'static str; 16], mode: Mode) -> Entry {
 Forty-eight opcodes' worth of mnemonics in three array literals, indexed by a
 nibble, with the illegal slots spelled `"???"` inline so the array stays
 sixteen wide and the index stays the nibble. `rmw_entry` is two lines because
-there is nothing left to do. Compare against week 2's `rmw_apply`, which
-dispatches the *behaviour* on the same nibble: two files, one numbering, and
+there is nothing left to do. Compare against Chapter 2's `rmw_apply`, which
+dispatches the *behavior* on the same nibble: two files, one numbering, and
 the numbering is the interface between them.
 
 Every one of those helpers falls through to `ILLEGAL` on an unmatched
@@ -1863,7 +1863,7 @@ Eleven `Mode` variants, eleven arms, no fallback needed because `Mode` is an
 `enum` — the match is exhaustive at compile time. Leave one variant unhandled
 and this file doesn't build. That is a guarantee `step()`'s `match` on a bare
 `u8` opcode can't get for free, since `u8` has 256 values and no enum-style
-exhaustiveness check, and it is a small argument for modelling the *rendering*
+exhaustiveness check, and it is a small argument for modeling the *rendering*
 side as an enum even though the *executing* side has to stay a byte.
 
 Notice too that the operand-byte consumption lives here, in the same expression
@@ -1884,8 +1884,8 @@ jump target instead of an effective address), and add it to `r.cur`, the
 reader's cursor *after* the offset bytes are consumed. That cursor is the
 disassembler's equivalent of `self.pc` after the operand fetch. It's the
 identical "relative to the next instruction" rule from `n,PCR` (§3.4), just
-applied to whole-instruction targets instead of an indexed EA — which is
-exactly why the `LBNE $F7AE` in the ROM excerpt below can be hand-verified with
+applied to whole-instruction targets instead of an indexed EA — which is why
+the `LBNE $F7AE` in the ROM excerpt below can be hand-verified with
 the same arithmetic exercise 3.8 asks for.
 
 **`Mode::RegPair`** is §3.7's nibble pair, rendered through `reg_name`, which
@@ -1911,13 +1911,13 @@ fn format_stack_mask(mask: u8, is_s_op: bool) -> String {
 }
 ```
 
-`is_s_op` is the disassembler's `to_s`/`from_s` — the exact same
+`is_s_op` is the disassembler's `to_s`/`from_s` — the same
 `OTHER_STACK_PTR`-means-a-different-register trick from §3.6, decided once
 by which mnemonic (`PSHS`/`PULS` vs `PSHU`/`PULU`) is being rendered
 rather than by which stack the CPU would actually touch, since the
 disassembler never touches any stack at all.
 
-One deliberate difference from §3.6 is worth flagging, because it looks like a
+One deliberate difference from §3.6 needs flagging, because it looks like a
 bug and isn't. `psh` pushes in the order `PC`, other-pointer, `Y`, `X`, `DP`,
 `B`, `A`, `CC`; `format_stack_mask` lists in the opposite order, low bit to
 high. The function's own doc comment says why: the mask is a bitset, not an
@@ -1926,7 +1926,7 @@ fact, and low-to-high is the one that matches how the mask constants are
 written down. [`stack_transfer.rs::pshs_all_registers_low_to_high_order`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/stack_transfer.rs)
 pins the convention with mask `$FF` rendering as `CC,A,B,DP,X,Y,U,PC`, and
 [`stack_transfer.rs::pulu_partial_mask`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/stack_transfer.rs) confirms mask `$16` (`A|B|X =
-$02|$04|$10`) renders as `A,B,X` through this exact function — the
+$02|$04|$10`) renders as `A,B,X` through this exact function. That is the
 same `A,B,X` string the ROM excerpt below shows for `PSHS A,B,X` at `$8C37`
 (mask also `$16`), since `format_stack_mask` doesn't care which of the
 four stack mnemonics called it except for the `OTHER_STACK_PTR` bit,
@@ -1934,8 +1934,8 @@ which this mask doesn't set.
 
 ### Two rendering choices worth knowing
 
-Before reading any disassembly listing produced by this module, two decisions
-about *presentation* will save you a double-take.
+Two decisions about *presentation* are worth knowing before you read any
+disassembly listing produced by this module; both will save you a double-take.
 
 **Constant offsets render in signed decimal, not hex.** The indexed renderer
 formats offsets with `format!("{offset},{reg}")` where `offset` is an `i16`, so
@@ -1975,13 +1975,13 @@ That is the invariant a disassembly pane depends on, stated as a test.
 ### A real rendered example
 
 Everything above is easier to trust once you've seen it run against actual
-ROM bytes instead of hand-picked test fixtures. `crates/mc6809/tests/disasm/
-rom_and_scan.rs` reads `roms/coco3.rom`, follows the real reset vector, and
-disassembles forward from the CoCo 3's actual entry point — the exact code
-the real machine executes on power-up, before any BASIC prompt exists. Nine
-bytes into that stream, the disassembler crosses a `$10`-prefixed long
-branch and an indexed load in the same handful of instructions, both
-concepts from this chapter:
+ROM bytes instead of hand-picked test fixtures.
+`crates/mc6809/tests/disasm/rom_and_scan.rs` reads `roms/coco3.rom`, follows
+the real reset vector, and disassembles forward from the CoCo 3's actual
+entry point — the exact code the real machine executes on power-up, before
+any BASIC prompt exists. Thirty-four bytes into that stream, the disassembler
+crosses a `$10`-prefixed long branch and an indexed load in the same handful
+of instructions, both concepts from this chapter:
 
 ```text
 8C1B: 1A 50        ORCC #$50
@@ -2012,13 +2012,13 @@ message rather than a wall of mismatched mnemonics.
 
 There is period texture in these sixteen lines if you know where to look. The
 very first instruction, `ORCC #$50`, sets bits `$40` and `$10` of the condition
-code register — the `F` and `I` masks from week 2's `cc` module — which is a
+code register — the `F` and `I` masks from Chapter 2's `cc` module — which is a
 power-on routine's way of saying that nothing may interrupt the next few
-instructions. Three
-instructions later, `STA $FF90` writes into the `$FF90–$FF9F` range that
-Chapter 1's I/O map labels "GIME control: INIT0/1, IRQs, timer, video" and
-assigns to weeks 5 and 8. This is the CoCo 3 configuring itself in the first
-microseconds after reset, and by week 8 you'll be able to read every line of
+instructions. Two instructions later, `STA $FF90` writes into the
+`$FF90–$FF9F` range that Chapter 1's I/O map labels
+"GIME control: INIT0/1, IRQs, timer, video" and
+assigns to Chapters 5 and 8. This is the CoCo 3 configuring itself in the first
+microseconds after reset, and by Chapter 8 you'll be able to read every line of
 it.
 
 Two lines are worth tracing by hand right now with what you know today.
@@ -2028,9 +2028,9 @@ is `BNE`'s low nibble (`6`) promoted to its long form, `LBNE`; the 16-bit
 offset `$6B6D` is added to the PC *after* the whole 4-byte instruction —
 `$8C41 + $6B6D = $F7AE` (wrapping `u16` arithmetic, same rule as every other
 relative branch). `decode_base` reads the `$10`, hands `$26` to `page10_entry`,
-which maps it through `LONG_BRANCH[6]`. That array index is worth noticing: the
+which maps it through `LONG_BRANCH[6]`. That array index is telling: the
 branch mnemonic comes out of a sixteen-entry table indexed by the opcode's low
-nibble, exactly like the RMW tables above, and exactly like week 2's
+nibble, exactly like the RMW tables above, and just as Chapter 2's
 `branch_taken` dispatches the *condition* on the same nibble.
 
 **`8C41: E6 61  LDB 1,S`.** `$E6` is `LDB` indexed; postbyte `$61` is
@@ -2053,7 +2053,7 @@ This is the concrete version of §3.7's argument for `TFR CC,B` over `PSHS CC`.
 
 Frame this module correctly for where the course is going: `Insn { len,
 mnemonic, operand }` — bytes consumed, name, rendered operand — is exactly
-the payload a debugger's disassembly pane needs, and week 16 builds that
+the payload a debugger's disassembly pane needs, and Chapter 16 builds that
 pane on top of this function. Every design decision here (never speculate
 past what an instruction needs, match the executor's byte count even for
 garbage, render offsets the way a human reads them) is a debugger
@@ -2077,7 +2077,7 @@ for `0 <= offset <= 15`, `n5 = offset + 32` for `-16 <= offset < 0`).
 
 **Full form** (bit 7 set): `byte = $80 | (rr << 5) | (i << 4) | mmmm`, where
 `i` is `1` for indirect and `mmmm` is the 4-bit sub-mode from the §3.3
-table. The `rr` field means the same thing in both forms — this is exactly
+table. The `rr` field means the same thing in both forms — this is
 `postbyte::REG_SHIFT` from §3.2 applied identically regardless of which
 layout the rest of the byte uses.
 
@@ -2104,7 +2104,7 @@ continuously — offsets, addresses — lives in the bytes after it.
 
 The full sixteen-row table, for register **X** (`rr = 00`). For Y, U, or S,
 add `$20`, `$40`, or `$60` respectively to *both* columns — the register
-field is the same three bits regardless of sub-mode, so the addend is
+field occupies the same two bits regardless of sub-mode, so the addend is
 constant across every row (verified above: `,Y` is `$A4`, `,U+` is `$C0`,
 `,S` is `$E4` — all §3.3's plain-`,R` byte `$84` or the auto-inc byte `$80`
 plus exactly the row's own `rr` addend):
@@ -2164,7 +2164,7 @@ lines); **[`regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/
 finally **[`tests/disasm/rom_and_scan.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/rom_and_scan.rs)**, for the disassembler pointed at
 real, ungenerated ROM bytes instead of hand-picked fixtures.
 
-Then run, and read while they run:
+Then run these tests, and read them while they run:
 
 ```
 cargo test -p mc6809 --test indexed
@@ -2279,7 +2279,7 @@ needs `roms/coco3.rom`, per this repo's `CLAUDE.md`.)
 
 ## What's next
 
-Week 4 finishes the CPU: `nmi`/`irq`/`firq` and the interrupt frames they
+Chapter 4 finishes the CPU: `nmi`/`irq`/`firq` and the interrupt frames they
 stack, using the exact `psh`/`pul` you read this week with fixed masks
 (`0xFF` full frame, `PC_CC_MASK` for FIRQ). The twelve-byte frame that
 `pshs_all_registers_cost_17` measured is the same twelve bytes an IRQ pushes,
@@ -2291,4 +2291,4 @@ three-legged validation strategy this codebase leans on instead: trace-diffing
 against a reference emulator, a self-checking exerciser ROM, and the
 hand-written corner tests you've read all month.
 
-After that the CPU is done, and week 5 opens the machine.
+After that the CPU is done, and Chapter 5 opens the machine.

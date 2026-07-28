@@ -16,7 +16,7 @@ use super::payload::{MediaRefs, SnapshotPayload, SnapshotPayloadRef};
 use super::{CONTAINER_MAGIC, CONTAINER_VERSION, HEADER_LEN, SCHEMA_VERSION};
 
 /// Cap on the inflated (decompressed CBOR) payload size [`gunzip`] will ever
-/// allocate, regardless of what a `.ccstate` file's gzip header claims —
+/// allocate, regardless of what a `.ccstate` file's gzip trailer claims —
 /// gzip's own length field is attacker-controlled and not to be trusted
 /// (a "decompression bomb": a tiny crafted file that inflates to gigabytes).
 /// 64 MiB comfortably covers today's real ceiling — 2 MB max RAM

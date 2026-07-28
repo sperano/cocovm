@@ -3,7 +3,7 @@
 *Week 16, the last week. Goal: watch fifteen weeks of architecture decisions
 turn into two features you can actually click on — the debugger panel and
 the save-state slots — and understand exactly which decision paid for which
-feature, and what each one cost to make. Then a real retrospective: not
+feature, and what each one cost. Then a real retrospective: not
 "what's next" (there is no next chapter), but an honest accounting of the
 whole course's design.*
 
@@ -14,9 +14,9 @@ whole course's design.*
 Every other chapter in this course introduced a subsystem: a chip, a
 protocol, a rendering path. This one introduces almost no new *mechanism*.
 The debugger is a `for` loop around `Machine::step_instruction` — the exact
-function week 6 built to make `run_field` resumable. Save states are one
-`#[derive(Serialize, Deserialize)]` on a struct that was designed, in week 1,
-specifically so that derive would work. If chapter 1's `Machine` had been
+function Chapter 6 built to make `run_field` resumable. Save states are one
+`#[derive(Serialize, Deserialize)]` on a struct that was designed, in Chapter 1,
+specifically so that derive would work. If Chapter 1's `Machine` had been
 built the "obvious" way — `Rc<RefCell<...>>` everywhere, a raw C-style
 back-pointer graph — this chapter would be the hardest one in the book,
 requiring a bespoke serialization format and a hand-written debugger hook
@@ -37,7 +37,7 @@ before reading the sections that redeem them:
 2. **Chapter 3** promised the disassembler — built to mirror the executor
    byte-for-byte, illegal opcodes rendered as `???` with correct length —
    would resurface as "the first piece of the debugger we'll meet again in
-   week 16."
+   Chapter 16."
 3. **Chapter 4** built the 1024-entry trace ring and the trace-diff workflow
    as *the* CPU-testing strategy for a chip with no reference test suite, and
    promised it would live inside the real debugger eventually.
@@ -45,7 +45,7 @@ before reading the sections that redeem them:
    actually running code, not just reading it — a real, documented gap: a
    breakpoint on an interrupt vector's target address can never fire,
    because interrupt entry and the handler's first instruction execute
-   inside one atomic call. That finding was left as "week 16 will ask you to
+   inside one atomic call. That finding was left as "Chapter 16 will ask you to
    make a decision about this." This chapter honors it rather than quietly
    contradicting it: the shipped debugger does not fix the gap. It documents
    it, the same way the code already does.
@@ -83,7 +83,7 @@ Notice what is *not* here: no second CPU loop, no "debug build" of the
 machine, no shadow interpreter. `Debugger` is a plain struct the frontend
 owns ([`crates/coco-egui/src/debugger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs) holds one), separate from
 `Machine` entirely — debug state doesn't live in the thing you'd serialize
-into a save state, which matters later in this chapter. Three pieces of
+into a save state, which matters later in this chapter. Three kinds of
 state live in it:
 
 ```rust
@@ -127,8 +127,8 @@ The distinction between `enabled: false` and "not in the map at all" is the
 whole reason `enabled` exists. Deleting a breakpoint throws away its hit count
 and its position in whatever list the UI is drawing; disabling it keeps both
 while making it inert. That is the difference between a checkbox and an `x`
-button in the Controls panel, and it is a distinction every debugger a
-professional has ever used makes, usually without ever explaining why.
+button in the Controls panel, and it is a distinction every professional
+debugger makes, usually without ever explaining why.
 
 `hits` is the other half of the same idea. A breakpoint that has stopped
 execution eleven times tells you something a breakpoint that has stopped it
@@ -148,7 +148,7 @@ careful read
 `HashMap::entry(pc).or_default()` inserts a fresh `Breakpoint` if the address
 has none and hands back the existing one if it does; either way the method then
 sets `enabled = true` and touches nothing else. The idempotence matters more
-than it looks, because §16.5's Run-to-Cursor feature adds a temporary
+than it might seem, because §16.5's Run-to-Cursor feature adds a temporary
 breakpoint at an address the user may already have a real breakpoint on, and
 then removes it again afterwards. Without "adding an existing breakpoint
 changes nothing but its enabled flag," that convenience feature would quietly
@@ -163,7 +163,7 @@ and that somewhere is a third field on this struct plus one more term in
 does is refuse to make it hard, which is a different and cheaper kind of
 foresight than building it speculatively.
 
-None of this data is where the interesting behaviour lives, though. A
+None of this data is where the interesting behavior lives, though. A
 breakpoint is inert until something compares it against a program counter, and
 the comparison happens in exactly one place: the run loop, which §16.3 reads in
 full.
@@ -171,7 +171,7 @@ full.
 ### Watchpoints, and the zero-cost-when-idle pattern
 
 Watchpoints are more interesting, because their design teaches a pattern
-worth internalizing beyond this codebase: **keep the debugger's book-keeping
+worth internalizing beyond this codebase: **keep the debugger's bookkeeping
 entirely out of the hot path except during the instant it's actually
 needed.**
 
@@ -259,7 +259,7 @@ fn read(&mut self, addr: u16) -> u8 {
 
 One `Option::is_some()` check, on a field that's `None` unless a debugger
 run with actual watchpoints is in flight. `Machine::run_field` — the plain,
-undebugged 262-times-a-second path every frame of normal emulation runs
+undebugged sixty-times-a-second path every frame of normal emulation runs
 through — never installs anything, never pays even that one branch's worth
 of attention to watchpoints. The design gives you the full generality of
 per-access watchpoints, compiled into the leanest table that can express
@@ -304,9 +304,9 @@ directly: a read watch "includes opcode/operand fetches and vector reads — the
 bus can't tell them apart." Set a read watchpoint on an address inside a code
 region and it fires on the CPU *fetching the instruction there*, not just on
 some other routine loading from it. That is not a limitation of this
-implementation so much as a fact about the hardware being modelled: the real
+implementation so much as a fact about the hardware being modeled: the real
 MC6809E's sixteen address pins carry no "this is an opcode fetch" bit, and
-week 1's insistence that the seam expose nothing the real chip couldn't express
+Chapter 1's insistence that the seam expose nothing the real chip couldn't express
 is what makes it impossible to fake one here. If you want "who reads this
 *variable*," pick an address in a data region and the distinction never comes
 up; if you want "when does execution reach here," that is what a breakpoint is
@@ -341,9 +341,9 @@ use, not with whether it's theoretically available.**
 ### The trace ring, home at last
 
 Chapter 4 built `TraceEntry` and a text format matching [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)
-specifically for trace-diffing against MAME/XRoar when the CPU had no bugs
-to blame and no reference test suite to check against. It now lives here,
-unchanged in spirit:
+specifically for trace-diffing against MAME/XRoar, back when a misbehaving CPU
+offered no obvious bug to blame and no reference test suite to check against.
+It now lives here, unchanged in spirit:
 
 ```rust
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -360,7 +360,7 @@ pub struct TraceEntry {
 }
 ```
 
-with a `format()` that matches [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)'s `log_state` exactly —
+Its `format()` matches [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)'s `log_state` exactly —
 verified by a test, `trace_entry_format_is_exact`, that hand-builds a CPU
 state and checks the output string byte for byte:
 
@@ -389,11 +389,11 @@ fn push_trace(&mut self, entry: TraceEntry) {
 }
 ```
 
-Recording only happens when `trace_enabled` is set (default `false` — like
-watchpoints, an opt-in cost: "a plain 'run' doesn't want" a snapshot taken
-every single instruction), and `export_trace()` turns the whole ring into
-text in the exact same format for pasting into a `diff` against a reference
-trace — the same workflow chapter 4 built, now reachable from inside a
+Recording only happens when `trace_enabled` is set. The default is `false`:
+like watchpoints, this is an opt-in cost, since "a plain 'run' doesn't want" a
+snapshot taken every single instruction. `export_trace()` turns the whole ring
+into text in the exact same format for pasting into a `diff` against a
+reference trace — the same workflow Chapter 4 built, now reachable from inside a
 running session instead of only from a standalone [`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs)
 binary.
 
@@ -410,7 +410,7 @@ binary.
 
 ---
 
-## 16.3 `run_until`: the whole run loop, and the ch06 quirk it inherits
+## 16.3 `run_until`: the whole run loop, and the Chapter 6 quirk it inherits
 
 Here is the entire run loop, [`debug.rs:371-407`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L371-L407), with nothing trimmed:
 
@@ -454,7 +454,8 @@ fn run_loop(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
 }
 ```
 
-Four `StopReason` variants, checked in this exact order every iteration:
+There are four `StopReason` variants, checked in this exact order on every
+iteration:
 
 ```rust
 pub enum StopReason {
@@ -466,12 +467,12 @@ pub enum StopReason {
 ```
 
 `FieldComplete` sitting next to `Breakpoint`/`Watchpoint` is the payoff of
-chapter 6's `StepEvent { kind, field_complete }` shape: the debugger's run
+Chapter 6's `StepEvent { kind, field_complete }` shape: the debugger's run
 loop can stop *exactly* where `run_field` would have stopped anyway, because
 both are reading the same flag off the same `StepEvent`. There is no
 separate "debugger scanline loop" — `run_until` is `for i in 0..max { ...
 m.step_instruction() ... }` with three early-exit checks wrapped around the
-one call chapter 6 spent an entire chapter making safe to call once, inspect,
+one call Chapter 6 spent its entire length making safe to call once, inspect,
 and call again forever.
 
 ### The first-iteration subtlety
@@ -498,17 +499,17 @@ fn run_until_resumes_off_parked_breakpoint() {
 
 The trade-off: a breakpoint set on the *current* PC when you resume is
 guaranteed skipped for that one call. If the same address is reached again
-later — a loop, a recursive call — it fires normally, because by then `i`
-has had a chance to be `0` on a *different* pass through the address. This
-is standard debugger behavior (GDB does the same thing for the same reason)
+later — a loop, a recursive call — it fires normally, because by then
+iteration `0`, the exempt one, has been spent on a *different* address. This
+is standard debugger behavior (GDB does the same thing for the same reason),
 but it's worth knowing you're reading a deliberate, tested design decision
 and not an oversight.
 
 ### The interrupt-vector breakpoint gap, honored
 
-Chapter 6 found this by actually running a program, not by reading code —
-worth restating here because this chapter is where the finding was always
-headed. `step_cpu_unit` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs), quoted in full below) redirects
+Chapter 6 found this by actually running a program, not by reading code, and
+it is worth restating here because this chapter is where the finding was
+always headed. `step_cpu_unit` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs), quoted in full below) redirects
 `cpu.pc` to an interrupt vector's target *and* executes that handler's first
 instruction inside a single call:
 
@@ -542,13 +543,15 @@ moment it ever looks at the PC. The CPU's program counter genuinely does
 equal the vector address for an instant, mid-call — but that instant is
 never externally observable as "the value of `m.cpu.pc` right before a
 `step_instruction` call," which is the only thing a PC breakpoint can check.
-**A breakpoint on an interrupt vector's target address cannot fire**, full
-stop, through this mechanism. Setting it one instruction later — the
+**A breakpoint on an interrupt vector's target address cannot fire** through
+this mechanism, full stop. Setting it one instruction later — the
 handler's *second* instruction — works normally, because by then a full
 `step_instruction` call has elapsed with the new PC sampled at its start.
 
-The debug module's own doc comment on `run_until` states this as a fact
-about the system, not a bug ticket:
+The debug module's own doc comment on `run_until` records the same ordering
+from the other direction — a breakpoint at an address the PC *reaches* wins
+over an interrupt that would have preempted that instruction — and states it
+as a fact about the system, not a bug ticket:
 
 ```rust
 /// Note on interrupt timing: [`Machine::step_instruction`] services a
@@ -558,19 +561,19 @@ about the system, not a bug ticket:
 /// that instruction is taken — the breakpoint wins.
 ```
 
-This chapter's code does not fix it. That's a real, intentional choice, and
-it's worth stating why rather than leaving it implicit: fixing it means
-checking breakpoints against the *new* PC immediately after
+This chapter's code does not fix the gap. That's a real, intentional
+choice, and it's worth stating why rather than leaving it implicit: fixing
+it means checking breakpoints against the *new* PC immediately after
 `service_interrupts` redirects it — a second breakpoint check inside
 `step_cpu_unit` itself, which currently knows nothing about breakpoints at
 all (that's `Debugger`'s job, one layer up). Threading debugger state down
 into the machine's innermost per-cycle loop is exactly the kind of coupling
-chapter 1's whole "debug state lives in `Debugger`, not `Machine`"
+Chapter 1's whole "debug state lives in `Debugger`, not `Machine`"
 separation was designed to avoid — `Machine` has no idea a debugger exists,
 which is also why it's the thing you serialize (§16.6) and the debugger
-isn't. The gap is a real limitation of a real design trade-off, not an
-oversight, and now you know exactly which line to change if you ever need
-to close it, and exactly what it would cost the rest of the design to do so.
+isn't. The gap is a real limitation of a deliberate design trade-off, not an
+oversight. Now you know exactly which line to change if you ever need to
+close it, and exactly what it would cost the rest of the design to do so.
 
 The same mechanism produces a second, quieter surprise in the trace ring:
 the `TraceEntry` recorded for the step that services an interrupt captures
@@ -596,44 +599,43 @@ self)`: reads have side effects on real hardware — a PIA data-register read
 clears that port's interrupt flag; the GIME's `$FF92`/`$FF93` status
 registers clear-on-read. A debugger that used `read()` to paint its memory
 view would be *lying about the state it just showed you and also changing
-that state while showing it to you* — the classic observer-effect bug,
-except worse than the physics metaphor, because on a real oscilloscope
-probing a PIA pin doesn't clear anything; on this bus, `read()` doing exactly
-that is *correct emulation*, which is precisely why the debugger cannot be
-allowed to call it.
+that state while showing it to you* — the classic observer-effect bug, except
+worse than the physics metaphor suggests. Probing a PIA pin with a real
+oscilloscope clears nothing; on this bus, `read()` doing exactly that is
+*correct emulation*, which is precisely why the debugger cannot be allowed to
+call it.
 
 ### The corruption scenario, made concrete
 
 Here's what "the debugger corrupts the machine" looks like as an actual
 sequence of events, not an abstraction. Stock Color BASIC idles on the PIA
-path (chapter 6): the 60 Hz vertical-sync interrupt sets PIA0's CB1 flag,
+path (Chapter 6): the 60 Hz vertical-sync interrupt sets PIA0's CB1 flag, and
 BASIC's IRQ handler reads PIA0's port B data register at `$FF02` specifically
 *to acknowledge that interrupt* — the read's side effect (clearing
 `cr::C1_FLAG`) is the acknowledgment; there is no separate "ack" register.
 That's what breaks BASIC out of its `BRA *` idle loop 60 times a second, the
-whole heartbeat this course has been building toward since week 6.
+whole heartbeat this course has been building toward since Chapter 6.
 
 Now imagine the memory panel used `SystemBus::read` to paint its hex dump,
-and the user happens to be hovering the mouse over (or the panel happens to
-be scrolled to) the row containing `$FF00–$FF03` — PIA0's four registers —
-at the exact moment a repaint fires, which on a debugger redrawing every
-frame is *constantly*. Every repaint would call `read(0xFF02)`, and every
-one of those calls would clear the just-latched CB1 flag before the ROM's
-own interrupt handler ever got a chance to read it and acknowledge it
-itself. From the emulated machine's point of view, the interrupt simply
-never happened — the flag was gone before the handler that was supposed to
-consume it ran. Depending on timing, either the ROM's `IRQ` handler runs
-anyway (dispatched on the *shared* IRQ line, which the GIME also drives) and
-finds nothing to acknowledge, or — worse, and this is the real failure mode
-— a genuinely pending 60 Hz field-sync interrupt gets silently eaten by the
-debugger's own repaint before BASIC's handler observes it at all. BASIC's
-clock (`TIMER`, and every routine that polls it) stops advancing, or stutters
-unpredictably, purely because a *read-only-looking* memory viewer was open.
-That is not a hypothetical: it is the literal mechanism `Bus::read(&mut
-self)`'s side effects create, applied to the literal address the ROM's own
-clock interrupt depends on, and it is exactly the bug `peek()` exists to make
-structurally impossible rather than merely "unlikely if the UI code is
-careful."
+with the user hovering the mouse over (or the panel simply scrolled to) the
+row containing `$FF00–$FF03` — PIA0's four registers — at the exact moment a
+repaint fires, which on a debugger redrawing every frame is *constantly*.
+Every repaint would call `read(0xFF02)`, and every one of those calls would
+clear the just-latched CB1 flag before the ROM's own interrupt handler ever
+got a chance to read and acknowledge it. From the emulated machine's point of
+view, the interrupt simply never happened — the flag was gone before the
+handler that was supposed to consume it ran. Depending on timing, either the
+ROM's `IRQ` handler runs anyway (dispatched on the *shared* IRQ line, which
+the GIME also drives) and finds nothing to acknowledge, or — worse, and this
+is the real failure mode — a genuinely pending 60 Hz field-sync interrupt gets
+silently eaten by the debugger's own repaint before BASIC's handler observes
+it at all. BASIC's clock (`TIMER`, and every routine that polls it) stops
+advancing, or stutters unpredictably, purely because a *read-only-looking*
+memory viewer was open. That is not a hypothetical: it is the mechanism
+`Bus::read(&mut self)`'s side effects create, applied to the exact address the
+ROM's own clock interrupt depends on, and it is precisely the bug `peek()`
+exists to make structurally impossible rather than merely "unlikely if the UI
+code is careful."
 
 ### The twin contract
 
@@ -652,7 +654,7 @@ Three things to notice in that sentence, in order of importance:
 1. **`&self`, not `&mut self`.** This is enforced by the type system, not by
    convention — a `peek` implementation *cannot* mutate `self` even by
    accident, because the borrow checker won't let it write to any field.
-   Compare that to `read(&mut self)`, which *could* mutate anything and the
+   Compare that to `read(&mut self)`, which *could* mutate anything: the
    type system offers no protection against a future edit accidentally
    adding a stray side effect to one code path but not its `peek` twin — the
    discipline there is "mirror the decode exactly," enforced by review and
@@ -695,7 +697,7 @@ IO_BASE..=PIA0_LAST => {
 ```
 
 `peek` doesn't invent a different answer from `read` for the *data* — it
-reproduces `read`'s exact data path (refresh port A's live pins the same
+reproduces `read`'s exact data path (refreshing port A's live pins the same
 way) while skipping only the *flag-clearing* half of what a real register
 read does. The debugger sees the same byte the CPU would see; it just
 doesn't get credited with having asked.
@@ -727,7 +729,7 @@ to check it is to put the two entry points side by side. Here is the whole of
     }
 ```
 
-Set that against `SystemBus::read`'s body from week 5 and the correspondence is
+Set that against `SystemBus::read`'s body from Chapter 5 and the correspondence is
 one-to-one: the same variant branch first, the same hardwired `$FFE0–$FFFF` ROM
 check second, the same I/O-page test third, the same ROM-window test fourth,
 and the same fall-through to `phys(addr)` and installed RAM. Only the leaf
@@ -749,7 +751,7 @@ by the compiler — which is precisely the cost §16.13 charges this design for 
 the end of the chapter.
 
 Two tests pin the whole contract down. First, that `peek` genuinely never
-mutates a PIA flag while `read` genuinely does:
+mutates a PIA flag while `read` does:
 
 ```rust
 #[test]
@@ -806,7 +808,7 @@ suggestion:
 
 Check the code and the rule holds everywhere reads happen: the disassembly
 panel feeds `disassemble(&mut |a| machine.bus.peek(a), addr)` — the closure
-handed to the disassembler (chapter 3's table-driven decoder, byte-for-byte
+handed to the disassembler (Chapter 3's table-driven decoder, byte-for-byte
 faithful to the executor) reads through `peek`, never `read`. The stack
 panel's return-address annotation does the same: `machine.bus.peek(addr)`
 for both the stack slot itself and the speculative disassembly of whatever
@@ -877,8 +879,8 @@ instruction count, so an ordinary run with nothing set always exits via
 `FieldComplete` well inside that budget; `StopReason::Step` — the budget
 exhausted with no field boundary and no trip — is the rare fallback that
 keeps looping within the same field rather than a case the caller has to
-special-case. The comment on this exact function documents a bug this
-design caught during development: conflating `FieldComplete` with "keep
+special-case. The comment on this exact function documents a bug found
+during development: conflating `FieldComplete` with "keep
 looping" (the way `run_until_stop`, its Step-Over/Run-to-Cursor sibling,
 correctly *does* want to keep going past field boundaries) silently ran
 extra fields per call — caught by a test named exactly for what it
@@ -890,7 +892,7 @@ guarantees, `run_field_with_no_breakpoints_matches_plain_run_field`.
 is the smallest panel and the one that drives everything else. Its entire job is
 to lay out a row of buttons, gate them on whether the machine is paused, and
 call one function per button — the panel itself contains no emulation logic at
-all, which is why it fits in eighty lines. The interesting material is the four
+all, which is why it fits in eighty lines. The substance is in the four
 step primitives sitting behind those buttons, and what makes them interesting
 is that not one of them is a wrapper around the same thing. Each answers a
 different question about "what does *step* mean here," and each pays a
@@ -920,12 +922,13 @@ Chapter 6 built `step_instruction` to return a `StepEvent` whose `kind` is
 either `Instruction { cycles }` or `HaltCycle`, because the machine's real unit
 of progress is "one CPU unit," and a CPU unit is sometimes a burned cycle
 rather than a retired instruction — that is what happens while the FD-502 holds
-HALT* low through a sector transfer (chapter 13). A Step In button that stopped
+HALT* low through a sector transfer (Chapter 13). A Step In button that stopped
 on a `HaltCycle` would appear to do nothing: same PC, same registers, one cycle
 gone. So the loop skips those and returns on the first real instruction. The
 `MAX_RAW_STEPS` bound of two million exists so that a machine wedged with HALT*
-permanently asserted gives the UI thread back rather than freezing the window,
-which is the same instinct every other bounded loop in this file follows.
+permanently asserted gives control of the UI thread back rather than freezing
+the window, which is the same instinct every other bounded loop in this file
+follows.
 
 Notice what Step In does *not* do: it never calls `Debugger::run_until`, so it
 never installs a watch table and never consults a breakpoint. The doc comment
@@ -934,7 +937,7 @@ the user's control." Stopping at a breakpoint you are already standing on, one
 instruction into a step you explicitly asked for, would be noise.
 
 **Step Over** is the first primitive that has to *understand* the instruction
-in front of it, and the way it acquires that understanding is chapter 3's
+in front of it, and the way it acquires that understanding is Chapter 3's
 disassembler
 ([`debugger.rs:203-215`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L203-L215)):
 
@@ -961,8 +964,8 @@ to Step In rather than build a second, near-identical path. The second is
 `insn.len`. The return address of a `JSR` is the address of the byte after the
 whole instruction, operands included, and getting that number right means
 knowing exactly how long a `JSR` with an indexed postbyte and a 16-bit offset
-is. Chapter 3 spent an entire chapter on that arithmetic, and this is where the
-investment gets spent: `pc.wrapping_add(u16::from(insn.len))` is the whole of
+is. Chapter 3 worked through that arithmetic at length, and this is where the
+investment pays out: `pc.wrapping_add(u16::from(insn.len))` is the whole of
 Step Over's cleverness, and it is only correct because the disassembler agrees
 with the executor byte for byte.
 
@@ -1012,15 +1015,15 @@ sampled by the caller" is not one of them, nor could it be without teaching the
 core about a condition only one frontend button cares about. So Step Out drives
 `step_instruction` raw, and the doc comment states the consequence rather than
 hiding it: a breakpoint or watchpoint that trips inside the callee will not
-stop this step. That is a real hole, it is written down where the next person
-to work on the file will see it, and closing it would mean either widening
+stop this step. That is a real hole, but it is written down where the next
+person to work on the file will see it, and closing it would mean either widening
 `StopReason` with a caller-supplied predicate or reimplementing Step Out on top
 of a temporary breakpoint that cannot be placed until the return address is
 known — which is, circularly, what Step Out exists to find out.
 
 **Step Scanline** is the one primitive with no counterpart in a general-purpose
 debugger, and it exists because this is an emulator for a machine whose
-interesting behaviour is organized by raster line
+interesting behavior is organized by raster line
 ([`debugger.rs:235-245`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L235-L245)):
 
 ```rust
@@ -1039,12 +1042,12 @@ interesting behaviour is organized by raster line
 
 `Machine::current_scanline` is a public accessor whose doc comment names its
 consumers explicitly: the debugger's status readout and this button, and
-nothing else in the crate, which uses the private `line` field directly. That
-is a small but telling piece of API design — the field stays private, and
+nothing else — the rest of the crate uses the private `line` field directly.
+That is a small but telling piece of API design — the field stays private, and
 exactly one read-only window into it is opened for exactly the caller that
 needs it.
 
-What the button buys you is chapter 9's material made steppable. A CoCo 3
+What the button buys you is Chapter 9's material made steppable. A CoCo 3
 split-screen effect works by reprogramming GIME registers partway down the
 frame, which means the *same* program produces different video depending on
 which scanline the CPU reached when it wrote. Step Scanline advances the
@@ -1054,7 +1057,7 @@ change is either correct or visibly wrong. Stepping by instruction to reach the
 same place would take a few hundred clicks per line.
 
 A fifth button, **Step Field**, needs no primitive at all — it calls
-`machine.run_field()` directly, the plain undebugged path from chapter 6, and
+`machine.run_field()` directly, the plain undebugged path from Chapter 6, and
 it is in the panel because "advance one whole frame" is occasionally the unit
 you want and there is nothing to add to it.
 
@@ -1113,10 +1116,10 @@ same budget. The only difference is which arm `FieldComplete` lands in:
 field's worth of emulation and no more; `run_until_stop` treats it as noise and
 keeps going, because a subroutine you asked to step over might take a hundred
 fields to return and the field boundary tells you nothing about that. Two
-functions that differ by one `match` arm is usually a sign one of them should
-be a parameter of the other — and the comment inside `run_field` records what
-happened when they *were* the same function, which is that fields silently ran
-in multiples. Sometimes the right refactor is to write the arm out twice and
+functions that differ by one `match` arm are usually a sign that one of them
+should be a parameter of the other — and the comment inside `run_field`
+records what happened when they *were* the same function, which is that
+fields silently ran in multiples. Sometimes the right refactor is to write the arm out twice and
 name the difference.
 
 Every one of the raw-stepping primitives is bounded — `MAX_RAW_STEPS =
@@ -1131,31 +1134,31 @@ emulated time, generous for any real call/run."
 
 `registers_ui` draws A/B/D/X/Y/U/S/PC/DP plus the eight CC flags as
 individually toggleable checkboxes (`E F H I N Z V C`, top to bottom
-matching the bit layout chapter 2 introduced), directly against
+matching the bit layout Chapter 2 introduced), directly against
 `machine.cpu.*` fields — no `peek` needed here, because the CPU's own
-registers have no side-effect-on-read concept at all; the debugger *is* the
-CPU state, not a read of it through a bus. Every editable widget is wrapped
+registers have no side-effect-on-read concept at all; the panel shows the
+CPU state itself, not a read of it through a bus. Every editable widget is wrapped
 in `ui.add_enabled(editable, ...)` where `editable = !running` — you can drag
 a register's hex value or flip a CC bit only while the machine is paused. The
 discipline is uniform across every panel (memory cells, register fields):
 *"editable only while paused; while running the panels still redraw every
-frame from live `peek`s, same as the main screen"* — you can always watch,
+frame from live `peek`s, same as the main screen"* — you can always watch;
 you can only touch when nothing is racing your edit.
 
 One row in that grid is deliberately not a widget. `D` renders as a plain
 label holding `(u16::from(machine.cpu.a) << 8) | u16::from(machine.cpu.b)`,
-because week 2 established that `D` is not a field on `MC6809` at all — it is a
+because Chapter 2 established that `D` is not a field on `MC6809` at all — it is a
 view of `A` and `B` concatenated, and the emulator stores the two halves. A
 debugger that offered an editable `D` box would have to decompose whatever you
 typed back into `a` and `b`, which is a perfectly writable five lines that
 would also be the only place in the program where `D` exists as a thing rather
 than as a spelling. The panel shows the derived value and makes you edit the
-registers that are real, which is the same choice the CPU struct made in week 2
+registers that are real, which is the same choice the CPU struct made in Chapter 2
 for the same reason.
 
 The condition codes get the opposite treatment. They *are* one real register —
 a single `u8` — but a byte of packed flags is close to unreadable as hex, so
-the panel unpacks it into eight labelled checkboxes and repacks on every
+the panel unpacks it into eight labeled checkboxes and repacks the byte on every
 toggle, from
 [`registers.rs:70-94`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger/registers.rs#L70-L94):
 
@@ -1187,25 +1190,25 @@ toggle, from
         });
 ```
 
-The masks are `mc6809::cc`'s own named constants — the same module week 2
+The masks are `mc6809::cc`'s own named constants — the same module Chapter 2
 introduced so that no arithmetic in the CPU ever writes `0x08` when it means
 `cc::IRQ_MASK` — reused here rather than re-derived. That is worth noticing as
 a habit rather than as a fact about this loop: a UI that redefines the bit
-positions it displays is a UI that can drift from the emulator it displays, and
+positions it shows is a UI that can drift from the emulator behind it, and
 the way you make drift impossible is to import the definition instead of
 copying it.
 
 Under the grid sit two read-only labels, `cycles` and `scanline`, and between
-them they are the most useful two numbers in the panel. The cycle count is
-week 1's "cycles are the currency" made visible: pause, note the number, step,
+them they hold the two most useful numbers in the panel. The cycle count is
+Chapter 1's "cycles are the currency" made visible: pause, note the number, step,
 note it again, and the difference is what the instruction cost. The scanline
 number is what tells you *where in the frame* the machine is parked, which is
-the coordinate every video bug in chapters 7 through 9 is measured in.
+the coordinate every video bug in Chapters 7 through 9 is measured in.
 
-### Disassembly: the payoff of chapter 3, verbatim
+### Disassembly: the payoff of Chapter 3, verbatim
 
 The disassembly panel calls the exact same `disassemble` function from
-`mc6809::disasm` that chapter 3 built to mirror the executor byte-for-byte
+`mc6809::disasm` that Chapter 3 built to mirror the executor byte-for-byte
 and render illegal opcodes as `???` with the correct byte length — the
 property that makes a scrolling disassembly view never desynchronize from
 the instruction stream even when it walks through data or an undocumented
@@ -1215,7 +1218,7 @@ opcode:
 let insn = disassemble(&mut |a| machine.bus.peek(a), addr);
 ```
 
-That one line is a small restatement of week 1's whole thesis, so it is worth
+That one line is a small restatement of Chapter 1's whole thesis, so it is worth
 unpacking rather than skimming. `disassemble` is declared as
 `pub fn disassemble(read: &mut impl FnMut(u16) -> u8, pc: u16) -> Insn` — it
 does not take a `Bus`, or a `SystemBus`, or a `Machine`. It takes *a way to get
@@ -1231,7 +1234,7 @@ know nor be able to object.
 
 Each row shows a breakpoint-toggle checkbox in the gutter, a `>` marker and
 yellow highlight on the current PC row, and click-to-select for
-Run-to-Cursor. Those three affordances are the panel's entire interaction
+Run to Cursor. Those three affordances are the panel's entire interaction
 budget, and each of them exists because of a specific thing the user is about to
 do: toggling the gutter checkbox calls `add_breakpoint`/`remove_breakpoint`
 directly, so the disassembly view doubles as the breakpoint editor; the yellow
@@ -1243,7 +1246,7 @@ guards against a zero-length decode ever stalling the scroll on a byte the
 disassembler can't classify, so even a corrupted or deliberately-`???`
 stream keeps scrolling forward one byte at a time rather than looping in
 place. That guard is the small, unglamorous kind of defensive code worth
-imitating: it costs one method call, it can never change behaviour on
+imitating: it costs one method call, it can never change behavior on
 well-formed input, and the failure it prevents is an infinite loop inside a
 repaint — which on an immediate-mode UI means a hung window rather than a
 misdrawn one.
@@ -1257,9 +1260,9 @@ address — and the view stays where you put it while the machine runs past it,
 which is what you want when you are watching one routine and stepping through
 another.
 
-### Memory: logical and physical, chapter 5's distinction made literal
+### Memory: logical and physical, Chapter 5's distinction made literal
 
-This is where chapter 5's MMU work becomes something you toggle with a
+This is where Chapter 5's MMU work becomes something you toggle with a
 button instead of computing by hand. `MemoryView` is a two-variant enum:
 
 ```rust
@@ -1272,7 +1275,7 @@ enum MemoryView {
 }
 ```
 
-The Logical path is just `machine.bus.peek(addr)` for sixteen columns times
+The Logical path is `machine.bus.peek(addr)`, called for sixteen columns by
 sixteen rows starting from a navigable top-of-view address — the same
 64K-address-space view a running 6809 program has, MMU translation and all,
 so a breakpoint stopped mid-BASIC and a memory dump of `$0400` show you the
@@ -1280,16 +1283,16 @@ exact byte the interrupted program would have read next.
 
 The Physical path bypasses `peek`/the MMU entirely and indexes
 `machine.bus.ram` directly by byte offset, with a `Block:` `DragValue`
-stepping through 8K blocks (`BLOCK_SIZE`, the exact granularity chapter 5's
+stepping through 8K blocks (`BLOCK_SIZE`, the exact granularity Chapter 5's
 GIME MMU translates in) up to `machine.bus.ram.len() / BLOCK_SIZE`. This is
 the view that answers a question the Logical view *cannot* answer: "which
 physical 8K block is MMU task 0 slot 2 actually pointing at, and what's
 really stored there regardless of what the CPU currently sees through it?"
 — exactly the question a 512K CoCo 3 program bank-switching through eight
-8K windows into 64 physical blocks needs answered, and exactly the
-distinction chapter 5 spent a whole chapter establishing (`phys = block<<13
-| addr&0x1FFF`) precisely so a debugger could someday expose both sides of
-it as separate, honest views rather than collapsing them into one address
+8K windows into 64 physical blocks needs answered. It is also exactly the
+distinction Chapter 5 established at length (`phys = block<<13
+| addr&0x1FFF`), precisely so that a debugger could someday expose both sides
+of it as separate, honest views rather than collapsing them into one address
 space that lies about which one you're looking at.
 
 Both views run through one function, and reading it is the fastest way to see
@@ -1344,7 +1347,7 @@ since the CPU never names that location. And writing calls `machine.poke(addr,
 val)` in the Logical view — the real, side-effect-bearing write from §16.4 —
 while the Physical view assigns into the RAM slice directly, because a physical
 byte offset has already left CPU address space and there is no `peek`/`poke`
-contract left to honour at that level.
+contract left to honor at that level.
 
 The amber highlight deserves a word, because it is the panel's one piece of
 genuine information design. A watchpoint you set is visible in the grid *before*
@@ -1370,7 +1373,7 @@ skim for "this looks like a call chain" without doing the arithmetic
 yourself.
 
 The whole panel is one loop, and the two `peek` calls at the top of it are a
-week-1 rule showing up in a place nobody would think to look for it
+Chapter 1 rule showing up in a place nobody would think to look for it
 ([`stack.rs:21-36`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger/stack.rs#L21-L36)):
 
 ```rust
@@ -1394,16 +1397,16 @@ week-1 rule showing up in a place nobody would think to look for it
 ```
 
 High byte first, low byte second, assembled with `(hi << 8) | lo`. This is
-`Bus::read_u16`'s body from week 1, written out by hand — and it has to be
+`Bus::read_u16`'s body from Chapter 1, written out by hand — and it has to be
 written out by hand, because `read_u16` is a default method on `Bus` and
 calling it would be calling `read`, which is exactly the thing this panel is
 forbidden to do. There is no `peek_u16`. So the panel reconstructs the 6809's
 big-endian word from two `peek`s, and gets to demonstrate, in four lines, why
-week 1 bothered to put the endianness rule in a default method in the first
+Chapter 1 bothered to put the endianness rule in a default method in the first
 place: the moment a caller can't use the shared implementation, the rule has to
 be restated correctly from memory, and every restatement is a chance to get it
-backwards. The `wrapping_add` on both addresses is the same house style, for
-the same reason a stack that has run down near `$FFFF` genuinely wraps on real
+backwards. The `wrapping_add` on both addresses is the same house style, and
+it is honest: a stack that has run down near `$FFFF` genuinely wraps on real
 hardware.
 
 ### Hardware: every latched register, decoded at a glance
@@ -1450,17 +1453,17 @@ named bit masks, from
     });
 ```
 
-Those constants are `coco_core::gime::init0`'s own — the same names chapter 5
-and chapter 8 used when they were deriving what each bit does, imported rather
+Those constants are `coco_core::gime::init0`'s own — the same names Chapter 5
+and Chapter 8 used when they were deriving what each bit does, imported rather
 than restated, exactly as the CC flag masks were in the Registers panel. The
 result is that `$FF90 = $6C` stops being a number you decode on paper and
-becomes eight labelled ones and zeros.
+becomes eight labeled ones and zeros.
 
 INIT1 gets the same treatment for its two interesting bits, `TINS` and `TR`.
 The panel then goes on to show the IRQ and FIRQ enable and pending masks
 alongside whether `IEN`/`FEN` are actually gating them, dumps the GIME timer
 reload/count/fast-clock state, and prints all eight MMU task-slot blocks for
-both tasks side by side — every register chapter 5 and chapter 8 spent pages
+both tasks side by side — every register Chapter 5 and Chapter 8 spent pages
 decoding from first principles, now read off the live machine in one glance.
 
 Two of those readouts pair a raw value with the thing that decides whether it
@@ -1473,18 +1476,18 @@ difference is one bit two registers away. The MMU block does the same:
 are never read without knowing whether the MMU is switched on and which of the
 two tasks the CPU is currently running under.
 
-Below that, both PIAs' A/B ports render in a shared table with a column for
+Below that, both PIAs' A/B ports render in a shared table with columns for
 `output`, `ddr`, `control`, `input`, and the raw C1-flag bit — the five fields
-chapter 10 established as the whole of a PIA port's state, laid out so PIA0 and
+Chapter 10 established as the whole of a PIA port's state, laid out so PIA0 and
 PIA1 can be compared row by row. The C1-flag column is the one to watch during
 any interrupt investigation, since it is the bit §16.4's corruption scenario is
-entirely about: watch it set on a field-sync edge and clear again the instant
+entirely about: see it set on a field-sync edge and clear again the instant
 BASIC's handler reads `$FF02`, sixty times a second, and the machine's
 heartbeat becomes something you can see rather than something you infer.
 
 A final line shows the cartridge-port line states — `HALT*`, whether the CART
 line ties to `Q`, whether an NMI is pending — the exact three signals
-chapter 13's FD-502 handshake and chapter 6's `step_cpu_unit`
+Chapter 13's FD-502 handshake and Chapter 6's `step_cpu_unit`
 HALT-before-interrupts ordering depend on. If a disk load ever wedges, those
 three booleans are where the investigation starts, because between them they
 say whether the CPU is being held, who is holding it, and what it will be
@@ -1500,11 +1503,11 @@ updating live, for free, the instant you pause.
 
 ## 16.6 Save states: the `.ccstate` container, byte by byte
 
-The debugger halves of this chapter were about looking at a machine without
+The debugger half of this chapter was about looking at a machine without
 disturbing it. The rest is about writing one down and getting it back — which
 turns out to be a file-format problem, a compatibility problem, and a security
 problem in roughly equal parts, and only incidentally a serialization problem.
-The serialization itself was settled in week 1 by the derive on `Machine`;
+The serialization itself was settled in Chapter 1 by the derive on `Machine`;
 everything that remains is the packaging around it, and the packaging is where
 all the decisions are.
 
@@ -1516,7 +1519,7 @@ magic "CCSTATE" (7 bytes) | container_version: u8 | schema: u32 LE | gzip(CBOR p
 ```
 
 Twelve header bytes (`HEADER_LEN = CONTAINER_MAGIC.len() + 1 + 4 = 12`),
-then a gzip stream. Reading `codec.rs::save` top to bottom builds exactly
+then a gzip stream. `codec.rs::save`, read top to bottom, builds exactly
 that:
 
 ```rust
@@ -1552,7 +1555,7 @@ explicit about why there are two:
   even find the schema field.
 - **`SCHEMA_VERSION`** — the *machine-tree* schema: what `SnapshotPayload`
   (and everything nested inside `Machine`) looks like. This one is meant to
-  almost never move either — see §16.7 — because the whole point of the
+  almost never move either — see §16.8 — because the whole point of the
   evolution rules is to absorb ordinary struct growth without a version
   bump at all. "Everything the four rules... can absorb should NOT bump it."
 
@@ -1637,7 +1640,7 @@ Merging all three into a generic "could not load file" is the default outcome
 of not thinking about it, and it is the reason so much software responds to a
 corrupt input with a sentence that helps nobody.
 
-The length check earning its place first in that condition is worth one more
+Why the length check comes first in that condition is worth one more
 line of attention. `bytes.len() < HEADER_LEN` runs before the magic comparison
 because the comparison slices `bytes[..7]`, and slicing past the end of a slice
 panics. On a path whose entire job is to consume untrusted bytes, the ordering
@@ -1651,7 +1654,7 @@ rather than merely possible.
 ### Why CBOR, not bincode/postcard
 
 The module doc gives the real reason, and it's worth sitting with because it
-determines whether the evolution rules in §16.7 are even possible to state:
+determines whether the evolution rules in §16.8 are even possible to state:
 
 > CBOR carries field names with the data, so serde's evolution tools
 > (`#[serde(default)]`/`alias`) work across versions instead of every struct
@@ -1665,12 +1668,12 @@ land in the wrong fields silently. CBOR (when serde derives it the way this
 codebase does — as a map) instead writes `{"a": ..., "b": ..., "c": ...}`
 with real field-name keys. That single difference is what makes "add a field
 with `#[serde(default)]`" a *decodable* operation at all: a decoder reading
-an old file just never sees the new key in the map, so `#[serde(default)]`
-supplies the value serde's derive macro would otherwise have nowhere to get
-it from. Positional formats can't offer this without hand-written
+an old file simply never sees the new key in the map, so `#[serde(default)]`
+supplies the value the derive macro would otherwise have nowhere to get.
+Positional formats can't offer this without hand-written
 versioning schemes bolted on top; CBOR gets it from serde's ordinary derive
 machinery for free, which is the whole reason this format was chosen over
-faster, smaller binary alternatives — the compatibility contract (§16.7) is
+faster, smaller binary alternatives — the compatibility contract (§16.8) is
 the entire point, and it's cheaper to buy with the right wire format than to
 build by hand on top of the wrong one.
 
@@ -1699,17 +1702,17 @@ fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, SnapshotError> {
 }
 ```
 
-A gzip stream's own header carries an uncompressed-size hint, and that hint
-is exactly as trustworthy as the rest of the file — which is to say, not at
-all, because a hostile `.ccstate` is free to lie about it. A few kilobytes of
-all-zero bytes compress to almost nothing and decompress to gigabytes — the
-classic "decompression bomb." `Read::take(MAX_PAYLOAD_BYTES)` wraps the
+A gzip stream carries its own uncompressed size in its *trailer* — the
+`ISIZE` field, the last four bytes — and that number is exactly as
+trustworthy as the rest of the file, which is to say not at all, because a
+hostile `.ccstate` is free to lie about it. A few kilobytes of all-zero
+bytes compress to almost nothing and decompress to gigabytes — the classic
+"decompression bomb." `Read::take(MAX_PAYLOAD_BYTES)` wraps the
 decoder in an adapter that simply refuses to hand back more than the cap,
-*regardless of what the stream claims about its own length* — the
-allocation this code ever performs is bounded by `MAX_PAYLOAD_BYTES`
-(64 MiB — chosen with headroom over "2 MB max RAM plus every other device's
-state," per the constant's own comment) no matter what a hostile input's
-gzip header says. The `if out.len() == MAX_PAYLOAD_BYTES` branch then
+*regardless of what the stream claims about its own length*. Any allocation
+this code performs is bounded by `MAX_PAYLOAD_BYTES` (64 MiB — chosen with
+headroom over "2 MB max RAM plus every other device's state," per the
+constant's own comment). The `if out.len() == MAX_PAYLOAD_BYTES` branch then
 distinguishes two cases that look identical after the `take` — "a payload
 that happened to be exactly the cap size" versus "a payload that's actually
 bigger and got silently truncated" — by probing for one more byte past the
@@ -1725,8 +1728,8 @@ either succeeding or panicking with an out-of-memory abort.
 > wraps any reader so it reports EOF after `limit` bytes, however many the
 > underlying source actually has. It's usually introduced as a convenience
 > for "read the first N bytes of a stream," but here it's doing real
-> security work: the *only* thing standing between a crafted gzip header and
-> an unbounded allocation is this adapter refusing to ask the decompressor
+> security work: the *only* thing standing between a crafted gzip size field
+> and an unbounded allocation is this adapter refusing to ask the decompressor
 > for more than the cap, ever, regardless of what the compressed stream
 > claims to contain. The pattern generalizes past gzip: any time you're
 > decoding a length-prefixed or self-describing format from untrusted bytes,
@@ -1758,8 +1761,8 @@ pub struct MediaRef {
 `MediaRefs` collects one of these (or a `Vec` of them, for multi-drive
 devices) per media *kind* a snapshot might reference: the system ROM,
 ROM-bearing cartridges (keyed by Multi-Pak slot), floppies, VHDs, DriveWire
-images, tape. None of their actual bytes ever enter `SnapshotPayload`. Two
-separate, equally load-bearing reasons, both stated in the module doc:
+images, tape. None of their actual bytes ever enter `SnapshotPayload`, for
+two separate and equally load-bearing reasons, both stated in the module doc:
 
 1. **Copyright.** Super Extended Color BASIC, Disk BASIC, any commercial
    cartridge ROM — these are copyrighted binaries this project doesn't have
@@ -1840,21 +1843,21 @@ place in the whole engine where "make illegal states unrepresentable" is
 consciously traded away, and the reason it is traded away is that the
 serialized shape is a *published interface* — the compatibility contract from
 §16.6 applies to it, and a type that changes shape when a constant changes
-cannot honour that contract.
+cannot honor that contract.
 
 The `#[serde(default)]` on every single field is evolution rule 2 applied
 pre-emptively, before any field has ever needed it. A snapshot from a build
 that had no `drivewire` field at all still decodes: the key is simply absent
 from the CBOR map, and the default supplies an empty `Vec`, which reads as "no
 DriveWire drives were mounted." That is precisely the "reproduces the old
-behaviour" standard rule 2 demands, and it costs one attribute per field to
-have arranged in advance.
+behavior" standard rule 2 demands, and arranging it in advance costs one
+attribute per field.
 
 ### Hashing without reading
 
 The hash is what makes this safe rather than merely convenient. `sha256_file`
-streams the file in 8 KiB chunks and `MediaRef::verify` checks a reference
-against the filesystem right now:
+streams the file in 8 KiB chunks, and `MediaRef::verify` checks a reference
+against the filesystem as it stands right now:
 
 ```rust
 pub fn verify(&self) -> MediaCheck {
@@ -1902,9 +1905,9 @@ there' call for the same response." The frontend's answer to both is to prompt
 for the file, so distinguishing them would produce two code paths that do the
 same thing.
 
-If you save a state, then swap the floppy in drive 0 for a different `.dsk`
-at the same path, then load that snapshot back — `verify` catches exactly
-this. The frontend's `read_if_present` surfaces a `Mismatch` as a warning
+Save a state, swap the floppy in drive 0 for a different `.dsk` at the same
+path, then load that snapshot back: `verify` catches exactly this.
+The frontend's `read_if_present` surfaces a `Mismatch` as a warning
 ("`floppy (...) doesn't match the hash recorded in this save state; loaded
 anyway`") rather than a hard failure, because a swapped-but-present file is
 recoverable information the user might have intended (a deliberately
@@ -1941,7 +1944,7 @@ field existed hits a required key that's missing from the CBOR map, and
 fails to load over one new `bool`. `#[serde(default)]` (or a named default
 function for a non-`Default`-able type, or a non-zero sentinel) tells serde
 "if this key is absent, use this value instead of failing" — and the rule's
-insistence on "reproduces the old behaviour" matters precisely because the
+insistence on "reproduces the old behavior" matters precisely because the
 wrong default is worse than a load failure: it loads *successfully* into
 the wrong state, silently, with no error to catch it.
 
@@ -1995,13 +1998,13 @@ diagnostic, the moment any future change to `Machine`'s tree violates one of
 the four rules against a file that has already shipped. The fixture uses a
 small hand-assembled synthetic ROM rather than the real Color BASIC image
 specifically so it's safe to commit — booting the real ROM copies its
-32K image into RAM during cold start (the same fact `snapshot_roundtrip.rs`'s
-doc comment documents), which would embed copyrighted bytes into a test
+32K image into RAM during cold start (a fact `snapshot_roundtrip.rs`'s
+doc comment records too), which would embed copyrighted bytes into a test
 fixture forever.
 
 That synthetic ROM is worth looking at, because it is a small exercise in
 designing a test input for what it must *prove* rather than for what it
-resembles. It is thirteen instructions, and every one of them is there to make
+resembles. It is eight instructions, and every one of them is there to make
 some specific field of the machine tree non-default at snapshot time
 ([`snapshot_fixtures.rs:49-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_fixtures.rs#L49-L66)):
 
@@ -2062,7 +2065,7 @@ explains what the cap is really watching for:
 ```
 
 128K of mostly-repetitive RAM gzips to a few kilobytes, so a fixture anywhere
-near 200 KB means something has started travelling inside snapshots that
+near 200 KB means something has started traveling inside snapshots that
 shouldn't be — a disk image, a tape, a ROM. It is a size check standing in for
 a policy check, and it works because the policy has a reliable physical
 signature: files that contain media are enormously bigger than files that
@@ -2076,10 +2079,10 @@ turning it into a paragraph in a contributing guide.
 
 `snapshot::restore` ([`crates/coco-core/src/snapshot/restore.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/restore.rs)) turns a
 decoded `SnapshotPayload` plus caller-supplied `MediaSources` bytes into a
-live `Machine`, in nine explicitly ordered, explicitly documented steps —
-worth reading the doc comment on `restore` itself as a checklist, because
-the ordering is load-bearing (step 5, the WD1773 transfer bound-check,
-literally cannot run before step 4 reattaches disk data — "this can't run
+live `Machine`, in nine explicitly ordered, explicitly documented steps. The
+doc comment on `restore` is worth reading as a checklist, because
+the ordering is load-bearing: step 5, the WD1773 transfer bound-check,
+literally cannot run before step 4 reattaches disk data ("this can't run
 any earlier," the comment says). Here is that checklist, verbatim, from
 [`restore.rs:11-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/restore.rs#L11-L33):
 
@@ -2137,7 +2140,7 @@ and what happens to time.
 Chapter 1 flagged `Machine::framebuffer` as `#[serde(skip)]` — derived
 scratch, cheap to rebuild, not worth bloating every snapshot to persist.
 That was the easy case: a `Vec<u8>` that regrows on demand costs nothing to
-skip. The harder cases, scattered through chapters 11 and 14, are fields
+skip. The harder cases, scattered through Chapters 11 and 14, are fields
 that are skipped not because they're *cheap to rebuild* but because they
 were **never data in the first place** — they're live handles to something
 outside the machine entirely, and no amount of clever serialization could
@@ -2179,7 +2182,7 @@ Three concrete examples of "this was never data":
   — which is honest (`RestoreNote::RtcPlaceholderTime` says so explicitly)
   rather than silently wrong.
 - **The DriveWire clock**, same shape: a live source of "now," not a value.
-- **The Deluxe RS-232 endpoint** — chapter 14's `unsafe`-with-`SAFETY`-comments
+- **The Deluxe RS-232 endpoint** — Chapter 14's `unsafe`-with-`SAFETY`-comments
   PTY code, `posix_openpt`/`grantpt`/`unlockpt` calls that hand back a raw
   file descriptor connected to the host's pseudo-terminal subsystem. There is
   no serializable representation of "an open file descriptor to a live PTY
@@ -2188,17 +2191,17 @@ Three concrete examples of "this was never data":
   than any attempt to resurrect the old connection, and
   `RestoreNote::Rs232EndpointLoopback` tells the frontend to say so.
 
-Every one of these is a case chapter 1's closing parenthetical anticipated:
+Every one of these is a case Chapter 1's closing parenthetical anticipated:
 "a couple of host-facing edges bend [the no-shared-ownership] rule... both
 excluded from save states." Save states are where that exclusion becomes
-directly visible as a *behavior*, not just a type-system fact — the note
+directly visible as a *behavior*, not just a type-system fact. The note
 system (`RestoreNote`) exists specifically so "this came back in a
 documented placeholder form" is a typed, matchable value the frontend can
-react to individually (the egui frontend filters out
-`RtcPlaceholderTime` from the user-facing toast, since by the time the toast
-would show, the RTC has *already* been re-synced — see the very next line of
-`apply_restored_machine`) rather than a string a caller would have to
-pattern-match against wording that might change.
+react to individually, rather than a string a caller would have to
+pattern-match against wording that might change. The egui frontend, for one,
+filters `RtcPlaceholderTime` out of the user-facing toast, since by the time
+the toast would show, the RTC has *already* been re-synced — see the very
+next line of `apply_restored_machine`.
 
 The enum itself is three variants and a `Display` impl, and its doc comment is
 unusually explicit about why the type exists at all
@@ -2260,23 +2263,23 @@ self.field_debt = 0.0;
 self.type_ahead.clear();
 ```
 
-`field_debt` is week 15's fractional wall-clock accumulator
+`field_debt` is Chapter 15's fractional wall-clock accumulator
 ([`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)): every real-time frame adds `dt * field_rate_hz()` to it,
 and the app runs as many whole fields as that debt covers, keeping the
 fractional remainder for next time — the mechanism that decouples "how often
 the host repaints" from "how many emulated fields have actually run," so a
-120 Hz monitor doesn't run the CoCo at 120 fields a second. If a save state
-had been loaded three days after it was saved, and `field_debt` (or the
-`Instant` `last_update` was measured against) survived the restore
-unchanged, the very next frame after loading would see an enormous wall-clock
+120 Hz monitor doesn't run the CoCo at 120 fields a second. Suppose a save
+state were loaded three days after it was saved, and `field_debt` (or the
+`Instant` that `last_update` was measured against) survived the restore
+unchanged. The very next frame after loading would see an enormous wall-clock
 gap since `last_update` and interpret it as a debt of three days' worth of
-emulated fields — the app would either hang running millions of fields
+emulated fields. The app would either hang running millions of fields
 trying to "catch up," or (if the existing `MAX_FIELDS_PER_UPDATE` guard
 caught it) silently skip straight to "now" while the emulated machine's
 internal clock lurches forward by three days' worth of fields in one
 repaint, which is not what "load a save state" means to anyone. Resetting
 `field_debt` to zero and clearing `last_update` is the same discipline
-week 15 already applies to an ordinary pause/resume — "drop any time owed to
+Chapter 15 already applies to an ordinary pause/resume — "drop any time owed to
 the wall clock so resuming doesn't 'catch up' across the load, like a
 pause," in the code's own comment — save-state restore is simply another
 event that must not let real elapsed time leak into emulated time.
@@ -2302,7 +2305,7 @@ mode is always a typed `SnapshotError`, never a panic.
 
 The file's own module doc explains its methodology precisely: most of the
 fields it wants to corrupt have no `pub` setter that could ever reach an
-out-of-range value through the normal API — the normal protocol dispatch
+out-of-range value through the normal API — the protocol dispatch
 that populates them "never produces one." So these tests build a *valid*
 snapshot through the real `snapshot::save` call, then hand-mutate the raw
 CBOR bytes directly — "the same way a hex editor on a real `.ccstate` file
@@ -2322,14 +2325,14 @@ fn mutate_cbor(cbor: &[u8], path: &[&str], new_value: Value) -> Vec<u8> {
 }
 ```
 
-Four concrete attacks this file mounts, each against a real bug class:
+The file mounts four concrete attacks, each against a real bug class:
 
 1. **`ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic`** — sets an
    SSC (Sound/Speech Cartridge) load buffer's `cap` field to `999_999`. The
    normal code path (`Ssc::feed_load`) indexes `self.ram[cursor]` for every
    `cursor` up to `cap`, with no bounds check of its own against the real RAM
    size (`512` bytes) — because on the *legitimate* path, `cap` can never
-   legitimately exceed that. A tampered payload removes that guarantee, and
+   exceed it. A tampered payload removes that guarantee, and
    without a restore-time check this would be a straightforward out-of-bounds
    panic (or, in a hypothetical unsafe implementation, worse) the moment the
    machine resumed and the SSC's load state machine advanced.
@@ -2338,10 +2341,11 @@ Four concrete attacks this file mounts, each against a real bug class:
    an `index` field set to `999_999` against a 256-byte sector buffer.
 3. **`cassette_bit_out_of_range_is_invalid_payload_not_a_panic`** — sets the
    cassette decoder's `bit` field (which indexes into a byte via a right
-   shift, `byte >> bit`) to `9`. In Rust, shifting a `u8` by 9 either panics
-   in a debug build or is unspecified behavior in release — a shift amount
-   past the type's bit width is exactly the kind of thing that reads as
-   "surely never happens" until a hostile input makes it happen.
+   shift, `byte >> bit`) to `9`. In Rust, shifting a `u8` by 9 panics in a
+   debug build and becomes a masked shift — the shift amount wrapped to the
+   type's width — in release ones; a shift amount past the type's bit width
+   is exactly the kind of thing that reads as "surely never happens" until a
+   hostile input makes it happen.
 4. **`nested_multipak_is_invalid_payload_not_a_panic`** — this one isn't even
    a hand-edited byte; it's a shape the *public API itself* doesn't prevent.
    `Cart: From<MultiPak>` makes a `MultiPak` itself `impl Into<Cart>`, so
@@ -2393,7 +2397,7 @@ pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotEr
 The RAM-length check in the middle is the quiet load-bearing one. Every later
 step assumes `bus.ram.len()` matches what `config.memory` declares — physical
 address masking is `% self.ram.len()`, so a payload claiming 512K while
-carrying a 128K buffer would not crash, it would *alias*, and the machine would
+carrying a 128K buffer would not crash; it would *alias*, and the machine would
 run with a memory map that quietly folds in on itself. Catching the
 contradiction here turns an entire class of "restored machine behaves
 inexplicably" into one sentence naming both numbers.
@@ -2462,7 +2466,7 @@ once an interrupt fires or a timer wraps — rather than as a vague "the
 machines ended up different somehow" a million steps later with no way to
 localize the cause.
 
-Why `step_instruction` (chapter 6's resumable primitive) and not the bare
+Why `step_instruction` (Chapter 6's resumable primitive) and not the bare
 CPU-only `step`? The comment states it precisely: `step_instruction` drives
 "the full per-scanline pipeline (GIME timer ticks, PIA field-sync IRQs,
 audio-event flushing, cartridge ticking, and the resumable
@@ -2482,7 +2486,7 @@ the exact number of CPU cycles burned by the exact same interrupts landing
 on the exact same scanlines. That property doesn't hold by accident; it
 holds because every piece of state the running machine's execution actually
 depends on — registers, RAM, GIME registers, PIA latches, the mid-field
-`line`/`line_cycles_spent`/`field_scan` bookkeeping chapter 6 hoisted onto
+`line`/`line_cycles_spent`/`field_scan` bookkeeping Chapter 6 hoisted onto
 `Machine` specifically to make resumability possible — made it into the
 serde tree, and everything that didn't (the `#[serde(skip)]` fields) is
 either genuinely derived (safe to omit) or genuinely host-only (re-injected
@@ -2495,7 +2499,7 @@ would catch it if any of those judgment calls were wrong.
 
 This worktree, like every clone or worktree of this repository, has no
 `roms/` directory — real ROM images are git-ignored and present only on the
-maintainer's primary checkout, exactly as chapter 1 warned. That makes this
+maintainer's primary checkout, exactly as Chapter 1 warned. That makes this
 a useful, honest demonstration of which tests are ROM-dependent and which
 aren't, rather than a hypothetical. Running the suites this chapter is built
 on, in this exact worktree:
@@ -2542,19 +2546,19 @@ and continues trace-identically, using a hand-assembled synthetic ROM that
 was written specifically so this test *never* needs a real, copyrighted ROM
 image to prove the compatibility contract holds.
 
-The pattern is exactly what chapter 1's "ROMs are local-only" warning
+The pattern is exactly what Chapter 1's "ROMs are local-only" warning
 predicted, and it doubles as a small confirmation of this chapter's own
 argument: the tests that matter most for proving the *engine's* correctness
-under adversarial input — hostile_payload's four attacks, the header
+under adversarial input — `hostile_payload.rs`'s four attacks, the header
 tests, the golden-fixture gate — were deliberately written to need no
 copyrighted material at all, which is exactly why they're the ones still
 green in a bare worktree with no `roms/` directory.
 
 ---
 
-## 16.13 Retrospective: the week-1 decisions, scored
+## 16.13 Retrospective: the Chapter 1 decisions, scored
 
-Fifteen weeks ago this course opened with two abstractions: the `Bus`
+Fifteen weeks ago this course opened with two decisions: the `Bus`
 trait, and a ban on `Rc<RefCell<...>>` in the machine's state tree. Here is
 the honest accounting — what each decision (and a few later ones) bought,
 where in this course it paid off, and what it genuinely cost. A retrospective
@@ -2563,15 +2567,15 @@ naming the price is the point.
 
 **The `Bus` trait, `read(&mut self)`.**
 *Bought:* honest PIA/GIME side effects with zero interior-mutability
-ceremony (week 1); a CPU testable against a bare `FlatBus` with no machine
-attached, run in ~200 tests with zero CoCo code compiled in (week 1, week
+ceremony (Chapter 1); a CPU testable against a bare `FlatBus` with no machine
+attached, run in ~200 tests with zero CoCo code compiled in (Chapter 1, week
 2); and, this week, the entire `peek()`/`read()` twin-contract that makes a
 debugger safe to open. *Cost:* every device with a read side effect now
 needs two implementations kept in sync by hand — `read`'s real path and
 `peek`'s side-effect-free mirror — with only a test
 (`peek_matches_read_for_ram_and_rom`, and device-specific ones like
-`peek_does_not_clear_pia_flags`) rather than the type system enforcing that
-they agree on the *data*, only that `peek` can't mutate. A future device
+`peek_does_not_clear_pia_flags`) to enforce that they agree on the *data*,
+since the type system enforces only that `peek` can't mutate. A future device
 added without its own `peek` arm silently falls through to
 `SystemBus::io_peek`'s `_ => OPEN_BUS` catch-all — wrong, not a compile
 error — unless someone remembers to add it and a test catches the gap.
@@ -2583,13 +2587,13 @@ day one, not retrofitted ([DESIGN.md](https://github.com/sperano/cocovm/blob/mai
 you avoid `Rc`/`RefCell`/raw pointers... and miserable to retrofit"). *Cost:*
 every place a subsystem needs several fields of `self` at once — GIME video
 scanout needing the GIME's registers, RAM, and the framebuffer
-simultaneously (chapter 1, [`render.rs:56`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L56)) — pays for it in destructuring
+simultaneously (Chapter 1, [`render.rs:56`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L56)) — pays for it in destructuring
 boilerplate (`let SystemBus { gime, ram, .. } = &mut self.bus;`) or free
 functions taking exactly the disjoint borrows they need instead of `&mut
 self` methods, spread across every rendering chapter (7 through 9). And the
 rule has two genuine, documented exceptions where the host forces shared
 ownership anyway — the printer capture sink (`Rc<RefCell<Vec<u8>>>`,
-chapter 14) and the Deluxe RS-232 PTY bridge's raw `libc` calls (chapter
+Chapter 14) and the Deluxe RS-232 PTY bridge's raw `libc` calls (chapter
 14) — both explicitly excluded from the serde tree and explicitly
 re-injected on restore (§16.9), which is extra restore-path code that
 exists purely because the ownership rule *couldn't* be made absolute at the
@@ -2597,8 +2601,8 @@ edge where the emulator meets the host OS.
 
 **The headless core (`coco-core` renders into `Vec<u8>`, never opens a
 window).**
-*Bought:* the PPM lab bench (chapters 7–9, no GPU needed for any rendering
-test); the real-ROM boot tests running in CI with no display (chapter 6);
+*Bought:* the PPM lab bench (Chapters 7–9, no GPU needed for any rendering
+test); the real-ROM boot tests running in CI with no display (Chapter 6);
 and, indirectly, this chapter's golden-fixture gate and lockstep test, which
 would be essentially impossible to write reliably against a windowed,
 frame-timed application. *Cost:* every piece of state a human actually wants
@@ -2613,16 +2617,16 @@ every frontend this core might ever grow.
 
 **Instruction-granular cycle accounting, not cycle-exact.**
 *Bought:* a CPU simple enough to write, read, and trust in three weeks
-(chapters 2–4) instead of the multi-month effort a cycle-exact 6809 core
+(Chapters 2–4) instead of the multi-month effort a cycle-exact 6809 core
 would demand; good enough to boot real BASIC, run real games, and pass every
 functional test this course has built. *Cost, precisely stated, not
-hand-waved:* chapter 4 found — by grepping for `self.cycles` and finding it
+hand-waved:* Chapter 4 found — by grepping for `self.cycles` and finding it
 touched in exactly two places in the entire `mc6809` crate, neither one
 inside `take_interrupt` — that **interrupt entry costs zero cycles** in this
 emulator's own accounting. `nmi()`/`irq()`/`firq()` push a full or partial
 stack frame (up to twelve bus writes) and never once increment `self.cycles`
 doing it; `psh`'s own byte-accurate return value is computed and then
-discarded every time `take_interrupt` calls it. As chapter 4 put it: "an
+discarded every time `take_interrupt` calls it. As Chapter 4 put it: "an
 externally-delivered interrupt is, as far as this CPU crate's clock is
 concerned, free." That's not a bug hiding — it's a direct, named consequence
 of the instruction-granular choice [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 states as policy from the
@@ -2630,11 +2634,11 @@ start, and it's exactly where a trace-diff against real MAME (which *does*
 cost this) would start disagreeing on cycle counts while still agreeing on
 every register value. Nothing this course's own software needs has ever
 required that precision — CoCo software mostly cares which *scanline* a
-handler lands on, the granularity chapter 6 already provides, not whether
+handler lands on, the granularity Chapter 6 already provides, not whether
 the handler's first instruction lands 10 or 19 cycles after the line was
 asserted — but "nothing needed it yet" is a fact about this course's test
 suite, not a proof the gap can never matter. The live-register rendering
-chapters 8–9 built (registers re-read every scanline rather than latched
+Chapters 8–9 built (registers re-read every scanline rather than latched
 once per field) claws back *some* of the precision a coarser design would
 have lost outright — mid-frame palette and border changes land on the right
 line even though mid-*instruction* timing is still out of reach — but that's
@@ -2659,7 +2663,7 @@ breakpointable" turned out to be in tension, and this codebase chose
 resumability; the gap is the receipt.
 
 **Fidelity as an explicit, subsystem-by-subsystem budget ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md)'s
-table, chapter 1).**
+table, Chapter 1).**
 *Bought:* effort spent exactly where real software would notice — cycle-
 timestamped audio events because the DAC's actual output waveform depends on
 *when within a scanline* the CPU wrote, cycle-granular cassette FSK edges
@@ -2677,8 +2681,8 @@ report will read "this fidelity line was in the wrong place for this one
 piece of software," and someone will have to move it.
 
 The through-line across all six: **every one of these decisions was cheap
-to make in week 1 and would have been expensive or impossible to retrofit
-in week 16.** That asymmetry — decide the shape early, pay a small
+to make in Chapter 1 and would have been expensive or impossible to retrofit
+in Chapter 16.** That asymmetry — decide the shape early, pay a small
 continuous tax for it every week after, versus discover the need for it
 late and rewrite the foundation — is the single idea this whole course has
 been trying to teach through sixteen weeks of specific chips instead of
@@ -2689,7 +2693,7 @@ fifteen weeks of concrete evidence for it.
 
 ## 16.14 Where you go next
 
-There is no week 17. Three honest directions from here, in ascending order
+There is no Chapter 17. Three honest directions from here, in ascending order
 of commitment:
 
 1. **Write your own core against the same `Bus` trait.** The two-method
@@ -2714,7 +2718,7 @@ of commitment:
    9 already covers, and true cycle-exact mid-instruction timing — the exact
    gap this chapter's retrospective just spent a paragraph pricing out.
    Every one of those is a real, bounded, well-scoped piece of work, sitting
-   on top of an architecture built, from week 1, specifically so that adding
+   on top of an architecture built, from Chapter 1, specifically so that adding
    to it wouldn't require rebuilding anything underneath.
 
 Whichever you pick, you now know where every seam in this codebase is, and
@@ -2843,10 +2847,10 @@ debugger and trace ring from this chapter to explain, with cited addresses
 and register values from an actual session (not from documentation), *one
 specific thing that program does with the hardware* that you did not
 already know before this course. Candidates that tend to produce a good
-answer: a mid-frame palette or border split (chapter 9) caught live in the
+answer: a mid-frame palette or border split (Chapter 9) caught live in the
 Hardware panel as the border color changes; a keyboard-scan routine watched
-byte-by-byte through a PIA-address watchpoint (chapter 10); a disk boot
-sequence traced through the WD1773's command dispatch (chapter 13) using
+byte-by-byte through a PIA-address watchpoint (Chapter 10); a disk boot
+sequence traced through the WD1773's command dispatch (Chapter 13) using
 Step Over to skip past the sector-copy loop and Step In to walk through the
 handshake itself. Write it up as you would a debugging session for a
 colleague: what you set (breakpoints, watchpoints), what you saw, and what

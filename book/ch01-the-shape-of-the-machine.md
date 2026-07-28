@@ -12,7 +12,7 @@ exists because of Rust.*
 There is a particular kind of intimidation that comes with the phrase
 "write an emulator." It sounds like the sort of project that requires a
 signal-processing background, or at least a deep familiarity with the
-electrical behaviour of 1980s silicon. It doesn't. What it requires is
+electrical behavior of 1980s silicon. It doesn't. What it requires is
 patience, a data sheet, and a willingness to be relentlessly literal
 about what each chip does. The reason emulators look mysterious from the
 outside is that finished ones are large — this repository is around fifty
@@ -23,9 +23,9 @@ same.
 
 That shape is what this chapter is about. This week does not write a
 single opcode. Instead it establishes the vocabulary and the mental model
-that the next fifteen weeks are built on: what the three moving parts of
-any emulated device are, the five chips that divided the CoCo 3's work
-among themselves, and the two design decisions in this codebase that,
+that the next fifteen weeks are built on: the three moving parts of any
+emulated device, the five chips that divided the CoCo 3's work among
+themselves, and the two design decisions in this codebase that,
 had they gone the other way, would have made the rest of the project
 miserable. One of those decisions comes from the 6809's own hardware
 interface. The other comes from Rust's borrow checker, and it is the one
@@ -42,9 +42,9 @@ emulator — any emulator, for any machine — is three things: some state,
 a loop that advances the state, and a seam through which the state
 touches the outside world. That's the whole idea. Everything else is
 detail work. It's worth taking each of the three seriously for a moment,
-because once you can see them in one device you can see them in all of
-them, and the rest of this book becomes an exercise in pattern
-recognition rather than an exercise in memorization.
+because once you can see them in one device you see them in every device,
+and the rest of this book becomes an exercise in pattern recognition
+rather than one in memorization.
 
 ### State
 
@@ -54,7 +54,7 @@ them — a mirror. When the data sheet says the 6809 has an 8-bit
 accumulator called A, the emulator has a `u8` called `a`, and that is the
 entire relationship.
 
-Here is the proof, and it is worth stating that this is real code from
+Here is the proof — real code from
 [`crates/mc6809/src/lib.rs:139`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L139),
 not a teaching simplification trimmed for the book. This is the entire
 CPU of the CoCo 3:
@@ -84,22 +84,23 @@ assembly. `a` and `b` are the accumulators that pair up into `D`. `x` and
 and system. `pc` is the program counter, `dp` the direct page register
 that most programs set once and then ignore, and `cc` the condition code
 byte whose bits are read as `E F H I N Z V C`. That's it. Fourteen
-registers' worth of bytes, a cycle counter, and two bookkeeping fields —
-`state` and `nmi_armed` — that we'll unpack properly in week 4 when
+bytes' worth of registers, a cycle counter, and two bookkeeping fields —
+`state` and `nmi_armed` — that we'll unpack properly in Chapter 4 when
 interrupts arrive.
 
 What matters right now is what *isn't* there. There is no microcode
 table. There is no hidden simulation engine, no instruction pipeline, no
 "CPU context" object with a hundred fields of scaffolding. Nine registers
 and three bits of housekeeping is the honest description of an MC6809E,
-and the struct is the honest description of the struct. If you were
-expecting the CPU to be the hard part of this project, adjust that
-expectation now: the CPU is roughly three weeks of careful table-copying
-from a data sheet. The GIME will take you longer.
+and the struct above is nothing more than that description in Rust. If
+you were expecting the CPU to be the hard part of this project, adjust
+that expectation now: the CPU is roughly three weeks of careful
+table-copying from a data sheet. The GIME will take you longer.
 
-Even the one field that isn't a register is smaller than you'd guess.
-`state` is a three-variant enum, and its variants are named after two
-instructions that rarely turn up in everyday 6809 code, from
+Even the one field that is neither a register nor a counter is smaller
+than you'd guess. `state` is a three-variant enum, and its variants are
+named after two instructions that rarely turn up in everyday 6809
+code, from
 [`lib.rs:123`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L123):
 
 ```rust
@@ -119,9 +120,9 @@ pub enum State {
 ```
 
 The 6809 could stop itself and wait for the outside world, which is more
-than most eight-bit CPUs of its generation could manage gracefully. We'll
-build both halt states properly in week 4. For now, notice only that a
-capability which sounds like it needs special machinery is modelled as
+than most 8-bit CPUs of its generation could manage gracefully. We'll
+build both halt states in Chapter 4. For now, notice only that a
+capability which sounds like it needs special machinery is modeled as
 one enum with three cases, and that Rust's `#[default]` attribute lets a
 derived `Default` pick `Running` without anyone writing a constructor. If
 you find yourself reaching for a state machine class, look again — it's
@@ -166,15 +167,15 @@ seriously, one at a time. And here is the claim that makes the rest of
 this course tractable: *each of those devices is also just state, a loop,
 and a seam.* The shape recurs at every level.
 
-Take one example on faith for now, since week 12 delivers the details.
+Take one example on faith for now, since Chapter 12 delivers the details.
 Consider the cassette interface — a device that sounds, on the face of
 it, like it should require real signal processing. Its **state** is a
 decoded byte stream, a playback position, and a motor flag. Its **loop**
 is "every N cycles, the current bit's tone flips the input line." Its
 **seam** is a single bit that PIA1 hands to the CPU when the ROM polls
-it. A tape deck, with motor physics and audio frequencies and the ROM's
-own demodulation algorithm sitting on the other end of it, reduces to the
-same three-part shape as the CPU does.
+it. A tape deck, with its motor physics, its audio frequencies, and the
+ROM's own demodulation algorithm sitting on the other end of it, reduces
+to the same three-part shape as the CPU does.
 
 So when you meet a new device in this course — and you will meet a dozen
 — train yourself to ask three questions before anything else. What is the
@@ -209,12 +210,12 @@ updates — leaves better than a ninety-nine percent idle margin. You could
 be ten times sloppier than that and still not notice.
 
 What you buy with that margin is readability. An interpreted core can be
-single-stepped, traced, breakpointed, and read aloud. When week 16 builds
+single-stepped, traced, breakpointed, and read aloud. When Chapter 16 builds
 a debugger that stops mid-instruction and shows you the register file, it
 can do that because there's no compiled artifact standing between the
-source and the behaviour. A course — and a debugger — cares about those
-properties enormously, and cares about performance headroom we will never
-spend not at all.
+source and the behavior. A course — and a debugger — cares enormously
+about those properties, and not at all about performance headroom we will
+never spend.
 
 ### Cycles are the currency
 
@@ -228,7 +229,7 @@ instruction-set tables on every 6809 reference card ever made, and they
 are not decoration — they are the unit of account for the entire
 machine. Video timing, audio sample rates, cassette bit
 periods, and floppy byte pacing are all downstream conversions from the
-cycle count. When week 6 builds the timing loop, "run one scanline" will
+cycle count. When Chapter 6 builds the timing loop, "run one scanline" will
 literally mean "run instructions until roughly fifty-seven cycles have
 elapsed," and "run one video field" will mean doing that 262 times.
 
@@ -281,7 +282,7 @@ cost-engineering.
 
 The **MC6809E** is the CPU, and it is the only chip in the machine that a
 6809 programmer already understands from the inside. Its addressing modes
-and its flags are familiar ground. When we get to week 2 and start
+and its flags are familiar ground. When we get to Chapter 2 and start
 reading the dispatch `match`, that existing knowledge does most of the
 work; the Rust is the easy half.
 
@@ -301,17 +302,17 @@ package:
 - The **video scanout** hardware. This replaced the CoCo 1 and 2's MC6847
   Video Display Generator while remaining able to imitate it. That
   imitation mode is not a curiosity — it is what the green text screen
-  every CoCo 3 booted into actually was. Week 7 has the receipts.
+  every CoCo 3 booted into actually was. Chapter 7 has the receipts.
 - An **interrupt controller and a 12-bit timer**, plus a compatibility
   layer that answers to the old SAM chip's addresses. The timer is the
-  thing that makes cursor blink and 60 Hz music possible without the CPU
-  counting instructions.
+  thing that makes a blinking cursor and 60 Hz music possible without the
+  CPU counting instructions.
 
 Then there are **two MC6821 PIAs** — Peripheral Interface Adapters. A PIA
 is a deeply unglamorous chip: two 8-bit parallel ports with direction
 control and a pair of handshake lines, and nothing else. Tandy wired them
-to everything cheap. The keyboard matrix hangs off them. So does the
-joystick comparator, the six-bit sound DAC, the cassette input and motor
+to everything cheap. The keyboard matrix hangs off them. So do the
+joystick comparator, the 6-bit sound DAC, the cassette input and motor
 relay, and the printer's bit-banged serial line. When a BASIC program
 did `PRINT PEEK(65280)` to read the keyboard, it was reading PIA0's data
 register at `$FF00`. When the cassette relay clicked, PIA1 had just
@@ -327,7 +328,7 @@ brought out to the connector. This is worth internalizing early, because
 it demystifies a whole category of hardware. A disk controller is not
 special hardware as far as the CoCo is concerned. It's a cartridge that
 decodes a few addresses in the I/O page and yanks the HALT and NMI lines
-at the right moments. Week 13 will build one, and the surprise will be
+at the right moments. Chapter 13 will build one, and the surprise will be
 how little the rest of the machine has to know about it.
 
 ### The one table that ties the course together
@@ -335,11 +336,11 @@ how little the rest of the machine has to know about it.
 The 6809 sees 64K, and the top 256 bytes of that space — `$FF00` through
 `$FFFF` — are the **I/O page**, where every device in the machine
 appears. This one page is the meeting point of every subsystem in this
-book. You'll internalize the map properly in week 5 when we implement the
-address decoder, but it's worth a bookmark right now, if only so the
-chapter numbers give you a sense of the shape of the journey:
+book. You'll internalize the map properly in Chapter 5 when we implement the
+address decoder, but it's worth a bookmark right now, if only so the week
+numbers give you a sense of the shape of the journey:
 
-| Address       | Device                                | Course week |
+| Address       | Device                                | Chapter     |
 |---------------|---------------------------------------|-------------|
 | `$FF00–$FF03` | PIA0 — keyboard, joystick, sync IRQs  | 10          |
 | `$FF20–$FF23` | PIA1 — DAC, cassette, VDG mode bits   | 10–12       |
@@ -351,19 +352,20 @@ chapter numbers give you a sense of the shape of the journey:
 | `$FFE0–$FFFF` | ROM: interrupt vectors                | 4           |
 
 `POKE 65497,0` is the poke CoCo owners learned early to make a program
-run twice as fast, and the poke that broke something the first time about
-as often as it worked. Decimal 65497 is `$FFD9`, which lands squarely in
-the SAM-compatibility row. By week 6 you'll know exactly what that poke
-does to the emulator's main loop, and the answer is delightfully
-anticlimactic: it changes one integer. The thing that felt like magic
-turns out to be a multiplier on a scanline's cycle budget.
+run twice as fast, and also the poke that, on the first attempt, broke
+something about as often as it worked. Decimal 65497 is `$FFD9`, which
+lands squarely in the SAM-compatibility row. By Chapter 6 you'll know
+exactly what that poke does to the emulator's main loop, and the answer
+is delightfully anticlimactic: it changes one integer. The thing that
+felt like magic turns out to be a multiplier on a scanline's cycle
+budget.
 
 ### Why the GIME answers to a dead chip's addresses
 
 That "SAM-compatibility strobes" row deserves a paragraph of its own,
 because it explains a pattern you'll meet again and again in this course
-— and, frankly, a pattern you'll meet in every piece of consumer hardware
-that ever had a successor.
+— and, frankly, in every piece of consumer hardware that ever had a
+successor.
 
 The CoCo 1 and CoCo 2 had no GIME. They had two separate chips doing the
 GIME's jobs. The **MC6883 SAM**, the Synchronous Address Multiplexer,
@@ -378,7 +380,7 @@ thousands of programs in the wild already poking the SAM's registers in
 the `$FFC0–$FFDF` range and flipping the VDG's mode bits through PIA1,
 and one of those programs was the BASIC ROM itself. Breaking them was not
 an option. So the GIME keeps answering at the old addresses, imitating
-the old chips' behaviour well enough that software written for a machine
+the old chips' behavior well enough that software written for a machine
 that no longer exists continues to work.
 
 What is genuinely satisfying is that this codebase mirrors the
@@ -390,7 +392,7 @@ routes the very same addresses into the GIME's own compatibility layer in
 [`crates/coco-core/src/gime/sam_compat.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/sam_compat.rs).
 Two implementations of one legacy interface, because that is what Tandy
 shipped. Backward compatibility is not a footnote in this machine; it is
-the reason the CoCo 3 boots into a 1980 video mode (week 7), and it is
+the reason the CoCo 3 boots into a 1980 video mode (Chapter 7), and it is
 why half the GIME's register map exists at all.
 
 ### Decoding the odd clock
@@ -411,19 +413,19 @@ const CPU_HZ: f64 = 894_886.0;
 Nobody sat down and decided the CPU should run at 894,886 Hz. What
 somebody decided was that the machine would plug into a television, and
 that decision cascaded. The 28.636363 MHz master crystal is eight times
-the NTSC colour subcarrier of 3.579545 MHz, which is the frequency the
-video output has to respect if colour is going to survive the trip to
+the NTSC color subcarrier of 3.579545 MHz, which is the frequency the
+video output has to respect if color is going to survive the trip to
 the television. Divide the crystal by 32 and you get the CPU clock.
 Divide it by 16 instead — which is exactly what the SAM's speed bit does
 — and you get the 1.79 MHz the speed poke unlocked.
 
 Every timing constant in the machine hangs off that one crystal. The
-GIME's fast timer clock, for instance, is documented in the very next
-constant in the same file as running at 3.579545 MHz, "exactly 4× the
-0.89 MHz CPU clock." Video timing, CPU timing, and cassette baud rates
-are all integer relationships to a frequency chosen for television
+GIME's fast timer clock, for instance, is set by the very next constant
+in that same file, at 3.579545 MHz — "exactly 4× the 0.89 MHz CPU
+clock." Video timing, CPU timing, and cassette baud rates are all
+integer relationships to a frequency chosen for television
 compatibility. That shared origin is not a coincidence you can ignore;
-it's the reason week 6 can drive the entire machine off a single cycle
+it's the reason Chapter 6 can drive the entire machine off a single cycle
 counter without any of the subsystems drifting apart.
 
 ---
@@ -431,7 +433,7 @@ counter without any of the subsystems drifting apart.
 ## 1.3 Load-bearing abstraction #1: the `Bus` trait
 
 We've established that the CPU needs a seam to reach the outside world.
-Now let's look at the actual seam, decide why it is shaped the way it is,
+Now let's look at the actual seam, see why it is shaped the way it is,
 and notice the three separate design decisions hiding in what looks like
 a trivial interface.
 
@@ -483,25 +485,25 @@ On real hardware, reading absolutely does change things, and the CoCo is
 full of examples. Two you'll meet within a few weeks:
 
 - Reading a PIA data register **clears that PIA's interrupt flag**
-  (week 10). This isn't a quirk to work around — the ROM's 60 Hz
+  (Chapter 10). This isn't a quirk to work around — the ROM's 60 Hz
   interrupt handler *depends* on it. The handler reads `$FF02` for the
   specific purpose of acknowledging the interrupt, and if your emulated
   read doesn't clear the flag, the machine takes the same interrupt again
   immediately and never makes forward progress.
 - Reading the GIME's IRQ status register at `$FF92` returns the pending
-  interrupt bits *and clears them* in the same access (week 8). Read it
+  interrupt bits *and clears them* in the same access (Chapter 8). Read it
   twice and the second read tells you nothing happened, which is the
   whole point.
 
 Now imagine `read` had been declared `fn read(&self, addr: u16) -> u8`.
-You could not model either behaviour without reaching for *interior
+You could not model either behavior without reaching for *interior
 mutability* — Rust's escape hatch for mutating through a shared
 reference, spelled `Cell` or `RefCell`. Those types would have to appear
 inside the PIA, inside the GIME, inside anything that can have a
 read side effect, and every field they wrapped would lose the ability to
 be read as a plain value. You'd be paying a syntactic and cognitive tax
 on every device in the machine to preserve a fiction that the hardware
-never honoured in the first place.
+never honored in the first place.
 
 By putting mutability in the seam's contract on day one, every device is
 free to have honest read side effects with no ceremony at all. A PIA
@@ -514,7 +516,7 @@ memory viewer, hovering over `$FF02` and refreshing sixty times a second,
 had better not eat a pending interrupt every frame. So there is a
 *separate* path for that, an explicitly side-effect-free `peek()` in
 [`crates/coco-core/src/bus/peek.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/peek.rs),
-which week 16 builds on. Two functions with two contracts, and both
+which Chapter 16 builds on. Two functions with two contracts, and both
 contracts visible in the type signatures rather than in a comment nobody
 reads. When you're deciding how to model something ugly, "make the ugly
 thing explicit and give the clean case its own name" beats "pretend the
@@ -563,7 +565,7 @@ impl Bus for FlatBus {
 ```
 
 Six lines, and the entire CPU test suite has somewhere to live. The
-harness that the crate's roughly two hundred tests share wraps that bus
+harness shared by the crate's roughly two hundred tests wraps that bus
 and the CPU together in a struct with a wonderfully unambitious name, from
 [`crates/mc6809/tests/common/mod.rs:7`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/common/mod.rs#L7):
 
@@ -599,10 +601,10 @@ address, and points `PC` at them. To test `LDA $0400`, you call
 timing, no boot sequence. Just three bytes and a question.
 
 Meanwhile the real machine implements the identical trait on
-`SystemBus`, which owns all the actual devices — that's week 5's work.
+`SystemBus`, which owns all the actual devices — that's Chapter 5's work.
 Same CPU code, byte for byte, running in both worlds. The practical
 consequence is worth stating plainly, because it will save you days: when
-a CPU test fails, you *know* it's the CPU, because there is no machine in
+a CPU test fails, you *know* it's the CPU, since there is no machine in
 the room to blame.
 
 > **Rust corner: monomorphization, or why this costs nothing.**
@@ -619,10 +621,10 @@ the room to blame.
 > perfectly reasonable technique in general, and this codebase does use
 > trait objects where the flexibility is worth it. But memory access
 > happens several times per instruction, on the hottest path in the
-> entire program, and there we get the abstraction genuinely for free.
-> The cost is paid in compile time and binary size, not in the run loop.
-> When you see `impl Trait` in this codebase, read it as "resolved at
-> compile time."
+> entire program, and monomorphization makes the abstraction there
+> genuinely free. The cost is paid in compile time and binary size, not
+> in the run loop. When you see `impl Trait` in this codebase, read it as
+> "resolved at compile time."
 
 > **Rust corner: default methods.** Notice that `read_u16` and
 > `write_u16` have bodies *inside the trait declaration*. Anything that
@@ -651,8 +653,9 @@ the room to blame.
 
 > **Rust corner: `#![forbid(unsafe_code)]`.** The first line of actual
 > code in
-> [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L11),
-> line 11, before a single `mod` or `use`, is `#![forbid(unsafe_code)]`.
+> [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L11)
+> — line 11, before a single `mod` or `use` — is
+> `#![forbid(unsafe_code)]`.
 >
 > The distinction from `#![deny(...)]` matters. A `deny` can be
 > overridden further down by an `#[allow]` attribute on some function
@@ -663,7 +666,7 @@ the room to blame.
 >
 > This is a deliberate stake in the ground. An emulator is *exactly* the
 > kind of program where the C tradition reaches for casts, unions, and
-> aliased buffers: you're modelling raw memory, so why not use raw
+> aliased buffers: you're modeling raw memory, so why not use raw
 > memory? Because the bugs you get from that are precisely the bugs you
 > cannot debug — silent corruption that manifests three subsystems away
 > as a wrong pixel. This crate takes the opposite position and has never
@@ -684,7 +687,7 @@ one address; the chip had no vocabulary for anything richer. By giving
 our emulated CPU exactly the same vocabulary, we guarantee that it cannot
 accidentally depend on information the real chip never had. If the real
 6809 couldn't express something in a single bus transaction, ours can't
-either, and any behaviour we get right, we get right for the right
+either, and any behavior we get right, we get right for the right
 reason.
 
 There's a practical dividend as well. Because the seam is two methods,
@@ -698,12 +701,11 @@ CPU in a Vectrex emulator, and the answer is pleasantly short.
 
 This is the section where Rust stops being an implementation detail and
 starts shaping the architecture. It's also the part that first-time
-emulator authors in this language most reliably get wrong — usually
-discovering the problem three weeks in, with a half-built machine that
-won't compile and no obvious way forward that doesn't involve rewriting
-everything.
+emulator authors in this language most reliably get wrong. They tend to
+discover the problem three weeks in, with a half-built machine that won't
+compile and no obvious way forward short of rewriting everything.
 
-Far better to meet it in week 1, on paper, than in week 5 with sunk
+Far better to meet it in Chapter 1, on paper, than in Chapter 5 with sunk
 cost.
 
 ### The problem
@@ -727,7 +729,7 @@ pub struct Machine {
 
 Perfectly reasonable. Now try to run one instruction.
 
-The CPU has to mutate itself, so you need `&mut self.cpu`. The CPU also
+The CPU has to mutate itself, which means `&mut self.cpu`. The CPU also
 needs a bus, and the bus is *the rest of the machine* — and by Decision 1
 above, reads mutate, so it must be `&mut` too. So you write the obvious
 thing:
@@ -803,15 +805,15 @@ self.cpu.step(&mut self.bus)
 
 and the borrow checker is perfectly happy. Rust's borrow analysis
 operates on *field paths*, not just on whole values: it can see that
-`self.cpu` and `self.bus` name disjoint pieces of memory, so a shared
-borrow of one and a mutable borrow of the other alias nothing and are
-allowed to coexist. No `Rc`. No `RefCell`. No `unsafe`. The machine stays
-a plain tree of owned values, and a single struct boundary placed along
-the borrow line makes the entire architecture compile.
+`self.cpu` and `self.bus` name disjoint pieces of memory, so mutable
+borrows of both alias nothing and are allowed to coexist. No `Rc`. No
+`RefCell`. No `unsafe`. The machine stays a plain tree of owned values,
+and a single struct boundary placed along the borrow line makes the
+entire architecture compile.
 
 Take a moment to appreciate how little this cost. The fix is not a
 pattern, or a framework, or a clever lifetime signature. It's a decision
-about which fields live in which struct — made once, in week 1, with the
+about which fields live in which struct — made once, in Chapter 1, with the
 borrow checker's rules in mind rather than against them.
 
 > **Rust corner: `Box<[u8]>`, not `Vec<u8>`.** Look at how `SystemBus`
@@ -843,11 +845,11 @@ borrow checker's rules in mind rather than against them.
 > `ram: vec![0u8; memory.bytes()].into_boxed_slice()`. You build a `Vec`
 > of the right size and then throw away its ability to change size. This
 > is the same philosophy as the `cc` module of named bit masks you'll
-> meet in week 2: pick the type that says exactly what the hardware does,
+> meet in Chapter 2: pick the type that says exactly what the hardware does,
 > and no more. When you see `Box<[u8]>` in this codebase, read it as "a
 > buffer whose size is a *decision*, not a variable."
 >
-> The two attributes are a preview of week 16, and the `rom` one is more
+> The two attributes are a preview of Chapter 16, and the `rom` one is more
 > interesting than it looks. Save states must not contain copyrighted ROM
 > bytes, so the field is skipped on serialization and re-injected from
 > your local ROM file on restore. Ownership discipline and licensing
@@ -859,7 +861,7 @@ The pattern doesn't stop at the `Machine`/`SystemBus` boundary. It
 recurs inside the bus, and recognizing it in its second form is what
 makes the technique usable rather than a one-off.
 
-During video scanout — week 8's material — the renderer needs three
+During video scanout — Chapter 8's material — the renderer needs three
 things simultaneously. It needs the GIME's registers, to know what mode
 and palette are in effect. It needs the RAM it's scanning out of, because
 that's where the pixels come from. And it needs the framebuffer it's
@@ -931,8 +933,8 @@ does something remarkable:
 That single attribute makes the **entire machine state serializable**.
 Freeze the CoCo mid-instruction, write it to disk, come back next week
 and restore it exactly where it stopped. That's the `.ccstate` save-state
-feature, and week 16 builds it — but the hard part was already paid for,
-in week 1, by refusing shared ownership.
+feature, and Chapter 16 builds it — but the hard part was already paid for,
+in Chapter 1, by refusing shared ownership.
 
 Consider what the `Rc<RefCell<…>>` version would have cost. Shared nodes
 serialize as duplicates, so a device referenced from two places comes
@@ -943,8 +945,8 @@ You'd be writing custom serialization code with an interning table, by
 hand, for a machine with forty devices in it. Somewhere between painful
 and impossible, and either way not a weekend.
 
-Instead, the architecture decision of week 1 quietly purchased the
-flagship feature of week 16. This is the single best example in this
+Instead, the architecture decision of Chapter 1 quietly purchased the
+flagship feature of Chapter 16. This is the single best example in this
 codebase of an early constraint paying compound interest, and it's the
 argument to make to anyone who thinks the borrow checker is a tax rather
 than a design tool.
@@ -972,7 +974,7 @@ than a design tool.
 > snapshot to buy nothing.
 >
 > Sorting every field into "essential" or "derived" is exactly the
-> judgment call you'll practice in week 16, and it's less obvious than it
+> judgment call you'll practice in Chapter 16, and it's less obvious than it
 > sounds — get it wrong in the derived direction and restores are subtly
 > broken; get it wrong in the essential direction and your snapshots are
 > full of scratch buffers. The doc comments on the skipped fields in
@@ -994,7 +996,7 @@ reach the same buffer. And the PTY code that bridges the emulated serial
 port to a terminal on the host machine makes `libc` calls inside `unsafe`
 blocks, because that's what talking to a Unix pseudo-terminal requires.
 Both live precisely at the boundary where the emulator stops and the host
-begins, both are excluded from save states, and week 14 examines each of
+begins, both are excluded from save states, and Chapter 14 examines each of
 them in detail.
 
 The lesson survives contact with reality, slightly sharpened: shared
@@ -1008,8 +1010,8 @@ which is more than can be said for purity.
 
 We've now met both seams — the `Bus` trait between the CPU and the world,
 and the `Machine`/`SystemBus` split between what borrows and what gets
-borrowed. It turns out those two seams also explain the shape of the
-workspace, because the crate boundaries were drawn along them.
+borrowed. It turns out they also explain the shape of the workspace,
+because the crate boundaries were drawn along them.
 
 The workspace root
 [`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/Cargo.toml)
@@ -1026,26 +1028,26 @@ crates/
 makes it necessary. CPU bugs are the hardest bugs in an emulator to find,
 because a wrong flag in an obscure addressing mode doesn't announce
 itself — it shows up four thousand instructions later as BASIC printing
-the wrong prompt, or not printing anything at all. Week 4 is largely
-about that problem. The defence is a CPU you can test in complete
+the wrong prompt, or not printing anything at all. Chapter 4 is largely
+about that problem. The defense is a CPU you can test in complete
 isolation, with nothing else in the room that could plausibly be at
 fault, and that requires the CPU crate to have no idea a CoCo exists.
 
 **`coco-core` is headless.** It renders into a plain `Vec<u8>`, pushes
 audio samples into a `Vec<[f32; 2]>`, and never opens a window or touches
-a GPU. This is not an aesthetic preference. It is what makes the
-repository able to contain a test that boots the real Color BASIC ROM,
-types `PRINT 2+2` one simulated keystroke at a time, and asserts on the
+a GPU. This is not an aesthetic preference. It is what lets the
+repository contain a test that boots the real Color BASIC ROM, types
+`PRINT 2+2` one simulated keystroke at a time, and asserts on the
 resulting pixels — running in CI, on a machine with no display attached
 ([`crates/coco-core/tests/coco1_boot.rs:93`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L93);
-you'll step through it in week 6). Think about what that test is actually
+you'll step through it in Chapter 6). Think about what that test is actually
 checking: the CPU decoded thousands of instructions correctly, the
 address decoder mapped ROM and RAM correctly, the keyboard matrix
 reported the right rows, the interrupt timing let the ROM's keyboard scan
 run, and the video path put the right glyphs at the right addresses. One
 assertion, most of the machine.
 
-The frontier between "emulator" and "app" is exactly the frontier between
+The line between "emulator" and "app" is exactly the line between
 "testable in CI" and "needs a human looking at a monitor," and the crate
 boundary is drawn there deliberately.
 
@@ -1059,7 +1061,7 @@ is, and none of them should.
 
 The dependency arrows point one way only: `coco-egui → coco-core →
 mc6809`. The CPU doesn't know the CoCo exists. The machine doesn't know
-the screen exists. Every week of this course until week 15 lives entirely
+the screen exists. Every week of this course until Chapter 15 lives entirely
 in the first two crates, and you could delete the third one and still
 have a working, testable emulator — just not one you could play a game
 on.
@@ -1084,7 +1086,7 @@ rungs, from loosest to tightest:
    transferred. You know how many cycles an operation took; you don't
    know how they were distributed inside it.
 3. **Cycle-accurate.** Every bus cycle happens on exactly the cycle the
-   real chip would have produced it, including in the middle of an
+   real chip would have produced it on, including in the middle of an
    instruction. If the real 6809 spends cycle 3 of a 5-cycle instruction
    doing a dead bus access, so does yours.
 4. **Gate-level.** You are simulating the netlist — transistors and
@@ -1095,7 +1097,7 @@ rungs, from loosest to tightest:
 The trap waiting for a first-time emulator author is the belief that
 "more accurate" is always better. It isn't. It's *more expensive*, and
 software only notices the difference at specific, discoverable points.
-Spending week 3's energy on cycle-exact bus timing for the CPU buys you
+Spending Chapter 3's energy on cycle-exact bus timing for the CPU buys you
 nothing if no CoCo program in existence can tell — and it costs you week
 3.
 
@@ -1106,17 +1108,17 @@ to be stricter?
 
 | Subsystem | Fidelity chosen | Where you'll study it |
 |-----------|-----------------|----------------------|
-| CPU cycles | instruction-granular (no mid-instruction bus timing) | weeks 2, 6 |
-| Video | scanline-granular; registers re-read every line | weeks 7–9 |
-| Audio DAC | cycle-*timestamped* events, rendered per scanline | week 11 |
-| Cassette | cycle-granular FSK edges (the ROM demands it) | week 12 |
-| Floppy controller | functional state machine, byte-paced delays | week 13 |
-| Serial UART (6551) | byte-granular frames, not bit-serial | week 14 |
+| CPU cycles | instruction-granular (no mid-instruction bus timing) | Chapters 2, 6 |
+| Video | scanline-granular; registers re-read every line | Chapters 7–9 |
+| Audio DAC | cycle-*timestamped* events, rendered per scanline | Chapter 11 |
+| Cassette | cycle-granular FSK edges (the ROM demands it) | Chapter 12 |
+| Floppy controller | functional state machine, byte-paced delays | Chapter 13 |
+| Serial UART (6551) | byte-granular frames, not bit-serial | Chapter 14 |
 
 Two things in that table are worth pausing on.
 
 First, the fidelity **varies by subsystem**, and the variation is not
-arbitrary. The cassette is modelled at cycle granularity while the floppy
+arbitrary. The cassette is modeled at cycle granularity while the floppy
 controller one row below it is merely functional. Why the asymmetry?
 Because BASIC's tape loader demodulates the audio signal by *counting
 cycles in a polling loop* — it decides whether a bit was a one or a zero
@@ -1154,12 +1156,12 @@ because each step makes the next one safe.
    hardware fact in five lines; the implementation of that same fact is
    spread across a decode chain, three constants, and a `match` arm. In
    this codebase the tests *are* the specification — a great many of them
-   encode behaviour that was verified against real ROM images, against
+   encode behavior that was verified against real ROM images, against
    MAME, or against the CoCo 3 service manual, and their names are
    written to say what the hardware does rather than what the function is
    called.
 2. **Run them.** `cargo test -p mc6809` this week; add `-p coco-core`
-   from week 5 on. Watching two hundred tests go green is not ceremony.
+   from Chapter 5 on. Watching two hundred tests go green is not ceremony.
    It establishes the baseline that makes step 3 safe, and it tells you
    your toolchain works before you start changing things.
 3. **Break something on purpose.** Flip a flag computation from `>=` to
@@ -1179,8 +1181,8 @@ A few practical notes for the labs:
   buffer, the programs in
   [`crates/coco-core/examples/`](https://github.com/sperano/cocovm/tree/main/crates/coco-core/examples)
   can dump frames straight to `.ppm` image files — no GPU, no window, no
-  frontend. PPM is about the simplest image format that exists and every
-  image viewer on earth reads it. Weeks 7 through 9 lean on this
+  frontend. PPM is about the simplest image format that exists, and every
+  image viewer on earth reads it. Chapters 7 through 9 lean on this
   constantly, because "diff two images" beats "squint at a window" every
   time.
 - **ROMs are local-only.** The `roms/` directory holds real, copyrighted
@@ -1190,7 +1192,7 @@ A few practical notes for the labs:
   chapter's lab tells you which. The synthetic-ROM tests — the whole CPU
   suite, `bus_map`, `pia_sync`, most of the render tests — need nothing
   but the repository.
-- **Keep a trace notebook.** From week 4 onward, the most valuable
+- **Keep a trace notebook.** From Chapter 4 onward, the most valuable
   debugging habit available to you is saving instruction traces and
   diffing them: against a reference emulator, or against your own
   last-known-good run from an hour ago. Plain text files and `diff -u`.
@@ -1219,7 +1221,7 @@ whole assignment is perhaps ninety minutes.
    lines 1–199.** This gets you the `Bus` trait, the condition-code bit
    masks, the interrupt vector constants, the `MC6809` struct, and
    `reset()`. Everything in this chapter's §1.3 lives here, plus a
-   preview of week 2 and week 4. Resist the urge to chase into
+   preview of Chapter 2 and Chapter 4. Resist the urge to chase into
    [`exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)
    — that's next week's chapter, and it's better with the setup.
 3. **[`crates/coco-core/src/machine.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L61-L135),
@@ -1227,7 +1229,7 @@ whole assignment is perhaps ninety minutes.
    read every doc comment on it, including the ones that reference weeks
    you haven't had yet — that's what the rest of the course is for, and
    seeing the names in advance is useful. Pay attention to how many
-   fields are `#[serde(skip)]` and why each one gives its reason.
+   fields are `#[serde(skip)]`, and to the reason each one gives.
 
 While you're reading, run the CPU test suite and watch two hundred tests
 pass with no machine attached anywhere. It's the standalone-CPU claim
@@ -1309,7 +1311,7 @@ take `&self` and use a `Cell` inside the PIA for the flag-clearing case.
 Then reads are pure in the common case, and the debugger's peek problem
 disappears entirely." Give the two strongest reasons this codebase
 rejects that design. One of them is about the honesty of a type
-signature; the other is about something week 16 needs. If you find a
+signature; the other is about something Chapter 16 needs. If you find a
 third — what does `Cell` fail to compose with, given the derive on
 `Machine`? — you're ahead of the class.
 
@@ -1330,7 +1332,7 @@ comments of
 [`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs)
 and
 [`crates/coco-core/src/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773.rs)
-— headers only; the guts are weeks 12 and 13. Each one states its
+— headers only; the guts are Chapters 12 and 13. Each one states its
 fidelity choice and its reason in the first comment block. Write down, in
 one sentence each, *what piece of 1980s software forced* that choice. The
 habit of asking "who notices?" is this week's real deliverable, and it
@@ -1351,7 +1353,7 @@ of §1.3.
 ## What's next
 
 Next week we open `MC6809::step()` and then stay inside the CPU for three
-solid weeks. Week 2 is the pleasant part: registers, flags, and the
+solid weeks. Chapter 2 is the pleasant part: registers, flags, and the
 dispatch `match` where every opcode you've ever hand-assembled has a line
 of Rust with its name on it. You'll see why `D` isn't a field, why the
 condition codes are a byte instead of eight booleans, and how a

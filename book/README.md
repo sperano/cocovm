@@ -10,7 +10,7 @@ GIME, VDG, SAM, and PIAs do it — and who have never written an emulator or don
 modern graphics programming. Every chapter assumes exactly that background.
 
 **How the course works.** One class per week, 16 weeks, six parts. Each week
-has: required reading (specific source files and tests — the tests *are* the
+has required reading (specific source files and tests — the tests *are* the
 textbook exercises with answers), a lecture outline, and exercises. The
 codebase is complete and working, so the mode of study is *archaeology, then
 surgery*: read a subsystem, run its tests, break something on purpose, watch
@@ -96,12 +96,12 @@ the fetch-execute rhythm before the real thing.)
   ([`alu.rs:156`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L156)) keyed on the opcode's low nibble — and the TST exception
   (flags but no write-back).
 - Cycle counting: per-instruction granularity, accumulated in `cpu.cycles`.
-  Why instruction-granular is enough to boot BASIC ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5).
+  Why instruction-level granularity is enough to boot BASIC ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5).
 
 **Reading:** [`exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs), [`exec/exec_data.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs), [`alu.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs), tests [`loads.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/loads.rs),
 [`alu.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/alu.rs), [`logic_rmw.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/logic_rmw.rs).
 **Exercises:** (1) trace `ADCA #$7F` with C=1, A=$80 by hand, predict all five
-flags, verify against a test you write; (2) delete the `V` computation from
+flags, and verify against a test you write; (2) delete the `V` computation from
 `asl` and find which existing test fails; (3) implement one currently-missing
 illegal-opcode behavior of your choice as a no-op with correct byte count.
 
@@ -112,7 +112,7 @@ illegal-opcode behavior of your choice as a no-op with correct byte count.
 - The indexed postbyte (`1 rr i mmmm`, [`lib.rs:76`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76), decoder
   [`addressing.rs:58-171`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L58-L171)): 5-bit offsets, A/B/D accumulator offsets, auto
   inc/dec by 1/2, PC-relative, extended-indirect — and the indirect bit that
-  applies a second memory fetch. A large fraction of all instructions route
+  adds a second memory fetch. A large fraction of all instructions route
   through `ea_indexed`; it must be bulletproof.
 - PSH/PUL register masks and the push order (PC first, CC last —
   [`stack.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs#L26)); TFR/EXG nibble encodings and the 8↔16-bit size-mismatch
@@ -127,20 +127,20 @@ illegal-opcode behavior of your choice as a no-op with correct byte count.
 **Reading:** [`addressing.rs:58-171`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L58-L171), [`stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs), [`regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs), [`disasm/`](https://github.com/sperano/cocovm/tree/main/crates/mc6809/src/disasm);
 tests [`indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs), [`stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs), [`disasm_indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm_indexed.rs).
 **Exercises:** (1) hand-decode postbytes `$8B`, `$F4`, `$9F` into syntax and
-cycle cost, check against [`disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs); (2) write a test for
+cycle cost, then check against [`disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs); (2) write a test for
 `LEAX ,--Y` asserting both the EA and Y's side effect; (3) explain why the
 5-bit-offset form cannot be indirect (look at the bit layout).
 
 ### Week 4 — CPU core III: interrupts, halt states, and how to test a CPU with no test suite
 
-*Goal: interrupt frames cold, plus the validation strategy.*
+*Goal: know the interrupt frames cold, plus the validation strategy.*
 
 - IRQ vs FIRQ vs NMI: full 12-byte frame vs CC+PC, the E flag telling RTI
   which frame to unwind ([`lib.rs:193-254`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L193-L254)). SWI/SWI2/SWI3. Why NMI is ignored
   until S is first loaded (`nmi_armed`).
 - SYNC and CWAI as CPU *states* (`State` enum, [`lib.rs:123`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L123)) — the CPU is a
   small state machine around the instruction loop, not just a loop.
-- **The 6809 testing problem**: unlike the Z80/6502/68000 there is no
+- **The 6809 testing problem**: unlike the Z80/6502/68000, there is no
   TomHarte-style per-instruction JSON suite ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5). The three-legged
   strategy used here: (1) trace-diff against XRoar/MAME from the same reset
   vector ([`examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs), the trace ring in [`coco-core/src/debug.rs:186`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L186));
@@ -150,9 +150,10 @@ cycle cost, check against [`disasm/indexed.rs`](https://github.com/sperano/cocov
 **Reading:** [`lib.rs:123-254`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L123-L254), tests [`interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs); [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5;
 [`crates/coco-core/examples/trace.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/trace.rs).
 **Exercises:** (1) draw both stack frames (IRQ and FIRQ) byte-by-byte with
-addresses; (2) write a test where FIRQ arrives during SYNC with F masked —
-what happens?; (3) produce a 50-instruction trace of the real ROM from reset
-and annotate the first 10 lines against the SEB Unravelled listing.
+addresses; (2) write a test where FIRQ arrives during SYNC with F masked,
+and describe what happens; (3) produce a 50-instruction trace of the real
+ROM from reset and annotate the first 10 lines against the SEB Unravelled
+listing.
 
 ---
 
@@ -190,7 +191,7 @@ all-RAM mode (what would happen on reset otherwise?).
 
 - The scanline-driven model ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4, [`machine/run.rs:20`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L20)): 262 lines
   (NTSC) per field, 56 CPU cycles per line ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md)'s ~57 sketch loses to
-  two truncating divisions — ch. 6 derives it), `end_of_line()` fires hsync,
+  two truncating divisions — week 6 derives it), `end_of_line()` fires hsync,
   renders the scanline, flushes audio, ticks the GIME timer. The
   double-speed poke = a different line budget ([`run.rs:185`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L185)).
 - Interrupt plumbing ([`bus/sync.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sync.rs)): wired-OR of PIA and GIME sources into
@@ -232,10 +233,10 @@ at once.
   native mode. So legacy text came first here too.
 - VDG text rendering ([`video/text.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs)): screen RAM at `$0400`, MC6847 glyphs
   ([`font6847.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font6847.rs)), bit 6 = inverse video (the stock screen sets it on every
-  character — black-on-green), bit 7 = semigraphics-4 (2×2 blocks, colour in
+  character — black-on-green), bit 7 = semigraphics-4 (2×2 blocks, color in
   bits 6–4). Fonts as data: MC6847 vs T1 vs GIME ([`font_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font_gime.rs)) and the
   T1's sneaky true-lowercase rule.
-- Where colours come from even in legacy mode: the GIME palette registers
+- Where colors come from even in legacy mode: the GIME palette registers
   the ROM programmed (bg=reg 12, fg=reg 13), 6-bit RGB decoded ×0x55.
 
 **Reading:** [`video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs), [`video/text.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs), [`font6847.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font6847.rs), [`raster.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs),
@@ -277,8 +278,8 @@ questions they force.*
 
 - Composite vs RGB monitors as a *palette interpretation*, not a different
   renderer: the two hand-measured 64-entry tables, BPI hue rotation, MOCH
-  greyscale ([`gime/palette.rs:19`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L19); test `composite.rs` — including a real
-  NitrOS-9 greyscale regression).
+  grayscale ([`gime/palette.rs:19`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L19); test `composite.rs` — including a real
+  NitrOS-9 grayscale regression).
 - Mid-frame register changes ([`tests/scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs) — the best-named
   test file in the repo): which registers are **live** (border, palette,
   mode, X-offset — take effect next scanline) vs **field-latched** (video
@@ -294,7 +295,7 @@ questions they force.*
 [`scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs), [`sam_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam_video.rs).
 **Exercises:** (1) predict the on-screen result of writing the border color
 at line 100 vs writing the video base at line 100, then find the two tests
-proving it; (2) compute which palette values NitrOS-9 uses for grey on
+proving it; (2) identify which palette values NitrOS-9 uses for gray on
 composite and why they're achromatic; (3) sketch how you'd add PAL 50 Hz
 artifact handling — what breaks?
 
@@ -324,7 +325,7 @@ artifact handling — what breaks?
 **Exercises:** (1) trace the ROM's keyboard scan for the 'A' key press,
 strobe pattern by strobe pattern; (2) write a test that a fire button reads
 pressed even with no column strobed; (3) why does the DDR exist at all —
-what would break if PIA registers were read/write plain bytes?
+what would break if PIA registers were plain read/write bytes?
 
 ### Week 11 — Sound: from a 6-bit DAC to your speakers
 
@@ -340,7 +341,7 @@ what would break if PIA registers were read/write plain bytes?
   blocker (`y[n]=x[n]-x[n-1]+0.995·y[n-1]`), Butterworth low-pass before
   decimation, linear-interpolation resampler, underrun fade instead of
   clicks. Each of these exists because of an audible artifact — the chapter
-  walks each one.
+  walks through each one.
 - The optional chips as a taxonomy of PSGs: Orchestra-90 (two dumb DACs),
   SN76489 (tone + LFSR noise, in the GMC cart), AY-3-8913 (adds envelopes,
   in the SSC) — `orch90.rs`, `sn76489.rs`, `ay8913.rs`.
@@ -385,10 +386,10 @@ threshold by ±20% — which bit pattern fails first, and why?
 - The WD1773 FDC (`wd1773.rs`) as a command state machine: Type I
   (seek/step), II (read/write sector), III (format), dispatched from
   `$FF48`. Byte-paced transfers (~32 µs DRQ intervals), and the **HALT/NMI
-  handshake**: the FD-502 halts the CPU until each byte is ready, NMI fires
-  at sector end — this is why `step_cpu_unit()` checks HALT before polling
-  interrupts (week 6's mystery resolved). Functional-not-cycle-exact as an
-  explicit modeling decision.
+  handshake**: the FD-502 halts the CPU until each byte is ready, and NMI
+  fires at sector end — this is why `step_cpu_unit()` checks HALT before
+  polling interrupts (week 6's mystery resolved). Functional-not-cycle-exact
+  as an explicit modeling decision.
 - JVC image geometry, including sniffing OS-9's LSN0 to guess sidedness
   ([`fdc/jvc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/fdc/jvc.rs)).
 - Contrast with two simpler designs: VHD (`vhd.rs`) — pure register
@@ -434,7 +435,7 @@ paks, the CART FIRQ auto-start Q-burst ([`cart/`](https://github.com/sperano/coc
 ### Week 15 — The egui frontend: pixels, keys, and real time
 
 *Goal: everything host-side, for the graphics-shy — there is less GPU here
-than you fear.*
+than you might fear.*
 
 - The whole per-frame story in one file ([`coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)):
   wall-clock delta → `field_debt` fractional accumulator → run N whole

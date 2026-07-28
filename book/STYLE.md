@@ -65,8 +65,10 @@ for pleasure as much as for learning.
 - Exercise mix: build / sabotage / read / recall. Sabotage exercises state
   empirically verified outcomes — do not alter their claims without re-running
   the experiment.
-- The course frame stays: chapters are weeks, cross-references say
-  "week 12," the reading assignments are assignments.
+- The course frame stays: chapters are weeks (the italic epigraph names the
+  week) and the reading assignments are assignments — but cross-references
+  between chapters say "Chapter 12," capitalized, never "week 12."
+  `book/README.md` is the syllabus and keeps its week-based structure.
 
 ## Technical ground rules (non-negotiable)
 
@@ -79,6 +81,9 @@ for pleasure as much as for learning.
   `docs/` (git-ignored). Bare filenames are linked only in Reading sections.
 - `$` hex for 6809-side addresses and opcodes (`$FF92`); `0x` hex in Rust
   contexts.
+- Spelling is American English (color, behavior, modeling, gray, center).
+  Code fences, identifiers, and text quoted verbatim from the source or
+  other documents keep their original spelling — never "fix" a quote.
 - New technical claims must be traceable: to this repository's source and
   comments, to DESIGN.md, or to facts already established in an earlier
   chapter. Do not introduce new CoCo-specific hardware claims from general

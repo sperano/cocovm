@@ -2,8 +2,8 @@
 
 *Week 14. Goal: climb three rungs of the same ladder — a software-timed GPIO
 pin, a real hardware UART, and a protocol interpreter built on top of
-either — and along the way finish two stories earlier chapters left
-open: week 6's `poll_cart_interrupt` and week 10's PIA1 CB1 path both
+either — and, along the way, finish two stories earlier chapters left
+open. Chapter 6's `poll_cart_interrupt` and Chapter 10's PIA1 CB1 path both
 terminate here, in the code that turns a cartridge's interrupt line into a
 running 6809 program. This chapter closes Part V; an elective second half
 covers the cartridge system that makes that termination possible in the
@@ -29,10 +29,10 @@ theme: the further you get from a chip, the more the interesting work
 moves into deciding *what to model at all*.
 
 There is a second thread running underneath, and it is the one that
-closes out Part V. Week 6 introduced a function called
+closes out Part V. Chapter 6 introduced a function called
 `poll_cart_interrupt` and immediately deferred it — nothing in the
 machine asserted the cartridge interrupt line yet, so there was nothing
-to poll. Week 10 built PIA1's `set_c1` for horizontal and field sync and
+to poll. Chapter 10 built PIA1's `set_c1` for horizontal and field sync and
 noted, without elaborating, that a third source feeds the same input pin.
 This chapter supplies both missing halves. By §14.4 you will have watched
 a 6551's interrupt output travel through the cartridge connector, into a
@@ -61,9 +61,9 @@ same ladder: pin, then chip, then protocol.
    (PIA1 PB0), and Color BASIC's ROM does the framing, timing, and
    handshaking entirely in software: a busy-wait loop toggling a GPIO pin
    at a rate it counts out in cycles. There is no hardware here to model
-   except a PIA you already met in week 10 — the "protocol" lives in ROM,
+   except a PIA you already met in Chapter 10 — the "protocol" lives in ROM,
    and the emulator's job is to *decode what the software transmits*, the
-   same relationship the cassette deck (week 12) has to its FSK tones.
+   same relationship the cassette deck (Chapter 12) has to its FSK tones.
 2. **A real UART** (`acia6551.rs`). The Tandy Deluxe RS-232 Program Pak
    plugs a genuine MOS 6551 ACIA into the cartridge port: hardware
    framing, a programmable baud-rate generator, modem control lines, and
@@ -76,9 +76,9 @@ same ladder: pin, then chip, then protocol.
    stream of control codes and ASCII into ink on paper. This is the
    chapter's example of a device that is *itself* built from a
    byte-stream seam plus a state machine, the same "state, loop, seam"
-   shape week 1 promised applies all the way down.
+   shape Chapter 1 promised applies all the way down.
 
-Run week 1's three questions against each rung as you read and the
+Run Chapter 1's three questions against each rung as you read, and the
 chapter's structure falls out immediately. The bit-banger's state is a
 half-assembled byte and a cycle count since the last edge; its loop is a
 per-instruction tick; its seam is a trait with one required method that
@@ -100,13 +100,13 @@ famous CoCo pokes need no special-case code anywhere in this chapter. The
 CoCo 3's `$FFD9` high-speed poke doubles the CPU clock; BASIC's own `POKE
 150,n` changes how many cycles the ROM's delay loop counts. Both change
 the effective baud rate, and the decoder finds out about it the only way
-it can — by counting the cycles that actually elapse. Week 12 built the
+it can — by counting the cycles that actually elapse. Chapter 12 built the
 cassette deck on exactly this idea, and it recurs here unchanged.
 
 The second is that **fidelity is a budget, spent unevenly**. Chapter 1's
 table already flagged the punchline in one row: "Serial UART (6551):
 byte-granular frames, not bit-serial." §14.3 is where you find out
-precisely what that row costs, what it buys, and — the question week 1
+precisely what that row costs, what it buys, and — the question Chapter 1
 insisted matters more than the abstraction — who would notice. The answer
 turns out to be nobody who ever bought software for this pak, which is
 what makes the choice defensible rather than merely convenient.
@@ -115,7 +115,7 @@ The elective second half, §14.6, is a genuine tangent from serial I/O.
 The cartridge port is its own subsystem with its own trait, its own enum,
 and its own four-slot expansion box. It is grouped here for two reasons.
 The CART* auto-start interrupt is the other half of the story
-`poll_cart_interrupt` (week 6) and PIA1's `set_c1` (week 10) began, so
+`poll_cart_interrupt` (Chapter 6) and PIA1's `set_c1` (Chapter 10) began, so
 the two halves belong in one chapter. And the Deluxe RS-232 pak of rung 2
 *is* a cartridge, so §14.4 has to borrow from §14.6 anyway. Reading
 §14.3–14.4 before §14.6 will make the auto-start story land better; the
@@ -130,10 +130,10 @@ dependency runs in that direction, not the reverse.
 There is no printer UART chip in a stock CoCo. What the machine has
 instead is two pins of a PIA and a subroutine. Color BASIC's
 `LLIST`/`LPRINT` driver bit-bangs RS-232-style serial timing on PIA1's
-PA1 and PB0: PA1 (`$FF20` bit 1, DIN pin 4) is the output — a plain async
-serial line, 1 start bit + 8 data bits LSB-first + 1 stop bit, no
-parity — and PB0 (`$FF22` bit 0, DIN pin 2) is BUSY feedback from the
-printer, polarity 0=ready/1=busy.
+PA1 and PB0. PA1 (`$FF20` bit 1, DIN pin 4) is the output: a plain async
+serial line, 1 start bit + 8 data bits LSB-first + 1 stop bit, no parity.
+PB0 (`$FF22` bit 0, DIN pin 2) carries BUSY feedback from the printer,
+with polarity 0=ready/1=busy.
 
 If the vocabulary of async serial is new, the three terms worth pinning
 down are *mark*, *space*, and *frame*. An idle line sits at mark, the
@@ -170,13 +170,13 @@ pub const TX_PIN: u8 = 0x02;
 pub const BUSY_PIN: u8 = 0x01;
 ```
 
-Both are PIA1 bits you already have the vocabulary for from week 10 —
-this chapter adds no new hardware primitive, only a new *use* of one. The
+Both are PIA1 bits Chapter 10 already gave you the vocabulary for — this
+chapter adds no new hardware primitive, only a new *use* of one. The
 entire physical layer of the CoCo's printer port, as far as this emulator
 is concerned, is those two masks plus the question of what a receiver
-watching PA1 would actually see.
+watching PA1 would see.
 
-### How PA1 actually reaches the decoder
+### How PA1 reaches the decoder
 
 That last question has a subtlety in it. The bus doesn't hand
 `BitBanger::tick` a raw PIA register, because a PIA output register's
@@ -206,21 +206,21 @@ pub(crate) fn pia1_tx_mark(&self) -> bool {
 ```
 
 This is exactly the kind of "read the DDR before trusting the output
-register" logic week 10 built into the PIA itself, reused at the call
+register" logic Chapter 10 built into the PIA itself, reused at the call
 site rather than duplicated, because a pin's DDR bit answers "is this
 even driven" independently of whatever the output register holds. Note
 the doc comment's honesty about the one part it had to decide rather than
 look up: the spec never says what an unconfigured PA1 looks like, because
 the ROM always configures DDRA first, so the "floating reads as mark"
 choice is flagged as this codebase's reasoning rather than a hardware
-fact. That flag matters more than it looks — the alternative choice
+fact. That flag matters more than it might seem — the alternative choice
 (floating reads as space) would have the decoder see a permanent start
 bit before the ROM ever touches the port.
 
 ### The RX state machine
 
 `BitBanger::tick` is driven once per instruction from the machine loop.
-You have already seen the call site, in week 6's `step_cpu_unit`:
+You have already seen the call site, in Chapter 6's `step_cpu_unit`:
 `self.bus.bitbanger.tick(cycles, self.bus.pia1_tx_mark());`. Each call
 carries a cycle delta and PA1's level, and the contract is that the level
 was held constant across that whole delta — which is true because the
@@ -303,26 +303,27 @@ pub fn tick(&mut self, cycles: u32, pa1_mark: bool) {
 
 Read the sample-index arithmetic against the frame layout. `START_SAMPLE
 = 0` validates the start bit, samples 1 through 8 (`sample <= DATA_BITS`)
-pull each data bit in with `bits |= u8::from(pa1_mark) << (sample - 1)` —
-notice that's `sample - 1`, so data-bit sample 1 lands in bit position 0,
-**LSB first**, matching the framing spec — and sample 9 checks the stop
-bit. `TOTAL_SAMPLES = DATA_BITS + 2 = 10`, which is the same ten bit
+pull each data bit in with `bits |= u8::from(pa1_mark) << (sample - 1)`,
+and sample 9 checks the stop bit. Notice the `sample - 1`: data-bit
+sample 1 lands in bit position 0, **LSB first**, matching the framing
+spec. `TOTAL_SAMPLES = DATA_BITS + 2 = 10`, which is the same ten bit
 times the frame layout describes, one sample each.
 
 The `while` loop is worth a second look, because at first glance a
 per-instruction tick could never need to take more than one sample. Most
 of the time it doesn't: a bit cell at the default rate is nearly fifteen
-hundred cycles wide and a 6809 instruction is a handful, so the common
-case is that `elapsed` creeps past one threshold every few hundred ticks.
-But the loop is not an optimization, it's a correctness requirement. The
-tick's `cycles` argument is whatever the last instruction cost, and
-nothing in the contract bounds it below a bit period — a `CWAI` or a long
-indexed instruction, or any future caller that batches cycles, can hand
-over a delta that crosses two thresholds at once. Writing the catch-up as
-a loop means the decoder's behavior depends only on how much time has
-passed, never on how that time happened to be chopped up by the caller.
-That property is exactly what lets the same decoder handle both a
-per-instruction drip and a test harness feeding it in deliberate chunks.
+hundred cycles wide and a 6809 instruction is a handful of cycles, so the
+common case is that `elapsed` creeps past one threshold every few hundred
+ticks. But the loop is not an optimization; it's a correctness
+requirement. The tick's `cycles` argument is whatever the last
+instruction cost, and nothing in the contract bounds it below a bit
+period — a `CWAI`, a long indexed instruction, or any future caller that
+batches cycles can hand over a delta that crosses two thresholds at
+once. Writing the catch-up as a loop means the decoder's behavior depends
+only on how much time has passed, never on how that time happened to be
+chopped up by the caller. That property is exactly what lets the same
+decoder handle both a per-instruction drip and a test harness feeding it
+in deliberate chunks.
 
 ### Why mid-cell, not edge-aligned
 
@@ -347,8 +348,8 @@ center. Transmitter and receiver run off independent clocks with no
 shared reference. Their idea of where a bit cell starts drifts apart the
 longer a frame runs, and nothing resynchronizes them until the next start
 edge. Sampling at the *edge* of a cell means the smallest clock
-disagreement flips you onto the wrong side of a transition and you read
-the neighboring bit. Sampling at the *center* buys a full half a bit-time
+disagreement flips you onto the wrong side of a transition, so you read
+the neighboring bit. Sampling at the *center* buys a full half bit-time
 of slack in either direction before that can happen — and the slack is
 needed most exactly where the design puts it, at the *last* bit of a
 ten-bit frame, where drift has had the longest time to accumulate.
@@ -367,19 +368,19 @@ true.
 The same mechanism doubles as glitch rejection, which is the other half
 of what `START_SAMPLE` is for. Its job is specifically to catch a falling
 edge that *isn't* a real start bit: if the line is already back at mark
-by the half-bit-time mark, the edge that triggered `Receiving` was too
-short to be a genuine transmission, so the frame is abandoned silently —
-"not a framing error, since no frame ever began." The doc comment names a
-concrete real-world trigger rather than a hypothetical one: without the
-check, "the ~30-cycle low pulse PA1 emits while the ROM's boot code
-reconfigures DDRA (`$A02F`) free-runs into a phantom 0xFF." Real boot
-code, real glitch, real phantom byte on the paper before the machine has
-even reached the `OK` prompt. The test
+by the half-bit-time sample point, the edge that triggered `Receiving`
+was too short to be a genuine transmission, so the frame is abandoned
+silently — "not a framing error, since no frame ever began." The doc
+comment names a concrete real-world trigger rather than a hypothetical
+one: without the check, "the ~30-cycle low pulse PA1 emits while the
+ROM's boot code reconfigures DDRA (`$A02F`) free-runs into a phantom
+0xFF." Real boot code, real glitch, real phantom byte on the paper before
+the machine has even reached the `OK` prompt. The test
 `sub_bit_glitch_is_rejected_as_false_start` reproduces it: a 30-cycle
-glitch against a ~1486-cycle bit period — under 2% of one cell — followed
-by two full bit-periods of mark, with assertions that nothing decoded and
-no framing error was counted, and then that a real byte sent afterward
-still decodes cleanly.
+glitch against a ~1486-cycle bit period — about 2% of one cell — followed
+by two full bit periods of mark. The assertions are that nothing decoded
+and no framing error was counted, and then that a real byte sent
+afterward still decodes cleanly.
 
 ### When the stop bit reads space
 
@@ -449,7 +450,7 @@ pub const DEFAULT_BIT_PERIOD: u32 = 78 + 16 * 88;
 The formula and the constant `88` both come from an actual ROM
 disassembly rather than a datasheet. This project's `docs/` directory
 holds copyrighted reference material and isn't part of the public
-repository, but the finding it records is this: the bit-bang delay loop
+repository, but the finding it records is this. The bit-bang delay loop
 is a self-referential `BSR` that runs the countdown *twice* per bit, so
 `cycles_per_bit = 78 + 16×N`, where `N` is the live 16-bit value of the
 ROM variable `LPTBTD` at `$0095`/`$0096` — decimal 149/150, which is
@@ -459,10 +460,10 @@ initializes at boot is `88` (`$0058`).
 That number is worth a paragraph, because it is a small lesson in
 sourcing. The CoCo 3 Service Manual's Table 2 prints `87`, not `88`, and
 the spec's own cross-check identifies the printed value as a stale
-pre-1.2 constant; the cross-reference to Color BASIC Unravelled confirms
-the 87→88 change happened at Color BASIC 1.2. When a manual and the ROM
+pre-1.2 constant; the reference to Color BASIC Unravelled confirms the
+87→88 change happened at Color BASIC 1.2. When a manual and the ROM
 bytes disagree, the ROM bytes are what the machine executes. This is the
-same instinct week 1 asked for when it said the tests are the
+same instinct Chapter 1 asked for when it said the tests are the
 specification — prefer the artifact that runs over the document that
 describes it.
 
@@ -524,8 +525,8 @@ disassembling the OS-9 driver:
 //! of BASIC's speed-oblivious driver.
 ```
 
-Two independently written 6809 device drivers took opposite policies on
-the same hardware fact. Color BASIC's printer driver counts a fixed
+Two independently written 6809 device drivers adopted opposite policies
+on the same hardware fact. Color BASIC's printer driver counts a fixed
 number of *cycles* per bit and lets the machine's clock speed decide what
 that means in wall-clock time. NitrOS-9's `/p` driver detects the doubled
 clock and doubles its own delay-loop count to compensate, holding *true*
@@ -535,8 +536,8 @@ property of the loop.
 
 The emulator's decoder encodes neither policy, and that is the point
 worth taking away. It counts whatever cycles actually elapse between
-edges, which is all a physical receiver could do either, so it decodes
-both drivers without being told which one is talking. The test
+edges, which is all a physical receiver could do, so it decodes both
+drivers without being told which one is talking. The test
 ([`crates/coco-core/tests/bitbanger_os9.rs:204-237`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_os9.rs#L204-L237))
 boots the real EOU disk images to a shell, runs `echo hello >/p`,
 retunes the decoder to `2 * DEFAULT_BIT_PERIOD`, and asserts the captured
@@ -560,17 +561,17 @@ unused. Nothing in this codebase's `Dmp105` sink calls `set_busy` — the
 module doc comment says so plainly, calling out "a (currently
 unimplemented) DMP-105 buffer model," and the reason is a gap in the
 source material rather than a gap in the code. BUSY's *assertion
-granularity* — does the real printer's 134-byte receive buffer assert
-BUSY after every byte? only when nearly full? — is marked INFERRED rather
-than VERIFIED in `dmp105-protocol.md`, because the manual documents the
-polarity and the existence of a 134-character buffer but never states the
-byte-count trigger.
+granularity* — does the real printer's 134-character receive buffer
+assert BUSY after every byte? only when nearly full? — is marked INFERRED
+rather than VERIFIED in `dmp105-protocol.md`, because the manual
+documents the polarity and the existence of a 134-character buffer but
+never states the byte-count trigger.
 
 So the wire is real and tested — three bus-level tests in
 [`tests/bitbanger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger.rs)
 confirm PB0 reads 0 by default and reflects `set_busy` — but no code path
 drives it from print volume. A virtual printer in this emulator is always
-"ready." Ask week 1's question about it: who would notice? Only a program
+"ready." Ask Chapter 1's question about it: who would notice? Only a program
 that depended on flow control the emulator never needs to apply, and an
 infinite-speed printer never needs to say "slow down." Guessing at the
 trigger threshold would produce a number that looks authoritative in the
@@ -600,7 +601,7 @@ pub trait PrinterSink {
 
 The two further defaults, `as_dmp105` and
 `was_file_capture_stopped_by_restore`, both return "no" and both exist
-for the save-state machinery discussed below. The shape is the one week 1
+for the save-state machinery discussed below. The shape is the one Chapter 1
 praised in the `Bus` trait: one method every implementor must write, and
 a set of defaults that let a trivial sink stay trivial. `NoopSink`, the
 sink installed until something more interesting is plugged in, is
@@ -652,8 +653,7 @@ hardware's failure mode, which is a better argument than "errors here are
 unlikely." Note also the flush on every line ending rather than on every
 byte — one `write` syscall per character would be absurd, but a capture
 file nobody can `tail` until the emulator exits would be useless, and
-line granularity is exactly what a printer's output is naturally shaped
-in.
+line granularity is exactly the shape a printer's output naturally has.
 
 > **Rust corner: the `Rc<RefCell<_>>` handle pattern for pluggable
 > sinks.** `BitBanger` owns its destination as `Box<dyn PrinterSink>`, so
@@ -677,13 +677,13 @@ in.
 > two-step, and `Dmp105Handle` (§14.5) is the same pattern one level
 > richer — a shared handle to a whole interpreter rather than to a `Vec`.
 >
-> Contrast this with week 11's cross-thread audio ring buffer,
+> Contrast this with Chapter 11's cross-thread audio ring buffer,
 > `Arc<Mutex<VecDeque<_>>>`. Both are "shared ownership plus a way to
 > mutate through a shared reference," but `BitBanger`, its sink, and the
 > frontend code that later reads a `Dmp105Handle`'s paper all run on the
 > *same* thread — the emulator core has no background thread of its own —
 > so the atomic reference counting and OS-level locking that `Arc` and
-> `Mutex` pay for buys nothing here. `Rc` and `RefCell` do the identical
+> `Mutex` pay for buy nothing here. `Rc` and `RefCell` do the identical
 > job at a fraction of the cost, because `Rc`'s count is a plain
 > non-atomic integer and `RefCell`'s borrow check is a runtime comparison
 > rather than a kernel-mediated lock. The rule of thumb: reach for
@@ -691,18 +691,18 @@ in.
 > 11's audio callback genuinely does; everywhere else in this
 > single-threaded core, `Rc`/`RefCell` is the right and cheaper tool.
 >
-> One clarification, because week 1 spent an entire section warning
+> One clarification, because Chapter 1 spent an entire section warning
 > against exactly these types. This is *not* the architecture it warned
 > about. `Machine` and `SystemBus` remain a plain owned tree with zero
 > `Rc`/`RefCell` anywhere in them, which is what makes save states
 > trivial. The pattern appears at this one narrow seam, where a value must
 > legitimately be reachable from two independent owners — the bus's sink
 > slot and the frontend's paper-window state — for reasons that have
-> nothing to do with the core machine's own structure. Week 1's "one
+> nothing to do with the core machine's own structure. Chapter 1's "one
 > honest caveat" section named this exact spot in advance.
 
-> **Rust corner: serializing a trait object it isn't possible to
-> serialize.** `BitBanger` derives `Serialize`/`Deserialize`, and one of
+> **Rust corner: serializing a trait object that cannot be
+> serialized.** `BitBanger` derives `Serialize`/`Deserialize`, and one of
 > its fields is a `Box<dyn PrinterSink>`. Those two facts should not be
 > compatible: `serde` needs to know at compile time every concrete type
 > that could be behind a pointer, and a public trait implementable by
@@ -732,11 +732,10 @@ in.
 > ```
 >
 > That is the `snapshot` default method earning its place in the trait:
-> every sink declares what kind of sink it is and what of it is worth
-> keeping. A
-> `NoopSink` and a `CaptureSink` answer `Noop`, a `FileSink` answers
-> `FileCapture`, and a `Dmp105Handle` answers with a clone of the entire
-> interpreter and its paper. Restoring inverts it
+> every sink declares what kind of sink it is and what part of it is
+> worth keeping. A `NoopSink` and a `CaptureSink` answer `Noop`, a
+> `FileSink` answers `FileCapture`, and a `Dmp105Handle` answers with a
+> clone of the entire interpreter and its paper. Restoring inverts it
 > ([`crates/coco-core/src/bitbanger.rs:485-495`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L485-L495)):
 >
 > ```rust
@@ -798,9 +797,9 @@ transmitter that owns the processor for the whole duration of every byte.
 The Tandy Deluxe RS-232 Program Pak (26-2226) is the answer people bought
 when they wanted the machine to talk to a modem instead of a printer. It
 plugs an actual MOS 6551 ACIA — Asynchronous Communications Interface
-Adapter, and, as the module doc is careful to note, "not a Motorola
-MC-prefixed part," since so much of this codebase's other silicon is
-Motorola — into the cartridge port.
+Adapter — into the cartridge port. The module doc is careful to note that
+this is "not a Motorola MC-prefixed part," since so much of this
+codebase's other silicon is Motorola.
 
 A 6551 does in silicon what the printer driver does in a busy-wait loop,
 and then does three things the busy-wait loop cannot do at all. It frames
@@ -818,7 +817,7 @@ cartridge material rather than after it.
 Four registers live at offsets 0 through 3, which land at `$FF68`–`$FF6B`
 once you know where the pak decodes them (§14.4). Their bit assignments
 are transcribed as three modules of named constants — the house style
-week 2 established for the condition-code register and week 8 reused for
+Chapter 2 established for the condition-code register and Chapter 8 reused for
 the GIME:
 
 ```rust
@@ -986,8 +985,8 @@ const BAUD_DIVIDER: [u32; 16] = [
 ```
 
 The rule is `baud = ACIA_CRYSTAL_HZ / 16 / BAUD_DIVIDER[index]`. Work
-four of the sixteen indices by hand, because unlike the bit-banger's
-table the numbers land exactly:
+four of the sixteen indices by hand, because, unlike the bit-banger's
+table, the numbers land exactly:
 
 | Baud | Index | Divider | `1843200 / 16 / divider` |
 |---|---|---|---|
@@ -1016,7 +1015,7 @@ reference implementation punts, this one punts identically and says so.
 
 ### The byte-level frame engine
 
-Here is the fidelity choice from chapter 1's table, in code. The model
+Here is the fidelity choice from Chapter 1's table, in code. The model
 does *not* shift bits one at a time. `cycles_per_frame` computes how many
 CPU cycles one whole frame takes — start bit, data bits, optional parity
 bit, stop bits, all at the configured baud — and a single countdown timer
@@ -1043,7 +1042,7 @@ just finished transmitting"
 ```
 
 Note what `frame_bits` counts: everything on the wire, including the bits
-that carry no data. A parity bit costs a tenth of the frame's time
+that carry no data. A parity bit costs an eleventh of the frame's time
 whether or not this model ever checks its value, because the wire time is
 real even when the checking isn't. That is the sort of detail a
 byte-level model can still get right, and getting it right is what keeps
@@ -1169,7 +1168,7 @@ throughput story ([`crates/coco-core/src/acia6551/frame.rs:54-74`](https://githu
 
 This is the same catch-up loop the bit-banger's sampler uses, for the
 same reason and with one extra move: after finishing a frame it does not
-just subtract and stop, it *starts the next one* with the cycles left
+just subtract and stop; it *starts the next one* with the cycles left
 over. Without the loop, a caller that handed over a large `cycles` delta
 would complete one frame and silently discard the remainder, and the
 transmitter's effective rate would depend on how finely the caller
@@ -1208,7 +1207,7 @@ Receiving is the mirror image with two wrinkles
 *Overrun* is the receiver's way of reporting that software was too slow:
 a new byte completed while the previous one was still sitting unread in
 RDR. Notice that the new byte lands in RDR regardless — the chip does not
-protect the old byte, it simply records that one was lost. That is the
+protect the old byte; it simply records that one was lost. That is the
 right behavior to copy, and it is also the reason overrun is one of the
 bits `read_rdr` clears: the flag describes the delivery of the byte you
 are reading, so reading it retires the complaint.
@@ -1219,11 +1218,11 @@ copy of a byte is already halfway back down the wire before the byte has
 finished arriving. This model queues the whole received byte onto the
 transmit wire the instant the receive frame completes — one frame time
 later than the hardware would have started, and all at once rather than
-progressively. Nothing that ships for this pak can tell, because echo
+progressively. Nothing that shipped for this pak can tell, because echo
 mode's consumers are terminals that care about characters rather than
-edges, but the divergence is documented at the point where it happens
-rather than only in the module header, which is the pattern to copy when
-you make a fidelity trade of your own.
+edges. The divergence is nonetheless documented at the point where it
+happens rather than only in the module header, which is the pattern to
+copy when you make a fidelity trade of your own.
 
 ### The deliberate fidelity gap, and who would notice
 
@@ -1242,15 +1241,15 @@ chapter's clearest example of accuracy as a budget rather than a goal:
 Concretely, four things follow from that one sentence.
 
 The model **never generates a parity or framing error internally**. There
-is no bit shifter to mis-sample a noisy line, so the status bits exist,
+is no bit shifter to mis-sample a noisy line, so the status bits exist
 and clear at exactly the moments MAME clears them, but nothing in this
 implementation ever *sets* them from its own receive process. Such an
 error could only arrive already baked into a host-injected byte, and
 nothing in the `SerialEndpoint` layer injects corrupted frames.
 
 It **approximates echo mode at the byte boundary**, as the previous
-section walked, and skips a further MAME nuance that forces the echoed
-output to mark while overrun is set.
+section walked through, and skips a further MAME nuance that forces the
+echoed output to mark while overrun is set.
 
 It **collapses the 5-bit-word with 2-stop-bits corner case**. A real 6551
 gives that specific combination 1.5 stop bits — a half-width stop
@@ -1268,17 +1267,18 @@ precision the reference does not have would not be.
 
 So who notices? Practically nobody running ordinary terminal software or
 BASIC's `OPEN "S"` I/O over the pak. A byte either arrives correctly or
-it doesn't, and correct bytes at the right cadence is the entire contract
-a terminal emulator or a file-transfer protocol checks. The gap would
-matter only to software that deliberately *depends on* bit-level RS-232
-misbehavior — a modem-diagnostic program that injects a framing error on
-purpose to exercise its own recovery path, or an oscilloscope-style
-RS-232 line monitor. Nothing that shipped for the CoCo did either of
-those things through this pak. That is DESIGN.md §5's philosophy from week
-1 — "tighten later only if a game needs it" — applied for the first time
-in this course to a non-video subsystem, and note that it remains
-falsifiable: the day a program turns up that can tell, the frame timer
-becomes a bit timer and the tests that already exist keep passing.
+it doesn't, and correct bytes at the right cadence are the entire
+contract a terminal emulator or a file-transfer protocol checks. The gap
+would matter only to software that deliberately *depends on* bit-level
+RS-232 misbehavior — a modem-diagnostic program that injects a framing
+error on purpose to exercise its own recovery path, or an
+oscilloscope-style RS-232 line monitor. Nothing that shipped for the
+CoCo did either of those things through this pak. That is DESIGN.md §5's
+philosophy from Chapter 1 — "tighten later only if a game needs it" —
+applied for the first time in this course to a non-video subsystem. Note
+that it remains falsifiable: the day a program turns up that can tell,
+the frame timer becomes a bit timer and the tests that already exist keep
+passing.
 
 ### DCD/DSR and the IRQ source bitmask
 
@@ -1312,7 +1312,7 @@ usual risk of the derived value drifting out of step with its inputs.
 
 A status-register read clears every armed source at once, which the
 previous section quoted: `self.irq_sources = 0; self.update_irq_output();`.
-That is the same "reading has side effects" fact week 1 built the whole
+That is the same "reading has side effects" fact Chapter 1 built the whole
 `Bus::read(&mut self)` contract around, showing up in a chip that isn't a
 PIA — a useful reminder that the contract was not designed for the PIA
 specifically. DCD and DSR arming is gated by DTR and checked once per
@@ -1345,7 +1345,7 @@ The pair of fields per line — `dcd_level` and `dcd_checked` — is the
 minimal edge detector: one holds the live input, the other holds what was
 seen last time, and a difference is an edge. It is the same shape as
 `BitBanger`'s `last_mark`, and the same shape as the PIA's `c1_level` in
-week 10. Three devices, three edge detectors, one idea.
+Chapter 10. Three devices, three edge detectors, one idea.
 
 The distinction to internalize from this function is what DTR gates and
 what it doesn't. The *status bits* `status::DCD` and `status::DSR` track
@@ -1362,11 +1362,11 @@ and the very next example is PIA1's CB1 input in §14.4.
 
 `Acia6551` never touches a socket or a file. Its host-facing seam is five
 methods — `take_tx_byte`, `receive_byte`, `rx_ready`, `set_dcd`,
-`set_dsr` — and the module doc describes the module as "a pure chip model
-with a byte-level wire interface: no knowledge of hosts, sockets, or
-files." That is exactly the relationship `PrinterSink` gave the
-bit-banger in §14.2, one abstraction level up, and `serial.rs` says so
-itself: "Same shape as `crate::bitbanger::PrinterSink`."
+`set_dsr` — and the module doc describes it as "a pure chip model with a
+byte-level wire interface: no knowledge of hosts, sockets, or files."
+That is exactly the relationship `PrinterSink` gave the bit-banger in
+§14.2, one abstraction level up, and `serial.rs` says so itself: "Same
+shape as `crate::bitbanger::PrinterSink`."
 
 The trait is three methods
 ([`crates/coco-core/src/serial.rs:26-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/serial.rs#L26-L38)):
@@ -1449,14 +1449,14 @@ see if a modem had hung up.
 allow `unsafe` at all.
 
 > **Rust corner: `unsafe` with `SAFETY` comments, and the crate that
-> doesn't forbid it.** Week 1 flagged `mc6809`'s `#![forbid(unsafe_code)]`
+> doesn't forbid it.** Chapter 1 flagged `mc6809`'s `#![forbid(unsafe_code)]`
 > as a promise the CPU crate makes and has never needed to break.
 > `coco-core` — the crate this whole chapter lives in — makes no such
 > promise, and `serial.rs` is why. Allocating a Unix pseudo-terminal pair
 > genuinely requires raw `libc` calls (`posix_openpt`, `grantpt`,
 > `unlockpt`, `ptsname_r`, `fcntl`) that have no safe wrapper in the
-> standard library. Read how the crate handles that honestly rather than
-> pulling in an external PTY crate to hide it:
+> standard library. The crate handles that honestly, rather than pulling
+> in an external PTY crate to hide it:
 >
 > ```rust
 > pub fn new() -> io::Result<Self> {
@@ -1530,7 +1530,7 @@ allow `unsafe` at all.
 
 Electrically, the Deluxe RS-232 Program Pak is nothing but a 6551 and an
 optional 4K EPROM sitting behind the cartridge port's address and data
-bus — the same port week 5's I/O map first showed you, and the same port
+bus — the same port Chapter 5's I/O map first showed you, and the same port
 the whole second half of this chapter is about. Chapter 1 made the claim
 that the cartridge port "is barely a device at all," just a raw extension
 of the bus with a chip-select line and two interrupt lines brought out to
@@ -1599,10 +1599,10 @@ const HOST_POLL_INTERVAL: u32 = 128;
 
 That comment is a complete engineering argument in five lines, and it is
 worth taking apart because the *form* of the argument recurs whenever an
-emulator has to touch the outside world. There is an upper bound: polling
+emulator has to touch the outside world. There is a lower bound: polling
 per instruction would mean a `read` syscall several hundred thousand
 times a second, for a device that produces a byte at most every 466
-cycles. There is a lower bound: poll less often than one frame time and
+cycles. There is an upper bound: poll less often than one frame time and
 the receiver goes idle waiting for input that is already sitting in a
 kernel buffer, so throughput would be limited by the poll rate rather
 than by the baud rate. And 128 cycles sits comfortably between them, with
@@ -1668,7 +1668,7 @@ serial activity; they are the sort of field that is easy to dismiss as
 debug decoration until you are trying to work out whether a silent
 terminal session is failing to send or failing to receive.
 
-The pak's save-state behavior follows the same rule week 1 set out for
+The pak's save-state behavior follows the same rule Chapter 1 set out for
 `SystemBus`: host resources and copyrighted bytes do not travel. The
 `endpoint` field is `#[serde(skip, default = "default_endpoint")]`, so a
 restored machine comes back with an inert `Loopback` until the frontend
@@ -1697,7 +1697,7 @@ One line of body, and it is the entire cartridge-side interrupt
 implementation: the 6551 already computes "is any source armed" for its
 own status register, so the pak just republishes it on the connector pin.
 
-This is the function week 6 named but deferred. `poll_cart_interrupt` is
+This is the function Chapter 6 named but deferred. `poll_cart_interrupt` is
 called once per instruction from `step_cpu_unit` — the very function §6.3
 walked through — and its job is to sample that level and convert a
 *change* into whatever the physical CART* pin actually feeds
@@ -1733,7 +1733,7 @@ the `!` is load-bearing. CART* is active-low on the real connector, so an
 *asserted* interrupt — `level == true` — must drive the PIA's CB1 input
 *low*. Get the inversion wrong and the interrupt fires on the wrong edge,
 which on a PIA configured for falling edges means it never fires at all.
-`set_c1` is the same primitive week 10 introduced for horizontal and
+`set_c1` is the same primitive Chapter 10 introduced for horizontal and
 field sync ([`crates/coco-core/src/pia.rs:66-85`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs#L66-L85));
 it latches the CB1 flag only on a genuine transition whose direction
 matches PIA1's control-register edge selection, exactly as it did for
@@ -1745,7 +1745,7 @@ the machine has two independent paths from one wire and a program may use
 either. On a CoCo 1 or 2 there is no GIME, and the `variant` check skips
 that half.
 
-What finally reaches the CPU is the PIA's own output, and week 10 already
+What finally reaches the CPU is the PIA's own output, and Chapter 10 already
 built the OR that carries it:
 
 ```rust
@@ -1819,8 +1819,8 @@ edge PIA1 was configured to latch, and the flag PIA1 latched earlier is
 still set. FIRQ therefore stays asserted, which the test asserts
 explicitly with a message explaining why. Only reading PIA1's port B
 *data* register clears the latched flag and releases the line. That is
-the "reading a data register clears the interrupt flag" fact from week 1
-and week 10, now mattering across a device boundary: the chip that
+the "reading a data register clears the interrupt flag" fact from Chapter 1
+and Chapter 10, now mattering across a device boundary: the chip that
 raised the interrupt and the chip that holds it are not the same chip,
 and acknowledging one does not acknowledge the other.
 
@@ -1828,7 +1828,7 @@ The third is the sixteen-cycle `run` between those two steps, with its
 comment "let the seam observe CART* deasserting." `poll_cart_interrupt`
 is edge-triggered on a polled level; a level that changes and is never
 polled has not changed as far as the bus is concerned. Sixteen cycles is
-enough instructions for the poll to happen.
+enough time for the poll to happen.
 
 A companion test, `machine_loop_polls_cart_interrupt`, proves the same
 chain fires through the real `Machine::run_field` loop rather than the
@@ -1910,7 +1910,7 @@ behind, so the match arms own their payloads — `operands` can be pushed
 to and moved back in without a clone — and, more importantly, so the
 default outcome of every arm is "no sequence in progress." An arm that
 forgets to store a new pending state cannot accidentally leave the old
-one in place. Week 11's Rust corner made the same observation about
+one in place. Chapter 11's Rust corner made the same observation about
 `std::mem::take` in the audio event queue; this is the same technique
 being used for state-machine hygiene rather than for buffer draining.
 
@@ -2047,11 +2047,11 @@ input fail to blow the stack; the interpreter has to come out the other
 side in a *clean* state, which the test proves by feeding one more
 character and checking the head is where a fourth cell would put it.
 
-This is the class of hardware-fed vulnerability week 1's "fidelity is a
+This is the class of hardware-fed vulnerability Chapter 1's "fidelity is a
 budget" table doesn't capture, because it isn't about accuracy at all. It
 is about robustness against untrusted, hostile-shaped input. A printer
 byte stream becomes attacker-controlled the moment it arrives from a
-socket — §14.3's `SerialEndpoint`, or a `.wav`/`.cas` decode in week 12's
+socket — §14.3's `SerialEndpoint`, or a `.wav`/`.cas` decode in Chapter 12's
 world — so the interpreter has to survive arbitrary bytes, not merely
 documented ones, without taking the emulator process down with it. The
 same instinct explains every `saturating_add` in the module, and the
@@ -2131,7 +2131,7 @@ Reset the machine, keep the paper. It would have been easier to write
 `*self = Self::default()` and stop, and the result would have been a
 printer that eats its own output when the user clicks a button — which is
 not a thing printers do. The three-line dance (take the paper out,
-rebuild everything else from defaults, put the paper back) is week 12's
+rebuild everything else from defaults, put the paper back) is Chapter 12's
 "reset a struct by rebuilding it" pattern with one field held aside, and
 the doc comment points at the *separate* explicit action that does erase
 paper: tearing it off.
@@ -2221,8 +2221,8 @@ are individually verified and mutually consistent with the rest of the
 model: the text line feed is 1/6 inch, the graphics line feed is 7/72
 inch. A third statement in the same manual asserts an identity between
 counts of those two feeds. The arithmetic does not close — 132 against
-126 — and, crucially, the author checked whether *any* choice of vertical
-unit would close it, and proved none can, since 126 is not divisible by
+126 — and, crucially, the doc comment goes further and shows that *no*
+choice of vertical unit can close it, since 126 is not divisible by
 11. That elevates the finding from "our units are wrong" to "these three
 statements cannot all be about nominal inch math."
 
@@ -2294,7 +2294,7 @@ repaints in full regardless of what `take_dirty` would have said.
 
 ### The font: data, and honestly labeled as guesswork
 
-Week 7 built the VDG's MC6847 text font as *verified* hardware data —
+Chapter 7 built the VDG's MC6847 text font as *verified* hardware data —
 real glyph bitmaps traceable to the chip. The DMP-105's font cannot be
 that, and the module doc comment says so as its very first line, in bold,
 before anything else:
@@ -2336,7 +2336,7 @@ The `while` loops rather than iterators are the price of `const fn` —
 iterator adapters are not usable in a const context — and the payoff is
 that a source line reading `"..#...#.."` looks like the glyph it
 produces. That is far more reviewable than raw hex, and it is the same
-"author data the way a human actually checks it" instinct week 7's font
+"author data the way a human actually checks it" instinct Chapter 7's font
 tables used, applied to data that has no authoritative source at all.
 
 The honest labeling matters precisely *because* everything else in this
@@ -2353,11 +2353,10 @@ loudest formatting the language allows.
 ### End to end: `LLIST` through the whole stack
 
 [`tests/dmp105_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/dmp105_boot.rs)
-is the integration test that proves every layer of this chapter's first
-two rungs plus this section actually compose. It boots the real
-`coco3.rom`, attaches a `Dmp105Handle` as the bit-banger's sink, types a
-one-line program, `LLIST`s it, and checks the paper picked up plausible
-content:
+is the integration test that proves this chapter's first two rungs and
+this section actually compose. It boots the real `coco3.rom`, attaches a
+`Dmp105Handle` as the bit-banger's sink, types a one-line program,
+`LLIST`s it, and checks the paper picked up plausible content:
 
 ```rust
 let dmp = m.bus.bitbanger.start_dmp105();
@@ -2463,7 +2462,7 @@ idle values, and both are facts somebody had to check rather than assume.
 Two categories of method in that list are already familiar from earlier
 chapters, wearing new names. `cart_line_ties_q` and `cart_interrupt` are
 this section's whole subject, the two halves of the FIRQ story. And
-`peek`, `rom_peek`, and `peek_control` are week 16's side-effect-free
+`peek`, `rom_peek`, and `peek_control` are Chapter 16's side-effect-free
 debugger twins of `read`, `rom_read`, and `control_read`, arriving here
 because a cartridge is exactly the kind of device — like a PIA, like the
 GIME — whose plain reads can have side effects a memory viewer must not
@@ -2526,7 +2525,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 >
 > The comment at the top of `cart.rs` gives the reason in one clause: "an
 > enum is what lets `SystemBus`/`Machine` derive serde for save-states."
-> This is week 1's `#[derive(Serialize, Deserialize)]` story (§1.4)
+> This is Chapter 1's `#[derive(Serialize, Deserialize)]` story (§1.4)
 > resurfacing at a new layer. A trait object has no fixed,
 > known-in-advance shape that `serde` can generate a serializer for,
 > because `serde` must know at compile time every concrete type that could
@@ -2536,7 +2535,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 > a hand-written `SinkState` mapping, while the cartridge kept its
 > derivability and paid for it by enumerating.
 >
-> Two smaller decisions in that declaration are worth reading. Three
+> Two further details in that declaration are worth reading. Three
 > variants are boxed — `DiskCart`, `MultiPak`, and `Ssc` — for two
 > different reasons. An enum is as large as its largest variant, so the
 > Sound/Speech Cartridge's AY-plus-speech-engine state would otherwise
@@ -2585,7 +2584,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 > — precisely the kind of repetition where a typo in one arm of one method
 > produces a bug nobody finds for months. Every arm except `Custom`
 > resolves to a statically known concrete type at the call site, which is
-> the same monomorphization story week 1's Rust corner told about
+> the same monomorphization story Chapter 1's Rust corner told about
 > `impl Bus`, except that here a `match` does the dispatch instead of
 > generics, because the *set* of cartridge types is closed and known
 > rather than "any type the caller supplies." Only `Cart::Custom` pays for
@@ -2650,7 +2649,7 @@ pub fn hsync(&mut self) {
 ```
 
 Both edges back to back, every scanline — the same "emit both edges
-together since there is no sub-line timing resolution" trick week 10's
+together since there is no sub-line timing resolution" trick Chapter 10's
 `hsync` used for the HS pulse itself, reused verbatim for the cartridge
 Q-burst. Contrast the two polling rates deliberately. This one is per
 scanline, which is wildly more than enough for a signal whose only
@@ -2660,9 +2659,9 @@ enough that scanline granularity would be visible to software. Two
 sampling rates for two lines on the same connector, each chosen against
 what a program could actually detect.
 
-Now the ROM side of the story, verified against a real disassembly —
-`docs/cartridges.md`, cross-checked against Super Extended BASIC
-Unravelled II and Bob Russell's memory map, rather than being this
+Now the ROM side of the story. It is verified against a real
+disassembly — `docs/cartridges.md`, cross-checked against Super Extended
+BASIC Unravelled II and Bob Russell's memory map — rather than being this
 codebase's own invention. BASIC's reset code enables PIA1's CB1 FIRQ
 (`$FF23` bit 0). The continuously toggling Q clock then fires the ROM's
 default FIRQ handler at `$A0F6`. On the CoCo 3, that handler's cartridge
@@ -2725,7 +2724,7 @@ fn non_autostart_pak_boots_to_normal_basic_and_never_runs_cart_code() {
 
 The seven bytes of `marker_pak` are the smallest program that can prove
 it ran: load a byte, store it somewhere observable, and spin. `$0400` is
-the top-left character cell of the text screen, which chapter 1 promised
+the top-left character cell of the text screen, which Chapter 1 promised
 would become as familiar as `$FF90`, so the marker is visible on the
 emulated screen as well as through `bus.read`.
 
@@ -2783,7 +2782,7 @@ fn cart_interrupt(&mut self) -> bool {
 }
 ```
 
-Two independent selectors is exactly why Disk-BASIC-era software could
+Two independent selectors are exactly why Disk-BASIC-era software could
 point SCS at the disk controller's slot while CTS and CART pointed at a
 game slot. That is not a clever emulator accommodation; it is what the
 hardware does, and software depended on it.
@@ -2798,8 +2797,8 @@ SCS and CTS at slot 1, and
 proves exactly that with a synthetic `TestCart`.
 
 Software-write blocking is the switch-and-register interaction most worth
-internalizing, because it is the kind of stateful hardware quirk that is
-easy to get backwards:
+getting straight, because it is the kind of stateful hardware quirk that
+is easy to get backwards:
 
 ```rust
 pub fn set_switch(&mut self, slot: usize) {
@@ -2975,7 +2974,7 @@ fn generator_sample(&mut self, dt: f64) -> (f32, f32) {
 }
 ```
 
-The SN76489A itself is week 11's chip, unchanged and unaware it is in a
+The SN76489A itself is Chapter 11's chip, unchanged and unaware it is in a
 cartridge. The GMC's only contribution is *plumbing* — that chip, running
 at its own 4 MHz crystal, alongside a bank-switched ROM window — which is
 why `generator_sample` is four lines, and why it takes `dt` in seconds
@@ -3046,16 +3045,20 @@ cargo test -p coco-core --lib bitbanger:: acia6551:: dmp105:: serial::
 cargo test -p coco-core --test bitbanger rs232 dmp105_boot cart mpi gmc
 ```
 
-The last two integration tests in that second line (`bitbanger_boot`,
-`bitbanger_os9`, `dmp105_boot`, and the real-ROM tests inside [`cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)/
-[`mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)) need `roms/coco3.rom` (and [`bitbanger_os9.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_os9.rs) additionally needs
-`roms/disk11.rom` plus disk images under `disks/`) — none of which ship
-in this repository or in a fresh worktree; they're git-ignored and
-present only on the machine this course was authored on. Every one of
-those tests checks for the asset and prints `eprintln!("skipping ...")`
-and returns cleanly if it's missing, rather than failing — you'll see
-that pattern (`load_rom()`/`try_load_rom()` returning `Option`) at the
-top of each file. The pure unit and bus-level tests ([`bitbanger_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs),
+Four of the six test targets in that second line need `roms/coco3.rom`:
+`dmp105_boot`, plus the real-ROM tests inside [`cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)/
+[`mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)/[`gmc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gmc.rs) (the `cart.rs` and `mpi.rs` ones additionally need
+`roms/disk11.rom`). So do the two boot tests §14.2 quoted,
+[`bitbanger_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_boot.rs) and [`bitbanger_os9.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bitbanger_os9.rs), which that line doesn't name —
+and `bitbanger_os9.rs` additionally needs disk images under `disks/`.
+None of those assets ship in this repository or in a fresh worktree;
+they're git-ignored and present only on the machine this course was
+authored on. Most of those tests check for the asset; if it's missing,
+the test prints `eprintln!("skipping ...")` and returns cleanly rather
+than failing — the `try_load_rom()`-returning-`Option` pattern at the
+top of each file. Two are stricter: `cart.rs` and `gmc.rs` panic with a
+clear message when the ROM is absent, on the theory that their whole
+file is about real-ROM behavior and a silent skip would be misleading. The pure unit and bus-level tests ([`bitbanger_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs),
 [`acia6551_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551_test.rs), [`serial_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/serial_test.rs), [`dmp105_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105_test.rs), the synthetic
 parts of [`tests/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cart.rs)/[`tests/mpi.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/mpi.rs)/[`tests/gmc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gmc.rs)) need nothing and
 will run regardless.
@@ -3120,7 +3123,7 @@ tests pass again and `git status` is clean.
 
 **14.4 — Build: an elongated-mode DMP-105 test (build).** `1B 0E`/`1B
 0F` (start/end elongation) are already implemented (`esc::ELONGATE_START`/
-`esc::ELONGATE_END` in [`dmp105/protocol.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105/protocol.rs)) but exercise it yourself:
+`esc::ELONGATE_END` in [`dmp105/protocol.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/dmp105/protocol.rs)) but exercise them yourself:
 write a new test in the shape of `dmp105_test.rs`'s existing tests that
 feeds `ESC $0E`, one glyph, `ESC $0F`, another glyph, and asserts the
 *second* glyph's cell starts exactly `2 * normal_cell_width()` after the
@@ -3162,17 +3165,17 @@ land on the same field for a reason.
 
 ## What's next
 
-Week 15 leaves the core entirely and spends a week on `coco-egui`, the
+Chapter 15 leaves the core entirely and spends a week on `coco-egui`, the
 frontend: the per-frame loop, input routing, the VM manager, and headless
 UI testing with kittest. One thread from this chapter continues there —
 the DMP-105's *paper*, as an actual on-screen scrolling view a user can
-watch fill up while `LLIST` runs, is week 15's to build; everything about
+watch fill up while `LLIST` runs, is Chapter 15's to build; everything about
 what goes *onto* that paper (the protocol, the fixed-point coordinate
 system, the font) was this chapter's, and so was `take_dirty`, the
 one-call answer to the only question a live paper view actually asks.
-Week 16 closes the course with the debugger and save states — and now
+Chapter 16 closes the course with the debugger and save states — and now
 that you've read `Cart`'s enum-versus-trait-object story, and watched a
 `Box<dyn PrinterSink>` get serialized through a state enum it doesn't
-know about, you already understand *why* the whole cartridge tree (RomPak
-images excepted — copyrighted bytes, reattached separately) rides along
-for free in every `.ccstate` snapshot.
+know about, you already understand *why* the whole cartridge tree rides
+along for free in every `.ccstate` snapshot — RomPak images excepted,
+since those are copyrighted bytes, reattached separately.

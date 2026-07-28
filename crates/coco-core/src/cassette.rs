@@ -148,7 +148,8 @@ impl Cassette {
     /// (an ordinary deserialized field a hand-crafted payload can set to
     /// anything) is out of its `0..8` range: [`Cassette::current_bit_is_one`]
     /// shifts a byte right by `bit` with no bounds check of its own, which
-    /// panics on overflow in debug builds and is unspecified in release
+    /// panics on overflow in debug builds and becomes a masked shift (the
+    /// amount wrapped to the type's width) in release
     /// (`docs/plan-save-states.md`). Also confirms `pos`/`bit` consistency
     /// exactly at end-of-tape: [`Cassette::tick`] only ever advances `pos`
     /// in the same step that wraps `bit` back to 0, so `pos == tape.len()`

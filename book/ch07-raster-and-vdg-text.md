@@ -1,13 +1,13 @@
 # Chapter 7 — How a Raster Works, and the Legacy VDG Text Mode
 
 *Week 7. Goal: go from "a TV scans lines" to a fully decoded green BASIC
-prompt, with zero GPU involved anywhere. Weeks 2–4 gave you a CPU; week 5
-gave you a bus; week 6 gave you a clock that calls `render_scanline()` once
+prompt, with zero GPU involved anywhere. Chapters 2–4 gave you a CPU; Chapter 5
+gave you a bus; Chapter 6 gave you a clock that calls `render_scanline()` once
 per line. This week that function stops being an empty promise and starts
 actually painting pixels — and the first thing it paints turns out not to be
 what forty years of CoCo folklore would suggest. The natural instinct is to
-"start with the GIME." Here is why that instinct leads here, to week 7, and
-not to week 1: nothing the GIME draws is visible until a CPU executes ROM
+"start with the GIME." Here is why that instinct leads to Chapter 7 rather than
+Chapter 1: nothing the GIME draws is visible until a CPU executes ROM
 code over a bus on a clock. Now all three previous parts of the course pay
 off at once, on the most familiar screen the machine ever produced.*
 
@@ -17,11 +17,11 @@ Video is the subsystem that finally makes an emulator feel like a machine
 rather than a test suite. It is also, for a reader coming from systems
 programming rather than graphics, the subsystem most likely to be handed
 over as vocabulary instead of understanding. Words like *raster*,
-*scanline*, *framebuffer*, and *blit* get used as though everyone was issued
-a copy of the definitions at some point. This chapter assumes nobody was.
-Section 7.2 builds the entire model from an electron beam upward, and it
-does so before a single line of Rust, because every function in the video
-subsystem is trivial once the picture behind it is clear and inscrutable
+*scanline*, *framebuffer*, and *blit* get used as though everyone had been
+issued a copy of the definitions at some point. This chapter assumes nobody
+was. Section 7.2 builds the entire model from an electron beam upward, and
+it does so before a single line of Rust, because every function in the video
+subsystem is trivial once the picture behind it is clear, and inscrutable
 before that.
 
 Here is the good news, stated up front so the rest of the chapter reads as
@@ -29,8 +29,8 @@ confirmation rather than suspense: the "graphics math" in this codebase is
 one multiplication and one addition. There is no matrix anywhere, no
 transform, no blending, no sampling. A pixel lives at a computable byte
 offset in a flat array, and every renderer in `coco-core` — this week's
-text mode, next week's GIME graphics, week 9's PMODE bitmaps — is a loop
-that decides which colour to write at which offset. Once that formula is in
+text mode, next week's GIME graphics, Chapter 9's PMODE bitmaps — is a loop
+that decides which color to write at which offset. Once that formula is in
 hand, the difficulty of a video mode is entirely a question of decoding
 bytes, and decoding bytes is what the previous six weeks were about.
 
@@ -42,9 +42,9 @@ Generator, a chip that is not on the CoCo 3's board at all, in a
 32-column-by-16-row text mode inherited whole from 1980. Everything in that
 mode — the character cell, the font ROM, the inverse-video bit, the blocky
 "semigraphics" cells that every BASIC one-liner drew with, the two palette
-registers that decide the colours — is legacy compatibility, faithfully
-reproduced by silicon that had no obligation to reproduce it except that
-Tandy could not afford to break the existing software library.
+registers that decide the colors — is legacy compatibility, faithfully
+reproduced by silicon that had no obligation to do so except that Tandy
+could not afford to break the existing software library.
 
 Nothing in this chapter requires a ROM image, a window, or a GPU. Every
 claim it makes about pixels can be checked by calling a pure function on a
@@ -56,10 +56,10 @@ exactly what §7.8's lab bench and §7.9's tests do.
 ## 7.1 Why this is where video finally starts
 
 Before the new material, a short recap of the machinery this chapter plugs
-into, because the seam between week 6 and week 7 is a single function call
+into, because the seam between Chapter 6 and Chapter 7 is a single function call,
 and it helps to see both sides of it at once.
 
-Week 6 built the clock. Its central loop runs the CPU in slices of one
+Chapter 6 built the clock. Its central loop runs the CPU in slices of one
 scanline's worth of cycles, and after each slice it runs a per-line trailer
 called `end_of_line()`
 ([`crates/coco-core/src/machine/run.rs:130`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130)).
@@ -88,7 +88,7 @@ pub(super) fn end_of_line(&mut self) -> bool {
 
 The important structural fact is that `render_scanline()`
 ([`crates/coco-core/src/machine/render.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L29))
-was already being called on every line back in week 6, in cycle-accurate
+was already being called on every line back in Chapter 6, in cycle-accurate
 lockstep with the CPU. It was simply not doing anything a human could see.
 Everything the video subsystem needed — a line counter, a field boundary, a
 guarantee that the CPU had run exactly the right number of cycles before
@@ -101,12 +101,12 @@ real CoCo 3 puts on a television at cold boot.
 That ordering — clock first, pixels second — is worth defending, because
 the instinct almost everyone brings to a CoCo emulator is "start with the
 GIME." The GIME is the interesting chip; it is the reason the CoCo 3 is
-worth emulating at all; week 1's tour gave it three separate jobs and a
+worth emulating at all; Chapter 1's tour gave it three separate jobs and a
 paragraph of admiration. And yet starting there produces nothing you can
 look at. The video hardware does not invent a screen. It reads bytes that a
 CPU wrote, at addresses a memory decoder resolved, on a schedule a clock
 imposed. Remove any one of those three and the video chip is a very
-elaborate way to produce a blank rectangle. Weeks 2 through 6 built exactly
+elaborate way to produce a blank rectangle. Chapters 2 through 6 built exactly
 those three things, in the order that makes each one testable, and this
 week collects on all of them at once.
 
@@ -114,11 +114,11 @@ It is equally worth being precise about what this chapter is *not*, because
 "video" is a large word and the CoCo 3 has a lot of it. This week does not
 cover the GIME's native 40- and 80-column text or its bitmapped graphics
 modes, which live behind the register file at `$FF98`–`$FF9F`; those are
-week 8, and week 8 opens by turning off the very compatibility bit this
-chapter spends its second half explaining. This week does not cover
-composite artifact colour, mid-frame register changes that split one screen
+Chapter 8, which opens by turning off the very compatibility bit this chapter
+spends its second half explaining. This week does not cover
+composite artifact color, mid-frame register changes that split one screen
 into two different modes, or the PMODE bitmap graphics that most CoCo games
-actually used; those are week 9. What is left after those exclusions is
+actually used; those are Chapter 9. What is left after those exclusions is
 deliberately narrow: one video mode, the one every CoCo 3 owner saw first
 and saw most, decoded down to individual bits and individual pixels, with
 nothing hand-waved.
@@ -129,7 +129,7 @@ nothing hand-waved.
 
 This book assumes no graphics programming background, so this section builds
 the whole picture before any Rust. Skip nothing here — every later section
-leans on this arithmetic, and the later sections are short precisely because
+leans on this arithmetic, and those sections are short precisely because
 this one is not.
 
 ### 7.2.1 What a CRT actually does
@@ -170,13 +170,13 @@ pulse, or vsync, meaning "start a new picture now."
 
 One complete top-to-bottom sweep is a *field*. On NTSC a field is 262
 scanlines, and fields arrive at roughly 59.94 per second — the two constants
-you derived in week 6, and which live in
+derived in Chapter 6, which live in
 [`crates/coco-core/src/config.rs:52`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L52)
 and
 [`:60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L60).
 Everything the emulator does per-line, per-field, or per-second is an
 integer relationship between those two numbers and the CPU clock, which is
-why week 6 could drive video, audio, and the interval timer off one cycle
+why Chapter 6 could drive video, audio, and the interval timer off one cycle
 counter without any of them drifting apart.
 
 Not every one of those 262 lines carries a picture, and the reasons are
@@ -194,12 +194,12 @@ of the sets in the field.
 
 The universal answer, on every home computer and console of the period, was
 to draw a smaller *active area* in the middle of the field and surround it
-with a solid *border* colour: border on the left and right of each visible
-line, before and after the active pixels, and whole border-coloured lines
+with a solid *border* color: border on the left and right of each visible
+line, before and after the active pixels, and whole border-colored lines
 above and below the active body. The border is not a decorative flourish
 that a renderer may skip. It is a required part of a legal video signal and
 a deliberate safety margin against the customer's television, and it is
-exactly the coloured strip that framed the CoCo's picture on every set it
+exactly the colored strip that framed the CoCo's picture on every set it
 was ever plugged into.
 
 That gives the complete model, and it is small enough to hold in one
@@ -208,7 +208,7 @@ of the visible ones, only a rectangle in the middle carries picture, and
 everything outside that rectangle is border or blanking. Every video chip
 this course will meet — the MC6847, the SAM, and the GIME — is, at bottom, a
 machine that answers two questions once per scanline. Is this line border or
-picture? And if it is picture, what colour is each pixel across it?
+picture? And if it is picture, what color is each pixel across it?
 
 It is worth pausing on a thought experiment, because it explains a class of
 bug that is otherwise baffling. Suppose an emulator decided the blanking
@@ -217,7 +217,7 @@ field instead of 262. The picture would look identical, and the machine
 would be subtly, permanently wrong: the CPU would get 240 lines' worth of
 cycles per field instead of 262, the interval timer counting horizontal
 syncs would run about nine percent fast, and the field-sync interrupt that
-BASIC's housekeeping depends on would arrive early. This is why week 6's
+BASIC's housekeeping depends on would arrive early. This is why Chapter 6's
 loop counts all 262 lines and why `render_scanline` handles the invisible
 ones by returning early rather than by never being called. Time is the
 product; pixels are a side effect.
@@ -231,17 +231,17 @@ belongs at that spot and converting it to a voltage. There is no
 intermediate copy of the screen anywhere, because there is nowhere to put
 one and no reason to want one.
 
-An emulator cannot work that way, because there is no beam. So it fakes the
-output into an ordinary array in memory and hands that array to the host to
-display — either once the whole field is complete, or, as §7.3 will show,
+An emulator cannot work that way, because there is no beam. So it assembles
+the output in an ordinary array in memory and hands that array to the host
+to display — either once the whole field is complete, or, as §7.3 will show,
 one scanline at a time as each is computed. That array is the
 *framebuffer*, and in this codebase it is a plain `Vec<u8>` hanging off the
-`Machine` struct. If that sounds familiar, it should: it is the field week 1
+`Machine` struct. If that sounds familiar, it should: it is the field Chapter 1
 used as its example of *derived* state, marked `#[serde(skip)]` and excluded
 from save states on the grounds that the next rendered field repaints every
 pixel from RAM and the registers anyway.
 
-The byte layout is the convention called **RGBA**, which is close to
+The byte layout is the convention called *RGBA*, which is close to
 universal in graphics work: four bytes per pixel, in the order red, green,
 blue, alpha. Alpha is opacity, and in this emulator it is always `0xFF`,
 fully opaque, because nothing here ever needs to see through one pixel to
@@ -292,13 +292,13 @@ with an extra offset added to skip past a border. You now know one hundred
 percent of the arithmetic of two-dimensional graphics as this codebase
 practices it. There is no further "graphics math" waiting in a later
 chapter; everything else in the video subsystem is bookkeeping about *which*
-colour belongs at *which* offset.
+color belongs at *which* offset.
 
 Here is the arithmetic in the flesh, verbatim from the renderer
 ([`crates/coco-core/src/video/text.rs:260`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L260)).
 The function's job is to draw one character cell: it receives the
 framebuffer, the cell's row and column on the text screen, the twelve bytes
-of font data for the glyph, and the two colours to draw with.
+of font data for the glyph, and the two colors to draw with.
 
 ```rust
 fn blit_cell(fb: &mut [u8], row: usize, col: usize, glyph: &[u8; CELL_H], fg: [u8; 4], bg: [u8; 4]) {
@@ -323,7 +323,7 @@ rows and eight columns. The test `bits & (0x80 >> cx)` picks out one bit of
 the current font row, starting from the most significant bit and marching
 right, which is how a font byte maps onto a row of pixels with the leftmost
 pixel in the high bit. And `copy_from_slice` stamps four bytes — one RGBA
-colour — into the buffer at the computed offset.
+color — into the buffer at the computed offset.
 
 The word *blit* in the function name is worth defining once, since it will
 recur. It is old graphics jargon, short for "block transfer," and it means
@@ -352,7 +352,7 @@ pub const FB_W: usize = ACTIVE_W + 2 * BORDER; // 288
 pub const FB_H: usize = ACTIVE_H + 2 * BORDER; // 224
 ```
 
-Every number in the rest of the chapter descends from those six lines. A
+Every number in the rest of the chapter descends from those nine lines. A
 character cell is eight pixels wide and twelve scanlines tall. The screen is
 thirty-two cells across and sixteen down. Multiply those out and the active
 picture is 256 by 192 pixels, which is the native resolution of every
@@ -360,20 +360,20 @@ CoCo-compatible video mode this book will meet, text and graphics alike. Add
 a sixteen-pixel border on all four sides and the whole legacy framebuffer is
 288 by 224. Notice that the constants are *derived* rather than restated:
 `ACTIVE_W` is written as `COLS * CELL_W`, not as `256`. That is the same
-discipline week 1 praised in the CPU's register struct — say the thing once,
+discipline Chapter 1 praised in the CPU's register struct — say the thing once,
 in the form that shows where it came from, and let the compiler do the
 multiplication.
 
 Once `blit_cell` is legible, every renderer in the video subsystem is
 legible, because they are all this same loop with a different rule for
-computing the colour. This week's text mode looks the colour up in a font
+computing the color. This week's text mode looks the color up in a font
 table. Next week's GIME graphics modes unpack it from packed pixel bits.
-Week 9's PMODE renderers do the same with a different packing. The loop
+Chapter 9's PMODE renderers do the same with a different packing. The loop
 never changes.
 
 ### 7.2.3 Connecting the two: one call per scanline
 
-Week 6 built the clock and §7.2.2 built the target; this section is the wire
+Chapter 6 built the clock and §7.2.2 built the target; this section is the wire
 between them. The call chain, top to bottom, is short enough to write out in
 full:
 
@@ -417,13 +417,13 @@ pub(super) fn render_scanline(&mut self) {
     }
 ```
 
-Four decisions in twenty lines, and each one is a piece of the model from
+Four decisions in twenty-three lines, each one a piece of the model from
 §7.2.1. The first guard restricts this whole path to the CoCo 3; a CoCo 1 or
 2 renders differently, and §7.3 explains why. The `self.line == 0` block runs
-once per field and *latches* the registers that a video chip samples at the
+once per field. It *latches* the registers that a video chip samples at the
 top of the picture rather than continuously — most importantly the
 compatibility bit that decides whether this field is a legacy VDG field at
-all — and sizes the framebuffer to the canvas that §7.3 is about. The `row
+all — and it sizes the framebuffer to the canvas that §7.3 is about. The `row
 >= raster::CANVAS_H` check is vertical blanking, exactly as promised: those
 lines are counted, they cost the CPU its cycles, and they paint nothing. And
 the final branch chooses this chapter's painter over next chapter's.
@@ -433,10 +433,10 @@ hardware, latching means sampling a signal at a defined instant and holding
 that sample steady regardless of what the source does afterward. Real video
 chips latch a handful of registers at the start of each field precisely so
 that a program writing to those registers halfway down the screen cannot
-tear the picture in two. Modelling that faithfully means the emulator must
+tear the picture in two. Modeling that faithfully means the emulator must
 copy those values once per field into somewhere stable, which is what
 `FieldScan::latch` does. Everything *not* in that latched group is re-read
-live on every scanline, and week 9's mid-frame split effects are entirely
+live on every scanline, and Chapter 9's mid-frame split effects are entirely
 about which registers fall on which side of that line.
 
 So `render_scanline` is called 262 times per field, whether or not the line
@@ -461,7 +461,7 @@ machine can enter.
 
 The codebase's answer, for the CoCo 3, is a single fixed-size canvas that
 every video mode renders into: this week's legacy text, next week's
-GIME-native text and graphics, week 9's advanced modes, all of them. The
+GIME-native text and graphics, Chapter 9's advanced modes, all of them. The
 whole module that defines it is forty lines, and it repays reading in full
 ([`crates/coco-core/src/raster.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs)):
 
@@ -511,24 +511,24 @@ frontend then has to know: which modes are wide, which pixel aspect ratios
 need correcting, how to rescale a texture when a running program switches
 modes mid-session, and what to do about the borders each mode draws
 differently. Every one of those is a place for mode-specific knowledge to
-leak out of the emulator core and into the window code, and week 15 would
+leak out of the emulator core and into the window code, and Chapter 15 would
 spend its budget re-deriving the video subsystem from the outside.
 
 `raster.rs` refuses that trade. It fixes one target — 640 by 240 — and makes
 each *mode* responsible for scaling itself up to fill it, always by an
 integer factor. A 256-pixel-wide legacy text row, this week's mode, is
 doubled to 512 active pixels. An 80-column GIME text row next week may not
-need scaling at all. The frontend, from week 15 onward, then does exactly
+need scaling at all. The frontend, from Chapter 15 onward, then does exactly
 one thing forever: take a 640×240 RGBA buffer, upload it as a texture, and
 letterbox it to a 4:3 aspect ratio. No mode-specific frontend code, ever.
 
-The specific numbers are not arbitrary either. 640×240 is MAME's own visible
+The specific numbers are not arbitrary either: 640×240 is MAME's own visible
 window for the CoCo 3, which means a frame produced by this emulator and a
 frame produced by MAME can be diffed pixel-for-pixel with no rescaling step
 in between to muddy the comparison. That is the headless-testability payoff
 the syllabus promised, and it is worth being concrete about what it buys: a
 test can allocate a 640×240 `Vec<u8>`, call the renderer, and assert on
-individual pixel colours, with no window, no GPU, and no scaling logic that
+individual pixel colors, with no window, no GPU, and no scaling logic that
 could be wrong in two places at once.
 
 The insistence on *integer* scaling is a related discipline. A non-integer
@@ -544,7 +544,7 @@ in §7.9.3 relies on when it samples one canvas pixel per native pixel.
 `NON_WIDE_ACTIVE_W` is 512, and the constant immediately below it computes
 the side border from it: `(640 − 512) / 2 = 64` pixels on each side. Most
 modes, including this week's legacy text, draw a 512-pixel active body
-centred in the 640-pixel canvas with 64 pixels of border to the left and
+centered in the 640-pixel canvas with 64 pixels of border to the left and
 right. A small number of GIME modes — next week's widest resolutions — use
 the full 640 with no side border at all, and those are called *wide* modes.
 
@@ -603,7 +603,7 @@ silently disagreeing with a hardcoded literal three files away.
 > *that* — "start here, then take this many," which reads more directly
 > than folding both bounds into one expression. `.chunks_exact_mut(4)` then
 > walks that slice four bytes at a time, handing back one `&mut [u8]` per
-> pixel for `copy_from_slice` to stamp the same colour into. `chunks_exact`
+> pixel for `copy_from_slice` to stamp the same color into. `chunks_exact`
 > (rather than plain `chunks`) guarantees every chunk is a full
 > `BYTES_PER_PIXEL` long and silently drops any short trailing remainder —
 > the right call here specifically *because* the slice length is
@@ -624,8 +624,8 @@ silently disagreeing with a hardcoded literal three files away.
 ### The vertical window, and one glitch this emulator declines to model
 
 `vertical_window(lpf)` answers the vertical half of §7.2.1's question:
-given the two-bit lines-per-field field of the GIME's `$FF99` register, how
-many border rows sit above the active body, and how tall is that body? For
+given the two-bit lines-per-field selector in the GIME's `$FF99` register,
+how many border rows sit above the active body, and how tall is that body? For
 `lpf = 0` the answer is 25 border rows followed by a 192-row body. The
 remaining 23 rows are the bottom border, which the function does not return
 because whoever calls it can compute it: 25 above plus 192 of body plus 23
@@ -638,17 +638,17 @@ of a VDG text screen agree exactly, which is not a coincidence but the whole
 point of a compatibility mode. Second, the value 25 is not a rounding: it
 comes from MAME's own geometry computation, and this codebase's
 `vertical_window` reproduces all four cases from that source rather than
-inventing centred approximations of its own.
+inventing centered approximations of its own.
 
 With one exception, which the doc comment is careful to flag. `LPF = 2` is
 the glitched case: on real silicon that setting produces a line count the
 documentation describes as zero or infinite, with the visible result
-depending on exactly where in the raster the write landed. Modelling that
-faithfully would mean modelling the write's raster position and the failure
+depending on exactly where in the raster the write landed. Modeling that
+faithfully would mean modeling the write's raster position and the failure
 mode it produces, for a setting no sane program uses. The codebase instead
-picks a defined, centred approximation — 210 rows, sitting `(240 − 210) / 2`
+picks a defined, centered approximation — 210 rows, sitting `(240 − 210) / 2`
 from the top — and says so in the comment. That is a fidelity trade-off of
-exactly the kind week 1's budget metaphor described: the cost of being
+exactly the kind Chapter 1's budget metaphor described: the cost of being
 stricter is high, the software that would notice is hypothetical, and the
 decision is written down where the next person will find it rather than
 discovered later as a mystery.
@@ -675,7 +675,7 @@ if row < top || row >= top + body {
 
 That is §7.2.1's first question, in Rust, once per line: is this line border
 or picture? If the row falls above the active body or below it, the entire
-640-pixel row is filled with the border colour and the function returns
+640-pixel row is filled with the border color and the function returns
 without touching a font or a screen byte. Only if the row falls inside the
 body does anything else happen — and the first thing that happens is the
 horizontal version of the same question, filling the 64-pixel margins on
@@ -706,8 +706,8 @@ CoCo 1/2 field is painted in one pass at the wrap.
 This chapter's worked examples are CoCo 3, since that is this course's
 machine. But two of the three tests in §7.9 run against the CoCo 1/2 path,
 because that is where the direct, ROM-free renderer entry point lives — so
-keep the split in mind when a test suddenly uses a different framebuffer
-width than the section before it did.
+keep the split in mind when a test suddenly uses a framebuffer width the
+preceding section did not.
 
 ---
 
@@ -724,8 +724,7 @@ GIME to imitate one, in a 32-column-by-16-row text mode that is
 bit-for-bit compatible with what CoCo 1/2 software expects to find in RAM.
 The GIME's native 40- and 80-column text appears only once a program asks
 for it with `WIDTH 40` or `WIDTH 80` — which, outside a handful of
-applications that wanted the extra columns, most BASIC programmers rarely
-did.
+applications that wanted the extra columns, rarely happened.
 
 This is not folklore. It is a correction recorded in the project's own
 design document, `DESIGN.md` §6, written after the original plan had
@@ -744,9 +743,9 @@ at all — the ambition to "start with the GIME" collided with the fact that
 the GIME's first job is impersonation. Pedagogically, the same ordering is
 the right one: the legacy mode is simpler, it is the screen the reader
 already recognizes, and understanding it makes next week's native register
-file read as a contrast rather than as a wall. Hence week 7 before week 8.
+file read as a contrast rather than as a wall. Hence Chapter 7 before Chapter 8.
 
-There is a broader pattern here, and week 1 named it while looking at the
+There is a broader pattern here, and Chapter 1 named it while looking at the
 SAM-compatibility strobes in the `$FFC0–$FFDF` range. Backward compatibility
 is not a footnote in this machine; it is a structural commitment that
 reaches all the way into what the hardware does on the very first field
@@ -757,7 +756,7 @@ existed.
 ### 7.4.1 How the machine decides which path it's on
 
 Everything above turns on a single bit, and the function that reads it is
-the map of the entire video subsystem for weeks 7 through 9. It is short
+the map of the entire video subsystem for Chapters 7 through 9. It is short
 enough to read in full
 ([`crates/coco-core/src/machine/video_mode.rs:19`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L19)):
 
@@ -791,7 +790,7 @@ fn video_mode(&self) -> VideoMode {
 ```
 
 Take the two machine families in turn. A CoCo 1 or 2 has no GIME to consult,
-so it always runs this week's path and picks text against graphics off a
+so it always runs this week's path and picks text against graphics from a
 single PIA1 bit: `VDG_AG`, bit 7 of `$FF22`
 ([`crates/coco-core/src/video/graphics.rs:16`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L16)).
 That bit is the MC6847's alphanumerics-versus-graphics pin, brought out to a
@@ -799,7 +798,7 @@ PIA output line because on those machines the *CPU* had to drive the video
 chip's mode pins directly — there was no video register file to write to.
 This is a good early illustration of how much of a CoCo's video
 configuration lives in a general-purpose parallel port rather than in
-anything that looks like a display controller, a theme week 10 will develop
+anything that looks like a display controller, a theme Chapter 10 will develop
 at length.
 
 A CoCo 3 checks one more gate before it gets there. `INIT0`'s `COCO` bit —
@@ -816,8 +815,8 @@ against hi-res text
 — get consulted at all.
 
 Stock CoCo 3 BASIC sets `COCO` at cold start and never clears it unless a
-program asks for a wider screen. Which is precisely the fact this section
-opened with, now traced to the single `if` that implements it.
+program asks for a wider screen — precisely the fact this section opened
+with, now traced to the single `if` that implements it.
 
 ### 7.4.2 The screen byte, bit by bit
 
@@ -857,7 +856,7 @@ const GLYPH_CODE_MASK: u8 = 0x3F;  // bits 5-0 — alphanumeric glyph code
 Bit 7 is the mode selector for that one cell, and everything else in the
 byte depends on it. When bit 7 is clear the cell is plain text: bits 5
 through 0 select one of 64 glyphs, and bit 6 swaps the cell's foreground and
-background colours. When bit 7 is set, none of that applies — the byte
+background colors. When bit 7 is set, none of that applies — the byte
 switches to an entirely different interpretation called semigraphics-4, and
 §7.6 takes it apart.
 
@@ -871,9 +870,8 @@ a second block starting at space, computed as `' ' + (code - 0x20)`. Sixty-four
 glyphs is what fits in six bits, and what the VDG's designers chose to spend
 them on was the uppercase alphabet, a handful of symbols, the digits, and
 punctuation. There are no lowercase letters in that space at all — a
-limitation the machine worked around in two different ways, one of which is
-the inverse bit and the other of which is §7.5.3's genuinely strange
-true-lowercase mode.
+limitation the machine worked around in two different ways: the inverse bit,
+and §7.5.3's genuinely strange true-lowercase mode.
 
 > **Rust corner: `usize` on the framebuffer side, `u16` on the bus side.**
 > `paint_legacy_scanline` ([`crates/coco-core/src/machine/render.rs:75`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L75))
@@ -891,9 +889,9 @@ true-lowercase mode.
 > ```
 > `base` (the screen row's start address) and the loop's `i as u16` are
 > `u16` because that's a real constraint, not a style choice: the 6809's
-> address bus is sixteen bits wide, full stop, and `Bus::read` (week 1)
+> address bus is sixteen bits wide, full stop, and `Bus::read` (Chapter 1)
 > takes a `u16` for exactly that reason — `wrapping_add` on `i as u16` is
-> the same "must wrap at `$FFFF` → `$0000`" discipline you saw in week 1's
+> the same "must wrap at `$FFFF` → `$0000`" discipline you saw in Chapter 1's
 > `Bus::read_u16`. `row`, `CANVAS_W`, `BYTES_PER_PIXEL`, and the framebuffer
 > index built from them are `usize` because *that's* a real constraint too:
 > `Vec<u8>`/slice indexing in Rust is defined in terms of `usize` — it's the
@@ -935,22 +933,22 @@ for capital `'A'`. That is not a coincidence dressed up as one; it falls
 straight out of the arithmetic. For any code `c` below `$20`, the
 non-inverse decoded character is `'@' + c`, which is `$40 + c`. The inverse
 *raw byte* for that same code is `c | $40`, and since `c`'s top two bits are
-clear by construction that expression equals `$40 + c` as well — the
+clear by construction, that expression equals `$40 + c` as well — the
 identical value. For codes under `$20`, "the ASCII value of the decoded
 character" and "the raw screen byte with the inverse bit forced on" are
 literally the same number. It is a cute artifact of the VDG's code space
-overlapping ASCII's uppercase block, not a rule anybody needs to memorize,
-but it is why `$41` reads naturally as both "screen byte" and "the letter A"
-at once, and it is why so much CoCo code gets away with treating the two as
+overlapping ASCII's uppercase block, not a rule anybody needs to memorize.
+But it is why `$41` reads naturally as both "screen byte" and "the letter A"
+at once, and why so much CoCo code gets away with treating the two as
 interchangeable.
 
-Now the part that matters for the black-on-green reveal, and it is the
-strangest fact in this chapter. The stock Color BASIC ROM fills the entire
-512-byte text screen with the *inverse* form of every character it prints.
-Bit 6 is set on every single screen byte, always — not just for a blinking
-cursor, not just for a highlighted word, but as the normal representation of
-ordinary text. `DESIGN.md` §6 records this as verified against the real ROM
-and against a MAME screenshot.
+Now the part that matters for the black-on-green reveal, and it is where the
+chapter's arithmetic turns into something visible. The stock Color BASIC ROM
+fills the entire 512-byte text screen with the *inverse* form of every
+character it prints. Bit 6 is set on every single screen byte, always — not
+just for a blinking cursor, not just for a highlighted word, but as the
+normal representation of ordinary text. `DESIGN.md` §6 records this as
+verified against the real ROM and against a MAME screenshot.
 
 Feed that fact into `resolve_alpha_cell`
 ([`crates/coco-core/src/video/text.rs:88-116`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L88-L116)),
@@ -973,29 +971,29 @@ fn resolve_alpha_cell(
 ```
 
 The whole mechanism is that penultimate line. When `inverse` is true, the
-function returns the pair swapped, so the *background* colour is what paints
-where the glyph's set bits are and the *foreground* colour paints
-everywhere else. Every character on the stock boot screen therefore draws
-its strokes in the background palette colour and its surroundings in the
-foreground palette colour — backwards from what the words "foreground" and
+function returns the pair swapped, so the *background* color paints where
+the glyph's set bits are and the *foreground* color paints everywhere
+else. Every character on the stock boot screen therefore draws
+its strokes in the background palette color and its surroundings in the
+foreground palette color — backwards from what the words "foreground" and
 "background" suggest in every other context they appear in.
 
-Combine that with where those two colours actually come from, which §7.7
+Combine that with where those two colors actually come from, which §7.7
 takes apart in detail: the foreground register resolves to green and the
 background register to black. Swap them on every cell, all the time, and the
 result is what a CoCo 3 shows at cold boot — black letters on a field of
-solid green, with the green being what "background" resolves to and the
-black letters being "foreground," inverted onto the page by one bit that
-nobody thinks about.
+solid green, with the green being what "foreground" resolves to and the
+black letters coming from "background," inverted onto the page by one bit
+that nobody thinks about.
 
 This is the single strangest fact this chapter teaches, and it is exactly
 correct. Boot the real ROM, or read
 [`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs)
-from week 6, and check for yourself that every non-blank screen byte has bit
-6 set. There is also a design lesson buried in it, and it is one week 1
+from Chapter 6, and check for yourself that every non-blank screen byte has bit
+6 set. There is also a design lesson buried in it, and it is one Chapter 1
 raised in a different context: the renderer does not know any of this. It
 has no notion of "the boot screen" or "how BASIC likes its text." It swaps
-two colours when a bit is set, and the visual character of an entire
+two colors when a bit is set, and the visual character of an entire
 operating environment is an emergent property of the ROM's choice to set
 that bit everywhere.
 
@@ -1046,7 +1044,7 @@ the screen, because a computed-from-scratch address answers the question
 "where would row N be if the registers had always held their current values"
 rather than "where is row N, given where row N−1 actually was." A running
 cursor answers the second question, which is the one the hardware answers.
-Week 9's mid-frame split effects live entirely in that difference.
+Chapter 9's mid-frame split effects live entirely in that difference.
 
 With the mode chosen, the byte decoded, and the row located, exactly one
 thing is left: turning a six-bit glyph code into twelve rows of pixels.
@@ -1077,8 +1075,8 @@ the second row of the table:
 ```
 
 Each byte's eight bits correspond to the cell's eight columns,
-most-significant bit first — the exact same `bits & (0x80 >> cx)` test
-already read in `blit_cell`. Decoding by hand is mechanical: write out each
+most-significant bit first — the same `bits & (0x80 >> cx)` test that
+`blit_cell` performs. Decoding by hand is mechanical: write out each
 byte in binary, put a `#` where a bit is set and a `.` where it is clear,
 and stack the twelve rows.
 
@@ -1108,9 +1106,9 @@ renderer produced, and the mismatch names the bug.
 Two structural observations fall out of the decode. First, rows 0 through 2
 and rows 10 and 11 are blank in *every* entry of `MC6847_FONT`, so all
 sixty-four glyphs live in rows 3 through 9. The module documentation states
-the same thing from the source's perspective: the plain MC6847 "occupies
-rows 3-10 (top 2 and bottom 2 rows always blank — MAME
-`vdg_fontdata8x12`)." Six or seven rows of actual strokes, centred in a
+it slightly more loosely, from the source's perspective: the plain MC6847
+"occupies rows 3-10 (top 2 and bottom 2 rows always blank — MAME
+`vdg_fontdata8x12`)." Six or seven rows of actual strokes, centered in a
 twelve-row cell with generous padding above and below, is what gives CoCo
 text its line spacing — the reason a 32×16 screen never looks cramped
 despite being only sixteen rows tall. Second, look at the horizontal extent
@@ -1128,7 +1126,7 @@ blank columns inside each glyph.
 > bytes but as an opaque `&'static [u8; 768]` with no structure — every
 > glyph lookup would need hand-rolled index math (`bytes[code * 12 + row]`)
 > instead of `font[code][row]`, reintroducing exactly the kind of
-> off-by-one risk week 3's indexed-postbyte decoder went to such lengths to
+> off-by-one risk Chapter 3's indexed-postbyte decoder went to such lengths to
 > eliminate. `lazy_static!`/`once_cell` exist to defer initialization of
 > values that genuinely *can't* be computed until runtime — a `HashMap`
 > built from config, a value needing an allocator. Nothing here needs
@@ -1143,7 +1141,7 @@ blank columns inside each glyph.
 >
 > The type is doing real work too. `[[u8; 12]; 64]` says "sixty-four
 > glyphs of twelve rows" in the type system, so an out-of-range glyph index
-> is a bounds check rather than a silent read into the neighbouring glyph,
+> is a bounds check rather than a silent read into the neighboring glyph,
 > and a function that takes a `&'static [u8; CELL_H]` — as
 > `resolve_alpha_cell` returns — cannot be handed a slice of the wrong
 > length. Compare that with the `&'static [u8]` a flat byte blob would give
@@ -1160,7 +1158,7 @@ convention rather than content.
 has 96 entries. The first 64 are the same uppercase and symbol glyphs at the
 same codes with the same meanings; the additional 32, at indices 64 through
 95, exist only on the newer MC6847T1 chip and hold true lowercase letters,
-reachable only through the special path in §7.5.3. Compare the T1's 'A'
+reachable through the special path in §7.5.3. Compare the T1's 'A'
 against the plain chip's:
 
 ```rust
@@ -1179,7 +1177,7 @@ uppercase glyph up. Adding lowercase to the chip therefore changed the
 vertical position of every character already in it, which is exactly the
 kind of consequence that makes hardware revisions interesting to emulate:
 the visible difference between a CoCo 1 and a CoCo 2B is not a feature
-anybody advertised, it is that all the letters sit two pixels higher.
+anybody advertised; it is that all the letters sit two pixels higher.
 
 `GIME_LOWRES_FONT`
 ([`crates/coco-core/src/font_gime.rs:162`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/font_gime.rs#L162))
@@ -1215,11 +1213,11 @@ for another costs the renderer nothing at all.
 
 Neither the plain MC6847 nor the T1 in its *normal* mode has real lowercase.
 Codes `$00` through `$1F` always draw the corresponding uppercase letter,
-and setting bit 6 merely inverts that letter's colours, as §7.4.3 showed.
-The T1 chip has a second, genuinely different mode — and the CoCo 3's GIME
-compat generator shares its logic — called *true lowercase*, which redirects
-those same low codes to an entirely different set of glyphs: actual
-lowercase letterforms with descenders, rather than inverted uppercase ones.
+and setting bit 6 merely inverts that letter's colors, as §7.4.3 showed.
+The T1 chip has a second, genuinely different mode, called *true lowercase*,
+which redirects those same low codes to an entirely different set of glyphs:
+actual lowercase letterforms with descenders, rather than inverted uppercase
+ones. The CoCo 3's GIME compat generator shares that logic.
 
 The three generators are named by one enum
 ([`crates/coco-core/src/video/text.rs:54-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L54-L62)):
@@ -1296,13 +1294,13 @@ if true_lowercase {
 Two details in eight lines deserve attention. The index is `0x40 +
 glyph_code` rather than `glyph_code % 64`, which is the arithmetic that
 reaches entries 64 through 95 — the lowercase section §7.5.2 described. And
-the returned colour pair is `(bg, fg)`, swapped, which is the same swap the
+the returned color pair is `(bg, fg)`, swapped, which is the same swap the
 `inverse` branch performs even though condition 2 above required `inverse`
-to be *false*. True-lowercase text is drawn colour-inverted relative to what
+to be *false*. True-lowercase text is drawn color-inverted relative to what
 anyone would naively expect.
 
 That is not a bug and it is not a simplification. It is a real hardware
-behaviour, reproduced deliberately, matching MAME's own `mc6847.cpp` — and
+behavior, reproduced deliberately, matching MAME's own `mc6847.cpp` — and
 the doc comment on `resolve_alpha_cell` explains the equivalence, noting
 that MAME expresses the same result as drawing `raw_glyph ^ 0xFF`
 non-inverted, which is arithmetically the same thing in the inverse-toggle
@@ -1324,7 +1322,7 @@ finds out immediately.
 ## 7.6 Semigraphics-4: the blocky graphics of every one-liner
 
 Set bit 7 of a screen byte and the entire interpretation changes. The cell
-stops being a letter and becomes a 2×2 grid of coloured blocks, each
+stops being a letter and becomes a 2×2 grid of colored blocks, each
 independently on or off. This is *semigraphics-4*, universally shortened to
 SG4, and it is the reason a machine whose text screen holds only 512 bytes
 could draw pictures without leaving text mode at all.
@@ -1368,9 +1366,9 @@ const SG4_LOWER_RIGHT: u8 = 0x01;
 ```
 
 Bits 6 through 4 select one of palette registers 0 through 7 as the lit
-colour for *this whole cell*. That is worth emphasizing because it is the
-mode's central limitation: SG4 is one colour per cell, not one colour per
-block, so the four quadrants of a cell are either that colour or unlit, with
+color for *this whole cell*. That is worth emphasizing because it is the
+mode's central limitation: SG4 is one color per cell, not one color per
+block, so the four quadrants of a cell are either that color or unlit, with
 no way to make the upper-left red and the lower-right blue. Bits 3 through 0
 are the on/off pattern for the four quadrants, one bit each. An unlit block
 always draws palette register 8, which resolves to black in
@@ -1418,19 +1416,19 @@ implementations of the same 2×2 decode exist because the CoCo 3 renders line
 by line and the CoCo 1/2 renders field by field, as §7.3's caveat explained.
 What the two paths *do* share is `resolve_alpha_cell`, the harder and more
 error-prone half, which is exactly the right place to draw the line — the
-part with four interacting conditions and a colour-swap quirk is written
+part with four interacting conditions and a color-swap quirk is written
 once, and the part that is two nested loops is written twice.
 
-Now decode a byte that puts this section and §7.4 to a rigour test: `$C1`.
+Now decode a byte that tests this section and §7.4 together: `$C1`.
 In binary that is `1100 0001`. Bit 7 is **1**, so before looking at anything
-else, this cell is semigraphics. Bit 6's meaning as "inverse" simply does
+else, this cell is semigraphics. Bit 6's meaning as "inverse" does
 not apply, because that meaning exists only in the `else` branch of the code
 above. It is tempting to read `$C1` as "`$41`, which was inverse 'A', plus
 something extra" and expect a letter to appear — that instinct is exactly
 the trap this byte sets, and it is the most common way to misread a CoCo
 screen dump. Decode it correctly, as SG4:
 
-- Colour: `(0xC1 >> 4) & 0x07` is `0xC & 0x07`, which is `0b1100 & 0b0111` =
+- Color: `(0xC1 >> 4) & 0x07` is `0xC & 0x07`, which is `0b1100 & 0b0111` =
   `0b0100` = palette register **4**.
 - Pattern: the low nibble is `0x1` = `0001`, so only `SG4_LOWER_RIGHT` is
   set.
@@ -1441,25 +1439,25 @@ lower right, in whatever palette register 4 currently resolves to. One
 small lit square in the corner of an otherwise-black cell, and nothing at
 all like a letter.
 
-Which raises the obvious question, and it is the subject of the next
+That raises the obvious question, and it is the subject of the next
 section: what does "palette register 4" actually look like?
 
 ---
 
-## 7.7 Where the colours actually come from
+## 7.7 Where the colors actually come from
 
-Every colour named so far has been an index rather than a colour. The text
-foreground and background, SG4's eight selectable colours, the unlit block
-colour, the border — all of them are *palette register indices*, and
+Every color named so far has been an index rather than a color. The text
+foreground and background, SG4's eight selectable colors, the unlit block
+color, the border — all of them are *palette register indices*, and
 something still has to turn "palette register 4" into four bytes of RGBA
 that a display can show.
 
 On the CoCo 3, that something is the GIME, even while the GIME is busy
 imitating a chip that never had programmable palette registers at all. This
 is one of the places where the compatibility fiction is visibly a fiction:
-a real MC6847 produced fixed analog colours determined by its own circuitry,
+a real MC6847 produced fixed analog colors determined by its own circuitry,
 and a program could no more reprogram them than it could resolder the board.
-The GIME's compat mode reproduces the *structure* of the VDG's colour scheme
+The GIME's compat mode reproduces the *structure* of the VDG's color scheme
 — which index means what — while sourcing the actual values from registers
 the ROM programmed at boot.
 
@@ -1475,14 +1473,14 @@ pub const TEXT_FG_INDEX: usize = 13;
 
 Registers 12 and 13, and not by accident: they match the MC6847's own
 `color_base_0` and `color_base_1` numbering, so a VDG-compatibility mode
-reading registers 12 and 13 is doing precisely what a real
-MC6847-plus-analog-colour-circuitry pairing did, with the GIME standing in
-for the analog part. The sixteen-entry index layout is shared across the
-whole legacy path: registers 0 through 7 are the eight SG4 colours, 8
-through 11 the two-colour graphics pairs, and 12 through 15 the two
-alphanumeric colour sets.
+reading registers 12 and 13 is doing precisely what a real MC6847 paired
+with its analog color circuitry did, with the GIME standing in for the
+analog part. The sixteen-entry index layout is shared across the
+whole legacy path: registers 0 through 7 are the eight SG4 colors, 8
+through 11 the two-color graphics pairs, and 12 through 15 the two
+alphanumeric color sets.
 
-The design point the module documentation insists on is that these colours
+The design point the module documentation insists on is that these colors
 are *data*, programmed by the ROM at boot, and not hardcoded anywhere in the
 renderer. `legacy_palette`
 ([`crates/coco-core/src/machine/video_mode.rs:62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L62))
@@ -1508,14 +1506,14 @@ pub(super) fn legacy_palette(&self, css: bool) -> [[u8; 4]; video::PALETTE_LEN] 
 
 The function is called once per scanline, which is what makes a palette
 write take visible effect on the very next line rather than the next field —
-the mechanism behind a whole family of raster tricks that week 9 will chase
+the mechanism behind a whole family of raster tricks that Chapter 9 will chase
 properly.
 
 ### The CoCo 1/2 side of the same interface
 
-The `else` arm above is the other half of the story, and it is a small
-lesson in how to model two machines that differ in exactly one respect. A
-CoCo 1 or 2 has no palette registers whatsoever; its colours are hardwired
+The second `match` arm above is the other half of the story, and it is a
+small lesson in how to model two machines that differ in exactly one respect. A
+CoCo 1 or 2 has no palette registers whatsoever; its colors are hardwired
 analog levels in the MC6847. So instead of snapshotting registers, that path
 resolves a fixed table
 ([`crates/coco-core/src/video.rs:66-83`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L66-L83)),
@@ -1534,7 +1532,7 @@ whose last eight entries show the shared index layout clearly:
 
 Those are not idealized values. The module comment records that they
 reproduce MAME's measured `mc6847.cpp` palette, which is why entry 8's
-"black" is `[0x26, 0x30, 0x16]` — a dark, slightly green grey rather than
+"black" is `[0x26, 0x30, 0x16]` — a dark, slightly green gray rather than
 true black, because that is what the chip actually put on a screen. And
 notice that entries 0 through 11 are exactly the values the CoCo 3 ROM
 programs into its palette registers at cold start, which is the reason the
@@ -1544,13 +1542,13 @@ The `ColorSource` enum that dispatches between them
 ([`crates/coco-core/src/video.rs:116-143`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L116-L143))
 carries one asymmetry worth understanding, because it explains a `css`
 parameter that has been threading through every signature in this chapter.
-The `$FF22` CSS bit selects the orange alphanumeric colour set instead of
+The `$FF22` CSS bit selects the orange alphanumeric color set instead of
 the green one. On a CoCo 1/2 that is a real hardware switch with no register
 behind it, so `resolve` implements it by copying entries 14 and 15 over
 entries 12 and 13 — meaning every caller can read `TEXT_BG_INDEX` and
 `TEXT_FG_INDEX` unconditionally and never think about CSS again. On a CoCo 3
 the GIME's registers already hold whatever the ROM programmed, so `css` is
-ignored. One enum, two behaviours, and a single index convention that
+ignored. One enum, two behaviors, and a single index convention that
 survives both.
 
 ### From six bits to twenty-four
@@ -1569,7 +1567,7 @@ pub fn rgb_color(value: u8) -> [u8; 4] {
 }
 ```
 
-A GIME palette register holds six meaningful bits, two per colour channel,
+A GIME palette register holds six meaningful bits, two per color channel,
 and the layout is the one the documentation calls `RGBrgb`: the three high
 bits are the more significant bit of red, green, and blue in that order, and
 the three low bits are the less significant bit of each. So a channel's two
@@ -1597,7 +1595,7 @@ B = chan(3, 0): bit3=0, bit0=0 → v = 0b00 = 0 → B = 0
 ```
 
 `rgb_color(0x12)` is `[0x00, 0xFF, 0x00, 0xFF]` — pure green, `#00FF00`.
-That is the value the codebase names `BORDER6_GREEN`
+`$12` is the value the codebase names `BORDER6_GREEN`
 ([`crates/coco-core/src/video/text.rs:126`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L126)),
 and it is used for the border of legacy *graphics* modes. The plain-text
 border, which is this week's mode, resolves `BORDER6_BLACK = 0x00` instead,
@@ -1605,11 +1603,11 @@ which by the same arithmetic is trivially `[0, 0, 0, 0xFF]` — confirming
 `DESIGN.md`'s claim that the boot screen has a black border around its green
 picture.
 
-One convenient consequence of that arithmetic: `rgb_color(0x00)` for a
-palette register that has been reset and never programmed is likewise pure
-black. That is why several of this chapter's tests, and §7.9.3's in
-particular, can leave a palette entry untouched and rely on it reading as
-black rather than as garbage. A zeroed register is a meaningful colour, not
+One convenient consequence of that arithmetic: a palette register that has
+been reset and never programmed holds `0x00`, and `rgb_color(0x00)` is
+likewise pure black. That is why several of this chapter's tests, §7.9.3's
+in particular, can leave a palette entry untouched and rely on it reading as
+black rather than as garbage. A zeroed register is a meaningful color, not
 an uninitialized one.
 
 ### The border tells you what mode you are in
@@ -1618,11 +1616,11 @@ an uninitialized one.
 ([`text.rs:136-145`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs#L136-L145))
 is worth reading once for what it reveals about the machine's visual design
 language. It examines three bits of `$FF22` and returns one of four
-six-bit colour values: graphics modes border green, or white when CSS is
-set; a particular text variant with GM2 set and GM1 clear borders green or
-orange; and every other text or semigraphics mode borders black.
+six-bit color values: graphics modes border green, or white when CSS is
+set; one particular text variant, with GM2 set and GM1 clear, borders green
+or orange; and every other text or semigraphics mode borders black.
 
-Real hardware, in other words, colour-codes the border by video mode. That
+Real hardware, in other words, color-codes the border by video mode. That
 is a detail no photograph of "a green CoCo screen" would ever tell you, and
 one that only becomes visible when you decode the register logic rather than
 eyeballing a screenshot. It is also the sort of thing that makes an emulator
@@ -1639,12 +1637,12 @@ it" is the single most effective debugging technique available in graphics
 work, and it should not require a window.
 
 The `examples/` directory of `coco-core` doubles as a lab bench for exactly
-that reason. It matters more than convenience: a course meant to be
+that reason. That is more than a convenience: a course meant to be
 followed on a headless machine, and a repository whose tests run in CI, both
 need a way to produce and inspect an image without a display server, a
 window manager, or a GPU driver. The mechanism is almost insultingly simple.
-It is **PPM**, the Portable Pixmap format: a plain-text header followed by a
-raw binary body, simple enough to write by hand in five lines.
+It is *PPM*, the Portable Pixmap format: a plain-text header followed by a
+raw binary body, short enough to write by hand in five lines.
 
 ```rust
 let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
@@ -1675,7 +1673,7 @@ Both of them, however, need real ROM images to boot: `demo_frames.rs` reads
 `coco3.rom` unconditionally, and `vdg_font_probe.rs` wants `extbas11.rom`,
 `bas12.rom`, and `coco3.rom` besides. Those files are copyrighted, so the
 repository does not ship them; the directory that holds them is git-ignored,
-exactly as week 1's practical notes described, and a fresh clone will not
+exactly as Chapter 1's practical notes described, and a fresh clone will not
 have it. That is not a gap in the course. It is the intended boundary
 between "code the emulator core," which works everywhere with nothing but
 the repository, and "trace-diff against a real boot," which needs assets the
@@ -1712,10 +1710,11 @@ std::fs::write("/tmp/one_letter.ppm", ppm).unwrap();
 Read what that program does *not* do. It never constructs a `Machine`. It
 never executes a 6809 instruction. It never touches a bus, a PIA, or an
 interrupt. It allocates a screen of spaces, drops one byte into the corner,
-resolves two colours by hand, and calls the pure decode function that this
-whole chapter has been reading. The output is a 288×224 image with a single
-inverse 'A' in the top-left corner: green letters' worth of background where
-the strokes are, black around them, exactly as §7.4.3 predicted.
+resolves two colors by hand, and calls the pure decode function that this
+whole chapter has been reading. The output is a 288×224 image, black
+everywhere except one cell in the top-left corner: the inverse 'A' fills
+that cell with the foreground green and draws the letter's strokes in the
+background black, exactly as §7.4.3 predicted.
 
 That is the real lab bench for this week, and it is the shape one of the
 exercises below asks you to extend. It is also a good habit to carry
@@ -1754,7 +1753,7 @@ fn border_and_active_area_use_their_colors() {
 ```
 
 The setup is a screen filled entirely with spaces, so every cell is blank
-and the active area should come out uniformly background-coloured. The two
+and the active area should come out uniformly background-colored. The two
 extreme corners of the framebuffer, `(0, 0)` and the bottom-right, should be
 border. That is the simplest possible statement of §7.2.2's geometry:
 `BORDER` pixels of margin on every side of a `COLS * CELL_W` by `ROWS *
@@ -1768,7 +1767,7 @@ chosen as *sentinels* rather than for realism. Three visually absurd
 primaries mean an assertion failure names exactly which of the three roles
 was painted in the wrong place, which a realistic palette of two similar
 greens could never do. When you write your own renderer tests, steal this
-technique: pick colours that could not possibly be confused for one another,
+technique: pick colors that could not possibly be confused for one another,
 and let the failure message do the diagnosis.
 
 If the border-versus-active arithmetic is ever broken by a refactor, this is
@@ -1792,7 +1791,7 @@ assert_eq!(px(&fb, BORDER + quad_x, BORDER + quad_y), SG_COLOR);                
 ```
 
 Decode the constant the same way §7.6 taught. `0x80` sets the semigraphics
-bit. `3 << 4` puts colour index 3 into bits 6 through 4. And `0b1001` sets
+bit. `3 << 4` puts color index 3 into bits 6 through 4. And `0b1001` sets
 `SG4_UPPER_LEFT` (`0x08`) and `SG4_LOWER_RIGHT` (`0x01`), leaving the other
 two quadrants clear. Notice that the test writes the byte as an *expression*
 built from the same shifts the decoder uses, rather than as the literal
@@ -1803,7 +1802,7 @@ assertions mean anything.
 
 The assertions then sample exactly one pixel from each of the four
 quadrants, at the quadrant's own top-left corner, and check it against the
-lit or unlit colour predicted from the pattern bits. Four pixels is a
+lit or unlit color predicted from the pattern bits. Four pixels is a
 minimal but complete proof that the `(bottom, right)` match in the painter
 puts each pattern bit in the quadrant the bit-layout diagram says it belongs
 in, and nowhere else. A transposition bug — say, swapping upper-right and
@@ -1817,7 +1816,7 @@ these four assertions immediately.
 This is the payoff test for §7.4's entire claim that no VDG chip exists on a
 CoCo 3. Unlike the two above, it boots a real `Machine` rather than calling
 `render_text` directly: it forces legacy mode through `INIT0`'s `COCO` bit,
-writes one character to the screen, runs a full field through week 6's
+writes one character to the screen, runs a full field through Chapter 6's
 timing loop, and then checks which of three possible glyph shapes came out
 the other end.
 
@@ -1865,7 +1864,7 @@ pixel.
 The palette setup is equally deliberate. Only the foreground register is
 programmed, to white; the background register is left at its zeroed default,
 which §7.7 established resolves to pure black. Two maximally distinct
-colours mean the sampling helper can classify every pixel in the cell as
+colors mean the sampling helper can classify every pixel in the cell as
 "on" or "off" with no ambiguity.
 
 That helper is the second thing worth noticing. It is
@@ -1875,7 +1874,7 @@ not the plain `sample_cell` the CoCo 1/2 tests use. It reads pixels off the
 CoCo 3's canonical 640×240 canvas from §7.3, which means it has to account
 for the ×2 horizontal scale — it samples the left pixel of each doubled
 pair — and for the 64-pixel side border and the 25-row top border that
-`vertical_window(0)` places the body at. Same underlying idea as its sibling,
+`vertical_window(0)` puts above the body. Same underlying idea as its sibling,
 different geometry constants, which is exactly the split §7.3's caveat
 flagged. Its counterpart `glyph_bits`
 ([`common.rs:144`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_coco12/common.rs#L144))
@@ -1907,7 +1906,7 @@ whole assignment is comfortably an evening's work.
 2. [`crates/coco-core/src/video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs)
    — the module-level doc first, then the geometry constants, then
    `ColorSource` and its `resolve` method. That last pair is §7.7's CoCo 1/2
-   versus CoCo 3 split, and it is a good small example of modelling a
+   versus CoCo 3 split, and it is a good small example of modeling a
    difference between two machines without duplicating everything around it.
 3. [`crates/coco-core/src/video/text.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/text.rs)
    — the whole file. It is 271 lines and every one of them was excerpted or
@@ -1933,7 +1932,7 @@ whole assignment is comfortably an evening's work.
    matters.
 6. [`crates/coco-core/src/gime/palette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs)
    — just `rgb_color`. Ignore the composite lookup tables entirely; they
-   are week 9's problem, and they are hand-measured data rather than
+   are Chapter 9's problem, and they are hand-measured data rather than
    anything you can reason about.
 7. The tests:
    [`crates/coco-core/tests/render.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render.rs)
@@ -1967,7 +1966,7 @@ look like? (Hint: `$9D = 1001 1101`.) Then draw the resulting 8×12 pixel
 grid on paper, `#`/`.` style like §7.5.1's worked example — for an
 alphanumeric byte, look up the actual glyph rows in `MC6847_FONT`; for a
 semigraphics byte, work out which of the four quadrants are lit from the
-low nibble. Check your colour assignment (which quadrant/glyph pixels are
+low nibble. Check your color assignment (which quadrant/glyph pixels are
 "on" vs. "off," and which palette index each maps to) against
 `resolve_alpha_cell`/`paint_legacy_text_line`.
 
@@ -2042,21 +2041,21 @@ chapter did its job.
 
 ## What's next
 
-Week 8 turns off the `INIT0 COCO` bit this chapter spent so long explaining
+Chapter 8 turns off the `INIT0 COCO` bit this chapter spent so long explaining
 and asks what happens on the other side of it: the GIME's *own* video
-registers at `$FF98`–`$FF9F`, native text with real per-character colour
+registers at `$FF98`–`$FF9F`, native text with real per-character color
 attributes and blink, and native bitmap graphics at up to 640 pixels wide.
 The contrast is instructive. Where legacy text packs three meanings into one
 byte and reads its geometry from a chip that no longer exists, GIME-native
 modes have a register for everything, read physical RAM with the MMU
-bypassed, and can put sixteen colours on screen at once.
+bypassed, and can put sixteen colors on screen at once.
 
 Almost none of this week's groundwork is wasted, which is the point of
 having built it first. The canonical 640×240 canvas is the same canvas. The
 palette-register-to-RGBA pipeline is the same pipeline, `rgb_color` and all.
 The per-scanline call chain, the `FieldScan` latch, and the row cursor are
-all unchanged. Week 8 is the same raster and the same painter with a
+all unchanged. Chapter 8 is the same raster and the same painter with a
 completely different register file deciding what to paint.
 
-Bring the `$FF90`–`$FF9F` memory map from week 1's table. You are about to
+Bring the `$FF90`–`$FF9F` memory map from Chapter 1's table. You are about to
 need every byte of it.

@@ -1,25 +1,25 @@
 # Chapter 9 — Splits, Composite, and PMODEs
 
 *Week 9. Goal: the effects that made demos possible, and the emulation-policy
-questions they force. Weeks 7–8 gave you a raster, VDG text, and the GIME's
+questions they force. Chapters 7–8 gave you a raster, VDG text, and the GIME's
 native text/graphics modes rendered from a register snapshot taken once per
 field. This week removes that simplification in two directions at once: the
 register snapshot turns out to be a lie (real software rewrites those
 registers **while the beam is still scanning**, and the picture must show
-both halves), and the "one renderer" story turns out to be a lie too — the
-same 6-bit palette value paints a different colour depending on which cable
-is plugged into the back of the machine. Both lies have famous symptoms on
+both halves), and the "one renderer" story is a lie too — the same 6-bit
+palette value paints a different color depending on which cable is plugged
+into the back of the machine. Both lies have famous symptoms on
 real hardware: the two-tone game screen where the top third and the bottom
 two-thirds clearly came from different POKEs, and the muddy-brown mess a
-composite TV made of colours that looked crisp on an RGB monitor. By the end
+composite TV made of colors that looked crisp on an RGB monitor. By the end
 of this chapter you can point at the exact struct and the exact test that
 explain each.*
 
 ---
 
-Weeks 7 and 8 were about geometry. Given a register file frozen at one
+Chapters 7 and 8 were about geometry. Given a register file frozen at one
 instant, where does each byte of video RAM land on the screen, and what
-colour does it come out? That question has a clean answer, and the last two
+color does it come out? That question has a clean answer, and the last two
 chapters gave it: a decode function per mode, a fetch address per row, a
 palette lookup per pixel. Every one of those answers is still correct. What
 was quietly missing is that neither the register file nor the palette lookup
@@ -27,22 +27,23 @@ is as fixed as the previous chapters made them look.
 
 Both simplifications were deliberate, and both are the kind that make a
 first pass tractable and a second pass necessary. The first is temporal: the
-GIME's registers are not a snapshot, they are a signal that changes while
-the picture is being drawn, and a 6809 program with an interrupt handler can
+GIME's registers are not a snapshot but a signal that changes while the
+picture is being drawn, and a 6809 program with an interrupt handler can
 change them at a *chosen* scanline. The second is physical: the six bits in
-a palette register are not a colour, they are a number that two entirely
-different pieces of analog hardware turn into two entirely different
-colours, and nothing in the machine records which one is attached.
+a palette register are not a color but a number, and two entirely
+different pieces of analog hardware turn that number into two entirely
+different colors, with nothing in the machine recording which one is
+attached.
 
 This chapter takes them in that order — physical first, temporal second —
-because the colour half is self-contained and short, and it sets up a habit
+because the color half is self-contained and short, and it sets up a habit
 of mind the split half needs: separating *what the register says* from *what
 the hardware downstream of the register does with it*. Sections 9.1 through
 9.7 are the monitor story, and end with a claim worth stating up front so
 you can watch it be defended: composite output is not a second renderer.
 Sections 9.8 through 9.11 are the raster-split story, ending in a test where
 hand-assembled 6809 code arms a hardware timer, takes a FIRQ, and paints two
-different border colours into one field with no help at all from the test
+different border colors into one field with no help at all from the test
 harness. Sections 9.12 through 9.15 then step back to the CoCo 1/2's own
 graphics modes, the `PMODE`s a generation of BASIC programmers typed
 without ever being told what the numbers meant — plus one honest accounting
@@ -58,16 +59,16 @@ were load-bearing.
 ## 9.1 Two pictures from one register file
 
 Start with the question that decides how much work the composite path is
-going to be, because the answer shapes every section after it: is composite
-output a different *renderer*, or a different *interpretation of the same
-render*? If it were a different renderer, this chapter would be twice as
-long and the codebase would have two of everything — two text painters, two
-graphics painters, two sets of tests.
+going to take, because the answer shapes every section after it: is
+composite output a different *renderer*, or a different *interpretation of
+the same render*? If it were a different renderer, this chapter would be
+twice as long and the codebase would have two of everything — two text
+painters, two graphics painters, two sets of tests.
 
 Here is the claim this chapter defends: **composite vs. RGB is not a second
 renderer.** There is exactly one code path that walks video RAM and produces
 pixels — the `paint_scanline`/`paint_text_row`/`paint_graphics_row` functions
-you read in week 8, untouched since. What changes between an RGB monitor and
+you read in Chapter 8, untouched since. What changes between an RGB monitor and
 a composite one is a single function call at the very last step, after every
 geometric decision (which byte, which bit, which palette register) has
 already been made: turning a 6-bit register *value* into an RGBA pixel. That
@@ -95,7 +96,7 @@ pub enum MonitorType {
 }
 ```
 
-Read the doc comment as the design decision it is. Almost everything else in
+Take the doc comment as the design decision it is. Almost everything else in
 `gime.rs` models a real register with a real address, and the module is
 scrupulous about saying so — `$FF98`, `$FF9A`, `$FFB0`–`$FFBF` all appear in
 their fields' doc comments. This type has no address, because on the real
@@ -106,8 +107,8 @@ chip on the other end of that cable never learned the outcome.
 That has a consequence worth holding on to for the rest of the chapter: a
 CoCo 3 program cannot branch on it. There is no "am I on composite?" call to
 make, no status bit to poll, no `PEEK` that answers the question. A program
-that wanted to look right on both had to either pick colours that survived
-both decodes or ship two colour schemes and ask the user which one to load —
+that wanted to look right on both had to either pick colors that survived
+both decodes or ship two color schemes and ask the user which one to load —
 and §9.7 comes back to what that meant in practice.
 
 Because the choice belongs to the machine's configuration rather than to its
@@ -144,7 +145,7 @@ finds out either way.
 > `monitor: Option<MonitorType>` is `None` on a CoCo 1/2 because those
 > machines have no monitor port. The very next field, `vdg:
 > Option<VDGVariant>`, is `None` on a CoCo 3 because that machine has no
-> MC6847 chip — the GIME does its own character generation, as week 7
+> MC6847 chip — the GIME does its own character generation, as Chapter 7
 > established. Two variants, two absences, each one making the *other*
 > machine's mandatory field meaningless.
 >
@@ -164,10 +165,10 @@ hand-measured constants, and the reason for the difference is physics.
 
 ## 9.2 The RGB decode: a formula
 
-Start with the easy half, because it sets up the contrast. Each GIME palette
+Take the easy half first, because it sets up the contrast. Each GIME palette
 register is 6 bits, laid out `RGBrgb` — a high bit and a low bit per
 channel, giving four intensity levels (`0, 1, 2, 3`) per channel. RGB output
-is a direct, arithmetic unpack — no lookup table, no hardware quirks, just
+is a direct, arithmetic unpack — no lookup table, no hardware quirks, only
 bit-picking and a fixed scale ([`palette.rs:56-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L56-L62)):
 
 ```rust
@@ -188,7 +189,7 @@ takes bits 5 and 2, green takes bits 4 and 1, blue takes bits 3 and 0: the
 register is `R1 G1 B1 R0 G0 B0`, interleaved. `chan` reassembles the two bits
 for one channel into a 2-bit value (`0..3`) and multiplies by `0x55`
 (`0x55 × 3 = 0xFF`, so the four levels land exactly on `0x00/0x55/0xAA/0xFF`
-— evenly spaced, no rounding error). This is week 8's `RGBrgb` walkthrough
+— evenly spaced, no rounding error). This is Chapter 8's `RGBrgb` walkthrough
 in executable form; the worked example there built SEB Unravelled II's
 "purple" as decimal 43 and got `(0xAA, 0x55, 0xFF)` back out of exactly this
 function.
@@ -199,13 +200,13 @@ span `0x00` to `0xFF` inclusive: the bottom level must be fully off and the
 top level must be fully on, or the emulator's white is not white. The only
 multiplier that does that with integer arithmetic is `0xFF / 3 = 0x55`.
 Consider the two obvious alternatives and what they cost. A shift, `v << 6`,
-produces `0x00/0x40/0x80/0xC0` — cheap, and the machine can never display
-white, only a slightly grubby light grey. A scale to `v * 0x50` produces
+produces `0x00/0x40/0x80/0xC0` — cheap, but the machine can then never
+display white, only a slightly grubby light gray. Scaling by `0x50` produces
 `0x00/0x50/0xA0/0xF0`, which is worse in a subtler way: it is *almost* right
 everywhere, so nothing looks obviously broken and every screenshot compared
 against a reference is off by a few counts in every channel. The exact
 constant is what lets a bit-exact comparison against another emulator mean
-something, which is week 4's testing philosophy showing up in a colour
+something, which is Chapter 4's testing philosophy showing up in a color
 routine.
 
 That's pure digital-to-analog arithmetic, and it matches the physical
@@ -239,7 +240,7 @@ explanation.
 > converting `RGBrgb` to RGB depends on any GIME state. That is why the
 > tests in this chapter call it as `GIME::rgb_color(0x09)` with no GIME
 > anywhere in sight, and it is the cleanest possible statement of "this
-> half of the colour path is a pure function." The composite half, as
+> half of the color path is a pure function." The composite half, as
 > you're about to see, cannot make that claim: it has to consult two mode
 > bits, so its entry point takes `&self`.
 
@@ -249,24 +250,24 @@ wire instead of three — and it does not reduce to arithmetic at all.
 
 ## 9.3 The composite decode: a table, because there is no formula
 
-Composite video has no separate channels. Luminance and colour are
-multiplexed onto a single carrier wave — colour rides as the phase and
+Composite video has no separate channels. Luminance and color are
+multiplexed onto a single carrier wave — color rides as the phase and
 amplitude of a 3.58 MHz subcarrier added on top of the brightness signal —
 and a real TV's tuner has to demodulate that carrier back into something a
-phosphor can use. That subcarrier frequency is not a stray number: week 1
+phosphor can use. That subcarrier frequency is not a stray number: Chapter 1
 pulled the machine's whole clock tree out of it, since the 28.636363 MHz
 crystal that the CPU clock and every video timing constant descend from was
-chosen as a multiple of the NTSC colour subcarrier in the first place. The
-same frequency that dictates how fast the 6809 runs is the one the colour
+chosen as a multiple of the NTSC color subcarrier in the first place. The
+same frequency that dictates how fast the 6809 runs is the one the color
 information rides on.
 
-Demodulating it is analog, lossy, and depends on exact component tolerances
-in both the GIME's video DAC and the TV's decoder circuit. You cannot derive
-it from the `RGBrgb` bit layout with arithmetic; there is no clean function
-from "6-bit register value" to "NTSC composite colour" the way `rgb_color`
-is a clean function from "6-bit register value" to RGB voltage. So the
-codebase doesn't try. It ships the actual measured result, ripped from
-MAME's own hand-calibrated table ([`palette.rs:19-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L19-L44),
+Demodulating it is an analog, lossy process that depends on exact component
+tolerances in both the GIME's video DAC and the TV's decoder circuit. You
+cannot derive it from the `RGBrgb` bit layout with arithmetic; there is no
+clean function from "6-bit register value" to "NTSC composite color" the
+way `rgb_color` is a clean function from "6-bit register value" to RGB
+voltage. So the codebase doesn't try. It ships the actual measured result,
+ripped from MAME's own hand-calibrated table ([`palette.rs:19-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs#L19-L44),
 comment preserved verbatim because the provenance matters):
 
 ```rust
@@ -322,7 +323,7 @@ fn unpack_rgb(v: u32) -> [u8; 4] {
 
 Three shifts and a hardcoded alpha. The doc comment's "matching
 [`GIME::rgb_color`]'s return convention" is the load-bearing part: both
-halves of the colour path must hand back the same shape, `[u8; 4]` with an
+halves of the color path must hand back the same shape, `[u8; 4]` with an
 opaque alpha, or the caller would have to know which branch it took — and
 the entire claim of §9.1 is that no caller knows.
 
@@ -334,7 +335,7 @@ the entire claim of §9.1 is that no caller knows.
 > constant tables: one line per entry, red/green/blue visually grouped in
 > pairs of hex digits, at the cost of needing a tiny unpack function instead
 > of just indexing a `[[u8; 3]; 64]` array directly. You'll see the same
-> `0xRRGGBB` packing anywhere a codebase ports a colour table from a C
+> `0xRRGGBB` packing anywhere a codebase ports a color table from a C
 > source (MAME's own `rgb_t` does exactly this) rather than reshaping it.
 >
 > The `as u8` casts deserve a note of their own, because `as` is the one
@@ -378,12 +379,12 @@ pub fn color(&self, value: u8) -> [u8; 4] {
 ```
 
 Three details in nineteen lines are worth naming before moving on. First,
-the signature takes `&self` and not `&mut self` — resolving a colour reads
-GIME state but changes nothing, so unlike week 1's `Bus::read`, this really
+the signature takes `&self` and not `&mut self` — resolving a color reads
+GIME state but changes nothing, so unlike Chapter 1's `Bus::read`, this really
 is a pure function of the register file. That matters more than it sounds:
-it means `resolve_colors` can call it sixteen times per scanline (week 8's
+it means `resolve_colors` can call it sixteen times per scanline (Chapter 8's
 per-line palette resolve) while the renderer holds only a shared borrow of
-the GIME, which is exactly the borrow arrangement week 1's §1.4 arrived at
+the GIME, which is exactly the borrow arrangement Chapter 1's §1.4 arrived at
 for `paint_scanline`.
 
 Second, `value as usize & 0x3F` masks to six bits before indexing. The
@@ -407,7 +408,7 @@ the "not a different renderer" claim made concrete: swap `MonitorType` and
 every pixel on screen can change without one line of the scanout code
 running differently.
 
-### Reading the table: a hue wheel, not a colour wheel
+### Reading the table: a hue wheel, not a color wheel
 
 Sixty-four hand-measured constants look, at first glance, like sixty-four
 independent facts — the sort of data you can verify but not understand. They
@@ -431,8 +432,8 @@ a rising brightness ramp. That's not a coincidence baked into four
 hand-picked entries; it's the structure of the whole table. Split the 6-bit
 value into a low nibble (bits 0–3, 16 values) and a high 2 bits (bits 4–5, 4
 values): the low nibble selects a **hue**, and the high bits select a
-**luminance level**. Hue `0` is defined as "no colour," so all four
-luminance steps at hue `0` are grey — which is exactly the `0x00/0x10/0x20/0x30`
+**luminance level**. Hue `0` is defined as "no color," so all four
+luminance steps at hue `0` are gray — which is exactly the `0x00/0x10/0x20/0x30`
 family above. This matches the real GIME/CoCo palette-register convention
 documented in SEB Unravelled II, and it's directly testable:
 `composite_decode_grey_anchors` ([`tests/composite.rs:16-26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L16-L26))
@@ -452,14 +453,14 @@ fn composite_decode_grey_anchors() {
 }
 ```
 
-Two things about the construction of that test generalize past this file.
+Two things about the construction of that test generalize beyond this file.
 The GIME is built with struct-update syntax — `monitor: MonitorType::Composite,
 ..GIME::new()` — which sets exactly the one field under test and leaves
 every other register at its reset value, so the test's name is an honest
 description of its only variable. And because `color` takes `&self`, the
 binding doesn't even need to be `mut`; the tests that do need `mut` in this
 file (§9.4's and §9.5's) need it because they poke `vmode`, not because
-resolving a colour changes anything.
+resolving a color changes anything.
 
 Walk one non-zero hue across its four luminance steps and the same pattern
 holds — hue `1` (green-family) at increasing brightness:
@@ -497,13 +498,13 @@ a bit that has appeared twice already without explanation.
 pub const BPI: u8 = 0x20;
 ```
 
-Nine words of doc comment for a bit that doubles the size of this chapter's
+Seven words of doc comment for a bit that doubles the size of this chapter's
 data. Expand them. "Burst phase" is the reference signal a composite decoder
-locks onto to know what phase angle corresponds to what hue — the colour
+locks onto to know what phase angle corresponds to what hue — the color
 information rides as a phase offset, so a decoder needs an agreed zero point
 to measure offsets against, and the burst is that agreement transmitted once
 per scanline. Inverting it moves the agreed zero point by half a turn, which
-should, in principle, rotate every hue by half the colour wheel: 180°, not
+should, in principle, rotate every hue by half the color wheel: 180°, not
 some smaller angle.
 
 Because the rotation is not derivable from the un-inverted table by
@@ -526,19 +527,20 @@ const COMPOSITE_PALETTE_180: [u32; 64] = [
 ];
 ```
 
-Compare the two tables at the four grey anchors before going near the
-colours, because it's the fastest sanity check available. Entries `0`, `16`,
-`32`, and `63` are byte-identical between the tables: `0x000000`,
-`0x2d2d2d`, `0x747474`, `0xffffff`. That is exactly what "rotate the hue"
-predicts — rotating a colour with no saturation does nothing, so the
-achromatic column must survive the inversion untouched. Entry 48 differs by
-a single count (`0xfdfdfe` versus `0xfdfdfc`), which is measurement noise on
+Compare the two tables at the four gray anchors before going near the
+colors, because it's the fastest sanity check available. Three of the four
+are byte-identical between the tables — entries `0`, `16`, and `32`:
+`0x000000`, `0x2d2d2d`, `0x747474` — as is entry `63`, `0xffffff`, the last
+value in both. That is exactly what "rotate the hue" predicts — rotating a
+color with no saturation does nothing, so the achromatic column must
+survive the inversion untouched. The fourth anchor, entry 48, differs by a
+single count (`0xfdfdfe` versus `0xfdfdfc`), which is measurement noise on
 a near-white, not a hue rotation. The structure holds where structure is
 predictable and wobbles where measurement wobbles.
 
-Now the colours, and a number this chapter needs to get right. It is worth
-stating precisely because an earlier pass at this material claimed "roughly
-a 120° hue shift" for palette value `0x01` under BPI. The actual test data
+Now the colors, and a number this chapter needs to get right. Precision
+matters here, because an earlier pass at this material claimed "roughly a
+120° hue shift" for palette value `0x01` under BPI. The actual test data
 doesn't support that number. `composite_decode_hue_and_bpi`
 ([`tests/composite.rs:28-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L28-L38)):
 
@@ -558,7 +560,7 @@ fn composite_decode_hue_and_bpi() {
 
 Checking a hue rotation by eye is unreliable, so it's worth writing down the
 arithmetic once — exercise 9.2 asks for it, and the rest of this section
-uses it. Take a colour's channels as fractions, let `max` and `min` be the
+uses it. Take a color's channels as fractions, let `max` and `min` be the
 largest and smallest of the three, and let `delta = max − min`. The hue in
 degrees is `60 × ((G − B) / delta)` when red is the largest channel,
 `60 × (2 + (B − R) / delta)` when green is, and `60 × (4 + (R − G) / delta)`
@@ -600,20 +602,20 @@ tidy it into a rule.
 One bit of `$FF98` down. The other composite-only bit does something
 structurally different: it doesn't choose a table at all.
 
-## 9.5 MOCH: averaging to grey
+## 9.5 MOCH: averaging to gray
 
 The last bit `GIME::color` consults is `vmode::MOCH` (`$FF98` bit 4) —
 monochrome-on-composite, for driving a green-screen or B&W composite
 monitor. Monochrome monitors were common and cheap in the period, and a
-colour signal shown on one is not automatically an improvement: hues that
-are clearly distinct in colour can carry nearly identical brightness, so a
-carefully colour-coded screen can collapse into an unreadable smear of one
-grey. A bit that tells the video hardware "this display has no chroma, throw
-the colour away deliberately" is a text-legibility feature, not an
+color signal shown on one is not automatically an improvement: hues that
+are clearly distinct in color can carry nearly identical brightness, so a
+carefully color-coded screen can collapse into an unreadable smear of one
+gray. A bit that tells the video hardware "this display has no chroma, throw
+the color away deliberately" is a text-legibility feature, not an
 aesthetic one.
 
 Whatever it does on real silicon, in this codebase it doesn't touch the
-lookup at all; it post-processes whatever colour the table produced,
+lookup at all; it post-processes whatever color the table produced,
 averaging the three channels:
 
 ```rust
@@ -628,10 +630,10 @@ if self.vmode & vmode::MOCH != 0 {
 The order matters and is easy to miss: `BPI` is consulted first and picks a
 table, then the entry is unpacked, and only then is `MOCH` applied to the
 result. So the two bits compose rather than conflict — with both set, the
-value is looked up in the inverted table and *then* flattened to grey. The
+value is looked up in the inverted table and *then* flattened to gray. The
 widths matter too. Each channel is promoted to `u16` before the addition,
 because three `u8` channels can sum past 255 and `u8 + u8` would overflow;
-this is the same instinct as week 1's `wrapping_add` house rule applied in
+this is the same instinct as Chapter 1's `wrapping_add` house rule applied in
 the opposite direction, where the fix is a wider type rather than a defined
 wrap.
 
@@ -657,15 +659,17 @@ fn composite_moch_averages_channels() {
 }
 ```
 
-`(0 + 76 + 0) / 3` is `25.33...`; `u16` integer division truncates to `25`
-(`0x19`), not rounds to `25` — the difference only matters by one count here,
-but it's exactly the kind of off-by-a-hair detail that a bit-exact
-trace-diff against MAME (week 4's testing philosophy) would catch and a
-"looks about right" implementation would let through silently. Note also
-what the test chose as its input: `0x01`, the same entry §9.4 used, whose
+`(0 + 76 + 0) / 3` is `25.33...`, and `u16` integer division truncates
+rather than rounds. At this input the two agree on `25` (`0x19`); at a
+channel sum of `77` they wouldn't — truncation gives `25` where rounding
+gives `26`. The difference is never more than one count, but it's exactly
+the kind of off-by-a-hair detail that a bit-exact trace-diff against MAME
+(Chapter 4's testing philosophy) would catch and a "looks about right"
+implementation would let through silently. Note also what the test chose as
+its input: `0x01`, the same entry §9.4 used, whose
 un-inverted value has two channels at zero. That makes the expected
 arithmetic checkable by hand in the comment above the assertion, which is
-worth more than picking a "realistic" colour whose expected value nobody can
+worth more than picking a "realistic" color whose expected value nobody can
 verify without running the code.
 
 `MonitorType::RGB` never looks at `MOCH` or `BPI` at all, and there is a
@@ -691,7 +695,7 @@ directly. That's the sharpest possible statement of the property: whatever
 the RGB formula produces, `color()` on an RGB monitor produces the same
 thing, and no combination of composite mode bits can put a gap between them.
 If someone later restructured `color()` and accidentally applied the
-greyscale step to both arms, this test fails immediately and names the
+grayscale step to both arms, this test fails immediately and names the
 reason.
 
 Three sections have now taken `GIME::color` apart bit by bit. What has not
@@ -699,32 +703,32 @@ yet been shown is why any of it matters to software that actually existed —
 and there is one very concrete case where getting this exact structure wrong
 would have silently ruined a real, shipping desktop environment.
 
-## 9.6 War story: the NitrOS-9 EOU greyscale regression
+## 9.6 War story: the NitrOS-9 EOU grayscale regression
 
 Here's where the "no formula, hand-measured, hue-then-luminance" structure
 stopped being a curiosity and started mattering. NitrOS-9's `gshell`
-desktop, part of the **EOU** ("Ease of Use") package, draws a greyscale
+desktop, part of the **EOU** ("Ease of Use") package, draws a grayscale
 interface — window chrome, shading, the works — using exactly the four
 palette values you just met: `0x00`, `0x10`, `0x20`, `0x30`. It's real
 software, written by people who owned real composite CoCo 3s, who chose
-those four values specifically *because* they're the hardware's own grey
+those four values specifically *because* they're the hardware's own gray
 ramp — not because they picked four arbitrary-looking numbers and hoped.
 
-Put yourself in the position of that program. It wants four shades of grey.
+Put yourself in the position of that program. It wants four shades of gray.
 It cannot ask what monitor is attached (§9.1), so whatever it picks has to
-be grey on both. On an RGB monitor the answer is easy and derivable: any
+be gray on both. On an RGB monitor the answer is easy and derivable: any
 value with all three channels equal, and `0x00`/`0x10`/`0x20`/`0x30` are not
 those values — run them through `rgb_color` and hue-0 luminance steps come
-out as black, blue-ish, green-ish, and cyan-ish, because the `RGBrgb` bit
-layout has no notion of "hue" at all. The four values are grey on
-*composite* specifically, because composite is the decode where the low
-nibble means hue and hue 0 means no colour. Choosing them is a statement
-about which monitor the authors expected, and it is the kind of statement
+out as black, green, red, and yellow, because the `RGBrgb` bit layout has
+no notion of "hue" at all. The four values are gray on *composite*
+specifically, because composite is the decode where the low nibble means
+hue and hue 0 means no color. Choosing them is a statement about which
+monitor the authors expected, and it is the kind of statement
 that only makes sense once you know the table's structure.
 
 Anyone running that software through a composite decode that got the
-hue-vs-luminance split wrong would see EOU's "neutral grey desktop" rendered
-in whatever stray colour the wrong decode produced instead — black, green,
+hue-vs-luminance split wrong would see EOU's "neutral gray desktop" rendered
+in whatever stray color the wrong decode produced instead — black, green,
 red, yellow, something plausible-looking but *wrong*, and wrong in a way
 that's easy to miss if you never happen to boot NitrOS-9 with a composite
 monitor selected. That is the shape of the nastiest class of emulator bug:
@@ -769,10 +773,10 @@ lessons about testing hardware you didn't build.
 First, the comment's parenthetical — `0x30 = 0xfdfdfe`, blue is one count
 short of the other two channels — is the test author refusing to pretend the
 measured data is cleaner than it is. A stricter test (`c[0] == c[1] &&
-c[1] == c[2]`) would be *more* elegant and *less* true; it would either need
+c[1] == c[2]`) would be *more* elegant and *less* true. It would either need
 to be relaxed the first time someone re-measured the table from a slightly
 different real GIME, or it would quietly encourage "fixing" the table to be
-exactly grey — which would be fixing it to be wrong, since the real chip's
+exactly gray — which would be fixing it to be wrong, since the real chip's
 `0x30` really does carry a one-LSB blue tint. The tolerance is the correct
 response to "hardware doesn't round the way your intuition does," and
 `GREY_TOLERANCE` being a named constant rather than a bare `1` in two
@@ -780,7 +784,7 @@ assertions is the difference between a documented allowance and a
 mysterious fudge factor.
 
 Second, notice what the test does *not* assert: it never checks the four
-colours are identical to `COMPOSITE_PALETTE[0]`/`[0x10]`/`[0x20]`/`[0x30]`
+colors are identical to `COMPOSITE_PALETTE[0]`/`[0x10]`/`[0x20]`/`[0x30]`
 by value — that would just be re-testing `composite_decode_grey_anchors`
 under a different name. Instead it asserts the *property* the real desktop
 software actually needed (achromatic, strictly brighter) so that if the
@@ -811,7 +815,7 @@ anyone having to decide whether the desktop still works.
 > doesn't exist on one, and the subtraction itself is the hazard: if `c[0]`
 > is `0x2c` and `c[1]` is `0x2d`, then `c[0] - c[1]` underflows. In a debug
 > build that's a panic; in a release build it wraps to `255`, and the test
-> silently passes or fails for reasons unrelated to colour. Writing
+> silently passes or fails for reasons unrelated to color. Writing
 > `(c[0] as i16 - c[1] as i16).abs()` works but adds two casts and a wider
 > type to say something simple.
 >
@@ -833,10 +837,10 @@ is explicit that it is not a hardware register at all.
 
 It is easy to conflate that with a different choice programs *could* make,
 so it's worth separating them carefully. Extended Color BASIC's `SCREEN`
-statement and its graphics-mode `PMODE`/`PCLS` calls choose a **colour
+statement and its graphics-mode `PMODE`/`PCLS` calls choose a **color
 set** — `CSS`, bit 3 of PIA1 `$FF22` — which selects *which* GIME palette
-registers a legacy mode reads from (regs 8/9 vs. 10/11 for two-colour modes,
-0–3 vs. 4–7 for four-colour; you'll meet the exact tables in §9.13). That's
+registers a legacy mode reads from (regs 8/9 vs. 10/11 for two-color modes,
+0–3 vs. 4–7 for four-color; you'll meet the exact tables in §9.13). That's
 a choice about *which register*, made by the program, at run time, and
 observable by the program. The monitor choice is a choice about *how any
 register's value is decoded*, made by a human with a cable, invisible to
@@ -845,19 +849,19 @@ happen at completely different layers: `CSS` selects an index, the monitor
 decides what the value at that index looks like.
 
 Follow that through to what a 1986 programmer actually experienced. A
-program tuned its four `PMODE` colours by picking a `CSS` set that looked
+program tuned its four `PMODE` colors by picking a `CSS` set that looked
 good on the monitor its author owned. On a different machine, a composite TV
 would run those exact same register values through `COMPOSITE_PALETTE`
 instead of `rgb_color` and show something else entirely — not a slightly
 different shade, but potentially a different hue, because the two decodes
 share no structure whatsoever. Recall §9.6's arithmetic in reverse: the four
-values that are a clean grey ramp on composite are black, blue, green, and
-cyan on RGB. A program written for either monitor is, from the other
+values that are a clean gray ramp on composite are black, green, red, and
+yellow on RGB. A program written for either monitor is, from the other
 monitor's point of view, using its palette registers to say something it
 never meant.
 
 This is the actual, mundane reason 1980s CoCo software sometimes shipped a
-"for composite" and "for RGB" colour scheme, and why a magazine type-in's
+"for composite" and "for RGB" color scheme, and why a magazine type-in's
 screenshot never quite matched the picture on the machine it was typed into.
 Two totally different physical processes — a three-gun CRT reading three
 separate voltages, versus an NTSC decoder demodulating a shared subcarrier —
@@ -866,7 +870,7 @@ decided they wouldn't agree.
 
 ### The test that proves the renderer never asks
 
-All of §9.1's "one renderer" claim so far has been an argument from reading
+So far, §9.1's "one renderer" claim has rested on an argument from reading
 the code: `GIME::color` is the only place `MonitorType` is consulted, and
 every painter calls it without inspecting the answer. Arguments from reading
 code are exactly the arguments that quietly stop being true. The last test
@@ -907,7 +911,7 @@ fn render_text_routes_through_composite_decode() {
 }
 ```
 
-Everything before `render_field` is week 8's material: a 40-column
+Everything before `render_field` is Chapter 8's material: a 40-column
 attribute-less text mode, one letter `A` at the video base, foreground from
 palette register 1. What makes this a composite test rather than a text test
 is the two assertions at the end, and the first one is the more interesting.
@@ -925,7 +929,7 @@ composite and RGB decode differ here."
 
 The second assertion then checks one specific framebuffer pixel — column
 `3 × 2`, row `25` — against `g.color(0x01)`, not against a hardcoded triple.
-Its coordinates come straight from week 8's geometry: the glyph's top row
+Its coordinates come straight from Chapter 8's geometry: the glyph's top row
 lights native pixel 3, a 40-column mode is wide so each native pixel is two
 canvas pixels with no side border, and `LPF=%00` starts the body at canvas
 row 25. Chase the value backwards through the code and the chain is the
@@ -934,30 +938,30 @@ whole claim of this half of the chapter: `render_field` → `paint_scanline` →
 functions was written for composite output, not one of them branches on
 `MonitorType`, and swapping the monitor changes the pixel anyway.
 
-That closes the colour half of the chapter. Everything from here on holds
+That closes the color half of the chapter. Everything from here on holds
 the monitor fixed and varies something else: *time*.
 
 ---
 
-## 9.8 The lie week 8 told you (on purpose)
+## 9.8 The lie Chapter 8 told you (on purpose)
 
-Week 8's `render_field` reads every GIME register exactly once and paints an
+Chapter 8's `render_field` reads every GIME register exactly once and paints an
 entire field from that one snapshot. As a way of learning geometry it is
 ideal — one set of registers, one picture, nothing moving. As a model of the
 machine it describes a computer where BASIC's `PALETTE` and `PMODE`
 statements only ever run between fields, never while one is being drawn.
 
 Real 6809 code makes no such promise, and the interesting software made a
-point of breaking it. A game can poke the border colour from inside an
+point of breaking it. A game can poke the border color from inside an
 interrupt handler that fires at a *specific scanline*, sixty-odd times a
 second, forever. A demo can rewrite a video register the instant the beam
 crosses a row it knows by heart. The picture that results — different
-colours in different bands of the *same* field — is a **raster split**, and
+colors in different bands of the *same* field — is a **raster split**, and
 it was one of the CoCo demo scene's bread-and-butter tricks. Section 9.11
 comes back to why anyone bothered, once the mechanism is on the table.
 
 Here is the pleasant surprise: the machine loop already had everything this
-needs, because week 6 built it that way. `end_of_line()`
+needs, because Chapter 6 built it that way. `end_of_line()`
 ([`crates/coco-core/src/machine/run.rs:130-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130-L172))
 calls `self.render_scanline()` — one canvas row — **every single scanline**,
 not once per field. Nothing had to be added to make splits work. What had to
@@ -1016,7 +1020,7 @@ it explains a number this chapter uses repeatedly. The canonical raster is
 262 lines tall but only 240 of them are visible; the rest is vertical
 blanking, when a real CRT is dragging its beam back to the top. Those lines
 still tick the machine loop — the timer still counts, interrupts still fire
-— they just have nowhere to paint. A program can perfectly well write a
+— but they have nowhere to paint. A program can perfectly well write a
 video register during blanking, and the effect shows up on line 0 of the
 next field, which is exactly how a program that wants a *whole-field* change
 rather than a split arranges one.
@@ -1063,12 +1067,12 @@ impl FieldScan {
 Three fields, three pieces of state that must survive across scanlines
 without being re-derived from a register that might have changed underneath
 them: which display path this field is on (`legacy`), where the current data
-row starts (`row_base`, seeded from `$FF9D/$FF9E` or the SAM page — the
-field-latched video base), and how far into the current character or pixel
-row the scan is (`line_in_row`, seeded from the `$FF9C` scroll nibble — the
-smooth-scroll seed).
+row starts (`row_base`, the field-latched video base, seeded from
+`$FF9D/$FF9E` or the SAM page), and how far into the current character or
+pixel row the scan is (`line_in_row`, the smooth-scroll seed, taken from the
+`$FF9C` scroll nibble).
 
-Week 8 introduced this struct as a fact about the code. It is worth asking
+Chapter 8 introduced this struct as a fact about the code. It is worth asking
 now *why* it is a struct at all, because the alternative is genuinely
 tempting. Each of these three values could have been a field on `Machine`
 guarded by an `if self.line == 0`, and the code would work. Making them a
@@ -1078,7 +1082,7 @@ reading one function instead of grepping for line-zero checks. The
 `Option<FieldScan>` on `Machine` distinguishes "no field has started yet"
 from "a field is in progress" without a separate boolean. And, quietly, the
 `#[derive(Serialize, Deserialize)]` means a save state taken mid-field
-restores mid-field correctly, which is week 16 collecting on week 1's
+restores mid-field correctly, which is Chapter 16 collecting on Chapter 1's
 plain-owned-tree discipline yet again.
 
 `row_base` and `line_in_row` aren't just latched once and left alone,
@@ -1100,7 +1104,7 @@ fn advance_scan(scan: &mut FieldScan, g: &GIME, row_bytes: usize) {
 }
 ```
 
-Read which values in there come from where, because the mix is the point.
+Trace which values in there come from where, because the mix is the point.
 `scan.line_in_row` and `scan.row_base` are the latched, carried-across-lines
 state. But `g.horizontal_offset`, `g.lines_per_row()`, and the `row_bytes`
 the caller computed from this line's decode are all read *live*, off the
@@ -1142,7 +1146,7 @@ Put together, that's the register taxonomy for the whole chapter:
 
 Notice what's *not* on the field-latched list: the palette registers
 themselves. A `PALETTE` statement (or a raw `STA $FFBx`) is live, exactly
-like the border — which is precisely why EOU's greyscale desktop and any
+like the border — which is precisely why EOU's grayscale desktop and any
 palette-cycling demo effect work at all on real hardware without waiting a
 whole frame.
 
@@ -1152,14 +1156,14 @@ The honest answer this codebase gives is that the reference implementation
 does it that way — MAME's `new_frame` samples exactly this group — and the
 tests in the next section exist to make sure the emulator keeps doing it
 that way. Section 9.11 offers a plausible hardware reason after the fact,
-but the reason the code is shaped like this is that the behaviour was
+but the reason the code is shaped like this is that the behavior was
 verified first and rationalized second, which is the correct order.
 
 ## 9.9 Four registers, four tests
 
 A taxonomy in a table is a claim. [`tests/scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs)
 is the same taxonomy as executable assertions, and it earns its "best-named
-test file in the repo" reputation (course README, week 9) by testing one
+test file in the repo" reputation (course README, Chapter 9) by testing one
 register class at a time, in isolation, with the rest of the machine held
 deliberately still.
 
@@ -1217,7 +1221,7 @@ fn run_to_line(m: &mut Machine, line: u32) {
 makes every later assertion legible. Reading pixel value `v` back from a
 rendered row and comparing it to `GIME::rgb_color(v)` proves the render
 picked up palette register `v` specifically — there is no ambiguity about
-which of sixteen registers a given on-screen colour came from. (An RGB
+which of sixteen registers a given on-screen color came from. (An RGB
 monitor is in force here, since `MachineConfig::default()` doesn't select
 composite, so there's no table indirection to reason about on top of the
 palette indirection.)
@@ -1241,8 +1245,8 @@ pub const fn vertical_window(lpf: usize) -> (usize, usize) {
 `LPF=%00` is 25 rows of top border followed by 192 rows of body, so the body
 occupies canvas rows 25 through 216 inclusive and line 100 lands about
 two-fifths of the way down it. The same function is what `in_active_rows`
-consulted a page ago, and what §9.9's third test uses to convert "body row
-105" into "canvas row 130."
+consulted a page ago, and what this section's third test uses to convert
+"body row 105" into "canvas row 130."
 
 The two helpers at the bottom are how a test addresses a moment in time.
 `finish_field` runs instructions until the machine reports the field wrapped;
@@ -1289,15 +1293,15 @@ differ within the *same* framebuffer.
 The assertion sites are chosen to be unarguable. Canvas row 0 and canvas row
 `CANVAS_H - 1` are both border rows in every mode this test could be in, so
 the test never has to reason about where the body starts; it just asks
-whether the frame around the picture is one colour or two.
+whether the frame around the picture is one color or two.
 
 What's worth appreciating is how little code exists to make this work.
 `paint_side_borders` and the "not in the active window" fill both call
 `resolve_colors(g)` fresh, every line ([`gime_video.rs:161-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L161-L168),
-week 8's code, unmodified), and `resolve_colors` reads `g.border` straight
+Chapter 8's code, unmodified), and `resolve_colors` reads `g.border` straight
 off the live `GIME`. Liveness here isn't a feature that was added; it's what
 happens when nothing was added to *prevent* it. The correct emulator
-behaviour fell out of writing the renderer as a function of the current
+behavior fell out of writing the renderer as a function of the current
 register file rather than of a snapshot — which is the same design instinct
 that made `GIME::color` a pure function in §9.3.
 
@@ -1326,21 +1330,21 @@ fn palette_write_mid_field_recolors_only_lines_below_it() {
 ```
 
 Same shape as the border test, different register — and it matters that it's
-a different *kind* of register. The border is a colour directly; a palette
+a different *kind* of register. The border is a color directly; a palette
 register is one level of indirection, since video RAM holds an *index* and
-the palette register holds the *colour* that index currently means. Leaving
+the palette register holds the *color* that index currently means. Leaving
 video RAM zero-filled means every body pixel reads index 0, so the test is
 asking one clean question: when register 0's meaning changes mid-field, do
 the pixels already painted keep the old meaning?
 
-They do, because `resolve_colors` rebuilds the whole 16-entry resolved-colour
+They do, because `resolve_colors` rebuilds the whole 16-entry resolved-color
 array from `g.palette` on every single call to `paint_scanline`
 ([`gime_video.rs:264-273`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L264-L273)).
-That per-line rebuild looked, in week 8, like a small performance
+That per-line rebuild looked, in Chapter 8, like a small performance
 compromise — sixteen `GIME::color` calls per scanline instead of sixteen per
 field. This test is the bill coming due in the other direction: the rebuild
 is not a compromise, it is the feature. A demo that cycles palette registers
-every scanline to get more than sixteen colours on screen (§9.11) needs
+every scanline to get more than sixteen colors on screen (§9.11) needs
 exactly this property, and a renderer that cached the resolved palette per
 field would render such a demo as a flat, wrong, single-palette picture with
 no error message anywhere.
@@ -1455,9 +1459,9 @@ fn mode_switch_mid_field_splits_text_and_graphics() {
 }
 ```
 
-The border and the palette are colours. This test changes something more
+The border and the palette are colors. This test changes something more
 drastic: the *meaning of every byte* the renderer fetches. Above the split
-the machine is in 16-colour graphics, where one byte is two pixels; below
+the machine is in 16-color graphics, where one byte is two pixels; below
 it, 80-column attribute text, where one byte is a character code and the
 next is its attributes. Both halves paint into the same field.
 
@@ -1509,7 +1513,7 @@ and the live-register raster split — works end to end, with **zero harness
 register pokes**. It hand-assembles a tiny ROM and lets the emulated CPU do
 everything, which makes it the closest thing in this codebase to running a
 real demo effect. It is also the first time this course drives the GIME's
-timer directly: week 6 asserted only that `tick_timer` gets *called*, and
+timer directly: Chapter 6 asserted only that `tick_timer` gets *called*, and
 here you see what arms it.
 
 ### The setup program
@@ -1542,7 +1546,7 @@ period software is built from, just shorter. `LDS #$1FF0` gives interrupts
 somewhere to stack a return frame; nothing here touches the CPU's normal
 work because there isn't any, since this ROM's only job is to arm one
 interrupt and then spin. `STA $FF9A` sets the border to `OLD_BORDER`
-(`0x09`) up front, so the field's top half has a known starting colour.
+(`0x09`) up front, so the field's top half has a known starting color.
 
 Then five writes configure the GIME's timer and interrupt block one register
 at a time, and each one is worth naming:
@@ -1570,7 +1574,7 @@ at a time, and each one is worth naming:
   path.
 - `ANDCC #$AF` clears bits `0x50` of CC — `cc::IRQ_MASK` (`0x10`) and
   `cc::FIRQ_MASK` (`0x40`), the two interrupt masks reset sets on every CoCo
-  (week 4). This is the instruction that actually lets the CPU *notice* the
+  (Chapter 4). This is the instruction that actually lets the CPU *notice* the
   interrupt once it arrives; everything before it was arming hardware that
   stays silent while masked.
 
@@ -1581,8 +1585,8 @@ demonstration of why interrupts exist at all. Counting scanlines by
 executing a precisely tuned delay loop is possible and miserable; arming a
 timer and going to sleep is neither.
 
-One period detail is worth flagging because the source comments in this
-codebase disagree with themselves about it, and reading both is instructive.
+One period detail is worth flagging because two source comments in this
+codebase disagree with each other about it, and reading both is instructive.
 `init1::TINS`'s doc comment in [`gime.rs:62-68`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L62-L68)
 describes the fast clock as "~70 ns (14.318 MHz)," repeating SEB Unravelled
 II. The constant that the machine loop actually uses says otherwise
@@ -1623,7 +1627,7 @@ Five instructions, and the first one is the most interesting thing in the
 test. `LDA $FF93` reads **FIRQENR** as a *status* register, not the enable
 register it was a moment ago in the setup code — same address, two different
 jobs depending on whether the access is a read or a write. This is the exact
-"reads have side effects" story week 1 promised would come back;
+"reads have side effects" story Chapter 1 promised would come back;
 `Bus::read` takes `&mut self` specifically because of registers like this
 one.
 
@@ -1647,7 +1651,7 @@ handler-loop hang is exactly the symptom that would result from getting it
 wrong.
 
 > **Rust corner: `std::mem::take` as the read-and-clear idiom.** The
-> hardware behaviour here is "give me the value and reset the register to
+> hardware behavior here is "give me the value and reset the register to
 > zero, atomically." The naive Rust spelling is three lines: copy the field
 > into a local, assign `0` to the field, return the local. `std::mem::take`
 > is that operation as one call — it swaps the field with
@@ -1681,7 +1685,7 @@ models," per the source comment. Belt and suspenders against a second FIRQ
 firing before `RTI` retires.
 
 `RTI` (`0x3B`) restores the **partial frame** — just CC and PC, three bytes,
-because FIRQ only ever stacks the partial frame (week 4) — and the CPU drops
+because FIRQ only ever stacks the partial frame (Chapter 4) — and the CPU drops
 back into `BRA *`, forever, border now `NEW_BORDER`. The choice of FIRQ over
 IRQ is not incidental for this kind of effect: a handler that must land
 within a scanline wants the cheapest possible entry and exit, and three
@@ -1690,7 +1694,7 @@ bytes of stack traffic instead of twelve is most of that difference.
 ### Wiring the vectors
 
 An interrupt handler that nothing points at never runs. The FIRQ hardware
-vector, `$FFF6/$FFF7` (`VECTOR_FIRQ`, week 4), has to point at `ISR`, and
+vector, `$FFF6/$FFF7` (`VECTOR_FIRQ`, Chapter 4), has to point at `ISR`, and
 the reset vector at `$FFFE/$FFFF` has to point at the setup program:
 
 ```rust
@@ -1707,7 +1711,7 @@ rom[0x7FFE..0x8000].copy_from_slice(&0x8000u16.to_be_bytes());
 to index the array. Mixing those two address spaces up is a classic way to
 spend an afternoon.
 
-`to_be_bytes()` matters exactly as much here as it did in week 1's
+`to_be_bytes()` matters exactly as much here as it did in Chapter 1's
 `Bus::write_u16` default method. The 6809 fetches vectors big-endian, and a
 little-endian byte order here would send the CPU to a FIRQ handler at
 completely the wrong address on the very first interrupt — in this ROM, to
@@ -1740,20 +1744,20 @@ assert!(
 ```
 
 This samples the entire left border column, row by row, and scans it for
-colour changes. Three assertions follow, and each is answering a different
-question. Does the field start on the old colour and end on the new one — so
+color changes. Three assertions follow, and each is answering a different
+question. Does the field start on the old color and end on the new one — so
 the split happened at all? Is there exactly *one* transition — so the timer
 didn't re-arm and paint stripes? And is that transition at approximately the
 right line?
 
 The transition scan is worth stealing as a technique. Rather than asserting
 against specific rows the test predicted in advance, it derives the set of
-rows where the colour changes and then makes claims about that set. The
+rows where the color changes and then makes claims about that set. The
 failure message prints the whole set (`got {transitions:?}`), so a broken
 run tells you immediately whether the problem is "no split," "split in the
 wrong place," or "splitting repeatedly" — three quite different bugs that a
 row-by-row assertion would have reported identically as "row 100 was the
-wrong colour."
+wrong color."
 
 The tolerance window (`expected..=expected + 4`) is the honest
 acknowledgment of a chain of real delays, and it is worth walking end to
@@ -1762,15 +1766,15 @@ timer's countdown doesn't start when the CPU boots; it starts when the
 `$FF95` write executes, a handful of instructions into the setup program and
 already partway through line 0. From there, `tick_timer`
 ([`gime.rs:382-394`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L382-L394))
-counts down from `SPLIT_LINE + TIMER_RELOAD_OFFSET` — the reload always adds
-the hardware's documented `+2` offset ([`gime.rs:162-165`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L162-L165))
+counts down from `SPLIT_LINE + TIMER_RELOAD_OFFSET`, one tick per
+`end_of_line` call, since `TINS` selects the horizontal-sync rate. The
+reload always adds the hardware's documented `+2` offset ([`gime.rs:162-165`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L162-L165))
 on top of the programmed value, a measured quirk of the 1986 GIME that this
-codebase models deliberately — one tick per `end_of_line` call, since `TINS`
-selects the horizontal-sync rate.
+codebase models deliberately.
 
 So there are `SPLIT_LINE + 2` scanlines of countdown before the FIRQ source
 even latches. Then the CPU has to notice it, and interrupts are recognized
-only at instruction boundaries (week 6), so the `BRA *` in progress finishes
+only at instruction boundaries (Chapter 6), so the `BRA *` in progress finishes
 first. Then the FIRQ sequence stacks its partial frame and vectors. Then
 three ISR instructions execute before the border write lands. And the border
 write only affects lines painted *after* it, so the visible transition is
@@ -1792,28 +1796,28 @@ the tolerance is the claim stated honestly.
 Once you've read that test, the motive for raster splits stops being
 abstract. The constraint every CoCo 3 programmer worked under is that the
 palette is 16 *simultaneous* registers, and that number never changes no
-matter what resolution or bit depth is selected. A 16-colour graphics mode
-uses all sixteen; a 4-colour mode uses four of them; there is no mode
-anywhere in the GIME's register map that gives you a seventeenth colour.
+matter what resolution or bit depth is selected. A 16-color graphics mode
+uses all sixteen; a 4-color mode uses four of them; there is no mode
+anywhere in the GIME's register map that gives you a seventeenth color.
 
 But "simultaneous" is doing a lot of work in that sentence, and the raster
 is a *sequence*, not a snapshot. Nothing stops a program from reprogramming
 those sixteen registers partway down the screen. A status bar at the bottom
-of a game screen, drawn in colours that would clash with the play field
-above it, can have its own sixteen-colour palette for free: set the game's
-colours, run the beam down to the status bar's first line, rewrite all
+of a game screen, drawn in colors that would clash with the play field
+above it, can have its own sixteen-color palette for free. Set the game's
+colors, run the beam down to the status bar's first line, then rewrite all
 sixteen palette registers — a `PALETTE` statement's worth of writes, or the
 raw `STA $FFBx` sixteen times a machine-language routine would do — and the
-bottom band renders in an entirely different colour scheme. Still only
-sixteen colours *at any given instant*, but thirty-two colours *on screen*,
+bottom band renders in an entirely different color scheme. Still only
+sixteen colors *at any given instant*, but thirty-two colors *on screen*,
 because "on screen" spans more than one instant.
 
 Push it further and the arithmetic gets silly in a good way. Nothing limits
 a program to one split. A handler that fires every eighth scanline and
 rewrites the palette each time gives a picture with dozens of distinct
-colours in it, on hardware whose data sheet says sixteen — at the cost of
+colors in it, on hardware whose data sheet says sixteen — at the cost of
 the CPU spending a meaningful fraction of every field inside an interrupt
-handler doing nothing but writing colour registers. That trade, screen
+handler doing nothing but writing color registers. That trade, screen
 richness paid for in CPU time, is the characteristic shape of demo-scene
 programming on every machine of the era.
 
@@ -1826,8 +1830,8 @@ product of understanding that the picture is drawn over time.
 Split-screen games — a status HUD with its own scroll position, distinct
 from a playfield scrolling underneath it — want to go one step further and
 rewrite the *video base* partway down. As §9.9's third test proved, that
-register is field-latched, not live. So this particular effect was simply
-not available in this form on a CoCo 3: real split-screen work had to be
+register is field-latched, not live. So this particular effect was not
+available in this form on a CoCo 3: real split-screen work had to be
 built from two independent *fields* interleaved by persistence of vision, or
 from arranging the two regions inside one fixed video-RAM window and
 scrolling within it, never from a video-base write mid-field. Knowing which
@@ -1837,7 +1841,7 @@ which effects were even possible before writing a line of code.
 
 From the emulator author's chair, this section is also the entire
 justification for `render_scanline` painting one canvas row per call instead
-of snapshotting the whole field at once — the way week 8 first showed it,
+of snapshotting the whole field at once — the way Chapter 8 first showed it,
 and the way the CoCo 1/2 legacy path in §9.14 still does it. A whole-field
 snapshot renderer is simpler to write and faster to run. It is also
 *provably wrong* the moment any real program does what this section
@@ -1867,16 +1871,16 @@ users learned that a computer could draw.
 The CoCo 3 has no MC6847 at all. What it has is the GIME's CoCo-compatible
 path (INIT0 `COCO`=1), which *imitates* one closely enough that the same
 BASIC programs, and the same POKEs, still work — the same backward-
-compatibility story week 1 traced through the SAM-compat register range and
-week 7 found sitting under the boot prompt. This section is legacy content
-in the strict sense: a compatibility surface, not something week 8's
+compatibility story Chapter 1 traced through the SAM-compat register range and
+Chapter 7 found sitting under the boot prompt. This section is legacy content
+in the strict sense: a compatibility surface, not something Chapter 8's
 GIME-native pipeline touches. But these are the modes most CoCo software of
 the era actually drew in, and they hide a genuinely strange piece of
 hardware history: **two separate chips decided two separate axes of the same
 picture, and they never had to agree.**
 
 The horizontal geometry — how many bytes get fetched per row, how many bits
-each pixel takes, which colour set applies — comes entirely from PIA1
+each pixel takes, which color set applies — comes entirely from PIA1
 `$FF22`, the same register that also carries the VDG's
 alphanumeric/semigraphics switch ([`video/graphics.rs:15-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L15-L18)):
 
@@ -1891,7 +1895,7 @@ plus three bits, `GM2:GM1:GM0`, in `$FF22` bits 6–4. Note where those bits
 live: a PIA output port, not a video register. On a CoCo 1 or 2 the VDG had
 no registers of its own at all — it was a chip with mode *pins*, and the way
 software set a video mode was to drive those pins from a general-purpose
-parallel output port. Week 10 builds the PIA that owns them.
+parallel output port. Chapter 10 builds the PIA that owns them.
 
 But the *vertical* geometry — how many actual RAM rows get fetched before
 the picture repeats, and how many times each fetched row gets redrawn to
@@ -1900,7 +1904,7 @@ the SAM's `V0–V2` strobes at `$FFC0–$FFC5`, or, on a CoCo 3, the GIME's
 SAM-compatibility overlay at the same addresses. Two chips, two halves of
 one picture, no communication between them.
 
-BASIC always programs matching `GM`/`V` pairs when a program types
+BASIC always programs matching `GM`/`V` pairs when a program executes
 `PMODE n`, so on stock software the two axes always agree and this split is
 invisible. But the split is real, and the module doc comment says so plainly
 ([`video/graphics.rs:1-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L1-L11)):
@@ -1921,12 +1925,13 @@ invisible. But the split is real, and the module doc comment says so plainly
 it's a fact this codebase deliberately preserves rather than papers over.
 There is a real temptation to paper over it. A decode function that took
 only `$FF22` and derived a whole mode from it would be simpler, would give a
-"sensible" answer for every input, and would be wrong: a program that pokes
+"sensible" answer for every input, and would be wrong. A program that pokes
 `$FF22` and the SAM V strobes out of their documented pairing — whether by a
 bug, or on purpose while hunting for an undocumented mode — gets whatever
 the independent combination of the two axes actually produces on real
 silicon. `decode_vdg_graphics` reproduces that rather than "helpfully"
-snapping to the nearest legal `PMODE`, and §9.12's last test proves it does.
+snapping to the nearest legal `PMODE`, and this section's last test proves
+it does.
 
 ### The SAM V bits: vertical cadence
 
@@ -1946,7 +1951,7 @@ Read this table as "how many times each fetched RAM row gets redrawn before
 the scan moves to the next one." `V=%000..010` (values 0–2) repeat every row
 three times, so `192 / 3 = 64` RAM rows are fetched for the whole screen.
 `V=%011..100` repeat twice, so 96 rows are fetched. `V=%101..111` repeat
-once — the full 192 rows, one RAM row per scan line, no vertical doubling at
+once — the full 192 rows, one RAM row per scanline, no vertical doubling at
 all.
 
 The reason this axis exists is memory. Video RAM was the scarcest resource
@@ -1957,8 +1962,8 @@ table is a memory-versus-detail trade, made at a time when the difference
 mattered enormously.
 
 What makes it strange is that it is *entirely independent* of how wide a row
-is or how many colours it holds. A mode can be simultaneously "128 pixels
-wide, 2 colours" — a horizontal decision, from `$FF22` — and "every RAM row
+is or how many colors it holds. A mode can be simultaneously "128 pixels
+wide, 2 colors" — a horizontal decision, from `$FF22` — and "every RAM row
 shown three times" — a vertical decision, from the SAM. That particular
 pairing is exactly `PMODE 0` (`RG2` with `V=%000`), and the fact that it
 takes two chips to say so is the whole point of this section.
@@ -2028,7 +2033,7 @@ Lay the whole `GM` table out with the BASIC name — the number every CoCo
 owner actually typed — and the horizontal geometry `decode_vdg_graphics`
 derives from it:
 
-| `GM` | MC6847 name | BASIC | `logical_w` | colours | `bpp` |
+| `GM` | MC6847 name | BASIC | `logical_w` | colors | `bpp` |
 |---|---|---|---|---|---|
 | `000` | CG1 | — | 64 | 4 | 2 |
 | `001` | RG1 | — | 128 | 2 | 1 |
@@ -2042,11 +2047,11 @@ derives from it:
 Several things jump out of that table once it is laid flat.
 
 The naming convention decodes itself: `RG` modes are "resolution graphics,"
-two colours, one bit per pixel; `CG` modes are "colour graphics," four
-colours, two bits per pixel. The pattern alternates all the way down, which
+two colors, one bit per pixel; `CG` modes are "color graphics," four
+colors, two bits per pixel. The pattern alternates all the way down, which
 is why `PMODE`'s odd numbers and even numbers behave so differently — the
 `PMODE` numbering walks up the `GM` values one at a time, so it alternates
-between two-colour and four-colour on every step.
+between two-color and four-color on every step.
 
 `PMODE 0`–`4` only ever reaches `GM` values 3–7. `CG1`, `RG1`, and `CG2`
 (`GM` 0–2) exist on the chip and in this decode table, but stock Extended
@@ -2058,8 +2063,8 @@ of thing magazine listings did on purpose.
 And `bytes_per_row = logical_w * bpp / 8` is the whole horizontal
 byte-count story. `PMODE 4` (`RG6`, 256 pixels × 1 bit) is `256/8 = 32`
 bytes per row; `PMODE 3` (`CG6`, 128 pixels × 2 bits) is `128×2/8 = 32`
-bytes too. Same memory footprint per row, resolution traded against colour
-depth — the classic tradeoff table, and one a period programmer could feel
+bytes too. Same memory footprint per row, resolution traded against color
+depth — the classic trade-off table, and one a period programmer could feel
 directly, because both modes cost the same 6K of a machine that had 16K.
 (That 6K is `32 bytes × 192 rows`, and it is why `PMODE 4` screens and
 `PMODE 3` screens could be swapped for each other without rearranging
@@ -2145,11 +2150,11 @@ fn vdg_strobes_latch_sam_video_bits_independently() {
 ```
 
 The comment on the first write is the entire design of the SAM's register
-interface in nine words. `write(V0_SET, 0)` sets bit 0; `write(V2_SET, 0xFF)`
+interface in eight words. `write(V0_SET, 0)` sets bit 0; `write(V2_SET, 0xFF)`
 sets bit 2; the value written is discarded in both cases, and only the
 *address* — `$FFC1` and `$FFC5`, the odd halves of two strobe pairs —
 carries information. Three bits, six addresses, each pair being one "set
-this bit" address and one "clear this bit" address. Week 5 introduced this
+this bit" address and one "clear this bit" address. Chapter 5 introduced this
 pattern for the page-select bits; the V bits are three more of exactly the
 same shape.
 
@@ -2229,13 +2234,13 @@ fn four_color_maps_two_bit_values_and_doubles_width() {
 ```
 
 Both tests use Rust's binary literals with underscores placed at the
-*semantic* boundaries, which turns each input into its own documentation.
-`0b1000_0000` for `RG6` at one bit per pixel lights exactly the leftmost of
-eight pixels. `0b00_01_10_11` for `CG6` at two bits per pixel packs four
-pixel values — `00`, `01`, `10`, `11` — left to right in one byte, grouped
-so a reader can see the four pixels without counting bits. Choosing test
-data that reads correctly is worth more than choosing test data that looks
-realistic.
+*semantic* boundaries, a choice that turns each input into its own
+documentation. `0b1000_0000` for `RG6` at one bit per pixel lights exactly
+the leftmost of eight pixels. `0b00_01_10_11` for `CG6` at two bits per
+pixel packs four pixel values — `00`, `01`, `10`, `11` — left to right in
+one byte, grouped so a reader can see the four pixels without counting
+bits. Choosing test data that reads correctly is worth more than choosing
+test data that looks realistic.
 
 Both follow the same "MSB first" rule, and the unpacking loop encodes it
 directly ([`video/graphics.rs:112-132`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L112-L132)):
@@ -2270,10 +2275,10 @@ shift arithmetic does, and the comment is there to save the next reader from
 re-deriving it. The rest of the loop is defensive in two small ways worth
 noticing: `row_data.get(bx).copied().unwrap_or(0)` treats a short row as
 zeros rather than panicking, and `value.min(colors.len() - 1)` clamps a
-pixel value to the palette actually supplied, so passing a two-entry colour
-slice to a four-colour mode degrades instead of indexing out of bounds.
+pixel value to the palette actually supplied, so passing a two-entry color
+slice to a four-color mode degrades instead of indexing out of bounds.
 Neither should ever trigger with correct callers. Both turn a class of
-future bug from a crash into a visible wrong colour, which in a renderer is
+future bug from a crash into a visible wrong color, which in a renderer is
 the better failure.
 
 The horizontal scaling is the last piece, and it explains something that
@@ -2281,11 +2286,11 @@ looks paradoxical in the geometry table. The second test's `PMODE 3` (`CG6`,
 `logical_w = 128`) doubles horizontally to fill the fixed 256-pixel active
 area, `hscale = ACTIVE_W / mode.logical_w = 256/128 = 2`, so every logical
 pixel becomes two adjacent framebuffer pixels. That is why `PMODE 3`'s
-128×192 four-colour picture and `PMODE 4`'s 256×192 two-colour picture both
+128×192 four-color picture and `PMODE 4`'s 256×192 two-color picture both
 fill the identical physical screen area despite having wildly different
-logical resolutions. The doubling — or tripling, for the 64-wide modes — is
-baked into every mode's presentation and is completely invisible to the
-program that set it up. A `PMODE 3` pixel is simply twice as wide as a
+logical resolutions. The doubling — or quadrupling, for the 64-wide `CG1`
+mode — is baked into every mode's presentation and is completely invisible
+to the program that set it up. A `PMODE 3` pixel is simply twice as wide as a
 `PMODE 4` pixel, on the same screen, in the same inches of glass.
 
 Which brings the section back to where it started. A fourth test in the same
@@ -2301,17 +2306,17 @@ each shown twice) while the horizontal decode keeps following `GM` (still
 The test doesn't stop at the decoded geometry, either. It renders a field in
 which each fetched row lights a different pixel of its first byte, then
 asserts that each row's pixels appear identically on *both* of its two
-active lines — the doubling actually happening, not merely being reported —
-and finishes with an `assert_ne!` confirming that different fetched rows
+active lines — the doubling actually happening, not merely being reported.
+It finishes with an `assert_ne!` confirming that different fetched rows
 really did produce different pixels, ruling out a stub that leaves
-everything one colour. The two axes really are that independent, proven by a
+everything one color. The two axes really are that independent, proven by a
 test that deliberately programs them out of their usual sync and then checks
 the pixels rather than the struct.
 
-## 9.13 Where the colours come from
+## 9.13 Where the colors come from
 
 Pixel *values* out of `paint_legacy_graphics_line` are small integers — `0`
-or `1` for two-colour modes, `0..3` for four-colour — and those integers are
+or `1` for two-color modes, `0..3` for four-color — and those integers are
 indices, exactly like GIME-native graphics. Indices into *what* is the last
 open question in the legacy path, and its answer is where the CoCo 3's
 imitation of a chip it doesn't contain becomes visible.
@@ -2329,13 +2334,13 @@ const G2_PALETTE_INDICES: [[usize; 2]; 2] = [[8, 9], [10, 11]];
 const G4_PALETTE_INDICES: [[usize; 4]; 2] = [[0, 1, 2, 3], [4, 5, 6, 7]];
 ```
 
-Read the shapes carefully, because they are the reason `CSS` felt like a
-"colour set" to anyone using it from BASIC. Each constant is an array of two
-arrays: the outer index is `CSS`, the inner one is the pixel value. A
-two-colour mode has two colour sets of two registers each; a four-colour
-mode has two sets of four. `CSS` never changes how many colours a mode has,
-only *which* group of palette registers those colours are drawn from — one
-bit selecting between two banks, which is precisely what "colour set" meant
+The shapes repay a careful look, because they are the reason `CSS` felt like
+a "color set" to anyone using it from BASIC. Each constant is an array of
+two arrays: the outer index is `CSS`, the inner one is the pixel value. A
+two-color mode has two color sets of two registers each; a four-color
+mode has two sets of four. `CSS` never changes how many colors a mode has,
+only *which* group of palette registers those colors are drawn from — one
+bit selecting between two banks, which is precisely what "color set" meant
 on the box.
 
 Selecting between them is a function that hands back a borrowed slice
@@ -2359,10 +2364,10 @@ pub fn vdg_palette_indices(bpp: usize, css: usize) -> &'static [usize] {
 > the caller is borrowing it rather than owning it.
 >
 > That lets one function return slices of two *different lengths* — two
-> entries for a two-colour mode, four for a four-colour one — without
+> entries for a two-color mode, four for a four-color one — without
 > allocating anything or committing to a fixed-size array type. A `Vec<usize>`
 > would have worked and would have heap-allocated on a path that runs once
-> per scanline. A `[usize; 4]` would have forced the two-colour case to pad
+> per scanline. A `[usize; 4]` would have forced the two-color case to pad
 > with meaningless values and the caller to know how many to trust.
 >
 > `'static` is the right lifetime here for a reason worth internalizing: the
@@ -2391,13 +2396,13 @@ looks trivial and earns its keep the first time someone "simplifies" the
 two tables into one and gets the `CSS` indexing backwards.
 
 Now the part that makes the CoCo 3 different from the machine it is
-imitating. On a real MC6847 — the actual CoCo 1/2 chip — those eight colours
+imitating. On a real MC6847 — the actual CoCo 1/2 chip — those eight colors
 per depth are wired to a fixed internal ROM. The chip itself decides what
-"colour 2 of `RG3`" looks like, and no program can change it, which is why
+"color 2 of `RG3`" looks like, and no program can change it, which is why
 `video::VDG_FIXED_PALETTE` exists as a separate, hardcoded RGB table for
 that variant. On a CoCo 3 there is no MC6847 at all: the GIME's
 compatibility path routes those *same* eight palette-register indices —
-`0–7` for four-colour modes, `8–11` for two-colour — through its own sixteen
+`0–7` for four-color modes, `8–11` for two-color — through its own sixteen
 programmable registers, the very registers you already know from GIME-native
 modes and from `PALETTE`.
 
@@ -2433,14 +2438,14 @@ on an RGB CoCo 3 than on a composite one, for precisely the same reason an
 a function whose subject is a chip from 1980. The single-`color`-function
 claim from §9.1 covers even the compatibility modes.
 
-Second, `PMODE` colours are *programmable* on a CoCo 3 in a way they
+Second, `PMODE` colors are *programmable* on a CoCo 3 in a way they
 categorically aren't on a real CoCo 1 or 2. A BASIC program can `PALETTE`
-its way to `RG6` colours no MC6847-equipped machine could ever produce,
-because the chip that decides what colour index 1 means changed from a fixed
+its way to `RG6` colors no MC6847-equipped machine could ever produce,
+because the chip that decides what color index 1 means changed from a fixed
 ROM into a register file — while the pixel-index arithmetic upstream of it
 stayed bit-for-bit identical on both machines. That is a precise statement
 of what "compatible" meant for this generation of hardware: the same program
-produces the same *pixels* and possibly different *colours*, and the machine
+produces the same *pixels* and possibly different *colors*, and the machine
 is considered compatible anyway.
 
 ## 9.14 The live per-line path vs. the whole-field snapshot
@@ -2490,7 +2495,7 @@ That is `advance_scan`'s logic again, in the legacy path's own terms:
 `lines_per_row` from the SAM V bits instead of `$FF98`'s LPR, `row_bytes`
 from the `GM` decode instead of the HRES decode, and the same `FieldScan`
 fields being stepped. The consequence is that a raster split on a
-CoCo-3-in-legacy-mode screen — `PMODE`'s colour set flipped, or the
+CoCo-3-in-legacy-mode screen — `PMODE`'s color set flipped, or the
 graphics/alpha bit toggled, partway down the picture — works exactly as well
 as it does in native mode, for the identical structural reason: nothing here
 is cached across lines except the shared cursor, carried in the same
@@ -2530,7 +2535,7 @@ Note also what the excerpt shows about code reuse across that boundary:
 `decode_vdg_graphics` is called by both paths, and only the *source* of
 `sam_video` differs — the GIME's SAM-compat overlay on a CoCo 3, the real
 `Sam` type on a CoCo 1/2, exactly the two implementations of one legacy
-interface that week 1 pointed at. The decode itself is shared, so the two
+interface that Chapter 1 pointed at. The decode itself is shared, so the two
 machines cannot disagree about what `GM=%110` means.
 
 Practically, then: **mid-field raster splits are a CoCo 3 phenomenon in this
@@ -2543,69 +2548,69 @@ codebase draws deliberately, not a hardware fact, and stating which is which
 is the difference between a documented limitation and a bug nobody has
 noticed yet.
 
-## 9.15 Artifact colours: what the code actually does
+## 9.15 Artifact colors: what the code actually does
 
 One phrase belongs in this chapter precisely because CoCo veterans expect it
 and the code needs to be honest about it either way: **NTSC composite
-artifact colours** — the famous trick where `PMODE 4`'s black-and-white
+artifact colors** — the famous trick where `PMODE 4`'s black-and-white
 checkerboard of alternating 1-bit pixels resolves, on a real composite
-display, into *coloured* fringes along vertical edges that were never
+display, into *colored* fringes along vertical edges that were never
 programmed as any palette value at all. This happens because a real NTSC
 composite decoder derives chroma from how *rapidly* the luminance signal
 changes between adjacent pixels: a fine alternating black/white pattern
-looks, to the subcarrier-phase math, exactly like a saturated colour, even
-though the video hardware only ever "meant" to send two shades of grey.
-Software exploited it constantly on real CoCo hardware to fake extra colours
-out of a nominally two-colour mode — getting four colours out of `PMODE 4`
+looks, to the subcarrier-phase math, exactly like a saturated color, even
+though the video hardware only ever "meant" to send two shades of gray.
+Software exploited it constantly on real CoCo hardware to fake extra colors
+out of a nominally two-color mode — getting four colors out of `PMODE 4`
 for the price of one bit per pixel was too good a bargain to leave alone.
 
 Searching this codebase for that mechanism comes up empty. The string
 `"artifact"` doesn't appear anywhere in `coco-core`'s video code, and having
-now read both colour paths end to end, it's clear why: **there is no
-pixel-pattern-dependent colour synthesis anywhere in this renderer.**
+now read both color paths end to end, it's clear why: **there is no
+pixel-pattern-dependent color synthesis anywhere in this renderer.**
 
 The evidence is all in place already. `GIME::color` (§9.2–9.5) is a pure
 function of a single 6-bit register value, with no visibility into what
-colour the *neighbouring* pixel resolved to. The two composite tables model
-what a monitor does with a **fully-formed 6-bit colour value** the GIME's
+color the *neighboring* pixel resolved to. The two composite tables model
+what a monitor does with a **fully-formed 6-bit color value** the GIME's
 video DAC already decided to output — the analog decode of an *intentional*
-colour choice, not the decode of a *pattern* of luminance-only pixels that
-was never meant to carry colour at all. And every legacy graphics pixel
+color choice, not the decode of a *pattern* of luminance-only pixels that
+was never meant to carry color at all. And every legacy graphics pixel
 §9.12 walked through, `RG6`'s black-and-white bits included, resolves
 through the same `vdg_palette_indices` → `legacy_palette` → `GIME::color`
 chain as everything else on screen.
 
-So if a program sets both of those registers to plain black and white, this
-emulator renders plain black and white, full stop — no matter what bit
-pattern is in video RAM, and regardless of `MonitorType`. A real composite
-television showing that exact same signal would not.
+So if a program sets a two-color mode's palette registers to plain black
+and white, this emulator renders plain black and white, full stop — no
+matter what bit pattern is in video RAM, and regardless of `MonitorType`.
+A real composite television showing that exact same signal would not.
 
 That's a real, honest gap, and it's worth being precise about *why* it's a
-gap rather than a bug. Implementing genuine artifact colour would mean
+gap rather than a bug. Implementing genuine artifact color would mean
 rewriting the innermost loop of `paint_legacy_graphics_line` — and its
 GIME-native `paint_graphics_row` cousin, for `HSCREEN`'s composite path — to
-stop being a per-pixel colour lookup and become a small sliding-window NTSC
+stop being a per-pixel color lookup and become a small sliding-window NTSC
 decoder. It would have to track several consecutive pixels' luminance
-values, their position relative to the colour subcarrier's phase (which
+values, their position relative to the color subcarrier's phase (which
 advances a fixed, non-integer amount per pixel clock, so the *same* bit
 pattern artifacts differently depending on which screen column it starts
 at), and synthesize chroma from the transition pattern rather than looking
 anything up in a 64-entry table at all.
 
 That is a materially different algorithm from everything else in this
-chapter. Every other colour decision in this codebase is `O(1)` per pixel
-with no neighbour dependence, which is what makes the whole renderer a
-sequence of independent lookups; artifact colour is inherently
-neighbour-dependent, and adding it changes the shape of the loop rather than
+chapter. Every other color decision in this codebase is `O(1)` per pixel
+with no neighbor dependence, which is what makes the whole renderer a
+sequence of independent lookups; artifact color is inherently
+neighbor-dependent, and adding it changes the shape of the loop rather than
 the contents of a table. It also only matters when `MonitorType::Composite`
-is selected, and only for the subset of legacy two-colour graphics modes
+is selected, and only for the subset of legacy two-color graphics modes
 where programs relied on the trick.
 
 It is exactly the kind of deferred-scope decision Appendix C exists for:
 real, named, sized, and left for later — because the 64-entry table
-correctly covers every *intentional* colour choice a program makes, and only
-misses the *unintentional* colour a real analog television invents from a
-bit pattern nobody asked it to colour at all. Naming a gap that precisely is
+correctly covers every *intentional* color choice a program makes, and only
+misses the *unintentional* color a real analog television invents from a
+bit pattern nobody asked it to color at all. Naming a gap that precisely is
 worth more than a vague "composite is approximate," because it tells the
 next person exactly which programs would notice and exactly what work
 closing it would take.
@@ -2633,7 +2638,7 @@ pub mod vmode {
 
 Three of those five have appeared already: `BP` split a field between text
 and graphics in §9.9, and `BPI` and `MOCH` are the two bits `GIME::color`
-consults on the composite path. `LPR_MASK` is week 8's character-row height.
+consults on the composite path. `LPR_MASK` is Chapter 8's character-row height.
 `H50` is the odd one out — it is parsed, named, documented, and never
 *read* anywhere else in the crate.
 
@@ -2641,8 +2646,8 @@ Field rate in this codebase comes from `MachineConfig`'s `VideoStandard`
 (`NTSC` or `PAL`), chosen once at machine-configuration time, the same
 moment as `MonitorType` — not from this live register that a real GIME lets
 software toggle mid-operation. That makes `H50` a small, sharp instance of
-the same category as artifact colour: not a missing bit definition, but a
-bit whose live behaviour would break a structural assumption several
+the same category as artifact color: not a missing bit definition, but a
+bit whose live behavior would break a structural assumption several
 subsystems deep. Section 9.17's essay exercise asks you to work out exactly
 which assumption, and Appendix C records the answer as a scoped, named gap
 rather than an oversight.
@@ -2662,9 +2667,10 @@ two test files in the middle are the ones to read most slowly.
    16, 32, and 63 are identical in both, which is §9.4's structural check.
 2. **[`crates/coco-core/tests/composite.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs), all of it** — five focused unit
    tests plus the `eou_greyscale_regression` war story. Pay attention to how
-   differently the first four and the last one are written: exact values
-   versus asserted properties, and §9.6's argument for why both belong in
-   one file. Run it and watch every assertion you just read pass:
+   differently `composite_decode_grey_anchors` and
+   `eou_greyscale_regression` are written: exact values versus asserted
+   properties, and §9.6's argument for why both belong in one file. Run it
+   and watch every assertion you just read pass:
    ```
    cargo test -p coco-core --test composite
    ```
@@ -2705,7 +2711,7 @@ two test files in the middle are the ones to read most slowly.
 ## 9.17 Exercises
 
 **9.1 — Predict the split (recall, then verify).** Without re-reading
-§9.9, answer from memory: a program writes the border colour ($FF9A) at
+§9.9, answer from memory: a program writes the border color ($FF9A) at
 scanline 100. A different program writes the video base ($FF9D/$FF9E) at
 scanline 100. Sketch what each field looks like — where (if anywhere) does
 each field show a visible seam? Now name the exact two tests in
@@ -2724,7 +2730,7 @@ one.
 palette values `0x05`, `0x15`, `0x25`, and `0x35` (hue 5, all four
 luminance steps) into their `(R, G, B)` triples. State whether the four
 results are achromatic or chromatic, and whether brightness increases
-monotonically the way the `0x00/0x10/0x20/0x30` grey ramp does. Then write a
+monotonically the way the `0x00/0x10/0x20/0x30` gray ramp does. Then write a
 two-line test (or a `cargo test -p coco-core --test composite -- --nocapture`
 scratch assertion) confirming your hand-decoded values against
 `GIME::color`. Finally: compute the *hue* (standard HSV formula) of `0x05`
@@ -2745,7 +2751,7 @@ Exactly one test should fail:
 further, predict what the failure message will show. The actual result is
 more surprising than "shows palette 7 (the new base) instead of palette 5":
 the sabotaged code reports `left: [0, 0, 0, 255]` — plain black, neither
-candidate colour. Explain why, in terms of what else `scan.row_base`'s
+candidate color. Explain why, in terms of what else `scan.row_base`'s
 per-row *advancement* (`advance_scan`) was doing that a bare
 `g.video_base()` call does not. (Hint: `advance_scan` still runs and still
 updates `scan.row_base` — but nothing reads that field anymore once the
@@ -2758,7 +2764,7 @@ matter how far down the field it is?) Revert your change and confirm
 test, don't just edit the original) to produce **three** visible border
 bands in one field, not two: pick two split lines (e.g. 60 and 160, both
 inside the 25..217 active body from `vertical_window`), write a different
-border colour at each via `run_to_line`, and assert all three colours
+border color at each via `run_to_line`, and assert all three colors
 appear at the right canvas rows with exactly two transitions in the left
 border column (reuse the `transitions` scan from §9.10's FIRQ test as a
 model, or just sample three specific rows directly). No ROM code required —
@@ -2779,7 +2785,7 @@ that test file) and inspecting the result. State in one sentence which axis
 of your (b) answer changed from the "textbook" `CG6` geometry (still `V=%110`)
 and which didn't — and why a program that meant to select `PMODE 3` but
 fat-fingered only the SAM strobes, leaving `$FF22` untouched, would see a
-picture that's still 128 pixels wide and 4 colours, just fetched from a
+picture that's still 128 pixels wide and 4 colors, just fetched from a
 third as much RAM (64 rows instead of 192) with each fetched row repeated
 three times vertically instead of drawn once.
 
@@ -2787,23 +2793,23 @@ three times vertically instead of drawn once.
 bit 3) is a real, named bit — a real GIME lets software toggle 50 Hz/60 Hz
 field rate live, mid-operation — but nothing in this crate ever reads it;
 field rate comes entirely from a static `VideoStandard` chosen once at
-machine-configuration time. Sketch what would have to change to honour a
+machine-configuration time. Sketch what would have to change to honor a
 live `H50` write instead: which fixed assumption in `end_of_line`/`run.rs`
-(week 6) would break first, and what would `render_scanline`'s canvas-row
+(Chapter 6) would break first, and what would `render_scanline`'s canvas-row
 math (§9.8, `CANVAS_H = 240` fixed) have to do differently mid-field if the
 line count *itself* could change under it? You do not need to implement
-this — the point is naming the load-bearing assumption a "just read the
-register live, like the border" fix would violate that the border write
-never does.
+this — the point is naming the load-bearing assumption that a "just read the
+register live, like the border" fix would violate, and that a border write
+never touches.
 
 ---
 
 ## What's next
 
 Video is done. You now own the whole visible half of the machine: raster
-timing (week 6), VDG text and the surprise CoCo-3-boots-in-VDG-mode fact
-(week 7), GIME native text and graphics and the palette register file
-(week 8), and — this week — the two ways that register file lies to a naive
+timing (Chapter 6), VDG text and the surprise CoCo-3-boots-in-VDG-mode fact
+(Chapter 7), GIME native text and graphics and the palette register file
+(Chapter 8), and — this week — the two ways that register file lies to a naive
 whole-field renderer. It means something different depending on a cable
 nobody can query, and it can change its mind mid-field in ways only some of
 its registers are allowed to respect.
@@ -2816,10 +2822,10 @@ of device state, whether it is read live or sampled once — `FieldScan` is
 the video answer to that question, and the cassette, the floppy controller,
 and the serial port each have their own version of it.
 
-Every remaining chapter through week 14 is a different device hanging off
-the same bus you mastered in week 5, each with its own version of "state, a
-loop, and a seam" from week 1. Week 10 starts the input side: the PIAs,
-whose output ports this chapter has already been reading `$FF22` from
-without ever building one, the keyboard matrix, and a joystick that has no
-ADC chip at all — just a comparator, a DAC, and 1980-style software doing
+Every remaining chapter through Chapter 14 is a different device hanging off
+the same bus you mastered in Chapter 5, each with its own version of "state, a
+loop, and a seam" from Chapter 1. Chapter 10 starts the input side: the PIAs,
+whose output ports this chapter has already read `$FF22` from without ever
+building one, the keyboard matrix, and a joystick that has no ADC chip at
+all — just a comparator, a DAC, and 1980-style software doing
 successive approximation one bit at a time.

@@ -1,8 +1,8 @@
 # Chapter 12 — The Cassette: FSK Modems, 1980 Edition
 
 *Week 12. Goal: a complete, self-contained signal-processing story, start to
-finish, in one subsystem small enough to hold in your head. Week 10 gave you
-the PIA — the chip that mediates almost all CoCo I/O — and week 11 walked
+finish, in one subsystem small enough to hold in your head. Chapter 10 gave you
+the PIA — the chip that mediates almost all CoCo I/O — and Chapter 11 walked
 the audio path the PIA's DAC feeds. This week reuses both: the cassette
 "modem" is nothing but a PIA pin and a DAC register, driven by software.
 By the end of this chapter you will know exactly how a byte becomes a tone,
@@ -25,7 +25,7 @@ no cassette chip on a CoCo, no data sheet describing the tape format, and
 — for the specific stretch of ROM that does the work — no disassembly
 with commentary either. What exists is a jack, a comparator, one bit of
 one PIA, and a few hundred bytes of hand-tuned 6809 machine code that
-nobody has annotated. The behaviour the emulator has to reproduce is not
+nobody has annotated. The behavior the emulator has to reproduce is not
 documented anywhere; it is *latent in the ROM*, and the only way to find
 it is to run the ROM and watch.
 
@@ -47,27 +47,28 @@ Before disk drives were common, loading a program on a CoCo followed a
 ritual that owners learned in their hands before they could put it into
 words. The cassette deck's volume sat somewhere in the middle of its
 dial — too quiet and the load failed with a garbled program, too loud and
-it failed as well, for a reason nobody could articulate at the time but
-which §12.2 will explain precisely. The tape counter's three-digit number
-went into a notebook after every `CSAVE`, so that the next session could
-wind straight to it instead of listening through ten minutes of previous
-programs. Then came `CLOAD"NAME"`, `PLAY` on the deck, and a wait: the
-motor engaging with an audible clunk, a faint high-pitched warble leaking
-out of the deck's speaker when the monitor was turned up, and a cursor
+it failed just as surely, for a reason nobody could articulate at the
+time and §12.2 will explain precisely. The tape counter's three-digit
+number went into a notebook after every `CSAVE`, so that the next
+session could wind straight to it instead of listening through ten
+minutes of previous programs. Then came `CLOAD"NAME"`, `PLAY` on the
+deck, and a wait: the motor engaging with an audible clunk, a faint
+high-pitched warble coming out of the television — the machine routes the
+tape signal through its own sound mux, which §12.5 traces — and a cursor
 sitting there giving nothing to watch.
 
 That last detail is the interesting one, because it looks like a
 missing feature and is in fact a direct consequence of the file format.
-Wound to the wrong counter position, nothing visibly happened at all.
-BASIC was not idle; it was reading blocks, checking the eight-character
-name in each one against the name it had been asked for, and — silently,
-patiently — skipping every block that didn't match while it waited for
-the next. There is no progress indicator because there is nothing
-meaningful to indicate. The loader genuinely does not know whether the
-program it wants is ten seconds ahead on the tape or not on this side at
-all.
+If the tape sat at the wrong counter position, nothing visibly happened
+at all. BASIC was not idle; it was reading blocks, checking the
+eight-character name in each one against the name it had been asked for,
+and — silently, patiently — skipping every block that didn't match while
+it waited for the next. There is no progress indicator because there is
+nothing meaningful to indicate. The loader genuinely does not know
+whether the program it wants is ten seconds ahead on the tape or not on
+this side at all.
 
-The shape of the tape format falls straight out of that behaviour. Every
+The shape of the tape format falls straight out of that behavior. Every
 program on tape begins with a small **namefile** block carrying its name,
 followed by a run of **data** blocks, followed by an **end-of-file**
 block. `CLOAD"NAME"` is nothing more elaborate than "read namefile blocks
@@ -104,8 +105,8 @@ Now the reveal, and it is the reason this chapter exists at all: **the
 CoCo has no tape controller chip.** There is no MC6850-style UART wired
 to the cassette jack, no dedicated modem part doing the frequency-shift
 keying on the machine's behalf, nothing analogous to the WD1773 that
-week 13 will meet on the disk side. Between the tape jack and one bit of
-one PIA sits an inexpensive op-amp comparator — the part labelled SALT on
+Chapter 13 will meet on the disk side. Between the tape jack and one bit of
+one PIA sits an inexpensive op-amp comparator — the part labeled SALT on
 the CoCo 3's board, functionally a zero-crossing detector — and that is
 the entire hardware contribution. Everything else is 6809 machine code in
 ROM, bit-banging a single pin: timing the tones, generating them,
@@ -227,7 +228,7 @@ modulated by data"; it is a sequence of single cycles, each of which is
 whichever length its bit calls for. The waveform's instantaneous period
 *is* the data. That makes demodulation conceptually trivial — measure one
 cycle, compare against a threshold, emit a bit — and it makes the data
-rate variable, since a byte of 1-bits takes barely half as long to
+rate variable, since a byte of 1-bits takes a little over half as long to
 transmit as a byte of 0-bits.
 
 Here are the constants exactly as measured, from the top of
@@ -252,20 +253,20 @@ const ONE_BIT_HIGH: u32 = 207;
 const ONE_BIT_LOW: u32 = 227;
 ```
 
-The doc comment's middle sentence is doing more work than it looks like.
+The doc comment's middle sentence is doing more work than it appears to.
 It says the emulator does not merely reproduce the right *period* — it
 reproduces the right *lopsidedness within* the period, and it gives the
 reason: the ROM's demodulator does not measure whole cycles. It counts
-times around a polling loop while waiting for the input line to change
-state, which means what it is actually measuring is a *half* cycle at a
-time. Feed it a symmetric wave whose full period is exactly right and its
-half-period counts land in the wrong place. The comment is blunt about
-the consequence: a symmetric wave "puts the 0-bit halves on its decision
+trips around a polling loop while waiting for the input line to change
+state, so what it actually measures is a *half* cycle at a time. Feed it
+a symmetric wave whose full period is exactly right and its half-period
+counts land in the wrong place. The comment is blunt about the
+consequence: a symmetric wave "puts the 0-bit halves on its decision
 boundary," which is another way of saying the loader becomes a coin flip.
 
 ### From cycles to Hertz, and back
 
-Emulator code, as week 1 established, thinks in CPU cycles rather than
+Emulator code, as Chapter 1 established, thinks in CPU cycles rather than
 seconds, and this chapter is the strongest illustration of why that habit
 pays. Nothing in `cassette.rs` ever mentions Hertz. Every timing quantity
 in the file is an integer count of CPU cycles, compared against other
@@ -275,8 +276,8 @@ conversion anywhere on the hot path.
 The conversion still matters for talking about the signal, and it is one
 division. The CoCo's clock is `CPU_HZ = 894_886.0`
 ([`crates/coco-core/src/machine.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L26)),
-which is the NTSC colour subcarrier of 3.579545 MHz divided by 4 — the
-same constant week 1 introduced by a different route, as the 28.636363
+which is the NTSC color subcarrier of 3.579545 MHz divided by 4 — the
+same constant Chapter 1 introduced by a different route, as the 28.636363
 MHz crystal divided by 32. A period expressed in cycles becomes a
 frequency by dividing it into the clock:
 
@@ -320,7 +321,7 @@ same way. The 0-bit's high half is 396 cycles against a low half of 418,
 a ratio of 94.7%. The 1-bit's is 207 against 227, a ratio of 91.2%. In
 both cases the high half runs shorter.
 
-That consistency is the tell. If these numbers were rounding artefacts or
+That consistency is the tell. If these numbers were rounding artifacts or
 measurement noise, the two tones would not lean in the same direction by
 similar proportions; noise does not conspire. What the numbers record is
 a single physical lopsidedness in the ROM's output waveform, sampled
@@ -362,12 +363,12 @@ authority. Too quiet and the swings never clear the noise floor cleanly,
 so crossings get missed or doubled. Too loud and the amplifier stage
 ahead of it clips and distorts, smearing where the crossings fall in
 time. Both failures corrupt the *timing* of the edges, which is the only
-thing the ROM is measuring, which is why both ends of the dial fail and
-the middle works.
+thing the ROM measures — and that is why both ends of the dial fail
+while the middle works.
 
 For the emulator, the consequence is a substantial simplification. The
-ROM never sees a sine wave, so the emulator does not need to synthesize
-sine samples to be correct for the CPU-facing side of this interface at
+ROM never sees a sine wave, so to be correct on the CPU-facing side of
+this interface the emulator does not need to synthesize sine samples at
 all. It only needs to flip a single bit — PA0 — at the right cycle
 counts, which is exactly what `Cassette::input_bit()` does in §12.5. The
 sine only has to exist where something *outside* the emulated CPU could
@@ -386,7 +387,7 @@ has to carry an "is this for the CPU or for a file?" flag.
 
 Before any code, one architectural choice governs everything else in this
 chapter, and it is a textbook example of the fidelity-budget thinking
-week 1 asked you to practise on every subsystem. The question is simple
+Chapter 1 asked you to practise on every subsystem. The question is simple
 to state: **what does the tape image on disk actually store?**
 
 Two answers exist, and both are real formats that real emulators use.
@@ -407,7 +408,7 @@ because the consequences ripple through every section that follows.
 
 **Storage cost.** A `.wav` recording of a `CSAVE`d one-line BASIC program
 runs to hundreds of kilobytes of 8-bit PCM at any sensible sample rate.
-The same program as decoded bytes is perhaps sixty of them. That is
+The same program as decoded bytes runs to perhaps sixty of them. That is
 roughly four orders of magnitude, spent on information that is one
 hundred percent redundant: the audio *is* the bytes, re-expanded into a
 representation that carries no additional meaning.
@@ -421,7 +422,7 @@ means playback is "walk this byte array," with no signal processing
 involved unless a format boundary is being crossed deliberately (§12.9).
 
 **Fidelity, honestly accounted.** The tempting objection is that `.wav`
-must be *more accurate* because it is closer to the physical artefact.
+must be *more accurate* because it is closer to the physical artifact.
 For this system, that intuition is backwards. The only consumer of a
 tape image inside the emulator is a demodulator that recovers the exact
 same byte stream either way; the audio carries no information the byte
@@ -454,7 +455,7 @@ paying that bill looks like.
 
 ## 12.4 The deck's state
 
-Week 1 proposed three questions to ask of every new device before writing
+Chapter 1 proposed three questions to ask of every new device before writing
 a line of code: what is the state, what is the loop, where is the seam?
 The cassette is small enough to answer all three at once, so start with
 the state. The `Cassette` struct is compact, and every field in it earns
@@ -548,7 +549,7 @@ either, it is arguably the more faithful model as well.
 > }
 > ```
 >
-> Neither function hand-resets ten fields one at a time. The expression
+> Neither function hand-resets eleven fields one at a time. The expression
 > `Self { mounted: true, tape: bytes, ..Self::default() }` is Rust's
 > *struct update syntax*: build a fresh value from `Default`, override
 > the fields you name, and take the rest from the default. Assigning that
@@ -572,9 +573,9 @@ either, it is arguably the more faithful model as well.
 
 ### The one place the state is not trusted
 
-There is a third entry point that resets the deck, and it is the
+There is a third entry point into this reset machinery, and it is the
 interesting one, because it deliberately does *not* reset anything. When
-week 16's save-state machinery restores a snapshot, the tape's bytes are
+Chapter 16's save-state machinery restores a snapshot, the tape's bytes are
 not in it — a mounted tape is media, and commercial tapes are
 copyrighted, so the `tape` field is `#[serde(skip)]` and the file is
 referenced by path and hash instead. Everything *else* about the deck,
@@ -597,7 +598,8 @@ ordinary deserialized field, and a hand-crafted or corrupted payload can
 set it to anything a `u8` can hold. Look at what happens downstream if it
 does: `current_bit_is_one` shifts a byte right by `bit` with no bounds
 check of its own, and a shift wider than the type panics in debug builds
-and is unspecified in release. The function's own doc comment
+and becomes a masked shift — the shift amount wrapped to the type's
+width — in release ones. The function's own doc comment
 ([`cassette.rs:140-155`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L140-L155))
 walks through the other two failure modes it screens for: a restored
 `pos` past the end of a tape file that has changed shape since the
@@ -605,7 +607,7 @@ snapshot was taken, and the subtler case of `pos == tape.len()` with a
 nonzero `bit`, which `tick` can never produce and which therefore
 indicates a corrupted payload rather than a legitimate end-of-tape.
 
-The general lesson is worth carrying into week 16 and into any project
+The general lesson is worth carrying into Chapter 16 and into any project
 with a load path. Deserialization is a trust boundary. Fields that were
 invariants while the program was running become *assertions to check* the
 moment they arrive from a file, and the cheapest place to check them is
@@ -615,10 +617,10 @@ the function that puts the pieces back together.
 
 ## 12.5 Playback: bytes become edges
 
-With the state understood, the loop is next. The cassette's loop is
-driven from the same place every other per-instruction device in this
-machine is driven from, and its cadence was chosen for a reason the doc
-comment states plainly:
+With the state understood, the loop is next. The cassette's loop runs
+from the same place as every other per-instruction device in this
+machine, and its cadence was chosen for a reason the doc comment states
+plainly:
 
 ```rust
 // crates/coco-core/src/cassette.rs:222-226
@@ -629,7 +631,7 @@ comment states plainly:
     /// ~217-cycle half-periods of the 1-bit tone.
 ```
 
-That last clause is the fidelity budget from week 1, spent explicitly. A
+That last clause is the fidelity budget from Chapter 1, spent explicitly. A
 scanline on this machine is on the order of fifty-seven CPU cycles at
 normal speed, and a video field is 262 of them; most devices in this
 emulator are perfectly happy being ticked once per scanline or once per
@@ -649,7 +651,7 @@ self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
 ```
 
 The second argument is the motor relay line — PIA1's CA2 output, which
-week 10 introduced as one of the two handshake lines every PIA port
+Chapter 10 introduced as one of the two handshake lines every PIA port
 carries and which Tandy wired to the deck's remote-control jack. When
 BASIC energizes that relay, a real deck's motor starts turning. More on
 what that costs in §12.7.
@@ -704,21 +706,21 @@ the steady on state, and arms the spin-up countdown. The tape does not
 move an inch until that countdown drains, for reasons §12.7 devotes
 itself to. Note that this is an *edge* detector built from one bool of
 history, which is the same shape you saw in the PIA's own Cx1 handling in
-week 10 and will see again in the disk controller's HALT logic in week
+Chapter 10 and will see again in the disk controller's HALT logic in week
 13.
 
 **Motor off means nothing moves, full stop.** No clock advance, no bit
 progress, no partial credit. This early return is also why the recorder's
 `record_dac` resets `last_level` to `None` on motor-off: the relay
 opening is a hard boundary between sessions on both sides of the deck,
-and both sides honour it identically.
+and both sides honor it identically.
 
 **The cycle budget accumulates into `bit_elapsed`,** and it is drained by
 a `while` loop rather than an `if`. That distinction is load-bearing and
 easy to get wrong. `tick` is called once per *instruction*, and a 6809
-instruction can cost quite a few cycles — more, on a slow addressing
-mode, than a substantial fraction of a bit period. Push the machine into
-the double-speed mode week 6 introduced and each emulated instruction
+instruction can cost quite a few cycles — on a slow addressing mode,
+more than a substantial fraction of a bit period. Push the machine into
+the double-speed mode Chapter 6 introduced and each emulated instruction
 covers twice as much tape. Under enough cycle pressure, more than one bit
 can legitimately complete inside a single `tick` call, and an `if` here
 would silently discard the surplus, dropping bits under exactly the
@@ -734,8 +736,8 @@ two counters is also what makes the save-state invariant in §12.4 true:
 execution.
 
 The two helpers that `tick` leans on are three lines each, and between
-them they answer "what does the tape's next bit want, and how long does
-its tone burst last":
+them they answer what the tape's next bit wants and how long its tone
+burst lasts:
 
 ```rust
 // crates/coco-core/src/cassette.rs:277-283
@@ -772,13 +774,13 @@ pub fn input_bit(&self) -> bool {
 }
 ```
 
-Two behaviours, in five lines. The guard clause establishes that the line
+Two behaviors, in five lines. The guard clause establishes that the line
 **idles high** whenever nothing is playing: motor off, still spinning up,
 or past the end of the tape. That default matches the CoCo's general rule
 that unused and idle input pins float high, which is exactly what
 `PiaPort::default()` encodes
 ([`crates/coco-core/src/pia.rs:52-56`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs#L52-L56),
-week 10) by initializing every port's `input` to `0xFF`.
+Chapter 10) by initializing every port's `input` to `0xFF`.
 
 Otherwise the function renders a **square wave with one flip per half
 period**. For the first `high` cycles of the current bit's tone —
@@ -864,13 +866,13 @@ the other half of the seam:
             }
 ```
 
-Read that in the context of what the ROM is doing on the other side.
+Put that in the context of what the ROM is doing on the other side.
 Color BASIC's `BITIN` routine sits in a tight loop reading `$FF20` and
 testing bit 0, counting iterations until the bit changes state. Every one
 of those reads lands here, re-samples `input_bit()` against the deck's
 current position, and hands back a freshly computed pin state. The
 emulator is not pushing edges at the CPU; the CPU is pulling the line's
-current value, thousands of times per byte, and the deck is answering
+current value, hundreds of times per byte, and the deck is answering
 from a position that `tick` has been advancing between each of those
 reads. That pull-based arrangement is why `input_bit` is a pure function
 of state rather than something that has to be scheduled: it can be asked
@@ -878,10 +880,10 @@ at any cycle and give the right answer for that cycle.
 
 ### The warble in the speaker
 
-One last connection, because it ties this chapter back to week 11 and
+One last connection, because it ties this chapter back to Chapter 11 and
 explains a detail from §12.1's opening ritual. The tape signal does not
 only reach the CPU. It also reaches the *speaker*, through the same
-four-way analog mux week 11 dissected:
+four-way analog mux Chapter 11 dissected:
 
 ```rust
 // crates/coco-core/src/audio.rs:92-97
@@ -945,12 +947,12 @@ PIA1_BASE..=PIA1_LAST => {
 ```
 
 The expression `(output & ddr & 0xFC) >> 2` is the same 6-bit DAC
-extraction week 11's mixer uses: PIA1 port A bits 2 through 7, masked
+extraction Chapter 11's mixer uses: PIA1 port A bits 2 through 7, masked
 against the data-direction register so that only pins actually configured
 as outputs contribute, then shifted down to a plain `0..=63` value. The
-`& ddr` term matters more than it looks — a pin configured as an input
+`& ddr` term is easy to skim past — a pin configured as an input
 contributes nothing to the analog output no matter what the output
-register holds, and modelling that keeps the emulator honest during the
+register holds, and modeling that keeps the emulator honest during the
 brief windows when the ROM is reconfiguring the port.
 
 The important word in that comment, though, is **unconditional**. Unlike
@@ -987,7 +989,7 @@ and never one entry per write. A program spending ten seconds in `CSAVE`
 writes the DAC an enormous number of times, but if you keep only the
 changes you retain exactly the information a demodulator needs — when the
 signal moved, and to what — without ever materializing a dense sample
-array. Week 11 built its entire audio-event grid on the same principle,
+array. Chapter 11 built its entire audio-event grid on the same principle,
 and recognizing it here as the same idea solving the same class of
 problem is worth more than either instance in isolation.
 
@@ -1048,14 +1050,17 @@ fn capture_to_bits(capture: &[Transition]) -> Vec<Option<bool>> {
 }
 ```
 
-The core idea is in the fifth line. `mid = max / 2` computes a
-zero-crossing threshold from the capture's *own observed levels*, not
-from a hardcoded constant, which is exactly what a real comparator does
-with an AC-coupled signal: it has no notion of what "high" means in
-absolute terms, only of where the signal's own midpoint sits. The two
+The core idea is in one line. `mid = max / 2` computes a zero-crossing
+threshold from the capture's *own observed levels*, not from a hardcoded
+constant, which is exactly what a real comparator does with an
+AC-coupled signal: it has no notion of what "high" means in absolute
+terms, only of where the signal's own midpoint sits. The two
 early returns handle the degenerate cases honestly — an empty capture and
-a capture that never left zero both yield no bits rather than a division
-by zero or a stream of garbage.
+a capture that never left zero both yield no bits rather than a stream of
+garbage. Note what the second one actually avoids: not a division by zero
+(`max / 2` is a perfectly well-defined 0) but a *degenerate threshold*, a
+midpoint of zero derived from a signal that never moved, against which
+"above the middle" would have stopped meaning anything at all.
 
 From there the loop is a state machine over one boolean, `side`. Every
 time the recorded level crosses from below `mid` to above it — a **rising
@@ -1088,7 +1093,7 @@ run, is one of the bits the receiver needs most — would vanish.
 
 ### The 624-cycle threshold
 
-A measured period is only half of a bit. The other half is the
+A measured period is only half the job. The other half is the
 comparison that turns a duration into a value, and the constants that
 define it:
 
@@ -1214,7 +1219,7 @@ There is no trailing rising edge to close out the very last tone cycle,
 since nothing gets written after it, and `capture_to_bits` only emits a
 bit when it sees the crossing that *ends* a cycle. Without a fallback,
 the tape's last bit — in practice, part of the EOF block's trailer —
-would simply be missing, and playing that recording back would leave the
+would go missing, and playing that recording back would leave the
 ROM's own `BITIN` routine at `$A755` polling forever for an edge that is
 never coming.
 
@@ -1320,8 +1325,8 @@ distinctive enough to bet on.
 rather, it is distinctive in an unusual way. As a bit pattern, `0x55` is
 `01010101`, a strict alternation. A run of consecutive `$55` bytes on the
 wire is therefore indistinguishable, bit for bit, from one continuous
-alternating stream with no byte structure visible in it anywhere. That is
-not a flaw in the choice; it is the entire point. A leader is not data,
+alternating stream with no byte structure visible in it anywhere. It is
+not a flaw in the choice; it is the entire point. A leader is not data;
 it is *clock recovery*. Its job is to give the receiver dozens of bytes'
 worth of opportunity to settle in — to establish that a signal is
 present, that its two tone widths are what they should be, and that the
@@ -1377,7 +1382,7 @@ choice worth naming: **a glitch costs the current block, not the
 recording.** Real tape behaves the same way. A dropout corrupts the block
 it lands in and nothing after it, because the next block's own leader run
 gives the reader a fresh chance to re-synchronize. An emulator that
-treated a discontinuity as fatal would be modelling a stricter medium
+treated a discontinuity as fatal would be modeling a stricter medium
 than the one it is pretending to be.
 
 ### Deciding whether the recording counts
@@ -1399,13 +1404,13 @@ the mounted tape:
 ```
 
 The guard `decoded.contains(&SYNC)` is doing something genuinely
-important. Remember from §12.6's first excerpt that the DAC tap is
-unconditional: *every* DAC write reaches the recorder while the motor
+important. Remember from this section's first excerpt that the DAC tap
+is unconditional: *every* DAC write reaches the recorder while the motor
 relay is closed, including writes that were meant for the speaker. A
 program that plays sound effects with the relay energized will leave
-noise in the capture, and demodulating noise produces a byte stream that
-happens to contain no sync byte, because sync bytes only arise from real
-block structure.
+noise in the capture, and demodulating noise produces a byte stream with
+no sync byte in it, because sync bytes only arise from real block
+structure.
 
 So a capture without a sync is discarded and the existing tape is kept.
 The practical effect is the one that matters at the user interface: a
@@ -1424,7 +1429,7 @@ bug prevented.
 
 Everything in §12.5 and §12.6 assumed the tape was already rolling. It is
 not, at the instant the motor relay closes, and the gap between those two
-statements is this chapter's cleanest example of something week 1
+statements is this chapter's cleanest example of something Chapter 1
 promised would recur: sometimes what an emulator has to reproduce is not
 a chip at all, but an *assumption* baked into the ROM's timing.
 
@@ -1446,12 +1451,13 @@ Start with the number. `65536 * 8` is 524,288 cycles, and dividing by
 comment's "~0.5 s" and the codebase's own test comment, which spells out
 the same figure at
 [`tests/cassette.rs:58`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs#L58).
-It is not a coincidence that the value is also exactly `512 * 1024`. The
-ROM's own delay loop at `LA7D1` runs 65,536 iterations of an 8-cycle
-body, and this constant is that loop transcribed literally, cycle for
-cycle, rather than a rounded-off "about half a second." Writing it as
-`65536 * 8` instead of `524288` keeps the derivation visible in the
-source, which is a small kindness to the next reader.
+That it lands on a tidy `512 * 1024` is a coincidence rather than the
+point, and reading it as a round binary figure gets the derivation
+backwards. The ROM's own delay loop at `LA7D1` runs 65,536 iterations of
+an 8-cycle body, and this constant is that loop transcribed literally,
+cycle for cycle, rather than a rounded-off "about half a second."
+Writing it as `65536 * 8` instead of `524288` keeps the derivation
+visible in the source, which is a small kindness to the next reader.
 
 ### The ROM never checks
 
@@ -1465,13 +1471,13 @@ is safe to assume they have.
 
 That is an assumption about *physics*, encoded as a fixed delay, with no
 feedback loop verifying it. There is no "motor ready" line on the
-cassette connector, no status bit to poll, nothing to ask. The software
-equivalent of counting to ten before you start listening, because you
-cannot ask the motor whether it is ready yet.
+cassette connector, no status bit to poll, nothing to ask. It is the
+software equivalent of counting to ten before you start listening,
+because you cannot ask the motor whether it is ready yet.
 
 Now run the thought experiment the comment is implicitly describing.
 Suppose the emulator's tape starts producing bits the instant the motor
-bit goes high, with no spin-up delay modelled at all — which is the
+bit goes high, with no spin-up delay modeled at all — which is the
 obvious first implementation, and the one most people would write.
 
 The ROM is still blindly burning its 0.586-second countdown. It has no
@@ -1514,7 +1520,7 @@ model with an angular-velocity variable, an acceleration constant, and a
 tape speed that ramps smoothly from zero. It would be more physically
 faithful, it would take an afternoon, and no software on the machine
 could tell the difference — because nothing in the system ever samples
-tape speed. That is the fidelity budget from week 1 applied to a device
+tape speed. That is the fidelity budget from Chapter 1 applied to a device
 rather than to a bus: spend where software can notice.
 
 ### Why it has to be an edge detector
@@ -1545,7 +1551,7 @@ This section is the chapter's best lesson, and it deserves telling in
 full, because it is the clearest example in this entire codebase of a
 methodology you will need again: **when the documentation runs out,
 instrument your own emulator and measure the software's actual
-behaviour.**
+behavior.**
 
 ### The gap in the documentation
 
@@ -1619,11 +1625,11 @@ as a measuring instrument. The ROM has no idea it is being measured; it
 is executing its normal cassette-save routine against a `Cassette` that
 happens to double as a stopwatch.
 
-The `200_000` safety valve is worth noticing too. A probe that runs
-against real ROM code should assume the ROM might do something
-unexpected — hang, loop, never turn the motor off — and bound its own
-resource use rather than filling memory. Measurement code deserves the
-same defensive instincts as production code, and gets them less often.
+Notice the `200_000` safety valve as well. A probe that runs against
+real ROM code should assume the ROM might do something unexpected —
+hang, loop, never turn the motor off — and bound its own resource use
+rather than filling memory. Measurement code deserves the same defensive
+instincts as production code, and gets them less often.
 
 This worktree does not have `roms/coco3.rom`, since `roms/` is
 git-ignored and present only on the machine this course was authored on,
@@ -1713,13 +1719,13 @@ it has been left in place rather than quietly corrected:
 ```
 
 **793 and 455 are not the constants in `cassette.rs` today**, which are
-814 and 434. That is not an error in this chapter; it is the header's own
-honestly-reported earlier figures, preserved rather than silently
-rewritten, and the same pair that turns up in `BIT_PERIOD_THRESHOLD`'s
-doc comment in §12.6. Whatever produced them — a coarser analysis, an
-earlier state of the emulator's own instruction timing, or both — they
-were superseded by the refined half-period measurement that produced the
-four constants in force today.
+814 and 434. Those are not an error in this chapter; they are the
+header's own honestly reported earlier figures, preserved rather than
+silently rewritten, and the same pair that turns up in
+`BIT_PERIOD_THRESHOLD`'s doc comment in §12.6. Whatever produced them —
+a coarser analysis, an earlier state of the emulator's own instruction
+timing, or both — they were superseded by the refined half-period
+measurement that produced the four constants in force today.
 
 There is a piece of arithmetic here worth checking rather than taking on
 faith, because it explains why the stale figures survived so long
@@ -1728,7 +1734,7 @@ The two pairs disagree about each individual period by roughly 21 cycles,
 in opposite directions, and agree exactly about their midpoint —
 `1248 / 2 = 624`, which is `BIT_PERIOD_THRESHOLD` to the cycle.
 
-That is why refining the constants changed no behaviour that any test
+That is why refining the constants changed no behavior that any test
 could see. The decision boundary, which is the only number demodulation
 actually consults, did not move. The refinement mattered for a different
 reason entirely: the *asymmetry*, which the old two-number framing could
@@ -1739,25 +1745,25 @@ half-period-counting demodulator off its decision boundary.
 
 The methodological lesson generalizes far past cassette tape, and it is
 worth stating on its own terms: **when a data sheet or a disassembly does
-not cover the behaviour you need, make your own emulator into an
+not cover the behavior you need, make your own emulator into an
 instrument.**
 
 By the time you reach this chapter you have a CPU that executes the real
-ROM correctly (weeks 2 through 4), a bus that routes every access
-correctly (week 5), and I/O devices honest enough that the ROM cannot
-tell it is not talking to real hardware (weeks 10 and 11). That
+ROM correctly (Chapters 2 through 4), a bus that routes every access
+correctly (Chapter 5), and I/O devices honest enough that the ROM cannot
+tell it is not talking to real hardware (Chapters 10 and 11). That
 combination is a measuring apparatus. It is not a disassembler, not a
 data sheet, and not another emulator's source code; it is a working
 replica of the machine, into which you can insert a probe at any point
 and read out a timestamped record of what the original software actually
 does.
 
-The catch, and it is a real one, is that this only works for behaviour
+The catch, and it is a real one, is that this only works for behavior
 your emulator already gets right for other reasons. Measuring tape timing
 with an emulator whose instruction cycle counts were wrong would produce
 confident, precise, wrong numbers. The chain of dependencies runs
 backwards through the whole course: the tape constants are trustworthy
-because the CPU's cycle counts are trustworthy, which is why weeks 2
+because the CPU's cycle counts are trustworthy, which is why Chapters 2
 through 4 spent so much effort on a table nobody enjoys copying. Every
 measurement you take with an instrument you built yourself inherits every
 error in the instrument.
@@ -1786,22 +1792,22 @@ reasons this is worth doing:
 ```
 
 The first paragraph is the feature: a `.cas` tape can be turned into
-audio and played into a real deck, or a WAV recorded from a real physical
+audio and played into a real deck, or a WAV recorded from a physical
 tape can be brought into the emulator. This is where the §12.3 argument
 gets its escape hatch — the one scenario in which audio genuinely is the
 more accurate representation is when the audio is the *only* thing you
 have, because it came off a physical tape whose exact bytes nobody knows.
 
-The second paragraph is a code-organization point that matters more than
-it looks. `ZERO_BIT_PERIOD`, `ONE_BIT_PERIOD` and `SYNC` are declared
-`pub(crate)` in `cassette.rs` specifically so that this module can `use`
-the same measured values rather than re-typing `814`, `434` and `0x3C` as
-a second set of magic numbers. Two copies of a measured constant will
-eventually disagree, because someone will refine one and miss the other,
-and the resulting bug — WAV export producing tones the emulator's own
-demodulator rejects — would be baffling to track down. One source of
-truth, two consumers, and the visibility modifier documents the
-relationship.
+The second paragraph is a code-organization point with more consequence
+than its brevity suggests. `ZERO_BIT_PERIOD`, `ONE_BIT_PERIOD` and
+`SYNC` are declared `pub(crate)` in `cassette.rs` specifically so that
+this module can `use` the same measured values rather than re-typing
+`814`, `434` and `0x3C` as a second set of magic numbers. Two copies of a
+measured constant will eventually disagree, because someone will refine
+one and miss the other, and the resulting bug — WAV export producing
+tones the emulator's own demodulator rejects — would be baffling to
+track down. One source of truth, two consumers, and the visibility
+modifier documents the relationship.
 
 ### Export: synthesizing real audio
 
@@ -1854,25 +1860,25 @@ emulated CPU. It might be a real deck's line input, or a waveform viewer
 produced rather than the comparator's squared rendering of it.
 
 Three details in twelve lines are worth pulling out. The conversion from
-cycles to samples goes through seconds — `period_cycles / cpu_hz` gives a
-duration, multiplied by the WAV sample rate gives a sample count — which
-is the only place in this entire chapter where a time is expressed in
-anything but CPU cycles, and it is there because a WAV file's timebase is
-defined in seconds. The `.max(1.0)` guards against a pathological
-`cpu_hz` producing a zero-length cycle. And the comment on the cast
-records a genuine Rust semantics fact: float-to-integer casts saturate
-rather than wrapping or being undefined, so a rounding excursion at the
-peak cannot produce a wrapped-around sample.
+cycles to samples goes through seconds: `period_cycles / cpu_hz` gives a
+duration, and multiplying that by the WAV sample rate gives a sample
+count. That is the only place in this entire chapter where a time is
+expressed in anything but CPU cycles, and it is there because a WAV
+file's timebase is defined in seconds. The `.max(1.0)` guards against a
+pathological `cpu_hz` producing a zero-length cycle. And the comment on
+the cast records a genuine Rust semantics fact: float-to-integer casts
+saturate rather than wrapping or being undefined, so a rounding excursion
+at the peak cannot produce a wrapped-around sample.
 
 The doc comment above `synthesize_wav` is explicit that this output is
 *not* inverted the way `Cassette::input_bit`'s PA0 rendering is, and the
-reason is worth restating. `synthesize_wav` is modelling the record-side
+reason bears repeating. `synthesize_wav` is modeling the record-side
 output jack, where the DAC's own un-inverted sine appears.
-`input_bit` is modelling the far end of the record-to-play analog path,
+`input_bit` is modeling the far end of the record-to-play analog path,
 after whatever flips the polarity (§12.5). Same underlying tone, two
 different points in the signal chain, two different polarities — and the
 code keeps them straight by never sharing a function between them, which
-is a more reliable defence than a comment saying "remember to invert."
+is a more reliable defense than a comment saying "remember to invert."
 
 `push_silence` frames the audio with a full second of dead air before the
 tone and a quarter second after. Neither number came from measuring a
@@ -1929,9 +1935,9 @@ The selection criterion is the presence of a `SYNC` byte, which is the
 same structural signal `finalize_recording` uses in §12.6 and for the
 same reason: `bits_to_bytes` only emits a sync byte when it has locked
 onto real block structure, so a decode containing one is overwhelmingly
-likely to be the correct interpretation. When both or neither contain a
-sync, the tie-break falls back to length, which is a weaker signal but
-better than a coin flip.
+likely to be the correct interpretation. When both decodes contain a sync
+byte, or neither does, the tie-break falls back to length, which is a
+weaker signal but better than a coin flip.
 
 This mirrors, at the audio boundary, exactly the "hunt, don't assume"
 philosophy §12.6 walked inside `bits_to_bytes`. When you cannot be
@@ -1965,11 +1971,11 @@ would be measured as an absurdly short period and demodulated as a
 this, because its crossings are computed rather than measured and cannot
 jitter.
 
-Notice also that the constant's doc comment ends by classifying itself:
+Notice, too, that the constant's doc comment ends by classifying itself:
 "a tunable heuristic, not a hardware fact." That is a small discipline
 with a large payoff in a codebase like this one, where most constants
 *are* hardware facts and a reader is entitled to assume so. Labelling the
-exceptions means the unlabelled ones can be trusted.
+exceptions means the unlabeled ones can be trusted.
 
 One last detail bridges this module back to the rest of the chapter:
 
@@ -1982,10 +1988,10 @@ fn sample_to_cycle(sample_index: usize, cpu_hz: f64, wav_sample_rate_hz: u32) ->
 
 `demodulate` consumes `Transition`s timestamped in CPU cycles, and a WAV
 file is indexed in samples, so the audio importer converts. Three lines,
-and they are the reason the entire demodulation pipeline could be reused
-verbatim across a format boundary: because the pipeline's interface was
+and they are why the entire demodulation pipeline could be reused
+verbatim across a format boundary: the pipeline's interface was
 specified in the machine's own currency rather than in whatever unit
-happened to be convenient at the call site. Week 1 claimed cycles are the
+happened to be convenient at the call site. Chapter 1 claimed cycles are the
 unit of account for the whole machine; this function is the invoice.
 
 The tests in §12.10 confirm that this round-trips through both 8-bit and
@@ -2000,7 +2006,7 @@ now that you know what machinery is being exercised.
 splits cleanly into two halves: tests that need nothing but the
 `Cassette` and `cassette_wav` APIs, which always run, and one end-to-end
 test against the real `roms/coco3.rom`. Running the file on a checkout
-without `roms/` — a fresh clone or a git worktree, since week 1
+without `roms/` — a fresh clone or a git worktree, since Chapter 1
 established that the directory is git-ignored and lives only in the main
 checkout — confirms exactly that split:
 
@@ -2026,8 +2032,8 @@ still reports `... ok`. It is not marked `#[ignore]`. It is an ordinary
 test that runs, looks for the ROM at `../../roms/coco3.rom`, prints a
 message to `stderr` when it is not there, and returns early. That pattern
 has appeared before in this course — [`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs)
-in week 6 does the same thing — and it will appear again in disks and
-serial in weeks 13 and 14. Every other test in the file needs nothing but
+in Chapter 6 does the same thing — and it will appear again in disks and
+serial in Chapters 13 and 14. Every other test in the file needs nothing but
 the code you have already read.
 
 ### `playback_waveform_demodulates_back_to_the_same_bytes`
@@ -2080,19 +2086,23 @@ itself a leader value, and four bytes with plenty of adjacent-bit
 variety, which between them exercise the demodulator's bit-boundary
 handling far better than a run of identical bytes would.
 
-Three details in the body are worth pulling out.
+Three details in the body deserve a second look.
 
 **`TICK_CYCLES = 7`** is described by its own comment as "deliberately
 not a divisor of either bit period," and the reasoning is worth adopting
-as a habit. Both periods, 814 and 434, are even; 7 is odd and shares no
-useful factor with either. Ticking in a stride that never aligns with a
-bit boundary means every boundary falls at a different offset within some
-7-cycle step, so a bug in how `tick` handles a partial bit at the end of
-its cycle budget — which is the `while` loop's whole job, §12.5 — shows
-up as compounding phase error rather than being accidentally masked. A
-test that ticked in units of 814 would pass against a badly broken
-implementation. Choose the granularity that stresses the general case,
-not the convenient one.
+as a habit — though the comment overstates its case by one period, which
+is §12.6's arithmetic-checking habit paying off a second time. Do the
+division: 814 is 7 × 116 + 2, so 7 genuinely is not a divisor there, but
+434 is 7 × 62 exactly, so the 1-bit's period is a whole number of ticks.
+What actually holds is the property the test needs. The 0-bit's period is
+not a multiple of the stride, so the moment one 0-bit goes by the phase
+shifts and every bit boundary after it falls at a different offset within
+some 7-cycle step. A bug in how `tick` handles a partial bit at the end
+of its cycle budget — which is the `while` loop's whole job, §12.5 —
+therefore shows up as compounding phase error rather than being
+accidentally masked. A test that ticked in units of 814 would pass
+against a badly broken implementation. Choose the granularity that
+stresses the general case, not the convenient one.
 
 **`deck.tick(600_000, true)` in a single call** burns through the entire
 524,288-cycle spin-up latency in one jump, which is legitimate precisely
@@ -2137,23 +2147,23 @@ fn motor_off_freezes_the_tape_and_records_nothing() {
 ```
 
 Both halves of the deck are checked against the same condition,
-independently, in one test. Ten thousand cycles of ticking with the motor
-off moves the tape exactly nowhere and leaves the line idling high. Two
-DAC writes with the motor off produce exactly zero captured transitions.
-It looks almost too simple to be worth writing, but it is checking a real
-invariant that spans two otherwise unrelated code paths: the motor line
-gates *everything*, not just the side of the deck you happened to be
-thinking about when you wrote the gate.
+independently, in one test. Ticking for ten thousand cycles with the
+motor off moves the tape exactly nowhere and leaves the line idling
+high. Two DAC writes with the motor off produce exactly zero captured
+transitions. It looks almost too simple to be worth writing, but it is
+checking a real invariant that spans two otherwise unrelated code paths:
+the motor line gates *everything*, not just the side of the deck you
+happened to be thinking about when you wrote the gate.
 
 ### `csave_rewind_cload_round_trips_a_basic_program`
 
 The full end-to-end test walks §12.1's entire ritual in code. It mounts a
 blank tape, types a program, issues `CSAVE"X"`, waits for the motor to go
-idle, rewinds — which finalizes the recording, since `Cassette::rewind`
-calls `finalize_recording` first, so `CSAVE` → rewind → `CLOAD` works
-with no eject cycle — checks the block structure, types `NEW` to wipe
-BASIC's program, loads it back with `CLOAD`, runs it, and checks the
-screen for the program's actual output.
+idle, and rewinds — which finalizes the recording, since
+`Cassette::rewind` calls `finalize_recording` first, so `CSAVE` → rewind
+→ `CLOAD` works with no eject cycle. It then checks the block structure,
+types `NEW` to wipe BASIC's program, loads it back with `CLOAD`, runs it,
+and checks the screen for the program's actual output.
 
 This is the test whose block-structure assertions opened the chapter in
 §12.1, and you now have every piece of machinery needed to read the rest
@@ -2194,7 +2204,7 @@ that if they do, something goes red. This is a regression guard in the
 precise sense — it protects a property that is currently true and could
 quietly stop being true.
 
-That test's behaviour on a ROM-less checkout is the same, for the same
+That test's behavior on a ROM-less checkout is the same, for the same
 reason:
 
 ```
@@ -2208,7 +2218,7 @@ Both end-to-end tests are honest about their dependency and skip cleanly
 rather than failing or, worse, passing silently without exercising
 anything real. That is a pattern worth stealing for your own device
 tests: a test that cannot run should say so on `stderr`, in a sentence
-that names both the missing file and where to read about it. Week 13's
+that names both the missing file and where to read about it. Chapter 13's
 disk tests do exactly the same thing, for the same reason.
 
 ---
@@ -2228,14 +2238,14 @@ In this order:
    verification would have looked like.
 2. **[`crates/coco-core/src/cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette_wav.rs).**
    Read the constants and `synthesize_wav` closely; skim `decode_wav`'s
-   chunk-parsing machinery more lightly, since it is ordinary defensive
-   file-format parsing. The interesting part is the polarity guessing in
-   §12.9. While you are in the file, note how many constants explicitly
+   chunk-parsing machinery, since it is ordinary defensive file-format
+   parsing. The interesting part is the polarity guessing in §12.9.
+   While you are in the file, note how many constants explicitly
    label themselves as conventions rather than hardware facts.
 3. **[`crates/coco-core/examples/cassette_calibrate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/cassette_calibrate.rs).**
    Read this as a measurement instrument rather than as application code.
-   Notice what it captures (raw DAC transitions) as against what it
-   computes from that capture (two different histograms), and connect
+   Notice what it captures (raw DAC transitions) as distinct from what
+   it computes from that capture (two different histograms), and connect
    both back to §12.8.
 4. **[`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs).**
    You have now read every test in this file in §12.10. Re-read
@@ -2279,14 +2289,14 @@ period (434) exceeding the threshold (430) and gets classified as a 0.
 Two things to explain in your own words: (a) why the ±20% case in the
 syllabus's own framing doesn't break *this* codebase's tests at all — what
 would need to be true of the test fixture for it to be threshold-sensitive
-in that range, and why isn't it?; (b) once you push far enough to break
+in that range, and why isn't it? (b) Once you push far enough to break
 something, why does it break as an *all-or-nothing* flip (every 1-bit at
 once) rather than "which bit pattern fails first" — and what would have
 to change about how the test's tape is synthesized for the question "which
 pattern fails first" to even have an answer? (Hint: compare how
 `ZERO_BIT_HIGH`/`ZERO_BIT_LOW` encode *measured* asymmetry within one bit
 against how the test's synthetic capture generates bits with zero
-per-instance jitter.) Revert your edit back to the real formula
+per-instance jitter.) Revert your edit to the real formula
 (`(ZERO_BIT_PERIOD as u64 + ONE_BIT_PERIOD as u64) / 2`) and confirm
 `cargo test -p coco-core --test cassette` is clean and `git status` is
 clean before moving on.
@@ -2295,8 +2305,9 @@ clean before moving on.
 verified).** In `bits_to_bytes`, change
 `window = window >> 1 | u8::from(bit) << 7;` to
 `window = window << 1 | u8::from(bit);` — assembling each byte MSB-first
-instead of LSB-first. Run `cargo test -p coco-core --test cassette`
-before you predict the outcome. The verified outcome: **3 of 8 tests fail**
+instead of LSB-first. Predict the outcome before you run
+`cargo test -p coco-core --test cassette`. The verified outcome:
+**3 of 8 tests fail**
 (`playback_waveform_demodulates_back_to_the_same_bytes`,
 `wav_round_trip_preserves_the_tape_bytes`,
 `wav_round_trip_survives_inverted_polarity`) — and the failure output is
@@ -2366,7 +2377,7 @@ it in Audacity or any waveform viewer. Zoom in far enough to see
 individual cycles and find the leader run (long, uniform, one frequency),
 the sync transition (a visible frequency change), and try reading the
 first data byte's bits by eye, LSB first, using §12.2's two frequencies
-as your guide. This exercise depends on hardware this worktree doesn't
+as your guide. This exercise depends on resources this worktree doesn't
 have (`roms/`), so treat it as a lab you run on a machine that does, not
 one you can complete here — but it's the single most direct way to
 confirm everything this chapter told you about the signal actually looks
@@ -2376,9 +2387,9 @@ like that on a real waveform.
 
 ## What's next
 
-Part IV is done, and the throughline running through it is worth naming
-before it disappears. Week 10 built the PIAs. Week 11 built the audio
-path they feed. Week 12 turned one PIA pin, plus a DAC register, into a
+Part IV is done, and the throughline of the whole part is worth naming
+before it disappears. Chapter 10 built the PIAs. Chapter 11 built the audio
+path they feed. Chapter 12 turned one PIA pin, plus a DAC register, into a
 complete two-way modem under nothing but ROM software. Every device in
 this part turned out to be "a PIA pin plus interpretation," and that is
 not a coincidence of how the chapters were ordered — it is the real
@@ -2386,17 +2397,17 @@ reason this machine could be built as cheaply as it was. Tandy bought
 general-purpose parts and spent software on making them behave like
 special-purpose ones.
 
-Part V trades that pattern for its opposite. Week 13 introduces the
+Part V trades that pattern for its opposite. Chapter 13 introduces the
 WD1773 floppy controller: a real, dedicated chip with its own command
 state machine, which the CPU talks to rather than bit-banging. You will
-meet the **HALT/NMI handshake** that week 6 quietly set up for — the HALT
+meet the **HALT/NMI handshake** that Chapter 6 quietly set up for — the HALT
 check in `step_cpu_unit`, whose exact call site you have now read, two
 lines above the cassette and cartridge `tick` calls in
 [`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs).
 
 You will also see the same "functional, not cycle-exact" fidelity
 decision this chapter's tape faced, resolved in the opposite direction —
-and for an instructive reason. It will not be because the exact behaviour
+and for an instructive reason. It will not be because the exact behavior
 cannot be derived; the WD1773 has a data sheet, which is more than the
 cassette ever had. It will be because disk software, unlike the cassette
 ROM you have just spent a whole chapter matching cycle for cycle, does

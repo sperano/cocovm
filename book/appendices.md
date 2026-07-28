@@ -1,8 +1,8 @@
 # Appendices
 
-*Self-study material for after week 16. These are reference documents, not
+*Self-study material for after Chapter 16. These are reference documents, not
 lectures: denser than the chapters, fewer worked examples, no required
-exercises (a handful of "try this" prompts are scattered through for the
+exercises (a couple of "try this" prompts are scattered throughout for the
 curious). Every file path and code excerpt below was checked against this
 worktree while writing; where an example needs a resource this worktree
 doesn't have (`roms/`, `docs/*.pdf` — both git-ignored, machine-local), that
@@ -32,9 +32,9 @@ and distills the method at the end.
 > cococommunity register reference instead lists **70 ns (≈14.3 MHz dot
 > clock)** for the fast source. This must be pinned empirically against a
 > reference emulator (XRoar / MAME `gime.cpp`) during implementation — do
-> **not** hard-code a number on authority alone. The slow = horizontal-
-> line-rate value is consistent across sources and is the safer one to rely
-> on first.
+> **not** hard-code a number on authority alone. The slow =
+> horizontal-line-rate value is consistent across sources and is the safer
+> one to rely on first.
 
 Two secondary references, both purporting to describe the same register,
 off by a factor of four (279.365 ns vs. 70 ns — not a rounding difference,
@@ -66,7 +66,7 @@ number a reference emulator's own device-model source code implements, and
 the codebase sided with the emulator source. The reason is implicit but
 inferable: MAME's `gime.cpp` is the artifact whose author had to make real
 software boot correctly against it for years; a mistaken constant there
-gets caught by regression the first time a game misbehaves. A one-line
+gets caught by a regression the first time a game misbehaves. A one-line
 register-reference table has no such feedback loop.
 
 Now the honest part: [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4 itself was never updated. Its "Caution"
@@ -88,10 +88,10 @@ that originally posed the question.
 each one still describes an open question by reading the file(s) it points
 at. You will find at least one more where the code has since resolved the
 question and the design doc hasn't caught up — that's not a bug in the
-project, it's what "design doc written before the code" costs, permanently.
+project; it's what "design doc written before the code" costs, permanently.
 
 The MMU sizing footnotes in the same document (§3) are a second instance of
-the identical pattern, worth knowing about even though the numbers matter
+the same pattern, worth knowing about even though the numbers matter
 less than the shape: the write-8-bits/read-6-bits banking asymmetry is
 "verified against the Sock GIME reference / cococommunity reference and
 corroborated by an owner of a 2 MB machine" — three independent
@@ -112,7 +112,7 @@ an entire category of "just derive it" reasoning:
 //! unpack, composite output goes through hand-measured lookup tables.
 ```
 
-and the table itself:
+The table itself repeats the point:
 
 ```rust
 /// Composite-monitor palette (BPI=0), 64 entries indexed by the 6-bit GIME
@@ -129,7 +129,7 @@ Composite output is a different physical process: the GIME's composite
 encoder mixes luminance and a phase-shifted chroma subcarrier, and a real
 NTSC monitor's decoder recovers hue and saturation from that mixed signal
 in a way that does not reduce to a clean per-channel formula for a
-*discrete* set of 64 register values — the relationship between "6-bit
+*discrete* set of 64 register values. The relationship between "6-bit
 palette register" and "perceived RGB" was measured on real silicon by the
 MAME authors, not derived, and this codebase inherits that measurement
 verbatim rather than attempting its own derivation (`ch09` §9.2 has you
@@ -145,14 +145,14 @@ a formula that will be subtly wrong everywhere, but to obtain a
 measurement that's known correct (here, borrowed from a reference
 emulator's own hand-measured table, with the borrowing declared in the
 source comment and in [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md)) and encode it verbatim, with its
-provenance attached. A formula you derive yourself, un-checked against
+provenance attached. A formula you derive yourself, unchecked against
 hardware, is a *guess dressed as rigor* — it looks more principled than a
 borrowed table, but it isn't, unless you can verify it against something
 real.
 
 ### Case 3: the cassette FSK timing — measuring what no document describes
 
-The GIME's timer clock had two competing documents to arbitrate between.
+The GIME's timer clock has two competing documents to arbitrate between.
 The CSAVE/CLOAD bit-bang routine has *zero* — it lives inside the
 undocumented $A000–$BFFF region of Color BASIC ROM, hand-written 6809
 assembly with no published disassembly this project has access to. The
@@ -178,7 +178,7 @@ transition the ROM's bit-bang routine produces on the cassette output line.
 It then histograms the deltas between transitions to find the two tone
 periods empirically, and separately does a zero-crossing analysis matching
 what the codebase's own demodulator ([`cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs)) does, so the calibration
-method mirrors the consuming code's own detection strategy rather than an
+method mirrors the consuming code's detection strategy rather than an
 idealized one.
 
 The findings recorded in the same file's header are the payoff, and they
@@ -196,17 +196,17 @@ directly contradict the "obvious" assumption:
 
 "1200/2400 Hz Kansas City standard" is the textbook answer every FSK
 write-up gives for CoCo cassette encoding, and it is *approximately* right
-— close enough that trusting it outright would have produced a working-
-looking emulator that occasionally desyncs on real captured tapes, because
-the real ROM's delay loop isn't crystal-locked to those round numbers at
-all. The only way to find that out was to measure the actual behavior of
-actual ROM code and cross-check the decode against a known-correct answer
-(the tokenized program bytes and block checksums for the specific one-liner
-that was CSAVEd) — not to trust the canonical spec, and not to trust a
+— close enough that trusting it outright would have produced a
+working-looking emulator that occasionally desyncs on real captured tapes,
+because the real ROM's delay loop isn't crystal-locked to those round
+numbers at all. The only way to find that out was to measure the actual
+behavior of real ROM code and cross-check the decode against a known-correct
+answer (the tokenized program bytes and block checksums for the specific
+one-liner that was CSAVEd) — not to trust the canonical spec, and not to trust a
 hand-derived cycle count either. `ch12` tells this as a narrative; the
 generalizable lesson is the instrument-first method: when there is no
 document, there is still the running system, and a purpose-built probe that
-captures its actual behavior — cross-checked against an independent ground
+captures what it actually does — cross-checked against an independent ground
 truth you can verify by hand (here: does the decoded output match the
 program you know you typed?) — is strictly more trustworthy than any
 number you could look up.
@@ -220,12 +220,12 @@ it's worth keeping them separate:
    (there is no TomHarte-style per-instruction suite for the 6809): boot
    the real ROM in both this emulator and a reference one from the same
    reset vector, dump a per-instruction trace from each (PC, opcode,
-   registers, cycles), and diff. First divergent line is the bug. This is
+   registers, cycles), and diff. The first divergent line is the bug. This is
    how the codebase substitutes for a test suite that doesn't exist for
    this CPU family — see Appendix D for the concrete workflow.
 2. **As a source of verbatim, licensed data** — the MC6847/GIME font
    bitmaps and the composite palette tables aren't *inspired by* MAME's
-   implementation, they are copied from it byte-for-byte, because the
+   implementation; they are copied from it byte-for-byte, because the
    alternative (re-measuring a font ROM or a composite decoder from
    scratch) is enormous, redundant effort for data MAME's authors already
    extracted correctly. [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md) documents exactly what was borrowed and
@@ -265,15 +265,15 @@ ls: roms/: No such file or directory
 tracked or not — several of these are themselves the kind of working
 document `.gitignore`'s `plan-*.md` pattern excludes from version control),
 not the copyrighted reference PDFs. There is no `coco3.rom` to boot, which
-is why every ROM-dependent claim in this appendix and the next two is
+is why every ROM-dependent claim in this appendix and the later ones is
 either (a) read directly out of source comments that themselves cite MAME
 or the datasheet, or (b) explicitly marked as unrun. This is not a gap
 specific to this worktree — it's the normal condition for a fresh clone,
 a CI runner, or a contributor who hasn't obtained the same reference
 material, and the project's whole [`rom_db.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rom_db.rs) + [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md)
-apparatus (Appendix B) exists precisely so the *code* still works and is
+apparatus (Appendix B) exists so that the *code* still works and is
 still auditable under that condition. Writing this appendix without local
-PDFs or ROMs is, in a small way, a test of whether the codebase's own
+PDFs or ROMs is, in a small way, a test of whether the codebase's
 provenance discipline is sufficient on its own — and for everything cited
 above, it was: every fact traces to a comment, a test, or [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md), not
 to a PDF that had to be taken on faith.
@@ -303,7 +303,7 @@ doesn't already encode:
    built out of the emulator's own instrumentation (`Cassette::capture`)
    could. This generalizes: a scratch `examples/` binary that logs the
    thing you can't find documented, run against real ROM code, beats
-   guessing every time real ROM code is available to run.
+   guessing every time such code is available to run.
 4. **Cross-check measurements and formulas against a reference
    implementation before trusting them.** Not because MAME/XRoar are
    infallible, but because "two independently-arrived-at numbers agree" is
@@ -347,23 +347,27 @@ is an accurate account of *this project's* choices, not legal advice.
 
 This mirrors the workspace boundary established in `ch01`
 (`mc6809` depends on nothing, knows only the `Bus` trait): the *licensing*
-boundary and the *dependency* boundary are the same boundary. `crates/
-mc6809/LICENSE-MIT` and `crates/mc6809/LICENSE-APACHE` sit inside that
+boundary and the *dependency* boundary are the same boundary.
+`crates/mc6809/LICENSE-MIT` and `crates/mc6809/LICENSE-APACHE` sit inside that
 crate; the root `LICENSE` file (GPL-3.0-or-later) covers the workspace as a
 whole via [`Cargo.toml`](https://github.com/sperano/cocovm/blob/main/Cargo.toml)'s `[workspace.package] license = "GPL-3.0-or-later"`.
 The one-way dependency arrow from `ch01` §1.5 (`coco-egui → coco-core →
 mc6809`) is also, it turns out, the one-way rule for what license terms are
 allowed to flow into what: GPL code may depend on permissive code, never
-the reverse, and keeping `mc6809` GPL-free is what keeps that rule
-satisfiable *by construction* rather than by discipline alone — no GPL
-dependency can ever sneak into `mc6809` and still let the crate compile as
-part of the workspace, because nothing in it is permitted to require one.
+the reverse, and keeping `mc6809` GPL-free is cheap to hold to, because the
+crate has almost nothing to hold the line against. Cargo does not check
+license compatibility, but [`crates/mc6809/Cargo.toml`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/Cargo.toml)'s `[dependencies]`
+section has exactly one entry — an optional `serde`, itself MIT OR
+Apache-2.0 — so there is no transitive dependency graph for a copyleft
+license to arrive through, and adding one would be a visible line in a
+fifteen-line manifest rather than something that sneaks in.
 
 ### Bundled MAME material — what, and under what terms
 
 [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md)'s "Bundled third-party material" section is short enough to
-summarize completely. Three tables, all originally copied from MAME
-source, all under the same license:
+summarize completely. Three bullets covering four tables — two
+character-generator fonts, two composite palette variants — all originally
+copied from MAME source, all under the same license:
 
 > Both character-generator bitmap tables were copied from **MAME**. The
 > source files are per-file licensed **BSD-3-Clause**, copyright **Nathan
@@ -384,12 +388,13 @@ the copyright notice, reproduce it in binary redistributions, don't use the
 contributors' names to endorse derived products) and the standard
 disclaimer of warranty.
 
-Two things worth noting precisely, because they're the kind of detail an
-appendix like this exists to get right rather than gloss over:
+Two things are worth stating carefully, because they're the kind of detail
+an appendix like this exists to get right rather than gloss over:
 
 **First, the license classification changed, and [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md) says so
-candidly.** Git history confirms it: an earlier commit filed all three
-tables under GPL-2.0-or-later; a later one corrected the record to
+candidly.** Git history confirms it: an earlier commit filed the two font
+tables under GPL-2.0-or-later (the palette tables were added to the notice
+later, already BSD-3-Clause); a later one corrected the record to
 BSD-3-Clause after checking the actual MAME file headers, and the current
 [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md) text explicitly flags its own prior version as wrong rather
 than silently fixing it. That candor is worth more than it costs — a
@@ -431,7 +436,7 @@ moved `COMPOSITE_PALETTE`/`COMPOSITE_PALETTE_180` into
 [`crates/coco-core/src/gime/palette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime/palette.rs). The file that actually holds the
 tables today still opens with `// Verbatim from MAME src/mame/trs/gime.cpp
 get_composite_color (BSD-3-Clause, Nathan Woods; see NOTICE.md)` — so the
-license attribution travelled with the code through the refactor even
+license attribution traveled with the code through the refactor even
 though [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md)'s path reference didn't get updated to follow it. Same
 lesson as above: trust the in-code attribution comment for *which file*,
 and [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md) for *what license*.
@@ -478,10 +483,10 @@ The relevant `.gitignore` lines, confirmed against this worktree:
 
 — ROM images, reference PDFs, and even loose cartridge dumps (`.ccc`,
 `.rom`) at the repo root are excluded categorically, not just the two named
-files. This is the practical consequence of the copyright question `NOTICE.
-md` doesn't try to resolve on this project's behalf: Tandy/Microsoft ROM
-images and third-party reference PDFs are not this project's to
-redistribute, so the repository simply never contains them, and every tool
+files. This is the practical consequence of the copyright question
+`NOTICE.md` doesn't try to resolve on this project's behalf: Tandy/Microsoft
+ROM images and third-party reference PDFs are not this project's to
+redistribute, so the repository never contains them, and every tool
 that needs one (the boot tests, the calibration examples, Appendix D's
 whole catalog) is written to read them from a local, unversioned path and
 degrade honestly (skip, or fail with a clear message) when they're absent
@@ -495,7 +500,7 @@ machine, and the machine's RAM at any moment contains copyrighted ROM
 content the CPU has been executing out of, plus whatever disk/tape/cart
 image is mounted. [`crates/coco-core/src/snapshot/payload.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs) answers it
 structurally, not by policy alone — the type that represents "a piece of
-mounted media" simply has no field a ROM's bytes could go in:
+mounted media" has no field a ROM's bytes could go in:
 
 ```rust
 /// Where one media file lived and what it hashed to, at save time.
@@ -522,10 +527,12 @@ for the frontend to say "this is the same `coco3.rom` you had when you
 saved" (or to warn you it isn't) without the snapshot file itself ever
 holding a byte of Tandy's ROM. This gets you two things at once, from one
 design decision: the copyright question doesn't arise (nothing
-redistributable is embedded), and snapshot files stay small regardless of
-how much RAM the emulated machine has, because the actual RAM contents
-*are* serialized (that's `Machine`'s own state, owned by this project) but
-the multi-megabyte ROM/disk/VHD images the RAM was loaded from are not.
+redistributable is embedded), and a snapshot's size tracks the emulated
+machine's RAM rather than its mounted media. The RAM contents *are*
+serialized — that's `Machine`'s own state, owned by this project, and
+`SystemBus::ram` is by its own comment "the single biggest snapshot
+payload, up to 2 MB" — while the ROM/disk/VHD images it was loaded from,
+however large, are not.
 
 *Try this:* read [`crates/coco-core/src/snapshot/payload.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs)'s doc comment
 on `RestoreNote` and on `MediaRefs`'s `disks`/`vhds`/`drivewire` fields (why
@@ -544,8 +551,8 @@ Creative-Commons-licensed 3D model's attribution requirement is satisfied
 by an About-window credit, or any other question a lawyer would need to
 answer for a specific redistribution plan. If you fork this project or
 lift a piece of it, read [`NOTICE.md`](https://github.com/sperano/cocovm/blob/main/NOTICE.md) and the license files it points to
-yourself; this appendix's job was only to make sure you knew they existed
-and roughly what they said.
+yourself; this appendix's job is only to make sure you know they exist
+and roughly what they say.
 
 ---
 
@@ -572,15 +579,16 @@ note.
 > don't pay for it now — ask before adding that scope.)
 
 and again in the key-decisions list: "6309 and Multi-Pak designed-for but
-not built — don't add that scope without asking." The 6309 is a
-pin-and-software-compatible 6809 replacement Hitachi shipped that most
-CoCo 3 owners never had, but that OS-9/NitrOS-9 has long had optional
-support for. In broad terms (general 6309 knowledge, not sourced from a
-local datasheet — none is present in this worktree, see Appendix A Case
-5): it adds a second accumulator pair (`E`/`F`, combinable as 16-bit `W`,
-and as 32-bit `Q` with `D`), a "native mode" with its own extra
-instructions (hardware `MUL`/`DIV`, block-transfer `TFM`, bit-test/set
-opcodes), and different — generally lower — cycle costs for many
+not built — don't add that scope without asking." The 6309 is a pin- and
+software-compatible 6809 replacement that Hitachi shipped; most CoCo 3
+owners never had one, but OS-9/NitrOS-9 has long had optional support for
+it. In broad terms (general 6309 knowledge, not sourced from a local
+datasheet — none is present in this worktree, see Appendix A Case 5): it
+adds a second accumulator pair (`E`/`F`, combinable as 16-bit `W`,
+and as 32-bit `Q` with `D`), extra instructions available in either mode
+(16-bit multiply and divide — `MULD`, `DIVD`/`DIVQ`, where the 6809 had
+only 8×8 `MUL` — block-transfer `TFM`, bit-manipulation opcodes), and a
+"native mode" that alters interrupt stacking and shaves cycles off many
 existing instructions. **Who'd notice:** 6309-native OS-9/NitrOS-9 builds
 and the handful of utilities written to detect and exploit the extra
 registers or native-mode instructions; ordinary 6809 CoCo 3 software is
@@ -598,7 +606,7 @@ whatever reference emulator support exists for it.
 64-entry composite palette table (Appendix A Case 2) is exactly correct for
 every *intentional* color a program selects via the GIME's palette
 registers, and only misses a specific unintended effect real composite
-monitors produce — certain black/white bit patterns in the CoCo 1/2's
+monitors produce. Certain black/white bit patterns in the CoCo 1/2's
 legacy two-color graphics modes "beat" against the NTSC color subcarrier
 and appear tinted on a real TV, a side effect some early-80s software
 exploited on purpose for extra colors nobody's palette register ever
@@ -621,7 +629,7 @@ be cycle-*exact* mid-instruction at first; instruction-granular cycle
 counts are enough to get the ROM booting and sync interrupts roughly right.
 Tighten later only if a game needs it." `ch02` §2.7 confirms this is
 exactly what shipped: `step()` never tracks *when* during an instruction a
-bus access happens, only that the whole instruction cost a fixed number of
+bus access happens, only that the whole instruction costs a fixed number of
 cycles matching the datasheet's per-opcode table — `LDA` extended is 5
 cycles regardless of which of those 5 the address-bus-valid moment "really"
 falls on. **Who'd notice:** software timing a raster effect or a
@@ -632,11 +640,11 @@ timing anomalies an interpreter would introduce. **What it would force:**
 the `Bus` trait (`ch01` §1.3) would need to grow from "whole read/write per
 call" to a tick model — something closer to `Bus::tick(&mut self)` called
 once per bus cycle with reads/writes resolved at the specific cycle the
-real 6809's bus-cycle table says they occur, which in turn means the
+real 6809's bus-cycle table says they occur. That in turn means the
 per-opcode cycle *table* this codebase currently has would need to become a
 per-opcode cycle-by-cycle bus-access *sequence*, and the scanline-driven
-main loop (`ch06`) would need sub-line granularity somewhere it currently
-has none.
+main loop (`ch06`) would need sub-line granularity where it currently has
+none.
 
 ### Interrupt-entry cycle cost — the known loose end
 
@@ -647,17 +655,17 @@ two, both inside [`exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/
 `step()`'s own post-dispatch bookkeeping. `take_interrupt` — the function
 `nmi()`, `irq()`, and `firq()` all funnel through — never touches
 `self.cycles` at all, even though it calls `self.psh(bus, 0xFF, true)` and
-discards that call's own cycle-accurate return value without recording it.
-Concretely: **an externally-delivered interrupt currently costs zero
-cycles on this CPU's clock.** `SWI`/`SWI2`/`SWI3`/`RTI`/`CWAI`/`SYNC` are
+discards that call's cycle-accurate return value. Concretely: **an
+externally-delivered interrupt currently costs zero cycles on this CPU's
+clock.** `SWI`/`SWI2`/`SWI3`/`RTI`/`CWAI`/`SYNC` are
 costed correctly because they're *opcodes*, dispatched through `step()`
 like any other instruction; a hardware IRQ/FIRQ/NMI line asserting between
 instructions is not an opcode and pays nothing. **Who'd notice:** the same
 audience as the item above — software timing interrupt latency itself
-(some copy protection did) — plus, concretely and immediately, anyone
+(some copy protection did) — plus, immediately and in practice, anyone
 trace-diffing this emulator against real MAME (Appendix A Case 4, Appendix
-D): the two traces would diverge in cycle counts at exactly the first
-interrupt boundary, even while agreeing on every register value up to and
+D): the two traces would diverge in cycle counts at the first interrupt
+boundary, even while agreeing on every register value up to and
 past that point, which is a specific, previously-flagged trap for exactly
 that workflow. **What it would force:** `take_interrupt` recording the
 frame-push cost `psh` already computes and currently discards, plus a
@@ -688,11 +696,11 @@ and collapses the 5-bit-word/2-stop-bits corner case to a plain 2 stop bits
 instead of the real chip's 1.5. **Who'd notice:** software that
 *deliberately* depends on bit-level RS-232 misbehavior — a modem
 diagnostic program injecting a framing error on purpose to exercise its own
-recovery path, or an oscilloscope-style serial line monitor — which, per
-`ch14`, nothing that shipped for the CoCo did. Ordinary terminal software
-and BASIC's `OPEN "S"` I/O only ever check that correct bytes arrive at the
-right cadence, which this model already delivers. (Contrast with the
-printer bitbanger, [`crates/coco-core/src/bitbanger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs) — that one *is*
+recovery path, or an oscilloscope-style serial line monitor — behavior
+that, per `ch14`, nothing shipped for the CoCo ever depended on. Ordinary
+terminal software and BASIC's `OPEN "S"` I/O only ever check that correct
+bytes arrive at the right cadence, which this model already delivers.
+(Contrast with the printer bitbanger, [`crates/coco-core/src/bitbanger.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs) — that one *is*
 already bit-level, an edge-triggered receive state machine sampling each
 bit cell's midpoint, because there's no real UART silicon underneath a
 software bit-bang driver to summarize into whole frames; "byte-level" was a
@@ -707,8 +715,8 @@ audience `ch14` couldn't name a single real example of.
 
 The CoCo 3 already supports both `VideoStandard::NTSC` and `::PAL`
 end-to-end ([`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md)'s "Settled decisions" list). CoCo 1/2 machines,
-which used the plain MC6847 rather than the GIME, do not — `crates/
-coco-core/src/config.rs` rejects the combination outright:
+which used the plain MC6847 rather than the GIME, do not —
+`crates/coco-core/src/config.rs` rejects the combination outright:
 
 ```rust
 if self.video == VideoStandard::PAL {
@@ -751,16 +759,16 @@ pub const H50: u8 = 0x08;
 ```
 
 — "$FF98 bit 3, 50 Hz field rate (else 60 Hz)," a real, named, documented
-GIME register bit that a real chip lets software toggle live, mid-
-operation. Nothing else in the crate ever *reads* it: field rate in this
-codebase is decided once, at machine-construction time, by
+GIME register bit that hardware lets software toggle live, mid-operation.
+Nothing else in the crate ever *reads* it: field rate in this codebase is
+decided once, at machine-construction time, by
 `MachineConfig`'s `VideoStandard` enum, the same moment `MonitorType` is
 chosen. **Who'd notice:** software that toggles `$FF98` bit 3 at runtime to
 switch field rate mid-operation rather than accepting whatever rate the
 machine booted with — rare in practice (most software picks a rate once,
-if it cares at all), most plausible in European utilities or diagnostic/
-demo code deliberately probing GIME register behavior. **What it would
-force**, per `ch09`'s own framing of the question (§9.17 exercise 9.6):
+if it cares at all), most plausible in European utilities or
+diagnostic/demo code deliberately probing GIME register behavior. **What it
+would force**, per `ch09`'s own framing of the question (§9.17 exercise 9.6):
 `end_of_line`/`run_field`'s fixed `lines_per_field` assumption (`ch06`)
 would have to become mutable mid-field rather than read once per field, and
 `render_scanline`'s canvas math — currently a fixed `CANVAS_H = 240` — would
@@ -847,8 +855,8 @@ wrote /tmp/ppm/hscreen2.ppm (640x240)
 [`gime_demo.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/gime_demo.rs) synthesizes an 80-column attribute text screen and an
 HSCREEN-2 color-bar frame entirely by poking `GIME` registers and RAM
 directly — no ROM, no CPU execution at all — then calls `gime_video`'s
-renderer straight and writes the resulting framebuffer as a PPM. The
-640×240 dimensions match the canonical raster canvas `ch07` introduces
+renderer and writes the resulting framebuffer as a PPM. The 640×240
+dimensions match the canonical raster canvas `ch07` introduces
 ([`raster.rs:16`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L16)), confirming the example renders through the same code path
 the real machine's video pipeline does, just with hand-poked registers
 standing in for ROM-driven ones.
@@ -867,22 +875,23 @@ The other eight, read from their own headers (not run here, since
 | [`disk_boot_probe.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/disk_boot_probe.rs) | `roms/coco3.rom`, `disk11.rom` + a `.dsk` | Boots Disk BASIC with a disk mounted, types commands, dumps the resulting text screen. |
 | [`eou_gshell_probe.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/eou_gshell_probe.rs) | `roms/coco3.rom` + a VHD image | Boots NitrOS-9 EOU, starts `gshell`, dumps GIME video-register state to diagnose color rendering. |
 
-Two ROM-dependent examples deserve a closer look at their doc comments
-because they're the tools referenced elsewhere in this book: `trace.rs`
-supports a no-cart mode (a deterministic cold-start trace with no
+One ROM-dependent example deserves a closer look at its doc comment — in
+both of its modes — because it's the tool referenced elsewhere in this
+book: `trace.rs` supports a no-cart mode (a deterministic cold-start trace with no
 interrupts, "comparable 1:1 against MAME up to the point BASIC first
-enables interrupts") and a cart mode that drives `Machine::step_instruction
-()` — interrupt servicing, hsync, vsync, and GIME timer ticks all included
-— "so the full boot-and-run stream can be diffed against a MAME run with
-`-cart1 <pak.ccc>`." That's the concrete mechanics behind the trace-diff
-method Appendix A Case 4 and `ch04` describe in the abstract.
+enables interrupts") and a cart mode that drives
+`Machine::step_instruction()` — interrupt servicing, hsync, vsync, and GIME
+timer ticks all included — "so the full boot-and-run stream can be diffed
+against a MAME run with `-cart1 <pak.ccc>`." Those are the concrete
+mechanics behind the trace-diff method Appendix A Case 4 and `ch04`
+describe in the abstract.
 
 ### The PPM workflow
 
 Every visual example in this list writes plain binary PPM (`P6`) files:
 a short ASCII header (`P6\n{width} {height}\n255\n`) followed by raw RGB
 triples, one per pixel, row-major. No library, no GPU, no window — `ch01`
-§1.7 calls this "the PPM lab bench" for exactly that reason. To view one:
+§1.7 calls this "the PPM lab bench" for exactly that reason. To view one,
 any general image viewer that reads PPM (macOS Preview, GIMP, most Linux
 image viewers) opens it directly; to convert to something more universally
 shareable, ImageMagick handles it in one line:
@@ -915,10 +924,13 @@ concrete recipe:
 3. **Diff.** Plain `diff -u reference.trace mine.trace` (`ch01` §1.7's
    "keep a trace notebook" advice — no special tooling required). The
    first line where the two disagree is the bug: either a wrong register
-   value (a flag or ALU bug) or a wrong `PC` (a wrong branch, a wrong
-   cycle count throwing off when an interrupt lands, or — per Appendix C's
-   "interrupt-entry cycle cost" entry — a cycle-count mismatch that hasn't
-   yet produced a wrong `PC` but will eventually).
+   value (a flag or ALU bug) or a wrong `PC` (a wrong branch, or a wrong
+   cycle count throwing off when an interrupt lands). One failure mode
+   doesn't announce itself in this diff at all — per Appendix C's
+   "interrupt-entry cycle cost" entry, a cycle-count mismatch can sit
+   latent while registers and `PC` still agree line for line, and only
+   surfaces once it moves an interrupt boundary, thousands of instructions
+   downstream of the actual bug.
 4. **Narrow it.** Once you have a divergent `PC`, the disassembler
    (`ch03`) tells you which instruction it was; the CPU test suite
    (`cargo test -p mc6809`) is where you write the regression once you
@@ -930,7 +942,7 @@ codebase also keeps a standing 1024-entry ring buffer
 (`DEFAULT_TRACE_CAP`, [`crates/coco-core/src/debug.rs:19`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/debug.rs#L19)) inside the
 `Debugger` type — the same `TraceEntry` format, always populated while a
 run is in flight, so a breakpoint hit can show you the instructions
-leading up to it without having to have started a file trace in advance.
+leading up to it even when no file trace was started in advance.
 
 ### The debugger as a tool
 
@@ -980,11 +992,11 @@ Three crates, two different test-organization styles:
 
 When emulated software misbehaves — garbled boot, wrong colors, a crash
 partway through — the cheapest question to answer first, before suspecting
-the emulator at all, is "is your ROM dump good?" `crates/coco-core/src/
-rom_db.rs`'s module comment states the intent: "Validation is advisory: an
-unrecognized or mismatching image still boots (patched and homebrew ROMs
-are legitimate), but the loader can tell the user exactly which known dump
-they have — or that they don't have one." `identify()`/`validate()` check a
+the emulator at all, is "is your ROM dump good?"
+`crates/coco-core/src/rom_db.rs`'s module comment states the intent:
+"Validation is advisory: an unrecognized or mismatching image still boots
+(patched and homebrew ROMs are legitimate), but the loader can tell the
+user exactly which known dump they have — or that they don't have one." `identify()`/`validate()` check a
 loaded image's size and CRC32 (a from-scratch reflected-polynomial
 implementation, [`rom_db.rs:53-67`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rom_db.rs#L53-L67) — not a crate dependency) against
 `KNOWN_ROMS`, a ten-entry manifest copied directly from MAME's own ROM

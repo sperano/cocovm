@@ -1,11 +1,11 @@
 # Chapter 11 — Sound: from a 6-bit DAC to your speakers
 
 *Week 11. Goal: the whole audio path, core to speaker cone — the most
-"systems" chapter in the course. Weeks 1–10 built up a CPU, a bus, a
+"systems" chapter in the course. Chapters 1–10 built up a CPU, a bus, a
 scanline clock, a raster, and the PIA chip that mediates most CoCo I/O.
 This week you'll watch all of it converge on a single number twice: once
 where the 6809 writes a byte to `$FF20`, and once, several layers and one
-thread-hop later, where a `f32` lands in a buffer `cpal` is about to hand
+thread-hop later, where an `f32` lands in a buffer `cpal` is about to hand
 to your sound card. In between are two small problems — "the CPU pokes at
 arbitrary cycles, the host wants a steady stream" and "62.8 kHz isn't
 48 kHz" — and this codebase's answer to each, built up from nothing. No
@@ -17,17 +17,17 @@ from a textbook.*
 
 Every previous week in this course has had a natural stopping point at
 the crate boundary. The CPU chapters lived inside `mc6809`. The bus, the
-GIME, the raster, and the PIAs all lived inside `coco-core`, and week 15
-will be the week that finally opens `coco-egui` properly. Audio refuses
-to respect that boundary. A byte written to `$FF20` has to survive a
-journey that starts in a PIA's output latch, passes through a cycle
-timestamp, a scanline flush, a mixing function, a per-frame drain, three
-filters, a resampler, a mutex, and a second operating-system thread
-before anything moves a speaker cone. Every layer in that list exists
-because of a specific defect, and none of them can be skipped without
-producing a specific, audible symptom.
+GIME, the raster, and the PIAs all lived inside `coco-core`, and Chapter 15
+will finally open `coco-egui` properly. Audio refuses to respect that
+boundary. A byte written to `$FF20` has to survive a journey that starts
+in a PIA's output latch and passes through a cycle timestamp, a scanline
+flush, a mixing function, a per-frame drain, two filters, a gain stage,
+a resampler, a mutex, and a second operating-system thread before
+anything moves a speaker cone. Every layer in that list exists because
+of a specific defect, and none of them can be skipped without producing
+a specific, audible symptom.
 
-That is what makes this the most "systems" chapter in the book, and it
+That is what makes this the most "systems" chapter in the course, and it
 is also what makes the finished pipeline a good case study in something
 this book keeps returning to: each stage turns one honest representation
 into another, and each is named after the problem it solves rather than
@@ -46,15 +46,15 @@ next to each other is the fastest way to understand what a "sound chip"
 even meant across the early 1980s. Sections 11.12 onward are the usual
 lab work.
 
-A word about the vocabulary, since the audience for this book has
-graphics and DSP backgrounds explicitly assumed away. Terms like
-*aliasing*, *Nyquist rate*, *decimation*, *low-pass*, and *DC offset*
-turn up in this chapter, and every one of them is introduced here from
-the defect it names rather than from a definition. If a section starts
-by describing something that sounds wrong — a click, a buzz, a fake tone
-that was never in the original signal — that description *is* the
-motivation for whatever filter comes next. Read the defect first; the
-formula afterwards will look like the obvious response to it.
+A word about the vocabulary, since this book assumes no graphics or DSP
+background. Terms like *aliasing*, *Nyquist rate*, *decimation*,
+*low-pass*, and *DC offset* turn up in this chapter, and every one of
+them is introduced here from the defect it names rather than from a
+definition. If a section starts by describing something that sounds
+wrong — a click, a buzz, a fake tone that was never in the original
+signal — that description *is* the motivation for whatever filter comes
+next. Read the defect first; the formula afterwards will look like the
+obvious response to it.
 
 One last framing note before the hardware. Nothing in this chapter
 requires a sound card. Every claim it makes about the core's half of the
@@ -74,7 +74,7 @@ Extended Color BASIC, and every machine-language music routine ever typed
 in from a magazine listing, worked by wiggling a handful of bits on a
 **general-purpose parallel port** fast enough, and in the right pattern,
 to approximate a waveform. The chip doing the wiggling is PIA1 — the same
-MC6821 week 10 introduced as "keyboard, joystick, cassette, printer,
+MC6821 Chapter 10 introduced as "keyboard, joystick, cassette, printer,
 DAC." This week is the "DAC" part.
 
 That absence is worth dwelling on for a moment, because it sets the
@@ -89,8 +89,9 @@ that "whenever it feels like it" has to be reconciled with a sound card
 that wants a number every twenty microseconds, forever, on a schedule
 neither the CoCo nor the emulator controls.
 
-Three signals matter, all on PIA1 (base `$FF20`, `$FF20–$FF23` — the
-table from week 1). Take them one at a time.
+Three signals matter. The first two are PIA1's (base `$FF20`, spanning
+`$FF20–$FF23` — the table from Chapter 1); the third borrows two more pins
+from PIA0 next door. Take them one at a time.
 
 ### Six pins and a resistor ladder
 
@@ -106,8 +107,8 @@ range. There is no clock in a resistor ladder, no register, and nothing
 to configure. It is a purely combinational lump of passive components
 whose output tracks its inputs continuously.
 
-That last property matters more than it sounds. Set the six pins to a
-value and the ladder's output *holds* that voltage, unchanging, until
+That last property matters more than it might sound. Set the six pins to
+a value and the ladder's output *holds* that voltage, unchanging, until
 the pins change. Nothing decays, nothing refreshes, nothing needs
 servicing. The emulator will need a word for that behavior, and the word
 is *latch*: a value that persists exactly as written until overwritten.
@@ -129,17 +130,17 @@ The second signal is **PB1, a single-bit "beeper."** One pin, on or off,
 with no ladder behind it — just a switch between two voltage levels.
 Toggle it at an audio frequency and the result is a square wave, and a
 square wave from a single pin is the harsh, buzzy tone every CoCo game's
-"you lost a life" sound used. It got used because it is the cheapest
+"you lost a life" sound used. It caught on because it is the cheapest
 possible way to make a noise: one bit, one store instruction, no D/A
 conversion at all, and no need to keep six pins coordinated.
 
 There is one structural fact about PB1 that will come back twice in this
 chapter, so it's worth planting now. The single-bit output is wired
-straight to the speaker path with no gate. Unlike the DAC, which is
-described next and which sits behind a multiplexer that can cut it off
-entirely, PB1 is *always* connected. Keep that filed under "wait, why is
-this always on?" — §11.3's mixing function makes it visible as a
-literal difference in indentation.
+straight to the speaker path with no gate. Unlike the DAC, which sits
+behind a multiplexer that can cut it off entirely, PB1 is *always*
+connected. Keep that filed under "wait, why is this always on?" —
+§11.3's mixing function makes it visible as a literal difference in
+indentation.
 
 ### Four inputs, one speaker: the analog mux
 
@@ -147,7 +148,7 @@ The third signal is not one signal but three, and they exist to solve a
 routing problem. The 6-bit DAC, the cassette input, and cartridge audio
 all want to reach one physical speaker or line-out jack, and only one of
 them should be audible at a time. (The cassette's own record path is a
-separate concern and belongs to week 12's SAVE-side story.) The
+separate concern and belongs to Chapter 12's SAVE-side story.) The
 component that arbitrates is a **4-to-1 analog multiplexer**: four
 inputs, one output, and two address bits that select which input gets
 connected, plus a master enable that can disconnect everything.
@@ -165,7 +166,7 @@ it. All three signals came from pins the two PIAs already had spare:
 No new chip, no new address range. Four spare output pins on hardware
 that already existed for other jobs, wired to an inexpensive
 multiplexer IC. This is the same "reuse what's already on the bus"
-instinct week 1 described when the GIME turned out to answer to the dead
+instinct Chapter 1 described when the GIME turned out to answer to the dead
 SAM's addresses: cheap hardware reusing cheap hardware, with the cost
 paid in documentation confusion rather than in parts.
 
@@ -184,7 +185,7 @@ Here is the exact table the emulator implements
 | 1 | `11` | grounded — silent |
 
 Four rows of behavior from three control bits, and one row that does
-nothing at all. The `11` position being grounded rather than being a
+nothing at all. The `11` position being grounded rather than made into a
 fourth useful source is the kind of detail that looks like waste until
 you remember that a 4-to-1 mux has four positions whether or not anyone
 has a use for the fourth, and grounding an unused input is cheaper than
@@ -211,7 +212,7 @@ One more piece of wiring deserves attention, because it connects this
 week directly to last week and it will change how you read the mux
 select. PIA0's CA2 and CB2 are the sound mux's SEL1 and SEL2. They are
 *also* the select lines for the joystick's potentiometer multiplexer,
-which week 10 walked through in detail
+which Chapter 10 walked through in detail
 ([`crates/coco-core/src/joystick.rs:1-10`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/joystick.rs#L1-L10)):
 
 ```rust
@@ -227,7 +228,7 @@ which week 10 walked through in detail
 //! `poll_keyboard`/`joyin` — PA7 = `dac_output() <= joyval`.)
 ```
 
-Read that next to §11.1's mux table and the overlap is total: the same
+Read that next to the mux table above and the overlap is total: the same
 two pins, read through the same `c2_output()` accessor, choose which
 potentiometer reaches the joystick comparator *and* which source reaches
 the speaker. In this codebase both consumers call that one accessor, so
@@ -249,7 +250,7 @@ six pins doing the same thing for different reasons.
 
 One point is worth internalizing before you look at a single line of
 Rust: **every one of those signals is a PIA output pin**, exactly the
-kind of "byte to an address" write week 5's bus chapter and week 10's
+kind of "byte to an address" write Chapter 5's bus chapter and Chapter 10's
 PIA chapter covered. There is no dedicated audio hardware to model here
 beyond "some PIA writes are audio-affecting, and the emulator needs to
 notice."
@@ -261,7 +262,7 @@ downsample to 48 kHz, feed `cpal`. Defer until video+CPU work; just
 leave the sink interface." Every noun in that sentence survived. The
 verb did not: nothing in the shipped pipeline "accumulates by cycle,"
 and the downsampling target turned out to be "whatever the device asks
-for" rather than a hardcoded 48 kHz. Week 1's reading assignment made a
+for" rather than a hardcoded 48 kHz. Chapter 1's reading assignment made a
 point of praising `DESIGN.md` for keeping its corrections attached
 rather than tidying them away; this is one of the places where the first
 guess and the built thing differ, and the next two sections are the
@@ -303,11 +304,10 @@ not on any fixed schedule the audio device would recognize. A `PLAY`
 statement's ROM routine might update the DAC once every few hundred
 cycles to shape a tone. A hand-written digitized-speech player might
 slam a new byte into `$FF20` every dozen or so cycles, faster than
-almost anything else in the machine does anything. Neither one is
-synchronized to a sound card that didn't exist yet. The emulator has to
-bridge "CPU writes whenever" to "device wants exactly N samples per
-second," and it has to do it without losing what the software actually
-did.
+almost anything else the machine does. Neither one is synchronized to a
+sound card that didn't exist yet. The emulator has to bridge "CPU writes
+whenever" to "device wants exactly N samples per second," and it has to
+do it without losing what the software actually did.
 
 The module documentation at the top of
 [`crates/coco-core/src/audio.rs:1-10`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/audio.rs#L1-L10)
@@ -334,21 +334,22 @@ first and letting each one fail audibly.
 ### Naive answer one: sample once per field
 
 The first idea most people have is to reuse the video clock. The
-emulator already runs a field sixty times a second and already has a
-natural place to do per-field work, so read whatever's in `$FF20` when
-you're about to hand a frame to the video renderer and call that "the
-audio for this frame."
+emulator already runs a field sixty times a second and has a natural
+place to do per-field work, so read whatever's in `$FF20` when you're
+about to hand a frame to the video renderer and call that "the audio for
+this frame."
 
 This is *catastrophically* coarse, and it fails on two separate counts.
 The first is a matter of representable frequency: a stream sampled 60
 times a second can only carry content up to 30 Hz, which is below the
-lowest note on a piano. Nothing musical survives. The second is worse
-and more specific. A program that writes the DAC a hundred times between
-frames, which is exactly what digitized speech does, has its entire
-waveform collapsed to one number per sixtieth of a second. Ninety-nine
-of those hundred writes are discarded, and the one that survives is
-whichever happened to be latched at the instant the sampler looked. The
-result is silence, or a dull thud, never speech.
+lowest string on a bass guitar and down at the bottom edge of where
+human hearing registers pitch at all. Nothing musical survives. The
+second is worse and more specific. A program that writes the DAC a
+hundred times between frames, which is exactly what digitized speech
+does, has its entire waveform collapsed to one number per sixtieth of a
+second. Ninety-nine of those hundred writes are discarded, and the one
+that survives is whichever happened to be latched at the instant the
+sampler looked. The result is silence, or a dull thud, never speech.
 
 ### Naive answer two: sample once per instruction, or once per bus cycle
 
@@ -357,15 +358,15 @@ machine can possibly change. Read `$FF20` after every single CPU cycle
 and you'd capture everything, in principle.
 
 In practice this fails in three ways at once. At 0.895 MHz it means
-895,000 samples per second of bookkeeping for every field, which is
-nearly twenty times the rate any downstream consumer wants, so every
-consumer would then have to decimate back down. Most of that work is
-wasted on values that never changed, since the DAC commonly holds one
-level for hundreds of cycles between writes and a latch that isn't
-being written is not producing information. And the sample rate would be
-tied to the *CPU* clock rather than to anything the audio device knows
-about, so the speed poke (`POKE 65495`, week 6's material) would
-silently double the audio rate mid-program.
+895,000 samples per second of bookkeeping, which is nearly twenty times
+the rate any downstream consumer wants, so every consumer would then
+have to decimate back down. Most of that work is wasted on values that
+never changed, since the DAC commonly holds one level for hundreds of
+cycles between writes; a latch that isn't being written is not producing
+information. And the sample rate would be tied to the *CPU* clock rather
+than to anything the audio device knows about, so the speed poke
+(`POKE 65495`, Chapter 6's material) would silently double the audio rate
+mid-program.
 
 The deepest objection is a matter of shape rather than of cost. What
 you actually want isn't "a sample of what the DAC held at cycle N." It's
@@ -411,7 +412,7 @@ snapshot changes and timestamps it (`note_audio_write`). Third, a
 per-scanline renderer that replays those timestamped events into a
 fixed-size grid of samples (`flush_line_audio`). Between the second and
 third sits `mix`, the function that turns one snapshot into one stereo
-sample, and which is §11.1's mux table written as code.
+sample: §11.1's mux table written as code.
 
 ### `AudioInputs`: everything the mux could be looking at, right now
 
@@ -448,10 +449,10 @@ indirection anywhere in it.
 
 What's *not* in it is as informative as what is. The cassette's own
 audio level isn't here, because it's sampled once per line rather than
-event-timestamped; its 1200/2400 Hz tone is far slower than the line
-rate, so per-cycle timing buys nothing, and week 12 takes that up
-properly. Nothing generator-driven is here either. The SSC's AY-3-8913
-and the GMC's SN76489A are sampled at flush time rather than latched,
+event-timestamped. Its 1200/2400 Hz tone is far slower than the line
+rate, so per-cycle timing buys nothing; Chapter 12 takes that up properly.
+Nothing generator-driven is here either. The SSC's AY-3-8913 and the
+GMC's SN76489A are sampled at flush time rather than latched,
 because they are continuously running oscillators rather than values a
 write sets and holds. Section 11.11 returns to that distinction; for now
 the rule is simply that `AudioInputs` holds *latches*, and latches are
@@ -462,8 +463,8 @@ depends on completely. `Copy` is what makes "snapshot the whole state"
 a register-width move rather than a clone. `PartialEq` is what makes
 "did anything change?" a single expression. And `Serialize`/
 `Deserialize` put the latched audio state into save-state snapshots
-alongside everything else, which week 16 will care about and which is
-only possible because week 1 refused shared ownership.
+alongside everything else, which Chapter 16 will care about and which is
+only possible because Chapter 1 refused shared ownership.
 
 > **Rust corner: `#[derive(PartialEq)]` as a change detector.** Deriving
 > `PartialEq` on a plain data struct generates a field-by-field
@@ -506,10 +507,10 @@ fn snapshot_audio_inputs(&self) -> crate::audio::AudioInputs {
 Two details are worth pausing on. The first is the DAC expression,
 `self.pia1.a.output & self.pia1.a.ddr & 0xFC`. Note that the value is
 masked by the **data direction register**, not just by the output
-register. This is week 10's DDR lesson cashing in directly. A PIA pin
+register. This is Chapter 10's DDR lesson cashing in directly. A PIA pin
 that the running program never configured as an output isn't driving
 anything, so whatever bit sits in the output register for that pin is
-not what the outside world sees, and letting it through would leak
+not what the outside world sees. Letting it through would leak
 program-irrelevant garbage into the mix. The DDR mask is what keeps
 un-configured pins out. `0xFC` then keeps only bits 2 through 7, the
 DAC's six wires, and `>> 2` slides them down into a 0–63 value.
@@ -566,7 +567,7 @@ pub(crate) struct AudioEvent {
 in `flush_line_audio` correct. An event isn't a sample of a moment; it's
 the beginning of an interval that runs until the next event. The
 timestamp is `self.cycle_clock`, the same free-running cycle counter
-week 6 built the entire scanline loop around, incremented in
+Chapter 6 built the entire scanline loop around, incremented in
 `step_cpu_unit` after every CPU unit
 ([`crates/coco-core/src/machine/run.rs:121`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L121)).
 Audio does not get its own clock. It reads the machine's.
@@ -647,7 +648,7 @@ reasoning. They encode relative loudness calibration: somebody had to
 decide that the DAC and the beeper shouldn't compete at equal volume,
 and the file records that decision per constant rather than leaving
 magic numbers for a future reader to reverse-engineer. `CASSETTE_GAIN`'s
-comment is a good example of the register these comments are written in,
+comment is a good example of the tone these comments are written in,
 explaining that tape playback is "kept below the DAC's full scale like
 the real attenuated level."
 
@@ -687,7 +688,7 @@ testing timing. That division of labor is what §11.12 is about.
 
 This is where the timestamped log becomes a fixed-rate stream, and it is
 the single most important function in the chapter. It is called once per
-scanline from the per-line trailer week 6 walked through
+scanline from the per-line trailer Chapter 6 walked through
 ([`crates/coco-core/src/machine/run.rs:147`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L147), inside `end_of_line`),
 and it renders **`OVERSAMPLE` grid slots** — four, in this codebase —
 per line. From
@@ -733,7 +734,7 @@ against. Storing `line_end` back into `self.audio_line_start`
 immediately means the next call picks up precisely where this one
 stopped, with no gap and no overlap. `span` is the line's *real* cycle
 width, and the comment above it explains why that matters: a line
-stretched by the FD-502's halt and DRQ handshake, which is week 13's
+stretched by the FD-502's halt and DRQ handshake, which is Chapter 13's
 subject, still divides evenly into four slots of its actual width rather
 than of some nominal width. Event timestamps therefore land in the slot
 they belong to even on an odd line. The `.max(1)` guards against a
@@ -783,13 +784,13 @@ resolution" behavior the module doc promises.
 ### A worked line
 
 Abstract descriptions of slot arithmetic are hard to hold onto, so put
-real numbers through it. Week 6 established that an NTSC line at normal
-speed has a budget of 56 cycles. With `OVERSAMPLE = 4`, the slot edges
-computed by `line_start + span * k / 4` fall at offsets 0, 14, 28, and
-42 cycles into the line. (The integer division is doing real work here:
-with a 57-cycle span the edges land at 0, 14, 28, and 42 as well, since
-`57 * 1 / 4 = 14` and `57 * 3 / 4 = 42` in integer arithmetic. The grid
-is robust to a cycle of slop in the line length.)
+real numbers through the machinery. Chapter 6 established that an NTSC line
+at normal speed has a budget of 56 cycles. With `OVERSAMPLE = 4`, the
+slot edges computed by `line_start + span * k / 4` fall at offsets 0,
+14, 28, and 42 cycles into the line. (The integer division is doing real
+work here: with a 57-cycle span the edges land at 0, 14, 28, and 42 as
+well, since `57 * 1 / 4 = 14` and `57 * 3 / 4 = 42` in integer
+arithmetic. The grid is robust to a cycle of slop in the line length.)
 
 Now suppose a program writes the DAC to full scale about 30 cycles into
 that line, which is precisely what
@@ -804,7 +805,7 @@ consumed: silence again. Slot 3's start is 42, the event's timestamp of
 full-scale DAC state. Slot 3 renders loud.
 
 Three silent slots, one loud slot, exactly one transition, and the
-transition placed at the last slot boundary at or after the write. That
+transition placed at the first slot boundary at or after the write. That
 is precisely what the test asserts: `grid[0]` equals silence, the last
 slot's left channel exceeds 0.5, and the count of adjacent unequal pairs
 is exactly one. It also shows the quantization honestly. The write
@@ -835,7 +836,7 @@ state to reconcile. The caller gets an iterator; the machine gets an
 empty `Vec` with its capacity intact, ready to refill.
 
 But what if nothing ever calls `take_audio`? Headless tests, trace
-tooling, and the PPM lab bench from week 1 all run fields with no sound
+tooling, and the PPM lab bench from Chapter 1 all run fields with no sound
 sink attached, and every one of those would otherwise grow this `Vec`
 forever. The core guards against exactly that
 ([`crates/coco-core/src/machine.rs:38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L38)):
@@ -859,9 +860,9 @@ Eight fields' worth of grid samples, which works out to 8 × 262 × 4 =
 than grown. The choice of `clear` over "stop producing" is deliberate
 and matches the physical intuition: a real CoCo's speaker doesn't care
 whether a human is in the room, so audio is produced whether or not
-anyone's listening, and the buffer simply has to survive being ignored
+anyone's listening, and the buffer only has to survive being ignored
 indefinitely without becoming a leak. This is the same "derived scratch,
-self-bounding" philosophy week 1 saw applied to the framebuffer, where
+self-bounding" philosophy Chapter 1 saw applied to the framebuffer, where
 the answer to "what if nobody looks at this?" was likewise "then it
 doesn't need to be kept."
 
@@ -873,8 +874,8 @@ doesn't need to be kept."
 > behind" when there's no natural "drain and refill" API (like
 > `Vec::drain` above) to reach for — a pattern you'll see again in week
 > 15's frame loop. The alternative, `std::mem::replace(&mut x,
-> Vec::new())`, does the same thing with one more character to type;
-> `take` exists purely because "replace with the default" is common
+> Vec::new())`, does the same thing with more noise to type; `take`
+> exists purely because "replace with the default" is common
 > enough to deserve its own name.
 >
 > Notice that it is also doing two jobs in one line here, and the second
@@ -908,7 +909,7 @@ codebase's standing objection to magic numbers: the number 4 appears in
 the slot loop, in the buffer cap, and in two test files, and it appears
 as `OVERSAMPLE` in every one of them. The second is the upgrade path.
 "Bump to 8 only if a digitized-speech title measurably needs it" is a
-fidelity-budget decision in exactly week 1's sense: the rung above is
+fidelity-budget decision in exactly Chapter 1's sense: the rung above is
 identified, the cost of climbing it is one constant, and the trigger for
 climbing it is evidence rather than taste.
 
@@ -930,7 +931,7 @@ Now the arithmetic. The rate is computed rather than declared, per
 
 `line_rate` is lines-per-field times fields-per-second, which is the
 scanline frequency, the same quantity every NTSC-era engineer called
-"the horizontal rate." Plug in the constants week 6 already established
+"the horizontal rate." Plug in the constants Chapter 6 already established
 for `VideoStandard::NTSC`, namely `lines_per_field() = 262` and
 `field_rate_hz() = 59.94`:
 
@@ -939,7 +940,7 @@ line_rate  =  262 × 59.94  =  15,704.28 Hz
 grid_rate  =  15,704.28 × 4  =  62,817.12 Hz
 ```
 
-**62,817 Hz, not 62,900.** This is a gentler version of chapter 6's "56,
+**62,817 Hz, not 62,900.** This is a gentler version of Chapter 6's "56,
 not 57" lesson. It is not a truncation bug this time, since both factors
 here are `f64` and `audio_sample_rate` never rounds. It is just a
 comment, plus a handful of test constants — `sound.rs`'s `PROBE_DT = 1.0
@@ -947,7 +948,7 @@ comment, plus a handful of test constants — `sound.rs`'s `PROBE_DT = 1.0
 convenient nearby number instead of carrying the exact product.
 
 Compare the two "the code disagrees with a round number in a comment"
-moments and notice the difference in kind. Week 6's 56-versus-57 came
+moments and notice the difference in kind. Chapter 6's 56-versus-57 came
 from floor division compounding, an artifact of how the arithmetic was
 written, and it changed what the emulator actually did. This one is
 imprecise rounding in prose and test fixtures, with the real computed
@@ -984,7 +985,7 @@ the consumer audio world runs at 62.8 kHz. It is not a multiple of
 44,100, it is not a multiple of 48,000, and it is not close to either.
 That awkwardness is not an accident or an oversight. It is what happens
 when a sample rate is derived from *video* timing, which is where every
-timing constant in this machine ultimately comes from (week 1's
+timing constant in this machine ultimately comes from (Chapter 1's
 crystal). The frontend's entire DSP chain exists to reconcile that
 video-derived rate with an audio-derived one, and §11.7 and §11.8 are
 the two halves of that reconciliation.
@@ -995,22 +996,22 @@ the two halves of that reconciliation.
 
 Everything so far has lived entirely inside `coco-core`, single-threaded,
 with no synchronization needed anywhere. A `Machine` is just a struct
-that one thread calls methods on, which is the direct payoff of week 1's
+that one thread calls methods on, which is the direct payoff of Chapter 1's
 "plain owned tree" decision. That changes the moment audio has to reach
 a speaker.
 
 Compare the two output paths and the asymmetry is stark. Video in this
 codebase gets uploaded to a GPU texture once per UI repaint, which is
-week 15's subject: the UI thread both produces the framebuffer and
+Chapter 15's subject: the UI thread both produces the framebuffer and
 consumes it, so no handoff is required and no lock exists. Audio cannot
 work that way, because the operating system's audio API calls your code
 back **on its own thread, on its own schedule**, expecting samples to
 already be waiting. `cpal`, the cross-platform audio library this
-frontend uses, opens a device and hands you a closure that runs whenever
-the OS wants more frames. That might be a professional-grade
-low-latency driver calling back every few milliseconds, or it might be
-whatever the host's default device happens to do. You do not control
-when that callback fires, and it must never be kept waiting.
+frontend uses, opens a device and runs a closure you supply whenever the
+OS wants more frames. That might be a professional-grade low-latency
+driver calling back every few milliseconds, or it might be whatever the
+host's default device happens to do. You do not control when that
+callback fires, and it must never be kept waiting.
 
 So [`coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs) has a producer and a consumer running on two
 different threads, connected by exactly one piece of shared state. Here
@@ -1053,7 +1054,7 @@ sixty times a second. It drains `Machine::take_audio()`, runs the whole
 DSP chain the rest of this chapter covers, and pushes the result into
 `ring`. The **cpal callback thread**, running independently and
 potentially far more often, locks `ring` and pops frames off the front,
-one per output sample the device asked for. Nothing else coordinates the
+one per output frame the device asked for. Nothing else coordinates the
 two threads: no channel, no condition variable, no "wait until ready."
 The queue either has data or it doesn't, and §11.9 and §11.10 cover what
 happens in each case.
@@ -1098,19 +1099,20 @@ at the device's rate, and within a fraction of a second the queue is
 empty. What the user hears at that moment is the subject of §11.10, and
 it is not silence-by-accident — it is a designed fade.
 
-> **Rust corner: `Arc`, not `Rc`.** Week 1 established that the core
+> **Rust corner: `Arc`, not `Rc`.** Chapter 1 established that the core
 > crate uses *no* `Rc<RefCell<…>>` anywhere, ever — the whole machine is
 > a plain owned tree, borrow-checked at compile time. `coco-egui`'s audio
 > module is the first place in this codebase that needs *shared ownership*
 > across two threads at once, and the type that buys that is `Arc`
 > (atomic reference count), never `Rc` (plain, non-atomic reference
 > count). The difference is one word — atomic — and it's load-bearing:
-> `Rc`'s internal counter increments/decrements with ordinary, non-atomic
-> reads and writes, which are only safe if a single thread ever touches
-> them. Rust's type system enforces this at compile time: `Rc<T>` doesn't
-> implement `Send`, so the compiler simply refuses to let you move one
-> across a thread boundary — try to hand a `Rc<Mutex<VecDeque<...>>>` to
-> `cpal`'s callback and you get a compile error, not a runtime data race.
+> `Rc`'s internal counter increments and decrements with ordinary,
+> non-atomic reads and writes, which are only safe if a single thread
+> ever touches them. Rust's type system enforces this at compile time:
+> `Rc<T>` doesn't implement `Send`, so the compiler refuses to let you
+> move one across a thread boundary — try to hand an
+> `Rc<Mutex<VecDeque<...>>>` to `cpal`'s callback and you get a compile
+> error, not a runtime data race.
 > `Arc<T>` costs a little more per clone (an atomic increment instead of
 > a plain one) in exchange for that `Send`/`Sync` guarantee. The rule of
 > thumb this codebase follows: `Rc` when everything stays on one thread
@@ -1211,9 +1213,10 @@ distortion.
 The second is that DC *changes* click. A steady offset is silent, but a
 *jump* from one offset to another is a sudden voltage step, and a sudden
 step is acoustically an impulse: a pop or thump, heard once, at the
-transition. These jumps happen constantly in normal CoCo operation. Any
-moment a program starts driving the DAC, stops driving it, or toggles
-SNDEN to gate the mux on or off produces exactly such a step.
+transition. These jumps happen constantly in normal CoCo operation.
+Every time a program starts driving the DAC, stops driving it, or
+toggles SNDEN to gate the mux on or off, it produces exactly such a
+step.
 
 The CoCo's DAC parks at a nonzero resting level, because it is a 6-bit
 unsigned value where "off" isn't a special voltage but merely whatever
@@ -1224,7 +1227,7 @@ choose to ignore.
 ### The filter
 
 The fix is a **DC blocker**, a filter that passes everything except the
-part of the signal that isn't changing. It is a species of *highpass*
+part of the signal that isn't changing. It is a species of *high-pass*
 filter: it lets high frequencies through and attenuates low ones, with
 "zero frequency," which is what DC is, attenuated most of all. Here's
 the whole thing
@@ -1259,7 +1262,7 @@ Feed it a fast alternation and it outputs something roughly twice the
 amplitude, because consecutive samples differ by twice the amplitude.
 
 But a pure difference filter has a problem of its own: it doesn't just
-crush truly-flat signal, it crushes *slowly-changing* signal too, since
+crush truly-flat signal; it crushes *slowly-changing* signal too, since
 "changed a little between samples" and "changed not at all" both produce
 small outputs. Real audio's low frequencies change slowly between
 samples by definition — that is what low frequency *means* at a 62.8 kHz
@@ -1487,7 +1490,7 @@ state is what "2-pole" means concretely, and comparing it to
 `DcBlocker`'s single `prev_in`/`prev_out` pair makes the progression
 obvious. More memory, steeper filter.
 
-`process` is a **direct-form-II biquad**, which is a standard structure
+`process` is a **direct-form-I biquad**, which is a standard structure
 whose shape you can read straight off the arithmetic: each output is a
 weighted sum of the current input, the two previous inputs, and the two
 previous outputs, followed by shifting the history along. The `b`
@@ -1617,12 +1620,12 @@ fn lowpass_attenuates_nyquist_rate_alternation_but_passes_dc() {
 ```
 
 A `+1, -1, +1, -1` alternation at the source rate is a signal at exactly
-half the source rate, which is 31.45 kHz, which is precisely the
-material that naive decimation to 48 kHz would fold into the audible
-band. The test asserts the filtered output is crushed below 0.2, and it
-only measures *after* sample 2000 so that the filter's startup transient
-doesn't count against it. The second half feeds constant 1.0 and asserts
-the output settles at 1.0 within 1%.
+half the source rate — 31.45 kHz — precisely the material that naive
+decimation to 48 kHz would fold into the audible band. The test asserts
+the filtered output is crushed below 0.2, and it only measures *after*
+sample 2000 so that the filter's startup transient doesn't count against
+it. The second half feeds constant 1.0 and asserts the output settles at
+1.0 within 1%.
 
 Read the two assertions together, because a low-pass has to do two
 things simultaneously and each is trivial alone. Killing everything is
@@ -1782,7 +1785,7 @@ idea for video
 
 Same shape, different units. A fractional quantity accumulates, the
 integer part is consumed, and the remainder is kept for next time so
-that rounding never compounds. Week 15 covers `fields_due` properly;
+that rounding never compounds. Chapter 15 covers `fields_due` properly;
 seeing the pattern twice in two subsystems is the point of mentioning it
 here.
 
@@ -1858,7 +1861,7 @@ describes a bug that would only appear under a specific user action.
 Filtering runs "on every frame regardless of mute," and mute is applied
 *after* resampling by overwriting the output with zeros. If muting
 instead skipped the DSP chain, the filters' internal state would freeze
-at whatever it held when mute was pressed, and un-muting would resume
+at whatever it held when mute was pressed, and unmuting would resume
 from stale state against a signal that had moved on. The result would be
 a pop at the moment of unmuting: exactly the discontinuity §11.6 spent a
 section teaching you to recognize. Keeping the filters running while
@@ -1920,12 +1923,12 @@ itself.
 
 The UI thread pushes roughly once per rendered frame, at whatever rate
 the UI happens to repaint, and the audio callback drains at whatever
-rate the device runs. Those two rates are related only by the fact both
-are approximately real time, and "approximately" is doing a lot of work.
-If the UI stalls, whether from a slow repaint, a backgrounded window, or
-a debugger breakpoint landing mid-frame, samples keep queuing while
-nothing drains them. If the UI thread instead races ahead of a slow
-device, the same thing happens for the opposite reason.
+rate the device runs. Those two rates are related only by the fact that
+both are approximately real time, and "approximately" is doing a lot of
+work. If the UI stalls, whether from a slow repaint, a backgrounded
+window, or a debugger breakpoint landing mid-frame, samples keep queuing
+while nothing drains them. If the UI thread instead races ahead of a
+slow device, the same thing happens for the opposite reason.
 
 An unbounded queue under sustained producer/consumer mismatch is a slow
 memory leak with an audible side effect. The memory growth is the
@@ -1957,13 +1960,13 @@ to drain space would put the UI thread in a dependency on the audio
 thread, which is precisely the kind of cross-thread coupling §11.5
 warned against in the other direction. It would also make video stutter
 in order to protect audio, which inverts the priorities of an emulator
-whose entire architecture, since week 6, is built on video's scanline
+whose entire architecture, since Chapter 6, is built on video's scanline
 clock as the timing backbone. A dropped audio frame is inaudible. A
 dropped video frame is visible, and a stalled UI thread is both.
 
 The choice, stated as a principle, is this: when a real-time producer
-and a real-time consumer disagree about rate, prefer to lose data over
-to lose time. Section 11.10 applies the same principle from the other
+and a real-time consumer disagree about rate, prefer losing data to
+losing time. Section 11.10 applies the same principle from the other
 side, where the shortage is data rather than space.
 
 ---
@@ -2046,9 +2049,8 @@ const UNDERRUN_FADE_FLOOR: f32 = 0.001;
 `UNDERRUN_FADE_SECS = 0.05` (50 ms) is *how long* the fade should take
 to reach effective silence. `UNDERRUN_FADE_FLOOR = 0.001` is *how close
 to zero* counts as "there": a thousandth of the held amplitude, which is
--60 dB, a standard "call it silent" threshold in audio engineering,
-where -60 dB is well below what's perceptible against typical background
-noise.
+-60 dB, a standard "call it silent" threshold in audio engineering and
+well below what's perceptible against typical background noise.
 
 `decay` is derived from both by asking a clean question: what per-sample
 multiplier, applied `fade_frames` times in a row, lands exactly on the
@@ -2125,11 +2127,11 @@ Everything so far has been the CoCo's *built-in* sound path: the DAC and
 beeper every stock machine has. Cartridges could add real sound chips,
 and this codebase models three, each one strictly richer than the last.
 None of them is this week's deep-dive, since the GMC and SSC cartridges
-that host two of them are weeks 13 and 14 territory. But seeing all
+that host two of them are Chapters 13 and 14 territory. But seeing all
 three side by side, as a taxonomy, tells you something about how PSG
-(programmable sound generator) hardware evolved through the early
-1980s, and each one plugs into the audio pipeline you just spent ten
-sections learning through exactly the seams already visible in `mix` and
+(programmable sound generator) hardware evolved through the early 1980s.
+Each one plugs into the audio pipeline you just spent ten sections
+learning, through exactly the seams already visible in `mix` and
 `flush_line_audio`.
 
 Before the rungs, one distinction from §11.3 needs to be made precise,
@@ -2194,7 +2196,7 @@ impl Cartridge for Orch90 {
 `$FF7A` latches left, `$FF7B` latches right, and both are write-only.
 There is no read path back from a 74LS374 octal latch feeding an R-2R
 ladder, which is why reads return `IO_OPEN_BUS`: the same "the hardware
-genuinely can't answer this" honesty week 5 established for I/O space.
+genuinely can't answer this" honesty Chapter 5 established for I/O space.
 There is no timer, no counter, and no waveform generator on the
 cartridge at all. "Sound generation" *is* the CPU's delay loop between
 writes, exactly like the CoCo's own internal DAC, just doubled and
@@ -2203,11 +2205,11 @@ stereo. The module header says as much in a sentence worth keeping:
 CPU's delay loops."
 
 `sound_levels()` is the seam. Section 11.3 showed it consumed directly
-into `AudioInputs.cart_left`/`cart_right`, and §11.3's walk through
-`mix` showed those fields summed into the output **unconditionally**,
-ignoring SNDEN and SEL entirely, because the Orch-90 drives its own RCA
-jacks rather than the CoCo's internal SND pin. That is not an assumption;
-it is asserted by a test
+into `AudioInputs.cart_left`/`cart_right`, and the walk through `mix`
+showed those fields summed into the output **unconditionally**, ignoring
+SNDEN and SEL entirely, because the Orch-90 drives its own RCA jacks
+rather than the CoCo's internal SND pin. That is not an assumption; it
+is asserted by a test
 ([`crates/coco-core/tests/orch90.rs:69-89`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/orch90.rs#L69-L89)):
 
 ```rust
@@ -2357,7 +2359,7 @@ directly: "all three channels that select envelope mode (R8/R9/R10 bit
 real constraint, and it is the kind of thing that shapes how music for
 the chip was written.
 
-The shape itself comes from a 4-bit register that a real chip decodes
+The shape itself comes from a 4-bit register that the real chip decodes
 into a small set of distinct ramp behaviors
 ([`crates/coco-core/src/ay8913/envelope.rs:47-65`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/ay8913/envelope.rs#L47-L65)):
 
@@ -2422,7 +2424,7 @@ Each rung moves work from software into silicon, which is the whole
 story of audio hardware in that decade compressed into three cartridges
 for one machine.
 
-Weeks 13 and 14 will put real cartridges around the SN76489A and the
+Chapters 13 and 14 will put real cartridges around the SN76489A and the
 AY-3-8913 respectively and drive them from actual 6809 code. This week's
 job was only to show where each chip's samples *enter* the pipeline you
 already understand: `sound_levels()` for latched cartridge DACs like the
@@ -2436,12 +2438,13 @@ chips, three eras of design philosophy, two trait methods.
 ## 11.12 Reading the tests
 
 You've already read `sound.rs`'s three tests and `audio_grid.rs`'s three
-tests inline, as evidence for specific claims: §11.1's mux table,
-§11.3's event timestamping, §11.6 and §11.7's filter behavior. Step back
-now and look at what each *file* is testing as a whole, because the two
-core-side files test different layers of the same pipeline on purpose,
-and the division between them is a good model for how to structure tests
-for any layered subsystem.
+tests inline, as evidence for §11.1's mux table and §11.3's event
+timestamping, and `audio_test.rs`'s frontend tests as evidence for
+§11.6 and §11.7's filter behavior. Step back now and look at what each
+*file* is testing as a whole, because the two core-side files test
+different layers of the same pipeline on purpose, and the division
+between them is a good model for how to structure tests for any layered
+subsystem.
 
 ### `sound.rs`: the mux and the mix, with no clock running
 
@@ -2540,7 +2543,7 @@ doc states the mandate in one sentence
 a `BRA *` is three cycles, so stepping until 30 cycles are spent lands
 at a predictable place in the line rather than somewhere approximate.
 
-The setup helper is worth reading next to week 10, because it is the PIA
+The setup helper is worth reading next to Chapter 10, because it is the PIA
 configuration dance from that chapter performed for audio's benefit
 ([`crates/coco-core/tests/audio_grid.rs:26-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/audio_grid.rs#L26-L40)):
 
@@ -2564,7 +2567,7 @@ fn dac_machine() -> Machine {
 
 Clear the control register to expose the DDR, program the direction
 bits, then restore the control register with the C2 output set the way
-you want it. That is week 10's three-step shape exactly, performed twice
+you want it. That is Chapter 10's three-step shape exactly, performed twice
 (once per port), and the DDR values are §11.1's pin assignments: `0xFC`
 for PA2 through PA7, the DAC's six wires, and `0x02` for PB1, the
 beeper. A test that got this dance wrong would silently test nothing,
@@ -2623,13 +2626,14 @@ final state is silent. A once-per-line point sampler would have read
 exactly that final state and heard nothing at all, so the second
 assertion is not merely a sanity check; it is a proof that the first
 assertion could not have been satisfied by accident. This is §11.2's
-"sample once per frame loses everything" failure mode demonstrated as a
-passing test against the fix, rather than argued in prose.
+"point-sampling loses whatever happened in between" failure mode, at the
+old path's once-per-line resolution, demonstrated as a passing test
+against the fix rather than argued in prose.
 
 This chapter's sabotage exercise (§11.14) puts that test's teeth on
-display: break the exact mechanism that makes it pass and both
-`audio_grid` tests fail with the precise diagnostic the sabotage
-predicts.
+display: break the exact mechanism that makes it pass and both of the
+`audio_grid` timing tests above fail with the precise diagnostic the
+sabotage predicts.
 
 ### `orch90.rs`: and one honest note about ROMs
 
@@ -2642,9 +2646,9 @@ CoCo 3 ROM (`roms/coco3.rom`) to prove the Orch-90's CART*→FIRQ autostart
 path actually runs cartridge code from a cold machine — and it fails
 loudly, with a clear "cannot read .../roms/coco3.rom: No such file or
 directory" message, in a worktree (like this course's) that doesn't have
-`roms/` checked out. That's the intended behavior, not a bug in the test
-— week 1's reading-assignment habit ("ROMs are local-only... tests that
-need a ROM either skip or fail loudly") applies here exactly as
+`roms/` checked out. That's the intended behavior, not a bug in the
+test. Chapter 1's reading-assignment habit ("ROMs are local-only... tests
+that need a ROM either skip or fail loudly") applies here exactly as
 advertised, and this is the first chapter where that behavior shows up
 in practice rather than being taken on faith.
 
@@ -2654,7 +2658,7 @@ that `take_audio()` produced a nonzero sample. One boolean, standing in
 for the cartridge autostart path, the FIRQ delivery, the `$FF7A`/`$FF7B`
 decode, the latch snapshot, the event record, the grid flush, and the
 mix. That is the same "one assertion, most of the machine" property
-week 1 admired in the boot tests, applied to audio.
+Chapter 1 admired in the boot tests, applied to audio.
 
 ---
 
@@ -2679,11 +2683,11 @@ In this order:
    this chapter walked in two short paragraphs.
 5. **[`crates/coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs), `fields_due` and
    `step_emulation`** — the producer's call site, and the "carry the
-   remainder" pattern §11.8 compared the resampler to. Week 15 owns this
+   remainder" pattern §11.8 compared the resampler to. Chapter 15 owns this
    file; reading two of its functions now is enough to see where audio
    enters the frame loop and why nothing is pushed while paused.
 6. Run both test suites and watch them pass with nothing but a
-   zero-filled ROM and no audio hardware required:
+   zero-filled ROM and no audio hardware:
 
    ```
    cargo test -p coco-core --test sound --test audio_grid
@@ -2703,7 +2707,7 @@ In this order:
 **11.1 — Derive the grid rate (recall + math).** Without looking back at
 §11.4, recompute the audio grid's sample rate from first principles: you
 need `VideoStandard::NTSC`'s `lines_per_field()` and `field_rate_hz()`
-(week 6 covered both; they're also in [`crates/coco-core/src/config.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs))
+(Chapter 6 covered both; they're also in [`crates/coco-core/src/config.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs))
 and `audio::OVERSAMPLE`. Show the two multiplications. Then do the same
 for PAL (`lines_per_field() = 312`, `field_rate_hz() = 50.0`) — is PAL's
 grid rate higher or lower than NTSC's, and does that match your intuition
@@ -2778,7 +2782,7 @@ fail?
 [`crates/coco-core/tests/sound.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sound.rs) (or a new test file) that: configures
 the DAC path exactly like `dac_reaches_speaker_only_with_snden_and_mux_zero`'s
 `bus()` helper, then alternates `PIA1_DA` between `0xFC` (full scale) and
-`0x00` every 16 CPU cycles for several full field's worth of scanlines,
+`0x00` every 16 CPU cycles for several full fields' worth of scanlines,
 using `Machine`/`step_instruction` rather than the raw `sound_probe`
 (you'll need `dac_machine()`-style setup from `audio_grid.rs` as your
 model). Drain `take_audio()` and assert the resulting sample stream
@@ -2806,15 +2810,15 @@ that's the section to reread.
 
 ## What's next
 
-Week 12 stays inside the audio system but flips the direction: instead
+Chapter 12 stays inside the audio system but flips the direction: instead
 of the CPU driving a speaker, the speaker (or rather, a cassette deck's
 read head) drives the CPU — CSAVE and CLOAD encode and decode data as
 audio tones entirely in software, and the emulator has to re-implement
 the ROM's own FSK demodulator well enough to fool it. You already met
-the cassette's *output* path in passing this week (`SEL_CASSETTE`
+the cassette's *output* path in passing this week, with `SEL_CASSETTE`
 routing the tape's square wave through the same mux you now understand
-completely); next week is where that square wave's timing — leader
+completely. Next week is where that square wave's timing — leader
 bytes, sync bytes, the motor's spin-up delay — becomes the whole subject,
-and where cycle-accurate timing (the fidelity table from week 1) turns
+and where cycle-accurate timing (the fidelity table from Chapter 1) turns
 out to matter far more for a tape deck than it ever did for the DAC path
 this week covered.

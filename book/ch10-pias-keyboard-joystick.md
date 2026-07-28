@@ -6,15 +6,16 @@ impressive machine that still can't hear you. Every key pressed and every
 joystick wiggle on a real CoCo passes through a pair of 1977-vintage
 parallel-port chips before the CPU ever sees it, and one of those chips also
 happens to generate the interrupt that keeps stock BASIC's idle loop alive.
-This week you finally deliver the promise made in week 1: reading a PIA data
-register clears an interrupt flag, and that single fact is why `Bus::read`
-takes `&mut self`. By the end you'll be able to trace a keypress from a
-finger on a keycap to a character on the screen, and explain why the CoCo's
-"joystick port" contains no analog-to-digital converter at all.*
+This week you finally deliver on the promise made in Chapter 1: reading a PIA
+data register clears an interrupt flag, and that single fact is why
+`Bus::read` takes `&mut self`. By the end you'll be able to trace a
+keypress from a finger on a keycap to a character on the screen, and explain
+why the CoCo's "joystick port" contains no analog-to-digital converter at
+all.*
 
 ---
 
-Nine weeks in, the emulator has an odd asymmetry to it. It can execute
+Nine weeks in, the emulator has an odd asymmetry. It can execute
 every 6809 instruction, resolve every indexed addressing mode, decode a
 64K address space through an MMU, keep time to the scanline, and paint a
 raster in half a dozen video modes. What it cannot do is notice that a
@@ -23,20 +24,20 @@ pixels, cycles become fields. Nothing flows in.
 
 This week reverses the arrow, and the chip that does the reversing is
 almost comically humble compared to the GIME. The MC6821 has no video
-scanout, no memory management, no timer, no palette. It has thirty-two
-pins of general-purpose parallel I/O, four registers per copy, and a
-single genuinely clever trick involving a bit that decides which of two
-registers a given address means this instruction. Tandy bought two of
-them and wired essentially everything to them.
+scanout, no memory management, no timer, no palette. It has sixteen
+pins of general-purpose parallel I/O, four registers, and a
+single genuinely clever trick involving a bit that decides, instruction
+by instruction, which of two registers a given address means. Tandy
+bought two of them and wired essentially everything to them.
 
 There is a reason this chapter sits here in the course rather than in
-week 3. A PIA in isolation is a twenty-minute read. A PIA understood as
+Chapter 3. A PIA in isolation is a twenty-minute read. A PIA understood as
 the thing that makes a keypress become a character on a BASIC screen
 requires a CPU that executes the ROM's scan loop, a bus that decodes
 `$FF00`, a scanline clock that fires the field-sync interrupt, and a
 video path that shows the result. All four of those now exist. What
 follows is the week where the pieces connect, and where several loose
-threads left dangling since week 1 finally get tied off: why `Bus::read`
+threads left dangling since Chapter 1 finally get tied off: why `Bus::read`
 takes `&mut self`, what the ROM's interrupt handler is actually
 acknowledging, and how software with no analog-to-digital converter
 anywhere in the machine still manages to read an analog joystick.
@@ -46,9 +47,9 @@ claim below can be checked twice, once against this repository's source
 and once against the disassembly of the ROM that ran on the real machine.
 When the two agree, you know the model is right for the right reason. The
 listings quoted throughout come from `color-basic-unravelled.pdf`, the
-commented disassembly of Color BASIC 1.2, and they are worth reading
-slowly: they are what the other end of every wire in this chapter was
-actually doing in 1981.
+commented disassembly of Color BASIC 1.2. They are worth reading slowly:
+they are what the other end of every wire in this chapter was actually
+doing in 1981.
 
 ---
 
@@ -65,7 +66,7 @@ CPU's world of addressed bytes and the peripheral's world of raw voltages,
 something has to translate.
 
 Open [`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs). Its header comment is the whole chapter
-in five lines:
+in miniature:
 
 ```rust
 //! MC6821 Peripheral Interface Adapter. See `DESIGN.md` §7.
@@ -119,7 +120,7 @@ One CPU-facing register layout serves both sides, mirrored:
 | `+3` | Control register B (CRB) | B |
 
 That's four registers, decoded by two address bits (`addr & 0x03`). Two
-details in that table matter more than they look like they should. The
+details in that table matter more than they appear to. The
 first is that offsets `+0` and `+2` each name *two* different registers
 depending on a control bit, which is §10.2's subject. The second is that
 four registers decoded by two address bits means the chip physically
@@ -174,13 +175,13 @@ keyboard does not know a PIA exists; the bus knows both, and introduces
 them at the moment of an actual bus access.
 
 That narrowness is why one 188-line file underlies the keyboard (this
-chapter), the sound DAC (week 11), the cassette relay and record line
-(weeks 11 and 12), and the printer's busy line (week 14). PIA1 in
+chapter), the sound DAC (Chapter 11), the cassette relay and record line
+(Chapters 11 and 12), and the printer's busy line (Chapter 14). PIA1 in
 particular is the front door every one of those subsystems walks through.
 This chapter builds the door; later chapters walk through it without
 re-deriving how it opens.
 
-> **A note on what's *not* modelled.** The doc comment above is explicit:
+> **A note on what's *not* modeled.** The doc comment above is explicit:
 > Cx2 interrupt-input mode and handshake/pulse-strobe mode don't exist in
 > this emulator. The real MC6821 can configure Cx2 as an *input* that
 > latches its own interrupt flag, or as an output that auto-pulses on a
@@ -190,9 +191,9 @@ re-deriving how it opens.
 > driving mux selects and enable lines, so the emulator doesn't pay for
 > logic nothing exercises.
 >
-> This is the fidelity-budget discipline from week 1 (§1.6) in miniature:
+> This is the fidelity-budget discipline from Chapter 1 (§1.6) in miniature:
 > model what software can observe, not what the data sheet allows. It is
-> also falsifiable in the way week 1 insisted every fidelity choice should
+> also falsifiable in the way Chapter 1 insisted every fidelity choice should
 > be. If some cartridge ROM turned up tomorrow that programmed CA2 as a
 > pulse strobe, the fix would be local — one more branch in the control
 > register write path — and it would arrive with a test proving it was
@@ -256,7 +257,7 @@ from the CPU's side. Bit 2 is the steal bit. Note in passing that the
 module is called `cr` and the constants are unprefixed, so call sites read
 as `cr::DDR_ACCESS` and `cr::C1_FLAG`. That is the same named-mask
 discipline the `cc` module applied to the CPU's condition codes back in
-week 2, applied here to a peripheral chip: no magic bit numbers, and every
+Chapter 2, applied here to a peripheral chip: no magic bit numbers, and every
 mask carries its meaning to the call site.
 
 With the constants in hand, the mechanism is four lines of `if`:
@@ -315,7 +316,8 @@ path and the debugger's non-destructive peek path in §10.3.
 ### A real ROM sequence, decoded byte by byte
 
 That's the theory. Here's the real thing: Color BASIC's cold-start PIA
-initialization, disassembled directly from the ROM. Nine instructions
+initialization, disassembled directly from the ROM. After `LEAY` seeds the
+warm-start pointer, sixteen instructions
 configure both chips completely, and every one of them is doing something
 this section has just explained.
 
@@ -352,8 +354,8 @@ answers at `$FF00`, and also at `$FF04`, `$FF08`, and so on, all the way
 up to `$FF1C`–`$FF1F`. This is *incomplete address decode*, and in 1980 it
 was not sloppiness but economics: routing more address lines and adding
 the gates to compare them cost silicon and board area, and if nothing else
-lives in the intervening addresses there is nothing to conflict with.
-Week 5 (§5.3) laid out the resulting I/O page map; [`bus/regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/regs.rs) states the
+lives in the intervening addresses, there is nothing to conflict with.
+Chapter 5 (§5.3) laid out the resulting I/O page map; [`bus/regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/regs.rs) states the
 consequence in a comment and three constants:
 
 ```rust
@@ -371,8 +373,8 @@ mirroring exactly.
 The ROM's author knew this and used it. With X already pointing at PIA1,
 `-4,X` through `-1,X` reach PIA0's last mirror for free, saving the three
 bytes of a second `LDX #PIA0` and the cycles to execute it. That is not an
-emulator implementation detail. It is a real hardware fact that real
-shipped code depends on, and an emulator that decoded PIA0 only at
+emulator implementation detail. It is a hardware fact that real shipped
+code depends on, and an emulator that decoded PIA0 only at
 `$FF00`–`$FF03` would watch this exact sequence write its configuration
 into the void and then fail to boot.
 
@@ -406,9 +408,9 @@ to 0 and means port A, and `$FF1E` masks to 2 and means port B.
    a set/reset output starting low, CB1 falling-edge selected, CB1
    interrupt disabled, data-register access restored.
 
-Then PIA1 gets the same three-step dance, and the DDR values it lands on
-are the interesting part. Port A's DDR becomes `$FE`, so bit 0 stays an
-input while bits 1 through 7 become outputs. Bit 0 is the cassette data
+Then PIA1 goes through the same three-step dance, and the DDR values it
+lands on are the interesting part. Port A's DDR becomes `$FE`, so bit 0
+stays an input while bits 1 through 7 become outputs. Bit 0 is the cassette
 input, and bits 2 through 7 are the 6-bit DAC that §10.6 sweeps and week
 11 turns into audio. Port B's DDR becomes `$F8`, so bits 0 through 2 stay
 inputs while bits 3 through 7 become outputs. Bits 0 and 2 are the
@@ -452,16 +454,16 @@ listing for the rest of the course.
 > than about hardware. The general rule is worth carrying: whenever the
 > zero value of a type isn't the hardware-true reset state, write
 > `Default` by hand and put the reason in a comment beside it. The same
-> reasoning shows up in week 11 for the idle audio DAC level and in week
+> reasoning shows up in Chapter 11 for the idle audio DAC level and in week
 > 13 for idle disk-controller status bits. When reading unfamiliar device
 > code in this codebase, check the field comments rather than assuming
-> that a struct which derives `Default` has a meaningful one.
+> that a struct deriving `Default` has a meaningful one.
 
 ---
 
-## 10.3 Edge detection, and the promise from week 1
+## 10.3 Edge detection, and the promise from Chapter 1
 
-Now the part weeks 1 and 5 promised in full: *reading a PIA data register
+Now, in full, the part Chapters 1 and 5 promised: *reading a PIA data register
 clears an interrupt flag*. That single sentence has been cited three times
 already in this course as the reason for a type signature, and this is the
 section that earns it. The mechanism has three moving parts, and it's
@@ -557,7 +559,7 @@ leading up to:
 "clear interrupt" register, not a magic value written to the control
 register: the mere act of the CPU reading `$FF00` or `$FF02` resets both
 interrupt flags for that side, as a side effect of the load instruction.
-This is real 1977 silicon behaviour rather than an emulator convenience.
+This is real 1977 silicon behavior rather than an emulator convenience.
 Inside the chip, the flag flip-flops are wired to reset during a
 peripheral-register read cycle, so the acknowledgment is a property of the
 bus transaction itself. Software doesn't handle the interrupt and then
@@ -585,22 +587,22 @@ interrupt on the CPU:
 Two bits, both required. The flag records that the edge happened; the
 enable records whether software wants to be interrupted about it. This is
 the standard separation between *status* and *mask* that every interrupt
-controller in this course uses, including the GIME's own in week 8, and it
+controller in this course uses, including the GIME's own in Chapter 8, and it
 is why the cold-start `$34` from §10.2 leaves the machine latching sync
 flags every single line and field without ever raising IRQ. The flags are
 there to be polled until software opts in.
 
 This whole mechanism is exactly why `Bus::read` in
-[`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs) takes `&mut self` (week 1, §1.3). `LDA $FF02`
+[`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs) takes `&mut self` (Chapter 1, §1.3). `LDA $FF02`
 looks, syntactically, like a pure load. On real hardware and in this
 emulator it mutates `PiaPort.control`. If `read` took `&self`, this
 method would need `Cell` or `RefCell` to compile, and the honest fact that
 this load has a side effect would be hidden inside a wrapper type instead
 of being visible in the signature of every read in the system. The reason
-you learned about `&mut self` reads in week 1 was this exact chip.
+you learned about `&mut self` reads in Chapter 1 was this exact chip.
 
-That decision has a cost, and week 1 named the payment as well: sometimes
-a read genuinely must not disturb anything. A debugger's memory viewer
+That decision has a cost, and Chapter 1 named it as well: sometimes a read
+genuinely must not disturb anything. A debugger's memory viewer
 hovering over `$FF02` and refreshing sixty times a second cannot be
 allowed to eat pending interrupts. So the PIA offers a second, explicitly
 side-effect-free path:
@@ -626,7 +628,7 @@ compiler guarantees it cannot mutate a flag. It takes the sampled input
 bytes as parameters rather than reaching for them, because a `&self`
 method has no way to ask the bus to refresh `PiaPort::input` first — the
 caller does that and hands the result in. Two functions, two contracts,
-both enforced by types rather than by a comment nobody reads. Week 16
+both enforced by types rather than by a comment nobody reads. Chapter 16
 builds the debugger panel on top of this; for now it is worth noting that
 the awkwardness lives in exactly one place, in the method whose entire
 purpose is to be the exception.
@@ -650,9 +652,9 @@ purpose is to be the exception.
 > Applying `&` to a `u8` yields a `u8`, whose type-level range is still
 > `0..=255`, and nothing in the type system narrows it after a bitwise
 > and. So exhaustiveness checking still demands a catch-all arm, and
-> `_ => self.b.control` is it. The fourth, unreachable-in-practice case is
-> folded into the same arm as `3`, which is harmless because they would do
-> the same thing.
+> `_ => self.b.control` is it. That arm does double duty: it handles the
+> legitimate `3` case and absorbs the 252 values the mask can never
+> produce, which is harmless because they would all read the same register.
 >
 > This is worth internalizing as a pattern rather than filing as a quirk.
 > Whenever you mask an integer down to a known-small range for a `match`,
@@ -669,11 +671,11 @@ purpose is to be the exception.
 
 ## 10.4 The interrupt story completed: two heartbeats
 
-Week 6 (§6.6) introduced the field-sync-on-PIA0-CB1 IRQ path as the thing
+Chapter 6 (§6.6) introduced the field-sync-on-PIA0-CB1 IRQ path as the thing
 that breaks stock BASIC out of its idle loop, and told the debugging war
 story of what an emulator looks like without it: instruction-perfect and
-functionally comatose. What week 6 deliberately deferred was the chip-level
-half of the story. This section is where the raster timing events of week 6
+functionally comatose. What Chapter 6 deliberately deferred was the chip-level
+half of the story. This section is where the raster timing events of Chapter 6
 meet the edge-detection logic of §10.3, and where the ROM's own interrupt
 handler is finally read line by line.
 
@@ -714,7 +716,7 @@ The two lines to look at first are `self.pia0.a.set_c1(false)` followed by
 `self.pia0.a.set_c1(true)`: a falling edge and then a rising edge, back to
 back, once per scanline. That pair models the real horizontal-sync pulse,
 which idles high and drops low for roughly 4.5 µs at the end of each line,
-without requiring sub-scanline timing resolution the emulator doesn't
+without requiring the sub-scanline timing resolution the emulator doesn't
 have. The trick works because of how `set_c1` gates on edge direction.
 Whichever direction CRA selected, exactly one of those two calls matches
 it, so every scanline produces exactly one CA1 flag no matter which
@@ -729,7 +731,7 @@ built around. The cheaper model emits both edges at the same instant and
 relies on the fact that the *observable consequence*, a single flag per
 line, is identical. Software cannot distinguish the two models unless it
 can read the raw CA1 level, and no CoCo software can, because the level
-isn't exposed anywhere in the register map. Week 14 uses the same
+isn't exposed anywhere in the register map. Chapter 14 uses the same
 compress-both-edges trick for a different signal.
 
 How fast is this heartbeat? An NTSC scanline is about 63.5 µs, so PIA0's
@@ -743,7 +745,7 @@ exactly never. It is available to be polled by anything that wants
 scanline-rate timing, and ignored by everything that doesn't.
 
 The slow heartbeat is field sync, and it does not live in `hsync`. It
-belongs to the scanline loop from week 6, in `Machine::end_of_line`
+belongs to the scanline loop from Chapter 6, in `Machine::end_of_line`
 ([`crates/coco-core/src/machine/run.rs:132-140`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L132-L140)):
 
 ```rust
@@ -804,16 +806,16 @@ wired-OR of two independent interrupt sources:
 ```
 
 `MC6821::irq()` is the two-sided combination of the per-side `irq()` from
-§10.3, so this expression is really four conditions: CA1's flag-and-enable,
+§10.3, so this expression is really three conditions: CA1's flag-and-enable,
 CB1's flag-and-enable, and whatever the GIME's own interrupt block has to
-say. Week 6 (§6.6) walked the consequences of that OR in detail; what's
+say. Chapter 6 (§6.6) walked the consequences of that OR in detail; what's
 new here is that you can now see all the way down to the two control-register
 bits at the bottom of it.
 
 ### What the ROM's handler actually does
 
 Here is Color BASIC's IRQ service routine, reached through the interrupt
-vector, disassembled from the ROM. It is nine instructions long, and the
+vector, disassembled from the ROM. It is eight instructions long, and the
 first three are pure PIA protocol:
 
 ```
@@ -843,7 +845,7 @@ If bit 7 *is* set, the very next instruction, `LDA PIA0+2`, reads PIA0's
 clears both `C1_FLAG` and `C2_FLAG` on side B. The ROM's comment says it
 outright: "RESET PIA0, PORT B INTERRUPT FLAG." What makes this the
 clearest illustration in the entire codebase of a memory read that changes
-machine state is what happens to the value: nothing. `A` holds the
+machine state is what happens to the value it loads: nothing. `A` holds the
 keyboard column-strobe byte for about one instruction and is then clobbered
 by the `LDX` on the next line. The read exists *purely for its side
 effect*. An optimizing compiler would delete it; a 6809 programmer in 1981
@@ -876,7 +878,7 @@ second argument, and the field-sync interrupt is the clock that counts it
 down while the main code sits in a tone-generating loop. `SOUND` enables
 the interrupt because `SOUND` is what needs it.
 
-This is a good moment to connect back to week 6's synthetic boot ROM,
+This is a good moment to connect back to Chapter 6's synthetic boot ROM,
 which contained the sequence `LDA #$05` / `STA $FF03` and was described
 there as "enable the CB1 field-sync IRQ." `$05` is `C1_IRQ_ENABLE |
 DDR_ACCESS`, which is precisely what `SOUND`'s `ORA #1` produces when the
@@ -889,7 +891,7 @@ section exists rather than stopping at `RTI`. The field-sync interrupt on
 a stock CoCo doesn't do much *work*. Its entire job, from BASIC's point of
 view, is to fire on a dependable schedule so that code which needs to
 measure elapsed time can do so without counting its own instructions.
-That's the "it's alive" heartbeat from week 6, and you have now seen both
+That's the "it's alive" heartbeat from Chapter 6, and you have now seen both
 ends of the wire: the raster hardware asserting CB1 in `fs_falling`, and
 the ROM's own handler acknowledging it with the read this section exists
 to explain.
@@ -902,10 +904,9 @@ Switch from interrupts to input. The CoCo keyboard is not sixty
 independent switches wired to sixty pins, because sixty pins is not a
 budget the machine has. It's a **matrix**: 56 keys wired at the
 intersections of 7 row lines and 8 column lines, so 15 pins can sense 56
-switches. The arithmetic generalizes and it's why every keyboard from this
-era through the one you're typing on now is scanned rather than wired
-directly: `r + c` pins buy `r × c` keys, so the savings grow as the
-keyboard does.
+switches. The arithmetic generalizes, and it's why every keyboard from
+this era through today's is scanned rather than wired directly: `r + c`
+pins buy `r × c` keys, so the savings grow as the keyboard does.
 
 `keyboard.rs`'s header comment gives the authentic layout, cross-checked
 against MAME's `coco3_keyboard`:
@@ -992,8 +993,8 @@ out-of-range position is worth a note: it makes a bad position a no-op
 rather than a panic, which is the right call for a function whose callers
 include a frontend translating host key events. A typo in a keymap table
 should produce a key that does nothing, not a crash. This is the frontend's
-entire write surface into the emulated keyboard; `coco-egui` never touches
-a PIA register directly, it calls `set` (§10.8).
+entire write surface into the emulated keyboard. `coco-egui` never touches
+a PIA register directly; it calls `set` (§10.8).
 
 Beside the matrix state lives a pure function that the frontend and the
 tests both use to go the other way, from a character to the key that
@@ -1062,8 +1063,8 @@ which is driven low.
    column that isn't the strobed one. Either way `pressed & selected` is
    zero, and those bits of `pa` stay high.
 5. The result is `pa = 0xFE`. Row 0 reads low; every other row reads high,
-   and PA7, never touched by the loop, is still part of the initial
-   `0xFF`.
+   and PA7, never touched by the loop, keeps the high level it started
+   with.
 
 That's the entire electrical story of one keypress: strobe a column low,
 read back which rows went low, done. The test
@@ -1097,13 +1098,13 @@ held keys senses correctly, always. That is a real difference from some
 physical CoCo keyboards, and it is the right call for an emulator.
 Ghosting is a mechanical property of a particular piece of keyboard
 hardware, not a fact about the 6821 or about the ROM's scanning algorithm,
-and nothing in the fidelity table from week 1 (§1.6) asks for it. The
+and nothing in the fidelity table from Chapter 1 (§1.6) asks for it. The
 question that table trains you to ask is "who notices?", and the answer
 here is: a user pressing three specific keys at once, who would experience
-the real machine's behaviour as a bug.
+the real machine's behavior as a bug.
 
 If you ever did want to model it, and an exercise below invites you to
-sketch how, you'd add it at exactly this function. `sense()` is the one
+sketch how, you'd add it in exactly this function. `sense()` is the one
 place in the whole codebase where "how the matrix behaves electrically"
 lives, which is itself a design property worth noticing: the fact that
 there is a single such place is what makes the question answerable at all.
@@ -1203,7 +1204,7 @@ purpose, though it lives on the other side of the fence: `rows` is the
 *truth* about what's held, and `KEYBUF` is the ROM's *memory* of what it
 last saw.
 
-The row-read subroutine `KEYIN` calls is five instructions and contains
+The row-read subroutine `KEYIN` calls is seven instructions and contains
 two surprises:
 
 ```
@@ -1225,9 +1226,9 @@ same reason from the other direction, and the comment in `sense()` says so
 in as many words. Two independent implementations, forty-five years apart,
 agreeing that PA7 must not be allowed to look like a key.
 
-The second surprise is the `TST`/`BMI`/`ORA #$C0` pair. `TST $02,U` tests
-the column strobe register itself, and `BMI` branches when its bit 7 is
-set, meaning column 7 is *not* the one being strobed. When column 7 *is*
+The second surprise is the `TST`/`BMI`/`ORA #$C0` sequence. `TST $02,U`
+tests the column strobe register itself, and `BMI` branches when its bit 7
+is set, meaning column 7 is *not* the one being strobed. When column 7 *is*
 selected, the ROM ORs in `$C0`, forcing row 6 high and thereby ignoring
 whatever key sits at (6, 7). Look that position up in the matrix table:
 it's SHIFT. The scan loop deliberately blinds itself to SHIFT so that
@@ -1300,7 +1301,7 @@ implements in hardware, except that here it runs as 6809 instructions.
 Tandy shipped the resistor ladder they already needed for sound, one
 comparator, and a few lines of ROM, instead of an ADC chip. That is the
 "ADC-by-comparator" in this week's title, and it is a fine example of the
-era's cost engineering: the missing chip's function still exists, it has
+era's cost engineering: the missing chip's function still exists; it has
 just been relocated into software.
 
 ### Selecting which pot: the analog mux
@@ -1374,7 +1375,7 @@ sweep the DAC through a range of values as fast as the CPU can write them,
 and if that reached the speaker it would be audible as a click or a buzz.
 So the ROM disconnects the audio path first, converts, and — in the
 `SOUND` statement's case — reconnects it afterwards. That single `BSR` is
-the whole reason weeks 10 and 11 are adjacent chapters: the joystick and
+the whole reason Chapters 10 and 11 are adjacent chapters: the joystick and
 the sound output are the same six pins, time-shared by convention.
 
 Then the conversion:
@@ -1443,8 +1444,8 @@ conversions, so the second reading always equals the first and the retry
 loop exits after two passes, every time. The ROM's defensive code is
 harmless and invisible. That's a nice illustration of a general principle:
 an emulator is frequently *more* deterministic than the hardware, and
-software written to cope with analog reality simply finds reality
-unusually agreeable.
+software written to cope with analog reality finds reality unusually
+agreeable.
 
 Compare the ROM's comparator test to the emulator's model of the same bit:
 
@@ -1457,7 +1458,7 @@ Compare the ROM's comparator test to the emulator's model of the same bit:
 ```
 
 One comparison operator, and the `<=` rather than `<` is load-bearing: it
-is what MAME's `coco.cpp` implements, and it decides the behaviour at the
+is what MAME's `coco.cpp` implements, and it decides the behavior at the
 exact boundary where DAC equals pot. The colocated test
 `comparator_is_high_while_dac_at_or_below_pot` pins all three cases, below,
 equal, and above. The `& 1` masks on both indices are the same defensive
@@ -1523,7 +1524,7 @@ cached between reads, because on real hardware there is nothing to cache.
 > When you see `T::from(some_bool)` for a numeric `T` in this codebase,
 > read it as "an index or count derived from a hardware select line." It
 > is a recurring shape anywhere a chip's output pin picks between two
-> alternatives, and you'll meet it again in week 11's sound-source
+> alternatives, and you'll meet it again in Chapter 11's sound-source
 > selection.
 
 ### Fire buttons bypass the strobe
@@ -1636,11 +1637,11 @@ single object now that every ingredient is familiar:
 ```
 
 One `u8`, and by the time the function returns it, bits 0 through 6 have
-been set by two entirely separate emulated devices — the 7×8 keyboard
-matrix and the joystick fire buttons — and bit 7 by a third, the
+been set by two entirely separate emulated devices, the 7×8 keyboard
+matrix and the joystick fire buttons. Bit 7 comes from a third, the
 DAC-and-comparator pair, which itself reaches across into `self.pia1`, the
-*other* PIA entirely, to read a DAC value that some completely unrelated
-piece of code wrote there.
+*other* PIA entirely, to read a DAC value that some unrelated piece of
+code wrote there.
 
 No single device in this codebase "owns" `$FF00`. The byte that a
 `LDA $FF00` returns is **assembled fresh on every read** from whatever
@@ -1674,7 +1675,7 @@ reference from the PIA back to them.
 
 It's the same "assemble reality at the point of observation, from disjoint
 pieces" instinct that the borrow checker forced onto `Machine`'s field
-layout in week 1 (§1.4). Here it shows up as a decision about *when* to
+layout in Chapter 1 (§1.4). Here it shows up as a decision about *when* to
 compute a value rather than *where* to store it, but the underlying rule is
 identical: don't let one piece of state need to know about another, and let
 something above both of them combine them exactly when combining is needed.
@@ -1701,14 +1702,14 @@ GIME can call it freely. Had the pin composition been folded into the PIA
 read path as a side effect, this second consumer would have needed a
 duplicate implementation, and the two would eventually have disagreed. The
 `& 0x7F` masks off PA7 so the comparator can't masquerade as a keypress,
-which is the same defensive move as the ROM's `ORA #$80` in §10.5, and
+which is the same defensive move as the ROM's `ORA #$80` in §10.5.
 `kbd_line_low` is the previous sample, retained so that only a *transition*
 raises the interrupt rather than every scanline of a held key. Edge
 detection from stored levels, one more time; the pattern is everywhere in
 this chapter once you start looking.
 
 PIA1's two input-pin functions are smaller but follow the same shape, and
-they are worth a glance because weeks 11, 12, and 14 lean on them without
+they are worth a glance because Chapters 11, 12, and 14 lean on them without
 re-deriving the pattern:
 
 ```rust
@@ -1722,7 +1723,7 @@ re-deriving the pattern:
     }
 ```
 
-Bit 0 is the cassette data-in line, which is week 12's entire subject.
+Bit 0 is the cassette data-in line, which is Chapter 12's entire subject.
 Every other bit floats high, matching `PiaPort::default`'s `0xFF` idle
 state from §10.2's Rust corner, because nothing is wired to them. Writing
 `0xFF` and `!CASSETTE_IN` rather than `0x01` and `0x00` keeps the floating
@@ -1730,7 +1731,7 @@ pins visible in the source: the reader can see that seven bits are
 deliberately idle rather than accidentally zero.
 
 `pia1_pb_pins` is the same idea with two real signals composed onto an
-otherwise floating `0xFF`: the printer's BUSY line on bit 0, which week 14
+otherwise floating `0xFF`: the printer's BUSY line on bit 0, which Chapter 14
 uses, and the RAMSZ memory-size sense switch on bit 2, which exists only
 on the CoCo 1 and 2. Its doc comment is one of the longer ones in the
 codebase and tells a genuinely interesting story about why a CoCo 1 needed
@@ -1742,15 +1743,15 @@ would; read it in the source.
 
 ## 10.8 Host-side, briefly: two keymaps and a type-ahead queue
 
-Week 15 owns the frontend in full. What follows is just enough to close
+Chapter 15 owns the frontend in full. What follows is just enough to close
 the loop from a human's actual keyboard to the matrix `sense()` scans,
 because a chapter about input that stops at the emulator boundary leaves
 the most obvious question unanswered.
 
 `coco-egui` supports two input philosophies, and the choice between them
-matters more than it might look. **Positional** mode maps each host
+matters more than it might seem. **Positional** mode maps each host
 physical key directly to the CoCo matrix position that sits in roughly the
-same place on a real CoCo keyboard. Press the key labelled `-` on a modern
+same place on a real CoCo keyboard. Press the key labeled `-` on a modern
 keyboard and what reaches the matrix is whatever CoCo key occupies that
 physical spot, regardless of what symbol either keyboard prints there.
 [`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L4-L43):
@@ -1782,8 +1783,8 @@ symbolic layer entirely; a game that checks for "the key at row 3, column
 3" wants that key to be where the CoCo's arrow key was.
 
 Positional mode has one more responsibility that the table doesn't show.
-Modifiers are not matrix positions in egui's event model, they're a
-separate bitfield, so they're applied first, every frame, from the current
+Modifiers are not matrix positions in egui's event model but a separate
+bitfield, so they're applied first, every frame, from the current
 modifier state
 ([`app/input.rs:115-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L115-L135)):
 
@@ -1848,7 +1849,7 @@ real emulated time, one field at a time
     }
 ```
 
-The state machine has three phases and each call advances it by one field.
+The state machine has three phases, and each call advances it by one field.
 Hold the key down for `TYPE_HOLD_FIELDS` fields, release it, wait
 `TYPE_GAP_FIELDS` fields, then move to the next queued tap. The gap is not
 decoration: without it, two identical consecutive characters would look to
@@ -1866,7 +1867,7 @@ test asserting on a screen buffer.
 ## 10.9 Reading the tests
 
 Four tests, across three files, each pinning a fact this chapter has
-already walked through in the source. The habit from week 1 (§1.7) applies
+already walked through in the source. The habit from Chapter 1 (§1.7) applies
 here more than anywhere: read the test first, and it tells you what the
 hardware does in five lines that the implementation spreads across three
 functions.
@@ -1897,8 +1898,8 @@ Three assertions covering the three cases that matter: the strobed column
 senses the key, a different column doesn't, and — the interesting one —
 strobing *every* column at once still senses it. That third case works
 because `sense()`'s `pressed & selected` test only needs *some* overlap
-between the held key's column and the set of currently selected columns,
-and it is not a hypothetical. It's the exact operation Color BASIC's
+between the held key's column and the set of currently selected columns.
+Nor is it a hypothetical: it's the exact operation Color BASIC's
 `LA1C1` fast path performs with `CLR PIA0+2` before deciding whether to
 pay for a full column-by-column scan (§10.5). A `sense()` that took a
 column *index* instead of a strobe *byte* would have been simpler to write
@@ -1960,15 +1961,15 @@ fn cb1_falling_flag_first_appears_at_fs_falling_line_not_before() {
 }
 ```
 
-This is a negative-space test: 244 iterations of asserting the flag is
-*still not there*, since `fs_falling_line` is 244 for NTSC on a CoCo 3,
-followed by one assertion that it now is. That shape, proving an invariant
-holds continuously right up to the instant it's supposed to change, is how
-you test "this fires at the *right time*" as opposed to merely "this fires
-eventually." Code that accidentally raised CB1 early, say by confusing
-`fs_falling_line` with a different line count, would fail on some
-iteration long before the loop reached `fs_falling()`, and the failure
-message would tell you which iteration.
+This is a negative-space test. Since `fs_falling_line` is 244 for NTSC on
+a CoCo 3, the loop spends 244 iterations asserting the flag is *still not
+there*, followed by one assertion that it now is. That shape, proving an
+invariant holds continuously right up to the instant it's supposed to
+change, is how you test "this fires at the *right time*" as opposed to
+merely "this fires eventually." Code that accidentally raised CB1 early,
+say by confusing `fs_falling_line` with a different line count, would fail
+on some iteration long before the loop reached `fs_falling()`, and the
+failure message would tell you which iteration.
 
 The loop also quietly asserts something else worth noticing: that
 `hsync()` touches side A and *only* side A. Two hundred and forty-four
@@ -2016,10 +2017,11 @@ the strobe register says, and the code says so structurally.
 > two end-to-end tests (`typing_at_prompt_echoes_to_screen`,
 > `typing_multiple_keys_with_irqs_active`) boot the real `roms/coco3.rom`
 > and will panic with a "file not found" error in a worktree that lacks
-> `roms/` (week 1, §1.7 warned you about exactly this — ROMs live only in
-> the main checkout). The four tests walked above need no ROM at all;
-> `cargo test -p coco-core --test pia_sync --test joystick_bus` and the
-> `pia::tests::*`/first-two-`keyboard.rs`-tests run clean anywhere.
+> `roms/` (Chapter 1, §1.7 warned you about exactly this — ROMs live only in
+> the main checkout). The four tests walked above need no ROM at all:
+> `cargo test -p coco-core --test pia_sync --test joystick_bus`, the
+> `pia::tests::*` set, and the first two tests in `keyboard.rs` all run
+> clean anywhere.
 
 ---
 
@@ -2030,7 +2032,7 @@ devices hanging off it, then the composition layer that joins them, then
 the tests that pin the whole thing down.
 
 1. **[`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs)**, the whole file (188 lines) — you've
-   now seen nearly every line quoted in this chapter, but read it once
+   now seen nearly every line of it quoted in this chapter, but read it once
    more start to finish without the surrounding narration, and check that
    you can predict what each function does before reading its body.
 2. **[`crates/coco-core/src/keyboard.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/keyboard.rs)** and **[`crates/coco-core/src/joystick.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/joystick.rs)**
@@ -2060,8 +2062,8 @@ should both be green with no ROM present.
 **10.1 — Trace a keypress, strobe by strobe (recall).** The 'K' key lives
 at `(row=1, col=3)` (§10.5's matrix table). Write out, as a table of eight
 rows (one per column strobe `KEYIN` tries, columns 0–7), what byte
-`Keyboard::sense` returns for each strobe, assuming only 'K' is held and no
-other key. Which single strobe value produces a non-`0xFF` result, and what
+`Keyboard::sense` returns for each strobe, assuming 'K' is the only key
+held. Which single strobe value produces a non-`0xFF` result, and what
 is that result exactly? Check your table against `sense`'s source — you
 should be able to predict all eight rows without running any code.
 
@@ -2114,7 +2116,7 @@ pot range around `AXIS_CENTER`, clamped with `AXIS_MAX`. Write a test that
 sets an axis this way and confirms `compare()` produces the same
 comparator bit a hand-computed 6-bit value would. (This is, in miniature,
 what `coco-egui`'s mouse-as-joystick input source does — you're
-implementing the core-side half of week 15's frontend feature.)
+implementing the core-side half of Chapter 15's frontend feature.)
 
 **10.4 — Read and predict a `pia_sync` test (read + predict).** Without
 running it, predict the output of this modification to
@@ -2153,7 +2155,7 @@ property of the *whole* matrix's rectangle structure, not of one row in
 isolation)?
 
 **10.7 — Why does the DDR exist at all? (essay, three sentences max).**
-A friend proposes: "just give every PIA port a fixed hardware direction —
+Someone proposes: "just give every PIA port a fixed hardware direction —
 port A is always input, port B is always output — and delete the DDR
 registers entirely; the CoCo never reconfigures a PIA port's direction
 after boot anyway, so why pay for the flexibility?" Give the two strongest
@@ -2175,11 +2177,11 @@ this chapter used only as a comparator reference voltage becomes, in week
 sample grid a sound card can play. The PIA-side plumbing has already made
 its cameo here, in `GETJOY`'s opening `BSR LA974` that mutes the sound mux
 before sweeping the DAC, and in the CA2/CB2 select bits that pick between
-sound sources. Week 11 is where that plumbing gets followed all the way to
+sound sources. Chapter 11 is where that plumbing gets followed all the way to
 a waveform, and where the awkward fact that the joystick and the speaker
 share six pins turns from a footnote into a scheduling problem.
 
-Week 12, after that, follows PIA1's *other* pins — the ones this chapter
+Chapter 12, after that, follows PIA1's *other* pins — the ones this chapter
 only named — into a cassette deck, where a single input bit and a single
 output bit carry a complete frequency-shift-keyed modem, demodulated in
 software by a ROM that has no idea it is being emulated.
