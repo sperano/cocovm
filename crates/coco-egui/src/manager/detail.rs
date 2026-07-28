@@ -11,8 +11,8 @@ use eframe::egui;
 use crate::{machine_def, new_vm};
 
 use super::{
-    vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, PAUSE_GLYPH,
-    PLAY_GLYPH, STOP_GLYPH, SUSPEND_DISABLED_HOVER,
+    vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, PLAY_GLYPH,
+    STOP_GLYPH, SUSPEND_GLYPH, SUSPEND_HOVER,
 };
 
 /// [`ManagerApp::record_media_choice`]'s auto-placed cassette file name, for
@@ -34,8 +34,8 @@ fn blank_vhd_file(drive: usize) -> String {
 /// Fat transport-button geometry: minimum button size and glyph point size.
 const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(56.0, 40.0);
 const TRANSPORT_GLYPH_SIZE: f32 = 24.0;
-/// Gap separating the transport pair from the console-style buttons
-/// (Suspend/Reset) and the status label.
+/// Gap separating the transport trio from the console Reset button and the
+/// status label.
 const TRANSPORT_GROUP_GAP: f32 = 12.0;
 
 /// One fat transport button ([`TRANSPORT_BUTTON_SIZE`]).
@@ -150,9 +150,12 @@ impl ManagerApp {
             .show(ui, |ui| {
                 edit.form.rows(ui);
             });
-        if self.entries[index].vm.is_some() {
+        if self.entries[index].vm.is_some() || self.entries[index].suspended {
             ui.add_space(DETAIL_SECTION_GAP);
-            ui.small("Changes apply the next time this machine starts.");
+            // Resume restores the frozen snapshot's hardware wholesale, so
+            // for a suspended machine even Resume won't pick edits up —
+            // only a cold start from power off does.
+            ui.small("Changes apply the next time this machine starts from power off.");
         }
 
         self.autosave(&slug, index, &mut edit);
@@ -179,41 +182,37 @@ impl ManagerApp {
         }
     }
 
-    /// Run controls (see the transport-glyph constants' doc for the
-    /// split-metaphor rationale): fat deck-style transport for execution,
-    /// ordinary buttons for Suspend (a placeholder until save-states land)
-    /// and the console Reset. `is_running` is copied out before the buttons
-    /// so the click handlers below can freely call `&mut self` methods
-    /// (`start_vm`/`stop_vm`/`toggle_running`) without fighting a borrow of
-    /// `self.entries[index].vm` still held by a `match` on it.
+    /// Run controls (see the transport-glyph constants' doc): the fat
+    /// deck-style transport covers the three machine states — ▶ powers on
+    /// (or resumes a suspended machine), ⏸ suspends, ⏹ powers off — with
+    /// the console Reset as an ordinary labeled button after it. State is
+    /// copied out before the buttons so the click handlers below can freely
+    /// call `&mut self` methods (`start_vm`/`resume_vm`/`suspend_vm`/
+    /// `stop_vm`) without fighting a borrow of `self.entries[index]`.
     fn draw_transport_row(&mut self, ui: &mut egui::Ui, index: usize) {
-        let is_running = self.entries[index].vm.as_ref().map(|vm| vm.is_running());
+        let suspended = self.entries[index].suspended;
+        let vm_alive = self.entries[index].vm.is_some();
+        let running = vm_alive && !suspended;
         ui.horizontal(|ui| {
-            // One Play/Pause toggle: ▶ starts a stopped machine or resumes
-            // a paused one; ⏸ pauses a running one.
-            let (glyph, hover) = match is_running {
-                None => (PLAY_GLYPH, "Start the machine"),
-                Some(true) => (
-                    PAUSE_GLYPH,
-                    "Pause emulation — freeze the machine in place; resume anytime. \
-                     Not saved: pausing does not survive quitting the manager.",
-                ),
-                Some(false) => (PLAY_GLYPH, "Resume emulation"),
-            };
-            if transport_button(ui, glyph, true).on_hover_text(hover).clicked() {
-                match is_running {
-                    None => self.start_vm(index),
-                    Some(_) => {
-                        if let Some(vm) = self.entries[index].vm.as_mut() {
-                            vm.toggle_running();
-                        }
-                    }
+            let play_hover =
+                if suspended { "Resume the machine from its frozen state" } else { "Start the machine" };
+            if transport_button(ui, PLAY_GLYPH, !running).on_hover_text(play_hover).clicked() {
+                if suspended {
+                    self.resume_vm(index, ui.ctx());
+                } else {
+                    self.start_vm(index);
                 }
             }
-            if transport_button(ui, STOP_GLYPH, is_running.is_some())
+            if transport_button(ui, SUSPEND_GLYPH, running)
+                .on_hover_text(SUSPEND_HOVER)
+                .clicked()
+            {
+                self.suspend_vm(index);
+            }
+            if transport_button(ui, STOP_GLYPH, vm_alive || suspended)
                 .on_hover_text(
                     "Shut down the machine — like flipping the power switch; \
-                     unsaved work inside it is lost",
+                     unsaved work inside it (and any suspended state) is lost",
                 )
                 .clicked()
             {
@@ -221,11 +220,8 @@ impl ManagerApp {
             }
 
             ui.add_space(TRANSPORT_GROUP_GAP);
-            let _ = ui
-                .add_enabled(false, egui::Button::new("Suspend"))
-                .on_disabled_hover_text(SUSPEND_DISABLED_HOVER);
             if ui
-                .add_enabled(is_running.is_some(), egui::Button::new("Reset"))
+                .add_enabled(running, egui::Button::new("Reset"))
                 .on_hover_text("Press the machine's reset button — the machine stays on")
                 .clicked()
                 && let Some(vm) = self.entries[index].vm.as_mut()

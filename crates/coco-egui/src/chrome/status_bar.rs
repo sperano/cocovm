@@ -5,8 +5,6 @@ impl CocoApp {
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(if self.running { "Running" } else { "Paused" });
-                ui.separator();
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 self.cart_status(ui);
                 self.rs232_status(ui);

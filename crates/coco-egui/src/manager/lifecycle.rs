@@ -10,7 +10,9 @@ use eframe::egui;
 
 use crate::machine_def;
 
-use super::{MachineEntry, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR};
+use super::{
+    suspend_state_path, MachineEntry, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR,
+};
 
 /// Display name (and slug source) of a freshly created machine
 /// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s
@@ -58,14 +60,13 @@ impl ManagerApp {
         }
     }
 
-    /// Detail pane's Start button: launch `entries[index]`'s *saved*
+    /// Play on a Powered Off machine: launch `entries[index]`'s *saved*
     /// definition (`crate::launch_machine`) — not the in-progress edit
     /// draft, which may hold changes the user hasn't saved yet (the small
     /// note next to the button in [`super::detail`]'s `draw_detail_ok` is
-    /// the only warning about that). A stopped entry always has `vm: None`,
-    /// so this only ever replaces `None` with `Some`; an entry that's
-    /// already running has no Start button to click (see the `is_running`
-    /// match in `draw_detail_ok`).
+    /// the only warning about that). A powered-off entry always has
+    /// `vm: None`, so this only ever replaces `None` with `Some`; callers
+    /// route a Running or Suspended entry elsewhere ([`Self::resume_vm`]).
     pub(super) fn start_vm(&mut self, index: usize) {
         let entry = &mut self.entries[index];
         entry.launch_error = None;
@@ -75,15 +76,110 @@ impl ManagerApp {
         }
     }
 
-    /// Stop button (and the VM window's own close box, via
-    /// [`super::vm_windows`]'s `draw_running_vms`): flush dirty disks/tape
-    /// back to their files — the same exit contract `CocoApp::on_exit` runs
-    /// for the direct-boot window — then drop the VM, returning the row to
-    /// Stopped.
-    pub(super) fn stop_vm(&mut self, index: usize) {
+    /// Suspend (the ⏸ transport button, Running machines only): freeze the
+    /// machine to disk and pause it in place. Order matters — the
+    /// screenshot first (the row preview must show the exact frozen frame),
+    /// then the state file (`CocoApp::save_state_to`, which flushes dirty
+    /// media itself as part of its contract), then the pause. A failed save
+    /// aborts the whole suspend: the machine stays Running and the error
+    /// lands in the transport row's error label (`launch_error` — same
+    /// label Start uses). The VM window deliberately stays open; closing it
+    /// is the user's choice ([`super::vm_windows`] just drops the VM object
+    /// for a suspended entry, the state being safe on disk).
+    pub(super) fn suspend_vm(&mut self, index: usize) {
+        let Some(root) = self.artifacts_root.clone() else {
+            self.entries[index].launch_error = Some(NO_CONFIG_DIR.to_string());
+            return;
+        };
+        if self.entries[index].vm.is_none() {
+            return;
+        }
         self.write_entry_thumbnail(index);
+        let path = suspend_state_path(&root, &self.entries[index].slug);
+        if let Some(dir) = path.parent()
+            && let Err(e) = fs::create_dir_all(dir)
+        {
+            self.entries[index].launch_error = Some(format!("{}: {e}", dir.display()));
+            return;
+        }
+        let entry = &mut self.entries[index];
+        let vm = entry.vm.as_mut().expect("checked Some above");
+        match vm.save_state_to(&path) {
+            Ok(()) => {
+                vm.set_running(false);
+                entry.suspended = true;
+                entry.launch_error = None;
+            }
+            Err(e) => entry.launch_error = Some(e),
+        }
+    }
+
+    /// Play on a Suspended machine: bring it back to Running. Two shapes —
+    /// the VM object may still be alive (suspend never closes the window),
+    /// in which case resuming is just un-pausing; or the window was closed
+    /// (VM dropped), in which case a fresh launch restores the frozen state
+    /// over itself (`CocoApp::load_state_from` replaces the machine
+    /// wholesale, so what the launch booted is irrelevant — it only has to
+    /// succeed). Either way a successful resume deletes the
+    /// [`super::SUSPEND_STATE_FILE`]: the running machine immediately
+    /// diverges from the frozen copy, and a stale file would misreport
+    /// Suspended after the next power-off. A failed relaunch/restore keeps
+    /// the file and the Suspended state — the frozen copy is still the
+    /// truth, and the error shows in the transport row.
+    pub(super) fn resume_vm(&mut self, index: usize, ctx: &egui::Context) {
+        let Some(root) = self.artifacts_root.clone() else {
+            self.entries[index].launch_error = Some(NO_CONFIG_DIR.to_string());
+            return;
+        };
+        let path = suspend_state_path(&root, &self.entries[index].slug);
+        if self.entries[index].vm.is_none() {
+            self.start_vm(index);
+            let entry = &mut self.entries[index];
+            let Some(vm) = entry.vm.as_mut() else {
+                return; // launch failed; start_vm already recorded the error
+            };
+            if let Err(e) = vm.load_state_from(&path, ctx) {
+                entry.vm = None;
+                entry.launch_error = Some(e);
+                return;
+            }
+        }
+        let entry = &mut self.entries[index];
+        entry.vm.as_mut().expect("alive or just restored").set_running(true);
+        entry.suspended = false;
+        entry.launch_error = None;
+        if let Err(e) = fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            // The machine IS running; a leftover state file is only a
+            // misleading label after the next power-off — worth a warning,
+            // not worth failing the resume.
+            tracing::warn!("could not remove {}: {e}", path.display());
+        }
+    }
+
+    /// Stop — the power switch (⏹ button, row context menu, and a *running*
+    /// VM window's close box via [`super::vm_windows`]'s
+    /// `draw_running_vms`): flush dirty disks/tape back to their files —
+    /// the same exit contract `CocoApp::on_exit` runs for the direct-boot
+    /// window — then drop the VM, returning the row to Powered Off. On a
+    /// Suspended machine (VM alive or not) this also discards the frozen
+    /// state file — powering off is explicitly "throw the saved state
+    /// away". The cached row preview is dropped with it: a powered-off row
+    /// shows the black placeholder, never a stale screenshot.
+    pub(super) fn stop_vm(&mut self, index: usize) {
         if let Some(mut vm) = self.entries[index].vm.take() {
             vm.flush_media();
+        }
+        let entry = &mut self.entries[index];
+        entry.suspended = false;
+        entry.thumbnail = None;
+        entry.thumbnail_load_attempted = false;
+        if let Some(root) = &self.artifacts_root
+            && let Err(e) = fs::remove_file(suspend_state_path(root, &entry.slug))
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("could not remove suspend state for '{}': {e}", entry.slug);
         }
     }
 

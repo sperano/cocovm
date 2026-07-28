@@ -14,11 +14,6 @@ impl CocoApp {
             ui.close();
         }
         ui.separator();
-        let run_label = if self.running { "Pause" } else { "Run" };
-        if ui.button(run_label).clicked() {
-            self.running = !self.running;
-            ui.close();
-        }
         if ui.button("Reset").clicked() {
             self.machine.reset();
             ui.close();

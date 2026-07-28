@@ -6,7 +6,7 @@ use eframe::egui;
 
 use crate::new_vm;
 use super::{
-    vm_status_label, CocoApp, ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, SUSPEND_DISABLED_HOVER,
+    vm_status_label, CocoApp, ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, SUSPEND_HOVER,
     THUMBNAIL_ASPECT, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL,
 };
 
@@ -70,14 +70,18 @@ impl ManagerApp {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let content_height = row_content_height(ui);
-                    // Preview priority: a live VM's framebuffer texture,
-                    // else the saved thumbnail.png loaded above, else the
-                    // bare placeholder fill.
-                    let texture = self.entries[i]
+                    // Preview by state: a live VM's framebuffer texture
+                    // (Running, or Suspended with its window still open —
+                    // the texture just stops changing, freezing the frame);
+                    // else a window-closed Suspended machine's saved
+                    // thumbnail.png loaded above; else — Powered Off — the
+                    // bare black placeholder, like a screen with no power.
+                    let entry = &self.entries[i];
+                    let texture = entry
                         .vm
                         .as_deref()
                         .and_then(CocoApp::framebuffer_texture)
-                        .or(self.entries[i].thumbnail.as_ref());
+                        .or(if entry.suspended { entry.thumbnail.as_ref() } else { None });
                     draw_row_thumbnail(ui, content_height, texture);
 
                     let def = &self.entries[i].def;
@@ -114,21 +118,36 @@ impl ManagerApp {
     /// selecting.
     fn draw_row_context_menu(&mut self, response: egui::Response, i: usize) {
         response.context_menu(|ui| {
-            let has_vm = self.entries[i].vm.is_some();
-            if ui.add_enabled(!has_vm, egui::Button::new("Start")).clicked() {
-                self.start_vm(i);
+            // Same enablement as the detail pane's transport row
+            // (`super::detail::draw_transport_row`), with Start/Resume as
+            // one item whose label follows the state, like the ▶ button.
+            let suspended = self.entries[i].suspended;
+            let vm_alive = self.entries[i].vm.is_some();
+            let running = vm_alive && !suspended;
+            let start_label = if suspended { "Resume" } else { "Start" };
+            if ui.add_enabled(!running, egui::Button::new(start_label)).clicked() {
+                if suspended {
+                    self.resume_vm(i, ui.ctx());
+                } else {
+                    self.start_vm(i);
+                }
                 ui.close();
             }
-            let _ = ui
-                .add_enabled(false, egui::Button::new("Suspend"))
-                .on_disabled_hover_text(SUSPEND_DISABLED_HOVER);
-            if ui.add_enabled(has_vm, egui::Button::new("Reset")).clicked() {
+            if ui
+                .add_enabled(running, egui::Button::new("Suspend"))
+                .on_hover_text(SUSPEND_HOVER)
+                .clicked()
+            {
+                self.suspend_vm(i);
+                ui.close();
+            }
+            if ui.add_enabled(running, egui::Button::new("Reset")).clicked() {
                 if let Some(vm) = self.entries[i].vm.as_mut() {
                     vm.machine.reset();
                 }
                 ui.close();
             }
-            if ui.add_enabled(has_vm, egui::Button::new("Stop")).clicked() {
+            if ui.add_enabled(vm_alive || suspended, egui::Button::new("Stop")).clicked() {
                 self.stop_vm(i);
                 ui.close();
             }

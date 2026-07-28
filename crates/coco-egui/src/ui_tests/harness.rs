@@ -128,8 +128,8 @@ pub(super) fn select_combo_at<S: 'static>(
 }
 
 /// Lowest-on-screen widget labelled `label` — the open-menu copy of a label
-/// the toolbar shows too ("Pause", "Reset"): the menu popup hangs below the
-/// toolbar row.
+/// the toolbar shows too ("Reset"): the menu popup hangs below the toolbar
+/// row.
 pub(super) fn lowest_by_label<'t>(harness: &'t AppHarness, label: &'t str) -> egui_kittest::Node<'t> {
     harness
         .get_all_by_label(label)

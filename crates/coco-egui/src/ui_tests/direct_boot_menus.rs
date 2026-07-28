@@ -13,35 +13,30 @@ use crate::*;
 
 use super::harness::*;
 
+/// The user-facing Run/Pause toggle is gone everywhere (three-state model,
+/// user decision 2026-07-27): no toolbar button, no Machine-menu item, no
+/// "Running"/"Paused" status-bar label — regression coverage against any of
+/// them creeping back.
 #[test]
-fn toolbar_pause_and_resume_update_the_status_bar() {
+fn pause_controls_are_gone_from_the_chrome() {
     let mut harness = boot_harness();
     assert!(harness.state().running);
-    harness.get_by_label("Running"); // status bar
+    assert!(harness.query_by_label("Pause").is_none(), "no toolbar Pause");
+    assert!(harness.query_by_label("Running").is_none(), "no status-bar run state");
 
-    // With no menu open, the toolbar's copy of the button is the only one.
-    click(&mut harness, "Pause");
-    assert!(!harness.state().running);
-    harness.get_by_label("Paused");
-
-    click(&mut harness, "Run");
-    assert!(harness.state().running);
-    harness.get_by_label("Running");
+    click(&mut harness, "Machine");
+    assert!(harness.query_by_label("Pause").is_none(), "no menu Pause");
+    // The console Reset survives — in the toolbar and the open menu alike.
+    assert!(label_exists(&harness, "Reset"));
 }
 
 #[test]
-fn machine_menu_pause_and_reset_keep_the_ui_alive() {
+fn machine_menu_reset_keeps_the_ui_alive() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    click_in_menu(&mut harness, "Pause");
-    assert!(!harness.state().running);
-
-    // Reset while paused: the machine restarts but stays paused — the two
-    // controls are independent, like the reset button on the real case.
-    click(&mut harness, "Machine");
     click_in_menu(&mut harness, "Reset");
-    assert!(!harness.state().running);
+    assert!(harness.state().running, "Reset leaves the machine on");
     assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
 }
 

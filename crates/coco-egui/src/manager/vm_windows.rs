@@ -38,10 +38,12 @@ impl ManagerApp {
     ///
     /// Close requests (the native window's close box, or the embedded
     /// fallback's `egui::Window` close button) are collected into a list and
-    /// applied with [`Self::stop_vm`] after the loop — `stop_vm` needs
-    /// `&mut self.entries[i]`, which would conflict with the `vm` this loop
-    /// already holds taken out of that same slot for the duration of the
-    /// viewport closure.
+    /// applied after the loop — for a Running machine the close box IS the
+    /// power switch ([`Self::stop_vm`]); for a Suspended one it merely
+    /// drops the VM object, the frozen state staying on disk. Deferred
+    /// because `stop_vm` needs `&mut self.entries[i]`, which would conflict
+    /// with the `vm` this loop already holds taken out of that same slot
+    /// for the duration of the viewport closure.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
         let mut to_stop: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
@@ -115,7 +117,17 @@ impl ManagerApp {
             }
         }
         for i in to_stop {
-            self.stop_vm(i);
+            if self.entries[i].suspended {
+                // Closing a *suspended* machine's window is not the power
+                // switch — the frozen state is already safe on disk
+                // (`save_state_to` flushed dirty media as part of Suspend,
+                // and the paused machine can't have dirtied anything
+                // since), so just drop the VM object; the row keeps showing
+                // its suspend-time screenshot.
+                self.entries[i].vm = None;
+            } else {
+                self.stop_vm(i);
+            }
         }
     }
 }

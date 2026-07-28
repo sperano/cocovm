@@ -283,17 +283,21 @@ impl CocoApp {
         self.write_back_tape();
     }
 
-    /// Toggle Run/Pause, the same assignment the toolbar and Machine-menu
-    /// "Pause"/"Run" buttons perform in [`Self::draw_chrome`] — exposed so
-    /// the manager's detail-pane Pause/Resume button can drive a VM it
-    /// doesn't otherwise reach into (`running` has no `pub` visibility).
-    pub(crate) fn toggle_running(&mut self) {
-        self.running = !self.running;
+    /// Set whether emulation advances — exposed so the manager's
+    /// Suspend/Resume can freeze and un-freeze a VM it doesn't otherwise
+    /// reach into (`running` has no `pub` visibility). The old user-facing
+    /// Run/Pause toggle is gone (three-state model, user decision
+    /// 2026-07-27); besides suspend, only the debugger still stops the
+    /// clock, and it assigns `running` directly.
+    pub(crate) fn set_running(&mut self, running: bool) {
+        self.running = running;
     }
 
-    /// Whether the VM is currently running (vs. paused) — the manager's
-    /// list-row and detail-pane status label reads this instead of the
-    /// (never-persisted) `Stopped` placeholder every row used to show.
+    /// Whether emulation is currently advancing (vs. frozen by Suspend or
+    /// the debugger). Test-only since the user-facing Run/Pause chrome went
+    /// away: production code drives `running` through [`Self::set_running`]
+    /// and never needs to read it back.
+    #[cfg(test)]
     pub(crate) fn is_running(&self) -> bool {
         self.running
     }
