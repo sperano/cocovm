@@ -847,16 +847,17 @@ module doc frames the whole thing as one discipline applied consistently:
 //! [`DebuggerPanel`] owns the `coco_core::debug::Debugger` (breakpoints,
 //! watchpoints, trace ring) and is the single entry point `CocoApp::update`
 //! drives the per-field run loop through ([`DebuggerPanel::run_field`]) so a
-//! tripped breakpoint or watchpoint pauses the emulator the same way the
-//! Run/Pause button does, rather than needing a second "why did we stop"
+//! tripped breakpoint or watchpoint pauses the emulator through the same
+//! `running` flag the debugger's own Run/Pause control drives, rather than
+//! needing a second "why did we stop"
 //! flag.
 ```
 
-"The same way the Run/Pause button does, rather than needing a second 'why
-did we stop' flag" is worth sitting with: `DebuggerPanel::run_field` returns
-a plain `bool` — `true` means "field completed normally, keep the app's
-existing `running` state as-is," `false` means "stop, as if Pause were
-clicked":
+"Through the same `running` flag, rather than needing a second 'why did we
+stop' flag" is worth sitting with: `DebuggerPanel::run_field` returns a
+plain `bool` — `true` means "field completed normally, keep the app's
+existing `running` state as-is," `false` means "stop, exactly as the
+debugger panel's own Pause control would":
 
 ```rust
 pub fn run_field(&mut self, machine: &mut Machine) -> bool {
@@ -898,7 +899,7 @@ different price for its answer.
 **Step In** is the primitive everyone pictures when they hear the word
 "debugger": advance by exactly one instruction and stop. Its implementation is
 five lines, and the loop in it exists for a single reason
-([`debugger.rs:188-199`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L188-L199)):
+([`debugger.rs:190-201`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L190-L201)):
 
 ```rust
     /// Step In: exactly one retired instruction, skipping over (not stopping
@@ -935,7 +936,7 @@ instruction into a step you explicitly asked for, would be noise.
 **Step Over** is the first primitive that has to *understand* the instruction
 in front of it, and the way it acquires that understanding is chapter 3's
 disassembler
-([`debugger.rs:201-213`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L201-L213)):
+([`debugger.rs:203-215`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L203-L215)):
 
 ```rust
     /// Step Over: temp-breakpoints past a call instruction (JSR/BSR/LBSR) so
@@ -973,7 +974,7 @@ breakpoint wants.
 
 **Step Out** is the primitive that breaks the pattern, and it does so
 deliberately and with a documented cost
-([`debugger.rs:215-231`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L215-L231)):
+([`debugger.rs:217-233`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L217-L233)):
 
 ```rust
     /// Step Out: run until S rises past its value at the start of the call
@@ -1020,7 +1021,7 @@ known — which is, circularly, what Step Out exists to find out.
 **Step Scanline** is the one primitive with no counterpart in a general-purpose
 debugger, and it exists because this is an emulator for a machine whose
 interesting behaviour is organized by raster line
-([`debugger.rs:233-243`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L233-L243)):
+([`debugger.rs:235-245`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L235-L245)):
 
 ```rust
     /// Step Scanline: run until the current scanline counter changes (a
@@ -1088,7 +1089,7 @@ workspace behind your back.
 `run_until_stop` in the middle of that function is the third of this module's
 three run loops, and comparing it with `run_field` from a page ago is the
 clearest way to see why both exist
-([`debugger.rs:158-170`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L158-L170)):
+([`debugger.rs:160-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/debugger.rs#L160-L172)):
 
 ```rust
     /// Chain `run_until` calls the same way [`Self::run_field`] does, but
