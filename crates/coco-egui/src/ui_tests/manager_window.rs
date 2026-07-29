@@ -50,7 +50,7 @@ fn cmd_n_creates_a_machine_immediately() {
         1,
         "Cmd/Ctrl+N must create a machine immediately in the manager"
     );
-    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(harness.state().selection.single(), Some(0));
     assert!(dir.path().join("coco-3.toml").is_file());
 }
 
@@ -150,11 +150,11 @@ fn manager_list_shows_entries_and_selecting_shows_detail() {
     assert_eq!(harness.state().detail_name(), None, "nothing selected yet");
 
     click(&mut harness, "Beta CoCo 3");
-    assert_eq!(harness.state().selected, Some(1));
+    assert_eq!(harness.state().selection.single(), Some(1));
     assert_eq!(harness.state().detail_name(), Some("Beta CoCo 3"));
 
     click(&mut harness, "Alpha CoCo 3");
-    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(harness.state().selection.single(), Some(0));
     assert_eq!(
         harness.state().detail_name(),
         Some("Alpha CoCo 3"),
@@ -173,7 +173,7 @@ fn manager_click_below_the_list_clears_the_selection() {
     let mut harness = manager_harness(None, entries);
 
     click(&mut harness, "Alpha CoCo 3");
-    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(harness.state().selection.single(), Some(0));
     assert_eq!(harness.state().detail_name(), Some("Alpha CoCo 3"));
 
     let empty_spot = egui::pos2(100.0, 650.0);
@@ -185,7 +185,7 @@ fn manager_click_below_the_list_clears_the_selection() {
     harness.step();
     harness.step();
 
-    assert_eq!(harness.state().selected, None, "empty-space click must deselect");
+    assert_eq!(harness.state().selection.single(), None, "empty-space click must deselect");
     assert_eq!(harness.state().detail_name(), None, "detail draft must be dropped");
 }
 
@@ -201,18 +201,18 @@ fn manager_row_right_click_opens_context_menu_without_selecting() {
     assert!(harness.query_by_label("Show config").is_none(), "menu must start closed");
 
     click(&mut harness, "Alpha CoCo 3");
-    assert_eq!(harness.state().selected, Some(0));
+    assert_eq!(harness.state().selection.single(), Some(0));
 
     right_click(&mut harness, "Beta CoCo 3");
     assert_eq!(
-        harness.state().selected,
+        harness.state().selection.single(),
         Some(0),
         "right-click must leave the selection cue where it was"
     );
 
     click(&mut harness, "Show config");
     assert_eq!(
-        harness.state().selected,
+        harness.state().selection.single(),
         Some(1),
         "Show config selects the right-clicked row, not the old selection"
     );
@@ -232,7 +232,7 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), entries);
 
     click(&mut harness, "Beta CoCo 3");
-    assert_eq!(harness.state().selected, Some(1));
+    assert_eq!(harness.state().selection.single(), Some(1));
 
     right_click(&mut harness, "Alpha CoCo 3");
     click(&mut harness, "Delete…");
@@ -246,6 +246,11 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
     assert_eq!(harness.state().entries.len(), 1);
     assert!(!dir.path().join("alpha.toml").exists(), "the definition file must be removed");
     assert!(dir.path().join("beta.toml").exists(), "only the confirmed machine is deleted");
+    assert_eq!(
+        harness.state().selection.single(),
+        Some(0),
+        "the selection must follow the surviving row as indices shift, not be cleared"
+    );
     assert_eq!(
         harness.state().detail_name(),
         Some("Beta CoCo 3"),
@@ -276,7 +281,7 @@ fn manager_new_creates_a_definition_file_immediately() {
     let parsed: machine_def::MachineDef =
         toml::from_str(&contents).expect("New must write a parseable definition");
     assert_eq!(parsed.name, "CoCo 3");
-    assert_eq!(harness.state().selected, Some(0), "New must select the new row");
+    assert_eq!(harness.state().selection.single(), Some(0), "New must select the new row");
     // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
     // form has its own "CoCo 3" Machine combo button, so the name would be
     // ambiguous between that and the list row.
@@ -368,6 +373,6 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
         "the artifact dir must follow the slug"
     );
     assert!(!artifacts.path().join("alpha").exists());
-    assert_eq!(harness.state().selected, Some(0), "selection follows the renamed row");
+    assert_eq!(harness.state().selection.single(), Some(0), "selection follows the renamed row");
     assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
 }

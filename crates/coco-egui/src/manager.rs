@@ -25,9 +25,14 @@ use eframe::egui;
 use crate::photo_view::{self, Photo};
 use crate::{machine_def, new_vm, CocoApp};
 
+use selection::Selection;
+
+mod bulk;
+mod delete;
 mod detail;
 mod lifecycle;
 mod list;
+mod selection;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
@@ -89,6 +94,15 @@ pub(crate) const PLAY_GLYPH: &str = "▶";
 pub(crate) const SUSPEND_GLYPH: &str = "⏸";
 pub(crate) const STOP_GLYPH: &str = "⏹";
 pub(crate) const RESET_GLYPH: &str = "↻";
+
+/// The "select all rows" shortcut (⌘A/Ctrl+A) for the machine list —
+/// consumed only when no widget owns the keyboard
+/// ([`ManagerApp::update`]'s `ctx.wants_keyboard_input()` guard), so the
+/// detail pane's own text fields (the Name field, a future search box)
+/// keep their native select-all instead of it being hijacked into a
+/// row-selection command.
+const SELECT_ALL_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A);
 
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).
@@ -163,6 +177,29 @@ impl MachineEntry {
             thumbnail_load_attempted: false,
             rename_pending: false,
         }
+    }
+
+    /// Whether this machine is currently Running — a live VM, not paused
+    /// for Suspend. The single most common predicate in the manager (every
+    /// transport surface gates on it); spelled out once here so the several
+    /// places that draw a Play/Suspend/Stop/Reset control can't drift on
+    /// what "running" means.
+    pub(crate) fn is_running(&self) -> bool {
+        self.vm.is_some() && !self.suspended
+    }
+
+    /// Whether this machine is anything other than Powered Off — Running,
+    /// or Suspended (VM object alive or already dropped, window-closed
+    /// style). Gates Stop, which has something to do in either case.
+    pub(crate) fn is_alive(&self) -> bool {
+        self.vm.is_some() || self.suspended
+    }
+
+    /// Whether Play has something to do: the machine isn't already Running
+    /// (it's either Powered Off, needing a Start, or Suspended, needing a
+    /// Resume).
+    pub(crate) fn is_startable(&self) -> bool {
+        !self.is_running()
     }
 }
 
@@ -266,9 +303,15 @@ pub struct ManagerApp {
     /// `CocoApp` in the crate root uses) aren't visible from that sibling
     /// module.
     pub(crate) entries: Vec<MachineEntry>,
-    pub(crate) selected: Option<usize>,
-    /// The right pane's edit state for `selected`. `None` while nothing is
-    /// selected.
+    /// Which rows are selected — zero, one, or many (`manager/selection.rs`).
+    /// `pub(crate)`: `ui_tests` asserts on it directly, same reason as
+    /// `entries`.
+    pub(crate) selection: Selection,
+    /// The right pane's edit state for [`Selection::single`]. `None` while
+    /// nothing, or more than one row, is selected — edit state only makes
+    /// sense for one machine at a time, so every selection change that
+    /// leaves the count at anything but 1 clears this
+    /// (`manager/list.rs`'s click handler).
     edit: Option<EditState>,
     /// Focus the detail pane's Name field on its next draw — set by "New…"
     /// so the natural next gesture after creating is typing the real name.
@@ -276,13 +319,13 @@ pub struct ManagerApp {
     /// Message from the last failed Save, shown under the Save/Revert row
     /// until the next attempt or a fresh selection.
     save_error: Option<String>,
-    /// Slug of the entry a context menu's "Delete…" was clicked for — a
-    /// confirmation modal ([`Self::draw_delete_confirmation`]) shows while
-    /// this is `Some`. Slug, not index: rows can shift under a pending
-    /// confirmation (another instance's file picked up on a future reload,
-    /// a Create landing before it alphabetically), and deleting the wrong
-    /// row is the one mistake this dialog exists to prevent.
-    pending_delete: Option<String>,
+    /// Slugs of the entries a "Delete…" (single- or multi-row) was clicked
+    /// for — a confirmation modal ([`Self::draw_delete_confirmation`]) shows
+    /// while this is non-empty. Slugs, not indices: rows can shift under a
+    /// pending confirmation (another instance's file picked up on a future
+    /// reload, a Create landing before it alphabetically), and deleting the
+    /// wrong row is the one mistake this dialog exists to prevent.
+    pending_delete: Vec<String>,
     /// Message from the last failed delete, shown inside the confirmation
     /// modal (which stays open for another try or a Cancel).
     delete_error: Option<String>,
@@ -312,11 +355,11 @@ impl ManagerApp {
             machines_dir,
             artifacts_root,
             entries,
-            selected: None,
+            selection: Selection::default(),
             edit: None,
             focus_name: false,
             save_error: None,
-            pending_delete: None,
+            pending_delete: Vec::new(),
             delete_error: None,
         }
     }
@@ -356,6 +399,15 @@ impl eframe::App for ManagerApp {
             self.create_machine_now();
         }
 
+        // ⌘A / Ctrl+A = select every row — but never while a widget (the
+        // Name field, a combo…) already owns the keyboard, so this doesn't
+        // hijack a text field's own native select-all.
+        if !ctx.wants_keyboard_input()
+            && ctx.input_mut(|i| i.consume_shortcut(&SELECT_ALL_SHORTCUT))
+        {
+            self.select_all_rows();
+        }
+
         // Toolbar: the manager actions (`toolbar.rs`).
         egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
             self.draw_toolbar(ui);
@@ -372,23 +424,28 @@ impl eframe::App for ManagerApp {
                 self.draw_machine_list(ui);
             });
 
-        // Right pane: the selected machine's detail/edit form, or — with
-        // nothing selected — a random photo asset, centered and scaled to
-        // fit.
+        // Right pane: the selected machine's detail/edit form, the bulk
+        // pane with more than one selected, or — with nothing selected — a
+        // random photo asset, centered and scaled to fit.
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(index) = self.selected {
+            if self.selection.is_empty() {
+                if let Some(texture) = &self.photo_texture {
+                    ui.centered_and_justified(|ui| {
+                        ui.add(
+                            egui::Image::new(texture)
+                                .max_size(ui.available_size())
+                                .maintain_aspect_ratio(true),
+                        );
+                    });
+                }
+            } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     egui::Frame::NONE
                         .inner_margin(egui::Margin::same(DETAIL_PANE_MARGIN))
-                        .show(ui, |ui| self.draw_detail(ui, index));
-                });
-            } else if let Some(texture) = &self.photo_texture {
-                ui.centered_and_justified(|ui| {
-                    ui.add(
-                        egui::Image::new(texture)
-                            .max_size(ui.available_size())
-                            .maintain_aspect_ratio(true),
-                    );
+                        .show(ui, |ui| match self.selection.single() {
+                            Some(index) => self.draw_detail(ui, index),
+                            None => self.draw_bulk_detail(ui),
+                        });
                 });
             }
         });

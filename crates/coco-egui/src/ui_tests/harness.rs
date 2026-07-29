@@ -65,6 +65,22 @@ pub(super) fn right_click<S: 'static>(harness: &mut egui_kittest::Harness<'stati
     harness.step();
 }
 
+/// [`click`] with `modifiers` held down for the press/release — Cmd/Ctrl-
+/// click and Shift-click on a machine-list row (`egui_kittest::Node::
+/// click_modifiers`, which both applies and then resets the modifiers, so
+/// nothing leaks into whatever's clicked next).
+pub(super) fn click_modifiers<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    label: &str,
+    modifiers: egui::Modifiers,
+) {
+    harness.get_by_label(label).hover();
+    harness.step();
+    harness.get_by_label(label).click_modifiers(modifiers);
+    harness.step();
+    harness.step();
+}
+
 /// [`click`] matching by substring — for widgets whose accessible label
 /// carries decoration beyond the visible caption, like submenu buttons'
 /// trailing arrow ("MultiPak Interface ⏵", "Slot 1 ⏵").
