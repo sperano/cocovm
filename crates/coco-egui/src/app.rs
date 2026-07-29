@@ -129,9 +129,6 @@ pub(crate) struct CocoApp {
     /// over the core's monotonic activity counters, plus the cassette reel
     /// angle (`status_icons.rs`). Purely UI state — not serialized, not
     /// touched by save/load state.
-    // Read starting from the reel-spin commit (`tape_reel_angle`); until
-    // then rustc sees the whole field as dead.
-    #[allow(dead_code)]
     pub(crate) activity: StatusActivity,
 }
 

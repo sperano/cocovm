@@ -57,3 +57,39 @@ fn same_value_reobserved_within_hold_stays_lit() {
     // doesn't cut it short either.
     assert!(latch.observe_at(11, at(base, 50)));
 }
+
+const TAU: f32 = std::f32::consts::TAU;
+
+#[test]
+fn reel_advances_forward_with_playback_position() {
+    let (angle, last_pos) = next_reel_angle(0.0, 100, 110, true, 0.0);
+    assert_eq!(last_pos, 110);
+    assert!((angle - 10.0 * REEL_ANGLE_PER_BYTE).abs() < 1e-6);
+}
+
+#[test]
+fn reel_spins_backward_on_rewind() {
+    let (angle, last_pos) = next_reel_angle(0.0, 110, 100, true, 0.0);
+    assert_eq!(last_pos, 100);
+    // Rewinding 10 bytes must turn the reel the opposite way, wrapped into
+    // 0..TAU (a bare negative angle would be a bug: the icon compares raw
+    // radians, and comparisons must stay well-defined across a rewind).
+    let expected = (-10.0 * REEL_ANGLE_PER_BYTE).rem_euclid(TAU);
+    assert!((angle - expected).abs() < 1e-6);
+}
+
+#[test]
+fn reel_keeps_turning_while_parked_with_motor_running() {
+    // Position didn't move (CSAVE never advances it) but the motor's on:
+    // the reel still turns, at RECORD_REEL_SPEED.
+    let (angle, last_pos) = next_reel_angle(0.0, 50, 50, true, 0.5);
+    assert_eq!(last_pos, 50);
+    assert!((angle - RECORD_REEL_SPEED * 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn reel_parks_when_motor_is_off_and_position_is_unchanged() {
+    let (angle, last_pos) = next_reel_angle(1.23, 50, 50, false, 0.5);
+    assert_eq!(last_pos, 50);
+    assert_eq!(angle, 1.23);
+}

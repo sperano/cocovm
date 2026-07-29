@@ -49,6 +49,66 @@ pub(crate) const TAPE_ICON_SIZE: egui::Vec2 = egui::vec2(18.0, 13.0);
 /// Corner rounding of the cassette shell.
 pub(crate) const TAPE_ICON_CORNER: f32 = 1.5;
 
+/// Radius of each reel's punched hub circle, as drawn by [`cassette_icon`].
+const REEL_HUB_R: f32 = TAPE_ICON_SIZE.y * 0.20;
+
+/// Reel rotation credited per tape byte of playback movement (CLOAD/CSAVE
+/// read position advancing or rewinding — [`crate::CocoApp::tape_status`]'s
+/// `cassette.position()`). Not a physically accurate angular rate (a real
+/// reel's angular speed changes with how much tape is spooled on it) — this
+/// is a status-icon approximation picked so a reel visibly turns at typical
+/// CLOAD speeds (one full turn per 40 bytes) without spinning distractingly
+/// fast.
+const REEL_ANGLE_PER_BYTE: f32 = std::f32::consts::TAU / 40.0;
+
+/// Reel rotation speed, in radians/second, while the motor runs but the
+/// tape position isn't moving: CSAVE (recording never advances
+/// `Cassette::position`'s `pos`) and the brief motor spin-up before
+/// playback position starts moving. Picked to look like a cassette motor at
+/// speed, not calibrated against a real deck.
+const RECORD_REEL_SPEED: f32 = std::f32::consts::TAU * 0.8;
+
+/// Number of spokes drawn on each reel hub.
+const REEL_SPOKE_COUNT: u32 = 3;
+
+/// Spoke length, as a fraction of [`REEL_HUB_R`].
+const REEL_SPOKE_LEN_FRAC: f32 = 0.85;
+
+/// Advance the cassette status icon's reel angle by one frame. Pure
+/// (doesn't touch `ui` or `self`) so it can be unit-tested directly; called
+/// from `tape_status` with the app's stored angle/position and the frame's
+/// `dt`, and the returned angle/position are stored back.
+///
+/// - If tape position moved since last frame (`pos != last_pos`), the reels
+///   turn by the moved distance (`REEL_ANGLE_PER_BYTE` per byte) — forward
+///   for playback, backward for a rewind. `pos` and `last_pos` are byte
+///   offsets (never negative), so the signed distance moved is recovered by
+///   reinterpreting a wrapping subtraction as `isize` rather than by
+///   subtracting directly, which would panic/wrap on a rewind.
+/// - Else, if the motor is running (position parked but the relay is
+///   closed — CSAVE, or spin-up before playback moves), the reels keep
+///   turning at [`RECORD_REEL_SPEED`].
+/// - Else (motor off), the angle is unchanged: the reels park.
+///
+/// The returned angle is wrapped into `0..TAU`.
+pub(crate) fn next_reel_angle(
+    angle: f32,
+    last_pos: usize,
+    pos: usize,
+    motor: bool,
+    dt: f32,
+) -> (f32, usize) {
+    let angle = if pos != last_pos {
+        let delta = pos.wrapping_sub(last_pos) as isize;
+        angle + delta as f32 * REEL_ANGLE_PER_BYTE
+    } else if motor {
+        angle + dt * RECORD_REEL_SPEED
+    } else {
+        angle
+    };
+    (angle.rem_euclid(std::f32::consts::TAU), pos)
+}
+
 /// UI-side pulse stretcher over a monotonic activity counter (bytes sent,
 /// sectors read, …): turns "the counter changed at some point" into a
 /// boolean an icon can light for [`ACTIVITY_HOLD`] after the fact, since a
@@ -126,21 +186,20 @@ pub(crate) struct StatusActivity {
     pub(crate) rs232_rx: ActivityLatch,
     #[allow(dead_code)]
     pub(crate) printer: ActivityLatch,
-    /// Current cassette reel rotation, in radians (see `next_reel_angle`,
-    /// added alongside the spinning-reel detail).
-    #[allow(dead_code)]
+    /// Current cassette reel rotation, in radians (see [`next_reel_angle`]).
     pub(crate) tape_reel_angle: f32,
     /// Tape playback position (in tape bytes) as of the last frame's
-    /// `next_reel_angle` call, so the next frame can tell how far it moved.
-    #[allow(dead_code)]
+    /// [`next_reel_angle`] call, so the next frame can tell how far it moved.
     pub(crate) tape_last_pos: usize,
 }
 
 /// One status-bar cassette indicator (see [`TAPE_ICON_SIZE`]'s doc): the
 /// shell with the two reel hubs punched out in the panel's background
-/// color. `reel_angle` is accepted for the reel-spin detail added on top of
-/// this shell later; unused for now.
-pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, _reel_angle: f32) {
+/// color, each with [`REEL_SPOKE_COUNT`] spokes drawn back in the shell
+/// color at `reel_angle` — both reels always at the same angle, since real
+/// cassette reels are pulled by the same capstan/pinch-roller and co-rotate
+/// (linked by the tape between them, not independent motors).
+pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) {
     let (rect, _) = ui.allocate_exact_size(TAPE_ICON_SIZE, egui::Sense::hover());
     let shell = if active { ICON_ACTIVE } else { ICON_IDLE };
     let punch = ui.visuals().panel_fill;
@@ -150,9 +209,24 @@ pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, _reel_angle: f32) {
     // occupies a real shell's bottom edge, unreadable at this size).
     let hub_y = rect.center().y - TAPE_ICON_SIZE.y * 0.08;
     let hub_dx = TAPE_ICON_SIZE.x * 0.22;
-    let hub_r = TAPE_ICON_SIZE.y * 0.20;
-    painter.circle_filled(egui::pos2(rect.center().x - hub_dx, hub_y), hub_r, punch);
-    painter.circle_filled(egui::pos2(rect.center().x + hub_dx, hub_y), hub_r, punch);
+    for hub_x in [rect.center().x - hub_dx, rect.center().x + hub_dx] {
+        let hub = egui::pos2(hub_x, hub_y);
+        painter.circle_filled(hub, REEL_HUB_R, punch);
+        draw_reel_spokes(painter, hub, reel_angle, shell);
+    }
+}
+
+/// The spokes punched back into a reel hub in `color` (the shell color),
+/// evenly spaced around `reel_angle` — see [`next_reel_angle`] for how the
+/// angle advances frame to frame.
+fn draw_reel_spokes(painter: &egui::Painter, hub: egui::Pos2, reel_angle: f32, color: egui::Color32) {
+    let len = REEL_HUB_R * REEL_SPOKE_LEN_FRAC;
+    let stroke = egui::Stroke::new(1.0f32, color);
+    for k in 0..REEL_SPOKE_COUNT {
+        let theta = reel_angle + k as f32 * std::f32::consts::TAU / REEL_SPOKE_COUNT as f32;
+        let tip = hub + len * egui::vec2(theta.cos(), theta.sin());
+        painter.line_segment([hub, tip], stroke);
+    }
 }
 
 /// One status-bar floppy activity indicator (see [`DRIVE_ICON_SIZE`]'s

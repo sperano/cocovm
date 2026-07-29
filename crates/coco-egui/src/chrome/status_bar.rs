@@ -104,20 +104,30 @@ impl CocoApp {
         }
     }
 
-    fn tape_status(&self, ui: &mut egui::Ui) {
+    fn tape_status(&mut self, ui: &mut egui::Ui) {
         let Some(path) = &self.tape_path else { return };
-        let cassette = &self.machine.bus.cassette;
         // The icon reddens while the motor runs (relay closed —
         // CLOAD/CSAVE/MOTOR ON); the counter is the playback position in
         // tape bytes; "*" as for floppies.
         let motor = self.machine.bus.pia1.a.c2_output();
-        let (pos, len) = cassette.position();
+        let (pos, len) = self.machine.bus.cassette.position();
+        let dirty = self.machine.bus.cassette.dirty();
+        let dt = ui.input(|i| i.stable_dt);
+        let (angle, last_pos) = status_icons::next_reel_angle(
+            self.activity.tape_reel_angle,
+            self.activity.tape_last_pos,
+            pos,
+            motor,
+            dt,
+        );
+        self.activity.tape_reel_angle = angle;
+        self.activity.tape_last_pos = last_pos;
         ui.separator();
-        cassette_icon(ui, motor, 0.0);
+        cassette_icon(ui, motor, angle);
         ui.label(format!(
             "Tape: {}{} [{pos}/{len}]",
             file_name(path),
-            dirty_mark(cassette.dirty())
+            dirty_mark(dirty)
         ));
     }
 }
