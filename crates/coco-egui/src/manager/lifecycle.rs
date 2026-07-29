@@ -7,13 +7,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use coco_core::MachineConfig;
-use eframe::egui;
 
 use crate::machine_def;
 
 use super::{
-    suspend_state_path, MachineEntry, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, NO_DATA_DIR,
-    SUSPEND_STATE_FILE, THUMBNAIL_FILE,
+    suspend_state_path, MachineEntry, ManagerApp, NO_CONFIG_DIR, NO_DATA_DIR, SUSPEND_STATE_FILE,
+    THUMBNAIL_FILE,
 };
 
 /// Display name (and slug source) of a freshly created machine
@@ -53,7 +52,7 @@ impl ManagerApp {
             Ok(()) => {
                 let index = self.entries.partition_point(|e| e.slug < slug);
                 self.entries.insert(index, MachineEntry::new(slug, def));
-                self.selected = Some(index);
+                self.selection.set_single(index);
                 self.edit = None; // seeded from the new entry on next draw
                 self.focus_name = true;
                 self.save_error = None;
@@ -208,8 +207,8 @@ impl ManagerApp {
     /// machine's `suspended.ccstate` records the media's absolute
     /// pre-rename paths (`save_state_to`'s `MediaRefs`), so moving the
     /// directory under it would make the frozen state unrestorable; callers
-    /// guard on both. The list is re-sorted afterwards, with `selected`,
-    /// the edit state, and a pending delete all following their entry.
+    /// guard on both. The list is re-sorted afterwards, with the selection,
+    /// the edit state, and every pending delete all following their entry.
     fn migrate_slug(&mut self, index: usize) {
         self.entries[index].rename_pending = false;
         let Some(dir) = self.machines_dir.clone() else {
@@ -248,20 +247,20 @@ impl ManagerApp {
         }
         self.entries[index].slug = new.clone();
         // Keep the list alphabetical and every slug-keyed pointer valid.
-        let selected_slug = self.selected.map(|s| self.entries[s].slug.clone());
+        let selection_snapshot = self.selection.snapshot(&self.entries);
         let entry = self.entries.remove(index);
         let at = self.entries.partition_point(|e| e.slug < entry.slug);
         self.entries.insert(at, entry);
-        if let Some(slug) = selected_slug {
-            self.selected = self.entries.iter().position(|e| e.slug == slug);
-        }
+        self.selection.restore(&self.entries, &selection_snapshot);
         if let Some(edit) = self.edit.as_mut()
             && edit.slug == old
         {
             edit.slug = new.clone();
         }
-        if self.pending_delete.as_deref() == Some(old.as_str()) {
-            self.pending_delete = Some(new);
+        for slug in &mut self.pending_delete {
+            if *slug == old {
+                *slug = new.clone();
+            }
         }
     }
 
@@ -284,107 +283,5 @@ impl ManagerApp {
         {
             self.migrate_slug(index);
         }
-    }
-
-    /// The confirmation modal behind the context menu's "Delete…"
-    /// ([`ManagerApp::pending_delete`]), drawn once per `update()`. Esc,
-    /// Cancel, and a click outside all dismiss without deleting; the confirm
-    /// button reads "Stop and Delete" when the machine is running (deleting
-    /// stops it first), and a suspended machine gets its own warning that
-    /// the frozen state is discarded — the modal's "media files stay on
-    /// disk" promise would otherwise read as covering it. A failed delete
-    /// reports its error inside the modal and leaves it open.
-    pub(super) fn draw_delete_confirmation(&mut self, ctx: &egui::Context) {
-        let Some(slug) = self.pending_delete.clone() else {
-            return;
-        };
-        let Some(index) = self.entries.iter().position(|e| e.slug == slug) else {
-            // The row vanished under the pending confirmation (see
-            // `pending_delete`'s doc) — nothing left to delete.
-            self.pending_delete = None;
-            return;
-        };
-        let suspended = self.entries[index].suspended;
-        let running = self.entries[index].vm.is_some() && !suspended;
-        let name = self.entries[index].def.name.clone();
-        let mut dismissed = false;
-        let modal = egui::Modal::new(egui::Id::new("confirm_delete_machine")).show(ctx, |ui| {
-            ui.heading(format!("Delete “{name}”?"));
-            ui.add_space(DETAIL_SECTION_GAP);
-            ui.label(
-                "The machine's definition is removed. Its disk, tape, and other \
-                 media files stay on disk.",
-            );
-            if running {
-                ui.label(
-                    egui::RichText::new(
-                        "This machine is running — it will be shut down first, like \
-                         flipping the power switch; unsaved work inside it is lost.",
-                    )
-                    .strong(),
-                );
-            }
-            if suspended {
-                ui.label(
-                    egui::RichText::new(
-                        "This machine is suspended — deleting discards its frozen \
-                         state.",
-                    )
-                    .strong(),
-                );
-            }
-            if let Some(err) = &self.delete_error {
-                ui.colored_label(ui.visuals().error_fg_color, err);
-            }
-            ui.add_space(DETAIL_SECTION_GAP);
-            ui.horizontal(|ui| {
-                let confirm = if running { "Stop and Delete" } else { "Delete" };
-                if ui.button(confirm).clicked() {
-                    self.delete_machine(index);
-                }
-                if ui.button("Cancel").clicked() {
-                    dismissed = true;
-                }
-            });
-        });
-        if dismissed || modal.should_close() {
-            self.pending_delete = None;
-            self.delete_error = None;
-        }
-    }
-
-    /// Confirmed delete of `entries[index]`: stop its VM if one is running
-    /// (same flush contract as the Stop button), remove its `<slug>.toml`,
-    /// and drop the row. Media/artifact files are deliberately left on disk
-    /// (the modal says so). Failure lands in [`Self::delete_error`] with the
-    /// entry kept, so the still-open modal can retry or cancel.
-    fn delete_machine(&mut self, index: usize) {
-        let Some(dir) = self.machines_dir.clone() else {
-            self.delete_error = Some(NO_CONFIG_DIR.to_string());
-            return;
-        };
-        let path = dir.join(format!("{}.toml", self.entries[index].slug));
-        // A file already gone (deleted externally since startup) is fine —
-        // the goal state "no definition on disk" is reached either way.
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                self.delete_error = Some(format!("{}: {e}", path.display()));
-                return;
-            }
-        }
-        self.stop_vm(index);
-        self.entries.remove(index);
-        match self.selected {
-            Some(s) if s == index => {
-                self.selected = None;
-                self.edit = None;
-            }
-            Some(s) if s > index => self.selected = Some(s - 1),
-            _ => {}
-        }
-        self.pending_delete = None;
-        self.delete_error = None;
     }
 }

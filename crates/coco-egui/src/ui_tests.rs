@@ -22,4 +22,5 @@ mod direct_boot_menus;
 mod harness;
 mod manager_lifecycle;
 mod manager_peripherals;
+mod manager_selection;
 mod manager_window;

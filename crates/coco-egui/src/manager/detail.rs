@@ -42,7 +42,9 @@ const TRANSPORT_GROUP_GAP: f32 = 12.0;
 /// accessible name (what a screen reader announces and what `ui_tests`
 /// address nodes by) — without it the name would be the raw glyph, and
 /// "clockwise open circle arrow" is nobody's idea of a Reset button.
-fn transport_button(
+/// `pub(super)`: [`super::bulk`]'s pane reuses it for the same four glyphs
+/// applied in bulk.
+pub(super) fn transport_button(
     ui: &mut egui::Ui,
     glyph: &str,
     label: &str,
@@ -199,7 +201,7 @@ impl ManagerApp {
         ui.add_space(DETAIL_SECTION_GAP);
 
         draw_form_sections(ui, &slug, &mut edit.form);
-        if self.entries[index].vm.is_some() || self.entries[index].suspended {
+        if self.entries[index].is_alive() {
             ui.add_space(DETAIL_SECTION_GAP);
             // Resume restores the frozen snapshot's hardware wholesale, so
             // for a suspended machine even Resume won't pick edits up —
@@ -241,8 +243,7 @@ impl ManagerApp {
     /// `self.entries[index]`.
     fn draw_transport_row(&mut self, ui: &mut egui::Ui, index: usize) {
         let suspended = self.entries[index].suspended;
-        let vm_alive = self.entries[index].vm.is_some();
-        let running = vm_alive && !suspended;
+        let running = self.entries[index].is_running();
         ui.horizontal(|ui| {
             // Each button also explains itself while disabled
             // (`on_disabled_hover_text` — a disabled `Response` never shows
@@ -271,7 +272,7 @@ impl ManagerApp {
             const STOP_HOVER: &str =
                 "Shut down the machine — like flipping the power switch; \
                  unsaved work inside it (and any suspended state) is lost";
-            if transport_button(ui, STOP_GLYPH, "Stop", vm_alive || suspended)
+            if transport_button(ui, STOP_GLYPH, "Stop", self.entries[index].is_alive())
                 .on_hover_text(STOP_HOVER)
                 .on_disabled_hover_text(STOP_HOVER)
                 .clicked()
