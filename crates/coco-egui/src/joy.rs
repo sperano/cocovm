@@ -71,6 +71,15 @@ pub struct JoystickInputs {
     /// pointer merely sits over the display); a gamepad port lights on any
     /// held button or an axis deflected past [`PAD_DEFLECT`]; a keyboard
     /// port lights on any of its six mapped keys; `None` never lights.
+    ///
+    /// For the mouse source specifically, [`mouse_in_use`] lights on
+    /// `primary_down`/`secondary_down` from anywhere in the egui input
+    /// state — not gated by pointer position over the display. This
+    /// matches [`Self::apply`]'s own button handling just above it (also
+    /// ungated by `display_rect`): the emulated fire button tracks whatever
+    /// the host mouse buttons are doing regardless of where the pointer
+    /// sits, so a click anywhere in the window lights this indicator too,
+    /// not only clicks over the CoCo display.
     pub in_use: [bool; 2],
 }
 
@@ -211,7 +220,7 @@ impl JoystickInputs {
                     machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
                     machine.bus.joysticks.set_button(stick, 0, keys.button0);
                     machine.bus.joysticks.set_button(stick, 1, keys.button1);
-                    keys_in_use(&keys)
+                    keys_in_use(keys)
                 }
             };
         }
@@ -264,7 +273,9 @@ fn gamepad_in_use(buttons: [bool; 2], axes: [f32; 2]) -> bool {
 }
 
 /// `JoySource::Keys`'s "in use" test: any of the six mapped keys held.
-fn keys_in_use(keys: &KeyState) -> bool {
+/// Takes `keys` by value, like [`gamepad_in_use`] takes its state — `KeyState`
+/// is `Copy`, so there's no reason to borrow it.
+fn keys_in_use(keys: KeyState) -> bool {
     keys.left || keys.right || keys.up || keys.down || keys.button0 || keys.button1
 }
 

@@ -7,7 +7,7 @@ impl CocoApp {
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                keyboard_icon(ui);
+                keyboard_icon(ui).on_hover_text("Keyboard input mode (F12 to toggle)");
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 self.cart_status(ui);
                 self.joystick_status(ui);
@@ -29,7 +29,7 @@ impl CocoApp {
     fn cart_status(&self, ui: &mut egui::Ui) {
         let Some(path) = &self.cart_path else { return };
         ui.separator();
-        cart_icon(ui);
+        cart_icon(ui).on_hover_text("Cartridge ROM pak");
         ui.label(format!("Cart: {}", file_name(path)));
     }
 
@@ -37,13 +37,14 @@ impl CocoApp {
     /// matching the Joysticks menu's "Right stick"/"Left stick" naming
     /// (`joy.rs`'s `menu_ui`), lit while that port is actively being driven.
     fn joystick_status(&self, ui: &mut egui::Ui) {
-        for (stick, prefix) in [(RIGHT, "JR"), (LEFT, "JL")] {
+        for (stick, prefix, side) in [(RIGHT, "JR", "right"), (LEFT, "JL", "left")] {
             let source = self.joysticks.sources[stick];
             if source == joy::JoySource::None {
                 continue;
             }
             ui.separator();
-            joystick_icon(ui, self.joysticks.in_use[stick]);
+            joystick_icon(ui, self.joysticks.in_use[stick])
+                .on_hover_text(format!("Joystick {side} — button/axis active"));
             ui.label(format!("{prefix}: {}", source.label()));
         }
     }
@@ -60,14 +61,14 @@ impl CocoApp {
         let tx_active = self.activity.rs232_tx.observe(tx);
         let rx_active = self.activity.rs232_rx.observe(rx);
         ui.separator();
-        rs232_icon(ui, tx_active || rx_active);
+        rs232_icon(ui, tx_active || rx_active).on_hover_text("RS-232 — byte sent or received");
         ui.label(format!("RS-232 [{}] ↑{tx} ↓{rx}", endpoint.label()));
     }
 
     fn mpi_status(&self, ui: &mut egui::Ui) {
         let Some(mpi) = &self.mpi else { return };
         ui.separator();
-        mpi_icon(ui);
+        mpi_icon(ui).on_hover_text("Multi-Pak Interface");
         let slots: Vec<String> = mpi
             .slots
             .iter()
@@ -97,7 +98,7 @@ impl CocoApp {
                 .as_disk_cart()
                 .is_some_and(|c| c.drive_active(drive));
             ui.separator();
-            floppy_icon(ui, active);
+            floppy_icon(ui, active).on_hover_text(format!("Drive {drive} — motor on"));
             ui.label(format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty)));
         }
     }
@@ -110,7 +111,7 @@ impl CocoApp {
             let count = self.machine.bus.vhd.access_count(drive);
             let active = self.activity.vhd[drive].observe(count);
             ui.separator();
-            vhd_icon(ui, active);
+            vhd_icon(ui, active).on_hover_text(format!("VHD drive {drive} — sector I/O"));
             ui.label(format!("VHD{drive}: {}", file_name(path)));
         }
     }
@@ -126,7 +127,8 @@ impl CocoApp {
             let count = dw.drive_ops(drive);
             let active = self.activity.dw[drive].observe(count);
             ui.separator();
-            drivewire_icon(ui, active);
+            drivewire_icon(ui, active)
+                .on_hover_text(format!("DriveWire drive {drive} — sector I/O"));
             ui.label(format!(
                 "DW{drive}: {}{}",
                 file_name(path),
@@ -146,7 +148,7 @@ impl CocoApp {
         let dt = ui.input(|i| i.stable_dt);
         let angle = self.activity.tape_reel.advance(pos, motor, dt);
         ui.separator();
-        cassette_icon(ui, motor, angle);
+        cassette_icon(ui, motor, angle).on_hover_text("Tape motor");
         ui.label(format!(
             "Tape: {}{} [{pos}/{len}]",
             file_name(path),
@@ -170,7 +172,7 @@ impl CocoApp {
         }
         let active = self.activity.printer.observe(bitbanger.bytes_out());
         ui.separator();
-        printer_icon(ui, active);
+        printer_icon(ui, active).on_hover_text("Printer — byte received");
         ui.label(format!(
             "Printer: {}",
             capture_path.map_or("DMP-105", file_name)
