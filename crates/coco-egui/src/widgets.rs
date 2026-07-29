@@ -64,10 +64,18 @@ pub(crate) fn titled_group<R>(
         egui::pos2(gap_start + TITLE_PAD, rect.top() - galley.size().y / 2.0),
         galley.size(),
     );
-    ui.put(
-        title_rect,
-        egui::Label::new(egui::RichText::new(title).strong()).selectable(false),
+    // A bare child Ui at the title's exact rect — NOT `ui.put`: `put`
+    // allocates its rect in the parent layout, and this rect sits *above*
+    // the just-closed frame, so the parent's cursor would snap back up and
+    // everything drawn after the group would overlap it. A child Ui still
+    // registers the Label in the AccessKit tree (screen readers,
+    // `ui_tests`) without touching the parent cursor.
+    let mut title_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(title_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
+    title_ui.add(egui::Label::new(egui::RichText::new(title).strong()).selectable(false));
     inner.inner
 }
 
