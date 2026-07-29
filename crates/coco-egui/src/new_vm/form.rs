@@ -38,10 +38,17 @@ impl MachineForm {
         config_form::machine_rows(ui, self.salt, &mut self.config);
     }
 
-    /// The Video/Monitor rows — the detail pane hosts these inside its
-    /// "Display" titled group, in that group's own grid.
+    /// The Video/Monitor rows plus the 4:3 aspect checkbox — the detail
+    /// pane hosts these inside its "Display" titled group, in that group's
+    /// own grid. The checkbox needs no field label (the group names the
+    /// topic); the empty label cell keeps it aligned with the combos.
+    /// Aspect is a `[ui]` preference — the launched window's *starting*
+    /// state; F9 keeps working as a live toggle.
     pub fn display_rows(&mut self, ui: &mut egui::Ui) {
         config_form::display_rows(ui, self.salt, &mut self.config);
+        ui.label("");
+        ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
+        ui.end_row();
     }
 
     /// The media and UI rows: Cassette, Cartridge (with its nested
@@ -88,12 +95,9 @@ impl MachineForm {
             ui.end_row();
         }
 
-        // UI preferences, the `[ui]` section's fields: the launched
-        // window's *starting* state; F9/F12 keep working as live toggles.
-        ui.label(egui::RichText::new("Display").size(font));
-        ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
-        ui.end_row();
-
+        // Keyboard mode, a `[ui]` preference like aspect (which lives in
+        // [`Self::display_rows`]): the launched window's *starting* state;
+        // F12 keeps working as a live toggle.
         ui.label(egui::RichText::new("Keyboard").size(font));
         ui.horizontal(|ui| {
             for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {
