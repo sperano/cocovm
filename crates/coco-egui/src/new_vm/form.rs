@@ -1,12 +1,11 @@
-//! [`MachineForm`]'s impl: the full row-drawing logic (hardware rows via
-//! [`super::config_form::config_form_rows`], then Cassette, Cartridge with
-//! its nested MPI-slot/Disk sub-rows, the HD rows, and the UI rows) plus
-//! each combo box's own picker logic. See the parent module doc for how the
-//! two hosts share this.
+//! [`MachineForm`]'s impl: the row-drawing logic, split into the sections
+//! the detail pane lays out ([`MachineForm::machine_rows`],
+//! [`MachineForm::display_rows`], [`MachineForm::media_rows`]), plus each
+//! combo box's own picker logic. See the parent module doc.
 
 use eframe::egui;
 
-use super::config_form::config_form_rows;
+use super::config_form;
 use super::{
     cartridge_label, disk_file_dialog, media_choice_text, rom_pak_file_dialog, slot_label,
     sub_form_row, CartridgeChoice, MachineForm, MediaChoice, SlotChoice, FORM_GRID_SPACING,
@@ -32,13 +31,26 @@ impl MachineForm {
         }
     }
 
-    /// All form rows. Must be called inside an already-open two-column
-    /// [`egui::Grid`] with [`FORM_GRID_SPACING`], like [`config_form_rows`].
-    pub fn rows(&mut self, ui: &mut egui::Ui) {
-        let font = ui.style().text_styles[&egui::TextStyle::Button].size;
-        config_form_rows(ui, self.salt, &mut self.config);
+    /// The Machine/VDG rows. Must be called inside an already-open
+    /// two-column [`egui::Grid`] with [`FORM_GRID_SPACING`], like every
+    /// `*_rows` method here.
+    pub fn machine_rows(&mut self, ui: &mut egui::Ui) {
+        config_form::machine_rows(ui, self.salt, &mut self.config);
+    }
 
-        // Form-only rows (not `config_form_rows`): the cartridge and media
+    /// The Video/Monitor rows — the detail pane hosts these inside its
+    /// "Display" titled group, in that group's own grid.
+    pub fn display_rows(&mut self, ui: &mut egui::Ui) {
+        config_form::display_rows(ui, self.salt, &mut self.config);
+    }
+
+    /// The media and UI rows: Cassette, Cartridge (with its nested
+    /// MPI-slot/Disk sub-rows), the HD rows, aspect correction, and
+    /// Keyboard.
+    pub fn media_rows(&mut self, ui: &mut egui::Ui) {
+        let font = ui.style().text_styles[&egui::TextStyle::Button].size;
+
+        // Form-only rows (not `config_form`): the cartridge and media
         // aren't part of `MachineConfig` — see [`CartridgeChoice`].
         ui.label(egui::RichText::new("Cassette").size(font));
         self.tape_combo(ui);
@@ -69,7 +81,7 @@ impl MachineForm {
         }
 
         // The VHD hard disks, below the removable media. Always shown, no
-        // cartridge required — see [`super::NewMachineSpec::vhds`].
+        // cartridge required — see [`MachineForm::vhds`]'s doc.
         for drive in 0..crate::UI_DRIVES {
             ui.label(egui::RichText::new(format!("HD {drive}")).size(font));
             self.vhd_combo(ui, drive);
@@ -91,7 +103,8 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// [`super::NewMachineSpec::has_drives`] over the form's own picks.
+    /// Whether a disk controller is reachable from the form's own picks:
+    /// the bare FD-502, or one in an MPI slot.
     pub fn drives_available(&self) -> bool {
         match self.cartridge {
             CartridgeChoice::FD502 => true,

@@ -153,17 +153,19 @@ impl ManagerApp {
         }
         ui.add_space(DETAIL_SECTION_GAP);
 
-        // The shared machine form (`new_vm::MachineForm`), hosted in the
-        // pane's own grid.
-        egui::Grid::new(("detail_form", slug.clone()))
+        // The machine form (`new_vm::MachineForm`), laid out in sections:
+        // the Machine/VDG rows, the RAM fieldset, the Display fieldset
+        // (Video/Monitor), then the media/UI rows — each grid its own,
+        // since a `titled_group` can't sit inside a grid row.
+        egui::Grid::new(("detail_form_machine", slug.clone()))
             .num_columns(2)
             .spacing(new_vm::FORM_GRID_SPACING)
             .show(ui, |ui| {
-                edit.form.rows(ui);
+                edit.form.machine_rows(ui);
             });
 
-        // THE RAM control (the form's grid deliberately has no RAM row —
-        // `config_form_rows`'s doc): a `widgets::titled_group` fieldset
+        // THE RAM control (the form deliberately has no RAM grid row —
+        // `config_form`'s module doc): a `widgets::titled_group` fieldset
         // holding one radio button per size the selected model shipped
         // with, no field label (the group's title says it all). Edits the
         // same draft as every grid row, so the autosave below picks the
@@ -181,6 +183,25 @@ impl ManagerApp {
                 }
             });
         });
+
+        ui.add_space(DETAIL_SECTION_GAP);
+        crate::widgets::titled_group(ui, "Display", |ui| {
+            ui.set_min_width(ui.available_width());
+            egui::Grid::new(("detail_form_display", slug.clone()))
+                .num_columns(2)
+                .spacing(new_vm::FORM_GRID_SPACING)
+                .show(ui, |ui| {
+                    edit.form.display_rows(ui);
+                });
+        });
+
+        ui.add_space(DETAIL_SECTION_GAP);
+        egui::Grid::new(("detail_form_media", slug.clone()))
+            .num_columns(2)
+            .spacing(new_vm::FORM_GRID_SPACING)
+            .show(ui, |ui| {
+                edit.form.media_rows(ui);
+            });
         if self.entries[index].vm.is_some() || self.entries[index].suspended {
             ui.add_space(DETAIL_SECTION_GAP);
             // Resume restores the frozen snapshot's hardware wholesale, so

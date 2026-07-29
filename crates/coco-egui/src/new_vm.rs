@@ -232,12 +232,12 @@ fn constrain(draft: &mut MachineConfig) {
     draft.vdg = crate::default_vdg(draft.variant);
 }
 
-/// The full machine form: the hardware rows ([`config_form_rows`]), then
-/// Cassette, Cartridge (with the nested MPI-slot and Disk sub-rows), the
-/// HD rows, and the UI rows (Display/Keyboard). The manager's detail pane
-/// (`manager::draw_detail_ok`) auto-saves it back into the machine's
-/// definition on every change — the rows, ordering, and constraint rules
-/// live here exactly once.
+/// The full machine form, drawn in sections ([`MachineForm::machine_rows`],
+/// [`MachineForm::display_rows`], [`MachineForm::media_rows`]) so the
+/// detail pane can interleave its titled groups between them. The manager's
+/// detail pane (`manager::draw_detail_ok`) auto-saves it back into the
+/// machine's definition on every change — the rows, ordering, and
+/// constraint rules live here exactly once.
 pub struct MachineForm {
     /// Distinguishes the combos' persistent egui ids between hosts drawing
     /// the form more than once in the same frame.
