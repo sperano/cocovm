@@ -140,6 +140,43 @@ fn framing_error_counts_and_resyncs() {
     assert_eq!(bb.framing_errors(), 1);
 }
 
+#[test]
+fn a_fully_framed_byte_bumps_bytes_out() {
+    let capture = CaptureSink::new();
+    let mut bb = BitBanger::new();
+    bb.set_sink(Box::new(capture.clone()));
+    assert_eq!(bb.bytes_out(), 0);
+    feed_byte(&mut bb, 0x55, DEFAULT_BIT_PERIOD, TICK_SIZE);
+    assert_eq!(bb.bytes_out(), 1);
+    feed_byte(&mut bb, 0x2A, DEFAULT_BIT_PERIOD, TICK_SIZE);
+    assert_eq!(bb.bytes_out(), 2);
+}
+
+#[test]
+fn a_framing_error_does_not_bump_bytes_out() {
+    let capture = CaptureSink::new();
+    let mut bb = BitBanger::new();
+    bb.set_sink(Box::new(capture.clone()));
+    feed_bad_frame(&mut bb, 0x2A, DEFAULT_BIT_PERIOD, TICK_SIZE);
+    assert_eq!(bb.framing_errors(), 1);
+    assert_eq!(bb.bytes_out(), 0);
+}
+
+#[test]
+fn sink_attached_reflects_the_live_sink() {
+    let mut bb = BitBanger::new();
+    assert!(!bb.sink_attached(), "the default no-op sink isn't attached");
+    bb.set_sink(Box::new(CaptureSink::new()));
+    assert!(!bb.sink_attached(), "a test capture sink isn't attached either");
+
+    let path = std::env::temp_dir().join("cocovm-bitbanger-test-sink-attached.txt");
+    bb.start_file_capture(&path, false).unwrap();
+    assert!(bb.sink_attached(), "a live file capture is attached");
+    bb.stop_capture();
+    assert!(!bb.sink_attached(), "stopping capture detaches it again");
+    let _ = std::fs::remove_file(&path);
+}
+
 /// The $FFD9 high-speed poke doubles the CPU clock with no change to
 /// the ROM's cycle-counted delay loop, so it exactly doubles the
 /// effective baud (`bitbanger-spec.md` "Baud timing"). Configuring the

@@ -164,15 +164,10 @@ impl ActivityLatch {
 /// snapshot) just starts every latch primed on its first draw.
 #[derive(Default)]
 pub(crate) struct StatusActivity {
-    // Each latch below is read starting from the commit that wires up its
-    // device's `*_status` fn; until then it's written by `Default` alone
-    // and rustc flags it dead. Attributes come off one at a time as each
-    // commit lands.
     pub(crate) vhd: [ActivityLatch; UI_DRIVES],
     pub(crate) dw: [ActivityLatch; drivewire::DRIVE_COUNT],
     pub(crate) rs232_tx: ActivityLatch,
     pub(crate) rs232_rx: ActivityLatch,
-    #[allow(dead_code)]
     pub(crate) printer: ActivityLatch,
     /// Current cassette reel rotation, in radians (see [`next_reel_angle`]).
     pub(crate) tape_reel_angle: f32,
@@ -411,6 +406,57 @@ pub(crate) fn joystick_icon(ui: &mut egui::Ui, active: bool) {
     // Button: punched into the base's left corner.
     let button = egui::pos2(base.left() + base_h * 0.35, base.center().y);
     painter.circle_filled(button, base_h * 0.22, punch);
+}
+
+/// Status-bar printer activity indicator: a dot-matrix printer silhouette
+/// (body plus a sheet of paper feeding out its top), red while a byte has
+/// recently been decoded to the live sink
+/// ([`coco_core::bitbanger::BitBanger::bytes_out`]), gray otherwise.
+pub(crate) const PRINTER_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 13.0);
+
+/// Height of the printer body rect, along the bottom of [`PRINTER_ICON_SIZE`].
+const PRINTER_BODY_H: f32 = 7.0;
+
+/// Size of the paper-sheet rect rising from the body's top.
+const PRINTER_PAPER_SIZE: egui::Vec2 = egui::vec2(8.0, 6.0);
+
+/// One status-bar printer indicator (see [`PRINTER_ICON_SIZE`]'s doc): the
+/// silhouette is the union of the body rect and the paper rect (so they
+/// read as one printer, not two overlapping shapes), with a 1px exit-slot
+/// line punched where the paper meets the body and two small control-light
+/// dots punched into the body's right side.
+pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(PRINTER_ICON_SIZE, egui::Sense::hover());
+    let shell = if active { ICON_ACTIVE } else { ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+
+    // Body: the wide rect along the bottom.
+    let body = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.bottom() - PRINTER_BODY_H),
+        egui::vec2(PRINTER_ICON_SIZE.x, PRINTER_BODY_H),
+    );
+    painter.rect_filled(body, 1.5, shell);
+    // Paper: the narrower rect rising from the body's top.
+    let paper = egui::Rect::from_min_size(
+        egui::pos2(rect.center().x - PRINTER_PAPER_SIZE.x / 2.0, body.top() - PRINTER_PAPER_SIZE.y),
+        PRINTER_PAPER_SIZE,
+    );
+    painter.rect_filled(paper, 1.0, shell);
+
+    // Exit slot: a thin punched line where the paper meets the body.
+    let slot = egui::Rect::from_center_size(
+        egui::pos2(paper.center().x, body.top()),
+        egui::vec2(PRINTER_PAPER_SIZE.x * 0.8, 1.0),
+    );
+    painter.rect_filled(slot, 0.0, punch);
+
+    // Control lights: two dots punched into the body's right side.
+    let light_r = PRINTER_BODY_H * 0.12;
+    for dy in [-PRINTER_BODY_H * 0.2, PRINTER_BODY_H * 0.2] {
+        let light = egui::pos2(body.right() - PRINTER_BODY_H * 0.3, body.center().y + dy);
+        painter.circle_filled(light, light_r, punch);
+    }
 }
 
 #[cfg(test)]

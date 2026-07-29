@@ -16,6 +16,7 @@ impl CocoApp {
                 self.vhd_status(ui);
                 self.drivewire_status(ui);
                 self.tape_status(ui);
+                self.printer_status(ui);
                 if let Some(toast) = self.toast_message() {
                     ui.separator();
                     ui.label(toast);
@@ -155,6 +156,27 @@ impl CocoApp {
             "Tape: {}{} [{pos}/{len}]",
             file_name(path),
             dirty_mark(dirty)
+        ));
+    }
+
+    /// Shown whenever a printer sink is plugged into the bit-banger:
+    /// text-file capture ([`Self::print_capture_path`]) or the paper
+    /// window's live DMP-105 ([`coco_core::bitbanger::BitBanger::sink_attached`]).
+    /// A capture path wins the label if somehow both are true at once
+    /// (shouldn't happen — starting either kind of capture detaches the
+    /// other — but the label has to pick one).
+    fn printer_status(&mut self, ui: &mut egui::Ui) {
+        let bitbanger = &self.machine.bus.bitbanger;
+        let capture_path = self.print_capture_path.as_deref();
+        if capture_path.is_none() && !bitbanger.sink_attached() {
+            return;
+        }
+        let active = self.activity.printer.observe(bitbanger.bytes_out());
+        ui.separator();
+        printer_icon(ui, active);
+        ui.label(format!(
+            "Printer: {}",
+            capture_path.map_or("DMP-105", file_name)
         ));
     }
 }
