@@ -144,15 +144,7 @@ impl CocoApp {
         let (pos, len) = self.machine.bus.cassette.position();
         let dirty = self.machine.bus.cassette.dirty();
         let dt = ui.input(|i| i.stable_dt);
-        let (angle, last_pos) = status_icons::next_reel_angle(
-            self.activity.tape_reel_angle,
-            self.activity.tape_last_pos,
-            pos,
-            motor,
-            dt,
-        );
-        self.activity.tape_reel_angle = angle;
-        self.activity.tape_last_pos = last_pos;
+        let angle = self.activity.tape_reel.advance(pos, motor, dt);
         ui.separator();
         cassette_icon(ui, motor, angle);
         ui.label(format!(

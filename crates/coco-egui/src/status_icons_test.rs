@@ -58,19 +58,47 @@ fn same_value_reobserved_within_hold_stays_lit() {
     assert!(latch.observe_at(11, at(base, 50)));
 }
 
+#[test]
+fn a_second_change_before_the_first_hold_expires_resets_the_hold_from_itself() {
+    let mut latch = ActivityLatch::default();
+    let base = Instant::now();
+    latch.observe_at(10, base);
+    latch.observe_at(11, at(base, 1)); // first change; hold alone would expire at t=1+HOLD
+    latch.observe_at(12, at(base, 50)); // second change, well inside that hold window
+    // Past when the FIRST change's hold alone would have expired, but still
+    // within the hold re-extended by the second change: still lit. This is
+    // the only way to prove the timer reset from the second change rather
+    // than just outlasting the first.
+    assert!(latch.observe_at(12, at(base, 1) + ACTIVITY_HOLD));
+    // Past the second change's own hold window: idle again.
+    assert!(!latch.observe_at(12, at(base, 50) + ACTIVITY_HOLD));
+}
+
 const TAU: f32 = std::f32::consts::TAU;
 
 #[test]
 fn reel_advances_forward_with_playback_position() {
-    let (angle, last_pos) = next_reel_angle(0.0, 100, 110, true, 0.0);
-    assert_eq!(last_pos, 110);
+    let mut reel = TapeReel { last_pos: 100, ..Default::default() };
+    let angle = reel.advance(110, true, 0.0);
     assert!((angle - 10.0 * REEL_ANGLE_PER_BYTE).abs() < 1e-6);
 }
 
 #[test]
+fn reel_forward_accumulation_past_tau_wraps_via_rem_euclid() {
+    // 45 bytes at REEL_ANGLE_PER_BYTE (TAU/40) is more than one full turn —
+    // the previously untested forward-wrap counterpart to the rewind case
+    // below.
+    let mut reel = TapeReel::default();
+    let raw = 45.0 * REEL_ANGLE_PER_BYTE;
+    assert!(raw > TAU, "test is only meaningful if the raw angle actually exceeds TAU");
+    let angle = reel.advance(45, true, 0.0);
+    assert!((angle - raw.rem_euclid(TAU)).abs() < 1e-6);
+}
+
+#[test]
 fn reel_spins_backward_on_rewind() {
-    let (angle, last_pos) = next_reel_angle(0.0, 110, 100, true, 0.0);
-    assert_eq!(last_pos, 100);
+    let mut reel = TapeReel { last_pos: 110, ..Default::default() };
+    let angle = reel.advance(100, true, 0.0);
     // Rewinding 10 bytes must turn the reel the opposite way, wrapped into
     // 0..TAU (a bare negative angle would be a bug: the icon compares raw
     // radians, and comparisons must stay well-defined across a rewind).
@@ -82,14 +110,14 @@ fn reel_spins_backward_on_rewind() {
 fn reel_keeps_turning_while_parked_with_motor_running() {
     // Position didn't move (CSAVE never advances it) but the motor's on:
     // the reel still turns, at RECORD_REEL_SPEED.
-    let (angle, last_pos) = next_reel_angle(0.0, 50, 50, true, 0.5);
-    assert_eq!(last_pos, 50);
+    let mut reel = TapeReel { last_pos: 50, ..Default::default() };
+    let angle = reel.advance(50, true, 0.5);
     assert!((angle - RECORD_REEL_SPEED * 0.5).abs() < 1e-6);
 }
 
 #[test]
 fn reel_parks_when_motor_is_off_and_position_is_unchanged() {
-    let (angle, last_pos) = next_reel_angle(1.23, 50, 50, false, 0.5);
-    assert_eq!(last_pos, 50);
+    let mut reel = TapeReel { angle: 1.23, last_pos: 50 };
+    let angle = reel.advance(50, false, 0.5);
     assert_eq!(angle, 1.23);
 }
