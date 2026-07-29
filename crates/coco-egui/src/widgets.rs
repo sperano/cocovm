@@ -16,28 +16,40 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
 /// the title — rather than a background-colored rect painted over a full
 /// border, so it renders correctly over any window/panel fill. Square
 /// corners: erasing a rounded stroke under the title would need exactly
-/// the background-fill hack this avoids.
+/// the background-fill hack this avoids. The box spans the full available
+/// width (a fieldset that hugged its content would give every group a
+/// different width), and the title is a real `Label` so it lands in the
+/// AccessKit tree for screen readers and `ui_tests`.
+///
+/// Assumes a vertical host layout (the title-overhang spacer is vertical)
+/// and a title narrower than the box — a wider one would collapse the
+/// top-right border segment and clip mid-glyph.
 pub(crate) fn titled_group<R>(
     ui: &mut egui::Ui,
     title: &str,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    /// Title's x offset from the box's left corner, and its breathing room
-    /// inside the gap in the border.
+    /// Title's x offset from the box's left corner.
     const TITLE_INDENT: f32 = 8.0;
+    /// The title's breathing room inside the gap in the border.
     const TITLE_PAD: f32 = 4.0;
     /// Padding between the border and the contents.
     const INNER_MARGIN: i8 = 10;
 
     let font = egui::TextStyle::Body.resolve(ui.style());
     let color = ui.visuals().strong_text_color();
+    // Measured up front to size the gap; the visible title is the `put`
+    // Label below, in the same Body font and strong color.
     let galley = ui.fonts_mut(|f| f.layout_no_wrap(title.to_owned(), font, color));
     // Room above the box for the half of the title that overhangs the
     // border line.
     ui.add_space(galley.size().y / 2.0);
     let inner = egui::Frame::NONE
         .inner_margin(egui::Margin::same(INNER_MARGIN))
-        .show(ui, add_contents);
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            add_contents(ui)
+        });
     let rect = inner.response.rect;
     let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
     let gap_start = rect.left() + TITLE_INDENT;
@@ -48,10 +60,13 @@ pub(crate) fn titled_group<R>(
     painter.line_segment([rect.left_top(), rect.left_bottom()], stroke);
     painter.line_segment([rect.right_top(), rect.right_bottom()], stroke);
     painter.line_segment([rect.left_bottom(), rect.right_bottom()], stroke);
-    painter.galley(
+    let title_rect = egui::Rect::from_min_size(
         egui::pos2(gap_start + TITLE_PAD, rect.top() - galley.size().y / 2.0),
-        galley,
-        color,
+        galley.size(),
+    );
+    ui.put(
+        title_rect,
+        egui::Label::new(egui::RichText::new(title).strong()).selectable(false),
     );
     inner.inner
 }

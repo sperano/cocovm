@@ -1,7 +1,7 @@
 use super::*;
 
-/// Every config the dialog can produce must pass core validation — the
-/// choice lists and `constrain_draft` exist precisely to guarantee this.
+/// Every config the form can produce must pass core validation — the
+/// choice lists and `constrain` exist precisely to guarantee this.
 #[test]
 fn every_selectable_config_validates() {
     for variant in [
@@ -39,7 +39,7 @@ fn every_selectable_config_validates() {
                         };
                         assert!(
                             config.validate().is_ok(),
-                            "dialog offered invalid config: {config:?}"
+                            "form offered invalid config: {config:?}"
                         );
                     }
                 }

@@ -66,8 +66,8 @@ pub(super) fn right_click<S: 'static>(harness: &mut egui_kittest::Harness<'stati
 }
 
 /// [`click`] matching by substring — for widgets whose accessible label
-/// carries decoration beyond the visible caption: submenu buttons ("MultiPak
-/// Interface ⏵") and menu rows with shortcut text ("New… ⌘N").
+/// carries decoration beyond the visible caption, like submenu buttons'
+/// trailing arrow ("MultiPak Interface ⏵", "Slot 1 ⏵").
 pub(super) fn click_containing<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
     harness.get_by_label_contains(label).hover();
     harness.step();

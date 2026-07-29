@@ -7,8 +7,8 @@ mod windows;
 
 impl CocoApp {
     /// The menu bar, toolbar, status bar, and every optional window/dialog
-    /// (keyboard help, About, the "New…" dialog, the printer-paper window,
-    /// the disk-controller confirmation, the cartridge-error banner) — every
+    /// (keyboard help, About, the printer-paper window, the disk-controller
+    /// confirmation, the cartridge-error banner) — every
     /// bit of chrome around the CoCo display itself. Split out of
     /// [`Self::window_ui`] so the manager's `ViewportClass::Embedded`
     /// fallback can skip it entirely: drawing two apps' menu bars/status

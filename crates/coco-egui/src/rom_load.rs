@@ -19,7 +19,8 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
 /// and git-ignored, `./roms`): `coco3.rom` for the CoCo 3, or a flat image
 /// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
 /// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
-/// the "New…" dialog shows them inline; `main` prints them and exits.
+/// the manager reports them inline in its detail pane
+/// (`launch_machine`'s contract); `main` prints them and exits.
 pub(crate) fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]>, String> {
     match variant {
         MachineVariant::Coco3 => {

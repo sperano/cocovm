@@ -11,6 +11,29 @@ use crate::*;
 
 use super::harness::*;
 
+/// The detail pane's RAM fieldset: the group's title is a real node in the
+/// accessibility tree (the `titled_group` widget promises this), and
+/// clicking a size radio auto-saves the definition like any other form
+/// edit.
+#[test]
+fn ram_radio_autosaves_the_definition() {
+    let dir = TempDir::new("ram-radio");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), entries);
+
+    click(&mut harness, "Dev CoCo 3");
+    harness.get_by_label("RAM");
+    click(&mut harness, "2048K");
+
+    let config = harness.state().entries[0]
+        .def
+        .to_machine_config()
+        .expect("saved definitions validate");
+    assert_eq!(config.memory, coco_core::MemorySize::K2048);
+    let toml = fs::read_to_string(dir.path().join("dev-coco-3.toml")).unwrap();
+    assert!(toml.contains("2048"), "auto-save must write the new RAM size: {toml}");
+}
+
 /// ⌘N/Ctrl+N in the manager is the toolbar's "New…": it creates a machine
 /// on the spot — saved to disk, inserted, selected — with no dialog.
 #[test]

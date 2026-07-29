@@ -38,11 +38,18 @@ const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, M
 pub const NEW_MACHINE_SHORTCUT: egui::KeyboardShortcut =
     egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N);
 
-/// Spacing of [`config_form_rows`]'s two-column grid. `pub(crate)`: the
-/// manager's detail pane (`manager::draw_detail_ok`) hosts the same shared
-/// rows in its own `egui::Grid` and must use this exact value too, or the
-/// two hosts render the shared form with mismatched spacing.
+/// Spacing of every form grid — the detail pane's section grids
+/// (`manager::draw_detail_ok`) and the nested Slot/Disk sub-grids alike —
+/// so the sections render as one visually continuous form.
 pub(crate) const FORM_GRID_SPACING: [f32; 2] = [24.0, 10.0];
+
+/// Minimum column width of the detail pane's section grids. Each
+/// `egui::Grid` sizes its label column from its own cells only, so
+/// without a shared floor the Machine grid's combos (label "Machine")
+/// would start at a different x than the media grid's (label
+/// "Cartridge") — the sections must line up like the single grid they
+/// replaced.
+pub(crate) const FORM_LABEL_MIN_WIDTH: f32 = 70.0;
 
 /// Horizontal shift of a nested sub-form (the FD-502's Disk rows, the
 /// MPI's Slot rows) into its parent's combo column — each nesting level
@@ -105,10 +112,12 @@ pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
     }
 }
 
-/// The dialog's Cartridge row. Not part of [`MachineConfig`] — the
+/// The form's Cartridge row. Not part of [`MachineConfig`] — the
 /// cartridge port is populated after machine construction (the same way
 /// the CLI and the Machine menu do it) — so it rides alongside the config
-/// in [`NewVmAction::Create`].
+/// in [`MachineForm`] and is packed into the definition's
+/// `[peripherals]`/`[media]` sections by the manager
+/// (`manager::detail::pack_def`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum CartridgeChoice {
     #[default]
@@ -121,12 +130,12 @@ pub enum CartridgeChoice {
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
     /// a VHD boot; for RTC + floppies use an MPI slot.
     RTC,
-    /// MultiPak Interface; the dialog then shows its four Slot rows, and
+    /// MultiPak Interface; the form then shows its four Slot rows, and
     /// the Disk rows only once a slot holds the FD-502.
     MPI,
 }
 
-/// One MultiPak slot's pick in the dialog's Slot rows (shown while the
+/// One MultiPak slot's pick in the form's Slot rows (shown while the
 /// cartridge is the MPI). At most one slot holds the FD-502 (a second
 /// disk controller would fight the first for the SCS decode) and at most
 /// one the Disto RTC (two would shadow each other at `$FF50`). ROM Paks
@@ -173,20 +182,19 @@ fn rom_pak_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("ROM Pak", &["rom", "ccc", "bin"])
 }
 
-/// One media pick — a drive's disk (Cartridge row, when the cartridge
-/// [`CartridgeChoice::has_drives`]) or the cassette: what to mount at
-/// create time.
+/// One media pick — a drive's disk (shown when a disk controller is
+/// reachable, [`MachineForm::drives_available`]), a VHD, or the cassette.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum MediaChoice {
     /// Empty drive.
     #[default]
     None,
-    /// A fresh blank image (0-track disk / empty tape). Blank media is
-    /// file-backed (the machine writes back to the host file): direct boot
-    /// picks the backing file with a save dialog when this is selected
-    /// (`Some(path)`); the manager auto-places a file in the machine's
-    /// artifact directory (`None`).
-    Blank(Option<PathBuf>),
+    /// A fresh blank image (0-track disk / empty tape / 0-sector VHD).
+    /// Blank media is file-backed (the machine writes back to the host
+    /// file); the backing file is auto-placed in the machine's artifact
+    /// directory when the definition saves
+    /// (`manager::detail::record_media_choice`).
+    Blank,
     /// An existing image picked with the file dialog.
     File(PathBuf),
 }
@@ -195,8 +203,8 @@ pub enum MediaChoice {
 fn media_choice_text(media: &MediaChoice) -> String {
     match media {
         MediaChoice::None => "None".to_string(),
-        MediaChoice::Blank(None) => "Blank".to_string(),
-        MediaChoice::Blank(Some(path)) | MediaChoice::File(path) => path
+        MediaChoice::Blank => "Blank".to_string(),
+        MediaChoice::File(path) => path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| "Disk".to_string()),
@@ -242,10 +250,6 @@ pub struct MachineForm {
     /// Distinguishes the combos' persistent egui ids between hosts drawing
     /// the form more than once in the same frame.
     salt: &'static str,
-    /// A "Blank" media pick auto-places its file in the machine's artifact
-    /// directory ([`MediaChoice::Blank`]`(None)`) rather than opening a
-    /// save dialog for the backing file.
-    auto_place_blanks: bool,
     pub config: MachineConfig,
     /// The Cartridge-row pick.
     pub cartridge: CartridgeChoice,

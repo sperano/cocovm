@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use crate::{machine_def, new_vm};
+use crate::{machine_def, new_vm, titled_group};
 
 use super::{
     vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, PLAY_GLYPH,
@@ -31,9 +31,10 @@ fn blank_vhd_file(drive: usize) -> String {
     format!("hd{drive}.vhd")
 }
 
-/// Fat transport-button geometry: minimum button size and glyph point size.
-const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(56.0, 40.0);
-const TRANSPORT_GLYPH_SIZE: f32 = 24.0;
+/// Transport-button geometry: minimum button size and glyph point size
+/// (previously 56×40/24pt; reduced by a third, user request 2026-07-28).
+const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(37.0, 27.0);
+const TRANSPORT_GLYPH_SIZE: f32 = 16.0;
 /// Gap separating the transport row from the status label.
 const TRANSPORT_GROUP_GAP: f32 = 12.0;
 
@@ -68,7 +69,7 @@ fn transport_button(
 /// Disk media implies the FD-502 even when the flag is off (older files —
 /// `launch_machine`'s rule).
 fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
-    let mut form = new_vm::MachineForm::new("detail", true);
+    let mut form = new_vm::MachineForm::new("detail");
     form.config = def.to_machine_config().expect("list entries are validated on load/save");
     let media = &def.media;
     let fd502 = def.peripherals.fd502 || media.disk0.is_some() || media.disk1.is_some();
@@ -104,6 +105,50 @@ fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
         machine_def::KbModeDTO::Symbolic => crate::KbMode::Symbolic,
     };
     form
+}
+
+/// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
+/// [`new_vm::FORM_LABEL_MIN_WIDTH`] — the shared floor is what keeps the
+/// sections' combo columns aligned with each other).
+fn form_grid(salt: (&str, &str)) -> egui::Grid {
+    egui::Grid::new(salt)
+        .num_columns(2)
+        .spacing(new_vm::FORM_GRID_SPACING)
+        .min_col_width(new_vm::FORM_LABEL_MIN_WIDTH)
+}
+
+/// The machine form (`new_vm::MachineForm`), laid out in sections: the
+/// Machine/VDG rows, the RAM fieldset, the Display fieldset (Video/
+/// Monitor/aspect), then the media/UI rows — each grid its own, since a
+/// `titled_group` can't sit inside a grid row. The RAM fieldset is one
+/// radio button per size the selected model shipped with, no field label
+/// (the group's title says it all); it edits the same draft as every grid
+/// row, so the caller's autosave picks it up like any other form edit.
+fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
+    form_grid(("detail_form_machine", slug)).show(ui, |ui| {
+        form.machine_rows(ui);
+    });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "RAM", |ui| {
+        ui.horizontal(|ui| {
+            for &memory in new_vm::ram_choices(form.config.variant) {
+                ui.radio_value(&mut form.config.memory, memory, new_vm::ram_label(memory));
+            }
+        });
+    });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Display", |ui| {
+        form_grid(("detail_form_display", slug)).show(ui, |ui| {
+            form.display_rows(ui);
+        });
+    });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    form_grid(("detail_form_media", slug)).show(ui, |ui| {
+        form.media_rows(ui);
+    });
 }
 
 impl ManagerApp {
@@ -153,55 +198,7 @@ impl ManagerApp {
         }
         ui.add_space(DETAIL_SECTION_GAP);
 
-        // The machine form (`new_vm::MachineForm`), laid out in sections:
-        // the Machine/VDG rows, the RAM fieldset, the Display fieldset
-        // (Video/Monitor), then the media/UI rows — each grid its own,
-        // since a `titled_group` can't sit inside a grid row.
-        egui::Grid::new(("detail_form_machine", slug.clone()))
-            .num_columns(2)
-            .spacing(new_vm::FORM_GRID_SPACING)
-            .show(ui, |ui| {
-                edit.form.machine_rows(ui);
-            });
-
-        // THE RAM control (the form deliberately has no RAM grid row —
-        // `config_form`'s module doc): a `widgets::titled_group` fieldset
-        // holding one radio button per size the selected model shipped
-        // with, no field label (the group's title says it all). Edits the
-        // same draft as every grid row, so the autosave below picks the
-        // change up like any other form edit.
-        ui.add_space(DETAIL_SECTION_GAP);
-        crate::widgets::titled_group(ui, "RAM", |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.horizontal(|ui| {
-                for &memory in new_vm::ram_choices(edit.form.config.variant) {
-                    ui.radio_value(
-                        &mut edit.form.config.memory,
-                        memory,
-                        new_vm::ram_label(memory),
-                    );
-                }
-            });
-        });
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        crate::widgets::titled_group(ui, "Display", |ui| {
-            ui.set_min_width(ui.available_width());
-            egui::Grid::new(("detail_form_display", slug.clone()))
-                .num_columns(2)
-                .spacing(new_vm::FORM_GRID_SPACING)
-                .show(ui, |ui| {
-                    edit.form.display_rows(ui);
-                });
-        });
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        egui::Grid::new(("detail_form_media", slug.clone()))
-            .num_columns(2)
-            .spacing(new_vm::FORM_GRID_SPACING)
-            .show(ui, |ui| {
-                edit.form.media_rows(ui);
-            });
+        draw_form_sections(ui, &slug, &mut edit.form);
         if self.entries[index].vm.is_some() || self.entries[index].suspended {
             ui.add_space(DETAIL_SECTION_GAP);
             // Resume restores the frozen snapshot's hardware wholesale, so
@@ -372,10 +369,7 @@ impl ManagerApp {
         let (path, recorded) = match &*choice {
             new_vm::MediaChoice::None => return Ok(None),
             new_vm::MediaChoice::File(path) => return Ok(Some(path.display().to_string())),
-            new_vm::MediaChoice::Blank(Some(path)) => {
-                (path.clone(), path.display().to_string())
-            }
-            new_vm::MediaChoice::Blank(None) => {
+            new_vm::MediaChoice::Blank => {
                 let Some(root) = self.artifacts_root.clone() else {
                     return Err(NO_CONFIG_DIR.to_string());
                 };
