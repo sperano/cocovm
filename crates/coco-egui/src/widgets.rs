@@ -9,6 +9,53 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
     egui::RichText::new(text).size(size).strong()
 }
 
+/// Fieldset-style titled group: a bordered box whose title interrupts the
+/// top border — the classic Qt `QGroupBox` / HTML `<fieldset>` look, which
+/// egui has no built-in equivalent for (`ui.group` puts the title *inside*
+/// the box). Drawn as five bare line segments — the top edge split around
+/// the title — rather than a background-colored rect painted over a full
+/// border, so it renders correctly over any window/panel fill. Square
+/// corners: erasing a rounded stroke under the title would need exactly
+/// the background-fill hack this avoids.
+pub(crate) fn titled_group<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    /// Title's x offset from the box's left corner, and its breathing room
+    /// inside the gap in the border.
+    const TITLE_INDENT: f32 = 8.0;
+    const TITLE_PAD: f32 = 4.0;
+    /// Padding between the border and the contents.
+    const INNER_MARGIN: i8 = 10;
+
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let color = ui.visuals().strong_text_color();
+    let galley = ui.fonts_mut(|f| f.layout_no_wrap(title.to_owned(), font, color));
+    // Room above the box for the half of the title that overhangs the
+    // border line.
+    ui.add_space(galley.size().y / 2.0);
+    let inner = egui::Frame::NONE
+        .inner_margin(egui::Margin::same(INNER_MARGIN))
+        .show(ui, add_contents);
+    let rect = inner.response.rect;
+    let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+    let gap_start = rect.left() + TITLE_INDENT;
+    let gap_end = (gap_start + 2.0 * TITLE_PAD + galley.size().x).min(rect.right());
+    let painter = ui.painter();
+    painter.line_segment([rect.left_top(), egui::pos2(gap_start, rect.top())], stroke);
+    painter.line_segment([egui::pos2(gap_end, rect.top()), rect.right_top()], stroke);
+    painter.line_segment([rect.left_top(), rect.left_bottom()], stroke);
+    painter.line_segment([rect.right_top(), rect.right_bottom()], stroke);
+    painter.line_segment([rect.left_bottom(), rect.right_bottom()], stroke);
+    painter.galley(
+        egui::pos2(gap_start + TITLE_PAD, rect.top() - galley.size().y / 2.0),
+        galley,
+        color,
+    );
+    inner.inner
+}
+
 /// Drives the UI exposes. The FD-502 latch can address four, but real setups
 /// were one or two — and the menu stays small.
 pub(crate) const UI_DRIVES: usize = 2;

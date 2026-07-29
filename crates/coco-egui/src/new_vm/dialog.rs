@@ -6,8 +6,8 @@ use coco_core::MachineConfig;
 use eframe::egui;
 
 use super::{
-    MachineForm, NewMachineSpec, NewVmAction, NewVmDialog, DIALOG_MARGIN, DIALOG_MIN_SIZE,
-    FORM_GRID_SPACING,
+    ram_choices, ram_label, MachineForm, NewMachineSpec, NewVmAction, NewVmDialog, DIALOG_MARGIN,
+    DIALOG_MIN_SIZE, FORM_GRID_SPACING,
 };
 
 impl NewVmDialog {
@@ -64,6 +64,34 @@ impl NewVmDialog {
                         .show(ui, |ui| {
                             self.form.rows(ui);
                         });
+
+                    // DEMO (temporary branch): `widgets::titled_group`, the
+                    // fieldset-style container egui lacks, wrapping a second
+                    // live RAM picker. It edits the same draft as the grid's
+                    // own RAM row above, so the two combos stay in sync —
+                    // immediate mode's one-source-of-truth for free.
+                    ui.add_space(DIALOG_MARGIN as f32 / 2.0);
+                    crate::widgets::titled_group(ui, "RAM", |ui| {
+                        ui.set_min_width(ui.available_width());
+                        egui::Grid::new("new_vm_ram_demo")
+                            .num_columns(2)
+                            .spacing(FORM_GRID_SPACING)
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("Size").size(font));
+                                egui::ComboBox::from_id_salt(("new_vm_demo", "ram"))
+                                    .selected_text(ram_label(self.form.config.memory))
+                                    .show_ui(ui, |ui| {
+                                        for &memory in ram_choices(self.form.config.variant) {
+                                            ui.selectable_value(
+                                                &mut self.form.config.memory,
+                                                memory,
+                                                ram_label(memory),
+                                            );
+                                        }
+                                    });
+                                ui.end_row();
+                            });
+                    });
 
                     if let Some(error) = &self.error {
                         ui.add_space(DIALOG_MARGIN as f32 / 2.0);

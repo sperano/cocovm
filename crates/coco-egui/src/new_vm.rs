@@ -42,7 +42,9 @@ const DIALOG_MARGIN: i8 = 16;
 /// window around `last_content_size` alone (`Window::min_size` and
 /// `default_size` only offer the content room, they never stretch the
 /// frame), so the dialog claims this floor itself with `set_min_size`.
-const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 560.0);
+/// DEMO (temporary branch): height +80 so the titled-group RAM demo
+/// section keeps the fully-expanded MPI form inside the floor.
+const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 640.0);
 
 /// The "New machine" shortcut, consumed by both the direct-boot Machine
 /// menu ([`crate::CocoApp`]) and the manager's toolbar: ⌘N on macOS,
