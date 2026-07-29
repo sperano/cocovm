@@ -459,6 +459,93 @@ pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) {
     }
 }
 
+/// Status-bar keyboard-mode indicator: a keyboard silhouette. Always drawn
+/// in [`ICON_IDLE`] — "activity" doesn't mean anything for the keyboard
+/// mode readout, this is decoration matching the other status-bar entries,
+/// not a light.
+pub(crate) const KEYBOARD_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 9.0);
+
+/// One status-bar keyboard icon (see [`KEYBOARD_ICON_SIZE`]'s doc): a
+/// rounded rect with two rows of punched key dots.
+pub(crate) fn keyboard_icon(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(KEYBOARD_ICON_SIZE, egui::Sense::hover());
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, 1.5, ICON_IDLE);
+
+    let key_r = KEYBOARD_ICON_SIZE.y * 0.11;
+    for row_frac in [0.35, 0.68] {
+        let y = rect.top() + KEYBOARD_ICON_SIZE.y * row_frac;
+        for col in 0..5 {
+            let x = rect.left() + KEYBOARD_ICON_SIZE.x * (0.14 + col as f32 * 0.18);
+            painter.circle_filled(egui::pos2(x, y), key_r, punch);
+        }
+    }
+}
+
+/// Status-bar cartridge indicator: a ROM-pak silhouette. Always drawn in
+/// [`ICON_IDLE`] — see [`keyboard_icon`]'s doc comment on why this isn't a
+/// light.
+pub(crate) const CART_ICON_SIZE: egui::Vec2 = egui::vec2(13.0, 10.0);
+
+/// One status-bar cartridge icon (see [`CART_ICON_SIZE`]'s doc): the
+/// ROM-pak body rect with a narrower label hump on top and two punched grip
+/// notches nicked into the bottom edge.
+pub(crate) fn cart_icon(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(CART_ICON_SIZE, egui::Sense::hover());
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+
+    // Body: the lower, full-width part of the pak.
+    let hump_h = CART_ICON_SIZE.y * 0.35;
+    let body = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.top() + hump_h),
+        egui::vec2(CART_ICON_SIZE.x, CART_ICON_SIZE.y - hump_h),
+    );
+    painter.rect_filled(body, 1.0, ICON_IDLE);
+    // Label hump: a narrower rect on top, like a pak's raised label area.
+    let hump_w = CART_ICON_SIZE.x * 0.6;
+    let hump = egui::Rect::from_min_size(
+        egui::pos2(rect.center().x - hump_w / 2.0, rect.top()),
+        egui::vec2(hump_w, hump_h),
+    );
+    painter.rect_filled(hump, 1.0, ICON_IDLE);
+
+    // Grip notches: nicked into the body's bottom edge.
+    let notch_w = CART_ICON_SIZE.x * 0.16;
+    let notch_h = CART_ICON_SIZE.y * 0.14;
+    for cx_frac in [0.28, 0.72] {
+        let notch = egui::Rect::from_center_size(
+            egui::pos2(rect.left() + CART_ICON_SIZE.x * cx_frac, rect.bottom()),
+            egui::vec2(notch_w, notch_h * 2.0),
+        );
+        painter.rect_filled(notch, 0.0, punch);
+    }
+}
+
+/// Status-bar Multi-Pak Interface indicator: a card-cage silhouette. Always
+/// drawn in [`ICON_IDLE`] — see [`keyboard_icon`]'s doc comment on why this
+/// isn't a light.
+pub(crate) const MPI_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 11.0);
+
+/// One status-bar MPI icon (see [`MPI_ICON_SIZE`]'s doc): a box with four
+/// punched vertical slot lines, one per cartridge slot the real FD-502
+/// Multi-Pak exposes.
+pub(crate) fn mpi_icon(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(MPI_ICON_SIZE, egui::Sense::hover());
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, 1.5, ICON_IDLE);
+
+    let slot_stroke = egui::Stroke::new(1.0f32, punch);
+    let slot_top = rect.top() + MPI_ICON_SIZE.y * 0.2;
+    let slot_bottom = rect.bottom() - MPI_ICON_SIZE.y * 0.2;
+    for col in 0..4 {
+        let x = rect.left() + MPI_ICON_SIZE.x * (0.18 + col as f32 * 0.22);
+        painter.line_segment([egui::pos2(x, slot_top), egui::pos2(x, slot_bottom)], slot_stroke);
+    }
+}
+
 #[cfg(test)]
 #[path = "status_icons_test.rs"]
 mod tests;

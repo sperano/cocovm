@@ -7,6 +7,7 @@ impl CocoApp {
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                keyboard_icon(ui);
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 self.cart_status(ui);
                 self.joystick_status(ui);
@@ -28,6 +29,7 @@ impl CocoApp {
     fn cart_status(&self, ui: &mut egui::Ui) {
         let Some(path) = &self.cart_path else { return };
         ui.separator();
+        cart_icon(ui);
         ui.label(format!("Cart: {}", file_name(path)));
     }
 
@@ -65,6 +67,7 @@ impl CocoApp {
     fn mpi_status(&self, ui: &mut egui::Ui) {
         let Some(mpi) = &self.mpi else { return };
         ui.separator();
+        mpi_icon(ui);
         let slots: Vec<String> = mpi
             .slots
             .iter()
