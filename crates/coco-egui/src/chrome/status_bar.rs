@@ -1,3 +1,5 @@
+use coco_core::joystick::{LEFT, RIGHT};
+
 use crate::*;
 
 impl CocoApp {
@@ -7,6 +9,7 @@ impl CocoApp {
             ui.horizontal(|ui| {
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 self.cart_status(ui);
+                self.joystick_status(ui);
                 self.rs232_status(ui);
                 self.mpi_status(ui);
                 self.disk_status(ui);
@@ -25,6 +28,21 @@ impl CocoApp {
         let Some(path) = &self.cart_path else { return };
         ui.separator();
         ui.label(format!("Cart: {}", file_name(path)));
+    }
+
+    /// One entry per port whose source isn't `JoySource::None` — "JR"/"JL"
+    /// matching the Joysticks menu's "Right stick"/"Left stick" naming
+    /// (`joy.rs`'s `menu_ui`), lit while that port is actively being driven.
+    fn joystick_status(&self, ui: &mut egui::Ui) {
+        for (stick, prefix) in [(RIGHT, "JR"), (LEFT, "JL")] {
+            let source = self.joysticks.sources[stick];
+            if source == joy::JoySource::None {
+                continue;
+            }
+            ui.separator();
+            joystick_icon(ui, self.joysticks.in_use[stick]);
+            ui.label(format!("{prefix}: {}", source.label()));
+        }
     }
 
     fn rs232_status(&mut self, ui: &mut egui::Ui) {

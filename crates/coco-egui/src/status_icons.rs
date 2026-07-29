@@ -377,6 +377,42 @@ pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) {
     }
 }
 
+/// Status-bar joystick activity indicator: an analog-stick silhouette, red
+/// while that port's source is actively being driven
+/// ([`crate::joy::JoystickInputs::in_use`]), gray otherwise.
+pub(crate) const JOYSTICK_ICON_SIZE: egui::Vec2 = egui::vec2(11.0, 13.0);
+
+/// One status-bar joystick indicator (see [`JOYSTICK_ICON_SIZE`]'s doc): a
+/// rounded base rect, a stick line rising from the base's center, and a
+/// filled ball cap on top — base, stick, and ball are all the same
+/// silhouette color (a real stick reads as one continuous shape from
+/// above), plus one small button dot punched into the base's left corner.
+pub(crate) fn joystick_icon(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(JOYSTICK_ICON_SIZE, egui::Sense::hover());
+    let shell = if active { ICON_ACTIVE } else { ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+
+    // Base: a rounded rect hugging the bottom.
+    let base_h = JOYSTICK_ICON_SIZE.y * 0.4;
+    let base = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.bottom() - base_h),
+        egui::vec2(JOYSTICK_ICON_SIZE.x, base_h),
+    );
+    painter.rect_filled(base, 1.5, shell);
+
+    // Stick: rises from the base's top-center toward the icon's top.
+    let ball = egui::pos2(base.center().x, rect.top() + JOYSTICK_ICON_SIZE.y * 0.12);
+    let stick_stroke = egui::Stroke::new(2.0f32, shell);
+    painter.line_segment([egui::pos2(base.center().x, base.top()), ball], stick_stroke);
+    // Ball: the fire-button cap on top.
+    painter.circle_filled(ball, JOYSTICK_ICON_SIZE.y * 0.10, shell);
+
+    // Button: punched into the base's left corner.
+    let button = egui::pos2(base.left() + base_h * 0.35, base.center().y);
+    painter.circle_filled(button, base_h * 0.22, punch);
+}
+
 #[cfg(test)]
 #[path = "status_icons_test.rs"]
 mod tests;

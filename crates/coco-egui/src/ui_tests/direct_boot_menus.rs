@@ -118,6 +118,19 @@ fn help_about_toggles_the_about_window() {
 }
 
 #[test]
+fn status_bar_shows_the_default_joystick_config() {
+    let mut harness = boot_harness();
+    harness.step();
+    // Default config: right stick on the mouse, left stick off — see
+    // JoystickInputs::new.
+    harness.get_by_label_contains("JR: Mouse");
+    assert!(
+        harness.query_by_label_contains("JL:").is_none(),
+        "the left stick's source is None by default, so it shouldn't get a status-bar entry"
+    );
+}
+
+#[test]
 fn joysticks_menu_assigns_a_source_to_the_right_stick() {
     let mut harness = boot_harness();
 
