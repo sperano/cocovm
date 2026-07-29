@@ -762,13 +762,12 @@ soft blur that no CoCo owner ever saw.
 The frontend does use linear sampling — twice, and both times for
 photographs rather than emulated screens. The manager's decorative photo
 pane uploads with `TextureOptions::LINEAR`
-([`crates/coco-egui/src/manager.rs:343-346`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L343-L346)), and so does a suspended
+([`crates/coco-egui/src/manager.rs:386-389`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L386-L389)), and so does a suspended
 machine's saved screen thumbnail when it is loaded back from its PNG
 ([`crates/coco-egui/src/manager/thumbnails.rs:57-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L57-L61)). Both are being
 scaled *down* into a small area rather than up, and a photograph shrunk
 with nearest sampling looks harsh and aliased. Same API, opposite choice,
-for a reason you can state in one sentence — which is what makes it worth
-knowing rather than memorizing.
+for a reason you can state in one sentence.
 
 ### One rectangle, and the arithmetic that places it
 
@@ -1422,9 +1421,9 @@ This is worth studying for two reasons that have nothing to do with the
 headless core, and the problems it solves — persistence, identity,
 crash-safety, forward compatibility — are the same problems in any
 application that saves the user's work. Second, it exercises the
-borrow-checker discipline from Chapter 1 (§1.4) in a setting where no
-hardware is involved at all, which is the best possible evidence that the
-discipline was a general design principle rather than an emulator trick.
+borrow-checker discipline from Chapter 1 (§1.4) with no hardware involved
+at all — evidence the discipline was a general design principle rather
+than an emulator trick.
 
 ### Machine definitions as data, not code
 
@@ -1463,9 +1462,9 @@ the types the program actually runs on. It is kept separate from
 Why not put `#[derive(Serialize, Deserialize)]` on `MachineConfig` and
 save that? The module doc gives the reason, and it is a good one: an
 internal `coco-core` refactor — renaming an enum variant, restructuring a
-field, splitting one config into two — would otherwise silently change what
-is written to disk, breaking every user's saved machines out from under
-them, with no compiler error and no warning. The DTO is a deliberate
+field, splitting one config into two — would otherwise silently change
+what is written to disk, breaking every user's saved machines out from
+under them. The DTO is a deliberate
 translation seam. It reads friendly strings on disk (`"512k"`,
 `"mc6847t1"`) rather than whatever `coco-core`'s enum discriminants happen
 to serialize as this week, and its `to_machine_config` runs
@@ -1541,18 +1540,17 @@ The property this buys is worth stating precisely, because "atomic" gets
 used loosely. A crash, a power loss, or a `kill -9` at *any* instant during
 this sequence leaves the filesystem holding either the untouched old file
 or the fully-written temporary one. It can never leave a half-written
-`<slug>.toml`, because a rename over an existing path is atomic with
-respect to a concurrent reader on every platform this program targets: a
-reader either observes the file before the rename or after it, never
-during. Writing in place has no such guarantee — a process killed halfway
-through `fs::write` leaves a truncated file that will not parse, and the
-user's machine definition is gone.
+`<slug>.toml`: a rename over an existing path is atomic with respect to a
+concurrent reader on every platform this program targets — a reader
+observes the file before the rename or after it, never during. Writing in
+place has no such guarantee; a process killed halfway through `fs::write`
+leaves a truncated file that will not parse, and the user's machine
+definition is gone.
 
 The same pattern appears verbatim for thumbnail PNGs a few paragraphs
-below. The manager applies it to *every* file it writes on the
-user's behalf, not merely to the one that would be most embarrassing to
-lose, which is the right instinct: the discipline is cheap enough that
-deciding case by case costs more thought than it saves.
+below. The manager applies it to *every* file it writes on the user's
+behalf, not merely the one most embarrassing to lose — the discipline is
+cheap enough that deciding case by case costs more thought than it saves.
 
 ### The slug is the identity
 
@@ -1597,7 +1595,7 @@ Renaming is therefore exactly two filesystem moves: `<old>.toml` to
 second move fails partway, the first is rolled back — the definition file
 is renamed back rather than left pointing at a directory that no longer
 matches its own name
-([`crates/coco-egui/src/manager/lifecycle.rs:213-266`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L213-L266)). The comment
+([`crates/coco-egui/src/manager/lifecycle.rs:212-265`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L212-L265)). The comment
 on that rollback states the priority plainly: "a stale slug beats relative
 [media] entries resolving into a directory that no longer matches the
 definition's file name."
@@ -1609,16 +1607,15 @@ so a disk image referenced as `"disk0.dsk"` means a different absolute file
 the instant the slug changes. Move the definition without moving the
 directory and every relative media path in it silently points at nothing.
 
-There is one more subtlety, and it is the sort of thing that only appears
-once a feature meets a real user. A machine cannot be renamed on disk while
-its VM is running — the running VM writes `thumbnail.png` into the
-artifact directory by path, and renaming out from under it races — nor
-while it is *suspended*, for a subtler reason: the frozen
+One more subtlety appears only once a feature meets a real user. A machine
+cannot be renamed on disk while its VM is running — the running VM writes
+`thumbnail.png` into the artifact directory by path, and renaming out from
+under it races — nor while it is *suspended*: the frozen
 `suspended.ccstate` records its media by absolute, pre-rename path (week
 16's `MediaRefs`), so moving the artifact directory under it would make
-the frozen state unrestorable. So a rename requested in either state
-merely sets a flag, and a separate pass picks it up once the machine is
-powered off:
+the frozen state unrestorable. A rename requested in either state merely
+sets a flag, and a separate pass picks it up once the machine is powered
+off:
 
 ```rust
     pub(super) fn apply_pending_renames(&mut self) {
@@ -1632,7 +1629,7 @@ powered off:
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:279-287`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L279-L287).) It runs once per
+([`crates/coco-egui/src/manager/lifecycle.rs:278-286`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L278-L286).) It runs once per
 `update()`, before any panel draws, so row indices stay stable for the
 whole frame — and it re-searches from scratch each iteration rather than
 iterating indices, because each `migrate_slug` re-sorts the list
@@ -1653,8 +1650,8 @@ state. The first changes what is actually *executing*:
     pub vm: Option<Box<CocoApp>>,
 ```
 
-That field is [`crates/coco-egui/src/manager.rs:116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L116), inside the struct at
-[`crates/coco-egui/src/manager.rs:108-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L108-L146). Powered Off is `None`. The
+That field is [`crates/coco-egui/src/manager.rs:130`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L130), inside the struct at
+[`crates/coco-egui/src/manager.rs:122-160`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L122-L160). Powered Off is `None`. The
 second, `suspended: bool`, mirrors something that lives on disk: a
 suspended machine's whole frozen state is a `suspended.ccstate` file in
 its artifact directory (written by week 16's save-state engine), and *the
@@ -1675,14 +1672,13 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
 }
 ```
 
-([`crates/coco-egui/src/manager.rs:173-181`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L173-L181).) Three states, computed
+([`crates/coco-egui/src/manager.rs:210-218`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L210-L218).) Three states, computed
 fresh at draw time; the only one with any persistence is Suspended, and
 its persistence is the state file itself, not a status field in the
 definition. This is §15.1's lesson applied to application state rather
-than widgets: do not store what you can compute, because stored copies go
-stale and computed ones cannot — and when something genuinely must
-persist, make the artifact itself the truth rather than a second record of
-it.
+than widgets: do not store what you can compute — and when something
+genuinely must persist, make the artifact itself the truth rather than a
+second record of it.
 
 Starting is short:
 
@@ -1697,7 +1693,7 @@ Starting is short:
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:72-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L72-L79).) `launch_machine`
+([`crates/coco-egui/src/manager/lifecycle.rs:71-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L71-L78).) `launch_machine`
 is the manager's counterpart to the CLI's `boot::boot_app`; both build a
 `CocoApp` from a config plus a set of mounted media, and the two modules'
 doc comments name each other as siblings
@@ -1714,11 +1710,11 @@ the row's preview (`write_entry_thumbnail`), freeze the whole machine to
 `suspended.ccstate` with week 16's `save_state_to` (which flushes dirty
 media as part of its own contract), and stop the clock in place
 (`set_running(false)`) — in that order, so the screenshot is exactly the
-frozen frame ([`crates/coco-egui/src/manager/lifecycle.rs:91-116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L91-L116)).
-The window stays open as a display-only viewing port (§ below), and
-closing it merely drops the `Box` — the state is already safe on disk.
+frozen frame ([`crates/coco-egui/src/manager/lifecycle.rs:90-115`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L90-L115)).
+The window stays open as a display-only viewing port; closing it merely
+drops the `Box`, the state being safe on disk.
 Play on a suspended machine (`resume_vm`,
-[`crates/coco-egui/src/manager/lifecycle.rs:130-159`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L130-L159)) either
+[`crates/coco-egui/src/manager/lifecycle.rs:129-158`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L129-L158)) either
 un-pauses the still-alive VM or, if the window was closed, launches fresh
 and restores the frozen state over it — and, either way, *deletes* the
 state file, because the running machine immediately diverges from the
@@ -1750,7 +1746,7 @@ Stopping is the power switch:
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:173-191`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L173-L191).) Flush dirty
+([`crates/coco-egui/src/manager/lifecycle.rs:172-190`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L172-L190).) Flush dirty
 media — the same `flush_media` that `CocoApp::on_exit` runs for the
 direct-boot window — drop the `Box`, and discard both halves of any frozen
 state: the `.ccstate` and the screenshot, since a powered-off row shows a
@@ -1762,11 +1758,10 @@ already provides one.
 > `CocoApp` is a large struct. It contains the whole `Machine` (CPU, RAM,
 > the GIME, both PIAs, every optional cartridge device) plus every UI
 > dialog's own state: the debugger panel, the paper window, and thirty-odd
-> more fields. With `Option<CocoApp>`, every
-> `MachineEntry` in the list would pay the full size of that struct
-> regardless of whether the machine is running — including entries for
-> machines that are, and always will be, stopped, since `Option<T>` is at
-> least as large as `T`.
+> more fields. With `Option<CocoApp>`, every `MachineEntry` in the list
+> would pay the full size of that struct regardless of whether the machine
+> is running — `Option<T>` is at least as large as `T`, even for machines
+> that are, and always will be, stopped.
 >
 > Boxing puts the actual `CocoApp` on the heap and leaves only a
 > pointer-sized `Option<Box<_>>` inline in the entry, so a manager listing
@@ -1829,13 +1824,13 @@ because there is only one.
 
 A *Suspended* machine whose window is still open takes a middle branch
 ([`crates/coco-egui/src/manager/vm_windows.rs:112-134`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L112-L134)):
-just the framebuffer-texture upload plus the display — no chrome, and no
+the framebuffer-texture upload plus the display, no chrome, and no
 `step_emulation` either, since its `handle_input` would keep the
 quick-load/quick-save shortcuts and keyboard/joystick writes live. The
 window becomes a viewing port onto the frozen frame, never a control
-surface — a full chrome would leave Reset, Load State, disk mounts, and
-the debugger's own Run/Step pointed at a machine whose on-disk frozen copy
-they would silently diverge from, and one stray click later, Play would
+surface: full chrome would leave Reset, Load State, disk mounts, and the
+debugger's own Run/Step pointed at a machine whose on-disk frozen copy
+they would silently diverge from — one stray click later, Play would
 "resume" (and discard the state file of) a machine that no longer matches
 what the user froze.
 
@@ -1854,9 +1849,9 @@ texture-upload-only gating here as in the native branch), followed by an
 anchored `egui::Window` whose body is just `vm.draw_display(ui)`
 ([`crates/coco-egui/src/manager/vm_windows.rs:82-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L82-L108)). Two decisions
 in that fallback are worth reading the comments for. It skips
-`draw_chrome` entirely because drawing two independent sets of menu bars
-and status bars into one shared context would interleave them into a single
-confusing window. And it caps the window at
+`draw_chrome` because two independent sets of menu bars and status bars
+drawn into one shared context would interleave into a single confusing
+window. And it caps the window at
 `EMBEDDED_FALLBACK_SIZE = 320×240` rather than the native window's full
 size, because — as the comment records, "found the hard way, via a kittest
 regression" — a window that large, even anchored to a corner, spans most of
@@ -1875,15 +1870,13 @@ because emulation was deliberately separated from the drawing of chrome.
 > holding `None` for the closure's whole duration — and then restores it
 > afterwards with `self.entries[i].vm = Some(vm)`.
 >
-> Why not simply borrow `&mut self.entries[i].vm` inside the closure? The
-> function's own doc comment answers it: close requests are collected into
-> a plain local `Vec<usize>` and applied *after* the loop with
+> Why not borrow `&mut self.entries[i].vm` directly inside the closure?
+> The function's own doc comment answers it: close requests are collected
+> into a plain local `Vec<usize>` and applied *after* the loop with
 > `close_vm_window` — the power switch for a Running machine, a mere
 > VM-object drop for a Suspended one — because that needs
 > `&mut self.entries[i]`, which would conflict with the `vm` the loop is
-> already holding out of that same slot. Holding a live borrow of `self`
-> across the closure body would collide with the surrounding loop's own
-> indexing of `self.entries`.
+> already holding out of that same slot.
 >
 > This is the exact move from Chapter 1, §1.4 — `Machine { cpu, bus }` as
 > disjoint fields so that `cpu.step(&mut bus)` compiles — recurring in
@@ -1903,9 +1896,8 @@ upload. A Powered Off machine shows plain black, like the screen of a
 machine with no power. And a Suspended one shows the *frozen frame*: at
 suspend time, `write_entry_thumbnail`
 ([`crates/coco-egui/src/manager/thumbnails.rs:18-34`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L18-L34)) captures the
-framebuffer as a plain PNG at `<artifact-dir>/<slug>/thumbnail.png` —
-written with the same temporary-file-then-rename atomicity as machine
-definitions — so the row keeps showing that exact frame after the VM
+framebuffer as a plain PNG at `<artifact-dir>/<slug>/thumbnail.png`, so
+the row keeps showing that exact frame after the VM
 window closes, and even across manager restarts. Powering off deletes it
 along with the state file; the screenshot has no meaning without the
 frozen machine it depicts.
@@ -1926,7 +1918,7 @@ One small heuristic in the PNG writer deserves attention:
     }
 ```
 
-([`crates/coco-egui/src/manager.rs:209-214`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L209-L214).) Consider what a
+([`crates/coco-egui/src/manager.rs:246-251`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L246-L251).) Consider what a
 screen capture is exposed to. The CoCo's screen is genuinely, uniformly
 black at plenty of legitimate moments: during a mode switch, right after a
 `CLS 0`, in the instant following a reset before the ROM has painted
@@ -2080,10 +2072,10 @@ so this section explains exactly how it works and what it costs.
 The tool is `egui_kittest`, a dev-dependency
 ([`crates/coco-egui/Cargo.toml:65-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/Cargo.toml#L65-L66)). It runs egui's *real* layout and
 input logic against a headless backend — the same code that would run in
-front of a user, not a mock — and then exposes the result as an *AccessKit*
-accessibility tree. AccessKit is the structured representation a screen
-reader consumes: a tree of nodes, each with a role (button, checkbox, text
-input) and a label. Tests query that tree by label rather than by pixel
+front of a user, not a mock — and exposes the result as an *AccessKit*
+accessibility tree, the structured representation a screen reader
+consumes: a tree of nodes, each with a role (button, checkbox, text input)
+and a label. Tests query that tree by label rather than by pixel
 coordinate, which turns out to change everything about how durable they
 are.
 
@@ -2149,11 +2141,10 @@ steps, so a test controls pacing precisely instead of sleeping and hoping.
 
 And the comment on `set_size` names a category of headless-testing gotcha
 that has nothing to do with emulation: egui only puts *currently visible*
-widgets into the AccessKit tree. A viewport too small to show the whole
-Machine menu makes its lower items simply un-queryable — not disabled, not
-hidden behind a flag, just never laid out this frame, and therefore absent
-from the tree the test searches. The failure looks like "the menu item does
-not exist," which sends you hunting in the wrong file.
+widgets into the AccessKit tree, so a viewport too small to show the whole
+Machine menu leaves its lower items un-queryable — never laid out this
+frame, therefore absent from the tree the test searches — and the failure
+looks like "the menu item does not exist."
 
 The manager harness does the same dance with `ManagerApp::new`, and adds
 one discipline the direct-boot harness does not need:
@@ -2173,7 +2164,7 @@ pub(super) fn manager_harness_with_artifacts(
 }
 ```
 
-([`crates/coco-egui/src/ui_tests/harness.rs:191-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L191-L202).) Both directory
+([`crates/coco-egui/src/ui_tests/harness.rs:207-218`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L207-L218).) Both directory
 paths are *injected* — as `None`, or as a temporary directory — and never
 the real user configuration or data directories. That injection is why
 `ManagerApp::new` takes them as parameters at all rather than calling
@@ -2199,49 +2190,47 @@ pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>,
 frame, click, step twice more. Each beat exists for a reason the module doc
 listed above.
 
-The hover comes first because, as that doc says, egui routes a press using
-the *previous* frame's hit-test data — so a press with no prior hover
-misses windows that were anchored or re-anchored this frame. The step
-between hover and click lets that hit-test data become current. The click
-itself is a press and a release, and egui fires `clicked()` on the release.
-And the two trailing steps let whatever the click *caused* — a menu
-opening, a row becoming selected, a modal appearing — be fully reflected in
-the accessibility tree before the test's next assertion reads it.
+The hover comes first because egui routes a press using the *previous*
+frame's hit-test data — a press with no prior hover misses windows that
+were anchored or re-anchored this frame — and the step between hover and
+click lets that data become current. The click itself is a press and a
+release, and egui fires `clicked()` on the release. The two trailing steps
+let whatever the click *caused* — a menu opening, a row becoming selected,
+a modal appearing — be fully reflected in the accessibility tree before
+the test's next assertion reads it.
 
 Skipping any of these beats is the single most common way a kittest test
-becomes flaky, and the failure is misleading: the application logic is
-fine, and the test merely asserted on a tree state egui had not finished
-producing.
+becomes flaky, and the failure misleads: the application logic is fine;
+the test asserted on a tree state egui had not finished producing.
 
 ### Why label-based queries beat coordinates
 
 `harness.get_by_label("Reset")` finds the one accessible node whose
-AccessKit label is exactly `"Reset"`, and panics if there is either no
-match or more than one. It is deliberately as strict as `unwrap()`.
+AccessKit label is exactly `"Reset"`, and panics unless there is exactly
+one match — deliberately as strict as `unwrap()`.
 
 Compare that to a coordinate-based test — something like clicking at
-position (340, 22). It would pass today. It would silently start clicking
-the *wrong thing* the day anyone reorders a menu, resizes the toolbar,
-changes a font, or adds an item above the one being targeted. And nothing
-about the failure would point at the cause: the test would exercise some
-other control and assert on state that control never touched.
+position (340, 22). It would pass today, and it would silently start
+clicking the *wrong thing* the day anyone reorders a menu, resizes the
+toolbar, changes a font, or adds an item above the one being targeted —
+with nothing about the failure pointing at the cause.
 
 A label-based test survives exactly the kind of refactor this codebase does
 constantly — the module-splitting visible throughout its own commit history
-— because it asserts on *meaning*: "the control labeled Reset." Not on
-where that meaning happened to render this week. It is the UI-testing
+— because it asserts on *meaning*: "the control labeled Reset," not
+wherever that meaning happened to render this week. It is the UI-testing
 analogue of asserting on a register's value rather than on a specific
 memory address that happens to hold it.
 
 Strictness has a cost, of course, which is that label collisions must be
 handled explicitly rather than papered over. Three helpers do that.
-`click_containing` matches by substring, for labels carrying decoration the
-visible caption does not show — a submenu's trailing "⏵" ("MultiPak
+`click_containing` matches by substring, for labels carrying decoration
+the visible caption does not show — a submenu's trailing "⏵" ("MultiPak
 Interface ⏵", "Slot 1 ⏵"). `lowest_by_label` and `click_in_menu`
-disambiguate a menu-popup copy of a label that the toolbar *also* shows —
-"Reset" appears in both places at once — by picking whichever matching node
-sits lowest on screen, since a popup always hangs below the toolbar row
-that opened it. And for the genuinely intentional duplicates there is:
+disambiguate a menu-popup copy of a label the toolbar *also* shows —
+"Reset" appears in both at once — by picking the matching node lowest on
+screen, since a popup hangs below the toolbar row that opened it. And for
+the genuinely intentional duplicates there is:
 
 ```rust
 pub(super) fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, S>, label: &str) -> bool {
@@ -2249,33 +2238,35 @@ pub(super) fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, 
 }
 ```
 
-([`crates/coco-egui/src/ui_tests/harness.rs:209-211`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L209-L211).) Its doc comment
+([`crates/coco-egui/src/ui_tests/harness.rs:225-227`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L225-L227).) Its doc comment
 names the case exactly: a status word like "Running" is deliberately shown
 twice at once, once weakly in the list row and once strongly in the detail
-pane header, both driven by the same `vm_status_label` from §15.6. Asserting
-that it exists is right; asserting that it exists *once* would be asserting
-on a layout decision.
+pane header, both driven by the same `vm_status_label` from §15.6 — while
+exactly one machine is selected, that is; with several, the bulk view
+described below replaces the pane, leaving the weak list-row copies.
+Asserting that the label exists is right; asserting that it exists *once*
+would be asserting on a layout decision.
 
-There is one more addressing wrinkle worth knowing, because it is the kind
-of thing that costs an hour if nobody wrote it down. A combo box does not
-expose its current selection as a label at all — egui sets it as the
-accessibility *value* instead — so `select_combo_at` addresses the combo
-button with `get_by_value` and the popup items, which are plain
-selectables, with `get_by_label`
-([`crates/coco-egui/src/ui_tests/harness.rs:79-115`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L79-L115)). Role, label, and
-value are three different axes of the accessibility tree, and knowing which
-one a widget uses is most of the skill in writing these tests.
+There is one more addressing wrinkle worth knowing, because it costs an
+hour if nobody wrote it down. A combo box does not expose its current
+selection as a label at all — egui sets it as the accessibility *value*
+instead — so `select_combo_at` addresses the combo button with
+`get_by_value` and the popup items, which are plain selectables, with
+`get_by_label`
+([`crates/coco-egui/src/ui_tests/harness.rs:95-131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L95-L131)). Role, label, and
+value are three different axes of the tree; knowing which one a widget
+uses is most of the skill in writing these tests.
 
 ### Reading one real test
 
 `manager_row_context_menu_delete_confirms_and_removes`
-([`crates/coco-egui/src/ui_tests/manager_window.rs:226-254`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L226-L254)) is worth
-reading start to finish, because it follows the exact sequence of clicks a
-human tester would perform, written in something very close to English:
+([`crates/coco-egui/src/ui_tests/manager_window.rs:226-259`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L226-L259)) is worth
+reading start to finish, because it follows the exact sequence of clicks
+a human tester would perform:
 
 ```rust
     click(&mut harness, "Beta CoCo 3");
-    assert_eq!(harness.state().selected, Some(1));
+    assert_eq!(harness.state().selection.single(), Some(1));
 
     right_click(&mut harness, "Alpha CoCo 3");
     click(&mut harness, "Delete…");
@@ -2290,6 +2281,11 @@ human tester would perform, written in something very close to English:
     assert!(!dir.path().join("alpha.toml").exists(), "the definition file must be removed");
     assert!(dir.path().join("beta.toml").exists(), "only the confirmed machine is deleted");
     assert_eq!(
+        harness.state().selection.single(),
+        Some(0),
+        "the selection must follow the surviving row as indices shift, not be cleared"
+    );
+    assert_eq!(
         harness.state().detail_name(),
         Some("Beta CoCo 3"),
         "the selection must follow the surviving row as indices shift"
@@ -2297,39 +2293,101 @@ human tester would perform, written in something very close to English:
 ```
 
 Select Beta. Right-click Alpha — and note that this must *not* move the
-selection, a real user-facing decision the code comment records: the context
-menu acts on the row under the cursor, not on whatever happens to be
-selected. Open Delete…, click Cancel, and confirm that nothing changed and
-the file survives. Then right-click Alpha again, Delete…, and this time
-confirm: the row and its `.toml` are both gone, Beta's file is untouched,
-and — the assertion that would be easy to forget to write — the selection
-has followed Beta down from index 1 to index 0 rather than silently
-pointing at whatever now occupies index 1.
+selection. Now that the list supports selecting several rows at once
+(this section's closing passage), that user-facing invariant has two
+halves, and `draw_row_context_menu`'s doc comment
+([`crates/coco-egui/src/manager/list.rs:153-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs#L153-L161)) states both: right-clicking
+a row *inside* a multi-selection opens a bulk menu acting on the whole
+selection, while right-clicking anywhere else — here, Beta alone is
+selected — opens the single-row menu, acting on the row under the cursor,
+not on whatever happens to be selected; neither moves the selection cue
+itself. Open Delete…, click Cancel, and confirm nothing changed and the
+file survives; right-click Alpha again, Delete…, and this time confirm:
+the row and its `.toml` are both gone, Beta's file is untouched,
+and — the pair of assertions that would be easy to forget to write — the
+selection has followed Beta down from index 1 to index 0 rather than
+silently pointing at whatever now occupies index 1.
 
-`harness.state()` is the other half of what makes these tests readable.
-It is plain field access into the real `ManagerApp` the harness owns, which
-lets a test look past the user interface entirely and inspect the actual
-model — the same way you would inspect `Machine` fields directly in a
-`coco-core` test rather than trying to read pixels off a rendered screen.
-The user interface is driven like a user drives it; the assertions are made
-where the truth lives.
+`harness.state()` is the other half of what makes these tests readable:
+plain field access into the real `ManagerApp` the harness owns, letting a
+test look past the user interface and inspect the actual model — the same
+way you would inspect `Machine` fields directly in a `coco-core` test
+rather than trying to read pixels off a rendered screen. The user
+interface is driven like a user drives it; the assertions are made where
+the truth lives.
 
 > **Rust corner — one function, two apps.** Look at the signature again:
 > `click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str)`.
-> It is generic over `S`, the app type the harness wraps, and this exact
-> function drives both `CocoApp` harnesses and `manager::ManagerApp`
-> harnesses with no duplication — because `Harness<'static, S>`'s
-> hover/step/click methods do not care what `S` is. They only need it to
-> satisfy the `Queryable` trait's `'static` bound.
+> It is generic over `S`, the app type the harness wraps, so this exact
+> function drives both `CocoApp` and `manager::ManagerApp` harnesses with
+> no duplication — `Harness<'static, S>`'s hover/step/click methods do not
+> care what `S` is beyond the `Queryable` trait's `'static` bound.
 >
-> This is the same monomorphization story from Chapter 1's `Bus` trait
-> (§1.3), arriving from a completely different direction. The compiler
-> emits one specialized copy of `click` for `S = CocoApp` and another for
-> `S = manager::ManagerApp`, so sharing this helper across two otherwise
-> unrelated app types costs nothing at run time. Generic code paid off in
-> the CPU crate's hot loop; here it pays off in test code, where the
-> benefit is not speed but the absence of a second, subtly divergent copy
-> of the click sequence.
+> This is the same monomorphization story as Chapter 1's `Bus` trait
+> (§1.3), arriving from a completely different direction: the compiler
+> emits one specialized copy of `click` per app type, so sharing the
+> helper across two otherwise unrelated apps costs nothing at run time.
+> Generic code paid off in the CPU crate's hot loop; here the benefit is
+> not speed but the absence of a second, subtly divergent copy of the
+> click sequence.
+
+### Many rows at once: selection as a set
+
+The machine list originally tracked its selection as a bare
+`Option<usize>`. It is now a `Selection`
+([`crates/coco-egui/src/manager/selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/selection.rs)): a sorted set of row indices
+plus the *anchor*, the row a Shift-click measures its range from — set by
+a plain or Cmd/Ctrl-click, never moved by a Shift-click itself, so
+repeated Shift-clicks keep extending from the same starting row, the
+Finder and Explorer convention. A plain click selects one row alone,
+Cmd/Ctrl-click toggles a row in or out, Shift-click selects the
+anchor-to-row range inclusive, and ⌘A/Ctrl+A selects every row — though
+only when no widget already owns the keyboard, so the Name field keeps its
+native select-all ([`crates/coco-egui/src/manager.rs:402-409`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L402-L409)). With more
+than one row selected, the single-machine edit form gives way to a bulk
+pane: an "N machines selected" heading over one transport row whose buttons
+act on every applicable selected machine at once
+([`crates/coco-egui/src/manager/bulk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/bulk.rs)).
+
+The set arithmetic — toggling, ranges, how indices shift when a row is
+deleted out from under the selection — is ordinary unit-test material,
+covered in [`crates/coco-egui/src/manager/selection_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/selection_test.rs) with no harness
+in sight. What genuinely needs kittest is the wiring from a modifier-held
+click to that arithmetic;
+[`crates/coco-egui/src/ui_tests/manager_selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_selection.rs) drives it through one
+new harness helper, `click_modifiers` — the same five-beat rhythm as
+`click`, with a set of `egui::Modifiers` held across the press and
+release. The Cmd-click test reads like the others:
+
+```rust
+#[test]
+fn cmd_click_adds_a_second_row_to_the_selection() {
+    let entries = vec![
+        sample_entry("alpha", "Alpha CoCo 3"),
+        sample_entry("beta", "Beta CoCo 3"),
+    ];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Alpha CoCo 3");
+    assert_eq!(harness.state().selection.single(), Some(0));
+
+    click_modifiers(&mut harness, "Beta CoCo 3", egui::Modifiers::COMMAND);
+    assert_eq!(harness.state().selection.len(), 2);
+    assert!(harness.state().selection.contains(0) && harness.state().selection.contains(1));
+    harness.get_by_label("2 machines selected");
+}
+```
+
+([`crates/coco-egui/src/ui_tests/manager_selection.rs:22-37`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_selection.rs#L22-L37).) The middle
+assertions inspect the model directly, `harness.state()` style —
+`selection.single()` is the "exactly one row selected" accessor the detail
+pane itself keys on — while the last line goes back through the
+accessibility tree: `get_by_label("2 machines selected")` proves the bulk
+pane actually replaced the edit form, not merely that the set grew. The
+rest of the file walks the other gestures the same way: a Shift-click
+range, a plain click collapsing back to a single row, both halves of the
+right-click invariant, and ⌘A declining to fire while the Name field owns
+the keyboard.
 
 ---
 
@@ -2337,13 +2395,12 @@ where the truth lives.
 
 A chapter that claims a test suite exists owes you the actual output,
 including the parts that do not pass. Here is `cargo test -p coco-egui`,
-run in a worktree that — like every worktree that is not the main checkout
-— has no `roms/` directory, since ROM images are git-ignored and local-only
-by the project's own convention. This is what happened, not a sanitized
-summary:
+run in a worktree with no `roms/` directory — ROM images are git-ignored
+and local-only by the project's own convention. This is what happened, not
+a sanitized summary:
 
 ```
-test result: FAILED. 83 passed; 30 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 102 passed; 30 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 **All 30 failures are ROM-required, and only ROM-required.** Every one
@@ -2358,33 +2415,35 @@ local-only)"`. The failing set breaks down cleanly into three groups:
   `boot_harness()`, which requires the real system ROM to construct a
   `CocoApp` at all.
 - `ui_tests::manager_lifecycle::*` (8) — every test that actually calls
-  `launch_machine` (Start a VM for real), as opposed to `manager_window.rs`
-  and `manager_peripherals.rs`'s tests, which only exercise the manager's
-  *list and edit* UI against injected `MachineEntry` fixtures
+  `launch_machine` (Start a VM for real), as opposed to `manager_window.rs`,
+  `manager_peripherals.rs`, and `manager_selection.rs`'s tests, which only
+  exercise the manager's *list and edit* UI against injected `MachineEntry` fixtures
   (`sample_entry`, built from `MachineDef::from_config` — no ROM, no
   `Machine`, no boot) and consequently pass cleanly.
 
-**The 80 passing tests are the whole non-ROM surface of the crate**: the
+**The 102 passing tests are the whole non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
-round-trip and both halves of the all-black skip heuristic), the joystick
-math tests, the paper-render/paper-export tests (pure rasterization, no
-emulated printer attached), and — importantly for this chapter — every
-`ui_tests::manager_window::*` and `ui_tests::manager_peripherals::*` test,
-including the exact delete-confirmation test walked in §15.8 above. If you
+round-trip and both halves of the all-black skip heuristic), the
+`Selection` set-arithmetic tests from §15.8, the joystick math tests, the
+paper-render/paper-export tests (pure rasterization, no emulated printer
+attached), and — importantly for this chapter — every
+`ui_tests::manager_window::*`, `ui_tests::manager_peripherals::*`, and
+`ui_tests::manager_selection::*` test, including the exact
+delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 115 tests should pass.
+checkout with real ROMs present, all 132 tests should pass.
 
-The split is itself worth a moment's reflection, because it is the same
-line Chapter 1 drew, showing up in the test results. The tests that need a
+The split is the same line Chapter 1 drew, showing up in the test
+results. The tests that need a
 copyrighted ROM are exactly the tests that need a *machine*; the tests that
 need only the application — its file format, its list management, its
-arithmetic — need nothing but the repository. Anyone can clone this project
-and immediately run eighty meaningful tests. That is not an accident of
-packaging; it is what keeping the frontend's own logic separable from the
-emulated hardware buys.
+arithmetic — need nothing but the repository. Anyone can clone this
+project and immediately run a hundred meaningful tests — not an accident
+of packaging, but what keeping the frontend's own logic separable from
+the emulated hardware buys.
 
 ---
 
@@ -2406,15 +2465,16 @@ In this order:
 4. **[`crates/coco-egui/src/app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs)** and **[`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs)** — every
    function in both files is short; read them all, not just the excerpts
    above.
-5. **[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs)**, **[`manager/lifecycle.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs)**, and
-   **[`manager/vm_windows.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs)** — the module doc comment at the top of
-   [`manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) first, then the three files in that order.
+5. **[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs)**, **[`manager/lifecycle.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs)**,
+   **[`manager/selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/selection.rs)**, **[`manager/bulk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/bulk.rs)**, **[`manager/delete.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/delete.rs)**,
+   and **[`manager/vm_windows.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs)** — the module doc comment at the top of
+   [`manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) first, then the files in that order.
 6. **[`crates/coco-egui/src/media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs)** in full — then skim
    [`media/tape.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/tape.rs) and note everywhere it *differs* from the disk pattern.
 7. **[`crates/coco-egui/src/ui_tests.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests.rs)**'s module doc, then
    **[`crates/coco-egui/src/ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)** in full, then
-   **[`crates/coco-egui/src/ui_tests/manager_window.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs)** — read every test
-   in the file as if it were a QA script, not code.
+   **[`crates/coco-egui/src/ui_tests/manager_window.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs)** and **[`manager_selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_selection.rs)** —
+   read every test in both files as if it were a QA script, not code.
 
 Run the suite and read the failures, not just the pass count:
 
@@ -2492,14 +2552,14 @@ problem?
 **15.5 — Read and predict a kittest test (read/predict, then verify by
 running it).** Without running anything yet, read
 `ui_tests::manager_window::manager_rename_migrates_definition_file_and_artifact_dir`
-([`crates/coco-egui/src/ui_tests/manager_window.rs:332-373`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L332-L373)) end to end and
+([`crates/coco-egui/src/ui_tests/manager_window.rs:337-378`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L337-L378)) end to end and
 write down, in order: (a) what `harness.state().entries[0].slug` equals
 immediately after `name_field().focus()` and typing `" Two"` but *before*
 `harness.key_press(egui::Key::Enter)`; (b) why the test calls
 `harness.step()` **three** times after the Enter key press, when most of
 this chapter's helpers only ever call it once or twice in a row — tie your
 answer to `ManagerApp::apply_pending_renames`'s doc comment
-([`manager/lifecycle.rs:268-278`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L268-L278)) and the `rename_pending` field it
+([`manager/lifecycle.rs:267-277`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L267-L277)) and the `rename_pending` field it
 consumes. Then run `cargo test -p coco-egui ui_tests::manager_window` (this
 one needs no ROM) and confirm your prediction against the passing test.
 
