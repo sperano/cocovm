@@ -1,13 +1,12 @@
-//! The machine form — model, RAM, cartridge, media, UI preferences — and
-//! the direct-boot "Machine → New…" dialog around it.
+//! The machine form — model, RAM, cartridge, media, UI preferences.
 //!
 //! [`MachineForm`] holds the full editable draft and draws every row; it
-//! never touches a machine or a file itself. Two hosts drive it: the
-//! [`NewVmDialog`] window (direct boot: pick everything, then Create
-//! cold-starts a fresh VM via `CocoApp::create_vm`), and the manager's
-//! detail pane (`manager::draw_detail_ok`), which hosts the same form over
-//! a saved machine definition and auto-saves each change. The `constrain`
-//! rules below therefore live in exactly one place no matter who edits.
+//! never touches a machine or a file itself. Its one host is the manager's
+//! detail pane (`manager::draw_detail_ok`), which draws the form over a
+//! saved machine definition and auto-saves each change. (The direct-boot
+//! "Machine → New…" dialog that used to co-host it was removed — machine
+//! creation belongs to the manager; user decision 2026-07-28.) The
+//! `constrain` rules below therefore live in exactly one place.
 
 use std::path::PathBuf;
 
@@ -17,12 +16,11 @@ use coco_core::{
 use eframe::egui;
 
 mod config_form;
-mod dialog;
 mod form;
 
 /// RAM sizes selectable per machine — the same sets
 /// [`MachineConfig::validate`] accepts (the configurations each machine
-/// actually shipped in), so every config this dialog can produce validates.
+/// actually shipped in), so every config the form can produce validates.
 const COCO1_RAM_CHOICES: &[MemorySize] = &[
     MemorySize::K4,
     MemorySize::K16,
@@ -32,24 +30,11 @@ const COCO1_RAM_CHOICES: &[MemorySize] = &[
 const COCO2_RAM_CHOICES: &[MemorySize] = &[MemorySize::K16, MemorySize::K64];
 const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, MemorySize::K2048];
 
-/// Inner padding of the dialog body, matching the power-cycle confirmation
-/// dialog in `main.rs`.
-const DIALOG_MARGIN: i8 = 16;
-
-/// Minimum size of the window's content area — roomy enough that revealing
-/// the FD-502's Disk rows or the MPI's Slot rows (with nested Disk rows)
-/// doesn't grow the window; the user may drag it larger. egui frames a
-/// window around `last_content_size` alone (`Window::min_size` and
-/// `default_size` only offer the content room, they never stretch the
-/// frame), so the dialog claims this floor itself with `set_min_size`.
-/// DEMO (temporary branch): height +80 so the titled-group RAM demo
-/// section keeps the fully-expanded MPI form inside the floor.
-const DIALOG_MIN_SIZE: egui::Vec2 = egui::Vec2::new(380.0, 640.0);
-
-/// The "New machine" shortcut, consumed by both the direct-boot Machine
-/// menu ([`crate::CocoApp`]) and the manager's toolbar: ⌘N on macOS,
-/// Ctrl+N on Windows/Linux ([`egui::Modifiers::COMMAND`] resolves to the
-/// platform's primary modifier).
+/// The "New machine" shortcut, consumed only by the manager (toolbar
+/// "New…" and its ⌘N): ⌘N on macOS, Ctrl+N on Windows/Linux
+/// ([`egui::Modifiers::COMMAND`] resolves to the platform's primary
+/// modifier). VM windows deliberately have no New shortcut — creating
+/// machines is the manager's job.
 pub const NEW_MACHINE_SHORTCUT: egui::KeyboardShortcut =
     egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N);
 
@@ -77,7 +62,7 @@ fn sub_form_row(ui: &mut egui::Ui, draw: impl FnOnce(&mut egui::Ui)) {
     ui.end_row();
 }
 
-const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
+pub(crate) const fn ram_choices(variant: MachineVariant) -> &'static [MemorySize] {
     match variant {
         MachineVariant::Coco1 => COCO1_RAM_CHOICES,
         MachineVariant::Coco2 => COCO2_RAM_CHOICES,
@@ -223,57 +208,9 @@ fn disk_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Disk image", &["dsk", "jvc", "os9"])
 }
 
-/// Everything "Create" hands the caller besides the machine config: the
-/// post-construction inventory (cartridge, its disks, the cassette) that
-/// lives outside [`MachineConfig`] — see [`CartridgeChoice`].
-#[derive(Debug, Clone)]
-pub struct NewMachineSpec {
-    pub config: MachineConfig,
-    pub cartridge: CartridgeChoice,
-    /// Only meaningful with [`CartridgeChoice::MPI`].
-    pub mpi_slots: [SlotChoice; crate::MPI_SLOT_COUNT],
-    /// Only meaningful when [`Self::has_drives`].
-    pub disks: [MediaChoice; crate::UI_DRIVES],
-    pub tape: MediaChoice,
-    /// VHD hard-disk images. Always meaningful: the VHD is a bus device
-    /// (`$FF80-$FF86`, `SystemBus::vhd`), not cartridge hardware, so the
-    /// HD rows need no controller.
-    pub vhds: [MediaChoice; crate::UI_DRIVES],
-    /// The Display row: the created window's starting 4:3 aspect
-    /// correction (F9 keeps toggling it live afterwards).
-    pub aspect_correct: bool,
-    /// The Keyboard row: the starting keyboard mode (F12 keeps toggling).
-    pub kb_mode: crate::KbMode,
-}
-
-impl NewMachineSpec {
-    /// Whether a disk controller is reachable: the bare FD-502, or one in
-    /// an MPI slot.
-    pub fn has_drives(&self) -> bool {
-        match self.cartridge {
-            CartridgeChoice::FD502 => true,
-            CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
-            CartridgeChoice::None | CartridgeChoice::RomPak(_) | CartridgeChoice::RTC => false,
-        }
-    }
-}
-
-/// What the user clicked this frame, from [`NewVmDialog::show`].
-#[must_use]
-pub enum NewVmAction {
-    None,
-    /// "Create" was clicked; the caller should try to build this machine and
-    /// either [`NewVmDialog::close`] the dialog or record the failure in
-    /// [`NewVmDialog::error`].
-    Create(Box<NewMachineSpec>),
-}
-
 /// Re-constrain a draft after a model change: snap RAM to the new family's
 /// default when the current pick isn't valid for it, and force NTSC where
-/// PAL isn't modeled ([`MachineConfig::validate`]'s rules). Free function
-/// (rather than a `NewVmDialog` method) so [`config_form_rows`] can call it
-/// too — the manager's detail pane edits a bare [`MachineConfig`], not a
-/// dialog.
+/// PAL isn't modeled ([`MachineConfig::validate`]'s rules).
 fn constrain(draft: &mut MachineConfig) {
     if !ram_choices(draft.variant).contains(&draft.memory) {
         // Same per-family default `main.rs`'s CLI path seeds `--ram` from.
@@ -295,22 +232,19 @@ fn constrain(draft: &mut MachineConfig) {
     draft.vdg = crate::default_vdg(draft.variant);
 }
 
-/// The full machine form both hosts draw: the hardware rows
-/// ([`config_form_rows`]), then Cassette, Cartridge (with the nested
-/// MPI-slot and Disk sub-rows), the HD rows, and the UI rows
-/// (Display/Keyboard). The "New…" dialog ([`NewVmDialog`]) collects it into
-/// a [`NewMachineSpec`] on Create; the manager's detail pane
+/// The full machine form: the hardware rows ([`config_form_rows`]), then
+/// Cassette, Cartridge (with the nested MPI-slot and Disk sub-rows), the
+/// HD rows, and the UI rows (Display/Keyboard). The manager's detail pane
 /// (`manager::draw_detail_ok`) auto-saves it back into the machine's
-/// definition on every change — but the rows, ordering, and constraint
-/// rules live here exactly once.
+/// definition on every change — the rows, ordering, and constraint rules
+/// live here exactly once.
 pub struct MachineForm {
-    /// Distinguishes the combos' persistent egui ids between hosts — the
-    /// "New…" dialog and the manager's detail pane can be visible at once.
+    /// Distinguishes the combos' persistent egui ids between hosts drawing
+    /// the form more than once in the same frame.
     salt: &'static str,
-    /// Manager flow: a "Blank" media pick auto-places its file in the
-    /// machine's artifact directory ([`MediaChoice::Blank`]`(None)`); the
-    /// direct-boot dialog instead picks the backing file with a save dialog
-    /// on the spot.
+    /// A "Blank" media pick auto-places its file in the machine's artifact
+    /// directory ([`MediaChoice::Blank`]`(None)`) rather than opening a
+    /// save dialog for the backing file.
     auto_place_blanks: bool,
     pub config: MachineConfig,
     /// The Cartridge-row pick.
@@ -324,24 +258,14 @@ pub struct MachineForm {
     pub disks: [MediaChoice; crate::UI_DRIVES],
     /// The Cassette-row pick.
     pub tape: MediaChoice,
-    /// The HD-row (VHD) picks. Always shown — see [`NewMachineSpec::vhds`].
+    /// The HD-row (VHD) picks. Always shown: the VHD is a bus device
+    /// (`$FF80-$FF86`, `SystemBus::vhd`), not cartridge hardware, so the
+    /// HD rows need no controller.
     pub vhds: [MediaChoice; crate::UI_DRIVES],
     /// The Display row: 4:3 aspect correction (`[ui].aspect_correct`).
     pub aspect_correct: bool,
     /// The Keyboard row (`[ui].kb_mode`).
     pub kb_mode: crate::KbMode,
-}
-
-/// State of the direct-boot "New…" dialog: the [`MachineForm`] being
-/// edited, plus the error from the last failed create attempt (e.g. a
-/// missing ROM set), shown inline until the dialog closes or the next
-/// attempt. The manager doesn't use this dialog at all — its "New…" creates
-/// a default machine on the spot and edits it in the detail pane, which
-/// hosts the same [`MachineForm`].
-pub struct NewVmDialog {
-    open: bool,
-    pub error: Option<String>,
-    pub form: MachineForm,
 }
 
 #[cfg(test)]

@@ -76,28 +76,15 @@ pub(super) fn click_containing<S: 'static>(harness: &mut egui_kittest::Harness<'
     harness.step();
 }
 
-/// Select an item in a form combo box (Machine, Cartridge, …): click the
-/// combo button to open the popup, then click the wanted item. The combo
-/// button exposes the selected text as its accessibility *value* (egui sets
-/// `WidgetInfo::current_text_value`, not a label), so it is addressed with
-/// `get_by_value`; the popup items are plain selectables, addressed by label.
-pub(super) fn select_combo<S: 'static>(
-    harness: &mut egui_kittest::Harness<'static, S>,
-    current: &str,
-    target: &str,
-) {
-    harness.get_by_value(current).hover();
-    harness.step();
-    harness.get_by_value(current).click();
-    harness.step();
-    harness.step();
-    click(harness, target);
-}
-
-/// [`select_combo`] disambiguated by position: among all combo buttons
-/// currently showing `current` as their value, open the `index`-th in
-/// top-to-bottom (then left-to-right) screen order. Needed once more than
-/// one drive combo shows "None" at the same time.
+/// Select an item in a form combo box (Machine, Cartridge, …),
+/// disambiguated by position: among all combo buttons currently showing
+/// `current` as their value, open the `index`-th in top-to-bottom (then
+/// left-to-right) screen order, then click the wanted item. The combo
+/// button exposes the selected text as its accessibility *value* (egui
+/// sets `WidgetInfo::current_text_value`, not a label), so it is addressed
+/// with `get_by_value`; the popup items are plain selectables, addressed
+/// by label. Positional because more than one combo can show the same
+/// value at once (e.g. several drive combos on "None").
 pub(super) fn select_combo_at<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     current: &str,

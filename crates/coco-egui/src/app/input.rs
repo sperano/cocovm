@@ -47,10 +47,6 @@ impl CocoApp {
     /// reaches the CoCo matrix or the symbolic type-ahead (the held modifier
     /// alone is harmless there).
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // ⌘N / Ctrl+N = Machine → New….
-        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
-            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
-        }
         // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves
         // it (`save_state.rs`).
         for slot in 0..save_state::QUICK_SLOTS {

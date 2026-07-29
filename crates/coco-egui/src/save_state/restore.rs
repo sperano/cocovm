@@ -50,8 +50,7 @@ impl CocoApp {
 
     /// Reissue the machine window's title for the current variant — the
     /// restored machine may be a different variant than whatever ran before
-    /// a load ([`CocoApp::create_vm`]'s own title update is the fresh-boot
-    /// sibling; reissuing when the variant didn't change is cheap and
+    /// a load (reissuing when the variant didn't change is cheap and
     /// idempotent). Split out of [`Self::load_state_from`] because
     /// `ctx.send_viewport_cmd` targets the context's *current* viewport:
     /// the manager's resume path runs on the manager window's root context

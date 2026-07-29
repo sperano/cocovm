@@ -15,22 +15,6 @@ impl CocoApp {
     /// can't make on the caller's behalf — so this refuses instead of
     /// silently replacing the MPI, and directs the caller to
     /// [`Self::mpi_insert_fd502`] via the MultiPak submenu.
-    /// Mount the "New…" dialog's per-drive disk picks, assuming a disk
-    /// controller is already reachable (bare FD-502 or one in an MPI
-    /// slot). `insert_disk`/`new_blank_disk` report failures via
-    /// [`Self::cart_error`]. `Blank(None)` is the manager flow's
-    /// auto-placed spelling and can't be produced by the direct-boot
-    /// dialog.
-    pub(crate) fn mount_dialog_disks(&mut self, disks: [new_vm::MediaChoice; UI_DRIVES]) {
-        for (drive, choice) in disks.into_iter().enumerate() {
-            match choice {
-                new_vm::MediaChoice::File(path) => self.insert_disk(drive, path),
-                new_vm::MediaChoice::Blank(Some(path)) => self.new_blank_disk(drive, path),
-                new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
-            }
-        }
-    }
-
     pub(crate) fn ensure_disk_controller(&mut self) -> Result<(), String> {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             return Ok(());
@@ -186,26 +170,6 @@ impl CocoApp {
         })();
         if let Err(e) = result {
             self.cart_error = Some(e);
-        }
-    }
-
-    /// Create a brand-new, empty VHD image at `path` and mount it in `drive`
-    /// ([`Self::insert_vhd`]'s blank sibling): a 0-byte file is a valid
-    /// 0-sector VHD, and `VhdImage::File` extends it on write. Refuses to
-    /// overwrite an existing file. Failures land in [`Self::cart_error`].
-    pub(crate) fn new_vhd(&mut self, drive: usize, path: PathBuf) {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => self.insert_vhd(drive, path),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                self.cart_error = Some(format!(
-                    "{} already exists; use Insert VHD to mount an existing image, or \
-                     choose a different name",
-                    path.display()
-                ));
-            }
-            Err(e) => {
-                self.cart_error = Some(format!("could not create {}: {e}", path.display()));
-            }
         }
     }
 

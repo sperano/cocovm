@@ -11,6 +11,26 @@ use crate::*;
 
 use super::harness::*;
 
+/// ⌘N/Ctrl+N in the manager is the toolbar's "New…": it creates a machine
+/// on the spot — saved to disk, inserted, selected — with no dialog.
+#[test]
+fn cmd_n_creates_a_machine_immediately() {
+    let dir = TempDir::new("cmd-n-manager");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+    assert!(harness.state().entries.is_empty());
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    harness.step();
+    harness.step();
+    assert_eq!(
+        harness.state().entries.len(),
+        1,
+        "Cmd/Ctrl+N must create a machine immediately in the manager"
+    );
+    assert_eq!(harness.state().selected, Some(0));
+    assert!(dir.path().join("coco-3.toml").is_file());
+}
+
 /// The manager window scaffold: toolbar buttons present, the machine-list
 /// panel and photo pane laid out without a photo injected. This harness has
 /// no machines dir (no home), so "New" must report that instead of

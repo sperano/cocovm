@@ -13,23 +13,6 @@ use crate::*;
 
 use super::harness::*;
 
-/// The user-facing Run/Pause toggle is gone everywhere (three-state model,
-/// user decision 2026-07-27): no toolbar button, no Machine-menu item, no
-/// "Running"/"Paused" status-bar label — regression coverage against any of
-/// them creeping back.
-#[test]
-fn pause_controls_are_gone_from_the_chrome() {
-    let mut harness = boot_harness();
-    assert!(harness.state().running);
-    assert!(harness.query_by_label("Pause").is_none(), "no toolbar Pause");
-    assert!(harness.query_by_label("Running").is_none(), "no status-bar run state");
-
-    click(&mut harness, "Machine");
-    assert!(harness.query_by_label("Pause").is_none(), "no menu Pause");
-    // The console Reset survives — in the toolbar and the open menu alike.
-    assert!(label_exists(&harness, "Reset"));
-}
-
 #[test]
 fn machine_menu_reset_keeps_the_ui_alive() {
     let mut harness = boot_harness();

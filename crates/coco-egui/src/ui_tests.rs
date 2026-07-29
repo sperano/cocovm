@@ -23,4 +23,3 @@ mod harness;
 mod manager_lifecycle;
 mod manager_peripherals;
 mod manager_window;
-mod new_vm_dialog;

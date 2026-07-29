@@ -32,17 +32,6 @@ impl MachineForm {
         }
     }
 
-    /// Reset every pick besides the hardware `config` and the UI rows to
-    /// its default — the dialog reopens as "same machine again, nothing
-    /// mounted".
-    pub(super) fn reset_inventory(&mut self) {
-        self.cartridge = CartridgeChoice::None;
-        self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
-        self.disks = std::array::from_fn(|_| MediaChoice::None);
-        self.tape = MediaChoice::None;
-        self.vhds = std::array::from_fn(|_| MediaChoice::None);
-    }
-
     /// All form rows. Must be called inside an already-open two-column
     /// [`egui::Grid`] with [`FORM_GRID_SPACING`], like [`config_form_rows`].
     pub fn rows(&mut self, ui: &mut egui::Ui) {

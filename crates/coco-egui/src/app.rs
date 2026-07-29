@@ -102,9 +102,6 @@ pub(crate) struct CocoApp {
     /// and applied when "TCP" is (re)selected — not live-rebound on each
     /// keystroke.
     pub(crate) rs232_tcp_addr: String,
-    /// The "Machine → New…" dialog ([`new_vm::NewVmDialog`]): edits a draft
-    /// [`MachineConfig`] that [`Self::create_vm`] builds a fresh machine from.
-    pub(crate) new_vm: new_vm::NewVmDialog,
     /// True while a Disto RTC is plugged directly into the cartridge port
     /// (gates the "Eject Disto RTC" menu item, like `cart_path` does for ROM
     /// paks). An RTC in a Multi-Pak slot is tracked by [`MPISlot::DistoRTC`]
@@ -189,7 +186,6 @@ impl CocoApp {
             rs232: None,
             rs232_eprom_path: None,
             rs232_tcp_addr: RS232_TCP_DEFAULT_ADDR.to_string(),
-            new_vm: new_vm::NewVmDialog::new(),
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
             debugger: debugger::DebuggerPanel::new(),
@@ -220,56 +216,6 @@ impl CocoApp {
             app.dw_paths = std::array::from_fn(|_| None);
         }
         app
-    }
-
-    /// Build a brand-new machine from `config`, replacing the current one
-    /// wholesale (the "New…" dialog's Create). The ROM set for the chosen
-    /// variant is loaded first, so a failure (returned for the dialog to
-    /// display) leaves the running machine untouched. On success, dirty
-    /// floppies and tape are written back exactly like [`Self::on_exit`],
-    /// then every mounted device and frontend path is dropped — a new VM
-    /// starts bare, like a machine fresh out of the box. Sticky UI
-    /// preferences (keyboard mode, joysticks, audio, autostart, CR→LF)
-    /// survive; they belong to the app, not the machine.
-    pub(crate) fn create_vm(&mut self, config: MachineConfig, ctx: &egui::Context) -> Result<(), String> {
-        let roms_dir = dev_roms_dir();
-        let (rom, rom_source) = load_rom_with_source(None, config.variant, &roms_dir)?;
-
-        self.flush_dirty_disks();
-        self.write_back_tape();
-        // The bit-banger sinks (file capture / DMP-105 paper feed) belong to
-        // the old machine and drop with it; clear the frontend's handles so
-        // neither UI points at a dead device.
-        self.print_capture_path = None;
-        self.paper_window.detach();
-
-        self.machine = Machine::new(config, rom);
-        self.rom_source = rom_source;
-        // `self.texture` is deliberately left alone: nulling it here would
-        // panic in this same frame's CentralPanel (drawn after the dialog),
-        // and the per-frame `texture.set` at the top of `update` re-uploads
-        // the new machine's framebuffer — including a size change, CoCo 1/2
-        // and CoCo 3 framebuffers differ — on the next pass anyway.
-        self.running = true; // boot straight to the prompt, like startup
-        self.type_ahead.clear();
-        self.last_update = None;
-        self.field_debt = 0.0;
-        self.cart_path = None;
-        self.cart_error = None;
-        self.disk_paths = [None, None];
-        self.vhd_paths = [None, None];
-        self.tape_path = None;
-        self.pending_disk_action = None;
-        self.mpi = None;
-        self.rs232 = None;
-        self.rs232_eprom_path = None;
-        self.rtc_direct = false;
-        self.toast = None;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "cocovm — {}",
-            machine_label(config.variant)
-        )));
-        Ok(())
     }
 
     /// Write modified floppies and tape back to their files — the exit

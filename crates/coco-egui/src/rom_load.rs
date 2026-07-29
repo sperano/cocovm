@@ -218,7 +218,7 @@ pub(crate) fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
 
 /// [`load_explicit_rom`]/[`load_default_rom`], plus the [`RomSource`] a
 /// snapshot needs to re-resolve/hash whichever path was taken — the single
-/// place `main()`'s CLI path, [`CocoApp::create_vm`], and [`launch_machine`]
+/// place `main()`'s CLI path and [`launch_machine`]
 /// all get both together, so they can't drift apart.
 pub(crate) fn load_rom_with_source(
     explicit: Option<&Path>,

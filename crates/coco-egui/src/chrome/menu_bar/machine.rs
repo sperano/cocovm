@@ -7,13 +7,6 @@ impl CocoApp {
     /// The Machine menu: cartridges, the MultiPak and its slots, disk
     /// and VHD drives, DriveWire, the cassette deck, and print capture.
     pub(super) fn machine_menu_ui(&mut self, ui: &mut egui::Ui) {
-        let new_button = egui::Button::new("New…")
-            .shortcut_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
-        if ui.add(new_button).clicked() {
-            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
-            ui.close();
-        }
-        ui.separator();
         if ui.button("Reset").clicked() {
             self.machine.reset();
             ui.close();
