@@ -125,6 +125,14 @@ pub(crate) struct CocoApp {
     /// [`save_state::TOAST_SECS`] seconds — save/load-state results today,
     /// extensible to any other fire-and-forget confirmation later.
     pub(crate) toast: Option<(String, std::time::Instant)>,
+    /// Status-bar device-activity icons: per-device pulse-stretched latches
+    /// over the core's monotonic activity counters, plus the cassette reel
+    /// angle (`status_icons.rs`). Purely UI state — not serialized, not
+    /// touched by save/load state.
+    // Read starting from the reel-spin commit (`tape_reel_angle`); until
+    // then rustc sees the whole field as dead.
+    #[allow(dead_code)]
+    pub(crate) activity: StatusActivity,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -191,6 +199,7 @@ impl CocoApp {
             debugger: debugger::DebuggerPanel::new(),
             rom_source,
             toast: None,
+            activity: StatusActivity::default(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);

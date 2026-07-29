@@ -39,6 +39,7 @@ mod rom_load;
 mod rs232;
 mod save_state;
 mod startup;
+mod status_icons;
 mod typeahead;
 mod widgets;
 
@@ -76,8 +77,9 @@ pub(crate) use rom_load::{
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, Rs232Endpoint, Rs232EndpointKind};
 pub(crate) use startup::{banner, ensure_assets, log_renderer_info, setup_logging};
+pub(crate) use status_icons::{StatusActivity, cassette_icon, floppy_icon};
 pub(crate) use typeahead::{KbMode, TypeAhead};
-pub(crate) use widgets::{UI_DRIVES, cassette_activity_light, drive_activity_light, titled_group, window_title};
+pub(crate) use widgets::{UI_DRIVES, titled_group, window_title};
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 pub(crate) const SCALE: f32 = 3.0;

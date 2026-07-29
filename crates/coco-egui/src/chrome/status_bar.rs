@@ -72,7 +72,7 @@ impl CocoApp {
                 .as_disk_cart()
                 .is_some_and(|c| c.drive_active(drive));
             ui.separator();
-            drive_activity_light(ui, active);
+            floppy_icon(ui, active);
             ui.label(format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty)));
         }
     }
@@ -113,7 +113,7 @@ impl CocoApp {
         let motor = self.machine.bus.pia1.a.c2_output();
         let (pos, len) = cassette.position();
         ui.separator();
-        cassette_activity_light(ui, motor);
+        cassette_icon(ui, motor, 0.0);
         ui.label(format!(
             "Tape: {}{} [{pos}/{len}]",
             file_name(path),
