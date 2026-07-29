@@ -430,10 +430,6 @@ impl PrinterSink for Dmp105Handle {
     fn as_dmp105(&self) -> Option<&Dmp105Handle> {
         Some(self)
     }
-
-    fn is_attached(&self) -> bool {
-        true
-    }
 }
 
 #[cfg(test)]

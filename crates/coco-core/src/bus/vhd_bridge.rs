@@ -32,19 +32,15 @@ impl SystemBus {
         if self.vhd.drives[drive].image.is_none() {
             self.vhd.drives[drive].status = vhd::status::NO_VHD;
         } else {
+            // Every real dispatch (as opposed to an unknown command byte)
+            // counts as one access, for the status bar's activity light.
+            if matches!(cmd, vhd::command::READ | vhd::command::WRITE | vhd::command::FLUSH) {
+                self.vhd.access_counts[drive] += 1;
+            }
             match cmd {
-                vhd::command::READ => {
-                    self.vhd.access_counts[drive] += 1;
-                    self.vhd_read_sector(drive);
-                }
-                vhd::command::WRITE => {
-                    self.vhd.access_counts[drive] += 1;
-                    self.vhd_write_sector(drive);
-                }
-                vhd::command::FLUSH => {
-                    self.vhd.access_counts[drive] += 1;
-                    self.vhd_flush(drive);
-                }
+                vhd::command::READ => self.vhd_read_sector(drive),
+                vhd::command::WRITE => self.vhd_write_sector(drive),
+                vhd::command::FLUSH => self.vhd_flush(drive),
                 _ => self.vhd.drives[drive].status = vhd::status::UNKNOWN_COMMAND,
             }
         }

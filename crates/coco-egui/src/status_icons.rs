@@ -10,10 +10,8 @@
 //! drawn as separate strokes — cheap to paint (one filled path per shape)
 //! and correct against both light and dark themes for free.
 
-use coco_core::drivewire;
+use coco_core::{drivewire, vhd};
 use eframe::egui;
-
-use crate::widgets::UI_DRIVES;
 
 /// Icon silhouette color while its device is active — the same red used for
 /// every activity light in the status bar.
@@ -164,7 +162,7 @@ impl ActivityLatch {
 /// snapshot) just starts every latch primed on its first draw.
 #[derive(Default)]
 pub(crate) struct StatusActivity {
-    pub(crate) vhd: [ActivityLatch; UI_DRIVES],
+    pub(crate) vhd: [ActivityLatch; vhd::DRIVE_COUNT],
     pub(crate) dw: [ActivityLatch; drivewire::DRIVE_COUNT],
     pub(crate) rs232_tx: ActivityLatch,
     pub(crate) rs232_rx: ActivityLatch,

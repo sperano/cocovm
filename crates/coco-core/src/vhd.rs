@@ -262,9 +262,12 @@ impl Vhd {
     }
 
     /// Count of READ/WRITE/FLUSH commands dispatched to `drive` so far (see
-    /// `access_counts`'s doc comment).
+    /// `access_counts`'s doc comment). Out-of-range `drive` reads as `0`
+    /// rather than panicking, so a caller iterating over its own drive count
+    /// (e.g. the status bar's UI-side drive list) can't be made to panic by
+    /// a mismatch against [`DRIVE_COUNT`].
     pub fn access_count(&self, drive: usize) -> u64 {
-        self.access_counts[drive]
+        self.access_counts.get(drive).copied().unwrap_or(0)
     }
 
     /// `$FF80–$FF82`/`$FF84–$FF85` read: MAME implements no readback for
