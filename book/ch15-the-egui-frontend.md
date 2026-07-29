@@ -1653,7 +1653,7 @@ state. The first changes what is actually *executing*:
     pub vm: Option<Box<CocoApp>>,
 ```
 
-That field is [`crates/coco-egui/src/manager.rs:118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L116), inside the struct at
+That field is [`crates/coco-egui/src/manager.rs:116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L116), inside the struct at
 [`crates/coco-egui/src/manager.rs:108-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L108-L146). Powered Off is `None`. The
 second, `suspended: bool`, mirrors something that lives on disk: a
 suspended machine's whole frozen state is a `suspended.ccstate` file in
