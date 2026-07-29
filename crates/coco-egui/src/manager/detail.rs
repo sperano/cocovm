@@ -164,31 +164,23 @@ impl ManagerApp {
 
         // DEMO (temporary branch): `widgets::titled_group`, the
         // fieldset-style container egui lacks, wrapping a second live RAM
-        // picker bound to the same draft as the form's own RAM row — the
-        // two combos stay in sync, and the autosave below picks the change
-        // up like any other form edit.
+        // picker — one radio button per size the selected model shipped
+        // with, no label (the group's title says it all) — bound to the
+        // same draft as the form's own RAM row, so the two stay in sync
+        // and the autosave below picks the change up like any other form
+        // edit.
         ui.add_space(DETAIL_SECTION_GAP);
-        let demo_font = ui.style().text_styles[&egui::TextStyle::Button].size;
         crate::widgets::titled_group(ui, "RAM", |ui| {
             ui.set_min_width(ui.available_width());
-            egui::Grid::new(("detail_ram_demo", slug.clone()))
-                .num_columns(2)
-                .spacing(new_vm::FORM_GRID_SPACING)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Size").size(demo_font));
-                    egui::ComboBox::from_id_salt(("detail_demo", "ram"))
-                        .selected_text(new_vm::ram_label(edit.form.config.memory))
-                        .show_ui(ui, |ui| {
-                            for &memory in new_vm::ram_choices(edit.form.config.variant) {
-                                ui.selectable_value(
-                                    &mut edit.form.config.memory,
-                                    memory,
-                                    new_vm::ram_label(memory),
-                                );
-                            }
-                        });
-                    ui.end_row();
-                });
+            ui.horizontal(|ui| {
+                for &memory in new_vm::ram_choices(edit.form.config.variant) {
+                    ui.radio_value(
+                        &mut edit.form.config.memory,
+                        memory,
+                        new_vm::ram_label(memory),
+                    );
+                }
+            });
         });
         if self.entries[index].vm.is_some() || self.entries[index].suspended {
             ui.add_space(DETAIL_SECTION_GAP);
