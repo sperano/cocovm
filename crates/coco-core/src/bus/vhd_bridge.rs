@@ -33,9 +33,18 @@ impl SystemBus {
             self.vhd.drives[drive].status = vhd::status::NO_VHD;
         } else {
             match cmd {
-                vhd::command::READ => self.vhd_read_sector(drive),
-                vhd::command::WRITE => self.vhd_write_sector(drive),
-                vhd::command::FLUSH => self.vhd_flush(drive),
+                vhd::command::READ => {
+                    self.vhd.access_counts[drive] += 1;
+                    self.vhd_read_sector(drive);
+                }
+                vhd::command::WRITE => {
+                    self.vhd.access_counts[drive] += 1;
+                    self.vhd_write_sector(drive);
+                }
+                vhd::command::FLUSH => {
+                    self.vhd.access_counts[drive] += 1;
+                    self.vhd_flush(drive);
+                }
                 _ => self.vhd.drives[drive].status = vhd::status::UNKNOWN_COMMAND,
             }
         }

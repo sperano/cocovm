@@ -185,6 +185,16 @@ pub struct Vhd {
     /// command *execution*; register writes (LRN/buffer address) during a
     /// transfer are not gated and behave normally.
     pub(crate) busy: bool,
+    /// Per-drive count of READ/WRITE/FLUSH commands dispatched since
+    /// construction — our own addition, not modeled by MAME, for the
+    /// status bar's VHD activity light (`status_icons.rs`'s `ActivityLatch`).
+    /// Bumped in `SystemBus::vhd_execute_command` only for a real dispatch
+    /// (past the busy/mounted guards); an unknown command or an unmounted
+    /// drive leaves it untouched. `#[serde(default)]` so an older save
+    /// state without this field restores to all-zero counts rather than
+    /// failing to load.
+    #[serde(default)]
+    pub(crate) access_counts: [u64; DRIVE_COUNT],
 }
 
 impl Vhd {
@@ -197,7 +207,12 @@ impl Vhd {
     /// default a DOS would assume, but should be treated as low-confidence
     /// until confirmed against real hardware or MAME's device reset code.
     pub fn new() -> Self {
-        Self { drives: [VhdDrive::new(), VhdDrive::new()], select: 0, busy: false }
+        Self {
+            drives: [VhdDrive::new(), VhdDrive::new()],
+            select: 0,
+            busy: false,
+            access_counts: [0; DRIVE_COUNT],
+        }
     }
 
     /// The currently addressed drive, or `None` if `$FF86` last saw a value
@@ -244,6 +259,12 @@ impl Vhd {
     /// useful for tests (see [`VhdImage::as_memory`]).
     pub fn image(&self, drive: usize) -> Option<&VhdImage> {
         self.drives[drive].image.as_ref()
+    }
+
+    /// Count of READ/WRITE/FLUSH commands dispatched to `drive` so far (see
+    /// `access_counts`'s doc comment).
+    pub fn access_count(&self, drive: usize) -> u64 {
+        self.access_counts[drive]
     }
 
     /// `$FF80–$FF82`/`$FF84–$FF85` read: MAME implements no readback for

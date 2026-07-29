@@ -77,12 +77,15 @@ impl CocoApp {
         }
     }
 
-    fn vhd_status(&self, ui: &mut egui::Ui) {
+    fn vhd_status(&mut self, ui: &mut egui::Ui) {
         for drive in 0..UI_DRIVES {
             let Some(path) = &self.vhd_paths[drive] else {
                 continue;
             };
+            let count = self.machine.bus.vhd.access_count(drive);
+            let active = self.activity.vhd[drive].observe(count);
             ui.separator();
+            vhd_icon(ui, active);
             ui.label(format!("VHD{drive}: {}", file_name(path)));
         }
     }

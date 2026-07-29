@@ -26,10 +26,6 @@ pub(crate) const ICON_IDLE: egui::Color32 = egui::Color32::from_gray(70);
 /// counter change it observed — long enough that a single sector
 /// read/write or byte transfer reads as a visible pulse rather than a
 /// single-frame flicker.
-// `ActivityLatch::observe` (the only non-test call site that exercises this
-// transitively) has no caller yet — its first `*_status` call site lands in
-// the VHD-activity commit — so this reads as dead code to rustc until then.
-#[allow(dead_code)]
 pub(crate) const ACTIVITY_HOLD: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Status-bar floppy activity indicator: a little 5¼" floppy jacket, red
@@ -138,10 +134,6 @@ impl ActivityLatch {
     /// Observe the current value of the counter this latch is tracking.
     /// Returns whether the icon should currently draw active (see the
     /// type's doc comment for the priming/hold/decrease rules).
-    // No `*_status` fn calls this yet — the VHD-activity commit adds the
-    // first one — so unlike `observe_at` (exercised directly by
-    // status_icons_test.rs), rustc sees this as dead until then.
-    #[allow(dead_code)]
     pub(crate) fn observe(&mut self, count: u64) -> bool {
         self.observe_at(count, std::time::Instant::now())
     }
@@ -176,7 +168,6 @@ pub(crate) struct StatusActivity {
     // device's `*_status` fn; until then it's written by `Default` alone
     // and rustc flags it dead. Attributes come off one at a time as each
     // commit lands.
-    #[allow(dead_code)]
     pub(crate) vhd: [ActivityLatch; UI_DRIVES],
     #[allow(dead_code)]
     pub(crate) dw: [ActivityLatch; drivewire::DRIVE_COUNT],
@@ -263,6 +254,38 @@ pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) {
         egui::vec2(DRIVE_ICON_SIZE * 0.12, DRIVE_ICON_SIZE * 0.18),
     );
     painter.rect_filled(notch, 0.0, punch);
+}
+
+/// Status-bar VHD (virtual hard disk, `$FF80-$FF86` `emudsk`) activity
+/// indicator: a 3½" hard-drive top-view silhouette, red while a READ/WRITE/
+/// FLUSH command has recently dispatched to that drive
+/// ([`coco_core::vhd::Vhd::access_count`]), gray otherwise.
+pub(crate) const VHD_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 11.0);
+
+/// Corner rounding of the VHD drive housing.
+pub(crate) const VHD_ICON_CORNER: f32 = 1.5;
+
+/// One status-bar VHD indicator (see [`VHD_ICON_SIZE`]'s doc): the housing
+/// rectangle with one large platter circle — offset toward the left edge,
+/// the way a real 3½" drive's platter sits off-center under its own
+/// top-view case — punched out in the panel background color, a
+/// shell-colored hub dot at the platter's center, and a thin shell-colored
+/// actuator-arm line reaching from the housing's bottom-right corner onto
+/// the platter, the way a hard drive's read/write head arm does.
+pub(crate) fn vhd_icon(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(VHD_ICON_SIZE, egui::Sense::hover());
+    let housing = if active { ICON_ACTIVE } else { ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+    painter.rect_filled(rect, VHD_ICON_CORNER, housing);
+
+    let platter_r = VHD_ICON_SIZE.y * 0.42;
+    let platter_center = egui::pos2(rect.left() + VHD_ICON_SIZE.y * 0.55, rect.center().y);
+    painter.circle_filled(platter_center, platter_r, punch);
+    painter.circle_filled(platter_center, VHD_ICON_SIZE.y * 0.08, housing);
+
+    let arm_stroke = egui::Stroke::new(1.0f32, housing);
+    painter.line_segment([rect.right_bottom(), platter_center], arm_stroke);
 }
 
 #[cfg(test)]
