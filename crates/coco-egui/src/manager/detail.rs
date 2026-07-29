@@ -162,13 +162,12 @@ impl ManagerApp {
                 edit.form.rows(ui);
             });
 
-        // DEMO (temporary branch): `widgets::titled_group`, the
-        // fieldset-style container egui lacks, wrapping a second live RAM
-        // picker — one radio button per size the selected model shipped
-        // with, no label (the group's title says it all) — bound to the
-        // same draft as the form's own RAM row, so the two stay in sync
-        // and the autosave below picks the change up like any other form
-        // edit.
+        // THE RAM control (the form's grid deliberately has no RAM row —
+        // `config_form_rows`'s doc): a `widgets::titled_group` fieldset
+        // holding one radio button per size the selected model shipped
+        // with, no field label (the group's title says it all). Edits the
+        // same draft as every grid row, so the autosave below picks the
+        // change up like any other form edit.
         ui.add_space(DETAIL_SECTION_GAP);
         crate::widgets::titled_group(ui, "RAM", |ui| {
             ui.set_min_width(ui.available_width());
