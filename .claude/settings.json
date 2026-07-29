@@ -6,24 +6,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd=$(jq -r \".tool_input.command // \\\"\\\"\"); if printf \"%s\" \"$cmd\" | grep -q \"gh pr create\" && ! printf \"%s\" \"$cmd\" | grep -q \"BOOK_OK=1\"; then printf \"%s\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"Book check gate: before creating this PR, review the branch diff against the chapters in book/ and update any chapter whose material this branch changes (commit the updates so they ride in the PR). If no chapter is affected, tell the user why. Once the check is done, re-run the same command prefixed with: env BOOK_OK=1 (exactly that prefix, at the very start of the command). That re-run will also trigger an idiomatic-Rust review and an independent second-opinion review, which may block with findings to fix.\\\"}}\"; fi",
+            "command": "cmd=$(jq -r \".tool_input.command // \\\"\\\"\"); if printf \"%s\" \"$cmd\" | grep -Eq \"(^|[;&|] *)(env +[A-Za-z_0-9=]+ +)*gh pr create\" && ! printf \"%s\" \"$cmd\" | grep -q \"BOOK_OK=1\"; then printf \"%s\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"Book check gate: before creating this PR, review the branch diff against the chapters in book/ and update any chapter whose material this branch changes (commit the updates so they ride in the PR). If no chapter is affected, tell the user why. Once the check is done, re-run the same command prefixed with: env BOOK_OK=1 (exactly that prefix, at the very start of the command). That re-run triggers one fast gate review, which may block with findings to fix.\\\"}}\"; fi",
             "statusMessage": "Checking book update gate"
           },
           {
             "type": "agent",
             "if": "Bash(env BOOK_OK=1 gh pr create*)",
-            "prompt": "You are gating PR creation in the cocovm Rust workspace with an idiomatic-Rust review. Determine the base branch (origin/main if it exists, else main) and run: git diff $BASE...HEAD -- '*.rs' to see the Rust changes this PR will contain. Review ONLY the changed lines and their immediate context for non-idiomatic Rust: needless clones/allocations, unwrap/expect where errors should propagate as Result, index loops where iterators fit, missed pattern-matching opportunities (if let, let-else, matches!), stringly-typed code where enums fit, non-standard naming, missing obvious derives, functions well over ~50 lines or files well over ~500 lines that the diff introduces. FAIL only if there are concrete, worth-fixing issues — list each as file:line, the problem, and the idiomatic alternative. PASS if the changed code is reasonably idiomatic; minor nitpicks alone are not a failure. If there are no Rust changes in the diff, PASS.",
+            "prompt": "You are the final gate before PR creation in the cocovm Rust workspace. Pre-PR reviews (idiomatic-rust + pr-challenger) have normally already run on this branch, so your job is a fast last-line check, NOT a re-review. Determine the base branch (origin/main if it exists, else main), run git diff $BASE...HEAD --stat first, then read only the riskiest parts of the diff. Look specifically for: accidental stray or generated files committed into the diff; obviously broken logic or invariants in changed code; book/ prose or line-numbered source links the diff makes false; and brand-new behavior with no test at all. Verdict first; PASS is a first-class outcome — do not manufacture findings, do not review style (pre-PR reviews own that), do not re-verify what the compiler, clippy, and the test suite already guarantee, and never request tests that assert a removed feature stays absent. FAIL only for concrete must-fix problems, each as file:line plus one sentence on why it is wrong. Target well under five minutes.",
             "model": "claude-sonnet-5",
-            "timeout": 600,
-            "statusMessage": "Idiomatic Rust review of the PR diff"
-          },
-          {
-            "type": "agent",
-            "if": "Bash(env BOOK_OK=1 gh pr create*)",
-            "prompt": "You are an independent second-opinion reviewer gating PR creation in the cocovm CoCo 3 emulator repo. Determine the base branch (origin/main if it exists, else main) and run: git diff $BASE...HEAD to see the full diff this PR will contain. Give it a fresh-eyes review for real defects: logic errors, off-by-one mistakes, broken invariants, incorrect hardware emulation semantics (registers, bit layouts, timing — verify against the PDFs in docs/ with pdftotext -layout when a claim looks suspect), regressions in behavior the diff touches, missing or weakened test coverage for new behavior, and book/ chapter text that contradicts what the code now does. Do NOT review style or idioms — a separate hook covers that. FAIL only for concrete problems that should be fixed before the PR opens, each with file:line and a short explanation of why it is wrong. PASS otherwise.",
-            "model": "claude-opus-5",
-            "timeout": 600,
-            "statusMessage": "Second-opinion review of the PR diff"
+            "timeout": 300,
+            "statusMessage": "Gate review of the PR diff"
           }
         ]
       }

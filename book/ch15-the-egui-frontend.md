@@ -215,8 +215,8 @@ framework this same behavior is a lifecycle problem; here it is an early
 
 The same trick governs entire windows. Everything optional the app can
 show — keyboard help, the About box, the Orchestra-90 level meters, the
-debugger, the "New…" dialog, the printer paper window, two error banners —
-is drawn by one function whose body is a list of conditions:
+debugger, the printer paper window, two error banners — is drawn by one
+function whose body is a list of conditions:
 
 ```rust
     pub(crate) fn windows_ui(&mut self, ctx: &egui::Context) {
@@ -233,7 +233,6 @@ is drawn by one function whose body is a list of conditions:
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
         self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
-        self.new_vm_dialog_ui(ctx);
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
@@ -242,7 +241,7 @@ is drawn by one function whose body is a list of conditions:
     }
 ```
 
-([`crates/coco-egui/src/chrome/windows.rs:5-25`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/windows.rs#L5-L25).) The Orchestra-90
+([`crates/coco-egui/src/chrome/windows.rs:5-24`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/windows.rs#L5-L24).) The Orchestra-90
 branch is the one worth dwelling on, because it demonstrates a subtlety
 that catches people. It requires two conditions: the user has asked for the
 meters *and* an Orchestra-90 cartridge is actually present in the machine
@@ -410,21 +409,15 @@ short enough to hold in your head at once:
             self.field_debt = 0.0;
         }
 
-        let image = egui::ColorImage::from_rgba_unmultiplied(
-            [
-                self.machine.fb_width as usize,
-                self.machine.fb_height as usize,
-            ],
-            &self.machine.framebuffer,
-        );
-        let texture = self.texture.get_or_insert_with(|| {
-            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
-        });
-        texture.set(image, egui::TextureOptions::NEAREST);
+        self.upload_framebuffer_texture(ctx);
     }
 ```
 
-([`crates/coco-egui/src/app/frame.rs:29-72`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L29-L72).) Five things happen, in
+([`crates/coco-egui/src/app/frame.rs:29-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L29-L62).) That last call is the
+texture upload, split into its own method
+(`upload_framebuffer_texture`, [`crates/coco-egui/src/app/frame.rs:71-83`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L71-L83))
+because a *suspended* VM's window runs only that step — §15.6 explains
+why. Five things happen, in
 this order, every time the host asks for a frame. Host input is read and
 routed into the emulated keyboard matrix. The joysticks are polled and
 their pot values written. Zero or more *emulated fields* are run. Whatever
@@ -769,7 +762,7 @@ soft blur that no CoCo owner ever saw.
 The frontend does use linear sampling — twice, and both times for
 photographs rather than emulated screens. The manager's decorative photo
 pane uploads with `TextureOptions::LINEAR`
-([`crates/coco-egui/src/manager.rs:345-348`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L345-L348)), and so does a suspended
+([`crates/coco-egui/src/manager.rs:343-346`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L343-L346)), and so does a suspended
 machine's saved screen thumbnail when it is loaded back from its PNG
 ([`crates/coco-egui/src/manager/thumbnails.rs:57-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L57-L61)). Both are being
 scaled *down* into a small area rather than up, and a photograph shrunk
@@ -1053,10 +1046,12 @@ application rather than to the emulated machine:
 
 ```rust
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // ⌘N / Ctrl+N = Machine → New….
-        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
-            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
-        }
+        // ⌘N is the MANAGER's new-machine shortcut and means nothing in a
+        // VM window — but it's still consumed here, as a deliberate no-op,
+        // so a user hitting it out of habit doesn't type an `N` into the
+        // running machine via the positional matrix (which forwards keys
+        // regardless of the COMMAND modifier).
+        let _ = ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
         // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves
         // it (`save_state.rs`).
         for slot in 0..save_state::QUICK_SLOTS {
@@ -1070,13 +1065,16 @@ application rather than to the emulated machine:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:49-64`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L49-L64).) The word doing the work
+([`crates/coco-egui/src/app/input.rs:49-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L49-L66).) The word doing the work
 is `consume_shortcut`, and its doc comment on the enclosing function
 explains why it must run first: these shortcuts are "consumed before the
 event snapshot `handle_input` takes, so the keypress never reaches the CoCo
-matrix or the symbolic type-ahead." Pressing ⌘N opens the New Machine
-dialog; it does not also type an `N` into BASIC. The quick-save and
-quick-load slots are Chapter 16's feature, wired up here.
+matrix or the symbolic type-ahead." The ⌘N line is the instructive one:
+creating machines belongs to the *manager* (its toolbar's "New…" and its
+own ⌘N handler), so a VM window consumes the chord and deliberately does
+nothing with it — swallowing it is still better than letting the positional
+matrix type an `N` into BASIC. The quick-save and quick-load slots are
+Chapter 16's feature, wired up here.
 
 The second stage handles keys the application claims without consuming, plus
 the clipboard:
@@ -1655,8 +1653,8 @@ state. The first changes what is actually *executing*:
     pub vm: Option<Box<CocoApp>>,
 ```
 
-That field is [`crates/coco-egui/src/manager.rs:118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L118), inside the struct at
-[`crates/coco-egui/src/manager.rs:110-148`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L110-L148). Powered Off is `None`. The
+That field is [`crates/coco-egui/src/manager.rs:116`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L116), inside the struct at
+[`crates/coco-egui/src/manager.rs:108-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L108-L146). Powered Off is `None`. The
 second, `suspended: bool`, mirrors something that lives on disk: a
 suspended machine's whole frozen state is a `suspended.ccstate` file in
 its artifact directory (written by week 16's save-state engine), and *the
@@ -1677,7 +1675,7 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
 }
 ```
 
-([`crates/coco-egui/src/manager.rs:175-183`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L175-L183).) Three states, computed
+([`crates/coco-egui/src/manager.rs:173-181`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L173-L181).) Three states, computed
 fresh at draw time; the only one with any persistence is Suspended, and
 its persistence is the state file itself, not a status field in the
 definition. This is §15.1's lesson applied to application state rather
@@ -1763,8 +1761,8 @@ already provides one.
 > **Rust corner — `Option<Box<CocoApp>>`, not `Option<CocoApp>`.**
 > `CocoApp` is a large struct. It contains the whole `Machine` (CPU, RAM,
 > the GIME, both PIAs, every optional cartridge device) plus every UI
-> dialog's own state: the debugger panel, the "New…" form, the paper
-> window, and thirty-odd more fields. With `Option<CocoApp>`, every
+> dialog's own state: the debugger panel, the paper window, and thirty-odd
+> more fields. With `Option<CocoApp>`, every
 > `MachineEntry` in the list would pay the full size of that struct
 > regardless of whether the machine is running — including entries for
 > machines that are, and always will be, stopped, since `Option<T>` is at
@@ -1928,7 +1926,7 @@ One small heuristic in the PNG writer deserves attention:
     }
 ```
 
-([`crates/coco-egui/src/manager.rs:211-216`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L211-L216).) Consider what a
+([`crates/coco-egui/src/manager.rs:209-214`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L209-L214).) Consider what a
 screen capture is exposed to. The CoCo's screen is genuinely, uniformly
 black at plenty of legitimate moments: during a mode switch, right after a
 `CLS 0`, in the instant following a reset before the ROM has painted
@@ -2175,7 +2173,7 @@ pub(super) fn manager_harness_with_artifacts(
 }
 ```
 
-([`crates/coco-egui/src/ui_tests/harness.rs:204-215`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L204-L215).) Both directory
+([`crates/coco-egui/src/ui_tests/harness.rs:191-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L191-L202).) Both directory
 paths are *injected* — as `None`, or as a temporary directory — and never
 the real user configuration or data directories. That injection is why
 `ManagerApp::new` takes them as parameters at all rather than calling
@@ -2238,8 +2236,8 @@ memory address that happens to hold it.
 Strictness has a cost, of course, which is that label collisions must be
 handled explicitly rather than papered over. Three helpers do that.
 `click_containing` matches by substring, for labels carrying decoration the
-visible caption does not show — a submenu's trailing "⏵", or a menu row's
-shortcut hint ("New… ⌘N"). `lowest_by_label` and `click_in_menu`
+visible caption does not show — a submenu's trailing "⏵" ("MultiPak
+Interface ⏵", "Slot 1 ⏵"). `lowest_by_label` and `click_in_menu`
 disambiguate a menu-popup copy of a label that the toolbar *also* shows —
 "Reset" appears in both places at once — by picking whichever matching node
 sits lowest on screen, since a popup always hangs below the toolbar row
@@ -2251,7 +2249,7 @@ pub(super) fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, 
 }
 ```
 
-([`crates/coco-egui/src/ui_tests/harness.rs:222-224`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L222-L224).) Its doc comment
+([`crates/coco-egui/src/ui_tests/harness.rs:209-211`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L209-L211).) Its doc comment
 names the case exactly: a status word like "Running" is deliberately shown
 twice at once, once weakly in the list row and once strongly in the detail
 pane header, both driven by the same `vm_status_label` from §15.6. Asserting
@@ -2261,17 +2259,17 @@ on a layout decision.
 There is one more addressing wrinkle worth knowing, because it is the kind
 of thing that costs an hour if nobody wrote it down. A combo box does not
 expose its current selection as a label at all — egui sets it as the
-accessibility *value* instead — so `select_combo` addresses the combo
+accessibility *value* instead — so `select_combo_at` addresses the combo
 button with `get_by_value` and the popup items, which are plain
 selectables, with `get_by_label`
-([`crates/coco-egui/src/ui_tests/harness.rs:79-95`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L79-L95)). Role, label, and
+([`crates/coco-egui/src/ui_tests/harness.rs:79-115`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L79-L115)). Role, label, and
 value are three different axes of the accessibility tree, and knowing which
 one a widget uses is most of the skill in writing these tests.
 
 ### Reading one real test
 
 `manager_row_context_menu_delete_confirms_and_removes`
-([`crates/coco-egui/src/ui_tests/manager_window.rs:156-184`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L156-L184)) is worth
+([`crates/coco-egui/src/ui_tests/manager_window.rs:226-254`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L226-L254)) is worth
 reading start to finish, because it follows the exact sequence of clicks a
 human tester would perform, written in something very close to English:
 
@@ -2345,10 +2343,10 @@ by the project's own convention. This is what happened, not a sanitized
 summary:
 
 ```
-test result: FAILED. 80 passed; 35 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 83 passed; 30 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-**All 35 failures are ROM-required, and only ROM-required.** Every one
+**All 30 failures are ROM-required, and only ROM-required.** Every one
 panics at a `std::fs::read`/`load_default_rom` call reading
 `roms/coco3.rom` or (for the FD-502 tests) `roms/disk11.rom`, with a
 message stating exactly that: `"roms/coco3.rom is required (git-ignored,
@@ -2356,10 +2354,10 @@ local-only)"`. The failing set breaks down cleanly into three groups:
 
 - `debugger::tests::*` (5) and `save_state::tests::*` (1) — unit tests that
   boot a real `Machine` directly with `Machine::new(config, load_rom())`.
-- `ui_tests::direct_boot_menus::*` (17) and `ui_tests::new_vm_dialog::*`
-  (8) — every kittest test that calls `boot_harness()`, which requires the
-  real system ROM to construct a `CocoApp` at all.
-- `ui_tests::manager_lifecycle::*` (4) — every test that actually calls
+- `ui_tests::direct_boot_menus::*` (16) — every kittest test that calls
+  `boot_harness()`, which requires the real system ROM to construct a
+  `CocoApp` at all.
+- `ui_tests::manager_lifecycle::*` (8) — every test that actually calls
   `launch_machine` (Start a VM for real), as opposed to `manager_window.rs`
   and `manager_peripherals.rs`'s tests, which only exercise the manager's
   *list and edit* UI against injected `MachineEntry` fixtures
@@ -2494,7 +2492,7 @@ problem?
 **15.5 — Read and predict a kittest test (read/predict, then verify by
 running it).** Without running anything yet, read
 `ui_tests::manager_window::manager_rename_migrates_definition_file_and_artifact_dir`
-([`crates/coco-egui/src/ui_tests/manager_window.rs:262-303`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L262-L303)) end to end and
+([`crates/coco-egui/src/ui_tests/manager_window.rs:332-373`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L332-L373)) end to end and
 write down, in order: (a) what `harness.state().entries[0].slug` equals
 immediately after `name_field().focus()` and typing `" Two"` but *before*
 `harness.key_press(egui::Key::Enter)`; (b) why the test calls

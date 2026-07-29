@@ -16,93 +16,11 @@ impl CocoApp {
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
         self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
-        self.new_vm_dialog_ui(ctx);
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
         self.disk_controller_prompt_ui(ctx);
         self.cart_error_ui(ctx);
-    }
-
-    /// The "New…" dialog, and the machine it builds when the user confirms.
-    fn new_vm_dialog_ui(&mut self, ctx: &egui::Context) {
-        let new_vm::NewVmAction::Create(spec) = self.new_vm.show(ctx) else {
-            return;
-        };
-        if let Err(e) = self.create_vm(spec.config, ctx) {
-            self.new_vm.error = Some(e);
-            return;
-        }
-        // The new window's starting UI preferences, from the form's
-        // Display/Keyboard rows; F9/F12 keep toggling them live afterwards.
-        self.aspect_correct = spec.aspect_correct;
-        self.kb_mode = spec.kb_mode;
-        // The machine booted; cartridge/media problems (e.g. missing
-        // disk11.rom, unreadable image) are reported like a menu insert,
-        // not as a create failure.
-        let has_drives = spec.has_drives();
-        let new_vm::NewMachineSpec { cartridge, mpi_slots, disks, tape, vhds, .. } = *spec;
-        self.mount_dialog_cartridge(cartridge, mpi_slots, disks, has_drives);
-        self.mount_dialog_tape(tape);
-        self.mount_dialog_vhds(vhds);
-        self.new_vm.close();
-    }
-
-    /// Whatever the "New…" dialog's Cartridge row selected, plus the floppies
-    /// that come with an FD-502 — bare, or in a MultiPak slot.
-    fn mount_dialog_cartridge(
-        &mut self,
-        cartridge: new_vm::CartridgeChoice,
-        mpi_slots: [new_vm::SlotChoice; MPI_SLOT_COUNT],
-        disks: [new_vm::MediaChoice; UI_DRIVES],
-        has_drives: bool,
-    ) {
-        match cartridge {
-            new_vm::CartridgeChoice::None => {}
-            new_vm::CartridgeChoice::RomPak(path) => self.insert_cartridge(path),
-            new_vm::CartridgeChoice::RTC => self.insert_rtc(),
-            new_vm::CartridgeChoice::FD502 => {
-                if let Err(e) = self.ensure_disk_controller() {
-                    self.cart_error = Some(e);
-                } else {
-                    self.mount_dialog_disks(disks);
-                }
-            }
-            new_vm::CartridgeChoice::MPI => {
-                self.insert_multipak();
-                for (slot, choice) in mpi_slots.into_iter().enumerate() {
-                    match choice {
-                        new_vm::SlotChoice::FD502 => self.mpi_insert_fd502(slot),
-                        new_vm::SlotChoice::RomPak(path) => self.mpi_insert_rompak(slot, path),
-                        new_vm::SlotChoice::RTC => self.mpi_insert_rtc(slot),
-                        new_vm::SlotChoice::Empty => {}
-                    }
-                }
-                if has_drives {
-                    self.mount_dialog_disks(disks);
-                }
-            }
-        }
-    }
-
-    /// The "New…" dialog's cassette row.
-    fn mount_dialog_tape(&mut self, tape: new_vm::MediaChoice) {
-        match tape {
-            new_vm::MediaChoice::File(path) => self.insert_tape(path),
-            new_vm::MediaChoice::Blank(Some(path)) => self.new_tape(path),
-            new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
-        }
-    }
-
-    /// The "New…" dialog's virtual-hard-disk rows.
-    fn mount_dialog_vhds(&mut self, vhds: [new_vm::MediaChoice; UI_DRIVES]) {
-        for (drive, choice) in vhds.into_iter().enumerate() {
-            match choice {
-                new_vm::MediaChoice::File(path) => self.insert_vhd(drive, path),
-                new_vm::MediaChoice::Blank(Some(path)) => self.new_vhd(drive, path),
-                new_vm::MediaChoice::None | new_vm::MediaChoice::Blank(None) => {}
-            }
-        }
     }
 
     /// Confirmation for a disk action that needs an FD-502 the machine

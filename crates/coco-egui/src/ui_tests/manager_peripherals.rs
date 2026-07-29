@@ -80,8 +80,8 @@ fn manager_edit_with_rtc_records_the_peripheral() {
 /// A ROM Pak — in the port or in an MPI slot — records `[media].cart`; two
 /// slotted paks exceed what the schema can represent, so that change is
 /// refused with an inline error and nothing is saved. Picks are seeded on
-/// the edit form directly (native file dialogs, see
-/// `new_dialog_rom_pak_choice_inserts_the_pak`).
+/// the edit form directly, since the combo's "ROM Pak…" item opens a
+/// native file dialog a headless harness can't drive.
 #[test]
 fn manager_edit_with_rom_pak_records_the_cart() {
     let pak = PathBuf::from("/paks/game.ccc");

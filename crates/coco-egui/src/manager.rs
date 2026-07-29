@@ -81,6 +81,9 @@ const STATUS_POWERED_OFF: &str = "Powered Off";
 /// Vertical gap between sections of the detail pane.
 const DETAIL_SECTION_GAP: f32 = 12.0;
 
+/// Inner margin of the detail/edit pane, in egui logical points.
+const DETAIL_PANE_MARGIN: i8 = 10;
+
 /// Cassette-deck transport glyphs
 pub(crate) const PLAY_GLYPH: &str = "▶";
 pub(crate) const SUSPEND_GLYPH: &str = "⏸";
@@ -375,7 +378,9 @@ impl eframe::App for ManagerApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(index) = self.selected {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    self.draw_detail(ui, index);
+                    egui::Frame::NONE
+                        .inner_margin(egui::Margin::same(DETAIL_PANE_MARGIN))
+                        .show(ui, |ui| self.draw_detail(ui, index));
                 });
             } else if let Some(texture) = &self.photo_texture {
                 ui.centered_and_justified(|ui| {

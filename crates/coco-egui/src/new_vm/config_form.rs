@@ -1,19 +1,20 @@
-//! [`config_form_rows`]: the shared hardware-config rows (Machine, VDG, RAM,
-//! Video, Monitor) drawn by both hosts — see the parent module doc.
+//! The hardware-config rows, split by the detail pane's sections:
+//! [`machine_rows`] (Machine, VDG) and [`display_rows`] (Video, Monitor) —
+//! see the parent module doc. RAM is deliberately absent: the detail pane
+//! draws it as its own titled radio-button group (`manager::detail`), not
+//! a grid row.
 
 use coco_core::{MachineConfig, MachineVariant, MonitorType, VDGVariant, VideoStandard};
 use eframe::egui;
 
-use super::{constrain, monitor_label, ram_choices, ram_label, vdg_label, video_label};
+use super::{constrain, monitor_label, vdg_label, video_label};
 
-/// Shared hardware-config rows, all label + combo box: Machine, conditional
-/// VDG (CoCo 2 only — see the inline comment below), RAM, Video (PAL only
-/// for CoCo 3), conditional Monitor (CoCo 3 only). Must be called inside an
+/// The Machine row and the conditional VDG row (CoCo 2 only — see the
+/// inline comment below), label + combo box each. Must be called inside an
 /// already-open two-column [`egui::Grid`]; `salt` distinguishes the
-/// [`egui::ComboBox`]'s persistent id when this is drawn from more than one
-/// call site in the same frame (the "New…" dialog *and* the manager's
-/// detail pane can both be visible at once).
-pub(super) fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
+/// [`egui::ComboBox`]'s persistent id when this is drawn from more than
+/// one call site in the same frame.
+pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
     ui.label(egui::RichText::new("Machine").size(font));
@@ -51,16 +52,13 @@ pub(super) fn config_form_rows(ui: &mut egui::Ui, salt: &str, draft: &mut Machin
             });
         ui.end_row();
     }
+}
 
-    ui.label(egui::RichText::new("RAM").size(font));
-    egui::ComboBox::from_id_salt((salt, "ram"))
-        .selected_text(ram_label(draft.memory))
-        .show_ui(ui, |ui| {
-            for &memory in ram_choices(draft.variant) {
-                ui.selectable_value(&mut draft.memory, memory, ram_label(memory));
-            }
-        });
-    ui.end_row();
+/// The Video row and the conditional Monitor row (CoCo 3 only — see the
+/// inline comment below) — [`machine_rows`]'s sibling, hosted by the
+/// detail pane's "Display" titled group in its own grid.
+pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
+    let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
     ui.label(egui::RichText::new("Video").size(font));
     // CoCo 1/2 PAL timing isn't modeled (`MachineConfig::validate`);

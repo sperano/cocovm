@@ -47,10 +47,12 @@ impl CocoApp {
     /// reaches the CoCo matrix or the symbolic type-ahead (the held modifier
     /// alone is harmless there).
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // ⌘N / Ctrl+N = Machine → New….
-        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
-            self.new_vm.open_with(self.machine.config, self.aspect_correct, self.kb_mode);
-        }
+        // ⌘N is the MANAGER's new-machine shortcut and means nothing in a
+        // VM window — but it's still consumed here, as a deliberate no-op,
+        // so a user hitting it out of habit doesn't type an `N` into the
+        // running machine via the positional matrix (which forwards keys
+        // regardless of the COMMAND modifier).
+        let _ = ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
         // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves
         // it (`save_state.rs`).
         for slot in 0..save_state::QUICK_SLOTS {

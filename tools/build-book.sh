@@ -32,9 +32,13 @@ for f in book/ch*.md book/appendices.md; do
     "$WORK/00-syllabus.md"
 done
 
+# The subtitle is the real emulator version, read from the workspace
+# Cargo.toml so it can never drift from what the code says it is.
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+
 META=(
   --metadata title="Writing a CoCo Emulator"
-  --metadata subtitle="A One-Semester Course"
+  --metadata subtitle="Version $VERSION"
   --metadata author="Éric Spérano"
   --metadata lang=en
   --metadata date="$(date +%Y-%m-%d)"

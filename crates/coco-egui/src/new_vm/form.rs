@@ -1,24 +1,22 @@
-//! [`MachineForm`]'s impl: the full row-drawing logic (hardware rows via
-//! [`super::config_form::config_form_rows`], then Cassette, Cartridge with
-//! its nested MPI-slot/Disk sub-rows, the HD rows, and the UI rows) plus
-//! each combo box's own picker logic. See the parent module doc for how the
-//! two hosts share this.
+//! [`MachineForm`]'s impl: the row-drawing logic, split into the sections
+//! the detail pane lays out ([`MachineForm::machine_rows`],
+//! [`MachineForm::display_rows`], [`MachineForm::media_rows`]), plus each
+//! combo box's own picker logic. See the parent module doc.
 
 use eframe::egui;
 
-use super::config_form::config_form_rows;
+use super::config_form;
 use super::{
     cartridge_label, disk_file_dialog, media_choice_text, rom_pak_file_dialog, slot_label,
     sub_form_row, CartridgeChoice, MachineForm, MediaChoice, SlotChoice, FORM_GRID_SPACING,
 };
 
 impl MachineForm {
-    /// An all-defaults form. `salt` and `auto_place_blanks` are per-host
-    /// constants — see the field docs.
-    pub fn new(salt: &'static str, auto_place_blanks: bool) -> Self {
+    /// An all-defaults form. `salt` is a per-host constant — see the
+    /// field doc.
+    pub(crate) fn new(salt: &'static str) -> Self {
         Self {
             salt,
-            auto_place_blanks,
             config: coco_core::MachineConfig::default(),
             cartridge: CartridgeChoice::None,
             mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
@@ -32,24 +30,32 @@ impl MachineForm {
         }
     }
 
-    /// Reset every pick besides the hardware `config` and the UI rows to
-    /// its default — the dialog reopens as "same machine again, nothing
-    /// mounted".
-    pub(super) fn reset_inventory(&mut self) {
-        self.cartridge = CartridgeChoice::None;
-        self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
-        self.disks = std::array::from_fn(|_| MediaChoice::None);
-        self.tape = MediaChoice::None;
-        self.vhds = std::array::from_fn(|_| MediaChoice::None);
+    /// The Machine/VDG rows. Must be called inside an already-open
+    /// two-column [`egui::Grid`] with [`FORM_GRID_SPACING`], like every
+    /// `*_rows` method here.
+    pub(crate) fn machine_rows(&mut self, ui: &mut egui::Ui) {
+        config_form::machine_rows(ui, self.salt, &mut self.config);
     }
 
-    /// All form rows. Must be called inside an already-open two-column
-    /// [`egui::Grid`] with [`FORM_GRID_SPACING`], like [`config_form_rows`].
-    pub fn rows(&mut self, ui: &mut egui::Ui) {
-        let font = ui.style().text_styles[&egui::TextStyle::Button].size;
-        config_form_rows(ui, self.salt, &mut self.config);
+    /// The Video/Monitor rows plus the 4:3 aspect checkbox — the detail
+    /// pane hosts these inside its "Display" titled group, in that group's
+    /// own grid. The checkbox needs no field label (the group names the
+    /// topic); the empty label cell keeps it aligned with the combos.
+    /// Aspect is a `[ui]` preference — the launched window's *starting*
+    /// state; F9 keeps working as a live toggle.
+    pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {
+        config_form::display_rows(ui, self.salt, &mut self.config);
+        ui.label("");
+        ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
+        ui.end_row();
+    }
 
-        // Form-only rows (not `config_form_rows`): the cartridge and media
+    /// The media and UI rows: Cassette, Cartridge (with its nested
+    /// MPI-slot/Disk sub-rows), the HD rows, and Keyboard.
+    pub(crate) fn media_rows(&mut self, ui: &mut egui::Ui) {
+        let font = ui.style().text_styles[&egui::TextStyle::Button].size;
+
+        // Form-only rows (not `config_form`): the cartridge and media
         // aren't part of `MachineConfig` — see [`CartridgeChoice`].
         ui.label(egui::RichText::new("Cassette").size(font));
         self.tape_combo(ui);
@@ -80,19 +86,16 @@ impl MachineForm {
         }
 
         // The VHD hard disks, below the removable media. Always shown, no
-        // cartridge required — see [`super::NewMachineSpec::vhds`].
+        // cartridge required — see [`MachineForm::vhds`]'s doc.
         for drive in 0..crate::UI_DRIVES {
             ui.label(egui::RichText::new(format!("HD {drive}")).size(font));
             self.vhd_combo(ui, drive);
             ui.end_row();
         }
 
-        // UI preferences, the `[ui]` section's fields: the launched
-        // window's *starting* state; F9/F12 keep working as live toggles.
-        ui.label(egui::RichText::new("Display").size(font));
-        ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
-        ui.end_row();
-
+        // Keyboard mode, a `[ui]` preference like aspect (which lives in
+        // [`Self::display_rows`]): the launched window's *starting* state;
+        // F12 keeps working as a live toggle.
         ui.label(egui::RichText::new("Keyboard").size(font));
         ui.horizontal(|ui| {
             for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {
@@ -102,8 +105,9 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// [`super::NewMachineSpec::has_drives`] over the form's own picks.
-    pub fn drives_available(&self) -> bool {
+    /// Whether a disk controller is reachable from the form's own picks:
+    /// the bare FD-502, or one in an MPI slot.
+    pub(crate) fn drives_available(&self) -> bool {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
@@ -238,8 +242,8 @@ impl MachineForm {
 
     /// The Cassette-row combo: the same None / Blank / Select… protocol as
     /// the disks' ([`Self::disk_combo`]) with tape semantics — Select…
-    /// accepts `.cas` and WAV, Blank is a fresh `.cas` (empty file), and
-    /// the manager flow auto-places `tape.cas` in the artifact directory.
+    /// accepts `.cas` and WAV, Blank is a fresh `.cas` (empty file)
+    /// auto-placed as `tape.cas` in the artifact directory at save time.
     fn tape_combo(&mut self, ui: &mut egui::Ui) {
         egui::ComboBox::from_id_salt((self.salt, "tape"))
             .selected_text(media_choice_text(&self.tape))
@@ -251,21 +255,10 @@ impl MachineForm {
                     self.tape = MediaChoice::None;
                 }
                 if ui
-                    .selectable_label(matches!(self.tape, MediaChoice::Blank(_)), "Blank")
+                    .selectable_label(self.tape == MediaChoice::Blank, "Blank")
                     .clicked()
                 {
-                    self.tape = if self.auto_place_blanks {
-                        MediaChoice::Blank(None)
-                    } else {
-                        match rfd::FileDialog::new()
-                            .add_filter("Cassette image", &["cas"])
-                            .set_file_name("blank.cas")
-                            .save_file()
-                        {
-                            Some(path) => MediaChoice::Blank(Some(path)),
-                            None => MediaChoice::None,
-                        }
-                    };
+                    self.tape = MediaChoice::Blank;
                 }
                 if ui
                     .selectable_label(matches!(self.tape, MediaChoice::File(_)), "Select…")
@@ -294,21 +287,10 @@ impl MachineForm {
                     self.vhds[drive] = MediaChoice::None;
                 }
                 if ui
-                    .selectable_label(matches!(self.vhds[drive], MediaChoice::Blank(_)), "Blank")
+                    .selectable_label(self.vhds[drive] == MediaChoice::Blank, "Blank")
                     .clicked()
                 {
-                    self.vhds[drive] = if self.auto_place_blanks {
-                        MediaChoice::Blank(None)
-                    } else {
-                        match rfd::FileDialog::new()
-                            .add_filter("VHD image", &["vhd"])
-                            .set_file_name(format!("blank{drive}.vhd"))
-                            .save_file()
-                        {
-                            Some(path) => MediaChoice::Blank(Some(path)),
-                            None => MediaChoice::None,
-                        }
-                    };
+                    self.vhds[drive] = MediaChoice::Blank;
                 }
                 if ui
                     .selectable_label(matches!(self.vhds[drive], MediaChoice::File(_)), "Select…")
@@ -324,13 +306,10 @@ impl MachineForm {
 
     /// One "Disk N:" label + combo, drawn while the FD-502 is selected
     /// (indented rows under the Cartridge combo — one level deeper when
-    /// nested under an MPI slot). "Blank" and "Select…" open native file
-    /// dialogs on the spot
-    /// (save-file and open-file respectively) — except the manager flow's
-    /// "Blank" (`show_name_field`), which is auto-placed in the machine's
-    /// artifact directory at create time and needs no path here. A
-    /// cancelled dialog falls back to None rather than keeping a pathless
-    /// choice.
+    /// nested under an MPI slot). "Select…" opens a native file dialog on
+    /// the spot (a cancelled dialog keeps the previous choice); "Blank" is
+    /// auto-placed in the machine's artifact directory at save time and
+    /// needs no path here.
     fn disk_combo(&mut self, ui: &mut egui::Ui, font: f32, drive: usize) {
         ui.label(egui::RichText::new(format!("Disk {drive}:")).size(font));
         egui::ComboBox::from_id_salt((self.salt, "disk", drive))
@@ -343,20 +322,10 @@ impl MachineForm {
                     self.disks[drive] = MediaChoice::None;
                 }
                 if ui
-                    .selectable_label(matches!(self.disks[drive], MediaChoice::Blank(_)), "Blank")
+                    .selectable_label(self.disks[drive] == MediaChoice::Blank, "Blank")
                     .clicked()
                 {
-                    self.disks[drive] = if self.auto_place_blanks {
-                        MediaChoice::Blank(None)
-                    } else {
-                        match disk_file_dialog()
-                            .set_file_name(format!("blank{drive}.dsk"))
-                            .save_file()
-                        {
-                            Some(path) => MediaChoice::Blank(Some(path)),
-                            None => MediaChoice::None,
-                        }
-                    };
+                    self.disks[drive] = MediaChoice::Blank;
                 }
                 if ui
                     .selectable_label(matches!(self.disks[drive], MediaChoice::File(_)), "Select…")
