@@ -169,7 +169,6 @@ pub(crate) struct StatusActivity {
     // and rustc flags it dead. Attributes come off one at a time as each
     // commit lands.
     pub(crate) vhd: [ActivityLatch; UI_DRIVES],
-    #[allow(dead_code)]
     pub(crate) dw: [ActivityLatch; drivewire::DRIVE_COUNT],
     #[allow(dead_code)]
     pub(crate) rs232_tx: ActivityLatch,
@@ -286,6 +285,47 @@ pub(crate) fn vhd_icon(ui: &mut egui::Ui, active: bool) {
 
     let arm_stroke = egui::Stroke::new(1.0f32, housing);
     painter.line_segment([rect.right_bottom(), platter_center], arm_stroke);
+}
+
+/// Status-bar DriveWire activity indicator: a serial-cable-and-plug
+/// silhouette, red while a sector has recently been read from or written to
+/// that drive over the Becker port ([`coco_core::drivewire::DwServer::drive_ops`]),
+/// gray otherwise.
+pub(crate) const DW_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 10.0);
+
+/// One status-bar DriveWire indicator (see [`DW_ICON_SIZE`]'s doc): a small
+/// plug body at the right with two punched pin slots, and a shell-colored
+/// cable line running from the plug to the icon's left edge with one
+/// sag/kink partway along, evoking a serial cable running off to the host.
+pub(crate) fn drivewire_icon(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(DW_ICON_SIZE, egui::Sense::hover());
+    let shell = if active { ICON_ACTIVE } else { ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+
+    // Plug body: a small rect hugging the right edge.
+    let plug_w = DW_ICON_SIZE.x * 0.4;
+    let plug = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - plug_w, rect.center().y - DW_ICON_SIZE.y * 0.35),
+        egui::vec2(plug_w, DW_ICON_SIZE.y * 0.7),
+    );
+    painter.rect_filled(plug, 1.0, shell);
+    // Two pin slots punched into the plug face.
+    let pin_w = plug_w * 0.22;
+    let pin_h = DW_ICON_SIZE.y * 0.32;
+    for dy in [-DW_ICON_SIZE.y * 0.16, DW_ICON_SIZE.y * 0.16] {
+        let pin = egui::Rect::from_center_size(
+            egui::pos2(plug.center().x, rect.center().y + dy),
+            egui::vec2(pin_w, pin_h),
+        );
+        painter.rect_filled(pin, 0.0, punch);
+    }
+
+    // Cable: plug face -> a sag/kink partway along -> the left edge.
+    let cable_stroke = egui::Stroke::new(1.0f32, shell);
+    let kink = egui::pos2(rect.left() + DW_ICON_SIZE.x * 0.35, rect.bottom() - 1.0);
+    painter.line_segment([egui::pos2(plug.left(), rect.center().y), kink], cable_stroke);
+    painter.line_segment([kink, egui::pos2(rect.left(), rect.center().y - DW_ICON_SIZE.y * 0.1)], cable_stroke);
 }
 
 #[cfg(test)]

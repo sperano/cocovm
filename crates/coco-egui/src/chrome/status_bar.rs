@@ -90,7 +90,7 @@ impl CocoApp {
         }
     }
 
-    fn drivewire_status(&self, ui: &mut egui::Ui) {
+    fn drivewire_status(&mut self, ui: &mut egui::Ui) {
         let Some(dw) = &self.machine.bus.drivewire else {
             return;
         };
@@ -98,7 +98,10 @@ impl CocoApp {
             let Some(path) = &self.dw_paths[drive] else {
                 continue;
             };
+            let count = dw.drive_ops(drive);
+            let active = self.activity.dw[drive].observe(count);
             ui.separator();
+            drivewire_icon(ui, active);
             ui.label(format!(
                 "DW{drive}: {}{}",
                 file_name(path),

@@ -37,6 +37,9 @@ impl DwServer {
         image
             .read_at(lsn * SECTOR_SIZE as u64, &mut sector)
             .map_err(|_| error::READ)?;
+        if let Some(ops) = self.drive_ops.get_mut(drive) {
+            *ops += 1;
+        }
         Ok(sector)
     }
 
@@ -53,6 +56,9 @@ impl DwServer {
                 self.sectors_written += 1;
                 if let Some(dirty) = self.dirty.get_mut(drive) {
                     *dirty = true;
+                }
+                if let Some(ops) = self.drive_ops.get_mut(drive) {
+                    *ops += 1;
                 }
                 error::OK
             }
