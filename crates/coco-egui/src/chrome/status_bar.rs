@@ -29,7 +29,6 @@ impl CocoApp {
 
     fn rs232_status(&mut self, ui: &mut egui::Ui) {
         let Some(endpoint) = &self.rs232 else { return };
-        ui.separator();
         // ↑/↓ = bytes out to / in from the host endpoint.
         let (tx, rx) = self
             .machine
@@ -37,6 +36,10 @@ impl CocoApp {
             .cart
             .as_deluxe_rs232()
             .map_or((0, 0), |pak| (pak.tx_bytes(), pak.rx_bytes()));
+        let tx_active = self.activity.rs232_tx.observe(tx);
+        let rx_active = self.activity.rs232_rx.observe(rx);
+        ui.separator();
+        rs232_icon(ui, tx_active || rx_active);
         ui.label(format!("RS-232 [{}] ↑{tx} ↓{rx}", endpoint.label()));
     }
 

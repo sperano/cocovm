@@ -170,9 +170,7 @@ pub(crate) struct StatusActivity {
     // commit lands.
     pub(crate) vhd: [ActivityLatch; UI_DRIVES],
     pub(crate) dw: [ActivityLatch; drivewire::DRIVE_COUNT],
-    #[allow(dead_code)]
     pub(crate) rs232_tx: ActivityLatch,
-    #[allow(dead_code)]
     pub(crate) rs232_rx: ActivityLatch,
     #[allow(dead_code)]
     pub(crate) printer: ActivityLatch,
@@ -326,6 +324,57 @@ pub(crate) fn drivewire_icon(ui: &mut egui::Ui, active: bool) {
     let kink = egui::pos2(rect.left() + DW_ICON_SIZE.x * 0.35, rect.bottom() - 1.0);
     painter.line_segment([egui::pos2(plug.left(), rect.center().y), kink], cable_stroke);
     painter.line_segment([kink, egui::pos2(rect.left(), rect.center().y - DW_ICON_SIZE.y * 0.1)], cable_stroke);
+}
+
+/// Status-bar RS-232 (Deluxe RS-232 Program Pak) activity indicator: a
+/// DB-connector silhouette, red while a byte has recently gone out to or
+/// come in from the host endpoint
+/// ([`coco_core::rs232::DeluxeRs232::tx_bytes`]/`rx_bytes`), gray otherwise.
+pub(crate) const RS232_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 9.0);
+
+/// Width of the pin field (the trapezoidal D-sub shield), excluding the ear
+/// studs on each side — see [`rs232_icon`].
+const RS232_PIN_FIELD_W: f32 = RS232_ICON_SIZE.x * 0.72;
+
+/// One status-bar RS-232 indicator (see [`RS232_ICON_SIZE`]'s doc): a
+/// trapezoid (top edge wider than the bottom, the classic D-sub shield
+/// shape) with three punched pin dots in an upper row and two in a lower
+/// row, plus a small filled ear stud at each side (the connector's
+/// mounting-screw bosses).
+pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(RS232_ICON_SIZE, egui::Sense::hover());
+    let shell = if active { ICON_ACTIVE } else { ICON_IDLE };
+    let punch = ui.visuals().panel_fill;
+    let painter = ui.painter();
+
+    // D-sub shield: a trapezoid, top edge the full pin-field width, bottom
+    // edge narrower.
+    let bottom_inset = RS232_PIN_FIELD_W * 0.15;
+    let cx = rect.center().x;
+    let half_top = RS232_PIN_FIELD_W / 2.0;
+    let points = vec![
+        egui::pos2(cx - half_top, rect.top()),
+        egui::pos2(cx + half_top, rect.top()),
+        egui::pos2(cx + half_top - bottom_inset, rect.bottom()),
+        egui::pos2(cx - half_top + bottom_inset, rect.bottom()),
+    ];
+    painter.add(egui::Shape::convex_polygon(points, shell, egui::Stroke::NONE));
+
+    // Ear studs: mounting-screw bosses at each side, at mid-height.
+    let ear_r = RS232_ICON_SIZE.y * 0.16;
+    painter.circle_filled(egui::pos2(rect.left() + ear_r, rect.center().y), ear_r, shell);
+    painter.circle_filled(egui::pos2(rect.right() - ear_r, rect.center().y), ear_r, shell);
+
+    // Pins: 3 over 2, punched into the shield.
+    let pin_r = RS232_ICON_SIZE.y * 0.09;
+    let upper_y = rect.center().y - RS232_ICON_SIZE.y * 0.16;
+    let lower_y = rect.center().y + RS232_ICON_SIZE.y * 0.16;
+    for dx in [-0.28, 0.0, 0.28] {
+        painter.circle_filled(egui::pos2(cx + dx * RS232_PIN_FIELD_W, upper_y), pin_r, punch);
+    }
+    for dx in [-0.16, 0.16] {
+        painter.circle_filled(egui::pos2(cx + dx * RS232_PIN_FIELD_W, lower_y), pin_r, punch);
+    }
 }
 
 #[cfg(test)]
