@@ -230,8 +230,9 @@ fn draw_reel_spokes(painter: &egui::Painter, hub: egui::Pos2, reel_angle: f32, c
 }
 
 /// One status-bar floppy activity indicator (see [`DRIVE_ICON_SIZE`]'s
-/// doc): the jacket square with the hub hole and the oblong head-access
-/// slot punched out in the panel's background color — the 5¼" silhouette.
+/// doc): the jacket square with the hub hole, the oblong head-access slot,
+/// the index-hole dot, and the write-protect notch all punched out in the
+/// panel's background color — the 5¼" silhouette.
 pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(DRIVE_ICON_SIZE, DRIVE_ICON_SIZE),
@@ -251,6 +252,17 @@ pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) {
         egui::vec2(slot_width, DRIVE_ICON_SIZE * 0.24),
     );
     painter.rect_filled(slot, slot_width / 2.0, punch);
+    // Index hole: a small dot out on the hub's radius, at the angle a real
+    // 5¼" jacket's index-sensor window sits at (drive-side, upper right).
+    let index = hub + egui::vec2(DRIVE_ICON_SIZE * 0.22, 0.0);
+    painter.circle_filled(index, DRIVE_ICON_SIZE * 0.05, punch);
+    // Write-protect notch: a small rectangular nick in the jacket's right
+    // edge (covering it on a real 5¼" disk write-protects the drive).
+    let notch = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - DRIVE_ICON_SIZE * 0.12, rect.center().y - DRIVE_ICON_SIZE * 0.09),
+        egui::vec2(DRIVE_ICON_SIZE * 0.12, DRIVE_ICON_SIZE * 0.18),
+    );
+    painter.rect_filled(notch, 0.0, punch);
 }
 
 #[cfg(test)]
