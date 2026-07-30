@@ -252,59 +252,77 @@ the enum makes the invalid combinations unrepresentable instead of merely
 unlikely.
 
 Here is the tick function itself
-([`crates/coco-core/src/bitbanger.rs:375-432`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L375-L432),
-elided only where the doc comments already quoted above repeat):
+([`crates/coco-core/src/bitbanger.rs:391-449`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L391-L449)):
 
 ```rust
-pub fn tick(&mut self, cycles: u32, pa1_mark: bool) {
-    self.state = match self.state {
-        RxState::Idle => {
-            if self.last_mark && !pa1_mark {
-                // Falling edge: mark -> space, a start-bit candidate.
-                RxState::Receiving { elapsed: cycles, sample: 0, bits: 0 }
-            } else {
-                RxState::Idle
-            }
-        }
-        RxState::Receiving { mut elapsed, mut sample, mut bits } => {
-            elapsed += cycles;
-            let mut false_start = false;
-            while sample < TOTAL_SAMPLES && elapsed >= self.sample_threshold(sample) {
-                if sample == START_SAMPLE {
-                    if pa1_mark {
-                        // Line back at mark mid-start-cell: the falling
-                        // edge was a glitch, not a start bit. Abandon
-                        // the frame silently (not a framing error — no
-                        // frame ever began).
-                        false_start = true;
-                        break;
+    pub fn tick(&mut self, cycles: u32, pa1_mark: bool) {
+        self.state = match self.state {
+            RxState::Idle => {
+                if self.last_mark && !pa1_mark {
+                    // Falling edge: mark -> space, a start-bit candidate.
+                    RxState::Receiving {
+                        elapsed: cycles,
+                        sample: 0,
+                        bits: 0,
                     }
-                } else if sample <= DATA_BITS {
-                    bits |= u8::from(pa1_mark) << (sample - 1);
-                } else if pa1_mark {
-                    self.sink.write_byte(bits);
                 } else {
-                    // Stop bit read space: framing error. Discard the
-                    // byte and resync...
-                    self.framing_errors += 1;
+                    RxState::Idle
                 }
-                sample += 1;
             }
-            if false_start || sample >= TOTAL_SAMPLES {
-                RxState::Idle
-            } else {
-                RxState::Receiving { elapsed, sample, bits }
+            RxState::Receiving {
+                mut elapsed,
+                mut sample,
+                mut bits,
+            } => {
+                elapsed += cycles;
+                let mut false_start = false;
+                while sample < TOTAL_SAMPLES && elapsed >= self.sample_threshold(sample) {
+                    if sample == START_SAMPLE {
+                        if pa1_mark {
+                            // Line back at mark mid-start-cell: the falling
+                            // edge was a glitch, not a start bit. Abandon
+                            // the frame silently (not a framing error — no
+                            // frame ever began).
+                            false_start = true;
+                            break;
+                        }
+                    } else if sample <= DATA_BITS {
+                        bits |= u8::from(pa1_mark) << (sample - 1);
+                    } else if pa1_mark {
+                        self.sink.write_byte(bits);
+                        self.bytes_out += 1;
+                    } else {
+                        // Stop bit read space: framing error. Discard the
+                        // byte and resync — go back to Idle and hunt for
+                        // the next mark->space edge, rather than assuming
+                        // the following bits are frame-aligned
+                        // (`bitbanger-spec.md` "Decoder spec").
+                        self.framing_errors += 1;
+                    }
+                    sample += 1;
+                }
+                if false_start || sample >= TOTAL_SAMPLES {
+                    RxState::Idle
+                } else {
+                    RxState::Receiving {
+                        elapsed,
+                        sample,
+                        bits,
+                    }
+                }
             }
-        }
-    };
-    self.last_mark = pa1_mark;
-}
+        };
+        self.last_mark = pa1_mark;
+    }
 ```
 
 Read the sample-index arithmetic against the frame layout. `START_SAMPLE
 = 0` validates the start bit, samples 1 through 8 (`sample <= DATA_BITS`)
 pull each data bit in with `bits |= u8::from(pa1_mark) << (sample - 1)`,
-and sample 9 checks the stop bit. Notice the `sample - 1`: data-bit
+and sample 9 checks the stop bit. A stop bit that reads mark delivers the
+assembled byte to the sink and bumps `bytes_out`, a monotonic counter the
+frontend's status bar reads to light its printer activity icon (Chapter
+15). Notice the `sample - 1`: data-bit
 sample 1 lands in bit position 0, **LSB first**, matching the framing
 spec. `TOTAL_SAMPLES = DATA_BITS + 2 = 10`, which is the same ten bit
 times the frame layout describes, one sample each.
@@ -329,17 +347,17 @@ in deliberate chunks.
 
 Every sample happens at the *middle* of its bit cell, not at its edge.
 `sample_threshold` computes `(0.5 + k)` bit-times for sample `k`
-([`crates/coco-core/src/bitbanger.rs:434-441`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L434-L441)):
+([`crates/coco-core/src/bitbanger.rs:451-458`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L451-L458)):
 
 ```rust
-/// CPU-cycle offset of sample `sample` (0-indexed) after the start-bit
-/// edge: sample times are 0.5 (start validation), 1.5, …, 8.5 (data),
-/// 9.5 (stop) bit-times, so sample `k` sits at `(0.5 + k)` bit-times =
-/// `bit_period * (2k + 1) / 2`.
-fn sample_threshold(&self, sample: u8) -> u32 {
-    let scaled = u64::from(self.bit_period) * (2 * u64::from(sample) + 1);
-    (scaled / 2) as u32
-}
+    /// CPU-cycle offset of sample `sample` (0-indexed) after the start-bit
+    /// edge: sample times are 0.5 (start validation), 1.5, …, 8.5 (data),
+    /// 9.5 (stop) bit-times (`bitbanger-spec.md` "Decoder spec"), so sample
+    /// `k` sits at `(0.5 + k)` bit-times = `bit_period * (2k + 1) / 2`.
+    fn sample_threshold(&self, sample: u8) -> u32 {
+        let scaled = u64::from(self.bit_period) * (2 * u64::from(sample) + 1);
+        (scaled / 2) as u32
+    }
 ```
 
 The reason is the same one that makes a real UART oversample its input,
@@ -496,7 +514,7 @@ high-speed poke doubles the CPU clock without touching the ROM's
 cycle-counted delay loop, so it *exactly* doubles the effective baud —
 the loop still counts the same number of now-faster cycles. Test
 `double_rate_bit_period_decodes`
-([`crates/coco-core/src/bitbanger_test.rs:150-158`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs#L150-L158))
+([`crates/coco-core/src/bitbanger_test.rs:172-180`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger_test.rs#L172-L180))
 configures the decoder at half the default period and confirms a byte
 sent at that rate still decodes, proving the relationship is pure
 arithmetic with "no special-cased fast mode."
@@ -709,7 +727,7 @@ line granularity is exactly the shape a printer's output naturally has.
 > `coco-egui` is by construction an open set. The field's attribute is
 > where the contradiction gets resolved — `#[serde(with = "sink_serde")]`
 > — and the module it names explains itself
-> ([`crates/coco-core/src/bitbanger.rs:444-452`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L444-L452)):
+> ([`crates/coco-core/src/bitbanger.rs:461-469`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L461-L469)):
 >
 > ```rust
 > /// `#[serde(with = "sink_serde")]` for [`BitBanger::sink`]: the trait object
@@ -736,7 +754,7 @@ line granularity is exactly the shape a printer's output naturally has.
 > worth keeping. A `NoopSink` and a `CaptureSink` answer `Noop`, a
 > `FileSink` answers `FileCapture`, and a `Dmp105Handle` answers with a
 > clone of the entire interpreter and its paper. Restoring inverts it
-> ([`crates/coco-core/src/bitbanger.rs:485-495`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L485-L495)):
+> ([`crates/coco-core/src/bitbanger.rs:502-512`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L502-L512)):
 >
 > ```rust
 >     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(

@@ -140,6 +140,28 @@ fn framing_error_counts_and_resyncs() {
     assert_eq!(bb.framing_errors(), 1);
 }
 
+#[test]
+fn a_fully_framed_byte_bumps_bytes_out() {
+    let capture = CaptureSink::new();
+    let mut bb = BitBanger::new();
+    bb.set_sink(Box::new(capture.clone()));
+    assert_eq!(bb.bytes_out(), 0);
+    feed_byte(&mut bb, 0x55, DEFAULT_BIT_PERIOD, TICK_SIZE);
+    assert_eq!(bb.bytes_out(), 1);
+    feed_byte(&mut bb, 0x2A, DEFAULT_BIT_PERIOD, TICK_SIZE);
+    assert_eq!(bb.bytes_out(), 2);
+}
+
+#[test]
+fn a_framing_error_does_not_bump_bytes_out() {
+    let capture = CaptureSink::new();
+    let mut bb = BitBanger::new();
+    bb.set_sink(Box::new(capture.clone()));
+    feed_bad_frame(&mut bb, 0x2A, DEFAULT_BIT_PERIOD, TICK_SIZE);
+    assert_eq!(bb.framing_errors(), 1);
+    assert_eq!(bb.bytes_out(), 0);
+}
+
 /// The $FFD9 high-speed poke doubles the CPU clock with no change to
 /// the ROM's cycle-counted delay loop, so it exactly doubles the
 /// effective baud (`bitbanger-spec.md` "Baud timing"). Configuring the

@@ -10,6 +10,12 @@ use eframe::egui;
 /// fully right/down) rather than leaving a bare `0` at each call site.
 const AXIS_MIN: u8 = 0;
 
+/// Minimum absolute gamepad axis deflection (gilrs' -1.0..=1.0 range) that
+/// counts as "in use" for the status bar's joystick activity light — small
+/// enough to catch a deliberate push, large enough that stick drift/noise
+/// near center doesn't light it permanently.
+const PAD_DEFLECT: f32 = 0.2;
+
 /// Where a joystick port's axes and buttons are read from.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum JoySource {
@@ -35,6 +41,7 @@ impl JoySource {
 
 /// Host-side keys driving `JoySource::Keys`: arrows for the axes, Z/X for the
 /// two fire buttons (mirroring the analog stick's button 0/1).
+#[derive(Clone, Copy)]
 struct KeyState {
     left: bool,
     right: bool,
@@ -56,6 +63,24 @@ pub struct JoystickInputs {
     pad_axes: [f32; 2],
     /// South (button 0) / East (button 1) state of the first gamepad seen.
     pad_buttons: [bool; 2],
+    /// Whether each port's source is currently being actively driven —
+    /// set every frame in [`Self::apply`], read by the status bar's
+    /// joystick activity light. Indexed like `sources`. What "actively
+    /// driven" means depends on the source: a mouse port only lights on a
+    /// button (pointer motion alone would light it constantly while the
+    /// pointer merely sits over the display); a gamepad port lights on any
+    /// held button or an axis deflected past [`PAD_DEFLECT`]; a keyboard
+    /// port lights on any of its six mapped keys; `None` never lights.
+    ///
+    /// For the mouse source specifically, [`mouse_in_use`] lights on
+    /// `primary_down`/`secondary_down` from anywhere in the egui input
+    /// state — not gated by pointer position over the display. This
+    /// matches [`Self::apply`]'s own button handling just above it (also
+    /// ungated by `display_rect`): the emulated fire button tracks whatever
+    /// the host mouse buttons are doing regardless of where the pointer
+    /// sits, so a click anywhere in the window lights this indicator too,
+    /// not only clicks over the CoCo display.
+    pub in_use: [bool; 2],
 }
 
 impl JoystickInputs {
@@ -74,6 +99,7 @@ impl JoystickInputs {
             gilrs,
             pad_axes: [0.0, 0.0],
             pad_buttons: [false, false],
+            in_use: [false, false],
         }
     }
 
@@ -150,7 +176,7 @@ impl JoystickInputs {
         let keys = Self::key_state(ctx);
 
         for stick in [RIGHT, LEFT] {
-            match self.sources[stick] {
+            self.in_use[stick] = match self.sources[stick] {
                 JoySource::None => {
                     // Explicitly recenter so a port doesn't stay wherever a
                     // previously selected source last left it.
@@ -158,6 +184,7 @@ impl JoystickInputs {
                     machine.bus.joysticks.set_axis(stick, AXIS_Y, AXIS_CENTER);
                     machine.bus.joysticks.set_button(stick, 0, false);
                     machine.bus.joysticks.set_button(stick, 1, false);
+                    false
                 }
                 JoySource::Mouse => {
                     // Only update the axes while the pointer is actually over the
@@ -172,6 +199,10 @@ impl JoystickInputs {
                     }
                     machine.bus.joysticks.set_button(stick, 0, primary_down);
                     machine.bus.joysticks.set_button(stick, 1, secondary_down);
+                    // Buttons only: pointer motion alone would light this
+                    // constantly whenever the pointer merely sits over the
+                    // display.
+                    mouse_in_use(primary_down, secondary_down)
                 }
                 JoySource::Gamepad => {
                     let x = pot_from_bipolar(self.pad_axes[0]);
@@ -180,6 +211,7 @@ impl JoystickInputs {
                     machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
                     machine.bus.joysticks.set_button(stick, 0, self.pad_buttons[0]);
                     machine.bus.joysticks.set_button(stick, 1, self.pad_buttons[1]);
+                    gamepad_in_use(self.pad_buttons, self.pad_axes)
                 }
                 JoySource::Keys => {
                     let x = axis_from_keys(keys.left, keys.right);
@@ -188,8 +220,9 @@ impl JoystickInputs {
                     machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
                     machine.bus.joysticks.set_button(stick, 0, keys.button0);
                     machine.bus.joysticks.set_button(stick, 1, keys.button1);
+                    keys_in_use(keys)
                 }
-            }
+            };
         }
     }
 
@@ -224,6 +257,26 @@ fn axis_from_keys(negative: bool, positive: bool) -> u8 {
         (false, true) => AXIS_MAX,
         _ => AXIS_CENTER,
     }
+}
+
+/// `JoySource::Mouse`'s "in use" test for the status bar's joystick
+/// activity light: buttons only (see [`JoystickInputs::in_use`]'s doc
+/// comment for why pointer position doesn't count).
+fn mouse_in_use(primary_down: bool, secondary_down: bool) -> bool {
+    primary_down || secondary_down
+}
+
+/// `JoySource::Gamepad`'s "in use" test: either mapped button held, or
+/// either axis deflected past [`PAD_DEFLECT`].
+fn gamepad_in_use(buttons: [bool; 2], axes: [f32; 2]) -> bool {
+    buttons[0] || buttons[1] || axes.iter().any(|v| v.abs() > PAD_DEFLECT)
+}
+
+/// `JoySource::Keys`'s "in use" test: any of the six mapped keys held.
+/// Takes `keys` by value, like [`gamepad_in_use`] takes its state — `KeyState`
+/// is `Copy`, so there's no reason to borrow it.
+fn keys_in_use(keys: KeyState) -> bool {
+    keys.left || keys.right || keys.up || keys.down || keys.button0 || keys.button1
 }
 
 /// Map a 0.0..=1.0 fraction (e.g. pointer position within the display rect) to

@@ -223,6 +223,28 @@ fn flush_command_reports_ok() {
 }
 
 #[test]
+fn read_bumps_the_drive_access_count() {
+    let mut m = boot_machine();
+    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    select(&mut m, 0);
+    assert_eq!(m.bus.vhd.access_count(0), 0);
+    m.bus.write(COMMAND_STATUS, command::READ);
+    assert_eq!(m.bus.vhd.access_count(0), 1);
+    m.bus.write(COMMAND_STATUS, command::READ);
+    assert_eq!(m.bus.vhd.access_count(0), 2, "each dispatched command bumps it again");
+}
+
+#[test]
+fn unknown_command_does_not_bump_the_access_count() {
+    let mut m = boot_machine();
+    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    select(&mut m, 0);
+    const UNKNOWN: u8 = 3;
+    m.bus.write(COMMAND_STATUS, UNKNOWN);
+    assert_eq!(m.bus.vhd.access_count(0), 0);
+}
+
+#[test]
 fn unmounted_drive_reports_no_vhd_regardless_of_command() {
     // Spec: the unmounted check happens before dispatch, uniformly for every
     // command value.

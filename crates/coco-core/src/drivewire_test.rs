@@ -94,12 +94,28 @@ fn read_success() {
 }
 
 #[test]
+fn read_bumps_drive_ops_for_that_drive_only() {
+    let mut server = DwServer::new();
+    let mut image = vec![0u8; SECTOR_SIZE * 2];
+    image[SECTOR_SIZE..].copy_from_slice(&pattern_sector());
+    server.mount(0, DwImage::Memory(image));
+
+    let mut req = vec![opcode::READ, 0];
+    req.extend(lsn_bytes(1));
+    feed_and_drain(&mut server, &req);
+
+    assert_eq!(server.drive_ops(0), 1);
+    assert_eq!(server.drive_ops(1), 0, "an unrelated drive must not be touched");
+}
+
+#[test]
 fn read_unmounted_drive() {
     let mut server = DwServer::new();
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(0));
     let reply = feed_and_drain(&mut server, &req);
     assert_eq!(reply, vec![error::NOT_READY]);
+    assert_eq!(server.drive_ops(0), 0, "a NOT_READY attempt must not bump drive_ops");
 }
 
 #[test]

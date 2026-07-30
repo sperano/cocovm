@@ -258,6 +258,15 @@ pub struct BitBanger {
     /// matching the line's idle-high convention).
     last_mark: bool,
     state: RxState,
+    /// Count of bytes delivered to `sink` since construction — our own
+    /// addition, for the status bar's printer activity light
+    /// (`status_icons.rs`'s `ActivityLatch`). Bumped alongside every
+    /// `sink.write_byte` call, i.e. only for a fully-framed byte; a framing
+    /// error (discarded, never reaches the sink) doesn't bump it.
+    /// `#[serde(default)]` so an older save state without this field
+    /// restores to zero rather than failing to load.
+    #[serde(default)]
+    bytes_out: u64,
     /// The trait object is serialized through the small state enum in
     /// [`sink_serde`], not directly — the DMP-105/paper state must survive
     /// a snapshot even though the sink itself doesn't own a serializable
@@ -274,6 +283,7 @@ impl Default for BitBanger {
             busy: false,
             last_mark: true,
             state: RxState::Idle,
+            bytes_out: 0,
             sink: Box::new(NoopSink),
         }
     }
@@ -299,6 +309,12 @@ impl BitBanger {
     /// construction.
     pub fn framing_errors(&self) -> u32 {
         self.framing_errors
+    }
+
+    /// Count of bytes delivered to the sink since construction (see
+    /// `bytes_out`'s doc comment).
+    pub fn bytes_out(&self) -> u64 {
+        self.bytes_out
     }
 
     /// Current BUSY (PIA1 PB0) level: false = ready, true = busy.
@@ -407,6 +423,7 @@ impl BitBanger {
                         bits |= u8::from(pa1_mark) << (sample - 1);
                     } else if pa1_mark {
                         self.sink.write_byte(bits);
+                        self.bytes_out += 1;
                     } else {
                         // Stop bit read space: framing error. Discard the
                         // byte and resync — go back to Idle and hunt for

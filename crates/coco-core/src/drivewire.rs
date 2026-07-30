@@ -369,6 +369,17 @@ pub struct DwServer {
     /// Cycle stamp of the last byte fed via [`DwServer::data_write`], for
     /// the transaction timeout. `None` before the first byte ever arrives.
     last_byte_cycle: Option<u64>,
+    /// Per-drive count of successful sector reads plus writes since
+    /// construction, for the status bar's DriveWire activity light
+    /// (`status_icons.rs`'s `ActivityLatch`) — mirrors [`Self::sectors_read`]/
+    /// [`Self::sectors_written`] but per-drive and combined, matching what a
+    /// single drive light should track. Bumped in `transfer::read_sector`/
+    /// `transfer::write_sector` only on success; `NOT_READY`/`READ`/`WRITE`
+    /// errors don't bump it. `#[serde(default)]` so an older save state
+    /// without this field restores to all-zero counts rather than failing
+    /// to load.
+    #[serde(default)]
+    drive_ops: [u64; DRIVE_COUNT],
 }
 
 impl DwServer {
@@ -385,6 +396,7 @@ impl DwServer {
             unknown_opcodes: 0,
             vserial_ops: 0,
             last_byte_cycle: None,
+            drive_ops: [0; DRIVE_COUNT],
         }
     }
 
@@ -437,6 +449,12 @@ impl DwServer {
 
     pub fn sectors_read(&self) -> u64 {
         self.sectors_read
+    }
+
+    /// Count of successful sector reads plus writes dispatched to `drive`
+    /// so far (see `drive_ops`'s doc comment).
+    pub fn drive_ops(&self, drive: usize) -> u64 {
+        self.drive_ops[drive]
     }
 
     pub fn sectors_written(&self) -> u64 {
