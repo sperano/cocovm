@@ -100,7 +100,7 @@ immediate mode there is no persistent widget tree at all. Instead, your
 ```
 
 That is the *entire* trait implementation — three lines at
-[`crates/coco-egui/src/app.rs:326-328`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L326-L328), forwarding to a plain inherent
+[`crates/coco-egui/src/app.rs:279-281`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L279-L281), forwarding to a plain inherent
 method. Everything else in that file is ordinary `impl CocoApp`. There is
 no widget registration, no event handler installation, no constructor that
 builds a layout. The window is whatever `update` draws this time around,
@@ -153,7 +153,7 @@ checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
 
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
-([`crates/coco-egui/src/app.rs:11-131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L131)) that between them constitute the
+([`crates/coco-egui/src/app.rs:11-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L133)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
 `self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
@@ -172,14 +172,17 @@ this concrete. Here is the whole thing:
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                keyboard_icon(ui).on_hover_text("Keyboard input mode (F12 to toggle)");
                 ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
                 self.cart_status(ui);
+                self.joystick_status(ui);
                 self.rs232_status(ui);
                 self.mpi_status(ui);
                 self.disk_status(ui);
                 self.vhd_status(ui);
                 self.drivewire_status(ui);
                 self.tape_status(ui);
+                self.printer_status(ui);
                 if let Some(toast) = self.toast_message() {
                     ui.separator();
                     ui.label(toast);
@@ -189,24 +192,36 @@ this concrete. Here is the whole thing:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:5-22`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L5-L22).) The toast at the
+([`crates/coco-egui/src/chrome/status_bar.rs:7-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L7-L27).) The toast at the
 end is a conditional widget, not a label that gets shown and hidden:
 whether the bar ends with a toast is decided fresh, sixty times a second,
-by asking `toast_message()`. The seven `*_status` calls are where it gets
+by asking `toast_message()`. The nine `*_status` calls are where it gets
 interesting. Each one is written like this:
 
 ```rust
     fn cart_status(&self, ui: &mut egui::Ui) {
         let Some(path) = &self.cart_path else { return };
         ui.separator();
+        cart_icon(ui).on_hover_text("Cartridge ROM pak");
         ui.label(format!("Cart: {}", file_name(path)));
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:24-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L24-L28).) With no
+([`crates/coco-egui/src/chrome/status_bar.rs:29-34`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L29-L34).) The `cart_icon`
+call ahead of the label is one of ten small device silhouettes the bar
+paints from `Painter` primitives
+([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the
+same per-frame function-call discipline as everything else here, a
+rectangle and a few punched-out circles rather than a bitmap asset. The
+busier entries pass the icon an `active` flag latched over a monotonic
+counter the core already keeps (bytes printed, sectors read), so a
+single instantaneous event stays lit long enough to see — the
+`ActivityLatch` type in
+[`crates/coco-egui/src/status_icons.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons.rs), which
+reappears among §15.9's test counts. With no
 cartridge inserted, the function returns before drawing anything, and the
 status bar this frame simply has no cartridge section — no separator, no
-label, no reserved space that has to be collapsed. Eject the cartridge and
+icon, no label, no reserved space that has to be collapsed. Eject the cartridge and
 the section is gone on the very next frame, with no teardown code, no
 `removeChild`, no visibility flag, and no possibility of an orphaned widget
 lingering because someone forgot to destroy it. In a retained-mode
@@ -337,8 +352,9 @@ function call.
 The cost, to be honest about it, is CPU time spent on work that produced no
 visible change. A running but idle CoCo — one sitting at the BASIC prompt
 with nothing to do — still walks every `ui.menu_button` call in the menu
-bar sixty times a second, still formats the status bar's strings, still
-asks the cartridge slot whether an Orchestra-90 is present. For an
+bar sixty times a second, still formats the status bar's strings and
+checks its activity latches, still asks the cartridge slot whether an
+Orchestra-90 is present. For an
 application of this size on modern hardware that cost is unmeasurable —
 the emulated machine's own field rendering dwarfs it. It would matter in a
 ten-thousand-widget enterprise dashboard.
@@ -603,7 +619,7 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 ```
 
-([`crates/coco-egui/src/main.rs:88-93`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L88-L93).) Both exist to prevent the same
+([`crates/coco-egui/src/main.rs:93-98`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L93-L98).) Both exist to prevent the same
 disease, which has a name: *the spiral of death*.
 
 Imagine there were no cap on fields per update. The host stalls for a
@@ -915,7 +931,7 @@ doc comment on `TARGET_ASPECT`:
 > framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
 > is stretched horizontally to this ratio so pixels are ~3% wider than
 > tall, as on real hardware.
-> ([`crates/coco-egui/src/main.rs:84-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L84-L87))
+> ([`crates/coco-egui/src/main.rs:89-92`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L89-L92))
 
 That 288×224 figure is `coco_core::video::FB_W` and `FB_H` — the CoCo 1
 and 2 legacy VDG canvas, which is a 256×192 active area plus a 16-pixel
@@ -1305,7 +1321,7 @@ press has to survive across multiple 60 Hz `KEYIN` scans of the ROM to
 register at all; a press and release confined to a single field can land
 entirely between two scans and simply vanish. The tuned constants are
 `TYPE_HOLD_FIELDS = 2` and `TYPE_GAP_FIELDS = 1`
-([`crates/coco-egui/src/main.rs:100-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L100-L102)): hold each synthesized keypress
+([`crates/coco-egui/src/main.rs:105-107`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L105-L107)): hold each synthesized keypress
 for two fields, safely longer than one scan interval, then release for one
 field before the next tap begins, so that two identical consecutive
 characters — the `"AA"` in a pasted `DATA` statement — read as two separate
@@ -1412,7 +1428,7 @@ transport — power on, suspend to disk, power off — and a detail pane for
 editing hardware and attached media.
 The dispatch is three lines in `main()` — "bare `coco` (no CLI arguments)
 opens the CocoVM manager window; any argument keeps the direct-boot
-emulator path" ([`crates/coco-egui/src/main.rs:110-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L110-L114)) — and everything
+emulator path" ([`crates/coco-egui/src/main.rs:115-119`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L115-L119)) — and everything
 downstream of it is in [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its
 submodules.
 
@@ -2400,10 +2416,10 @@ and local-only by the project's own convention. This is what happened, not
 a sanitized summary:
 
 ```
-test result: FAILED. 102 passed; 30 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 117 passed; 31 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-**All 30 failures are ROM-required, and only ROM-required.** Every one
+**All 31 failures are ROM-required, and only ROM-required.** Every one
 panics at a `std::fs::read`/`load_default_rom` call reading
 `roms/coco3.rom` or (for the FD-502 tests) `roms/disk11.rom`, with a
 message stating exactly that: `"roms/coco3.rom is required (git-ignored,
@@ -2411,7 +2427,7 @@ local-only)"`. The failing set breaks down cleanly into three groups:
 
 - `debugger::tests::*` (5) and `save_state::tests::*` (1) — unit tests that
   boot a real `Machine` directly with `Machine::new(config, load_rom())`.
-- `ui_tests::direct_boot_menus::*` (16) — every kittest test that calls
+- `ui_tests::direct_boot_menus::*` (17) — every kittest test that calls
   `boot_harness()`, which requires the real system ROM to construct a
   `CocoApp` at all.
 - `ui_tests::manager_lifecycle::*` (8) — every test that actually calls
@@ -2421,12 +2437,15 @@ local-only)"`. The failing set breaks down cleanly into three groups:
   (`sample_entry`, built from `MachineDef::from_config` — no ROM, no
   `Machine`, no boot) and consequently pass cleanly.
 
-**The 102 passing tests are the whole non-ROM surface of the crate**: the
+**The 117 passing tests are the whole non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
 round-trip and both halves of the all-black skip heuristic), the
-`Selection` set-arithmetic tests from §15.8, the joystick math tests, the
+`Selection` set-arithmetic tests from §15.8, the joystick math and
+in-use-flag tests, the status-icon tests (`ActivityLatch`'s
+prime/hold/decrease rules driven through an injected clock, and the tape
+reel's angle arithmetic — no `Machine`, no window), the
 paper-render/paper-export tests (pure rasterization, no emulated printer
 attached), and — importantly for this chapter — every
 `ui_tests::manager_window::*`, `ui_tests::manager_peripherals::*`, and
@@ -2434,7 +2453,7 @@ attached), and — importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 132 tests should pass.
+checkout with real ROMs present, all 148 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
@@ -2451,7 +2470,7 @@ the emulated hardware buys.
 
 In this order:
 
-1. **[`crates/coco-egui/src/main.rs:1-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L102)** — the crate's module list (a
+1. **[`crates/coco-egui/src/main.rs:1-107`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L107)** — the crate's module list (a
    map of everything this chapter did and didn't cover) and the constants
    block: `SCALE`, `TARGET_ASPECT`, `MAX_FIELDS_PER_UPDATE`, `MAX_FRAME_DT`,
    `TYPE_HOLD_FIELDS`/`TYPE_GAP_FIELDS`.

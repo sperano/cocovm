@@ -1968,7 +1968,7 @@ than in the device.
 The read side is stranger, and it is the sharpest contrast with the
 WD1773. Those five address registers do not read back what was written to
 them
-([`vhd.rs:249-263`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs#L249-L263)):
+([`vhd.rs:273-287`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs#L273-L287)):
 the doc comment records that "MAME implements no readback for these
 registers," so they answer `0` while a drive is selected and open bus
 while none is. A driver cannot ask VHD what sector number it last set. On
@@ -1981,7 +1981,7 @@ usually something you interrogate afterwards.
 One doc comment in this module deserves attention for a reason that has
 nothing to do with disks. `Vhd::new` picks drive 0 as the power-on
 selection, and rather than let that pass as a fact, the comment labels it
-([`vhd.rs:191-201`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs#L191-L201)):
+([`vhd.rs:201-216`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs#L201-L216)):
 "This is an inferred default, not a verified hardware fact: no source
 available for this implementation states the drive-select latch's
 power-on value. Drive 0 selected matches a typical zeroed-register reset
@@ -2005,7 +2005,7 @@ in a private bus method, not in `vhd.rs` at all — the module doc comment
 says so explicitly: it needs to "transfer sector data through the
 GIME-translated logical address space," which is `SystemBus`'s job, not
 a standalone device's. Here's the READ command's entire implementation
-([`bus/vhd_bridge.rs:51-65`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/vhd_bridge.rs#L51-L65)):
+([`bus/vhd_bridge.rs:56-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/vhd_bridge.rs#L56-L70)):
 
 ```rust
     fn vhd_read_sector(&mut self, drive: usize) {
@@ -2088,12 +2088,13 @@ remembering: it's *write-only* in the strictest possible sense
 it can never ask VHD "which drive is currently selected?" through this
 register. [`tests/vhd.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/vhd.rs) covers the full lifecycle this section described
 — status transitions, short/EOF reads, zero-extend-on-write, drive
-independence, MMU-translated transfers, and the reentrancy guard — but
+independence, MMU-translated transfers, the reentrancy guard, and the
+per-drive access counter the frontend's status bar reads — but
 every one of its tests boots a real CoCo 3 ROM through
 `Machine::new(MachineConfig::default(), load_rom("coco3.rom"))`
 ([`tests/vhd.rs:36-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/vhd.rs#L36-L38)), with **no graceful skip** if that file is
 missing. Without that file, `cargo test -p coco-core --test vhd` fails all
-14 of its tests with the same `cannot read .../roms/coco3.rom` panic —
+16 of its tests with the same `cannot read .../roms/coco3.rom` panic —
 worth knowing before you run it, so you don't mistake "no ROM available"
 for "VHD is broken."
 
@@ -2205,7 +2206,7 @@ State::AwaitReadHeader { ex: false, buf: Vec::with_capacity(HEADER_LEN)
 }`. Bytes 2–5 are the 4-byte header — drive number, then a 24-bit
 big-endian LSN — and each one lands in `feed_read_header`, which appends
 to `buf` (`buf.push(byte)`) until it reaches `HEADER_LEN`, then calls
-`execute_read(ex, &buf)`. That function ([`drivewire/transfer.rs:66-96`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/transfer.rs#L66-L96),
+`execute_read(ex, &buf)`. That function ([`drivewire/transfer.rs:72-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/transfer.rs#L72-L102),
 abridged) reads the sector and immediately queues the *entire* reply —
 status byte, 256 data bytes, and a 2-byte checksum — into the outgoing
 FIFO:
@@ -2304,7 +2305,7 @@ concrete: DriveWire needs *some* way to detect a corrupted transmission,
 because unlike the WD1773 (wired to the media it reads) or VHD (a direct
 function call), a client and server genuinely can't see each other's
 state — but "some way" doesn't have to be sophisticated to do its job.
-`execute_write` ([`drivewire/transfer.rs:98-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/transfer.rs#L98-L113)) shows the other half of
+`execute_write` ([`drivewire/transfer.rs:104-118`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/transfer.rs#L104-L118)) shows the other half of
 the same defense: the *server* verifies the checksum the client sent —
 `if received != checksum_of(sector) { self.reply.push_back(error::CRC);
 return; }` — and rejects the write outright on a mismatch, before
