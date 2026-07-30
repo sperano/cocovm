@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "coco-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "ciborium",
  "flate2",
@@ -795,7 +795,7 @@ dependencies = [
 
 [[package]]
 name = "coco-egui"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "chrono",
  "clap",
@@ -2221,7 +2221,7 @@ dependencies = [
 
 [[package]]
 name = "mc6809"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "serde",
 ]
