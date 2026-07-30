@@ -1135,7 +1135,7 @@ abridged):
 Each byte lands straight in the disk image (`d.write_byte(t.offset +
 t.index, val)`) the instant it's written — there's no in-memory sector
 buffer being assembled and flushed at the end; every CPU write to `$FF4B`
-during an active Write Sector is a real, immediate mutation of `JvcDisk`'s
+during an active Write Sector is a real, immediate mutation of `JVCDisk`'s
 backing bytes.
 
 [`tests/fdc/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs) proves both the happy path
@@ -1669,7 +1669,7 @@ real cartridge schematic would show as separate ICs and switches.
 
 ## 13.9 JVC images: geometry from a file, geometry from a guess
 
-Every disk image this emulator mounts is a `JvcDisk`
+Every disk image this emulator mounts is a `JVCDisk`
 ([`crates/coco-core/src/fdc/jvc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/fdc/jvc.rs)) — the de facto standard format for
 CoCo emulators, named for Jeff Vavasour, and about as close to "no format
 at all" as a disk image gets. **A headerless JVC image is just the raw
@@ -1890,7 +1890,7 @@ default, exactly as if no LSN0 were there at all.
 
 **Every test in [`tests/fdc/image_geometry.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/image_geometry.rs), [`tests/fdc/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/wd1773.rs), and
 [`tests/fdc/write_track.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/write_track.rs) needs no ROM and no external disk image at
-all** — they construct their `JvcDisk`s and `WD1773`s directly, in
+all** — they construct their `JVCDisk`s and `WD1773`s directly, in
 memory. The one exception, `real_nitros9_40_track_disk_parses_as_
 40_tracks_2_sides`, checks the same sniff logic against a real NitrOS-9
 disk and skips gracefully with an `eprintln!` if
@@ -2601,7 +2601,7 @@ argument. Then revert your one-character edit and confirm `git status`
 shows a clean tree again.
 
 **13.4 — Build: a new JVC geometry test (build).** Using only the public
-`JvcDisk` API, write a new test in [`tests/fdc/image_geometry.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/image_geometry.rs) for a
+`JVCDisk` API, write a new test in [`tests/fdc/image_geometry.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/fdc/image_geometry.rs) for a
 geometry this file doesn't already cover: an explicit 4-byte header
 (`sectors_per_track=10, sides=1, size_code=0` → 128-byte sectors,
 `first_sector_id=5`). Confirm that `sector_offset` resolves sector IDs 5

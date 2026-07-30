@@ -1,10 +1,10 @@
 //! IRQ bookkeeping: recomputing [`status::IRQ`] from the armed-source
 //! bitmask, the small command-register predicates that gate IRQ arming, and
-//! the DCD/DSR change-detector [`Acia6551::tick`] drives every tick.
+//! the DCD/DSR change-detector [`ACIA6551::tick`] drives every tick.
 
-use super::{Acia6551, command, irq_source, status, tx_control};
+use super::{ACIA6551, command, irq_source, status, tx_control};
 
-impl Acia6551 {
+impl ACIA6551 {
     /// Recompute the [`status::IRQ`] bit from `irq_sources`.
     pub(super) fn update_irq_output(&mut self) {
         if self.irq_sources != 0 {

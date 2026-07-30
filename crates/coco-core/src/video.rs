@@ -16,7 +16,7 @@ mod text;
 
 pub use graphics::{
     decode_vdg_graphics, paint_legacy_graphics_line, render_graphics, vdg_palette_indices,
-    VdgGraphicsMode, LEGACY_GFX_LINES_PER_ROW, MAX_VDG_COLORS, VDG_AG, VDG_CSS, VDG_GM0_INTEXT,
+    VDGGraphicsMode, LEGACY_GFX_LINES_PER_ROW, MAX_VDG_COLORS, VDG_AG, VDG_CSS, VDG_GM0_INTEXT,
 };
 pub use text::{
     decode_alpha_char, legacy_border_value, paint_legacy_text_line, render_text, AlphaGenerator,

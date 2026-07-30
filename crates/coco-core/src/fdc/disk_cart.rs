@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::cart::{Cartridge, ROMPak, RomPakError, IO_OPEN_BUS};
 use crate::wd1773::WD1773;
 
-use super::jvc::JvcDisk;
+use super::jvc::JVCDisk;
 use super::DRIVE_COUNT;
 
 /// DSKREG latch bit assignments (`$FF40`; SCS writes at `$FF40-$FF47` all hit
@@ -66,9 +66,9 @@ fn selected_side(reg: u8, drive: Option<usize>) -> u8 {
 /// through a `&mut self` method here would make the borrow checker see the
 /// whole `DiskCart` as borrowed instead of just this one field.
 fn selected_disk(
-    drives: &mut [Option<JvcDisk>; DRIVE_COUNT],
+    drives: &mut [Option<JVCDisk>; DRIVE_COUNT],
     drive: Option<usize>,
-) -> Option<&mut JvcDisk> {
+) -> Option<&mut JVCDisk> {
     drive.and_then(|i| drives[i].as_mut())
 }
 
@@ -89,7 +89,7 @@ pub struct DiskCart {
     rom: ROMPak,
     fdc: WD1773,
     dskreg: u8,
-    drives: [Option<JvcDisk>; DRIVE_COUNT],
+    drives: [Option<JVCDisk>; DRIVE_COUNT],
     /// Previous state of the NMI line (`intrq && DENSITY_AND_NMI_ENABLE`), so
     /// [`DiskCart::update_lines`] can detect its rising edge.
     nmi_line: bool,
@@ -141,7 +141,7 @@ impl DiskCart {
         self.rom.reattach_image(rom)
     }
 
-    pub fn insert_disk(&mut self, drive: usize, disk: JvcDisk) {
+    pub fn insert_disk(&mut self, drive: usize, disk: JVCDisk) {
         self.drives[drive] = Some(disk);
     }
 
@@ -154,14 +154,14 @@ impl DiskCart {
     }
 
     /// The floppy in `drive`, if any (status display, write-back on eject).
-    pub fn disk(&self, drive: usize) -> Option<&JvcDisk> {
+    pub fn disk(&self, drive: usize) -> Option<&JVCDisk> {
         self.drives[drive].as_ref()
     }
 
     /// Mutable twin of [`DiskCart::disk`]: the snapshot restore flow uses
-    /// this to reach [`JvcDisk::reattach_data`] for whichever drives came
+    /// this to reach [`JVCDisk::reattach_data`] for whichever drives came
     /// back from a snapshot with a disk mounted (`docs/plan-save-states.md`).
-    pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JvcDisk> {
+    pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JVCDisk> {
         self.drives[drive].as_mut()
     }
 

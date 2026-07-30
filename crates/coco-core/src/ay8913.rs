@@ -5,15 +5,15 @@
 //! them are stored and otherwise inert).
 //!
 //! No bus/CPU dependencies: a standalone register-level model driven by
-//! [`Ay8913::write_reg`]/[`Ay8913::read_reg`] and stepped by master clocks via
-//! [`Ay8913::step`]. Mirrors MAME `src/devices/sound/ay8910.cpp`
+//! [`AY8913::write_reg`]/[`AY8913::read_reg`] and stepped by master clocks via
+//! [`AY8913::step`]. Mirrors MAME `src/devices/sound/ay8910.cpp`
 //! (`ay8910_device`) in its classic, non-expanded (AY8930), non-YM2149 mode —
 //! every fact below is cited against that file.
 //!
 //! **Deviation from MAME**: real AY output mixing combines the three
 //! channels through a shared resistor network (MAME's `mix_3D`, indexed by
 //! an `8*32*32*32`-entry precomputed table) — a genuinely nonlinear
-//! combination. [`Ay8913::drain`] instead sums the three channels' already
+//! combination. [`AY8913::drain`] instead sums the three channels' already
 //! gated, already-DAC'd levels and divides by three (`SINGLE_OUTPUT` style,
 //! per `docs/ssc-spec.md`), which keeps full-scale output comparable
 //! regardless of how many channels are active but does not reproduce the
@@ -95,7 +95,7 @@ const ENV_STEP_MASK: i32 = 0x0F;
 /// shift register would never toggle since the feedback taps are also zero.
 const NOISE_SEED: u32 = 1;
 
-/// Channel count, for the mono-mix normalization in [`Ay8913::drain`]'s
+/// Channel count, for the mono-mix normalization in [`AY8913::drain`]'s
 /// per-step accumulation.
 const CHANNEL_COUNT: f32 = 3.0;
 
@@ -172,7 +172,7 @@ struct ToneChannel {
 /// generator, mixed to a single mono output (see module doc's "Deviation
 /// from MAME").
 #[derive(Serialize, Deserialize)]
-pub struct Ay8913 {
+pub struct AY8913 {
     regs: [u8; reg::COUNT],
     tone: [ToneChannel; 3],
     /// Noise generator's own internal-step counter, separate from the tone
@@ -186,16 +186,16 @@ pub struct Ay8913 {
     rng: u32,
     envelope: Envelope,
     /// Fractional master-clock remainder toward the next internal step
-    /// ([`MASTER_CLOCK_DIVIDER`]), carried across [`Ay8913::step`] calls so a
+    /// ([`MASTER_CLOCK_DIVIDER`]), carried across [`AY8913::step`] calls so a
     /// `cycles` argument that isn't a multiple of 8 doesn't lose clocks.
     clock_accum: u32,
     /// Precomputed once per instance (cheap: 16 entries) — see
     /// [`build_volume_table`]. Skipped: pure construction-time scratch,
     /// left at its `Default` (all-zero — silent, not correct) until
-    /// [`Ay8913::after_restore`] rebuilds it (`docs/plan-save-states.md`).
+    /// [`AY8913::after_restore`] rebuilds it (`docs/plan-save-states.md`).
     #[serde(skip)]
     dac: [f32; 16],
-    /// Box-filter accumulator for [`Ay8913::drain`]: running sum of the
+    /// Box-filter accumulator for [`AY8913::drain`]: running sum of the
     /// per-internal-step mixed output since the last drain. Skipped:
     /// per-drain accumulator, correctly resets to zero
     /// (`docs/plan-save-states.md`).
@@ -205,13 +205,13 @@ pub struct Ay8913 {
     sample_count: u32,
 }
 
-impl Default for Ay8913 {
+impl Default for AY8913 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Ay8913 {
+impl AY8913 {
     pub fn new() -> Self {
         let mut ay = Self {
             regs: [0; reg::COUNT],
@@ -249,7 +249,7 @@ impl Ay8913 {
     /// Restore-time fixup after a snapshot round-trip
     /// (`docs/plan-save-states.md`): rebuilds `dac`, the skipped
     /// construction-time lookup table, via the same [`build_volume_table`]
-    /// helper [`Ay8913::new`] uses. Idempotent — safe to call even though
+    /// helper [`AY8913::new`] uses. Idempotent — safe to call even though
     /// nothing else needs fixing up.
     pub fn after_restore(&mut self) {
         self.dac = build_volume_table();
@@ -275,14 +275,14 @@ impl Ay8913 {
     }
 
     /// Read a register back (the value as stored — see
-    /// [`Ay8913::write_reg`]'s masking).
+    /// [`AY8913::write_reg`]'s masking).
     pub fn read_reg(&self, r: u8) -> u8 {
         self.regs[(r & 0x0F) as usize]
     }
 
     /// Advance the generators by `master_clocks` AY master-clock cycles
     /// (already 2× the CoCo E-clock — see `docs/ssc-spec.md`), accumulating
-    /// mixed output samples for the next [`Ay8913::drain`].
+    /// mixed output samples for the next [`AY8913::drain`].
     pub fn step(&mut self, master_clocks: u32) {
         self.clock_accum += master_clocks;
         while self.clock_accum >= MASTER_CLOCK_DIVIDER {
@@ -352,7 +352,7 @@ impl Ay8913 {
 
     /// One internal step (master_clock/8): advance tone/noise/envelope,
     /// gate and sum the three channels, and fold the result into the
-    /// running [`Ay8913::drain`] average.
+    /// running [`AY8913::drain`] average.
     fn internal_step(&mut self) {
         // Tone: classic (non-expanded) mode toggles the square wave every
         // `period` internal steps — MAME's AY8930 duty-cycle down-counter

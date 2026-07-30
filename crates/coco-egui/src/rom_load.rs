@@ -34,7 +34,7 @@ pub(crate) fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Resu
             }
         }
         MachineVariant::Coco1 | MachineVariant::Coco2 => match compose_coco12_rom(roms_dir) {
-            Coco12RomResult::Composed { image, bas, extbas } => {
+            Coco12ROMResult::Composed { image, bas, extbas } => {
                 report_rom_validation(&bas.0, &bas.1);
                 match extbas {
                     Some((ext_path, ext_bytes)) => report_rom_validation(&ext_path, &ext_bytes),
@@ -45,7 +45,7 @@ pub(crate) fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Resu
                 }
                 Ok(image)
             }
-            Coco12RomResult::NoColorBasic => Err(format!(
+            Coco12ROMResult::NoColorBasic => Err(format!(
                 "no Color BASIC ROM found: place one of {} in {}",
                 COCO_BASIC_CANDIDATES.join(", "),
                 roms_dir.display()
@@ -91,7 +91,7 @@ pub(crate) fn find_rom(roms_dir: &Path, candidates: &[&str]) -> Option<(PathBuf,
 /// What [`compose_coco12_rom`] found (or didn't) while composing the flat
 /// image, so the CLI-facing caller can report it and the pure composition
 /// logic stays unit-testable without touching `std::process::exit`.
-pub(crate) enum Coco12RomResult {
+pub(crate) enum Coco12ROMResult {
     Composed {
         image: Box<[u8]>,
         bas: (PathBuf, Vec<u8>),
@@ -107,9 +107,9 @@ pub(crate) enum Coco12RomResult {
 /// image at [`OPEN_BUS_FILLER`] rather than failing (`docs/coco12-plan.md`
 /// "ROM files": a Color-BASIC-only machine still boots). Pure (no I/O side
 /// effects beyond reading `roms_dir`, no process exit) so it's unit-testable.
-pub(crate) fn compose_coco12_rom(roms_dir: &Path) -> Coco12RomResult {
+pub(crate) fn compose_coco12_rom(roms_dir: &Path) -> Coco12ROMResult {
     let Some((bas_path, bas_bytes)) = find_rom(roms_dir, COCO_BASIC_CANDIDATES) else {
-        return Coco12RomResult::NoColorBasic;
+        return Coco12ROMResult::NoColorBasic;
     };
 
     let mut image = vec![OPEN_BUS_FILLER; COCO12_BAS_OFFSET];
@@ -119,7 +119,7 @@ pub(crate) fn compose_coco12_rom(roms_dir: &Path) -> Coco12RomResult {
         image[..n].copy_from_slice(&ext_bytes[..n]);
     }
     image.extend_from_slice(&bas_bytes);
-    Coco12RomResult::Composed {
+    Coco12ROMResult::Composed {
         image: image.into_boxed_slice(),
         bas: (bas_path, bas_bytes),
         extbas,
@@ -184,7 +184,7 @@ pub(crate) fn rs232_eprom_default_path() -> PathBuf {
 /// `CocoApp::save_state_to`/`CocoApp::load_state_from` (`save_state.rs`) can
 /// record and re-resolve it without a second copy of the boot-time ROM logic
 /// ([`load_default_rom`]/[`load_explicit_rom`]/[`compose_coco12_rom`]).
-pub(crate) enum RomSource {
+pub(crate) enum ROMSource {
     /// Loaded verbatim from a real file: `roms/coco3.rom`, or any explicit
     /// `--rom` (which, for CoCo 1/2, must already be the composed flat
     /// layout — see `Cli::rom`'s doc). Hashed and re-read by path directly.
@@ -200,14 +200,14 @@ pub(crate) enum RomSource {
 }
 
 /// Prefix marking a [`coco_core::snapshot::MediaRef::path`] as one of
-/// [`RomSource::ComposedCoco12`]'s pseudo-paths rather than a real
+/// [`ROMSource::ComposedCoco12`]'s pseudo-paths rather than a real
 /// filesystem path — [`coco_core::snapshot::MediaRef`]'s own doc: "never
 /// resolves or interprets it, only carries it", so this module is the only
 /// reader.
 pub(crate) const ROM_DB_PSEUDO_PATH_PREFIX: &str = "rom-db:";
 
-/// Build [`RomSource::ComposedCoco12`]'s pseudo-path for `variant` (CoCo 3
-/// never produces one — its system ROM is always [`RomSource::File`]).
+/// Build [`ROMSource::ComposedCoco12`]'s pseudo-path for `variant` (CoCo 3
+/// never produces one — its system ROM is always [`ROMSource::File`]).
 pub(crate) fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
     let label = match variant {
         MachineVariant::Coco1 => "coco1",
@@ -217,7 +217,7 @@ pub(crate) fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
     PathBuf::from(format!("{ROM_DB_PSEUDO_PATH_PREFIX}{label}"))
 }
 
-/// [`load_explicit_rom`]/[`load_default_rom`], plus the [`RomSource`] a
+/// [`load_explicit_rom`]/[`load_default_rom`], plus the [`ROMSource`] a
 /// snapshot needs to re-resolve/hash whichever path was taken — the single
 /// place `main()`'s CLI path and [`launch_machine`]
 /// all get both together, so they can't drift apart.
@@ -225,14 +225,14 @@ pub(crate) fn load_rom_with_source(
     explicit: Option<&Path>,
     variant: MachineVariant,
     roms_dir: &Path,
-) -> Result<(Box<[u8]>, RomSource), String> {
+) -> Result<(Box<[u8]>, ROMSource), String> {
     match explicit {
-        Some(path) => Ok((load_explicit_rom(path)?, RomSource::File(path.to_path_buf()))),
+        Some(path) => Ok((load_explicit_rom(path)?, ROMSource::File(path.to_path_buf()))),
         None => {
             let rom = load_default_rom(variant, roms_dir)?;
             let source = match variant {
-                MachineVariant::Coco3 => RomSource::File(roms_dir.join("coco3.rom")),
-                MachineVariant::Coco1 | MachineVariant::Coco2 => RomSource::ComposedCoco12,
+                MachineVariant::Coco3 => ROMSource::File(roms_dir.join("coco3.rom")),
+                MachineVariant::Coco1 | MachineVariant::Coco2 => ROMSource::ComposedCoco12,
             };
             Ok((rom, source))
         }

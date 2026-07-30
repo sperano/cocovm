@@ -1,4 +1,4 @@
-//! FD-502 floppy disk controller cartridge: [`JvcDisk`] (JVC/.dsk image parsing)
+//! FD-502 floppy disk controller cartridge: [`JVCDisk`] (JVC/.dsk image parsing)
 //! and [`DiskCart`], the [`Cartridge`](crate::cart::Cartridge) that wires a
 //! [`crate::wd1773::WD1773`] and four drive slots to the CoCo's DSKREG latch and
 //! the SCS/CTS windows.
@@ -13,7 +13,7 @@ mod jvc;
 
 pub use disk_cart::{dskreg, DiskCart};
 pub use jvc::{
-    JvcDisk, JvcError, DEFAULT_FIRST_SECTOR_ID, DEFAULT_SECTORS_PER_TRACK,
+    JVCDisk, JVCError, DEFAULT_FIRST_SECTOR_ID, DEFAULT_SECTORS_PER_TRACK,
     DEFAULT_SECTOR_SIZE_CODE, DEFAULT_SIDES, MAX_FORMAT_TRACKS,
 };
 

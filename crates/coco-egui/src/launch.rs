@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::{
-    CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, RomSource, UI_DRIVES, dev_roms_dir,
+    CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, dev_roms_dir,
     load_rom_with_source, machine_def,
 };
 
@@ -141,7 +141,7 @@ fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), 
 fn new_app(
     config: coco_core::MachineConfig,
     rom: Box<[u8]>,
-    rom_source: RomSource,
+    rom_source: ROMSource,
     media: &Media,
     peripherals: &Peripherals,
 ) -> CocoApp {

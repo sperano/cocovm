@@ -187,7 +187,7 @@ fn tcp_endpoint_round_trip_through_the_bus() {
     use std::io::{Read, Write};
 
     let endpoint =
-        coco_core::serial::TcpEndpoint::bind("127.0.0.1:0").expect("bind an OS-assigned port");
+        coco_core::serial::TCPEndpoint::bind("127.0.0.1:0").expect("bind an OS-assigned port");
     let addr = endpoint.local_addr().expect("bound address");
     let mut pak = DeluxeRS232::new();
     pak.set_endpoint(Box::new(endpoint));

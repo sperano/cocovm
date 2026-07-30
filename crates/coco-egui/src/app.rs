@@ -118,8 +118,8 @@ pub(crate) struct CocoApp {
     pub(crate) debugger: debugger::DebuggerPanel,
     /// Where the currently-loaded system ROM image came from, for
     /// [`Self::save_state_to`] (`save_state.rs`) to record and re-resolve —
-    /// see [`RomSource`].
-    pub(crate) rom_source: RomSource,
+    /// see [`ROMSource`].
+    pub(crate) rom_source: ROMSource,
     /// Status-bar toast: a message plus when it was shown
     /// ([`Self::set_toast`], `save_state.rs`), displayed for
     /// [`save_state::TOAST_SECS`] seconds — save/load-state results today,
@@ -152,7 +152,7 @@ impl CocoApp {
     pub(crate) fn new(
         config: MachineConfig,
         rom: Box<[u8]>,
-        rom_source: RomSource,
+        rom_source: ROMSource,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
         vhd_paths: [Option<PathBuf>; UI_DRIVES],

@@ -2001,7 +2001,7 @@ immediately when it is ([`crates/coco-egui/src/media/disk.rs:64-73`](https://git
 
 **Insert acts, write-back protects.** `insert_disk` mounts the new image —
 but not before dealing with whatever was already there. The sequence is
-`ensure_disk_controller`, read the file, parse it as a `JvcDisk`, then
+`ensure_disk_controller`, read the file, parse it as a `JVCDisk`, then
 `self.write_back_disk(drive)` with the comment "whatever was in the drive
 first", and only then `cart.insert_disk(drive, disk)`
 ([`crates/coco-egui/src/media/disk.rs:86-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L86-L102)). Unsaved changes to the
@@ -2035,7 +2035,7 @@ function that decides whether a floppy needs saving is this one:
 
 ([`crates/coco-egui/src/media/disk.rs:146-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs#L146-L162).) Four guard clauses and
 one write. The frontend never guesses whether a disk changed; it asks the
-mounted `JvcDisk` itself via `disk.dirty()` (Chapter 13), deferring entirely
+mounted `JVCDisk` itself via `disk.dirty()` (Chapter 13), deferring entirely
 to the device that actually knows. That is the correct division: the
 frontend knows *where* the image came from, the device knows *whether* it
 changed, and neither pretends to know the other's business.

@@ -52,7 +52,7 @@ const BAS_MIRROR_OFFSET: usize = 0xBFE0 - BAS_ROM_BASE as usize;
 /// Each F-bit (display page) step is 512 bytes: `display_base = f * PAGE_UNIT`.
 pub const PAGE_UNIT: usize = 512;
 
-/// Where a CPU address decodes to, per [`Sam::map`].
+/// Where a CPU address decodes to, per [`SAM::map`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SamTarget {
     /// Physical RAM address (already includes any P1 banking).
@@ -76,10 +76,10 @@ pub enum SamTarget {
 /// MC6883 SAM register state (`docs/coco12-plan.md` bit table). All 16 bits
 /// power up clear. Fields are `pub` (matching `gime::GIME`'s style) so tests
 /// can inspect latched state directly, same as `sam_video.rs` does for the
-/// GIME's compatibility overlay; [`Sam::map`]/[`Sam::display_base`]/
-/// [`Sam::v_bits`]/[`Sam::cpu_fast`] are the API real callers use.
+/// GIME's compatibility overlay; [`SAM::map`]/[`SAM::display_base`]/
+/// [`SAM::v_bits`]/[`SAM::cpu_fast`] are the API real callers use.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-pub struct Sam {
+pub struct SAM {
     /// VDG-counter mode bits V0-V2, packed as `V2:V1:V0` (0-7). Latched but
     /// not consulted here — `video.rs`'s legacy-graphics vertical cadence
     /// lookup uses it (`docs/coco12-plan.md`).
@@ -90,14 +90,14 @@ pub struct Sam {
     /// when TY=0 and 64K (`m1`).
     pub p1: bool,
     /// CPU rate, address-dependent half (ROM fast / RAM slow on real
-    /// hardware). See [`Sam::cpu_fast`]'s KNOWN GAP note.
+    /// hardware). See [`SAM::cpu_fast`]'s KNOWN GAP note.
     pub r0: bool,
     /// CPU rate, unconditional-double-speed half.
     pub r1: bool,
     /// Memory-size bit 0 (4K/16K/32K-64K, with `m1`).
     pub m0: bool,
     /// Memory-size bit 1; used here only as the plan's 64K/"not 64K" proxy
-    /// (see [`Sam::is_64k`]) for TY's all-RAM precondition and P1 banking.
+    /// (see [`SAM::is_64k`]) for TY's all-RAM precondition and P1 banking.
     pub m1: bool,
     /// Map type: false = ROM map, true = all-RAM (system ROM disabled). Color
     /// BASIC Unravelled's appendix has $FFDE/$FFDF backwards; MAME, Bob
@@ -106,7 +106,7 @@ pub struct Sam {
     pub ty: bool,
 }
 
-impl Sam {
+impl SAM {
     pub fn new() -> Self {
         Self::default()
     }

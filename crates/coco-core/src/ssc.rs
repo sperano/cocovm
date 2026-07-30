@@ -10,7 +10,7 @@
 //! Cartridge Owner's Manual (26-3144) Appendix A: command bytes that load
 //! data into an 8×64-byte buffer RAM and execute it. Sound-data streams,
 //! register-string streams, and direct AY register access (`$AF`) are fully
-//! functional and drive the [`Ay8913`] PSG. Speech, allophone, and SP0256
+//! functional and drive the [`AY8913`] PSG. Speech, allophone, and SP0256
 //! command bytes are parsed just enough to keep the state machine in sync
 //! (their LOAD variants still fill the buffer RAM per the flat-RAM model
 //! below) but their EXECUTE variants are no-ops — no SP0256 is emulated, so
@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ay8913::Ay8913;
+use crate::ay8913::AY8913;
 use crate::cart::{Cartridge, IO_OPEN_BUS};
 
 mod engine;
@@ -92,7 +92,7 @@ const AY_CLOCK_MULTIPLIER: u32 = 2;
 /// always reported set (idle/ready) — see the module doc comment.
 #[derive(Serialize, Deserialize)]
 pub struct SoundSpeechCartridge {
-    ay: Ay8913,
+    ay: AY8913,
     /// Bit 0 of the last byte written to `$FF7D`, for falling-edge detection
     /// on the next write. Power-on-reset starts clear so the very first
     /// `$FF7D` write (even if it's bit0=0) is never itself treated as a
@@ -140,7 +140,7 @@ impl Default for SoundSpeechCartridge {
 impl SoundSpeechCartridge {
     pub fn new() -> Self {
         Self {
-            ay: Ay8913::new(),
+            ay: AY8913::new(),
             prev_reset_bit0: false,
             host_latch: 0,
             busy: false,

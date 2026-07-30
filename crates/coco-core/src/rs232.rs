@@ -10,7 +10,7 @@
 //! wraps every 4K across the CTS window.
 //!
 //! The wire glue in [`DeluxeRS232::tick`] is the only place the chip model
-//! ([`Acia6551`]) and the host backend ([`SerialEndpoint`]) meet: completed
+//! ([`ACIA6551`]) and the host backend ([`SerialEndpoint`]) meet: completed
 //! TX frames are forwarded to the endpoint, and the endpoint is polled for
 //! RX bytes only when the receiver is between frames — a byte the ACIA
 //! isn't ready for stays queued host-side (kernel socket/pty buffer),
@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::acia6551::Acia6551;
+use crate::acia6551::ACIA6551;
 use crate::cart::{Cartridge, IO_OPEN_BUS, ROM_OPEN_BUS};
 use crate::serial::{Loopback, SerialEndpoint};
 
@@ -47,7 +47,7 @@ fn default_endpoint() -> Box<dyn SerialEndpoint> {
 /// The Deluxe RS-232 Program Pak as a cartridge-port device.
 #[derive(Serialize, Deserialize)]
 pub struct DeluxeRS232 {
-    acia: Acia6551,
+    acia: ACIA6551,
     /// Skipped: a host backend (TCP, PTY, …) is a host resource with no
     /// serializable shape. Deserializes to a fresh [`Loopback`] via
     /// `default_endpoint` below; the frontend re-plugs a real backend after
@@ -78,7 +78,7 @@ impl DeluxeRS232 {
     /// [`DeluxeRS232::set_endpoint`].
     pub fn new() -> Self {
         Self {
-            acia: Acia6551::new(),
+            acia: ACIA6551::new(),
             endpoint: Box::new(Loopback::new()),
             eprom: None,
             since_host_poll: 0,
@@ -115,7 +115,7 @@ impl DeluxeRS232 {
     }
 
     /// Direct access to the ACIA, for tests and debugger probes.
-    pub fn acia(&mut self) -> &mut Acia6551 {
+    pub fn acia(&mut self) -> &mut ACIA6551 {
         &mut self.acia
     }
 }

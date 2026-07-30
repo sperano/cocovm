@@ -13,7 +13,7 @@
 //!
 //! [`Loopback`] is the test/CI endpoint and the acceptance-test seam
 //! (`docs/plan-deluxe-rs232.md` "Testing / acceptance": "byte written to
-//! `$FF68` reappears at `$FF68`"). [`TcpEndpoint`] and [`PtyEndpoint`] are
+//! `$FF68` reappears at `$FF68`"). [`TCPEndpoint`] and [`PTYEndpoint`] are
 //! the real host-facing backends the egui frontend offers.
 
 use std::collections::VecDeque;
@@ -86,12 +86,12 @@ impl SerialEndpoint for Loopback {
 /// non-blocking (`set_nonblocking(true)` on both the listener and every
 /// accepted stream); `WouldBlock` means "nothing to do right now", never
 /// surfaced as an error.
-pub struct TcpEndpoint {
+pub struct TCPEndpoint {
     listener: TcpListener,
     client: Option<TcpStream>,
 }
 
-impl TcpEndpoint {
+impl TCPEndpoint {
     /// Bind and start listening at `addr` (e.g. `"127.0.0.1:6551"`, or
     /// `"127.0.0.1:0"` for an OS-assigned port — see [`Self::local_addr`]).
     pub fn bind(addr: impl ToSocketAddrs) -> io::Result<Self> {
@@ -132,7 +132,7 @@ impl TcpEndpoint {
     }
 }
 
-impl SerialEndpoint for TcpEndpoint {
+impl SerialEndpoint for TCPEndpoint {
     fn poll_rx(&mut self) -> Option<u8> {
         self.try_accept();
         let stream = self.client.as_mut()?;
@@ -187,13 +187,13 @@ impl SerialEndpoint for TcpEndpoint {
 /// business, not the emulator's; bytes cross the master fd raw and
 /// unmodified in both directions.
 #[cfg(unix)]
-pub struct PtyEndpoint {
+pub struct PTYEndpoint {
     master_fd: libc::c_int,
     slave_path: String,
 }
 
 #[cfg(unix)]
-impl PtyEndpoint {
+impl PTYEndpoint {
     /// Allocate a new PTY pair: `posix_openpt` the master, `grantpt` +
     /// `unlockpt` to make the slave usable, then resolve the slave's device
     /// path. The master fd is set non-blocking before returning.
@@ -294,7 +294,7 @@ impl PtyEndpoint {
 }
 
 #[cfg(unix)]
-impl SerialEndpoint for PtyEndpoint {
+impl SerialEndpoint for PTYEndpoint {
     fn poll_rx(&mut self) -> Option<u8> {
         let mut byte = [0u8; 1];
         // SAFETY: `byte` is a valid 1-byte buffer for the duration of the
@@ -333,7 +333,7 @@ impl SerialEndpoint for PtyEndpoint {
 }
 
 #[cfg(unix)]
-impl Drop for PtyEndpoint {
+impl Drop for PTYEndpoint {
     fn drop(&mut self) {
         // SAFETY: `master_fd` is owned exclusively by this struct and only
         // ever closed here.

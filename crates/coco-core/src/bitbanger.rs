@@ -35,7 +35,7 @@ use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dmp105::Dmp105Handle;
+use crate::dmp105::DMP105Handle;
 
 /// PIA1 Port A bit 1 ($FF20): the TX line to the printer. 1 = mark/idle
 /// (high), 0 = space. Only meaningful as an output when PIA1 DDRA bit 1 is
@@ -89,11 +89,11 @@ pub trait PrinterSink {
         sink_serde::SinkState::Noop
     }
 
-    /// Downcast hook: `Some` only for a live [`Dmp105Handle`] sink, so the
+    /// Downcast hook: `Some` only for a live [`DMP105Handle`] sink, so the
     /// frontend can re-grab the restored handle for the paper window after
     /// `sink_serde::deserialize` rebuilds `sink` (see
     /// [`BitBanger::dmp105_handle`]). Default: not a DMP-105 sink.
-    fn as_dmp105(&self) -> Option<&Dmp105Handle> {
+    fn as_dmp105(&self) -> Option<&DMP105Handle> {
         None
     }
 
@@ -354,24 +354,24 @@ impl BitBanger {
         self.sink = Box::new(NoopSink);
     }
 
-    /// Attach a [`Dmp105`](crate::dmp105::Dmp105) interpreter as the live
+    /// Attach a [`Dmp105`](crate::dmp105::DMP105) interpreter as the live
     /// sink (`docs/printer-plan.md` T4): same shape as
     /// [`Self::start_file_capture`], but returns a cloned
-    /// [`Dmp105Handle`] (the `CaptureSink` `Rc<RefCell<_>>` pattern) rather
+    /// [`DMP105Handle`] (the `CaptureSink` `Rc<RefCell<_>>` pattern) rather
     /// than nothing, since — unlike text capture — the frontend needs to
     /// read the accumulating paper back out while the bus owns the other
     /// half as its sink.
-    pub fn start_dmp105(&mut self) -> Dmp105Handle {
-        let handle = Dmp105Handle::new();
+    pub fn start_dmp105(&mut self) -> DMP105Handle {
+        let handle = DMP105Handle::new();
         self.sink = Box::new(handle.clone());
         handle
     }
 
-    /// The live sink's [`Dmp105Handle`], if it is one — how the frontend
+    /// The live sink's [`DMP105Handle`], if it is one — how the frontend
     /// re-grabs the paper-window handle after a snapshot restore rebuilds
     /// `sink` from `sink_serde::SinkState::Dmp105` (a `Dmp105Handle` is a
     /// cheap `Rc` clone, so this is fine to call every frame).
-    pub fn dmp105_handle(&self) -> Option<Dmp105Handle> {
+    pub fn dmp105_handle(&self) -> Option<DMP105Handle> {
         self.sink.as_dmp105().cloned()
     }
 
@@ -471,7 +471,7 @@ pub mod sink_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     use super::{NoopSink, PrinterSink};
-    use crate::dmp105::{Dmp105, Dmp105Handle};
+    use crate::dmp105::{DMP105, DMP105Handle};
 
     /// What actually needs to survive a snapshot, per live sink kind: a
     /// no-op sink and a file capture both restore to [`NoopSink`] (`FileSink`
@@ -482,7 +482,7 @@ pub mod sink_serde {
     pub enum SinkState {
         Noop,
         FileCapture,
-        Dmp105(Dmp105),
+        Dmp105(DMP105),
     }
 
     // `&Box<dyn PrinterSink>`, not `&dyn PrinterSink`: this is what the
@@ -507,7 +507,7 @@ pub mod sink_serde {
             // Distinct from `SinkState::Noop`, even though both currently
             // behave identically: see `StoppedFileCaptureSink`'s doc comment.
             SinkState::FileCapture => Box::new(super::StoppedFileCaptureSink),
-            SinkState::Dmp105(state) => Box::new(Dmp105Handle::from_state(state)),
+            SinkState::Dmp105(state) => Box::new(DMP105Handle::from_state(state)),
         })
     }
 }

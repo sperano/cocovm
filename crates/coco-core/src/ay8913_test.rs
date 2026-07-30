@@ -4,14 +4,14 @@ use super::*;
 
 #[test]
 fn tone_coarse_register_masks_to_4_bits() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     ay.write_reg(reg::TONE_A_COARSE, 0xFF);
     assert_eq!(ay.read_reg(reg::TONE_A_COARSE), 0x0F);
 }
 
 #[test]
 fn noise_period_register_masks_to_5_bits() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     ay.write_reg(reg::NOISE_PERIOD, 0xFF);
     assert_eq!(ay.read_reg(reg::NOISE_PERIOD), 0x1F);
 }
@@ -20,7 +20,7 @@ fn noise_period_register_masks_to_5_bits() {
 
 #[test]
 fn tone_toggles_once_per_period_internal_steps() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     const TONE_PERIOD: u16 = 100;
     ay.write_reg(reg::TONE_A_FINE, (TONE_PERIOD & 0xFF) as u8);
     ay.write_reg(reg::TONE_A_COARSE, (TONE_PERIOD >> 8) as u8);
@@ -49,7 +49,7 @@ fn tone_toggles_once_per_period_internal_steps() {
 
 #[test]
 fn lfsr_matches_bit0_xor_bit3_recurrence_from_seed() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     assert_eq!(ay.rng, NOISE_SEED, "seed must be non-zero at power-on");
     let mut expected = NOISE_SEED;
     for _ in 0..32 {
@@ -66,7 +66,7 @@ fn lfsr_matches_bit0_xor_bit3_recurrence_from_seed() {
 /// Runs the envelope generator for `steps` internal steps with envelope
 /// period 1 (effective period [`ENVELOPE_STEP_MULTIPLIER`] after the
 /// classic-AY pacing multiplier).
-fn run_envelope(ay: &mut Ay8913, shape_byte: u8, steps: u32) -> u8 {
+fn run_envelope(ay: &mut AY8913, shape_byte: u8, steps: u32) -> u8 {
     ay.write_reg(reg::ENV_FINE, 1);
     ay.write_reg(reg::ENV_COARSE, 0);
     ay.write_reg(reg::ENV_SHAPE, shape_byte);
@@ -79,7 +79,7 @@ fn run_envelope(ay: &mut Ay8913, shape_byte: u8, steps: u32) -> u8 {
 
 #[test]
 fn shape_0d_attacks_then_holds_at_max() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     ay.write_reg(reg::ENV_FINE, 1);
     ay.write_reg(reg::ENV_COARSE, 0);
     ay.write_reg(reg::ENV_SHAPE, 0x0D);
@@ -100,7 +100,7 @@ fn shape_0d_attacks_then_holds_at_max() {
 
 #[test]
 fn shape_00_family_decays_then_holds_at_zero() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     let full_ramp = 16 * ENVELOPE_STEP_MULTIPLIER;
     assert_eq!(
         run_envelope(&mut ay, 0x00, 0),
@@ -113,7 +113,7 @@ fn shape_00_family_decays_then_holds_at_zero() {
 
 #[test]
 fn shape_08_is_a_repeating_sawtooth() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     let full_ramp = 16 * ENVELOPE_STEP_MULTIPLIER;
     let v_start = run_envelope(&mut ay, 0x08, 0);
     assert_eq!(v_start, 0x0F);
@@ -145,7 +145,7 @@ fn volume_table_is_monotonic_nondecreasing_and_normalized() {
 
 #[test]
 fn mixer_disable_bits_gate_the_channel() {
-    let mut ay = Ay8913::new();
+    let mut ay = AY8913::new();
     ay.write_reg(reg::VOL_A, 0x0F); // full scale, fixed level
     ay.write_reg(reg::TONE_A_FINE, 4);
     ay.write_reg(reg::TONE_A_COARSE, 0);

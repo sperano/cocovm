@@ -1,6 +1,6 @@
 //! Write Track (format) MFM stream parsing
 
-use coco_core::fdc::JvcDisk;
+use coco_core::fdc::JVCDisk;
 use coco_core::wd1773::{status, WD1773};
 
 use super::common::{DRQ_INTERVAL, ONE_TRACK_BYTES};
@@ -64,7 +64,7 @@ fn write_track_parses_a_synthetic_dskini_stream_into_the_image() {
 
     let mut wd = WD1773::new();
     wd.set_double_density(true); // exercise the MFM parser explicitly, not just the default
-    let mut disk = JvcDisk::from_bytes(Vec::new()).unwrap();
+    let mut disk = JVCDisk::from_bytes(Vec::new()).unwrap();
     assert_eq!(disk.track_count(), 0, "starting from a blank image");
 
     let mut stream = Vec::new();
@@ -120,7 +120,7 @@ fn write_track_parses_a_synthetic_dskini_stream_into_the_image() {
 fn write_track_to_a_write_protected_image_sets_status_and_does_not_transfer() {
     let mut wd = WD1773::new();
     wd.set_double_density(true);
-    let mut disk = JvcDisk::from_bytes(vec![0xAAu8; ONE_TRACK_BYTES]).unwrap();
+    let mut disk = JVCDisk::from_bytes(vec![0xAAu8; ONE_TRACK_BYTES]).unwrap();
     disk.set_write_protected(true);
     let before = disk.bytes().to_vec();
 

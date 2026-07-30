@@ -3,17 +3,17 @@
 //! `acia6551` module doc's "byte-level timing divergence").
 
 use super::{
-    ACIA_CRYSTAL_HZ, Acia6551, BAUD_CLOCK_DIVISOR, BAUD_DIVIDER, CPU_HZ, START_BITS, command,
+    ACIA_CRYSTAL_HZ, ACIA6551, BAUD_CLOCK_DIVISOR, BAUD_DIVIDER, CPU_HZ, START_BITS, command,
     control, irq_source, status,
 };
 
-impl Acia6551 {
+impl ACIA6551 {
     /// If the transmitter is idle and a byte is pending (TDRE clear) and
     /// DTR is enabled and BREAK is not active: consume TDR into the shifter,
     /// set TDRE (freeing TDR for a new write) and arm the TDRE IRQ source if
     /// enabled, and start the frame timer. This is the "consume-at-start"
     /// moment MAME fires TDRE/IRQ at — deliberately *not* at frame end (see
-    /// [`Acia6551::complete_tx_frame`]).
+    /// [`ACIA6551::complete_tx_frame`]).
     pub(super) fn start_tx_frame_if_ready(&mut self) {
         if self.tx_timer.is_some() {
             return;
@@ -35,7 +35,7 @@ impl Acia6551 {
 
     /// Frame-end: the shifted byte becomes available on the wire and the
     /// transmitter is free again (the next consume, if TDR was rewritten
-    /// mid-frame, happens on the following [`Acia6551::tick_tx`] iteration).
+    /// mid-frame, happens on the following [`ACIA6551::tick_tx`] iteration).
     fn complete_tx_frame(&mut self) {
         self.tx_output.push_back(self.tx_shift_byte);
     }

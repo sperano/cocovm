@@ -10,7 +10,7 @@ use coco_core::cart::Cart;
 use coco_core::snapshot::{self, MediaCheck, MediaRef, MediaRefs};
 
 use crate::{
-    Coco12RomResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, dev_roms_dir,
+    Coco12ROMResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, dev_roms_dir,
 };
 
 /// The recorded `mpi_slot: None` cart-ROM path, if any — shared by
@@ -84,7 +84,7 @@ fn mismatch_warning(role: &str, mr: &MediaRef) -> String {
     )
 }
 
-/// True if `path` is one of [`crate::RomSource::ComposedCoco12`]'s
+/// True if `path` is one of [`crate::ROMSource::ComposedCoco12`]'s
 /// pseudo-paths ([`ROM_DB_PSEUDO_PATH_PREFIX`], built by
 /// [`crate::rom_db_pseudo_path`]) rather than a real filesystem path.
 pub(super) fn is_rom_db_pseudo_path(path: &Path) -> bool {
@@ -101,7 +101,7 @@ pub(super) fn resolve_system_rom(media: &MediaRefs, warnings: &mut Vec<String>) 
     let mr = media.system_rom.as_ref()?;
     if is_rom_db_pseudo_path(&mr.path) {
         return match compose_coco12_rom(&dev_roms_dir()) {
-            Coco12RomResult::Composed { image, .. } => {
+            Coco12ROMResult::Composed { image, .. } => {
                 let actual = snapshot::sha256_hex(&image);
                 if actual != mr.sha256 {
                     warnings.push(format!(
@@ -112,7 +112,7 @@ pub(super) fn resolve_system_rom(media: &MediaRefs, warnings: &mut Vec<String>) 
                 }
                 Some(image)
             }
-            Coco12RomResult::NoColorBasic => None,
+            Coco12ROMResult::NoColorBasic => None,
         };
     }
     read_if_present(mr, "system ROM", warnings).map(Vec::into_boxed_slice)

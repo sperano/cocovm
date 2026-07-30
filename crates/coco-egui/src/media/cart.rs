@@ -145,7 +145,7 @@ impl CocoApp {
                 pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
                 self.rs232 = Some(RS232Endpoint::Loopback);
             }
-            RS232EndpointKind::TCP => match coco_core::serial::TcpEndpoint::bind(&self.rs232_tcp_addr)
+            RS232EndpointKind::TCP => match coco_core::serial::TCPEndpoint::bind(&self.rs232_tcp_addr)
             {
                 Ok(ep) => {
                     // Show the address actually bound, so ":0" (OS-assigned
@@ -162,7 +162,7 @@ impl CocoApp {
                 }
             },
             #[cfg(unix)]
-            RS232EndpointKind::PTY => match coco_core::serial::PtyEndpoint::new() {
+            RS232EndpointKind::PTY => match coco_core::serial::PTYEndpoint::new() {
                 Ok(ep) => {
                     let path = ep.path().to_string();
                     pak.set_endpoint(Box::new(ep));

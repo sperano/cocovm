@@ -79,7 +79,7 @@ pub use codec::{load, save};
 pub use error::SnapshotError;
 pub use hash::{sha256_file, sha256_hex, MediaCheck};
 pub use payload::{
-    MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SlotRomRef, SnapshotPayload,
+    MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SlotROMRef, SnapshotPayload,
 };
 pub use restore::restore;
 

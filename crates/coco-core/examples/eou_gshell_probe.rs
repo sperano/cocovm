@@ -5,7 +5,7 @@
 //!
 //! Usage: cargo run -p coco-core --example eou_gshell_probe --release
 
-use coco_core::fdc::{DiskCart, JvcDisk};
+use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig, MonitorType};
 use std::path::PathBuf;
@@ -80,7 +80,7 @@ fn main() {
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
     let mut cart = DiskCart::new(disk_rom.into_boxed_slice());
-    cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
+    cart.insert_disk(0, JVCDisk::from_bytes(dsk).unwrap());
     m.insert_cartridge(cart);
     m.bus.vhd.insert(0, VHDImage::File(vhd_file));
     m.reset();

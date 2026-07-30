@@ -10,7 +10,7 @@
 //! MAME's `mos6551_device` is a bit-serial engine: it shifts one bit at a
 //! time off a per-bit timer and can therefore generate real parity/framing
 //! errors and expose bit-accurate RS-232 waveforms. This model is
-//! deliberately **byte-level**: [`Acia6551::tick`] runs a whole-frame timer
+//! deliberately **byte-level**: [`ACIA6551::tick`] runs a whole-frame timer
 //! for the receiver and transmitter, sized from the same baud-rate math MAME
 //! uses (see [`BAUD_DIVIDER`]), and delivers/consumes a complete byte when
 //! that timer expires. Consequences of the divergence, called out again at
@@ -25,19 +25,19 @@
 //!   completes. It also skips MAME's nuance of forcing the echoed output to
 //!   mark while overrun is set.
 //! - The 1.5-stop-bit case for 5-bit words is collapsed to 2 stop bits (see
-//!   [`Acia6551::stop_bits`]).
-//! - DCD/DSR level-change IRQ arming is checked once per [`Acia6551::tick`]
+//!   [`ACIA6551::stop_bits`]).
+//! - DCD/DSR level-change IRQ arming is checked once per [`ACIA6551::tick`]
 //!   call rather than on a live edge — MAME itself ties this to the receive
 //!   clock and carries `TODO` comments admitting the exact timing is
 //!   unresolved, so tying it to our own tick boundary is no worse and is
-//!   simpler to reason about. See [`Acia6551::tick_modem_lines`].
+//!   simpler to reason about. See [`ACIA6551::tick_modem_lines`].
 //!
 //! # Wire interface
 //!
 //! This module is a pure chip model with a byte-level wire interface: no
-//! knowledge of hosts, sockets, or files. [`Acia6551::take_tx_byte`] /
-//! [`Acia6551::receive_byte`] / [`Acia6551::rx_ready`] / [`Acia6551::set_dcd`]
-//! / [`Acia6551::set_dsr`] are the seam a future cartridge-glue layer drives
+//! knowledge of hosts, sockets, or files. [`ACIA6551::take_tx_byte`] /
+//! [`ACIA6551::receive_byte`] / [`ACIA6551::rx_ready`] / [`ACIA6551::set_dcd`]
+//! / [`ACIA6551::set_dsr`] are the seam a future cartridge-glue layer drives
 //! from a real host endpoint.
 
 use std::collections::VecDeque;
@@ -187,7 +187,7 @@ mod irq_source {
 /// timer. See the module doc for the MAME source and the deliberate
 /// byte-level timing divergence.
 #[derive(Serialize, Deserialize)]
-pub struct Acia6551 {
+pub struct ACIA6551 {
     /// Receive Data Register — last completed RX byte.
     rdr: u8,
     /// Transmit Data Register — last byte written by the CPU, pending
@@ -240,13 +240,13 @@ pub struct Acia6551 {
     rx_timer: Option<u32>,
 }
 
-impl Default for Acia6551 {
+impl Default for ACIA6551 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Acia6551 {
+impl ACIA6551 {
     /// Power-on state: identical to [`Self::hardware_reset`] (MAME
     /// `mos6551_device::device_reset` runs on both power-on and RESET*).
     pub fn new() -> Self {

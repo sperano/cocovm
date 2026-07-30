@@ -20,7 +20,7 @@ fn c2_flags_are_not_writable() {
 
 #[test]
 fn falling_edge_selected_flags_only_on_high_to_low() {
-    let mut port = PiaPort::default(); // idle high, control=0 -> falling edge selected
+    let mut port = PIAPort::default(); // idle high, control=0 -> falling edge selected
     assert_eq!(port.control & cr::C1_EDGE_HIGH, 0);
     port.set_c1(true); // still high: no transition
     assert_eq!(port.control & cr::C1_FLAG, 0);
@@ -30,7 +30,7 @@ fn falling_edge_selected_flags_only_on_high_to_low() {
 
 #[test]
 fn rising_edge_selected_flags_only_on_low_to_high() {
-    let mut port = PiaPort::default();
+    let mut port = PIAPort::default();
     port.control |= cr::C1_EDGE_HIGH; // select low->high
     port.set_c1(false); // high -> low: not the selected edge
     assert_eq!(port.control & cr::C1_FLAG, 0);
@@ -42,7 +42,7 @@ fn rising_edge_selected_flags_only_on_low_to_high() {
 
 #[test]
 fn repeated_level_never_flags() {
-    let mut port = PiaPort::default();
+    let mut port = PIAPort::default();
     port.control |= cr::C1_EDGE_HIGH; // rising edge selected
     port.set_c1(true); // still high: no transition, no flag even though level matches
     assert_eq!(port.control & cr::C1_FLAG, 0);

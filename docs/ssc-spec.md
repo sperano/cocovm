@@ -424,7 +424,7 @@ simplicity tradeoff as `BUSY_HOLD_CYCLES` elsewhere in this file).
 ## AY-3-8913 core (`crates/coco-core/src/ay8913.rs`)
 
 The AY-3-8913 is an AY-3-8910 PSG with the two I/O ports (registers 14/15)
-absent — no pins on the package. `Ay8913` mirrors MAME `ay8910.cpp`'s classic
+absent — no pins on the package. `AY8913` mirrors MAME `ay8910.cpp`'s classic
 (non-AY8930-expanded, non-YM2149) mode:
 
 - **Registers**: R0-R5 tone A/B/C fine/coarse (12-bit combined period; coarse

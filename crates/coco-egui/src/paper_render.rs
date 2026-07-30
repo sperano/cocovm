@@ -137,9 +137,9 @@ impl DotSource for coco_core::printer::Paper {
     }
 }
 
-impl DotSource for coco_core::dmp105::Dmp105Handle {
+impl DotSource for coco_core::dmp105::DMP105Handle {
     fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        coco_core::dmp105::Dmp105Handle::dots_in_range(self, y0, y1)
+        coco_core::dmp105::DMP105Handle::dots_in_range(self, y0, y1)
     }
 }
 

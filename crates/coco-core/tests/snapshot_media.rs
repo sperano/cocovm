@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use coco_core::fdc::{DiskCart, JvcDisk};
-use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotRomRef, SnapshotError};
+use coco_core::fdc::{DiskCart, JVCDisk};
+use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError};
 use coco_core::{Machine, MachineConfig};
 
 fn rom_path() -> PathBuf {
@@ -56,7 +56,7 @@ fn media_with_disk_rom(disk_bytes: &[u8], disk_path: &str) -> MediaRefs {
             path: rom_path(),
             sha256: snapshot::sha256_file(&rom_path()).expect("hash roms/coco3.rom"),
         }),
-        cart_roms: vec![SlotRomRef {
+        cart_roms: vec![SlotROMRef {
             mpi_slot: None,
             rom: MediaRef {
                 path: disk_rom_path(),
@@ -78,7 +78,7 @@ fn missing_disk_source_is_missing_media_naming_the_disk_and_its_path() {
     let mut machine = boot_machine();
     let mut cart = DiskCart::new(load_disk_rom());
     let disk_bytes = vec![0u8; ONE_TRACK_BYTES];
-    cart.insert_disk(0, JvcDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
+    cart.insert_disk(0, JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
     machine.insert_cartridge(cart);
 
     let disk_path = "my-floppy.jvc";
@@ -110,7 +110,7 @@ fn reattached_disk_with_different_geometry_is_a_media_shape_error() {
     let mut cart = DiskCart::new(load_disk_rom());
     // 35-track headerless image (default geometry).
     let original_bytes = vec![0u8; 35 * ONE_TRACK_BYTES];
-    cart.insert_disk(0, JvcDisk::from_bytes(original_bytes.clone()).expect("build disk"));
+    cart.insert_disk(0, JVCDisk::from_bytes(original_bytes.clone()).expect("build disk"));
     machine.insert_cartridge(cart);
 
     let media = media_with_disk_rom(&original_bytes, "shifted.jvc");

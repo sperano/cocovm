@@ -50,7 +50,7 @@ use chrono::{Datelike, Timelike};
 use clap::Parser;
 use coco_core::cart::{GamesMasterCartridge, MultiPak, ROMPak};
 use coco_core::drivewire::{self, DriveWireImage, DwTime};
-use coco_core::fdc::{DiskCart, JvcDisk};
+use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::orch90::Orch90;
 use coco_core::rtc::{DistoRTC, RTCTime};
@@ -71,7 +71,7 @@ pub(crate) use mpi::{
     DEFAULT_MPI_SWITCH_SLOT, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState,
 };
 pub(crate) use rom_load::{
-    Coco12RomResult, ROM_DB_PSEUDO_PATH_PREFIX, RomSource, compose_coco12_rom, dev_roms_dir,
+    Coco12ROMResult, ROM_DB_PSEUDO_PATH_PREFIX, ROMSource, compose_coco12_rom, dev_roms_dir,
     disk_basic_rom_path, load_rom_with_source, report_rom_validation, rom_db_pseudo_path,
     rs232_eprom_default_path,
 };

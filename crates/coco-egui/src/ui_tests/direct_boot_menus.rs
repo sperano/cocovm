@@ -368,7 +368,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
     }
     std::fs::write(&path, &image).unwrap();
 
-    let rom_source = RomSource::File(roms_dir.join("coco3.rom"));
+    let rom_source = ROMSource::File(roms_dir.join("coco3.rom"));
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
             MachineConfig::default(),

@@ -25,7 +25,7 @@ fn ascii_art(paper: &Paper, x0: u32, x1: u32, y0: u32, y1: u32, step: u32) -> St
     out
 }
 
-fn feed_str(dmp: &mut Dmp105, bytes: &[u8]) {
+fn feed_str(dmp: &mut DMP105, bytes: &[u8]) {
     for &b in bytes {
         dmp.feed(b);
     }
@@ -45,7 +45,7 @@ fn normal_cell_width() -> u32 {
 /// placeholder glyph, `n` times, and the state machine ends clean.
 #[test]
 fn repeating_the_repeat_introducer_terminates_and_prints_placeholders() {
-    let mut dmp = Dmp105::default();
+    let mut dmp = DMP105::default();
     feed_str(&mut dmp, &[control::REPEAT, 3, control::REPEAT]);
     assert_eq!(dmp.x, 3 * normal_cell_width());
     assert!(dmp.paper.extent().dot_count > 0); // three X glyphs
@@ -58,7 +58,7 @@ fn repeating_the_repeat_introducer_terminates_and_prints_placeholders() {
 /// no escape sequence starts, no panic.
 #[test]
 fn repeating_the_escape_introducer_terminates() {
-    let mut dmp = Dmp105::default();
+    let mut dmp = DMP105::default();
     feed_str(&mut dmp, &[control::REPEAT, 2, control::ESC]);
     assert_eq!(dmp.x, 2 * normal_cell_width());
     // Not left in Pending::Esc: a following 'Z' is a glyph, not a
@@ -72,7 +72,7 @@ fn repeating_the_escape_introducer_terminates() {
 /// volumes.
 #[test]
 fn head_position_saturates_at_extremes() {
-    let mut dmp = Dmp105 {
+    let mut dmp = DMP105 {
         y: u32::MAX - 2,
         ..Default::default()
     };
@@ -88,7 +88,7 @@ fn head_position_saturates_at_extremes() {
 /// limit on a CR-less stream.
 #[test]
 fn marks_beyond_print_width_are_dropped() {
-    let mut dmp = Dmp105 {
+    let mut dmp = DMP105 {
         x: PRINT_WIDTH_X_UNITS,
         ..Default::default()
     };
@@ -98,7 +98,7 @@ fn marks_beyond_print_width_are_dropped() {
 
 #[test]
 fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"HELLO\r");
 
     // 'H' is the widened uppercase H: a solid vertical stroke at column 1
@@ -137,7 +137,7 @@ fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
 
 #[test]
 fn cr_only_mode_does_not_advance_y() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"\x1B\x15"); // ESC 15: CR = CR only
     feed_str(&mut dmp, b"A\r");
     assert_eq!(dmp.x, 0);
@@ -146,7 +146,7 @@ fn cr_only_mode_does_not_advance_y() {
 
 #[test]
 fn cr_lf_mode_advances_y_by_latched_pitch() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"\x1B\x16"); // ESC 16: CR = CR+LF (also the default)
     feed_str(&mut dmp, b"A\r");
     assert_eq!(dmp.y, LF_PITCH_1_6);
@@ -154,7 +154,7 @@ fn cr_lf_mode_advances_y_by_latched_pitch() {
 
 #[test]
 fn plain_lf_advances_y_without_touching_x() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"AB\n");
     assert_eq!(dmp.y, LF_PITCH_1_6);
     assert_eq!(dmp.x, 2 * normal_cell_width(), "LF alone must not reset x");
@@ -162,7 +162,7 @@ fn plain_lf_advances_y_without_touching_x() {
 
 #[test]
 fn pitch_change_mid_line_changes_subsequent_cell_width() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"A"); // at Normal pitch
     let after_a = dmp.x;
     assert_eq!(after_a, normal_cell_width());
@@ -180,11 +180,11 @@ fn pitch_change_mid_line_changes_subsequent_cell_width() {
 
 #[test]
 fn elongation_doubles_dot_spacing_and_cell_advance() {
-    let mut normal = Dmp105::new();
+    let mut normal = DMP105::new();
     feed_str(&mut normal, b"A");
     let normal_advance = normal.x;
 
-    let mut elongated = Dmp105::new();
+    let mut elongated = DMP105::new();
     feed_str(&mut elongated, b"\x1B\x0E"); // ESC 0E: start elongation
     feed_str(&mut elongated, b"A");
     assert_eq!(elongated.x, normal_advance * 2);
@@ -208,7 +208,7 @@ fn elongation_doubles_dot_spacing_and_cell_advance() {
 
 #[test]
 fn underline_marks_full_cell_width_on_descender_row() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"\x0F"); // start underline
     feed_str(&mut dmp, b"A");
     let dot = Pitch::Normal.dot_spacing();
@@ -242,11 +242,11 @@ fn underline_marks_full_cell_width_on_descender_row() {
 
 #[test]
 fn bold_strikes_every_column_twice_one_dot_over() {
-    let mut plain = Dmp105::new();
+    let mut plain = DMP105::new();
     feed_str(&mut plain, b"H");
     let plain_dots = plain.paper.dots_in_range(0, DESCENDER_ROW).len();
 
-    let mut bold = Dmp105::new();
+    let mut bold = DMP105::new();
     feed_str(&mut bold, b"\x1B\x1F"); // ESC 1F: start bold
     feed_str(&mut bold, b"H");
     let bold_dots = bold.paper.dots_in_range(0, DESCENDER_ROW).len();
@@ -264,14 +264,14 @@ fn bold_strikes_every_column_twice_one_dot_over() {
 
 #[test]
 fn repeat_code_repeats_a_character_n_times_in_cp_mode() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"\x1C\x03A"); // repeat 'A' 3 times
     assert_eq!(dmp.x, 3 * normal_cell_width());
 }
 
 #[test]
 fn repeat_code_in_graphics_mode_requires_msb_set_on_c() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     dmp.feed(control::SELECT_GRAPHICS);
 
     // c without MSB set: per spec, not honored at all in Graphics mode.
@@ -290,7 +290,7 @@ fn repeat_code_in_graphics_mode_requires_msb_set_on_c() {
 
 #[test]
 fn graphics_mode_enter_data_lf_and_exit_round_trip() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"A"); // one CP char first, to prove entry doesn't reset x
     let x_before_graphics = dmp.x;
 
@@ -348,7 +348,7 @@ fn graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts() {
 
 #[test]
 fn head_positioning_sets_absolute_column_including_explicit_zero_band() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     // 1B 10 n1 n2, n1=0 n2=0: the worked example's "mandatory CHR$(0)"
     // case -- must be accepted as a real 2-byte operand pair, not
     // skipped because the value is zero.
@@ -363,16 +363,16 @@ fn head_positioning_sets_absolute_column_including_explicit_zero_band() {
 
 #[test]
 fn undefined_codes_print_the_x_glyph() {
-    let mut undefined = Dmp105::new();
+    let mut undefined = DMP105::new();
     undefined.feed(0x02); // undefined low control code
-    let mut x_glyph = Dmp105::new();
+    let mut x_glyph = DMP105::new();
     feed_str(&mut x_glyph, b"X");
     assert_eq!(
         undefined.paper.dots_in_range(0, DESCENDER_ROW),
         x_glyph.paper.dots_in_range(0, DESCENDER_ROW)
     );
 
-    let mut undefined_high = Dmp105::new();
+    let mut undefined_high = DMP105::new();
     undefined_high.feed(0x85); // undefined in $80-$9F
     assert_eq!(
         undefined_high.paper.dots_in_range(0, DESCENDER_ROW),
@@ -382,7 +382,7 @@ fn undefined_codes_print_the_x_glyph() {
 
 #[test]
 fn esc_5a_feeds_immediately_esc_5b_only_latches() {
-    let mut immediate = Dmp105::new();
+    let mut immediate = DMP105::new();
     feed_str(&mut immediate, b"\x1B\x5A\x0A"); // ESC 5A 10: feed 10/72" now
     assert_eq!(immediate.y, 10);
     // Latched pitch is untouched by the immediate feed: a later plain
@@ -390,7 +390,7 @@ fn esc_5a_feeds_immediately_esc_5b_only_latches() {
     immediate.feed(control::LF);
     assert_eq!(immediate.y, 10 + LF_PITCH_1_6);
 
-    let mut latched = Dmp105::new();
+    let mut latched = DMP105::new();
     feed_str(&mut latched, b"\x1B\x5B\x0A"); // ESC 5B 10: latch only, no feed
     assert_eq!(latched.y, 0, "5B must not feed immediately");
     latched.feed(control::LF);
@@ -402,7 +402,7 @@ fn esc_5a_feeds_immediately_esc_5b_only_latches() {
 
 #[test]
 fn reset_restores_power_on_defaults_but_leaves_paper_alone() {
-    let mut dmp = Dmp105::new();
+    let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"\x1B\x0EHELLO"); // elongated, some ink on the paper
     assert!(dmp.x > 0);
     assert!(!dmp.paper.dots_in_range(0, DESCENDER_ROW).is_empty());
@@ -421,7 +421,7 @@ fn reset_restores_power_on_defaults_but_leaves_paper_alone() {
 
 #[test]
 fn handle_exposes_extent_dirty_range_and_tear_off() {
-    let handle = Dmp105Handle::new();
+    let handle = DMP105Handle::new();
     let mut sink: Box<dyn PrinterSink> = Box::new(handle.clone());
     for &b in b"HI\r" {
         sink.write_byte(b);

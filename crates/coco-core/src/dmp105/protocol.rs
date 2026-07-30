@@ -1,4 +1,4 @@
-//! Control/escape-code state machine: [`Dmp105::feed`] is the entry point
+//! Control/escape-code state machine: [`DMP105::feed`] is the entry point
 //! every decoded byte flows through, dispatching per-mode
 //! ([`Mode::CharacterPrint`](super::Mode)/[`Mode::Graphics`](super::Mode))
 //! and assembling multi-byte escape/repeat sequences
@@ -8,11 +8,11 @@
 use crate::dmp105_font;
 
 use super::{
-    Dmp105, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12, Mode,
+    DMP105, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12, Mode,
     NlMode, Pending, Pitch, control, esc,
 };
 
-impl Dmp105 {
+impl DMP105 {
     /// Feed one decoded byte through the interpreter.
     pub(super) fn feed(&mut self, b: u8) {
         match std::mem::replace(&mut self.pending, Pending::None) {
@@ -182,7 +182,7 @@ impl Dmp105 {
     /// restriction for that mode.
     ///
     /// The repeated byte is expanded through the per-mode dispatchers, NOT
-    /// through [`Dmp105::feed`]: inside a repeat, `c` is the datum being
+    /// through [`DMP105::feed`]: inside a repeat, `c` is the datum being
     /// repeated, never a new ESC/repeat sequence introducer (the spec gives
     /// no semantics for repeating an introducer, and `dispatch_cp` already
     /// handles an out-of-band `1C`/`1B` as an undefined code printing `X`).

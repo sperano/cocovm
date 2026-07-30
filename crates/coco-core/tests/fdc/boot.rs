@@ -1,7 +1,7 @@
 //! Integration: boot Disk Extended Color BASIC and read a synthesized RS-DOS
 //! directory via DIR.
 
-use coco_core::fdc::{DiskCart, JvcDisk};
+use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -152,7 +152,7 @@ fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
 
     let mut m = Machine::new(MachineConfig::default(), coco);
     let mut cart = DiskCart::new(disk_rom);
-    cart.insert_disk(0, JvcDisk::from_bytes(Vec::new()).unwrap()); // blank, 0 tracks
+    cart.insert_disk(0, JVCDisk::from_bytes(Vec::new()).unwrap()); // blank, 0 tracks
     m.insert_cartridge(cart);
     m.reset();
     for _ in 0..BOOT_FIELDS {
@@ -230,7 +230,7 @@ fn nitros9_l2_boot_reaches_shell_prompt() {
 
     let mut m = Machine::new(MachineConfig::default(), coco);
     let mut cart = DiskCart::new(disk_rom);
-    cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
+    cart.insert_disk(0, JVCDisk::from_bytes(dsk).unwrap());
     m.insert_cartridge(cart);
     m.reset();
     for _ in 0..BOOT_FIELDS {

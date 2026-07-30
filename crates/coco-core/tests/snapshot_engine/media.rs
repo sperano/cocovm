@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use coco_core::cart::{Cart, Cartridge, ROMPak};
 use coco_core::snapshot::{
-    self, MediaCheck, MediaRef, MediaRefs, MediaSources, SlotRomRef, SnapshotError, SnapshotPayload,
+    self, MediaCheck, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError, SnapshotPayload,
 };
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize};
 
@@ -101,7 +101,7 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
             path: rom_path(),
             sha256: snapshot::sha256_file(&rom_path()).expect("hash roms/coco3.rom"),
         }),
-        cart_roms: vec![SlotRomRef {
+        cart_roms: vec![SlotROMRef {
             mpi_slot: None,
             rom: MediaRef {
                 path: PathBuf::from("pak.rom"),
@@ -136,7 +136,7 @@ fn missing_cart_rom_source_is_missing_media() {
             path: rom_path(),
             sha256: snapshot::sha256_file(&rom_path()).expect("hash roms/coco3.rom"),
         }),
-        cart_roms: vec![SlotRomRef {
+        cart_roms: vec![SlotROMRef {
             mpi_slot: None,
             rom: MediaRef {
                 path: PathBuf::from("pak.rom"),

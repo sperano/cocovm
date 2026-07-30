@@ -43,7 +43,7 @@ pub struct MediaRef {
 
 /// A ROM-bearing cartridge's image reference, located by where it plugs in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SlotRomRef {
+pub struct SlotROMRef {
     /// `None` = the machine's own cartridge port; `Some(i)` = Multi-Pak slot
     /// `i` (0-3).
     pub mpi_slot: Option<u8>,
@@ -73,7 +73,7 @@ pub struct MediaRefs {
     /// DeluxeRS232 is the one cart in this list that can legitimately run
     /// without one; see [`super::restore`]'s cart-ROM step).
     #[serde(default)]
-    pub cart_roms: Vec<SlotRomRef>,
+    pub cart_roms: Vec<SlotROMRef>,
     /// FD-502 JVC drives, indexed by drive number.
     #[serde(default)]
     pub disks: Vec<Option<MediaRef>>,
@@ -94,7 +94,7 @@ pub struct MediaRefs {
 pub struct MediaSources {
     pub system_rom: Option<Box<[u8]>>,
     /// `(mpi_slot, bytes)` pairs, matched against the deserialized cart
-    /// tree's own `(mpi_slot, ..)` positions — see [`SlotRomRef`].
+    /// tree's own `(mpi_slot, ..)` positions — see [`SlotROMRef`].
     pub cart_roms: Vec<(Option<u8>, Vec<u8>)>,
     pub disks: [Option<Vec<u8>>; fdc::DRIVE_COUNT],
     pub vhds: [Option<VHDImage>; vhd::DRIVE_COUNT],

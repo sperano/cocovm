@@ -2,7 +2,7 @@
 //! command types and starts the corresponding [`Op`](super::Op)/
 //! [`Transfer`](super::Transfer). See [`WD1773::write_command`].
 
-use crate::fdc::JvcDisk;
+use crate::fdc::JVCDisk;
 
 use super::{
     COMMAND_SETTLE_CYCLES, DRQ_INTERVAL_CYCLES, FIRST_BYTE_LATENCY_CYCLES, FormatState, Op,
@@ -52,7 +52,7 @@ impl WD1773 {
     /// Write the command register ($FF48). Force Interrupt (Type IV) runs even
     /// while busy (it's how you cancel a stuck command); every other command
     /// written while busy is ignored (spec).
-    pub fn write_command(&mut self, cmd: u8, disk: Option<&mut JvcDisk>, side: u8) {
+    pub fn write_command(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
         let type_nibble = cmd >> 4;
         if type_nibble == cmd_type::FORCE_INTERRUPT {
             self.force_interrupt(cmd);
@@ -102,12 +102,12 @@ impl WD1773 {
         }
     }
 
-    fn track_readable(disk: Option<&JvcDisk>, track: u8) -> bool {
+    fn track_readable(disk: Option<&JVCDisk>, track: u8) -> bool {
         disk.is_some_and(|d| (track as usize) < d.track_count())
     }
 
     /// Restore (Type I, `0x0`): seek to physical track 0.
-    fn start_restore(&mut self, cmd: u8, disk: Option<&mut JvcDisk>) {
+    fn start_restore(&mut self, cmd: u8, disk: Option<&mut JVCDisk>) {
         self.last_was_type1 = true;
         self.physical_track = 0;
         self.track = 0;
@@ -117,7 +117,7 @@ impl WD1773 {
     }
 
     /// Seek (Type I, `0x1`): move to the track named by the data register.
-    fn start_seek(&mut self, cmd: u8, disk: Option<&mut JvcDisk>) {
+    fn start_seek(&mut self, cmd: u8, disk: Option<&mut JVCDisk>) {
         self.last_was_type1 = true;
         let target = self.data;
         self.physical_track = target;
@@ -135,7 +135,7 @@ impl WD1773 {
         &mut self,
         cmd: u8,
         forced_direction: Option<StepDirection>,
-        disk: Option<&mut JvcDisk>,
+        disk: Option<&mut JVCDisk>,
     ) {
         self.last_was_type1 = true;
         if let Some(dir) = forced_direction {
@@ -156,7 +156,7 @@ impl WD1773 {
     }
 
     /// Read Sector (Type II, `0x8`/`0x9`).
-    fn start_read_sector(&mut self, cmd: u8, disk: Option<&mut JvcDisk>, side: u8) {
+    fn start_read_sector(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
         // No data yet: DRQ low so a HALT-enabled driver stalls at its LDA
         // DATAREG loop until the first byte lands (see FIRST_BYTE_LATENCY_CYCLES).
         self.drq = false;
@@ -187,7 +187,7 @@ impl WD1773 {
     }
 
     /// Write Sector (Type II, `0xA`/`0xB`).
-    fn start_write_sector(&mut self, cmd: u8, disk: Option<&mut JvcDisk>, side: u8) {
+    fn start_write_sector(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
         // No sector located yet: DRQ low until the ID field is found and the
         // controller requests the first byte (see FIRST_BYTE_LATENCY_CYCLES).
         self.drq = false;
@@ -226,7 +226,7 @@ impl WD1773 {
     /// first sector ID on the track, size code, CRC1, CRC2 — CRC bytes are 0,
     /// unmodelled). The sector register is deliberately left alone (spec: "not
     /// needed").
-    fn start_read_address(&mut self, disk: Option<&mut JvcDisk>, side: u8) {
+    fn start_read_address(&mut self, disk: Option<&mut JVCDisk>, side: u8) {
         // No ID field under the head yet: DRQ low until the next address mark
         // spins around (see FIRST_BYTE_LATENCY_CYCLES).
         self.drq = false;
@@ -267,7 +267,7 @@ impl WD1773 {
     /// up front, mirroring [`WD1773::start_write_sector`]'s WP arm; there's no
     /// "not found" case since a format command has no target sector to fail
     /// to find (spec).
-    fn start_write_track(&mut self, disk: Option<&mut JvcDisk>) {
+    fn start_write_track(&mut self, disk: Option<&mut JVCDisk>) {
         if let Some(d) = disk
             && d.write_protected()
         {

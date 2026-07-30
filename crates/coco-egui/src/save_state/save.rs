@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use coco_core::drivewire;
 use coco_core::fdc;
-use coco_core::snapshot::{self, MediaRef, MediaRefs, SlotRomRef};
+use coco_core::snapshot::{self, MediaRef, MediaRefs, SlotROMRef};
 use coco_core::vhd;
 
-use crate::{CocoApp, MPISlot, RomSource, disk_basic_rom_path, rom_db_pseudo_path};
+use crate::{CocoApp, MPISlot, ROMSource, disk_basic_rom_path, rom_db_pseudo_path};
 
 use super::media_ref::hash_media_ref;
 
@@ -74,7 +74,7 @@ impl CocoApp {
     }
 
     /// [`MediaRefs::system_rom`]: the frontend resolved/composed the boot
-    /// ROM at boot time ([`RomSource`]) — a real file records its path but
+    /// ROM at boot time ([`ROMSource`]) — a real file records its path but
     /// hashes the boot-time bytes live from `self.machine.bus.rom` rather
     /// than re-reading the file (a ROM file modified mid-session should
     /// produce a mismatch WARNING on restore, not a silently-passing wrong
@@ -85,8 +85,8 @@ impl CocoApp {
     /// function's `File` arm was brought in line with it.
     fn system_rom_media_ref(&self) -> MediaRef {
         let path = match &self.rom_source {
-            RomSource::File(path) => path.clone(),
-            RomSource::ComposedCoco12 => rom_db_pseudo_path(self.machine.config.variant),
+            ROMSource::File(path) => path.clone(),
+            ROMSource::ComposedCoco12 => rom_db_pseudo_path(self.machine.config.variant),
         };
         MediaRef { path, sha256: snapshot::sha256_hex(&self.machine.bus.rom) }
     }
@@ -96,7 +96,7 @@ impl CocoApp {
     /// plus the FD-502's Disk BASIC ROM ([`disk_basic_rom_path`]) and the
     /// Deluxe RS-232 pak's optional EPROM (`rs232_eprom_path`, only present
     /// when one was actually mounted — the pak also runs ROM-less).
-    fn collect_cart_roms(&mut self) -> Result<Vec<SlotRomRef>, String> {
+    fn collect_cart_roms(&mut self) -> Result<Vec<SlotROMRef>, String> {
         let mut out = Vec::new();
         if let Some(mpi) = &self.mpi {
             // Snapshot the slot paths first — this ends the immutable
@@ -116,19 +116,19 @@ impl CocoApp {
                 })
                 .collect();
             for (mpi_slot, path) in paths {
-                out.push(SlotRomRef { mpi_slot, rom: hash_media_ref(&path)? });
+                out.push(SlotROMRef { mpi_slot, rom: hash_media_ref(&path)? });
             }
         } else {
             if let Some(path) = &self.cart_path {
-                out.push(SlotRomRef { mpi_slot: None, rom: hash_media_ref(path)? });
+                out.push(SlotROMRef { mpi_slot: None, rom: hash_media_ref(path)? });
             } else if self.machine.bus.cart.as_disk_cart().is_some() {
-                out.push(SlotRomRef {
+                out.push(SlotROMRef {
                     mpi_slot: None,
                     rom: hash_media_ref(&disk_basic_rom_path())?,
                 });
             }
             if let Some(path) = &self.rs232_eprom_path {
-                out.push(SlotRomRef { mpi_slot: None, rom: hash_media_ref(path)? });
+                out.push(SlotROMRef { mpi_slot: None, rom: hash_media_ref(path)? });
             }
         }
         Ok(out)

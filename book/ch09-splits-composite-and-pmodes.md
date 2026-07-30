@@ -2534,7 +2534,7 @@ model for a display chip this course never sets out to model.
 Note also what the excerpt shows about code reuse across that boundary:
 `decode_vdg_graphics` is called by both paths, and only the *source* of
 `sam_video` differs — the GIME's SAM-compat overlay on a CoCo 3, the real
-`Sam` type on a CoCo 1/2, exactly the two implementations of one legacy
+`SAM` type on a CoCo 1/2, exactly the two implementations of one legacy
 interface that Chapter 1 pointed at. The decode itself is shared, so the two
 machines cannot disagree about what `GM=%110` means.
 

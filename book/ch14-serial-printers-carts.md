@@ -575,7 +575,7 @@ pub fn set_busy(&mut self, busy: bool) { self.busy = busy; }
 
 What this buys today is worth being explicit about, because it is the
 chapter's first example of a wire that is fully implemented and fully
-unused. Nothing in this codebase's `Dmp105` sink calls `set_busy` — the
+unused. Nothing in this codebase's `DMP105` sink calls `set_busy` — the
 module doc comment says so plainly, calling out "a (currently
 unimplemented) DMP-105 buffer model," and the reason is a gap in the
 source material rather than a gap in the code. BUSY's *assertion
@@ -626,7 +626,7 @@ sink installed until something more interesting is plugged in, is
 therefore three lines, and its `write_byte` body is empty.
 
 Four sinks ship in the crate. `NoopSink` discards. `CaptureSink` appends
-to a shared buffer and is what the tests use. `Dmp105Handle` — §14.5's
+to a shared buffer and is what the tests use. `DMP105Handle` — §14.5's
 whole subject — feeds a printer interpreter. And `FileSink` is the "print
 to a text file" implementation behind the CLI's `--print-capture` flag
 and the GUI's Machine menu, which is worth reading because its
@@ -692,13 +692,13 @@ line granularity is exactly the shape a printer's output naturally has.
 > time, via `RefCell`): clone the handle before handing one half to
 > `set_sink`, keep the other half, and both names refer to the same
 > buffer. Every test in `bitbanger_test.rs` opens with exactly that
-> two-step, and `Dmp105Handle` (§14.5) is the same pattern one level
+> two-step, and `DMP105Handle` (§14.5) is the same pattern one level
 > richer — a shared handle to a whole interpreter rather than to a `Vec`.
 >
 > Contrast this with Chapter 11's cross-thread audio ring buffer,
 > `Arc<Mutex<VecDeque<_>>>`. Both are "shared ownership plus a way to
 > mutate through a shared reference," but `BitBanger`, its sink, and the
-> frontend code that later reads a `Dmp105Handle`'s paper all run on the
+> frontend code that later reads a `DMP105Handle`'s paper all run on the
 > *same* thread — the emulator core has no background thread of its own —
 > so the atomic reference counting and OS-level locking that `Arc` and
 > `Mutex` pay for buy nothing here. `Rc` and `RefCell` do the identical
@@ -752,7 +752,7 @@ line granularity is exactly the shape a printer's output naturally has.
 > That is the `snapshot` default method earning its place in the trait:
 > every sink declares what kind of sink it is and what part of it is
 > worth keeping. A `NoopSink` and a `CaptureSink` answer `Noop`, a
-> `FileSink` answers `FileCapture`, and a `Dmp105Handle` answers with a
+> `FileSink` answers `FileCapture`, and a `DMP105Handle` answers with a
 > clone of the entire interpreter and its paper. Restoring inverts it
 > ([`crates/coco-core/src/bitbanger.rs:502-512`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L502-L512)):
 >
@@ -1378,7 +1378,7 @@ and the very next example is PIA1's CB1 input in §14.4.
 
 ### The wire interface: `SerialEndpoint`
 
-`Acia6551` never touches a socket or a file. Its host-facing seam is five
+`ACIA6551` never touches a socket or a file. Its host-facing seam is five
 methods — `take_tx_byte`, `receive_byte`, `rx_ready`, `set_dcd`,
 `set_dsr` — and the module doc describes it as "a pure chip model with a
 byte-level wire interface: no knowledge of hosts, sockets, or files."
@@ -1424,7 +1424,7 @@ written to `$FF68` reappears at `$FF68`" is a one-line guarantee once
 this type exists, and it needs no host I/O whatsoever, so it runs in CI
 on a machine with no network and no terminal.
 
-`TcpEndpoint` binds a listener and serves one non-blocking client at a
+`TCPEndpoint` binds a listener and serves one non-blocking client at a
 time, so a host terminal program can connect at any point without the
 emulator having a separate "wait for a client" step — every `poll_rx` and
 `tx` first tries to accept a pending connection. Its `tx` is the clearest
@@ -1463,7 +1463,7 @@ at all: `dcd()` simply starts returning false, the ACIA's DCD status bit
 follows, and a program watching carrier detect sees exactly what it would
 see if a modem had hung up.
 
-`PtyEndpoint` is the third, and it is the one that forced this crate to
+`PTYEndpoint` is the third, and it is the one that forced this crate to
 allow `unsafe` at all.
 
 > **Rust corner: `unsafe` with `SAFETY` comments, and the crate that
@@ -1598,7 +1598,7 @@ image simply makes CTS reads answer open bus.
 
 ### Where the chip meets the host: a poll budget
 
-`Acia6551` is a pure chip model and `SerialEndpoint` is a pure host
+`ACIA6551` is a pure chip model and `SerialEndpoint` is a pure host
 backend, so something has to introduce them. That something is the pak's
 own `tick`, and it is the only place in the design where the two halves
 touch. It is also where a performance consideration enters the chapter
@@ -1864,7 +1864,7 @@ hand.
 
 Nothing about the bit-banger or the 6551 knows a printer is on the other
 end of the wire. Both are pure byte-in, byte-out transports, and that is
-the property that makes a third rung possible at all. `Dmp105` is the
+the property that makes a third rung possible at all. `DMP105` is the
 layer that turns a byte stream into ink. It implements `PrinterSink`, so
 it plugs into `BitBanger` exactly where `CaptureSink` and `FileSink` did,
 and it interprets every byte arriving there as either printable text or
@@ -2156,7 +2156,7 @@ paper: tearing it off.
 
 ### Fixed-point units: why 1/3600" and 1/72"
 
-Every position `Dmp105` tracks — head `x`, head `y` — is a plain integer,
+Every position `DMP105` tracks — head `x`, head `y` — is a plain integer,
 never a float, and the two axes use different denominators chosen for
 different reasons.
 
@@ -2373,7 +2373,7 @@ loudest formatting the language allows.
 [`tests/dmp105_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/dmp105_boot.rs)
 is the integration test that proves this chapter's first two rungs and
 this section actually compose. It boots the real `coco3.rom`, attaches a
-`Dmp105Handle` as the bit-banger's sink, types a one-line program,
+`DMP105Handle` as the bit-banger's sink, types a one-line program,
 `LLIST`s it, and checks the paper picked up plausible content:
 
 ```rust
@@ -2408,7 +2408,7 @@ letter.
 What the integration test buys instead is proof that the *wiring* works
 against unmodified ROM code, end to end. Real PIA1 DDR and CRA setup, the
 real ROM's bit-bang transmit loop, the BUSY handshake never hanging,
-`BitBanger`'s decoder, and `Dmp105`'s interpreter, all chained, with the
+`BitBanger`'s decoder, and `DMP105`'s interpreter, all chained, with the
 only stimulus being simulated keystrokes. The third assertion is the
 sharpest: every dot from a single printed line has to fall inside one
 glyph cell's body rows, which fails loudly if the interpreter mistakes a

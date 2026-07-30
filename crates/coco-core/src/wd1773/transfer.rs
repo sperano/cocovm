@@ -4,7 +4,7 @@
 //! [`WD1773::tick`](super::WD1773::tick), which drives [`advance_transfer`]
 //! via [`WD1773::advance_transfer`].
 
-use crate::fdc::JvcDisk;
+use crate::fdc::JVCDisk;
 
 use super::{
     AWAITING_HOST_CYCLES, CRC_TRAILER_CYCLES, DRQ_INTERVAL_CYCLES, FormatState, Op, Transfer,
@@ -40,7 +40,7 @@ impl WD1773 {
     /// Write the data register ($FF4B). Side effect: clears DRQ, and — mid a
     /// Write Sector/Write Track transfer — supplies the next byte, advancing
     /// (and possibly completing) the transfer.
-    pub fn write_data(&mut self, val: u8, mut disk: Option<&mut JvcDisk>, side: u8) {
+    pub fn write_data(&mut self, val: u8, mut disk: Option<&mut JVCDisk>, side: u8) {
         self.data = val;
         self.drq = false;
         let Op::Transfer(mut t) = std::mem::replace(&mut self.op, Op::Idle) else {
@@ -76,7 +76,7 @@ impl WD1773 {
 
     /// A DRQ interval elapsed mid-transfer: deliver the next read byte, or (for
     /// writes) request one and wait for [`WD1773::write_data`].
-    pub(super) fn advance_transfer(&mut self, disk: Option<&mut JvcDisk>, side: u8) {
+    pub(super) fn advance_transfer(&mut self, disk: Option<&mut JVCDisk>, side: u8) {
         let Op::Transfer(t) = std::mem::replace(&mut self.op, Op::Idle) else {
             unreachable!("advance_transfer only called from the Op::Transfer arm");
         };
@@ -91,7 +91,7 @@ impl WD1773 {
     /// [`advance_transfer`](Self::advance_transfer)'s Read Sector/Read
     /// Address half: deliver the next staged byte via DRQ, or — once `total`
     /// bytes are delivered — finish the transfer after the CRC trailer delay.
-    fn advance_read_transfer(&mut self, mut t: Transfer, disk: Option<&mut JvcDisk>, side: u8) {
+    fn advance_read_transfer(&mut self, mut t: Transfer, disk: Option<&mut JVCDisk>, side: u8) {
         if t.index >= t.total {
             // The CRC trailer elapsed after the final data byte; a
             // still-unread final byte is a genuine overrun.
@@ -148,7 +148,7 @@ impl WD1773 {
     /// A sector/ID-field/format run finished. For a multiple-sector Type II
     /// command, roll onto the next sector (RNF once one runs past the end of
     /// the track); otherwise complete with INTRQ.
-    fn finish_transfer(&mut self, t: Transfer, disk: Option<&mut JvcDisk>, side: u8) {
+    fn finish_transfer(&mut self, t: Transfer, disk: Option<&mut JVCDisk>, side: u8) {
         if t.multiple {
             let next_sector = self.sector.wrapping_add(1);
             if let Some(d) = disk
@@ -198,7 +198,7 @@ impl WD1773 {
 /// hardware side select, not the stream's own (discarded) literal side byte,
 /// since the WD1773 never derives side from the ID field on Write Track
 /// (spec). Does nothing if `disk` is `None` or no ID field has completed yet.
-fn feed_write_track_byte(t: &mut Transfer, val: u8, disk: Option<&mut JvcDisk>, hw_side: u8) {
+fn feed_write_track_byte(t: &mut Transfer, val: u8, disk: Option<&mut JVCDisk>, hw_side: u8) {
     let state = std::mem::replace(&mut t.format_state, FormatState::Gap);
     t.format_state = match state {
         FormatState::Gap => step_gap(val),
@@ -221,7 +221,7 @@ fn step_gap(val: u8) -> FormatState {
 /// address mark. `IdField`, `DataField`/`DeletedDataField` are recognized;
 /// the index-AM preamble and any other unexpected byte are treated as
 /// filler.
-fn step_sync(val: u8, t: &Transfer, disk: Option<&JvcDisk>) -> FormatState {
+fn step_sync(val: u8, t: &Transfer, disk: Option<&JVCDisk>) -> FormatState {
     match val {
         mfm::SYNC => FormatState::Sync,
         mfm::ID_AM => FormatState::IdField(Vec::new()),
@@ -229,7 +229,7 @@ fn step_sync(val: u8, t: &Transfer, disk: Option<&JvcDisk>) -> FormatState {
             let target_len = t
                 .last_id_field
                 .map(|(_, _, size_code)| 128usize << size_code)
-                .or_else(|| disk.map(JvcDisk::sector_size))
+                .or_else(|| disk.map(JVCDisk::sector_size))
                 .unwrap_or(256);
             FormatState::DataField(Vec::new(), target_len)
         }
@@ -276,7 +276,7 @@ fn step_data_field(mut buf: Vec<u8>, target_len: usize, val: u8) -> FormatState 
 fn step_data_field_term(
     buf: Vec<u8>,
     val: u8,
-    disk: Option<&mut JvcDisk>,
+    disk: Option<&mut JVCDisk>,
     hw_side: u8,
     last_id_field: Option<(u8, u8, u8)>,
 ) -> FormatState {

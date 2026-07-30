@@ -25,8 +25,8 @@ use crate::gime::{self, GIME};
 use crate::joystick::Joysticks;
 use crate::keyboard::Keyboard;
 use crate::pia::MC6821;
-use crate::sam::Sam;
-use crate::vhd::Vhd;
+use crate::sam::SAM;
+use crate::vhd::VHD;
 
 use regs::{
     CONSTANT_RAM_BASE, CONSTANT_RAM_LAST, CONSTANT_RAM_PHYS, HARDWIRED_ROM_BASE, IO_BASE,
@@ -55,11 +55,11 @@ pub struct SystemBus {
     /// [`MachineVariant::Coco2`]. Left at its power-on state (and never
     /// consulted) on [`MachineVariant::Coco3`] — the GIME keeps its own
     /// SAM-compatibility overlay (`gime::write_sam`) for that path.
-    pub sam: Sam,
+    pub sam: SAM,
     pub pia0: MC6821,
     pub pia1: MC6821,
     pub cart: Cart,
-    pub vhd: Vhd,
+    pub vhd: VHD,
     /// The Becker-port DriveWire server ($FF41/$FF42). `None` = Becker
     /// disabled — $FF41/$FF42 fall through to cartridge dispatch exactly as
     /// before. Public like `vhd` so the frontend and tests reach it
@@ -116,11 +116,11 @@ impl SystemBus {
             ram: vec![0u8; memory.bytes()].into_boxed_slice(),
             rom,
             gime: GIME::new(),
-            sam: Sam::new(),
+            sam: SAM::new(),
             pia0: MC6821::new(),
             pia1: MC6821::new(),
             cart: Cart::default(),
-            vhd: Vhd::new(),
+            vhd: VHD::new(),
             drivewire: None,
             keyboard: Keyboard::new(),
             joysticks: Joysticks::new(),

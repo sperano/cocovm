@@ -12,7 +12,7 @@ use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, RestoredMachi
 use coco_core::vhd::{self, VHDImage};
 use eframe::egui;
 
-use crate::{CocoApp, MPI_SLOT_COUNT, MPISlot, MPIState, RS232Endpoint, RomSource, host_dw_clock, host_time_source, machine_label};
+use crate::{CocoApp, MPI_SLOT_COUNT, MPISlot, MPIState, RS232Endpoint, ROMSource, host_dw_clock, host_time_source, machine_label};
 
 use super::media_ref::{
     direct_port_rom_path, is_rom_db_pseudo_path, mpi_slot_from_cart, open_if_present,
@@ -232,8 +232,8 @@ impl CocoApp {
     /// resolver already supplied".
     fn update_rom_source_from_media(&mut self, media: &MediaRefs) {
         match &media.system_rom {
-            Some(mr) if is_rom_db_pseudo_path(&mr.path) => self.rom_source = RomSource::ComposedCoco12,
-            Some(mr) => self.rom_source = RomSource::File(mr.path.clone()),
+            Some(mr) if is_rom_db_pseudo_path(&mr.path) => self.rom_source = ROMSource::ComposedCoco12,
+            Some(mr) => self.rom_source = ROMSource::File(mr.path.clone()),
             None => {}
         }
     }

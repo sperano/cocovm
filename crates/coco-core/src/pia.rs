@@ -35,7 +35,7 @@ pub mod cr {
 
 /// One side (A or B) of an MC6821.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PiaPort {
+pub struct PIAPort {
     /// Output register (drives the pins selected as outputs by `ddr`).
     pub output: u8,
     /// Data direction register — 1 bit = output pin, 0 = input pin.
@@ -44,19 +44,19 @@ pub struct PiaPort {
     pub control: u8,
     /// State of the input pins (what the outside world drives).
     pub input: u8,
-    /// Current level of the Cx1 line, tracked so [`PiaPort::set_c1`] can tell
+    /// Current level of the Cx1 line, tracked so [`PIAPort::set_c1`] can tell
     /// an edge from a repeated level. Idle high (MAME `6821pia.cpp`).
     c1_level: bool,
 }
 
-impl Default for PiaPort {
+impl Default for PIAPort {
     fn default() -> Self {
         // Idle input pins float high on the CoCo (keyboard rows read $FF = no key).
         Self { output: 0, ddr: 0, control: 0, input: 0xFF, c1_level: true }
     }
 }
 
-impl PiaPort {
+impl PIAPort {
     /// Value seen when reading the data register: output bits on output pins,
     /// live input on the rest.
     fn data(&self) -> u8 {
@@ -101,8 +101,8 @@ impl PiaPort {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MC6821 {
-    pub a: PiaPort,
-    pub b: PiaPort,
+    pub a: PIAPort,
+    pub b: PIAPort,
 }
 
 impl MC6821 {
@@ -121,7 +121,7 @@ impl MC6821 {
         }
     }
 
-    fn read_side(port: &mut PiaPort) -> u8 {
+    fn read_side(port: &mut PIAPort) -> u8 {
         if port.control & cr::DDR_ACCESS != 0 {
             // Reading the peripheral data register clears the interrupt flags.
             port.control &= !(cr::C1_FLAG | cr::C2_FLAG);
@@ -145,7 +145,7 @@ impl MC6821 {
         }
     }
 
-    fn peek_side(port: &PiaPort, input: u8) -> u8 {
+    fn peek_side(port: &PIAPort, input: u8) -> u8 {
         if port.control & cr::DDR_ACCESS != 0 {
             (port.output & port.ddr) | (input & !port.ddr)
         } else {
@@ -163,7 +163,7 @@ impl MC6821 {
         }
     }
 
-    fn write_side(port: &mut PiaPort, val: u8) {
+    fn write_side(port: &mut PIAPort, val: u8) {
         if port.control & cr::DDR_ACCESS != 0 {
             port.output = val;
         } else {
@@ -171,7 +171,7 @@ impl MC6821 {
         }
     }
 
-    fn write_control(port: &mut PiaPort, val: u8) {
+    fn write_control(port: &mut PIAPort, val: u8) {
         // Bits 7/6 are read-only interrupt flags; the CPU can't set them.
         const WRITABLE: u8 = !(cr::C1_FLAG | cr::C2_FLAG);
         port.control = (port.control & !WRITABLE) | (val & WRITABLE);

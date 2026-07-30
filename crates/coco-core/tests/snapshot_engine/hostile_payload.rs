@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use ciborium::Value;
 use coco_core::cart::MultiPak;
-use coco_core::fdc::{dskreg, DiskCart, JvcDisk};
+use coco_core::fdc::{dskreg, DiskCart, JVCDisk};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SnapshotError};
 use coco_core::ssc::{cmd as ssc_cmd, reg as ssc_reg, SoundSpeechCartridge};
 use coco_core::{Machine, MachineConfig};
@@ -122,7 +122,7 @@ fn machine_with_disk_in_read_transfer() -> Machine {
     // since nothing here executes a CPU instruction.
     let mut cart = DiskCart::new(vec![0u8; 16].into_boxed_slice());
     const ONE_TRACK_BYTES: usize = 18 * 256;
-    cart.insert_disk(0, JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).expect("build disk"));
+    cart.insert_disk(0, JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).expect("build disk"));
     machine.insert_cartridge(cart);
 
     const DSKREG: u16 = 0xFF40;

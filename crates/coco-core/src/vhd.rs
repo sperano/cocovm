@@ -7,7 +7,7 @@
 //! the verified spec this module was built from; the driver-side contract
 //! (24-bit LRN, 256-byte sectors) is corroborated by NitrOS-9 `emudsk.asm`.
 //!
-//! This module holds only data and file I/O: [`Vhd`]/`VhdDrive`/[`VHDImage`]
+//! This module holds only data and file I/O: [`VHD`]/`VhdDrive`/[`VHDImage`]
 //! know nothing about the CPU bus. The actual command execution — which needs
 //! to transfer sector data through the GIME-translated logical address space
 //! — lives in `SystemBus`'s private methods in `bus.rs`.
@@ -159,7 +159,7 @@ pub(crate) struct VhdDrive {
     pub(crate) buffer_addr: u16,
     pub(crate) status: u8,
     /// Skipped: an open host `File` handle. Remounted by path on restore via
-    /// [`Vhd::reattach_image`] (`docs/plan-save-states.md`).
+    /// [`VHD::reattach_image`] (`docs/plan-save-states.md`).
     #[serde(skip)]
     pub(crate) image: Option<VHDImage>,
 }
@@ -173,10 +173,10 @@ impl VhdDrive {
 /// The VHD device: two independent drives plus the shared `$FF86`
 /// drive-select latch.
 #[derive(Serialize, Deserialize)]
-pub struct Vhd {
+pub struct VHD {
     pub(crate) drives: [VhdDrive; DRIVE_COUNT],
     /// Raw value last written to `$FF86`. `0`/`1` select a drive; anything
-    /// else deselects both (see [`Vhd::selected_drive`]).
+    /// else deselects both (see [`VHD::selected_drive`]).
     select: u8,
     /// Reentrancy guard for command execution (`SystemBus::vhd_execute_command`
     /// in `bus.rs`): our own addition, not modeled by MAME — needed because
@@ -197,7 +197,7 @@ pub struct Vhd {
     pub(crate) access_counts: [u64; DRIVE_COUNT],
 }
 
-impl Vhd {
+impl VHD {
     /// Both drives start unmounted (status [`status::NO_VHD`]).
     ///
     /// `select` defaults to drive 0. This is an inferred default, not a
@@ -245,7 +245,7 @@ impl Vhd {
 
     /// Restore-path-only: re-inject a mounted image after a snapshot
     /// restore, WITHOUT resetting `lrn`/`buffer_addr`/`status` the way
-    /// [`Vhd::insert`] does — all three are themselves restored machine
+    /// [`VHD::insert`] does — all three are themselves restored machine
     /// state, exactly as deserialized (`docs/plan-save-states.md`).
     pub fn reattach_image(&mut self, drive: usize, image: VHDImage) {
         self.drives[drive].image = Some(image);
@@ -333,7 +333,7 @@ impl Vhd {
     }
 }
 
-impl Default for Vhd {
+impl Default for VHD {
     fn default() -> Self {
         Self::new()
     }

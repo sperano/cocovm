@@ -53,7 +53,7 @@ fn resampler_keeps_channels_independent() {
 
 #[test]
 fn dc_blocker_converges_toward_zero_on_constant_input() {
-    let mut dc = DcBlocker::default();
+    let mut dc = DCBlocker::default();
     let mut last = 1.0;
     for _ in 0..2000 {
         last = dc.process(1.0);
@@ -63,7 +63,7 @@ fn dc_blocker_converges_toward_zero_on_constant_input() {
 
 #[test]
 fn dc_blocker_passes_already_centered_signal_without_blowing_up() {
-    let mut dc = DcBlocker::default();
+    let mut dc = DCBlocker::default();
     let mut max_abs = 0.0f32;
     for i in 0..1000 {
         let x = if i % 2 == 0 { 1.0 } else { -1.0 };

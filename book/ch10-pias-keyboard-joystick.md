@@ -427,7 +427,7 @@ it, and having decoded it once you'll recognize it instantly in any
 listing for the rest of the course.
 
 > **Rust corner: overriding `Default` for hardware truth, not zero.**
-> `PiaPort` does not derive `Default`; it has a hand-written `impl`:
+> `PIAPort` does not derive `Default`; it has a hand-written `impl`:
 >
 > ```rust
 > impl Default for PiaPort {
@@ -969,7 +969,7 @@ pub struct Keyboard {
 }
 ```
 
-Seven bytes, one per row, each bit a column, and — unlike `PiaPort` — a
+Seven bytes, one per row, each bit a column, and — unlike `PIAPort` — a
 derived `Default` is correct here, because "no bits set" really does mean
 "no keys held." The field is private, so the only way in is `set`:
 

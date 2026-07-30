@@ -19,7 +19,7 @@
 //! garbled screen can be told apart from "this is actually a graphics-mode
 //! screen with no text buffer".
 
-use coco_core::fdc::{DiskCart, JvcDisk};
+use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::char_key;
 use coco_core::{Machine, MachineConfig};
 
@@ -76,7 +76,7 @@ fn main() {
 
     let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
     let disk_rom = std::fs::read("roms/disk11.rom").unwrap().into_boxed_slice();
-    let disk = JvcDisk::from_bytes(std::fs::read(&disk_path).unwrap()).unwrap();
+    let disk = JVCDisk::from_bytes(std::fs::read(&disk_path).unwrap()).unwrap();
     println!(
         "mounted {disk_path}: {} tracks, {} sectors/track, {} side(s)",
         disk.track_count(),

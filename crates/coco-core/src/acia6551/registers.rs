@@ -1,10 +1,10 @@
 //! Register read/write internals: the four `$FF68`-`$FF6B` offsets'
-//! side-effecting behavior, dispatched from [`Acia6551::read`]/
-//! [`Acia6551::write`].
+//! side-effecting behavior, dispatched from [`ACIA6551::read`]/
+//! [`ACIA6551::write`].
 
-use super::{Acia6551, command, irq_source, status, tx_control};
+use super::{ACIA6551, command, irq_source, status, tx_control};
 
-impl Acia6551 {
+impl ACIA6551 {
     /// RDR read: returns the byte, then clears RDRF and all three error
     /// bits together (MAME `mos6551.cpp` `read_receive_data_register` — does
     /// *not* touch the IRQ output; that needs a status read or disabling
@@ -30,7 +30,7 @@ impl Acia6551 {
     /// TDR write: latches the byte and clears TDRE immediately, even if a
     /// frame is already shifting (the 1-deep holding register — a rewrite
     /// before the current frame ends is picked up when it does, in
-    /// [`Acia6551::tick_tx`]). Then attempts an immediate consume — if the
+    /// [`ACIA6551::tick_tx`]). Then attempts an immediate consume — if the
     /// transmitter happens to already be idle, MAME picks a freshly loaded
     /// TDR up as soon as it's written rather than waiting for the next
     /// clock tick.
@@ -62,7 +62,7 @@ impl Acia6551 {
     /// Programmed reset (any write to reg 1, value ignored): clears *only*
     /// the overrun status bit and *only* the DCD/DSR IRQ-source bits — the
     /// RDRF/TDRE IRQ sources deliberately survive, unlike the general
-    /// command-write rule in [`Acia6551::write_command`] (verified MAME
+    /// command-write rule in [`ACIA6551::write_command`] (verified MAME
     /// `mos6551.cpp` `write_status_command_register` behavior: this is a
     /// narrower reset than a full command-register disable would produce).
     /// Command bits 0-4 are cleared (DTR off, rx-IRQ enabled, transmitter

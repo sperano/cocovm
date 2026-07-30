@@ -385,7 +385,7 @@ that no longer exists continues to work.
 
 What is genuinely satisfying is that this codebase mirrors the
 silicon's family history rather than papering over it. There is a real
-`Sam` type in
+`SAM` type in
 [`crates/coco-core/src/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs),
 and it is used *only* when emulating a CoCo 1 or CoCo 2. The CoCo 3 path
 routes the very same addresses into the GIME's own compatibility layer in

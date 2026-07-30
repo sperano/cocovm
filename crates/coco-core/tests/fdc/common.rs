@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use coco_core::cart::Cartridge;
-use coco_core::fdc::{DiskCart, JvcDisk};
+use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -19,16 +19,16 @@ pub fn disk_cart() -> DiskCart {
 
 /// One track, one sector, every byte the given marker — enough to identify
 /// which drive/side answered a Read Sector without caring about pacing.
-pub fn marker_disk(marker: u8) -> JvcDisk {
-    JvcDisk::from_bytes(vec![marker; ONE_TRACK_BYTES]).unwrap()
+pub fn marker_disk(marker: u8) -> JVCDisk {
+    JVCDisk::from_bytes(vec![marker; ONE_TRACK_BYTES]).unwrap()
 }
 
 /// One track, 2 sides, 1 sector/side, 128B — for side-select coverage.
-pub fn two_sided_marker_disk(side0: u8, side1: u8) -> JvcDisk {
+pub fn two_sided_marker_disk(side0: u8, side1: u8) -> JVCDisk {
     let mut bytes = vec![1u8, 2, 0, 1, 0]; // spt=1, sides=2, size 128, first id 1
     bytes.extend(vec![side0; 128]);
     bytes.extend(vec![side1; 128]);
-    JvcDisk::from_bytes(bytes).unwrap()
+    JVCDisk::from_bytes(bytes).unwrap()
 }
 
 /// Comfortably more than the implementation's first-byte search latency (~30
@@ -52,9 +52,9 @@ pub fn read_marker_byte(cart: &mut DiskCart) -> u8 {
 
 /// A disk whose track 0, sector 1 is filled with `i as u8` for `i` in
 /// `0..256` — lets a read-sector test confirm both delivery order and value.
-pub fn index_pattern_disk() -> JvcDisk {
+pub fn index_pattern_disk() -> JVCDisk {
     let bytes: Vec<u8> = (0..ONE_TRACK_BYTES).map(|i| i as u8).collect();
-    JvcDisk::from_bytes(bytes).unwrap()
+    JVCDisk::from_bytes(bytes).unwrap()
 }
 
 /// Comfortably longer than the implementation's fixed Type I/RNF settle delay.
@@ -126,7 +126,7 @@ pub const DIR_ENTRY_SIZE: usize = 32;
 /// file, "HELLO.BAS", occupying granule 0 (track 0, both granules — i.e. the
 /// first 2 tracks worth of granules; RS-DOS granules are half-tracks, 2 per
 /// track, 9 sectors each on a 18-spt disk).
-pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JvcDisk {
+pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JVCDisk {
     const TRACKS: usize = 35;
     let mut bytes = vec![0u8; TRACKS * ONE_TRACK_BYTES];
 
@@ -166,7 +166,7 @@ pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JvcDisk {
         *b = 0;
     }
 
-    JvcDisk::from_bytes(bytes).unwrap()
+    JVCDisk::from_bytes(bytes).unwrap()
 }
 
 /// Like [`load_rom`] but returns `None` instead of panicking when the
@@ -182,7 +182,7 @@ pub fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
 /// Synthesize a 35-track RS-DOS disk holding one machine-language file
 /// (`name8`.BIN) whose `data` loads at `load_addr`. The file (a single DECB
 /// binary load segment plus the exec trailer) occupies granule 0.
-pub fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JvcDisk {
+pub fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JVCDisk {
     const TRACKS: usize = 35;
     let mut bytes = vec![0u8; TRACKS * ONE_TRACK_BYTES];
     let track_offset =
@@ -230,7 +230,7 @@ pub fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JvcDisk 
     bytes[entry_off + 14] = (last_sector_bytes >> 8) as u8;
     bytes[entry_off + 15] = last_sector_bytes as u8;
 
-    JvcDisk::from_bytes(bytes).unwrap()
+    JVCDisk::from_bytes(bytes).unwrap()
 }
 
 /// Like [`try_load_rom`], but for a disk image under the git-ignored `disks/`.

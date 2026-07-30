@@ -149,7 +149,7 @@ const VHD_ICON_CORNER: f32 = 1.5;
 /// Status-bar VHD (virtual hard disk, `$FF80-$FF86` `emudsk`) activity
 /// indicator (see [`VHD_ICON_SIZE`]): red while a READ/WRITE/FLUSH command
 /// has recently dispatched to that drive
-/// ([`coco_core::vhd::Vhd::access_count`]), gray otherwise. The housing
+/// ([`coco_core::vhd::VHD::access_count`]), gray otherwise. The housing
 /// rectangle has one large platter circle — offset toward the left edge,
 /// the way a real 3½" drive's platter sits off-center under its own
 /// top-view case — punched out in the panel background color, a

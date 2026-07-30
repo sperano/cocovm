@@ -116,7 +116,7 @@ joysticks, cassette, serial port, and the debugger's watchpoint table.
 
 Notice that both `gime: GIME` and `sam: Sam` are present unconditionally,
 on every machine. A CoCo 1 allocates a `GIME` it will never once look at;
-a CoCo 3 allocates a `Sam` it will never once look at. Two decode chips
+a CoCo 3 allocates a `SAM` it will never once look at. Two decode chips
 that never coexisted in any real machine are both sitting in the struct
 at the same time, which looks like waste until you price the
 alternatives.
