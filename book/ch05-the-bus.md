@@ -1928,8 +1928,8 @@ MAME's own romset definitions) and validates by content, not filename:
 
 ```rust
 pub enum Validation {
-    Verified(&'static KnownRom),
-    Mismatch { expected: &'static KnownRom, actual_crc32: u32, actual_size: usize },
+    Verified(&'static KnownROM),
+    Mismatch { expected: &'static KnownROM, actual_crc32: u32, actual_size: usize },
     Unknown,
 }
 

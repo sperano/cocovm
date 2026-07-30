@@ -1976,7 +1976,7 @@ small struct describing the mode's geometry
 
 ```rust
 /// A decoded VDG resolution-graphics mode.
-pub struct VdgGraphicsMode {
+pub struct VDGGraphicsMode {
     /// Bytes fetched per displayed row.
     pub bytes_per_row: usize,
     /// RAM rows fetched (before vertical repetition into [`ACTIVE_H`]); driven by
@@ -1999,7 +1999,7 @@ The function that fills it in is a single `match`
 ([`video/graphics.rs:75-96`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs#L75-L96)):
 
 ```rust
-pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VdgGraphicsMode {
+pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VDGGraphicsMode {
     let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
     // (logical width, 4-colour?) for GM2..GM0 = 0..7.
     let (logical_w, four_colour) = match gm {
@@ -2014,7 +2014,7 @@ pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VdgGraphicsMode {
     };
     let bpp = if four_colour { 2 } else { 1 };
     let lines_per_row = LEGACY_GFX_LINES_PER_ROW[(sam_video & SAM_VIDEO_MASK) as usize];
-    VdgGraphicsMode {
+    VDGGraphicsMode {
         bytes_per_row: logical_w * bpp / 8,
         rows: ACTIVE_H / lines_per_row,
         bpp,
@@ -2248,7 +2248,7 @@ directly ([`video/graphics.rs:112-132`](https://github.com/sperano/cocovm/blob/m
 ```rust
 pub fn paint_legacy_graphics_line(
     row_data: &[u8],
-    mode: &VdgGraphicsMode,
+    mode: &VDGGraphicsMode,
     colors: &[[u8; 4]],
     xscale: usize,
     out: &mut [u8],

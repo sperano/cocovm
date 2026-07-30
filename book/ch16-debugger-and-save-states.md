@@ -741,7 +741,7 @@ doesn't have.
 That first branch is the one that saves this design from a subtle trap. This
 emulator runs CoCo 1 and CoCo 2 machines as well as CoCo 3s, and on those
 variants the address decode is a different function entirely — `sam_read`
-walking the SAM's own `SamTarget` map rather than the GIME's MMU. A `peek` that
+walking the SAM's own `SAMTarget` map rather than the GIME's MMU. A `peek` that
 mirrored only the CoCo 3 path would return plausible-looking garbage on a CoCo
 1, and it would do so silently, because there is no failure mode: every address
 decodes to *something*. So there is a second mirror underneath, `sam_peek`,
@@ -1783,7 +1783,7 @@ two separate and equally load-bearing reasons, both stated in the module doc:
 The container for all of that is one struct, and its shape encodes an evolution
 lesson that took a review cycle to learn. Here it is in full, doc comment
 included, from
-[`payload.rs:53-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs#L53-L88):
+[`payload.rs:53-89`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs#L53-L89):
 
 ```rust
 /// Every media reference a snapshot might carry. Every field is
@@ -1803,13 +1803,14 @@ included, from
 pub struct MediaRefs {
     #[serde(default)]
     pub system_rom: Option<MediaRef>,
-    /// ROM-bearing carts, keyed by where they sit. Covers RomPak/
-    /// BankedRomPak/Gmc/DiskCart/Orch90 images and the DeluxeRs232 EPROM —
-    /// one entry per ROM-bearing cart that actually has an image (the
-    /// DeluxeRs232 is the one cart in this list that can legitimately run
-    /// without one; see [`super::restore`]'s cart-ROM step).
+    /// ROM-bearing carts, keyed by where they sit. Covers ROMPak/
+    /// BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images and the
+    /// DeluxeRS232 EPROM — one entry per ROM-bearing cart that actually has
+    /// an image (the DeluxeRS232 is the one cart in this list that can
+    /// legitimately run without one; see [`super::restore`]'s cart-ROM
+    /// step).
     #[serde(default)]
-    pub cart_roms: Vec<SlotRomRef>,
+    pub cart_roms: Vec<SlotROMRef>,
     /// FD-502 JVC drives, indexed by drive number.
     #[serde(default)]
     pub disks: Vec<Option<MediaRef>>,
@@ -2179,7 +2180,7 @@ Three concrete examples of "this was never data":
   is the *capability* to ask again, which is exactly the kind of thing
   `#[serde(skip)]` marks and `reinject_host_only_resources` supplies fresh.
   Until re-injected, the RTC comes back reporting a placeholder — 1970-01-01
-  — which is honest (`RestoreNote::RtcPlaceholderTime` says so explicitly)
+  — which is honest (`RestoreNote::RTCPlaceholderTime` says so explicitly)
   rather than silently wrong.
 - **The DriveWire clock**, same shape: a live source of "now," not a value.
 - **The Deluxe RS-232 endpoint** — Chapter 14's `unsafe`-with-`SAFETY`-comments
@@ -2189,7 +2190,7 @@ Three concrete examples of "this was never data":
   on a different machine, possibly one that no longer exists" — the endpoint
   restores as `Loopback` (echo whatever you send back to yourself) rather
   than any attempt to resurrect the old connection, and
-  `RestoreNote::Rs232EndpointLoopback` tells the frontend to say so.
+  `RestoreNote::RS232EndpointLoopback` tells the frontend to say so.
 
 Every one of these is a case Chapter 1's closing parenthetical anticipated:
 "a couple of host-facing edges bend [the no-shared-ownership] rule... both
@@ -2205,7 +2206,7 @@ next line of `apply_restored_machine`.
 
 The enum itself is three variants and a `Display` impl, and its doc comment is
 unusually explicit about why the type exists at all
-([`payload.rs:114-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs#L114-L137)):
+([`payload.rs:115-138`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs#L115-L138)):
 
 ```rust
 /// A non-fatal condition [`super::restore`] leaves for the caller to surface: state
@@ -2213,7 +2214,7 @@ unusually explicit about why the type exists at all
 /// restored (`docs/plan-save-states.md`). Typed rather than raw strings so a
 /// caller can react to a specific condition programmatically — e.g. the egui
 /// frontend re-injects the Disto RTC's host time source right after
-/// `restore` returns and then drops [`RestoreNote::RtcPlaceholderTime`]
+/// `restore` returns and then drops [`RestoreNote::RTCPlaceholderTime`]
 /// before showing the rest as a toast, since that note is only true for a
 /// caller that DOESN'T immediately do that (a headless tool, a test) — a
 /// caller matching on message text couldn't single that one note out safely
@@ -2225,12 +2226,12 @@ pub enum RestoreNote {
     PrintCaptureStopped,
     /// The Deluxe RS-232 host connection restored as loopback; the real
     /// endpoint needs to be re-plugged from the frontend.
-    Rs232EndpointLoopback,
+    RS232EndpointLoopback,
     /// The Disto real-time clock restored to a placeholder time
     /// (1970-01-01); true only for a caller that doesn't itself re-sync it
     /// from a live time source right after restoring — see this type's own
     /// doc comment.
-    RtcPlaceholderTime,
+    RTCPlaceholderTime,
 }
 ```
 
@@ -2329,7 +2330,7 @@ The file mounts four concrete attacks, each against a real bug class:
 
 1. **`ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic`** — sets an
    SSC (Sound/Speech Cartridge) load buffer's `cap` field to `999_999`. The
-   normal code path (`Ssc::feed_load`) indexes `self.ram[cursor]` for every
+   normal code path (`SoundSpeechCartridge::feed_load`) indexes `self.ram[cursor]` for every
    `cursor` up to `cap`, with no bounds check of its own against the real RAM
    size (`512` bytes) — because on the *legitimate* path, `cap` can never
    exceed it. A tampered payload removes that guarantee, and
@@ -2771,7 +2772,7 @@ performing the read-acknowledges-and-clears dance). Then list the
 sub-ranges where they're identical. For each *different* case, name the
 specific side effect `read` performs that `peek` must avoid, in one
 sentence. (You should find at least: both PIAs' Cx1 flags, the GIME
-IRQ/FIRQ pending registers, and — check `sam_peek`'s `SamTarget::Io` arm for
+IRQ/FIRQ pending registers, and — check `sam_peek`'s `SAMTarget::Io` arm for
 the CoCo 1/2 path too — the same PIA cases there.)
 
 **16.2 — Hand-decode a header (build + verify).** A `.ccstate` file begins

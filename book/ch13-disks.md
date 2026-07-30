@@ -417,7 +417,7 @@ subject of §13.4.
 > escape hatch: swap in a placeholder (`Op::Idle`, always cheap to
 > construct) and get full, owned access to what was there before. You'll
 > see the identical shape in `write_data` (this module) and in
-> `DwServer::feed` (§13.11) — any time a Rust state machine needs to
+> `DWServer::feed` (§13.11) — any time a Rust state machine needs to
 > *consume and replace* its own current state rather than mutate it in
 > place, expect this pattern.
 
@@ -1734,7 +1734,7 @@ default: sectors/track (18, the RS-DOS standard), sides (1), sector-size
 code (1, meaning `128 << 1 = 256`), first sector ID (1). The fifth byte
 this implementation doesn't support at all: a nonzero attribute-byte
 flag, which some JVC variants use to prepend an extra byte to every
-sector, is rejected outright (`JvcError::AttributeBytesUnsupported`)
+sector, is rejected outright (`JVCError::AttributeBytesUnsupported`)
 rather than silently misreading the geometry. Most real CoCo disk images
 in the wild are headerless (`header_len == 0`, an exact multiple of 256
 bytes) and rely on every one of those four defaults, which happen to
@@ -1747,7 +1747,7 @@ because it is a compact statement of everything the parser refuses to
 guess at ([`fdc/jvc.rs:88-107`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/fdc/jvc.rs#L88-L107)):
 
 ```rust
-pub enum JvcError {
+pub enum JVCError {
     /// Header byte 4 (sector attribute flag) was nonzero: every sector would
     /// carry an extra prepended attribute byte, a JVC variant this
     /// implementation doesn't support.
@@ -1979,7 +1979,7 @@ a place to put arguments before a call, and a call's arguments are not
 usually something you interrogate afterwards.
 
 One doc comment in this module deserves attention for a reason that has
-nothing to do with disks. `Vhd::new` picks drive 0 as the power-on
+nothing to do with disks. `VHD::new` picks drive 0 as the power-on
 selection, and rather than let that pass as a fact, the comment labels it
 ([`vhd.rs:201-216`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs#L201-L216)):
 "This is an inferred default, not a verified hardware fact: no source
@@ -2149,7 +2149,7 @@ apart from "fall through" ([`bus/io.rs:19-59`](https://github.com/sperano/cocovm
 ```
 
 `becker_write` has the same shape (`BECKER_STATUS` writes are silently
-swallowed; `BECKER_DATA` feeds `DwServer::data_write`), guarded
+swallowed; `BECKER_DATA` feeds `DWServer::data_write`), guarded
 `if self.drivewire.is_none() { return false; }`, checked before
 `io_write`'s own `match`. This means a genuine `DiskCart` (§13.2–13.9,
 occupying that same address range through its own
@@ -2166,7 +2166,7 @@ outside the two Becker registers, still inside the cartridge's own range
 
 `enable_drivewire()` deserves a mention too: DriveWire, unlike a `DiskCart`,
 isn't a cartridge you insert; it's a bus-level feature you switch on
-([`bus.rs:173-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L173-L176)). When `self.drivewire: Option<DwServer>` is `None`,
+([`bus.rs:173-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L173-L176)). When `self.drivewire: Option<DWServer>` is `None`,
 `becker_read`'s `self.drivewire.as_mut()?` short-circuits before the
 address is even inspected, and `$FF41`/`$FF42` fall straight through to
 cartridge dispatch exactly as if the Becker port didn't exist — disabled
@@ -2175,7 +2175,7 @@ DriveWire costs nothing beyond one `Option` check per I/O access.
 ### The state machine, one byte at a time
 
 Every DriveWire transaction is driven by feeding one byte at a time into
-`DwServer::data_write`, which is what a write to `$FF42` calls. The
+`DWServer::data_write`, which is what a write to `$FF42` calls. The
 protocol's entire vocabulary of "what am I in the middle of" lives in one
 enum ([`drivewire/protocol.rs:24-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/protocol.rs#L24-L87), abridged to the variants a READ
 transaction actually visits):
@@ -2433,10 +2433,10 @@ build the one time it mattered.
 > **Rust corner: injecting the outside world through a boxed closure.**
 > `coco-core` is headless (Chapter 1's crate-boundary argument), but
 > `opcode::TIME` needs *some* notion of wall-clock time:
-> `pub type DwClock = Box<dyn FnMut() -> DwTime + Send>;` is a trait
+> `pub type DWClock = Box<dyn FnMut() -> DWTime + Send>;` is a trait
 > object over *any* closure with that signature. `coco-egui`, which
 > knows how to ask the OS for the time, constructs one and hands it to
-> `DwServer::set_clock`; `coco-core` itself only ever uses
+> `DWServer::set_clock`; `coco-core` itself only ever uses
 > `default_clock`, a fixed stand-in date, so tests stay reproducible
 > without a real clock dependency. `Send` matters because a `Machine`
 > might cross threads; a closure capturing non-`Send` state couldn't make
@@ -2610,7 +2610,7 @@ express a non-default `first_sector_id`, which is why this needs an
 explicit header). This needs no ROM and runs in any checkout. If you
 *do* have `roms/` available, a further build worth attempting: add a
 `sectors_read: u64` counter to `WD1773` (direct precedent to copy from:
-`DwServer::sectors_read`, §13.11), increment it in `finish_transfer` on a
+`DWServer::sectors_read`, §13.11), increment it in `finish_transfer` on a
 successful `ReadSector` completion, expose it through `DiskCart`, and use
 [`examples/disk_boot_probe.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/disk_boot_probe.rs) to print how many sectors a Disk BASIC
 `DIR` actually reads.

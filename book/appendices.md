@@ -684,7 +684,7 @@ existing push-cost formula).
 > MAME's `mos6551_device` is a bit-serial engine: it shifts one bit at a
 > time off a per-bit timer and can therefore generate real parity/framing
 > errors and expose bit-accurate RS-232 waveforms. This model is
-> deliberately **byte-level**: `Acia6551::tick` runs a whole-frame timer for
+> deliberately **byte-level**: `ACIA6551::tick` runs a whole-frame timer for
 > the receiver and transmitter... and delivers/consumes a complete byte when
 > that timer expires.
 
