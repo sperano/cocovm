@@ -778,7 +778,7 @@ soft blur that no CoCo owner ever saw.
 The frontend does use linear sampling — twice, and both times for
 photographs rather than emulated screens. The manager's decorative photo
 pane uploads with `TextureOptions::LINEAR`
-([`crates/coco-egui/src/manager.rs:386-389`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L386-L389)), and so does a suspended
+([`crates/coco-egui/src/manager.rs:387-390`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L387-L390)), and so does a suspended
 machine's saved screen thumbnail when it is loaded back from its PNG
 ([`crates/coco-egui/src/manager/thumbnails.rs:57-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L57-L61)). Both are being
 scaled *down* into a small area rather than up, and a photograph shrunk
@@ -1469,7 +1469,7 @@ pub struct MachineDef {
     pub ui: UIDTO,
 ```
 
-([`crates/coco-egui/src/machine_def.rs:49-64`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L49-L64).) It is deliberately a
+([`crates/coco-egui/src/machine_def.rs:51-68`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L51-L68).) It is deliberately a
 *DTO* — a Data Transfer Object, meaning a struct whose only job is to
 mirror an external data format field for field and be converted to and from
 the types the program actually runs on. It is kept separate from
@@ -1502,7 +1502,7 @@ problem most configuration formats simply lose to:
     pub unknown: toml::Table,
 ```
 
-([`crates/coco-egui/src/machine_def.rs:74-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L74-L75).) Any TOML key the
+([`crates/coco-egui/src/machine_def.rs:78-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L78-L79).) Any TOML key the
 loader does not recognize — at the top level, or one level into a known
 section — is both logged via `tracing::warn!` and stashed in this field
 rather than silently dropped. The collection is a plain double loop:
@@ -1517,10 +1517,10 @@ fn extract_unknown(table: &toml::Table) -> toml::Table {
     }
 ```
 
-([`crates/coco-egui/src/machine_def/io.rs:69-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L69-L75).) When the definition
+([`crates/coco-egui/src/machine_def/io.rs:72-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L72-L78).) When the definition
 is written back out, `merge_unknown` folds those keys into the freshly
 serialized table before it hits disk
-([`crates/coco-egui/src/machine_def/io.rs:99-118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L99-L118)).
+([`crates/coco-egui/src/machine_def/io.rs:102-121`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L102-L121)).
 
 The consequence is the thing to remember. Suppose a future build adds a
 `[hardware].turbo_multiplier` key. A user sets it, then opens the same
@@ -1534,7 +1534,7 @@ Distinguish that from the *schema* number, which is handled the opposite
 way. An unrecognized key is forward-compatible and merely warned about; an
 unrecognized schema number is fatal, because it means the shape of the file
 itself may have changed and no key-level reasoning is safe
-([`crates/coco-egui/src/machine_def.rs:36-41`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L36-L41)). Additive changes are
+([`crates/coco-egui/src/machine_def.rs:38-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L38-L43)). Additive changes are
 tolerated; structural ones are refused. That is exactly the right split.
 
 ### Atomic saves: tmp, then rename
@@ -1548,7 +1548,7 @@ tolerated; structural ones are refused. That is exactly the right split.
     fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))?;
 ```
 
-([`crates/coco-egui/src/machine_def/io.rs:204-207`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L204-L207).) The complete new
+([`crates/coco-egui/src/machine_def/io.rs:207-210`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L207-L210).) The complete new
 contents go to a sibling `.tmp` file first, and only then is that file
 renamed over the real path.
 
@@ -1578,7 +1578,7 @@ those are two different operations with different failure modes.
 `slugify` lowercases, keeps `[a-z0-9]`, collapses every run of other
 characters to a single dash, trims leading and trailing dashes, and falls
 back to `"machine"` if nothing survives
-([`crates/coco-egui/src/machine_def.rs:137-156`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L137-L156)). Collisions are then
+([`crates/coco-egui/src/machine_def.rs:142-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L142-L161)). Collisions are then
 resolved by a function that is pleasingly boring:
 
 ```rust
@@ -1597,7 +1597,7 @@ pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {
 }
 ```
 
-([`crates/coco-egui/src/machine_def.rs:161-173`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L161-L173).) The `taken` predicate is
+([`crates/coco-egui/src/machine_def.rs:166-178`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L166-L178).) The `taken` predicate is
 passed in rather than hard-coded, and the call sites are where the care
 shows. Creating a machine checks *both* the in-memory list and the
 directory on disk, because the in-memory list would miss a `<slug>.toml`
@@ -1618,7 +1618,7 @@ definition's file name."
 
 Why the artifact directory has to follow at all comes down to one function.
 Relative `[media]` paths inside a definition resolve *against the slug's
-own artifact directory* ([`crates/coco-egui/src/machine_def.rs:193-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L193-L202)),
+own artifact directory* ([`crates/coco-egui/src/machine_def.rs:198-207`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L198-L207)),
 so a disk image referenced as `"disk0.dsk"` means a different absolute file
 the instant the slug changes. Move the definition without moving the
 directory and every relative media path in it silently points at nothing.
@@ -1666,8 +1666,8 @@ state. The first changes what is actually *executing*:
     pub vm: Option<Box<CocoApp>>,
 ```
 
-That field is [`crates/coco-egui/src/manager.rs:130`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L130), inside the struct at
-[`crates/coco-egui/src/manager.rs:122-160`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L122-L160). Powered Off is `None`. The
+That field is [`crates/coco-egui/src/manager.rs:131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L131), inside the struct at
+[`crates/coco-egui/src/manager.rs:123-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L123-L161). Powered Off is `None`. The
 second, `suspended: bool`, mirrors something that lives on disk: a
 suspended machine's whole frozen state is a `suspended.ccstate` file in
 its artifact directory (written by week 16's save-state engine), and *the
@@ -1688,7 +1688,7 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
 }
 ```
 
-([`crates/coco-egui/src/manager.rs:210-218`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L210-L218).) Three states, computed
+([`crates/coco-egui/src/manager.rs:211-219`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L211-L219).) Three states, computed
 fresh at draw time; the only one with any persistence is Suspended, and
 its persistence is the state file itself, not a status field in the
 definition. This is §15.1's lesson applied to application state rather
@@ -1713,7 +1713,7 @@ Starting is short:
 is the manager's counterpart to the CLI's `boot::boot_app`; both build a
 `CocoApp` from a config plus a set of mounted media, and the two modules'
 doc comments name each other as siblings
-([`crates/coco-egui/src/launch.rs:29-42`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L29-L42)). The important difference is
+([`crates/coco-egui/src/launch.rs:39-53`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L39-L53)). The important difference is
 error handling: the CLI path prints and exits, while this one must return
 an `Err` for the detail pane to display, since crashing the manager because
 one machine's disk image is missing would be absurd. On failure `vm` is
@@ -1934,7 +1934,7 @@ One small heuristic in the PNG writer deserves attention:
     }
 ```
 
-([`crates/coco-egui/src/manager.rs:246-251`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L246-L251).) Consider what a
+([`crates/coco-egui/src/manager.rs:247-252`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L247-L252).) Consider what a
 screen capture is exposed to. The CoCo's screen is genuinely, uniformly
 black at plenty of legitimate moments: during a mode switch, right after a
 `CLS 0`, in the instant following a reset before the ROM has painted
@@ -2359,10 +2359,10 @@ Finder and Explorer convention. A plain click selects one row alone,
 Cmd/Ctrl-click toggles a row in or out, Shift-click selects the
 anchor-to-row range inclusive, and ⌘A/Ctrl+A selects every row — though
 only when no widget already owns the keyboard, so the Name field keeps its
-native select-all ([`crates/coco-egui/src/manager.rs:402-409`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L402-L409)). With more
+native select-all ([`crates/coco-egui/src/manager.rs:403-410`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L403-L410)). With more
 than one row selected, the single-machine edit form gives way to a bulk
-pane: an "N machines selected" heading over one transport row whose buttons
-act on every applicable selected machine at once
+pane — an "N machines selected" heading — and the toolbar's transport
+buttons act on every applicable selected machine at once
 ([`crates/coco-egui/src/manager/bulk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/bulk.rs)).
 
 The set arithmetic — toggling, ranges, how indices shift when a row is

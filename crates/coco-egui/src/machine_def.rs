@@ -30,7 +30,9 @@ use crate::paths;
 mod dto;
 mod io;
 
-pub use dto::{HardwareDTO, KbModeDTO, MediaDTO, PeripheralsDTO, UIDTO};
+pub use dto::{
+    HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PeripheralsDTO, PortsDTO, SerialDTO, UIDTO,
+};
 pub use io::{load_all, save};
 
 /// Schema version this build writes, and the newest it accepts on load.
@@ -60,6 +62,8 @@ pub struct MachineDef {
     pub media: MediaDTO,
     #[serde(default)]
     pub peripherals: PeripheralsDTO,
+    #[serde(default)]
+    pub ports: PortsDTO,
     #[serde(default)]
     pub ui: UIDTO,
     /// Keys the loader (`io::load_one`) found in the source file but doesn't
@@ -123,6 +127,7 @@ impl MachineDef {
             hardware: HardwareDTO::from_config(config, None),
             media: MediaDTO::default(),
             peripherals: PeripheralsDTO::default(),
+            ports: PortsDTO::default(),
             ui: UIDTO::default(),
             unknown: toml::Table::new(),
         }

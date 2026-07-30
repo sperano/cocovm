@@ -1,113 +1,16 @@
 //! The detail/edit pane for the selected machine: drawing the shared
 //! [`crate::new_vm::MachineForm`] over a definition and auto-saving every
-//! change, plus the form↔definition mapping ([`ManagerApp::pack_def`],
-//! [`seed_form`]) that makes that round trip possible.
-
-use std::fs;
-use std::path::PathBuf;
+//! change. The form↔definition mapping that makes that round trip possible
+//! ([`ManagerApp::pack_def`], `detail_map::seed_form`) lives in the sibling
+//! `manager::detail_map` module — split out once this file grew past the
+//! project's ~500-line ceiling.
 
 use eframe::egui;
 
 use crate::{machine_def, new_vm, titled_group};
 
-use super::{
-    vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR, PLAY_GLYPH,
-    RESET_GLYPH, STOP_GLYPH, SUSPEND_GLYPH, SUSPEND_HOVER,
-};
-
-/// [`ManagerApp::record_media_choice`]'s auto-placed cassette file name, for
-/// `[media].tape`.
-const BLANK_TAPE_FILE: &str = "tape.cas";
-
-/// File name of the auto-placed blank image the detail pane's
-/// Disk N = Blank pick creates in the machine's artifact directory,
-/// recorded in `[media].diskN` as a relative path.
-fn blank_disk_file(drive: usize) -> String {
-    format!("disk{drive}.dsk")
-}
-
-/// [`blank_disk_file`]'s VHD sibling, for `[media].vhdN`.
-fn blank_vhd_file(drive: usize) -> String {
-    format!("hd{drive}.vhd")
-}
-
-/// Transport-button geometry: minimum button size and glyph point size
-/// (previously 56×40/24pt; reduced by a third, user request 2026-07-28).
-const TRANSPORT_BUTTON_SIZE: egui::Vec2 = egui::vec2(37.0, 27.0);
-const TRANSPORT_GLYPH_SIZE: f32 = 16.0;
-/// Gap separating the transport row from the status label.
-const TRANSPORT_GROUP_GAP: f32 = 12.0;
-
-/// One fat transport button ([`TRANSPORT_BUTTON_SIZE`]). `label` is the
-/// accessible name (what a screen reader announces and what `ui_tests`
-/// address nodes by) — without it the name would be the raw glyph, and
-/// "clockwise open circle arrow" is nobody's idea of a Reset button.
-/// `pub(super)`: [`super::bulk`]'s pane reuses it for the same four glyphs
-/// applied in bulk.
-pub(super) fn transport_button(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    label: &str,
-    enabled: bool,
-) -> egui::Response {
-    let response = ui.add_enabled(
-        enabled,
-        egui::Button::new(egui::RichText::new(glyph).size(TRANSPORT_GLYPH_SIZE))
-            .min_size(TRANSPORT_BUTTON_SIZE),
-    );
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label)
-    });
-    response
-}
-
-/// Seed the detail pane's [`new_vm::MachineForm`] from a saved definition —
-/// the inverse of [`ManagerApp::pack_def`], reconstructing the cartridge
-/// picture the same way `crate::launch_machine` mounts it: with an MPI,
-/// `[media].cart` re-seats in slot 0, the FD-502 in the last slot, the RTC
-/// in its default slot; without one, the single port shows whichever of
-/// pak/RTC/FD-502 the definition claims, in that priority (launch rejects a
-/// conflicting combination outright — seeding at least shows one of them).
-/// Disk media implies the FD-502 even when the flag is off (older files —
-/// `launch_machine`'s rule).
-fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
-    let mut form = new_vm::MachineForm::new("detail");
-    form.config = def.to_machine_config().expect("list entries are validated on load/save");
-    let media = &def.media;
-    let fd502 = def.peripherals.fd502 || media.disk0.is_some() || media.disk1.is_some();
-    let cart = media.cart.as_deref().map(PathBuf::from);
-    if def.peripherals.mpi {
-        form.cartridge = new_vm::CartridgeChoice::MPI;
-        if let Some(path) = cart {
-            form.mpi_slots[0] = new_vm::SlotChoice::RomPak(path);
-        }
-        if fd502 {
-            form.mpi_slots[crate::MPI_SLOT_COUNT - 1] = new_vm::SlotChoice::FD502;
-        }
-        if def.peripherals.rtc {
-            form.mpi_slots[crate::DEFAULT_RTC_SLOT] = new_vm::SlotChoice::RTC;
-        }
-    } else if let Some(path) = cart {
-        form.cartridge = new_vm::CartridgeChoice::RomPak(path);
-    } else if def.peripherals.rtc {
-        form.cartridge = new_vm::CartridgeChoice::RTC;
-    } else if fd502 {
-        form.cartridge = new_vm::CartridgeChoice::FD502;
-    }
-    let media_choice = |raw: &Option<String>| match raw {
-        Some(s) => new_vm::MediaChoice::File(PathBuf::from(s)),
-        None => new_vm::MediaChoice::None,
-    };
-    form.disks = [media_choice(&media.disk0), media_choice(&media.disk1)];
-    form.tape = media_choice(&media.tape);
-    form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
-    form.aspect_correct = def.ui.aspect_correct;
-    form.kb_mode = match def.ui.kb_mode {
-        machine_def::KbModeDTO::Positional => crate::KbMode::Positional,
-        machine_def::KbModeDTO::Symbolic => crate::KbMode::Symbolic,
-    };
-    form
-}
+use super::detail_map;
+use super::{vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR};
 
 /// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
 /// [`new_vm::FORM_LABEL_MIN_WIDTH`] — the shared floor is what keeps the
@@ -120,15 +23,22 @@ fn form_grid(salt: (&str, &str)) -> egui::Grid {
 }
 
 /// The machine form (`new_vm::MachineForm`), laid out in sections: the
-/// Machine/VDG rows, the RAM fieldset, the Display fieldset (Video/
-/// Monitor/aspect), then the media/UI rows — each grid its own, since a
-/// `titled_group` can't sit inside a grid row. The RAM fieldset is one
-/// radio button per size the selected model shipped with, no field label
-/// (the group's title says it all); it edits the same draft as every grid
-/// row, so the caller's autosave picks it up like any other form edit.
+/// Machine (Model), RAM, Display (VDG/Video/Monitor/aspect), Peripherals
+/// (Cassette/Cartridge/VHD), Ports (Serial), Joysticks (per-port input
+/// source), and Keyboard fieldsets — each grid its own, since a
+/// `titled_group` can't sit inside a grid row. Joysticks sits after Ports
+/// (both are physical-port fieldsets) and before Keyboard (which stays
+/// last). The RAM, Joysticks, and Keyboard fieldsets are one row of
+/// controls with no field label (the group's title says it all); they edit
+/// the same draft as every grid row, so the caller's autosave picks them up
+/// like any other form edit. Joysticks and Keyboard are both `[ui]`
+/// preferences like aspect — the launched window's *starting* state; the
+/// Joysticks menu and F12 keep working as live toggles afterwards.
 fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
-    form_grid(("detail_form_machine", slug)).show(ui, |ui| {
-        form.machine_rows(ui);
+    titled_group(ui, "Machine", |ui| {
+        form_grid(("detail_form_machine", slug)).show(ui, |ui| {
+            form.machine_rows(ui);
+        });
     });
 
     ui.add_space(DETAIL_SECTION_GAP);
@@ -148,8 +58,27 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     });
 
     ui.add_space(DETAIL_SECTION_GAP);
-    form_grid(("detail_form_media", slug)).show(ui, |ui| {
-        form.media_rows(ui);
+    titled_group(ui, "Peripherals", |ui| {
+        form_grid(("detail_form_media", slug)).show(ui, |ui| {
+            form.media_rows(ui);
+        });
+    });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Ports", |ui| {
+        form_grid(("detail_form_ports", slug)).show(ui, |ui| {
+            form.ports_rows(ui);
+        });
+    });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Joysticks", |ui| {
+        form.joystick_row(ui);
+    });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Keyboard", |ui| {
+        form.keyboard_row(ui);
     });
 }
 
@@ -174,7 +103,7 @@ impl ManagerApp {
         def: machine_def::MachineDef,
     ) {
         if self.edit.as_ref().is_none_or(|e| e.slug != slug) {
-            let mut form = seed_form(&def);
+            let mut form = detail_map::seed_form(&def);
             // The auto-save baseline is the seeded form's own repack — see
             // `EditState::packed`'s doc for why it must not be `def`
             // itself. A freshly seeded form holds no Blank picks and at
@@ -194,7 +123,10 @@ impl ManagerApp {
 
         self.draw_name_field(ui, index, &mut edit);
         ui.add_space(DETAIL_SECTION_GAP);
-        self.draw_transport_row(ui, index);
+        // The transport buttons themselves moved to the toolbar (user
+        // decision 2026-07-29, `toolbar.rs`'s doc) — this pane keeps just
+        // the status they used to sit above, plus the last launch failure.
+        ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         if let Some(err) = &self.entries[index].launch_error {
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
@@ -231,67 +163,6 @@ impl ManagerApp {
         if name_response.lost_focus() {
             self.commit_name(index, edit);
         }
-    }
-
-    /// Run controls: the fat deck-style transport covers the three machine
-    /// states — ▶ powers on
-    /// (or resumes a suspended machine), ⏸ suspends, ⏹ powers off — with
-    /// the console Reset (↻) as a fourth transport-style button after it.
-    /// State is copied out before the buttons so the click handlers below
-    /// can freely call `&mut self` methods (`start_vm`/`resume_vm`/
-    /// `suspend_vm`/`stop_vm`) without fighting a borrow of
-    /// `self.entries[index]`.
-    fn draw_transport_row(&mut self, ui: &mut egui::Ui, index: usize) {
-        let suspended = self.entries[index].suspended;
-        let running = self.entries[index].is_running();
-        ui.horizontal(|ui| {
-            // Each button also explains itself while disabled
-            // (`on_disabled_hover_text` — a disabled `Response` never shows
-            // the plain hover), so the transport teaches the state model
-            // from any starting state.
-            let play_hover =
-                if suspended { "Resume the machine from its frozen state" } else { "Start the machine" };
-            if transport_button(ui, PLAY_GLYPH, "Play", !running)
-                .on_hover_text(play_hover)
-                .on_disabled_hover_text("The machine is already running")
-                .clicked()
-            {
-                if suspended {
-                    self.resume_vm(index);
-                } else {
-                    self.start_vm(index);
-                }
-            }
-            if transport_button(ui, SUSPEND_GLYPH, "Suspend", running)
-                .on_hover_text(SUSPEND_HOVER)
-                .on_disabled_hover_text(SUSPEND_HOVER)
-                .clicked()
-            {
-                self.suspend_vm(index);
-            }
-            const STOP_HOVER: &str =
-                "Shut down the machine — like flipping the power switch; \
-                 unsaved work inside it (and any suspended state) is lost";
-            if transport_button(ui, STOP_GLYPH, "Stop", self.entries[index].is_alive())
-                .on_hover_text(STOP_HOVER)
-                .on_disabled_hover_text(STOP_HOVER)
-                .clicked()
-            {
-                self.stop_vm(index);
-            }
-            const RESET_HOVER: &str = "Press the machine's reset button";
-            if transport_button(ui, RESET_GLYPH, "Reset", running)
-                .on_hover_text(RESET_HOVER)
-                .on_disabled_hover_text(RESET_HOVER)
-                .clicked()
-                && let Some(vm) = self.entries[index].vm.as_mut()
-            {
-                vm.machine.reset();
-            }
-
-            ui.add_space(TRANSPORT_GROUP_GAP);
-            ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
-        });
     }
 
     /// Auto-save: every change writes straight back to the definition file
@@ -350,112 +221,5 @@ impl ManagerApp {
             }
             Err(e) => self.save_error = Some(e),
         }
-    }
-
-    /// Resolve one of the edit form's media picks to the string recorded in
-    /// the definition's `[media]` section, creating the backing file for a
-    /// Blank pick: auto-placed in `slug`'s artifact dir as `auto_file`
-    /// (recorded relative — `machine_def::resolve_media_path`). Blank media
-    /// is a 0-byte file — a blank 0-track JVC disk, an empty `.cas` tape or
-    /// `.vhd`, the same starting point `CocoApp::{new_blank_disk, new_tape}`
-    /// use; a leftover file under the same slug is reused rather than
-    /// clobbered. The pick is rewritten to `File(recorded)` afterwards so
-    /// the combo shows the placed file, not a stale "Blank".
-    fn record_media_choice(
-        &self,
-        slug: &str,
-        choice: &mut new_vm::MediaChoice,
-        auto_file: String,
-    ) -> Result<Option<String>, String> {
-        let (path, recorded) = match &*choice {
-            new_vm::MediaChoice::None => return Ok(None),
-            new_vm::MediaChoice::File(path) => return Ok(Some(path.display().to_string())),
-            new_vm::MediaChoice::Blank => {
-                let Some(root) = self.artifacts_root.clone() else {
-                    return Err(NO_CONFIG_DIR.to_string());
-                };
-                let artifact_dir = root.join(slug);
-                fs::create_dir_all(&artifact_dir)
-                    .map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
-                (artifact_dir.join(&auto_file), auto_file)
-            }
-        };
-        match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(format!("{}: {e}", path.display())),
-        }
-        *choice = new_vm::MediaChoice::File(PathBuf::from(&recorded));
-        Ok(Some(recorded))
-    }
-
-    /// Pack the edit form back into a definition, starting from `base` (the
-    /// entry's current definition) so everything the form doesn't edit —
-    /// `name`, `created`, `[hardware].rom`, unknown keys — passes through
-    /// untouched. Blank media picks create their backing files here (see
-    /// [`Self::record_media_choice`]); this is the write moment, since with
-    /// auto-save every change *is* a save. Errors (an unrepresentable form,
-    /// a failed file creation) leave the definition unwritten and land in
-    /// the pane's error label.
-    fn pack_def(
-        &self,
-        base: &machine_def::MachineDef,
-        slug: &str,
-        form: &mut new_vm::MachineForm,
-    ) -> Result<machine_def::MachineDef, String> {
-        let mut def = base.clone();
-        def.hardware =
-            machine_def::HardwareDTO::from_config(&form.config, base.hardware.rom.clone());
-        // The definition schema has no slot layout (yet): an FD-502 in an
-        // MPI slot is recorded as fd502 = true, a slotted RTC as rtc = true,
-        // and launch_machine re-seats them in their default slots.
-        def.peripherals.fd502 = form.drives_available();
-        def.peripherals.mpi = form.cartridge == new_vm::CartridgeChoice::MPI;
-        def.peripherals.rtc = form.cartridge == new_vm::CartridgeChoice::RTC
-            || form.mpi_slots.contains(&new_vm::SlotChoice::RTC);
-        // A ROM Pak — in the port or slotted in the MPI — is recorded as
-        // [media].cart. The schema holds a single pak and no slot layout
-        // (launch_machine re-seats a slotted one in slot 0), so more than
-        // one slotted pak cannot be represented.
-        let mut slotted_paks = form.mpi_slots.iter().filter_map(|slot| match slot {
-            new_vm::SlotChoice::RomPak(path) => Some(path),
-            _ => None,
-        });
-        def.media.cart = match &form.cartridge {
-            new_vm::CartridgeChoice::RomPak(path) => Some(path.display().to_string()),
-            new_vm::CartridgeChoice::MPI => slotted_paks.next().map(|p| p.display().to_string()),
-            _ => None,
-        };
-        if slotted_paks.next().is_some() {
-            return Err(
-                "a machine definition records a single ROM Pak — leave at most one slot \
-                 with a pak"
-                    .to_string(),
-            );
-        }
-        for drive in 0..crate::UI_DRIVES {
-            let recorded =
-                self.record_media_choice(slug, &mut form.disks[drive], blank_disk_file(drive))?;
-            match drive {
-                0 => def.media.disk0 = recorded,
-                _ => def.media.disk1 = recorded,
-            }
-        }
-        def.media.tape =
-            self.record_media_choice(slug, &mut form.tape, BLANK_TAPE_FILE.to_string())?;
-        for drive in 0..crate::UI_DRIVES {
-            let recorded =
-                self.record_media_choice(slug, &mut form.vhds[drive], blank_vhd_file(drive))?;
-            match drive {
-                0 => def.media.vhd0 = recorded,
-                _ => def.media.vhd1 = recorded,
-            }
-        }
-        def.ui.aspect_correct = form.aspect_correct;
-        def.ui.kb_mode = match form.kb_mode {
-            crate::KbMode::Positional => machine_def::KbModeDTO::Positional,
-            crate::KbMode::Symbolic => machine_def::KbModeDTO::Symbolic,
-        };
-        Ok(def)
     }
 }

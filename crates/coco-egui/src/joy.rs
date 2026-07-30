@@ -6,6 +6,8 @@ use coco_core::joystick::{AXIS_CENTER, AXIS_MAX, AXIS_X, AXIS_Y, LEFT, RIGHT};
 use coco_core::Machine;
 use eframe::egui;
 
+use crate::machine_def::JoySourceDTO;
+
 /// Pot floor (0 = fully left/up), named to match `joystick::AXIS_MAX` (63 =
 /// fully right/down) rather than leaving a bare `0` at each call site.
 const AXIS_MIN: u8 = 0;
@@ -35,6 +37,33 @@ impl JoySource {
             Self::Mouse => "Mouse",
             Self::Gamepad => "Gamepad",
             Self::Keys => "Keys",
+        }
+    }
+}
+
+// `[ui].joy_left`/`joy_right`'s `From` impls, kept here (rather than beside
+// `machine_def::JoySourceDTO` itself) so both `manager::detail_map` (form ⇄
+// definition) and `launch.rs` (definition ⇒ runtime) share one conversion
+// instead of each hand-rolling their own match, the way `KbModeDTO` still
+// does at each call site.
+impl From<JoySourceDTO> for JoySource {
+    fn from(dto: JoySourceDTO) -> Self {
+        match dto {
+            JoySourceDTO::None => Self::None,
+            JoySourceDTO::Mouse => Self::Mouse,
+            JoySourceDTO::Gamepad => Self::Gamepad,
+            JoySourceDTO::Keys => Self::Keys,
+        }
+    }
+}
+
+impl From<JoySource> for JoySourceDTO {
+    fn from(source: JoySource) -> Self {
+        match source {
+            JoySource::None => Self::None,
+            JoySource::Mouse => Self::Mouse,
+            JoySource::Gamepad => Self::Gamepad,
+            JoySource::Keys => Self::Keys,
         }
     }
 }
@@ -93,9 +122,11 @@ impl JoystickInputs {
             }
         };
         Self {
-            // Defaults per spec: right stick to the mouse (the common single-stick
-            // case), left stick off.
-            sources: [JoySource::Mouse, JoySource::None],
+            // Both ports off until opted in (user decision 2026-07-29,
+            // replacing the original right-stick-on-mouse default): a mouse
+            // silently driving the pots surprised more than it helped, and
+            // the Joysticks menu / manager form make enabling one a click.
+            sources: [JoySource::None, JoySource::None],
             gilrs,
             pad_axes: [0.0, 0.0],
             pad_buttons: [false, false],

@@ -1,4 +1,7 @@
-use super::dto::{MachineVariantDTO, MonitorDTO, RamDTO, VDGVariantDTO, VideoStandardDTO};
+use super::dto::{
+    JoySourceDTO, MachineVariantDTO, MonitorDTO, RamDTO, SerialDTO, VDGVariantDTO,
+    VideoStandardDTO,
+};
 use super::*;
 use std::fs;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -57,10 +60,19 @@ fn full_def() -> MachineDef {
             mpi: true,
             rtc: true,
             fd502: true,
+            rs232: false,
+        },
+        ports: PortsDTO {
+            serial: Some(SerialDTO::Printer),
         },
         ui: UIDTO {
             aspect_correct: false,
             kb_mode: KbModeDTO::Symbolic,
+            // Both away from their shared `None` default, so the round
+            // trip actually exercises non-default values (see
+            // `minimal_file_uses_defaults` for the defaults).
+            joy_left: JoySourceDTO::Keys,
+            joy_right: JoySourceDTO::Gamepad,
         },
         unknown: toml::Table::new(),
     }
@@ -76,6 +88,82 @@ fn round_trip_full_definition() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].0, "dev-coco-3");
     assert_eq!(&loaded[0].1, &def);
+}
+
+/// `[peripherals].rs232` and `[ports].serial` round-trip through save/load
+/// like every other peripheral/ports field — [`round_trip_full_definition`]
+/// above already covers `serial = "printer"`; this covers `rs232 = true`
+/// and the other `serial` variant, `"file"`.
+#[test]
+fn rs232_and_serial_file_round_trip() {
+    let dir = TempDir::new("rs232-roundtrip");
+    let mut def = full_def();
+    def.peripherals.mpi = false;
+    def.peripherals.rtc = false;
+    def.peripherals.fd502 = false;
+    def.peripherals.rs232 = true;
+    def.ports.serial = Some(SerialDTO::File);
+    save(dir.path(), "rs232", &def).expect("save should succeed");
+
+    let loaded = load_all(dir.path()).expect("every file is valid");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(&loaded[0].1, &def);
+
+    let contents = fs::read_to_string(dir.path().join("rs232.toml")).unwrap();
+    assert!(contents.contains("rs232 = true"), "TOML must record rs232:\n{contents}");
+    assert!(
+        contents.contains("serial = \"file\""),
+        "TOML must record the serial port's sink:\n{contents}"
+    );
+}
+
+/// `[ui].joy_left`/`joy_right` round-trip like every other `[ui]` field —
+/// [`round_trip_full_definition`] above already covers the non-default
+/// `"keys"`/`"gamepad"` pair (`full_def`'s own values); this checks the TOML
+/// text itself, the same way [`rs232_and_serial_file_round_trip`] does for
+/// `[ports].serial`.
+#[test]
+fn joy_sources_round_trip() {
+    let dir = TempDir::new("joy-roundtrip");
+    let def = full_def();
+    save(dir.path(), "joy", &def).expect("save should succeed");
+
+    let loaded = load_all(dir.path()).expect("every file is valid");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(&loaded[0].1, &def);
+
+    let contents = fs::read_to_string(dir.path().join("joy.toml")).unwrap();
+    assert!(
+        contents.contains("joy_left = \"keys\""),
+        "TOML must record the left joystick source:\n{contents}"
+    );
+    assert!(
+        contents.contains("joy_right = \"gamepad\""),
+        "TOML must record the right joystick source:\n{contents}"
+    );
+}
+
+/// The inverse of [`rs232_and_serial_file_round_trip`]'s TOML-text check: a
+/// default `[ports].serial` (`None`, nothing attached) is left out of the
+/// written TOML entirely rather than round-tripping as some empty/null
+/// form — `MachineDef`'s serde derive skips a `None` `Option` field on
+/// serialize (the same way `[hardware]`'s absent `monitor`/`vdg`/`rom` do),
+/// while the `[ports]` table header itself is still always written, even
+/// empty (`io::merge_unknown`'s doc comment). Save-side, unlike
+/// `minimal_file_uses_defaults`, which is the load-side check that a file
+/// omitting `[ports]` altogether parses back to the same default.
+#[test]
+fn default_ports_omits_serial_key_on_save() {
+    let dir = TempDir::new("default-ports-save");
+    let mut def = full_def();
+    def.ports.serial = None;
+    save(dir.path(), "no-serial", &def).expect("save should succeed");
+
+    let contents = fs::read_to_string(dir.path().join("no-serial.toml")).unwrap();
+    assert!(
+        !contents.contains("serial"),
+        "a default [ports].serial must not be written:\n{contents}"
+    );
 }
 
 #[test]
@@ -102,8 +190,14 @@ monitor = "rgb"
     assert_eq!(def.media, MediaDTO::default());
     assert!(!def.peripherals.mpi);
     assert!(!def.peripherals.rtc);
+    assert!(!def.peripherals.rs232);
+    assert_eq!(def.ports.serial, None);
     assert!(def.ui.aspect_correct);
     assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
+    // Absent joy_left/joy_right ⇒ the same defaults `JoystickInputs::new`
+    // boots with: both ports off until opted in.
+    assert_eq!(def.ui.joy_left, JoySourceDTO::None);
+    assert_eq!(def.ui.joy_right, JoySourceDTO::None);
 
     // Default VDG is per-variant: a CoCo 3 has none at all.
     let config = def.to_machine_config().expect("should validate");

@@ -1,9 +1,9 @@
 //! The machine list's selection: zero, one, or many selected row indices,
 //! plus the anchor a Shift-click range extends from — the multi-select
 //! upgrade of what used to be a bare `Option<usize>` on `ManagerApp`
-//! (`manager/list.rs`'s click handler builds these; `manager/bulk.rs`'s
-//! transport row and `manager/detail.rs`'s single-machine pane consume
-//! them).
+//! (`manager/list.rs`'s click handler builds these; `manager/toolbar.rs`'s
+//! transport tiles, the bulk context menu, and `manager/detail.rs`'s
+//! single-machine pane consume them).
 //!
 //! Indices are into `ManagerApp::entries`, so any mutation that reorders or
 //! shrinks that list must fix the selection up in the same move:

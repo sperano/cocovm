@@ -1,23 +1,24 @@
 //! The bulk detail pane: shown in [`super::ManagerApp`]'s central panel in
 //! place of a single machine's edit form whenever more than one row is
-//! selected (`manager.rs`'s `update`) — a summary line plus one transport
-//! row that applies to every selected machine at once. There is no bulk
+//! selected (`manager.rs`'s `update`) — just a summary line and a pointer to
+//! the toolbar, which is where the transport buttons that used to live here
+//! now sit (user decision 2026-07-29, `toolbar.rs`'s doc). There is no bulk
 //! edit form: `EditState` only ever describes one machine
 //! (`manager.rs`'s doc on the `edit` field), so a multi-selection can only
 //! run transport actions, not edit definitions.
 //!
 //! [`BulkAction`] and [`ManagerApp::apply_bulk`] are the single dispatch
-//! point shared with the bulk context menu (`super::list::
-//! draw_bulk_row_context_menu`), so the two UIs can't drift on what each
-//! action does or is gated by.
+//! point shared by the toolbar (`super::toolbar::draw_toolbar`) and the bulk
+//! context menu (`super::list::draw_bulk_row_context_menu`), so the three
+//! UIs can't drift on what each action does or is gated by.
 
 use eframe::egui;
 
-use super::detail::transport_button;
-use super::{
-    DETAIL_SECTION_GAP, ManagerApp, PLAY_GLYPH, RESET_GLYPH, STOP_GLYPH, SUSPEND_GLYPH,
-    SUSPEND_HOVER,
-};
+use super::{DETAIL_SECTION_GAP, ManagerApp};
+
+/// [`ManagerApp::draw_bulk_detail`]'s pointer to the toolbar.
+const BULK_HINT: &str =
+    "Use the toolbar's Start, Suspend, Stop, and Reset buttons to act on this selection.";
 
 /// One of the four transport actions a bulk selection can run.
 #[derive(Clone, Copy)]
@@ -28,8 +29,8 @@ pub(super) enum BulkAction {
     Reset,
 }
 
-/// The three aggregate eligibility flags every bulk UI (the pane's
-/// transport row, the bulk context menu, and the delete-confirmation
+/// The three aggregate eligibility flags every bulk UI (the toolbar's
+/// transport tiles, the bulk context menu, and the delete-confirmation
 /// modal's own "is anything running" check) gates its controls on —
 /// computed once by [`ManagerApp::bulk_flags`] so the three surfaces can't
 /// disagree about what "any row is eligible" means.
@@ -40,12 +41,12 @@ pub(super) struct BulkFlags {
 }
 
 impl ManagerApp {
-    /// The bulk pane: a "N machines selected" heading over the shared
-    /// transport row.
-    pub(super) fn draw_bulk_detail(&mut self, ui: &mut egui::Ui) {
+    /// The bulk pane: a "N machines selected" heading and a pointer to the
+    /// toolbar, which is where the actual transport controls now live.
+    pub(super) fn draw_bulk_detail(&self, ui: &mut egui::Ui) {
         ui.heading(format!("{} machines selected", self.selection.len()));
         ui.add_space(DETAIL_SECTION_GAP);
-        self.draw_bulk_transport_row(ui);
+        ui.small(BULK_HINT);
     }
 
     /// `indices`' three [`BulkFlags`] — "is at least one selected row
@@ -58,54 +59,9 @@ impl ManagerApp {
         }
     }
 
-    /// One transport row, [`transport_button`]-built like
-    /// [`super::detail::draw_transport_row`]'s single-machine version, but
-    /// each button now acts on every selected row via [`BulkAction`]/
-    /// [`Self::apply_bulk`]. Reset is gated the same as every other Reset
-    /// control in the manager (the detail pane's button, both context
-    /// menus): *running* rows only, never a suspended one — resetting a
-    /// frozen machine's live object without touching its `.ccstate` would
-    /// silently desync the two, exactly the divergence Resume's own
-    /// contract goes out of its way to avoid (`lifecycle::resume_vm`'s
-    /// doc).
-    fn draw_bulk_transport_row(&mut self, ui: &mut egui::Ui) {
-        let indices: Vec<usize> = self.selection.iter().collect();
-        let flags = self.bulk_flags(&indices);
-        let mut picked = None;
-        ui.horizontal(|ui| {
-            if transport_button(ui, PLAY_GLYPH, "Play", flags.any_startable)
-                .on_hover_text("Start or resume every selected machine that isn't already running")
-                .clicked()
-            {
-                picked = Some(BulkAction::Play);
-            }
-            if transport_button(ui, SUSPEND_GLYPH, "Suspend", flags.any_running)
-                .on_hover_text(SUSPEND_HOVER)
-                .clicked()
-            {
-                picked = Some(BulkAction::Suspend);
-            }
-            if transport_button(ui, STOP_GLYPH, "Stop", flags.any_alive)
-                .on_hover_text("Shut down every selected machine that is running or suspended")
-                .clicked()
-            {
-                picked = Some(BulkAction::Stop);
-            }
-            if transport_button(ui, RESET_GLYPH, "Reset", flags.any_running)
-                .on_hover_text("Press the reset button on every selected running machine")
-                .clicked()
-            {
-                picked = Some(BulkAction::Reset);
-            }
-        });
-        if let Some(action) = picked {
-            self.apply_bulk(action, &indices);
-        }
-    }
-
     /// The single dispatch point for a bulk transport action — called from
-    /// both the pane above and the bulk context menu
-    /// (`super::list::draw_bulk_row_context_menu`).
+    /// the toolbar (`super::toolbar::draw_toolbar`) and the bulk context
+    /// menu (`super::list::draw_bulk_row_context_menu`).
     pub(super) fn apply_bulk(&mut self, action: BulkAction, indices: &[usize]) {
         match action {
             BulkAction::Play => self.bulk_play(indices),
@@ -161,9 +117,11 @@ impl ManagerApp {
         }
     }
 
-    /// Reset every running row (see [`Self::draw_bulk_transport_row`]'s doc
-    /// for why suspended rows are excluded). `Machine::reset` cannot fail,
-    /// so — like [`Self::bulk_stop`] — no error surfacing is needed.
+    /// Reset every running row, never a suspended one: resetting a frozen
+    /// machine's live object without touching its `.ccstate` would silently
+    /// desync the two, exactly the divergence `resume_vm`'s own contract
+    /// goes out of its way to avoid. `Machine::reset` cannot fail, so —
+    /// like [`Self::bulk_stop`] — no error surfacing is needed.
     fn bulk_reset(&mut self, indices: &[usize]) {
         for &i in indices {
             if self.entries[i].is_running()

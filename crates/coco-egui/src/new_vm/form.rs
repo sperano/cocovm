@@ -1,14 +1,19 @@
 //! [`MachineForm`]'s impl: the row-drawing logic, split into the sections
 //! the detail pane lays out ([`MachineForm::machine_rows`],
-//! [`MachineForm::display_rows`], [`MachineForm::media_rows`]), plus each
-//! combo box's own picker logic. See the parent module doc.
+//! [`MachineForm::display_rows`], [`MachineForm::media_rows`],
+//! [`MachineForm::ports_rows`]), plus each combo box's own picker logic. See
+//! the parent module doc.
 
+use coco_core::joystick::{LEFT, RIGHT};
 use eframe::egui;
+
+use crate::joy::JoySource;
 
 use super::config_form;
 use super::{
-    cartridge_label, disk_file_dialog, media_choice_text, rom_pak_file_dialog, slot_label,
-    sub_form_row, CartridgeChoice, MachineForm, MediaChoice, SlotChoice, FORM_GRID_SPACING,
+    cartridge_label, disk_file_dialog, media_choice_text, rom_pak_file_dialog, serial_label,
+    slot_label, sub_form_row, CartridgeChoice, MachineForm, MediaChoice, SerialChoice, SlotChoice,
+    FORM_GRID_SPACING,
 };
 
 impl MachineForm {
@@ -26,18 +31,24 @@ impl MachineForm {
             // The same starting values `CocoApp::new` boots with and
             // `machine_def::UIDTO::default()` records.
             aspect_correct: true,
+            serial: SerialChoice::None,
+            // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, matching
+            // `JoystickInputs::new`'s own defaults: both ports off until
+            // opted in.
+            joy_sources: [JoySource::None, JoySource::None],
             kb_mode: crate::KbMode::Positional,
         }
     }
 
-    /// The Machine/VDG rows. Must be called inside an already-open
-    /// two-column [`egui::Grid`] with [`FORM_GRID_SPACING`], like every
-    /// `*_rows` method here.
+    /// The Model row — the detail pane hosts it inside its "Machine"
+    /// titled group. Must be called inside an already-open two-column
+    /// [`egui::Grid`] with [`FORM_GRID_SPACING`], like every `*_rows`
+    /// method here.
     pub(crate) fn machine_rows(&mut self, ui: &mut egui::Ui) {
         config_form::machine_rows(ui, self.salt, &mut self.config);
     }
 
-    /// The Video/Monitor rows plus the 4:3 aspect checkbox — the detail
+    /// The VDG/Video/Monitor rows plus the 4:3 aspect checkbox — the detail
     /// pane hosts these inside its "Display" titled group, in that group's
     /// own grid. The checkbox needs no field label (the group names the
     /// topic); the empty label cell keeps it aligned with the combos.
@@ -50,8 +61,9 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// The media and UI rows: Cassette, Cartridge (with its nested
-    /// MPI-slot/Disk sub-rows), the HD rows, and Keyboard.
+    /// The media rows: Cassette, Cartridge (with its nested MPI-slot/Disk
+    /// sub-rows), and the VHD rows — the detail pane hosts these inside its
+    /// "Peripherals" titled group, in that group's own grid.
     pub(crate) fn media_rows(&mut self, ui: &mut egui::Ui) {
         let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
@@ -82,27 +94,19 @@ impl MachineForm {
             CartridgeChoice::MPI => {
                 sub_form_row(ui, |ui| self.slot_rows(ui, font));
             }
-            CartridgeChoice::None | CartridgeChoice::RomPak(_) | CartridgeChoice::RTC => {}
+            CartridgeChoice::None
+            | CartridgeChoice::RomPak(_)
+            | CartridgeChoice::RTC
+            | CartridgeChoice::RS232 => {}
         }
 
         // The VHD hard disks, below the removable media. Always shown, no
         // cartridge required — see [`MachineForm::vhds`]'s doc.
         for drive in 0..crate::UI_DRIVES {
-            ui.label(egui::RichText::new(format!("HD {drive}")).size(font));
+            ui.label(egui::RichText::new(format!("VHD {drive}")).size(font));
             self.vhd_combo(ui, drive);
             ui.end_row();
         }
-
-        // Keyboard mode, a `[ui]` preference like aspect (which lives in
-        // [`Self::display_rows`]): the launched window's *starting* state;
-        // F12 keeps working as a live toggle.
-        ui.label(egui::RichText::new("Keyboard").size(font));
-        ui.horizontal(|ui| {
-            for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {
-                ui.radio_value(&mut self.kb_mode, mode, mode.label());
-            }
-        });
-        ui.end_row();
     }
 
     /// Whether a disk controller is reachable from the form's own picks:
@@ -111,7 +115,10 @@ impl MachineForm {
         match self.cartridge {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
-            CartridgeChoice::None | CartridgeChoice::RomPak(_) | CartridgeChoice::RTC => false,
+            CartridgeChoice::None
+            | CartridgeChoice::RomPak(_)
+            | CartridgeChoice::RTC
+            | CartridgeChoice::RS232 => false,
         }
     }
 
@@ -179,6 +186,12 @@ impl MachineForm {
                     .clicked()
                 {
                     self.cartridge = CartridgeChoice::RTC;
+                }
+                if ui
+                    .selectable_label(self.cartridge == CartridgeChoice::RS232, "RS-232 Pak")
+                    .clicked()
+                {
+                    self.cartridge = CartridgeChoice::RS232;
                 }
                 if ui
                     .selectable_label(self.cartridge == CartridgeChoice::MPI, "MultiPak Interface")
@@ -272,7 +285,7 @@ impl MachineForm {
             });
     }
 
-    /// One "HD N"-row combo — the VHD hard-disk image for `drive`, with
+    /// One "VHD N"-row combo — the VHD hard-disk image for `drive`, with
     /// the disks' None / Blank / Select… protocol ([`Self::disk_combo`]).
     /// A blank is a 0-byte file: `VhdImage::File` extends on write, so no
     /// preallocation is needed.
@@ -335,5 +348,64 @@ impl MachineForm {
                     self.disks[drive] = MediaChoice::File(path);
                 }
             });
+    }
+
+    /// The Ports row: the built-in Serial port's host sink — the detail
+    /// pane hosts this inside its own "Ports" titled group, below
+    /// Peripherals.
+    pub(crate) fn ports_rows(&mut self, ui: &mut egui::Ui) {
+        ui.label("Serial");
+        egui::ComboBox::from_id_salt((self.salt, "serial"))
+            .selected_text(serial_label(self.serial))
+            .show_ui(ui, |ui| {
+                for source in SerialChoice::ALL {
+                    ui.selectable_value(&mut self.serial, source, serial_label(source));
+                }
+            });
+        ui.end_row();
+    }
+
+    /// The Joysticks fieldset's one row — the detail pane hosts it inside
+    /// its own "Joysticks" titled group, between Ports (also a physical
+    /// port) and Keyboard (which stays last). Left is shown before Right
+    /// even though the right port is index [`RIGHT`] — the CoCo's primary
+    /// stick, and `JoystickInputs::sources`' own index 0 — because Left/Right
+    /// reads naturally in that order to a user, the same left-to-right
+    /// layout as the two DIN sockets on the back of the machine. `[ui]`
+    /// preferences like aspect/keyboard mode: the launched window's
+    /// *starting* state; the Joysticks menu keeps working as a live toggle
+    /// afterwards.
+    pub(crate) fn joystick_row(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Left:");
+            self.joy_combo(ui, LEFT);
+            ui.add_space(FORM_GRID_SPACING[0]);
+            ui.label("Right:");
+            self.joy_combo(ui, RIGHT);
+        });
+    }
+
+    /// One port's source combo, over every [`JoySource::ALL`] choice.
+    fn joy_combo(&mut self, ui: &mut egui::Ui, port: usize) {
+        egui::ComboBox::from_id_salt((self.salt, "joy", port))
+            .selected_text(self.joy_sources[port].label())
+            .show_ui(ui, |ui| {
+                for source in JoySource::ALL {
+                    ui.selectable_value(&mut self.joy_sources[port], source, source.label());
+                }
+            });
+    }
+
+    /// The Keyboard fieldset's one row — the detail pane hosts it inside
+    /// its own "Keyboard" titled group, last (`draw_form_sections`'s doc in
+    /// `manager::detail`). A `[ui]` preference like aspect/joysticks: the
+    /// launched window's *starting* state; F12 keeps working as a live
+    /// toggle afterwards.
+    pub(crate) fn keyboard_row(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {
+                ui.radio_value(&mut self.kb_mode, mode, mode.label());
+            }
+        });
     }
 }
