@@ -4,7 +4,7 @@
 
 use std::fs;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
 use crate::*;
@@ -54,10 +54,13 @@ fn cmd_n_creates_a_machine_immediately() {
     assert!(dir.path().join("coco-3.toml").is_file());
 }
 
-/// The manager window scaffold: toolbar buttons present, the machine-list
-/// panel and photo pane laid out without a photo injected. This harness has
-/// no machines dir (no home), so "New" must report that instead of
-/// creating or panicking.
+/// The manager window scaffold: toolbar buttons present — New, the four
+/// transport tiles, Settings, Help — the machine-list panel and photo pane
+/// laid out without a photo injected. This harness has no machines dir (no
+/// home), so "New" must report that instead of creating or panicking, and
+/// with nothing selected (no entries at all, here) the transport tiles must
+/// start disabled — the toolbar's own version of the old detail pane's
+/// "nothing to act on yet" state.
 #[test]
 fn manager_window_shows_its_toolbar() {
     let mut harness =
@@ -65,9 +68,14 @@ fn manager_window_shows_its_toolbar() {
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
-    for label in ["New", "Settings", "Help"] {
+    for label in ["New", "Start", "Suspend", "Stop", "Reset", "Settings", "Help"] {
         harness.get_by_label(label);
     }
+    assert!(
+        harness.get_by_label("Start").accesskit_node().is_disabled(),
+        "Start must be disabled with no selection"
+    );
+
     harness.get_by_label("New").hover();
     harness.step();
     harness.get_by_label("New").click();

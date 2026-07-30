@@ -30,6 +30,7 @@ use selection::Selection;
 mod bulk;
 mod delete;
 mod detail;
+mod detail_map;
 mod lifecycle;
 mod list;
 mod selection;

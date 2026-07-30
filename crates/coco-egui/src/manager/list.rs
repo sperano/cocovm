@@ -174,9 +174,9 @@ impl ManagerApp {
     /// a silent no-op would be the alternative.
     fn draw_single_row_context_menu(&mut self, response: egui::Response, i: usize) {
         response.context_menu(|ui| {
-            // Same enablement as the detail pane's transport row
-            // (`super::detail::draw_transport_row`), with Start/Resume as
-            // one item whose label follows the state, like the ▶ button.
+            // Same enablement as the toolbar's transport tiles
+            // (`super::toolbar::draw_toolbar`), with Start/Resume as one
+            // item whose label follows the state, like the ▶ tile.
             let suspended = self.entries[i].suspended;
             let running = self.entries[i].is_running();
             let start_label = if suspended { "Resume" } else { "Start" };

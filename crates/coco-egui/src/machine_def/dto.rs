@@ -184,6 +184,20 @@ pub enum KbModeDTO {
     Symbolic,
 }
 
+/// `[ui].joy_left` / `[ui].joy_right`. Maps to `crate::joy::JoySource` (the
+/// `From` impls live in `joy.rs`, alongside that enum, rather than here —
+/// see its doc comment for why). Serialized lowercase, matching
+/// [`SerialDTO`]'s convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum JoySourceDTO {
+    #[default]
+    None,
+    Mouse,
+    Gamepad,
+    Keys,
+}
+
 /// `[hardware]` section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareDTO {
@@ -257,6 +271,34 @@ pub struct PeripheralsDTO {
     /// disk0/disk1 being set, so older files without this key keep working.
     #[serde(default)]
     pub fd502: bool,
+    /// Deluxe RS-232 Pak in the cartridge port. Like `rtc`/`fd502`, the
+    /// schema keeps no slot layout: a slotted pak isn't representable yet —
+    /// launch rejects `mpi && rs232` outright (`launch::check_cartridge_port`).
+    #[serde(default)]
+    pub rs232: bool,
+}
+
+/// `[ports].serial`. What host sink the built-in bit-banger serial port
+/// (the 4-pin DIN every CoCo has — `coco_core::bitbanger::BitBanger`, not
+/// the Deluxe RS-232 Pak's ACIA) starts wired to. Absent ⇒ nothing
+/// attached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SerialDTO {
+    /// The DMP-105 dot-matrix printer, shown in the Printer Paper window.
+    Printer,
+    /// Plain text capture to `printout.txt` in the machine's artifact
+    /// directory. The file is truncated on every launch (`FileSink::create`
+    /// semantics, same as the runtime menu's Start Print Capture) — each
+    /// power-on starts a fresh capture, not an appended log.
+    File,
+}
+
+/// `[ports]` section — section itself optional.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PortsDTO {
+    #[serde(default)]
+    pub serial: Option<SerialDTO>,
 }
 
 /// Default for `[ui].aspect_correct` — `bool::default()` is `false`, but the
@@ -273,6 +315,14 @@ pub struct UIDTO {
     pub aspect_correct: bool,
     #[serde(default)]
     pub kb_mode: KbModeDTO,
+    /// Absent ⇒ off, matching `JoystickInputs::new` (user decision
+    /// 2026-07-29: nothing drives a port until it's opted in — same for
+    /// both ports).
+    #[serde(default)]
+    pub joy_left: JoySourceDTO,
+    /// Absent ⇒ off; see [`Self::joy_left`].
+    #[serde(default)]
+    pub joy_right: JoySourceDTO,
 }
 
 impl Default for UIDTO {
@@ -280,6 +330,8 @@ impl Default for UIDTO {
         Self {
             aspect_correct: true,
             kb_mode: KbModeDTO::default(),
+            joy_left: JoySourceDTO::default(),
+            joy_right: JoySourceDTO::default(),
         }
     }
 }

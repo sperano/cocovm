@@ -2,12 +2,19 @@
 //! [`CocoApp`]. The CLI's equivalent, starting from parsed flags instead, is
 //! [`crate::boot`].
 
+use std::fs;
 use std::path::PathBuf;
 
 use crate::{
     CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, RomSource, UI_DRIVES, dev_roms_dir,
     load_rom_with_source, machine_def,
 };
+
+/// File name [`launch_machine`] captures `[ports].serial = "file"` to,
+/// resolved against the machine's artifact directory — the same auto-named
+/// target the runtime Machine menu's "Capture to File…" item suggests
+/// (`chrome::menu_bar::machine`'s file dialog).
+const PRINTOUT_FILE: &str = "printout.txt";
 
 /// Where a definition's `[media]` paths land once resolved against the
 /// machine's own directory (`machine_def::resolve_media_path`).
@@ -24,14 +31,18 @@ struct Peripherals {
     mpi: bool,
     rtc: bool,
     fd502: bool,
+    /// Deluxe RS-232 Pak. Bare-port only — no MPI-slot support yet
+    /// (`check_cartridge_port` rejects `mpi && rs232`).
+    rs232: bool,
 }
 
 /// Build a running [`CocoApp`] from a saved machine definition
 /// (`machine_def::MachineDef`): the same steps the CLI branch performs — load
 /// the ROM (an explicit `[hardware].rom` if set, else the same `./roms`
-/// resolution the CLI path uses), mount `[media]` (cart/disks/vhds/tape) and
-/// `[peripherals]` (MPI/RTC) with the same `CocoApp` methods and ordering,
-/// and enforce the same single-cartridge-port rule — but every failure is a
+/// resolution the CLI path uses), mount `[media]` (cart/disks/vhds/tape),
+/// `[peripherals]` (MPI/RTC/RS-232), and `[ports]` (the built-in serial
+/// port's host sink) with the same `CocoApp` methods and ordering, and
+/// enforce the same single-cartridge-port rule — but every failure is a
 /// returned `Err` here instead of a process exit, since the caller (the
 /// manager's Start button, `manager.rs`) must show it in the detail pane
 /// rather than crash the whole app (`docs/plan-machine-persistence.md`
@@ -53,11 +64,13 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         // Disk media implies the controller even when the flag is off (older
         // definition files predate `[peripherals].fd502`).
         fd502: def.peripherals.fd502 || media.disks.iter().any(|p| p.is_some()),
+        rs232: def.peripherals.rs232,
     };
     check_cartridge_port(&media, &peripherals)?;
 
     let mut app = new_app(config, rom, rom_source, &media, &peripherals);
     mount_peripherals(&mut app, media, &peripherals);
+    mount_serial(&mut app, def.ports.serial, slug);
 
     // Every `insert_*`/`mpi_insert_*` helper above records its own failure in
     // `cart_error` rather than returning a `Result` (it's designed to run from
@@ -69,14 +82,17 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     }
 
     // The definition's [ui] preferences are the launched window's *starting*
-    // state; F9 (aspect) and F12 (keyboard mode) keep working as live toggles
-    // afterwards — the file controls where they begin, exactly like the
-    // hardware section controls the machine's construction.
+    // state; F9 (aspect), F12 (keyboard mode), and the Joysticks menu keep
+    // working as live toggles afterwards — the file controls where they
+    // begin, exactly like the hardware section controls the machine's
+    // construction.
     app.aspect_correct = def.ui.aspect_correct;
     app.kb_mode = match def.ui.kb_mode {
         machine_def::KbModeDTO::Positional => KbMode::Positional,
         machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,
     };
+    app.joysticks.sources[coco_core::joystick::RIGHT] = def.ui.joy_right.into();
+    app.joysticks.sources[coco_core::joystick::LEFT] = def.ui.joy_left.into();
     Ok(app)
 }
 
@@ -92,17 +108,29 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
 
 /// The same rule the CLI branch enforces by hand (clap's declarative
 /// `conflicts_with` can't express "only when --mpi is absent"): cart,
-/// disk0/disk1 (which imply the FD-502), and rtc all want the single
-/// cartridge port unless an MPI is installed.
+/// disk0/disk1 (which imply the FD-502), rtc, and rs232 all want the single
+/// cartridge port unless an MPI is installed. rs232 additionally has no
+/// MPI-slot support at all yet (no `mpi_insert_rs232`), so `mpi && rs232` is
+/// rejected even though an MPI would otherwise lift the one-peripheral
+/// limit.
 fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), String> {
-    let claims = [media.cart.is_some(), peripherals.fd502, peripherals.rtc]
+    if peripherals.mpi && peripherals.rs232 {
+        return Err(
+            "the Deluxe RS-232 Pak has no MultiPak slot support yet; disable the MultiPak \
+             Interface peripheral to use it"
+                .to_string(),
+        );
+    }
+    let claims = [media.cart.is_some(), peripherals.fd502, peripherals.rtc, peripherals.rs232]
         .into_iter()
         .filter(|&claims| claims)
         .count();
     if !peripherals.mpi && claims > 1 {
-        return Err("cart, disk0/disk1, and rtc all need the cartridge port; enable the MultiPak \
-                    Interface peripheral to combine them"
-            .to_string());
+        return Err(
+            "cart, disk0/disk1, rtc, and rs232 all need the cartridge port; enable the \
+             MultiPak Interface peripheral to combine them"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -160,11 +188,15 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
             }
         }
     } else if peripherals.rtc {
-        // cart/fd502 (disk media is handled by the `CocoApp::new` call above,
-        // same as the CLI's non-mpi branch) and rtc are mutually exclusive
-        // here — `check_cartridge_port` already rejected any combination of
-        // them without an MPI.
+        // cart/fd502/rs232 (disk media is handled by the `CocoApp::new` call
+        // above, same as the CLI's non-mpi branch) and rtc are mutually
+        // exclusive here — `check_cartridge_port` already rejected any
+        // combination of them without an MPI.
         app.insert_rtc();
+    } else if peripherals.rs232 {
+        // Starts on the inert Loopback endpoint; TCP/PTY stay a
+        // runtime-menu-only setting (`chrome::menu_bar::rs232`).
+        app.insert_rs232();
     } else if peripherals.fd502 && let Err(e) = app.ensure_disk_controller() {
         // Empty-drive FD-502 from `[peripherals].fd502` alone; with disk media
         // set, `CocoApp::new` already inserted the controller and this is a
@@ -176,3 +208,35 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
         app.insert_tape(path);
     }
 }
+
+/// Wire `[ports].serial` — the built-in bit-banger serial port's host sink,
+/// distinct from the cartridge-port Deluxe RS-232 Pak the peripherals above
+/// mount. Runs after [`mount_peripherals`] and before `launch_machine`'s
+/// `cart_error` promotion, so a failure here (an unwritable artifact
+/// directory, or whatever [`CocoApp::start_print_capture`] itself rejects)
+/// surfaces as a launch error the same way an `insert_*` failure does.
+fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
+    match serial {
+        // Attached with the paper window closed; output accumulates and
+        // View ▸ Printer Paper shows it (`paper_view`'s module doc — the
+        // window just displays whatever handle it's given).
+        Some(machine_def::SerialDTO::Printer) => app.attach_dmp105(),
+        Some(machine_def::SerialDTO::File) => {
+            let path = machine_def::resolve_media_path(PRINTOUT_FILE, slug);
+            if let Some(parent) = path.parent() {
+                // The artifact directory may not exist yet — nothing else
+                // creates it ahead of a `[ports]`-only definition.
+                if let Err(e) = fs::create_dir_all(parent) {
+                    app.cart_error = Some(format!("{}: {e}", parent.display()));
+                    return;
+                }
+            }
+            app.start_print_capture(path);
+        }
+        None => {}
+    }
+}
+
+#[cfg(test)]
+#[path = "launch_test.rs"]
+mod tests;

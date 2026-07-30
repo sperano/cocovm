@@ -15,6 +15,8 @@ use coco_core::{
 };
 use eframe::egui;
 
+use crate::machine_def::SerialDTO;
+
 mod config_form;
 mod form;
 
@@ -130,6 +132,10 @@ pub enum CartridgeChoice {
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
     /// a VHD boot; for RTC + floppies use an MPI slot.
     RTC,
+    /// Deluxe RS-232 Pak plugged straight into the port. Bare-port only —
+    /// unlike the RTC/FD-502 there's no `mpi_insert_rs232`, so this choice
+    /// isn't offered in the MPI's Slot combos.
+    RS232,
     /// MultiPak Interface; the form then shows its four Slot rows, and
     /// the Disk rows only once a slot holds the FD-502.
     MPI,
@@ -166,6 +172,7 @@ fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::FD502 => "FD-502".to_string(),
         CartridgeChoice::RomPak(path) => pak_file_name(path),
         CartridgeChoice::RTC => "Disto RTC".to_string(),
+        CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),
     }
 }
@@ -216,6 +223,61 @@ fn disk_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Disk image", &["dsk", "jvc", "os9"])
 }
 
+/// The form's Ports/Serial row: what host sink the built-in bit-banger
+/// serial port (the 4-pin DIN every CoCo has, distinct from the Deluxe
+/// RS-232 Pak's cartridge-port ACIA) starts wired to. No path payload — the
+/// file mode always captures to the auto-named `printout.txt` in the
+/// machine's artifact directory; a custom capture path remains a
+/// runtime-menu-only feature (`CocoApp::start_print_capture`'s file dialog).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SerialChoice {
+    #[default]
+    None,
+    /// A DMP-105 dot-matrix printer, shown in the Printer Paper window.
+    Printer,
+    /// Plain text capture to `printout.txt`.
+    PrintFile,
+}
+
+impl SerialChoice {
+    pub const ALL: [Self; 3] = [Self::None, Self::Printer, Self::PrintFile];
+}
+
+fn serial_label(serial: SerialChoice) -> &'static str {
+    match serial {
+        SerialChoice::None => "None",
+        SerialChoice::Printer => "Printer (DMP-105)",
+        SerialChoice::PrintFile => "Print to file",
+    }
+}
+
+// `[ports].serial`'s `From` impls, kept here (rather than beside
+// `machine_def::SerialDTO` itself) so `manager::detail_map` (form ⇄
+// definition, its only caller) shares one conversion instead of hand-rolling
+// its own match — the same reasoning as `JoySource`'s pair in `joy.rs`.
+// `SerialDTO` has no `None` variant of its own (absence is the section's
+// `Option`, not a variant — `PortsDTO::serial`'s doc), so the DTO side of
+// this pair is `Option<SerialDTO>` rather than `SerialDTO` itself.
+impl From<SerialChoice> for Option<SerialDTO> {
+    fn from(serial: SerialChoice) -> Self {
+        match serial {
+            SerialChoice::None => None,
+            SerialChoice::Printer => Some(SerialDTO::Printer),
+            SerialChoice::PrintFile => Some(SerialDTO::File),
+        }
+    }
+}
+
+impl From<Option<SerialDTO>> for SerialChoice {
+    fn from(serial: Option<SerialDTO>) -> Self {
+        match serial {
+            None => Self::None,
+            Some(SerialDTO::Printer) => Self::Printer,
+            Some(SerialDTO::File) => Self::PrintFile,
+        }
+    }
+}
+
 /// Re-constrain a draft after a model change: snap RAM to the new family's
 /// default when the current pick isn't valid for it, and force NTSC where
 /// PAL isn't modeled ([`MachineConfig::validate`]'s rules).
@@ -241,11 +303,13 @@ fn constrain(draft: &mut MachineConfig) {
 }
 
 /// The full machine form, drawn in sections ([`MachineForm::machine_rows`],
-/// [`MachineForm::display_rows`], [`MachineForm::media_rows`]) so the
-/// detail pane can interleave its titled groups between them. The manager's
-/// detail pane (`manager::draw_detail_ok`) auto-saves it back into the
-/// machine's definition on every change — the rows, ordering, and
-/// constraint rules live here exactly once.
+/// [`MachineForm::display_rows`], [`MachineForm::media_rows`],
+/// [`MachineForm::ports_rows`], [`MachineForm::joystick_row`],
+/// [`MachineForm::keyboard_row`]) so the detail pane can interleave its
+/// titled groups between them. The manager's detail pane
+/// (`manager::draw_detail_ok`) auto-saves it back into the machine's
+/// definition on every change — the rows, ordering, and constraint rules
+/// live here exactly once.
 pub struct MachineForm {
     /// Distinguishes the combos' persistent egui ids between hosts drawing
     /// the form more than once in the same frame.
@@ -262,13 +326,19 @@ pub struct MachineForm {
     pub disks: [MediaChoice; crate::UI_DRIVES],
     /// The Cassette-row pick.
     pub tape: MediaChoice,
-    /// The HD-row (VHD) picks. Always shown: the VHD is a bus device
+    /// The VHD-row picks. Always shown: the VHD is a bus device
     /// (`$FF80-$FF86`, `SystemBus::vhd`), not cartridge hardware, so the
-    /// HD rows need no controller.
+    /// VHD rows need no controller.
     pub vhds: [MediaChoice; crate::UI_DRIVES],
     /// The Display row: 4:3 aspect correction (`[ui].aspect_correct`).
     pub aspect_correct: bool,
-    /// The Keyboard row (`[ui].kb_mode`).
+    /// The Ports fieldset's Serial-row pick (`[ports].serial`).
+    pub serial: SerialChoice,
+    /// The Joysticks fieldset's picks (`[ui].joy_left`/`joy_right`), indexed
+    /// by `coco_core::joystick::{RIGHT, LEFT}` like
+    /// `crate::joy::JoystickInputs::sources`.
+    pub joy_sources: [crate::joy::JoySource; 2],
+    /// The Keyboard fieldset's pick (`[ui].kb_mode`).
     pub kb_mode: crate::KbMode,
 }
 
