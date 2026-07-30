@@ -778,7 +778,7 @@ Two behaviors, in five lines. The guard clause establishes that the line
 **idles high** whenever nothing is playing: motor off, still spinning up,
 or past the end of the tape. That default matches the CoCo's general rule
 that unused and idle input pins float high, which is exactly what
-`PiaPort::default()` encodes
+`PIAPort::default()` encodes
 ([`crates/coco-core/src/pia.rs:52-56`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs#L52-L56),
 Chapter 10) by initializing every port's `input` to `0xFF`.
 
@@ -837,7 +837,7 @@ function that samples PIA1's port-A input pins:
     /// PIA1 port-A input pins: only bit 0 (cassette data in, `$FF20` —
     /// Service Manual / `cassette-verified-facts`) is driven by anything
     /// emulated; the rest float high like every other unused CoCo input pin
-    /// ([`crate::pia::PiaPort`]'s default).
+    /// ([`crate::pia::PIAPort`]'s default).
     pub(super) fn pia1_pa_pins(&self) -> u8 {
         const CASSETTE_IN: u8 = 0x01;
         if self.cassette.input_bit() {
@@ -1904,7 +1904,7 @@ Both are handled honestly rather than assumed away:
 
 ```rust
 // crates/coco-core/src/cassette_wav.rs:390-406 (excerpt)
-pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WavError> {
+pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WAVError> {
     let (fmt, data) = parse_wav_chunks(bytes)?;
     let samples = extract_mono_samples(data, &fmt);
     // ... compute mid/hysteresis from the capture's own min/max

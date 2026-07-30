@@ -39,7 +39,7 @@ pub(crate) struct CocoApp {
     pub(crate) display_rect: egui::Rect,
     /// Whether the next inserted cartridge should tie CART* to Q (auto-run at
     /// power-up). Consulted at insert time, not retroactively — see
-    /// `RomPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
+    /// `ROMPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
     /// must be started with `EXEC &HE010`.
     pub(crate) autostart_cart: bool,
     /// Path of the currently inserted cartridge, if any (shown in the status
@@ -92,7 +92,7 @@ pub(crate) struct CocoApp {
     /// endpoint its serial line is wired to (the core's trait object can't
     /// describe itself to menu labels, so the frontend tracks it — same
     /// rationale as [`MPISlot`]). `None` means the slot holds something else.
-    pub(crate) rs232: Option<Rs232Endpoint>,
+    pub(crate) rs232: Option<RS232Endpoint>,
     /// Source path of the Deluxe RS-232 pak's optional EPROM dump, if one was
     /// found and installed at insert time ([`Self::insert_rs232`]) — the
     /// save-state counterpart of `cart_path` for this one cart, since the
@@ -118,8 +118,8 @@ pub(crate) struct CocoApp {
     pub(crate) debugger: debugger::DebuggerPanel,
     /// Where the currently-loaded system ROM image came from, for
     /// [`Self::save_state_to`] (`save_state.rs`) to record and re-resolve —
-    /// see [`RomSource`].
-    pub(crate) rom_source: RomSource,
+    /// see [`ROMSource`].
+    pub(crate) rom_source: ROMSource,
     /// Status-bar toast: a message plus when it was shown
     /// ([`Self::set_toast`], `save_state.rs`), displayed for
     /// [`save_state::TOAST_SECS`] seconds — save/load-state results today,
@@ -152,7 +152,7 @@ impl CocoApp {
     pub(crate) fn new(
         config: MachineConfig,
         rom: Box<[u8]>,
-        rom_source: RomSource,
+        rom_source: ROMSource,
         cart_path: Option<PathBuf>,
         disk_paths: [Option<PathBuf>; UI_DRIVES],
         vhd_paths: [Option<PathBuf>; UI_DRIVES],

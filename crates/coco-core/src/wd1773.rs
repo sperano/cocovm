@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::fdc::JvcDisk;
+use crate::fdc::JVCDisk;
 
 mod command;
 mod transfer;
@@ -190,7 +190,7 @@ enum Op {
 /// The WD1773 chip: registers, command state machine, DRQ/INTRQ lines.
 ///
 /// Owns no disk state itself — [`WD1773::write_command`], [`WD1773::tick`], and
-/// [`WD1773::write_data`] take the currently-selected drive's [`JvcDisk`] (or
+/// [`WD1773::write_data`] take the currently-selected drive's [`JVCDisk`] (or
 /// `None`) and the DSKREG-derived side select as parameters, so the caller
 /// (`crate::fdc::DiskCart`) owns drive selection and the four drive slots.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,7 +330,7 @@ impl WD1773 {
     /// exceeds `buf.len()` (0) for those two kinds mid transfer; not checked
     /// here. See [`crate::fdc::DiskCart::validate_restored_transfer`] for the
     /// disk-bound half of this check, which needs a reattached
-    /// [`JvcDisk`] and so runs later in the restore flow.
+    /// [`JVCDisk`] and so runs later in the restore flow.
     pub(crate) fn validate_restored(&self) -> Result<(), String> {
         let Op::Transfer(t) = &self.op else { return Ok(()) };
         if matches!(t.kind, TransferKind::ReadSector | TransferKind::ReadAddress) && t.index > t.buf.len()
@@ -350,15 +350,15 @@ impl WD1773 {
     /// in-flight Read/Write Sector transfer's `offset`/`total` against
     /// `disk`'s actual reattached byte length. `offset`/`total` are ordinary
     /// deserialized fields a hand-crafted payload can set to anything;
-    /// [`JvcDisk::write_byte`]/[`JvcDisk::read_bytes`] index straight into
+    /// [`JVCDisk::write_byte`]/[`JVCDisk::read_bytes`] index straight into
     /// `data` with no bounds check of their own, so an out-of-range pair
     /// would panic the instant the transfer resumes
     /// (`docs/plan-save-states.md`). Read Address/Write Track transfers
     /// never index `data` by `offset` at all (Read Address's `buf` is a
     /// fixed 6-byte reply built at dispatch time; Write Track lays sectors
-    /// via [`JvcDisk::format_sector`], which computes its own bounded
+    /// via [`JVCDisk::format_sector`], which computes its own bounded
     /// offset), so only the two sector-transfer kinds are checked.
-    pub(crate) fn validate_transfer_bounds(&self, disk: Option<&JvcDisk>) -> Result<(), String> {
+    pub(crate) fn validate_transfer_bounds(&self, disk: Option<&JVCDisk>) -> Result<(), String> {
         let Op::Transfer(t) = &self.op else { return Ok(()) };
         if !matches!(t.kind, TransferKind::ReadSector | TransferKind::WriteSector) {
             return Ok(());
@@ -383,7 +383,7 @@ impl WD1773 {
     /// are the currently-selected drive (per DSKREG) and its side select —
     /// needed for the not-found detection and for locating the next sector of
     /// a multiple-sector transfer.
-    pub fn tick(&mut self, mut cycles: u32, mut disk: Option<&mut JvcDisk>, side: u8) {
+    pub fn tick(&mut self, mut cycles: u32, mut disk: Option<&mut JVCDisk>, side: u8) {
         while cycles > 0 {
             let consumed = match &mut self.op {
                 Op::Idle => break,

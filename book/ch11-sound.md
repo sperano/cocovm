@@ -1034,7 +1034,7 @@ pub struct AudioOutput {
     device_rate: f64,
     muted: bool,
     volume: f32,
-    dc: [DcBlocker; 2],
+    dc: [DCBlocker; 2],
     /// Anti-alias low-pass per channel, designed lazily for the source rate
     /// seen on the first `push_samples` call (`None` until then, or when
     /// upsampling makes it unnecessary).
@@ -1234,12 +1234,12 @@ the whole thing
 ([`crates/coco-egui/src/audio.rs:58-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs#L58-L70)):
 
 ```rust
-struct DcBlocker {
+struct DCBlocker {
     prev_in: f32,
     prev_out: f32,
 }
 
-impl DcBlocker {
+impl DCBlocker {
     fn process(&mut self, x: f32) -> f32 {
         let y = x - self.prev_in + DC_BLOCKER_POLE * self.prev_out;
         self.prev_in = x;
@@ -1318,7 +1318,7 @@ than any paragraph above
 ```rust
 #[test]
 fn dc_blocker_converges_toward_zero_on_constant_input() {
-    let mut dc = DcBlocker::default();
+    let mut dc = DCBlocker::default();
     let mut last = 1.0;
     for _ in 0..2000 {
         last = dc.process(1.0);
@@ -1328,7 +1328,7 @@ fn dc_blocker_converges_toward_zero_on_constant_input() {
 
 #[test]
 fn dc_blocker_passes_already_centered_signal_without_blowing_up() {
-    let mut dc = DcBlocker::default();
+    let mut dc = DCBlocker::default();
     let mut max_abs = 0.0f32;
     for i in 0..1000 {
         let x = if i % 2 == 0 { 1.0 } else { -1.0 };
@@ -1352,7 +1352,7 @@ alternating signal somewhat, and this one does, which is why the bound
 is 2.5 rather than 1.0.
 
 Neither test opens an audio device, allocates a ring buffer, or knows
-that `cpal` exists. That is the payoff of factoring `DcBlocker` out of
+that `cpal` exists. That is the payoff of factoring `DCBlocker` out of
 `AudioOutput` as its own struct, which is exactly what its doc comment
 says it's for: "factored out of `AudioOutput` so the math can be
 unit-tested without a live stream."
@@ -1487,7 +1487,7 @@ The struct's nine fields split cleanly into two groups. `b0`, `b1`,
 `design()` and constant thereafter. `x1`, `x2`, `y1`, and `y2` are the
 *state*: the two previous inputs and the two previous outputs. That
 state is what "2-pole" means concretely, and comparing it to
-`DcBlocker`'s single `prev_in`/`prev_out` pair makes the progression
+`DCBlocker`'s single `prev_in`/`prev_out` pair makes the progression
 obvious. More memory, steeper filter.
 
 `process` is a **direct-form-I biquad**, which is a standard structure
@@ -2678,7 +2678,7 @@ In this order:
    `end_of_line` ([`run.rs:130-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs#L130-L172)) so you see exactly where in the
    per-line trailer it's called.
 4. **[`crates/coco-egui/src/audio.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/audio.rs), all of it** — the whole host chain
-   in one file: `DcBlocker`, `LowPass`, `Resampler`, `AudioOutput`, and
+   in one file: `DCBlocker`, `LowPass`, `Resampler`, `AudioOutput`, and
    `push_samples`. Read the module doc first; it previews every artifact
    this chapter walked in two short paragraphs.
 5. **[`crates/coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs), `fields_due` and

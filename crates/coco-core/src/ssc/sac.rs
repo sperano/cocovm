@@ -7,7 +7,7 @@
 //! ~62.9 kHz call rate is close enough that the same constants serve, and
 //! much closer than the old once-per-scanline 15.7 kHz rate was).
 
-use super::Ssc;
+use super::SoundSpeechCartridge;
 
 /// One-pole DC-blocking high-pass filter coefficient:
 /// `y = ALPHA * (y_prev + x - x_prev)`.
@@ -24,9 +24,9 @@ const THRESH_ON: f32 = 0.05;
 /// single threshold).
 const THRESH_OFF: f32 = 0.01;
 
-impl Ssc {
+impl SoundSpeechCartridge {
     /// Sound Activity Circuit envelope follower — see the module doc
-    /// comment. Runs unconditionally on every [`Ssc::audio_sample`] call.
+    /// comment. Runs unconditionally on every [`SoundSpeechCartridge::audio_sample`] call.
     pub(super) fn update_sac(&mut self, x: f32) {
         let y = HPF_ALPHA * (self.sac_hpf_prev_out + x - self.sac_hpf_prev_in);
         self.sac_hpf_prev_in = x;

@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::drivewire::DwImage;
-use crate::vhd::VhdImage;
+use crate::drivewire::DWImage;
+use crate::vhd::VHDImage;
 use crate::{drivewire, fdc, vhd, Machine};
 
 /// Everything a snapshot needs besides resolved media bytes: the machine
@@ -43,7 +43,7 @@ pub struct MediaRef {
 
 /// A ROM-bearing cartridge's image reference, located by where it plugs in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SlotRomRef {
+pub struct SlotROMRef {
     /// `None` = the machine's own cartridge port; `Some(i)` = Multi-Pak slot
     /// `i` (0-3).
     pub mpi_slot: Option<u8>,
@@ -67,13 +67,14 @@ pub struct SlotRomRef {
 pub struct MediaRefs {
     #[serde(default)]
     pub system_rom: Option<MediaRef>,
-    /// ROM-bearing carts, keyed by where they sit. Covers RomPak/
-    /// BankedRomPak/Gmc/DiskCart/Orch90 images and the DeluxeRs232 EPROM —
-    /// one entry per ROM-bearing cart that actually has an image (the
-    /// DeluxeRs232 is the one cart in this list that can legitimately run
-    /// without one; see [`super::restore`]'s cart-ROM step).
+    /// ROM-bearing carts, keyed by where they sit. Covers ROMPak/
+    /// BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images and the
+    /// DeluxeRS232 EPROM — one entry per ROM-bearing cart that actually has
+    /// an image (the DeluxeRS232 is the one cart in this list that can
+    /// legitimately run without one; see [`super::restore`]'s cart-ROM
+    /// step).
     #[serde(default)]
-    pub cart_roms: Vec<SlotRomRef>,
+    pub cart_roms: Vec<SlotROMRef>,
     /// FD-502 JVC drives, indexed by drive number.
     #[serde(default)]
     pub disks: Vec<Option<MediaRef>>,
@@ -94,11 +95,11 @@ pub struct MediaRefs {
 pub struct MediaSources {
     pub system_rom: Option<Box<[u8]>>,
     /// `(mpi_slot, bytes)` pairs, matched against the deserialized cart
-    /// tree's own `(mpi_slot, ..)` positions — see [`SlotRomRef`].
+    /// tree's own `(mpi_slot, ..)` positions — see [`SlotROMRef`].
     pub cart_roms: Vec<(Option<u8>, Vec<u8>)>,
     pub disks: [Option<Vec<u8>>; fdc::DRIVE_COUNT],
-    pub vhds: [Option<VhdImage>; vhd::DRIVE_COUNT],
-    pub drivewire: [Option<DwImage>; drivewire::DRIVE_COUNT],
+    pub vhds: [Option<VHDImage>; vhd::DRIVE_COUNT],
+    pub drivewire: [Option<DWImage>; drivewire::DRIVE_COUNT],
     pub tape: Option<Vec<u8>>,
 }
 
@@ -116,7 +117,7 @@ pub struct RestoredMachine {
 /// restored (`docs/plan-save-states.md`). Typed rather than raw strings so a
 /// caller can react to a specific condition programmatically — e.g. the egui
 /// frontend re-injects the Disto RTC's host time source right after
-/// `restore` returns and then drops [`RestoreNote::RtcPlaceholderTime`]
+/// `restore` returns and then drops [`RestoreNote::RTCPlaceholderTime`]
 /// before showing the rest as a toast, since that note is only true for a
 /// caller that DOESN'T immediately do that (a headless tool, a test) — a
 /// caller matching on message text couldn't single that one note out safely
@@ -128,12 +129,12 @@ pub enum RestoreNote {
     PrintCaptureStopped,
     /// The Deluxe RS-232 host connection restored as loopback; the real
     /// endpoint needs to be re-plugged from the frontend.
-    Rs232EndpointLoopback,
+    RS232EndpointLoopback,
     /// The Disto real-time clock restored to a placeholder time
     /// (1970-01-01); true only for a caller that doesn't itself re-sync it
     /// from a live time source right after restoring — see this type's own
     /// doc comment.
-    RtcPlaceholderTime,
+    RTCPlaceholderTime,
 }
 
 impl fmt::Display for RestoreNote {
@@ -144,12 +145,12 @@ impl fmt::Display for RestoreNote {
                 "print capture was active when this snapshot was saved; capture is stopped until \
                  restarted from the Machine menu"
             ),
-            RestoreNote::Rs232EndpointLoopback => write!(
+            RestoreNote::RS232EndpointLoopback => write!(
                 f,
                 "Deluxe RS-232 host connection restored as loopback; re-plug the real endpoint from \
                  the frontend"
             ),
-            RestoreNote::RtcPlaceholderTime => write!(
+            RestoreNote::RTCPlaceholderTime => write!(
                 f,
                 "Disto real-time clock restored to a placeholder time (1970-01-01); re-sync it from \
                  the frontend"

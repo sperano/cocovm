@@ -1,6 +1,6 @@
 //! Headless sign-off example for the virtual fanfold-paper renderer
 //! (`docs/printer-plan.md` T5 visual spec): feeds a canned byte stream
-//! through a real [`Dmp105Handle`], rasterizes the whole printed roll (plus
+//! through a real [`DMP105Handle`], rasterizes the whole printed roll (plus
 //! one trailing blank page, same "+2 pages" rule the live window uses), and
 //! writes two PNGs so a human can eyeball the result without launching the
 //! GUI.
@@ -16,7 +16,7 @@
 mod paper_render;
 
 use coco_core::bitbanger::PrinterSink;
-use coco_core::dmp105::Dmp105Handle;
+use coco_core::dmp105::DMP105Handle;
 use coco_core::printer::Y_UNITS_PER_INCH;
 use paper_render::{PAGE_HEIGHT_IN, RASTER_DPI};
 
@@ -40,7 +40,7 @@ const DETAIL_Y0_IN: f32 = 0.0;
 const DETAIL_WIDTH_IN: f32 = 3.0;
 const DETAIL_HEIGHT_IN: f32 = 1.0;
 
-fn feed(printer: &mut Dmp105Handle, bytes: &[u8]) {
+fn feed(printer: &mut DMP105Handle, bytes: &[u8]) {
     for &b in bytes {
         printer.write_byte(b);
     }
@@ -55,7 +55,7 @@ fn main() {
         "PAGE_HEIGHT_IN and Y_UNITS_PER_INCH must still agree with the 66-lines-per-page convention"
     );
 
-    let mut printer = Dmp105Handle::new();
+    let mut printer = DMP105Handle::new();
 
     // Plain ASCII lines, bare-CR terminated (BASIC's own line ending).
     feed(&mut printer, b"REM FANFOLD PAPER TEST\r");

@@ -96,11 +96,11 @@ pub struct SystemBus {
     #[serde(skip)]
     pub rom: Box<[u8]>,
     pub gime: GIME,
-    pub sam: Sam,
+    pub sam: SAM,
     pub pia0: MC6821,
     pub pia1: MC6821,
     pub cart: Cart,
-    pub vhd: Vhd,
+    pub vhd: VHD,
     // ...
 }
 ```
@@ -114,9 +114,9 @@ then the two PIAs, then the cartridge slot and the virtual hard disk, and
 in the full declaration a further dozen fields covering the keyboard,
 joysticks, cassette, serial port, and the debugger's watchpoint table.
 
-Notice that both `gime: GIME` and `sam: Sam` are present unconditionally,
+Notice that both `gime: GIME` and `sam: SAM` are present unconditionally,
 on every machine. A CoCo 1 allocates a `GIME` it will never once look at;
-a CoCo 3 allocates a `Sam` it will never once look at. Two decode chips
+a CoCo 3 allocates a `SAM` it will never once look at. Two decode chips
 that never coexisted in any real machine are both sitting in the struct
 at the same time, which looks like waste until you price the
 alternatives.
@@ -359,7 +359,7 @@ dispatch on:
 | `$FF00–$FF1F` | PIA0 | Keyboard rows, joystick comparator, sync IRQs. Only 4 registers exist; `addr & 0x03` mirrors them across the whole 32-byte range. |
 | `$FF20–$FF3F` | PIA1 | 6-bit DAC, cassette, VDG-legacy mode bits. Same 4-register mirror. |
 | `$FF40–$FF7E` | Cartridge / FDC (SCS\*) | The "standard" SCS window is `$FF40–$FF5F`; some carts (RS-232 Pak, Orchestra-90, the Sound/Speech Cartridge) decode further registers out to `$FF7E` — the full address bus reaches the expansion connector regardless of what the motherboard "intends." |
-| `$FF41` / `$FF42` | Becker port (DriveWire) | Intercepts **ahead of** cartridge dispatch, on both decode paths, whenever a `DwServer` is installed — mirrors MAME's handler-install order. |
+| `$FF41` / `$FF42` | Becker port (DriveWire) | Intercepts **ahead of** cartridge dispatch, on both decode paths, whenever a `DWServer` is installed — mirrors MAME's handler-install order. |
 | `$FF7F` | Multi-Pak Interface select | Only meaningful with an MPI inserted; decoded by the MPI itself, never by a plugged-in cart. |
 | `$FF80–$FF86` | VHD (virtual hard disk, NitrOS-9 `emudsk`) | `$FF87–$FF8F` is unmapped/open bus. |
 | `$FF90` | INIT0 | MMU enable, ROM map bits, MC3, IRQ/FIRQ master enables, CoCo-compat select. |
@@ -683,7 +683,9 @@ disappeared,
 //! decode (RAM/ROM/cart/I/O/open-bus) in one step, unlike the GIME path's
 //! separate ROM-window/I/O-page/MMU layers, so there's no need for
 //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
-//! touches `self.gime` — no MMU translate, no interrupt raises, no timer.
+//! touches `self.gime` — no MMU translate, no interrupt raises, no timer
+//! (`docs/coco12-plan.md` Phase 2; the field-loop gating that keeps it that
+//! way for `hsync`/`fs_*` is Phase 4).
 ```
 
 The claim in that comment is stronger than "these two chips have
@@ -714,7 +716,7 @@ wearing the same 64K clothes.
 
 ---
 
-## 5.5 The CoCo 1/2 path: `Sam::map` and the strobe registers
+## 5.5 The CoCo 1/2 path: `SAM::map` and the strobe registers
 
 It would be reasonable to skip the older machines entirely — this is a
 CoCo 3 emulator first, and the GIME is where the interesting hardware
@@ -728,42 +730,49 @@ is that the GIME did not replace the SAM so much as swallow it. Half of
 imitation only makes sense once you know what is being imitated.
 
 The MC6883 SAM predates the GIME by half a decade and does its entire job
-in one function. Read `Sam::map` below with two questions in mind: where
+in one function. Read `SAM::map` below with two questions in mind: where
 does it return early, and what does the return value carry? Both answers
 matter more than the arithmetic
 ([`crates/coco-core/src/sam.rs:140-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs#L140-L176)):
 
 ```rust
-pub fn map(&self, addr: u16) -> SamTarget {
-    // The vector mirror and the $FF00+ fixed page win regardless of TY —
-    // "the mirror region stays ROM" even in all-RAM mode.
-    if addr >= VECTOR_MIRROR_BASE {
-        return SamTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
-    }
-    if addr >= STROBE_BASE {
-        return SamTarget::Io; // $FFC0-$FFDF: SAM control strobes.
-    }
-    if (OPEN_BUS_BASE..=OPEN_BUS_LAST).contains(&addr) {
-        return SamTarget::OpenBus; // $FF7F-$FFBF.
-    }
-    if addr >= IO_BASE {
-        return SamTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
-    }
-    if self.ty && self.is_64k() {
-        // All-RAM mode extends the RAM decode through $FEFF.
-        return SamTarget::Ram(addr as usize);
-    }
-    match addr {
-        0x0000..=0x7FFF => {
-            let ram_addr = if self.p1 && self.is_64k() { addr | 0x8000 } else { addr };
-            SamTarget::Ram(ram_addr as usize)
+    pub fn map(&self, addr: u16) -> SAMTarget {
+        // The vector mirror and the $FF00+ fixed page win regardless of TY —
+        // "the mirror region stays ROM" even in all-RAM mode.
+        if addr >= VECTOR_MIRROR_BASE {
+            return SAMTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
         }
-        EXT_ROM_BASE..=EXT_ROM_LAST => SamTarget::RomExt((addr - EXT_ROM_BASE) as usize),
-        BAS_ROM_BASE..=BAS_ROM_LAST => SamTarget::RomBas((addr - BAS_ROM_BASE) as usize),
-        CART_ROM_BASE..=CART_ROM_LAST => SamTarget::Cart((addr - CART_ROM_BASE) as usize),
-        _ => unreachable!("address {addr:#06x} not covered by the SAM decode"),
+        if addr >= STROBE_BASE {
+            return SAMTarget::Io; // $FFC0-$FFDF: SAM control strobes.
+        }
+        if (OPEN_BUS_BASE..=OPEN_BUS_LAST).contains(&addr) {
+            return SAMTarget::OpenBus; // $FF7F-$FFBF.
+        }
+        if addr >= IO_BASE {
+            return SAMTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
+        }
+        if self.ty && self.is_64k() {
+            // All-RAM mode extends the RAM decode through $FEFF.
+            return SAMTarget::Ram(addr as usize);
+        }
+        match addr {
+            0x0000..=0x7FFF => {
+                // P1 only matters when TY=0 (guaranteed by this branch) and
+                // 64K: it ORs $8000 into the RAM address for CPU accesses in
+                // this range.
+                let ram_addr = if self.p1 && self.is_64k() {
+                    addr | 0x8000
+                } else {
+                    addr
+                };
+                SAMTarget::Ram(ram_addr as usize)
+            }
+            EXT_ROM_BASE..=EXT_ROM_LAST => SAMTarget::RomExt((addr - EXT_ROM_BASE) as usize),
+            BAS_ROM_BASE..=BAS_ROM_LAST => SAMTarget::RomBas((addr - BAS_ROM_BASE) as usize),
+            CART_ROM_BASE..=CART_ROM_LAST => SAMTarget::Cart((addr - CART_ROM_BASE) as usize),
+            _ => unreachable!("address {addr:#06x} not covered by the SAM decode"),
+        }
     }
-}
 ```
 
 The early returns come first, and they encode the same principle §5.2
@@ -802,7 +811,7 @@ sharply, and it is short enough to read whole
 ```rust
     pub(super) fn sam_write(&mut self, addr: u16, val: u8) {
         match self.sam.map(addr) {
-            SamTarget::Ram(phys) => {
+            SAMTarget::Ram(phys) => {
                 if let Some(i) = self.sam_ram_index(phys) {
                     self.ram[i] = val;
                 }
@@ -811,11 +820,11 @@ sharply, and it is short enough to read whole
             // not write through to the RAM underneath (MAME gates
             // write-through on TY) — there's no RAM there at all in our
             // model, so these are simply dropped.
-            SamTarget::RomExt(_)
-            | SamTarget::RomBas(_)
-            | SamTarget::Cart(_)
-            | SamTarget::OpenBus => {}
-            SamTarget::Io => self.sam_io_write(addr, val),
+            SAMTarget::RomExt(_)
+            | SAMTarget::RomBas(_)
+            | SAMTarget::Cart(_)
+            | SAMTarget::OpenBus => {}
+            SAMTarget::Io => self.sam_io_write(addr, val),
         }
     }
 ```
@@ -834,14 +843,14 @@ physical space that the CPU views through a shifting window. The same
 programmer action, a `STA` into the ROM window, silently does nothing on
 one machine and quietly modifies hidden RAM on the other.
 
-> **Rust corner: an `enum` as a decode result.** `SamTarget` — `Ram`,
+> **Rust corner: an `enum` as a decode result.** `SAMTarget` — `Ram`,
 > `RomExt`, `RomBas`, `Cart`, `Io`, `OpenBus` — is a textbook use of an
 > algebraic data type as a *typed, exhaustive* answer to "what is this
 > address." Compare this to how you'd likely do it in C: an integer tag
 > plus an offset, with the compiler powerless to stop you reading the
-> offset when the tag says `Io`. Here, `SamTarget::Ram(usize)` carries
+> offset when the tag says `Io`. Here, `SAMTarget::Ram(usize)` carries
 > its payload *only* in the variant where a payload makes sense, and
-> every `match` on a `SamTarget` that omits a variant is a compile
+> every `match` on a `SAMTarget` that omits a variant is a compile
 > error, not a runtime surprise the day someone adds `OpenBus`. This
 > pattern — "decode to an enum, then match exhaustively" — recurs
 > throughout this codebase; get comfortable reading it now.
@@ -908,7 +917,7 @@ compatibility overlay.
 > address-to-meaning mapping: notice the *structure* (even/odd pairs,
 > sequential index) and compute rather than enumerate. It only works
 > because the mapping really is that regular — don't reach for this if
-> the pairing has exceptions, which is exactly why `Sam::map`'s vector
+> the pairing has exceptions, which is exactly why `SAM::map`'s vector
 > mirror and open-bus carve-outs above are handled as explicit early
 > returns instead of folded into the arithmetic.
 
@@ -921,7 +930,7 @@ which the SAM (as you just saw) doesn't have at all.
 
 ## 5.6 The GIME's ROM window: MC1:MC0 and what a cartridge sees
 
-You just read `Sam::map`'s ROM decode: two hard-coded 8K windows,
+You just read `SAM::map`'s ROM decode: two hard-coded 8K windows,
 `EXT_ROM_BASE..=EXT_ROM_LAST` and `BAS_ROM_BASE..=BAS_ROM_LAST`, that
 never move. The CoCo 3's `$8000–$FDFF` window is the same 32K of address
 space doing the same job, but the GIME adds one thing the SAM never had:
@@ -1762,7 +1771,7 @@ same.
 | Constant | Value | Where it fires |
 |---|---|---|
 | `bus::regs::OPEN_BUS` | `0xFF` | The I/O page's final catch-all (`io_read`'s `_ => OPEN_BUS`); `VHD_SELECT` unconditionally; a ROM image shorter than the window it's mapped into (`rom.get(off).copied().unwrap_or(OPEN_BUS)` in `rom_read`, §5.6). |
-| `sam::SamTarget::OpenBus` region | `0xFF` | CoCo 1/2 only: `$FF7F–$FFBF`, the range that would be GIME registers on a CoCo 3 but simply doesn't exist without one ([`tests/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam.rs)'s `ff7f_to_ffbf_is_open_bus_on_coco1_2`). |
+| `sam::SAMTarget::OpenBus` region | `0xFF` | CoCo 1/2 only: `$FF7F–$FFBF`, the range that would be GIME registers on a CoCo 3 but simply doesn't exist without one ([`tests/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam.rs)'s `ff7f_to_ffbf_is_open_bus_on_coco1_2`). |
 | plain-SAM small-RAM reads | `0xFF` | `sam_path.rs`'s `sam_ram_index` returns `None` for an address past the installed RAM size on a 4K/16K/32K machine; the caller's `.unwrap_or(OPEN_BUS)` supplies `0xFF` ([`tests/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/sam.rs)'s `small_ram_reads_open_bus_and_drops_writes_past_installed_size`). |
 | `cart::IO_OPEN_BUS` | `0xFF` | The cartridge's `$FF40–$FF7E` (`SCS*`) window when no cartridge is installed — "floats high, like an unstrobed PIA input pin" ([`cart.rs:30-32`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L30-L32)). |
 | `vhd`'s local `OPEN_BUS` | `0xFF` | VHD registers that don't answer while their drive is deselected. |
@@ -1862,8 +1871,8 @@ The CoCo 1/2 story has no single "the ROM" at all. Real machines shipped
 several separate mask ROM chips — Extended Color BASIC answering
 `$8000–$9FFF`, plain Color BASIC answering `$A000–$BFFF` — and a machine
 with only Color BASIC installed, which many were, has literally nothing
-responding in the Extended BASIC range. `Sam::map` reflects that chip
-boundary directly, returning two distinct `SamTarget` variants
+responding in the Extended BASIC range. `SAM::map` reflects that chip
+boundary directly, returning two distinct `SAMTarget` variants
 (`RomExt` and `RomBas`, §5.5) rather than pretending there is one flat
 image.
 
@@ -1897,7 +1906,7 @@ what they answer is "nothing is here."
 
 The payoff is that the emulator does not need to know whether Extended
 BASIC is installed. Nothing branches on it, no configuration flag records
-it, and `Sam::map` decodes the `RomExt` range identically either way. The
+it, and `SAM::map` decodes the `RomExt` range identically either way. The
 absence is represented as data rather than as a case. A test that boots
 this composed image
 (`ty0_reads_rom_at_extbas_and_bas_windows`-adjacent coverage, and
@@ -1919,8 +1928,8 @@ MAME's own romset definitions) and validates by content, not filename:
 
 ```rust
 pub enum Validation {
-    Verified(&'static KnownRom),
-    Mismatch { expected: &'static KnownRom, actual_crc32: u32, actual_size: usize },
+    Verified(&'static KnownROM),
+    Mismatch { expected: &'static KnownROM, actual_crc32: u32, actual_size: usize },
     Unknown,
 }
 
@@ -2232,8 +2241,8 @@ In this order:
    end to end, and doing so makes explicit just how much simpler the
    CoCo 1/2 memory story is next to the GIME's.
 6. **[`crates/coco-core/src/bus/sam_path.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/sam_path.rs)** — the thin adapter that
-   turns `Sam::map`'s `SamTarget` into actual reads and writes; note
-   how little code it takes once `Sam::map` has already done the real
+   turns `SAM::map`'s `SAMTarget` into actual reads and writes; note
+   how little code it takes once `SAM::map` has already done the real
    work.
 7. **[`crates/coco-core/src/cart.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cart.rs#L1-L70), lines 1–70** — the `Cartridge`
    trait and its two open-bus constants (§5.11); a preview of Chapter 13

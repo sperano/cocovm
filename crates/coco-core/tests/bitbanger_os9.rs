@@ -28,8 +28,8 @@
 use std::path::PathBuf;
 
 use coco_core::bitbanger::{self, CaptureSink};
-use coco_core::fdc::{DiskCart, JvcDisk};
-use coco_core::vhd::VhdImage;
+use coco_core::fdc::{DiskCart, JVCDisk};
+use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig};
 
 /// NitrOS-9's `/p` driver holds true 600 baud at the CoCo 3's doubled
@@ -164,9 +164,9 @@ fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
     let mut cart = DiskCart::new(disk_rom.into_boxed_slice());
-    cart.insert_disk(0, JvcDisk::from_bytes(dsk).unwrap());
+    cart.insert_disk(0, JVCDisk::from_bytes(dsk).unwrap());
     m.insert_cartridge(cart);
-    m.bus.vhd.insert(0, VhdImage::File(vhd_file));
+    m.bus.vhd.insert(0, VHDImage::File(vhd_file));
     m.reset();
 
     for _ in 0..BASIC_FIELDS {

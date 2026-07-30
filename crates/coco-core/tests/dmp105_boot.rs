@@ -1,8 +1,8 @@
 //! End-to-end smoke test for the DMP-105 interpreter (`docs/printer-plan.md`
 //! T4): boot the real Super Extended Color BASIC ROM, `LLIST` a one-liner
-//! through the bit-banger port with a [`Dmp105Handle`] attached as the sink,
+//! through the bit-banger port with a [`DMP105Handle`] attached as the sink,
 //! and assert the paper picked up plausible content — proving the whole
-//! chain (PIA1 bit-bang TX -> `BitBanger` decode -> `Dmp105` interpretation
+//! chain (PIA1 bit-bang TX -> `BitBanger` decode -> `DMP105` interpretation
 //! -> `Paper`) works against unmodified ROM code without panicking. Glyph-
 //! exact assertions are the unit golden tests' job (`src/dmp105.rs`); this
 //! only checks shape: nonzero dots, a plausible line count, no hangs.
@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 
 use coco_core::bitbanger::PrinterSink;
-use coco_core::dmp105::Dmp105Handle;
+use coco_core::dmp105::DMP105Handle;
 use coco_core::printer::Y_UNITS_PER_INCH;
 use coco_core::{Machine, MachineConfig};
 
@@ -132,10 +132,10 @@ fn llist_through_dmp105_produces_plausible_paper_content() {
         extent.max_y
     );
 
-    // Sanity: a fresh Dmp105Handle used directly as a PrinterSink (not just
+    // Sanity: a fresh DMP105Handle used directly as a PrinterSink (not just
     // through BitBanger) must also accept bytes without panicking, covering
     // the trait object path the real bus uses.
-    let direct = Dmp105Handle::new();
+    let direct = DMP105Handle::new();
     let mut sink: Box<dyn PrinterSink> = Box::new(direct.clone());
     for &b in b"SANITY\r" {
         sink.write_byte(b);

@@ -40,7 +40,7 @@ fn rising_edge_selected_port_flags_only_on_low_to_high() {
     assert_ne!(b.pia0.a.control & cr::C1_FLAG, 0);
 }
 
-// PiaPort-level edge gating (falling/rising-selected flags only on the
+// PIAPort-level edge gating (falling/rising-selected flags only on the
 // matching transition, never on a repeated level) is covered directly by
 // `pia::tests::{falling_edge_selected_flags_only_on_high_to_low,
 // rising_edge_selected_flags_only_on_low_to_high, repeated_level_never_flags}`.

@@ -10,7 +10,7 @@
 
 use crate::config::MachineVariant;
 use crate::gime;
-use crate::sam::SamTarget;
+use crate::sam::SAMTarget;
 
 use super::regs::{
     CART_BASE, CART_LAST, FIRQENR_REG, GIME_LAST, HARDWIRED_ROM_BASE, INIT0_REG, INIT1_REG,
@@ -87,19 +87,19 @@ impl SystemBus {
     /// Side-effect-free twin of `SystemBus::sam_read` (plain-SAM path).
     fn sam_peek(&self, addr: u16) -> u8 {
         match self.sam.map(addr) {
-            SamTarget::Ram(phys) => self
+            SAMTarget::Ram(phys) => self
                 .sam_ram_index(phys)
                 .map(|i| self.ram[i])
                 .unwrap_or(OPEN_BUS),
-            SamTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
-            SamTarget::RomBas(off) => self
+            SAMTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
+            SAMTarget::RomBas(off) => self
                 .rom
                 .get(SAM_BAS_ROM_OFFSET + off)
                 .copied()
                 .unwrap_or(OPEN_BUS),
-            SamTarget::Cart(off) => self.cart.rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
-            SamTarget::Io => self.sam_io_peek(addr),
-            SamTarget::OpenBus => OPEN_BUS,
+            SAMTarget::Cart(off) => self.cart.rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
+            SAMTarget::Io => self.sam_io_peek(addr),
+            SAMTarget::OpenBus => OPEN_BUS,
         }
     }
 

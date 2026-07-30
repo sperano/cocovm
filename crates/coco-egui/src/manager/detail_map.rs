@@ -49,7 +49,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     if def.peripherals.mpi {
         form.cartridge = new_vm::CartridgeChoice::MPI;
         if let Some(path) = cart {
-            form.mpi_slots[0] = new_vm::SlotChoice::RomPak(path);
+            form.mpi_slots[0] = new_vm::SlotChoice::ROMPak(path);
         }
         if fd502 {
             form.mpi_slots[crate::MPI_SLOT_COUNT - 1] = new_vm::SlotChoice::FD502;
@@ -58,7 +58,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
             form.mpi_slots[crate::DEFAULT_RTC_SLOT] = new_vm::SlotChoice::RTC;
         }
     } else if let Some(path) = cart {
-        form.cartridge = new_vm::CartridgeChoice::RomPak(path);
+        form.cartridge = new_vm::CartridgeChoice::ROMPak(path);
     } else if def.peripherals.rtc {
         form.cartridge = new_vm::CartridgeChoice::RTC;
     } else if def.peripherals.rs232 {
@@ -194,11 +194,11 @@ fn pack_cartridge(
     // (launch_machine re-seats a slotted one in slot 0), so more than
     // one slotted pak cannot be represented.
     let mut slotted_paks = form.mpi_slots.iter().filter_map(|slot| match slot {
-        new_vm::SlotChoice::RomPak(path) => Some(path),
+        new_vm::SlotChoice::ROMPak(path) => Some(path),
         _ => None,
     });
     def.media.cart = match &form.cartridge {
-        new_vm::CartridgeChoice::RomPak(path) => Some(path.display().to_string()),
+        new_vm::CartridgeChoice::ROMPak(path) => Some(path.display().to_string()),
         new_vm::CartridgeChoice::MPI => slotted_paks.next().map(|p| p.display().to_string()),
         _ => None,
     };

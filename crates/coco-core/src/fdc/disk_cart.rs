@@ -4,10 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cart::{Cartridge, RomPak, RomPakError, IO_OPEN_BUS};
+use crate::cart::{Cartridge, ROMPak, ROMPakError, IO_OPEN_BUS};
 use crate::wd1773::WD1773;
 
-use super::jvc::JvcDisk;
+use super::jvc::JVCDisk;
 use super::DRIVE_COUNT;
 
 /// DSKREG latch bit assignments (`$FF40`; SCS writes at `$FF40-$FF47` all hit
@@ -66,9 +66,9 @@ fn selected_side(reg: u8, drive: Option<usize>) -> u8 {
 /// through a `&mut self` method here would make the borrow checker see the
 /// whole `DiskCart` as borrowed instead of just this one field.
 fn selected_disk(
-    drives: &mut [Option<JvcDisk>; DRIVE_COUNT],
+    drives: &mut [Option<JVCDisk>; DRIVE_COUNT],
     drive: Option<usize>,
-) -> Option<&mut JvcDisk> {
+) -> Option<&mut JVCDisk> {
     drive.and_then(|i| drives[i].as_mut())
 }
 
@@ -86,10 +86,10 @@ const DSKREG_LAST: u16 = 0xFF47;
 /// Extended Color BASIC ROM through the cartridge's CTS window.
 #[derive(Serialize, Deserialize)]
 pub struct DiskCart {
-    rom: RomPak,
+    rom: ROMPak,
     fdc: WD1773,
     dskreg: u8,
-    drives: [Option<JvcDisk>; DRIVE_COUNT],
+    drives: [Option<JVCDisk>; DRIVE_COUNT],
     /// Previous state of the NMI line (`intrq && DENSITY_AND_NMI_ENABLE`), so
     /// [`DiskCart::update_lines`] can detect its rising edge.
     nmi_line: bool,
@@ -110,7 +110,7 @@ impl std::fmt::Debug for DiskCart {
 impl DiskCart {
     /// Build a disk controller cartridge serving `rom` (Disk Extended Color
     /// BASIC, `disk11.rom`) through the CTS window, mirror-filled the same way
-    /// a plain [`RomPak`] is (reused directly: same MAME `coco_pak_device`
+    /// a plain [`ROMPak`] is (reused directly: same MAME `coco_pak_device`
     /// mirror-fill, same CTS-first/half-swap indexing). Never ties CART* to Q —
     /// like other Disk BASIC paks, BASIC finds it via the cold-start `DK` probe,
     /// not autostart.
@@ -120,8 +120,8 @@ impl DiskCart {
     /// halt-enable bit, before any command has run).
     pub fn new(rom: Box<[u8]>) -> Self {
         const AUTOSTART: bool = false;
-        let rom = RomPak::from_bytes(&rom, AUTOSTART)
-            .unwrap_or_else(|e: RomPakError| panic!("invalid disk controller ROM image: {e}"));
+        let rom = ROMPak::from_bytes(&rom, AUTOSTART)
+            .unwrap_or_else(|e: ROMPakError| panic!("invalid disk controller ROM image: {e}"));
         Self {
             rom,
             fdc: WD1773::new(),
@@ -134,14 +134,14 @@ impl DiskCart {
 
     /// Restore-path-only: re-inject the Disk Extended Color BASIC ROM image
     /// after a snapshot restore — delegates to the inner
-    /// [`RomPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
+    /// [`ROMPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
     /// [`DiskCart::new`], returns a `Result` instead of panicking: a restore
     /// path must not crash the process on a bad ROM.
-    pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), RomPakError> {
+    pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(rom)
     }
 
-    pub fn insert_disk(&mut self, drive: usize, disk: JvcDisk) {
+    pub fn insert_disk(&mut self, drive: usize, disk: JVCDisk) {
         self.drives[drive] = Some(disk);
     }
 
@@ -154,14 +154,14 @@ impl DiskCart {
     }
 
     /// The floppy in `drive`, if any (status display, write-back on eject).
-    pub fn disk(&self, drive: usize) -> Option<&JvcDisk> {
+    pub fn disk(&self, drive: usize) -> Option<&JVCDisk> {
         self.drives[drive].as_ref()
     }
 
     /// Mutable twin of [`DiskCart::disk`]: the snapshot restore flow uses
-    /// this to reach [`JvcDisk::reattach_data`] for whichever drives came
+    /// this to reach [`JVCDisk::reattach_data`] for whichever drives came
     /// back from a snapshot with a disk mounted (`docs/plan-save-states.md`).
-    pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JvcDisk> {
+    pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JVCDisk> {
         self.drives[drive].as_mut()
     }
 

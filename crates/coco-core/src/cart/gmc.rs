@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::rompak::{BankedPakError, BankedRomPak};
+use super::rompak::{BankedPakError, BankedROMPak};
 use super::{Cartridge, IO_OPEN_BUS};
 
 /// The SN76489A data port: `$FF41` (MAME `coco_gmc.cpp` `scs_write` case 1).
@@ -20,7 +20,7 @@ const GMC_PSG_REG: u16 = 0xFF41;
 const GMC_PSG_CRYSTAL_HZ: f64 = 4_000_000.0;
 
 /// John Linville's Games Master Cartridge (MAME `coco_gmc.cpp`): a
-/// [`BankedRomPak`] plus a TI SN76489A PSG for game music. `$FF40` is the
+/// [`BankedROMPak`] plus a TI SN76489A PSG for game music. `$FF40` is the
 /// ROM bank latch (inherited from the banked pak), `$FF41` writes the PSG's
 /// single command port; nothing is readable back (MAME's `scs_read` is the
 /// do-nothing base), so reads stay at the I/O window's open-bus value.
@@ -31,39 +31,39 @@ const GMC_PSG_CRYSTAL_HZ: f64 = 4_000_000.0;
 /// is an explicit "NYI" stub), and no independent schematic settles what the
 /// real cart's SND-pin wiring expects — so we keep MAME's behaviour.
 #[derive(Serialize, Deserialize)]
-pub struct Gmc {
-    rom: BankedRomPak,
+pub struct GamesMasterCartridge {
+    rom: BankedROMPak,
     psg: crate::sn76489::SN76489A,
 }
 
-impl std::fmt::Debug for Gmc {
+impl std::fmt::Debug for GamesMasterCartridge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Gmc")
+        f.debug_struct("GamesMasterCartridge")
             .field("rom", &self.rom)
             .field("psg", &self.psg)
             .finish()
     }
 }
 
-impl Gmc {
+impl GamesMasterCartridge {
     /// Build a GMC from a raw banked-ROM image (same size rules as
-    /// [`BankedRomPak::from_bytes`]).
+    /// [`BankedROMPak::from_bytes`]).
     pub fn from_bytes(bytes: &[u8], autostart: bool) -> Result<Self, BankedPakError> {
         Ok(Self {
-            rom: BankedRomPak::from_bytes(bytes, autostart)?,
+            rom: BankedROMPak::from_bytes(bytes, autostart)?,
             psg: crate::sn76489::SN76489A::new(GMC_PSG_CRYSTAL_HZ),
         })
     }
 
     /// Restore-path-only: re-inject the banked ROM image after a snapshot
-    /// restore — delegates to the inner [`BankedRomPak::reattach_image`]
+    /// restore — delegates to the inner [`BankedROMPak::reattach_image`]
     /// (`docs/plan-save-states.md`).
     pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
         self.rom.reattach_image(bytes)
     }
 }
 
-impl Cartridge for Gmc {
+impl Cartridge for GamesMasterCartridge {
     fn read(&mut self, _addr: u16) -> u8 {
         IO_OPEN_BUS
     }

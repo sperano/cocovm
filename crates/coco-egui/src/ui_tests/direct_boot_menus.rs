@@ -118,12 +118,17 @@ fn help_about_toggles_the_about_window() {
 }
 
 #[test]
-fn status_bar_shows_the_default_joystick_config() {
+fn status_bar_shows_no_joystick_entries_by_default() {
     let mut harness = boot_harness();
     harness.step();
-    // Default config: right stick on the mouse, left stick off — see
-    // JoystickInputs::new.
-    harness.get_by_label_contains("JR: Mouse");
+    // Default config: both sticks off (`JoySource::None`) — see
+    // `JoystickInputs::new`. `joystick_status` only ever emits a "JR"/"JL"
+    // entry for a port whose source isn't `JoySource::None`, so neither
+    // should appear until the Joysticks menu assigns one.
+    assert!(
+        harness.query_by_label_contains("JR:").is_none(),
+        "the right stick's source is None by default, so it shouldn't get a status-bar entry"
+    );
     assert!(
         harness.query_by_label_contains("JL:").is_none(),
         "the left stick's source is None by default, so it shouldn't get a status-bar entry"
@@ -329,7 +334,7 @@ fn rs232_menu_inserts_and_removes_the_pak() {
     click(&mut harness, "Insert Deluxe RS-232 Pak");
     {
         let app = harness.state_mut();
-        assert!(matches!(app.rs232, Some(Rs232Endpoint::Loopback)));
+        assert!(matches!(app.rs232, Some(RS232Endpoint::Loopback)));
         assert!(
             app.machine.bus.cart.as_deluxe_rs232().is_some(),
             "the pak must be reachable behind the trait object"
@@ -368,7 +373,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
     }
     std::fs::write(&path, &image).unwrap();
 
-    let rom_source = RomSource::File(roms_dir.join("coco3.rom"));
+    let rom_source = ROMSource::File(roms_dir.join("coco3.rom"));
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
             MachineConfig::default(),

@@ -66,7 +66,7 @@ motherboard-unmapped, not the disk controller's SCS window — see
     forces `busy` to `false` — this is MAME `coco_ssc_device`'s modelled
     behavior for the SP0256 reset line, not an emulator convenience we added.
   - Any other transition (bit 0 stays 0, or goes 0→1) does nothing to the AY.
-  - Edge detection needs a "previous bit 0" to compare against; `Ssc` inits
+  - Edge detection needs a "previous bit 0" to compare against; `SoundSpeechCartridge` inits
     it to `false` at power-on/reset so the very first `$FF7D` write — even if
     it happens to be bit 0 = 0 — is never itself treated as a falling edge.
 
@@ -424,7 +424,7 @@ simplicity tradeoff as `BUSY_HOLD_CYCLES` elsewhere in this file).
 ## AY-3-8913 core (`crates/coco-core/src/ay8913.rs`)
 
 The AY-3-8913 is an AY-3-8910 PSG with the two I/O ports (registers 14/15)
-absent — no pins on the package. `Ay8913` mirrors MAME `ay8910.cpp`'s classic
+absent — no pins on the package. `AY8913` mirrors MAME `ay8910.cpp`'s classic
 (non-AY8930-expanded, non-YM2149) mode:
 
 - **Registers**: R0-R5 tone A/B/C fine/coarse (12-bit combined period; coarse

@@ -1,7 +1,7 @@
 //! Scratch harness: boot a cart and log every GIME palette-register change
 //! with the PC that made it, plus periodic palette snapshots.
 
-use coco_core::cart::RomPak;
+use coco_core::cart::ROMPak;
 use coco_core::{Machine, MachineConfig};
 
 fn main() {
@@ -9,7 +9,7 @@ fn main() {
     let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
     let cart = std::fs::read(&cart_path).unwrap();
     let mut m = Machine::new(MachineConfig::default(), rom);
-    m.insert_cartridge(RomPak::from_bytes(&cart, true).unwrap());
+    m.insert_cartridge(ROMPak::from_bytes(&cart, true).unwrap());
     m.reset();
 
     let stop_pulse_at: Option<u32> = std::env::args()
@@ -22,7 +22,7 @@ fn main() {
         if stop_pulse_at == Some(field) {
             // Swap in the same image with autostart=false: the CART line goes
             // quiet, ROM reads unchanged.
-            let quiet = RomPak::from_bytes(&std::fs::read(&cart_path).unwrap(), false).unwrap();
+            let quiet = ROMPak::from_bytes(&std::fs::read(&cart_path).unwrap(), false).unwrap();
             m.bus.cart = quiet.into();
             println!("--- field {field}: CART line silenced");
         }

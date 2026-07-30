@@ -83,9 +83,9 @@ fn sniff_os9_sides(bytes: &[u8], file_len: usize) -> Option<usize> {
     Some(sides)
 }
 
-/// Error constructing a [`JvcDisk`] from a raw image.
+/// Error constructing a [`JVCDisk`] from a raw image.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JvcError {
+pub enum JVCError {
     /// Header byte 4 (sector attribute flag) was nonzero: every sector would
     /// carry an extra prepended attribute byte, a JVC variant this
     /// implementation doesn't support.
@@ -100,19 +100,19 @@ pub enum JvcError {
         sides: usize,
         sector_size: usize,
     },
-    /// [`JvcDisk::reattach_data`] only: the reattached file parses to a
+    /// [`JVCDisk::reattach_data`] only: the reattached file parses to a
     /// different geometry than the snapshot recorded — it changed shape
     /// (was reformatted, truncated, grown, …) since the snapshot was taken.
     GeometryChanged,
 }
 
-impl std::fmt::Display for JvcError {
+impl std::fmt::Display for JVCError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JvcError::AttributeBytesUnsupported => {
+            JVCError::AttributeBytesUnsupported => {
                 write!(f, "JVC images with per-sector attribute bytes are not supported")
             }
-            JvcError::InvalidGeometry { file_len, header_len, sectors_per_track, sides, sector_size } => {
+            JVCError::InvalidGeometry { file_len, header_len, sectors_per_track, sides, sector_size } => {
                 write!(
                     f,
                     "JVC image geometry doesn't divide evenly into tracks: file_len={file_len}, \
@@ -120,23 +120,23 @@ impl std::fmt::Display for JvcError {
                      sector_size={sector_size}"
                 )
             }
-            JvcError::GeometryChanged => {
+            JVCError::GeometryChanged => {
                 write!(f, "reattached JVC image geometry doesn't match the snapshot's")
             }
         }
     }
 }
 
-impl std::error::Error for JvcError {}
+impl std::error::Error for JVCError {}
 
 /// A JVC (`.dsk`/`.jvc`) floppy image, kept fully in memory.
 ///
 /// Geometry comes from the optional trailing-length header (MAME
 /// `jvc_dsk.cpp`): header length is `file_len % 256` (usually 0 — a headerless
 /// image uses every default). Two-sided images interleave
-/// track0-side0, track0-side1, track1-side0, … — see [`JvcDisk::sector_offset`].
+/// track0-side0, track0-side1, track1-side0, … — see [`JVCDisk::sector_offset`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JvcDisk {
+pub struct JVCDisk {
     sectors_per_track: usize,
     sides: usize,
     sector_size: usize,
@@ -146,7 +146,7 @@ pub struct JvcDisk {
     /// Skipped: a mounted disk image's contents are media, referenced by
     /// path+hash in the snapshot container (a later phase) rather than
     /// embedded — floppy images can be copyrighted commercial software.
-    /// Re-injected via [`JvcDisk::reattach_data`] (`docs/plan-save-states.md`).
+    /// Re-injected via [`JVCDisk::reattach_data`] (`docs/plan-save-states.md`).
     /// Deserializes to an empty `Vec` until reattached.
     #[serde(skip)]
     data: Vec<u8>,
@@ -154,10 +154,10 @@ pub struct JvcDisk {
     dirty: bool,
 }
 
-impl JvcDisk {
+impl JVCDisk {
     /// Parse a raw JVC image. Rejects attribute-byte images and geometries that
     /// don't divide evenly into whole tracks.
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, JvcError> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, JVCError> {
         let file_len = bytes.len();
         let header_len = file_len % HEADER_MODULUS;
         let header = &bytes[..header_len];
@@ -173,13 +173,13 @@ impl JvcDisk {
         let first_sector_id = header.get(3).copied().unwrap_or(DEFAULT_FIRST_SECTOR_ID);
         let attribute_flag = header.get(4).copied().unwrap_or(0);
         if attribute_flag != 0 {
-            return Err(JvcError::AttributeBytesUnsupported);
+            return Err(JVCError::AttributeBytesUnsupported);
         }
 
         let data_len = file_len - header_len;
         let track_bytes = sectors_per_track * sector_size * sides;
         if track_bytes == 0 || !data_len.is_multiple_of(track_bytes) {
-            return Err(JvcError::InvalidGeometry {
+            return Err(JVCError::InvalidGeometry {
                 file_len,
                 header_len,
                 sectors_per_track,
@@ -218,12 +218,12 @@ impl JvcDisk {
     /// snapshot restore (`data` is `#[serde(skip)]` — mounted disk images
     /// are media, referenced by path+hash rather than embedded, since they
     /// can be copyrighted commercial software; `docs/plan-save-states.md`).
-    /// Re-derives geometry from `bytes` exactly like [`JvcDisk::from_bytes`]
+    /// Re-derives geometry from `bytes` exactly like [`JVCDisk::from_bytes`]
     /// and verifies it matches the geometry the snapshot recorded before
-    /// setting `data` — [`JvcError::GeometryChanged`] means the file changed
+    /// setting `data` — [`JVCError::GeometryChanged`] means the file changed
     /// shape since the snapshot was taken.
-    pub fn reattach_data(&mut self, bytes: Vec<u8>) -> Result<(), JvcError> {
-        let reparsed = JvcDisk::from_bytes(bytes)?;
+    pub fn reattach_data(&mut self, bytes: Vec<u8>) -> Result<(), JVCError> {
+        let reparsed = JVCDisk::from_bytes(bytes)?;
         if reparsed.sectors_per_track != self.sectors_per_track
             || reparsed.sides != self.sides
             || reparsed.sector_size != self.sector_size
@@ -231,7 +231,7 @@ impl JvcDisk {
             || reparsed.track_count != self.track_count
             || reparsed.header_len != self.header_len
         {
-            return Err(JvcError::GeometryChanged);
+            return Err(JVCError::GeometryChanged);
         }
         self.data = reparsed.data;
         Ok(())

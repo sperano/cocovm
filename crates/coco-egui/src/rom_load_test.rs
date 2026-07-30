@@ -20,7 +20,7 @@ fn compose_coco12_rom_lays_out_extbas_then_bas() {
     std::fs::write(dir.join("bas12.rom"), &bas).unwrap();
     std::fs::write(dir.join("extbas11.rom"), &extbas).unwrap();
 
-    let Coco12RomResult::Composed { image, .. } = compose_coco12_rom(&dir) else {
+    let Coco12ROMResult::Composed { image, .. } = compose_coco12_rom(&dir) else {
         panic!("expected Composed");
     };
     assert_eq!(image.len(), COCO12_BAS_OFFSET * 2);
@@ -34,7 +34,7 @@ fn compose_coco12_rom_fills_open_bus_when_extbas_missing() {
     let bas = vec![0xAAu8; COCO12_BAS_OFFSET];
     std::fs::write(dir.join("bas12.rom"), &bas).unwrap();
 
-    let Coco12RomResult::Composed { image, extbas, .. } = compose_coco12_rom(&dir) else {
+    let Coco12ROMResult::Composed { image, extbas, .. } = compose_coco12_rom(&dir) else {
         panic!("expected Composed");
     };
     assert!(extbas.is_none());
@@ -53,7 +53,7 @@ fn compose_coco12_rom_prefers_newest_candidate_present() {
     std::fs::write(dir.join("bas10.rom"), vec![0x10u8; COCO12_BAS_OFFSET]).unwrap();
     std::fs::write(dir.join("bas12.rom"), vec![0x12u8; COCO12_BAS_OFFSET]).unwrap();
 
-    let Coco12RomResult::Composed { bas, .. } = compose_coco12_rom(&dir) else {
+    let Coco12ROMResult::Composed { bas, .. } = compose_coco12_rom(&dir) else {
         panic!("expected Composed");
     };
     assert_eq!(bas.0.file_name().unwrap(), "bas12.rom");
@@ -67,7 +67,7 @@ fn compose_coco12_rom_demotes_coco2b_bas13_to_last_resort() {
     std::fs::write(dir.join("bas13.rom"), vec![0x13u8; COCO12_BAS_OFFSET]).unwrap();
     std::fs::write(dir.join("bas12.rom"), vec![0x12u8; COCO12_BAS_OFFSET]).unwrap();
 
-    let Coco12RomResult::Composed { bas, .. } = compose_coco12_rom(&dir) else {
+    let Coco12ROMResult::Composed { bas, .. } = compose_coco12_rom(&dir) else {
         panic!("expected Composed");
     };
     assert_eq!(bas.0.file_name().unwrap(), "bas12.rom");
@@ -79,6 +79,6 @@ fn compose_coco12_rom_reports_missing_color_basic() {
     // Directory exists but has no candidate ROMs in it.
     assert!(matches!(
         compose_coco12_rom(&dir),
-        Coco12RomResult::NoColorBasic
+        Coco12ROMResult::NoColorBasic
     ));
 }

@@ -203,7 +203,7 @@ fn wav_decode_rejects_non_pcm_format_tag() {
     assert!(
         matches!(
             cassette_wav::decode_wav(&wav, CPU_HZ),
-            Err(cassette_wav::WavError::UnsupportedFormatTag(IEEE_FLOAT_FORMAT_TAG))
+            Err(cassette_wav::WAVError::UnsupportedFormatTag(IEEE_FLOAT_FORMAT_TAG))
         ),
         "a non-PCM format tag must error, not panic or silently misparse"
     );

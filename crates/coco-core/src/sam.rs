@@ -1,4 +1,4 @@
-//! `Sam` — the MC6883 Synchronous Address Multiplexer's primary memory map, for
+//! `SAM` — the MC6883 Synchronous Address Multiplexer's primary memory map, for
 //! the plain CoCo 1/2 machine (no GIME). See `docs/coco12-plan.md`.
 //!
 //! This is a standalone model, deliberately **not** shared with the GIME's own
@@ -21,7 +21,7 @@ pub const STROBE_LAST: u16 = 0xFFDF;
 /// $FF00–$FF7E: PIA0, PIA1, cart SCS* ($FF40–$FF5F), and the cart SCS*
 /// extension some cartridges decode ($FF60–$FF7E, e.g. the Sound/Speech
 /// Cartridge's $FF7D/$FF7E — `docs/cartridges.md` "Carts can decode
-/// addresses outside SCS") — decoded by the bus, not `Sam` itself (`Sam::map`
+/// addresses outside SCS") — decoded by the bus, not `SAM` itself (`SAM::map`
 /// only reports that this range is I/O).
 const IO_BASE: u16 = 0xFF00;
 /// $FF7F–$FFBF: no GIME (hence no MPI-style `$FF7F` decode either) on these
@@ -52,9 +52,9 @@ const BAS_MIRROR_OFFSET: usize = 0xBFE0 - BAS_ROM_BASE as usize;
 /// Each F-bit (display page) step is 512 bytes: `display_base = f * PAGE_UNIT`.
 pub const PAGE_UNIT: usize = 512;
 
-/// Where a CPU address decodes to, per [`Sam::map`].
+/// Where a CPU address decodes to, per [`SAM::map`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SamTarget {
+pub enum SAMTarget {
     /// Physical RAM address (already includes any P1 banking).
     Ram(usize),
     /// Offset into the Extended Color BASIC ROM half of the flat 32K image
@@ -76,10 +76,10 @@ pub enum SamTarget {
 /// MC6883 SAM register state (`docs/coco12-plan.md` bit table). All 16 bits
 /// power up clear. Fields are `pub` (matching `gime::GIME`'s style) so tests
 /// can inspect latched state directly, same as `sam_video.rs` does for the
-/// GIME's compatibility overlay; [`Sam::map`]/[`Sam::display_base`]/
-/// [`Sam::v_bits`]/[`Sam::cpu_fast`] are the API real callers use.
+/// GIME's compatibility overlay; [`SAM::map`]/[`SAM::display_base`]/
+/// [`SAM::v_bits`]/[`SAM::cpu_fast`] are the API real callers use.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-pub struct Sam {
+pub struct SAM {
     /// VDG-counter mode bits V0-V2, packed as `V2:V1:V0` (0-7). Latched but
     /// not consulted here — `video.rs`'s legacy-graphics vertical cadence
     /// lookup uses it (`docs/coco12-plan.md`).
@@ -90,14 +90,14 @@ pub struct Sam {
     /// when TY=0 and 64K (`m1`).
     pub p1: bool,
     /// CPU rate, address-dependent half (ROM fast / RAM slow on real
-    /// hardware). See [`Sam::cpu_fast`]'s KNOWN GAP note.
+    /// hardware). See [`SAM::cpu_fast`]'s KNOWN GAP note.
     pub r0: bool,
     /// CPU rate, unconditional-double-speed half.
     pub r1: bool,
     /// Memory-size bit 0 (4K/16K/32K-64K, with `m1`).
     pub m0: bool,
     /// Memory-size bit 1; used here only as the plan's 64K/"not 64K" proxy
-    /// (see [`Sam::is_64k`]) for TY's all-RAM precondition and P1 banking.
+    /// (see [`SAM::is_64k`]) for TY's all-RAM precondition and P1 banking.
     pub m1: bool,
     /// Map type: false = ROM map, true = all-RAM (system ROM disabled). Color
     /// BASIC Unravelled's appendix has $FFDE/$FFDF backwards; MAME, Bob
@@ -106,7 +106,7 @@ pub struct Sam {
     pub ty: bool,
 }
 
-impl Sam {
+impl SAM {
     pub fn new() -> Self {
         Self::default()
     }
@@ -137,24 +137,24 @@ impl Sam {
 
     /// Decode a CPU address to its target, per the plan's TY=0/TY=1 memory
     /// map table (`docs/coco12-plan.md`; MAME `6883sam.cpp`).
-    pub fn map(&self, addr: u16) -> SamTarget {
+    pub fn map(&self, addr: u16) -> SAMTarget {
         // The vector mirror and the $FF00+ fixed page win regardless of TY —
         // "the mirror region stays ROM" even in all-RAM mode.
         if addr >= VECTOR_MIRROR_BASE {
-            return SamTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
+            return SAMTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
         }
         if addr >= STROBE_BASE {
-            return SamTarget::Io; // $FFC0-$FFDF: SAM control strobes.
+            return SAMTarget::Io; // $FFC0-$FFDF: SAM control strobes.
         }
         if (OPEN_BUS_BASE..=OPEN_BUS_LAST).contains(&addr) {
-            return SamTarget::OpenBus; // $FF7F-$FFBF.
+            return SAMTarget::OpenBus; // $FF7F-$FFBF.
         }
         if addr >= IO_BASE {
-            return SamTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
+            return SAMTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
         }
         if self.ty && self.is_64k() {
             // All-RAM mode extends the RAM decode through $FEFF.
-            return SamTarget::Ram(addr as usize);
+            return SAMTarget::Ram(addr as usize);
         }
         match addr {
             0x0000..=0x7FFF => {
@@ -166,11 +166,11 @@ impl Sam {
                 } else {
                     addr
                 };
-                SamTarget::Ram(ram_addr as usize)
+                SAMTarget::Ram(ram_addr as usize)
             }
-            EXT_ROM_BASE..=EXT_ROM_LAST => SamTarget::RomExt((addr - EXT_ROM_BASE) as usize),
-            BAS_ROM_BASE..=BAS_ROM_LAST => SamTarget::RomBas((addr - BAS_ROM_BASE) as usize),
-            CART_ROM_BASE..=CART_ROM_LAST => SamTarget::Cart((addr - CART_ROM_BASE) as usize),
+            EXT_ROM_BASE..=EXT_ROM_LAST => SAMTarget::RomExt((addr - EXT_ROM_BASE) as usize),
+            BAS_ROM_BASE..=BAS_ROM_LAST => SAMTarget::RomBas((addr - BAS_ROM_BASE) as usize),
+            CART_ROM_BASE..=CART_ROM_LAST => SAMTarget::Cart((addr - CART_ROM_BASE) as usize),
             _ => unreachable!("address {addr:#06x} not covered by the SAM decode"),
         }
     }

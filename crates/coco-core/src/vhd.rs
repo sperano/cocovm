@@ -7,7 +7,7 @@
 //! the verified spec this module was built from; the driver-side contract
 //! (24-bit LRN, 256-byte sectors) is corroborated by NitrOS-9 `emudsk.asm`.
 //!
-//! This module holds only data and file I/O: [`Vhd`]/`VhdDrive`/[`VhdImage`]
+//! This module holds only data and file I/O: [`VHD`]/`VHDDrive`/[`VHDImage`]
 //! know nothing about the CPU bus. The actual command execution — which needs
 //! to transfer sector data through the GIME-translated logical address space
 //! — lives in `SystemBus`'s private methods in `bus.rs`.
@@ -55,17 +55,17 @@ pub mod status {
 /// A VHD backing image: either an in-memory buffer (tests — small, cheap to
 /// construct and assert against) or a real file, accessed by seeking rather
 /// than loaded whole (real VHD images run from hundreds of MB to several GB).
-pub enum VhdImage {
+pub enum VHDImage {
     Memory(Vec<u8>),
     File(File),
 }
 
-impl VhdImage {
+impl VHDImage {
     /// Current length of the backing image in bytes.
     fn len(&self) -> io::Result<u64> {
         match self {
-            VhdImage::Memory(bytes) => Ok(bytes.len() as u64),
-            VhdImage::File(file) => Ok(file.metadata()?.len()),
+            VHDImage::Memory(bytes) => Ok(bytes.len() as u64),
+            VHDImage::File(file) => Ok(file.metadata()?.len()),
         }
     }
 
@@ -82,11 +82,11 @@ impl VhdImage {
         let available = (len - offset) as usize;
         let want = buf.len().min(available);
         match self {
-            VhdImage::Memory(bytes) => {
+            VHDImage::Memory(bytes) => {
                 let start = offset as usize;
                 buf[..want].copy_from_slice(&bytes[start..start + want]);
             }
-            VhdImage::File(file) => {
+            VHDImage::File(file) => {
                 file.seek(SeekFrom::Start(offset))?;
                 file.read_exact(&mut buf[..want])?;
             }
@@ -101,8 +101,8 @@ impl VhdImage {
             return Ok(());
         }
         match self {
-            VhdImage::Memory(bytes) => bytes.resize(len as usize, 0),
-            VhdImage::File(file) => file.set_len(len)?,
+            VHDImage::Memory(bytes) => bytes.resize(len as usize, 0),
+            VHDImage::File(file) => file.set_len(len)?,
         }
         Ok(())
     }
@@ -113,7 +113,7 @@ impl VhdImage {
     /// same way a real file does).
     pub(crate) fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
         match self {
-            VhdImage::Memory(bytes) => {
+            VHDImage::Memory(bytes) => {
                 let end = offset as usize + buf.len();
                 if bytes.len() < end {
                     bytes.resize(end, 0);
@@ -121,7 +121,7 @@ impl VhdImage {
                 bytes[offset as usize..end].copy_from_slice(buf);
                 Ok(())
             }
-            VhdImage::File(file) => {
+            VHDImage::File(file) => {
                 file.seek(SeekFrom::Start(offset))?;
                 file.write_all(buf)
             }
@@ -131,8 +131,8 @@ impl VhdImage {
     /// Flush the backing file to disk; a no-op for an in-memory test image.
     pub(crate) fn flush(&mut self) -> io::Result<()> {
         match self {
-            VhdImage::Memory(_) => Ok(()),
-            VhdImage::File(file) => file.flush(),
+            VHDImage::Memory(_) => Ok(()),
+            VHDImage::File(file) => file.flush(),
         }
     }
 
@@ -141,8 +141,8 @@ impl VhdImage {
     /// to check what a command wrote); `None` for a file-backed image.
     pub fn as_memory(&self) -> Option<&[u8]> {
         match self {
-            VhdImage::Memory(bytes) => Some(bytes),
-            VhdImage::File(_) => None,
+            VHDImage::Memory(bytes) => Some(bytes),
+            VHDImage::File(_) => None,
         }
     }
 }
@@ -151,7 +151,7 @@ impl VhdImage {
 /// buffer address latched by writes to `$FF80–$FF82`/`$FF84–$FF85`, the last
 /// command's outcome (`$FF83` read), and the mounted image, if any.
 #[derive(Serialize, Deserialize)]
-pub(crate) struct VhdDrive {
+pub(crate) struct VHDDrive {
     /// 24-bit logical record (sector) number; the top 8 bits of the `u32` are
     /// always 0.
     pub(crate) lrn: u32,
@@ -159,12 +159,12 @@ pub(crate) struct VhdDrive {
     pub(crate) buffer_addr: u16,
     pub(crate) status: u8,
     /// Skipped: an open host `File` handle. Remounted by path on restore via
-    /// [`Vhd::reattach_image`] (`docs/plan-save-states.md`).
+    /// [`VHD::reattach_image`] (`docs/plan-save-states.md`).
     #[serde(skip)]
-    pub(crate) image: Option<VhdImage>,
+    pub(crate) image: Option<VHDImage>,
 }
 
-impl VhdDrive {
+impl VHDDrive {
     fn new() -> Self {
         Self { lrn: 0, buffer_addr: 0, status: status::NO_VHD, image: None }
     }
@@ -173,10 +173,10 @@ impl VhdDrive {
 /// The VHD device: two independent drives plus the shared `$FF86`
 /// drive-select latch.
 #[derive(Serialize, Deserialize)]
-pub struct Vhd {
-    pub(crate) drives: [VhdDrive; DRIVE_COUNT],
+pub struct VHD {
+    pub(crate) drives: [VHDDrive; DRIVE_COUNT],
     /// Raw value last written to `$FF86`. `0`/`1` select a drive; anything
-    /// else deselects both (see [`Vhd::selected_drive`]).
+    /// else deselects both (see [`VHD::selected_drive`]).
     select: u8,
     /// Reentrancy guard for command execution (`SystemBus::vhd_execute_command`
     /// in `bus.rs`): our own addition, not modeled by MAME — needed because
@@ -197,7 +197,7 @@ pub struct Vhd {
     pub(crate) access_counts: [u64; DRIVE_COUNT],
 }
 
-impl Vhd {
+impl VHD {
     /// Both drives start unmounted (status [`status::NO_VHD`]).
     ///
     /// `select` defaults to drive 0. This is an inferred default, not a
@@ -208,7 +208,7 @@ impl Vhd {
     /// until confirmed against real hardware or MAME's device reset code.
     pub fn new() -> Self {
         Self {
-            drives: [VhdDrive::new(), VhdDrive::new()],
+            drives: [VHDDrive::new(), VHDDrive::new()],
             select: 0,
             busy: false,
             access_counts: [0; DRIVE_COUNT],
@@ -228,7 +228,7 @@ impl Vhd {
     /// Mount `image` in `drive`: status becomes [`status::POWER_ON`], and the
     /// LRN/buffer-address registers reset to 0 (MAME `coco_vhd.cpp` image
     /// load).
-    pub fn insert(&mut self, drive: usize, image: VhdImage) {
+    pub fn insert(&mut self, drive: usize, image: VHDImage) {
         let d = &mut self.drives[drive];
         d.image = Some(image);
         d.status = status::POWER_ON;
@@ -245,9 +245,9 @@ impl Vhd {
 
     /// Restore-path-only: re-inject a mounted image after a snapshot
     /// restore, WITHOUT resetting `lrn`/`buffer_addr`/`status` the way
-    /// [`Vhd::insert`] does — all three are themselves restored machine
+    /// [`VHD::insert`] does — all three are themselves restored machine
     /// state, exactly as deserialized (`docs/plan-save-states.md`).
-    pub fn reattach_image(&mut self, drive: usize, image: VhdImage) {
+    pub fn reattach_image(&mut self, drive: usize, image: VHDImage) {
         self.drives[drive].image = Some(image);
     }
 
@@ -256,8 +256,8 @@ impl Vhd {
     }
 
     /// The image mounted in `drive`, if any — an inspection accessor mainly
-    /// useful for tests (see [`VhdImage::as_memory`]).
-    pub fn image(&self, drive: usize) -> Option<&VhdImage> {
+    /// useful for tests (see [`VHDImage::as_memory`]).
+    pub fn image(&self, drive: usize) -> Option<&VHDImage> {
         self.drives[drive].image.as_ref()
     }
 
@@ -333,7 +333,7 @@ impl Vhd {
     }
 }
 
-impl Default for Vhd {
+impl Default for VHD {
     fn default() -> Self {
         Self::new()
     }

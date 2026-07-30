@@ -14,9 +14,9 @@
 
 use std::path::PathBuf;
 
-use coco_core::cart::{Cartridge, MultiPak, RomPak};
-use coco_core::fdc::{DiskCart, JvcDisk, dskreg};
-use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotRomRef};
+use coco_core::cart::{Cartridge, MultiPak, ROMPak};
+use coco_core::fdc::{DiskCart, JVCDisk, dskreg};
+use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotROMRef};
 use coco_core::wd1773::status;
 use coco_core::{Machine, MachineConfig};
 use mc6809::{Bus, MC6809, State};
@@ -25,7 +25,7 @@ use mc6809::{Bus, MC6809, State};
 /// `snapshot_roundtrip.rs`'s doc comment for the rationale; duplicated here
 /// rather than shared since these are separate test binaries).
 #[derive(Debug, PartialEq)]
-struct CpuSnapshot {
+struct CPUSnapshot {
     a: u8,
     b: u8,
     x: u16,
@@ -39,7 +39,7 @@ struct CpuSnapshot {
     state: State,
 }
 
-impl CpuSnapshot {
+impl CPUSnapshot {
     fn of(cpu: &MC6809) -> Self {
         Self {
             a: cpu.a,
@@ -120,14 +120,14 @@ fn dispatch_read_sector(m: &mut Machine) {
 /// what code (if any) the CPU is otherwise executing. Returns the drained
 /// bytes and a full per-step CPU trace, for the lockstep comparison between
 /// the original and restored machine.
-fn drain_sector(m: &mut Machine) -> (Vec<u8>, Vec<CpuSnapshot>) {
+fn drain_sector(m: &mut Machine) -> (Vec<u8>, Vec<CPUSnapshot>) {
     let mut bytes = Vec::with_capacity(SECTOR_BYTES);
     let mut trace = Vec::new();
     let mut steps = 0usize;
     while bytes.len() < SECTOR_BYTES {
         assert!(steps < MAX_TRANSFER_STEPS, "sector transfer never completed");
         m.step_instruction();
-        trace.push(CpuSnapshot::of(&m.cpu));
+        trace.push(CPUSnapshot::of(&m.cpu));
         steps += 1;
         if m.bus.read(STATUS_COMMAND_REG) & status::DRQ != 0 {
             bytes.push(m.bus.read(DATA_REG));
@@ -180,7 +180,7 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
     let disk_rom = load_rom("disk11.rom");
     let disk_bytes = index_pattern_disk_bytes();
     let mut cart = DiskCart::new(disk_rom.clone());
-    cart.insert_disk(0, JvcDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
+    cart.insert_disk(0, JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
     original.insert_cartridge(cart);
     original.reset();
     for _ in 0..WARMUP_FIELDS {
@@ -195,7 +195,7 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
 
     let media = MediaRefs {
         system_rom: Some(media_ref("coco3.rom", &load_rom("coco3.rom"))),
-        cart_roms: vec![SlotRomRef { mpi_slot: None, rom: media_ref("disk11.rom", &disk_rom) }],
+        cart_roms: vec![SlotROMRef { mpi_slot: None, rom: media_ref("disk11.rom", &disk_rom) }],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
         ..MediaRefs::default()
     };
@@ -231,10 +231,10 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     let disk_rom = load_rom("disk11.rom");
     let disk_bytes = index_pattern_disk_bytes();
     let mut disk_cart = DiskCart::new(disk_rom.clone());
-    disk_cart.insert_disk(0, JvcDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
+    disk_cart.insert_disk(0, JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
 
     let pak_image = vec![0x77u8; 1024];
-    let pak = RomPak::from_bytes(&pak_image, false).expect("build pak");
+    let pak = ROMPak::from_bytes(&pak_image, false).expect("build pak");
 
     let mut mp = MultiPak::new(FDC_SLOT);
     mp.insert(FDC_SLOT, disk_cart);
@@ -257,8 +257,8 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     let media = MediaRefs {
         system_rom: Some(media_ref("coco3.rom", &load_rom("coco3.rom"))),
         cart_roms: vec![
-            SlotRomRef { mpi_slot: Some(ROMPAK_SLOT as u8), rom: media_ref("pak.rom", &pak_image) },
-            SlotRomRef { mpi_slot: Some(FDC_SLOT as u8), rom: media_ref("disk11.rom", &disk_rom) },
+            SlotROMRef { mpi_slot: Some(ROMPAK_SLOT as u8), rom: media_ref("pak.rom", &pak_image) },
+            SlotROMRef { mpi_slot: Some(FDC_SLOT as u8), rom: media_ref("disk11.rom", &disk_rom) },
         ],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
         ..MediaRefs::default()

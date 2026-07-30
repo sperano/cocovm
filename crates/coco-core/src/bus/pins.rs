@@ -29,7 +29,7 @@ impl SystemBus {
     /// PIA1 port-A input pins: only bit 0 (cassette data in, `$FF20` —
     /// Service Manual / `cassette-verified-facts`) is driven by anything
     /// emulated; the rest float high like every other unused CoCo input pin
-    /// ([`crate::pia::PiaPort`]'s default).
+    /// ([`crate::pia::PIAPort`]'s default).
     pub(super) fn pia1_pa_pins(&self) -> u8 {
         const CASSETTE_IN: u8 = 0x01;
         if self.cassette.input_bit() {
@@ -41,7 +41,7 @@ impl SystemBus {
 
     /// PIA1 port-B input pins. Two bits are driven by anything emulated; the
     /// rest float high like every other unused CoCo input pin
-    /// ([`crate::pia::PiaPort`]'s default).
+    /// ([`crate::pia::PIAPort`]'s default).
     ///
     /// Bit 0 (printer BUSY in, `$FF22` — `bitbanger-spec.md` "Register map"),
     /// on every variant. Polarity is 0 = ready, 1 = busy: BASIC's driver

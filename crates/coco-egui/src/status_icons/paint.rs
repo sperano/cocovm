@@ -149,7 +149,7 @@ const VHD_ICON_CORNER: f32 = 1.5;
 /// Status-bar VHD (virtual hard disk, `$FF80-$FF86` `emudsk`) activity
 /// indicator (see [`VHD_ICON_SIZE`]): red while a READ/WRITE/FLUSH command
 /// has recently dispatched to that drive
-/// ([`coco_core::vhd::Vhd::access_count`]), gray otherwise. The housing
+/// ([`coco_core::vhd::VHD::access_count`]), gray otherwise. The housing
 /// rectangle has one large platter circle — offset toward the left edge,
 /// the way a real 3½" drive's platter sits off-center under its own
 /// top-view case — punched out in the panel background color, a
@@ -175,7 +175,7 @@ const DW_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 10.0);
 
 /// Status-bar DriveWire activity indicator (see [`DW_ICON_SIZE`]): red
 /// while a sector has recently been read from or written to that drive
-/// over the Becker port ([`coco_core::drivewire::DwServer::drive_ops`]),
+/// over the Becker port ([`coco_core::drivewire::DWServer::drive_ops`]),
 /// gray otherwise. A small plug body sits at the right with two punched
 /// pin slots, and a shell-colored cable line runs from the plug to the
 /// icon's left edge with one sag/kink partway along, evoking a serial
@@ -219,7 +219,7 @@ const RS232_PIN_FIELD_W: f32 = RS232_ICON_SIZE.x * 0.72;
 /// Status-bar RS-232 (Deluxe RS-232 Program Pak) activity indicator (see
 /// [`RS232_ICON_SIZE`]): red while a byte has recently gone out to or come
 /// in from the host endpoint
-/// ([`coco_core::rs232::DeluxeRs232::tx_bytes`]/`rx_bytes`), gray
+/// ([`coco_core::rs232::DeluxeRS232::tx_bytes`]/`rx_bytes`), gray
 /// otherwise. A trapezoid (top edge wider than the bottom, the classic
 /// D-sub shield shape) carries three punched pin dots in an upper row and
 /// two in a lower row, plus a small filled ear stud at each side (the

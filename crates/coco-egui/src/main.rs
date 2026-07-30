@@ -48,14 +48,14 @@ use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Timelike};
 use clap::Parser;
-use coco_core::cart::{Gmc, MultiPak, RomPak};
-use coco_core::drivewire::{self, DwImage, DwTime};
-use coco_core::fdc::{DiskCart, JvcDisk};
+use coco_core::cart::{GamesMasterCartridge, MultiPak, ROMPak};
+use coco_core::drivewire::{self, DWImage, DWTime};
+use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::orch90::Orch90;
-use coco_core::rtc::{DistoRtc, RTCTime};
-use coco_core::ssc::Ssc;
-use coco_core::vhd::VhdImage;
+use coco_core::rtc::{DistoRTC, RTCTime};
+use coco_core::ssc::SoundSpeechCartridge;
+use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig, MonitorType};
 pub(crate) use app::{CocoApp, PendingDiskAction};
 use eframe::egui;
@@ -71,11 +71,11 @@ pub(crate) use mpi::{
     DEFAULT_MPI_SWITCH_SLOT, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState,
 };
 pub(crate) use rom_load::{
-    Coco12RomResult, ROM_DB_PSEUDO_PATH_PREFIX, RomSource, compose_coco12_rom, dev_roms_dir,
+    Coco12ROMResult, ROM_DB_PSEUDO_PATH_PREFIX, ROMSource, compose_coco12_rom, dev_roms_dir,
     disk_basic_rom_path, load_rom_with_source, report_rom_validation, rom_db_pseudo_path,
     rs232_eprom_default_path,
 };
-pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, Rs232Endpoint, Rs232EndpointKind};
+pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
 pub(crate) use startup::{banner, ensure_assets, log_renderer_info, setup_logging};
 pub(crate) use status_icons::{
     StatusActivity, cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon,

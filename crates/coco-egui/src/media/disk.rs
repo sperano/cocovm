@@ -73,7 +73,7 @@ impl CocoApp {
             let bytes =
                 std::fs::read(&path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
             let disk =
-                JvcDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+                JVCDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             self.write_back_disk(drive); // whatever was in the drive first
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
@@ -102,7 +102,7 @@ impl CocoApp {
                 }
                 Err(e) => return Err(format!("could not create {}: {e}", path.display())),
             }
-            let disk = JvcDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
+            let disk = JVCDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
             self.write_back_disk(drive); // whatever was in the drive first
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
@@ -164,7 +164,7 @@ impl CocoApp {
                 .write(true)
                 .open(&path)
                 .map_err(|e| format!("could not open {}: {e}", path.display()))?;
-            self.machine.bus.vhd.insert(drive, VhdImage::File(file));
+            self.machine.bus.vhd.insert(drive, VHDImage::File(file));
             self.vhd_paths[drive] = Some(path);
             Ok(())
         })();

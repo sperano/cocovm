@@ -13,9 +13,9 @@ use std::path::PathBuf;
 
 use ciborium::Value;
 use coco_core::cart::MultiPak;
-use coco_core::fdc::{dskreg, DiskCart, JvcDisk};
+use coco_core::fdc::{dskreg, DiskCart, JVCDisk};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SnapshotError};
-use coco_core::ssc::{cmd as ssc_cmd, reg as ssc_reg, Ssc};
+use coco_core::ssc::{cmd as ssc_cmd, reg as ssc_reg, SoundSpeechCartridge};
 use coco_core::{Machine, MachineConfig};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -79,10 +79,10 @@ fn rewrap_container(cbor: &[u8], schema: u32) -> Vec<u8> {
 }
 
 /// A minimal machine (empty system ROM — nothing here executes any CPU
-/// instructions) with an [`Ssc`] plugged directly into the cartridge port.
+/// instructions) with an [`SoundSpeechCartridge`] plugged directly into the cartridge port.
 fn machine_with_ssc() -> Machine {
     let mut machine = Machine::new(MachineConfig::default(), Box::new([]));
-    machine.insert_cartridge(Ssc::new());
+    machine.insert_cartridge(SoundSpeechCartridge::new());
     machine
 }
 
@@ -91,17 +91,17 @@ fn ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic() {
     let mut machine = machine_with_ssc();
     // `$98` = LOAD_SOUND_INDIVIDUAL_START buffer 0: a legitimate `$FF7E`
     // write that leaves the SSC mid `Mode::Loading(Load { cursor: 0, cap:
-    // 64, .. })` — see `Ssc::start_load_individual`.
+    // 64, .. })` — see `SoundSpeechCartridge::start_load_individual`.
     machine.bus.cart.write(ssc_reg::DATA, ssc_cmd::LOAD_SOUND_INDIVIDUAL_START);
 
     let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
     let cbor = cbor_body_of(&bytes);
-    // Past `ram::SIZE` (512): `Ssc::feed_load` would index `self.ram[cursor]`
+    // Past `ram::SIZE` (512): `SoundSpeechCartridge::feed_load` would index `self.ram[cursor]`
     // for any `cursor` up to (but not including) `cap` with no bounds check
     // against `ram::SIZE` of its own.
     let tampered = mutate_cbor(
         &cbor,
-        &["machine", "bus", "cart", "Ssc", "mode", "Loading", "cap"],
+        &["machine", "bus", "cart", "SoundSpeechCartridge", "mode", "Loading", "cap"],
         Value::Integer(999_999.into()),
     );
     let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
@@ -118,11 +118,11 @@ fn ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic() {
 fn machine_with_disk_in_read_transfer() -> Machine {
     let mut machine = Machine::new(MachineConfig::default(), Box::new([]));
     // Any nonempty bytes: `DiskCart::new` only rejects an EMPTY image
-    // (`RomPak::from_bytes`) — this never needs to be a real Disk BASIC ROM
+    // (`ROMPak::from_bytes`) — this never needs to be a real Disk BASIC ROM
     // since nothing here executes a CPU instruction.
     let mut cart = DiskCart::new(vec![0u8; 16].into_boxed_slice());
     const ONE_TRACK_BYTES: usize = 18 * 256;
-    cart.insert_disk(0, JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).expect("build disk"));
+    cart.insert_disk(0, JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).expect("build disk"));
     machine.insert_cartridge(cart);
 
     const DSKREG: u16 = 0xFF40;

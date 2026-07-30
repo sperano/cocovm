@@ -7,7 +7,7 @@
 //! (74LS374 octal latch feeding an R-2R ladder per channel; no read path).
 //! There is no on-cart timer or interrupt: sample timing is entirely the
 //! CPU's delay loops. The pak autostarts by tying CART* to Q, exactly the
-//! [`RomPak`] autostart mechanism.
+//! [`ROMPak`] autostart mechanism.
 //!
 //! Tier 1 (this module): latch decode + mono mix via
 //! [`crate::cart::Cartridge::sound_level`]. Stereo output at full sample
@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cart::{Cartridge, IO_OPEN_BUS, RomPak, RomPakError};
+use crate::cart::{Cartridge, IO_OPEN_BUS, ROMPak, ROMPakError};
 
 /// Left-channel DAC latch (write-only).
 pub const LEFT_DAC_REG: u16 = 0xFF7A;
@@ -25,11 +25,11 @@ pub const RIGHT_DAC_REG: u16 = 0xFF7B;
 /// The Orchestra-90/CC cartridge.
 #[derive(Serialize, Deserialize)]
 pub struct Orch90 {
-    /// The 8K program ROM in the CTS window ([`RomPak`] reused for the
+    /// The 8K program ROM in the CTS window ([`ROMPak`] reused for the
     /// MAME-compatible mirror-fill and half-swap indexing; its own autostart
     /// flag is irrelevant — [`Cartridge::cart_line_ties_q`] is overridden
     /// unconditionally here).
-    rom: RomPak,
+    rom: ROMPak,
     left: u8,
     right: u8,
 }
@@ -46,9 +46,9 @@ impl std::fmt::Debug for Orch90 {
 impl Orch90 {
     /// Build from the raw 8K ROM image (`orch90.rom`); same size validation
     /// and mirror-fill as any pak image.
-    pub fn from_rom_bytes(bytes: &[u8]) -> Result<Self, RomPakError> {
+    pub fn from_rom_bytes(bytes: &[u8]) -> Result<Self, ROMPakError> {
         Ok(Self {
-            rom: RomPak::from_bytes(bytes, true)?,
+            rom: ROMPak::from_bytes(bytes, true)?,
             left: 0,
             right: 0,
         })
@@ -65,9 +65,9 @@ impl Orch90 {
     }
 
     /// Restore-path-only: re-inject the 8K program ROM after a snapshot
-    /// restore — delegates to the inner [`RomPak::reattach_image`]
+    /// restore — delegates to the inner [`ROMPak::reattach_image`]
     /// (`docs/plan-save-states.md`).
-    pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), RomPakError> {
+    pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(bytes)
     }
 }

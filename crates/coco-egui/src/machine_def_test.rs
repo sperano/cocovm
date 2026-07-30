@@ -1,5 +1,5 @@
 use super::dto::{
-    JoySourceDTO, MachineVariantDTO, MonitorDTO, RamDTO, SerialDTO, VDGVariantDTO,
+    JoySourceDTO, MachineVariantDTO, MonitorDTO, RAMDTO, SerialDTO, VDGVariantDTO,
     VideoStandardDTO,
 };
 use super::*;
@@ -42,7 +42,7 @@ fn full_def() -> MachineDef {
         created: Some("2026-07-16".to_string()),
         hardware: HardwareDTO {
             variant: MachineVariantDTO::Coco3,
-            ram: RamDTO::K512,
+            ram: RAMDTO::K512,
             video: VideoStandardDTO::NTSC,
             monitor: Some(MonitorDTO::RGB),
             vdg: None,

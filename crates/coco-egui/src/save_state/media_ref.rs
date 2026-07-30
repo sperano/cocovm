@@ -10,7 +10,7 @@ use coco_core::cart::Cart;
 use coco_core::snapshot::{self, MediaCheck, MediaRef, MediaRefs};
 
 use crate::{
-    Coco12RomResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, dev_roms_dir,
+    Coco12ROMResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, dev_roms_dir,
 };
 
 /// The recorded `mpi_slot: None` cart-ROM path, if any — shared by
@@ -26,12 +26,12 @@ pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISl
     let rom_path =
         || media.cart_roms.iter().find(|r| r.mpi_slot == Some(i)).map(|r| r.rom.path.clone());
     match cart {
-        Cart::RomPak(_) | Cart::BankedRomPak(_) => rom_path().map(MPISlot::ROMPak).unwrap_or(MPISlot::Empty),
-        Cart::Gmc(_) => rom_path().map(MPISlot::Gmc).unwrap_or(MPISlot::Empty),
+        Cart::ROMPak(_) | Cart::BankedROMPak(_) => rom_path().map(MPISlot::ROMPak).unwrap_or(MPISlot::Empty),
+        Cart::GamesMasterCartridge(_) => rom_path().map(MPISlot::GamesMasterCartridge).unwrap_or(MPISlot::Empty),
         Cart::Orch90(_) => rom_path().map(MPISlot::Orch90).unwrap_or(MPISlot::Empty),
         Cart::DiskCart(_) => MPISlot::FD502,
-        Cart::DistoRtc(_) => MPISlot::DistoRTC,
-        Cart::Ssc(_) => MPISlot::Ssc,
+        Cart::DistoRTC(_) => MPISlot::DistoRTC,
+        Cart::SoundSpeechCartridge(_) => MPISlot::SoundSpeechCartridge,
         _ => MPISlot::Empty,
     }
 }
@@ -84,7 +84,7 @@ fn mismatch_warning(role: &str, mr: &MediaRef) -> String {
     )
 }
 
-/// True if `path` is one of [`crate::RomSource::ComposedCoco12`]'s
+/// True if `path` is one of [`crate::ROMSource::ComposedCoco12`]'s
 /// pseudo-paths ([`ROM_DB_PSEUDO_PATH_PREFIX`], built by
 /// [`crate::rom_db_pseudo_path`]) rather than a real filesystem path.
 pub(super) fn is_rom_db_pseudo_path(path: &Path) -> bool {
@@ -101,7 +101,7 @@ pub(super) fn resolve_system_rom(media: &MediaRefs, warnings: &mut Vec<String>) 
     let mr = media.system_rom.as_ref()?;
     if is_rom_db_pseudo_path(&mr.path) {
         return match compose_coco12_rom(&dev_roms_dir()) {
-            Coco12RomResult::Composed { image, .. } => {
+            Coco12ROMResult::Composed { image, .. } => {
                 let actual = snapshot::sha256_hex(&image);
                 if actual != mr.sha256 {
                     warnings.push(format!(
@@ -112,7 +112,7 @@ pub(super) fn resolve_system_rom(media: &MediaRefs, warnings: &mut Vec<String>) 
                 }
                 Some(image)
             }
-            Coco12RomResult::NoColorBasic => None,
+            Coco12ROMResult::NoColorBasic => None,
         };
     }
     read_if_present(mr, "system ROM", warnings).map(Vec::into_boxed_slice)

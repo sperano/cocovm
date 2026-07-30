@@ -17,20 +17,20 @@ fn lsn_bytes(lsn: u32) -> [u8; 3] {
 /// Feed every byte of `bytes` into `server`, each at its own
 /// (small, strictly increasing) fake cycle count, then drain and return
 /// whatever reply bytes are queued afterward.
-fn feed_and_drain(server: &mut DwServer, bytes: &[u8]) -> Vec<u8> {
+fn feed_and_drain(server: &mut DWServer, bytes: &[u8]) -> Vec<u8> {
     feed_at(server, bytes, 0);
     drain(server)
 }
 
 /// Like [`feed_and_drain`] but the first byte lands at cycle `start`
 /// (subsequent bytes increment by 1), without draining afterward.
-fn feed_at(server: &mut DwServer, bytes: &[u8], start: u64) {
+fn feed_at(server: &mut DWServer, bytes: &[u8], start: u64) {
     for (i, &b) in bytes.iter().enumerate() {
         server.data_write(b, start + i as u64);
     }
 }
 
-fn drain(server: &mut DwServer) -> Vec<u8> {
+fn drain(server: &mut DWServer) -> Vec<u8> {
     let mut out = Vec::new();
     while server.status_read() != 0 {
         out.push(server.data_read());
@@ -47,15 +47,15 @@ fn checksum_vectors() {
 
 #[test]
 fn dwinit_replies_protocol_version() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(&mut server, &[opcode::DWINIT, 0x03]);
     assert_eq!(reply, vec![0x04]);
 }
 
 #[test]
 fn time_uses_injected_clock() {
-    let mut server = DwServer::new();
-    server.set_clock(Box::new(|| DwTime {
+    let mut server = DWServer::new();
+    server.set_clock(Box::new(|| DWTime {
         year: 2024,
         month: 6,
         day: 15,
@@ -69,17 +69,17 @@ fn time_uses_injected_clock() {
 
 #[test]
 fn time_default_clock_is_fixed_date() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(&mut server, &[opcode::TIME]);
     assert_eq!(reply, vec![90, 1, 1, 0, 0, 0]);
 }
 
 #[test]
 fn read_success() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let mut image = vec![0u8; SECTOR_SIZE * 2];
     image[SECTOR_SIZE..].copy_from_slice(&pattern_sector());
-    server.mount(0, DwImage::Memory(image));
+    server.mount(0, DWImage::Memory(image));
 
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(1));
@@ -95,10 +95,10 @@ fn read_success() {
 
 #[test]
 fn read_bumps_drive_ops_for_that_drive_only() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let mut image = vec![0u8; SECTOR_SIZE * 2];
     image[SECTOR_SIZE..].copy_from_slice(&pattern_sector());
-    server.mount(0, DwImage::Memory(image));
+    server.mount(0, DWImage::Memory(image));
 
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(1));
@@ -110,7 +110,7 @@ fn read_bumps_drive_ops_for_that_drive_only() {
 
 #[test]
 fn read_unmounted_drive() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(0));
     let reply = feed_and_drain(&mut server, &req);
@@ -120,8 +120,8 @@ fn read_unmounted_drive() {
 
 #[test]
 fn read_lsn_past_end() {
-    let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    let mut server = DWServer::new();
+    server.mount(0, DWImage::Memory(vec![0u8; SECTOR_SIZE]));
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(1));
     let reply = feed_and_drain(&mut server, &req);
@@ -130,10 +130,10 @@ fn read_lsn_past_end() {
 
 #[test]
 fn readex_round_trip_and_retry() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let mut image = vec![0u8; SECTOR_SIZE];
     image.copy_from_slice(&pattern_sector());
-    server.mount(0, DwImage::Memory(image));
+    server.mount(0, DWImage::Memory(image));
 
     let mut req = vec![opcode::READEX, 0];
     req.extend(lsn_bytes(0));
@@ -172,7 +172,7 @@ fn readex_round_trip_and_retry() {
 
 #[test]
 fn readex_unmounted_drive_sends_zeros_with_pending_error() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let mut req = vec![opcode::READEX, 0];
     req.extend(lsn_bytes(0));
     feed_at(&mut server, &req, 0);
@@ -192,8 +192,8 @@ fn readex_unmounted_drive_sends_zeros_with_pending_error() {
 
 #[test]
 fn write_success_sets_dirty_and_persists() {
-    let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    let mut server = DWServer::new();
+    server.mount(0, DWImage::Memory(vec![0u8; SECTOR_SIZE]));
 
     let sector = pattern_sector();
     let checksum = checksum_of(&sector);
@@ -212,8 +212,8 @@ fn write_success_sets_dirty_and_persists() {
 
 #[test]
 fn write_bad_checksum_leaves_image_untouched() {
-    let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    let mut server = DWServer::new();
+    server.mount(0, DWImage::Memory(vec![0u8; SECTOR_SIZE]));
 
     let sector = pattern_sector();
     let mut req = vec![opcode::WRITE, 0];
@@ -242,7 +242,7 @@ fn write_bad_checksum_leaves_image_untouched() {
 
 #[test]
 fn write_unmounted_drive_still_consumes_all_bytes() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let sector = pattern_sector();
     let checksum = checksum_of(&sector);
     let mut req = vec![opcode::WRITE, 0];
@@ -261,8 +261,8 @@ fn write_unmounted_drive_still_consumes_all_bytes() {
 
 #[test]
 fn write_past_end_extends_image() {
-    let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    let mut server = DWServer::new();
+    server.mount(0, DWImage::Memory(vec![0u8; SECTOR_SIZE]));
 
     let sector = pattern_sector();
     let checksum = checksum_of(&sector);
@@ -281,7 +281,7 @@ fn write_past_end_extends_image() {
 
 #[test]
 fn getstat_setstat_consume_exactly_two_bytes() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     // GETSTAT + drive + statcode, then a fresh DWINIT — no leftover
     // reply from GETSTAT, and DWINIT parses cleanly right after.
     let reply = feed_and_drain(
@@ -299,7 +299,7 @@ fn getstat_setstat_consume_exactly_two_bytes() {
 
 #[test]
 fn serread_always_reports_idle() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     for i in 0..3u64 {
         let reply = feed_and_drain(&mut server, &[opcode::SERREAD]);
         assert_eq!(reply, vec![0x00, 0x00], "iteration {i}");
@@ -310,7 +310,7 @@ fn serread_always_reports_idle() {
 
 #[test]
 fn serinit_serterm_sergetstat_consume_bytes_with_no_reply() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(
         &mut server,
         &[
@@ -334,7 +334,7 @@ fn serinit_serterm_sergetstat_consume_bytes_with_no_reply() {
 
 #[test]
 fn sersetstat_non_comst_consumes_two_bytes_only() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(
         &mut server,
         &[
@@ -352,7 +352,7 @@ fn sersetstat_non_comst_consumes_two_bytes_only() {
 
 #[test]
 fn sersetstat_comst_consumes_payload_without_dispatching_it_as_opcodes() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let mut req = vec![
         opcode::SERSETSTAT,
         0x00,     // channel
@@ -379,7 +379,7 @@ fn sersetstat_comst_consumes_payload_without_dispatching_it_as_opcodes() {
 
 #[test]
 fn fastwrite_and_serwrite_consume_bytes_with_no_reply() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(
         &mut server,
         &[
@@ -401,7 +401,7 @@ fn fastwrite_and_serwrite_consume_bytes_with_no_reply() {
 
 #[test]
 fn serreadm_replies_with_count_zero_bytes() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(&mut server, &[opcode::SERREADM, 0x00, 0x05]);
     assert_eq!(reply, vec![0u8; 5]);
     assert_eq!(server.vserial_ops(), 1);
@@ -410,7 +410,7 @@ fn serreadm_replies_with_count_zero_bytes() {
 
 #[test]
 fn unknown_opcode_is_silently_skipped() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     let reply = feed_and_drain(&mut server, &[0xAB, opcode::DWINIT, 0x00]);
     assert_eq!(reply, vec![0x04]);
     assert_eq!(server.unknown_opcodes(), 1);
@@ -418,7 +418,7 @@ fn unknown_opcode_is_silently_skipped() {
 
 #[test]
 fn stalled_transaction_times_out() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     // Start a READ but only send 2 of its 4 header bytes.
     feed_at(&mut server, &[opcode::READ, 0x00], 0);
     assert!(drain(&mut server).is_empty());
@@ -433,10 +433,10 @@ fn stalled_transaction_times_out() {
 
 #[test]
 fn hdbdos_mode_remaps_drive_and_lsn() {
-    let mut server = DwServer::new();
+    let mut server = DWServer::new();
     server.set_hdbdos_mode(true);
-    server.mount(0, DwImage::Memory(vec![0xAAu8; SECTOR_SIZE]));
-    server.mount(1, DwImage::Memory(pattern_sector().to_vec()));
+    server.mount(0, DWImage::Memory(vec![0xAAu8; SECTOR_SIZE]));
+    server.mount(1, DWImage::Memory(pattern_sector().to_vec()));
 
     // Wire drive byte 0 is ignored; LSN 630 -> drive 1, local LSN 0.
     let mut req = vec![opcode::READ, 0];

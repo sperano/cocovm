@@ -1,4 +1,4 @@
-use coco_core::ssc::{reg as ssc_reg, Ssc};
+use coco_core::ssc::{reg as ssc_reg, SoundSpeechCartridge};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
@@ -17,7 +17,7 @@ pub const CLEAR_BUSY: u32 = 1_000;
 
 pub fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
     let mut b = SystemBus::new(variant, memory, vec![0u8; 32 * 1024].into_boxed_slice());
-    b.cart = Ssc::new().into();
+    b.cart = SoundSpeechCartridge::new().into();
     b
 }
 
@@ -35,7 +35,7 @@ const CR_C2_HIGH: u8 = 0x3C;
 /// suite only drives Cx2 (SNDEN/SEL1/SEL2), never the DAC's data pins.
 const CR_DDR: u8 = 0x30;
 
-/// A bus with an `Ssc` inserted and the sound mux routed to the cartridge
+/// A bus with a `SoundSpeechCartridge` inserted and the sound mux routed to the cartridge
 /// input (SEL2:SEL1 = 10, SNDEN high) — same PIA-poking pattern as
 /// `tests/sound.rs`'s `bus()` helper.
 pub fn bus_with_ssc_selected() -> SystemBus {

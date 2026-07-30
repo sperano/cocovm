@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::fdc::{JvcDisk, JvcError};
+use coco_core::fdc::{JVCDisk, JVCError};
 
 use super::common::ONE_TRACK_BYTES;
 
@@ -12,7 +12,7 @@ fn headerless_image_uses_all_defaults() {
     // 35 tracks x 18 spt x 1 side x 256B, no header (file_len is an exact
     // multiple of 256).
     let bytes = vec![0u8; 35 * ONE_TRACK_BYTES];
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.track_count(), 35);
     assert_eq!(disk.sectors_per_track(), 18);
     assert_eq!(disk.sides(), 1);
@@ -31,7 +31,7 @@ fn two_byte_header_sets_spt_and_sides_defaults_the_rest() {
     // intended; ONE_TRACK_BYTES*2 is a multiple of 256, so this holds for any
     // TRACKS.
     assert_eq!(bytes.len() % 256, 2);
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.sectors_per_track(), 18);
     assert_eq!(disk.sides(), 2);
     assert_eq!(disk.sector_size(), 256);
@@ -55,7 +55,7 @@ fn sector_offset_matches_the_spec_formula_single_sided() {
             bytes.extend(std::iter::repeat_n(marker, SECTOR_SIZE));
         }
     }
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.track_count(), TRACKS);
 
     for track in 0..TRACKS as u8 {
@@ -75,7 +75,7 @@ fn two_sided_image_interleaves_track0_side0_track0_side1_track1_side0() {
     for marker in 0u8..4 {
         bytes.extend(std::iter::repeat_n(marker, 128));
     }
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     let cases = [
         (0u8, 0u8, 0u8), // track0 side0 -> marker 0
         (0, 1, 1),       // track0 side1 -> marker 1
@@ -90,7 +90,7 @@ fn two_sided_image_interleaves_track0_side0_track0_side1_track1_side0() {
 
 #[test]
 fn sector_offset_rejects_out_of_range_track_side_and_sector() {
-    let disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track
+    let disk = JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track
     assert_eq!(disk.sector_offset(1, 0, 1), None, "track beyond track_count");
     assert_eq!(disk.sector_offset(0, 1, 1), None, "side beyond sides (single-sided)");
     assert_eq!(disk.sector_offset(0, 0, 0), None, "sector below first_sector_id");
@@ -105,8 +105,8 @@ fn invalid_geometry_is_rejected() {
     // tracks (4608 bytes/track).
     let bytes = vec![0u8; 5120];
     assert_eq!(bytes.len() % 256, 0);
-    let err = JvcDisk::from_bytes(bytes).unwrap_err();
-    assert!(matches!(err, JvcError::InvalidGeometry { .. }));
+    let err = JVCDisk::from_bytes(bytes).unwrap_err();
+    assert!(matches!(err, JVCError::InvalidGeometry { .. }));
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn nonzero_attribute_flag_is_rejected() {
     // one otherwise-valid track of data.
     let mut bytes = vec![18u8, 1, 1, 1, 1];
     bytes.extend(vec![0u8; ONE_TRACK_BYTES]);
-    assert_eq!(JvcDisk::from_bytes(bytes).unwrap_err(), JvcError::AttributeBytesUnsupported);
+    assert_eq!(JVCDisk::from_bytes(bytes).unwrap_err(), JVCError::AttributeBytesUnsupported);
 }
 
 /// JVC default sectors/track and sector size, as assumed for any headerless
@@ -161,7 +161,7 @@ fn os9_lsn0_sniff_adopts_two_sides_and_halves_track_count() {
         }
     }
 
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.track_count(), TRACKS);
     assert_eq!(disk.sides(), SIDES);
     assert_eq!(disk.sectors_per_track(), OS9_SPT);
@@ -189,7 +189,7 @@ fn os9_lsn0_with_mismatched_tot_keeps_naive_defaults() {
     let mut bytes = os9_synthetic_disk(TRACKS, 1);
     bytes[0x10] = 1; // claims 2 sides
     bytes[2] = bytes[2].wrapping_add(1); // DD.TOT now wrong
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.sides(), 1);
     assert_eq!(disk.track_count(), TRACKS);
     assert_eq!(disk.sectors_per_track(), OS9_SPT);
@@ -202,7 +202,7 @@ fn headerless_disk_with_no_os9_signature_is_unaffected_by_the_sniff() {
     // default parse (already covered by `headerless_image_uses_all_defaults`)
     // is unaffected. Restated here to pin the sniff-rejection path directly.
     let bytes = vec![0u8; 35 * ONE_TRACK_BYTES];
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.track_count(), 35);
     assert_eq!(disk.sides(), 1);
 }
@@ -218,7 +218,7 @@ fn real_nitros9_40_track_disk_parses_as_40_tracks_2_sides() {
         eprintln!("skipping real_nitros9_40_track_disk_parses_as_40_tracks_2_sides: {} not present", path.display());
         return;
     };
-    let disk = JvcDisk::from_bytes(bytes).unwrap();
+    let disk = JVCDisk::from_bytes(bytes).unwrap();
     assert_eq!(disk.track_count(), 40);
     assert_eq!(disk.sides(), 2);
 }

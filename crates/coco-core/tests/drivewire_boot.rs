@@ -11,7 +11,7 @@
 //! `$C000`/`$C001` (`crates/coco-core/tests/cart.rs`'s
 //! `disk_basic_pak_integrates_at_cold_start`, same mechanism as `disk11.rom`
 //! Disk BASIC), not via the CART* FIRQ autostart line — so it's inserted as
-//! a plain, non-autostart [`RomPak`], exactly like `disk11.rom` elsewhere in
+//! a plain, non-autostart [`ROMPak`], exactly like `disk11.rom` elsewhere in
 //! this test suite. No FD-502/[`coco_core::fdc::DiskCart`] is involved: the
 //! whole point of the Becker port is that no floppy hardware is present.
 //!
@@ -27,8 +27,8 @@
 
 use std::path::{Path, PathBuf};
 
-use coco_core::cart::RomPak;
-use coco_core::drivewire::DwImage;
+use coco_core::cart::ROMPak;
+use coco_core::drivewire::DWImage;
 use coco_core::{Machine, MachineConfig};
 
 fn asset(dir: &str, name: &str) -> PathBuf {
@@ -139,7 +139,7 @@ fn boot_to_hdbdos_prompt(coco: Vec<u8>, hdbdos: Vec<u8>, hdbdos_mode: bool) -> M
     const MAX_BOOT_FIELDS: usize = 6_000;
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
-    m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
+    m.insert_cartridge(ROMPak::from_bytes(&hdbdos, false).unwrap());
     m.bus.enable_drivewire();
     let dw = m.bus.drivewire.as_mut().unwrap();
     dw.set_hdbdos_mode(hdbdos_mode);
@@ -162,11 +162,11 @@ fn boot_to_hdbdos_prompt_with_disk_mounted(
     const MAX_BOOT_FIELDS: usize = 6_000;
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
-    m.insert_cartridge(RomPak::from_bytes(&hdbdos, false).unwrap());
+    m.insert_cartridge(ROMPak::from_bytes(&hdbdos, false).unwrap());
     m.bus.enable_drivewire();
     let dw = m.bus.drivewire.as_mut().unwrap();
     dw.set_hdbdos_mode(hdbdos_mode);
-    dw.mount(0, DwImage::File(disk_file));
+    dw.mount(0, DWImage::File(disk_file));
     m.reset();
 
     wait_for_hdbdos_prompt(&mut m, MAX_BOOT_FIELDS);
@@ -212,7 +212,7 @@ fn hdbdos_dir_lists_drivewire_disk() {
         .drivewire
         .as_mut()
         .unwrap()
-        .mount(0, DwImage::File(dsk_file));
+        .mount(0, DWImage::File(dsk_file));
 
     type_str(&mut m, "DIR");
     tap_char(&mut m, '\r');
@@ -394,7 +394,7 @@ fn nitros9_l2_boots_over_drivewire_to_shell_prompt() {
         .drivewire
         .as_mut()
         .unwrap()
-        .mount(0, DwImage::File(scratch_file));
+        .mount(0, DWImage::File(scratch_file));
 
     type_str(&mut m, "DOS");
     tap_char(&mut m, '\r');

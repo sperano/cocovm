@@ -9,8 +9,8 @@
 //! (`eprom[offset & 0x0fff]`, coco_rs232.cpp `cts_read`), so the image
 //! wraps every 4K across the CTS window.
 //!
-//! The wire glue in [`DeluxeRs232::tick`] is the only place the chip model
-//! ([`Acia6551`]) and the host backend ([`SerialEndpoint`]) meet: completed
+//! The wire glue in [`DeluxeRS232::tick`] is the only place the chip model
+//! ([`ACIA6551`]) and the host backend ([`SerialEndpoint`]) meet: completed
 //! TX frames are forwarded to the endpoint, and the endpoint is polled for
 //! RX bytes only when the receiver is between frames — a byte the ACIA
 //! isn't ready for stays queued host-side (kernel socket/pty buffer),
@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::acia6551::Acia6551;
+use crate::acia6551::ACIA6551;
 use crate::cart::{Cartridge, IO_OPEN_BUS, ROM_OPEN_BUS};
 use crate::serial::{Loopback, SerialEndpoint};
 
@@ -31,27 +31,27 @@ pub const ACIA_LAST: u16 = 0xFF6B;
 /// image is mirrored across the 16K+ CTS window.
 pub const EPROM_LEN: usize = 0x1000;
 
-/// CPU cycles between host-endpoint polls in [`DeluxeRs232::tick`] (~143 µs
+/// CPU cycles between host-endpoint polls in [`DeluxeRS232::tick`] (~143 µs
 /// at the 0.894886 MHz clock). Polling the endpoint can cost a syscall
 /// (nonblocking socket read / `accept`), so it must not run per instruction;
 /// this interval stays well under one serial frame even at the ACIA's top
 /// rate (19200 baud ≈ 466 cycles/frame), so throughput is never poll-bound.
 const HOST_POLL_INTERVAL: u32 = 128;
 
-/// `#[serde(default = "...")]` for [`DeluxeRs232::endpoint`]: matches
-/// [`DeluxeRs232::new`]'s own inert default.
+/// `#[serde(default = "...")]` for [`DeluxeRS232::endpoint`]: matches
+/// [`DeluxeRS232::new`]'s own inert default.
 fn default_endpoint() -> Box<dyn SerialEndpoint> {
     Box::new(Loopback::new())
 }
 
 /// The Deluxe RS-232 Program Pak as a cartridge-port device.
 #[derive(Serialize, Deserialize)]
-pub struct DeluxeRs232 {
-    acia: Acia6551,
+pub struct DeluxeRS232 {
+    acia: ACIA6551,
     /// Skipped: a host backend (TCP, PTY, …) is a host resource with no
     /// serializable shape. Deserializes to a fresh [`Loopback`] via
     /// `default_endpoint` below; the frontend re-plugs a real backend after
-    /// restore through [`DeluxeRs232::set_endpoint`]
+    /// restore through [`DeluxeRS232::set_endpoint`]
     /// (`docs/plan-save-states.md`).
     #[serde(skip, default = "default_endpoint")]
     endpoint: Box<dyn SerialEndpoint>,
@@ -61,7 +61,7 @@ pub struct DeluxeRs232 {
     /// (CTS reads answer open-bus). Skipped: COPYRIGHTED ROM bytes never
     /// travel through a snapshot; `None` is the correct restored default
     /// until the frontend re-injects it via the existing
-    /// [`DeluxeRs232::set_eprom`] (`docs/plan-save-states.md`).
+    /// [`DeluxeRS232::set_eprom`] (`docs/plan-save-states.md`).
     #[serde(skip)]
     eprom: Option<Box<[u8]>>,
     /// Cycles since the endpoint was last polled (see [`HOST_POLL_INTERVAL`]).
@@ -72,13 +72,13 @@ pub struct DeluxeRs232 {
     rx_bytes: u64,
 }
 
-impl DeluxeRs232 {
+impl DeluxeRS232 {
     /// Build a pak with no EPROM and a [`Loopback`] endpoint — the inert
     /// default until the frontend plugs in a real backend via
-    /// [`DeluxeRs232::set_endpoint`].
+    /// [`DeluxeRS232::set_endpoint`].
     pub fn new() -> Self {
         Self {
-            acia: Acia6551::new(),
+            acia: ACIA6551::new(),
             endpoint: Box::new(Loopback::new()),
             eprom: None,
             since_host_poll: 0,
@@ -115,18 +115,18 @@ impl DeluxeRs232 {
     }
 
     /// Direct access to the ACIA, for tests and debugger probes.
-    pub fn acia(&mut self) -> &mut Acia6551 {
+    pub fn acia(&mut self) -> &mut ACIA6551 {
         &mut self.acia
     }
 }
 
-impl Default for DeluxeRs232 {
+impl Default for DeluxeRS232 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Cartridge for DeluxeRs232 {
+impl Cartridge for DeluxeRS232 {
     /// The pak decodes only `$FF68-$FF6B`; everything else that reaches the
     /// cartridge (the SCS window, the rest of the spare window) floats.
     fn read(&mut self, addr: u16) -> u8 {

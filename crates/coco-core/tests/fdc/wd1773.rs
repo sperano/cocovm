@@ -1,6 +1,6 @@
 //! WD1773 command state machine
 
-use coco_core::fdc::JvcDisk;
+use coco_core::fdc::JVCDisk;
 use coco_core::wd1773::{status, WD1773};
 
 use super::common::{index_pattern_disk, CRC_TRAILER, DRQ_INTERVAL, FIRST_BYTE_LATENCY, ONE_TRACK_BYTES, SETTLE};
@@ -24,7 +24,7 @@ fn restore_zeroes_track_register_and_sets_track0_plus_intrq() {
 #[test]
 fn seek_moves_to_the_data_register_value() {
     let mut wd = WD1773::new();
-    let mut disk = JvcDisk::from_bytes(vec![0u8; 10 * ONE_TRACK_BYTES]).unwrap(); // 10 tracks
+    let mut disk = JVCDisk::from_bytes(vec![0u8; 10 * ONE_TRACK_BYTES]).unwrap(); // 10 tracks
     wd.data = 5;
     wd.write_command(0x10, Some(&mut disk), 0); // Seek, no verify
     wd.tick(SETTLE, Some(&mut disk), 0);
@@ -37,7 +37,7 @@ fn seek_moves_to_the_data_register_value() {
 #[test]
 fn verify_sets_rnf_when_the_target_track_is_beyond_the_image() {
     let mut wd = WD1773::new();
-    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track only
+    let mut disk = JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track only
     wd.data = 5; // beyond the single mounted track
     wd.write_command(0x14, Some(&mut disk), 0); // Seek with Verify (V bit set)
     wd.tick(SETTLE, Some(&mut disk), 0);
@@ -138,7 +138,7 @@ fn read_sector_samples_side_when_the_data_field_streams_not_at_dispatch() {
     const SIDE1_MARK: u8 = 0x55;
     let mut header = vec![18u8, 2u8]; // spt=18, sides=2; rest defaults (256B)
     header.extend(vec![0u8; ONE_TRACK_BYTES * 2]); // one 2-sided track
-    let mut disk = JvcDisk::from_bytes(header).unwrap();
+    let mut disk = JVCDisk::from_bytes(header).unwrap();
     assert_eq!(disk.sides(), 2);
     let off0 = disk.sector_offset(0, 0, 1).unwrap();
     let off1 = disk.sector_offset(0, 1, 1).unwrap();
@@ -168,7 +168,7 @@ fn read_sector_samples_side_when_the_data_field_streams_not_at_dispatch() {
 #[test]
 fn write_sector_round_trips_into_the_image() {
     let mut wd = WD1773::new();
-    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap();
+    let mut disk = JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap();
     wd.track = 0;
     wd.sector = 1;
     wd.write_command(0xA0, Some(&mut disk), 0); // Write Sector, no multiple
@@ -191,7 +191,7 @@ fn write_sector_round_trips_into_the_image() {
 #[test]
 fn write_sector_to_a_write_protected_image_sets_status_and_does_not_transfer() {
     let mut wd = WD1773::new();
-    let mut disk = JvcDisk::from_bytes(vec![0xAAu8; ONE_TRACK_BYTES]).unwrap();
+    let mut disk = JVCDisk::from_bytes(vec![0xAAu8; ONE_TRACK_BYTES]).unwrap();
     disk.set_write_protected(true);
     wd.track = 0;
     wd.sector = 1;
@@ -206,7 +206,7 @@ fn write_sector_to_a_write_protected_image_sets_status_and_does_not_transfer() {
 #[test]
 fn read_sector_sets_rnf_when_the_sector_is_missing() {
     let mut wd = WD1773::new();
-    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // spt=18
+    let mut disk = JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // spt=18
     wd.track = 0;
     wd.sector = 99; // out of range
     wd.write_command(0x80, Some(&mut disk), 0);
@@ -219,7 +219,7 @@ fn read_sector_sets_rnf_when_the_sector_is_missing() {
 #[test]
 fn force_interrupt_cancels_a_pending_command() {
     let mut wd = WD1773::new();
-    let mut disk = JvcDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap();
+    let mut disk = JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap();
     wd.track = 0;
     wd.sector = 1;
     wd.write_command(0xA0, Some(&mut disk), 0); // Write Sector: busy, awaiting DRQ
@@ -257,7 +257,7 @@ fn multiple_read_increments_the_sector_register_then_rnf_past_the_last_sector() 
     for sector in 1u8..=3 {
         bytes.extend(vec![sector; 256]);
     }
-    let mut disk = JvcDisk::from_bytes(bytes).unwrap();
+    let mut disk = JVCDisk::from_bytes(bytes).unwrap();
     let mut wd = WD1773::new();
     wd.track = 0;
     wd.sector = 1;

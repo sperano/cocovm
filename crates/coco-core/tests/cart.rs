@@ -1,21 +1,21 @@
-//! `RomPak` cartridge coverage: the MAME-compatible mirror-fill, and end-to-end
+//! `ROMPak` cartridge coverage: the MAME-compatible mirror-fill, and end-to-end
 //! integration against the real `roms/coco3.rom` / `roms/disk11.rom` for the
 //! two ways a pak reaches the CPU — the autostart FIRQ boot path (fact 1/2)
 //! and BASIC's cold-start `DK` disk-controller probe (`docs/cartridges.md`).
 
 use std::path::PathBuf;
 
-use coco_core::cart::{Cartridge, ROM_PAK_MAX_LEN, RomPak, RomPakError};
+use coco_core::cart::{Cartridge, ROM_PAK_MAX_LEN, ROMPak, ROMPakError};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
-// ---- RomPak::from_bytes: rejection and mirror-fill ----------------------------
+// ---- ROMPak::from_bytes: rejection and mirror-fill ----------------------------
 
 #[test]
 fn rejects_empty_image() {
     assert_eq!(
-        RomPak::from_bytes(&[], false).unwrap_err(),
-        RomPakError::Empty
+        ROMPak::from_bytes(&[], false).unwrap_err(),
+        ROMPakError::Empty
     );
 }
 
@@ -23,8 +23,8 @@ fn rejects_empty_image() {
 fn rejects_oversized_image() {
     let bytes = vec![0u8; ROM_PAK_MAX_LEN + 1];
     assert_eq!(
-        RomPak::from_bytes(&bytes, false).unwrap_err(),
-        RomPakError::TooLarge {
+        ROMPak::from_bytes(&bytes, false).unwrap_err(),
+        ROMPakError::TooLarge {
             len: ROM_PAK_MAX_LEN + 1
         }
     );
@@ -37,7 +37,7 @@ fn full_32k_image_maps_cts_half_first() {
     // gime.cpp `((bank & 3) ^ 2) * 0x2000`). Arkanoid's entry code at file
     // offset 0 must be fetched by BASIC's JMP $C000.
     let bytes: Vec<u8> = (0..ROM_PAK_MAX_LEN).map(|i| i as u8).collect();
-    let mut pak = RomPak::from_bytes(&bytes, false).unwrap();
+    let mut pak = ROMPak::from_bytes(&bytes, false).unwrap();
     assert_eq!(pak.rom_read(0xC000), bytes[0x0000]);
     assert_eq!(pak.rom_read(0xE000), bytes[0x2000]);
     assert_eq!(pak.rom_read(0x8000), bytes[0x4000]);
@@ -49,7 +49,7 @@ fn full_32k_image_maps_cts_half_first() {
 fn undersized_image_mirrors_at_the_c000_and_e000_windows() {
     const LEN: usize = 8 * 1024;
     let bytes: Vec<u8> = (0..LEN).map(|i| i as u8).collect();
-    let mut pak = RomPak::from_bytes(&bytes, false).unwrap();
+    let mut pak = ROMPak::from_bytes(&bytes, false).unwrap();
     // An 8K image mirror-fills to 4 copies across the 32K buffer, so $8000,
     // $A000, $C000, and $E000 (each LEN bytes apart) must all read identically.
     for off in 0..LEN as u16 {
@@ -82,7 +82,7 @@ fn mirror_fill_equals_plain_repetition_for_any_size() {
     // half-swap `rom_read` applies on top of the filled image).
     const LEN: usize = 5000;
     let bytes: Vec<u8> = (0..LEN).map(|i| (i % 256) as u8).collect();
-    let mut pak = RomPak::from_bytes(&bytes, false).unwrap();
+    let mut pak = ROMPak::from_bytes(&bytes, false).unwrap();
     for i in 0..ROM_PAK_MAX_LEN {
         assert_eq!(
             pak.rom_read(0x8000 + i as u16),
@@ -133,11 +133,11 @@ const CART_ENTRY_OFFSET: usize = 0x0000;
 /// A pak whose code at $C000 writes [`MARKER_BYTE`] to [`MARKER_ADDR`] and
 /// loops forever: `LDA #$A5 ; STA $0400 ; BRA *` (bytes verified by hand:
 /// `86 A5 B7 04 00 20 FE`).
-fn marker_pak(autostart: bool) -> RomPak {
+fn marker_pak(autostart: bool) -> ROMPak {
     let mut image = vec![0u8; ROM_PAK_MAX_LEN];
     let program = [0x86, 0xA5, 0xB7, 0x04, 0x00, 0x20, 0xFE];
     image[CART_ENTRY_OFFSET..CART_ENTRY_OFFSET + program.len()].copy_from_slice(&program);
-    RomPak::from_bytes(&image, autostart).unwrap()
+    ROMPak::from_bytes(&image, autostart).unwrap()
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn disk_basic_pak_integrates_at_cold_start() {
     const FIELDS: usize = 400;
     let mut m = boot_machine();
     m.insert_cartridge(
-        RomPak::from_bytes(&load_rom("disk11.rom"), false).unwrap(),
+        ROMPak::from_bytes(&load_rom("disk11.rom"), false).unwrap(),
     );
     m.reset();
     for _ in 0..FIELDS {

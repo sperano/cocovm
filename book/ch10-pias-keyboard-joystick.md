@@ -133,7 +133,7 @@ and one struct wrapping the pair:
 ```rust
 /// One side (A or B) of an MC6821.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PiaPort {
+pub struct PIAPort {
     /// Output register (drives the pins selected as outputs by `ddr`).
     pub output: u8,
     /// Data direction register — 1 bit = output pin, 0 = input pin.
@@ -142,15 +142,15 @@ pub struct PiaPort {
     pub control: u8,
     /// State of the input pins (what the outside world drives).
     pub input: u8,
-    /// Current level of the Cx1 line, tracked so [`PiaPort::set_c1`] can tell
+    /// Current level of the Cx1 line, tracked so [`PIAPort::set_c1`] can tell
     /// an edge from a repeated level. Idle high (MAME `6821pia.cpp`).
     c1_level: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MC6821 {
-    pub a: PiaPort,
-    pub b: PiaPort,
+    pub a: PIAPort,
+    pub b: PIAPort,
 }
 ```
 
@@ -263,7 +263,7 @@ mask carries its meaning to the call site.
 With the constants in hand, the mechanism is four lines of `if`:
 
 ```rust
-fn read_side(port: &mut PiaPort) -> u8 {
+fn read_side(port: &mut PIAPort) -> u8 {
     if port.control & cr::DDR_ACCESS != 0 {
         // Reading the peripheral data register clears the interrupt flags.
         port.control &= !(cr::C1_FLAG | cr::C2_FLAG);
@@ -273,7 +273,7 @@ fn read_side(port: &mut PiaPort) -> u8 {
     }
 }
 
-fn write_side(port: &mut PiaPort, val: u8) {
+fn write_side(port: &mut PIAPort, val: u8) {
     if port.control & cr::DDR_ACCESS != 0 {
         port.output = val;
     } else {
@@ -427,10 +427,10 @@ it, and having decoded it once you'll recognize it instantly in any
 listing for the rest of the course.
 
 > **Rust corner: overriding `Default` for hardware truth, not zero.**
-> `PiaPort` does not derive `Default`; it has a hand-written `impl`:
+> `PIAPort` does not derive `Default`; it has a hand-written `impl`:
 >
 > ```rust
-> impl Default for PiaPort {
+> impl Default for PIAPort {
 >     fn default() -> Self {
 >         // Idle input pins float high on the CoCo (keyboard rows read $FF = no key).
 >         Self { output: 0, ddr: 0, control: 0, input: 0xFF, c1_level: true }
@@ -525,7 +525,7 @@ The flag is read-only from the CPU's perspective. Software can never
 directly set or clear it with a write, and the write path enforces that:
 
 ```rust
-    fn write_control(port: &mut PiaPort, val: u8) {
+    fn write_control(port: &mut PIAPort, val: u8) {
         // Bits 7/6 are read-only interrupt flags; the CPU can't set them.
         const WRITABLE: u8 = !(cr::C1_FLAG | cr::C2_FLAG);
         port.control = (port.control & !WRITABLE) | (val & WRITABLE);
@@ -544,7 +544,7 @@ it's the hardware protocol the whole first chapter of this course was
 leading up to:
 
 ```rust
-    fn read_side(port: &mut PiaPort) -> u8 {
+    fn read_side(port: &mut PIAPort) -> u8 {
         if port.control & cr::DDR_ACCESS != 0 {
             // Reading the peripheral data register clears the interrupt flags.
             port.control &= !(cr::C1_FLAG | cr::C2_FLAG);
@@ -595,7 +595,7 @@ there to be polled until software opts in.
 This whole mechanism is exactly why `Bus::read` in
 [`crates/mc6809/src/lib.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs) takes `&mut self` (Chapter 1, §1.3). `LDA $FF02`
 looks, syntactically, like a pure load. On real hardware and in this
-emulator it mutates `PiaPort.control`. If `read` took `&self`, this
+emulator it mutates `PIAPort.control`. If `read` took `&self`, this
 method would need `Cell` or `RefCell` to compile, and the honest fact that
 this load has a side effect would be hidden inside a wrapper type instead
 of being visible in the signature of every read in the system. The reason
@@ -612,7 +612,7 @@ side-effect-free path:
     /// value [`MC6821::read`] would return for `reg`, but WITHOUT clearing the
     /// Cx1/Cx2 interrupt flags. `a_input`/`b_input` are the freshly sampled
     /// input-pin states — the bus recomputes them the same way a real read
-    /// refreshes `PiaPort::input` first.
+    /// refreshes `PIAPort::input` first.
     pub fn peek(&self, reg: u8, a_input: u8, b_input: u8) -> u8 {
         match reg & 0x03 {
             0 => Self::peek_side(&self.a, a_input),
@@ -626,7 +626,7 @@ side-effect-free path:
 The signature carries the entire contract. It takes `&self`, so the
 compiler guarantees it cannot mutate a flag. It takes the sampled input
 bytes as parameters rather than reaching for them, because a `&self`
-method has no way to ask the bus to refresh `PiaPort::input` first — the
+method has no way to ask the bus to refresh `PIAPort::input` first — the
 caller does that and hands the result in. Two functions, two contracts,
 both enforced by types rather than by a comment nobody reads. Chapter 16
 builds the debugger panel on top of this; for now it is worth noting that
@@ -969,7 +969,7 @@ pub struct Keyboard {
 }
 ```
 
-Seven bytes, one per row, each bit a column, and — unlike `PiaPort` — a
+Seven bytes, one per row, each bit a column, and — unlike `PIAPort` — a
 derived `Default` is correct here, because "no bits set" really does mean
 "no keys held." The field is private, so the only way in is `set`:
 
@@ -1666,7 +1666,7 @@ speculatively and never on a timer:
 ```
 
 `self.pia0.a.input` is written immediately before `self.pia0.read(...)`
-consumes it inside `PiaPort::data()`, whose DDR-blending formula §10.2
+consumes it inside `PIAPort::data()`, whose DDR-blending formula §10.2
 walked through. The PIA's own state doesn't know or care where `input`
 came from; it trusts that whoever calls `read` refreshed it first. That
 one-line contract is what allows keyboard and joystick state to live in
@@ -1724,7 +1724,7 @@ re-deriving the pattern:
 ```
 
 Bit 0 is the cassette data-in line, which is Chapter 12's entire subject.
-Every other bit floats high, matching `PiaPort::default`'s `0xFF` idle
+Every other bit floats high, matching `PIAPort::default`'s `0xFF` idle
 state from §10.2's Rust corner, because nothing is wired to them. Writing
 `0xFF` and `!CASSETTE_IN` rather than `0x01` and `0x00` keeps the floating
 pins visible in the source: the reader can see that seven bits are
@@ -1908,7 +1908,7 @@ and would have made that ROM path impossible to model.
 **`falling_edge_selected_port_flags_only_on_high_to_low`**
 ([`crates/coco-core/tests/pia_sync.rs:26-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/pia_sync.rs#L26-L33)) exercises §10.3's edge logic
 through the real bus entry point, `hsync()`, rather than through
-`PiaPort::set_c1` directly:
+`PIAPort::set_c1` directly:
 
 ```rust
 #[test]
@@ -2068,7 +2068,7 @@ is that result exactly? Check your table against `sense`'s source — you
 should be able to predict all eight rows without running any code.
 
 **10.2 — Sabotage the edge match, run the suite, revert precisely
-(sabotage).** In [`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs), inside `PiaPort::set_c1`,
+(sabotage).** In [`crates/coco-core/src/pia.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/pia.rs), inside `PIAPort::set_c1`,
 change
 
 ```rust

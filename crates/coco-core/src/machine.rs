@@ -288,7 +288,7 @@ impl Machine {
         self.bus.ram.fill(0);
         self.bus.gime = GIME::new();
         self.bus.gime.monitor = monitor;
-        self.bus.sam = sam::Sam::new();
+        self.bus.sam = sam::SAM::new();
         self.bus.pia0 = pia::MC6821::new();
         self.bus.pia1 = pia::MC6821::new();
         self.prev_halted = false;

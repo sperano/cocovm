@@ -128,7 +128,7 @@ pub enum CartridgeChoice {
     FD502,
     /// A program ROM Pak image plugged straight into the port; picked with
     /// a file dialog on selection.
-    RomPak(PathBuf),
+    ROMPak(PathBuf),
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
     /// a VHD boot; for RTC + floppies use an MPI slot.
     RTC,
@@ -151,8 +151,8 @@ pub enum SlotChoice {
     #[default]
     Empty,
     FD502,
-    /// A program ROM Pak image in this slot (see [`CartridgeChoice::RomPak`]).
-    RomPak(PathBuf),
+    /// A program ROM Pak image in this slot (see [`CartridgeChoice::ROMPak`]).
+    ROMPak(PathBuf),
     /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
     RTC,
 }
@@ -161,7 +161,7 @@ fn slot_label(slot: &SlotChoice) -> String {
     match slot {
         SlotChoice::Empty => "Empty".to_string(),
         SlotChoice::FD502 => "FD-502".to_string(),
-        SlotChoice::RomPak(path) => pak_file_name(path),
+        SlotChoice::ROMPak(path) => pak_file_name(path),
         SlotChoice::RTC => "Disto RTC".to_string(),
     }
 }
@@ -170,7 +170,7 @@ fn cartridge_label(cartridge: &CartridgeChoice) -> String {
     match cartridge {
         CartridgeChoice::None => "None".to_string(),
         CartridgeChoice::FD502 => "FD-502".to_string(),
-        CartridgeChoice::RomPak(path) => pak_file_name(path),
+        CartridgeChoice::ROMPak(path) => pak_file_name(path),
         CartridgeChoice::RTC => "Disto RTC".to_string(),
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),

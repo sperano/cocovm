@@ -203,7 +203,7 @@ enum Pending {
 /// The DMP-105 interpreter: control/escape-code state machine plus the
 /// [`Paper`] it prints onto.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Dmp105 {
+pub struct DMP105 {
     mode: Mode,
     /// Live pitch setting (`1B 13`/`1B 14`/`1B 17`), always up to date even
     /// while printing graphics (which uses `graphics_pitch` instead — see
@@ -231,7 +231,7 @@ pub struct Dmp105 {
     paper: Paper,
 }
 
-impl Default for Dmp105 {
+impl Default for DMP105 {
     /// Power-on defaults (`dmp105-protocol.md` §7): Normal 10 CPI; LF pitch
     /// 1/6"; NL mode CR+LF; underline/elongation/bold off; bidirectional;
     /// buffer cleared. Head position (0, 0) is this implementation's choice
@@ -257,7 +257,7 @@ impl Default for Dmp105 {
     }
 }
 
-impl Dmp105 {
+impl DMP105 {
     pub fn new() -> Self {
         Self::default()
     }
@@ -357,32 +357,32 @@ impl Dmp105 {
     }
 }
 
-impl PrinterSink for Dmp105 {
+impl PrinterSink for DMP105 {
     fn write_byte(&mut self, b: u8) {
         self.feed(b);
     }
 }
 
-/// Shared handle to a live [`Dmp105`]: the `CaptureSink` `Rc<RefCell<_>>`
+/// Shared handle to a live [`DMP105`]: the `CaptureSink` `Rc<RefCell<_>>`
 /// pattern (`bitbanger.rs`), needed here because the frontend must be able
 /// to read the accumulating paper while [`crate::bitbanger::BitBanger`] owns
 /// the other half as its sink. Clone before handing one half to
 /// [`crate::bitbanger::BitBanger::start_dmp105`]; keep the other to poll the
 /// paper.
 #[derive(Clone, Default)]
-pub struct Dmp105Handle(Rc<RefCell<Dmp105>>);
+pub struct DMP105Handle(Rc<RefCell<DMP105>>);
 
-impl Dmp105Handle {
+impl DMP105Handle {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Restore-path-only: rebuild a handle around an already-deserialized
-    /// [`Dmp105`] state (`sink_serde::SinkState::Dmp105` — see
+    /// [`DMP105`] state (`sink_serde::SinkState::DMP105` — see
     /// `bitbanger.rs`), wrapping it in a fresh `Rc<RefCell<_>>`
-    /// (`docs/plan-save-states.md`). Unlike [`Dmp105Handle::new`], this
+    /// (`docs/plan-save-states.md`). Unlike [`DMP105Handle::new`], this
     /// starts from real restored state rather than power-on defaults.
-    pub(crate) fn from_state(state: Dmp105) -> Self {
+    pub(crate) fn from_state(state: DMP105) -> Self {
         Self(Rc::new(RefCell::new(state)))
     }
 
@@ -408,26 +408,26 @@ impl Dmp105Handle {
         self.0.borrow_mut().paper.clear();
     }
 
-    /// Power-cycle the printer (see [`Dmp105::reset`]): every register back
+    /// Power-cycle the printer (see [`DMP105::reset`]): every register back
     /// to its power-on default, paper untouched.
     pub fn reset(&self) {
         self.0.borrow_mut().reset();
     }
 }
 
-impl PrinterSink for Dmp105Handle {
+impl PrinterSink for DMP105Handle {
     fn write_byte(&mut self, b: u8) {
         self.0.borrow_mut().feed(b);
     }
 
     /// The whole interpreter/paper state, cloned out of the shared
-    /// `Rc<RefCell<_>>` — `Dmp105` is plain data (`Clone` derive), so this
+    /// `Rc<RefCell<_>>` — `DMP105` is plain data (`Clone` derive), so this
     /// is a deep-but-cheap snapshot (`docs/plan-save-states.md`).
     fn snapshot(&self) -> SinkState {
-        SinkState::Dmp105(self.0.borrow().clone())
+        SinkState::DMP105(self.0.borrow().clone())
     }
 
-    fn as_dmp105(&self) -> Option<&Dmp105Handle> {
+    fn as_dmp105(&self) -> Option<&DMP105Handle> {
         Some(self)
     }
 }

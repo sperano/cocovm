@@ -52,14 +52,14 @@ fn loopback_inject_feeds_poll_rx_directly() {
 
 #[test]
 fn tcp_dcd_false_before_any_connection() {
-    let mut ep = TcpEndpoint::bind("127.0.0.1:0").expect("bind");
+    let mut ep = TCPEndpoint::bind("127.0.0.1:0").expect("bind");
     assert_eq!(ep.poll_rx(), None); // drives try_accept with no client waiting
     assert!(!ep.dcd());
 }
 
 #[test]
 fn tcp_round_trip_dcd_and_disconnect() {
-    let mut ep = TcpEndpoint::bind("127.0.0.1:0").expect("bind");
+    let mut ep = TCPEndpoint::bind("127.0.0.1:0").expect("bind");
     let addr = ep.local_addr().expect("local_addr");
 
     let mut client = TcpStream::connect(addr).expect("connect");
@@ -102,7 +102,7 @@ fn tcp_round_trip_dcd_and_disconnect() {
 
 #[test]
 fn tcp_tx_with_no_client_is_silently_dropped() {
-    let mut ep = TcpEndpoint::bind("127.0.0.1:0").expect("bind");
+    let mut ep = TCPEndpoint::bind("127.0.0.1:0").expect("bind");
     // No client ever connects; tx must not panic or block.
     ep.tx(0x01);
     assert!(!ep.dcd());
@@ -117,7 +117,7 @@ mod pty {
 
     #[test]
     fn path_is_nonempty_and_exists() {
-        let pty = PtyEndpoint::new().expect("open pty");
+        let pty = PTYEndpoint::new().expect("open pty");
         assert!(!pty.path().is_empty());
         assert!(std::path::Path::new(pty.path()).exists());
         assert!(pty.dcd());
@@ -149,7 +149,7 @@ mod pty {
 
     #[test]
     fn round_trip_via_slave_device() {
-        let mut pty = PtyEndpoint::new().expect("open pty");
+        let mut pty = PTYEndpoint::new().expect("open pty");
 
         // Open the slave non-blocking too, so a read with nothing
         // written yet returns EAGAIN instead of hanging the test.

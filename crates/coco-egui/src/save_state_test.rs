@@ -1,7 +1,7 @@
 use super::*;
 use coco_core::MachineConfig;
 use coco_core::snapshot;
-use crate::{RomSource, dev_roms_dir, disk_basic_rom_path};
+use crate::{ROMSource, dev_roms_dir, disk_basic_rom_path};
 
 /// Scratch directory holding only the fixture files a given test writes
 /// into it, under `target/` (git-ignored, unlike the workspace `roms/`
@@ -45,7 +45,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
     let mut app = CocoApp::new(
         MachineConfig::default(),
         rom,
-        RomSource::File(rom_path.clone()),
+        ROMSource::File(rom_path.clone()),
         None,
         [None, None],
         [None, None],

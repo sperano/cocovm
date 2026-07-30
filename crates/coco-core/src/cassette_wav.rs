@@ -126,7 +126,7 @@ fn build_wav_bytes(samples: &[u8]) -> Vec<u8> {
 
 /// Error decoding a WAV file into cassette tape bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WavError {
+pub enum WAVError {
     /// Fewer bytes than the minimal `RIFF`+size(4)+`WAVE` header.
     Truncated,
     /// Missing/mismatched `RIFF`/`WAVE` magic.
@@ -148,33 +148,33 @@ pub enum WavError {
     MissingDataChunk,
 }
 
-impl std::fmt::Display for WavError {
+impl std::fmt::Display for WAVError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WavError::Truncated => write!(f, "WAV file is truncated (missing RIFF/WAVE header)"),
-            WavError::NotWav => write!(f, "not a WAV file (missing RIFF/WAVE magic)"),
-            WavError::ChunkOverrun { chunk_id, offset, size, remaining } => write!(
+            WAVError::Truncated => write!(f, "WAV file is truncated (missing RIFF/WAVE header)"),
+            WAVError::NotWav => write!(f, "not a WAV file (missing RIFF/WAVE magic)"),
+            WAVError::ChunkOverrun { chunk_id, offset, size, remaining } => write!(
                 f,
                 "WAV chunk {:?} at offset {offset} claims {size} bytes but only {remaining} remain",
                 String::from_utf8_lossy(chunk_id)
             ),
-            WavError::MissingFmtChunk => write!(f, "WAV file has no 'fmt ' chunk"),
-            WavError::FmtChunkTooShort => {
+            WAVError::MissingFmtChunk => write!(f, "WAV file has no 'fmt ' chunk"),
+            WAVError::FmtChunkTooShort => {
                 write!(f, "WAV 'fmt ' chunk is shorter than the minimal 16-byte PCM format body")
             }
-            WavError::UnsupportedFormatTag(tag) => {
+            WAVError::UnsupportedFormatTag(tag) => {
                 write!(f, "unsupported WAV format tag {tag} (only PCM/1 is supported)")
             }
-            WavError::UnsupportedBitsPerSample(bits) => {
+            WAVError::UnsupportedBitsPerSample(bits) => {
                 write!(f, "unsupported WAV sample depth {bits}-bit (only 8-bit or 16-bit are supported)")
             }
-            WavError::NoChannels => write!(f, "WAV 'fmt ' chunk declares zero channels"),
-            WavError::MissingDataChunk => write!(f, "WAV file has no 'data' chunk"),
+            WAVError::NoChannels => write!(f, "WAV 'fmt ' chunk declares zero channels"),
+            WAVError::MissingDataChunk => write!(f, "WAV file has no 'data' chunk"),
         }
     }
 }
 
-impl std::error::Error for WavError {}
+impl std::error::Error for WAVError {}
 
 /// Minimum bytes to hold `"RIFF"` + size(4) + `"WAVE"` before any chunk
 /// walking can begin.
@@ -186,7 +186,7 @@ const CHUNK_HEADER_LEN: usize = 8;
 const PCM_FMT_CHUNK_LEN: usize = 16;
 
 /// The subset of the `fmt ` chunk this module cares about.
-struct WavFmt {
+struct WAVFmt {
     channels: u16,
     sample_rate_hz: u32,
     bits_per_sample: u16,
@@ -195,15 +195,15 @@ struct WavFmt {
 /// Walk a RIFF/WAVE file's chunks (not assuming `fmt ` immediately follows
 /// the header — `LIST`/`INFO` chunks commonly come first) and return the
 /// `fmt` info plus the `data` chunk's payload slice.
-fn parse_wav_chunks(bytes: &[u8]) -> Result<(WavFmt, &[u8]), WavError> {
+fn parse_wav_chunks(bytes: &[u8]) -> Result<(WAVFmt, &[u8]), WAVError> {
     if bytes.len() < RIFF_HEADER_LEN {
-        return Err(WavError::Truncated);
+        return Err(WAVError::Truncated);
     }
     if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Err(WavError::NotWav);
+        return Err(WAVError::NotWav);
     }
 
-    let mut fmt: Option<WavFmt> = None;
+    let mut fmt: Option<WAVFmt> = None;
     let mut data: Option<&[u8]> = None;
     let mut offset = RIFF_HEADER_LEN;
     while offset + CHUNK_HEADER_LEN <= bytes.len() {
@@ -216,8 +216,8 @@ fn parse_wav_chunks(bytes: &[u8]) -> Result<(WavFmt, &[u8]), WavError> {
         offset = next_offset;
     }
 
-    let fmt = fmt.ok_or(WavError::MissingFmtChunk)?;
-    let data = data.ok_or(WavError::MissingDataChunk)?;
+    let fmt = fmt.ok_or(WAVError::MissingFmtChunk)?;
+    let data = data.ok_or(WAVError::MissingDataChunk)?;
     Ok((fmt, data))
 }
 
@@ -225,13 +225,13 @@ fn parse_wav_chunks(bytes: &[u8]) -> Result<(WavFmt, &[u8]), WavError> {
 /// returning `(id, body, next_offset)` — `next_offset` already accounts for
 /// RIFF's even-size chunk padding (the pad byte isn't part of the declared
 /// size).
-fn read_chunk(bytes: &[u8], offset: usize) -> Result<([u8; 4], &[u8], usize), WavError> {
+fn read_chunk(bytes: &[u8], offset: usize) -> Result<([u8; 4], &[u8], usize), WAVError> {
     let chunk_id: [u8; 4] = bytes[offset..offset + 4].try_into().unwrap();
     let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
     let body_start = offset + CHUNK_HEADER_LEN;
     let body_end = body_start.checked_add(chunk_size).filter(|&e| e <= bytes.len());
     let Some(body_end) = body_end else {
-        return Err(WavError::ChunkOverrun {
+        return Err(WAVError::ChunkOverrun {
             chunk_id,
             offset,
             size: chunk_size,
@@ -243,32 +243,32 @@ fn read_chunk(bytes: &[u8], offset: usize) -> Result<([u8; 4], &[u8], usize), Wa
     Ok((chunk_id, body, next_offset))
 }
 
-/// Parse a `fmt ` chunk body into [`WavFmt`], rejecting anything this module
+/// Parse a `fmt ` chunk body into [`WAVFmt`], rejecting anything this module
 /// doesn't decode (non-PCM, zero channels, unsupported sample depth).
-fn parse_fmt_chunk(body: &[u8]) -> Result<WavFmt, WavError> {
+fn parse_fmt_chunk(body: &[u8]) -> Result<WAVFmt, WAVError> {
     if body.len() < PCM_FMT_CHUNK_LEN {
-        return Err(WavError::FmtChunkTooShort);
+        return Err(WAVError::FmtChunkTooShort);
     }
     let format_tag = u16::from_le_bytes(body[0..2].try_into().unwrap());
     if format_tag != PCM_FORMAT_TAG {
-        return Err(WavError::UnsupportedFormatTag(format_tag));
+        return Err(WAVError::UnsupportedFormatTag(format_tag));
     }
     let channels = u16::from_le_bytes(body[2..4].try_into().unwrap());
     if channels == 0 {
-        return Err(WavError::NoChannels);
+        return Err(WAVError::NoChannels);
     }
     let sample_rate_hz = u32::from_le_bytes(body[4..8].try_into().unwrap());
     let bits_per_sample = u16::from_le_bytes(body[14..16].try_into().unwrap());
     if bits_per_sample != 8 && bits_per_sample != 16 {
-        return Err(WavError::UnsupportedBitsPerSample(bits_per_sample));
+        return Err(WAVError::UnsupportedBitsPerSample(bits_per_sample));
     }
-    Ok(WavFmt { channels, sample_rate_hz, bits_per_sample })
+    Ok(WAVFmt { channels, sample_rate_hz, bits_per_sample })
 }
 
 /// Extract channel 0's samples as signed integers on a common scale,
 /// regardless of the WAV's bit depth (8-bit unsigned or 16-bit signed).
 /// Other channels are simply skipped (every Nth sample, N = channel count).
-fn extract_mono_samples(data: &[u8], fmt: &WavFmt) -> Vec<i32> {
+fn extract_mono_samples(data: &[u8], fmt: &WAVFmt) -> Vec<i32> {
     let channels = usize::from(fmt.channels);
     let mut out = Vec::new();
     match fmt.bits_per_sample {
@@ -387,7 +387,7 @@ fn choose_best_decode(a: Vec<u8>, b: Vec<u8>) -> Vec<u8> {
 ///
 /// `cpu_hz` is the machine's CPU clock ([`crate::Machine::cpu_hz`]), used to
 /// convert WAV sample indices into the CPU-cycle domain `demodulate` expects.
-pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WavError> {
+pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WAVError> {
     let (fmt, data) = parse_wav_chunks(bytes)?;
     let samples = extract_mono_samples(data, &fmt);
     if samples.is_empty() {

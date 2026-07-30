@@ -2,10 +2,10 @@
 //! DriveWire protocol: a byte-stream RPC that lets NitrOS-9 (or DECB, via
 //! HDB-DOS) address disk images living on the host instead of real
 //! hardware, one 256-byte sector at a time. This module is the protocol
-//! engine only — framing, opcodes, checksums, and the [`DwImage`] backing
+//! engine only — framing, opcodes, checksums, and the [`DWImage`] backing
 //! store; the Becker-port register wiring ($FF41/$FF42) that feeds bytes
-//! into [`DwServer::data_write`] and reads them back out of
-//! [`DwServer::data_read`] from the CPU bus is a separate, later task.
+//! into [`DWServer::data_write`] and reads them back out of
+//! [`DWServer::data_read`] from the CPU bus is a separate, later task.
 //!
 //! Opcode set, packet layout, checksum algorithm, and error codes are cited
 //! from the DriveWire 4 Java server (`DWProtocolHandler.java`) and
@@ -13,7 +13,7 @@
 //! (`dwio.asm`, `rbdw.asm`, `dwcheck.asm`), per the verified spec this
 //! module was built from.
 //!
-//! The byte-level protocol state machine ([`data_write`](DwServer::data_write)
+//! The byte-level protocol state machine ([`data_write`](DWServer::data_write)
 //! down to opcode dispatch) lives in the [`protocol`] submodule; the
 //! READ/WRITE family's actual sector I/O lives in [`transfer`].
 
@@ -172,7 +172,7 @@ const WRITE_BODY_LEN: usize = HEADER_LEN + SECTOR_SIZE + 2;
 
 /// HDB-DOS flat addressing: sectors per virtual disk (35 tracks × 18
 /// sectors/track — a standard DECB `.dsk` geometry). In HDB-DOS mode
-/// ([`DwServer::set_hdbdos_mode`]) the wire drive byte is ignored;
+/// ([`DWServer::set_hdbdos_mode`]) the wire drive byte is ignored;
 /// `drive = lsn / HDBDOS_SECTORS_PER_DISK`, local
 /// `lsn = lsn % HDBDOS_SECTORS_PER_DISK`.
 pub const HDBDOS_SECTORS_PER_DISK: u64 = 630;
@@ -201,14 +201,14 @@ pub const TRANSACTION_TIMEOUT_CYCLES: u64 = (MAX_CPU_HZ * TRANSACTION_TIMEOUT_SE
 const TIME_REPLY_YEAR_BASE: u16 = 1900;
 
 /// Becker-port status bit meaning "at least one reply byte is ready for the
-/// client to read" ([`DwServer::status_read`]). The Becker-port register
+/// client to read" ([`DWServer::status_read`]). The Becker-port register
 /// wiring itself ($FF41/$FF42) is out of scope for this module — this
 /// constant only names the bit value this in-process server reports.
 const STATUS_DATA_AVAILABLE: u8 = 0x02;
 
 /// A DriveWire backing image: either an in-memory buffer (tests — small,
 /// cheap to construct and assert against) or a real file, accessed by
-/// seeking rather than loaded whole. Mirrors [`crate::vhd::VhdImage`] with
+/// seeking rather than loaded whole. Mirrors [`crate::vhd::VHDImage`] with
 /// one deliberate difference: a read whose sector lies fully or partly
 /// beyond the image's current length is an *error* here (DriveWire has no
 /// "sparse image" semantics — a read past the end means the client asked
@@ -216,17 +216,17 @@ const STATUS_DATA_AVAILABLE: u8 = 0x02;
 /// silently extends the image (so a fresh, empty image file can become a
 /// valid disk just by formatting it — DECB `FORMAT`/NitrOS-9 `format` write
 /// every sector of a new volume in ascending LSN order).
-pub enum DwImage {
+pub enum DWImage {
     Memory(Vec<u8>),
     File(File),
 }
 
-impl DwImage {
+impl DWImage {
     /// Current length of the backing image in bytes.
     fn len(&self) -> io::Result<u64> {
         match self {
-            DwImage::Memory(bytes) => Ok(bytes.len() as u64),
-            DwImage::File(file) => Ok(file.metadata()?.len()),
+            DWImage::Memory(bytes) => Ok(bytes.len() as u64),
+            DWImage::File(file) => Ok(file.metadata()?.len()),
         }
     }
 
@@ -243,12 +243,12 @@ impl DwImage {
             ));
         }
         match self {
-            DwImage::Memory(bytes) => {
+            DWImage::Memory(bytes) => {
                 let start = offset as usize;
                 buf.copy_from_slice(&bytes[start..start + buf.len()]);
                 Ok(())
             }
-            DwImage::File(file) => {
+            DWImage::File(file) => {
                 file.seek(SeekFrom::Start(offset))?;
                 file.read_exact(buf)
             }
@@ -261,7 +261,7 @@ impl DwImage {
     /// current end and writing extends it the same way a real file does).
     pub(crate) fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
         match self {
-            DwImage::Memory(bytes) => {
+            DWImage::Memory(bytes) => {
                 let end = offset as usize + buf.len();
                 if bytes.len() < end {
                     bytes.resize(end, 0);
@@ -269,7 +269,7 @@ impl DwImage {
                 bytes[offset as usize..end].copy_from_slice(buf);
                 Ok(())
             }
-            DwImage::File(file) => {
+            DWImage::File(file) => {
                 file.seek(SeekFrom::Start(offset))?;
                 file.write_all(buf)
             }
@@ -281,15 +281,15 @@ impl DwImage {
     /// back to check what a command wrote); `None` for a file-backed image.
     pub fn as_memory(&self) -> Option<&[u8]> {
         match self {
-            DwImage::Memory(bytes) => Some(bytes),
-            DwImage::File(_) => None,
+            DWImage::Memory(bytes) => Some(bytes),
+            DWImage::File(_) => None,
         }
     }
 }
 
 /// A wall-clock timestamp for [`opcode::TIME`] replies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DwTime {
+pub struct DWTime {
     pub year: u16,
     pub month: u8,
     pub day: u8,
@@ -300,9 +300,9 @@ pub struct DwTime {
 
 /// A source of wall-clock time for [`opcode::TIME`], injected by the
 /// frontend — `coco-core` has no host clock access of its own.
-pub type DwClock = Box<dyn FnMut() -> DwTime + Send>;
+pub type DWClock = Box<dyn FnMut() -> DWTime + Send>;
 
-/// [`DwServer`]'s default clock (before [`DwServer::set_clock`] is called):
+/// [`DWServer`]'s default clock (before [`DWServer::set_clock`] is called):
 /// an arbitrary but deterministic fixed date, since `coco-core` must stay
 /// host-free. The frontend crate injects the real wall clock.
 const DEFAULT_CLOCK_YEAR: u16 = 1990;
@@ -312,8 +312,8 @@ const DEFAULT_CLOCK_HOUR: u8 = 0;
 const DEFAULT_CLOCK_MINUTE: u8 = 0;
 const DEFAULT_CLOCK_SECOND: u8 = 0;
 
-fn default_clock() -> DwTime {
-    DwTime {
+fn default_clock() -> DWTime {
+    DWTime {
         year: DEFAULT_CLOCK_YEAR,
         month: DEFAULT_CLOCK_MONTH,
         day: DEFAULT_CLOCK_DAY,
@@ -323,11 +323,11 @@ fn default_clock() -> DwTime {
     }
 }
 
-/// `#[serde(default = "...")]` for [`DwServer::clock`]: matches
-/// [`DwServer::new`]'s own default (a closure has no serializable shape, so
+/// `#[serde(default = "...")]` for [`DWServer::clock`]: matches
+/// [`DWServer::new`]'s own default (a closure has no serializable shape, so
 /// this is what a restored server falls back to until the frontend calls
-/// [`DwServer::set_clock`] again — `docs/plan-save-states.md`).
-fn default_dw_clock() -> DwClock {
+/// [`DWServer::set_clock`] again — `docs/plan-save-states.md`).
+fn default_dw_clock() -> DWClock {
     Box::new(default_clock)
 }
 
@@ -342,23 +342,23 @@ fn checksum_of(sector: &[u8]) -> u16 {
 /// The DriveWire server: mounted images, the protocol state machine, and
 /// the reply FIFO the Becker-port bus wiring drains from.
 #[derive(Serialize, Deserialize)]
-pub struct DwServer {
+pub struct DWServer {
     /// Skipped: each mounted image can hold an open host `File` handle —
-    /// remounted by path on restore via [`DwServer::reattach`]
+    /// remounted by path on restore via [`DWServer::reattach`]
     /// (`docs/plan-save-states.md`).
     #[serde(skip)]
-    drives: [Option<DwImage>; DRIVE_COUNT],
+    drives: [Option<DWImage>; DRIVE_COUNT],
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
-    /// [`DwServer::mount`]/[`DwServer::eject`].
+    /// [`DWServer::mount`]/[`DWServer::eject`].
     dirty: [bool; DRIVE_COUNT],
     reply: VecDeque<u8>,
     state: State,
     hdbdos: bool,
     /// Skipped: a closure has no serializable shape. Restored to
-    /// [`default_dw_clock`] until the frontend calls [`DwServer::set_clock`]
+    /// [`default_dw_clock`] until the frontend calls [`DWServer::set_clock`]
     /// again (`docs/plan-save-states.md`).
     #[serde(skip, default = "default_dw_clock")]
-    clock: DwClock,
+    clock: DWClock,
     sectors_read: u64,
     sectors_written: u64,
     unknown_opcodes: u64,
@@ -366,7 +366,7 @@ pub struct DwServer {
     /// `OP_SER*`/[`opcode::FASTWRITE_BASE`] family), incremented once per
     /// top-level operation dispatched — not per byte consumed.
     vserial_ops: u64,
-    /// Cycle stamp of the last byte fed via [`DwServer::data_write`], for
+    /// Cycle stamp of the last byte fed via [`DWServer::data_write`], for
     /// the transaction timeout. `None` before the first byte ever arrives.
     last_byte_cycle: Option<u64>,
     /// Per-drive count of successful sector reads plus writes since
@@ -382,7 +382,7 @@ pub struct DwServer {
     drive_ops: [u64; DRIVE_COUNT],
 }
 
-impl DwServer {
+impl DWServer {
     pub fn new() -> Self {
         Self {
             drives: std::array::from_fn(|_| None),
@@ -402,7 +402,7 @@ impl DwServer {
 
     /// Mount `image` in `drive`, replacing anything already there and
     /// clearing its dirty flag.
-    pub fn mount(&mut self, drive: usize, image: DwImage) {
+    pub fn mount(&mut self, drive: usize, image: DWImage) {
         self.drives[drive] = Some(image);
         self.dirty[drive] = false;
     }
@@ -414,11 +414,11 @@ impl DwServer {
     }
 
     /// Restore-path-only: re-inject a mounted image after a snapshot
-    /// restore, WITHOUT clearing `dirty[drive]` (unlike [`DwServer::mount`])
+    /// restore, WITHOUT clearing `dirty[drive]` (unlike [`DWServer::mount`])
     /// — the restored dirty flag is itself real machine state, not reset by
     /// remounting the same image the snapshot already had open
     /// (`docs/plan-save-states.md`).
-    pub fn reattach(&mut self, drive: usize, image: DwImage) {
+    pub fn reattach(&mut self, drive: usize, image: DWImage) {
         self.drives[drive] = Some(image);
     }
 
@@ -427,8 +427,8 @@ impl DwServer {
     }
 
     /// The image mounted in `drive`, if any — mainly for tests (see
-    /// [`DwImage::as_memory`]).
-    pub fn image(&self, drive: usize) -> Option<&DwImage> {
+    /// [`DWImage::as_memory`]).
+    pub fn image(&self, drive: usize) -> Option<&DWImage> {
         self.drives[drive].as_ref()
     }
 
@@ -471,13 +471,13 @@ impl DwServer {
 
     /// Inject a wall clock for [`opcode::TIME`] replies (the frontend's
     /// job — `coco-core` itself only ever uses [`default_clock`]).
-    pub fn set_clock(&mut self, clock: DwClock) {
+    pub fn set_clock(&mut self, clock: DWClock) {
         self.clock = clock;
     }
 
     /// Becker-port status register read: [`STATUS_DATA_AVAILABLE`] set
     /// whenever at least one reply byte is queued, `0` otherwise.
-    /// Non-destructive, unlike [`DwServer::data_read`].
+    /// Non-destructive, unlike [`DWServer::data_read`].
     pub fn status_read(&self) -> u8 {
         if self.reply.is_empty() {
             0
@@ -494,7 +494,7 @@ impl DwServer {
 
 }
 
-impl Default for DwServer {
+impl Default for DWServer {
     fn default() -> Self {
         Self::new()
     }

@@ -33,9 +33,9 @@ pub(crate) enum MPISlot {
     ROMPak(PathBuf),
     FD502,
     DistoRTC,
-    Gmc(PathBuf),
+    GamesMasterCartridge(PathBuf),
     Orch90(PathBuf),
-    Ssc,
+    SoundSpeechCartridge,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the

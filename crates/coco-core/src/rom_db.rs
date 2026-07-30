@@ -10,7 +10,7 @@
 
 /// One known-good dump from MAME's manifest.
 #[derive(Debug, PartialEq, Eq)]
-pub struct KnownRom {
+pub struct KnownROM {
     /// Canonical file name in the MAME romset.
     pub file: &'static str,
     /// Size in bytes; CRC32 matches are only trusted at the right size.
@@ -21,27 +21,27 @@ pub struct KnownRom {
 }
 
 /// Every system ROM the emulator knows how to use, per MAME.
-pub const KNOWN_ROMS: &[KnownRom] = &[
-    KnownRom { file: "coco3.rom", size: 0x8000, crc32: 0xb4c88d6c, desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)" },
-    KnownRom { file: "coco3p.rom", size: 0x8000, crc32: 0xff050d80, desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)" },
-    KnownRom { file: "bas10.rom", size: 0x2000, crc32: 0x00b50aaa, desc: "Color BASIC 1.0 (CoCo 1/2)" },
-    KnownRom { file: "bas11.rom", size: 0x2000, crc32: 0x6270955a, desc: "Color BASIC 1.1 (CoCo 1/2)" },
-    KnownRom { file: "bas12.rom", size: 0x2000, crc32: 0x54368805, desc: "Color BASIC 1.2 (CoCo 1/2)" },
-    KnownRom { file: "bas13.rom", size: 0x2000, crc32: 0xd8f4d15e, desc: "Color BASIC 1.3 (CoCo 2B)" },
-    KnownRom { file: "extbas10.rom", size: 0x2000, crc32: 0x6111a086, desc: "Extended Color BASIC 1.0 (CoCo 1/2)" },
-    KnownRom { file: "extbas11.rom", size: 0x2000, crc32: 0xa82a6254, desc: "Extended Color BASIC 1.1 (CoCo 1/2)" },
-    KnownRom { file: "disk10.rom", size: 0x2000, crc32: 0xb4f9968e, desc: "Disk Extended Color BASIC 1.0 (FD-502)" },
-    KnownRom { file: "disk11.rom", size: 0x2000, crc32: 0x0b9c5415, desc: "Disk Extended Color BASIC 1.1 (FD-502)" },
+pub const KNOWN_ROMS: &[KnownROM] = &[
+    KnownROM { file: "coco3.rom", size: 0x8000, crc32: 0xb4c88d6c, desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)" },
+    KnownROM { file: "coco3p.rom", size: 0x8000, crc32: 0xff050d80, desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)" },
+    KnownROM { file: "bas10.rom", size: 0x2000, crc32: 0x00b50aaa, desc: "Color BASIC 1.0 (CoCo 1/2)" },
+    KnownROM { file: "bas11.rom", size: 0x2000, crc32: 0x6270955a, desc: "Color BASIC 1.1 (CoCo 1/2)" },
+    KnownROM { file: "bas12.rom", size: 0x2000, crc32: 0x54368805, desc: "Color BASIC 1.2 (CoCo 1/2)" },
+    KnownROM { file: "bas13.rom", size: 0x2000, crc32: 0xd8f4d15e, desc: "Color BASIC 1.3 (CoCo 2B)" },
+    KnownROM { file: "extbas10.rom", size: 0x2000, crc32: 0x6111a086, desc: "Extended Color BASIC 1.0 (CoCo 1/2)" },
+    KnownROM { file: "extbas11.rom", size: 0x2000, crc32: 0xa82a6254, desc: "Extended Color BASIC 1.1 (CoCo 1/2)" },
+    KnownROM { file: "disk10.rom", size: 0x2000, crc32: 0xb4f9968e, desc: "Disk Extended Color BASIC 1.0 (FD-502)" },
+    KnownROM { file: "disk11.rom", size: 0x2000, crc32: 0x0b9c5415, desc: "Disk Extended Color BASIC 1.1 (FD-502)" },
 ];
 
 /// What [`validate`] concluded about a ROM image.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Validation {
     /// Byte-identical to a known dump (matched by size + CRC32).
-    Verified(&'static KnownRom),
+    Verified(&'static KnownROM),
     /// The file name claims a known ROM, but the contents differ.
     Mismatch {
-        expected: &'static KnownRom,
+        expected: &'static KnownROM,
         actual_crc32: u32,
         actual_size: usize,
     },
@@ -67,7 +67,7 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 }
 
 /// Look up an image by contents alone (size + CRC32), regardless of name.
-pub fn identify(bytes: &[u8]) -> Option<&'static KnownRom> {
+pub fn identify(bytes: &[u8]) -> Option<&'static KnownROM> {
     let crc = crc32(bytes);
     KNOWN_ROMS
         .iter()

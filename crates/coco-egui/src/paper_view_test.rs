@@ -23,7 +23,7 @@ fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
 }
 
 /// Tearing off must both discard the printed roll (the underlying
-/// [`Dmp105Handle`]'s extent resets to empty) and reset every bit of
+/// [`DMP105Handle`]'s extent resets to empty) and reset every bit of
 /// this window's own view state that referred to the old roll's
 /// content — a stale `current_page` or cached texture would otherwise
 /// point past the now-empty roll on the very next `ui()` frame. Tests
@@ -32,7 +32,7 @@ fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
 #[test]
 fn tear_off_resets_paper_extent_and_view_state() {
     let mut window = PaperWindow::new();
-    let mut handle = Dmp105Handle::new();
+    let mut handle = DMP105Handle::new();
     // Print enough real ink (not just bare line feeds, which move the
     // head but mark no dots) to have non-default extent/cache state to
     // reset away from.
@@ -65,7 +65,7 @@ fn tear_off_resets_paper_extent_and_view_state() {
 #[test]
 fn detach_also_resets_current_page_and_pending_tear_off() {
     let mut window = PaperWindow::new();
-    window.handle = Some(Dmp105Handle::new());
+    window.handle = Some(DMP105Handle::new());
     window.open = true;
     window.current_page = 5;
     window.pending_tear_off = true;

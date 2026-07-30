@@ -8,7 +8,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use coco_core::cart::Cart;
-use coco_core::drivewire::{DwImage, SECTOR_SIZE, error, opcode};
+use coco_core::drivewire::{DWImage, SECTOR_SIZE, error, opcode};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
@@ -161,7 +161,7 @@ fn read_round_trip_over_bus() {
     b.drivewire
         .as_mut()
         .unwrap()
-        .mount(0, DwImage::Memory(image));
+        .mount(0, DWImage::Memory(image));
 
     // opcode::READ, drive 0, LSN 1 (24-bit big-endian).
     feed(&mut b, opcode::READ);
@@ -217,8 +217,8 @@ fn becker_takes_precedence_over_cartridge() {
 
 #[test]
 fn sam_path_becker_intercept_matches_gime_path() {
-    // A small synthetic ROM: `Sam::map` routes all of $FF00-$FF9F
-    // unconditionally to `SamTarget::Io` regardless of ROM contents/size, so
+    // A small synthetic ROM: `SAM::map` routes all of $FF00-$FF9F
+    // unconditionally to `SAMTarget::Io` regardless of ROM contents/size, so
     // the ROM box just needs to exist.
     let rom: Box<[u8]> = vec![0u8; 1].into_boxed_slice();
     let mut b = SystemBus::new(MachineVariant::Coco1, MemorySize::K32, rom);

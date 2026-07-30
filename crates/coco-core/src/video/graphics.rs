@@ -50,7 +50,7 @@ pub const MAX_VDG_COLORS: usize = 4;
 pub const LEGACY_GFX_LINES_PER_ROW: [usize; 8] = [3, 3, 3, 2, 2, 1, 1, 1];
 
 /// A decoded VDG resolution-graphics mode.
-pub struct VdgGraphicsMode {
+pub struct VDGGraphicsMode {
     /// Bytes fetched per displayed row.
     pub bytes_per_row: usize,
     /// RAM rows fetched (before vertical repetition into [`ACTIVE_H`]); driven by
@@ -72,7 +72,7 @@ const SAM_VIDEO_MASK: u8 = 0x07;
 /// [`LEGACY_GFX_LINES_PER_ROW`]. Real BASIC always programs matching GM/V pairs,
 /// but the two are independent on hardware and this function does not reconcile
 /// a mismatched pairing: it just follows each source for its own axis.
-pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VdgGraphicsMode {
+pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VDGGraphicsMode {
     let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
     // (logical width, 4-colour?) for GM2..GM0 = 0..7.
     let (logical_w, four_colour) = match gm {
@@ -87,7 +87,7 @@ pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VdgGraphicsMode {
     };
     let bpp = if four_colour { 2 } else { 1 };
     let lines_per_row = LEGACY_GFX_LINES_PER_ROW[(sam_video & SAM_VIDEO_MASK) as usize];
-    VdgGraphicsMode {
+    VDGGraphicsMode {
         bytes_per_row: logical_w * bpp / 8,
         rows: ACTIVE_H / lines_per_row,
         bpp,
@@ -111,7 +111,7 @@ pub fn vdg_palette_indices(bpp: usize, css: usize) -> &'static [usize] {
 /// the mode's own doubling into the canvas width).
 pub fn paint_legacy_graphics_line(
     row_data: &[u8],
-    mode: &VdgGraphicsMode,
+    mode: &VDGGraphicsMode,
     colors: &[[u8; 4]],
     xscale: usize,
     out: &mut [u8],
@@ -136,7 +136,7 @@ pub fn paint_legacy_graphics_line(
 /// (pixel value → RGBA). Each logical pixel is scaled to fill the 256×192 active area.
 pub fn render_graphics(
     data: &[u8],
-    mode: &VdgGraphicsMode,
+    mode: &VDGGraphicsMode,
     colors: &[[u8; 4]],
     border: [u8; 4],
     fb: &mut [u8],

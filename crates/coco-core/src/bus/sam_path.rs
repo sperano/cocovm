@@ -1,4 +1,4 @@
-//! Plain-SAM path (CoCo 1/2, no GIME): `Sam::map` does the whole-address
+//! Plain-SAM path (CoCo 1/2, no GIME): `SAM::map` does the whole-address
 //! decode (RAM/ROM/cart/I/O/open-bus) in one step, unlike the GIME path's
 //! separate ROM-window/I/O-page/MMU layers, so there's no need for
 //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
@@ -6,7 +6,7 @@
 //! (`docs/coco12-plan.md` Phase 2; the field-loop gating that keeps it that
 //! way for `hsync`/`fs_*` is Phase 4).
 
-use crate::sam::SamTarget;
+use crate::sam::SAMTarget;
 
 use super::regs::{
     CART_BASE, CART_LAST, IO_BASE, OPEN_BUS, PIA0_LAST, PIA1_BASE, PIA1_LAST, SAM_BAS_ROM_OFFSET,
@@ -15,7 +15,7 @@ use super::regs::{
 use super::SystemBus;
 
 impl SystemBus {
-    /// Bounds-check a `Sam::map` RAM target against installed RAM. Unlike the
+    /// Bounds-check a `SAM::map` RAM target against installed RAM. Unlike the
     /// GIME path (which masks/wraps into a smaller machine's high blocks),
     /// out-of-range plain-SAM RAM is just truncated for now: reads/writes
     /// past the installed size fall off the bus (`docs/coco12-plan.md`).
@@ -25,27 +25,27 @@ impl SystemBus {
 
     pub(super) fn sam_read(&mut self, addr: u16) -> u8 {
         match self.sam.map(addr) {
-            SamTarget::Ram(phys) => self
+            SAMTarget::Ram(phys) => self
                 .sam_ram_index(phys)
                 .map(|i| self.ram[i])
                 .unwrap_or(OPEN_BUS),
-            SamTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
-            SamTarget::RomBas(off) => self
+            SAMTarget::RomExt(off) => self.rom.get(off).copied().unwrap_or(OPEN_BUS),
+            SAMTarget::RomBas(off) => self
                 .rom
                 .get(SAM_BAS_ROM_OFFSET + off)
                 .copied()
                 .unwrap_or(OPEN_BUS),
-            SamTarget::Cart(off) => self
+            SAMTarget::Cart(off) => self
                 .cart
                 .rom_read(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
-            SamTarget::Io => self.sam_io_read(addr),
-            SamTarget::OpenBus => OPEN_BUS,
+            SAMTarget::Io => self.sam_io_read(addr),
+            SAMTarget::OpenBus => OPEN_BUS,
         }
     }
 
     pub(super) fn sam_write(&mut self, addr: u16, val: u8) {
         match self.sam.map(addr) {
-            SamTarget::Ram(phys) => {
+            SAMTarget::Ram(phys) => {
                 if let Some(i) = self.sam_ram_index(phys) {
                     self.ram[i] = val;
                 }
@@ -54,15 +54,15 @@ impl SystemBus {
             // not write through to the RAM underneath (MAME gates
             // write-through on TY) — there's no RAM there at all in our
             // model, so these are simply dropped.
-            SamTarget::RomExt(_)
-            | SamTarget::RomBas(_)
-            | SamTarget::Cart(_)
-            | SamTarget::OpenBus => {}
-            SamTarget::Io => self.sam_io_write(addr, val),
+            SAMTarget::RomExt(_)
+            | SAMTarget::RomBas(_)
+            | SAMTarget::Cart(_)
+            | SAMTarget::OpenBus => {}
+            SAMTarget::Io => self.sam_io_write(addr, val),
         }
     }
 
-    /// The `SamTarget::Io` sub-decode: PIA0, PIA1, cart SCS*, and the SAM
+    /// The `SAMTarget::Io` sub-decode: PIA0, PIA1, cart SCS*, and the SAM
     /// control strobes (read-only in effect — a strobe read falls through to
     /// open bus, matching the plan's memory map).
     fn sam_io_read(&mut self, addr: u16) -> u8 {

@@ -124,7 +124,7 @@ pub(crate) const DOT_QUERY_PAD_Y_UNITS: u32 = 2;
 /// A source of already-printed dot impressions, in the same `(x, y)` unit
 /// system as `coco_core::printer::Paper`: `x` in [`X_UNITS_PER_INCH`]
 /// units, `y` in [`Y_UNITS_PER_INCH`] units. A local trait over the two
-/// foreign paper types (`Paper` itself, and `Dmp105Handle`'s live-printer
+/// foreign paper types (`Paper` itself, and `DMP105Handle`'s live-printer
 /// view of one) so `rasterize` doesn't care which it's drawing.
 pub trait DotSource {
     /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs.
@@ -137,9 +137,9 @@ impl DotSource for coco_core::printer::Paper {
     }
 }
 
-impl DotSource for coco_core::dmp105::Dmp105Handle {
+impl DotSource for coco_core::dmp105::DMP105Handle {
     fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        coco_core::dmp105::Dmp105Handle::dots_in_range(self, y0, y1)
+        coco_core::dmp105::DMP105Handle::dots_in_range(self, y0, y1)
     }
 }
 

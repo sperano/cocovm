@@ -23,7 +23,7 @@ a zero-filled array (`[[0; 8]; 2]`, `[0; 16]` both implement `Default`). The
 maintenance hazard: add a field and the manual impl silently drifts. Replace the
 whole block with `#[derive(Default)]` on the struct (it already derives
 `Debug, Clone, Serialize, Deserialize`; `new()` calling `Self::default()` keeps
-working). Contrast with `PiaPort` (`pia.rs:41`), whose manual `Default` is
+working). Contrast with `PIAPort` (`pia.rs:41`), whose manual `Default` is
 *justified* because `input` starts at `0xFF` — that one should stay.
 
 ### F2. Per-field heap allocations in the graphics render paths

@@ -10,9 +10,9 @@
 
 use std::path::PathBuf;
 
-use coco_core::cart::{Cart, Cartridge, RomPak};
+use coco_core::cart::{Cart, Cartridge, ROMPak};
 use coco_core::snapshot::{
-    self, MediaCheck, MediaRef, MediaRefs, MediaSources, SlotRomRef, SnapshotError, SnapshotPayload,
+    self, MediaCheck, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError, SnapshotPayload,
 };
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize};
 
@@ -67,7 +67,7 @@ fn media_ref_verify_reports_ok_mismatch_and_missing() {
 fn restored_payload_carries_no_rom_bytes_before_reattachment() {
     let mut machine = boot_machine();
     let pak_image = vec![0xA5u8; 4096];
-    machine.insert_cartridge(RomPak::from_bytes(&pak_image, false).expect("build pak"));
+    machine.insert_cartridge(ROMPak::from_bytes(&pak_image, false).expect("build pak"));
 
     let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
     let payload: SnapshotPayload = snapshot::load(&bytes).expect("load");
@@ -78,8 +78,8 @@ fn restored_payload_carries_no_rom_bytes_before_reattachment() {
     );
     let cart_debug = format!("{:?}", payload.machine.bus.cart);
     assert!(
-        matches!(payload.machine.bus.cart, Cart::RomPak(_)),
-        "expected a RomPak cart, got {cart_debug}"
+        matches!(payload.machine.bus.cart, Cart::ROMPak(_)),
+        "expected a ROMPak cart, got {cart_debug}"
     );
     assert!(
         cart_debug.contains("image_len: 0"),
@@ -92,16 +92,16 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
     let mut machine = boot_machine();
     // A uniform fill so any byte read back proves the *mirrored* image
     // (not just offset 0) survived reattachment, without needing to work
-    // out `RomPak`'s half-swap indexing by hand.
+    // out `ROMPak`'s half-swap indexing by hand.
     let pak_image = vec![0x42u8; 1024];
-    machine.insert_cartridge(RomPak::from_bytes(&pak_image, false).expect("build pak"));
+    machine.insert_cartridge(ROMPak::from_bytes(&pak_image, false).expect("build pak"));
 
     let media = MediaRefs {
         system_rom: Some(MediaRef {
             path: rom_path(),
             sha256: snapshot::sha256_file(&rom_path()).expect("hash roms/coco3.rom"),
         }),
-        cart_roms: vec![SlotRomRef {
+        cart_roms: vec![SlotROMRef {
             mpi_slot: None,
             rom: MediaRef {
                 path: PathBuf::from("pak.rom"),
@@ -120,8 +120,8 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
     let restored = snapshot::restore(payload, sources).expect("restore");
 
     match restored.machine.bus.cart {
-        Cart::RomPak(pak) => assert_eq!(pak.rom_peek(0x8000), 0x42),
-        other => panic!("expected RomPak, got {other:?}"),
+        Cart::ROMPak(pak) => assert_eq!(pak.rom_peek(0x8000), 0x42),
+        other => panic!("expected ROMPak, got {other:?}"),
     }
 }
 
@@ -129,14 +129,14 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
 fn missing_cart_rom_source_is_missing_media() {
     let mut machine = boot_machine();
     let pak_image = vec![0x99u8; 1024];
-    machine.insert_cartridge(RomPak::from_bytes(&pak_image, false).expect("build pak"));
+    machine.insert_cartridge(ROMPak::from_bytes(&pak_image, false).expect("build pak"));
 
     let media = MediaRefs {
         system_rom: Some(MediaRef {
             path: rom_path(),
             sha256: snapshot::sha256_file(&rom_path()).expect("hash roms/coco3.rom"),
         }),
-        cart_roms: vec![SlotRomRef {
+        cart_roms: vec![SlotROMRef {
             mpi_slot: None,
             rom: MediaRef {
                 path: PathBuf::from("pak.rom"),
@@ -154,8 +154,8 @@ fn missing_cart_rom_source_is_missing_media() {
     match err {
         SnapshotError::MissingMedia { descriptions } => {
             assert!(
-                descriptions.iter().any(|d| d.contains("RomPak")),
-                "descriptions {descriptions:?} should mention the missing RomPak ROM"
+                descriptions.iter().any(|d| d.contains("ROMPak")),
+                "descriptions {descriptions:?} should mention the missing ROMPak ROM"
             );
         }
         other => panic!("expected MissingMedia, got {other:?}"),

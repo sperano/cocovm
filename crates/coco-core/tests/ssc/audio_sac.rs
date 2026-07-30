@@ -1,7 +1,7 @@
 //! Audio / Sound Activity Circuit integration.
 
 use coco_core::ay8913::reg as ay_reg;
-use coco_core::ssc::Ssc;
+use coco_core::ssc::SoundSpeechCartridge;
 use mc6809::Bus;
 
 use super::common::{bus_with_ssc_selected, coco3_bus_with_ssc, pump, FF7E, PROBE_DT};
@@ -29,14 +29,14 @@ const TEST_TONE_PERIOD: u16 = 1000;
 
 /// Loud AY tone A, gated on regardless of noise (mixer bit 3: noise disabled
 /// for channel A).
-fn drive_loud_tone(ssc: &mut Ssc) {
+fn drive_loud_tone(ssc: &mut SoundSpeechCartridge) {
     ssc.ay_write(ay_reg::TONE_A_FINE, (TEST_TONE_PERIOD & 0xFF) as u8);
     ssc.ay_write(ay_reg::TONE_A_COARSE, (TEST_TONE_PERIOD >> 8) as u8);
     ssc.ay_write(ay_reg::VOL_A, 0x0F);
     ssc.ay_write(ay_reg::MIXER, 0b0000_1000);
 }
 
-fn silence(ssc: &mut Ssc) {
+fn silence(ssc: &mut SoundSpeechCartridge) {
     ssc.ay_write(ay_reg::VOL_A, 0);
 }
 

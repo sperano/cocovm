@@ -6,7 +6,7 @@ use coco_core::{MachineConfig, MachineVariant, MonitorType};
 use eframe::egui;
 
 use crate::{
-    Cli, CocoApp, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MENU_BAR_H, MPI_SLOT_COUNT, RomSource, SCALE,
+    Cli, CocoApp, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MENU_BAR_H, MPI_SLOT_COUNT, ROMSource, SCALE,
     STATUS_BAR_H, TARGET_ASPECT, TOOLBAR_H, default_ram, default_vdg, machine_label,
 };
 
@@ -76,7 +76,7 @@ pub(crate) fn boot_app(
     cli: Cli,
     config: MachineConfig,
     rom: Box<[u8]>,
-    rom_source: RomSource,
+    rom_source: ROMSource,
 ) -> CocoApp {
     let mut app = new_app(&cli, config, rom, rom_source);
     mount_cli_hardware(&mut app, &cli);
@@ -106,7 +106,7 @@ pub(crate) fn boot_app(
 /// instead of the plain single-cartridge model, so the base constructor gets
 /// none of them and [`mount_cli_hardware`] wires everything up afterward
 /// through the same methods the MultiPak menu uses.
-fn new_app(cli: &Cli, config: MachineConfig, rom: Box<[u8]>, rom_source: RomSource) -> CocoApp {
+fn new_app(cli: &Cli, config: MachineConfig, rom: Box<[u8]>, rom_source: ROMSource) -> CocoApp {
     let dw_paths = [cli.dw0.clone(), cli.dw1.clone(), cli.dw2.clone(), cli.dw3.clone()];
     let becker_enabled = cli.becker || dw_paths.iter().any(|p| p.is_some());
     let (cart_path, disk_paths) = if cli.mpi {

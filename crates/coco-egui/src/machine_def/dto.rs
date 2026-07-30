@@ -44,7 +44,7 @@ impl From<MachineVariantDTO> for MachineVariant {
 /// `512k` aren't valid Rust identifiers, hence the explicit renames rather
 /// than a derived `rename_all`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RamDTO {
+pub enum RAMDTO {
     #[serde(rename = "4k")]
     K4,
     #[serde(rename = "16k")]
@@ -61,30 +61,30 @@ pub enum RamDTO {
     K2048,
 }
 
-impl From<MemorySize> for RamDTO {
+impl From<MemorySize> for RAMDTO {
     fn from(memory: MemorySize) -> Self {
         match memory {
-            MemorySize::K4 => RamDTO::K4,
-            MemorySize::K16 => RamDTO::K16,
-            MemorySize::K32 => RamDTO::K32,
-            MemorySize::K64 => RamDTO::K64,
-            MemorySize::K128 => RamDTO::K128,
-            MemorySize::K512 => RamDTO::K512,
-            MemorySize::K2048 => RamDTO::K2048,
+            MemorySize::K4 => RAMDTO::K4,
+            MemorySize::K16 => RAMDTO::K16,
+            MemorySize::K32 => RAMDTO::K32,
+            MemorySize::K64 => RAMDTO::K64,
+            MemorySize::K128 => RAMDTO::K128,
+            MemorySize::K512 => RAMDTO::K512,
+            MemorySize::K2048 => RAMDTO::K2048,
         }
     }
 }
 
-impl From<RamDTO> for MemorySize {
-    fn from(ram: RamDTO) -> Self {
+impl From<RAMDTO> for MemorySize {
+    fn from(ram: RAMDTO) -> Self {
         match ram {
-            RamDTO::K4 => MemorySize::K4,
-            RamDTO::K16 => MemorySize::K16,
-            RamDTO::K32 => MemorySize::K32,
-            RamDTO::K64 => MemorySize::K64,
-            RamDTO::K128 => MemorySize::K128,
-            RamDTO::K512 => MemorySize::K512,
-            RamDTO::K2048 => MemorySize::K2048,
+            RAMDTO::K4 => MemorySize::K4,
+            RAMDTO::K16 => MemorySize::K16,
+            RAMDTO::K32 => MemorySize::K32,
+            RAMDTO::K64 => MemorySize::K64,
+            RAMDTO::K128 => MemorySize::K128,
+            RAMDTO::K512 => MemorySize::K512,
+            RAMDTO::K2048 => MemorySize::K2048,
         }
     }
 }
@@ -202,7 +202,7 @@ pub enum JoySourceDTO {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareDTO {
     pub variant: MachineVariantDTO,
-    pub ram: RamDTO,
+    pub ram: RAMDTO,
     pub video: VideoStandardDTO,
     /// Absent ⇒ per-variant default: RGB on a CoCo 3, nothing on a CoCo 1/2
     /// (no monitor port — RF TV only; an explicit key there fails

@@ -15,10 +15,10 @@ mod rompak;
 
 pub use cart_enum::Cart;
 pub use empty::EmptySlot;
-pub use gmc::Gmc;
+pub use gmc::GamesMasterCartridge;
 pub use multipak::{mpi, MultiPak};
 pub use rompak::{
-    BankedPakError, BankedRomPak, RomPak, RomPakError, BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN,
+    BankedPakError, BankedROMPak, ROMPak, ROMPakError, BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN,
     ROM_PAK_MAX_LEN,
 };
 
@@ -154,7 +154,7 @@ pub trait Cartridge {
     /// silence, full scale comparable to that method's other sources).
     /// Default: silent — most cartridges (ROM paks, the FD-502, the VHD
     /// interface) have no audio output of their own. The Sound/Speech
-    /// Cartridge ([`crate::ssc::Ssc`]) is the one device that overrides
+    /// Cartridge ([`crate::ssc::SoundSpeechCartridge`]) is the one device that overrides
     /// this.
     ///
     /// Called exactly once per `sound_sample`, regardless of whether the
@@ -178,7 +178,7 @@ pub trait Cartridge {
     /// fields this cartridge indexes its own buffers with — Rust's own
     /// bounds checks turn a bad one (from a hand-crafted payload) into a
     /// panic, not a graceful error, unless this catches it first. See
-    /// `crate::ssc::Ssc`/`crate::fdc::DiskCart`'s overrides. Default:
+    /// `crate::ssc::SoundSpeechCartridge`/`crate::fdc::DiskCart`'s overrides. Default:
     /// nothing to check.
     fn validate_restored(&self) -> Result<(), String> {
         Ok(())

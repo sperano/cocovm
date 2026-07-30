@@ -5,7 +5,7 @@
 //!   trace, NO interrupts, comparable 1:1 against MAME up to the point BASIC
 //!   first enables interrupts.
 //! - With cart (`trace -- [max_instrs] <pak.ccc>`): inserts an autostart
-//!   RomPak and drives `Machine::step_instruction()` (which handles interrupt
+//!   ROMPak and drives `Machine::step_instruction()` (which handles interrupt
 //!   servicing before each instruction, hsync per line, vsync per field, and
 //!   GIME timer ticks) so the full boot-and-run stream can be diffed against a
 //!   MAME run with `-cart1 <pak.ccc>`.
@@ -15,7 +15,7 @@
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
-use coco_core::cart::RomPak;
+use coco_core::cart::ROMPak;
 use coco_core::debug::TraceEntry;
 use coco_core::{Machine, MachineConfig, StepKind};
 
@@ -36,7 +36,7 @@ fn main() {
     let mut m = Machine::new(MachineConfig::default(), load_rom());
     if let Some(path) = &cart_path {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
-        m.insert_cartridge(RomPak::from_bytes(&bytes, true).unwrap());
+        m.insert_cartridge(ROMPak::from_bytes(&bytes, true).unwrap());
         m.reset();
     }
     let out = std::io::stdout();

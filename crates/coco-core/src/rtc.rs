@@ -172,14 +172,14 @@ const NOON: u8 = 12;
 
 /// Placeholder time the restored default `now` closure yields until the
 /// frontend re-injects a real host time source via
-/// [`DistoRtc::set_time_source`] (`docs/plan-save-states.md`) — an
+/// [`DistoRTC::set_time_source`] (`docs/plan-save-states.md`) — an
 /// obviously-fake epoch, not a guess at the real time.
 const RESTORED_PLACEHOLDER_TIME: RTCTime =
     RTCTime { year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
 
 /// `#[serde(default = "...")]` for [`MSM6242::now`]: a closure that always
 /// returns [`RESTORED_PLACEHOLDER_TIME`], standing in until
-/// [`DistoRtc::set_time_source`] re-injects the host clock the frontend owns
+/// [`DistoRTC::set_time_source`] re-injects the host clock the frontend owns
 /// (`now` isn't itself state — it's a closure, so it can't round-trip
 /// through a snapshot at all).
 fn default_time_source() -> TimeSource {
@@ -200,7 +200,7 @@ fn default_time_source() -> TimeSource {
 pub struct MSM6242 {
     /// Never travels through a snapshot (a closure has no serializable
     /// shape) — skipped, restored to [`default_time_source`] until
-    /// [`MSM6242::set_time_source`]/[`DistoRtc::set_time_source`]
+    /// [`MSM6242::set_time_source`]/[`DistoRTC::set_time_source`]
     /// re-injects the real one (`docs/plan-save-states.md`).
     #[serde(skip, default = "default_time_source")]
     now: TimeSource,
@@ -453,21 +453,21 @@ const RTC_SELECT_ALT2: u16 = 0xFF53;
 /// boots from VHD without a disk controller) or into a Multi-Pak slot next to
 /// the FD-502, as the real MEB host cards did.
 #[derive(Serialize, Deserialize)]
-pub struct DistoRtc {
+pub struct DistoRTC {
     rtc: MSM6242,
     address_latch: u8,
 }
 
-impl std::fmt::Debug for DistoRtc {
+impl std::fmt::Debug for DistoRTC {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DistoRtc")
+        f.debug_struct("DistoRTC")
             .field("address_latch", &self.address_latch)
             .field("rtc", &self.rtc)
             .finish()
     }
 }
 
-impl DistoRtc {
+impl DistoRTC {
     /// Build the cart around a host time source; the clock starts on the
     /// source's time (offset 0), like a battery-backed chip that was already
     /// set.
@@ -491,7 +491,7 @@ impl DistoRtc {
     }
 }
 
-impl Cartridge for DistoRtc {
+impl Cartridge for DistoRTC {
     fn read(&mut self, addr: u16) -> u8 {
         match addr {
             RTC_DATA => self.rtc.read(self.address_latch & 0x0F),

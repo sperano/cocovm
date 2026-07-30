@@ -9,7 +9,7 @@
 //! multi-window support egui reports `ViewportClass::Embedded` and the view
 //! falls back to an in-viewport `egui::Window`.
 //!
-//! Sink ownership: [`PaperWindow`] never attaches its own [`Dmp105Handle`] —
+//! Sink ownership: [`PaperWindow`] never attaches its own [`DMP105Handle`] —
 //! that handshake (which touches [`crate::CocoApp::print_capture_path`] and
 //! `bus.bitbanger`, both owned by `CocoApp`) lives in
 //! [`crate::CocoApp::toggle_paper_window`]. This window just holds whatever
@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use coco_core::dmp105::Dmp105Handle;
+use coco_core::dmp105::DMP105Handle;
 use coco_core::printer::{PaperExtent, Y_UNITS_PER_INCH};
 use eframe::egui;
 
@@ -40,7 +40,7 @@ pub struct PaperWindow {
     /// The live DMP-105 handle this window reads from, if the bit-banger's
     /// sink is currently a DMP-105 (see the module doc comment on who
     /// attaches/detaches this).
-    pub handle: Option<Dmp105Handle>,
+    pub handle: Option<DMP105Handle>,
     /// Green-bar banding toggle, exposed in the window's header row.
     green_bar: bool,
     /// Whether `green_bar` changed since the cache below was last built —
@@ -86,7 +86,7 @@ impl PaperWindow {
     /// restored paper. `None` — nothing was attached at save time, or it was
     /// a file capture (always restored as stopped) — has nothing to show, so
     /// this just delegates to `detach`.
-    pub fn resync(&mut self, handle: Option<Dmp105Handle>) {
+    pub fn resync(&mut self, handle: Option<DMP105Handle>) {
         match handle {
             Some(handle) => {
                 self.handle = Some(handle);
@@ -113,7 +113,7 @@ impl PaperWindow {
         last_content_page + 2
     }
 
-    /// Tear off: discard the printed roll ([`Dmp105Handle::tear_off`]) and
+    /// Tear off: discard the printed roll ([`DMP105Handle::tear_off`]) and
     /// reset every bit of view state that referred to the old roll's
     /// content, so the next `ui()` frame (or a export call) sees a fresh,
     /// blank single page rather than stale cached textures or an
@@ -207,7 +207,7 @@ impl PaperWindow {
 
     /// Drop every cached page whose range intersects what changed since the
     /// last poll, forcing a re-rasterize next time that page is visible.
-    fn invalidate_dirty_pages(&mut self, handle: &Dmp105Handle) {
+    fn invalidate_dirty_pages(&mut self, handle: &DMP105Handle) {
         let Some((y0, y1)) = handle.take_dirty() else {
             return;
         };
@@ -275,7 +275,7 @@ impl PaperWindow {
     fn contents(
         &mut self,
         ui: &mut egui::Ui,
-        handle: &Dmp105Handle,
+        handle: &DMP105Handle,
         total_pages: u32,
         printed_pages: u32,
         error: &mut Option<String>,
@@ -310,7 +310,7 @@ impl PaperWindow {
     fn export_menu(
         &mut self,
         ui: &mut egui::Ui,
-        handle: &Dmp105Handle,
+        handle: &DMP105Handle,
         total_pages: u32,
         error: &mut Option<String>,
     ) {
@@ -418,7 +418,7 @@ impl PaperWindow {
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
-        handle: &Dmp105Handle,
+        handle: &DMP105Handle,
         total_pages: u32,
     ) {
         // Fit-width scaling: no horizontal scrolling at default zoom.

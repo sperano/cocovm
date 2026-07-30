@@ -6,10 +6,10 @@
 //! MPI slot-select routing/limitation.
 
 use coco_core::acia6551::{command, status};
-use coco_core::cart::{Cart, Cartridge, IO_OPEN_BUS, MultiPak, RomPak, mpi};
+use coco_core::cart::{Cart, Cartridge, IO_OPEN_BUS, MultiPak, ROMPak, mpi};
 use coco_core::config::{MachineVariant, MemorySize};
 use coco_core::pia::cr;
-use coco_core::rs232::DeluxeRs232;
+use coco_core::rs232::DeluxeRS232;
 use coco_core::{Machine, MachineConfig, SystemBus};
 use mc6809::Bus;
 
@@ -41,7 +41,7 @@ fn bus() -> SystemBus {
 
 fn bus_with_pak() -> SystemBus {
     let mut bus = bus();
-    bus.cart = DeluxeRs232::new().into();
+    bus.cart = DeluxeRS232::new().into();
     bus
 }
 
@@ -72,7 +72,7 @@ fn empty_slot_reads_open_bus_at_acia_window() {
 #[test]
 fn rom_pak_reads_open_bus_at_acia_window() {
     let mut bus = bus();
-    bus.cart = RomPak::from_bytes(&[0xA5; 0x2000], false).unwrap().into();
+    bus.cart = ROMPak::from_bytes(&[0xA5; 0x2000], false).unwrap().into();
     for addr in ACIA_DATA..=ACIA_CONTROL {
         assert_eq!(bus.read(addr), IO_OPEN_BUS, "addr {addr:#06X}");
     }
@@ -166,7 +166,7 @@ fn machine_loop_polls_cart_interrupt() {
         MachineConfig::default(),
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    machine.bus.cart = DeluxeRs232::new().into();
+    machine.bus.cart = DeluxeRS232::new().into();
     machine.bus.write(PIA1_CRB, cr::C1_IRQ_ENABLE | cr::DDR_ACCESS);
     machine.bus.write(ACIA_CONTROL, CTL_19200_8N1);
     machine.bus.write(ACIA_COMMAND, command::DTR);
@@ -187,9 +187,9 @@ fn tcp_endpoint_round_trip_through_the_bus() {
     use std::io::{Read, Write};
 
     let endpoint =
-        coco_core::serial::TcpEndpoint::bind("127.0.0.1:0").expect("bind an OS-assigned port");
+        coco_core::serial::TCPEndpoint::bind("127.0.0.1:0").expect("bind an OS-assigned port");
     let addr = endpoint.local_addr().expect("bound address");
-    let mut pak = DeluxeRs232::new();
+    let mut pak = DeluxeRS232::new();
     pak.set_endpoint(Box::new(endpoint));
     let mut bus = bus();
     bus.cart = pak.into();
@@ -228,7 +228,7 @@ fn tcp_endpoint_round_trip_through_the_bus() {
 
 #[test]
 fn eprom_window_decodes_12_bits_and_wraps() {
-    let mut pak = DeluxeRs232::new();
+    let mut pak = DeluxeRS232::new();
     // ROM-less pak: CTS reads answer open-bus $00.
     assert_eq!(pak.rom_read(0xC000), 0x00);
 
@@ -253,7 +253,7 @@ fn eprom_window_decodes_12_bits_and_wraps() {
 fn mpi_extension_window_ignores_the_slot_select() {
     let mut bus = bus();
     let mut mp = MultiPak::new(0);
-    mp.insert(0, DeluxeRs232::new());
+    mp.insert(0, DeluxeRS232::new());
     bus.cart = mp.into();
 
     bus.write(ACIA_COMMAND, command::DTR);

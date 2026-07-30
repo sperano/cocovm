@@ -26,10 +26,10 @@ pub(crate) fn host_time_source() -> coco_core::rtc::TimeSource {
 /// `CocoApp::load_state_from`'s restore path (`save_state.rs`) — a restored
 /// `DwServer`'s clock is `#[serde(skip)]`, same reasoning as the Disto RTC's
 /// time source.
-pub(crate) fn host_dw_clock() -> drivewire::DwClock {
+pub(crate) fn host_dw_clock() -> drivewire::DWClock {
     Box::new(|| {
         let now = chrono::Local::now();
-        DwTime {
+        DWTime {
             year: now.year() as u16,
             month: now.month() as u8,
             day: now.day() as u8,

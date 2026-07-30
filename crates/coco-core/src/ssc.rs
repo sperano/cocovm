@@ -10,13 +10,13 @@
 //! Cartridge Owner's Manual (26-3144) Appendix A: command bytes that load
 //! data into an 8×64-byte buffer RAM and execute it. Sound-data streams,
 //! register-string streams, and direct AY register access (`$AF`) are fully
-//! functional and drive the [`Ay8913`] PSG. Speech, allophone, and SP0256
+//! functional and drive the [`AY8913`] PSG. Speech, allophone, and SP0256
 //! command bytes are parsed just enough to keep the state machine in sync
 //! (their LOAD variants still fill the buffer RAM per the flat-RAM model
 //! below) but their EXECUTE variants are no-ops — no SP0256 is emulated, so
 //! there is nothing to make them audible.
 //!
-//! See [`dispatch_command`](Ssc::dispatch_command) for the top-level command
+//! See [`dispatch_command`](SoundSpeechCartridge::dispatch_command) for the top-level command
 //! dispatch (in the [`protocol`] submodule) and `docs/ssc-spec.md` for the
 //! full protocol writeup, including every judgment call this implementation
 //! had to make where the manual doesn't fully specify behavior. The
@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ay8913::Ay8913;
+use crate::ay8913::AY8913;
 use crate::cart::{Cartridge, IO_OPEN_BUS};
 
 mod engine;
@@ -60,7 +60,7 @@ mod status {
     /// still "being processed".
     pub const NOT_BUSY: u8 = 0x80;
     /// Bit 6: SP0256 SBY ("standby" = idle/ready). No SP0256 is emulated, so
-    /// this is always set — see [`super::Ssc`]'s doc comment. The
+    /// this is always set — see [`super::SoundSpeechCartridge`]'s doc comment. The
     /// execute-speech commands are no-ops by design and never clear this
     /// bit, since there is no speech synthesis running to report busy.
     pub const SPEECH_READY: u8 = 0x40;
@@ -91,8 +91,8 @@ const AY_CLOCK_MULTIPLIER: u32 = 2;
 /// No SP0256 speech synthesizer is modelled, so [`status::SPEECH_READY`] is
 /// always reported set (idle/ready) — see the module doc comment.
 #[derive(Serialize, Deserialize)]
-pub struct Ssc {
-    ay: Ay8913,
+pub struct SoundSpeechCartridge {
+    ay: AY8913,
     /// Bit 0 of the last byte written to `$FF7D`, for falling-edge detection
     /// on the next write. Power-on-reset starts clear so the very first
     /// `$FF7D` write (even if it's bit0=0) is never itself treated as a
@@ -102,10 +102,10 @@ pub struct Ssc {
     /// Last byte latched from a `$FF7E` write (the "Port A latch" the real
     /// TMS7040 firmware reads and interprets as a command/data byte).
     /// Stored for tests/debug; the actual interpretation happens in
-    /// [`Ssc::dispatch`], invoked synchronously from [`Ssc::write_data`].
+    /// [`SoundSpeechCartridge::dispatch`], invoked synchronously from [`SoundSpeechCartridge::write_data`].
     host_latch: u8,
     busy: bool,
-    /// E-clock cycles remaining before [`Ssc::busy`] synthetically clears —
+    /// E-clock cycles remaining before [`SoundSpeechCartridge::busy`] synthetically clears —
     /// see [`BUSY_HOLD_CYCLES`].
     busy_countdown: u32,
     // Sound Activity Circuit state (see the [`sac`] module doc comment).
@@ -131,16 +131,16 @@ pub struct Ssc {
     engine: Engine,
 }
 
-impl Default for Ssc {
+impl Default for SoundSpeechCartridge {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Ssc {
+impl SoundSpeechCartridge {
     pub fn new() -> Self {
         Self {
-            ay: Ay8913::new(),
+            ay: AY8913::new(),
             prev_reset_bit0: false,
             host_latch: 0,
             busy: false,
@@ -163,7 +163,7 @@ impl Ssc {
         self.ay.write_reg(reg, val);
     }
 
-    /// Direct AY-3-8913 register read (see [`Ssc::ay_write`]).
+    /// Direct AY-3-8913 register read (see [`SoundSpeechCartridge::ay_write`]).
     pub fn ay_read(&mut self, reg: u8) -> u8 {
         self.ay.read_reg(reg)
     }
@@ -191,7 +191,7 @@ impl Ssc {
     }
 
     /// Resets buffer RAM, dispatch mode, timer base, and the sound engine —
-    /// shared by [`Ssc::write_reset`]'s falling-edge handler and the
+    /// shared by [`SoundSpeechCartridge::write_reset`]'s falling-edge handler and the
     /// [`Cartridge::reset`] trait method. Does NOT touch the AY, busy
     /// handshake, or SAC state — callers already handle those themselves.
     fn reset_protocol_state(&mut self) {
@@ -205,12 +205,12 @@ impl Ssc {
     ///
     /// Per the manual (page 10): "If you try to transfer data to the S/SC
     /// while bit 7 is low, you lose all the data you send until the bit
-    /// resets." So while [`Ssc::busy`] is already set, an incoming byte is
+    /// resets." So while [`SoundSpeechCartridge::busy`] is already set, an incoming byte is
     /// discarded entirely — not latched, not fed to the protocol state
     /// machine, and it does not restart the busy hold window. Every byte
     /// that IS accepted (command bytes, load-data bytes, direct-access
     /// register/value bytes, the `$8F` postbyte alike) is processed through
-    /// [`Ssc::dispatch`] synchronously, right here.
+    /// [`SoundSpeechCartridge::dispatch`] synchronously, right here.
     fn write_data(&mut self, val: u8) {
         if self.busy {
             return;
@@ -236,7 +236,7 @@ impl Ssc {
     }
 }
 
-impl Cartridge for Ssc {
+impl Cartridge for SoundSpeechCartridge {
     fn read(&mut self, addr: u16) -> u8 {
         match addr {
             reg::RESET => 0xFF, // always, regardless of state (MAME `ff7d_r`)
@@ -298,10 +298,11 @@ impl Cartridge for Ssc {
 
     /// Restore-only: reject a mid buffer-RAM-load or mid sound-engine
     /// snapshot whose `cursor`/`cap` don't satisfy `cursor <= cap <=
-    /// ram::SIZE` — [`Ssc::feed_load`](protocol) indexes `self.ram[load.cursor]`
-    /// once `load.cursor < load.cap`, and [`Ssc::advance_engine`](engine)
-    /// (and its callees) index `self.ram` off `engine.cursor`/`engine.cap`
-    /// the same way, with no bounds check of their own against `ram::SIZE`
+    /// ram::SIZE` — [`SoundSpeechCartridge::feed_load`](protocol) indexes
+    /// `self.ram[load.cursor]` once `load.cursor < load.cap`, and
+    /// [`SoundSpeechCartridge::advance_engine`](engine) (and its callees)
+    /// index `self.ram` off `engine.cursor`/`engine.cap` the same way, with
+    /// no bounds check of their own against `ram::SIZE`
     /// (`docs/plan-save-states.md`). `cursor`/`cap` are ordinary
     /// deserialized fields a hand-crafted payload can set past the end of
     /// `ram`.
@@ -309,7 +310,7 @@ impl Cartridge for Ssc {
         if let Mode::Loading(load) = &self.mode {
             check_ram_cursor_cap("Load", load.cursor, load.cap)?;
         }
-        // An inactive engine's `cursor`/`cap` are never read (`Ssc::tick_engine`
+        // An inactive engine's `cursor`/`cap` are never read (`SoundSpeechCartridge::tick_engine`
         // returns immediately when `!active`), so only check while active.
         if self.engine.active {
             check_ram_cursor_cap("Engine", self.engine.cursor, self.engine.cap)?;
@@ -318,7 +319,7 @@ impl Cartridge for Ssc {
     }
 }
 
-/// Shared bound check for [`Ssc::validate_restored`]'s two cursor/cap pairs
+/// Shared bound check for [`SoundSpeechCartridge::validate_restored`]'s two cursor/cap pairs
 /// ([`Load`]/[`Engine`]): `cursor <= cap <= ram::SIZE`.
 fn check_ram_cursor_cap(name: &str, cursor: usize, cap: usize) -> Result<(), String> {
     if cap > ram::SIZE {

@@ -575,7 +575,7 @@ pub fn set_busy(&mut self, busy: bool) { self.busy = busy; }
 
 What this buys today is worth being explicit about, because it is the
 chapter's first example of a wire that is fully implemented and fully
-unused. Nothing in this codebase's `Dmp105` sink calls `set_busy` — the
+unused. Nothing in this codebase's `DMP105` sink calls `set_busy` — the
 module doc comment says so plainly, calling out "a (currently
 unimplemented) DMP-105 buffer model," and the reason is a gap in the
 source material rather than a gap in the code. BUSY's *assertion
@@ -626,7 +626,7 @@ sink installed until something more interesting is plugged in, is
 therefore three lines, and its `write_byte` body is empty.
 
 Four sinks ship in the crate. `NoopSink` discards. `CaptureSink` appends
-to a shared buffer and is what the tests use. `Dmp105Handle` — §14.5's
+to a shared buffer and is what the tests use. `DMP105Handle` — §14.5's
 whole subject — feeds a printer interpreter. And `FileSink` is the "print
 to a text file" implementation behind the CLI's `--print-capture` flag
 and the GUI's Machine menu, which is worth reading because its
@@ -692,13 +692,13 @@ line granularity is exactly the shape a printer's output naturally has.
 > time, via `RefCell`): clone the handle before handing one half to
 > `set_sink`, keep the other half, and both names refer to the same
 > buffer. Every test in `bitbanger_test.rs` opens with exactly that
-> two-step, and `Dmp105Handle` (§14.5) is the same pattern one level
+> two-step, and `DMP105Handle` (§14.5) is the same pattern one level
 > richer — a shared handle to a whole interpreter rather than to a `Vec`.
 >
 > Contrast this with Chapter 11's cross-thread audio ring buffer,
 > `Arc<Mutex<VecDeque<_>>>`. Both are "shared ownership plus a way to
 > mutate through a shared reference," but `BitBanger`, its sink, and the
-> frontend code that later reads a `Dmp105Handle`'s paper all run on the
+> frontend code that later reads a `DMP105Handle`'s paper all run on the
 > *same* thread — the emulator core has no background thread of its own —
 > so the atomic reference counting and OS-level locking that `Arc` and
 > `Mutex` pay for buy nothing here. `Rc` and `RefCell` do the identical
@@ -745,14 +745,14 @@ line granularity is exactly the shape a printer's output naturally has.
 > pub enum SinkState {
 >     Noop,
 >     FileCapture,
->     Dmp105(Dmp105),
+>     DMP105(DMP105),
 > }
 > ```
 >
 > That is the `snapshot` default method earning its place in the trait:
 > every sink declares what kind of sink it is and what part of it is
 > worth keeping. A `NoopSink` and a `CaptureSink` answer `Noop`, a
-> `FileSink` answers `FileCapture`, and a `Dmp105Handle` answers with a
+> `FileSink` answers `FileCapture`, and a `DMP105Handle` answers with a
 > clone of the entire interpreter and its paper. Restoring inverts it
 > ([`crates/coco-core/src/bitbanger.rs:502-512`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L502-L512)):
 >
@@ -765,7 +765,7 @@ line granularity is exactly the shape a printer's output naturally has.
 >             // Distinct from `SinkState::Noop`, even though both currently
 >             // behave identically: see `StoppedFileCaptureSink`'s doc comment.
 >             SinkState::FileCapture => Box::new(super::StoppedFileCaptureSink),
->             SinkState::Dmp105(state) => Box::new(Dmp105Handle::from_state(state)),
+>             SinkState::DMP105(state) => Box::new(DMP105Handle::from_state(state)),
 >         })
 >     }
 > ```
@@ -908,7 +908,7 @@ The four registers are not four storage locations. Two of the offsets
 mean entirely different things depending on whether the CPU is reading or
 writing them, which is a hardware convention 6809 programmers know well
 but which is easy to lose when transcribing a datasheet into a struct.
-`Acia6551::read` and `Acia6551::write` are therefore two separate `match`
+`ACIA6551::read` and `ACIA6551::write` are therefore two separate `match`
 statements over the same 0–3 range rather than one accessor pair, and the
 interesting arms are the side-effecting ones
 ([`crates/coco-core/src/acia6551/registers.rs:8-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/acia6551/registers.rs#L8-L28)):
@@ -953,7 +953,7 @@ all ([`crates/coco-core/src/acia6551/registers.rs:61-82`](https://github.com/spe
     /// Programmed reset (any write to reg 1, value ignored): clears *only*
     /// the overrun status bit and *only* the DCD/DSR IRQ-source bits — the
     /// RDRF/TDRE IRQ sources deliberately survive, unlike the general
-    /// command-write rule in [`Acia6551::write_command`] (verified MAME
+    /// command-write rule in [`ACIA6551::write_command`] (verified MAME
     /// `mos6551.cpp` `write_status_command_register` behavior: this is a
     /// narrower reset than a full command-register disable would produce).
     /// Command bits 0-4 are cleared (DTR off, rx-IRQ enabled, transmitter
@@ -1082,7 +1082,7 @@ and the test confirms it to the cycle ([`crates/coco-core/src/acia6551_test.rs:4
 
 ```rust
 fn take_tx_byte_after_exact_frame_cycles_baud_19200() {
-    let mut acia = Acia6551::new();
+    let mut acia = ACIA6551::new();
     acia.write(2, command::DTR);
     acia.write(3, 15); // baud index 15
     acia.write(0, 0xA5);
@@ -1251,7 +1251,7 @@ chapter's clearest example of accuracy as a budget rather than a goal:
 //! MAME's `mos6551_device` is a bit-serial engine: it shifts one bit at a
 //! time off a per-bit timer and can therefore generate real parity/framing
 //! errors and expose bit-accurate RS-232 waveforms. This model is
-//! deliberately **byte-level**: [`Acia6551::tick`] runs a whole-frame timer
+//! deliberately **byte-level**: [`ACIA6551::tick`] runs a whole-frame timer
 //! for the receiver and transmitter, sized from the same baud-rate math MAME
 //! uses..., and delivers/consumes a complete byte when that timer expires.
 ```
@@ -1272,7 +1272,7 @@ echoed output to mark while overrun is set.
 It **collapses the 5-bit-word with 2-stop-bits corner case**. A real 6551
 gives that specific combination 1.5 stop bits — a half-width stop
 interval, which is meaningful to a bit-serial engine and meaningless to a
-frame timer. `Acia6551::stop_bits` rounds it to a plain 2 and says so in
+frame timer. `ACIA6551::stop_bits` rounds it to a plain 2 and says so in
 its doc comment.
 
 And it **resolves DCD/DSR interrupt arming once per `tick` rather than on
@@ -1378,7 +1378,7 @@ and the very next example is PIA1's CB1 input in §14.4.
 
 ### The wire interface: `SerialEndpoint`
 
-`Acia6551` never touches a socket or a file. Its host-facing seam is five
+`ACIA6551` never touches a socket or a file. Its host-facing seam is five
 methods — `take_tx_byte`, `receive_byte`, `rx_ready`, `set_dcd`,
 `set_dsr` — and the module doc describes it as "a pure chip model with a
 byte-level wire interface: no knowledge of hosts, sockets, or files."
@@ -1424,7 +1424,7 @@ written to `$FF68` reappears at `$FF68`" is a one-line guarantee once
 this type exists, and it needs no host I/O whatsoever, so it runs in CI
 on a machine with no network and no terminal.
 
-`TcpEndpoint` binds a listener and serves one non-blocking client at a
+`TCPEndpoint` binds a listener and serves one non-blocking client at a
 time, so a host terminal program can connect at any point without the
 emulator having a separate "wait for a client" step — every `poll_rx` and
 `tx` first tries to accept a pending connection. Its `tx` is the clearest
@@ -1463,7 +1463,7 @@ at all: `dcd()` simply starts returning false, the ACIA's DCD status bit
 follows, and a program watching carrier detect sees exactly what it would
 see if a modem had hung up.
 
-`PtyEndpoint` is the third, and it is the one that forced this crate to
+`PTYEndpoint` is the third, and it is the one that forced this crate to
 allow `unsafe` at all.
 
 > **Rust corner: `unsafe` with `SAFETY` comments, and the crate that
@@ -1598,7 +1598,7 @@ image simply makes CTS reads answer open bus.
 
 ### Where the chip meets the host: a poll budget
 
-`Acia6551` is a pure chip model and `SerialEndpoint` is a pure host
+`ACIA6551` is a pure chip model and `SerialEndpoint` is a pure host
 backend, so something has to introduce them. That something is the pak's
 own `tick`, and it is the only place in the design where the two halves
 touch. It is also where a performance consideration enters the chapter
@@ -1607,7 +1607,7 @@ loop, this one can make a *syscall*
 ([`crates/coco-core/src/rs232.rs:34-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rs232.rs#L34-L39)):
 
 ```rust
-/// CPU cycles between host-endpoint polls in [`DeluxeRs232::tick`] (~143 µs
+/// CPU cycles between host-endpoint polls in [`DeluxeRS232::tick`] (~143 µs
 /// at the 0.894886 MHz clock). Polling the endpoint can cost a syscall
 /// (nonblocking socket read / `accept`), so it must not run per instruction;
 /// this interval stays well under one serial frame even at the ACIA's top
@@ -1691,7 +1691,7 @@ The pak's save-state behavior follows the same rule Chapter 1 set out for
 `endpoint` field is `#[serde(skip, default = "default_endpoint")]`, so a
 restored machine comes back with an inert `Loopback` until the frontend
 re-plugs a real backend, and the `eprom` field is skipped outright and
-re-injected on restore. `DeluxeRs232::set_endpoint`'s doc comment states
+re-injected on restore. `DeluxeRS232::set_endpoint`'s doc comment states
 the resulting semantics in one sentence — "The ACIA's in-flight frame
 state is untouched — this is re-plugging the cable, not resetting the
 chip" — which is exactly the distinction a user swapping backends in a
@@ -1864,7 +1864,7 @@ hand.
 
 Nothing about the bit-banger or the 6551 knows a printer is on the other
 end of the wire. Both are pure byte-in, byte-out transports, and that is
-the property that makes a third rung possible at all. `Dmp105` is the
+the property that makes a third rung possible at all. `DMP105` is the
 layer that turns a byte stream into ink. It implements `PrinterSink`, so
 it plugs into `BitBanger` exactly where `CaptureSink` and `FileSink` did,
 and it interprets every byte arriving there as either printable text or
@@ -1891,7 +1891,7 @@ silent where an implementer needs it to speak.
 
 ### The control-code interpreter
 
-Every decoded byte flows through one entry point, `Dmp105::feed`, which
+Every decoded byte flows through one entry point, `DMP105::feed`, which
 dispatches on whether a multi-byte escape or repeat sequence is already
 in progress:
 
@@ -2014,7 +2014,7 @@ doesn't:
 
 ```rust
 /// The repeated byte is expanded through the per-mode dispatchers, NOT
-/// through [`Dmp105::feed`]: inside a repeat, `c` is the datum being
+/// through [`DMP105::feed`]: inside a repeat, `c` is the datum being
 /// repeated, never a new ESC/repeat sequence introducer... Recursing
 /// through `feed` here would let the stream `1C 1C 1C` rebuild its own
 /// spawning state unboundedly — a stack-overflow crash on three bytes of
@@ -2050,7 +2050,7 @@ The regression test names the exact failure mode this prevents:
 /// placeholder glyph, `n` times, and the state machine ends clean.
 #[test]
 fn repeating_the_repeat_introducer_terminates_and_prints_placeholders() {
-    let mut dmp = Dmp105::default();
+    let mut dmp = DMP105::default();
     feed_str(&mut dmp, &[control::REPEAT, 3, control::REPEAT]);
     assert_eq!(dmp.x, 3 * normal_cell_width());
     assert!(dmp.paper.extent().dot_count > 0); // three X glyphs
@@ -2156,7 +2156,7 @@ paper: tearing it off.
 
 ### Fixed-point units: why 1/3600" and 1/72"
 
-Every position `Dmp105` tracks — head `x`, head `y` — is a plain integer,
+Every position `DMP105` tracks — head `x`, head `y` — is a plain integer,
 never a float, and the two axes use different denominators chosen for
 different reasons.
 
@@ -2373,7 +2373,7 @@ loudest formatting the language allows.
 [`tests/dmp105_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/dmp105_boot.rs)
 is the integration test that proves this chapter's first two rungs and
 this section actually compose. It boots the real `coco3.rom`, attaches a
-`Dmp105Handle` as the bit-banger's sink, types a one-line program,
+`DMP105Handle` as the bit-banger's sink, types a one-line program,
 `LLIST`s it, and checks the paper picked up plausible content:
 
 ```rust
@@ -2408,7 +2408,7 @@ letter.
 What the integration test buys instead is proof that the *wiring* works
 against unmodified ROM code, end to end. Real PIA1 DDR and CRA setup, the
 real ROM's bit-bang transmit loop, the BUSY handshake never hanging,
-`BitBanger`'s decoder, and `Dmp105`'s interpreter, all chained, with the
+`BitBanger`'s decoder, and `DMP105`'s interpreter, all chained, with the
 only stimulus being simulated keystrokes. The third assertion is the
 sharpest: every dot from a single printed line has to fall inside one
 glyph cell's body rows, which fails loudly if the interpreter mistakes a
@@ -2459,8 +2459,8 @@ pub trait Cartridge {
 
 Twenty methods, and only the first two have no default body. That ratio
 is what makes this a *plugin* seam rather than a heavyweight interface
-every implementor must satisfy in full. `RomPak` needs `rom_read` and
-`cart_line_ties_q` above the required pair, and nothing else. `Gmc` adds
+every implementor must satisfy in full. `ROMPak` needs `rom_read` and
+`cart_line_ties_q` above the required pair, and nothing else. `GamesMasterCartridge` adds
 `generator_sample` for its sound chip. Only `DiskCart` implements
 `halt_asserted` and `take_nmi`; only the Sound/Speech Cartridge
 implements `audio_sample`. Every method a given cartridge doesn't
@@ -2527,15 +2527,15 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 > #[derive(Serialize, Deserialize)]
 > pub enum Cart {
 >     Empty(EmptySlot),
->     RomPak(RomPak),
->     BankedRomPak(BankedRomPak),
->     Gmc(Gmc),
+>     ROMPak(ROMPak),
+>     BankedROMPak(BankedROMPak),
+>     GamesMasterCartridge(GamesMasterCartridge),
 >     DiskCart(Box<crate::fdc::DiskCart>),
 >     MultiPak(Box<MultiPak>),
 >     Orch90(crate::orch90::Orch90),
->     DistoRtc(crate::rtc::DistoRtc),
->     DeluxeRs232(crate::rs232::DeluxeRs232),
->     Ssc(Box<crate::ssc::Ssc>),
+>     DistoRTC(crate::rtc::DistoRTC),
+>     DeluxeRS232(crate::rs232::DeluxeRS232),
+>     SoundSpeechCartridge(Box<crate::ssc::SoundSpeechCartridge>),
 >     #[serde(skip)]
 >     Custom(Box<dyn Cartridge>),
 > }
@@ -2554,7 +2554,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 > derivability and paid for it by enumerating.
 >
 > Two further details in that declaration are worth reading. Three
-> variants are boxed — `DiskCart`, `MultiPak`, and `Ssc` — for two
+> variants are boxed — `DiskCart`, `MultiPak`, and `SoundSpeechCartridge` — for two
 > different reasons. An enum is as large as its largest variant, so the
 > Sound/Speech Cartridge's AY-plus-speech-engine state would otherwise
 > inflate every `Cart` value in the program, which clippy flags as
@@ -2582,7 +2582,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 >     ($self:expr, $cart:ident => $body:expr) => {
 >         match $self {
 >             Cart::Empty($cart) => $body,
->             Cart::RomPak($cart) => $body,
+>             Cart::ROMPak($cart) => $body,
 >             // ... one arm per variant ...
 >             Cart::Custom($cart) => $body,
 >         }
@@ -2610,7 +2610,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 >
 > Contrast this against where `dyn Trait` genuinely *is* the right tool in
 > this same codebase. `BitBanger`'s `Box<dyn PrinterSink>` (§14.2) and
-> `DeluxeRs232`'s `Box<dyn SerialEndpoint>` (§14.3) are both open trait
+> `DeluxeRS232`'s `Box<dyn SerialEndpoint>` (§14.3) are both open trait
 > objects, because those sinks and endpoints are meant to be extended by
 > consumers of the crate — a frontend's own printer-capture UI, a future
 > host backend — without `coco-core` knowing about them in advance.
@@ -2704,12 +2704,13 @@ synthetic stub, with one autostart test and one negative control:
 
 ```rust
 /// A pak whose code at $C000 writes [`MARKER_BYTE`] to [`MARKER_ADDR`] and
-/// loops forever: `LDA #$A5 ; STA $0400 ; BRA *`
-fn marker_pak(autostart: bool) -> RomPak {
+/// loops forever: `LDA #$A5 ; STA $0400 ; BRA *` (bytes verified by hand:
+/// `86 A5 B7 04 00 20 FE`).
+fn marker_pak(autostart: bool) -> ROMPak {
     let mut image = vec![0u8; ROM_PAK_MAX_LEN];
     let program = [0x86, 0xA5, 0xB7, 0x04, 0x00, 0x20, 0xFE];
     image[CART_ENTRY_OFFSET..CART_ENTRY_OFFSET + program.len()].copy_from_slice(&program);
-    RomPak::from_bytes(&image, autostart).unwrap()
+    ROMPak::from_bytes(&image, autostart).unwrap()
 }
 
 #[test]
@@ -2872,7 +2873,7 @@ behavior of the product, and reproducing it would make correct software
 misbehave on a stock machine. Both notes exist so that "the MPI doesn't
 do X" reads as a decision rather than as an omission.
 
-### RomPak: mirror-fill, and the half-swap quirk
+### ROMPak: mirror-fill, and the half-swap quirk
 
 A ROM pak dump is a headerless raw file. The emulator community's
 `.ccc`/`.rom`/`.bin` convention carries no size or banking metadata at
@@ -2926,7 +2927,7 @@ is the byte that appears at `$8000` once the GIME's INIT0 map switches to
 32K-external. But the GIME does not route cartridge banks in that
 straightforward an order. Its actual bank-routing formula, from MAME's
 `gime.cpp`, is `((bank & 3) ^ 2) * 0x2000`, which swaps the two 16K
-halves relative to a naive `addr - $8000` index. `RomPak::rom_read`
+halves relative to a naive `addr - $8000` index. `ROMPak::rom_read`
 reproduces the swap directly:
 
 ```rust
@@ -2954,7 +2955,7 @@ full 32K image with `bytes[i] = i as u8`, making every offset
 individually distinguishable, rather than anything smaller and more
 convenient.
 
-Banked paks — `BankedRomPak`, the RoboCop/Predator circuit the Games
+Banked paks — `BankedROMPak`, the RoboCop/Predator circuit the Games
 Master Cartridge reuses — trade the fixed 32K window for a **16K** window
 that a whole-byte write to `$FF40` slides across up to 128K of image. The
 effective bank is `bank * 16K mod 128K`, wrapping so an undersized image
@@ -2965,18 +2966,18 @@ the half-swap bit *disappear* rather than needing separate handling:
 bit `ROM_PAK_HALF_SWAP` would have flipped. The code comment says so, and
 `window_mirrors_across_both_16k_halves_of_the_external_map` confirms the
 same bank shows identically at `$8000`, `$A000`, and `$C000` with no
-special-casing in `BankedRomPak::rom_read` at all.
+special-casing in `BankedROMPak::rom_read` at all.
 
 ### The Games Master Cartridge: banked ROM plus a chip you already know
 
-John Linville's GMC is, structurally, nothing but a `BankedRomPak` with
+John Linville's GMC is, structurally, nothing but a `BankedROMPak` with
 one extra write-only register:
 
 ```rust
 const GMC_PSG_REG: u16 = 0xFF41;
 
-pub struct Gmc {
-    rom: BankedRomPak,
+pub struct GamesMasterCartridge {
+    rom: BankedROMPak,
     psg: crate::sn76489::SN76489A,
 }
 
@@ -3012,7 +3013,7 @@ schematic turns up there is a note saying what to revisit.
 
 [`tests/gmc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gmc.rs)'s
 `bank_latch_pages_the_16k_window` confirms the inherited banking behaves
-exactly like a standalone `BankedRomPak`, writing each of 8 bank values
+exactly like a standalone `BankedROMPak`, writing each of 8 bank values
 to `$FF40` and checking `rom_read($C000)` returns that bank's marker
 byte. A separate MPI test confirms the PSG's audio genuinely plays "from
 any slot" — the analog bus is common across an MPI's four slots, just
@@ -3118,7 +3119,7 @@ Work `Pitch::Compressed.dot_spacing()` from the table in §14.5
 (`X_UNITS_PER_INCH / dots_per_inch`, where Compressed is 144 dots/inch)
 before computing cell advances, and remember elongation doubles the
 *column step* (hence the cell width) only for the glyph it's active
-during. Check your trace against a test you write using `Dmp105::feed`
+during. Check your trace against a test you write using `DMP105::feed`
 directly (see `dmp105_test.rs`'s `feed_str` helper for the pattern) —
 assert on `dmp.x` and `dmp.y` after the sequence.
 
@@ -3195,5 +3196,5 @@ Chapter 16 closes the course with the debugger and save states — and now
 that you've read `Cart`'s enum-versus-trait-object story, and watched a
 `Box<dyn PrinterSink>` get serialized through a state enum it doesn't
 know about, you already understand *why* the whole cartridge tree rides
-along for free in every `.ccstate` snapshot — RomPak images excepted,
+along for free in every `.ccstate` snapshot — ROMPak images excepted,
 since those are copyrighted bytes, reattached separately.

@@ -312,12 +312,12 @@ impl MultiPak {
     }
 
     /// The Deluxe RS-232 pak in any slot, if one is plugged in.
-    pub fn find_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRs232> {
+    pub fn find_deluxe_rs232(&mut self) -> Option<&mut crate::rs232::DeluxeRS232> {
         self.slots.iter_mut().find_map(Cart::as_deluxe_rs232)
     }
 
     /// The Disto real-time clock in any slot, if one is plugged in.
-    pub fn find_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRtc> {
+    pub fn find_disto_rtc(&mut self) -> Option<&mut crate::rtc::DistoRTC> {
         self.slots.iter_mut().find_map(Cart::as_disto_rtc)
     }
 
@@ -327,7 +327,7 @@ impl MultiPak {
     }
 
     /// The Sound/Speech Cartridge in any slot, if one is plugged in.
-    pub fn find_ssc(&mut self) -> Option<&mut crate::ssc::Ssc> {
+    pub fn find_ssc(&mut self) -> Option<&mut crate::ssc::SoundSpeechCartridge> {
         self.slots.iter_mut().find_map(Cart::as_ssc)
     }
 }
