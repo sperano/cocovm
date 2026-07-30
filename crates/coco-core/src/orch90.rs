@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cart::{Cartridge, IO_OPEN_BUS, ROMPak, RomPakError};
+use crate::cart::{Cartridge, IO_OPEN_BUS, ROMPak, ROMPakError};
 
 /// Left-channel DAC latch (write-only).
 pub const LEFT_DAC_REG: u16 = 0xFF7A;
@@ -46,7 +46,7 @@ impl std::fmt::Debug for Orch90 {
 impl Orch90 {
     /// Build from the raw 8K ROM image (`orch90.rom`); same size validation
     /// and mirror-fill as any pak image.
-    pub fn from_rom_bytes(bytes: &[u8]) -> Result<Self, RomPakError> {
+    pub fn from_rom_bytes(bytes: &[u8]) -> Result<Self, ROMPakError> {
         Ok(Self {
             rom: ROMPak::from_bytes(bytes, true)?,
             left: 0,
@@ -67,7 +67,7 @@ impl Orch90 {
     /// Restore-path-only: re-inject the 8K program ROM after a snapshot
     /// restore — delegates to the inner [`ROMPak::reattach_image`]
     /// (`docs/plan-save-states.md`).
-    pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), RomPakError> {
+    pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(bytes)
     }
 }

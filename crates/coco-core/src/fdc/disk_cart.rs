@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cart::{Cartridge, ROMPak, RomPakError, IO_OPEN_BUS};
+use crate::cart::{Cartridge, ROMPak, ROMPakError, IO_OPEN_BUS};
 use crate::wd1773::WD1773;
 
 use super::jvc::JVCDisk;
@@ -121,7 +121,7 @@ impl DiskCart {
     pub fn new(rom: Box<[u8]>) -> Self {
         const AUTOSTART: bool = false;
         let rom = ROMPak::from_bytes(&rom, AUTOSTART)
-            .unwrap_or_else(|e: RomPakError| panic!("invalid disk controller ROM image: {e}"));
+            .unwrap_or_else(|e: ROMPakError| panic!("invalid disk controller ROM image: {e}"));
         Self {
             rom,
             fdc: WD1773::new(),
@@ -137,7 +137,7 @@ impl DiskCart {
     /// [`ROMPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
     /// [`DiskCart::new`], returns a `Result` instead of panicking: a restore
     /// path must not crash the process on a bad ROM.
-    pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), RomPakError> {
+    pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(rom)
     }
 

@@ -54,7 +54,7 @@ pub const PAGE_UNIT: usize = 512;
 
 /// Where a CPU address decodes to, per [`SAM::map`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SamTarget {
+pub enum SAMTarget {
     /// Physical RAM address (already includes any P1 banking).
     Ram(usize),
     /// Offset into the Extended Color BASIC ROM half of the flat 32K image
@@ -137,24 +137,24 @@ impl SAM {
 
     /// Decode a CPU address to its target, per the plan's TY=0/TY=1 memory
     /// map table (`docs/coco12-plan.md`; MAME `6883sam.cpp`).
-    pub fn map(&self, addr: u16) -> SamTarget {
+    pub fn map(&self, addr: u16) -> SAMTarget {
         // The vector mirror and the $FF00+ fixed page win regardless of TY —
         // "the mirror region stays ROM" even in all-RAM mode.
         if addr >= VECTOR_MIRROR_BASE {
-            return SamTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
+            return SAMTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
         }
         if addr >= STROBE_BASE {
-            return SamTarget::Io; // $FFC0-$FFDF: SAM control strobes.
+            return SAMTarget::Io; // $FFC0-$FFDF: SAM control strobes.
         }
         if (OPEN_BUS_BASE..=OPEN_BUS_LAST).contains(&addr) {
-            return SamTarget::OpenBus; // $FF7F-$FFBF.
+            return SAMTarget::OpenBus; // $FF7F-$FFBF.
         }
         if addr >= IO_BASE {
-            return SamTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
+            return SAMTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).
         }
         if self.ty && self.is_64k() {
             // All-RAM mode extends the RAM decode through $FEFF.
-            return SamTarget::Ram(addr as usize);
+            return SAMTarget::Ram(addr as usize);
         }
         match addr {
             0x0000..=0x7FFF => {
@@ -166,11 +166,11 @@ impl SAM {
                 } else {
                     addr
                 };
-                SamTarget::Ram(ram_addr as usize)
+                SAMTarget::Ram(ram_addr as usize)
             }
-            EXT_ROM_BASE..=EXT_ROM_LAST => SamTarget::RomExt((addr - EXT_ROM_BASE) as usize),
-            BAS_ROM_BASE..=BAS_ROM_LAST => SamTarget::RomBas((addr - BAS_ROM_BASE) as usize),
-            CART_ROM_BASE..=CART_ROM_LAST => SamTarget::Cart((addr - CART_ROM_BASE) as usize),
+            EXT_ROM_BASE..=EXT_ROM_LAST => SAMTarget::RomExt((addr - EXT_ROM_BASE) as usize),
+            BAS_ROM_BASE..=BAS_ROM_LAST => SAMTarget::RomBas((addr - BAS_ROM_BASE) as usize),
+            CART_ROM_BASE..=CART_ROM_LAST => SAMTarget::Cart((addr - CART_ROM_BASE) as usize),
             _ => unreachable!("address {addr:#06x} not covered by the SAM decode"),
         }
     }

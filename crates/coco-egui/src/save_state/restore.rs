@@ -166,7 +166,7 @@ impl CocoApp {
         self.reinject_host_only_resources();
 
         // Now that the RTC's host time source is back (just above),
-        // `RestoreNote::RtcPlaceholderTime` no longer describes this
+        // `RestoreNote::RTCPlaceholderTime` no longer describes this
         // session's state — it's only true for a caller that DOESN'T
         // immediately re-sync the clock the way this one just did (a
         // headless tool, a test) — so drop it before converting the rest of

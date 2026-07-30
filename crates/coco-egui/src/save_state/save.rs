@@ -108,9 +108,9 @@ impl CocoApp {
                 .enumerate()
                 .filter_map(|(i, slot)| {
                     let path = match slot {
-                        MPISlot::ROMPak(p) | MPISlot::Gmc(p) | MPISlot::Orch90(p) => p.clone(),
+                        MPISlot::ROMPak(p) | MPISlot::GamesMasterCartridge(p) | MPISlot::Orch90(p) => p.clone(),
                         MPISlot::FD502 => disk_basic_rom_path(),
-                        MPISlot::Empty | MPISlot::DistoRTC | MPISlot::Ssc => return None,
+                        MPISlot::Empty | MPISlot::DistoRTC | MPISlot::SoundSpeechCartridge => return None,
                     };
                     Some((Some(i as u8), path))
                 })

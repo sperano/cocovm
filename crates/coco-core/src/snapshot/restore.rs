@@ -124,18 +124,18 @@ fn restore_system_rom(
 /// Restore step 3: walk every cartridge slot ([`Cart::slots_mut`]) and
 /// reattach the ROM image for each variant that carries one.
 ///
-/// The DeluxeRs232 is handled differently from the other five ROM-bearing
-/// types: `RomPak`/`BankedRomPak`/`Gmc`/`DiskCart`/`Orch90` can only exist in
-/// the tree at all by having been built from a nonempty image
-/// (`from_bytes`/`new` reject an empty one), so their presence always means a
-/// `MediaRefs` entry was recorded and a source is required. A DeluxeRs232's
-/// EPROM is optional even at construction (`docs/plan-deluxe-rs232.md`: "the
-/// pak works ROM-less"), and that optionality can't be recovered from the
-/// deserialized tree — `eprom` is itself `#[serde(skip)]` and always comes
-/// back `None` regardless of whether one was mounted. So a DeluxeRs232 only
-/// requires its source when `media.cart_roms` actually recorded one for its
-/// slot; if it didn't, this cart legitimately runs ROM-less and nothing is
-/// missing.
+/// The DeluxeRS232 is handled differently from the other five ROM-bearing
+/// types: `ROMPak`/`BankedROMPak`/`GamesMasterCartridge`/`DiskCart`/`Orch90`
+/// can only exist in the tree at all by having been built from a nonempty
+/// image (`from_bytes`/`new` reject an empty one), so their presence always
+/// means a `MediaRefs` entry was recorded and a source is required. A
+/// DeluxeRS232's EPROM is optional even at construction
+/// (`docs/plan-deluxe-rs232.md`: "the pak works ROM-less"), and that
+/// optionality can't be recovered from the deserialized tree — `eprom` is
+/// itself `#[serde(skip)]` and always comes back `None` regardless of
+/// whether one was mounted. So a DeluxeRS232 only requires its source when
+/// `media.cart_roms` actually recorded one for its slot; if it didn't, this
+/// cart legitimately runs ROM-less and nothing is missing.
 fn restore_cart_roms(
     machine: &mut Machine,
     media: &MediaRefs,
@@ -144,17 +144,19 @@ fn restore_cart_roms(
 ) -> Result<(), SnapshotError> {
     for (mpi_slot, cart) in machine.bus.cart.slots_mut() {
         match cart {
-            Cart::ROMPak(pak) => require_cart_rom(mpi_slot, "RomPak", media, &mut cart_roms, missing, |b| {
+            Cart::ROMPak(pak) => require_cart_rom(mpi_slot, "ROMPak", media, &mut cart_roms, missing, |b| {
                 pak.reattach_image(b)
             })?,
             Cart::BankedROMPak(pak) => {
-                require_cart_rom(mpi_slot, "BankedRomPak", media, &mut cart_roms, missing, |b| {
+                require_cart_rom(mpi_slot, "BankedROMPak", media, &mut cart_roms, missing, |b| {
                     pak.reattach_image(b)
                 })?
             }
-            Cart::GamesMasterCartridge(gmc) => require_cart_rom(mpi_slot, "Gmc", media, &mut cart_roms, missing, |b| {
-                gmc.reattach_rom(b)
-            })?,
+            Cart::GamesMasterCartridge(gmc) => {
+                require_cart_rom(mpi_slot, "GamesMasterCartridge", media, &mut cart_roms, missing, |b| {
+                    gmc.reattach_rom(b)
+                })?
+            }
             Cart::DiskCart(disk) => {
                 require_cart_rom(mpi_slot, "DiskCart", media, &mut cart_roms, missing, |b| {
                     disk.reattach_rom(b)
@@ -277,7 +279,7 @@ fn restore_disks(
     Ok(())
 }
 
-/// Restore step 5 (VHD half): unlike floppies, a `VhdDrive::image` is
+/// Restore step 5 (VHD half): unlike floppies, a `VHDDrive::image` is
 /// *entirely* `#[serde(skip)]`, so the deserialized tree always looks
 /// unmounted — whether a drive was mounted at save time can only be read
 /// from `media.vhds`, per the phase-2 spec.

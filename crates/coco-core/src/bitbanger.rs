@@ -354,7 +354,7 @@ impl BitBanger {
         self.sink = Box::new(NoopSink);
     }
 
-    /// Attach a [`Dmp105`](crate::dmp105::DMP105) interpreter as the live
+    /// Attach a [`DMP105`](crate::dmp105::DMP105) interpreter as the live
     /// sink (`docs/printer-plan.md` T4): same shape as
     /// [`Self::start_file_capture`], but returns a cloned
     /// [`DMP105Handle`] (the `CaptureSink` `Rc<RefCell<_>>` pattern) rather
@@ -369,7 +369,7 @@ impl BitBanger {
 
     /// The live sink's [`DMP105Handle`], if it is one — how the frontend
     /// re-grabs the paper-window handle after a snapshot restore rebuilds
-    /// `sink` from `sink_serde::SinkState::Dmp105` (a `Dmp105Handle` is a
+    /// `sink` from `sink_serde::SinkState::DMP105` (a `DMP105Handle` is a
     /// cheap `Rc` clone, so this is fine to call every frame).
     pub fn dmp105_handle(&self) -> Option<DMP105Handle> {
         self.sink.as_dmp105().cloned()
@@ -482,7 +482,7 @@ pub mod sink_serde {
     pub enum SinkState {
         Noop,
         FileCapture,
-        Dmp105(DMP105),
+        DMP105(DMP105),
     }
 
     // `&Box<dyn PrinterSink>`, not `&dyn PrinterSink`: this is what the
@@ -507,7 +507,7 @@ pub mod sink_serde {
             // Distinct from `SinkState::Noop`, even though both currently
             // behave identically: see `StoppedFileCaptureSink`'s doc comment.
             SinkState::FileCapture => Box::new(super::StoppedFileCaptureSink),
-            SinkState::Dmp105(state) => Box::new(DMP105Handle::from_state(state)),
+            SinkState::DMP105(state) => Box::new(DMP105Handle::from_state(state)),
         })
     }
 }

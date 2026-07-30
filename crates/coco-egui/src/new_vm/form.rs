@@ -95,7 +95,7 @@ impl MachineForm {
                 sub_form_row(ui, |ui| self.slot_rows(ui, font));
             }
             CartridgeChoice::None
-            | CartridgeChoice::RomPak(_)
+            | CartridgeChoice::ROMPak(_)
             | CartridgeChoice::RTC
             | CartridgeChoice::RS232 => {}
         }
@@ -116,7 +116,7 @@ impl MachineForm {
             CartridgeChoice::FD502 => true,
             CartridgeChoice::MPI => self.mpi_slots.contains(&SlotChoice::FD502),
             CartridgeChoice::None
-            | CartridgeChoice::RomPak(_)
+            | CartridgeChoice::ROMPak(_)
             | CartridgeChoice::RTC
             | CartridgeChoice::RS232 => false,
         }
@@ -173,13 +173,13 @@ impl MachineForm {
                 }
                 if ui
                     .selectable_label(
-                        matches!(self.cartridge, CartridgeChoice::RomPak(_)),
+                        matches!(self.cartridge, CartridgeChoice::ROMPak(_)),
                         "ROM Pak…",
                     )
                     .clicked()
                     && let Some(path) = rom_pak_file_dialog().pick_file()
                 {
-                    self.cartridge = CartridgeChoice::RomPak(path);
+                    self.cartridge = CartridgeChoice::ROMPak(path);
                 }
                 if ui
                     .selectable_label(self.cartridge == CartridgeChoice::RTC, "Disto RTC")
@@ -230,13 +230,13 @@ impl MachineForm {
                 }
                 if ui
                     .selectable_label(
-                        matches!(self.mpi_slots[slot], SlotChoice::RomPak(_)),
+                        matches!(self.mpi_slots[slot], SlotChoice::ROMPak(_)),
                         "ROM Pak…",
                     )
                     .clicked()
                     && let Some(path) = rom_pak_file_dialog().pick_file()
                 {
-                    self.mpi_slots[slot] = SlotChoice::RomPak(path);
+                    self.mpi_slots[slot] = SlotChoice::ROMPak(path);
                 }
                 if ui
                     .selectable_label(self.mpi_slots[slot] == SlotChoice::RTC, "Disto RTC")
@@ -287,7 +287,7 @@ impl MachineForm {
 
     /// One "VHD N"-row combo — the VHD hard-disk image for `drive`, with
     /// the disks' None / Blank / Select… protocol ([`Self::disk_combo`]).
-    /// A blank is a 0-byte file: `VhdImage::File` extends on write, so no
+    /// A blank is a 0-byte file: `VHDImage::File` extends on write, so no
     /// preallocation is needed.
     fn vhd_combo(&mut self, ui: &mut egui::Ui, drive: usize) {
         egui::ComboBox::from_id_salt((self.salt, "vhd", drive))

@@ -40,7 +40,7 @@ fn ff7e_status_base_bits_and_speech_ready_are_always_set() {
 #[test]
 fn ff7d_falling_edge_clears_busy_and_resets_the_ay() {
     let mut b = coco3_bus_with_ssc();
-    let ssc = b.cart.as_ssc().expect("an Ssc is inserted");
+    let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     ssc.ay_write(ay_reg::TONE_A_FINE, 0x55);
     assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), 0x55);
 
@@ -51,19 +51,19 @@ fn ff7d_falling_edge_clears_busy_and_resets_the_ay() {
     b.write(FF7D, 0x00); // falling edge
 
     assert_eq!(b.read(FF7E) & 0x80, 0x80, "falling edge must clear busy immediately");
-    let ssc = b.cart.as_ssc().expect("an Ssc is inserted");
+    let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), 0, "falling edge must reset the AY's registers");
 }
 
 #[test]
 fn ff7d_bit0_set_alone_does_not_reset_the_ay() {
     let mut b = coco3_bus_with_ssc();
-    let ssc = b.cart.as_ssc().expect("an Ssc is inserted");
+    let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     ssc.ay_write(ay_reg::TONE_A_FINE, 0x7A);
 
     b.write(FF7D, 0x01); // assert only -- no preceding 1 that could make this a falling edge
 
-    let ssc = b.cart.as_ssc().expect("an Ssc is inserted");
+    let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), 0x7A, "bit0=1 alone must not reset the AY");
 }
 
@@ -72,11 +72,11 @@ fn power_on_first_bit0_clear_write_is_not_a_falling_edge() {
     // MAME primes the reset line so the very first $FF7D write, even if it's
     // bit0=0, isn't itself treated as a 1-then-0 transition.
     let mut b = coco3_bus_with_ssc();
-    let ssc = b.cart.as_ssc().expect("an Ssc is inserted");
+    let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     ssc.ay_write(ay_reg::TONE_A_FINE, 0x11);
 
     b.write(FF7D, 0x00);
 
-    let ssc = b.cart.as_ssc().expect("an Ssc is inserted");
+    let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), 0x11, "the first bit0=0 write must not reset the AY");
 }

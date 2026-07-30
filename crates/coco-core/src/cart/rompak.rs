@@ -25,7 +25,7 @@ const ROM_PAK_HALF_SWAP: u16 = 0x4000;
 
 /// Error constructing a [`ROMPak`] from a raw image.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RomPakError {
+pub enum ROMPakError {
     /// The image had zero bytes.
     Empty,
     /// The image exceeded [`ROM_PAK_MAX_LEN`].
@@ -35,11 +35,11 @@ pub enum RomPakError {
     },
 }
 
-impl std::fmt::Display for RomPakError {
+impl std::fmt::Display for ROMPakError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RomPakError::Empty => write!(f, "ROM pak image is empty"),
-            RomPakError::TooLarge { len } => write!(
+            ROMPakError::Empty => write!(f, "ROM pak image is empty"),
+            ROMPakError::TooLarge { len } => write!(
                 f,
                 "ROM pak image is {len} bytes, larger than the {ROM_PAK_MAX_LEN}-byte external ROM window"
             ),
@@ -47,7 +47,7 @@ impl std::fmt::Display for RomPakError {
     }
 }
 
-impl std::error::Error for RomPakError {}
+impl std::error::Error for ROMPakError {}
 
 /// A cartridge ROM pak: a headerless raw dump (`.rom`/`.ccc`/`.bin`, 2K–32K) of
 /// the kind sold for CoCo game/utility cartridges.
@@ -73,7 +73,7 @@ impl std::fmt::Debug for ROMPak {
     /// Elides the 32K image body; only its length and the autostart flag are
     /// interesting for debugging.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RomPak")
+        f.debug_struct("ROMPak")
             .field("image_len", &self.image.len())
             .field("autostart", &self.autostart)
             .finish()
@@ -84,12 +84,12 @@ impl ROMPak {
     /// Build a ROM pak from a raw image. Rejects empty images and images
     /// larger than [`ROM_PAK_MAX_LEN`]; anything in between is mirror-filled
     /// to 32K.
-    pub fn from_bytes(bytes: &[u8], autostart: bool) -> Result<Self, RomPakError> {
+    pub fn from_bytes(bytes: &[u8], autostart: bool) -> Result<Self, ROMPakError> {
         if bytes.is_empty() {
-            return Err(RomPakError::Empty);
+            return Err(ROMPakError::Empty);
         }
         if bytes.len() > ROM_PAK_MAX_LEN {
-            return Err(RomPakError::TooLarge { len: bytes.len() });
+            return Err(ROMPakError::TooLarge { len: bytes.len() });
         }
 
         Ok(Self {
@@ -104,12 +104,12 @@ impl ROMPak {
     /// deserialized `autostart` is itself the restored machine state
     /// (`docs/plan-save-states.md`). Same validation and mirror-fill as
     /// [`ROMPak::from_bytes`].
-    pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), RomPakError> {
+    pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         if bytes.is_empty() {
-            return Err(RomPakError::Empty);
+            return Err(ROMPakError::Empty);
         }
         if bytes.len() > ROM_PAK_MAX_LEN {
-            return Err(RomPakError::TooLarge { len: bytes.len() });
+            return Err(ROMPakError::TooLarge { len: bytes.len() });
         }
         self.image = mirror_fill(bytes, ROM_PAK_MAX_LEN);
         Ok(())
@@ -226,7 +226,7 @@ pub struct BankedROMPak {
 impl std::fmt::Debug for BankedROMPak {
     /// Elides the 128K image body.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BankedRomPak")
+        f.debug_struct("BankedROMPak")
             .field("bank", &self.bank)
             .field("autostart", &self.autostart)
             .finish()

@@ -37,7 +37,7 @@ impl CocoApp {
     }
 
     /// Load a Games Master Cartridge image (banked ROM + SN76489A) from
-    /// `path` and insert it. Mirrors [`Self::insert_cartridge`]'s RomPak
+    /// `path` and insert it. Mirrors [`Self::insert_cartridge`]'s ROMPak
     /// path exactly, including the `autostart_cart` choice — GMC games are
     /// autostart game paks (CART* tied to Q), but the checkbox stays
     /// authoritative like it is for plain paks.
@@ -65,7 +65,7 @@ impl CocoApp {
     }
 
     /// Load an Orchestra-90/CC ROM from `path` and insert it. Mirrors
-    /// [`Self::insert_cartridge`]'s RomPak path exactly, but there is no
+    /// [`Self::insert_cartridge`]'s ROMPak path exactly, but there is no
     /// `autostart_cart` choice to honor — [`Orch90::cart_line_ties_q`] always
     /// autostarts, like the real pak's CART*-tied-to-Q wiring.
     ///
@@ -266,7 +266,7 @@ impl CocoApp {
                     mp.insert(slot, cart);
                 }
                 if let Some(mpi) = &mut self.mpi {
-                    mpi.slots[slot] = MPISlot::Gmc(path);
+                    mpi.slots[slot] = MPISlot::GamesMasterCartridge(path);
                 }
                 self.machine.power_cycle();
             }
@@ -344,7 +344,7 @@ impl CocoApp {
             mp.insert(slot, SoundSpeechCartridge::new());
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MPISlot::Ssc;
+            mpi.slots[slot] = MPISlot::SoundSpeechCartridge;
         }
         self.machine.power_cycle();
     }

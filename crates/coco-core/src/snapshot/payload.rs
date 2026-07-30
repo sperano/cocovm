@@ -67,11 +67,12 @@ pub struct SlotROMRef {
 pub struct MediaRefs {
     #[serde(default)]
     pub system_rom: Option<MediaRef>,
-    /// ROM-bearing carts, keyed by where they sit. Covers RomPak/
-    /// BankedRomPak/Gmc/DiskCart/Orch90 images and the DeluxeRS232 EPROM —
-    /// one entry per ROM-bearing cart that actually has an image (the
-    /// DeluxeRS232 is the one cart in this list that can legitimately run
-    /// without one; see [`super::restore`]'s cart-ROM step).
+    /// ROM-bearing carts, keyed by where they sit. Covers ROMPak/
+    /// BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images and the
+    /// DeluxeRS232 EPROM — one entry per ROM-bearing cart that actually has
+    /// an image (the DeluxeRS232 is the one cart in this list that can
+    /// legitimately run without one; see [`super::restore`]'s cart-ROM
+    /// step).
     #[serde(default)]
     pub cart_roms: Vec<SlotROMRef>,
     /// FD-502 JVC drives, indexed by drive number.

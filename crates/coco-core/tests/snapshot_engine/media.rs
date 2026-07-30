@@ -79,7 +79,7 @@ fn restored_payload_carries_no_rom_bytes_before_reattachment() {
     let cart_debug = format!("{:?}", payload.machine.bus.cart);
     assert!(
         matches!(payload.machine.bus.cart, Cart::ROMPak(_)),
-        "expected a RomPak cart, got {cart_debug}"
+        "expected a ROMPak cart, got {cart_debug}"
     );
     assert!(
         cart_debug.contains("image_len: 0"),
@@ -92,7 +92,7 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
     let mut machine = boot_machine();
     // A uniform fill so any byte read back proves the *mirrored* image
     // (not just offset 0) survived reattachment, without needing to work
-    // out `RomPak`'s half-swap indexing by hand.
+    // out `ROMPak`'s half-swap indexing by hand.
     let pak_image = vec![0x42u8; 1024];
     machine.insert_cartridge(ROMPak::from_bytes(&pak_image, false).expect("build pak"));
 
@@ -121,7 +121,7 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
 
     match restored.machine.bus.cart {
         Cart::ROMPak(pak) => assert_eq!(pak.rom_peek(0x8000), 0x42),
-        other => panic!("expected RomPak, got {other:?}"),
+        other => panic!("expected ROMPak, got {other:?}"),
     }
 }
 
@@ -154,8 +154,8 @@ fn missing_cart_rom_source_is_missing_media() {
     match err {
         SnapshotError::MissingMedia { descriptions } => {
             assert!(
-                descriptions.iter().any(|d| d.contains("RomPak")),
-                "descriptions {descriptions:?} should mention the missing RomPak ROM"
+                descriptions.iter().any(|d| d.contains("ROMPak")),
+                "descriptions {descriptions:?} should mention the missing ROMPak ROM"
             );
         }
         other => panic!("expected MissingMedia, got {other:?}"),

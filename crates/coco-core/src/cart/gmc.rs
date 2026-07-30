@@ -38,7 +38,7 @@ pub struct GamesMasterCartridge {
 
 impl std::fmt::Debug for GamesMasterCartridge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Gmc")
+        f.debug_struct("GamesMasterCartridge")
             .field("rom", &self.rom)
             .field("psg", &self.psg)
             .finish()

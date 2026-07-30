@@ -460,7 +460,7 @@ pub struct DistoRTC {
 
 impl std::fmt::Debug for DistoRTC {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DistoRtc")
+        f.debug_struct("DistoRTC")
             .field("address_latch", &self.address_latch)
             .field("rtc", &self.rtc)
             .finish()

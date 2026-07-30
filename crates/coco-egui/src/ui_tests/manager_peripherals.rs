@@ -90,7 +90,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
 
     click_containing(&mut harness, "New");
     harness.state_mut().edit_form_mut().expect("pane form seeded").cartridge =
-        new_vm::CartridgeChoice::RomPak(pak.clone());
+        new_vm::CartridgeChoice::ROMPak(pak.clone());
     harness.step();
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
@@ -103,7 +103,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     {
         let form = harness.state_mut().edit_form_mut().expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
-        form.mpi_slots[1] = new_vm::SlotChoice::RomPak(pak.clone());
+        form.mpi_slots[1] = new_vm::SlotChoice::ROMPak(pak.clone());
     }
     harness.step();
     assert_eq!(harness.state().entries.len(), 2);
@@ -115,7 +115,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     // refused with an inline error instead of silently dropping one, and
     // the definition keeps the single recorded pak.
     harness.state_mut().edit_form_mut().expect("pane form seeded").mpi_slots[3] =
-        new_vm::SlotChoice::RomPak(pak);
+        new_vm::SlotChoice::ROMPak(pak);
     harness.step();
     harness.get_by_label_contains("a single ROM Pak");
     assert_eq!(

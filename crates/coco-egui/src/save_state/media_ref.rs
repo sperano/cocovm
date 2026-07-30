@@ -27,11 +27,11 @@ pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISl
         || media.cart_roms.iter().find(|r| r.mpi_slot == Some(i)).map(|r| r.rom.path.clone());
     match cart {
         Cart::ROMPak(_) | Cart::BankedROMPak(_) => rom_path().map(MPISlot::ROMPak).unwrap_or(MPISlot::Empty),
-        Cart::GamesMasterCartridge(_) => rom_path().map(MPISlot::Gmc).unwrap_or(MPISlot::Empty),
+        Cart::GamesMasterCartridge(_) => rom_path().map(MPISlot::GamesMasterCartridge).unwrap_or(MPISlot::Empty),
         Cart::Orch90(_) => rom_path().map(MPISlot::Orch90).unwrap_or(MPISlot::Empty),
         Cart::DiskCart(_) => MPISlot::FD502,
         Cart::DistoRTC(_) => MPISlot::DistoRTC,
-        Cart::SoundSpeechCartridge(_) => MPISlot::Ssc,
+        Cart::SoundSpeechCartridge(_) => MPISlot::SoundSpeechCartridge,
         _ => MPISlot::Empty,
     }
 }

@@ -118,12 +118,17 @@ fn help_about_toggles_the_about_window() {
 }
 
 #[test]
-fn status_bar_shows_the_default_joystick_config() {
+fn status_bar_shows_no_joystick_entries_by_default() {
     let mut harness = boot_harness();
     harness.step();
-    // Default config: right stick on the mouse, left stick off — see
-    // JoystickInputs::new.
-    harness.get_by_label_contains("JR: Mouse");
+    // Default config: both sticks off (`JoySource::None`) — see
+    // `JoystickInputs::new`. `joystick_status` only ever emits a "JR"/"JL"
+    // entry for a port whose source isn't `JoySource::None`, so neither
+    // should appear until the Joysticks menu assigns one.
+    assert!(
+        harness.query_by_label_contains("JR:").is_none(),
+        "the right stick's source is None by default, so it shouldn't get a status-bar entry"
+    );
     assert!(
         harness.query_by_label_contains("JL:").is_none(),
         "the left stick's source is None by default, so it shouldn't get a status-bar entry"

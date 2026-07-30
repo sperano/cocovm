@@ -55,12 +55,12 @@ const UNDERRUN_FADE_FLOOR: f32 = 0.001;
 /// Per-sample state for the one-pole DC-blocking highpass filter, factored out
 /// of `AudioOutput` so the math can be unit-tested without a live stream.
 #[derive(Default, Clone, Copy)]
-struct DcBlocker {
+struct DCBlocker {
     prev_in: f32,
     prev_out: f32,
 }
 
-impl DcBlocker {
+impl DCBlocker {
     fn process(&mut self, x: f32) -> f32 {
         let y = x - self.prev_in + DC_BLOCKER_POLE * self.prev_out;
         self.prev_in = x;
@@ -170,7 +170,7 @@ pub struct AudioOutput {
     device_rate: f64,
     muted: bool,
     volume: f32,
-    dc: [DcBlocker; 2],
+    dc: [DCBlocker; 2],
     /// Anti-alias low-pass per channel, designed lazily for the source rate
     /// seen on the first `push_samples` call (`None` until then, or when
     /// upsampling makes it unnecessary).
@@ -191,7 +191,7 @@ impl AudioOutput {
                 device_rate,
                 muted: false,
                 volume: DEFAULT_VOLUME,
-                dc: [DcBlocker::default(); 2],
+                dc: [DCBlocker::default(); 2],
                 lowpass: None,
                 lowpass_rate: 0.0,
                 resampler: Resampler::default(),
@@ -205,7 +205,7 @@ impl AudioOutput {
                     device_rate: 0.0,
                     muted: false,
                     volume: DEFAULT_VOLUME,
-                    dc: [DcBlocker::default(); 2],
+                    dc: [DCBlocker::default(); 2],
                     lowpass: None,
                     lowpass_rate: 0.0,
                     resampler: Resampler::default(),

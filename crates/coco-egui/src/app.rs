@@ -39,7 +39,7 @@ pub(crate) struct CocoApp {
     pub(crate) display_rect: egui::Rect,
     /// Whether the next inserted cartridge should tie CART* to Q (auto-run at
     /// power-up). Consulted at insert time, not retroactively — see
-    /// `RomPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
+    /// `ROMPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
     /// must be started with `EXEC &HE010`.
     pub(crate) autostart_cart: bool,
     /// Path of the currently inserted cartridge, if any (shown in the status

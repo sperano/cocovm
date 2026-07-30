@@ -18,7 +18,7 @@ pub use empty::EmptySlot;
 pub use gmc::GamesMasterCartridge;
 pub use multipak::{mpi, MultiPak};
 pub use rompak::{
-    BankedPakError, BankedROMPak, ROMPak, RomPakError, BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN,
+    BankedPakError, BankedROMPak, ROMPak, ROMPakError, BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN,
     ROM_PAK_MAX_LEN,
 };
 
@@ -178,7 +178,7 @@ pub trait Cartridge {
     /// fields this cartridge indexes its own buffers with — Rust's own
     /// bounds checks turn a bad one (from a hand-crafted payload) into a
     /// panic, not a graceful error, unless this catches it first. See
-    /// `crate::ssc::Ssc`/`crate::fdc::DiskCart`'s overrides. Default:
+    /// `crate::ssc::SoundSpeechCartridge`/`crate::fdc::DiskCart`'s overrides. Default:
     /// nothing to check.
     fn validate_restored(&self) -> Result<(), String> {
         Ok(())

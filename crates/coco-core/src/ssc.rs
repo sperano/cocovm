@@ -298,10 +298,11 @@ impl Cartridge for SoundSpeechCartridge {
 
     /// Restore-only: reject a mid buffer-RAM-load or mid sound-engine
     /// snapshot whose `cursor`/`cap` don't satisfy `cursor <= cap <=
-    /// ram::SIZE` — [`Ssc::feed_load`](protocol) indexes `self.ram[load.cursor]`
-    /// once `load.cursor < load.cap`, and [`Ssc::advance_engine`](engine)
-    /// (and its callees) index `self.ram` off `engine.cursor`/`engine.cap`
-    /// the same way, with no bounds check of their own against `ram::SIZE`
+    /// ram::SIZE` — [`SoundSpeechCartridge::feed_load`](protocol) indexes
+    /// `self.ram[load.cursor]` once `load.cursor < load.cap`, and
+    /// [`SoundSpeechCartridge::advance_engine`](engine) (and its callees)
+    /// index `self.ram` off `engine.cursor`/`engine.cap` the same way, with
+    /// no bounds check of their own against `ram::SIZE`
     /// (`docs/plan-save-states.md`). `cursor`/`cap` are ordinary
     /// deserialized fields a hand-crafted payload can set past the end of
     /// `ram`.
@@ -309,7 +310,7 @@ impl Cartridge for SoundSpeechCartridge {
         if let Mode::Loading(load) = &self.mode {
             check_ram_cursor_cap("Load", load.cursor, load.cap)?;
         }
-        // An inactive engine's `cursor`/`cap` are never read (`Ssc::tick_engine`
+        // An inactive engine's `cursor`/`cap` are never read (`SoundSpeechCartridge::tick_engine`
         // returns immediately when `!active`), so only check while active.
         if self.engine.active {
             check_ram_cursor_cap("Engine", self.engine.cursor, self.engine.cap)?;

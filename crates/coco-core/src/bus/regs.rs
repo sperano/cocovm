@@ -97,7 +97,7 @@ pub(super) const OPEN_BUS: u8 = 0xFF;
 /// extbas at 0, bas at $2000 (`docs/coco12-plan.md` "ROM files").
 pub(super) const SAM_BAS_ROM_OFFSET: usize = 0x2000;
 /// Plain-SAM path only: base CPU address of the cartridge CTS* ROM window,
-/// added back to a `SamTarget::Cart` offset before calling
+/// added back to a `SAMTarget::Cart` offset before calling
 /// [`Cartridge::rom_read`].
 ///
 /// [`Cartridge::rom_read`]: crate::cart::Cartridge::rom_read

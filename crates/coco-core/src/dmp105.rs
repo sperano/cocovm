@@ -378,7 +378,7 @@ impl DMP105Handle {
     }
 
     /// Restore-path-only: rebuild a handle around an already-deserialized
-    /// [`DMP105`] state (`sink_serde::SinkState::Dmp105` — see
+    /// [`DMP105`] state (`sink_serde::SinkState::DMP105` — see
     /// `bitbanger.rs`), wrapping it in a fresh `Rc<RefCell<_>>`
     /// (`docs/plan-save-states.md`). Unlike [`DMP105Handle::new`], this
     /// starts from real restored state rather than power-on defaults.
@@ -421,10 +421,10 @@ impl PrinterSink for DMP105Handle {
     }
 
     /// The whole interpreter/paper state, cloned out of the shared
-    /// `Rc<RefCell<_>>` — `Dmp105` is plain data (`Clone` derive), so this
+    /// `Rc<RefCell<_>>` — `DMP105` is plain data (`Clone` derive), so this
     /// is a deep-but-cheap snapshot (`docs/plan-save-states.md`).
     fn snapshot(&self) -> SinkState {
-        SinkState::Dmp105(self.0.borrow().clone())
+        SinkState::DMP105(self.0.borrow().clone())
     }
 
     fn as_dmp105(&self) -> Option<&DMP105Handle> {

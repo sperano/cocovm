@@ -40,7 +40,7 @@ fn marker(bank: usize) -> u8 {
 /// The four attenuation-code-15 writes that silence every PSG channel.
 const PSG_MUTE_ALL: [u8; 4] = [0x9F, 0xBF, 0xDF, 0xFF];
 
-// ---- BankedRomPak -------------------------------------------------------------
+// ---- BankedROMPak -------------------------------------------------------------
 
 #[test]
 fn rejects_empty_and_oversized_images() {
@@ -100,7 +100,7 @@ fn reset_returns_to_bank_zero() {
     assert_eq!(pak.rom_read(0xC000), marker(0));
 }
 
-// ---- Gmc through the bus -------------------------------------------------------
+// ---- GamesMasterCartridge through the bus --------------------------------------
 
 fn bus_with_gmc() -> SystemBus {
     let mut b = SystemBus::new(

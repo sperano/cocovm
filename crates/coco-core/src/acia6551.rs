@@ -76,7 +76,7 @@ const BAUD_DIVIDER: [u32; 16] = [
     1, 2304, 1536, 1048, 856, 768, 384, 192, 96, 64, 48, 32, 24, 16, 12, 6,
 ];
 
-/// Status register bits (offset 1, read-only view; see [`Acia6551::read`]).
+/// Status register bits (offset 1, read-only view; see [`ACIA6551::read`]).
 pub mod status {
     /// Bit 0: parity error. This model never sets it (see module doc,
     /// "byte-level timing divergence") but clears it exactly where MAME
@@ -128,7 +128,7 @@ pub mod command {
     /// Even values (0/2/4/6) mean parity disabled; odd values mean enabled:
     /// 1 = odd, 3 = even, 5 = mark, 7 = space. At byte level only "enabled
     /// or not" matters (it adds one bit to the frame; see
-    /// [`Acia6551::frame_bits`]) — this model does not distinguish which
+    /// [`ACIA6551::frame_bits`]) — this model does not distinguish which
     /// parity mode, since it never generates or checks parity bits.
     pub const PARITY_MASK: u8 = 0xE0;
     /// Shift to bring [`PARITY_MASK`] down to a 0..=7 value.
@@ -153,7 +153,7 @@ pub mod tx_control {
 
 /// Control register bits (offset 3, read/write). None of the bits here
 /// generate errors at the byte level (see module doc); they only feed
-/// [`Acia6551::cycles_per_frame`].
+/// [`ACIA6551::cycles_per_frame`].
 pub mod control {
     /// Bits 3:0: baud-rate index — see [`BAUD_DIVIDER`].
     pub const BAUD_MASK: u8 = 0x0F;
@@ -167,7 +167,7 @@ pub mod control {
     /// Shift to bring [`WORD_LENGTH_MASK`] down to a 0..=3 value.
     pub const WORD_LENGTH_SHIFT: u8 = 5;
     /// Bit 7: 2 stop bits instead of 1 (also covers the 5-bit-word 1.5-stop
-    /// case, collapsed to 2 — see [`Acia6551::stop_bits`]).
+    /// case, collapsed to 2 — see [`ACIA6551::stop_bits`]).
     pub const STOP_BITS_2: u8 = 0x80;
 }
 

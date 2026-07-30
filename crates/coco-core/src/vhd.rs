@@ -7,7 +7,7 @@
 //! the verified spec this module was built from; the driver-side contract
 //! (24-bit LRN, 256-byte sectors) is corroborated by NitrOS-9 `emudsk.asm`.
 //!
-//! This module holds only data and file I/O: [`VHD`]/`VhdDrive`/[`VHDImage`]
+//! This module holds only data and file I/O: [`VHD`]/`VHDDrive`/[`VHDImage`]
 //! know nothing about the CPU bus. The actual command execution — which needs
 //! to transfer sector data through the GIME-translated logical address space
 //! — lives in `SystemBus`'s private methods in `bus.rs`.
@@ -151,7 +151,7 @@ impl VHDImage {
 /// buffer address latched by writes to `$FF80–$FF82`/`$FF84–$FF85`, the last
 /// command's outcome (`$FF83` read), and the mounted image, if any.
 #[derive(Serialize, Deserialize)]
-pub(crate) struct VhdDrive {
+pub(crate) struct VHDDrive {
     /// 24-bit logical record (sector) number; the top 8 bits of the `u32` are
     /// always 0.
     pub(crate) lrn: u32,
@@ -164,7 +164,7 @@ pub(crate) struct VhdDrive {
     pub(crate) image: Option<VHDImage>,
 }
 
-impl VhdDrive {
+impl VHDDrive {
     fn new() -> Self {
         Self { lrn: 0, buffer_addr: 0, status: status::NO_VHD, image: None }
     }
@@ -174,7 +174,7 @@ impl VhdDrive {
 /// drive-select latch.
 #[derive(Serialize, Deserialize)]
 pub struct VHD {
-    pub(crate) drives: [VhdDrive; DRIVE_COUNT],
+    pub(crate) drives: [VHDDrive; DRIVE_COUNT],
     /// Raw value last written to `$FF86`. `0`/`1` select a drive; anything
     /// else deselects both (see [`VHD::selected_drive`]).
     select: u8,
@@ -208,7 +208,7 @@ impl VHD {
     /// until confirmed against real hardware or MAME's device reset code.
     pub fn new() -> Self {
         Self {
-            drives: [VhdDrive::new(), VhdDrive::new()],
+            drives: [VHDDrive::new(), VHDDrive::new()],
             select: 0,
             busy: false,
             access_counts: [0; DRIVE_COUNT],

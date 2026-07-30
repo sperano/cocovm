@@ -35,7 +35,7 @@ const CR_C2_HIGH: u8 = 0x3C;
 /// suite only drives Cx2 (SNDEN/SEL1/SEL2), never the DAC's data pins.
 const CR_DDR: u8 = 0x30;
 
-/// A bus with an `Ssc` inserted and the sound mux routed to the cartridge
+/// A bus with a `SoundSpeechCartridge` inserted and the sound mux routed to the cartridge
 /// input (SEL2:SEL1 = 10, SNDEN high) — same PIA-poking pattern as
 /// `tests/sound.rs`'s `bus()` helper.
 pub fn bus_with_ssc_selected() -> SystemBus {

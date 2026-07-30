@@ -2,7 +2,7 @@
 //! T4): boot the real Super Extended Color BASIC ROM, `LLIST` a one-liner
 //! through the bit-banger port with a [`DMP105Handle`] attached as the sink,
 //! and assert the paper picked up plausible content — proving the whole
-//! chain (PIA1 bit-bang TX -> `BitBanger` decode -> `Dmp105` interpretation
+//! chain (PIA1 bit-bang TX -> `BitBanger` decode -> `DMP105` interpretation
 //! -> `Paper`) works against unmodified ROM code without panicking. Glyph-
 //! exact assertions are the unit golden tests' job (`src/dmp105.rs`); this
 //! only checks shape: nonzero dots, a plausible line count, no hangs.
@@ -132,7 +132,7 @@ fn llist_through_dmp105_produces_plausible_paper_content() {
         extent.max_y
     );
 
-    // Sanity: a fresh Dmp105Handle used directly as a PrinterSink (not just
+    // Sanity: a fresh DMP105Handle used directly as a PrinterSink (not just
     // through BitBanger) must also accept bytes without panicking, covering
     // the trait object path the real bus uses.
     let direct = DMP105Handle::new();

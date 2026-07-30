@@ -5,7 +5,7 @@
 //!   trace, NO interrupts, comparable 1:1 against MAME up to the point BASIC
 //!   first enables interrupts.
 //! - With cart (`trace -- [max_instrs] <pak.ccc>`): inserts an autostart
-//!   RomPak and drives `Machine::step_instruction()` (which handles interrupt
+//!   ROMPak and drives `Machine::step_instruction()` (which handles interrupt
 //!   servicing before each instruction, hsync per line, vsync per field, and
 //!   GIME timer ticks) so the full boot-and-run stream can be diffed against a
 //!   MAME run with `-cart1 <pak.ccc>`.

@@ -133,9 +133,9 @@ fn slot_menu_label(slot: usize, contents: Option<&MPISlot>) -> String {
         Some(MPISlot::ROMPak(p)) => format!("Slot {number} ({})", name(p)),
         Some(MPISlot::FD502) => format!("Slot {number} (FD-502)"),
         Some(MPISlot::DistoRTC) => format!("Slot {number} (Disto RTC)"),
-        Some(MPISlot::Gmc(p)) => format!("Slot {number} (GMC: {})", name(p)),
+        Some(MPISlot::GamesMasterCartridge(p)) => format!("Slot {number} (GMC: {})", name(p)),
         Some(MPISlot::Orch90(p)) => format!("Slot {number} (Orchestra-90: {})", name(p)),
-        Some(MPISlot::Ssc) => format!("Slot {number} (Sound/Speech)"),
+        Some(MPISlot::SoundSpeechCartridge) => format!("Slot {number} (Sound/Speech)"),
         _ => format!("Slot {number}"),
     }
 }
