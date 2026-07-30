@@ -1,4 +1,4 @@
-//! `Sam` — the MC6883 Synchronous Address Multiplexer's primary memory map, for
+//! `SAM` — the MC6883 Synchronous Address Multiplexer's primary memory map, for
 //! the plain CoCo 1/2 machine (no GIME). See `docs/coco12-plan.md`.
 //!
 //! This is a standalone model, deliberately **not** shared with the GIME's own
@@ -21,7 +21,7 @@ pub const STROBE_LAST: u16 = 0xFFDF;
 /// $FF00–$FF7E: PIA0, PIA1, cart SCS* ($FF40–$FF5F), and the cart SCS*
 /// extension some cartridges decode ($FF60–$FF7E, e.g. the Sound/Speech
 /// Cartridge's $FF7D/$FF7E — `docs/cartridges.md` "Carts can decode
-/// addresses outside SCS") — decoded by the bus, not `Sam` itself (`Sam::map`
+/// addresses outside SCS") — decoded by the bus, not `SAM` itself (`SAM::map`
 /// only reports that this range is I/O).
 const IO_BASE: u16 = 0xFF00;
 /// $FF7F–$FFBF: no GIME (hence no MPI-style `$FF7F` decode either) on these

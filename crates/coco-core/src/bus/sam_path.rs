@@ -1,4 +1,4 @@
-//! Plain-SAM path (CoCo 1/2, no GIME): `Sam::map` does the whole-address
+//! Plain-SAM path (CoCo 1/2, no GIME): `SAM::map` does the whole-address
 //! decode (RAM/ROM/cart/I/O/open-bus) in one step, unlike the GIME path's
 //! separate ROM-window/I/O-page/MMU layers, so there's no need for
 //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
@@ -15,7 +15,7 @@ use super::regs::{
 use super::SystemBus;
 
 impl SystemBus {
-    /// Bounds-check a `Sam::map` RAM target against installed RAM. Unlike the
+    /// Bounds-check a `SAM::map` RAM target against installed RAM. Unlike the
     /// GIME path (which masks/wraps into a smaller machine's high blocks),
     /// out-of-range plain-SAM RAM is just truncated for now: reads/writes
     /// past the installed size fall off the bus (`docs/coco12-plan.md`).

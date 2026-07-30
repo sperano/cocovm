@@ -217,7 +217,7 @@ fn becker_takes_precedence_over_cartridge() {
 
 #[test]
 fn sam_path_becker_intercept_matches_gime_path() {
-    // A small synthetic ROM: `Sam::map` routes all of $FF00-$FF9F
+    // A small synthetic ROM: `SAM::map` routes all of $FF00-$FF9F
     // unconditionally to `SAMTarget::Io` regardless of ROM contents/size, so
     // the ROM box just needs to exist.
     let rom: Box<[u8]> = vec![0u8; 1].into_boxed_slice();

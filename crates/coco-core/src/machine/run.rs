@@ -185,7 +185,7 @@ impl Machine {
     fn cycles_per_field(&self) -> u32 {
         // Speed-poke source differs per variant: the GIME's own R1 latch on
         // CoCo 3, the plain SAM's R0|R1 strobes on CoCo 1/2
-        // (`docs/coco12-plan.md` Phase 4; `Sam::cpu_fast`'s KNOWN GAP note).
+        // (`docs/coco12-plan.md` Phase 4; `SAM::cpu_fast`'s KNOWN GAP note).
         let cpu_fast = match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.cpu_fast,
             MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.cpu_fast(),
