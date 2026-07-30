@@ -1752,7 +1752,7 @@ re-checks the wired-OR at every instruction boundary and offers the CPU a
 chance to act. FIRQ is offered first, because it is the faster and
 higher-priority of the two.
 
-### How one edge becomes a flag: `PiaPort::set_c1`
+### How one edge becomes a flag: `PIAPort::set_c1`
 
 There is one piece still missing from the chain, and it is the piece that
 does the actual conversion. Field sync is a *level* — a physical line that
@@ -1869,7 +1869,7 @@ That completes the chain. When `end_of_line` reaches line 244 on a CoCo 3
 running NTSC, it calls `bus.fs_falling()`, which calls
 `pia0.b.set_c1(false)`. If PIA0's control register B has the falling edge
 selected — which is the stock ROM's default, `cr::C1_EDGE_HIGH` clear —
-the Cx1 flag latches. `PiaPort::irq()` now reports `true`, so
+the Cx1 flag latches. `PIAPort::irq()` now reports `true`, so
 `MC6821::irq()` does, so `bus.irq_asserted()` does, so the next call to
 `service_interrupts` offers the CPU an IRQ, and `cpu.irq(&mut bus)` takes
 it. The flag stays latched until something *reads* PIA0's port B data
@@ -2047,7 +2047,7 @@ selects `cr::C1_EDGE_HIGH`, so rising — still doesn't flag. That is the
 same "wrong direction never counts" guarantee from the edge-selection pair,
 now exercised at the real field-sync scanline instead of at every hsync.
 
-Between these four tests and the `PiaPort::set_c1` code they exercise, this
+Between these four tests and the `PIAPort::set_c1` code they exercise, this
 section's whole account of "field sync becomes an IRQ" has been demonstrated
 rather than asserted — which is exactly the property exercise 6.2 below
 asks you to break on purpose and watch fail.
@@ -2176,7 +2176,7 @@ pub fn read(&mut self, reg: u8) -> u8 {
     }
 }
 
-fn read_side(port: &mut PiaPort) -> u8 {
+fn read_side(port: &mut PIAPort) -> u8 {
     if port.control & cr::DDR_ACCESS != 0 {
         // Reading the peripheral data register clears the interrupt flags.
         port.control &= !(cr::C1_FLAG | cr::C2_FLAG);

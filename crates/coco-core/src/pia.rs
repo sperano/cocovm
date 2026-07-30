@@ -135,7 +135,7 @@ impl MC6821 {
     /// value [`MC6821::read`] would return for `reg`, but WITHOUT clearing the
     /// Cx1/Cx2 interrupt flags. `a_input`/`b_input` are the freshly sampled
     /// input-pin states — the bus recomputes them the same way a real read
-    /// refreshes `PiaPort::input` first.
+    /// refreshes `PIAPort::input` first.
     pub fn peek(&self, reg: u8, a_input: u8, b_input: u8) -> u8 {
         match reg & 0x03 {
             0 => Self::peek_side(&self.a, a_input),
