@@ -69,7 +69,7 @@ jobs:
         run: |
           STAGE=cocovm-${RELEASE_TAG}-${{ matrix.target }}
           mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/coco" LICENSE NOTICE.md "$STAGE/"
+          cp "target/${{ matrix.target }}/release/cocovm" LICENSE NOTICE.md "$STAGE/"
           tar -czf "$STAGE.tar.gz" "$STAGE"
           echo "ARCHIVE=$STAGE.tar.gz" >> "$GITHUB_ENV"
 
@@ -79,7 +79,7 @@ jobs:
         run: |
           $stage = "cocovm-$env:RELEASE_TAG-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $stage | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/coco.exe", "LICENSE", "NOTICE.md" -Destination $stage
+          Copy-Item "target/${{ matrix.target }}/release/cocovm.exe", "LICENSE", "NOTICE.md" -Destination $stage
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ARCHIVE=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
