@@ -8,7 +8,7 @@ license.workspace = true
 workspace = true
 
 [[bin]]
-name = "coco"
+name = "cocovm"
 path = "src/main.rs"
 
 [dependencies]
