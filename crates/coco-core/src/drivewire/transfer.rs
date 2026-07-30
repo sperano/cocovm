@@ -1,12 +1,12 @@
 //! Sector I/O: header decoding and the READ/WRITE family's actual image
 //! access, invoked once a full READ/READEX header or WRITE body has arrived
-//! at [`DwServer::execute_read`]/[`DwServer::execute_write`] from
+//! at [`DWServer::execute_read`]/[`DWServer::execute_write`] from
 //! `drivewire::protocol`'s [`State`](super::protocol::State) machine.
 
 use super::protocol::State;
-use super::{DwServer, HEADER_LEN, SECTOR_SIZE, checksum_of, error};
+use super::{DWServer, HEADER_LEN, SECTOR_SIZE, checksum_of, error};
 
-impl DwServer {
+impl DWServer {
     /// Decode a READ/READEX/WRITE header: byte 0 is the drive number, bytes
     /// 1..4 are the 24-bit big-endian LSN. In HDB-DOS mode the wire drive
     /// byte is ignored and both drive and local LSN are derived from the
@@ -46,7 +46,7 @@ impl DwServer {
     /// Write `sector` to `drive` at `lsn`. [`error::NOT_READY`] if the
     /// drive is unmounted/out of range, [`error::WRITE`] on a host I/O
     /// error, else [`error::OK`] (which also marks the drive dirty and
-    /// bumps [`DwServer::sectors_written`]).
+    /// bumps [`DWServer::sectors_written`]).
     fn write_sector(&mut self, drive: usize, lsn: u64, sector: &[u8]) -> u8 {
         let Some(image) = self.drives.get_mut(drive).and_then(|d| d.as_mut()) else {
             return error::NOT_READY;

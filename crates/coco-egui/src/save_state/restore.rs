@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use coco_core::cart::Cart;
-use coco_core::drivewire::{self, DriveWireImage};
+use coco_core::drivewire::{self, DWImage};
 use coco_core::fdc;
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, RestoredMachine};
 use coco_core::vhd::{self, VHDImage};
@@ -103,10 +103,10 @@ impl CocoApp {
                 vhds[i] = open_if_present(mr, "VHD", &mut warnings).map(VHDImage::File);
             }
         }
-        let mut drivewire: [Option<DriveWireImage>; drivewire::DRIVE_COUNT] = Default::default();
+        let mut drivewire: [Option<DWImage>; drivewire::DRIVE_COUNT] = Default::default();
         for (i, mr) in media.drivewire.iter().enumerate().take(drivewire::DRIVE_COUNT) {
             if let Some(mr) = mr {
-                drivewire[i] = open_if_present(mr, "DriveWire image", &mut warnings).map(DriveWireImage::File);
+                drivewire[i] = open_if_present(mr, "DriveWire image", &mut warnings).map(DWImage::File);
             }
         }
         let tape = match &media.tape {

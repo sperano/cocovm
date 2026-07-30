@@ -1,22 +1,22 @@
-//! The byte-level protocol state machine: [`DwServer::data_write`] feeds one
-//! host byte at a time into [`DwServer::feed`], which either dispatches a
-//! fresh opcode ([`DwServer::handle_opcode`]) or advances whatever
+//! The byte-level protocol state machine: [`DWServer::data_write`] feeds one
+//! host byte at a time into [`DWServer::feed`], which either dispatches a
+//! fresh opcode ([`DWServer::handle_opcode`]) or advances whatever
 //! multi-byte transaction [`State`] says is in progress. Completed
 //! READ/READEX headers and WRITE bodies hand off to
-//! `drivewire::transfer`'s [`DwServer::execute_read`]/
-//! [`DwServer::execute_write`].
+//! `drivewire::transfer`'s [`DWServer::execute_read`]/
+//! [`DWServer::execute_write`].
 
 use serde::{Deserialize, Serialize};
 
 use super::{
-    COMST_PAYLOAD_LEN, DW_PROTOCOL_VERSION, DwServer, HEADER_LEN, SS_COMST, STAT_PAYLOAD_LEN,
+    COMST_PAYLOAD_LEN, DW_PROTOCOL_VERSION, DWServer, HEADER_LEN, SS_COMST, STAT_PAYLOAD_LEN,
     TIME_REPLY_YEAR_BASE, TRANSACTION_TIMEOUT_CYCLES, WRITE_BODY_LEN, error, opcode,
 };
 
 /// One in-progress DriveWire transaction. An opcode byte is only ever
 /// parsed from [`State::Idle`] — a byte arriving mid-transaction is always
 /// consumed as more of that transaction's payload, never reinterpreted as a
-/// fresh opcode (that's what [`DwServer::data_write`]'s timeout check is
+/// fresh opcode (that's what [`DWServer::data_write`]'s timeout check is
 /// for). This is also why [`opcode::RESET1`](opcode)/`RESET2`/`RESET3` need
 /// no special handling beyond being normal opcodes: by the time an opcode
 /// byte is parsed, whatever transaction there was has already ended
@@ -86,7 +86,7 @@ pub(super) enum State {
     },
 }
 
-impl DwServer {
+impl DWServer {
     /// Becker-port data register write: feed one byte from the client into
     /// the protocol state machine. `cycle` is a monotonically increasing
     /// CPU cycle count, used only to detect a stalled transaction (see

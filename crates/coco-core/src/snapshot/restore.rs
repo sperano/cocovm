@@ -307,7 +307,7 @@ fn restore_vhds(
 fn restore_drivewire(
     machine: &mut Machine,
     media: &MediaRefs,
-    mut drivewire: [Option<drivewire::DriveWireImage>; drivewire::DRIVE_COUNT],
+    mut drivewire: [Option<drivewire::DWImage>; drivewire::DRIVE_COUNT],
     missing: &mut Vec<String>,
 ) -> Result<(), SnapshotError> {
     check_media_ref_capacity(&media.drivewire, drivewire::DRIVE_COUNT, "DriveWire")?;

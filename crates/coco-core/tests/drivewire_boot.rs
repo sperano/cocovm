@@ -28,7 +28,7 @@
 use std::path::{Path, PathBuf};
 
 use coco_core::cart::ROMPak;
-use coco_core::drivewire::DriveWireImage;
+use coco_core::drivewire::DWImage;
 use coco_core::{Machine, MachineConfig};
 
 fn asset(dir: &str, name: &str) -> PathBuf {
@@ -166,7 +166,7 @@ fn boot_to_hdbdos_prompt_with_disk_mounted(
     m.bus.enable_drivewire();
     let dw = m.bus.drivewire.as_mut().unwrap();
     dw.set_hdbdos_mode(hdbdos_mode);
-    dw.mount(0, DriveWireImage::File(disk_file));
+    dw.mount(0, DWImage::File(disk_file));
     m.reset();
 
     wait_for_hdbdos_prompt(&mut m, MAX_BOOT_FIELDS);
@@ -212,7 +212,7 @@ fn hdbdos_dir_lists_drivewire_disk() {
         .drivewire
         .as_mut()
         .unwrap()
-        .mount(0, DriveWireImage::File(dsk_file));
+        .mount(0, DWImage::File(dsk_file));
 
     type_str(&mut m, "DIR");
     tap_char(&mut m, '\r');
@@ -394,7 +394,7 @@ fn nitros9_l2_boots_over_drivewire_to_shell_prompt() {
         .drivewire
         .as_mut()
         .unwrap()
-        .mount(0, DriveWireImage::File(scratch_file));
+        .mount(0, DWImage::File(scratch_file));
 
     type_str(&mut m, "DOS");
     tap_char(&mut m, '\r');

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::drivewire::DriveWireImage;
+use crate::drivewire::DWImage;
 use crate::vhd::VHDImage;
 use crate::{drivewire, fdc, vhd, Machine};
 
@@ -98,7 +98,7 @@ pub struct MediaSources {
     pub cart_roms: Vec<(Option<u8>, Vec<u8>)>,
     pub disks: [Option<Vec<u8>>; fdc::DRIVE_COUNT],
     pub vhds: [Option<VHDImage>; vhd::DRIVE_COUNT],
-    pub drivewire: [Option<DriveWireImage>; drivewire::DRIVE_COUNT],
+    pub drivewire: [Option<DWImage>; drivewire::DRIVE_COUNT],
     pub tape: Option<Vec<u8>>,
 }
 

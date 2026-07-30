@@ -49,7 +49,7 @@ use std::path::{Path, PathBuf};
 use chrono::{Datelike, Timelike};
 use clap::Parser;
 use coco_core::cart::{GamesMasterCartridge, MultiPak, ROMPak};
-use coco_core::drivewire::{self, DriveWireImage, DwTime};
+use coco_core::drivewire::{self, DWImage, DWTime};
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::orch90::Orch90;

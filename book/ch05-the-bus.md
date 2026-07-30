@@ -359,7 +359,7 @@ dispatch on:
 | `$FF00–$FF1F` | PIA0 | Keyboard rows, joystick comparator, sync IRQs. Only 4 registers exist; `addr & 0x03` mirrors them across the whole 32-byte range. |
 | `$FF20–$FF3F` | PIA1 | 6-bit DAC, cassette, VDG-legacy mode bits. Same 4-register mirror. |
 | `$FF40–$FF7E` | Cartridge / FDC (SCS\*) | The "standard" SCS window is `$FF40–$FF5F`; some carts (RS-232 Pak, Orchestra-90, the Sound/Speech Cartridge) decode further registers out to `$FF7E` — the full address bus reaches the expansion connector regardless of what the motherboard "intends." |
-| `$FF41` / `$FF42` | Becker port (DriveWire) | Intercepts **ahead of** cartridge dispatch, on both decode paths, whenever a `DwServer` is installed — mirrors MAME's handler-install order. |
+| `$FF41` / `$FF42` | Becker port (DriveWire) | Intercepts **ahead of** cartridge dispatch, on both decode paths, whenever a `DWServer` is installed — mirrors MAME's handler-install order. |
 | `$FF7F` | Multi-Pak Interface select | Only meaningful with an MPI inserted; decoded by the MPI itself, never by a plugged-in cart. |
 | `$FF80–$FF86` | VHD (virtual hard disk, NitrOS-9 `emudsk`) | `$FF87–$FF8F` is unmapped/open bus. |
 | `$FF90` | INIT0 | MMU enable, ROM map bits, MC3, IRQ/FIRQ master enables, CoCo-compat select. |

@@ -175,7 +175,7 @@ const DW_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 10.0);
 
 /// Status-bar DriveWire activity indicator (see [`DW_ICON_SIZE`]): red
 /// while a sector has recently been read from or written to that drive
-/// over the Becker port ([`coco_core::drivewire::DwServer::drive_ops`]),
+/// over the Becker port ([`coco_core::drivewire::DWServer::drive_ops`]),
 /// gray otherwise. A small plug body sits at the right with two punched
 /// pin slots, and a shell-colored cable line runs from the plug to the
 /// icon's left edge with one sag/kink partway along, evoking a serial

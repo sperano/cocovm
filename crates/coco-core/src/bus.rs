@@ -20,7 +20,7 @@ use crate::bitbanger::BitBanger;
 use crate::cart::Cart;
 use crate::cassette::Cassette;
 use crate::config::{MachineVariant, MemorySize};
-use crate::drivewire::DwServer;
+use crate::drivewire::DWServer;
 use crate::gime::{self, GIME};
 use crate::joystick::Joysticks;
 use crate::keyboard::Keyboard;
@@ -64,7 +64,7 @@ pub struct SystemBus {
     /// disabled — $FF41/$FF42 fall through to cartridge dispatch exactly as
     /// before. Public like `vhd` so the frontend and tests reach it
     /// directly (mount images, enable HDB-DOS mode, etc.).
-    pub drivewire: Option<DwServer>,
+    pub drivewire: Option<DWServer>,
     pub keyboard: Keyboard,
     pub joysticks: Joysticks,
     pub cassette: Cassette,
@@ -172,7 +172,7 @@ impl SystemBus {
     /// discard mounted images or protocol state).
     pub fn enable_drivewire(&mut self) {
         if self.drivewire.is_none() {
-            self.drivewire = Some(DwServer::new());
+            self.drivewire = Some(DWServer::new());
         }
     }
 

@@ -32,7 +32,7 @@ impl CocoApp {
                 .open(&path)
                 .map_err(|e| format!("could not open {}: {e}", path.display()))?;
             if let Some(ref mut dw) = self.machine.bus.drivewire {
-                dw.mount(drive, DriveWireImage::File(file));
+                dw.mount(drive, DWImage::File(file));
                 self.dw_paths[drive] = Some(path);
             } else {
                 return Err("Becker port not enabled".to_string());
