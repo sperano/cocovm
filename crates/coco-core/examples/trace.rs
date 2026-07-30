@@ -15,7 +15,7 @@
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
-use coco_core::cart::RomPak;
+use coco_core::cart::ROMPak;
 use coco_core::debug::TraceEntry;
 use coco_core::{Machine, MachineConfig, StepKind};
 
@@ -36,7 +36,7 @@ fn main() {
     let mut m = Machine::new(MachineConfig::default(), load_rom());
     if let Some(path) = &cart_path {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
-        m.insert_cartridge(RomPak::from_bytes(&bytes, true).unwrap());
+        m.insert_cartridge(ROMPak::from_bytes(&bytes, true).unwrap());
         m.reset();
     }
     let out = std::io::stdout();

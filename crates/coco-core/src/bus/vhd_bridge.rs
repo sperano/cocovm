@@ -111,7 +111,7 @@ impl SystemBus {
     /// The image mounted in `drive`, for the command bodies above. Panics if
     /// called on an unmounted drive — every call site is guarded by
     /// `vhd_execute_command`'s own mounted check first.
-    fn vhd_image_mut(&mut self, drive: usize) -> &mut vhd::VhdImage {
+    fn vhd_image_mut(&mut self, drive: usize) -> &mut vhd::VHDImage {
         self.vhd.drives[drive]
             .image
             .as_mut()

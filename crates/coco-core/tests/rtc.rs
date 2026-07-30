@@ -8,7 +8,7 @@ use std::rc::Rc;
 use coco_core::Machine;
 use coco_core::cart::{Cartridge, MultiPak};
 use coco_core::config::MachineConfig;
-use coco_core::rtc::{DistoRtc, RTCTime};
+use coco_core::rtc::{DistoRTC, RTCTime};
 use mc6809::Bus;
 
 const RTC_DATA: u16 = 0xFF50;
@@ -40,16 +40,16 @@ const FIXED_TIME: RTCTime = RTCTime {
     second: 56,
 };
 
-fn fixed_rtc() -> DistoRtc {
-    DistoRtc::new(Box::new(|| FIXED_TIME))
+fn fixed_rtc() -> DistoRTC {
+    DistoRTC::new(Box::new(|| FIXED_TIME))
 }
 
 /// An RTC whose time source's seconds-within-minute field the test can
 /// advance by hand.
-fn ticking_rtc() -> (DistoRtc, Rc<Cell<u8>>) {
+fn ticking_rtc() -> (DistoRTC, Rc<Cell<u8>>) {
     let seconds = Rc::new(Cell::new(0u8));
     let source = Rc::clone(&seconds);
-    let rtc = DistoRtc::new(Box::new(move || RTCTime {
+    let rtc = DistoRTC::new(Box::new(move || RTCTime {
         second: source.get(),
         ..FIXED_TIME
     }));
@@ -161,7 +161,7 @@ fn twelve_hour_mode_survives_later_cf_writes_and_reset_reads_back_clear() {
 
 #[test]
 fn twelve_hour_mode_shows_midnight_as_12_am() {
-    let mut cart = DistoRtc::new(Box::new(|| RTCTime {
+    let mut cart = DistoRTC::new(Box::new(|| RTCTime {
         hour: 0,
         ..FIXED_TIME
     }));

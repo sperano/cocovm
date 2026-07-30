@@ -164,7 +164,7 @@ impl CocoApp {
                 .write(true)
                 .open(&path)
                 .map_err(|e| format!("could not open {}: {e}", path.display()))?;
-            self.machine.bus.vhd.insert(drive, VhdImage::File(file));
+            self.machine.bus.vhd.insert(drive, VHDImage::File(file));
             self.vhd_paths[drive] = Some(path);
             Ok(())
         })();

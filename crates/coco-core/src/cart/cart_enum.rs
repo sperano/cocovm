@@ -5,9 +5,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::empty::EmptySlot;
-use super::gmc::Gmc;
+use super::gmc::GamesMasterCartridge;
 use super::multipak::MultiPak;
-use super::rompak::{BankedRomPak, RomPak};
+use super::rompak::{BankedROMPak, ROMPak};
 use super::Cartridge;
 
 /// The cartridge in the expansion port (or in a [`MultiPak`] slot), as a
@@ -27,12 +27,12 @@ pub enum Cart {
     /// Nothing in the port ([`EmptySlot`]).
     Empty(EmptySlot),
     /// Plain (up to 32K) game/utility ROM pak.
-    RomPak(RomPak),
+    ROMPak(ROMPak),
     /// RoboCop/Predator-style banked ROM pak.
-    BankedRomPak(BankedRomPak),
+    BankedROMPak(BankedROMPak),
     /// Games Master Cartridge: banked ROM + SN76489A PSG.
-    Gmc(Gmc),
-    /// FD-502 floppy disk controller. Boxed for size, like [`Cart::Ssc`].
+    GamesMasterCartridge(GamesMasterCartridge),
+    /// FD-502 floppy disk controller. Boxed for size, like [`Cart::SoundSpeechCartridge`].
     DiskCart(Box<crate::fdc::DiskCart>),
     /// Multi-Pak Interface. Boxed to break the size recursion — a
     /// [`MultiPak`] holds four [`Cart`] slots of its own.
@@ -40,12 +40,12 @@ pub enum Cart {
     /// Orchestra-90/CC stereo DAC cartridge.
     Orch90(crate::orch90::Orch90),
     /// Disto real-time clock.
-    DistoRtc(crate::rtc::DistoRtc),
+    DistoRTC(crate::rtc::DistoRTC),
     /// Deluxe RS-232 Program Pak.
-    DeluxeRs232(crate::rs232::DeluxeRs232),
+    DeluxeRS232(crate::rs232::DeluxeRS232),
     /// Sound/Speech Cartridge. Boxed for size: the AY + speech-engine state
     /// is by far the largest cartridge (clippy `large_enum_variant`).
-    Ssc(Box<crate::ssc::Ssc>),
+    SoundSpeechCartridge(Box<crate::ssc::SoundSpeechCartridge>),
     /// Out-of-crate [`Cartridge`] implementation (test doubles) — see the
     /// type-level doc. Skipped: a boxed trait object has no serializable
     /// shape, so serializing a machine with one inserted is a hard error
@@ -64,15 +64,15 @@ macro_rules! with_each_cart {
     ($self:expr, $cart:ident => $body:expr) => {
         match $self {
             Cart::Empty($cart) => $body,
-            Cart::RomPak($cart) => $body,
-            Cart::BankedRomPak($cart) => $body,
-            Cart::Gmc($cart) => $body,
+            Cart::ROMPak($cart) => $body,
+            Cart::BankedROMPak($cart) => $body,
+            Cart::GamesMasterCartridge($cart) => $body,
             Cart::DiskCart($cart) => $body,
             Cart::MultiPak($cart) => $body,
             Cart::Orch90($cart) => $body,
-            Cart::DistoRtc($cart) => $body,
-            Cart::DeluxeRs232($cart) => $body,
-            Cart::Ssc($cart) => $body,
+            Cart::DistoRTC($cart) => $body,
+            Cart::DeluxeRS232($cart) => $body,
+            Cart::SoundSpeechCartridge($cart) => $body,
             Cart::Custom($cart) => $body,
         }
     };
@@ -171,7 +171,7 @@ impl Cart {
 /// Generates one device accessor below: the `$variant` payload if that's
 /// what this cart is, else searching a [`MultiPak`]'s slots through its
 /// paired `MultiPak::$finder`. The `let` rebind deref-coerces boxed payloads
-/// ([`Cart::DiskCart`], [`Cart::Ssc`]) and reborrows plain ones alike.
+/// ([`Cart::DiskCart`], [`Cart::SoundSpeechCartridge`]) and reborrows plain ones alike.
 macro_rules! cart_accessor {
     ($(#[$doc:meta])* $name:ident, $finder:ident, $variant:ident, $ty:ty) => {
         $(#[$doc])*
@@ -219,13 +219,13 @@ impl Cart {
     cart_accessor!(
         /// The Deluxe RS-232 pak, if one is inserted — how the frontend
         /// swaps host endpoints and reads the TX/RX activity counters.
-        as_deluxe_rs232, find_deluxe_rs232, DeluxeRs232, crate::rs232::DeluxeRs232
+        as_deluxe_rs232, find_deluxe_rs232, DeluxeRS232, crate::rs232::DeluxeRS232
     );
 
     cart_accessor!(
         /// The Disto real-time clock, if one is inserted — how the frontend
         /// reaches the clock chip (sync to host time).
-        as_disto_rtc, find_disto_rtc, DistoRtc, crate::rtc::DistoRtc
+        as_disto_rtc, find_disto_rtc, DistoRTC, crate::rtc::DistoRTC
     );
 
     cart_accessor!(
@@ -235,12 +235,12 @@ impl Cart {
     );
 
     cart_accessor!(
-        /// The [`crate::ssc::Ssc`] Sound/Speech Cartridge, if one is
+        /// The [`crate::ssc::SoundSpeechCartridge`] Sound/Speech Cartridge, if one is
         /// inserted — tests and debug tooling reach direct AY-3-8913
-        /// register access ([`crate::ssc::Ssc::ay_write`]/
-        /// [`crate::ssc::Ssc::ay_read`]), bypassing the `$FF7D`/`$FF7E`
+        /// register access ([`crate::ssc::SoundSpeechCartridge::ay_write`]/
+        /// [`crate::ssc::SoundSpeechCartridge::ay_read`]), bypassing the `$FF7D`/`$FF7E`
         /// host-byte protocol (see `crate::ssc`'s module doc comment).
-        as_ssc, find_ssc, Ssc, crate::ssc::Ssc
+        as_ssc, find_ssc, SoundSpeechCartridge, crate::ssc::SoundSpeechCartridge
     );
 }
 
@@ -312,15 +312,15 @@ impl std::fmt::Debug for Cart {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Cart::Empty(slot) => f.debug_tuple("Empty").field(slot).finish(),
-            Cart::RomPak(pak) => f.debug_tuple("RomPak").field(pak).finish(),
-            Cart::BankedRomPak(pak) => f.debug_tuple("BankedRomPak").field(pak).finish(),
-            Cart::Gmc(gmc) => f.debug_tuple("Gmc").field(gmc).finish(),
+            Cart::ROMPak(pak) => f.debug_tuple("ROMPak").field(pak).finish(),
+            Cart::BankedROMPak(pak) => f.debug_tuple("BankedROMPak").field(pak).finish(),
+            Cart::GamesMasterCartridge(gmc) => f.debug_tuple("GamesMasterCartridge").field(gmc).finish(),
             Cart::DiskCart(disk) => f.debug_tuple("DiskCart").field(disk).finish(),
             Cart::MultiPak(mp) => f.debug_tuple("MultiPak").field(mp).finish(),
             Cart::Orch90(orch) => f.debug_tuple("Orch90").field(orch).finish(),
-            Cart::DistoRtc(rtc) => f.debug_tuple("DistoRtc").field(rtc).finish(),
-            Cart::DeluxeRs232(_) => f.write_str("DeluxeRs232"),
-            Cart::Ssc(_) => f.write_str("Ssc"),
+            Cart::DistoRTC(rtc) => f.debug_tuple("DistoRTC").field(rtc).finish(),
+            Cart::DeluxeRS232(_) => f.write_str("DeluxeRS232"),
+            Cart::SoundSpeechCartridge(_) => f.write_str("SoundSpeechCartridge"),
             Cart::Custom(_) => f.write_str("Custom"),
         }
     }
@@ -340,12 +340,12 @@ macro_rules! impl_from_cart {
 
 impl_from_cart!(
     EmptySlot => Empty,
-    RomPak => RomPak,
-    BankedRomPak => BankedRomPak,
-    Gmc => Gmc,
+    ROMPak => ROMPak,
+    BankedROMPak => BankedROMPak,
+    GamesMasterCartridge => GamesMasterCartridge,
     crate::orch90::Orch90 => Orch90,
-    crate::rtc::DistoRtc => DistoRtc,
-    crate::rs232::DeluxeRs232 => DeluxeRs232,
+    crate::rtc::DistoRTC => DistoRTC,
+    crate::rs232::DeluxeRS232 => DeluxeRS232,
 );
 
 impl From<crate::fdc::DiskCart> for Cart {
@@ -355,10 +355,10 @@ impl From<crate::fdc::DiskCart> for Cart {
     }
 }
 
-impl From<crate::ssc::Ssc> for Cart {
-    /// Boxes the SSC — see [`Cart::Ssc`].
-    fn from(ssc: crate::ssc::Ssc) -> Self {
-        Cart::Ssc(Box::new(ssc))
+impl From<crate::ssc::SoundSpeechCartridge> for Cart {
+    /// Boxes the SSC — see [`Cart::SoundSpeechCartridge`].
+    fn from(ssc: crate::ssc::SoundSpeechCartridge) -> Self {
+        Cart::SoundSpeechCartridge(Box::new(ssc))
     }
 }
 

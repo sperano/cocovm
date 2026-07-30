@@ -1,5 +1,5 @@
-//! Plain and bank-switched ROM paks: [`RomPak`] (up to 32K, fixed) and
-//! [`BankedRomPak`] (up to 128K, `$FF40`-latched 16K window).
+//! Plain and bank-switched ROM paks: [`ROMPak`] (up to 32K, fixed) and
+//! [`BankedROMPak`] (up to 128K, `$FF40`-latched 16K window).
 
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ const ROM_PAK_BASE: u16 = 0x8000;
 /// at `$C000`.
 const ROM_PAK_HALF_SWAP: u16 = 0x4000;
 
-/// Error constructing a [`RomPak`] from a raw image.
+/// Error constructing a [`ROMPak`] from a raw image.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RomPakError {
     /// The image had zero bytes.
@@ -57,10 +57,10 @@ impl std::error::Error for RomPakError {}
 /// regardless of the original image size (fact 5). Indexing swaps the 16K
 /// halves — see [`ROM_PAK_HALF_SWAP`].
 #[derive(Serialize, Deserialize)]
-pub struct RomPak {
+pub struct ROMPak {
     /// Skipped: COPYRIGHTED pak bytes (always a 32K mirror-fill) never
     /// travel through a snapshot; re-injected on restore via
-    /// [`RomPak::reattach_image`] (`docs/plan-save-states.md`). Deserializes
+    /// [`ROMPak::reattach_image`] (`docs/plan-save-states.md`). Deserializes
     /// to an empty `Box<[u8]>` until reattached.
     #[serde(skip)]
     image: Box<[u8]>,
@@ -69,7 +69,7 @@ pub struct RomPak {
     autostart: bool,
 }
 
-impl std::fmt::Debug for RomPak {
+impl std::fmt::Debug for ROMPak {
     /// Elides the 32K image body; only its length and the autostart flag are
     /// interesting for debugging.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -80,7 +80,7 @@ impl std::fmt::Debug for RomPak {
     }
 }
 
-impl RomPak {
+impl ROMPak {
     /// Build a ROM pak from a raw image. Rejects empty images and images
     /// larger than [`ROM_PAK_MAX_LEN`]; anything in between is mirror-filled
     /// to 32K.
@@ -100,10 +100,10 @@ impl RomPak {
 
     /// Restore-path-only: re-inject this pak's image after a snapshot
     /// restore, leaving `autostart` untouched (unlike
-    /// [`RomPak::from_bytes`], which always takes a fresh value for it) — the
+    /// [`ROMPak::from_bytes`], which always takes a fresh value for it) — the
     /// deserialized `autostart` is itself the restored machine state
     /// (`docs/plan-save-states.md`). Same validation and mirror-fill as
-    /// [`RomPak::from_bytes`].
+    /// [`ROMPak::from_bytes`].
     pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), RomPakError> {
         if bytes.is_empty() {
             return Err(RomPakError::Empty);
@@ -127,8 +127,8 @@ impl RomPak {
 /// an already-periodic buffer, so the result is byte-identical to plain
 /// repetition (`image[i % len]`) for every image size — the doubling is only
 /// an efficiency trick, kept in MAME's shape so the provenance is obvious.
-/// The slot device runs this same loop for every pak type, so [`RomPak`]
-/// (32K) and [`BankedRomPak`] (128K) share it.
+/// The slot device runs this same loop for every pak type, so [`ROMPak`]
+/// (32K) and [`BankedROMPak`] (128K) share it.
 fn mirror_fill(bytes: &[u8], total_len: usize) -> Box<[u8]> {
     let mut image = vec![0u8; total_len].into_boxed_slice();
     image[..bytes.len()].copy_from_slice(bytes);
@@ -142,7 +142,7 @@ fn mirror_fill(bytes: &[u8], total_len: usize) -> Box<[u8]> {
     image
 }
 
-impl Cartridge for RomPak {
+impl Cartridge for ROMPak {
     fn read(&mut self, _addr: u16) -> u8 {
         IO_OPEN_BUS
     }
@@ -161,7 +161,7 @@ impl Cartridge for RomPak {
 
 /// The banked pak's CTS window: the `$FF40` latch slides a **16K** view over
 /// the image (MAME `coco_pak.cpp` `coco_pak_banked_device::get_cart_size()`
-/// = `0x4000`), unlike the plain [`RomPak`]'s fixed 32K.
+/// = `0x4000`), unlike the plain [`ROMPak`]'s fixed 32K.
 pub const BANKED_PAK_WINDOW_LEN: usize = 16 * 1024;
 
 /// Largest banked-pak image: MAME's banked cart ROM region is 128K
@@ -174,7 +174,7 @@ pub const BANKED_PAK_MAX_LEN: usize = 128 * 1024;
 /// of the SCS window).
 const BANKED_PAK_BANK_REG: u16 = 0xFF40;
 
-/// Error constructing a [`BankedRomPak`] from a raw image.
+/// Error constructing a [`BankedROMPak`] from a raw image.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BankedPakError {
     /// The image had zero bytes.
@@ -208,10 +208,10 @@ impl std::error::Error for BankedPakError {}
 /// `(m_pos * 0x4000) % m_eprom->bytes()`), and the latch resets to bank 0 on
 /// the RESET* line (`device_reset`).
 #[derive(Serialize, Deserialize)]
-pub struct BankedRomPak {
+pub struct BankedROMPak {
     /// Skipped: COPYRIGHTED pak bytes (always a 128K mirror-fill) never
     /// travel through a snapshot; re-injected on restore via
-    /// [`BankedRomPak::reattach_image`] (`docs/plan-save-states.md`).
+    /// [`BankedROMPak::reattach_image`] (`docs/plan-save-states.md`).
     /// Deserializes to an empty `Box<[u8]>` until reattached.
     #[serde(skip)]
     image: Box<[u8]>,
@@ -223,7 +223,7 @@ pub struct BankedRomPak {
     autostart: bool,
 }
 
-impl std::fmt::Debug for BankedRomPak {
+impl std::fmt::Debug for BankedROMPak {
     /// Elides the 128K image body.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BankedRomPak")
@@ -233,7 +233,7 @@ impl std::fmt::Debug for BankedRomPak {
     }
 }
 
-impl BankedRomPak {
+impl BankedROMPak {
     /// Build a banked ROM pak from a raw image. Rejects empty images and
     /// images larger than [`BANKED_PAK_MAX_LEN`]; anything in between is
     /// mirror-filled to the full 128K (MAME loads every pak type through the
@@ -255,7 +255,7 @@ impl BankedRomPak {
     /// Restore-path-only: re-inject this pak's image after a snapshot
     /// restore, leaving `bank`/`autostart` untouched — both are themselves
     /// restored machine state (`docs/plan-save-states.md`). Same validation
-    /// and mirror-fill as [`BankedRomPak::from_bytes`].
+    /// and mirror-fill as [`BankedROMPak::from_bytes`].
     pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
         if bytes.is_empty() {
             return Err(BankedPakError::Empty);
@@ -268,7 +268,7 @@ impl BankedRomPak {
     }
 }
 
-impl Cartridge for BankedRomPak {
+impl Cartridge for BankedROMPak {
     fn read(&mut self, _addr: u16) -> u8 {
         IO_OPEN_BUS
     }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use coco_core::cart::MultiPak;
 use coco_core::fdc::{DiskCart, JvcDisk};
-use coco_core::vhd::VhdImage;
+use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig};
 
 fn asset(dir: &str, name: &str) -> PathBuf {
@@ -106,7 +106,7 @@ fn setup_machine(through_mpi: bool) -> Option<(Machine, PathBuf)> {
     } else {
         m.insert_cartridge(cart);
     }
-    m.bus.vhd.insert(0, VhdImage::File(vhd_file));
+    m.bus.vhd.insert(0, VHDImage::File(vhd_file));
     m.reset();
 
     Some((m, vhd_copy))

@@ -329,7 +329,7 @@ fn rs232_menu_inserts_and_removes_the_pak() {
     click(&mut harness, "Insert Deluxe RS-232 Pak");
     {
         let app = harness.state_mut();
-        assert!(matches!(app.rs232, Some(Rs232Endpoint::Loopback)));
+        assert!(matches!(app.rs232, Some(RS232Endpoint::Loopback)));
         assert!(
             app.machine.bus.cart.as_deluxe_rs232().is_some(),
             "the pak must be reachable behind the trait object"

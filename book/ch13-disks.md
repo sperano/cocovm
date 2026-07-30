@@ -227,7 +227,7 @@ what the recomputation does.
 One more thing `DiskCart` is, which is easy to miss because none of the
 four registers hint at it: a ROM pak. The same cartridge serves Disk
 Extended Color BASIC — `disk11.rom` — through the expansion port's CTS
-window, mirror-filled exactly the way a plain `RomPak` is
+window, mirror-filled exactly the way a plain `ROMPak` is
 ([`disk_cart.rs:111-120`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/fdc/disk_cart.rs#L111-L120)).
 It deliberately does *not* tie the CART\* line to the Q clock the way an
 autostart game pak does, and the doc comment on that trait method

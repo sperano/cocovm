@@ -66,7 +66,7 @@ motherboard-unmapped, not the disk controller's SCS window — see
     forces `busy` to `false` — this is MAME `coco_ssc_device`'s modelled
     behavior for the SP0256 reset line, not an emulator convenience we added.
   - Any other transition (bit 0 stays 0, or goes 0→1) does nothing to the AY.
-  - Edge detection needs a "previous bit 0" to compare against; `Ssc` inits
+  - Edge detection needs a "previous bit 0" to compare against; `SoundSpeechCartridge` inits
     it to `false` at power-on/reset so the very first `$FF7D` write — even if
     it happens to be bit 0 = 0 — is never itself treated as a falling edge.
 

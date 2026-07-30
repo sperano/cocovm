@@ -18,7 +18,7 @@ impl CocoApp {
                 return;
             }
         };
-        match RomPak::from_bytes(&bytes, self.autostart_cart) {
+        match ROMPak::from_bytes(&bytes, self.autostart_cart) {
             Ok(pak) => {
                 self.flush_dirty_disks();
                 self.machine.insert_cartridge(pak);
@@ -49,7 +49,7 @@ impl CocoApp {
                 return;
             }
         };
-        match Gmc::from_bytes(&bytes, self.autostart_cart) {
+        match GamesMasterCartridge::from_bytes(&bytes, self.autostart_cart) {
             Ok(cart) => {
                 self.flush_dirty_disks();
                 self.machine.insert_cartridge(cart);
@@ -115,7 +115,7 @@ impl CocoApp {
     /// and `PEEK`/`POKE` code drive the ACIA registers directly).
     pub(crate) fn insert_rs232(&mut self) {
         self.flush_dirty_disks();
-        let mut pak = coco_core::rs232::DeluxeRs232::new();
+        let mut pak = coco_core::rs232::DeluxeRS232::new();
         let rom_path = rs232_eprom_default_path();
         let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
             pak.set_eprom(&bytes);
@@ -128,7 +128,7 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None;
-        self.rs232 = Some(Rs232Endpoint::Loopback);
+        self.rs232 = Some(RS232Endpoint::Loopback);
         self.rs232_eprom_path = eprom_path;
     }
 
@@ -136,16 +136,16 @@ impl CocoApp {
     /// (the menu's Loopback/TCP/PTY selection). Binding failures (port in
     /// use, pty exhaustion) land in [`Self::cart_error`] and leave the
     /// current endpoint in place.
-    pub(crate) fn rs232_set_endpoint(&mut self, kind: Rs232EndpointKind) {
+    pub(crate) fn rs232_set_endpoint(&mut self, kind: RS232EndpointKind) {
         let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() else {
             return;
         };
         match kind {
-            Rs232EndpointKind::Loopback => {
+            RS232EndpointKind::Loopback => {
                 pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
-                self.rs232 = Some(Rs232Endpoint::Loopback);
+                self.rs232 = Some(RS232Endpoint::Loopback);
             }
-            Rs232EndpointKind::Tcp => match coco_core::serial::TcpEndpoint::bind(&self.rs232_tcp_addr)
+            RS232EndpointKind::TCP => match coco_core::serial::TcpEndpoint::bind(&self.rs232_tcp_addr)
             {
                 Ok(ep) => {
                     // Show the address actually bound, so ":0" (OS-assigned
@@ -154,7 +154,7 @@ impl CocoApp {
                         .local_addr()
                         .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
                     pak.set_endpoint(Box::new(ep));
-                    self.rs232 = Some(Rs232Endpoint::Tcp(addr));
+                    self.rs232 = Some(RS232Endpoint::TCP(addr));
                 }
                 Err(e) => {
                     self.cart_error =
@@ -162,11 +162,11 @@ impl CocoApp {
                 }
             },
             #[cfg(unix)]
-            Rs232EndpointKind::Pty => match coco_core::serial::PtyEndpoint::new() {
+            RS232EndpointKind::PTY => match coco_core::serial::PtyEndpoint::new() {
                 Ok(ep) => {
                     let path = ep.path().to_string();
                     pak.set_endpoint(Box::new(ep));
-                    self.rs232 = Some(Rs232Endpoint::Pty(path));
+                    self.rs232 = Some(RS232Endpoint::PTY(path));
                 }
                 Err(e) => {
                     self.cart_error = Some(format!("could not open a pty: {e}"));
@@ -181,7 +181,7 @@ impl CocoApp {
     /// paks, this can't fail.
     pub(crate) fn insert_ssc(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(Ssc::new());
+        self.machine.insert_cartridge(SoundSpeechCartridge::new());
         self.machine.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -232,7 +232,7 @@ impl CocoApp {
                 return;
             }
         };
-        match RomPak::from_bytes(&bytes, self.autostart_cart) {
+        match ROMPak::from_bytes(&bytes, self.autostart_cart) {
             Ok(pak) => {
                 self.flush_dirty_disks();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
@@ -259,7 +259,7 @@ impl CocoApp {
                 return;
             }
         };
-        match Gmc::from_bytes(&bytes, self.autostart_cart) {
+        match GamesMasterCartridge::from_bytes(&bytes, self.autostart_cart) {
             Ok(cart) => {
                 self.flush_dirty_disks();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
@@ -341,7 +341,7 @@ impl CocoApp {
     pub(crate) fn mpi_insert_ssc(&mut self, slot: usize) {
         self.flush_dirty_disks();
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, Ssc::new());
+            mp.insert(slot, SoundSpeechCartridge::new());
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::Ssc;
@@ -383,7 +383,7 @@ impl CocoApp {
     /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
     pub(crate) fn insert_rtc(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(DistoRtc::new(host_time_source()));
+        self.machine.insert_cartridge(DistoRTC::new(host_time_source()));
         self.machine.power_cycle();
         self.rtc_direct = true;
         self.cart_path = None;
@@ -407,7 +407,7 @@ impl CocoApp {
             return;
         }
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, DistoRtc::new(host_time_source()));
+            mp.insert(slot, DistoRTC::new(host_time_source()));
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::DistoRTC;

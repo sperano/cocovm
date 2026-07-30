@@ -2,7 +2,7 @@
 //! DriveWire protocol: a byte-stream RPC that lets NitrOS-9 (or DECB, via
 //! HDB-DOS) address disk images living on the host instead of real
 //! hardware, one 256-byte sector at a time. This module is the protocol
-//! engine only — framing, opcodes, checksums, and the [`DwImage`] backing
+//! engine only — framing, opcodes, checksums, and the [`DriveWireImage`] backing
 //! store; the Becker-port register wiring ($FF41/$FF42) that feeds bytes
 //! into [`DwServer::data_write`] and reads them back out of
 //! [`DwServer::data_read`] from the CPU bus is a separate, later task.
@@ -208,7 +208,7 @@ const STATUS_DATA_AVAILABLE: u8 = 0x02;
 
 /// A DriveWire backing image: either an in-memory buffer (tests — small,
 /// cheap to construct and assert against) or a real file, accessed by
-/// seeking rather than loaded whole. Mirrors [`crate::vhd::VhdImage`] with
+/// seeking rather than loaded whole. Mirrors [`crate::vhd::VHDImage`] with
 /// one deliberate difference: a read whose sector lies fully or partly
 /// beyond the image's current length is an *error* here (DriveWire has no
 /// "sparse image" semantics — a read past the end means the client asked
@@ -216,17 +216,17 @@ const STATUS_DATA_AVAILABLE: u8 = 0x02;
 /// silently extends the image (so a fresh, empty image file can become a
 /// valid disk just by formatting it — DECB `FORMAT`/NitrOS-9 `format` write
 /// every sector of a new volume in ascending LSN order).
-pub enum DwImage {
+pub enum DriveWireImage {
     Memory(Vec<u8>),
     File(File),
 }
 
-impl DwImage {
+impl DriveWireImage {
     /// Current length of the backing image in bytes.
     fn len(&self) -> io::Result<u64> {
         match self {
-            DwImage::Memory(bytes) => Ok(bytes.len() as u64),
-            DwImage::File(file) => Ok(file.metadata()?.len()),
+            DriveWireImage::Memory(bytes) => Ok(bytes.len() as u64),
+            DriveWireImage::File(file) => Ok(file.metadata()?.len()),
         }
     }
 
@@ -243,12 +243,12 @@ impl DwImage {
             ));
         }
         match self {
-            DwImage::Memory(bytes) => {
+            DriveWireImage::Memory(bytes) => {
                 let start = offset as usize;
                 buf.copy_from_slice(&bytes[start..start + buf.len()]);
                 Ok(())
             }
-            DwImage::File(file) => {
+            DriveWireImage::File(file) => {
                 file.seek(SeekFrom::Start(offset))?;
                 file.read_exact(buf)
             }
@@ -261,7 +261,7 @@ impl DwImage {
     /// current end and writing extends it the same way a real file does).
     pub(crate) fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
         match self {
-            DwImage::Memory(bytes) => {
+            DriveWireImage::Memory(bytes) => {
                 let end = offset as usize + buf.len();
                 if bytes.len() < end {
                     bytes.resize(end, 0);
@@ -269,7 +269,7 @@ impl DwImage {
                 bytes[offset as usize..end].copy_from_slice(buf);
                 Ok(())
             }
-            DwImage::File(file) => {
+            DriveWireImage::File(file) => {
                 file.seek(SeekFrom::Start(offset))?;
                 file.write_all(buf)
             }
@@ -281,8 +281,8 @@ impl DwImage {
     /// back to check what a command wrote); `None` for a file-backed image.
     pub fn as_memory(&self) -> Option<&[u8]> {
         match self {
-            DwImage::Memory(bytes) => Some(bytes),
-            DwImage::File(_) => None,
+            DriveWireImage::Memory(bytes) => Some(bytes),
+            DriveWireImage::File(_) => None,
         }
     }
 }
@@ -347,7 +347,7 @@ pub struct DwServer {
     /// remounted by path on restore via [`DwServer::reattach`]
     /// (`docs/plan-save-states.md`).
     #[serde(skip)]
-    drives: [Option<DwImage>; DRIVE_COUNT],
+    drives: [Option<DriveWireImage>; DRIVE_COUNT],
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DwServer::mount`]/[`DwServer::eject`].
     dirty: [bool; DRIVE_COUNT],
@@ -402,7 +402,7 @@ impl DwServer {
 
     /// Mount `image` in `drive`, replacing anything already there and
     /// clearing its dirty flag.
-    pub fn mount(&mut self, drive: usize, image: DwImage) {
+    pub fn mount(&mut self, drive: usize, image: DriveWireImage) {
         self.drives[drive] = Some(image);
         self.dirty[drive] = false;
     }
@@ -418,7 +418,7 @@ impl DwServer {
     /// — the restored dirty flag is itself real machine state, not reset by
     /// remounting the same image the snapshot already had open
     /// (`docs/plan-save-states.md`).
-    pub fn reattach(&mut self, drive: usize, image: DwImage) {
+    pub fn reattach(&mut self, drive: usize, image: DriveWireImage) {
         self.drives[drive] = Some(image);
     }
 
@@ -427,8 +427,8 @@ impl DwServer {
     }
 
     /// The image mounted in `drive`, if any — mainly for tests (see
-    /// [`DwImage::as_memory`]).
-    pub fn image(&self, drive: usize) -> Option<&DwImage> {
+    /// [`DriveWireImage::as_memory`]).
+    pub fn image(&self, drive: usize) -> Option<&DriveWireImage> {
         self.drives[drive].as_ref()
     }
 

@@ -2199,7 +2199,7 @@ system (`RestoreNote`) exists specifically so "this came back in a
 documented placeholder form" is a typed, matchable value the frontend can
 react to individually, rather than a string a caller would have to
 pattern-match against wording that might change. The egui frontend, for one,
-filters `RtcPlaceholderTime` out of the user-facing toast, since by the time
+filters `RTCPlaceholderTime` out of the user-facing toast, since by the time
 the toast would show, the RTC has *already* been re-synced — see the very
 next line of `apply_restored_machine`.
 
@@ -2239,7 +2239,7 @@ trivial to produce, they carry their own wording, and they need no type. The
 cost shows up the first time a caller needs to treat one warning differently
 from the others, which is exactly the RTC case: the egui frontend re-injects a
 live time source immediately after `restore` returns, so by the time it would
-display the notes, `RtcPlaceholderTime` is no longer true of its own session.
+display the notes, `RTCPlaceholderTime` is no longer true of its own session.
 Filtering it out means recognizing it, and recognizing a string means matching
 on wording that a future edit is free to change without any warning at all —
 including from a translator. A `matches!` against a variant cannot rot that

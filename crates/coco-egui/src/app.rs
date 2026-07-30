@@ -92,7 +92,7 @@ pub(crate) struct CocoApp {
     /// endpoint its serial line is wired to (the core's trait object can't
     /// describe itself to menu labels, so the frontend tracks it — same
     /// rationale as [`MPISlot`]). `None` means the slot holds something else.
-    pub(crate) rs232: Option<Rs232Endpoint>,
+    pub(crate) rs232: Option<RS232Endpoint>,
     /// Source path of the Deluxe RS-232 pak's optional EPROM dump, if one was
     /// found and installed at insert time ([`Self::insert_rs232`]) — the
     /// save-state counterpart of `cart_path` for this one cart, since the

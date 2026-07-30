@@ -15,7 +15,7 @@ use ciborium::Value;
 use coco_core::cart::MultiPak;
 use coco_core::fdc::{dskreg, DiskCart, JvcDisk};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SnapshotError};
-use coco_core::ssc::{cmd as ssc_cmd, reg as ssc_reg, Ssc};
+use coco_core::ssc::{cmd as ssc_cmd, reg as ssc_reg, SoundSpeechCartridge};
 use coco_core::{Machine, MachineConfig};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -79,10 +79,10 @@ fn rewrap_container(cbor: &[u8], schema: u32) -> Vec<u8> {
 }
 
 /// A minimal machine (empty system ROM — nothing here executes any CPU
-/// instructions) with an [`Ssc`] plugged directly into the cartridge port.
+/// instructions) with an [`SoundSpeechCartridge`] plugged directly into the cartridge port.
 fn machine_with_ssc() -> Machine {
     let mut machine = Machine::new(MachineConfig::default(), Box::new([]));
-    machine.insert_cartridge(Ssc::new());
+    machine.insert_cartridge(SoundSpeechCartridge::new());
     machine
 }
 

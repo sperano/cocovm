@@ -79,7 +79,7 @@ fn read_success() {
     let mut server = DwServer::new();
     let mut image = vec![0u8; SECTOR_SIZE * 2];
     image[SECTOR_SIZE..].copy_from_slice(&pattern_sector());
-    server.mount(0, DwImage::Memory(image));
+    server.mount(0, DriveWireImage::Memory(image));
 
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(1));
@@ -98,7 +98,7 @@ fn read_bumps_drive_ops_for_that_drive_only() {
     let mut server = DwServer::new();
     let mut image = vec![0u8; SECTOR_SIZE * 2];
     image[SECTOR_SIZE..].copy_from_slice(&pattern_sector());
-    server.mount(0, DwImage::Memory(image));
+    server.mount(0, DriveWireImage::Memory(image));
 
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(1));
@@ -121,7 +121,7 @@ fn read_unmounted_drive() {
 #[test]
 fn read_lsn_past_end() {
     let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    server.mount(0, DriveWireImage::Memory(vec![0u8; SECTOR_SIZE]));
     let mut req = vec![opcode::READ, 0];
     req.extend(lsn_bytes(1));
     let reply = feed_and_drain(&mut server, &req);
@@ -133,7 +133,7 @@ fn readex_round_trip_and_retry() {
     let mut server = DwServer::new();
     let mut image = vec![0u8; SECTOR_SIZE];
     image.copy_from_slice(&pattern_sector());
-    server.mount(0, DwImage::Memory(image));
+    server.mount(0, DriveWireImage::Memory(image));
 
     let mut req = vec![opcode::READEX, 0];
     req.extend(lsn_bytes(0));
@@ -193,7 +193,7 @@ fn readex_unmounted_drive_sends_zeros_with_pending_error() {
 #[test]
 fn write_success_sets_dirty_and_persists() {
     let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    server.mount(0, DriveWireImage::Memory(vec![0u8; SECTOR_SIZE]));
 
     let sector = pattern_sector();
     let checksum = checksum_of(&sector);
@@ -213,7 +213,7 @@ fn write_success_sets_dirty_and_persists() {
 #[test]
 fn write_bad_checksum_leaves_image_untouched() {
     let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    server.mount(0, DriveWireImage::Memory(vec![0u8; SECTOR_SIZE]));
 
     let sector = pattern_sector();
     let mut req = vec![opcode::WRITE, 0];
@@ -262,7 +262,7 @@ fn write_unmounted_drive_still_consumes_all_bytes() {
 #[test]
 fn write_past_end_extends_image() {
     let mut server = DwServer::new();
-    server.mount(0, DwImage::Memory(vec![0u8; SECTOR_SIZE]));
+    server.mount(0, DriveWireImage::Memory(vec![0u8; SECTOR_SIZE]));
 
     let sector = pattern_sector();
     let checksum = checksum_of(&sector);
@@ -435,8 +435,8 @@ fn stalled_transaction_times_out() {
 fn hdbdos_mode_remaps_drive_and_lsn() {
     let mut server = DwServer::new();
     server.set_hdbdos_mode(true);
-    server.mount(0, DwImage::Memory(vec![0xAAu8; SECTOR_SIZE]));
-    server.mount(1, DwImage::Memory(pattern_sector().to_vec()));
+    server.mount(0, DriveWireImage::Memory(vec![0xAAu8; SECTOR_SIZE]));
+    server.mount(1, DriveWireImage::Memory(pattern_sector().to_vec()));
 
     // Wire drive byte 0 is ignored; LSN 630 -> drive 1, local LSN 0.
     let mut req = vec![opcode::READ, 0];

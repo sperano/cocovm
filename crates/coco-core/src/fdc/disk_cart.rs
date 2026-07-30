@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cart::{Cartridge, RomPak, RomPakError, IO_OPEN_BUS};
+use crate::cart::{Cartridge, ROMPak, RomPakError, IO_OPEN_BUS};
 use crate::wd1773::WD1773;
 
 use super::jvc::JvcDisk;
@@ -86,7 +86,7 @@ const DSKREG_LAST: u16 = 0xFF47;
 /// Extended Color BASIC ROM through the cartridge's CTS window.
 #[derive(Serialize, Deserialize)]
 pub struct DiskCart {
-    rom: RomPak,
+    rom: ROMPak,
     fdc: WD1773,
     dskreg: u8,
     drives: [Option<JvcDisk>; DRIVE_COUNT],
@@ -110,7 +110,7 @@ impl std::fmt::Debug for DiskCart {
 impl DiskCart {
     /// Build a disk controller cartridge serving `rom` (Disk Extended Color
     /// BASIC, `disk11.rom`) through the CTS window, mirror-filled the same way
-    /// a plain [`RomPak`] is (reused directly: same MAME `coco_pak_device`
+    /// a plain [`ROMPak`] is (reused directly: same MAME `coco_pak_device`
     /// mirror-fill, same CTS-first/half-swap indexing). Never ties CART* to Q —
     /// like other Disk BASIC paks, BASIC finds it via the cold-start `DK` probe,
     /// not autostart.
@@ -120,7 +120,7 @@ impl DiskCart {
     /// halt-enable bit, before any command has run).
     pub fn new(rom: Box<[u8]>) -> Self {
         const AUTOSTART: bool = false;
-        let rom = RomPak::from_bytes(&rom, AUTOSTART)
+        let rom = ROMPak::from_bytes(&rom, AUTOSTART)
             .unwrap_or_else(|e: RomPakError| panic!("invalid disk controller ROM image: {e}"));
         Self {
             rom,
@@ -134,7 +134,7 @@ impl DiskCart {
 
     /// Restore-path-only: re-inject the Disk Extended Color BASIC ROM image
     /// after a snapshot restore — delegates to the inner
-    /// [`RomPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
+    /// [`ROMPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
     /// [`DiskCart::new`], returns a `Result` instead of panicking: a restore
     /// path must not crash the process on a bad ROM.
     pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), RomPakError> {

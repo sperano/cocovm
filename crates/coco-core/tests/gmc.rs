@@ -6,7 +6,7 @@
 //! `coco_pak.cpp`).
 
 use coco_core::cart::{
-    BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN, BankedPakError, BankedRomPak, Cartridge, Gmc,
+    BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN, BankedPakError, BankedROMPak, Cartridge, GamesMasterCartridge,
     MultiPak,
 };
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
@@ -45,12 +45,12 @@ const PSG_MUTE_ALL: [u8; 4] = [0x9F, 0xBF, 0xDF, 0xFF];
 #[test]
 fn rejects_empty_and_oversized_images() {
     assert_eq!(
-        BankedRomPak::from_bytes(&[], false).unwrap_err(),
+        BankedROMPak::from_bytes(&[], false).unwrap_err(),
         BankedPakError::Empty
     );
     let bytes = vec![0u8; BANKED_PAK_MAX_LEN + 1];
     assert_eq!(
-        BankedRomPak::from_bytes(&bytes, false).unwrap_err(),
+        BankedROMPak::from_bytes(&bytes, false).unwrap_err(),
         BankedPakError::TooLarge {
             len: BANKED_PAK_MAX_LEN + 1
         }
@@ -59,7 +59,7 @@ fn rejects_empty_and_oversized_images() {
 
 #[test]
 fn bank_latch_pages_the_16k_window() {
-    let mut pak = BankedRomPak::from_bytes(&banked_image(8), false).unwrap();
+    let mut pak = BankedROMPak::from_bytes(&banked_image(8), false).unwrap();
     assert_eq!(pak.rom_read(0xC000), marker(0), "power-on bank is 0");
     for bank in 0..8 {
         pak.write(BANK_REG, bank as u8);
@@ -72,7 +72,7 @@ fn bank_latch_pages_the_16k_window() {
 fn window_mirrors_across_both_16k_halves_of_the_external_map() {
     // Under INIT0's 32K-external map the same 16K bank shows at $8000 and
     // $C000 (the GIME half-swap flips a bit the 16K window mask discards).
-    let mut pak = BankedRomPak::from_bytes(&banked_image(8), false).unwrap();
+    let mut pak = BankedROMPak::from_bytes(&banked_image(8), false).unwrap();
     pak.write(BANK_REG, 5);
     assert_eq!(pak.rom_read(0x8000), marker(5));
     assert_eq!(pak.rom_read(0xA000), marker(5));
@@ -84,7 +84,7 @@ fn bank_latch_wraps_modulo_128k_and_undersized_images_mirror() {
     // A 4-bank (64K) image mirror-fills to 128K, so banks 4-7 repeat banks
     // 0-3; the raw latch byte itself wraps modulo the 128K space (MAME
     // `(m_pos * 0x4000) % m_eprom->bytes()`), so bank 9 lands on bank 1.
-    let mut pak = BankedRomPak::from_bytes(&banked_image(4), false).unwrap();
+    let mut pak = BankedROMPak::from_bytes(&banked_image(4), false).unwrap();
     pak.write(BANK_REG, 6);
     assert_eq!(pak.rom_read(0xC000), marker(2), "mirror-filled upper half");
     pak.write(BANK_REG, 9);
@@ -93,7 +93,7 @@ fn bank_latch_wraps_modulo_128k_and_undersized_images_mirror() {
 
 #[test]
 fn reset_returns_to_bank_zero() {
-    let mut pak = BankedRomPak::from_bytes(&banked_image(8), false).unwrap();
+    let mut pak = BankedROMPak::from_bytes(&banked_image(8), false).unwrap();
     pak.write(BANK_REG, 3);
     assert_eq!(pak.rom_read(0xC000), marker(3));
     pak.reset();
@@ -108,7 +108,7 @@ fn bus_with_gmc() -> SystemBus {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    b.cart = Gmc::from_bytes(&banked_image(8), true).unwrap().into();
+    b.cart = GamesMasterCartridge::from_bytes(&banked_image(8), true).unwrap().into();
     b
 }
 
@@ -151,7 +151,7 @@ fn machine_mixes_gmc_audio_into_the_field_samples() {
     );
     m.bus.write(0x0000, 0x20); // BRA *
     m.bus.write(0x0001, 0xFE);
-    m.insert_cartridge(Gmc::from_bytes(&banked_image(8), false).unwrap());
+    m.insert_cartridge(GamesMasterCartridge::from_bytes(&banked_image(8), false).unwrap());
     m.run_field();
     m.run_field();
     assert!(
@@ -192,7 +192,7 @@ fn autostarted_cart_code_plays_a_tone_through_the_speaker() {
     image[..PSG_PLAYER.len()].copy_from_slice(&PSG_PLAYER);
 
     let mut m = Machine::new(MachineConfig::default(), rom);
-    m.insert_cartridge(Gmc::from_bytes(&image, true).unwrap());
+    m.insert_cartridge(GamesMasterCartridge::from_bytes(&image, true).unwrap());
     m.reset();
 
     // Boot until the cart code has silenced the power-on hum (bounded so a
@@ -231,7 +231,7 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     let mut mp = MultiPak::new(0);
-    mp.insert(1, Gmc::from_bytes(&banked_image(8), false).unwrap());
+    mp.insert(1, GamesMasterCartridge::from_bytes(&banked_image(8), false).unwrap());
     b.cart = mp.into();
 
     // Slot 1 (the GMC) is not SCS-selected (switch points at slot 0): the

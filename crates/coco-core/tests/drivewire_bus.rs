@@ -8,7 +8,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use coco_core::cart::Cart;
-use coco_core::drivewire::{DwImage, SECTOR_SIZE, error, opcode};
+use coco_core::drivewire::{DriveWireImage, SECTOR_SIZE, error, opcode};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
@@ -161,7 +161,7 @@ fn read_round_trip_over_bus() {
     b.drivewire
         .as_mut()
         .unwrap()
-        .mount(0, DwImage::Memory(image));
+        .mount(0, DriveWireImage::Memory(image));
 
     // opcode::READ, drive 0, LSN 1 (24-bit big-endian).
     feed(&mut b, opcode::READ);

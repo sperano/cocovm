@@ -6,13 +6,13 @@
 use std::path::Path;
 
 use coco_core::cart::Cart;
-use coco_core::drivewire::{self, DwImage};
+use coco_core::drivewire::{self, DriveWireImage};
 use coco_core::fdc;
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, RestoredMachine};
-use coco_core::vhd::{self, VhdImage};
+use coco_core::vhd::{self, VHDImage};
 use eframe::egui;
 
-use crate::{CocoApp, MPI_SLOT_COUNT, MPISlot, MPIState, Rs232Endpoint, RomSource, host_dw_clock, host_time_source, machine_label};
+use crate::{CocoApp, MPI_SLOT_COUNT, MPISlot, MPIState, RS232Endpoint, RomSource, host_dw_clock, host_time_source, machine_label};
 
 use super::media_ref::{
     direct_port_rom_path, is_rom_db_pseudo_path, mpi_slot_from_cart, open_if_present,
@@ -97,16 +97,16 @@ impl CocoApp {
                 disks[i] = read_if_present(mr, "floppy", &mut warnings);
             }
         }
-        let mut vhds: [Option<VhdImage>; vhd::DRIVE_COUNT] = Default::default();
+        let mut vhds: [Option<VHDImage>; vhd::DRIVE_COUNT] = Default::default();
         for (i, mr) in media.vhds.iter().enumerate().take(vhd::DRIVE_COUNT) {
             if let Some(mr) = mr {
-                vhds[i] = open_if_present(mr, "VHD", &mut warnings).map(VhdImage::File);
+                vhds[i] = open_if_present(mr, "VHD", &mut warnings).map(VHDImage::File);
             }
         }
-        let mut drivewire: [Option<DwImage>; drivewire::DRIVE_COUNT] = Default::default();
+        let mut drivewire: [Option<DriveWireImage>; drivewire::DRIVE_COUNT] = Default::default();
         for (i, mr) in media.drivewire.iter().enumerate().take(drivewire::DRIVE_COUNT) {
             if let Some(mr) = mr {
-                drivewire[i] = open_if_present(mr, "DriveWire image", &mut warnings).map(DwImage::File);
+                drivewire[i] = open_if_present(mr, "DriveWire image", &mut warnings).map(DriveWireImage::File);
             }
         }
         let tape = match &media.tape {
@@ -140,7 +140,7 @@ impl CocoApp {
 
     /// Swap in a freshly-restored machine and re-sync every piece of
     /// frontend state a snapshot can't carry itself: host-only resources
-    /// dropped by (de)serialization ([`coco_core::rtc::DistoRtc`]'s time
+    /// dropped by (de)serialization ([`coco_core::rtc::DistoRTC`]'s time
     /// source, the DriveWire clock, the RS-232 endpoint — always restored as
     /// loopback), the printer paper window's handle, path mirrors rebuilt
     /// from `media` and the restored cart tree, and emulation pacing.
@@ -175,7 +175,7 @@ impl CocoApp {
             restored
                 .notes
                 .into_iter()
-                .filter(|n| !matches!(n, snapshot::RestoreNote::RtcPlaceholderTime))
+                .filter(|n| !matches!(n, snapshot::RestoreNote::RTCPlaceholderTime))
                 .map(|n| n.to_string()),
         );
 
@@ -206,9 +206,9 @@ impl CocoApp {
 
     /// Re-inject every host-only resource `#[serde(skip)]` dropped by the
     /// round trip, wherever the owning device landed (port or MPI slot
-    /// alike — `Cart::as_*` searches both): [`coco_core::rtc::DistoRtc`]'s
+    /// alike — `Cart::as_*` searches both): [`coco_core::rtc::DistoRTC`]'s
     /// time source, the DriveWire clock, and the Deluxe RS-232 endpoint
-    /// (always restored as loopback — see [`snapshot::RestoreNote::Rs232EndpointLoopback`]).
+    /// (always restored as loopback — see [`snapshot::RestoreNote::RS232EndpointLoopback`]).
     fn reinject_host_only_resources(&mut self) {
         if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
             rtc.set_time_source(host_time_source());
@@ -286,12 +286,12 @@ impl CocoApp {
                 let mut new_rs232_eprom_path = None;
                 for (_, cart) in self.machine.bus.cart.slots_mut() {
                     match cart {
-                        Cart::RomPak(_) | Cart::BankedRomPak(_) | Cart::Gmc(_) | Cart::Orch90(_) => {
+                        Cart::ROMPak(_) | Cart::BankedROMPak(_) | Cart::GamesMasterCartridge(_) | Cart::Orch90(_) => {
                             new_cart_path = direct_port_rom_path(media);
                         }
-                        Cart::DistoRtc(_) => new_rtc_direct = true,
-                        Cart::DeluxeRs232(_) => {
-                            new_rs232 = Some(Rs232Endpoint::Loopback);
+                        Cart::DistoRTC(_) => new_rtc_direct = true,
+                        Cart::DeluxeRS232(_) => {
+                            new_rs232 = Some(RS232Endpoint::Loopback);
                             new_rs232_eprom_path = direct_port_rom_path(media);
                         }
                         _ => {}

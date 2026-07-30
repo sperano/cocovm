@@ -144,15 +144,15 @@ fn restore_cart_roms(
 ) -> Result<(), SnapshotError> {
     for (mpi_slot, cart) in machine.bus.cart.slots_mut() {
         match cart {
-            Cart::RomPak(pak) => require_cart_rom(mpi_slot, "RomPak", media, &mut cart_roms, missing, |b| {
+            Cart::ROMPak(pak) => require_cart_rom(mpi_slot, "RomPak", media, &mut cart_roms, missing, |b| {
                 pak.reattach_image(b)
             })?,
-            Cart::BankedRomPak(pak) => {
+            Cart::BankedROMPak(pak) => {
                 require_cart_rom(mpi_slot, "BankedRomPak", media, &mut cart_roms, missing, |b| {
                     pak.reattach_image(b)
                 })?
             }
-            Cart::Gmc(gmc) => require_cart_rom(mpi_slot, "Gmc", media, &mut cart_roms, missing, |b| {
+            Cart::GamesMasterCartridge(gmc) => require_cart_rom(mpi_slot, "Gmc", media, &mut cart_roms, missing, |b| {
                 gmc.reattach_rom(b)
             })?,
             Cart::DiskCart(disk) => {
@@ -163,13 +163,13 @@ fn restore_cart_roms(
             Cart::Orch90(orch) => require_cart_rom(mpi_slot, "Orch90", media, &mut cart_roms, missing, |b| {
                 orch.reattach_rom(b)
             })?,
-            Cart::DeluxeRs232(rs232) => {
+            Cart::DeluxeRS232(rs232) => {
                 // Optional: see this function's doc comment.
                 if let Some(bytes) = take_cart_rom(&mut cart_roms, mpi_slot) {
                     rs232.set_eprom(&bytes);
                 }
             }
-            Cart::Empty(_) | Cart::Ssc(_) | Cart::DistoRtc(_) => {} // no ROM
+            Cart::Empty(_) | Cart::SoundSpeechCartridge(_) | Cart::DistoRTC(_) => {} // no ROM
             // Never produced by `slots_mut` (a `MultiPak`'s own slots are
             // what it yields, not itself) and never produced by
             // deserialization (`#[serde(skip)]`), respectively.
@@ -284,7 +284,7 @@ fn restore_disks(
 fn restore_vhds(
     machine: &mut Machine,
     media: &MediaRefs,
-    mut vhds: [Option<vhd::VhdImage>; vhd::DRIVE_COUNT],
+    mut vhds: [Option<vhd::VHDImage>; vhd::DRIVE_COUNT],
     missing: &mut Vec<String>,
 ) -> Result<(), SnapshotError> {
     check_media_ref_capacity(&media.vhds, vhd::DRIVE_COUNT, "VHD")?;
@@ -307,7 +307,7 @@ fn restore_vhds(
 fn restore_drivewire(
     machine: &mut Machine,
     media: &MediaRefs,
-    mut drivewire: [Option<drivewire::DwImage>; drivewire::DRIVE_COUNT],
+    mut drivewire: [Option<drivewire::DriveWireImage>; drivewire::DRIVE_COUNT],
     missing: &mut Vec<String>,
 ) -> Result<(), SnapshotError> {
     check_media_ref_capacity(&media.drivewire, drivewire::DRIVE_COUNT, "DriveWire")?;
@@ -360,10 +360,10 @@ fn standing_notes(machine: &mut Machine) -> Vec<RestoreNote> {
         notes.push(RestoreNote::PrintCaptureStopped);
     }
     if machine.bus.cart.as_deluxe_rs232().is_some() {
-        notes.push(RestoreNote::Rs232EndpointLoopback);
+        notes.push(RestoreNote::RS232EndpointLoopback);
     }
     if machine.bus.cart.as_disto_rtc().is_some() {
-        notes.push(RestoreNote::RtcPlaceholderTime);
+        notes.push(RestoreNote::RTCPlaceholderTime);
     }
     notes
 }

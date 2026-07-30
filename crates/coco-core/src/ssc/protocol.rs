@@ -1,11 +1,11 @@
 //! Host-byte protocol interpreter for `$FF7E` writes: top-level command
-//! dispatch ([`Ssc::dispatch_command`]), buffer-RAM loads ([`Ssc::feed_load`]),
-//! and `$AF` direct-AY-access mode ([`Ssc::feed_direct`]). See the `ssc`
+//! dispatch ([`SoundSpeechCartridge::dispatch_command`]), buffer-RAM loads ([`SoundSpeechCartridge::feed_load`]),
+//! and `$AF` direct-AY-access mode ([`SoundSpeechCartridge::feed_direct`]). See the `ssc`
 //! module doc comment and `docs/ssc-spec.md` for the full protocol writeup.
 
 use serde::{Deserialize, Serialize};
 
-use super::Ssc;
+use super::SoundSpeechCartridge;
 
 // ---- Host byte protocol: command bytes -----------------------------------
 //
@@ -34,7 +34,7 @@ pub mod cmd {
     pub const LOAD_SOUND_CONSECUTIVE_START: u8 = 0x88;
     pub const LOAD_SOUND_CONSECUTIVE_END: u8 = 0x8E;
     /// Load timer base value: exactly one postbyte (0-255), written to
-    /// [`super::Ssc::timer_base`] directly, NOT to buffer RAM. See
+    /// [`super::SoundSpeechCartridge::timer_base`] directly, NOT to buffer RAM. See
     /// `docs/ssc-spec.md`'s timing section.
     pub const LOAD_TIMER_BASE: u8 = 0x8F;
 
@@ -200,7 +200,7 @@ pub(super) enum DirectMode {
     Value(u8),
 }
 
-impl Ssc {
+impl SoundSpeechCartridge {
     // ---- Host byte protocol: dispatch --------------------------------------
 
     /// Routes an accepted `$FF7E` byte to the current [`Mode`]'s handler.
@@ -280,7 +280,7 @@ impl Ssc {
         }
     }
 
-    /// The `$8x`/`$9x`/`$Ax`/`$Bx` half of [`Ssc::dispatch_command`]: every
+    /// The `$8x`/`$9x`/`$Ax`/`$Bx` half of [`SoundSpeechCartridge::dispatch_command`]: every
     /// LOAD command (speech/sound/allophone/register, consecutive or
     /// individual) and `$8F`/`$AF`.
     fn dispatch_load_command(&mut self, byte: u8) {
@@ -331,7 +331,7 @@ impl Ssc {
         }
     }
 
-    /// The `$Cx`-`$Fx` half of [`Ssc::dispatch_command`]: every EXECUTE
+    /// The `$Cx`-`$Fx` half of [`SoundSpeechCartridge::dispatch_command`]: every EXECUTE
     /// command (speech/sound/allophone/register, consecutive or
     /// individual) plus `$C7` abort-all-speech. Only the sound-data and
     /// register-string variants do anything — see the `ssc` module doc

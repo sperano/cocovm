@@ -9,7 +9,7 @@
 
 use coco_core::config::BLOCK_SIZE;
 use coco_core::gime::DISABLED_MMU_BASE;
-use coco_core::vhd::{command, status, VhdImage, SECTOR_SIZE};
+use coco_core::vhd::{command, status, VHDImage, SECTOR_SIZE};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -75,7 +75,7 @@ fn unmounted_drive_reports_no_vhd() {
 #[test]
 fn insert_sets_power_on_status_before_any_command() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     assert_eq!(m.bus.read(COMMAND_STATUS), status::POWER_ON);
 }
@@ -90,7 +90,7 @@ fn full_read_transfers_sector_to_buffer() {
     let pattern: Vec<u8> = (0..256).map(|i| i as u8).collect();
     let mut image = vec![0u8; 6 * SECTOR_SIZE];
     image[5 * SECTOR_SIZE..6 * SECTOR_SIZE].copy_from_slice(&pattern);
-    m.bus.vhd.insert(0, VhdImage::Memory(image));
+    m.bus.vhd.insert(0, VHDImage::Memory(image));
 
     select(&mut m, 0);
     set_lrn(&mut m, 5);
@@ -110,7 +110,7 @@ fn full_read_supports_lrn_beyond_16_bits() {
     let offset = lrn as usize * SECTOR_SIZE;
     let mut image = vec![0u8; offset + SECTOR_SIZE];
     image[offset..offset + SECTOR_SIZE].copy_from_slice(&pattern);
-    m.bus.vhd.insert(0, VhdImage::Memory(image));
+    m.bus.vhd.insert(0, VHDImage::Memory(image));
 
     select(&mut m, 0);
     set_lrn(&mut m, lrn);
@@ -126,7 +126,7 @@ fn full_read_supports_lrn_beyond_16_bits() {
 fn read_past_eof_entirely_zero_fills() {
     let mut m = boot_machine();
     // Only 2 sectors in the image; LRN 10 is well past the end.
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
 
     select(&mut m, 0);
     set_lrn(&mut m, 10);
@@ -151,7 +151,7 @@ fn short_tail_read_zero_pads_remainder() {
     for (i, b) in image[5 * SECTOR_SIZE..].iter_mut().enumerate() {
         *b = (i as u8).wrapping_add(1);
     }
-    m.bus.vhd.insert(0, VhdImage::Memory(image));
+    m.bus.vhd.insert(0, VHDImage::Memory(image));
 
     select(&mut m, 0);
     set_lrn(&mut m, 5); // the last, partial sector
@@ -177,7 +177,7 @@ fn short_tail_read_zero_pads_remainder() {
 fn write_past_eof_zero_extends_then_writes() {
     let mut m = boot_machine();
     // 2 sectors of 0xAA; LRN 4 is 2 sectors past the current end.
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
 
     select(&mut m, 0);
     set_lrn(&mut m, 4);
@@ -206,7 +206,7 @@ fn write_past_eof_zero_extends_then_writes() {
 #[test]
 fn unknown_command_reports_unknown_command_status() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     const UNKNOWN: u8 = 3;
     m.bus.write(COMMAND_STATUS, UNKNOWN);
@@ -216,7 +216,7 @@ fn unknown_command_reports_unknown_command_status() {
 #[test]
 fn flush_command_reports_ok() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     m.bus.write(COMMAND_STATUS, command::FLUSH);
     assert_eq!(m.bus.read(COMMAND_STATUS), status::OK);
@@ -225,7 +225,7 @@ fn flush_command_reports_ok() {
 #[test]
 fn read_bumps_the_drive_access_count() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     assert_eq!(m.bus.vhd.access_count(0), 0);
     m.bus.write(COMMAND_STATUS, command::READ);
@@ -237,7 +237,7 @@ fn read_bumps_the_drive_access_count() {
 #[test]
 fn unknown_command_does_not_bump_the_access_count() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VhdImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     const UNKNOWN: u8 = 3;
     m.bus.write(COMMAND_STATUS, UNKNOWN);
@@ -269,8 +269,8 @@ fn per_drive_state_is_independent() {
     image0[2 * SECTOR_SIZE..3 * SECTOR_SIZE].copy_from_slice(&pattern0);
     let mut image1 = vec![0u8; 3 * SECTOR_SIZE];
     image1[SECTOR_SIZE..2 * SECTOR_SIZE].copy_from_slice(&pattern1);
-    m.bus.vhd.insert(0, VhdImage::Memory(image0));
-    m.bus.vhd.insert(1, VhdImage::Memory(image1));
+    m.bus.vhd.insert(0, VHDImage::Memory(image0));
+    m.bus.vhd.insert(1, VHDImage::Memory(image1));
 
     select(&mut m, 0);
     set_lrn(&mut m, 2); // drive 0's LRN
@@ -294,7 +294,7 @@ fn deselected_state_reads_open_bus_and_drops_writes() {
     let mut m = boot_machine();
     let mut image = vec![0u8; 8 * SECTOR_SIZE];
     image[7 * SECTOR_SIZE..8 * SECTOR_SIZE].fill(0x77);
-    m.bus.vhd.insert(0, VhdImage::Memory(image));
+    m.bus.vhd.insert(0, VHDImage::Memory(image));
 
     select(&mut m, 0);
     set_lrn(&mut m, 7);
@@ -335,7 +335,7 @@ fn deselected_state_reads_open_bus_and_drops_writes() {
 fn transfer_honors_mmu_translation() {
     let mut m = boot_machine();
     let pattern: Vec<u8> = (0..256).map(|i| i as u8).collect();
-    m.bus.vhd.insert(0, VhdImage::Memory(pattern.clone()));
+    m.bus.vhd.insert(0, VHDImage::Memory(pattern.clone()));
 
     select(&mut m, 0);
     set_lrn(&mut m, 0);
@@ -371,7 +371,7 @@ fn transfer_honors_mmu_translation() {
 fn reentrant_command_write_is_dropped_and_outer_result_stands() {
     let mut m = boot_machine();
     let pattern: Vec<u8> = (0..256).map(|i| i as u8).collect();
-    m.bus.vhd.insert(0, VhdImage::Memory(pattern));
+    m.bus.vhd.insert(0, VHDImage::Memory(pattern));
 
     select(&mut m, 0);
     set_lrn(&mut m, 0);

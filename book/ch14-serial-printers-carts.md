@@ -2459,8 +2459,8 @@ pub trait Cartridge {
 
 Twenty methods, and only the first two have no default body. That ratio
 is what makes this a *plugin* seam rather than a heavyweight interface
-every implementor must satisfy in full. `RomPak` needs `rom_read` and
-`cart_line_ties_q` above the required pair, and nothing else. `Gmc` adds
+every implementor must satisfy in full. `ROMPak` needs `rom_read` and
+`cart_line_ties_q` above the required pair, and nothing else. `GamesMasterCartridge` adds
 `generator_sample` for its sound chip. Only `DiskCart` implements
 `halt_asserted` and `take_nmi`; only the Sound/Speech Cartridge
 implements `audio_sample`. Every method a given cartridge doesn't
@@ -2554,7 +2554,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 > derivability and paid for it by enumerating.
 >
 > Two further details in that declaration are worth reading. Three
-> variants are boxed — `DiskCart`, `MultiPak`, and `Ssc` — for two
+> variants are boxed — `DiskCart`, `MultiPak`, and `SoundSpeechCartridge` — for two
 > different reasons. An enum is as large as its largest variant, so the
 > Sound/Speech Cartridge's AY-plus-speech-engine state would otherwise
 > inflate every `Cart` value in the program, which clippy flags as
@@ -2610,7 +2610,7 @@ own crystal-based baud generator avoids in §14.3. The rule was never
 >
 > Contrast this against where `dyn Trait` genuinely *is* the right tool in
 > this same codebase. `BitBanger`'s `Box<dyn PrinterSink>` (§14.2) and
-> `DeluxeRs232`'s `Box<dyn SerialEndpoint>` (§14.3) are both open trait
+> `DeluxeRS232`'s `Box<dyn SerialEndpoint>` (§14.3) are both open trait
 > objects, because those sinks and endpoints are meant to be extended by
 > consumers of the crate — a frontend's own printer-capture UI, a future
 > host backend — without `coco-core` knowing about them in advance.
@@ -2954,7 +2954,7 @@ full 32K image with `bytes[i] = i as u8`, making every offset
 individually distinguishable, rather than anything smaller and more
 convenient.
 
-Banked paks — `BankedRomPak`, the RoboCop/Predator circuit the Games
+Banked paks — `BankedROMPak`, the RoboCop/Predator circuit the Games
 Master Cartridge reuses — trade the fixed 32K window for a **16K** window
 that a whole-byte write to `$FF40` slides across up to 128K of image. The
 effective bank is `bank * 16K mod 128K`, wrapping so an undersized image
@@ -2969,7 +2969,7 @@ special-casing in `BankedRomPak::rom_read` at all.
 
 ### The Games Master Cartridge: banked ROM plus a chip you already know
 
-John Linville's GMC is, structurally, nothing but a `BankedRomPak` with
+John Linville's GMC is, structurally, nothing but a `BankedROMPak` with
 one extra write-only register:
 
 ```rust
@@ -3012,7 +3012,7 @@ schematic turns up there is a note saying what to revisit.
 
 [`tests/gmc.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/gmc.rs)'s
 `bank_latch_pages_the_16k_window` confirms the inherited banking behaves
-exactly like a standalone `BankedRomPak`, writing each of 8 bank values
+exactly like a standalone `BankedROMPak`, writing each of 8 bank values
 to `$FF40` and checking `rom_read($C000)` returns that bank's marker
 byte. A separate MPI test confirms the PSG's audio genuinely plays "from
 any slot" — the analog bus is common across an MPI's four slots, just

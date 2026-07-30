@@ -1,4 +1,4 @@
-use coco_core::ssc::{reg as ssc_reg, Ssc};
+use coco_core::ssc::{reg as ssc_reg, SoundSpeechCartridge};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
@@ -17,7 +17,7 @@ pub const CLEAR_BUSY: u32 = 1_000;
 
 pub fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
     let mut b = SystemBus::new(variant, memory, vec![0u8; 32 * 1024].into_boxed_slice());
-    b.cart = Ssc::new().into();
+    b.cart = SoundSpeechCartridge::new().into();
     b
 }
 

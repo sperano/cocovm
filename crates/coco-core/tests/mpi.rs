@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::cart::{Cart, Cartridge, MultiPak, RomPak};
+use coco_core::cart::{Cart, Cartridge, MultiPak, ROMPak};
 use coco_core::fdc::DiskCart;
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
@@ -200,8 +200,8 @@ fn scs_routing_follows_bits_1_0_and_tracks_changes() {
 fn cts_routing_follows_bits_5_4() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
-    mp.insert(0, RomPak::from_bytes(&[0xAA], false).unwrap());
-    mp.insert(1, RomPak::from_bytes(&[0xBB], false).unwrap());
+    mp.insert(0, ROMPak::from_bytes(&[0xAA], false).unwrap());
+    mp.insert(1, ROMPak::from_bytes(&[0xBB], false).unwrap());
     b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // CTS slot 0
@@ -218,8 +218,8 @@ fn cts_routing_follows_bits_5_4() {
 fn cart_line_ties_q_follows_cts_select_only() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
-    mp.insert(0, RomPak::from_bytes(&[0u8], true).unwrap()); // autostart
-    mp.insert(1, RomPak::from_bytes(&[0u8], false).unwrap()); // not autostart
+    mp.insert(0, ROMPak::from_bytes(&[0u8], true).unwrap()); // autostart
+    mp.insert(1, ROMPak::from_bytes(&[0u8], false).unwrap()); // not autostart
     b.cart = mp.into();
 
     b.write(MPI_CONTROL, 0x00); // CTS slot 0 (autostart)

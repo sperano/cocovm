@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::cart::{Cartridge, MultiPak, RomPak};
+use coco_core::cart::{Cartridge, MultiPak, ROMPak};
 use coco_core::fdc::{DiskCart, JvcDisk, dskreg};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotRomRef};
 use coco_core::wd1773::status;
@@ -234,7 +234,7 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     disk_cart.insert_disk(0, JvcDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
 
     let pak_image = vec![0x77u8; 1024];
-    let pak = RomPak::from_bytes(&pak_image, false).expect("build pak");
+    let pak = ROMPak::from_bytes(&pak_image, false).expect("build pak");
 
     let mut mp = MultiPak::new(FDC_SLOT);
     mp.insert(FDC_SLOT, disk_cart);

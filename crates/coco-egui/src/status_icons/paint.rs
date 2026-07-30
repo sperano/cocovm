@@ -219,7 +219,7 @@ const RS232_PIN_FIELD_W: f32 = RS232_ICON_SIZE.x * 0.72;
 /// Status-bar RS-232 (Deluxe RS-232 Program Pak) activity indicator (see
 /// [`RS232_ICON_SIZE`]): red while a byte has recently gone out to or come
 /// in from the host endpoint
-/// ([`coco_core::rs232::DeluxeRs232::tx_bytes`]/`rx_bytes`), gray
+/// ([`coco_core::rs232::DeluxeRS232::tx_bytes`]/`rx_bytes`), gray
 /// otherwise. A trapezoid (top edge wider than the bottom, the classic
 /// D-sub shield shape) carries three punched pin dots in an upper row and
 /// two in a lower row, plus a small filled ear stud at each side (the

@@ -37,20 +37,20 @@ impl CocoApp {
 
     /// Which host backend the pak's serial line is wired to.
     fn rs232_endpoint_items(&mut self, ui: &mut egui::Ui) {
-        let current = self.rs232.as_ref().map(Rs232Endpoint::kind);
+        let current = self.rs232.as_ref().map(RS232Endpoint::kind);
         let selected = |kind| current == Some(kind);
 
         ui.label("Wire the serial line to:");
-        if ui.selectable_label(selected(Rs232EndpointKind::Loopback), "Loopback").clicked() {
-            self.rs232_set_endpoint(Rs232EndpointKind::Loopback);
+        if ui.selectable_label(selected(RS232EndpointKind::Loopback), "Loopback").clicked() {
+            self.rs232_set_endpoint(RS232EndpointKind::Loopback);
         }
 
         let tcp_label = match &self.rs232 {
-            Some(Rs232Endpoint::Tcp(addr)) => format!("TCP ({addr})"),
+            Some(RS232Endpoint::TCP(addr)) => format!("TCP ({addr})"),
             _ => "TCP".to_string(),
         };
-        if ui.selectable_label(selected(Rs232EndpointKind::Tcp), tcp_label).clicked() {
-            self.rs232_set_endpoint(Rs232EndpointKind::Tcp);
+        if ui.selectable_label(selected(RS232EndpointKind::TCP), tcp_label).clicked() {
+            self.rs232_set_endpoint(RS232EndpointKind::TCP);
         }
         ui.horizontal(|ui| {
             ui.label("Listen address:");
@@ -60,11 +60,11 @@ impl CocoApp {
         #[cfg(unix)]
         {
             let pty_label = match &self.rs232 {
-                Some(Rs232Endpoint::Pty(path)) => format!("PTY ({path})"),
+                Some(RS232Endpoint::PTY(path)) => format!("PTY ({path})"),
                 _ => "PTY".to_string(),
             };
-            if ui.selectable_label(selected(Rs232EndpointKind::Pty), pty_label).clicked() {
-                self.rs232_set_endpoint(Rs232EndpointKind::Pty);
+            if ui.selectable_label(selected(RS232EndpointKind::PTY), pty_label).clicked() {
+                self.rs232_set_endpoint(RS232EndpointKind::PTY);
             }
         }
     }
