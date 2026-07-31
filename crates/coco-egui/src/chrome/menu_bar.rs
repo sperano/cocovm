@@ -25,9 +25,9 @@ impl CocoApp {
 
     /// The Keyboard menu: positional/symbolic mode and the key map. Shared
     /// with the status bar's keyboard entry, which pops the same menu up
-    /// from the bottom of the window ([`crate::chrome::status_bar`]'s
+    /// from the bottom of the window (`chrome::status_bar`'s
     /// `keyboard_status`).
-    pub(crate) fn keyboard_menu_ui(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn keyboard_menu_ui(&mut self, ui: &mut egui::Ui) {
         for mode in [KbMode::Positional, KbMode::Symbolic] {
             if ui
                 .selectable_label(self.kb_mode == mode, mode.label())

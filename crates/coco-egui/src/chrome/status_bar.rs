@@ -28,26 +28,42 @@ impl CocoApp {
 
     /// The keyboard entry — the one status-bar entry that is also a
     /// control: icon and mode readout are a single click target that pops
-    /// up the menu bar's Keyboard menu
-    /// ([`CocoApp::keyboard_menu_ui`] — positional/symbolic, then the key
-    /// layout window), so the mode readout is also where the mode is
-    /// changed.
+    /// up the menu bar's Keyboard menu (`keyboard_menu_ui` —
+    /// positional/symbolic, then the key layout window), so the mode
+    /// readout is also where the mode is changed.
     ///
-    /// The readout is a frameless button rather than a label: it lines up
-    /// with the plain labels of every other entry while still lighting up
-    /// under the pointer. The popup is anchored [`TOP_START`] since the
-    /// status bar sits on the window's bottom edge — the default
-    /// below-the-button placement would be off-screen.
+    /// The readout is a frameless button rather than a label: `frame(false)`
+    /// zeroes the button padding too, so it lines up with the plain labels
+    /// of every other entry while still lighting up under the pointer. The
+    /// icon is painted, not a widget, so `interact` is what makes its half
+    /// of the entry clickable — and since a click sense is also a focus
+    /// sense, it needs [`WidgetInfo`] naming it or it joins the tab order
+    /// as an unnamed stop.
     ///
-    /// [`TOP_START`]: egui::RectAlign::TOP_START
+    /// [`WidgetInfo`]: egui::WidgetInfo
     fn keyboard_status(&mut self, ui: &mut egui::Ui) {
         let readout = format!("Keyboard: {} (F12)", self.kb_mode.label());
-        let entry = keyboard_icon(ui).interact(egui::Sense::click())
-            | ui.add(egui::Button::new(readout).frame(false));
+        let icon = keyboard_icon(ui).interact(egui::Sense::click());
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Keyboard menu")
+        });
+        let entry = (icon | ui.add(egui::Button::new(readout).frame(false)))
+            .on_hover_text("Keyboard input mode — click for the keyboard menu (F12 toggles)");
         egui::Popup::menu(&entry)
+            // An explicit id, not the union's: that one is the icon's auto
+            // id, which is stable only as long as the keyboard stays the
+            // bar's first entry (every entry after it is conditional, so
+            // mounting a disk mid-session would renumber it and silently
+            // drop an open menu).
+            .id(ui.id().with("keyboard_menu"))
+            // Anchored above the bar rather than left to egui's own
+            // flipping: `BOTTOM_START.symmetries()` does include
+            // `TOP_START`, but only a popup with a remembered size can be
+            // seen not to fit. On its first frame the candidate is
+            // zero-height, so it "fits" against the window's bottom edge
+            // and paints one clipped frame before snapping up.
             .align(egui::RectAlign::TOP_START)
             .show(|ui| self.keyboard_menu_ui(ui));
-        entry.on_hover_text("Keyboard input mode — click for the keyboard menu (F12 toggles)");
     }
 
     fn cart_status(&self, ui: &mut egui::Ui) {
