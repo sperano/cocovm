@@ -214,7 +214,7 @@ conditional-widget idea gets interesting. Each one is written like this:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:53-58`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L53-L58).) The `cart_icon`
+([`crates/coco-egui/src/chrome/status_bar.rs:69-74`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L69-L74).) The `cart_icon`
 call ahead of the label is one of ten small device silhouettes the bar
 paints from `Painter` primitives
 ([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the
