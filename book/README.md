@@ -452,7 +452,7 @@ than you might fear.*
 - UI testing with kittest ([`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)): headless egui, queries by
   accessibility label. Tests that read like scripts.
 
-**Reading:** [`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs), [`app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs), [`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs), [`main.rs:87-147`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L87-L147),
+**Reading:** [`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs), [`app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs), [`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs), [`main.rs:91-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L91-L168),
 [`manager/lifecycle.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs), [`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs).
 **Exercises:** (1) explain `field_debt` and what goes wrong with naive
 "one field per repaint" on a 120 Hz monitor; (2) add a 2× turbo menu item;

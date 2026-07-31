@@ -31,9 +31,9 @@ mod mpi;
 mod new_vm;
 mod orch90_meters;
 mod paper_export;
-mod paths;
 mod paper_render;
 mod paper_view;
+mod paths;
 mod photo_view;
 mod rom_load;
 mod rs232;
@@ -46,6 +46,7 @@ mod widgets;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
+pub(crate) use app::{CocoApp, PendingDiskAction};
 use chrono::{Datelike, Timelike};
 use clap::Parser;
 use coco_core::cart::{GamesMasterCartridge, MultiPak, ROMPak};
@@ -57,7 +58,6 @@ use coco_core::rtc::{DistoRTC, RTCTime};
 use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig, MonitorType};
-pub(crate) use app::{CocoApp, PendingDiskAction};
 use eframe::egui;
 use joy::JoystickInputs;
 // Re-exported rather than plainly imported: the modules carved out of this file
@@ -82,7 +82,11 @@ pub(crate) use status_icons::{
     keyboard_icon, mpi_icon, printer_icon, rs232_icon, vhd_icon,
 };
 pub(crate) use typeahead::{KbMode, TypeAhead};
-pub(crate) use widgets::{UI_DRIVES, titled_group, window_title};
+pub(crate) use widgets::{
+    BUTTON_GAP, BUTTON_SIZE, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH,
+    STOP_LABEL, SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, UI_DRIVES, titled_group,
+    toolbar_button, window_title,
+};
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 pub(crate) const SCALE: f32 = 3.0;
@@ -98,14 +102,31 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 /// Height reserved for the top menu bar row when sizing the window.
 pub(crate) const MENU_BAR_H: f32 = 22.0;
-/// Height reserved for the toolbar row when sizing the window.
-pub(crate) const TOOLBAR_H: f32 = 30.0;
+/// Horizontal inner margin `chrome::toolbar`'s `TopBottomPanel::top
+/// ("toolbar")` gives its content, via an explicit `.frame(...)` rather than
+/// egui's `TopBottomPanel` default — matches `egui::Frame::side_top_panel`'s
+/// own default (`Margin::symmetric(8, 2)`, the `8` here) so the toolbar
+/// panel doesn't look different from the app's other panels, but as our own
+/// named constant it can't silently drift if a future egui version changes
+/// that default. `i8`: the field type `egui::Margin` uses.
+pub(crate) const TOOLBAR_PANEL_MARGIN_X: i8 = 8;
+/// Vertical inner margin `chrome::toolbar`'s toolbar panel gives its content
+/// above and below, set the same explicit way as
+/// [`TOOLBAR_PANEL_MARGIN_X`] — also matches `Frame::side_top_panel`'s
+/// default (the `2` in `Margin::symmetric(8, 2)`). The panel's separator
+/// line is drawn on the boundary itself and adds no extra height, so this is
+/// exactly the frame's overhead. `i8`, cast to `f32` below for the window-
+/// sizing formula.
+pub(crate) const TOOLBAR_PANEL_MARGIN_Y: i8 = 2;
+/// Height reserved for the toolbar row when sizing the window: the toolbar
+/// tiles' own height ([`BUTTON_SIZE`].y) plus the panel frame's vertical
+/// margin on both edges ([`TOOLBAR_PANEL_MARGIN_Y`]).
+pub(crate) const TOOLBAR_H: f32 = BUTTON_SIZE.y + 2.0 * TOOLBAR_PANEL_MARGIN_Y as f32;
 /// Height reserved for the bottom status bar row when sizing the window.
 pub(crate) const STATUS_BAR_H: f32 = 22.0;
 /// Symbolic-mode key timing, in fields: hold a synthesized key then release.
 pub(crate) const TYPE_HOLD_FIELDS: u8 = 2;
 pub(crate) const TYPE_GAP_FIELDS: u8 = 1;
-
 
 fn main() -> eframe::Result<()> {
     setup_logging();

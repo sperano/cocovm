@@ -100,7 +100,7 @@ immediate mode there is no persistent widget tree at all. Instead, your
 ```
 
 That is the *entire* trait implementation — three lines at
-[`crates/coco-egui/src/app.rs:279-281`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L279-L281), forwarding to a plain inherent
+[`crates/coco-egui/src/app.rs:295-297`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L295-L297), forwarding to a plain inherent
 method. Everything else in that file is ordinary `impl CocoApp`. There is
 no widget registration, no event handler installation, no constructor that
 builds a layout. The window is whatever `update` draws this time around,
@@ -110,19 +110,22 @@ Every widget you see on screen, then, is not an object but a *function call
 that returns a response*, made fresh, every single frame:
 
 ```rust
-                if ui.button("Reset").clicked() {
-                    self.machine.reset();
-                }
+        if ui.button("Reset").clicked() {
+            self.machine.reset();
+            ui.close();
+        }
 ```
 
-That is the Reset button of the real toolbar, at
-[`crates/coco-egui/src/chrome/toolbar.rs:9-11`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar.rs#L9-L11). Read it as three
+That is the Reset item of the Machine menu, at
+[`crates/coco-egui/src/chrome/menu_bar/machine.rs:10-13`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar/machine.rs#L10-L13). Read it as three
 things happening inside one expression. `ui.button("Reset")` draws a button
-at whatever the current layout position happens to be, then checks this
-frame's input for a click that landed inside the rectangle it just drew,
-then returns a `Response` describing what it found. `.clicked()` asks that
-response one question. The `if` acts on the answer, immediately, in the
-same statement — which is why the style is called immediate mode.
+at whatever the current layout position happens to be — here, a row of the
+open menu popup — then checks this frame's input for a click that landed
+inside the rectangle it just drew, then returns a `Response` describing
+what it found. `.clicked()` asks that response one question. The `if` acts
+on the answer immediately, in the same statement — resetting the machine
+and dismissing the popup — which is why the style is called immediate
+mode.
 
 There is no `Button` object living anywhere between frames. Next frame, if
 this code path runs again, egui draws the same button again from scratch,
@@ -153,7 +156,7 @@ checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
 
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
-([`crates/coco-egui/src/app.rs:11-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L133)) that between them constitute the
+([`crates/coco-egui/src/app.rs:11-148`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L148)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
 `self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
@@ -619,7 +622,7 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 ```
 
-([`crates/coco-egui/src/main.rs:93-98`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L93-L98).) Both exist to prevent the same
+([`crates/coco-egui/src/main.rs:97-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L97-L102).) Both exist to prevent the same
 disease, which has a name: *the spiral of death*.
 
 Imagine there were no cap on fields per update. The host stalls for a
@@ -766,7 +769,7 @@ contents.
 right, and it deserves a paragraph because it is the only piece of graphics
 vocabulary this chapter needs. When a texture is drawn at a size other than
 its native pixel dimensions — and it always is, since a 640-pixel-wide CoCo
-canvas is being stretched across a 1341-pixel-wide rectangle — the hardware
+canvas is being stretched across a 1307-pixel-wide rectangle — the hardware
 has to decide what color to put at each destination pixel. *Nearest*
 sampling picks the single closest source pixel and uses it unchanged.
 *Linear* sampling blends the neighboring source pixels together. For a
@@ -778,7 +781,7 @@ soft blur that no CoCo owner ever saw.
 The frontend does use linear sampling — twice, and both times for
 photographs rather than emulated screens. The manager's decorative photo
 pane uploads with `TextureOptions::LINEAR`
-([`crates/coco-egui/src/manager.rs:387-390`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L387-L390)), and so does a suspended
+([`crates/coco-egui/src/manager.rs:377-380`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L377-L380)), and so does a suspended
 machine's saved screen thumbnail when it is loaded back from its PNG
 ([`crates/coco-egui/src/manager/thumbnails.rs:57-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L57-L61)). Both are being
 scaled *down* into a small area rather than up, and a photograph shrunk
@@ -882,21 +885,23 @@ Now plug in real numbers. Take a CoCo 3 running in a GIME-native mode, so
 its canvas is the canonical 640×240 raster (`raster::CANVAS_W` and
 `CANVAS_H`, [`crates/coco-core/src/raster.rs:15-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L15-L18), Chapter 7), inside a
 1920×1080 window. Subtract the fixed chrome heights `coco-egui` reserves —
-`MENU_BAR_H` at 22, `TOOLBAR_H` at 30, and `STATUS_BAR_H` at 22, totalling
-74 pixels — and the `CentralPanel` is roughly **1920 × 1006**.
+`MENU_BAR_H` at 22, `TOOLBAR_H` at 56 (not a literal but computed: the
+toolbar's 52-pixel transport tiles, `BUTTON_SIZE.y`, plus the panel's
+2-pixel inner margin top and bottom), and `STATUS_BAR_H` at 22, totalling
+100 pixels — and the `CentralPanel` is roughly **1920 × 980**.
 
 **Aspect-corrected**, so `aspect = 4/3 ≈ 1.3333`:
 
 ```
 w = 1920                  (try full width)
-h = 1920 / 1.3333 = 1440  (taller than the 1006 available!)
-→ clamp: h = 1006
-  w = 1006 × 1.3333 = 1341.3
+h = 1920 / 1.3333 = 1440  (taller than the 980 available!)
+→ clamp: h = 980
+  w = 980 × 1.3333 = 1306.7
 ```
 
-The final rectangle is **1341 × 1006**, centered. Height was the binding
+The final rectangle is **1307 × 980**, centered. Height was the binding
 constraint, so the leftover space is horizontal: roughly
-`(1920 − 1341.3) / 2 ≈ 289` pixels of black bar down each side. That is
+`(1920 − 1306.7) / 2 ≈ 307` pixels of black bar down each side. That is
 pillarboxing.
 
 **Aspect-uncorrected**, so `aspect = tex_size.x / tex_size.y = 640/240 ≈
@@ -904,12 +909,12 @@ pillarboxing.
 
 ```
 w = 1920                 (try full width)
-h = 1920 / 2.6667 = 720  (fits inside 1006 — no clamp needed)
+h = 1920 / 2.6667 = 720  (fits inside 980 — no clamp needed)
 ```
 
 The final rectangle is **1920 × 720**, centered. Width was the binding
 constraint this time, the `if` did not fire, and the leftover space is
-vertical: roughly `(1006 − 720) / 2 ≈ 143` pixels of black bar top and
+vertical: `(980 − 720) / 2 = 130` pixels of black bar top and
 bottom. That is letterboxing.
 
 Two different final rectangles, same algorithm, same source texture. The
@@ -931,7 +936,7 @@ doc comment on `TARGET_ASPECT`:
 > framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
 > is stretched horizontally to this ratio so pixels are ~3% wider than
 > tall, as on real hardware.
-> ([`crates/coco-egui/src/main.rs:89-92`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L89-L92))
+> ([`crates/coco-egui/src/main.rs:93-96`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L93-L96))
 
 That 288×224 figure is `coco_core::video::FB_W` and `FB_H` — the CoCo 1
 and 2 legacy VDG canvas, which is a 256×192 active area plus a 16-pixel
@@ -1321,7 +1326,7 @@ press has to survive across multiple 60 Hz `KEYIN` scans of the ROM to
 register at all; a press and release confined to a single field can land
 entirely between two scans and simply vanish. The tuned constants are
 `TYPE_HOLD_FIELDS = 2` and `TYPE_GAP_FIELDS = 1`
-([`crates/coco-egui/src/main.rs:105-107`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L105-L107)): hold each synthesized keypress
+([`crates/coco-egui/src/main.rs:127-129`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L127-L129)): hold each synthesized keypress
 for two fields, safely longer than one scan interval, then release for one
 field before the next tap begins, so that two identical consecutive
 characters — the `"AA"` in a pasted `DATA` statement — read as two separate
@@ -1428,7 +1433,7 @@ transport — power on, suspend to disk, power off — and a detail pane for
 editing hardware and attached media.
 The dispatch is three lines in `main()` — "bare `coco` (no CLI arguments)
 opens the CocoVM manager window; any argument keeps the direct-boot
-emulator path" ([`crates/coco-egui/src/main.rs:115-119`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L115-L119)) — and everything
+emulator path" ([`crates/coco-egui/src/main.rs:136-140`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L136-L140)) — and everything
 downstream of it is in [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its
 submodules.
 
@@ -1666,8 +1671,8 @@ state. The first changes what is actually *executing*:
     pub vm: Option<Box<CocoApp>>,
 ```
 
-That field is [`crates/coco-egui/src/manager.rs:131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L131), inside the struct at
-[`crates/coco-egui/src/manager.rs:123-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L123-L161). Powered Off is `None`. The
+That field is [`crates/coco-egui/src/manager.rs:118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L118), inside the struct at
+[`crates/coco-egui/src/manager.rs:110-148`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L110-L148). Powered Off is `None`. The
 second, `suspended: bool`, mirrors something that lives on disk: a
 suspended machine's whole frozen state is a `suspended.ccstate` file in
 its artifact directory (written by week 16's save-state engine), and *the
@@ -1688,7 +1693,7 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
 }
 ```
 
-([`crates/coco-egui/src/manager.rs:211-219`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L211-L219).) Three states, computed
+([`crates/coco-egui/src/manager.rs:198-206`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L198-L206).) Three states, computed
 fresh at draw time; the only one with any persistence is Suspended, and
 its persistence is the state file itself, not a status field in the
 definition. This is §15.1's lesson applied to application state rather
@@ -1801,7 +1806,7 @@ The loop's core is three lines:
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:64-67`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L64-L67).) The
+([`crates/coco-egui/src/manager/vm_windows.rs:67-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L67-L70).) The
 `viewport_id` above it is
 `egui::ViewportId::from_hash_of(("vm-window", &slug))`, which gives each
 VM's window a stable identity across frames. That stability is what makes
@@ -1823,13 +1828,17 @@ machine takes the straightforward path:
                 }
             });
 
+            let suspend_requested = std::mem::take(&mut vm.pending_suspend);
             self.entries[i].vm = Some(vm);
             if close_requested {
                 to_stop.push(i);
+            } else if suspend_requested {
+                to_suspend.push(i);
             }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:135-146`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L135-L146).) That single
+([`crates/coco-egui/src/manager/vm_windows.rs:138-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L138-L162), comment lines
+elided.) That single
 `vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
 §15.3 established. The *entire* direct-boot experience — menu bar, toolbar,
 status bar, the letterboxed display, every dialog — runs unmodified inside
@@ -1838,8 +1847,16 @@ been reading all along. There is no second implementation of the emulator
 window for the manager to maintain, and no risk of the two drifting apart,
 because there is only one.
 
+The `pending_suspend` flag drained on the way back is that same shared
+window talking to the manager: the VM window's toolbar shows the manager's
+own four transport tiles, and its Suspend tile can only *request* a
+suspend — `CocoApp` does not even know its own slug — so it sets a flag,
+and the manager, which owns the artifact directory and the freeze
+machinery, applies it after the loop exactly as it applies close
+requests.
+
 A *Suspended* machine whose window is still open takes a middle branch
-([`crates/coco-egui/src/manager/vm_windows.rs:112-134`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L112-L134)):
+([`crates/coco-egui/src/manager/vm_windows.rs:115-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L115-L137)):
 the framebuffer-texture upload plus the display, no chrome, and no
 `step_emulation` either, since its `handle_input` would keep the
 quick-load/quick-save shortcuts and keyboard/joystick writes live. The
@@ -1863,7 +1880,7 @@ bare display:
 (for a Running machine — a suspended one gets the same
 texture-upload-only gating here as in the native branch), followed by an
 anchored `egui::Window` whose body is just `vm.draw_display(ui)`
-([`crates/coco-egui/src/manager/vm_windows.rs:82-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L82-L108)). Two decisions
+([`crates/coco-egui/src/manager/vm_windows.rs:85-111`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L85-L111)). Two decisions
 in that fallback are worth reading the comments for. It skips
 `draw_chrome` because two independent sets of menu bars and status bars
 drawn into one shared context would interleave into a single confusing
@@ -1934,7 +1951,7 @@ One small heuristic in the PNG writer deserves attention:
     }
 ```
 
-([`crates/coco-egui/src/manager.rs:247-252`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L247-L252).) Consider what a
+([`crates/coco-egui/src/manager.rs:234-239`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L234-L239).) Consider what a
 screen capture is exposed to. The CoCo's screen is genuinely, uniformly
 black at plenty of legitimate moments: during a mode switch, right after a
 `CLS 0`, in the instant following a reset before the ROM has painted
@@ -2312,7 +2329,7 @@ Select Beta. Right-click Alpha — and note that this must *not* move the
 selection. Now that the list supports selecting several rows at once
 (this section's closing passage), that user-facing invariant has two
 halves, and `draw_row_context_menu`'s doc comment
-([`crates/coco-egui/src/manager/list.rs:153-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs#L153-L161)) states both: right-clicking
+([`crates/coco-egui/src/manager/list.rs:154-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs#L154-L162)) states both: right-clicking
 a row *inside* a multi-selection opens a bulk menu acting on the whole
 selection, while right-clicking anywhere else — here, Beta alone is
 selected — opens the single-row menu, acting on the row under the cursor,
@@ -2359,7 +2376,7 @@ Finder and Explorer convention. A plain click selects one row alone,
 Cmd/Ctrl-click toggles a row in or out, Shift-click selects the
 anchor-to-row range inclusive, and ⌘A/Ctrl+A selects every row — though
 only when no widget already owns the keyboard, so the Name field keeps its
-native select-all ([`crates/coco-egui/src/manager.rs:403-410`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L403-L410)). With more
+native select-all ([`crates/coco-egui/src/manager.rs:393-400`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L393-L400)). With more
 than one row selected, the single-machine edit form gives way to a bulk
 pane — an "N machines selected" heading — and the toolbar's transport
 buttons act on every applicable selected machine at once
@@ -2416,28 +2433,38 @@ and local-only by the project's own convention. This is what happened, not
 a sanitized summary:
 
 ```
-test result: FAILED. 117 passed; 31 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 123 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-**All 31 failures are ROM-required, and only ROM-required.** Every one
-panics at a `std::fs::read`/`load_default_rom` call reading
+**All 37 failures are ROM-required, and only ROM-required.** Every one
+traces to the same missing file: most panic right at a
+`std::fs::read`/`load_default_rom` call reading
 `roms/coco3.rom` or (for the FD-502 tests) `roms/disk11.rom`, with a
-message stating exactly that: `"roms/coco3.rom is required (git-ignored,
-local-only)"`. The failing set breaks down cleanly into three groups:
+message stating exactly that (`"roms/coco3.rom is required (git-ignored,
+local-only)"`); the handful that survive the load call itself fail an
+assertion immediately downstream of a launch that died for the same
+reason. The failing set breaks down cleanly into four groups:
 
 - `debugger::tests::*` (5) and `save_state::tests::*` (1) — unit tests that
   boot a real `Machine` directly with `Machine::new(config, load_rom())`.
-- `ui_tests::direct_boot_menus::*` (17) — every kittest test that calls
+- `launch::tests::*` (4) — unit tests of `launch_machine` itself, each
+  building a full `CocoApp` from a saved definition and so loading the
+  real ROM.
+- `ui_tests::direct_boot_menus::*` (18) — every kittest test that calls
   `boot_harness()`, which requires the real system ROM to construct a
   `CocoApp` at all.
-- `ui_tests::manager_lifecycle::*` (8) — every test that actually calls
-  `launch_machine` (Start a VM for real), as opposed to `manager_window.rs`,
+- `ui_tests::manager_lifecycle::*` (9 of the file's 10) — the tests that
+  need a machine to actually boot (Start a VM for real), as opposed to `manager_window.rs`,
   `manager_peripherals.rs`, and `manager_selection.rs`'s tests, which only
   exercise the manager's *list and edit* UI against injected `MachineEntry` fixtures
   (`sample_entry`, built from `MachineDef::from_config` — no ROM, no
-  `Machine`, no boot) and consequently pass cleanly.
+  `Machine`, no boot) and consequently pass cleanly. The tenth,
+  `stop_on_suspended_machine_discards_the_frozen_state`, scrapes by
+  without a ROM only because everything it asserts is an absence — a
+  Start that failed for want of a ROM leaves the same nothing behind
+  that a real Stop would.
 
-**The 117 passing tests are the whole non-ROM surface of the crate**: the
+**The 123 passing tests are the whole non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
@@ -2453,7 +2480,7 @@ attached), and — importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 148 tests should pass.
+checkout with real ROMs present, all 160 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
@@ -2470,7 +2497,7 @@ the emulated hardware buys.
 
 In this order:
 
-1. **[`crates/coco-egui/src/main.rs:1-107`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L107)** — the crate's module list (a
+1. **[`crates/coco-egui/src/main.rs:1-129`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L129)** — the crate's module list (a
    map of everything this chapter did and didn't cover) and the constants
    block: `SCALE`, `TARGET_ASPECT`, `MAX_FIELDS_PER_UPDATE`, `MAX_FRAME_DT`,
    `TYPE_HOLD_FIELDS`/`TYPE_GAP_FIELDS`.

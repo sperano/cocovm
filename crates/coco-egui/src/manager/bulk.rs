@@ -140,7 +140,10 @@ impl ManagerApp {
     /// surface — shows why. Mirrors `list::select_row_on_error`; a bulk
     /// action only ever surfaces the *first* failure this way, the
     /// documented tradeoff for a batch operation with no dialog of its own.
-    fn focus_first_failed_row(&mut self, acted: &[usize]) {
+    /// `pub(super)`: [`super::ManagerApp::draw_running_vms`] reuses this for
+    /// the VM windows' own Suspend tiles, batching every window's suspend
+    /// request the same way a bulk action batches `acted`.
+    pub(super) fn focus_first_failed_row(&mut self, acted: &[usize]) {
         if let Some(&i) = acted
             .iter()
             .find(|&&i| self.entries[i].launch_error.is_some())

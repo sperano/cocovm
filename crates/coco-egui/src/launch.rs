@@ -81,6 +81,10 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
         return Err(err);
     }
 
+    // Built by the manager, not a direct CLI boot — gates the VM window's
+    // own Suspend tile (`CocoApp::managed`'s doc).
+    app.managed = true;
+
     // The definition's [ui] preferences are the launched window's *starting*
     // state; F9 (aspect), F12 (keyboard mode), and the Joysticks menu keep
     // working as live toggles afterwards — the file controls where they
@@ -100,8 +104,14 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
     let resolve = |p: Option<&str>| p.map(|p| machine_def::resolve_media_path(p, slug));
     Media {
         cart: resolve(def.media.cart.as_deref()),
-        disks: [resolve(def.media.disk0.as_deref()), resolve(def.media.disk1.as_deref())],
-        vhds: [resolve(def.media.vhd0.as_deref()), resolve(def.media.vhd1.as_deref())],
+        disks: [
+            resolve(def.media.disk0.as_deref()),
+            resolve(def.media.disk1.as_deref()),
+        ],
+        vhds: [
+            resolve(def.media.vhd0.as_deref()),
+            resolve(def.media.vhd1.as_deref()),
+        ],
         tape: resolve(def.media.tape.as_deref()),
     }
 }
@@ -121,10 +131,15 @@ fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), 
                 .to_string(),
         );
     }
-    let claims = [media.cart.is_some(), peripherals.fd502, peripherals.rtc, peripherals.rs232]
-        .into_iter()
-        .filter(|&claims| claims)
-        .count();
+    let claims = [
+        media.cart.is_some(),
+        peripherals.fd502,
+        peripherals.rtc,
+        peripherals.rs232,
+    ]
+    .into_iter()
+    .filter(|&claims| claims)
+    .count();
     if !peripherals.mpi && claims > 1 {
         return Err(
             "cart, disk0/disk1, rtc, and rs232 all need the cartridge port; enable the \
@@ -197,7 +212,9 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
         // Starts on the inert Loopback endpoint; TCP/PTY stay a
         // runtime-menu-only setting (`chrome::menu_bar::rs232`).
         app.insert_rs232();
-    } else if peripherals.fd502 && let Err(e) = app.ensure_disk_controller() {
+    } else if peripherals.fd502
+        && let Err(e) = app.ensure_disk_controller()
+    {
         // Empty-drive FD-502 from `[peripherals].fd502` alone; with disk media
         // set, `CocoApp::new` already inserted the controller and this is a
         // no-op Ok.

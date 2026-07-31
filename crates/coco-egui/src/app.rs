@@ -130,6 +130,21 @@ pub(crate) struct CocoApp {
     /// angle (`status_icons.rs`). Purely UI state — not serialized, not
     /// touched by save/load state.
     pub(crate) activity: StatusActivity,
+    /// Whether this app was built by the manager's launch path
+    /// (`launch::launch_machine`, set alongside `aspect_correct` there) as
+    /// opposed to a direct CLI boot (`boot.rs`, left `false`). Gates the VM
+    /// window's own Suspend tile (`chrome::toolbar`): suspending needs the
+    /// manager's slug-keyed artifact directory and `.ccstate` machinery
+    /// (`manager::lifecycle::suspend_vm`), which a direct-boot window has no
+    /// access to and no meaning for.
+    pub(crate) managed: bool,
+    /// Set by the VM window's Suspend tile (`chrome::toolbar`); consumed by
+    /// [`crate::manager::ManagerApp::draw_running_vms`] after the viewport
+    /// closure returns. Just a *request* — `CocoApp` cannot suspend itself
+    /// (it doesn't even know its own slug); the actual freeze (screenshot →
+    /// `.ccstate` → pause) is manager-owned
+    /// (`manager::lifecycle::suspend_vm`).
+    pub(crate) pending_suspend: bool,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -197,6 +212,8 @@ impl CocoApp {
             rom_source,
             toast: None,
             activity: StatusActivity::default(),
+            managed: false,
+            pending_suspend: false,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
@@ -266,7 +283,6 @@ impl CocoApp {
     pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {
         self.texture.as_ref()
     }
-
 }
 
 impl eframe::App for CocoApp {

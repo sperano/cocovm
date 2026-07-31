@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 use crate::photo_view::{self, Photo};
-use crate::{machine_def, new_vm, CocoApp};
+use crate::{CocoApp, machine_def, new_vm};
 
 use selection::Selection;
 
@@ -67,13 +67,6 @@ const ROW_MARGIN: f32 = 8.0;
 /// Corner rounding of a list row's selection/hover frame.
 const ROW_CORNER_RADIUS: f32 = 4.0;
 
-/// Hover text of the Suspend transport button (and the row context-menu
-/// item) — the *heavy* freeze built on the save-states engine
-/// (`docs/plan-save-states.md`).
-const SUSPEND_HOVER: &str =
-    "Suspend the machine — freeze it to disk; resume later, even after \
-     quitting the manager.";
-
 /// List-row / detail-pane status labels for the three machine states
 /// (Powered Off / Running / Suspended). Not stored in the definition file
 /// (`plan-machine-persistence.md` "Decisions" — "Runtime status … is never
@@ -89,12 +82,6 @@ const DETAIL_SECTION_GAP: f32 = 12.0;
 
 /// Inner margin of the detail/edit pane, in egui logical points.
 const DETAIL_PANE_MARGIN: i8 = 10;
-
-/// Cassette-deck transport glyphs
-pub(crate) const PLAY_GLYPH: &str = "▶";
-pub(crate) const SUSPEND_GLYPH: &str = "⏸";
-pub(crate) const STOP_GLYPH: &str = "⏹";
-pub(crate) const RESET_GLYPH: &str = "↻";
 
 /// The "select all rows" shortcut (⌘A/Ctrl+A) for the machine list —
 /// consumed only when no widget owns the keyboard
@@ -252,7 +239,10 @@ fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), St
     }
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let image = image::RgbaImage::from_raw(w, h, rgba.to_vec()).ok_or_else(|| {
-        format!("framebuffer geometry mismatch: {w}x{h} vs {} bytes", rgba.len())
+        format!(
+            "framebuffer geometry mismatch: {w}x{h} vs {} bytes",
+            rgba.len()
+        )
     })?;
     let tmp_path = dir.join(format!("{THUMBNAIL_FILE}.tmp"));
     image
@@ -459,8 +449,9 @@ impl eframe::App for ManagerApp {
 /// Open the manager as the application's main window (blocks until close,
 /// like `eframe::run_native` everywhere else).
 pub fn run() -> eframe::Result<()> {
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
-        .expect("embedded icon PNG is valid");
+    let icon =
+        eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
+            .expect("embedded icon PNG is valid");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(WINDOW_SIZE)

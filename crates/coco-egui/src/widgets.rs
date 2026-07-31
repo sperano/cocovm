@@ -82,3 +82,134 @@ pub(crate) fn titled_group<R>(
 /// Drives the UI exposes. The FD-502 latch can address four, but real setups
 /// were one or two — and the menu stays small.
 pub(crate) const UI_DRIVES: usize = 2;
+
+// [`toolbar_button`], the icon-over-label toolbar tile, and its supporting
+// glyphs/layout constants — the VirtualBox/Parallels toolbar idiom (big
+// glyph, small caption underneath) rather than egui's default text-chip
+// `ui.button`. Shared by the manager window's toolbar
+// (`manager::toolbar::draw_toolbar`) and the VM window's toolbar
+// (`chrome::toolbar::toolbar_ui`) — two independent `TopBottomPanel`s that
+// both draw a row of these tiles.
+
+/// Fixed footprint of one toolbar tile. Wide enough for the longest caption
+/// ("Settings", the manager toolbar's widest label, at [`LABEL_FONT_SIZE`]);
+/// tall enough for the icon row plus the caption with
+/// [`ICON_TOP_PAD`]/[`LABEL_BOTTOM_PAD`] breathing room. Fixed (not
+/// per-label sized) so the buttons read as one row of equal tiles, the
+/// toolbar convention the tile widget reproduces.
+pub(crate) const BUTTON_SIZE: egui::Vec2 = egui::vec2(64.0, 52.0);
+
+/// Icon glyph size. Deliberately much larger than the caption — the icon is
+/// the button's identity, the caption is the reminder.
+const ICON_FONT_SIZE: f32 = 20.0;
+const LABEL_FONT_SIZE: f32 = 11.0;
+
+/// Gap from the button's top edge to the icon's top, and from the caption's
+/// baseline box to the bottom edge.
+const ICON_TOP_PAD: f32 = 5.0;
+const LABEL_BOTTOM_PAD: f32 = 4.0;
+
+/// Rounding of the hover/press highlight behind a button.
+const BUTTON_CORNER_RADIUS: f32 = 6.0;
+
+/// Horizontal gap between adjacent toolbar buttons — tighter than egui's
+/// default item spacing so the tiles read as one grouped toolbar. Applied by
+/// each caller (`ui.spacing_mut().item_spacing.x = BUTTON_GAP`), not by
+/// [`toolbar_button`] itself: it's a property of the row a caller lays out,
+/// not of one tile.
+pub(crate) const BUTTON_GAP: f32 = 2.0;
+
+/// Horizontal breathing room on each side of a `ui.separator()` —
+/// [`BUTTON_GAP`] is tuned for tile-to-tile spacing and reads as cramped
+/// around a vertical rule.
+const SEPARATOR_GAP: f32 = 6.0;
+
+/// Cassette-deck transport glyphs, shared by every surface that draws a
+/// Start/Suspend/Stop/Reset control: the manager toolbar's tiles, the VM
+/// window toolbar's tiles, and the manager's row/bulk context menus.
+pub(crate) const PLAY_GLYPH: &str = "▶";
+pub(crate) const SUSPEND_GLYPH: &str = "⏸";
+pub(crate) const STOP_GLYPH: &str = "⏹";
+pub(crate) const RESET_GLYPH: &str = "↻";
+
+/// Caption text of the four transport tiles — shared by the manager
+/// toolbar's tiles (`manager::toolbar::draw_toolbar`) and the VM window
+/// toolbar's tiles (`chrome::toolbar::toolbar_ui`) so the two can't drift on
+/// the one piece of tile identity the glyph consts above didn't already
+/// cover. `ui_tests` still assert the raw string literals independently, to
+/// pin the user-visible text rather than just this constant's own value.
+pub(crate) const START_LABEL: &str = "Start";
+pub(crate) const SUSPEND_LABEL: &str = "Suspend";
+pub(crate) const STOP_LABEL: &str = "Stop";
+pub(crate) const RESET_LABEL: &str = "Reset";
+
+/// Hover text of the Suspend transport control everywhere it appears (the
+/// manager toolbar tile, the manager's row/bulk context-menu items, and the
+/// VM window's own Suspend tile) — the *heavy* freeze built on the
+/// save-states engine (`docs/plan-save-states.md`).
+pub(crate) const SUSPEND_HOVER: &str = "Suspend the machine — freeze it to disk; resume later, even after \
+     quitting the manager.";
+
+/// A vertical rule with [`SEPARATOR_GAP`] on each side, grouping a toolbar
+/// into clusters (e.g. the manager toolbar's New/transport, Settings, and
+/// Help clusters).
+pub(crate) fn toolbar_separator(ui: &mut egui::Ui) {
+    ui.add_space(SEPARATOR_GAP);
+    ui.separator();
+    ui.add_space(SEPARATOR_GAP);
+}
+
+/// One toolbar tile: `icon` large on top, `label` small underneath, with a
+/// rounded highlight behind the whole tile on hover/press and no chrome at
+/// rest (flat-toolbar idiom). Hand-painted because `egui::Button` can't mix
+/// two font sizes in one label — which also means the disabled look doesn't
+/// come for free the way `ui.add_enabled(Button::new(..))` gets it, so this
+/// wraps its painting in [`egui::Ui::add_enabled_ui`]: that's what gives a
+/// disabled tile the correct `Response::enabled()` (so `on_hover_text`/
+/// `on_disabled_hover_text` pick the right one and a click can't sneak
+/// through — `Ui::interact`'s enabled flag is what the input layer actually
+/// gates on, not the `Sense` alone), while the noninteractive-visuals text
+/// color and skipped hover fill below supply the grayed-out paint.
+pub(crate) fn toolbar_button(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    enabled: bool,
+) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| {
+        // Not necessarily the same as the `enabled` parameter above:
+        // `Ui::is_enabled` also ANDs in the parent's enabledness, so this is
+        // load-bearing for a tile drawn inside an already-disabled parent.
+        let effective_enabled = ui.is_enabled();
+        let (rect, response) = ui.allocate_exact_size(BUTTON_SIZE, egui::Sense::click());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, effective_enabled, label)
+        });
+
+        let visuals = if effective_enabled {
+            ui.style().interact(&response)
+        } else {
+            &ui.visuals().widgets.noninteractive
+        };
+        let painter = ui.painter();
+        if effective_enabled && (response.hovered() || response.is_pointer_button_down_on()) {
+            painter.rect_filled(rect, BUTTON_CORNER_RADIUS, visuals.weak_bg_fill);
+        }
+        painter.text(
+            egui::pos2(rect.center().x, rect.top() + ICON_TOP_PAD),
+            egui::Align2::CENTER_TOP,
+            icon,
+            egui::FontId::proportional(ICON_FONT_SIZE),
+            visuals.text_color(),
+        );
+        painter.text(
+            egui::pos2(rect.center().x, rect.bottom() - LABEL_BOTTOM_PAD),
+            egui::Align2::CENTER_BOTTOM,
+            label,
+            egui::FontId::proportional(LABEL_FONT_SIZE),
+            visuals.text_color(),
+        );
+        response
+    })
+    .inner
+}

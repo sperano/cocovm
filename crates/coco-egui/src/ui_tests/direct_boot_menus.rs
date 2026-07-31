@@ -20,7 +20,55 @@ fn machine_menu_reset_keeps_the_ui_alive() {
     click(&mut harness, "Machine");
     click_in_menu(&mut harness, "Reset");
     assert!(harness.state().running, "Reset leaves the machine on");
-    assert_eq!(harness.state().machine.config.variant, MachineVariant::Coco3);
+    assert_eq!(
+        harness.state().machine.config.variant,
+        MachineVariant::Coco3
+    );
+}
+
+/// The VM window's own toolbar: the same four transport tiles
+/// (Start/Suspend/Stop/Reset) the manager toolbar draws, via the shared
+/// `toolbar_button` widget. A direct boot is never manager-owned
+/// (`CocoApp::managed` stays `false` unless `launch_machine` sets it), and a
+/// chrome-bearing VM window only ever exists while Running, so Start and
+/// Suspend are permanently disabled here; Stop and Reset stay live. With no
+/// menu open, "Reset" can only be the toolbar tile — the Machine menu's own
+/// "Reset" item only joins the accessibility tree while that menu is open
+/// (`harness.rs`'s `lowest_by_label` doc covers the collision once it is).
+#[test]
+fn toolbar_shows_transport_tiles_disabled_for_direct_boot() {
+    let mut harness = boot_harness();
+
+    // One pass over all four tiles: each label is looked up (asserting it
+    // exists) exactly once, and its enabled/disabled state checked in the
+    // same step rather than re-querying "Start"/"Suspend" a second time.
+    let expectations = [
+        (
+            "Start",
+            Some(
+                "Start is always disabled in the VM window: a chrome-bearing window only exists while Running",
+            ),
+        ),
+        (
+            "Suspend",
+            Some("Suspend needs the manager (CocoApp::managed); a direct boot has none"),
+        ),
+        ("Stop", None),
+        ("Reset", None),
+    ];
+    for (label, disabled_reason) in expectations {
+        let is_disabled = harness.get_by_label(label).accesskit_node().is_disabled();
+        match disabled_reason {
+            Some(reason) => assert!(is_disabled, "{reason}"),
+            None => assert!(!is_disabled, "{label} must stay enabled in the VM window"),
+        }
+    }
+
+    click(&mut harness, "Reset");
+    assert!(
+        harness.state().running,
+        "the toolbar's Reset tile must leave the machine on"
+    );
 }
 
 #[test]
@@ -35,7 +83,10 @@ fn function_key_hotkeys_toggle_aspect_help_and_keyboard_mode() {
 
     harness.key_press(egui::Key::F10);
     harness.step();
-    assert!(harness.state().show_kbd_help, "F10 opens the key layout window");
+    assert!(
+        harness.state().show_kbd_help,
+        "F10 opens the key layout window"
+    );
     harness.get_by_label_contains("CoCo Keyboard Mapping");
     harness.key_press(egui::Key::F10);
     harness.step();
@@ -62,8 +113,9 @@ fn keyboard_menu_selects_mode_and_opens_key_layout() {
     click(&mut harness, "Key layout (F10)");
     assert!(harness.state().show_kbd_help);
 
-    // The toolbar shortcut toggles the same window closed.
-    click(&mut harness, "⌨ Keys (F10)");
+    // The same menu item toggles the window closed again.
+    click(&mut harness, "Keyboard");
+    click(&mut harness, "Key layout (F10)");
     assert!(!harness.state().show_kbd_help);
 }
 
@@ -112,9 +164,11 @@ fn help_about_toggles_the_about_window() {
     click(&mut harness, "Help");
     click(&mut harness, "About");
     assert!(!harness.state().show_about);
-    assert!(harness
-        .query_by_label("A Tandy Color Computer 3 emulator")
-        .is_none());
+    assert!(
+        harness
+            .query_by_label("A Tandy Color Computer 3 emulator")
+            .is_none()
+    );
 }
 
 #[test]
@@ -158,7 +212,12 @@ fn media_actions_are_disabled_until_media_is_present() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    for label in ["Eject Cartridge", "Eject Tape", "Rewind Tape", "Stop Print Capture"] {
+    for label in [
+        "Eject Cartridge",
+        "Eject Tape",
+        "Rewind Tape",
+        "Stop Print Capture",
+    ] {
         assert!(
             harness.get_by_label(label).accesskit_node().is_disabled(),
             "{label} should be disabled with nothing inserted"
@@ -200,7 +259,13 @@ fn multipak_install_slot_and_switch_flow() {
         MPISlot::FD502
     ));
     assert!(
-        harness.state_mut().machine.bus.cart.as_disk_cart().is_some(),
+        harness
+            .state_mut()
+            .machine
+            .bus
+            .cart
+            .as_disk_cart()
+            .is_some(),
         "the FD-502 in an MPI slot must be reachable through the cart chain"
     );
 
