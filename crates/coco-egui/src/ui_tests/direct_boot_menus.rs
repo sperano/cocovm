@@ -138,6 +138,31 @@ fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     assert!(harness.state().show_kbd_help);
 }
 
+/// The icon half of that click target: icon and readout are unioned into
+/// one response, so clicking the painted keyboard opens the same menu. The
+/// icon has no accessible label of its own (it is painted, not a labelled
+/// widget), so it is addressed by position — [`ICON_PROBE_DX`] left of the
+/// readout's left edge.
+#[test]
+fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
+    /// How far left of the readout's left edge to click to land inside the
+    /// keyboard icon: the icon is `KEYBOARD_ICON_SIZE.x` (15pt) wide and
+    /// sits one item spacing (8pt) before the readout, so it spans 23pt to
+    /// 8pt left of that edge.
+    const ICON_PROBE_DX: f32 = 15.0;
+
+    let mut harness = boot_harness();
+    let readout = harness.get_by_label("Keyboard: Positional (F12)").rect();
+    click_at(
+        &mut harness,
+        egui::pos2(readout.left() - ICON_PROBE_DX, readout.center().y),
+    );
+    harness.get_by_label("Key layout (F10)"); // the menu is open
+
+    click(&mut harness, "Symbolic");
+    assert!(harness.state().kb_mode == KbMode::Symbolic);
+}
+
 #[test]
 fn view_menu_toggles_aspect_and_switches_monitor_type() {
     let mut harness = boot_harness();

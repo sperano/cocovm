@@ -55,6 +55,32 @@ pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>,
     harness.step();
 }
 
+/// [`click`] at a screen position rather than at a labelled widget — for
+/// click targets that paint themselves and so never enter the
+/// accessibility tree, like the status bar's keyboard icon
+/// ([`crate::status_icons::keyboard_icon`]). Same hover-then-press-then-
+/// release frame sequence [`click`] uses.
+pub(super) fn click_at<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    pos: egui::Pos2,
+) {
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(pos));
+    harness.step();
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+    }
+    harness.step();
+}
+
 /// [`click`] with the secondary button — opens the machine-list rows'
 /// context menu.
 pub(super) fn right_click<S: 'static>(

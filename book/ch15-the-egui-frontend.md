@@ -175,8 +175,7 @@ this concrete. Here is the whole thing:
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                keyboard_icon(ui).on_hover_text("Keyboard input mode (F12 to toggle)");
-                ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
+                self.keyboard_status(ui);
                 self.cart_status(ui);
                 self.joystick_status(ui);
                 self.rs232_status(ui);
@@ -195,11 +194,16 @@ this concrete. Here is the whole thing:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:7-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L7-L27).) The toast at the
+([`crates/coco-egui/src/chrome/status_bar.rs:8-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L8-L27).) The toast at the
 end is a conditional widget, not a label that gets shown and hidden:
 whether the bar ends with a toast is decided fresh, sixty times a second,
-by asking `toast_message()`. The nine `*_status` calls are where it gets
-interesting. Each one is written like this:
+by asking `toast_message()`. The first entry, `keyboard_status`, is the
+bar's one control as well as a readout: it `|`-unions the icon's response
+with the mode readout's frameless button into a single click target and
+hangs the menu bar's own Keyboard menu off it with
+`egui::Popup::menu(&entry)` — a menu that, like the toast, exists only on
+the frames it is open. The other nine `*_status` calls are where the
+conditional-widget idea gets interesting. Each one is written like this:
 
 ```rust
     fn cart_status(&self, ui: &mut egui::Ui) {
@@ -210,7 +214,7 @@ interesting. Each one is written like this:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:29-34`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L29-L34).) The `cart_icon`
+([`crates/coco-egui/src/chrome/status_bar.rs:53-58`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L53-L58).) The `cart_icon`
 call ahead of the label is one of ten small device silhouettes the bar
 paints from `Painter` primitives
 ([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the
