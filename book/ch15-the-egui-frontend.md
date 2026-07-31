@@ -2434,7 +2434,7 @@ and local-only by the project's own convention. This is what happened, not
 a sanitized summary:
 
 ```
-test result: FAILED. 133 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 134 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 **All 37 failures are ROM-required, and only ROM-required.** Every one
@@ -2465,7 +2465,7 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
-**The 133 passing tests are the whole non-ROM surface of the crate**: the
+**The 134 passing tests are the whole non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
@@ -2484,7 +2484,7 @@ and no machine — and — importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 170 tests should pass.
+checkout with real ROMs present, all 171 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
