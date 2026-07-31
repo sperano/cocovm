@@ -3,12 +3,12 @@ use coco_core::joystick::{LEFT, RIGHT};
 use crate::*;
 
 impl CocoApp {
-    /// The status bar: read-only live state, no controls.
+    /// The status bar: live state readouts, plus the keyboard entry's menu
+    /// ([`Self::keyboard_status`]).
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                keyboard_icon(ui).on_hover_text("Keyboard input mode (F12 to toggle)");
-                ui.label(format!("Keyboard: {} (F12)", self.kb_mode.label()));
+                self.keyboard_status(ui);
                 self.cart_status(ui);
                 self.joystick_status(ui);
                 self.rs232_status(ui);
@@ -24,6 +24,30 @@ impl CocoApp {
                 }
             });
         });
+    }
+
+    /// The keyboard entry — the one status-bar entry that is also a
+    /// control: icon and mode readout are a single click target that pops
+    /// up the menu bar's Keyboard menu
+    /// ([`CocoApp::keyboard_menu_ui`] — positional/symbolic, then the key
+    /// layout window), so the mode readout is also where the mode is
+    /// changed.
+    ///
+    /// The readout is a frameless button rather than a label: it lines up
+    /// with the plain labels of every other entry while still lighting up
+    /// under the pointer. The popup is anchored [`TOP_START`] since the
+    /// status bar sits on the window's bottom edge — the default
+    /// below-the-button placement would be off-screen.
+    ///
+    /// [`TOP_START`]: egui::RectAlign::TOP_START
+    fn keyboard_status(&mut self, ui: &mut egui::Ui) {
+        let readout = format!("Keyboard: {} (F12)", self.kb_mode.label());
+        let entry = keyboard_icon(ui).interact(egui::Sense::click())
+            | ui.add(egui::Button::new(readout).frame(false));
+        egui::Popup::menu(&entry)
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.keyboard_menu_ui(ui));
+        entry.on_hover_text("Keyboard input mode — click for the keyboard menu (F12 toggles)");
     }
 
     fn cart_status(&self, ui: &mut egui::Ui) {

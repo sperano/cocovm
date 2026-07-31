@@ -119,6 +119,25 @@ fn keyboard_menu_selects_mode_and_opens_key_layout() {
     assert!(!harness.state().show_kbd_help);
 }
 
+/// The status bar's keyboard entry is a menu button for the same menu
+/// (`CocoApp::keyboard_menu_ui`): the readout both reports the mode and
+/// changes it. Its items are only in the accessibility tree while the popup
+/// is open, so an exact "Symbolic"/"Key layout (F10)" match is unambiguous
+/// here — the menu bar's Keyboard menu is closed throughout.
+#[test]
+fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "Keyboard: Positional (F12)");
+    click(&mut harness, "Symbolic");
+    assert!(harness.state().kb_mode == KbMode::Symbolic);
+    harness.get_by_label("Keyboard: Symbolic (F12)"); // the readout follows
+
+    click(&mut harness, "Keyboard: Symbolic (F12)");
+    click(&mut harness, "Key layout (F10)");
+    assert!(harness.state().show_kbd_help);
+}
+
 #[test]
 fn view_menu_toggles_aspect_and_switches_monitor_type() {
     let mut harness = boot_harness();
