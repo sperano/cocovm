@@ -64,8 +64,138 @@ jobs:
       - name: Build
         run: cargo build --release -p coco-egui --target ${{ matrix.target }}
 
-      - name: Package (macOS/Linux)
-        if: runner.os != 'Windows'
+      # --- macOS: Developer ID signing + notarization ---------------------
+      # Secrets: MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD,
+      # APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD (app-specific password).
+
+      - name: Import signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PWD=$(openssl rand -base64 24)
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          # Generous auto-lock: the DMG is signed after notarization, which
+          # can occasionally take over an hour in Apple's queue.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          [ -n "$IDENTITY" ] || { echo "no Developer ID identity found"; exit 1; }
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Sign, notarize, package (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          BIN=target/${{ matrix.target }}/release/cocovm
+          VERSION=${RELEASE_TAG#v}
+          STAGE=cocovm-${RELEASE_TAG}-${{ matrix.target }}
+
+          # cocovm.app bundle around the release binary. The plist lives
+          # here (not as a repo file) so workflow_dispatch runs against
+          # tags that predate this workflow still work — the checkout is
+          # the tag, but the workflow file always comes from main.
+          APP="$RUNNER_TEMP/cocovm.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>cocovm</string>
+            <key>CFBundleDisplayName</key><string>CocoVM</string>
+            <key>CFBundleIdentifier</key><string>com.sperano.cocovm</string>
+            <key>CFBundleExecutable</key><string>cocovm</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$VERSION</string>
+            <key>CFBundleVersion</key><string>$VERSION</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+            <key>NSHumanReadableCopyright</key><string>GPL-3.0-or-later</string>
+            <key>CFBundleIconFile</key><string>cocovm</string>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$APP/Contents/Info.plist"
+          cp "$BIN" "$APP/Contents/MacOS/cocovm"
+
+          # Finder icon from the same art the app embeds for its Dock icon.
+          # Guarded so dispatch against a tag predating the asset still works.
+          ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
+          if [ -f "$ICON_SRC" ]; then
+            ICONSET="$RUNNER_TEMP/cocovm.iconset"
+            mkdir "$ICONSET"
+            for s in 16 32 128 256 512; do
+              sips -z "$s" "$s" "$ICON_SRC" \
+                --out "$ICONSET/icon_${s}x${s}.png" > /dev/null
+              sips -z "$((s * 2))" "$((s * 2))" "$ICON_SRC" \
+                --out "$ICONSET/icon_${s}x${s}@2x.png" > /dev/null
+            done
+            mkdir -p "$APP/Contents/Resources"
+            iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/cocovm.icns"
+          fi
+
+          # Hardened runtime + secure timestamp are notarization requirements.
+          codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" "$APP"
+
+          # Notarize the bundle; the ticket covers the binary's code hash,
+          # so the identical binary in the tarball below passes Gatekeeper's
+          # online check too (bare executables cannot be stapled).
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait --timeout 2h --output-format json \
+            | tee "$RUNNER_TEMP/notary.json"
+          if [ "$(jq -r .status "$RUNNER_TEMP/notary.json")" != "Accepted" ]; then
+            # Older notarytool exits 0 on an Invalid verdict; surface the
+            # rejection log instead of dying later at stapling.
+            xcrun notarytool log "$(jq -r .id "$RUNNER_TEMP/notary.json")" \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" || true
+            exit 1
+          fi
+          xcrun stapler staple "$APP"
+
+          # DMG with the stapled app + docs, signed.
+          DMGROOT="$RUNNER_TEMP/dmgroot"
+          mkdir "$DMGROOT"
+          cp -R "$APP" "$DMGROOT/"
+          cp LICENSE NOTICE.md "$DMGROOT/"
+          ln -s /Applications "$DMGROOT/Applications"
+          hdiutil create -volname "CocoVM" -srcfolder "$DMGROOT" \
+            -ov -format UDZO "$STAGE.dmg"
+          codesign --sign "$SIGN_IDENTITY" --timestamp "$STAGE.dmg"
+
+          # Plain tarball with the same signed binary, for CLI users.
+          mkdir "$STAGE"
+          cp "$APP/Contents/MacOS/cocovm" LICENSE NOTICE.md "$STAGE/"
+          tar -czf "$STAGE.tar.gz" "$STAGE"
+
+          {
+            echo "ARCHIVE<<EOF"
+            echo "$STAGE.dmg"
+            echo "$STAGE.tar.gz"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
           STAGE=cocovm-${RELEASE_TAG}-${{ matrix.target }}
           mkdir "$STAGE"

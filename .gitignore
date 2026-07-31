@@ -21,3 +21,4 @@
 
 # built book editions (tools/build-book.sh)
 /build
+dist/
