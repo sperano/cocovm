@@ -1,7 +1,7 @@
 //! Write Track (format) MFM stream parsing
 
 use coco_core::fdc::JVCDisk;
-use coco_core::wd1773::{status, WD1773};
+use coco_core::wd1773::{WD1773, status};
 
 use super::common::{DRQ_INTERVAL, ONE_TRACK_BYTES};
 
@@ -127,7 +127,14 @@ fn write_track_to_a_write_protected_image_sets_status_and_does_not_transfer() {
     wd.write_command(0xF0, Some(&mut disk), 0); // Write Track, no options
     assert!(!wd.busy, "write-protected Write Track must not transfer");
     assert!(wd.intrq);
-    assert_eq!(wd.read_status(true, true) & status::WRITE_PROTECT, status::WRITE_PROTECT);
+    assert_eq!(
+        wd.read_status(true, true) & status::WRITE_PROTECT,
+        status::WRITE_PROTECT
+    );
     assert_eq!(disk.track_count(), 1, "image must not grow");
-    assert_eq!(disk.bytes(), before.as_slice(), "image must be completely unchanged");
+    assert_eq!(
+        disk.bytes(),
+        before.as_slice(),
+        "image must be completely unchanged"
+    );
 }

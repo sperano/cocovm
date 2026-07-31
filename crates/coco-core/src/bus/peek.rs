@@ -14,12 +14,12 @@ use crate::sam::SAMTarget;
 
 use super::regs::{
     CART_BASE, CART_LAST, FIRQENR_REG, GIME_LAST, HARDWIRED_ROM_BASE, INIT0_REG, INIT1_REG,
-    IO_BASE, IRQENR_REG, MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE,
-    PALETTE_LAST, PIA0_LAST, PIA1_BASE, PIA1_LAST, ROM_WINDOW_BASE, SAM_BAS_ROM_OFFSET,
-    SAM_CART_ROM_BASE, TIMER_MSB_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS,
-    VHD_LRN_HI, VHD_LRN_LO, VHD_LRN_MID, VHD_SELECT,
+    IO_BASE, IRQENR_REG, MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE, PALETTE_LAST,
+    PIA0_LAST, PIA1_BASE, PIA1_LAST, ROM_WINDOW_BASE, SAM_BAS_ROM_OFFSET, SAM_CART_ROM_BASE,
+    TIMER_MSB_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO,
+    VHD_LRN_MID, VHD_SELECT,
 };
-use super::{mmu_index, SystemBus};
+use super::{SystemBus, mmu_index};
 
 impl SystemBus {
     /// Read `addr` with no side effects. Routes identically to [`mc6809::Bus::read`].
@@ -58,10 +58,11 @@ impl SystemBus {
                 self.pia0
                     .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
             }
-            PIA1_BASE..=PIA1_LAST => {
-                self.pia1
-                    .peek((addr & 0x03) as u8, self.pia1_pa_pins(), self.pia1_pb_pins())
-            }
+            PIA1_BASE..=PIA1_LAST => self.pia1.peek(
+                (addr & 0x03) as u8,
+                self.pia1_pa_pins(),
+                self.pia1_pb_pins(),
+            ),
             CART_BASE..=CART_LAST => self.cart.peek(addr),
             MPI_CONTROL_REG => self.cart.peek_control(),
             VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
@@ -97,7 +98,9 @@ impl SystemBus {
                 .get(SAM_BAS_ROM_OFFSET + off)
                 .copied()
                 .unwrap_or(OPEN_BUS),
-            SAMTarget::Cart(off) => self.cart.rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
+            SAMTarget::Cart(off) => self
+                .cart
+                .rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
             SAMTarget::Io => self.sam_io_peek(addr),
             SAMTarget::OpenBus => OPEN_BUS,
         }
@@ -110,10 +113,11 @@ impl SystemBus {
                 self.pia0
                     .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
             }
-            PIA1_BASE..=PIA1_LAST => {
-                self.pia1
-                    .peek((addr & 0x03) as u8, self.pia1_pa_pins(), self.pia1_pb_pins())
-            }
+            PIA1_BASE..=PIA1_LAST => self.pia1.peek(
+                (addr & 0x03) as u8,
+                self.pia1_pa_pins(),
+                self.pia1_pb_pins(),
+            ),
             CART_BASE..=CART_LAST => self.cart.peek(addr),
             _ => OPEN_BUS,
         }

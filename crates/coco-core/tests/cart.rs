@@ -188,9 +188,7 @@ fn disk_basic_pak_integrates_at_cold_start() {
     // (`docs/cartridges.md`).
     const FIELDS: usize = 400;
     let mut m = boot_machine();
-    m.insert_cartridge(
-        ROMPak::from_bytes(&load_rom("disk11.rom"), false).unwrap(),
-    );
+    m.insert_cartridge(ROMPak::from_bytes(&load_rom("disk11.rom"), false).unwrap());
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();

@@ -7,9 +7,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard,
-};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 
 const BOOT_FIELDS: usize = 120;
 

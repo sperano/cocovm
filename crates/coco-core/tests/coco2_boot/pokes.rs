@@ -4,7 +4,9 @@
 
 use mc6809::Bus;
 
-use super::common::{assert_print_2_plus_2_works, boot_machine, boot_to_prompt, run_fields, type_line, SETTLE_FIELDS};
+use super::common::{
+    SETTLE_FIELDS, assert_print_2_plus_2_works, boot_machine, boot_to_prompt, run_fields, type_line,
+};
 
 /// Phase 6 acceptance test 1 (`docs/coco12-plan.md`): `PMODE 4,1:SCREEN 1,1`
 /// switches PIA1 $FF22's A/G bit on, `Machine::video_mode_summary` reports

@@ -16,10 +16,10 @@ mod rompak;
 pub use cart_enum::Cart;
 pub use empty::EmptySlot;
 pub use gmc::GamesMasterCartridge;
-pub use multipak::{mpi, MultiPak};
+pub use multipak::{MultiPak, mpi};
 pub use rompak::{
-    BankedPakError, BankedROMPak, ROMPak, ROMPakError, BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN,
-    ROM_PAK_MAX_LEN,
+    BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN, BankedPakError, BankedROMPak, ROM_PAK_MAX_LEN,
+    ROMPak, ROMPakError,
 };
 
 /// Value read from the external ROM window when nothing drives the bus:

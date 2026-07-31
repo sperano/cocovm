@@ -17,25 +17,27 @@ impl DebuggerPanel {
             .id_salt("dbg_stack_scroll")
             .max_height(320.0)
             .show(ui, |ui| {
-                egui::Grid::new("dbg_stack_grid").striped(true).show(ui, |ui| {
-                    for i in 0..STACK_SLOTS {
-                        let addr = machine.cpu.s.wrapping_add((i * 2) as u16);
-                        let hi = machine.bus.peek(addr);
-                        let lo = machine.bus.peek(addr.wrapping_add(1));
-                        let word = (u16::from(hi) << 8) | u16::from(lo);
-                        // Candidate return-address annotation: disassemble
-                        // whatever is AT this 16-bit stack value, so a
-                        // genuine return address reads as recognizable code
-                        // next to it (`docs/plan-debugger.md` §3) — not every
-                        // slot holds one (locals, saved registers), so this
-                        // is a best-effort hint, not a claim.
-                        let insn = disassemble(&mut |a| machine.bus.peek(a), word);
-                        ui.label(format!("${addr:04X}"));
-                        ui.label(format!("${word:04X}"));
-                        ui.label(format!("-> {} {}", insn.mnemonic, insn.operand));
-                        ui.end_row();
-                    }
-                });
+                egui::Grid::new("dbg_stack_grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for i in 0..STACK_SLOTS {
+                            let addr = machine.cpu.s.wrapping_add((i * 2) as u16);
+                            let hi = machine.bus.peek(addr);
+                            let lo = machine.bus.peek(addr.wrapping_add(1));
+                            let word = (u16::from(hi) << 8) | u16::from(lo);
+                            // Candidate return-address annotation: disassemble
+                            // whatever is AT this 16-bit stack value, so a
+                            // genuine return address reads as recognizable code
+                            // next to it (`docs/plan-debugger.md` §3) — not every
+                            // slot holds one (locals, saved registers), so this
+                            // is a best-effort hint, not a claim.
+                            let insn = disassemble(&mut |a| machine.bus.peek(a), word);
+                            ui.label(format!("${addr:04X}"));
+                            ui.label(format!("${word:04X}"));
+                            ui.label(format!("-> {} {}", insn.mnemonic, insn.operand));
+                            ui.end_row();
+                        }
+                    });
             });
     }
 }

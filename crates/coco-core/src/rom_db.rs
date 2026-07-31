@@ -22,16 +22,66 @@ pub struct KnownROM {
 
 /// Every system ROM the emulator knows how to use, per MAME.
 pub const KNOWN_ROMS: &[KnownROM] = &[
-    KnownROM { file: "coco3.rom", size: 0x8000, crc32: 0xb4c88d6c, desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)" },
-    KnownROM { file: "coco3p.rom", size: 0x8000, crc32: 0xff050d80, desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)" },
-    KnownROM { file: "bas10.rom", size: 0x2000, crc32: 0x00b50aaa, desc: "Color BASIC 1.0 (CoCo 1/2)" },
-    KnownROM { file: "bas11.rom", size: 0x2000, crc32: 0x6270955a, desc: "Color BASIC 1.1 (CoCo 1/2)" },
-    KnownROM { file: "bas12.rom", size: 0x2000, crc32: 0x54368805, desc: "Color BASIC 1.2 (CoCo 1/2)" },
-    KnownROM { file: "bas13.rom", size: 0x2000, crc32: 0xd8f4d15e, desc: "Color BASIC 1.3 (CoCo 2B)" },
-    KnownROM { file: "extbas10.rom", size: 0x2000, crc32: 0x6111a086, desc: "Extended Color BASIC 1.0 (CoCo 1/2)" },
-    KnownROM { file: "extbas11.rom", size: 0x2000, crc32: 0xa82a6254, desc: "Extended Color BASIC 1.1 (CoCo 1/2)" },
-    KnownROM { file: "disk10.rom", size: 0x2000, crc32: 0xb4f9968e, desc: "Disk Extended Color BASIC 1.0 (FD-502)" },
-    KnownROM { file: "disk11.rom", size: 0x2000, crc32: 0x0b9c5415, desc: "Disk Extended Color BASIC 1.1 (FD-502)" },
+    KnownROM {
+        file: "coco3.rom",
+        size: 0x8000,
+        crc32: 0xb4c88d6c,
+        desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)",
+    },
+    KnownROM {
+        file: "coco3p.rom",
+        size: 0x8000,
+        crc32: 0xff050d80,
+        desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)",
+    },
+    KnownROM {
+        file: "bas10.rom",
+        size: 0x2000,
+        crc32: 0x00b50aaa,
+        desc: "Color BASIC 1.0 (CoCo 1/2)",
+    },
+    KnownROM {
+        file: "bas11.rom",
+        size: 0x2000,
+        crc32: 0x6270955a,
+        desc: "Color BASIC 1.1 (CoCo 1/2)",
+    },
+    KnownROM {
+        file: "bas12.rom",
+        size: 0x2000,
+        crc32: 0x54368805,
+        desc: "Color BASIC 1.2 (CoCo 1/2)",
+    },
+    KnownROM {
+        file: "bas13.rom",
+        size: 0x2000,
+        crc32: 0xd8f4d15e,
+        desc: "Color BASIC 1.3 (CoCo 2B)",
+    },
+    KnownROM {
+        file: "extbas10.rom",
+        size: 0x2000,
+        crc32: 0x6111a086,
+        desc: "Extended Color BASIC 1.0 (CoCo 1/2)",
+    },
+    KnownROM {
+        file: "extbas11.rom",
+        size: 0x2000,
+        crc32: 0xa82a6254,
+        desc: "Extended Color BASIC 1.1 (CoCo 1/2)",
+    },
+    KnownROM {
+        file: "disk10.rom",
+        size: 0x2000,
+        crc32: 0xb4f9968e,
+        desc: "Disk Extended Color BASIC 1.0 (FD-502)",
+    },
+    KnownROM {
+        file: "disk11.rom",
+        size: 0x2000,
+        crc32: 0x0b9c5415,
+        desc: "Disk Extended Color BASIC 1.1 (FD-502)",
+    },
 ];
 
 /// What [`validate`] concluded about a ROM image.

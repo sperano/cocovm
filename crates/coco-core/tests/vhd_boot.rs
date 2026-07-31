@@ -13,7 +13,10 @@ use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig};
 
 fn asset(dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(dir).join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(dir)
+        .join(name)
 }
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {
@@ -28,7 +31,8 @@ fn tap(m: &mut Machine, pos: (u8, u8)) {
 }
 
 fn tap_char(m: &mut Machine, c: char) {
-    let (pos, shift) = coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
+    let (pos, shift) =
+        coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
     if shift {
         m.bus.keyboard.set(coco_core::keyboard::SHIFT, true);
     }

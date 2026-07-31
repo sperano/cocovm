@@ -2,12 +2,12 @@
 //! MC6847/MC6847T1/GIME character-generator decode, the legacy border rule,
 //! and the whole-field/per-scanline text painters.
 
-use crate::font6847::{MC6847T1_FONT, MC6847_FONT};
 use crate::font_gime::GIME_LOWRES_FONT;
+use crate::font6847::{MC6847_FONT, MC6847T1_FONT};
 
 use super::{
-    paint_px, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, COLS, FB_H, FB_W, PALETTE_LEN, ROWS,
-    TEXT_BG_INDEX, TEXT_FG_INDEX, VDG_AG, VDG_CSS, VDG_GM0_INTEXT,
+    BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, COLS, FB_H, FB_W, PALETTE_LEN, ROWS, TEXT_BG_INDEX,
+    TEXT_FG_INDEX, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, paint_px,
 };
 
 /// Number of glyphs in the font (VDG codes $00–$3F).
@@ -184,7 +184,11 @@ pub fn paint_legacy_text_line(
             let (cell_fg, cell_bg, glyph) = resolve_alpha_cell(generator, ff22, code, fg, bg);
             let bits = glyph.get(glyph_row).copied().unwrap_or(0);
             for cx in 0..CELL_W {
-                let color = if bits & (0x80 >> cx) != 0 { cell_fg } else { cell_bg };
+                let color = if bits & (0x80 >> cx) != 0 {
+                    cell_fg
+                } else {
+                    cell_bg
+                };
                 paint_px(out, &mut x, xscale, color);
             }
         }
@@ -235,7 +239,13 @@ pub fn render_text(
 }
 
 /// Render one semigraphics-4 cell: a 2×2 grid of blocks in the selected colour.
-fn blit_semigraphics4(fb: &mut [u8], row: usize, col: usize, code: u8, palette: &[[u8; 4]; PALETTE_LEN]) {
+fn blit_semigraphics4(
+    fb: &mut [u8],
+    row: usize,
+    col: usize,
+    code: u8,
+    palette: &[[u8; 4]; PALETTE_LEN],
+) {
     let on = palette[((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize];
     let off = palette[SG4_OFF_INDEX];
     let x0 = BORDER + col * CELL_W;
@@ -257,7 +267,14 @@ fn blit_semigraphics4(fb: &mut [u8], row: usize, col: usize, code: u8, palette: 
     }
 }
 
-fn blit_cell(fb: &mut [u8], row: usize, col: usize, glyph: &[u8; CELL_H], fg: [u8; 4], bg: [u8; 4]) {
+fn blit_cell(
+    fb: &mut [u8],
+    row: usize,
+    col: usize,
+    glyph: &[u8; CELL_H],
+    fg: [u8; 4],
+    bg: [u8; 4],
+) {
     let x0 = BORDER + col * CELL_W;
     let y0 = BORDER + row * CELL_H;
     for (cy, &bits) in glyph.iter().enumerate() {

@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
 
-
 /// Read an explicit `--rom` image as-is: a CoCo 3 image, or — for CoCo 1/2 —
 /// an already pre-composed flat layout (see the `Cli::rom` doc).
 pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
@@ -21,7 +20,10 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
 /// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
 /// the manager reports them inline in its detail pane
 /// (`launch_machine`'s contract); `main` prints them and exits.
-pub(crate) fn load_default_rom(variant: MachineVariant, roms_dir: &Path) -> Result<Box<[u8]>, String> {
+pub(crate) fn load_default_rom(
+    variant: MachineVariant,
+    roms_dir: &Path,
+) -> Result<Box<[u8]>, String> {
     match variant {
         MachineVariant::Coco3 => {
             let path = roms_dir.join("coco3.rom");
@@ -67,7 +69,8 @@ pub(crate) const COCO12_BAS_OFFSET: usize = 8 * 1024;
 /// far rarer dump, so it stays a last resort rather than the preferred one —
 /// even though the CoCo 2 now defaults to `VdgVariant::Mc6847T1`, 1.2 runs
 /// identically on a T1 machine (lowercase just goes unused).
-pub(crate) const COCO_BASIC_CANDIDATES: &[&str] = &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
+pub(crate) const COCO_BASIC_CANDIDATES: &[&str] =
+    &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
 
 /// Newest-preferred Extended Color BASIC dumps; optional
 /// (`docs/coco12-plan.md` "ROM files": a Color-BASIC-only machine still
@@ -137,14 +140,25 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
         .unwrap_or_default();
     match rom_db::validate(&name, bytes) {
         Validation::Verified(known) => {
-            tracing::info!("{name}: verified {} [crc32 {:08x}]", known.desc, known.crc32);
+            tracing::info!(
+                "{name}: verified {} [crc32 {:08x}]",
+                known.desc,
+                known.crc32
+            );
         }
-        Validation::Mismatch { expected, actual_crc32, actual_size } => {
+        Validation::Mismatch {
+            expected,
+            actual_crc32,
+            actual_size,
+        } => {
             tracing::warn!(
                 "{name} does not match the known dump of {}: \
                  expected {} bytes crc32 {:08x}, got {} bytes crc32 {actual_crc32:08x} \
                  (patched image, or a bad dump)",
-                expected.desc, expected.size, expected.crc32, actual_size,
+                expected.desc,
+                expected.size,
+                expected.crc32,
+                actual_size,
             );
         }
         Validation::Unknown => {
@@ -156,7 +170,6 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
         }
     }
 }
-
 
 /// Dev-tree ROM directory (`./roms`, git-ignored): where the direct-boot CLI
 /// path and the manager's [`launch_machine`] both default-resolve system and
@@ -227,7 +240,10 @@ pub(crate) fn load_rom_with_source(
     roms_dir: &Path,
 ) -> Result<(Box<[u8]>, ROMSource), String> {
     match explicit {
-        Some(path) => Ok((load_explicit_rom(path)?, ROMSource::File(path.to_path_buf()))),
+        Some(path) => Ok((
+            load_explicit_rom(path)?,
+            ROMSource::File(path.to_path_buf()),
+        )),
         None => {
             let rom = load_default_rom(variant, roms_dir)?;
             let source = match variant {

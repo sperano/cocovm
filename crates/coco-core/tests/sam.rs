@@ -270,7 +270,11 @@ fn ff60_to_ff7e_reaches_the_cart_slot_on_coco1_2() {
     // actually answers.
     let mut b = bus(MemorySize::K64);
     for addr in 0xFF60u16..=0xFF7E {
-        assert_eq!(b.read(addr), 0xFF, "addr {addr:#06x} must read open bus with an empty slot");
+        assert_eq!(
+            b.read(addr),
+            0xFF,
+            "addr {addr:#06x} must read open bus with an empty slot"
+        );
     }
 
     // A cart that actually answers proves the extension range truly reaches

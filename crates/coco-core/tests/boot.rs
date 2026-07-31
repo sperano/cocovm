@@ -13,8 +13,7 @@ use mc6809::Bus;
 const RESET_ENTRY: u16 = 0x8C1B;
 
 fn load_rom() -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms/coco3.rom");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

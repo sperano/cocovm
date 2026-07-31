@@ -41,7 +41,10 @@ impl CocoApp {
         let selected = |kind| current == Some(kind);
 
         ui.label("Wire the serial line to:");
-        if ui.selectable_label(selected(RS232EndpointKind::Loopback), "Loopback").clicked() {
+        if ui
+            .selectable_label(selected(RS232EndpointKind::Loopback), "Loopback")
+            .clicked()
+        {
             self.rs232_set_endpoint(RS232EndpointKind::Loopback);
         }
 
@@ -49,7 +52,10 @@ impl CocoApp {
             Some(RS232Endpoint::TCP(addr)) => format!("TCP ({addr})"),
             _ => "TCP".to_string(),
         };
-        if ui.selectable_label(selected(RS232EndpointKind::TCP), tcp_label).clicked() {
+        if ui
+            .selectable_label(selected(RS232EndpointKind::TCP), tcp_label)
+            .clicked()
+        {
             self.rs232_set_endpoint(RS232EndpointKind::TCP);
         }
         ui.horizontal(|ui| {
@@ -63,7 +69,10 @@ impl CocoApp {
                 Some(RS232Endpoint::PTY(path)) => format!("PTY ({path})"),
                 _ => "PTY".to_string(),
             };
-            if ui.selectable_label(selected(RS232EndpointKind::PTY), pty_label).clicked() {
+            if ui
+                .selectable_label(selected(RS232EndpointKind::PTY), pty_label)
+                .clicked()
+            {
                 self.rs232_set_endpoint(RS232EndpointKind::PTY);
             }
         }
@@ -74,6 +83,10 @@ impl CocoApp {
             return;
         };
         ui.separator();
-        ui.label(format!("TX {} bytes / RX {} bytes", pak.tx_bytes(), pak.rx_bytes()));
+        ui.label(format!(
+            "TX {} bytes / RX {} bytes",
+            pak.tx_bytes(),
+            pak.rx_bytes()
+        ));
     }
 }

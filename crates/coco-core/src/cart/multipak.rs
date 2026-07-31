@@ -296,7 +296,8 @@ impl Cartridge for MultiPak {
     /// walk ever runs (`docs/plan-save-states.md`).
     fn validate_restored(&self) -> Result<(), String> {
         for (i, slot) in self.slots.iter().enumerate() {
-            slot.validate_restored().map_err(|e| format!("Multi-Pak slot {i}: {e}"))?;
+            slot.validate_restored()
+                .map_err(|e| format!("Multi-Pak slot {i}: {e}"))?;
         }
         Ok(())
     }

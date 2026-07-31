@@ -347,8 +347,7 @@ impl GIME {
     /// the count. SEB documents the MSB write as starting the timer; on the
     /// real chip either byte restarts it (MAME `reset_timer` on both).
     pub fn write_timer_msb(&mut self, val: u8) {
-        self.timer_reload =
-            (self.timer_reload & 0x00FF) | (u16::from(val) << 8 & TIMER_VALUE_MASK);
+        self.timer_reload = (self.timer_reload & 0x00FF) | (u16::from(val) << 8 & TIMER_VALUE_MASK);
         self.restart_timer();
     }
 

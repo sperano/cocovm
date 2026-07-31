@@ -11,9 +11,9 @@ use crate::joy::JoySource;
 
 use super::config_form;
 use super::{
+    CartridgeChoice, FORM_GRID_SPACING, MachineForm, MediaChoice, SerialChoice, SlotChoice,
     cartridge_label, disk_file_dialog, media_choice_text, rom_pak_file_dialog, serial_label,
-    slot_label, sub_form_row, CartridgeChoice, MachineForm, MediaChoice, SerialChoice, SlotChoice,
-    FORM_GRID_SPACING,
+    slot_label, sub_form_row,
 };
 
 impl MachineForm {

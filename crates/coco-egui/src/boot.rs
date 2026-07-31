@@ -59,11 +59,15 @@ pub(crate) fn native_options(variant: MachineVariant) -> eframe::NativeOptions {
     // Size for the aspect-corrected (wider) image so it always fits; the
     // uncorrected image is narrower and simply leaves margin.
     let img_h = coco_core::video::FB_H as f32 * SCALE;
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
-        .expect("embedded icon PNG is valid");
+    let icon =
+        eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
+            .expect("embedded icon PNG is valid");
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([img_h * TARGET_ASPECT, img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H])
+            .with_inner_size([
+                img_h * TARGET_ASPECT,
+                img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H,
+            ])
             .with_icon(icon)
             .with_title(format!("cocovm — {}", machine_label(variant))),
         ..Default::default()
@@ -107,7 +111,12 @@ pub(crate) fn boot_app(
 /// none of them and [`mount_cli_hardware`] wires everything up afterward
 /// through the same methods the MultiPak menu uses.
 fn new_app(cli: &Cli, config: MachineConfig, rom: Box<[u8]>, rom_source: ROMSource) -> CocoApp {
-    let dw_paths = [cli.dw0.clone(), cli.dw1.clone(), cli.dw2.clone(), cli.dw3.clone()];
+    let dw_paths = [
+        cli.dw0.clone(),
+        cli.dw1.clone(),
+        cli.dw2.clone(),
+        cli.dw3.clone(),
+    ];
     let becker_enabled = cli.becker || dw_paths.iter().any(|p| p.is_some());
     let (cart_path, disk_paths) = if cli.mpi {
         (None, [None, None])
@@ -133,7 +142,9 @@ fn new_app(cli: &Cli, config: MachineConfig, rom: Box<[u8]>, rom_source: ROMSour
 fn mount_cli_hardware(app: &mut CocoApp, cli: &Cli) {
     let disk_paths = [cli.disk0.clone(), cli.disk1.clone()];
     if !cli.mpi {
-        if cli.fd502 && let Err(e) = app.ensure_disk_controller() {
+        if cli.fd502
+            && let Err(e) = app.ensure_disk_controller()
+        {
             app.cart_error = Some(e);
         } else if cli.rtc {
             app.insert_rtc();

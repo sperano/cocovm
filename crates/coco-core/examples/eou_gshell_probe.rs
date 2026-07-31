@@ -11,7 +11,10 @@ use coco_core::{Machine, MachineConfig, MonitorType};
 use std::path::PathBuf;
 
 fn asset(dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(dir).join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(dir)
+        .join(name)
 }
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {
@@ -26,7 +29,8 @@ fn tap(m: &mut Machine, pos: (u8, u8)) {
 }
 
 fn tap_char(m: &mut Machine, c: char) {
-    let (pos, shift) = coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
+    let (pos, shift) =
+        coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
     if shift {
         m.bus.keyboard.set(coco_core::keyboard::SHIFT, true);
     }
@@ -60,7 +64,10 @@ fn wait_for(m: &mut Machine, marker: &str, max_fields: usize) -> String {
 fn dump_video(m: &Machine, label: &str) {
     let g = &m.bus.gime;
     println!("== {label}");
-    println!("   vmode($FF98)={:#04x} vres($FF99)={:#04x} border($FF9A)={:#04x}", g.vmode, g.vres, g.border);
+    println!(
+        "   vmode($FF98)={:#04x} vres($FF99)={:#04x} border($FF9A)={:#04x}",
+        g.vmode, g.vres, g.border
+    );
     print!("   palette:");
     for (i, p) in g.palette.iter().enumerate() {
         print!(" [{i}]={p:#04x}");
@@ -75,8 +82,11 @@ fn main() {
     let vhd_src = asset("disks", "68SDC.VHD");
     let vhd_copy = std::env::temp_dir().join("cocovm-eou-probe.VHD");
     std::fs::copy(&vhd_src, &vhd_copy).expect("copy VHD");
-    let vhd_file =
-        std::fs::File::options().read(true).write(true).open(&vhd_copy).expect("open VHD");
+    let vhd_file = std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(&vhd_copy)
+        .expect("open VHD");
 
     let mut m = Machine::new(MachineConfig::default(), coco.into_boxed_slice());
     let mut cart = DiskCart::new(disk_rom.into_boxed_slice());
@@ -102,13 +112,17 @@ fn main() {
         m.run_field();
     }
     dump_video(&m, "after gshell (3000 fields)");
-    println!("-- text_screen_lines now --\n{}", m.text_screen_lines().join("\n"));
+    println!(
+        "-- text_screen_lines now --\n{}",
+        m.text_screen_lines().join("\n")
+    );
 
     // Screenshot the same gshell frame through both monitor types.
     if let Some(dir) = std::env::args().nth(1) {
-        for (monitor, name) in
-            [(MonitorType::RGB, "gshell-rgb.ppm"), (MonitorType::Composite, "gshell-cmp.ppm")]
-        {
+        for (monitor, name) in [
+            (MonitorType::RGB, "gshell-rgb.ppm"),
+            (MonitorType::Composite, "gshell-cmp.ppm"),
+        ] {
             m.bus.gime.monitor = monitor;
             m.run_field();
             write_ppm(

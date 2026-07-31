@@ -43,7 +43,10 @@ fn printer_def_attaches_the_paper_window_handle() {
 
     let app = super::launch_machine(&def, "launch-test-printer")
         .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
-    assert!(app.paper_window.handle.is_some(), "the paper window should hold a DMP-105 handle");
+    assert!(
+        app.paper_window.handle.is_some(),
+        "the paper window should hold a DMP-105 handle"
+    );
     assert!(!app.paper_window.open, "attached with the window closed");
 }
 
@@ -81,5 +84,8 @@ fn mpi_and_rs232_together_errors() {
     let err = super::launch_machine(&def, "launch-test-mpi-rs232")
         .err()
         .expect("mpi + rs232 must be rejected");
-    assert!(err.contains("MultiPak"), "error should explain the MPI-slot gap: {err}");
+    assert!(
+        err.contains("MultiPak"),
+        "error should explain the MPI-slot gap: {err}"
+    );
 }

@@ -4,8 +4,8 @@
 
 use coco_core::gime::init0;
 use coco_core::video::{
-    render_text, AlphaGenerator, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN,
-    SCREEN_LEN, TEXT_BG_INDEX, TEXT_FG_INDEX,
+    AlphaGenerator, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN, SCREEN_LEN,
+    TEXT_BG_INDEX, TEXT_FG_INDEX, render_text,
 };
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
@@ -50,7 +50,14 @@ const AT: u8 = 0x00;
 #[test]
 fn border_and_active_area_use_their_colors() {
     let mut fb = fb();
-    render_text(&[SPACE; SCREEN_LEN], &palette(), BD, AlphaGenerator::MC6847, NO_GM0, &mut fb);
+    render_text(
+        &[SPACE; SCREEN_LEN],
+        &palette(),
+        BD,
+        AlphaGenerator::MC6847,
+        NO_GM0,
+        &mut fb,
+    );
 
     assert_eq!(px(&fb, 0, 0), BD);
     assert_eq!(px(&fb, FB_W - 1, FB_H - 1), BD);
@@ -66,7 +73,14 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = AT;
     let mut fb = fb();
-    render_text(&screen, &palette(), BD, AlphaGenerator::MC6847, NO_GM0, &mut fb);
+    render_text(
+        &screen,
+        &palette(),
+        BD,
+        AlphaGenerator::MC6847,
+        NO_GM0,
+        &mut fb,
+    );
 
     let mut fg_pixels = 0;
     for y in BORDER..BORDER + CELL_H {
@@ -91,7 +105,14 @@ fn inverse_video_swaps_fg_and_bg() {
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = AT_INVERSE;
     let mut fb = fb();
-    render_text(&screen, &palette(), BD, AlphaGenerator::MC6847, NO_GM0, &mut fb);
+    render_text(
+        &screen,
+        &palette(),
+        BD,
+        AlphaGenerator::MC6847,
+        NO_GM0,
+        &mut fb,
+    );
 
     let mut counts = (0, 0);
     for y in BORDER..BORDER + CELL_H {
@@ -103,8 +124,14 @@ fn inverse_video_swaps_fg_and_bg() {
             }
         }
     }
-    assert!(counts.1 > 0, "inverse glyph strokes should use the background colour");
-    assert!(counts.0 > counts.1, "inverse cell should be mostly foreground-filled");
+    assert!(
+        counts.1 > 0,
+        "inverse glyph strokes should use the background colour"
+    );
+    assert!(
+        counts.0 > counts.1,
+        "inverse cell should be mostly foreground-filled"
+    );
 }
 
 #[test]
@@ -169,7 +196,14 @@ fn semigraphics4_renders_2x2_color_blocks() {
     let mut screen = [SPACE; SCREEN_LEN];
     screen[0] = SG4;
     let mut fb = fb();
-    render_text(&screen, &palette(), BD, AlphaGenerator::MC6847, NO_GM0, &mut fb);
+    render_text(
+        &screen,
+        &palette(),
+        BD,
+        AlphaGenerator::MC6847,
+        NO_GM0,
+        &mut fb,
+    );
 
     let quad_x = CELL_W / 2;
     let quad_y = CELL_H / 2;

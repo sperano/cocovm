@@ -1,7 +1,7 @@
 //! Branch-condition evaluation, shared by the short `Bcc` and long `LBcc`
 //! encodings in [`crate::exec`].
 
-use crate::{cc, MC6809};
+use crate::{MC6809, cc};
 
 impl MC6809 {
     /// Evaluate a branch condition selected by the opcode's low nibble — shared

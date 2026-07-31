@@ -166,7 +166,12 @@ pub(crate) struct VHDDrive {
 
 impl VHDDrive {
     fn new() -> Self {
-        Self { lrn: 0, buffer_addr: 0, status: status::NO_VHD, image: None }
+        Self {
+            lrn: 0,
+            buffer_addr: 0,
+            status: status::NO_VHD,
+            image: None,
+        }
     }
 }
 
@@ -274,7 +279,11 @@ impl VHD {
     /// these registers. They read `0` while a drive is selected, open bus
     /// while deselected.
     pub fn read_lrn_or_buffer(&self) -> u8 {
-        if self.selected_drive().is_some() { 0 } else { OPEN_BUS }
+        if self.selected_drive().is_some() {
+            0
+        } else {
+            OPEN_BUS
+        }
     }
 
     /// `$FF83` read: the selected drive's last command status, or open bus

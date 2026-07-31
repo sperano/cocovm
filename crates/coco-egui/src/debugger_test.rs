@@ -38,7 +38,10 @@ fn run_field_with_no_breakpoints_matches_plain_run_field() {
     let mut panel = DebuggerPanel::new();
 
     for _ in 0..3 {
-        assert!(panel.run_field(&mut via_panel), "no breakpoints set: must always continue");
+        assert!(
+            panel.run_field(&mut via_panel),
+            "no breakpoints set: must always continue"
+        );
         via_plain.run_field();
     }
 

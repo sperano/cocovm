@@ -465,8 +465,7 @@ fn paint_ink_dots<D: DotSource>(
     // Pad the y-unit query range: a dot's center can sit just outside
     // [y0, y1] while its rendered circle still bleeds into view (see
     // DOT_QUERY_PAD_Y_UNITS's doc comment).
-    let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64
-        - DOT_QUERY_PAD_Y_UNITS as i64)
+    let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64 - DOT_QUERY_PAD_Y_UNITS as i64)
         .max(0) as u32;
     let y1_units = (y1_in * Y_UNITS_PER_INCH as f32).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;
     for (x_units, y_units) in dots.dots_in_range(y0_units, y1_units) {

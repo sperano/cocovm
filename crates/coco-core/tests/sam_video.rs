@@ -57,4 +57,3 @@ fn vdg_strobes_do_not_disturb_the_adjacent_page_bits() {
     assert_eq!(b.gime.sam_page, 0b01);
     assert_eq!(b.gime.sam_video, 0b111, "V bits untouched by a page strobe");
 }
-

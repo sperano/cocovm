@@ -323,10 +323,15 @@ impl Cartridge for SoundSpeechCartridge {
 /// ([`Load`]/[`Engine`]): `cursor <= cap <= ram::SIZE`.
 fn check_ram_cursor_cap(name: &str, cursor: usize, cap: usize) -> Result<(), String> {
     if cap > ram::SIZE {
-        return Err(format!("SSC: {name}.cap ({cap}) exceeds ram::SIZE ({})", ram::SIZE));
+        return Err(format!(
+            "SSC: {name}.cap ({cap}) exceeds ram::SIZE ({})",
+            ram::SIZE
+        ));
     }
     if cursor > cap {
-        return Err(format!("SSC: {name}.cursor ({cursor}) exceeds {name}.cap ({cap})"));
+        return Err(format!(
+            "SSC: {name}.cursor ({cursor}) exceeds {name}.cap ({cap})"
+        ));
     }
     Ok(())
 }

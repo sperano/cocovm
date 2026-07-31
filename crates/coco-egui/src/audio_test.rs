@@ -35,11 +35,7 @@ fn resampler_downsamples_when_step_exceeds_one() {
     // isn't simply input[0].
     let mut r = Resampler::default();
     let mut out = Vec::new();
-    r.process(
-        &[[1.0; 2], [2.0; 2], [3.0; 2], [4.0; 2]],
-        2.0,
-        &mut out,
-    );
+    r.process(&[[1.0; 2], [2.0; 2], [3.0; 2], [4.0; 2]], 2.0, &mut out);
     assert_eq!(out, vec![[0.0; 2], [2.0; 2]]);
 }
 
@@ -87,14 +83,20 @@ fn lowpass_attenuates_nyquist_rate_alternation_but_passes_dc() {
             max_late = f32::max(max_late, y.abs());
         }
     }
-    assert!(max_late < 0.2, "Nyquist alternation not attenuated: {max_late}");
+    assert!(
+        max_late < 0.2,
+        "Nyquist alternation not attenuated: {max_late}"
+    );
 
     let mut lp = LowPass::design(0.45 * 48_000.0, 62_866.0);
     let mut last = 0.0;
     for _ in 0..4000 {
         last = lp.process(1.0);
     }
-    assert!((last - 1.0).abs() < 0.01, "DC gain should be ~1, got {last}");
+    assert!(
+        (last - 1.0).abs() < 0.01,
+        "DC gain should be ~1, got {last}"
+    );
 }
 
 #[test]

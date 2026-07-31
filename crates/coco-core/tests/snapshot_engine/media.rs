@@ -41,14 +41,20 @@ fn missing_system_rom_source_is_missing_media() {
 /// cleaned up by the caller (`RAII` would be nicer, but a bare helper keeps
 /// this file's dependency list unchanged).
 fn scratch_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("coco_snapshot_engine_test_{}_{name}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "coco_snapshot_engine_test_{}_{name}",
+        std::process::id()
+    ))
 }
 
 #[test]
 fn media_ref_verify_reports_ok_mismatch_and_missing() {
     let path = scratch_path("verify");
     std::fs::write(&path, b"hello coco").unwrap();
-    let media_ref = MediaRef { path: path.clone(), sha256: snapshot::sha256_hex(b"hello coco") };
+    let media_ref = MediaRef {
+        path: path.clone(),
+        sha256: snapshot::sha256_hex(b"hello coco"),
+    };
     assert_eq!(media_ref.verify(), MediaCheck::Ok);
 
     std::fs::write(&path, b"goodbye coco").unwrap();
@@ -148,7 +154,10 @@ fn missing_cart_rom_source_is_missing_media() {
     let bytes = snapshot::save(&machine, &media).expect("save");
     let payload = snapshot::load(&bytes).expect("load");
     // No `cart_roms` entry in `sources`: the pak's image is unresolved.
-    let sources = MediaSources { system_rom: Some(load_rom()), ..MediaSources::default() };
+    let sources = MediaSources {
+        system_rom: Some(load_rom()),
+        ..MediaSources::default()
+    };
 
     let err = expect_err(snapshot::restore(payload, sources));
     match err {
@@ -173,7 +182,10 @@ fn ram_length_mismatch_is_an_invalid_payload_error_not_a_panic() {
     // Hand-tamper the RAM length so it no longer matches `config.memory`.
     machine.bus.ram = vec![0u8; 1].into_boxed_slice();
 
-    let payload = SnapshotPayload { media: MediaRefs::default(), machine };
+    let payload = SnapshotPayload {
+        media: MediaRefs::default(),
+        machine,
+    };
     let err = expect_err(snapshot::restore(payload, MediaSources::default()));
     assert!(matches!(err, SnapshotError::InvalidPayload(_)), "{err:?}");
 }
@@ -185,6 +197,9 @@ fn sha256_file_matches_sha256_hex_of_the_same_bytes() {
     let path = scratch_path("hash");
     let content = b"the quick brown fox jumps over the lazy dog";
     std::fs::write(&path, content).unwrap();
-    assert_eq!(snapshot::sha256_file(&path).unwrap(), snapshot::sha256_hex(content));
+    assert_eq!(
+        snapshot::sha256_file(&path).unwrap(),
+        snapshot::sha256_hex(content)
+    );
     std::fs::remove_file(&path).unwrap();
 }

@@ -11,10 +11,10 @@
 mod disk_cart;
 mod jvc;
 
-pub use disk_cart::{dskreg, DiskCart};
+pub use disk_cart::{DiskCart, dskreg};
 pub use jvc::{
-    JVCDisk, JVCError, DEFAULT_FIRST_SECTOR_ID, DEFAULT_SECTORS_PER_TRACK,
-    DEFAULT_SECTOR_SIZE_CODE, DEFAULT_SIDES, MAX_FORMAT_TRACKS,
+    DEFAULT_FIRST_SECTOR_ID, DEFAULT_SECTOR_SIZE_CODE, DEFAULT_SECTORS_PER_TRACK, DEFAULT_SIDES,
+    JVCDisk, JVCError, MAX_FORMAT_TRACKS,
 };
 
 /// Number of physical drive slots the FD-502 exposes (DSKREG selects among

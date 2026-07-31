@@ -13,7 +13,7 @@ use coco_core::video::{CELL_H, TEXT_FG_INDEX, VDG_GM0_INTEXT};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
-use super::common::{glyph_bits, sample_cell_canonical, CODE_A, CODE_O, PLAIN_O_GLYPH, T1_O_GLYPH};
+use super::common::{CODE_A, CODE_O, PLAIN_O_GLYPH, T1_O_GLYPH, glyph_bits, sample_cell_canonical};
 
 /// `GIME_LOWRES_FONT[15]` ('O').
 const GIME_O_GLYPH: [u8; CELL_H] = [

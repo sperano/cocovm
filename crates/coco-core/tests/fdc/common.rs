@@ -9,8 +9,12 @@ use mc6809::Bus;
 pub const ONE_TRACK_BYTES: usize = 18 * 256;
 
 pub fn load_rom(name: &str) -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms").join(name);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display())).into_boxed_slice()
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../roms")
+        .join(name);
+    std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+        .into_boxed_slice()
 }
 
 pub fn disk_cart() -> DiskCart {
@@ -78,7 +82,11 @@ pub fn screen_row(m: &mut Machine, row: u16) -> String {
     (0..32)
         .map(|c| {
             let code = m.bus.read(0x0400 + row * 32 + c) & 0x3F;
-            if code < 0x20 { (b'@' + code) as char } else { (b' ' + (code - 0x20)) as char }
+            if code < 0x20 {
+                (b'@' + code) as char
+            } else {
+                (b' ' + (code - 0x20)) as char
+            }
         })
         .collect()
 }
@@ -95,7 +103,8 @@ pub fn tap(m: &mut Machine, pos: (u8, u8)) {
 }
 
 pub fn tap_char(m: &mut Machine, c: char) {
-    let (pos, shift) = coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
+    let (pos, shift) =
+        coco_core::keyboard::char_key(c).unwrap_or_else(|| panic!("no key for {c:?}"));
     if shift {
         m.bus.keyboard.set(coco_core::keyboard::SHIFT, true);
     }
@@ -130,9 +139,8 @@ pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JVCDisk {
     const TRACKS: usize = 35;
     let mut bytes = vec![0u8; TRACKS * ONE_TRACK_BYTES];
 
-    let track_offset = |track: usize, sector: u8| -> usize {
-        (track * 18 + (sector as usize - 1)) * SECTOR_SIZE
-    };
+    let track_offset =
+        |track: usize, sector: u8| -> usize { (track * 18 + (sector as usize - 1)) * SECTOR_SIZE };
 
     // GAT: 68 granules, $FF = free, except granule 0 = $C1 (last granule of
     // the file, 1 sector used in its last sector).

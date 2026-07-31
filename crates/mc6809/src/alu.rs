@@ -1,7 +1,7 @@
 //! 8/16-bit ALU primitives and condition-code flag helpers shared by every
 //! instruction family in [`crate::exec`].
 
-use crate::{cc, MC6809};
+use crate::{MC6809, cc};
 
 impl MC6809 {
     /// Set N and Z from an 8-bit result, leaving V, C, H untouched.

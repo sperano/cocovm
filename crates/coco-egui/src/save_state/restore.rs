@@ -12,7 +12,10 @@ use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, RestoredMachi
 use coco_core::vhd::{self, VHDImage};
 use eframe::egui;
 
-use crate::{CocoApp, MPI_SLOT_COUNT, MPISlot, MPIState, RS232Endpoint, ROMSource, host_dw_clock, host_time_source, machine_label};
+use crate::{
+    CocoApp, MPI_SLOT_COUNT, MPISlot, MPIState, ROMSource, RS232Endpoint, host_dw_clock,
+    host_time_source, machine_label,
+};
 
 use super::media_ref::{
     direct_port_rom_path, is_rom_db_pseudo_path, mpi_slot_from_cart, open_if_present,
@@ -78,7 +81,10 @@ impl CocoApp {
     /// ([`Self::resolve_tape`]): that's neither "wrong" (a warning) nor
     /// "absent" (silently becomes `MissingMedia` downstream, burying the
     /// actual reason) — it's a hard error straight out of this function.
-    fn resolve_media_sources(&self, media: &MediaRefs) -> Result<(MediaSources, Vec<String>), String> {
+    fn resolve_media_sources(
+        &self,
+        media: &MediaRefs,
+    ) -> Result<(MediaSources, Vec<String>), String> {
         let mut warnings = Vec::new();
         let system_rom = resolve_system_rom(media, &mut warnings);
         let cart_roms = resolve_cart_roms(media, &mut warnings);
@@ -104,9 +110,15 @@ impl CocoApp {
             }
         }
         let mut drivewire: [Option<DWImage>; drivewire::DRIVE_COUNT] = Default::default();
-        for (i, mr) in media.drivewire.iter().enumerate().take(drivewire::DRIVE_COUNT) {
+        for (i, mr) in media
+            .drivewire
+            .iter()
+            .enumerate()
+            .take(drivewire::DRIVE_COUNT)
+        {
             if let Some(mr) = mr {
-                drivewire[i] = open_if_present(mr, "DriveWire image", &mut warnings).map(DWImage::File);
+                drivewire[i] =
+                    open_if_present(mr, "DriveWire image", &mut warnings).map(DWImage::File);
             }
         }
         let tape = match &media.tape {
@@ -114,7 +126,17 @@ impl CocoApp {
             None => None,
         };
 
-        Ok((MediaSources { system_rom, cart_roms, disks, vhds, drivewire, tape }, warnings))
+        Ok((
+            MediaSources {
+                system_rom,
+                cart_roms,
+                disks,
+                vhds,
+                drivewire,
+                tape,
+            },
+            warnings,
+        ))
     }
 
     /// [`MediaSources::tape`]: raw bytes, or — sniffed by the `RIFF` magic,
@@ -127,12 +149,23 @@ impl CocoApp {
     /// turns straight into its own error string — the specific "couldn't
     /// decode this .wav" reason would never reach the user, only "tape:
     /// (no reference recorded)"-style boilerplate.
-    fn resolve_tape(&self, mr: &MediaRef, warnings: &mut Vec<String>) -> Result<Option<Vec<u8>>, String> {
-        let Some(raw) = read_if_present(mr, "tape", warnings) else { return Ok(None) };
+    fn resolve_tape(
+        &self,
+        mr: &MediaRef,
+        warnings: &mut Vec<String>,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let Some(raw) = read_if_present(mr, "tape", warnings) else {
+            return Ok(None);
+        };
         if raw.starts_with(b"RIFF") {
-            coco_core::cassette_wav::decode_wav(&raw, self.machine.cpu_hz()).map(Some).map_err(|e| {
-                format!("tape ({}) could not be decoded as .wav: {e}", mr.path.display())
-            })
+            coco_core::cassette_wav::decode_wav(&raw, self.machine.cpu_hz())
+                .map(Some)
+                .map_err(|e| {
+                    format!(
+                        "tape ({}) could not be decoded as .wav: {e}",
+                        mr.path.display()
+                    )
+                })
         } else {
             Ok(Some(raw))
         }
@@ -232,7 +265,9 @@ impl CocoApp {
     /// resolver already supplied".
     fn update_rom_source_from_media(&mut self, media: &MediaRefs) {
         match &media.system_rom {
-            Some(mr) if is_rom_db_pseudo_path(&mr.path) => self.rom_source = ROMSource::ComposedCoco12,
+            Some(mr) if is_rom_db_pseudo_path(&mr.path) => {
+                self.rom_source = ROMSource::ComposedCoco12
+            }
             Some(mr) => self.rom_source = ROMSource::File(mr.path.clone()),
             None => {}
         }
@@ -246,13 +281,25 @@ impl CocoApp {
     /// all.
     fn rebuild_media_path_mirrors(&mut self, media: &MediaRefs) {
         for (i, path) in self.disk_paths.iter_mut().enumerate() {
-            *path = media.disks.get(i).and_then(Option::as_ref).map(|r| r.path.clone());
+            *path = media
+                .disks
+                .get(i)
+                .and_then(Option::as_ref)
+                .map(|r| r.path.clone());
         }
         for (i, path) in self.vhd_paths.iter_mut().enumerate() {
-            *path = media.vhds.get(i).and_then(Option::as_ref).map(|r| r.path.clone());
+            *path = media
+                .vhds
+                .get(i)
+                .and_then(Option::as_ref)
+                .map(|r| r.path.clone());
         }
         for (i, path) in self.dw_paths.iter_mut().enumerate() {
-            *path = media.drivewire.get(i).and_then(Option::as_ref).map(|r| r.path.clone());
+            *path = media
+                .drivewire
+                .get(i)
+                .and_then(Option::as_ref)
+                .map(|r| r.path.clone());
         }
         self.tape_path = media.tape.as_ref().map(|r| r.path.clone());
     }
@@ -268,7 +315,12 @@ impl CocoApp {
         self.rs232_eprom_path = None;
         self.mpi = None;
 
-        let switch = self.machine.bus.cart.as_multipak().map(|mp| mp.switch_slot());
+        let switch = self
+            .machine
+            .bus
+            .cart
+            .as_multipak()
+            .map(|mp| mp.switch_slot());
         match switch {
             Some(switch) => {
                 let mut slots: [MPISlot; MPI_SLOT_COUNT] = std::array::from_fn(|_| MPISlot::Empty);
@@ -286,7 +338,10 @@ impl CocoApp {
                 let mut new_rs232_eprom_path = None;
                 for (_, cart) in self.machine.bus.cart.slots_mut() {
                     match cart {
-                        Cart::ROMPak(_) | Cart::BankedROMPak(_) | Cart::GamesMasterCartridge(_) | Cart::Orch90(_) => {
+                        Cart::ROMPak(_)
+                        | Cart::BankedROMPak(_)
+                        | Cart::GamesMasterCartridge(_)
+                        | Cart::Orch90(_) => {
                             new_cart_path = direct_port_rom_path(media);
                         }
                         Cart::DistoRTC(_) => new_rtc_direct = true,

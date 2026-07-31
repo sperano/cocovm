@@ -49,7 +49,10 @@ fn manager_edit_with_mpi_records_the_peripheral() {
     assert!(def.peripherals.mpi);
     assert!(!def.peripherals.fd502);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
-    assert!(contents.contains("mpi = true"), "TOML must record the MPI:\n{contents}");
+    assert!(
+        contents.contains("mpi = true"),
+        "TOML must record the MPI:\n{contents}"
+    );
 }
 
 /// A Disto RTC — in the port or slotted — records `peripherals.rtc` (the
@@ -66,7 +69,10 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     let def = &harness.state().entries[0].def;
     assert!(def.peripherals.rtc && !def.peripherals.mpi);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
-    assert!(contents.contains("rtc = true"), "TOML must record the RTC:\n{contents}");
+    assert!(
+        contents.contains("rtc = true"),
+        "TOML must record the RTC:\n{contents}"
+    );
 
     // Slotted, on a second machine: rtc = true alongside mpi = true.
     click_containing(&mut harness, "New");
@@ -89,8 +95,11 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    harness.state_mut().edit_form_mut().expect("pane form seeded").cartridge =
-        new_vm::CartridgeChoice::ROMPak(pak.clone());
+    harness
+        .state_mut()
+        .edit_form_mut()
+        .expect("pane form seeded")
+        .cartridge = new_vm::CartridgeChoice::ROMPak(pak.clone());
     harness.step();
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
@@ -101,7 +110,10 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     // mpi = true.
     click_containing(&mut harness, "New");
     {
-        let form = harness.state_mut().edit_form_mut().expect("pane form seeded");
+        let form = harness
+            .state_mut()
+            .edit_form_mut()
+            .expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
         form.mpi_slots[1] = new_vm::SlotChoice::ROMPak(pak.clone());
     }
@@ -114,8 +126,11 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     // Two slotted paks cannot be represented in the schema: the change is
     // refused with an inline error instead of silently dropping one, and
     // the definition keeps the single recorded pak.
-    harness.state_mut().edit_form_mut().expect("pane form seeded").mpi_slots[3] =
-        new_vm::SlotChoice::ROMPak(pak);
+    harness
+        .state_mut()
+        .edit_form_mut()
+        .expect("pane form seeded")
+        .mpi_slots[3] = new_vm::SlotChoice::ROMPak(pak);
     harness.step();
     harness.get_by_label_contains("a single ROM Pak");
     assert_eq!(
@@ -254,7 +269,11 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
     assert_eq!(def.media.vhd1, None, "VHD 1 stayed None");
     for file in ["disk0.dsk", "disk1.dsk", "tape.cas", "hd0.vhd"] {
         let blank = artifacts.path().join("coco-3").join(file);
-        assert!(blank.is_file(), "blank image must exist at {}", blank.display());
+        assert!(
+            blank.is_file(),
+            "blank image must exist at {}",
+            blank.display()
+        );
         assert_eq!(
             fs::metadata(&blank).unwrap().len(),
             0,

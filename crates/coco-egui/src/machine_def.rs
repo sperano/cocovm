@@ -22,7 +22,9 @@
 
 use std::path::{Path, PathBuf};
 
-use coco_core::{MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard};
+use coco_core::{
+    MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::paths;

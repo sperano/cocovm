@@ -193,8 +193,5 @@ fn mean_sampling_of_a_fast_tone_settles_near_half_volume() {
     // wave to ~vol/2 instead of aliasing.
     let level = psg.sample(1000.0 * ONE_TICK);
     let half = psg.vol_table[0] / 2.0;
-    assert!(
-        (level - half).abs() < 0.01,
-        "expected ~{half}, got {level}"
-    );
+    assert!((level - half).abs() < 0.01, "expected ~{half}, got {level}");
 }

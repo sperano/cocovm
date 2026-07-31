@@ -145,22 +145,23 @@ impl CocoApp {
                 pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
                 self.rs232 = Some(RS232Endpoint::Loopback);
             }
-            RS232EndpointKind::TCP => match coco_core::serial::TCPEndpoint::bind(&self.rs232_tcp_addr)
-            {
-                Ok(ep) => {
-                    // Show the address actually bound, so ":0" (OS-assigned
-                    // port) displays usably.
-                    let addr = ep
-                        .local_addr()
-                        .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
-                    pak.set_endpoint(Box::new(ep));
-                    self.rs232 = Some(RS232Endpoint::TCP(addr));
+            RS232EndpointKind::TCP => {
+                match coco_core::serial::TCPEndpoint::bind(&self.rs232_tcp_addr) {
+                    Ok(ep) => {
+                        // Show the address actually bound, so ":0" (OS-assigned
+                        // port) displays usably.
+                        let addr = ep
+                            .local_addr()
+                            .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
+                        pak.set_endpoint(Box::new(ep));
+                        self.rs232 = Some(RS232Endpoint::TCP(addr));
+                    }
+                    Err(e) => {
+                        self.cart_error =
+                            Some(format!("could not listen on {}: {e}", self.rs232_tcp_addr));
+                    }
                 }
-                Err(e) => {
-                    self.cart_error =
-                        Some(format!("could not listen on {}: {e}", self.rs232_tcp_addr));
-                }
-            },
+            }
             #[cfg(unix)]
             RS232EndpointKind::PTY => match coco_core::serial::PTYEndpoint::new() {
                 Ok(ep) => {
@@ -196,7 +197,8 @@ impl CocoApp {
     /// front-panel switch on slot 4 ([`DEFAULT_MPI_SWITCH_SLOT`]).
     pub(crate) fn insert_multipak(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT));
+        self.machine
+            .insert_cartridge(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT));
         self.machine.power_cycle();
         self.mpi = Some(MPIState {
             switch: DEFAULT_MPI_SWITCH_SLOT,
@@ -318,8 +320,10 @@ impl CocoApp {
         let rom = match std::fs::read(&path) {
             Ok(rom) => rom,
             Err(e) => {
-                self.cart_error =
-                    Some(format!("could not read Disk BASIC ROM {}: {e}", path.display()));
+                self.cart_error = Some(format!(
+                    "could not read Disk BASIC ROM {}: {e}",
+                    path.display()
+                ));
                 return;
             }
         };
@@ -351,7 +355,10 @@ impl CocoApp {
 
     /// Eject whatever is plugged into MPI `slot`, restoring its empty slot.
     pub(crate) fn mpi_eject_slot(&mut self, slot: usize) {
-        let was_fd502 = matches!(self.mpi.as_ref().map(|m| &m.slots[slot]), Some(MPISlot::FD502));
+        let was_fd502 = matches!(
+            self.mpi.as_ref().map(|m| &m.slots[slot]),
+            Some(MPISlot::FD502)
+        );
         if was_fd502 {
             self.flush_dirty_disks();
             self.disk_paths = [None, None];
@@ -383,7 +390,8 @@ impl CocoApp {
     /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
     pub(crate) fn insert_rtc(&mut self) {
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(DistoRTC::new(host_time_source()));
+        self.machine
+            .insert_cartridge(DistoRTC::new(host_time_source()));
         self.machine.power_cycle();
         self.rtc_direct = true;
         self.cart_path = None;

@@ -15,7 +15,8 @@ impl CocoApp {
         {
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
-        self.debugger.windows_ui(ctx, &mut self.machine, &mut self.running);
+        self.debugger
+            .windows_ui(ctx, &mut self.machine, &mut self.running);
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
@@ -38,35 +39,37 @@ impl CocoApp {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "The FD-502 disk controller isn't installed yet. Installing \
+                egui::Frame::NONE
+                    .inner_margin(DIALOG_MARGIN)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(
+                                "The FD-502 disk controller isn't installed yet. Installing \
                              it swaps the cartridge and cold-restarts the machine — any \
                              unsaved work in memory will be lost.",
-                        )
-                        .size(font),
-                    );
-                    ui.add_space(DIALOG_MARGIN as f32);
-                    ui.horizontal(|ui| {
-                        // Roomier buttons: pad text away from the button edge.
-                        ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-                        if ui.button("Insert & Restart").clicked() {
-                            match self.pending_disk_action.take() {
-                                Some(PendingDiskAction::Insert { drive, path }) => {
-                                    self.insert_disk(drive, path)
+                            )
+                            .size(font),
+                        );
+                        ui.add_space(DIALOG_MARGIN as f32);
+                        ui.horizontal(|ui| {
+                            // Roomier buttons: pad text away from the button edge.
+                            ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                            if ui.button("Insert & Restart").clicked() {
+                                match self.pending_disk_action.take() {
+                                    Some(PendingDiskAction::Insert { drive, path }) => {
+                                        self.insert_disk(drive, path)
+                                    }
+                                    Some(PendingDiskAction::NewBlank { drive, path }) => {
+                                        self.new_blank_disk(drive, path)
+                                    }
+                                    None => {}
                                 }
-                                Some(PendingDiskAction::NewBlank { drive, path }) => {
-                                    self.new_blank_disk(drive, path)
-                                }
-                                None => {}
                             }
-                        }
-                        if ui.button("Cancel").clicked() {
-                            self.pending_disk_action = None;
-                        }
+                            if ui.button("Cancel").clicked() {
+                                self.pending_disk_action = None;
+                            }
+                        });
                     });
-                });
             });
     }
 

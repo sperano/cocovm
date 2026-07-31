@@ -58,8 +58,12 @@ impl CPUSnapshot {
 }
 
 fn load_rom(name: &str) -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms").join(name);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display())).into_boxed_slice()
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../roms")
+        .join(name);
+    std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+        .into_boxed_slice()
 }
 
 fn boot_machine() -> Machine {
@@ -104,7 +108,10 @@ fn dispatch_read_sector(m: &mut Machine) {
     m.bus.write(STATUS_COMMAND_REG, 0xD0); // Force Interrupt, cancel only: clean slate
     m.bus.write(TRACK_REG, 0);
     m.bus.write(SECTOR_REG, 1);
-    m.bus.write(DSKREG, dskreg::MOTOR_ON | dskreg::DRIVE0 | dskreg::HALT_ENABLE);
+    m.bus.write(
+        DSKREG,
+        dskreg::MOTOR_ON | dskreg::DRIVE0 | dskreg::HALT_ENABLE,
+    );
     m.bus.write(STATUS_COMMAND_REG, 0x80); // Read Sector, single
     while !m.bus.halt_asserted() {
         m.step_instruction();
@@ -125,7 +132,10 @@ fn drain_sector(m: &mut Machine) -> (Vec<u8>, Vec<CPUSnapshot>) {
     let mut trace = Vec::new();
     let mut steps = 0usize;
     while bytes.len() < SECTOR_BYTES {
-        assert!(steps < MAX_TRANSFER_STEPS, "sector transfer never completed");
+        assert!(
+            steps < MAX_TRANSFER_STEPS,
+            "sector transfer never completed"
+        );
         m.step_instruction();
         trace.push(CPUSnapshot::of(&m.cpu));
         steps += 1;
@@ -144,7 +154,10 @@ fn expected_sector_bytes() -> Vec<u8> {
 /// two-field struct literal that would otherwise repeat at every media
 /// reference below.
 fn media_ref(path: &str, bytes: &[u8]) -> MediaRef {
-    MediaRef { path: PathBuf::from(path), sha256: snapshot::sha256_hex(bytes) }
+    MediaRef {
+        path: PathBuf::from(path),
+        sha256: snapshot::sha256_hex(bytes),
+    }
 }
 
 /// `save` -> `load` -> `restore` through the engine, panicking (with the
@@ -154,7 +167,9 @@ fn media_ref(path: &str, bytes: &[u8]) -> MediaRef {
 fn save_and_restore(original: &Machine, media: MediaRefs, sources: MediaSources) -> Machine {
     let bytes = snapshot::save(original, &media).expect("save");
     let payload = snapshot::load(&bytes).expect("load");
-    snapshot::restore(payload, sources).expect("restore").machine
+    snapshot::restore(payload, sources)
+        .expect("restore")
+        .machine
 }
 
 /// Drain the sector on both machines post-restore and assert the whole
@@ -164,10 +179,23 @@ fn assert_transfer_completes_identically(original: &mut Machine, restored: &mut 
     let (original_bytes, original_trace) = drain_sector(original);
     let (restored_bytes, restored_trace) = drain_sector(restored);
 
-    assert_eq!(original_trace, restored_trace, "CPU trace diverged draining the sector post-restore");
-    assert_eq!(original_bytes, restored_bytes, "drained sector bytes diverged post-restore");
-    assert_eq!(original_bytes, expected_sector_bytes(), "the transfer must not corrupt the sector's data");
-    assert_eq!(original.bus.ram, restored.bus.ram, "RAM diverged after completing the transfer");
+    assert_eq!(
+        original_trace, restored_trace,
+        "CPU trace diverged draining the sector post-restore"
+    );
+    assert_eq!(
+        original_bytes, restored_bytes,
+        "drained sector bytes diverged post-restore"
+    );
+    assert_eq!(
+        original_bytes,
+        expected_sector_bytes(),
+        "the transfer must not corrupt the sector's data"
+    );
+    assert_eq!(
+        original.bus.ram, restored.bus.ram,
+        "RAM diverged after completing the transfer"
+    );
 }
 
 // ============================================================================
@@ -180,7 +208,10 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
     let disk_rom = load_rom("disk11.rom");
     let disk_bytes = index_pattern_disk_bytes();
     let mut cart = DiskCart::new(disk_rom.clone());
-    cart.insert_disk(0, JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
+    cart.insert_disk(
+        0,
+        JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"),
+    );
     original.insert_cartridge(cart);
     original.reset();
     for _ in 0..WARMUP_FIELDS {
@@ -195,7 +226,10 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
 
     let media = MediaRefs {
         system_rom: Some(media_ref("coco3.rom", &load_rom("coco3.rom"))),
-        cart_roms: vec![SlotROMRef { mpi_slot: None, rom: media_ref("disk11.rom", &disk_rom) }],
+        cart_roms: vec![SlotROMRef {
+            mpi_slot: None,
+            rom: media_ref("disk11.rom", &disk_rom),
+        }],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
         ..MediaRefs::default()
     };
@@ -231,7 +265,10 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     let disk_rom = load_rom("disk11.rom");
     let disk_bytes = index_pattern_disk_bytes();
     let mut disk_cart = DiskCart::new(disk_rom.clone());
-    disk_cart.insert_disk(0, JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
+    disk_cart.insert_disk(
+        0,
+        JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"),
+    );
 
     let pak_image = vec![0x77u8; 1024];
     let pak = ROMPak::from_bytes(&pak_image, false).expect("build pak");
@@ -245,8 +282,12 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
         original.run_field();
     }
 
-    let original_control =
-        original.bus.cart.as_multipak().expect("a MultiPak is inserted").control_read();
+    let original_control = original
+        .bus
+        .cart
+        .as_multipak()
+        .expect("a MultiPak is inserted")
+        .control_read();
 
     dispatch_read_sector(&mut original);
     assert!(
@@ -257,23 +298,39 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     let media = MediaRefs {
         system_rom: Some(media_ref("coco3.rom", &load_rom("coco3.rom"))),
         cart_roms: vec![
-            SlotROMRef { mpi_slot: Some(ROMPAK_SLOT as u8), rom: media_ref("pak.rom", &pak_image) },
-            SlotROMRef { mpi_slot: Some(FDC_SLOT as u8), rom: media_ref("disk11.rom", &disk_rom) },
+            SlotROMRef {
+                mpi_slot: Some(ROMPAK_SLOT as u8),
+                rom: media_ref("pak.rom", &pak_image),
+            },
+            SlotROMRef {
+                mpi_slot: Some(FDC_SLOT as u8),
+                rom: media_ref("disk11.rom", &disk_rom),
+            },
         ],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
         ..MediaRefs::default()
     };
     let sources = MediaSources {
         system_rom: Some(load_rom("coco3.rom")),
-        cart_roms: vec![(Some(ROMPAK_SLOT as u8), pak_image.clone()), (Some(FDC_SLOT as u8), disk_rom.to_vec())],
+        cart_roms: vec![
+            (Some(ROMPAK_SLOT as u8), pak_image.clone()),
+            (Some(FDC_SLOT as u8), disk_rom.to_vec()),
+        ],
         disks: [Some(disk_bytes.clone()), None, None, None],
         ..MediaSources::default()
     };
     let mut restored = save_and_restore(&original, media, sources);
 
-    let restored_control =
-        restored.bus.cart.as_multipak().expect("a MultiPak came back").control_read();
-    assert_eq!(original_control, restored_control, "MPI slot-select register must round-trip");
+    let restored_control = restored
+        .bus
+        .cart
+        .as_multipak()
+        .expect("a MultiPak came back")
+        .control_read();
+    assert_eq!(
+        original_control, restored_control,
+        "MPI slot-select register must round-trip"
+    );
     assert!(
         restored.bus.halt_asserted(),
         "restored machine must come back mid-transfer, still HALT*-asserted"

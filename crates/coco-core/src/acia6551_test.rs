@@ -160,7 +160,10 @@ fn programmed_reset_clears_overrun_and_command_bits_0_4_preserves_parity_and_con
     let parity_odd = 1u8 << command::PARITY_SHIFT;
     acia.write(
         2,
-        command::DTR | command::ECHO | parity_odd | (tx_control::RTS_ON << command::TX_CONTROL_SHIFT),
+        command::DTR
+            | command::ECHO
+            | parity_odd
+            | (tx_control::RTS_ON << command::TX_CONTROL_SHIFT),
     );
     let cycles = acia_test_cycles_per_frame(&acia);
     acia.receive_byte(0x01);

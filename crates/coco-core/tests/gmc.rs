@@ -6,8 +6,8 @@
 //! `coco_pak.cpp`).
 
 use coco_core::cart::{
-    BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN, BankedPakError, BankedROMPak, Cartridge, GamesMasterCartridge,
-    MultiPak,
+    BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN, BankedPakError, BankedROMPak, Cartridge,
+    GamesMasterCartridge, MultiPak,
 };
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
@@ -108,7 +108,9 @@ fn bus_with_gmc() -> SystemBus {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    b.cart = GamesMasterCartridge::from_bytes(&banked_image(8), true).unwrap().into();
+    b.cart = GamesMasterCartridge::from_bytes(&banked_image(8), true)
+        .unwrap()
+        .into();
     b
 }
 
@@ -184,7 +186,8 @@ const LONE_TONE_LEVEL: f32 = 0.25 * 0.75;
 
 #[test]
 fn autostarted_cart_code_plays_a_tone_through_the_speaker() {
-    let rom_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let rom_path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
     let rom = std::fs::read(&rom_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", rom_path.display()))
         .into_boxed_slice();
@@ -204,8 +207,14 @@ fn autostarted_cart_code_plays_a_tone_through_the_speaker() {
         let samples: Vec<f32> = m.take_audio().map(|s| s[0]).collect();
         if samples.iter().all(|&s| s <= LONE_TONE_LEVEL) {
             programmed = true;
-            let loud = samples.iter().filter(|&&s| s > LONE_TONE_LEVEL * 0.5).count();
-            let quiet = samples.iter().filter(|&&s| s < LONE_TONE_LEVEL * 0.1).count();
+            let loud = samples
+                .iter()
+                .filter(|&&s| s > LONE_TONE_LEVEL * 0.5)
+                .count();
+            let quiet = samples
+                .iter()
+                .filter(|&&s| s < LONE_TONE_LEVEL * 0.1)
+                .count();
             assert!(
                 loud > 10 && quiet > 10,
                 "expected the programmed ~4.2 kHz square wave to oscillate \
@@ -231,7 +240,10 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     let mut mp = MultiPak::new(0);
-    mp.insert(1, GamesMasterCartridge::from_bytes(&banked_image(8), false).unwrap());
+    mp.insert(
+        1,
+        GamesMasterCartridge::from_bytes(&banked_image(8), false).unwrap(),
+    );
     b.cart = mp.into();
 
     // Slot 1 (the GMC) is not SCS-selected (switch points at slot 0): the
@@ -254,6 +266,10 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
         b.write(PSG_REG, cmd);
     }
     for _ in 0..262 {
-        assert_eq!(b.sound_probe(LINE_DT)[0], 0.0, "selected slot's PSG must mute");
+        assert_eq!(
+            b.sound_probe(LINE_DT)[0],
+            0.0,
+            "selected slot's PSG must mute"
+        );
     }
 }

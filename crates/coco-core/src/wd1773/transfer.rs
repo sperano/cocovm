@@ -132,7 +132,11 @@ impl WD1773 {
         // After the final data byte, INTRQ waits out the CRC trailer
         // (see [`CRC_TRAILER_CYCLES`]) so the host can collect the
         // byte before completion clears halt-enable and fires NMI.
-        t.remaining = if t.index >= t.total { CRC_TRAILER_CYCLES } else { DRQ_INTERVAL_CYCLES };
+        t.remaining = if t.index >= t.total {
+            CRC_TRAILER_CYCLES
+        } else {
+            DRQ_INTERVAL_CYCLES
+        };
         self.op = Op::Transfer(t);
     }
 
@@ -204,17 +208,25 @@ fn feed_write_track_byte(t: &mut Transfer, val: u8, disk: Option<&mut JVCDisk>, 
         FormatState::Gap => step_gap(val),
         FormatState::Sync => step_sync(val, t, disk.as_deref()),
         FormatState::IdField(buf) => step_id_field(buf, val),
-        FormatState::IdFieldTerm { track, sector, size_code } => {
-            step_id_field_term(track, sector, size_code, val, t)
-        }
+        FormatState::IdFieldTerm {
+            track,
+            sector,
+            size_code,
+        } => step_id_field_term(track, sector, size_code, val, t),
         FormatState::DataField(buf, target_len) => step_data_field(buf, target_len, val),
-        FormatState::DataFieldTerm(buf) => step_data_field_term(buf, val, disk, hw_side, t.last_id_field),
+        FormatState::DataFieldTerm(buf) => {
+            step_data_field_term(buf, val, disk, hw_side, t.last_id_field)
+        }
     };
 }
 
 /// `Gap` state: waiting for a sync run.
 fn step_gap(val: u8) -> FormatState {
-    if val == mfm::SYNC { FormatState::Sync } else { FormatState::Gap }
+    if val == mfm::SYNC {
+        FormatState::Sync
+    } else {
+        FormatState::Gap
+    }
 }
 
 /// `Sync` state: at least one sync byte seen; the next non-sync byte is the
@@ -246,7 +258,11 @@ fn step_sync(val: u8, t: &Transfer, disk: Option<&JVCDisk>) -> FormatState {
 fn step_id_field(mut buf: Vec<u8>, val: u8) -> FormatState {
     buf.push(val);
     if buf.len() == mfm::ID_FIELD_LEN {
-        FormatState::IdFieldTerm { track: buf[0], sector: buf[2], size_code: buf[3] }
+        FormatState::IdFieldTerm {
+            track: buf[0],
+            sector: buf[2],
+            size_code: buf[3],
+        }
     } else {
         FormatState::IdField(buf)
     }
@@ -254,19 +270,33 @@ fn step_id_field(mut buf: Vec<u8>, val: u8) -> FormatState {
 
 /// `IdFieldTerm` state: the 4 ID bytes are gathered; consuming (ignored)
 /// bytes until the write-CRC terminator, which latches `t.last_id_field`.
-fn step_id_field_term(track: u8, sector: u8, size_code: u8, val: u8, t: &mut Transfer) -> FormatState {
+fn step_id_field_term(
+    track: u8,
+    sector: u8,
+    size_code: u8,
+    val: u8,
+    t: &mut Transfer,
+) -> FormatState {
     if val == mfm::WRITE_CRC {
         t.last_id_field = Some((track, sector, size_code));
         FormatState::Gap
     } else {
-        FormatState::IdFieldTerm { track, sector, size_code }
+        FormatState::IdFieldTerm {
+            track,
+            sector,
+            size_code,
+        }
     }
 }
 
 /// `DataField` state: gathering the sector's data payload.
 fn step_data_field(mut buf: Vec<u8>, target_len: usize, val: u8) -> FormatState {
     buf.push(val);
-    if buf.len() == target_len { FormatState::DataFieldTerm(buf) } else { FormatState::DataField(buf, target_len) }
+    if buf.len() == target_len {
+        FormatState::DataFieldTerm(buf)
+    } else {
+        FormatState::DataField(buf, target_len)
+    }
 }
 
 /// `DataFieldTerm` state: the payload is fully gathered; consuming (ignored)

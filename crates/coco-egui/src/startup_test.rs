@@ -4,7 +4,8 @@ use super::*;
 
 #[test]
 fn unpack_assets_extracts_gzipped_tar_into_dest() {
-    let dest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-test-assets/unpack");
+    let dest =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-test-assets/unpack");
     let _ = std::fs::remove_dir_all(&dest);
 
     // Build a cocovm-assets-shaped tarball in memory: roms/ and images/.
@@ -23,6 +24,12 @@ fn unpack_assets_extracts_gzipped_tar_into_dest() {
     let bytes = tarball.into_inner().unwrap().finish().unwrap();
 
     unpack_assets(&bytes[..], &dest).unwrap();
-    assert_eq!(std::fs::read(dest.join("roms/test.rom")).unwrap(), b"\xAA\xBB");
-    assert_eq!(std::fs::read(dest.join("images/blank.dsk")).unwrap(), b"\x00\x01");
+    assert_eq!(
+        std::fs::read(dest.join("roms/test.rom")).unwrap(),
+        b"\xAA\xBB"
+    );
+    assert_eq!(
+        std::fs::read(dest.join("images/blank.dsk")).unwrap(),
+        b"\x00\x01"
+    );
 }

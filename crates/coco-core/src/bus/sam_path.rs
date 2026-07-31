@@ -8,11 +8,11 @@
 
 use crate::sam::SAMTarget;
 
+use super::SystemBus;
 use super::regs::{
     CART_BASE, CART_LAST, IO_BASE, OPEN_BUS, PIA0_LAST, PIA1_BASE, PIA1_LAST, SAM_BAS_ROM_OFFSET,
     SAM_CART_ROM_BASE,
 };
-use super::SystemBus;
 
 impl SystemBus {
     /// Bounds-check a `SAM::map` RAM target against installed RAM. Unlike the

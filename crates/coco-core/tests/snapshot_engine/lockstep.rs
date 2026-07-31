@@ -1,7 +1,7 @@
 //! 1. Full engine round-trip
 
 use coco_core::snapshot::{self, MediaSources};
-use mc6809::{State, MC6809};
+use mc6809::{MC6809, State};
 
 use super::common::{boot_machine, load_rom, system_rom_only_media};
 
@@ -73,7 +73,10 @@ fn full_round_trip_continues_trace_identically() {
     let bytes = snapshot::save(&original, &media).expect("save");
 
     let payload = snapshot::load(&bytes).expect("load");
-    let sources = MediaSources { system_rom: Some(load_rom()), ..MediaSources::default() };
+    let sources = MediaSources {
+        system_rom: Some(load_rom()),
+        ..MediaSources::default()
+    };
     let restored = snapshot::restore(payload, sources).expect("restore");
     let mut restored = restored.machine;
 

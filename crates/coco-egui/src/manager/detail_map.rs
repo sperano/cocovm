@@ -42,7 +42,9 @@ fn blank_vhd_file(drive: usize) -> String {
 /// so there's no slot to seed it into.
 pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     let mut form = new_vm::MachineForm::new("detail");
-    form.config = def.to_machine_config().expect("list entries are validated on load/save");
+    form.config = def
+        .to_machine_config()
+        .expect("list entries are validated on load/save");
     let media = &def.media;
     let fd502 = def.peripherals.fd502 || media.disk0.is_some() || media.disk1.is_some();
     let cart = media.cart.as_deref().map(PathBuf::from);
@@ -115,7 +117,11 @@ impl ManagerApp {
                 (artifact_dir.join(&auto_file), auto_file)
             }
         };
-        match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(format!("{}: {e}", path.display())),

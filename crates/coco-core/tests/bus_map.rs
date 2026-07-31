@@ -2,8 +2,8 @@
 //! window, always-ROM vector fetch, the disabled/enabled MMU translation, and the
 //! write-8 / read-low-6 MMU register asymmetry (`DESIGN.md` §3).
 
-use coco_core::config::BLOCK_SIZE;
 use coco_core::cart::Cart;
+use coco_core::config::BLOCK_SIZE;
 use coco_core::gime::{DISABLED_MMU_BASE, MMU_READ_MASK, init0, init1};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;

@@ -3,12 +3,12 @@
 //! parse-and-discard no-op -- covered here only to the extent of proving it
 //! doesn't desync the state machine for later commands.
 
+use coco_core::SystemBus;
 use coco_core::ay8913::reg as ay_reg;
 use coco_core::ssc::{cmd, group, ram, terminator, timing};
-use coco_core::SystemBus;
 use mc6809::Bus;
 
-use super::common::{bus_with_ssc_selected, coco3_bus_with_ssc, pump, CLEAR_BUSY, FF7E};
+use super::common::{CLEAR_BUSY, FF7E, bus_with_ssc_selected, coco3_bus_with_ssc, pump};
 
 /// Writes one byte to `$FF7E` and ticks the cart's clock well past the
 /// synthetic busy-hold window ([`CLEAR_BUSY`]), so the next write is accepted
@@ -42,23 +42,44 @@ fn direct_access_end_to_end_pokes_ay_and_drives_audio() {
 
     {
         let ssc = b.cart.as_ssc().unwrap();
-        assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), (TONE_A_PERIOD & 0xFF) as u8);
-        assert_eq!(ssc.ay_read(ay_reg::TONE_A_COARSE), (TONE_A_PERIOD >> 8) as u8);
+        assert_eq!(
+            ssc.ay_read(ay_reg::TONE_A_FINE),
+            (TONE_A_PERIOD & 0xFF) as u8
+        );
+        assert_eq!(
+            ssc.ay_read(ay_reg::TONE_A_COARSE),
+            (TONE_A_PERIOD >> 8) as u8
+        );
         assert_eq!(ssc.ay_read(ay_reg::MIXER), MIXER_TONE_A_ONLY);
         assert_eq!(ssc.ay_read(ay_reg::VOL_A), 0x0F);
     }
 
     let sample = pump(&mut b, 2_000);
-    assert!(sample > 0.0, "direct-access-programmed tone must be audible: {sample}");
-    assert_eq!(b.read(FF7E) & 0x20, 0x00, "SAC bit5 (QUIET) must clear while sound plays");
+    assert!(
+        sample > 0.0,
+        "direct-access-programmed tone must be audible: {sample}"
+    );
+    assert_eq!(
+        b.read(FF7E) & 0x20,
+        0x00,
+        "SAC bit5 (QUIET) must clear while sound plays"
+    );
 
     send(&mut b, cmd::STOP_ALL_SOUND);
     {
         let ssc = b.cart.as_ssc().unwrap();
-        assert_eq!(ssc.ay_read(ay_reg::VOL_A), 0, "$00 stop-all-sound must zero every channel volume");
+        assert_eq!(
+            ssc.ay_read(ay_reg::VOL_A),
+            0,
+            "$00 stop-all-sound must zero every channel volume"
+        );
     }
     pump(&mut b, 20_000);
-    assert_eq!(b.read(FF7E) & 0x20, 0x20, "SAC bit5 (QUIET) must set again once the envelope decays");
+    assert_eq!(
+        b.read(FF7E) & 0x20,
+        0x20,
+        "SAC bit5 (QUIET) must set again once the envelope decays"
+    );
 }
 
 #[test]
@@ -85,13 +106,22 @@ fn sound_data_load_and_execute_individual_tone_event() {
         assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), FINE);
         assert_eq!(ssc.ay_read(ay_reg::VOL_A), AMP);
         let mixer = ssc.ay_read(ay_reg::MIXER);
-        assert_eq!(mixer & 0b0000_1001, 0b0000_1000, "tone A enabled (bit0=0), noise A disabled (bit3=1)");
+        assert_eq!(
+            mixer & 0b0000_1001,
+            0b0000_1000,
+            "tone A enabled (bit0=0), noise A disabled (bit3=1)"
+        );
     }
 
-    b.cart.tick(timing::duration_cycles(DURATION, timing::DEFAULT_TIMER_BASE) + 1);
+    b.cart
+        .tick(timing::duration_cycles(DURATION, timing::DEFAULT_TIMER_BASE) + 1);
 
     let ssc = b.cart.as_ssc().unwrap();
-    assert_eq!(ssc.ay_read(ay_reg::VOL_A), AMP, "end-of-stream must not silence the AY");
+    assert_eq!(
+        ssc.ay_read(ay_reg::VOL_A),
+        AMP,
+        "end-of-stream must not silence the AY"
+    );
 }
 
 #[test]
@@ -107,7 +137,11 @@ fn noise_reuse_flag_carries_forward_previous_amplitude() {
 
     let noise_opcode = group::NOISE_A << group::OPCODE_SHIFT;
     let group1 = [noise_opcode | FIRST_AMP, FIRST_PERIOD, FIRST_DURATION];
-    let group2 = [noise_opcode | SECOND_AMP, group::NOISE_REUSE_FLAG | SECOND_PERIOD, SECOND_DURATION];
+    let group2 = [
+        noise_opcode | SECOND_AMP,
+        group::NOISE_REUSE_FLAG | SECOND_PERIOD,
+        SECOND_DURATION,
+    ];
 
     send(&mut b, cmd::LOAD_SOUND_INDIVIDUAL_START); // buffer 0
     for &byte in group1.iter().chain(group2.iter()) {
@@ -119,10 +153,15 @@ fn noise_reuse_flag_carries_forward_previous_amplitude() {
 
     {
         let ssc = b.cart.as_ssc().unwrap();
-        assert_eq!(ssc.ay_read(ay_reg::VOL_A), FIRST_AMP, "first group's own amplitude");
+        assert_eq!(
+            ssc.ay_read(ay_reg::VOL_A),
+            FIRST_AMP,
+            "first group's own amplitude"
+        );
     }
 
-    b.cart.tick(timing::duration_cycles(FIRST_DURATION, timing::DEFAULT_TIMER_BASE) + 1);
+    b.cart
+        .tick(timing::duration_cycles(FIRST_DURATION, timing::DEFAULT_TIMER_BASE) + 1);
 
     let ssc = b.cart.as_ssc().unwrap();
     assert_eq!(
@@ -130,8 +169,15 @@ fn noise_reuse_flag_carries_forward_previous_amplitude() {
         FIRST_AMP,
         "the reuse flag must carry forward the FIRST group's amplitude, not the second group's own bits"
     );
-    assert_eq!(ssc.ay_read(ay_reg::NOISE_PERIOD), SECOND_PERIOD, "the period must still come from the second group");
-    assert_ne!(FIRST_AMP, SECOND_AMP, "test setup: amplitudes must differ to be distinguishable");
+    assert_eq!(
+        ssc.ay_read(ay_reg::NOISE_PERIOD),
+        SECOND_PERIOD,
+        "the period must still come from the second group"
+    );
+    assert_ne!(
+        FIRST_AMP, SECOND_AMP,
+        "test setup: amplitudes must differ to be distinguishable"
+    );
 }
 
 #[test]
@@ -146,8 +192,18 @@ fn tone_plus_envelope_pair_uses_the_envelope_groups_own_duration() {
     const ENV_DURATION: u8 = 50; // deliberately large and different from TONE_DURATION
     const MARKER_AMP: u8 = 7;
 
-    let tone = [(group::TONE_A << group::OPCODE_SHIFT) | group::M_FLAG | TONE_AMP, 1, 2, TONE_DURATION];
-    let envelope = [(group::ENVELOPE_LOW << group::OPCODE_SHIFT) | ENV_SHAPE, ENV_COARSE, ENV_FINE, ENV_DURATION];
+    let tone = [
+        (group::TONE_A << group::OPCODE_SHIFT) | group::M_FLAG | TONE_AMP,
+        1,
+        2,
+        TONE_DURATION,
+    ];
+    let envelope = [
+        (group::ENVELOPE_LOW << group::OPCODE_SHIFT) | ENV_SHAPE,
+        ENV_COARSE,
+        ENV_FINE,
+        ENV_DURATION,
+    ];
     // A plain (M=0) tone-B marker group: its VOL_B write only happens once
     // the engine actually advances past the chained tone+envelope event.
     let marker = [(group::TONE_B << group::OPCODE_SHIFT) | MARKER_AMP, 6, 7, 0];
@@ -167,16 +223,25 @@ fn tone_plus_envelope_pair_uses_the_envelope_groups_own_duration() {
         assert_eq!(ssc.ay_read(ay_reg::TONE_A_COARSE), 1);
         assert_eq!(ssc.ay_read(ay_reg::TONE_A_FINE), 2);
         assert_eq!(ssc.ay_read(ay_reg::VOL_A), TONE_AMP | group::M_FLAG);
-        assert_eq!(ssc.ay_read(ay_reg::ENV_SHAPE), ENV_SHAPE, "chained envelope group must program ENV_SHAPE");
+        assert_eq!(
+            ssc.ay_read(ay_reg::ENV_SHAPE),
+            ENV_SHAPE,
+            "chained envelope group must program ENV_SHAPE"
+        );
         assert_eq!(ssc.ay_read(ay_reg::ENV_COARSE), ENV_COARSE);
         assert_eq!(ssc.ay_read(ay_reg::ENV_FINE), ENV_FINE);
-        assert_eq!(ssc.ay_read(ay_reg::VOL_B), 0, "marker group must not have run yet");
+        assert_eq!(
+            ssc.ay_read(ay_reg::VOL_B),
+            0,
+            "marker group must not have run yet"
+        );
     }
 
     // Enough cycles for the TONE group's own duration, but nowhere near the
     // ENVELOPE group's -- if the engine wrongly used the tone's duration,
     // the marker would already have fired here.
-    b.cart.tick(timing::duration_cycles(TONE_DURATION, timing::DEFAULT_TIMER_BASE) + 1);
+    b.cart
+        .tick(timing::duration_cycles(TONE_DURATION, timing::DEFAULT_TIMER_BASE) + 1);
     {
         let ssc = b.cart.as_ssc().unwrap();
         assert_eq!(
@@ -187,9 +252,14 @@ fn tone_plus_envelope_pair_uses_the_envelope_groups_own_duration() {
     }
 
     // Now cross the ENVELOPE group's own duration.
-    b.cart.tick(timing::duration_cycles(ENV_DURATION, timing::DEFAULT_TIMER_BASE) + 1_000);
+    b.cart
+        .tick(timing::duration_cycles(ENV_DURATION, timing::DEFAULT_TIMER_BASE) + 1_000);
     let ssc = b.cart.as_ssc().unwrap();
-    assert_eq!(ssc.ay_read(ay_reg::VOL_B), MARKER_AMP, "marker group must fire once the envelope's duration elapses");
+    assert_eq!(
+        ssc.ay_read(ay_reg::VOL_B),
+        MARKER_AMP,
+        "marker group must fire once the envelope's duration elapses"
+    );
 }
 
 #[test]
@@ -200,7 +270,12 @@ fn timer_base_scales_sound_event_duration() {
 
     for &base in &[1u8, 250u8] {
         let mut b = coco3_bus_with_ssc();
-        let tone = [(group::TONE_A << group::OPCODE_SHIFT) | AMP_A, 1, 2, DURATION];
+        let tone = [
+            (group::TONE_A << group::OPCODE_SHIFT) | AMP_A,
+            1,
+            2,
+            DURATION,
+        ];
         let marker = [(group::TONE_B << group::OPCODE_SHIFT) | MARKER_AMP, 3, 4, 0];
 
         send(&mut b, cmd::LOAD_SOUND_INDIVIDUAL_START); // buffer 0
@@ -268,7 +343,11 @@ fn ascii_text_bytes_are_consumed_and_discarded_then_normal_commands_still_work()
     send(&mut b, terminator::SOUND);
 
     let ssc = b.cart.as_ssc().unwrap();
-    assert_eq!(ssc.ay_read(ay_reg::VOL_A), 0x07, "a direct-access command after ASCII passthrough must still work");
+    assert_eq!(
+        ssc.ay_read(ay_reg::VOL_A),
+        0x07,
+        "a direct-access command after ASCII passthrough must still work"
+    );
 }
 
 #[test]
@@ -289,7 +368,11 @@ fn individual_load_without_terminator_ends_at_capacity_and_reprocesses_overflow_
     send(&mut b, terminator::SOUND);
 
     let ssc = b.cart.as_ssc().unwrap();
-    assert_eq!(ssc.ay_read(ay_reg::VOL_B), 0x05, "the overflow byte must have been reprocessed as $AF");
+    assert_eq!(
+        ssc.ay_read(ay_reg::VOL_B),
+        0x05,
+        "the overflow byte must have been reprocessed as $AF"
+    );
 }
 
 #[test]
@@ -318,7 +401,11 @@ fn sound_data_execute_never_runs_an_incomplete_trailing_group() {
             send(&mut b, byte);
         }
     }
-    assert_eq!(PAD_TONE_GROUPS * 4 + PAD_NOISE_GROUPS * 3, 62, "test setup arithmetic");
+    assert_eq!(
+        PAD_TONE_GROUPS * 4 + PAD_NOISE_GROUPS * 3,
+        62,
+        "test setup arithmetic"
+    );
 
     // Dangling group: a tone-B opcode+amplitude byte, plus one filler byte
     // -- 2 of the 4 bytes a tone group needs. A distinctive amplitude makes
@@ -360,13 +447,21 @@ fn speech_load_command_parses_and_discards_without_desyncing_later_commands() {
     send(&mut b, terminator::SOUND);
 
     let ssc = b.cart.as_ssc().unwrap();
-    assert_eq!(ssc.ay_read(ay_reg::VOL_C), 0x0A, "a normal command after a speech LOAD must still work");
+    assert_eq!(
+        ssc.ay_read(ay_reg::VOL_C),
+        0x0A,
+        "a normal command after a speech LOAD must still work"
+    );
 }
 
 #[test]
 fn register_string_load_and_execute_applies_all_pairs() {
     let mut b = coco3_bus_with_ssc();
-    let pairs: [(u8, u8); 3] = [(ay_reg::TONE_A_FINE, 0x33), (ay_reg::TONE_A_COARSE, 0x02), (ay_reg::VOL_A, 0x0D)];
+    let pairs: [(u8, u8); 3] = [
+        (ay_reg::TONE_A_FINE, 0x33),
+        (ay_reg::TONE_A_COARSE, 0x02),
+        (ay_reg::VOL_A, 0x0D),
+    ];
 
     send(&mut b, cmd::LOAD_REGISTER_INDIVIDUAL_START); // $B8: buffer 0
     for &(register, value) in &pairs {
@@ -379,6 +474,10 @@ fn register_string_load_and_execute_applies_all_pairs() {
 
     let ssc = b.cart.as_ssc().unwrap();
     for &(register, value) in &pairs {
-        assert_eq!(ssc.ay_read(register), value, "register {register:#04x} must have been applied");
+        assert_eq!(
+            ssc.ay_read(register),
+            value,
+            "register {register:#04x} must have been applied"
+        );
     }
 }

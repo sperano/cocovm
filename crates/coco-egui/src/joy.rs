@@ -2,8 +2,8 @@
 //! (`coco_core::joystick`) from the mouse, a gamepad (via `gilrs`), or the
 //! keyboard, per-port selectable from the "Joysticks" menu.
 
-use coco_core::joystick::{AXIS_CENTER, AXIS_MAX, AXIS_X, AXIS_Y, LEFT, RIGHT};
 use coco_core::Machine;
+use coco_core::joystick::{AXIS_CENTER, AXIS_MAX, AXIS_X, AXIS_Y, LEFT, RIGHT};
 use eframe::egui;
 
 use crate::machine_def::JoySourceDTO;
@@ -225,8 +225,14 @@ impl JoystickInputs {
                     {
                         let nx = (pos.x - display_rect.left()) / display_rect.width();
                         let ny = (pos.y - display_rect.top()) / display_rect.height();
-                        machine.bus.joysticks.set_axis(stick, AXIS_X, pot_from_unit(nx));
-                        machine.bus.joysticks.set_axis(stick, AXIS_Y, pot_from_unit(ny));
+                        machine
+                            .bus
+                            .joysticks
+                            .set_axis(stick, AXIS_X, pot_from_unit(nx));
+                        machine
+                            .bus
+                            .joysticks
+                            .set_axis(stick, AXIS_Y, pot_from_unit(ny));
                     }
                     machine.bus.joysticks.set_button(stick, 0, primary_down);
                     machine.bus.joysticks.set_button(stick, 1, secondary_down);
@@ -240,8 +246,14 @@ impl JoystickInputs {
                     let y = pot_from_bipolar(self.pad_axes[1]);
                     machine.bus.joysticks.set_axis(stick, AXIS_X, x);
                     machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
-                    machine.bus.joysticks.set_button(stick, 0, self.pad_buttons[0]);
-                    machine.bus.joysticks.set_button(stick, 1, self.pad_buttons[1]);
+                    machine
+                        .bus
+                        .joysticks
+                        .set_button(stick, 0, self.pad_buttons[0]);
+                    machine
+                        .bus
+                        .joysticks
+                        .set_button(stick, 1, self.pad_buttons[1]);
                     gamepad_in_use(self.pad_buttons, self.pad_axes)
                 }
                 JoySource::Keys => {

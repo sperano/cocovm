@@ -36,8 +36,7 @@ const NMI_MARKER: u8 = 0xA5;
 /// `LDA #$A5; STA $0401; RTI`.
 fn test_rom() -> Box<[u8]> {
     let mut rom = vec![0u8; ROM_SIZE];
-    rom[0x0000..0x0009]
-        .copy_from_slice(&[0x10, 0xCE, 0x5E, 0xFF, 0x7C, 0x04, 0x00, 0x20, 0xFB]);
+    rom[0x0000..0x0009].copy_from_slice(&[0x10, 0xCE, 0x5E, 0xFF, 0x7C, 0x04, 0x00, 0x20, 0xFB]);
     rom[0x0100..0x0106].copy_from_slice(&[0x86, NMI_MARKER, 0xB7, 0x04, 0x01, 0x3B]);
     rom[0x7FFC..0x7FFE].copy_from_slice(&[0x81, 0x00]); // NMI vector → $8100
     rom[0x7FFE..0x8000].copy_from_slice(&[0x80, 0x00]); // RESET vector → $8000
@@ -127,7 +126,12 @@ fn halt_line_stops_the_cpu_and_nmi_fires_on_release() {
 fn take_nmi_returns_true_at_most_once_per_edge() {
     let ticks = Rc::new(Cell::new(0));
     let nmi_pending = Rc::new(Cell::new(true));
-    let mut cart = HaltCart { ticks, halt_from: 0, halt_until: 0, nmi_pending };
+    let mut cart = HaltCart {
+        ticks,
+        halt_from: 0,
+        halt_until: 0,
+        nmi_pending,
+    };
     assert!(cart.take_nmi());
     assert!(!cart.take_nmi(), "a consumed edge must not repeat");
 }

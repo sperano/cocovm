@@ -4,8 +4,8 @@ use coco_core::video::{CELL_H, VDG_FIXED_PALETTE, VDG_GM0_INTEXT};
 use mc6809::Bus;
 
 use super::common::{
-    boot_parked_machine_with, coco1_config, coco2_t1_config, glyph_bits, sample_cell, CODE_A, CODE_O,
-    PLAIN_O_GLYPH, SCREEN_BASE, T1_O_GLYPH,
+    CODE_A, CODE_O, PLAIN_O_GLYPH, SCREEN_BASE, T1_O_GLYPH, boot_parked_machine_with, coco1_config,
+    coco2_t1_config, glyph_bits, sample_cell,
 };
 
 /// MC6847 alphanumeric INVERSE_BIT (bit 6).

@@ -142,7 +142,10 @@ fn rx_irq_fires_firq_via_pia1_cb1() {
 
     bus.write(ACIA_DATA, 0x99);
     run(&mut bus, ROUND_TRIP_BUDGET);
-    assert!(bus.firq_asserted(), "RDRF with rx-IRQ enabled must reach FIRQ");
+    assert!(
+        bus.firq_asserted(),
+        "RDRF with rx-IRQ enabled must reach FIRQ"
+    );
 
     // Unwind: RDR read clears RDRF, status read clears the ACIA IRQ output.
     assert_eq!(bus.read(ACIA_DATA), 0x99);
@@ -167,7 +170,9 @@ fn machine_loop_polls_cart_interrupt() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     machine.bus.cart = DeluxeRS232::new().into();
-    machine.bus.write(PIA1_CRB, cr::C1_IRQ_ENABLE | cr::DDR_ACCESS);
+    machine
+        .bus
+        .write(PIA1_CRB, cr::C1_IRQ_ENABLE | cr::DDR_ACCESS);
     machine.bus.write(ACIA_CONTROL, CTL_19200_8N1);
     machine.bus.write(ACIA_COMMAND, command::DTR);
     machine.bus.write(ACIA_DATA, 0x5A);

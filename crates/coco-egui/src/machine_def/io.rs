@@ -8,7 +8,7 @@ use std::path::Path;
 
 use pluralizer::pluralize;
 
-use super::{MachineDef, CURRENT_SCHEMA};
+use super::{CURRENT_SCHEMA, MachineDef};
 
 const TOP_LEVEL_KEYS: &[&str] = &[
     "schema",

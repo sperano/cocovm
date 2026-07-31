@@ -23,9 +23,7 @@ const RED_FRAME: [u8; 16] = [
 ];
 /// Same geometry, uniformly black — the frame [`write_thumbnail_png`]'s
 /// blank-screen heuristic guards against.
-const BLACK_FRAME: [u8; 16] = [
-    0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF,
-];
+const BLACK_FRAME: [u8; 16] = [0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF];
 
 #[test]
 fn write_thumbnail_png_round_trips_and_leaves_no_tmp() {
@@ -45,7 +43,10 @@ fn uniformly_black_frame_keeps_the_previous_thumbnail() {
 
     write_thumbnail_png(dir.path(), &BLACK_FRAME, 2, 2).unwrap();
     let after = fs::read(dir.path().join(THUMBNAIL_FILE)).unwrap();
-    assert_eq!(before, after, "a blank screen must not clobber a useful preview");
+    assert_eq!(
+        before, after,
+        "a blank screen must not clobber a useful preview"
+    );
 }
 
 #[test]

@@ -70,7 +70,14 @@ impl CocoApp {
             None => None,
         };
 
-        Ok(MediaRefs { system_rom, cart_roms, disks, vhds, drivewire, tape })
+        Ok(MediaRefs {
+            system_rom,
+            cart_roms,
+            disks,
+            vhds,
+            drivewire,
+            tape,
+        })
     }
 
     /// [`MediaRefs::system_rom`]: the frontend resolved/composed the boot
@@ -88,7 +95,10 @@ impl CocoApp {
             ROMSource::File(path) => path.clone(),
             ROMSource::ComposedCoco12 => rom_db_pseudo_path(self.machine.config.variant),
         };
-        MediaRef { path, sha256: snapshot::sha256_hex(&self.machine.bus.rom) }
+        MediaRef {
+            path,
+            sha256: snapshot::sha256_hex(&self.machine.bus.rom),
+        }
     }
 
     /// [`MediaRefs::cart_roms`]: one entry per ROM-bearing cart the app
@@ -108,19 +118,29 @@ impl CocoApp {
                 .enumerate()
                 .filter_map(|(i, slot)| {
                     let path = match slot {
-                        MPISlot::ROMPak(p) | MPISlot::GamesMasterCartridge(p) | MPISlot::Orch90(p) => p.clone(),
+                        MPISlot::ROMPak(p)
+                        | MPISlot::GamesMasterCartridge(p)
+                        | MPISlot::Orch90(p) => p.clone(),
                         MPISlot::FD502 => disk_basic_rom_path(),
-                        MPISlot::Empty | MPISlot::DistoRTC | MPISlot::SoundSpeechCartridge => return None,
+                        MPISlot::Empty | MPISlot::DistoRTC | MPISlot::SoundSpeechCartridge => {
+                            return None;
+                        }
                     };
                     Some((Some(i as u8), path))
                 })
                 .collect();
             for (mpi_slot, path) in paths {
-                out.push(SlotROMRef { mpi_slot, rom: hash_media_ref(&path)? });
+                out.push(SlotROMRef {
+                    mpi_slot,
+                    rom: hash_media_ref(&path)?,
+                });
             }
         } else {
             if let Some(path) = &self.cart_path {
-                out.push(SlotROMRef { mpi_slot: None, rom: hash_media_ref(path)? });
+                out.push(SlotROMRef {
+                    mpi_slot: None,
+                    rom: hash_media_ref(path)?,
+                });
             } else if self.machine.bus.cart.as_disk_cart().is_some() {
                 out.push(SlotROMRef {
                     mpi_slot: None,
@@ -128,7 +148,10 @@ impl CocoApp {
                 });
             }
             if let Some(path) = &self.rs232_eprom_path {
-                out.push(SlotROMRef { mpi_slot: None, rom: hash_media_ref(path)? });
+                out.push(SlotROMRef {
+                    mpi_slot: None,
+                    rom: hash_media_ref(path)?,
+                });
             }
         }
         Ok(out)

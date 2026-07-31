@@ -62,8 +62,8 @@ fn sniff_os9_sides(bytes: &[u8], file_len: usize) -> Option<usize> {
     } else {
         1
     };
-    let dd_spt =
-        (u16::from(lsn0[os9_lsn0::SPT_OFFSET]) << 8 | u16::from(lsn0[os9_lsn0::SPT_OFFSET + 1])) as usize;
+    let dd_spt = (u16::from(lsn0[os9_lsn0::SPT_OFFSET]) << 8
+        | u16::from(lsn0[os9_lsn0::SPT_OFFSET + 1])) as usize;
 
     if dd_spt != DEFAULT_SECTORS_PER_TRACK {
         return None;
@@ -110,9 +110,18 @@ impl std::fmt::Display for JVCError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JVCError::AttributeBytesUnsupported => {
-                write!(f, "JVC images with per-sector attribute bytes are not supported")
+                write!(
+                    f,
+                    "JVC images with per-sector attribute bytes are not supported"
+                )
             }
-            JVCError::InvalidGeometry { file_len, header_len, sectors_per_track, sides, sector_size } => {
+            JVCError::InvalidGeometry {
+                file_len,
+                header_len,
+                sectors_per_track,
+                sides,
+                sector_size,
+            } => {
                 write!(
                     f,
                     "JVC image geometry doesn't divide evenly into tracks: file_len={file_len}, \
@@ -121,7 +130,10 @@ impl std::fmt::Display for JVCError {
                 )
             }
             JVCError::GeometryChanged => {
-                write!(f, "reattached JVC image geometry doesn't match the snapshot's")
+                write!(
+                    f,
+                    "reattached JVC image geometry doesn't match the snapshot's"
+                )
             }
         }
     }
@@ -167,7 +179,11 @@ impl JVCDisk {
             .copied()
             .map(usize::from)
             .unwrap_or(DEFAULT_SECTORS_PER_TRACK);
-        let mut sides = header.get(1).copied().map(usize::from).unwrap_or(DEFAULT_SIDES);
+        let mut sides = header
+            .get(1)
+            .copied()
+            .map(usize::from)
+            .unwrap_or(DEFAULT_SIDES);
         let size_code = header.get(2).copied().unwrap_or(DEFAULT_SECTOR_SIZE_CODE);
         let sector_size = 128usize << size_code;
         let first_sector_id = header.get(3).copied().unwrap_or(DEFAULT_FIRST_SECTOR_ID);
@@ -193,9 +209,7 @@ impl JVCDisk {
         // sniff LSN0 for an OS-9 identification sector. A 2-sided disk whose
         // side-major bytes were parsed as 1 side needs its track count halved to
         // match (see `sniff_os9_sides`'s doc comment for the trust conditions).
-        if header_len == 0
-            && sides == DEFAULT_SIDES
-            && sniff_os9_sides(&bytes, file_len) == Some(2)
+        if header_len == 0 && sides == DEFAULT_SIDES && sniff_os9_sides(&bytes, file_len) == Some(2)
         {
             sides = 2;
             track_count /= 2;
@@ -321,12 +335,21 @@ impl JVCDisk {
     /// single-sided image) or the cap is exceeded — real hardware has no error
     /// path for this, and JvcDisk can't represent a sector outside its own
     /// geometry (spec).
-    pub fn format_sector(&mut self, track: u8, side: u8, sector_id: u8, size_code: u8, data: &[u8]) {
+    pub fn format_sector(
+        &mut self,
+        track: u8,
+        side: u8,
+        sector_id: u8,
+        size_code: u8,
+        data: &[u8],
+    ) {
         let size = 128usize << size_code;
         if size != self.sector_size || side as usize >= self.sides {
             return;
         }
-        let Some(sector_index) = sector_id.checked_sub(self.first_sector_id) else { return };
+        let Some(sector_index) = sector_id.checked_sub(self.first_sector_id) else {
+            return;
+        };
         if sector_index as usize >= self.sectors_per_track {
             return;
         }
@@ -353,7 +376,10 @@ impl JVCDisk {
         }
         let track_bytes = self.sectors_per_track * self.sector_size * self.sides;
         let new_track_count = track + 1;
-        self.data.resize(self.data.len() + (new_track_count - self.track_count) * track_bytes, 0);
+        self.data.resize(
+            self.data.len() + (new_track_count - self.track_count) * track_bytes,
+            0,
+        );
         self.track_count = new_track_count;
         self.dirty = true;
         true

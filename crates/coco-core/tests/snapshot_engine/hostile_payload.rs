@@ -13,13 +13,13 @@ use std::path::PathBuf;
 
 use ciborium::Value;
 use coco_core::cart::MultiPak;
-use coco_core::fdc::{dskreg, DiskCart, JVCDisk};
+use coco_core::fdc::{DiskCart, JVCDisk, dskreg};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SnapshotError};
-use coco_core::ssc::{cmd as ssc_cmd, reg as ssc_reg, SoundSpeechCartridge};
+use coco_core::ssc::{SoundSpeechCartridge, cmd as ssc_cmd, reg as ssc_reg};
 use coco_core::{Machine, MachineConfig};
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 use mc6809::Bus;
 
 use super::common::expect_err;
@@ -36,7 +36,9 @@ fn header_len() -> usize {
 /// (ungzipped) CBOR payload bytes, discarding the header.
 fn cbor_body_of(container: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
-    GzDecoder::new(&container[header_len()..]).read_to_end(&mut out).expect("gunzip");
+    GzDecoder::new(&container[header_len()..])
+        .read_to_end(&mut out)
+        .expect("gunzip");
     out
 }
 
@@ -49,7 +51,9 @@ fn mutate_cbor(cbor: &[u8], path: &[&str], new_value: Value) -> Vec<u8> {
     let mut root: Value = ciborium::from_reader(cbor).expect("decode cbor");
     let mut cursor = &mut root;
     for key in path {
-        let map = cursor.as_map_mut().unwrap_or_else(|| panic!("expected a map navigating to {key:?}"));
+        let map = cursor
+            .as_map_mut()
+            .unwrap_or_else(|| panic!("expected a map navigating to {key:?}"));
         cursor = &mut map
             .iter_mut()
             .find(|(k, _)| k.as_text() == Some(*key))
@@ -92,7 +96,10 @@ fn ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic() {
     // `$98` = LOAD_SOUND_INDIVIDUAL_START buffer 0: a legitimate `$FF7E`
     // write that leaves the SSC mid `Mode::Loading(Load { cursor: 0, cap:
     // 64, .. })` — see `SoundSpeechCartridge::start_load_individual`.
-    machine.bus.cart.write(ssc_reg::DATA, ssc_cmd::LOAD_SOUND_INDIVIDUAL_START);
+    machine
+        .bus
+        .cart
+        .write(ssc_reg::DATA, ssc_cmd::LOAD_SOUND_INDIVIDUAL_START);
 
     let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
     let cbor = cbor_body_of(&bytes);
@@ -101,7 +108,15 @@ fn ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic() {
     // against `ram::SIZE` of its own.
     let tampered = mutate_cbor(
         &cbor,
-        &["machine", "bus", "cart", "SoundSpeechCartridge", "mode", "Loading", "cap"],
+        &[
+            "machine",
+            "bus",
+            "cart",
+            "SoundSpeechCartridge",
+            "mode",
+            "Loading",
+            "cap",
+        ],
         Value::Integer(999_999.into()),
     );
     let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
@@ -122,7 +137,10 @@ fn machine_with_disk_in_read_transfer() -> Machine {
     // since nothing here executes a CPU instruction.
     let mut cart = DiskCart::new(vec![0u8; 16].into_boxed_slice());
     const ONE_TRACK_BYTES: usize = 18 * 256;
-    cart.insert_disk(0, JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).expect("build disk"));
+    cart.insert_disk(
+        0,
+        JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).expect("build disk"),
+    );
     machine.insert_cartridge(cart);
 
     const DSKREG: u16 = 0xFF40;
@@ -150,7 +168,9 @@ fn wd1773_transfer_index_past_buf_len_is_invalid_payload_not_a_panic() {
     // `buf`.
     let tampered = mutate_cbor(
         &cbor,
-        &["machine", "bus", "cart", "DiskCart", "fdc", "op", "Transfer", "index"],
+        &[
+            "machine", "bus", "cart", "DiskCart", "fdc", "op", "Transfer", "index",
+        ],
         Value::Integer(999_999.into()),
     );
     let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
@@ -169,7 +189,10 @@ fn cassette_bit_out_of_range_is_invalid_payload_not_a_panic() {
     // `reattach_tape` at all (an unrecorded tape is skipped entirely) — the
     // path/hash themselves don't matter to this test.
     let media = MediaRefs {
-        tape: Some(MediaRef { path: PathBuf::from("tape.cas"), sha256: snapshot::sha256_hex(&tape_bytes) }),
+        tape: Some(MediaRef {
+            path: PathBuf::from("tape.cas"),
+            sha256: snapshot::sha256_hex(&tape_bytes),
+        }),
         ..MediaRefs::default()
     };
 
@@ -178,12 +201,18 @@ fn cassette_bit_out_of_range_is_invalid_payload_not_a_panic() {
     // `Cassette::current_bit_is_one` shifts a tape byte right by `bit` with
     // no bounds check of its own: 8 (or higher) shift-overflow-panics in a
     // debug build and is unspecified in release.
-    let tampered =
-        mutate_cbor(&cbor, &["machine", "bus", "cassette", "bit"], Value::Integer(9.into()));
+    let tampered = mutate_cbor(
+        &cbor,
+        &["machine", "bus", "cassette", "bit"],
+        Value::Integer(9.into()),
+    );
     let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
 
     let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
-    let sources = MediaSources { tape: Some(tape_bytes), ..MediaSources::default() };
+    let sources = MediaSources {
+        tape: Some(tape_bytes),
+        ..MediaSources::default()
+    };
     let err = expect_err(snapshot::restore(payload, sources));
     match err {
         SnapshotError::MediaShape { role, detail } => {
@@ -227,7 +256,8 @@ const OVERSIZED_PAYLOAD_LEN: usize = 70 * 1024 * 1024;
 #[test]
 fn oversized_gzip_payload_is_rejected_without_allocating_it() {
     let mut gz = GzEncoder::new(Vec::new(), Compression::fast());
-    gz.write_all(&vec![0u8; OVERSIZED_PAYLOAD_LEN]).expect("gzip zeros");
+    gz.write_all(&vec![0u8; OVERSIZED_PAYLOAD_LEN])
+        .expect("gzip zeros");
     let compressed = gz.finish().expect("finish gzip");
 
     let mut bytes = Vec::new();

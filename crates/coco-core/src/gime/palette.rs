@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{vmode, GIME};
+use super::{GIME, vmode};
 
 /// Which monitor signal path resolves 6-bit palette values to RGB: the real
 /// GIME drives both an RGB and a composite output simultaneously, and it's

@@ -118,7 +118,10 @@ fn shape_08_is_a_repeating_sawtooth() {
     let v_start = run_envelope(&mut ay, 0x08, 0);
     assert_eq!(v_start, 0x0F);
     let v_mid = run_envelope(&mut ay, 0x08, full_ramp / 2);
-    assert!(v_mid < v_start, "midway through the ramp it must have decayed");
+    assert!(
+        v_mid < v_start,
+        "midway through the ramp it must have decayed"
+    );
     let v_wrapped = run_envelope(&mut ay, 0x08, full_ramp);
     assert_eq!(
         v_wrapped, 0x0F,

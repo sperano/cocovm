@@ -85,8 +85,11 @@ fn synthetic_rom() -> Box<[u8]> {
 }
 
 fn synthetic_machine(rom: Box<[u8]>) -> Machine {
-    let config =
-        MachineConfig { variant: MachineVariant::Coco3, memory: MemorySize::K128, ..MachineConfig::default() };
+    let config = MachineConfig {
+        variant: MachineVariant::Coco3,
+        memory: MemorySize::K128,
+        ..MachineConfig::default()
+    };
     Machine::new(config, rom)
 }
 
@@ -176,7 +179,11 @@ fn all_committed_fixtures_still_load() {
         check_fixture(&path);
         checked += 1;
     }
-    assert!(checked > 0, "no *.ccstate fixtures found under {}", dir.display());
+    assert!(
+        checked > 0,
+        "no *.ccstate fixtures found under {}",
+        dir.display()
+    );
 }
 
 /// Load, restore, and trace-continue one fixture, comparing against its
@@ -184,22 +191,26 @@ fn all_committed_fixtures_still_load() {
 /// `<stem>.trace`) join this gate automatically via [`all_committed_fixtures_still_load`]'s
 /// directory scan.
 fn check_fixture(ccstate_path: &Path) {
-    let stem = ccstate_path.file_stem().and_then(|s| s.to_str()).expect("fixture file stem");
+    let stem = ccstate_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .expect("fixture file stem");
     let dir = ccstate_path.parent().expect("fixture parent dir");
     let rom_path = dir.join(format!("{stem}.rom"));
     let trace_path = dir.join(format!("{stem}.trace"));
 
-    let ccstate =
-        std::fs::read(ccstate_path).unwrap_or_else(|e| panic!("read {}: {e}", ccstate_path.display()));
+    let ccstate = std::fs::read(ccstate_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", ccstate_path.display()));
     assert!(
         ccstate.len() as u64 <= FIXTURE_MAX_BYTES,
         "fixture {stem} is {} bytes, over the {FIXTURE_MAX_BYTES}-byte cap -- did something \
          start embedding media bytes into a snapshot fixture?",
         ccstate.len()
     );
-    let rom = std::fs::read(&rom_path).unwrap_or_else(|e| panic!("read {}: {e}", rom_path.display()));
-    let expected_trace =
-        std::fs::read_to_string(&trace_path).unwrap_or_else(|e| panic!("read {}: {e}", trace_path.display()));
+    let rom =
+        std::fs::read(&rom_path).unwrap_or_else(|e| panic!("read {}: {e}", rom_path.display()));
+    let expected_trace = std::fs::read_to_string(&trace_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", trace_path.display()));
 
     let payload = snapshot::load(&ccstate).unwrap_or_else(|e| {
         panic!(
@@ -208,7 +219,10 @@ fn check_fixture(ccstate_path: &Path) {
              future version) was broken: {e}"
         )
     });
-    let sources = MediaSources { system_rom: Some(rom.into_boxed_slice()), ..MediaSources::default() };
+    let sources = MediaSources {
+        system_rom: Some(rom.into_boxed_slice()),
+        ..MediaSources::default()
+    };
     let mut restored = snapshot::restore(payload, sources)
         .unwrap_or_else(|e| panic!("fixture {stem} failed to restore: {e}"))
         .machine;

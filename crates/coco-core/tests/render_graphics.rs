@@ -3,7 +3,7 @@
 //! pixel-doubling that scales lower resolutions into the 256×192 active area.
 
 use coco_core::video::{
-    decode_vdg_graphics, render_graphics, vdg_palette_indices, BORDER, BYTES_PER_PIXEL, FB_H, FB_W,
+    BORDER, BYTES_PER_PIXEL, FB_H, FB_W, decode_vdg_graphics, render_graphics, vdg_palette_indices,
 };
 
 const C0: [u8; 4] = [0x10, 0x10, 0x10, 0xFF];
@@ -36,13 +36,22 @@ const V_RG3: u8 = 0b101; // paired with GM=101 (RG3 / PMODE 2)
 #[test]
 fn decodes_pmode_geometry() {
     let m = decode_vdg_graphics(RG6, V_RG6);
-    assert_eq!((m.bytes_per_row, m.rows, m.bpp, m.logical_w), (32, 192, 1, 256));
+    assert_eq!(
+        (m.bytes_per_row, m.rows, m.bpp, m.logical_w),
+        (32, 192, 1, 256)
+    );
 
     let m = decode_vdg_graphics(CG6, V_CG6);
-    assert_eq!((m.bytes_per_row, m.rows, m.bpp, m.logical_w), (32, 192, 2, 128));
+    assert_eq!(
+        (m.bytes_per_row, m.rows, m.bpp, m.logical_w),
+        (32, 192, 2, 128)
+    );
 
     let m = decode_vdg_graphics(RG3, V_RG3);
-    assert_eq!((m.bytes_per_row, m.rows, m.bpp, m.logical_w), (16, 192, 1, 128));
+    assert_eq!(
+        (m.bytes_per_row, m.rows, m.bpp, m.logical_w),
+        (16, 192, 1, 128)
+    );
 }
 
 #[test]
@@ -91,7 +100,10 @@ fn mismatched_v_and_gm_pairing_follows_v_for_vertical_cadence() {
     // the horizontal decode still follows GM.
     const V_MISMATCH: u8 = 0b011; // LEGACY_GFX_LINES_PER_ROW[3] == 2
     let mode = decode_vdg_graphics(RG6, V_MISMATCH);
-    assert_eq!((mode.bytes_per_row, mode.rows, mode.bpp, mode.logical_w), (32, 96, 1, 256));
+    assert_eq!(
+        (mode.bytes_per_row, mode.rows, mode.bpp, mode.logical_w),
+        (32, 96, 1, 256)
+    );
 
     // Distinguish each fetched row by lighting pixel `row % 8` of its first byte.
     let mut data = vec![0u8; mode.bytes_per_row * mode.rows];

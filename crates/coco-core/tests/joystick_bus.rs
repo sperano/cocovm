@@ -37,7 +37,11 @@ fn comparator_tracks_dac_sweep_on_selected_pot() {
     b.joysticks.set_axis(RIGHT, AXIS_X, 40);
 
     set_dac(&mut b, 40);
-    assert_ne!(b.read(PIA0_PA) & COMPARATOR, 0, "DAC == pot: comparator high");
+    assert_ne!(
+        b.read(PIA0_PA) & COMPARATOR,
+        0,
+        "DAC == pot: comparator high"
+    );
     set_dac(&mut b, 41);
     assert_eq!(b.read(PIA0_PA) & COMPARATOR, 0, "DAC > pot: comparator low");
 }

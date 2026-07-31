@@ -15,11 +15,11 @@ mod graphics;
 mod text;
 
 pub use graphics::{
+    LEGACY_GFX_LINES_PER_ROW, MAX_VDG_COLORS, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, VDGGraphicsMode,
     decode_vdg_graphics, paint_legacy_graphics_line, render_graphics, vdg_palette_indices,
-    VDGGraphicsMode, LEGACY_GFX_LINES_PER_ROW, MAX_VDG_COLORS, VDG_AG, VDG_CSS, VDG_GM0_INTEXT,
 };
 pub use text::{
-    decode_alpha_char, legacy_border_value, paint_legacy_text_line, render_text, AlphaGenerator,
+    AlphaGenerator, decode_alpha_char, legacy_border_value, paint_legacy_text_line, render_text,
 };
 
 /// VDG character cell: 8 pixels wide × 12 raster lines (matches the font rows).
@@ -146,7 +146,8 @@ impl ColorSource<'_> {
 /// Shared by [`text::paint_legacy_text_line`] and
 /// [`graphics::paint_legacy_graphics_line`].
 fn paint_px(out: &mut [u8], x: &mut usize, xscale: usize, color: [u8; 4]) {
-    for px in out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
+    for px in
+        out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
     {
         px.copy_from_slice(&color);
     }

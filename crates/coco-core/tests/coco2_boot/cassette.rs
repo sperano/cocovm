@@ -11,7 +11,10 @@
 
 use coco_core::Machine;
 
-use super::common::{boot_machine, boot_to_prompt, run_fields, screen_contains, screen_dump, type_line, SETTLE_FIELDS};
+use super::common::{
+    SETTLE_FIELDS, boot_machine, boot_to_prompt, run_fields, screen_contains, screen_dump,
+    type_line,
+};
 
 /// Tape leader/sync bytes (Service Manual §5.10) — matches `tests/cassette.rs`.
 const LEADER: u8 = 0x55;

@@ -192,7 +192,10 @@ fn rom_programs_the_timer_and_blink_phase_toggles() {
             last = m.bus.gime.blink_state;
         }
     }
-    assert_ne!(m.bus.gime.timer_reload, 0, "boot never programmed the timer");
+    assert_ne!(
+        m.bus.gime.timer_reload, 0,
+        "boot never programmed the timer"
+    );
     assert!(
         (4..=12).contains(&toggles),
         "expected ~7 blink toggles in {FIELDS} fields, saw {toggles}"

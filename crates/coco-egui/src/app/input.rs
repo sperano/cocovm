@@ -72,7 +72,12 @@ impl CocoApp {
     pub(crate) fn handle_hotkeys_and_paste(&mut self, events: &[egui::Event]) {
         for ev in events {
             match ev {
-                egui::Event::Key { key, pressed: true, repeat: false, .. } => match key {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    repeat: false,
+                    ..
+                } => match key {
                     egui::Key::F12 => {
                         let next = match self.kb_mode {
                             KbMode::Positional => KbMode::Symbolic,
@@ -98,7 +103,9 @@ impl CocoApp {
         for ev in events {
             match ev {
                 egui::Event::Text(text) => self.enqueue_text(text),
-                egui::Event::Key { key, pressed: true, .. } => {
+                egui::Event::Key {
+                    key, pressed: true, ..
+                } => {
                     if joystick_keys && is_joystick_key(*key) {
                         continue;
                     }
@@ -114,14 +121,24 @@ impl CocoApp {
     /// Positional mode: physical keys drive the CoCo matrix directly. Arrows
     /// and Z/X are skipped when a joystick port is in Keys mode, so the two
     /// input paths don't fight over the same physical keys.
-    pub(crate) fn drive_matrix_positionally(&mut self, events: &[egui::Event], mods: egui::Modifiers) {
+    pub(crate) fn drive_matrix_positionally(
+        &mut self,
+        events: &[egui::Event],
+        mods: egui::Modifiers,
+    ) {
         let joystick_keys = self.joysticks.keys_active();
         let kb = &mut self.machine.bus.keyboard;
         kb.set(kbd::SHIFT, mods.shift);
         kb.set(kbd::CTRL, mods.ctrl);
         kb.set(kbd::ALT, mods.alt);
         for ev in events {
-            if let egui::Event::Key { key, physical_key, pressed, .. } = ev {
+            if let egui::Event::Key {
+                key,
+                physical_key,
+                pressed,
+                ..
+            } = ev
+            {
                 let k = physical_key.unwrap_or(*key);
                 if k == egui::Key::F12 {
                     continue;
@@ -140,6 +157,7 @@ impl CocoApp {
     /// ports. Called once per `update()`, before running any emulated fields, so
     /// the pot/button state a field sees is this frame's, not last frame's.
     pub(crate) fn drive_joysticks(&mut self, ctx: &egui::Context) {
-        self.joysticks.apply(ctx, self.display_rect, &mut self.machine);
+        self.joysticks
+            .apply(ctx, self.display_rect, &mut self.machine);
     }
 }

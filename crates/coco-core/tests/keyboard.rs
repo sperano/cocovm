@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::keyboard::{char_key, Keyboard};
+use coco_core::keyboard::{Keyboard, char_key};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -115,5 +115,8 @@ fn typing_multiple_keys_with_irqs_active() {
         .map(|r| screen_row(&mut m, r))
         .find(|row| row.trim_start().starts_with("ABC"))
         .unwrap_or_default();
-    assert!(typed.trim_start().starts_with("ABC"), "expected 'ABC' echoed, screen had no such row");
+    assert!(
+        typed.trim_start().starts_with("ABC"),
+        "expected 'ABC' echoed, screen had no such row"
+    );
 }

@@ -71,7 +71,13 @@ const REEL_SPOKE_LEN_FRAC: f32 = 0.85;
 /// and co-rotate (linked by the tape between them, not independent
 /// motors).
 pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, TAPE_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, TAPE_ICON_SIZE, active);
     painter.rect_filled(rect, TAPE_ICON_CORNER, shell);
     // The two reel hubs, side by side above the mid-line (the head window
     // occupies a real shell's bottom edge, unreadable at this size).
@@ -88,7 +94,12 @@ pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) ->
 /// The spokes punched back into a reel hub in `color` (the shell color),
 /// evenly spaced around `reel_angle` — see [`super::TapeReel::advance`] for
 /// how the angle advances frame to frame.
-fn draw_reel_spokes(painter: &egui::Painter, hub: egui::Pos2, reel_angle: f32, color: egui::Color32) {
+fn draw_reel_spokes(
+    painter: &egui::Painter,
+    hub: egui::Pos2,
+    reel_angle: f32,
+    color: egui::Color32,
+) {
     let len = REEL_HUB_R * REEL_SPOKE_LEN_FRAC;
     let stroke = egui::Stroke::new(1.0f32, color);
     for k in 0..REEL_SPOKE_COUNT {
@@ -111,7 +122,13 @@ const DRIVE_ICON_CORNER: f32 = 1.5;
 /// index-hole dot, and the write-protect notch all punched out in the
 /// panel's background color — the 5¼" silhouette.
 pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, DRIVE_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, DRIVE_ICON_SIZE, active);
     painter.rect_filled(rect, DRIVE_ICON_CORNER, shell);
     // Hub hole, a hair above center (the slot below claims the bottom).
     let hub = rect.center() - egui::vec2(0.0, DRIVE_ICON_SIZE.x * 0.08);
@@ -157,7 +174,13 @@ const VHD_ICON_CORNER: f32 = 1.5;
 /// actuator-arm line reaching from the housing's bottom-right corner onto
 /// the platter, the way a hard drive's read/write head arm does.
 pub(crate) fn vhd_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, VHD_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, VHD_ICON_SIZE, active);
     painter.rect_filled(rect, VHD_ICON_CORNER, shell);
 
     let platter_r = VHD_ICON_SIZE.y * 0.42;
@@ -181,12 +204,21 @@ const DW_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 10.0);
 /// icon's left edge with one sag/kink partway along, evoking a serial
 /// cable running off to the host.
 pub(crate) fn drivewire_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, DW_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, DW_ICON_SIZE, active);
 
     // Plug body: a small rect hugging the right edge.
     let plug_w = DW_ICON_SIZE.x * 0.4;
     let plug = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - plug_w, rect.center().y - DW_ICON_SIZE.y * 0.35),
+        egui::pos2(
+            rect.right() - plug_w,
+            rect.center().y - DW_ICON_SIZE.y * 0.35,
+        ),
         egui::vec2(plug_w, DW_ICON_SIZE.y * 0.7),
     );
     painter.rect_filled(plug, 1.0, shell);
@@ -204,8 +236,17 @@ pub(crate) fn drivewire_icon(ui: &mut egui::Ui, active: bool) -> egui::Response 
     // Cable: plug face -> a sag/kink partway along -> the left edge.
     let cable_stroke = egui::Stroke::new(1.0f32, shell);
     let kink = egui::pos2(rect.left() + DW_ICON_SIZE.x * 0.35, rect.bottom() - 1.0);
-    painter.line_segment([egui::pos2(plug.left(), rect.center().y), kink], cable_stroke);
-    painter.line_segment([kink, egui::pos2(rect.left(), rect.center().y - DW_ICON_SIZE.y * 0.1)], cable_stroke);
+    painter.line_segment(
+        [egui::pos2(plug.left(), rect.center().y), kink],
+        cable_stroke,
+    );
+    painter.line_segment(
+        [
+            kink,
+            egui::pos2(rect.left(), rect.center().y - DW_ICON_SIZE.y * 0.1),
+        ],
+        cable_stroke,
+    );
     response
 }
 
@@ -225,7 +266,13 @@ const RS232_PIN_FIELD_W: f32 = RS232_ICON_SIZE.x * 0.72;
 /// two in a lower row, plus a small filled ear stud at each side (the
 /// connector's mounting-screw bosses).
 pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, RS232_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, RS232_ICON_SIZE, active);
 
     // D-sub shield: a trapezoid, top edge the full pin-field width, bottom
     // edge narrower.
@@ -238,22 +285,42 @@ pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
         egui::pos2(cx + half_top - bottom_inset, rect.bottom()),
         egui::pos2(cx - half_top + bottom_inset, rect.bottom()),
     ];
-    painter.add(egui::Shape::convex_polygon(points, shell, egui::Stroke::NONE));
+    painter.add(egui::Shape::convex_polygon(
+        points,
+        shell,
+        egui::Stroke::NONE,
+    ));
 
     // Ear studs: mounting-screw bosses at each side, at mid-height.
     let ear_r = RS232_ICON_SIZE.y * 0.16;
-    painter.circle_filled(egui::pos2(rect.left() + ear_r, rect.center().y), ear_r, shell);
-    painter.circle_filled(egui::pos2(rect.right() - ear_r, rect.center().y), ear_r, shell);
+    painter.circle_filled(
+        egui::pos2(rect.left() + ear_r, rect.center().y),
+        ear_r,
+        shell,
+    );
+    painter.circle_filled(
+        egui::pos2(rect.right() - ear_r, rect.center().y),
+        ear_r,
+        shell,
+    );
 
     // Pins: 3 over 2, punched into the shield.
     let pin_r = RS232_ICON_SIZE.y * 0.09;
     let upper_y = rect.center().y - RS232_ICON_SIZE.y * 0.16;
     let lower_y = rect.center().y + RS232_ICON_SIZE.y * 0.16;
     for dx in [-0.28, 0.0, 0.28] {
-        painter.circle_filled(egui::pos2(cx + dx * RS232_PIN_FIELD_W, upper_y), pin_r, punch);
+        painter.circle_filled(
+            egui::pos2(cx + dx * RS232_PIN_FIELD_W, upper_y),
+            pin_r,
+            punch,
+        );
     }
     for dx in [-0.16, 0.16] {
-        painter.circle_filled(egui::pos2(cx + dx * RS232_PIN_FIELD_W, lower_y), pin_r, punch);
+        painter.circle_filled(
+            egui::pos2(cx + dx * RS232_PIN_FIELD_W, lower_y),
+            pin_r,
+            punch,
+        );
     }
     response
 }
@@ -269,7 +336,13 @@ const JOYSTICK_ICON_SIZE: egui::Vec2 = egui::vec2(11.0, 13.0);
 /// stick reads as one continuous shape from above) — plus one small button
 /// dot punched into the base's left corner.
 pub(crate) fn joystick_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, JOYSTICK_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, JOYSTICK_ICON_SIZE, active);
 
     // Base: a rounded rect hugging the bottom.
     let base_h = JOYSTICK_ICON_SIZE.y * 0.4;
@@ -282,7 +355,10 @@ pub(crate) fn joystick_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     // Stick: rises from the base's top-center toward the icon's top.
     let ball = egui::pos2(base.center().x, rect.top() + JOYSTICK_ICON_SIZE.y * 0.12);
     let stick_stroke = egui::Stroke::new(2.0f32, shell);
-    painter.line_segment([egui::pos2(base.center().x, base.top()), ball], stick_stroke);
+    painter.line_segment(
+        [egui::pos2(base.center().x, base.top()), ball],
+        stick_stroke,
+    );
     // Ball: the fire-button cap on top.
     painter.circle_filled(ball, JOYSTICK_ICON_SIZE.y * 0.10, shell);
 
@@ -310,7 +386,13 @@ const PRINTER_PAPER_SIZE: egui::Vec2 = egui::vec2(8.0, 6.0);
 /// line punched where the paper meets the body and two small control-light
 /// dots punched into the body's right side.
 pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, PRINTER_ICON_SIZE, active);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, PRINTER_ICON_SIZE, active);
 
     // Body: the wide rect along the bottom.
     let body = egui::Rect::from_min_size(
@@ -320,7 +402,10 @@ pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     painter.rect_filled(body, 1.5, shell);
     // Paper: the narrower rect rising from the body's top.
     let paper = egui::Rect::from_min_size(
-        egui::pos2(rect.center().x - PRINTER_PAPER_SIZE.x / 2.0, body.top() - PRINTER_PAPER_SIZE.y),
+        egui::pos2(
+            rect.center().x - PRINTER_PAPER_SIZE.x / 2.0,
+            body.top() - PRINTER_PAPER_SIZE.y,
+        ),
         PRINTER_PAPER_SIZE,
     );
     painter.rect_filled(paper, 1.0, shell);
@@ -349,7 +434,13 @@ const KEYBOARD_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 9.0);
 /// keyboard mode readout, this is decoration matching the other status-bar
 /// entries, not a light. A rounded rect with two rows of punched key dots.
 pub(crate) fn keyboard_icon(ui: &mut egui::Ui) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, KEYBOARD_ICON_SIZE, false);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, KEYBOARD_ICON_SIZE, false);
     painter.rect_filled(rect, 1.5, shell);
 
     let key_r = KEYBOARD_ICON_SIZE.y * 0.11;
@@ -371,7 +462,13 @@ const CART_ICON_SIZE: egui::Vec2 = egui::vec2(13.0, 10.0);
 /// isn't a light. The ROM-pak body rect has a narrower label hump on top
 /// and two punched grip notches nicked into the bottom edge.
 pub(crate) fn cart_icon(ui: &mut egui::Ui) -> egui::Response {
-    let Icon { rect, shell, punch, painter, response } = begin_icon(ui, CART_ICON_SIZE, false);
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, CART_ICON_SIZE, false);
 
     // Body: the lower, full-width part of the pak.
     let hump_h = CART_ICON_SIZE.y * 0.35;
@@ -409,7 +506,13 @@ const MPI_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 11.0);
 /// why this isn't a light. A box with four punched vertical slot lines, one
 /// per cartridge slot the real FD-502 Multi-Pak exposes.
 pub(crate) fn mpi_icon(ui: &mut egui::Ui) -> egui::Response {
-    let Icon { rect, punch, painter, shell, response } = begin_icon(ui, MPI_ICON_SIZE, false);
+    let Icon {
+        rect,
+        punch,
+        painter,
+        shell,
+        response,
+    } = begin_icon(ui, MPI_ICON_SIZE, false);
     painter.rect_filled(rect, 1.5, shell);
 
     let slot_stroke = egui::Stroke::new(1.0f32, punch);
@@ -417,7 +520,10 @@ pub(crate) fn mpi_icon(ui: &mut egui::Ui) -> egui::Response {
     let slot_bottom = rect.bottom() - MPI_ICON_SIZE.y * 0.2;
     for col in 0..4 {
         let x = rect.left() + MPI_ICON_SIZE.x * (0.18 + col as f32 * 0.22);
-        painter.line_segment([egui::pos2(x, slot_top), egui::pos2(x, slot_bottom)], slot_stroke);
+        painter.line_segment(
+            [egui::pos2(x, slot_top), egui::pos2(x, slot_bottom)],
+            slot_stroke,
+        );
     }
     response
 }

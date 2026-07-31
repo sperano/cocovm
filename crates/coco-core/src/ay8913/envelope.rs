@@ -52,7 +52,11 @@ impl Envelope {
     /// which only implements 10 of the 16 possible shape codes distinctly
     /// (the CONT=0 codes duplicate 4 of the CONT=1 ones).
     pub(super) fn set_shape(&mut self, shape_byte: u8) {
-        self.attack = if shape_byte & shape::ATTACK != 0 { ENV_STEP_MASK as u8 } else { 0 };
+        self.attack = if shape_byte & shape::ATTACK != 0 {
+            ENV_STEP_MASK as u8
+        } else {
+            0
+        };
         if shape_byte & shape::CONTINUE == 0 {
             self.hold = true;
             self.alternate = self.attack != 0;

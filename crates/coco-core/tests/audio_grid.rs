@@ -61,7 +61,10 @@ fn finish_line(m: &mut Machine) -> Vec<[f32; 2]> {
         m.step_instruction();
     }
     let all: Vec<[f32; 2]> = m.take_audio().collect();
-    assert!(all.len() >= OVERSAMPLE as usize, "at least one line flushed");
+    assert!(
+        all.len() >= OVERSAMPLE as usize,
+        "at least one line flushed"
+    );
     all[all.len() - OVERSAMPLE as usize..].to_vec()
 }
 
@@ -80,7 +83,10 @@ fn dac_write_mid_line_splits_the_grid_slots() {
     let loud = *grid.last().unwrap();
     assert!(loud[0] > 0.5, "last slot carries the DAC level: {loud:?}");
     let transitions = grid.windows(2).filter(|w| w[0] != w[1]).count();
-    assert_eq!(transitions, 1, "exactly one level step within the line: {grid:?}");
+    assert_eq!(
+        transitions, 1,
+        "exactly one level step within the line: {grid:?}"
+    );
 
     // The write held: the next full line is loud in every slot.
     let next = finish_line(&mut m);

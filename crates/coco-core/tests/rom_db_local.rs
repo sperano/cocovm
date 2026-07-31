@@ -24,5 +24,8 @@ fn local_roms_match_manifest() {
             other => panic!("{}: {other:?}", path.display()),
         }
     }
-    println!("verified {checked} of {} known ROMs present locally", rom_db::KNOWN_ROMS.len());
+    println!(
+        "verified {checked} of {} known ROMs present locally",
+        rom_db::KNOWN_ROMS.len()
+    );
 }

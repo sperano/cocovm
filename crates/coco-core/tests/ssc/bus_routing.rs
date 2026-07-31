@@ -5,7 +5,7 @@ use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
-use super::common::{bus_with_ssc, FF7D, FF7E};
+use super::common::{FF7D, FF7E, bus_with_ssc};
 
 #[test]
 fn empty_slot_still_reads_open_bus_across_ff60_to_ff7e() {
@@ -16,7 +16,11 @@ fn empty_slot_still_reads_open_bus_across_ff60_to_ff7e() {
     );
     b.cart = EmptySlot.into();
     for addr in 0xFF60u16..=0xFF7E {
-        assert_eq!(b.read(addr), 0xFF, "addr {addr:#06x} must be open bus with an empty slot");
+        assert_eq!(
+            b.read(addr),
+            0xFF,
+            "addr {addr:#06x} must be open bus with an empty slot"
+        );
     }
 }
 
@@ -26,7 +30,11 @@ fn ssc_reaches_ff7d_ff7e_on_the_coco1_2_plain_sam_path() {
     assert_eq!(b.read(FF7D), 0xFF);
 
     b.write(FF7E, 0x12);
-    assert_eq!(b.read(FF7E) & 0x80, 0x00, "busy must be set on the plain-SAM (CoCo 1/2) path too");
+    assert_eq!(
+        b.read(FF7E) & 0x80,
+        0x00,
+        "busy must be set on the plain-SAM (CoCo 1/2) path too"
+    );
 }
 
 #[test]

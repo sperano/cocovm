@@ -11,7 +11,7 @@ use mc6809::{Bus, MC6809};
 use serde::{Deserialize, Serialize};
 
 use crate::config::MachineConfig;
-use crate::{cart, gime_video, pia, sam, video, GIME};
+use crate::{GIME, cart, gime_video, pia, sam, video};
 
 /// Framebuffer geometry: the VDG 32×16 text display plus border (`DESIGN.md` §6).
 const FB_WIDTH: u32 = video::FB_W as u32;
@@ -215,8 +215,10 @@ impl Machine {
     ///   (`resize`/`push`), so there's nothing to rebuild.
     pub fn after_restore(&mut self) {
         if self.field_scan.is_some() {
-            self.framebuffer
-                .resize(crate::raster::CANVAS_W * crate::raster::CANVAS_H * BYTES_PER_PIXEL, 0);
+            self.framebuffer.resize(
+                crate::raster::CANVAS_W * crate::raster::CANVAS_H * BYTES_PER_PIXEL,
+                0,
+            );
             self.fb_width = crate::raster::CANVAS_W as u32;
             self.fb_height = crate::raster::CANVAS_H as u32;
         } else {

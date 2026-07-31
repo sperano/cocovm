@@ -4,11 +4,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::Cartridge;
 use super::empty::EmptySlot;
 use super::gmc::GamesMasterCartridge;
 use super::multipak::MultiPak;
 use super::rompak::{BankedROMPak, ROMPak};
-use super::Cartridge;
 
 /// The cartridge in the expansion port (or in a [`MultiPak`] slot), as a
 /// closed enum over every in-crate cartridge type. An enum rather than a
@@ -314,7 +314,9 @@ impl std::fmt::Debug for Cart {
             Cart::Empty(slot) => f.debug_tuple("Empty").field(slot).finish(),
             Cart::ROMPak(pak) => f.debug_tuple("ROMPak").field(pak).finish(),
             Cart::BankedROMPak(pak) => f.debug_tuple("BankedROMPak").field(pak).finish(),
-            Cart::GamesMasterCartridge(gmc) => f.debug_tuple("GamesMasterCartridge").field(gmc).finish(),
+            Cart::GamesMasterCartridge(gmc) => {
+                f.debug_tuple("GamesMasterCartridge").field(gmc).finish()
+            }
             Cart::DiskCart(disk) => f.debug_tuple("DiskCart").field(disk).finish(),
             Cart::MultiPak(mp) => f.debug_tuple("MultiPak").field(mp).finish(),
             Cart::Orch90(orch) => f.debug_tuple("Orch90").field(orch).finish(),

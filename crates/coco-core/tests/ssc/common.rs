@@ -1,4 +1,4 @@
-use coco_core::ssc::{reg as ssc_reg, SoundSpeechCartridge};
+use coco_core::ssc::{SoundSpeechCartridge, reg as ssc_reg};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 

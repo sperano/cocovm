@@ -99,7 +99,11 @@ impl CocoApp {
                 .is_some_and(|c| c.drive_active(drive));
             ui.separator();
             floppy_icon(ui, active).on_hover_text(format!("Drive {drive} — motor on"));
-            ui.label(format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty)));
+            ui.label(format!(
+                "D{drive}: {}{}",
+                file_name(path),
+                dirty_mark(dirty)
+            ));
         }
     }
 

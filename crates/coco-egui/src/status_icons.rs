@@ -11,8 +11,8 @@
 mod paint;
 
 pub(crate) use paint::{
-    cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon, keyboard_icon,
-    mpi_icon, printer_icon, rs232_icon, vhd_icon,
+    cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon, keyboard_icon, mpi_icon,
+    printer_icon, rs232_icon, vhd_icon,
 };
 
 use coco_core::{drivewire, vhd};
@@ -137,7 +137,8 @@ impl ActivityLatch {
             }
             _ => {}
         }
-        self.last_change.is_some_and(|t| now.duration_since(t) < ACTIVITY_HOLD)
+        self.last_change
+            .is_some_and(|t| now.duration_since(t) < ACTIVITY_HOLD)
     }
 }
 

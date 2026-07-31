@@ -31,7 +31,10 @@ fn ram_radio_autosaves_the_definition() {
         .expect("saved definitions validate");
     assert_eq!(config.memory, coco_core::MemorySize::K2048);
     let toml = fs::read_to_string(dir.path().join("dev-coco-3.toml")).unwrap();
-    assert!(toml.contains("2048"), "auto-save must write the new RAM size: {toml}");
+    assert!(
+        toml.contains("2048"),
+        "auto-save must write the new RAM size: {toml}"
+    );
 }
 
 /// ⌘N/Ctrl+N in the manager is the toolbar's "New…": it creates a machine
@@ -63,12 +66,15 @@ fn cmd_n_creates_a_machine_immediately() {
 /// "nothing to act on yet" state.
 #[test]
 fn manager_window_shows_its_toolbar() {
-    let mut harness =
-        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, None, Vec::new()));
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        manager::ManagerApp::new(None, None, None, Vec::new())
+    });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
-    for label in ["New", "Start", "Suspend", "Stop", "Reset", "Settings", "Help"] {
+    for label in [
+        "New", "Start", "Suspend", "Stop", "Reset", "Settings", "Help",
+    ] {
         harness.get_by_label(label);
     }
     assert!(
@@ -94,8 +100,9 @@ fn manager_window_shows_its_toolbar() {
 /// `ManagerApp::update`).
 #[test]
 fn manager_list_divider_is_draggable() {
-    let mut harness =
-        egui_kittest::Harness::new_eframe(|_cc| manager::ManagerApp::new(None, None, None, Vec::new()));
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        manager::ManagerApp::new(None, None, None, Vec::new())
+    });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
@@ -150,7 +157,10 @@ fn manager_window_renders_an_injected_photo() {
 /// definition — not whatever the previously-selected row left behind.
 #[test]
 fn manager_list_shows_entries_and_selecting_shows_detail() {
-    let entries = vec![sample_entry("alpha", "Alpha CoCo 3"), sample_entry("beta", "Beta CoCo 3")];
+    let entries = vec![
+        sample_entry("alpha", "Alpha CoCo 3"),
+        sample_entry("beta", "Beta CoCo 3"),
+    ];
     let mut harness = manager_harness(None, entries);
 
     harness.get_by_label("Alpha CoCo 3");
@@ -193,8 +203,16 @@ fn manager_click_below_the_list_clears_the_selection() {
     harness.step();
     harness.step();
 
-    assert_eq!(harness.state().selection.single(), None, "empty-space click must deselect");
-    assert_eq!(harness.state().detail_name(), None, "detail draft must be dropped");
+    assert_eq!(
+        harness.state().selection.single(),
+        None,
+        "empty-space click must deselect"
+    );
+    assert_eq!(
+        harness.state().detail_name(),
+        None,
+        "detail draft must be dropped"
+    );
 }
 
 /// Right-clicking a list row opens its context menu *without* moving the
@@ -204,9 +222,15 @@ fn manager_click_below_the_list_clears_the_selection() {
 /// the menu.
 #[test]
 fn manager_row_right_click_opens_context_menu_without_selecting() {
-    let entries = vec![sample_entry("alpha", "Alpha CoCo 3"), sample_entry("beta", "Beta CoCo 3")];
+    let entries = vec![
+        sample_entry("alpha", "Alpha CoCo 3"),
+        sample_entry("beta", "Beta CoCo 3"),
+    ];
     let mut harness = manager_harness(None, entries);
-    assert!(harness.query_by_label("Show config").is_none(), "menu must start closed");
+    assert!(
+        harness.query_by_label("Show config").is_none(),
+        "menu must start closed"
+    );
 
     click(&mut harness, "Alpha CoCo 3");
     assert_eq!(harness.state().selection.single(), Some(0));
@@ -224,7 +248,10 @@ fn manager_row_right_click_opens_context_menu_without_selecting() {
         Some(1),
         "Show config selects the right-clicked row, not the old selection"
     );
-    assert!(harness.query_by_label("Show config").is_none(), "picking an item closes the menu");
+    assert!(
+        harness.query_by_label("Show config").is_none(),
+        "picking an item closes the menu"
+    );
 }
 
 /// The context menu's "Delete…" asks for confirmation first: Cancel keeps
@@ -233,7 +260,10 @@ fn manager_row_right_click_opens_context_menu_without_selecting() {
 #[test]
 fn manager_row_context_menu_delete_confirms_and_removes() {
     let dir = TempDir::new("ctx-delete");
-    let entries = vec![sample_entry("alpha", "Alpha CoCo 3"), sample_entry("beta", "Beta CoCo 3")];
+    let entries = vec![
+        sample_entry("alpha", "Alpha CoCo 3"),
+        sample_entry("beta", "Beta CoCo 3"),
+    ];
     for entry in &entries {
         machine_def::save(dir.path(), &entry.slug, &entry.def).expect("seed definition files");
     }
@@ -245,15 +275,28 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
     right_click(&mut harness, "Alpha CoCo 3");
     click(&mut harness, "Delete…");
     click(&mut harness, "Cancel");
-    assert_eq!(harness.state().entries.len(), 2, "Cancel must keep the machine");
-    assert!(dir.path().join("alpha.toml").exists(), "Cancel must keep the definition file");
+    assert_eq!(
+        harness.state().entries.len(),
+        2,
+        "Cancel must keep the machine"
+    );
+    assert!(
+        dir.path().join("alpha.toml").exists(),
+        "Cancel must keep the definition file"
+    );
 
     right_click(&mut harness, "Alpha CoCo 3");
     click(&mut harness, "Delete…");
     click(&mut harness, "Delete");
     assert_eq!(harness.state().entries.len(), 1);
-    assert!(!dir.path().join("alpha.toml").exists(), "the definition file must be removed");
-    assert!(dir.path().join("beta.toml").exists(), "only the confirmed machine is deleted");
+    assert!(
+        !dir.path().join("alpha.toml").exists(),
+        "the definition file must be removed"
+    );
+    assert!(
+        dir.path().join("beta.toml").exists(),
+        "only the confirmed machine is deleted"
+    );
     assert_eq!(
         harness.state().selection.single(),
         Some(0),
@@ -278,8 +321,15 @@ fn manager_new_creates_a_definition_file_immediately() {
 
     click_containing(&mut harness, "New");
 
-    assert_eq!(harness.state().entries.len(), 1, "New must add a list row on the spot");
-    assert!(harness.query_by_label("Create").is_none(), "no dialog is involved");
+    assert_eq!(
+        harness.state().entries.len(),
+        1,
+        "New must add a list row on the spot"
+    );
+    assert!(
+        harness.query_by_label("Create").is_none(),
+        "no dialog is involved"
+    );
     let slug = harness.state().entries[0].slug.clone();
     assert_eq!(slug, "coco-3", "slugified from the default name");
     assert_eq!(harness.state().entries[0].def.name, "CoCo 3");
@@ -289,7 +339,11 @@ fn manager_new_creates_a_definition_file_immediately() {
     let parsed: machine_def::MachineDef =
         toml::from_str(&contents).expect("New must write a parseable definition");
     assert_eq!(parsed.name, "CoCo 3");
-    assert_eq!(harness.state().selection.single(), Some(0), "New must select the new row");
+    assert_eq!(
+        harness.state().selection.single(),
+        Some(0),
+        "New must select the new row"
+    );
     // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
     // form has its own "CoCo 3" Machine combo button, so the name would be
     // ambiguous between that and the list row.
@@ -297,7 +351,11 @@ fn manager_new_creates_a_definition_file_immediately() {
 
     click_containing(&mut harness, "New");
     assert_eq!(harness.state().entries.len(), 2);
-    assert_eq!(harness.state().entries[1].slug, "coco-3-2", "second default uniquifies");
+    assert_eq!(
+        harness.state().entries[1].slug,
+        "coco-3-2",
+        "second default uniquifies"
+    );
     assert!(dir.path().join("coco-3-2.toml").is_file());
 }
 
@@ -310,7 +368,10 @@ fn manager_detail_edits_save_immediately() {
     let entry = sample_entry("dev-coco-3", "Dev CoCo 3");
     machine_def::save(dir.path(), "dev-coco-3", &entry.def)
         .expect("seed the file the entry claims to be");
-    assert!(entry.def.ui.aspect_correct, "test assumes the sample starts aspect-corrected");
+    assert!(
+        entry.def.ui.aspect_correct,
+        "test assumes the sample starts aspect-corrected"
+    );
 
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
     let file = dir.path().join("dev-coco-3.toml");
@@ -318,8 +379,14 @@ fn manager_detail_edits_save_immediately() {
 
     click(&mut harness, "Dev CoCo 3");
     harness.step();
-    assert!(harness.query_by_label("Save").is_none(), "auto-save: no Save button");
-    assert!(harness.query_by_label("Revert").is_none(), "auto-save: no Revert button");
+    assert!(
+        harness.query_by_label("Save").is_none(),
+        "auto-save: no Save button"
+    );
+    assert!(
+        harness.query_by_label("Revert").is_none(),
+        "auto-save: no Revert button"
+    );
     assert_eq!(
         fs::read_to_string(&file).unwrap(),
         before,
@@ -364,7 +431,9 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
     let name_field = || harness.get_by_role(egui::accesskit::Role::TextInput);
     name_field().focus();
     harness.step();
-    harness.get_by_role(egui::accesskit::Role::TextInput).type_text(" Two");
+    harness
+        .get_by_role(egui::accesskit::Role::TextInput)
+        .type_text(" Two");
     harness.step();
     assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
     harness.key_press(egui::Key::Enter);
@@ -377,10 +446,18 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
     assert!(machines.path().join("alpha-two.toml").is_file());
     assert!(!machines.path().join("alpha.toml").exists());
     assert!(
-        artifacts.path().join("alpha-two").join("disk0.dsk").is_file(),
+        artifacts
+            .path()
+            .join("alpha-two")
+            .join("disk0.dsk")
+            .is_file(),
         "the artifact dir must follow the slug"
     );
     assert!(!artifacts.path().join("alpha").exists());
-    assert_eq!(harness.state().selection.single(), Some(0), "selection follows the renamed row");
+    assert_eq!(
+        harness.state().selection.single(),
+        Some(0),
+        "selection follows the renamed row"
+    );
     assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
 }

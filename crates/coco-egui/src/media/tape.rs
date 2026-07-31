@@ -37,7 +37,11 @@ impl CocoApp {
     /// Create a brand-new blank tape at `path` and mount it, ready for CSAVE.
     /// Refuses to overwrite an existing file (mirrors [`Self::new_blank_disk`]).
     pub(crate) fn new_tape(&mut self, path: PathBuf) {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(_) => {
                 self.write_back_tape();
                 self.machine.bus.cassette.insert_tape(Vec::new());

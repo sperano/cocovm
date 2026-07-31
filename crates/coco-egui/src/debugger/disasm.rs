@@ -34,10 +34,8 @@ impl DebuggerPanel {
                     let insn = disassemble(&mut |a| machine.bus.peek(a), addr);
                     let row_addr = addr;
                     ui.horizontal(|ui| {
-                        let mut has_bp = self
-                            .core
-                            .breakpoint(row_addr)
-                            .is_some_and(|bp| bp.enabled);
+                        let mut has_bp =
+                            self.core.breakpoint(row_addr).is_some_and(|bp| bp.enabled);
                         if ui.checkbox(&mut has_bp, "").changed() {
                             if has_bp {
                                 self.core.add_breakpoint(row_addr);

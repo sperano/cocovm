@@ -6,7 +6,7 @@ use mc6809::Bus;
 use crate::config::{MachineVariant, VDGVariant};
 use crate::{gime, gime_video, raster, video};
 
-use super::{Machine, BYTES_PER_PIXEL, FB_HEIGHT, FB_WIDTH, TEXT_BORDER_COLOR};
+use super::{BYTES_PER_PIXEL, FB_HEIGHT, FB_WIDTH, Machine, TEXT_BORDER_COLOR};
 
 impl Machine {
     /// Current scanline within the field (`0..lines_per_field`): the canonical
@@ -74,15 +74,13 @@ impl Machine {
     /// GM2-without-GM1 text variant.
     fn paint_legacy_scanline(&mut self, row: usize) {
         let ff22 = self.bus.pia1.b.output;
-        let border =
-            self.bus.gime.color(video::legacy_border_value(ff22));
-        let row_px = &mut self.framebuffer
-            [row * raster::CANVAS_W * BYTES_PER_PIXEL..][..raster::CANVAS_W * BYTES_PER_PIXEL];
+        let border = self.bus.gime.color(video::legacy_border_value(ff22));
+        let row_px = &mut self.framebuffer[row * raster::CANVAS_W * BYTES_PER_PIXEL..]
+            [..raster::CANVAS_W * BYTES_PER_PIXEL];
 
         // Vertical placement from the live LPF bits — the GIME applies LPF
         // even in legacy modes (MAME `update_geometry`).
-        let lpf =
-            ((self.bus.gime.vres & gime::vres::LPF_MASK) >> gime::vres::LPF_SHIFT) as usize;
+        let lpf = ((self.bus.gime.vres & gime::vres::LPF_MASK) >> gime::vres::LPF_SHIFT) as usize;
         let (top, body) = raster::vertical_window(lpf);
         if row < top || row >= top + body {
             for px in row_px.chunks_exact_mut(BYTES_PER_PIXEL) {
@@ -93,13 +91,13 @@ impl Machine {
 
         // Side borders around the 512 px active span (legacy is always
         // non-wide: MAME `render_scanline`'s `wide = !legacy && ...`).
-        for px in row_px[..raster::NON_WIDE_BORDER_X * BYTES_PER_PIXEL]
-            .chunks_exact_mut(BYTES_PER_PIXEL)
+        for px in
+            row_px[..raster::NON_WIDE_BORDER_X * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
         {
             px.copy_from_slice(&border);
         }
-        for px in row_px[(raster::NON_WIDE_BORDER_X + raster::NON_WIDE_ACTIVE_W)
-            * BYTES_PER_PIXEL..]
+        for px in row_px
+            [(raster::NON_WIDE_BORDER_X + raster::NON_WIDE_ACTIVE_W) * BYTES_PER_PIXEL..]
             .chunks_exact_mut(BYTES_PER_PIXEL)
         {
             px.copy_from_slice(&border);
@@ -129,9 +127,9 @@ impl Machine {
         }
 
         let palette = self.legacy_palette(css);
-        let active = &mut self.framebuffer[(row * raster::CANVAS_W
-            + raster::NON_WIDE_BORDER_X)
-            * BYTES_PER_PIXEL..][..raster::NON_WIDE_ACTIVE_W * BYTES_PER_PIXEL];
+        let active = &mut self.framebuffer
+            [(row * raster::CANVAS_W + raster::NON_WIDE_BORDER_X) * BYTES_PER_PIXEL..]
+            [..raster::NON_WIDE_ACTIVE_W * BYTES_PER_PIXEL];
         if ag {
             let mode = video::decode_vdg_graphics(ff22, sam_video);
             let indices = video::vdg_palette_indices(mode.bpp, usize::from(css));
@@ -223,7 +221,14 @@ impl Machine {
                 Some(VDGVariant::MC6847) | None => video::AlphaGenerator::MC6847,
             },
         };
-        video::render_text(&screen, &palette, border, generator, ff22, &mut self.framebuffer);
+        video::render_text(
+            &screen,
+            &palette,
+            border,
+            generator,
+            ff22,
+            &mut self.framebuffer,
+        );
     }
 
     /// Render a VDG bitmap graphics (PMODE) field (`DESIGN.md` §6).

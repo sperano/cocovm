@@ -65,13 +65,21 @@ pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
     // Keyboard fieldsets.
     ui.label(egui::RichText::new("Video").size(font));
     ui.horizontal(|ui| {
-        ui.radio_value(&mut draft.video, VideoStandard::NTSC, video_label(VideoStandard::NTSC));
+        ui.radio_value(
+            &mut draft.video,
+            VideoStandard::NTSC,
+            video_label(VideoStandard::NTSC),
+        );
         // CoCo 1/2 PAL timing isn't modeled (`MachineConfig::validate`);
         // `constrain` already snapped the draft back to NTSC.
         let pal_possible = draft.variant == MachineVariant::Coco3;
         ui.add_enabled_ui(pal_possible, |ui| {
-            ui.radio_value(&mut draft.video, VideoStandard::PAL, video_label(VideoStandard::PAL))
-                .on_disabled_hover_text("PAL is only supported on the CoCo 3");
+            ui.radio_value(
+                &mut draft.video,
+                VideoStandard::PAL,
+                video_label(VideoStandard::PAL),
+            )
+            .on_disabled_hover_text("PAL is only supported on the CoCo 3");
         });
     });
     ui.end_row();
@@ -88,7 +96,10 @@ pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
         let selected = draft.monitor.unwrap_or(MonitorType::RGB);
         ui.horizontal(|ui| {
             for monitor in [MonitorType::RGB, MonitorType::Composite] {
-                if ui.radio(selected == monitor, monitor_label(monitor)).clicked() {
+                if ui
+                    .radio(selected == monitor, monitor_label(monitor))
+                    .clicked()
+                {
                     draft.monitor = Some(monitor);
                 }
             }

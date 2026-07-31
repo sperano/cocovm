@@ -6,8 +6,8 @@ use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
 use super::common::{
-    boot_machine, load_rom, screen_row, synthesized_ml_disk, synthesized_rsdos_disk, tap_char,
-    try_load_disk, try_load_rom, type_str, SECTOR_SIZE,
+    SECTOR_SIZE, boot_machine, load_rom, screen_row, synthesized_ml_disk, synthesized_rsdos_disk,
+    tap_char, try_load_disk, try_load_rom, type_str,
 };
 
 #[test]
@@ -22,7 +22,11 @@ fn boots_to_disk_basic_and_dir_lists_the_synthesized_file() {
         m.run_field();
     }
     let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
-    assert!(banner, "expected the Disk BASIC banner; row0 = {:?}", screen_row(&mut m, 0));
+    assert!(
+        banner,
+        "expected the Disk BASIC banner; row0 = {:?}",
+        screen_row(&mut m, 0)
+    );
 
     type_str(&mut m, "DIR");
     tap_char(&mut m, '\r');
@@ -34,7 +38,10 @@ fn boots_to_disk_basic_and_dir_lists_the_synthesized_file() {
     assert!(
         found,
         "expected DIR to list HELLO.BAS; screen:\n{}",
-        (0..16).map(|r| screen_row(&mut m, r)).collect::<Vec<_>>().join("\n")
+        (0..16)
+            .map(|r| screen_row(&mut m, r))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
@@ -48,7 +55,10 @@ fn boots_to_disk_basic_without_a_disk_inserted() {
         m.run_field();
     }
     let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
-    assert!(banner, "expected the Disk BASIC banner even with no disk mounted (no spurious HALT)");
+    assert!(
+        banner,
+        "expected the Disk BASIC banner even with no disk mounted (no spurious HALT)"
+    );
 }
 
 /// Hot-plugging the controller into a machine already sitting at the BASIC
@@ -74,7 +84,10 @@ fn controller_added_mid_session_boots_disk_basic_after_power_cycle() {
         m.run_field();
     }
     let banner = (0..16).any(|r| screen_row(&mut m, r).contains("DISK EXTENDED COLOR BASIC"));
-    assert!(banner, "expected Disk BASIC after mid-session insert + power cycle");
+    assert!(
+        banner,
+        "expected Disk BASIC after mid-session insert + power cycle"
+    );
 }
 
 /// Regression: the FD-502 halt/NMI handshake must not drop a sector's final
@@ -146,7 +159,9 @@ fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
 
     let (Some(coco), Some(disk_rom)) = (try_load_rom("coco3.rom"), try_load_rom("disk11.rom"))
     else {
-        eprintln!("skipping dskini_formats_a_blank_disk_and_dir_reports_no_io_error: roms/ assets not present");
+        eprintln!(
+            "skipping dskini_formats_a_blank_disk_and_dir_reports_no_io_error: roms/ assets not present"
+        );
         return;
     };
 
@@ -171,15 +186,28 @@ fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
 
     const EXPECTED_LEN: usize = 35 * 18 * SECTOR_SIZE;
     {
-        let cart = m.bus.cart.as_disk_cart().expect("disk controller still inserted");
+        let cart = m
+            .bus
+            .cart
+            .as_disk_cart()
+            .expect("disk controller still inserted");
         let disk = cart.disk(0).expect("drive 0 still mounted");
-        assert_eq!(disk.bytes().len(), EXPECTED_LEN, "formatted image must be a full 35-track disk");
+        assert_eq!(
+            disk.bytes().len(),
+            EXPECTED_LEN,
+            "formatted image must be a full 35-track disk"
+        );
 
         // Sample track 5 sector 1's data region: DSKINI fills every sector
         // with $FF.
-        let off = disk.sector_offset(5, 0, 1).expect("track 5 sector 1 must exist after formatting");
+        let off = disk
+            .sector_offset(5, 0, 1)
+            .expect("track 5 sector 1 must exist after formatting");
         let sample = disk.read_bytes(off, SECTOR_SIZE);
-        assert!(sample.iter().all(|&b| b == 0xFF), "DSKINI must fill every sector with $FF");
+        assert!(
+            sample.iter().all(|&b| b == 0xFF),
+            "DSKINI must fill every sector with $FF"
+        );
     }
 
     type_str(&mut m, "DIR");
@@ -224,7 +252,9 @@ fn nitros9_l2_boot_reaches_shell_prompt() {
         try_load_rom("disk11.rom"),
         try_load_disk(DISK),
     ) else {
-        eprintln!("skipping nitros9_l2_boot_reaches_shell_prompt: roms/ or disks/ assets not present");
+        eprintln!(
+            "skipping nitros9_l2_boot_reaches_shell_prompt: roms/ or disks/ assets not present"
+        );
         return;
     };
 

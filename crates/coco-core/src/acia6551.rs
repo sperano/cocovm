@@ -390,7 +390,6 @@ impl ACIA6551 {
     pub fn rts(&self) -> bool {
         self.rts
     }
-
 }
 
 #[cfg(test)]

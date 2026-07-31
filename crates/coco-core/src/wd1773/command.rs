@@ -113,7 +113,9 @@ impl WD1773 {
         self.track = 0;
         let verify = cmd & type1::VERIFY != 0;
         self.status_record_not_found = verify && !Self::track_readable(disk.as_deref(), 0);
-        self.op = Op::SettlingTypeOne { remaining: COMMAND_SETTLE_CYCLES };
+        self.op = Op::SettlingTypeOne {
+            remaining: COMMAND_SETTLE_CYCLES,
+        };
     }
 
     /// Seek (Type I, `0x1`): move to the track named by the data register.
@@ -124,7 +126,9 @@ impl WD1773 {
         self.track = target;
         let verify = cmd & type1::VERIFY != 0;
         self.status_record_not_found = verify && !Self::track_readable(disk.as_deref(), target);
-        self.op = Op::SettlingTypeOne { remaining: COMMAND_SETTLE_CYCLES };
+        self.op = Op::SettlingTypeOne {
+            remaining: COMMAND_SETTLE_CYCLES,
+        };
     }
 
     /// Step/Step-In/Step-Out (Type I, `0x2`-`0x7`): move one track in
@@ -150,9 +154,10 @@ impl WD1773 {
             self.track = new_track;
         }
         let verify = cmd & type1::VERIFY != 0;
-        self.status_record_not_found =
-            verify && !Self::track_readable(disk.as_deref(), new_track);
-        self.op = Op::SettlingTypeOne { remaining: COMMAND_SETTLE_CYCLES };
+        self.status_record_not_found = verify && !Self::track_readable(disk.as_deref(), new_track);
+        self.op = Op::SettlingTypeOne {
+            remaining: COMMAND_SETTLE_CYCLES,
+        };
     }
 
     /// Read Sector (Type II, `0x8`/`0x9`).
@@ -294,7 +299,9 @@ impl WD1773 {
 
     fn start_not_found(&mut self) {
         self.status_record_not_found = true;
-        self.op = Op::SettlingNotFound { remaining: COMMAND_SETTLE_CYCLES };
+        self.op = Op::SettlingNotFound {
+            remaining: COMMAND_SETTLE_CYCLES,
+        };
     }
 
     /// Force Interrupt (Type IV, `0xD`): cancel any command in progress. Low

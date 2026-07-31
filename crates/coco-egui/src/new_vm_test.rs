@@ -15,9 +15,7 @@ fn every_selectable_config_validates() {
             &[VideoStandard::NTSC]
         };
         let vdgs: &[Option<VDGVariant>] = match variant {
-            MachineVariant::Coco2 => {
-                &[Some(VDGVariant::MC6847), Some(VDGVariant::MC6847T1)]
-            }
+            MachineVariant::Coco2 => &[Some(VDGVariant::MC6847), Some(VDGVariant::MC6847T1)],
             MachineVariant::Coco1 => &[Some(VDGVariant::MC6847)],
             MachineVariant::Coco3 => &[None],
         };

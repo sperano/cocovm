@@ -174,8 +174,14 @@ const NOON: u8 = 12;
 /// frontend re-injects a real host time source via
 /// [`DistoRTC::set_time_source`] (`docs/plan-save-states.md`) — an
 /// obviously-fake epoch, not a guess at the real time.
-const RESTORED_PLACEHOLDER_TIME: RTCTime =
-    RTCTime { year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+const RESTORED_PLACEHOLDER_TIME: RTCTime = RTCTime {
+    year: 1970,
+    month: 1,
+    day: 1,
+    hour: 0,
+    minute: 0,
+    second: 0,
+};
 
 /// `#[serde(default = "...")]` for [`MSM6242::now`]: a closure that always
 /// returns [`RESTORED_PLACEHOLDER_TIME`], standing in until

@@ -78,7 +78,10 @@ const TAU: f32 = std::f32::consts::TAU;
 
 #[test]
 fn reel_advances_forward_with_playback_position() {
-    let mut reel = TapeReel { last_pos: 100, ..Default::default() };
+    let mut reel = TapeReel {
+        last_pos: 100,
+        ..Default::default()
+    };
     let angle = reel.advance(110, true, 0.0);
     assert!((angle - 10.0 * REEL_ANGLE_PER_BYTE).abs() < 1e-6);
 }
@@ -90,14 +93,20 @@ fn reel_forward_accumulation_past_tau_wraps_via_rem_euclid() {
     // below.
     let mut reel = TapeReel::default();
     let raw = 45.0 * REEL_ANGLE_PER_BYTE;
-    assert!(raw > TAU, "test is only meaningful if the raw angle actually exceeds TAU");
+    assert!(
+        raw > TAU,
+        "test is only meaningful if the raw angle actually exceeds TAU"
+    );
     let angle = reel.advance(45, true, 0.0);
     assert!((angle - raw.rem_euclid(TAU)).abs() < 1e-6);
 }
 
 #[test]
 fn reel_spins_backward_on_rewind() {
-    let mut reel = TapeReel { last_pos: 110, ..Default::default() };
+    let mut reel = TapeReel {
+        last_pos: 110,
+        ..Default::default()
+    };
     let angle = reel.advance(100, true, 0.0);
     // Rewinding 10 bytes must turn the reel the opposite way, wrapped into
     // 0..TAU (a bare negative angle would be a bug: the icon compares raw
@@ -110,14 +119,20 @@ fn reel_spins_backward_on_rewind() {
 fn reel_keeps_turning_while_parked_with_motor_running() {
     // Position didn't move (CSAVE never advances it) but the motor's on:
     // the reel still turns, at RECORD_REEL_SPEED.
-    let mut reel = TapeReel { last_pos: 50, ..Default::default() };
+    let mut reel = TapeReel {
+        last_pos: 50,
+        ..Default::default()
+    };
     let angle = reel.advance(50, true, 0.5);
     assert!((angle - RECORD_REEL_SPEED * 0.5).abs() < 1e-6);
 }
 
 #[test]
 fn reel_parks_when_motor_is_off_and_position_is_unchanged() {
-    let mut reel = TapeReel { angle: 1.23, last_pos: 50 };
+    let mut reel = TapeReel {
+        angle: 1.23,
+        last_pos: 50,
+    };
     let angle = reel.advance(50, false, 0.5);
     assert_eq!(angle, 1.23);
 }

@@ -22,7 +22,12 @@ fn undefined_glyph_matches_capital_x() {
 #[test]
 fn only_the_documented_five_ascii_letters_use_the_descender_row() {
     let descenders: Vec<u8> = (ASCII_FIRST..=ASCII_LAST)
-        .filter(|&c| ascii_glyph(c).unwrap().iter().any(|&col| col & DESCENDER_BIT != 0))
+        .filter(|&c| {
+            ascii_glyph(c)
+                .unwrap()
+                .iter()
+                .any(|&col| col & DESCENDER_BIT != 0)
+        })
         .collect();
     assert_eq!(descenders, vec![b'g', b'j', b'p', b'q', b'y']);
 }
@@ -51,5 +56,9 @@ fn block_glyphs_are_distinct_non_blank_patterns() {
         assert_ne!(*p, [0u8; 9], "non-blank block index rendered blank");
     }
     let unique: std::collections::HashSet<Glyph> = patterns.iter().copied().collect();
-    assert_eq!(unique.len(), patterns.len(), "block glyphs must be distinct");
+    assert_eq!(
+        unique.len(),
+        patterns.len(),
+        "block glyphs must be distinct"
+    );
 }

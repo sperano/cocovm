@@ -3,10 +3,10 @@
 //! selection, and MOCH (monochrome-on-composite) greyscale averaging.
 //! Register values and tables follow MAME `src/mame/trs/gime.cpp`.
 
+use coco_core::MonitorType;
 use coco_core::gime::{GIME, vmode};
 use coco_core::gime_video::render_field;
 use coco_core::video::BYTES_PER_PIXEL;
-use coco_core::MonitorType;
 
 fn px(fb: &[u8], fb_w: usize, x: usize, y: usize) -> [u8; 4] {
     let i = (y * fb_w + x) * BYTES_PER_PIXEL;
@@ -76,8 +76,14 @@ fn eou_greyscale_regression() {
     // rather than exact channel equality.
     const GREY_TOLERANCE: u8 = 1;
     for c in &colors {
-        assert!(c[0].abs_diff(c[1]) <= GREY_TOLERANCE, "achromatic: r ~= g ({c:?})");
-        assert!(c[1].abs_diff(c[2]) <= GREY_TOLERANCE, "achromatic: g ~= b ({c:?})");
+        assert!(
+            c[0].abs_diff(c[1]) <= GREY_TOLERANCE,
+            "achromatic: r ~= g ({c:?})"
+        );
+        assert!(
+            c[1].abs_diff(c[2]) <= GREY_TOLERANCE,
+            "achromatic: g ~= b ({c:?})"
+        );
     }
     assert!(colors[0][0] < colors[1][0]);
     assert!(colors[1][0] < colors[2][0]);

@@ -79,7 +79,12 @@ pub(crate) struct AudioEvent {
 /// line's cassette level, and this slot's generator contributions.
 /// `ay` is the mux-gated cartridge input's slot sample; `generators` the
 /// unconditional crystal-generator pair.
-pub(crate) fn mix(inputs: &AudioInputs, cassette_bit: bool, ay: f32, generators: (f32, f32)) -> [f32; 2] {
+pub(crate) fn mix(
+    inputs: &AudioInputs,
+    cassette_bit: bool,
+    ay: f32,
+    generators: (f32, f32),
+) -> [f32; 2] {
     let mut l = 0.0f32;
     let mut r = 0.0f32;
     if inputs.snden {

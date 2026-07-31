@@ -11,8 +11,8 @@ use coco_core::MachineConfig;
 use crate::machine_def;
 
 use super::{
-    suspend_state_path, MachineEntry, ManagerApp, NO_CONFIG_DIR, NO_DATA_DIR, SUSPEND_STATE_FILE,
-    THUMBNAIL_FILE,
+    MachineEntry, ManagerApp, NO_CONFIG_DIR, NO_DATA_DIR, SUSPEND_STATE_FILE, THUMBNAIL_FILE,
+    suspend_state_path,
 };
 
 /// Display name (and slug source) of a freshly created machine
@@ -46,7 +46,11 @@ impl ManagerApp {
                 || dir.join(format!("{candidate}.toml")).exists()
         };
         let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
-        let created = Some(chrono::Local::now().format(machine_def::DATE_FORMAT).to_string());
+        let created = Some(
+            chrono::Local::now()
+                .format(machine_def::DATE_FORMAT)
+                .to_string(),
+        );
         let def = machine_def::MachineDef::from_config(name, created, &MachineConfig::default());
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
@@ -144,7 +148,11 @@ impl ManagerApp {
             }
         }
         let entry = &mut self.entries[index];
-        entry.vm.as_mut().expect("alive or just restored").set_running(true);
+        entry
+            .vm
+            .as_mut()
+            .expect("alive or just restored")
+            .set_running(true);
         entry.suspended = false;
         entry.launch_error = None;
         if let Err(e) = fs::remove_file(&path)
@@ -194,7 +202,10 @@ impl ManagerApp {
     /// Suspend/Resume outright. Returns an owned path so callers keep their
     /// `&mut self` freedom.
     fn suspend_state_path_for(&self, index: usize) -> Option<PathBuf> {
-        Some(suspend_state_path(self.artifacts_root.as_deref()?, &self.entries[index].slug))
+        Some(suspend_state_path(
+            self.artifacts_root.as_deref()?,
+            &self.entries[index].slug,
+        ))
     }
 
     /// Rename `entries[index]`'s `<slug>.toml` and artifact directory to

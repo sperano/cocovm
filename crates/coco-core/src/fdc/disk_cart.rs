@@ -4,11 +4,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cart::{Cartridge, ROMPak, ROMPakError, IO_OPEN_BUS};
+use crate::cart::{Cartridge, IO_OPEN_BUS, ROMPak, ROMPakError};
 use crate::wd1773::WD1773;
 
-use super::jvc::JVCDisk;
 use super::DRIVE_COUNT;
+use super::jvc::JVCDisk;
 
 /// DSKREG latch bit assignments (`$FF40`; SCS writes at `$FF40-$FF47` all hit
 /// it — MAME `coco_fdc.cpp` `dskreg_w`).
@@ -195,7 +195,6 @@ impl DiskCart {
         self.dskreg & dskreg::MOTOR_ON != 0
     }
 
-
     /// Recompute the control lines the DSKREG/WD1773 pair drives, per MAME
     /// `coco_fdc.cpp update_lines`: called after every event that could change
     /// INTRQ, DRQ, or DSKREG (register access or a `tick`).
@@ -239,7 +238,8 @@ impl Cartridge for DiskCart {
         match addr {
             DSKREG_BASE..=DSKREG_LAST => self.dskreg = val,
             STATUS_COMMAND_REG => {
-                self.fdc.set_double_density(self.dskreg & dskreg::DENSITY_AND_NMI_ENABLE != 0);
+                self.fdc
+                    .set_double_density(self.dskreg & dskreg::DENSITY_AND_NMI_ENABLE != 0);
                 let side = self.side();
                 let idx = self.drive_index();
                 let disk = selected_disk(&mut self.drives, idx);
@@ -297,6 +297,8 @@ impl Cartridge for DiskCart {
     /// any media is resolved) and runs separately, later in the restore
     /// flow.
     fn validate_restored(&self) -> Result<(), String> {
-        self.fdc.validate_restored().map_err(|e| format!("WD1773: {e}"))
+        self.fdc
+            .validate_restored()
+            .map_err(|e| format!("WD1773: {e}"))
     }
 }

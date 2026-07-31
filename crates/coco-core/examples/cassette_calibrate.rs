@@ -76,11 +76,22 @@ fn main() {
         println!("no transitions captured — motor never came on?");
         return;
     }
-    println!("first cycle: {}, last cycle: {}", cap[0].cycle, cap[cap.len() - 1].cycle);
+    println!(
+        "first cycle: {}, last cycle: {}",
+        cap[0].cycle,
+        cap[cap.len() - 1].cycle
+    );
     println!("first 80 transitions (level, cycle, delta):");
     for i in 0..cap.len().min(80) {
-        let delta = if i == 0 { 0 } else { cap[i].cycle - cap[i - 1].cycle };
-        println!("{i:4}: level={:2} cycle={:8} delta={:5}", cap[i].level, cap[i].cycle, delta);
+        let delta = if i == 0 {
+            0
+        } else {
+            cap[i].cycle - cap[i - 1].cycle
+        };
+        println!(
+            "{i:4}: level={:2} cycle={:8} delta={:5}",
+            cap[i].level, cap[i].cycle, delta
+        );
     }
 
     // Histogram of deltas (rounded) to spot the two tone periods.
@@ -119,8 +130,15 @@ fn main() {
     println!("crossings: {}", crossings.len());
     println!("first 60 crossing deltas (cycle, rising, delta):");
     for i in 0..crossings.len().min(60) {
-        let delta = if i == 0 { 0 } else { crossings[i].0 - crossings[i - 1].0 };
-        println!("{i:4}: cycle={:8} rising={:5} delta={:5}", crossings[i].0, crossings[i].1, delta);
+        let delta = if i == 0 {
+            0
+        } else {
+            crossings[i].0 - crossings[i - 1].0
+        };
+        println!(
+            "{i:4}: cycle={:8} rising={:5} delta={:5}",
+            crossings[i].0, crossings[i].1, delta
+        );
     }
     let mut chist: std::collections::BTreeMap<u64, u32> = std::collections::BTreeMap::new();
     for i in 1..crossings.len() {

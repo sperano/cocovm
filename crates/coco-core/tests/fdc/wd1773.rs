@@ -1,9 +1,11 @@
 //! WD1773 command state machine
 
 use coco_core::fdc::JVCDisk;
-use coco_core::wd1773::{status, WD1773};
+use coco_core::wd1773::{WD1773, status};
 
-use super::common::{index_pattern_disk, CRC_TRAILER, DRQ_INTERVAL, FIRST_BYTE_LATENCY, ONE_TRACK_BYTES, SETTLE};
+use super::common::{
+    CRC_TRAILER, DRQ_INTERVAL, FIRST_BYTE_LATENCY, ONE_TRACK_BYTES, SETTLE, index_pattern_disk,
+};
 
 #[test]
 fn restore_zeroes_track_register_and_sets_track0_plus_intrq() {
@@ -31,7 +33,11 @@ fn seek_moves_to_the_data_register_value() {
     assert!(!wd.busy);
     assert!(wd.intrq);
     assert_eq!(wd.track, 5);
-    assert_eq!(wd.read_status(true, true) & status::TRACK0, 0, "track 5 is not track 0");
+    assert_eq!(
+        wd.read_status(true, true) & status::TRACK0,
+        0,
+        "track 5 is not track 0"
+    );
 }
 
 #[test]
@@ -43,7 +49,10 @@ fn verify_sets_rnf_when_the_target_track_is_beyond_the_image() {
     wd.tick(SETTLE, Some(&mut disk), 0);
     assert!(!wd.busy);
     assert!(wd.intrq, "RNF still completes with INTRQ");
-    assert_eq!(wd.read_status(true, true) & status::RECORD_NOT_FOUND, status::RECORD_NOT_FOUND);
+    assert_eq!(
+        wd.read_status(true, true) & status::RECORD_NOT_FOUND,
+        status::RECORD_NOT_FOUND
+    );
 }
 
 #[test]
@@ -57,7 +66,11 @@ fn read_sector_delivers_256_correct_bytes_paced_by_drq_then_intrq() {
     for expected in 0..256u32 {
         // The first byte waits out the sector-search latency; the rest pace at
         // one DRQ interval each.
-        let step = if expected == 0 { FIRST_BYTE_LATENCY } else { DRQ_INTERVAL };
+        let step = if expected == 0 {
+            FIRST_BYTE_LATENCY
+        } else {
+            DRQ_INTERVAL
+        };
         wd.tick(step, Some(&mut disk), 0);
         assert!(wd.drq, "DRQ must be asserted for byte {expected}");
         // INTRQ must trail the final byte's DRQ by the CRC-read time: if it
@@ -98,7 +111,10 @@ fn read_sector_first_byte_waits_out_the_driver_setup_delay() {
     // The driver hasn't started collecting bytes yet: no DRQ may fire (and thus
     // no byte can be lost) during its post-command setup delay.
     wd.tick(DRIVER_SETUP_DELAY, Some(&mut disk), 0);
-    assert!(!wd.drq, "no DRQ may fire during the driver's post-command setup delay");
+    assert!(
+        !wd.drq,
+        "no DRQ may fire during the driver's post-command setup delay"
+    );
 
     // Now collect all 256 bytes the way the HALT loop does: spin one byte-time
     // at a time until each DRQ, then take the byte.
@@ -175,7 +191,11 @@ fn write_sector_round_trips_into_the_image() {
     assert!(wd.busy);
     for expected in 0..256u32 {
         // The first byte request waits out the sector-search latency.
-        let step = if expected == 0 { FIRST_BYTE_LATENCY } else { DRQ_INTERVAL };
+        let step = if expected == 0 {
+            FIRST_BYTE_LATENCY
+        } else {
+            DRQ_INTERVAL
+        };
         wd.tick(step, Some(&mut disk), 0);
         assert!(wd.drq, "DRQ must request byte {expected}");
         wd.write_data(expected as u8, Some(&mut disk), 0);
@@ -198,7 +218,10 @@ fn write_sector_to_a_write_protected_image_sets_status_and_does_not_transfer() {
     wd.write_command(0xA0, Some(&mut disk), 0);
     assert!(!wd.busy, "write-protected write must not transfer");
     assert!(wd.intrq);
-    assert_eq!(wd.read_status(true, true) & status::WRITE_PROTECT, status::WRITE_PROTECT);
+    assert_eq!(
+        wd.read_status(true, true) & status::WRITE_PROTECT,
+        status::WRITE_PROTECT
+    );
     let off = disk.sector_offset(0, 0, 1).unwrap();
     assert_eq!(disk.read_bytes(off, 1)[0], 0xAA, "image must be untouched");
 }
@@ -213,7 +236,10 @@ fn read_sector_sets_rnf_when_the_sector_is_missing() {
     wd.tick(SETTLE, Some(&mut disk), 0);
     assert!(!wd.busy);
     assert!(wd.intrq);
-    assert_eq!(wd.read_status(true, true) & status::RECORD_NOT_FOUND, status::RECORD_NOT_FOUND);
+    assert_eq!(
+        wd.read_status(true, true) & status::RECORD_NOT_FOUND,
+        status::RECORD_NOT_FOUND
+    );
 }
 
 #[test]
@@ -264,11 +290,18 @@ fn multiple_read_increments_the_sector_register_then_rnf_past_the_last_sector() 
     wd.write_command(0x90, Some(&mut disk), 0); // Read Sector, multiple
 
     for sector in 1u8..=3 {
-        assert_eq!(wd.sector, sector, "sector register before reading sector {sector}");
+        assert_eq!(
+            wd.sector, sector,
+            "sector register before reading sector {sector}"
+        );
         for byte in 0..256 {
             // Only the command's very first byte waits out the sector-search
             // latency; multiple-sector continuations roll on at one DRQ interval.
-            let step = if sector == 1 && byte == 0 { FIRST_BYTE_LATENCY } else { DRQ_INTERVAL };
+            let step = if sector == 1 && byte == 0 {
+                FIRST_BYTE_LATENCY
+            } else {
+                DRQ_INTERVAL
+            };
             wd.tick(step, Some(&mut disk), 0);
             assert_eq!(wd.read_data(), sector, "sector {sector}");
         }
@@ -279,5 +312,8 @@ fn multiple_read_increments_the_sector_register_then_rnf_past_the_last_sector() 
     }
     assert!(!wd.busy);
     assert!(wd.intrq);
-    assert_eq!(wd.read_status(true, true) & status::RECORD_NOT_FOUND, status::RECORD_NOT_FOUND);
+    assert_eq!(
+        wd.read_status(true, true) & status::RECORD_NOT_FOUND,
+        status::RECORD_NOT_FOUND
+    );
 }

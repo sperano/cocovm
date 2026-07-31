@@ -34,7 +34,10 @@ impl SystemBus {
         } else {
             // Every real dispatch (as opposed to an unknown command byte)
             // counts as one access, for the status bar's activity light.
-            if matches!(cmd, vhd::command::READ | vhd::command::WRITE | vhd::command::FLUSH) {
+            if matches!(
+                cmd,
+                vhd::command::READ | vhd::command::WRITE | vhd::command::FLUSH
+            ) {
                 self.vhd.access_counts[drive] += 1;
             }
             match cmd {

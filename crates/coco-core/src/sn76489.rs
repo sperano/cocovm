@@ -259,8 +259,7 @@ impl SN76489A {
     /// circulates over 15 shifts (the classic 1/15-duty "periodic noise").
     fn shift_lfsr(&mut self) {
         let tap1 = self.lfsr & LFSR_TAP1 != 0;
-        let tap2 =
-            self.lfsr & LFSR_TAP2 != 0 && self.regs[REG_NOISE_CTRL] & NOISE_MODE_WHITE != 0;
+        let tap2 = self.lfsr & LFSR_TAP2 != 0 && self.regs[REG_NOISE_CTRL] & NOISE_MODE_WHITE != 0;
         self.lfsr >>= 1;
         if tap1 != tap2 {
             self.lfsr |= LFSR_FEEDBACK;

@@ -105,7 +105,11 @@ fn read_bumps_drive_ops_for_that_drive_only() {
     feed_and_drain(&mut server, &req);
 
     assert_eq!(server.drive_ops(0), 1);
-    assert_eq!(server.drive_ops(1), 0, "an unrelated drive must not be touched");
+    assert_eq!(
+        server.drive_ops(1),
+        0,
+        "an unrelated drive must not be touched"
+    );
 }
 
 #[test]
@@ -115,7 +119,11 @@ fn read_unmounted_drive() {
     req.extend(lsn_bytes(0));
     let reply = feed_and_drain(&mut server, &req);
     assert_eq!(reply, vec![error::NOT_READY]);
-    assert_eq!(server.drive_ops(0), 0, "a NOT_READY attempt must not bump drive_ops");
+    assert_eq!(
+        server.drive_ops(0),
+        0,
+        "a NOT_READY attempt must not bump drive_ops"
+    );
 }
 
 #[test]

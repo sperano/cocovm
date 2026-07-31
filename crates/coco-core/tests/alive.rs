@@ -17,7 +17,7 @@ const ROWS: u16 = 16;
 /// inverse-video bit is masked off).
 fn vdg_to_ascii(code: u8) -> char {
     match code & 0x3F {
-        b @ 0x00..=0x1F => (b'@' + b) as char,        // @, A–Z, [ \ ] ↑ ←
+        b @ 0x00..=0x1F => (b'@' + b) as char, // @, A–Z, [ \ ] ↑ ←
         b @ 0x20..=0x3F => (b' ' + (b - 0x20)) as char, // space, ! " # … ?
         _ => unreachable!(),
     }
@@ -44,7 +44,8 @@ fn rom_paints_signon_banner_and_prompt() {
 
     // The `OK` prompt is the last thing the cold-start prints, so wait for it
     // rather than the banner (which appears a few fields earlier).
-    let ok_prompt = |m: &mut Machine| (0..ROWS).any(|r| screen_row(m, r).trim_start().starts_with("OK"));
+    let ok_prompt =
+        |m: &mut Machine| (0..ROWS).any(|r| screen_row(m, r).trim_start().starts_with("OK"));
 
     let mut alive = false;
     for _ in 0..MAX_FIELDS {
@@ -55,7 +56,11 @@ fn rom_paints_signon_banner_and_prompt() {
         }
     }
 
-    assert!(alive, "OK prompt never appeared; row0 = {:?}", screen_row(&mut m, 0));
+    assert!(
+        alive,
+        "OK prompt never appeared; row0 = {:?}",
+        screen_row(&mut m, 0)
+    );
     assert!(screen_row(&mut m, 0).contains("EXTENDED COLOR BASIC"));
     assert!(screen_row(&mut m, 1).contains("TANDY"));
     assert!(screen_row(&mut m, 2).contains("MICROSOFT"));

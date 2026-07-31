@@ -11,9 +11,7 @@
 
 use std::path::PathBuf;
 
-use coco_core::{
-    Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard,
-};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 use mc6809::Bus;
 
 /// Color BASIC occupies the high 8K ($A000-$BFFF) of the flat image, same

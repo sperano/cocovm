@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use coco_core::cassette::{demodulate, Cassette, Transition};
-use coco_core::{cassette_wav, Machine, MachineConfig};
+use coco_core::cassette::{Cassette, Transition, demodulate};
+use coco_core::{Machine, MachineConfig, cassette_wav};
 use mc6809::Bus;
 
 /// Leader/sync/framing bytes (Service Manual §5.10, `cassette-verified-facts`).
@@ -64,7 +64,10 @@ fn playback_waveform_demodulates_back_to_the_same_bytes() {
         clock += u64::from(TICK_CYCLES);
         let level = if deck.input_bit() { 0 } else { 63 };
         if last != Some(level) {
-            capture.push(Transition { level, cycle: clock });
+            capture.push(Transition {
+                level,
+                cycle: clock,
+            });
             last = Some(level);
         }
     }
@@ -77,12 +80,19 @@ fn motor_off_freezes_the_tape_and_records_nothing() {
     let mut deck = Cassette::new();
     deck.insert_tape(vec![LEADER; 8]);
     deck.tick(10_000, false);
-    assert_eq!(deck.position().0, 0, "tape must not move with the motor off");
+    assert_eq!(
+        deck.position().0,
+        0,
+        "tape must not move with the motor off"
+    );
     assert!(deck.input_bit(), "input idles high with the motor off");
 
     deck.record_dac(63, false);
     deck.record_dac(0, false);
-    assert!(deck.capture().is_empty(), "nothing records with the motor off");
+    assert!(
+        deck.capture().is_empty(),
+        "nothing records with the motor off"
+    );
 }
 
 // ============================================================================
@@ -125,7 +135,10 @@ fn wav_round_trip_survives_inverted_polarity() {
     }
     let decoded =
         cassette_wav::decode_wav(&wav, CPU_HZ).expect("a polarity-inverted WAV must still decode");
-    assert_eq!(decoded, tape, "auto-polarity-detection must recover the original bytes");
+    assert_eq!(
+        decoded, tape,
+        "auto-polarity-detection must recover the original bytes"
+    );
 }
 
 /// Minimal 16-bit mono PCM WAV builder for the 16-bit round-trip test below.
@@ -172,7 +185,10 @@ fn wav_round_trip_via_16_bit_pcm() {
 
     // Widen each 8-bit unsigned sample to the equivalent 16-bit signed one
     // (same waveform, different container).
-    let samples16: Vec<i16> = samples8.iter().map(|&s| (i16::from(s) - 128) * 256).collect();
+    let samples16: Vec<i16> = samples8
+        .iter()
+        .map(|&s| (i16::from(s) - 128) * 256)
+        .collect();
     let wav16 = build_16bit_wav(&samples16);
 
     let decoded16 = cassette_wav::decode_wav(&wav16, CPU_HZ).expect("a 16-bit WAV must decode");
@@ -203,7 +219,9 @@ fn wav_decode_rejects_non_pcm_format_tag() {
     assert!(
         matches!(
             cassette_wav::decode_wav(&wav, CPU_HZ),
-            Err(cassette_wav::WAVError::UnsupportedFormatTag(IEEE_FLOAT_FORMAT_TAG))
+            Err(cassette_wav::WAVError::UnsupportedFormatTag(
+                IEEE_FLOAT_FORMAT_TAG
+            ))
         ),
         "a non-PCM format tag must error, not panic or silently misparse"
     );
@@ -224,7 +242,11 @@ fn screen_row(m: &mut Machine, row: u16) -> String {
     (0..32)
         .map(|c| {
             let code = m.bus.read(0x0400 + row * 32 + c) & 0x3F;
-            if code < 0x20 { (b'@' + code) as char } else { (b' ' + (code - 0x20)) as char }
+            if code < 0x20 {
+                (b'@' + code) as char
+            } else {
+                (b' ' + (code - 0x20)) as char
+            }
         })
         .collect()
 }
@@ -234,7 +256,10 @@ fn screen_contains(m: &mut Machine, needle: &str) -> bool {
 }
 
 fn screen_dump(m: &mut Machine) -> String {
-    (0..16).map(|r| screen_row(m, r)).collect::<Vec<_>>().join("\n")
+    (0..16)
+        .map(|r| screen_row(m, r))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn tap_char(m: &mut Machine, c: char) {
@@ -293,15 +318,24 @@ fn parse_blocks(tape: &[u8]) -> Vec<(u8, Vec<u8>)> {
             i += 1;
             continue;
         }
-        assert_eq!(tape[i], SYNC, "expected sync at offset {i}, got ${:02X}", tape[i]);
+        assert_eq!(
+            tape[i], SYNC,
+            "expected sync at offset {i}, got ${:02X}",
+            tape[i]
+        );
         let block_type = tape[i + 1];
         let len = usize::from(tape[i + 2]);
         let payload = tape[i + 3..i + 3 + len].to_vec();
         let checksum = tape[i + 3 + len];
         let expected = payload
             .iter()
-            .fold((block_type).wrapping_add(len as u8), |acc, &b| acc.wrapping_add(b));
-        assert_eq!(checksum, expected, "bad checksum in block type ${block_type:02X}");
+            .fold((block_type).wrapping_add(len as u8), |acc, &b| {
+                acc.wrapping_add(b)
+            });
+        assert_eq!(
+            checksum, expected,
+            "bad checksum in block type ${block_type:02X}"
+        );
         i += 3 + len + 1; // sync consumed through checksum; trailer is a LEADER
         blocks.push((block_type, payload));
     }
@@ -332,7 +366,11 @@ fn csave_rewind_cload_round_trips_a_basic_program() {
     type_line(&mut m, "10 PRINT \"HI\"");
     type_line(&mut m, "CSAVE\"X\"");
     run_until_motor_idle(&mut m, TAPE_OP_FIELDS);
-    assert!(screen_contains(&mut m, "OK"), "CSAVE never finished:\n{}", screen_dump(&mut m));
+    assert!(
+        screen_contains(&mut m, "OK"),
+        "CSAVE never finished:\n{}",
+        screen_dump(&mut m)
+    );
 
     // Rewind finalizes the recording into the tape; check its structure.
     m.bus.cassette.rewind();
@@ -343,7 +381,9 @@ fn csave_rewind_cload_round_trips_a_basic_program() {
     assert_eq!(&blocks[0].1[..8], b"X       ", "namefile name");
     assert_eq!(blocks[0].1.len(), 15, "namefile payload is 15 bytes");
     assert!(
-        blocks[1..blocks.len() - 1].iter().all(|(t, _)| *t == BLOCK_DATA),
+        blocks[1..blocks.len() - 1]
+            .iter()
+            .all(|(t, _)| *t == BLOCK_DATA),
         "middle blocks are data blocks"
     );
     assert_eq!(blocks.last().unwrap().0, BLOCK_EOF);
@@ -360,7 +400,11 @@ fn csave_rewind_cload_round_trips_a_basic_program() {
     );
     // (The blinking cursor masks to '?' in screen_row, so match "ERROR",
     // not '?'.)
-    assert!(!screen_contains(&mut m, "ERROR"), "CLOAD errored:\n{}", screen_dump(&mut m));
+    assert!(
+        !screen_contains(&mut m, "ERROR"),
+        "CLOAD errored:\n{}",
+        screen_dump(&mut m)
+    );
 
     type_line(&mut m, "RUN");
     for _ in 0..30 {

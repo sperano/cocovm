@@ -234,7 +234,10 @@ impl SoundSpeechCartridge {
             return;
         }
         self.ram[load.cursor] = byte;
-        self.mode = Mode::Loading(Load { cursor: load.cursor + 1, ..load });
+        self.mode = Mode::Loading(Load {
+            cursor: load.cursor + 1,
+            ..load
+        });
     }
 
     /// `$AF` direct-access register/value alternation (see [`DirectMode`]).
@@ -377,13 +380,21 @@ impl SoundSpeechCartridge {
     /// through the end of RAM (may spill into later buffers).
     fn start_load_consecutive(&mut self, terminator: u8, n: u8) {
         let cursor = n as usize * ram::BUFFER_SIZE;
-        self.mode = Mode::Loading(Load { terminator, cursor, cap: ram::SIZE });
+        self.mode = Mode::Loading(Load {
+            terminator,
+            cursor,
+            cap: ram::SIZE,
+        });
     }
 
     /// Starts an individual buffer-RAM load confined to buffer `n` only.
     fn start_load_individual(&mut self, terminator: u8, n: u8) {
         let cursor = n as usize * ram::BUFFER_SIZE;
-        self.mode = Mode::Loading(Load { terminator, cursor, cap: cursor + ram::BUFFER_SIZE });
+        self.mode = Mode::Loading(Load {
+            terminator,
+            cursor,
+            cap: cursor + ram::BUFFER_SIZE,
+        });
     }
 
     /// Executes a register-string stream: `(register, value)` pairs applied

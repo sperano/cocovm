@@ -123,7 +123,11 @@ impl Cassette {
     /// Mount a tape (decoded .cas bytes; empty = blank tape ready to record),
     /// rewound, discarding any unsaved capture.
     pub fn insert_tape(&mut self, bytes: Vec<u8>) {
-        *self = Self { mounted: true, tape: bytes, ..Self::default() };
+        *self = Self {
+            mounted: true,
+            tape: bytes,
+            ..Self::default()
+        };
     }
 
     /// Unmount. Callers wanting the recording saved must call
@@ -271,7 +275,11 @@ impl Cassette {
         if !self.motor_was_on || self.spinup_left > 0 || !self.playing() {
             return true;
         }
-        let high = if self.current_bit_is_one() { ONE_BIT_HIGH } else { ZERO_BIT_HIGH };
+        let high = if self.current_bit_is_one() {
+            ONE_BIT_HIGH
+        } else {
+            ZERO_BIT_HIGH
+        };
         self.bit_elapsed >= high
     }
 
@@ -280,7 +288,11 @@ impl Cassette {
     }
 
     fn current_bit_period(&self) -> u32 {
-        if self.current_bit_is_one() { ONE_BIT_PERIOD } else { ZERO_BIT_PERIOD }
+        if self.current_bit_is_one() {
+            ONE_BIT_PERIOD
+        } else {
+            ZERO_BIT_PERIOD
+        }
     }
 
     /// Sample the cassette-out DAC tap after a PIA1 write. The record output
@@ -293,7 +305,10 @@ impl Cassette {
             return;
         }
         if self.last_level != Some(level) {
-            self.capture.push(Transition { level, cycle: self.clock });
+            self.capture.push(Transition {
+                level,
+                cycle: self.clock,
+            });
             self.last_level = Some(level);
         }
     }
@@ -424,10 +439,16 @@ fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
                     out.push(SYNC);
                     leader_count = 0;
                     window_bits = 0;
-                    state = BlockState::Locked { seen: 0, total: usize::MAX };
+                    state = BlockState::Locked {
+                        seen: 0,
+                        total: usize::MAX,
+                    };
                 }
             }
-            BlockState::Locked { ref mut seen, ref mut total } => {
+            BlockState::Locked {
+                ref mut seen,
+                ref mut total,
+            } => {
                 if window_bits < 8 {
                     continue;
                 }

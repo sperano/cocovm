@@ -47,11 +47,9 @@ fn random_from_dir(dir: &Path) -> Option<Photo> {
                     .and_then(|n| n.to_str())
                     .is_none_or(|n| n.starts_with('.'));
                 !hidden
-                    && p.extension()
-                        .and_then(|e| e.to_str())
-                        .is_some_and(|e| {
-                            IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())
-                        })
+                    && p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                        IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())
+                    })
             })
             .collect(),
         Err(e) => {

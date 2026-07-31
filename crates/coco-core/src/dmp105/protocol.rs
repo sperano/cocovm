@@ -8,8 +8,8 @@
 use crate::dmp105_font;
 
 use super::{
-    DMP105, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12, Mode,
-    NlMode, Pending, Pitch, control, esc,
+    DMP105, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12, Mode, NlMode,
+    Pending, Pitch, control, esc,
 };
 
 impl DMP105 {

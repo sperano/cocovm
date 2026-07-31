@@ -71,7 +71,10 @@ impl CocoApp {
     fn mpi_slot_fd502_item(&mut self, ui: &mut egui::Ui, slot: usize) {
         let here = matches!(self.mpi_slot(slot), Some(MPISlot::FD502));
         let elsewhere = self.machine.bus.cart.as_disk_cart().is_some() && !here;
-        if ui.add_enabled(!elsewhere, egui::Button::new("Insert FD-502")).clicked() {
+        if ui
+            .add_enabled(!elsewhere, egui::Button::new("Insert FD-502"))
+            .clicked()
+        {
             self.mpi_insert_fd502(slot);
             ui.close();
         }
@@ -82,7 +85,10 @@ impl CocoApp {
     fn mpi_slot_rtc_item(&mut self, ui: &mut egui::Ui, slot: usize) {
         let here = matches!(self.mpi_slot(slot), Some(MPISlot::DistoRTC));
         let elsewhere = self.machine.bus.cart.as_disto_rtc().is_some() && !here;
-        if ui.add_enabled(!elsewhere, egui::Button::new("Insert Disto RTC")).clicked() {
+        if ui
+            .add_enabled(!elsewhere, egui::Button::new("Insert Disto RTC"))
+            .clicked()
+        {
             self.mpi_insert_rtc(slot);
             ui.close();
         }
@@ -122,13 +128,20 @@ fn rom_pick(ui: &mut egui::Ui, label: &str, filter: &str) -> Option<PathBuf> {
         return None;
     }
     ui.close();
-    rfd::FileDialog::new().add_filter(filter, ROM_EXTENSIONS).pick_file()
+    rfd::FileDialog::new()
+        .add_filter(filter, ROM_EXTENSIONS)
+        .pick_file()
 }
 
 /// A slot's menu-bar entry, naming what is currently in it.
 fn slot_menu_label(slot: usize, contents: Option<&MPISlot>) -> String {
     let number = slot + 1;
-    let name = |p: &Path| p.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
+    let name = |p: &Path| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string()
+    };
     match contents {
         Some(MPISlot::ROMPak(p)) => format!("Slot {number} ({})", name(p)),
         Some(MPISlot::FD502) => format!("Slot {number} (FD-502)"),

@@ -32,7 +32,8 @@ impl CocoApp {
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
         self.flush_dirty_disks();
-        self.machine.insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
+        self.machine
+            .insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
         // Power cycle, not warm reset: the DK probe that links Disk BASIC
         // only runs on the ROM's cold-start path (a warm reset leaves the
         // DOS ROM unlinked and the drives dead).
@@ -70,8 +71,8 @@ impl CocoApp {
     pub(crate) fn insert_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
-            let bytes =
-                std::fs::read(&path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
+            let bytes = std::fs::read(&path)
+                .map_err(|e| format!("could not read {}: {e}", path.display()))?;
             let disk =
                 JVCDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             self.write_back_disk(drive); // whatever was in the drive first
@@ -91,7 +92,11 @@ impl CocoApp {
     pub(crate) fn new_blank_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
-            match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
                 Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                     return Err(format!(
@@ -102,7 +107,8 @@ impl CocoApp {
                 }
                 Err(e) => return Err(format!("could not create {}: {e}", path.display())),
             }
-            let disk = JVCDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
+            let disk =
+                JVCDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
             self.write_back_disk(drive); // whatever was in the drive first
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);

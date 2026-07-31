@@ -3,10 +3,12 @@
 use std::fmt;
 
 use crate::cart::Cart;
-use crate::{drivewire, fdc, vhd, Machine};
+use crate::{Machine, drivewire, fdc, vhd};
 
 use super::error::SnapshotError;
-use super::payload::{MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SnapshotPayload};
+use super::payload::{
+    MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SnapshotPayload,
+};
 
 /// Turn a decoded payload plus resolved media into a running [`Machine`],
 /// per the restore order documented on each private step below:
@@ -38,7 +40,14 @@ pub fn restore(
     let SnapshotPayload { media, mut machine } = payload;
     validate_payload_shape(&machine)?;
 
-    let MediaSources { system_rom, cart_roms, disks, vhds, drivewire, tape } = sources;
+    let MediaSources {
+        system_rom,
+        cart_roms,
+        disks,
+        vhds,
+        drivewire,
+        tape,
+    } = sources;
 
     let mut missing = Vec::new();
     restore_system_rom(&mut machine, &media, system_rom, &mut missing);
@@ -49,7 +58,9 @@ pub fn restore(
     restore_tape(&mut machine, &media, tape, &mut missing)?;
 
     if !missing.is_empty() {
-        return Err(SnapshotError::MissingMedia { descriptions: missing });
+        return Err(SnapshotError::MissingMedia {
+            descriptions: missing,
+        });
     }
 
     // Only reachable once every floppy the payload needed has been
@@ -92,7 +103,10 @@ pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotEr
             "nested Multi-Pak is not valid hardware".to_string(),
         ));
     }
-    machine.bus.validate_restored().map_err(SnapshotError::InvalidPayload)?;
+    machine
+        .bus
+        .validate_restored()
+        .map_err(SnapshotError::InvalidPayload)?;
     Ok(())
 }
 
@@ -101,7 +115,9 @@ pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotEr
 /// tree (direct port or nested one level in a Multi-Pak — same reach as
 /// [`Cart::as_disk_cart`]). See [`crate::fdc::DiskCart::validate_restored_transfer`].
 fn validate_restored_disk_transfers(machine: &mut Machine) -> Result<(), SnapshotError> {
-    let Some(disk_cart) = machine.bus.cart.as_disk_cart() else { return Ok(()) };
+    let Some(disk_cart) = machine.bus.cart.as_disk_cart() else {
+        return Ok(());
+    };
     disk_cart
         .validate_restored_transfer()
         .map_err(|e| SnapshotError::InvalidPayload(format!("FD-502: {e}")))
@@ -144,27 +160,37 @@ fn restore_cart_roms(
 ) -> Result<(), SnapshotError> {
     for (mpi_slot, cart) in machine.bus.cart.slots_mut() {
         match cart {
-            Cart::ROMPak(pak) => require_cart_rom(mpi_slot, "ROMPak", media, &mut cart_roms, missing, |b| {
-                pak.reattach_image(b)
-            })?,
-            Cart::BankedROMPak(pak) => {
-                require_cart_rom(mpi_slot, "BankedROMPak", media, &mut cart_roms, missing, |b| {
+            Cart::ROMPak(pak) => {
+                require_cart_rom(mpi_slot, "ROMPak", media, &mut cart_roms, missing, |b| {
                     pak.reattach_image(b)
                 })?
             }
-            Cart::GamesMasterCartridge(gmc) => {
-                require_cart_rom(mpi_slot, "GamesMasterCartridge", media, &mut cart_roms, missing, |b| {
-                    gmc.reattach_rom(b)
-                })?
-            }
+            Cart::BankedROMPak(pak) => require_cart_rom(
+                mpi_slot,
+                "BankedROMPak",
+                media,
+                &mut cart_roms,
+                missing,
+                |b| pak.reattach_image(b),
+            )?,
+            Cart::GamesMasterCartridge(gmc) => require_cart_rom(
+                mpi_slot,
+                "GamesMasterCartridge",
+                media,
+                &mut cart_roms,
+                missing,
+                |b| gmc.reattach_rom(b),
+            )?,
             Cart::DiskCart(disk) => {
                 require_cart_rom(mpi_slot, "DiskCart", media, &mut cart_roms, missing, |b| {
                     disk.reattach_rom(b)
                 })?
             }
-            Cart::Orch90(orch) => require_cart_rom(mpi_slot, "Orch90", media, &mut cart_roms, missing, |b| {
-                orch.reattach_rom(b)
-            })?,
+            Cart::Orch90(orch) => {
+                require_cart_rom(mpi_slot, "Orch90", media, &mut cart_roms, missing, |b| {
+                    orch.reattach_rom(b)
+                })?
+            }
             Cart::DeluxeRS232(rs232) => {
                 // Optional: see this function's doc comment.
                 if let Some(bytes) = take_cart_rom(&mut cart_roms, mpi_slot) {
@@ -223,7 +249,11 @@ fn slot_label(mpi_slot: Option<u8>) -> String {
 
 fn missing_cart_rom_desc(role: &str, mpi_slot: Option<u8>, media: &MediaRefs) -> String {
     let found = media.cart_roms.iter().find(|r| r.mpi_slot == mpi_slot);
-    missing_desc(&format!("{role} ROM"), &format!("in {}", slot_label(mpi_slot)), found.map(|r| &r.rom))
+    missing_desc(
+        &format!("{role} ROM"),
+        &format!("in {}", slot_label(mpi_slot)),
+        found.map(|r| &r.rom),
+    )
 }
 
 /// Guard for [`MediaRefs::disks`]/[`vhds`](MediaRefs::vhds)/
@@ -233,7 +263,11 @@ fn missing_cart_rom_desc(role: &str, mpi_slot: Option<u8>, media: &MediaRefs) ->
 /// still carry more entries than this build's hardware has drives for.
 /// Anything beyond `capacity` is unreachable by any drive index this build
 /// will ever loop over, so it's flagged here rather than silently ignored.
-fn check_media_ref_capacity(refs: &[Option<MediaRef>], capacity: usize, role: &str) -> Result<(), SnapshotError> {
+fn check_media_ref_capacity(
+    refs: &[Option<MediaRef>],
+    capacity: usize,
+    role: &str,
+) -> Result<(), SnapshotError> {
     if refs.len() > capacity {
         return Err(SnapshotError::InvalidPayload(format!(
             "snapshot records {} {role} media references, but this build only has {capacity} drives",
@@ -266,13 +300,17 @@ fn restore_disks(
         return Ok(());
     };
     for (i, slot) in disks.iter_mut().enumerate() {
-        let Some(disk) = disk_cart.disk_mut(i) else { continue };
+        let Some(disk) = disk_cart.disk_mut(i) else {
+            continue;
+        };
         let media_ref = media.disks.get(i).and_then(Option::as_ref);
         match slot.take() {
-            Some(bytes) => disk.reattach_data(bytes).map_err(|e| SnapshotError::MediaShape {
-                role: format!("floppy in drive {i}"),
-                detail: e.to_string(),
-            })?,
+            Some(bytes) => disk
+                .reattach_data(bytes)
+                .map_err(|e| SnapshotError::MediaShape {
+                    role: format!("floppy in drive {i}"),
+                    detail: e.to_string(),
+                })?,
             None => missing.push(missing_desc("floppy", &format!("in drive {i}"), media_ref)),
         }
     }
@@ -291,10 +329,16 @@ fn restore_vhds(
 ) -> Result<(), SnapshotError> {
     check_media_ref_capacity(&media.vhds, vhd::DRIVE_COUNT, "VHD")?;
     for (i, slot) in vhds.iter_mut().enumerate() {
-        let Some(media_ref) = media.vhds.get(i).and_then(Option::as_ref) else { continue };
+        let Some(media_ref) = media.vhds.get(i).and_then(Option::as_ref) else {
+            continue;
+        };
         match slot.take() {
             Some(image) => machine.bus.vhd.reattach_image(i, image),
-            None => missing.push(missing_desc("VHD", &format!("in drive {i}"), Some(media_ref))),
+            None => missing.push(missing_desc(
+                "VHD",
+                &format!("in drive {i}"),
+                Some(media_ref),
+            )),
         }
     }
     Ok(())
@@ -314,9 +358,15 @@ fn restore_drivewire(
 ) -> Result<(), SnapshotError> {
     check_media_ref_capacity(&media.drivewire, drivewire::DRIVE_COUNT, "DriveWire")?;
     for (i, slot) in drivewire.iter_mut().enumerate() {
-        let Some(media_ref) = media.drivewire.get(i).and_then(Option::as_ref) else { continue };
+        let Some(media_ref) = media.drivewire.get(i).and_then(Option::as_ref) else {
+            continue;
+        };
         let Some(image) = slot.take() else {
-            missing.push(missing_desc("DriveWire image", &format!("in drive {i}"), Some(media_ref)));
+            missing.push(missing_desc(
+                "DriveWire image",
+                &format!("in drive {i}"),
+                Some(media_ref),
+            ));
             continue;
         };
         match machine.bus.drivewire.as_mut() {
@@ -339,13 +389,20 @@ fn restore_tape(
     tape: Option<Vec<u8>>,
     missing: &mut Vec<String>,
 ) -> Result<(), SnapshotError> {
-    let Some(media_ref) = &media.tape else { return Ok(()) };
+    let Some(media_ref) = &media.tape else {
+        return Ok(());
+    };
     match tape {
-        Some(bytes) => machine
-            .bus
-            .cassette
-            .reattach_tape(bytes)
-            .map_err(|detail| SnapshotError::MediaShape { role: "tape".to_string(), detail }),
+        Some(bytes) => {
+            machine
+                .bus
+                .cassette
+                .reattach_tape(bytes)
+                .map_err(|detail| SnapshotError::MediaShape {
+                    role: "tape".to_string(),
+                    detail,
+                })
+        }
         None => {
             missing.push(missing_desc("tape", "", Some(media_ref)));
             Ok(())

@@ -33,7 +33,11 @@ impl SoundSpeechCartridge {
         self.sac_hpf_prev_out = y;
 
         let rectified = y.abs();
-        let coeff = if rectified > self.sac_envelope { ATTACK_COEFF } else { DECAY_COEFF };
+        let coeff = if rectified > self.sac_envelope {
+            ATTACK_COEFF
+        } else {
+            DECAY_COEFF
+        };
         self.sac_envelope += coeff * (rectified - self.sac_envelope);
 
         if self.sac_envelope > THRESH_ON {

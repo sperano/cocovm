@@ -2,7 +2,7 @@
 //! nibbles ([`crate::regsel`]) to actual register reads/writes and honouring the
 //! documented cross-size transfer rules.
 
-use crate::{regsel, MC6809};
+use crate::{MC6809, regsel};
 
 impl MC6809 {
     // ---- Register transfer (TFR/EXG) --------------------------------------

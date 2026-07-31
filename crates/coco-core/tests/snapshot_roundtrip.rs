@@ -148,4 +148,3 @@ fn custom_cart_fails_to_serialize_with_an_error_not_a_panic() {
         "serializing a machine with a Cart::Custom test double must fail, not succeed"
     );
 }
-

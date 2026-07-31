@@ -10,7 +10,7 @@ use eframe::egui;
 use crate::{machine_def, new_vm, titled_group};
 
 use super::detail_map;
-use super::{vm_status_label, EditState, ManagerApp, DETAIL_SECTION_GAP, NO_CONFIG_DIR};
+use super::{DETAIL_SECTION_GAP, EditState, ManagerApp, NO_CONFIG_DIR, vm_status_label};
 
 /// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
 /// [`new_vm::FORM_LABEL_MIN_WIDTH`] — the shared floor is what keeps the

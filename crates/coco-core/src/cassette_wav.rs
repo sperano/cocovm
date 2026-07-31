@@ -79,7 +79,9 @@ fn push_silence(samples: &mut Vec<u8>, secs: f64) {
 /// Append one full sine cycle representing a single tape bit's tone.
 fn push_sine_cycle(samples: &mut Vec<u8>, period_cycles: u32, cpu_hz: f64) {
     let period_secs = f64::from(period_cycles) / cpu_hz;
-    let cycle_samples = (period_secs * f64::from(WAV_SAMPLE_RATE_HZ)).round().max(1.0) as usize;
+    let cycle_samples = (period_secs * f64::from(WAV_SAMPLE_RATE_HZ))
+        .round()
+        .max(1.0) as usize;
     for i in 0..cycle_samples {
         let phase = i as f64 / cycle_samples as f64;
         let value = f64::from(WAV_MIDPOINT) + WAV_AMPLITUDE * (std::f64::consts::TAU * phase).sin();
@@ -132,7 +134,12 @@ pub enum WAVError {
     /// Missing/mismatched `RIFF`/`WAVE` magic.
     NotWav,
     /// A chunk header claims a size that runs past the end of the buffer.
-    ChunkOverrun { chunk_id: [u8; 4], offset: usize, size: usize, remaining: usize },
+    ChunkOverrun {
+        chunk_id: [u8; 4],
+        offset: usize,
+        size: usize,
+        remaining: usize,
+    },
     /// No `fmt ` chunk found before the buffer ran out.
     MissingFmtChunk,
     /// `fmt ` chunk shorter than the minimal 16-byte PCM format body.
@@ -153,20 +160,34 @@ impl std::fmt::Display for WAVError {
         match self {
             WAVError::Truncated => write!(f, "WAV file is truncated (missing RIFF/WAVE header)"),
             WAVError::NotWav => write!(f, "not a WAV file (missing RIFF/WAVE magic)"),
-            WAVError::ChunkOverrun { chunk_id, offset, size, remaining } => write!(
+            WAVError::ChunkOverrun {
+                chunk_id,
+                offset,
+                size,
+                remaining,
+            } => write!(
                 f,
                 "WAV chunk {:?} at offset {offset} claims {size} bytes but only {remaining} remain",
                 String::from_utf8_lossy(chunk_id)
             ),
             WAVError::MissingFmtChunk => write!(f, "WAV file has no 'fmt ' chunk"),
             WAVError::FmtChunkTooShort => {
-                write!(f, "WAV 'fmt ' chunk is shorter than the minimal 16-byte PCM format body")
+                write!(
+                    f,
+                    "WAV 'fmt ' chunk is shorter than the minimal 16-byte PCM format body"
+                )
             }
             WAVError::UnsupportedFormatTag(tag) => {
-                write!(f, "unsupported WAV format tag {tag} (only PCM/1 is supported)")
+                write!(
+                    f,
+                    "unsupported WAV format tag {tag} (only PCM/1 is supported)"
+                )
             }
             WAVError::UnsupportedBitsPerSample(bits) => {
-                write!(f, "unsupported WAV sample depth {bits}-bit (only 8-bit or 16-bit are supported)")
+                write!(
+                    f,
+                    "unsupported WAV sample depth {bits}-bit (only 8-bit or 16-bit are supported)"
+                )
             }
             WAVError::NoChannels => write!(f, "WAV 'fmt ' chunk declares zero channels"),
             WAVError::MissingDataChunk => write!(f, "WAV file has no 'data' chunk"),
@@ -229,7 +250,9 @@ fn read_chunk(bytes: &[u8], offset: usize) -> Result<([u8; 4], &[u8], usize), WA
     let chunk_id: [u8; 4] = bytes[offset..offset + 4].try_into().unwrap();
     let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
     let body_start = offset + CHUNK_HEADER_LEN;
-    let body_end = body_start.checked_add(chunk_size).filter(|&e| e <= bytes.len());
+    let body_end = body_start
+        .checked_add(chunk_size)
+        .filter(|&e| e <= bytes.len());
     let Some(body_end) = body_end else {
         return Err(WAVError::ChunkOverrun {
             chunk_id,
@@ -262,7 +285,11 @@ fn parse_fmt_chunk(body: &[u8]) -> Result<WAVFmt, WAVError> {
     if bits_per_sample != 8 && bits_per_sample != 16 {
         return Err(WAVError::UnsupportedBitsPerSample(bits_per_sample));
     }
-    Ok(WAVFmt { channels, sample_rate_hz, bits_per_sample })
+    Ok(WAVFmt {
+        channels,
+        sample_rate_hz,
+        bits_per_sample,
+    })
 }
 
 /// Extract channel 0's samples as signed integers on a common scale,
@@ -283,7 +310,9 @@ fn extract_mono_samples(data: &[u8], fmt: &WAVFmt) -> Vec<i32> {
                 out.push(i32::from(sample));
             }
         }
-        other => unreachable!("bits_per_sample {other} was validated to 8 or 16 in parse_wav_chunks"),
+        other => {
+            unreachable!("bits_per_sample {other} was validated to 8 or 16 in parse_wav_chunks")
+        }
     }
     out
 }
@@ -371,7 +400,11 @@ fn choose_best_decode(a: Vec<u8>, b: Vec<u8>) -> Vec<u8> {
         (true, false) => a,
         (false, true) => b,
         _ => {
-            if a.len() >= b.len() { a } else { b }
+            if a.len() >= b.len() {
+                a
+            } else {
+                b
+            }
         }
     }
 }
@@ -403,5 +436,8 @@ pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WAVError> {
     let normal = capture_transitions(&samples, mid, hysteresis, false, cpu_hz, fmt.sample_rate_hz);
     let inverted = capture_transitions(&samples, mid, hysteresis, true, cpu_hz, fmt.sample_rate_hz);
 
-    Ok(choose_best_decode(demodulate(&normal), demodulate(&inverted)))
+    Ok(choose_best_decode(
+        demodulate(&normal),
+        demodulate(&inverted),
+    ))
 }

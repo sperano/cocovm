@@ -7,9 +7,9 @@
 //! fields already exposed by `coco-core` — no new side-effect-free read paths
 //! were needed for this panel.
 
-use coco_core::gime::{self, init0, init1};
-use coco_core::pia::{cr, MC6821};
 use coco_core::Machine;
+use coco_core::gime::{self, init0, init1};
+use coco_core::pia::{MC6821, cr};
 use eframe::egui;
 
 pub(super) fn hardware_ui(ui: &mut egui::Ui, machine: &Machine) {

@@ -9,7 +9,7 @@
 
 use coco_core::config::BLOCK_SIZE;
 use coco_core::gime::DISABLED_MMU_BASE;
-use coco_core::vhd::{command, status, VHDImage, SECTOR_SIZE};
+use coco_core::vhd::{SECTOR_SIZE, VHDImage, command, status};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
@@ -29,8 +29,12 @@ const DESELECT: u8 = 5;
 const OPEN_BUS: u8 = 0xFF;
 
 fn load_rom(name: &str) -> Box<[u8]> {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms").join(name);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display())).into_boxed_slice()
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../roms")
+        .join(name);
+    std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+        .into_boxed_slice()
 }
 
 fn boot_machine() -> Machine {
@@ -58,7 +62,9 @@ fn set_buffer(m: &mut Machine, addr: u16) {
 /// Read back `len` bytes from the CPU's logical address space starting at
 /// `addr`, through the MMU exactly like the VHD transfer itself.
 fn read_ram(m: &mut Machine, addr: u16, len: usize) -> Vec<u8> {
-    (0..len as u16).map(|i| m.bus.read(addr.wrapping_add(i))).collect()
+    (0..len as u16)
+        .map(|i| m.bus.read(addr.wrapping_add(i)))
+        .collect()
 }
 
 // ============================================================================
@@ -75,7 +81,9 @@ fn unmounted_drive_reports_no_vhd() {
 #[test]
 fn insert_sets_power_on_status_before_any_command() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     assert_eq!(m.bus.read(COMMAND_STATUS), status::POWER_ON);
 }
@@ -126,7 +134,9 @@ fn full_read_supports_lrn_beyond_16_bits() {
 fn read_past_eof_entirely_zero_fills() {
     let mut m = boot_machine();
     // Only 2 sectors in the image; LRN 10 is well past the end.
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
 
     select(&mut m, 0);
     set_lrn(&mut m, 10);
@@ -139,7 +149,10 @@ fn read_past_eof_entirely_zero_fills() {
     m.bus.write(COMMAND_STATUS, command::READ);
 
     assert_eq!(m.bus.read(COMMAND_STATUS), status::OK);
-    assert_eq!(read_ram(&mut m, buffer, SECTOR_SIZE), vec![0u8; SECTOR_SIZE]);
+    assert_eq!(
+        read_ram(&mut m, buffer, SECTOR_SIZE),
+        vec![0u8; SECTOR_SIZE]
+    );
 }
 
 #[test]
@@ -177,7 +190,9 @@ fn short_tail_read_zero_pads_remainder() {
 fn write_past_eof_zero_extends_then_writes() {
     let mut m = boot_machine();
     // 2 sectors of 0xAA; LRN 4 is 2 sectors past the current end.
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0xAAu8; 2 * SECTOR_SIZE]));
 
     select(&mut m, 0);
     set_lrn(&mut m, 4);
@@ -191,9 +206,15 @@ fn write_past_eof_zero_extends_then_writes() {
 
     assert_eq!(m.bus.read(COMMAND_STATUS), status::OK);
     let image = m.bus.vhd.image(0).unwrap().as_memory().unwrap();
-    assert_eq!(image.len(), 5 * SECTOR_SIZE, "image extended exactly to LRN 4's sector end");
+    assert_eq!(
+        image.len(),
+        5 * SECTOR_SIZE,
+        "image extended exactly to LRN 4's sector end"
+    );
     assert!(
-        image[2 * SECTOR_SIZE..4 * SECTOR_SIZE].iter().all(|&b| b == 0),
+        image[2 * SECTOR_SIZE..4 * SECTOR_SIZE]
+            .iter()
+            .all(|&b| b == 0),
         "the zero-extended gap (sectors 2-3) must be zero, not left as old/garbage bytes"
     );
     assert_eq!(&image[4 * SECTOR_SIZE..5 * SECTOR_SIZE], pattern.as_slice());
@@ -206,7 +227,9 @@ fn write_past_eof_zero_extends_then_writes() {
 #[test]
 fn unknown_command_reports_unknown_command_status() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     const UNKNOWN: u8 = 3;
     m.bus.write(COMMAND_STATUS, UNKNOWN);
@@ -216,7 +239,9 @@ fn unknown_command_reports_unknown_command_status() {
 #[test]
 fn flush_command_reports_ok() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     m.bus.write(COMMAND_STATUS, command::FLUSH);
     assert_eq!(m.bus.read(COMMAND_STATUS), status::OK);
@@ -225,19 +250,27 @@ fn flush_command_reports_ok() {
 #[test]
 fn read_bumps_the_drive_access_count() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     assert_eq!(m.bus.vhd.access_count(0), 0);
     m.bus.write(COMMAND_STATUS, command::READ);
     assert_eq!(m.bus.vhd.access_count(0), 1);
     m.bus.write(COMMAND_STATUS, command::READ);
-    assert_eq!(m.bus.vhd.access_count(0), 2, "each dispatched command bumps it again");
+    assert_eq!(
+        m.bus.vhd.access_count(0),
+        2,
+        "each dispatched command bumps it again"
+    );
 }
 
 #[test]
 fn unknown_command_does_not_bump_the_access_count() {
     let mut m = boot_machine();
-    m.bus.vhd.insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
+    m.bus
+        .vhd
+        .insert(0, VHDImage::Memory(vec![0u8; SECTOR_SIZE]));
     select(&mut m, 0);
     const UNKNOWN: u8 = 3;
     m.bus.write(COMMAND_STATUS, UNKNOWN);
@@ -301,7 +334,11 @@ fn deselected_state_reads_open_bus_and_drops_writes() {
 
     m.bus.write(SELECT, DESELECT);
     for addr in LRN_HI..=BUFFER_LO {
-        assert_eq!(m.bus.read(addr), OPEN_BUS, "addr {addr:#06X} while deselected");
+        assert_eq!(
+            m.bus.read(addr),
+            OPEN_BUS,
+            "addr {addr:#06X} while deselected"
+        );
     }
 
     // Attempts while deselected are silently dropped -- neither of these may
@@ -353,9 +390,15 @@ fn transfer_honors_mmu_translation() {
 
     let mmu_phys = BLOCK as usize * BLOCK_SIZE + (buffer as usize % BLOCK_SIZE);
     let identity_phys = DISABLED_MMU_BASE | buffer as usize;
-    assert_ne!(mmu_phys, identity_phys, "test setup must pick translations that actually differ");
+    assert_ne!(
+        mmu_phys, identity_phys,
+        "test setup must pick translations that actually differ"
+    );
 
-    assert_eq!(&m.bus.ram[mmu_phys..mmu_phys + SECTOR_SIZE], pattern.as_slice());
+    assert_eq!(
+        &m.bus.ram[mmu_phys..mmu_phys + SECTOR_SIZE],
+        pattern.as_slice()
+    );
     assert_eq!(
         &m.bus.ram[identity_phys..identity_phys + SECTOR_SIZE],
         vec![0u8; SECTOR_SIZE].as_slice(),

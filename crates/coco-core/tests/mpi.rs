@@ -21,13 +21,20 @@ const SWITCH_SLOT4: usize = 3;
 /// A bus with a small dummy ROM — these tests never boot code, only drive
 /// registers directly (same pattern as `tests/gime_irq.rs`).
 fn bus() -> SystemBus {
-    SystemBus::new(MachineVariant::Coco3, MemorySize::K512, vec![0u8; 32 * 1024].into_boxed_slice())
+    SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    )
 }
 
 /// A `Machine` with a small dummy ROM, for the reset-propagation test, which
 /// needs `Machine::reset` (CPU + cartridge) but never runs any code.
 fn dummy_machine() -> Machine {
-    Machine::new(MachineConfig::default(), vec![0u8; 32 * 1024].into_boxed_slice())
+    Machine::new(
+        MachineConfig::default(),
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    )
 }
 
 // ============================================================================
@@ -53,7 +60,14 @@ struct TestCart {
 
 impl TestCart {
     fn new(id: u8) -> Self {
-        Self { id, last_write: None, ties_q: false, halt: false, nmi_pending: false, ticks: 0 }
+        Self {
+            id,
+            last_write: None,
+            ties_q: false,
+            halt: false,
+            nmi_pending: false,
+            ticks: 0,
+        }
     }
 }
 
@@ -144,7 +158,11 @@ fn software_write_blocks_the_switch_until_the_next_reset() {
         0xCC,
         "a software write must block the switch until the next reset"
     );
-    assert_eq!(mp.switch_slot(), 1, "the new switch position is still recorded while blocked");
+    assert_eq!(
+        mp.switch_slot(),
+        1,
+        "the new switch position is still recorded while blocked"
+    );
 
     mp.reset();
     assert_eq!(
@@ -162,7 +180,11 @@ fn machine_reset_restores_switch_control_and_reloads_value() {
     mp.set_switch(1); // physical slot 2 -- blocked, must not apply yet
     m.insert_cartridge(mp);
 
-    assert_eq!(m.bus.read(MPI_CONTROL), 0xDC, "software value still in effect pre-reset");
+    assert_eq!(
+        m.bus.read(MPI_CONTROL),
+        0xDC,
+        "software value still in effect pre-reset"
+    );
     m.reset();
     assert_eq!(
         m.bus.read(MPI_CONTROL),
@@ -189,7 +211,11 @@ fn scs_routing_follows_bits_1_0_and_tracks_changes() {
     assert_eq!(b.read(0xFF40), 0x55, "slot 0 must have recorded the write");
 
     b.write(MPI_CONTROL, 0x01); // SCS slot 1
-    assert_eq!(b.read(0xFF40), 0xB0, "slot 1 has no write recorded yet, so its id answers");
+    assert_eq!(
+        b.read(0xFF40),
+        0xB0,
+        "slot 1 has no write recorded yet, so its id answers"
+    );
 }
 
 // ============================================================================
@@ -285,7 +311,9 @@ fn tick_advances_every_slot_regardless_of_selection() {
 /// when the (git-ignored) ROM image isn't present, so this test skips
 /// gracefully in an asset-less checkout.
 fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms").join(name);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../roms")
+        .join(name);
     std::fs::read(&path).ok().map(Vec::into_boxed_slice)
 }
 
@@ -293,7 +321,11 @@ fn screen_row(m: &mut Machine, row: u16) -> String {
     (0..32)
         .map(|c| {
             let code = m.bus.read(0x0400 + row * 32 + c) & 0x3F;
-            if code < 0x20 { (b'@' + code) as char } else { (b' ' + (code - 0x20)) as char }
+            if code < 0x20 {
+                (b'@' + code) as char
+            } else {
+                (b' ' + (code - 0x20)) as char
+            }
         })
         .collect()
 }
@@ -301,8 +333,11 @@ fn screen_row(m: &mut Machine, row: u16) -> String {
 #[test]
 fn mpi_with_fd502_in_slot4_and_switch_on_slot4_boots_disk_basic() {
     const FIELDS: usize = 400;
-    let (Some(coco), Some(disk_rom)) = (try_load_rom("coco3.rom"), try_load_rom("disk11.rom")) else {
-        eprintln!("skipping mpi_with_fd502_in_slot4_and_switch_on_slot4_boots_disk_basic: roms/ assets not present");
+    let (Some(coco), Some(disk_rom)) = (try_load_rom("coco3.rom"), try_load_rom("disk11.rom"))
+    else {
+        eprintln!(
+            "skipping mpi_with_fd502_in_slot4_and_switch_on_slot4_boots_disk_basic: roms/ assets not present"
+        );
         return;
     };
 

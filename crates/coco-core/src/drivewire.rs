@@ -491,7 +491,6 @@ impl DWServer {
     pub fn data_read(&mut self) -> u8 {
         self.reply.pop_front().unwrap_or(0)
     }
-
 }
 
 impl Default for DWServer {

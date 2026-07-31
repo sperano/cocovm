@@ -23,8 +23,14 @@ const DUMP_EVERY: usize = 60;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let bin_path = PathBuf::from(args.next().expect("usage: demo_frames <file.bin> <outdir> [ram-kb]"));
-    let out = PathBuf::from(args.next().expect("usage: demo_frames <file.bin> <outdir> [ram-kb]"));
+    let bin_path = PathBuf::from(
+        args.next()
+            .expect("usage: demo_frames <file.bin> <outdir> [ram-kb]"),
+    );
+    let out = PathBuf::from(
+        args.next()
+            .expect("usage: demo_frames <file.bin> <outdir> [ram-kb]"),
+    );
     let memory = match args.next().as_deref() {
         Some("128") => MemorySize::K128,
         Some("2048") => MemorySize::K2048,
@@ -37,7 +43,10 @@ fn main() {
         .into_boxed_slice();
     let bin = std::fs::read(&bin_path).unwrap_or_else(|e| panic!("{}: {e}", bin_path.display()));
 
-    let config = MachineConfig { memory, ..MachineConfig::default() };
+    let config = MachineConfig {
+        memory,
+        ..MachineConfig::default()
+    };
     let mut m = Machine::new(config, rom);
     for _ in 0..BOOT_FIELDS {
         m.run_field();

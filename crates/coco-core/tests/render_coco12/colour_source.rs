@@ -9,7 +9,7 @@
 use coco_core::video::{BORDER, CELL_H, CELL_W, VDG_FIXED_PALETTE};
 use mc6809::Bus;
 
-use super::common::{boot_parked_machine, px, SCREEN_BASE};
+use super::common::{SCREEN_BASE, boot_parked_machine, px};
 
 /// PIA1 $FF22: A/G, GM2-0, CSS (SAM strobes move the display base, not this).
 const FF22_AG: u8 = 0x80;

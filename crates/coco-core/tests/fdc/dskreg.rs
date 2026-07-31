@@ -21,7 +21,10 @@ fn halt_line_is_not_drq_and_halt_enable() {
     // drq is still true (nothing has cleared it yet): HALT must not assert.
     assert!(!cart.halt_asserted());
     cart.read(0xFF4B); // clears DRQ as a side effect
-    assert!(cart.halt_asserted(), "HALT must assert once DRQ clears with halt-enable set");
+    assert!(
+        cart.halt_asserted(),
+        "HALT must assert once DRQ clears with halt-enable set"
+    );
 }
 
 #[test]
@@ -31,7 +34,10 @@ fn intrq_high_clears_dskreg_halt_enable() {
     cart.read(0xFF4B); // drq now false -> halt asserted
     assert!(cart.halt_asserted());
     cart.write(0xFF48, 0xD8); // Force Interrupt, I3 set -> INTRQ high
-    assert!(!cart.halt_asserted(), "a high INTRQ must clear DSKREG's halt-enable bit");
+    assert!(
+        !cart.halt_asserted(),
+        "a high INTRQ must clear DSKREG's halt-enable bit"
+    );
 }
 
 #[test]
@@ -39,12 +45,18 @@ fn nmi_edge_fires_only_when_density_nmi_enable_bit_is_set() {
     let mut cart = disk_cart();
     cart.write(0xFF40, 0); // bit5 clear
     cart.write(0xFF48, 0xD8); // Force Interrupt, I3 -> INTRQ high
-    assert!(!cart.take_nmi(), "NMI must not fire when DSKREG bit5 is clear");
+    assert!(
+        !cart.take_nmi(),
+        "NMI must not fire when DSKREG bit5 is clear"
+    );
 
     let mut cart = disk_cart();
     cart.write(0xFF40, dskreg::DENSITY_AND_NMI_ENABLE);
     cart.write(0xFF48, 0xD8);
-    assert!(cart.take_nmi(), "NMI must fire on the rising edge of intrq && bit5");
+    assert!(
+        cart.take_nmi(),
+        "NMI must fire on the rising edge of intrq && bit5"
+    );
     assert!(!cart.take_nmi(), "the edge must not repeat once consumed");
 }
 
@@ -73,7 +85,11 @@ fn drive_select_priority_bit2_then_bit1_then_bit0_then_bit6() {
     ];
     for (select_bits, expect_marker) in cases {
         cart.write(0xFF40, dskreg::MOTOR_ON | select_bits);
-        assert_eq!(read_marker_byte(&mut cart), expect_marker, "select bits {select_bits:#04x}");
+        assert_eq!(
+            read_marker_byte(&mut cart),
+            expect_marker,
+            "select bits {select_bits:#04x}"
+        );
     }
 }
 
@@ -85,8 +101,15 @@ fn side_select_is_bit6_unless_it_is_selecting_drive3() {
     cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE0);
     assert_eq!(read_marker_byte(&mut cart), 20, "bit6 clear -> side 0");
 
-    cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE0 | dskreg::DRIVE3_OR_SIDE);
-    assert_eq!(read_marker_byte(&mut cart), 21, "bit6 set with drive0 selected -> side 1");
+    cart.write(
+        0xFF40,
+        dskreg::MOTOR_ON | dskreg::DRIVE0 | dskreg::DRIVE3_OR_SIDE,
+    );
+    assert_eq!(
+        read_marker_byte(&mut cart),
+        21,
+        "bit6 set with drive0 selected -> side 1"
+    );
 }
 
 #[test]
@@ -95,11 +118,23 @@ fn not_ready_status_bit_reflects_missing_disk_or_motor_off() {
     cart.insert_disk(0, marker_disk(1));
 
     cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE0);
-    assert_eq!(cart.read(0xFF48) & status::NOT_READY, 0, "mounted + motor on -> ready");
+    assert_eq!(
+        cart.read(0xFF48) & status::NOT_READY,
+        0,
+        "mounted + motor on -> ready"
+    );
 
     cart.write(0xFF40, dskreg::DRIVE0); // motor off
-    assert_eq!(cart.read(0xFF48) & status::NOT_READY, status::NOT_READY, "motor off -> not ready");
+    assert_eq!(
+        cart.read(0xFF48) & status::NOT_READY,
+        status::NOT_READY,
+        "motor off -> not ready"
+    );
 
     cart.write(0xFF40, dskreg::MOTOR_ON | dskreg::DRIVE1); // unmounted drive
-    assert_eq!(cart.read(0xFF48) & status::NOT_READY, status::NOT_READY, "unmounted drive -> not ready");
+    assert_eq!(
+        cart.read(0xFF48) & status::NOT_READY,
+        status::NOT_READY,
+        "unmounted drive -> not ready"
+    );
 }

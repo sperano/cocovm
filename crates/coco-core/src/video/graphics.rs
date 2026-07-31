@@ -10,7 +10,7 @@
 //! reconcile the two: if a program sets V and GM to a non-standard pairing, the
 //! vertical cadence follows V and the horizontal decode follows GM independently.
 
-use super::{paint_px, ACTIVE_H, ACTIVE_W, BORDER, BYTES_PER_PIXEL, FB_H, FB_W};
+use super::{ACTIVE_H, ACTIVE_W, BORDER, BYTES_PER_PIXEL, FB_H, FB_W, paint_px};
 
 /// PIA1 $FF22 bit 7: 1 = VDG graphics, 0 = alphanumeric/semigraphics.
 pub const VDG_AG: u8 = 0x80;

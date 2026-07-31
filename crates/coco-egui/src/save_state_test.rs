@@ -1,7 +1,7 @@
 use super::*;
+use crate::{ROMSource, dev_roms_dir, disk_basic_rom_path};
 use coco_core::MachineConfig;
 use coco_core::snapshot;
-use crate::{ROMSource, dev_roms_dir, disk_basic_rom_path};
 
 /// Scratch directory holding only the fixture files a given test writes
 /// into it, under `target/` (git-ignored, unlike the workspace `roms/`
@@ -57,28 +57,51 @@ fn build_media_refs_hashes_match_the_mounted_files() {
     app.insert_multipak();
     app.mpi_insert_rompak(0, cart_path.clone());
     app.mpi_insert_fd502(3);
-    assert!(app.cart_error.is_none(), "mounting the MPI slots: {:?}", app.cart_error);
+    assert!(
+        app.cart_error.is_none(),
+        "mounting the MPI slots: {:?}",
+        app.cart_error
+    );
     app.insert_disk(0, disk_path.clone());
-    assert!(app.cart_error.is_none(), "mounting the disk: {:?}", app.cart_error);
+    assert!(
+        app.cart_error.is_none(),
+        "mounting the disk: {:?}",
+        app.cart_error
+    );
 
-    let media = app.build_media_refs().expect("build_media_refs should succeed");
+    let media = app
+        .build_media_refs()
+        .expect("build_media_refs should succeed");
 
-    let system_rom = media.system_rom.as_ref().expect("system ROM must be recorded");
+    let system_rom = media
+        .system_rom
+        .as_ref()
+        .expect("system ROM must be recorded");
     assert_eq!(system_rom.path, rom_path);
     // Hashes the boot-time bytes the running machine actually has
     // (`Self::system_rom_media_ref`'s fix — phase-5 review item 13), not
     // a fresh re-read of the file; they agree here only because the file
     // hasn't changed since boot, which is exactly what this asserts.
-    assert_eq!(system_rom.sha256, snapshot::sha256_hex(&app.machine.bus.rom));
+    assert_eq!(
+        system_rom.sha256,
+        snapshot::sha256_hex(&app.machine.bus.rom)
+    );
 
-    assert_eq!(media.cart_roms.len(), 2, "the ROM pak and the FD-502's own ROM");
+    assert_eq!(
+        media.cart_roms.len(),
+        2,
+        "the ROM pak and the FD-502's own ROM"
+    );
     let cart_ref = media
         .cart_roms
         .iter()
         .find(|r| r.mpi_slot == Some(0))
         .expect("the ROM pak's slot must be recorded");
     assert_eq!(cart_ref.rom.path, cart_path);
-    assert_eq!(cart_ref.rom.sha256, snapshot::sha256_file(&cart_path).unwrap());
+    assert_eq!(
+        cart_ref.rom.sha256,
+        snapshot::sha256_file(&cart_path).unwrap()
+    );
     let fd502_ref = media
         .cart_roms
         .iter()

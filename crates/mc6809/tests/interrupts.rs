@@ -9,7 +9,7 @@
 mod common;
 
 use common::Sys;
-use mc6809::{cc, State};
+use mc6809::{State, cc};
 
 // ======================================================================
 // Misc inherent

@@ -84,17 +84,37 @@ fn two_sided_image_interleaves_track0_side0_track0_side1_track1_side0() {
     ];
     for (track, side, marker) in cases {
         let off = disk.sector_offset(track, side, 1).unwrap();
-        assert_eq!(disk.read_bytes(off, 1)[0], marker, "track{track} side{side}");
+        assert_eq!(
+            disk.read_bytes(off, 1)[0],
+            marker,
+            "track{track} side{side}"
+        );
     }
 }
 
 #[test]
 fn sector_offset_rejects_out_of_range_track_side_and_sector() {
     let disk = JVCDisk::from_bytes(vec![0u8; ONE_TRACK_BYTES]).unwrap(); // 1 track
-    assert_eq!(disk.sector_offset(1, 0, 1), None, "track beyond track_count");
-    assert_eq!(disk.sector_offset(0, 1, 1), None, "side beyond sides (single-sided)");
-    assert_eq!(disk.sector_offset(0, 0, 0), None, "sector below first_sector_id");
-    assert_eq!(disk.sector_offset(0, 0, 19), None, "sector beyond sectors_per_track");
+    assert_eq!(
+        disk.sector_offset(1, 0, 1),
+        None,
+        "track beyond track_count"
+    );
+    assert_eq!(
+        disk.sector_offset(0, 1, 1),
+        None,
+        "side beyond sides (single-sided)"
+    );
+    assert_eq!(
+        disk.sector_offset(0, 0, 0),
+        None,
+        "sector below first_sector_id"
+    );
+    assert_eq!(
+        disk.sector_offset(0, 0, 19),
+        None,
+        "sector beyond sectors_per_track"
+    );
     assert!(disk.sector_offset(0, 0, 1).is_some());
     assert!(disk.sector_offset(0, 0, 18).is_some());
 }
@@ -115,7 +135,10 @@ fn nonzero_attribute_flag_is_rejected() {
     // one otherwise-valid track of data.
     let mut bytes = vec![18u8, 1, 1, 1, 1];
     bytes.extend(vec![0u8; ONE_TRACK_BYTES]);
-    assert_eq!(JVCDisk::from_bytes(bytes).unwrap_err(), JVCError::AttributeBytesUnsupported);
+    assert_eq!(
+        JVCDisk::from_bytes(bytes).unwrap_err(),
+        JVCError::AttributeBytesUnsupported
+    );
 }
 
 /// JVC default sectors/track and sector size, as assumed for any headerless
@@ -215,7 +238,10 @@ fn real_nitros9_40_track_disk_parses_as_40_tracks_2_sides() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../disks/NOS9_6809_L2_v030300_coco3_40d_1.dsk");
     let Ok(bytes) = std::fs::read(&path) else {
-        eprintln!("skipping real_nitros9_40_track_disk_parses_as_40_tracks_2_sides: {} not present", path.display());
+        eprintln!(
+            "skipping real_nitros9_40_track_disk_parses_as_40_tracks_2_sides: {} not present",
+            path.display()
+        );
         return;
     };
     let disk = JVCDisk::from_bytes(bytes).unwrap();

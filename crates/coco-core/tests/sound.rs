@@ -61,7 +61,11 @@ fn dac_reaches_speaker_only_with_snden_and_mux_zero() {
     assert!(loud > 0.5, "SNDEN + SEL=00 routes the DAC: {loud}");
 
     b.write(PIA0_CRA, CR_C2_HIGH); // SEL1 high -> mux 01 (cassette): silent
-    assert_eq!(mono(b.sound_probe(PROBE_DT)), 0.0, "mux away from DAC: silent");
+    assert_eq!(
+        mono(b.sound_probe(PROBE_DT)),
+        0.0,
+        "mux away from DAC: silent"
+    );
 }
 
 #[test]
@@ -83,8 +87,7 @@ fn machine_collects_oversample_grid_frames_per_scanline() {
     m.bus.write(0x0000, 0x20); // BRA *
     m.bus.write(0x0001, 0xFE);
     m.run_field();
-    let frames =
-        m.config.video.lines_per_field() as usize * coco_core::audio::OVERSAMPLE as usize;
+    let frames = m.config.video.lines_per_field() as usize * coco_core::audio::OVERSAMPLE as usize;
     assert_eq!(m.take_audio().count(), frames);
     // Drained: the next field starts fresh.
     m.run_field();

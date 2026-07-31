@@ -1,6 +1,5 @@
 use super::dto::{
-    JoySourceDTO, MachineVariantDTO, MonitorDTO, RAMDTO, SerialDTO, VDGVariantDTO,
-    VideoStandardDTO,
+    JoySourceDTO, MachineVariantDTO, MonitorDTO, RAMDTO, SerialDTO, VDGVariantDTO, VideoStandardDTO,
 };
 use super::*;
 use std::fs;
@@ -110,7 +109,10 @@ fn rs232_and_serial_file_round_trip() {
     assert_eq!(&loaded[0].1, &def);
 
     let contents = fs::read_to_string(dir.path().join("rs232.toml")).unwrap();
-    assert!(contents.contains("rs232 = true"), "TOML must record rs232:\n{contents}");
+    assert!(
+        contents.contains("rs232 = true"),
+        "TOML must record rs232:\n{contents}"
+    );
     assert!(
         contents.contains("serial = \"file\""),
         "TOML must record the serial port's sink:\n{contents}"
@@ -243,9 +245,11 @@ monitor = "rgb"
     let good = full_def();
     save(dir.path(), "good", &good).unwrap();
 
-    let err = load_all(dir.path())
-        .expect_err("a too-new schema must fail the whole load");
-    assert!(err.contains('2'), "error should name the file's schema: {err}");
+    let err = load_all(dir.path()).expect_err("a too-new schema must fail the whole load");
+    assert!(
+        err.contains('2'),
+        "error should name the file's schema: {err}"
+    );
     assert!(
         err.contains(&CURRENT_SCHEMA.to_string()),
         "error should name the supported schema: {err}"
@@ -358,15 +362,24 @@ future_ui_field = 42
 
     let contents = fs::read_to_string(dir.path().join("extra.toml")).unwrap();
     let table: toml::Table = toml::from_str(&contents).unwrap();
-    assert_eq!(table.get("future_top_level_field"), Some(&toml::Value::Boolean(true)));
+    assert_eq!(
+        table.get("future_top_level_field"),
+        Some(&toml::Value::Boolean(true))
+    );
     assert_eq!(
         table["hardware"].get("future_hardware_field"),
         Some(&toml::Value::String("whatever".to_string()))
     );
-    assert_eq!(table["ui"].get("future_ui_field"), Some(&toml::Value::Integer(42)));
+    assert_eq!(
+        table["ui"].get("future_ui_field"),
+        Some(&toml::Value::Integer(42))
+    );
 
     // And the edit itself did take effect.
-    assert_eq!(table["name"], toml::Value::String("Has Extras (renamed)".to_string()));
+    assert_eq!(
+        table["name"],
+        toml::Value::String("Has Extras (renamed)".to_string())
+    );
 }
 
 #[test]
@@ -398,7 +411,9 @@ fn from_config_round_trips_through_to_machine_config() {
     };
     let def = MachineDef::from_config("Test CoCo 2".to_string(), None, &config);
     assert_eq!(def.hardware.vdg, Some(VDGVariantDTO::MC6847T1));
-    let round_tripped = def.to_machine_config().expect("from_config produces a valid def");
+    let round_tripped = def
+        .to_machine_config()
+        .expect("from_config produces a valid def");
     // MachineConfig has no PartialEq derive — compare fields directly.
     assert_eq!(round_tripped.variant, config.variant);
     assert_eq!(round_tripped.video, config.video);
@@ -409,7 +424,11 @@ fn from_config_round_trips_through_to_machine_config() {
 
 #[test]
 fn resolve_media_path_leaves_absolute_paths_untouched() {
-    let abs = if cfg!(windows) { r"C:\shared\utils.dsk" } else { "/shared/utils.dsk" };
+    let abs = if cfg!(windows) {
+        r"C:\shared\utils.dsk"
+    } else {
+        "/shared/utils.dsk"
+    };
     assert_eq!(resolve_media_path(abs, "dev-coco-3"), PathBuf::from(abs));
 }
 
@@ -417,12 +436,19 @@ fn resolve_media_path_leaves_absolute_paths_untouched() {
 fn resolve_media_path_resolves_relative_against_the_slugs_artifact_dir() {
     let resolved = resolve_media_path("dev.dsk", "dev-coco-3");
     let data_dir = paths::data_dir().expect("home dir should exist in tests");
-    assert_eq!(resolved, data_dir.join("machines").join("dev-coco-3").join("dev.dsk"));
+    assert_eq!(
+        resolved,
+        data_dir.join("machines").join("dev-coco-3").join("dev.dsk")
+    );
 }
 
 #[test]
 fn missing_dir_returns_empty_list() {
     let dir = std::env::temp_dir().join("coco-egui-machine-def-test-does-not-exist");
     let _ = fs::remove_dir_all(&dir);
-    assert!(load_all(&dir).expect("a missing dir is the first-run case").is_empty());
+    assert!(
+        load_all(&dir)
+            .expect("a missing dir is the first-run case")
+            .is_empty()
+    );
 }

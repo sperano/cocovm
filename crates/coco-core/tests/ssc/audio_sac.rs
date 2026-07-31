@@ -4,7 +4,7 @@ use coco_core::ay8913::reg as ay_reg;
 use coco_core::ssc::SoundSpeechCartridge;
 use mc6809::Bus;
 
-use super::common::{bus_with_ssc_selected, coco3_bus_with_ssc, pump, FF7E, PROBE_DT};
+use super::common::{FF7E, PROBE_DT, bus_with_ssc_selected, coco3_bus_with_ssc, pump};
 
 const PIA0_CRA: u16 = 0xFF01;
 const PIA0_CRB: u16 = 0xFF03;
@@ -47,8 +47,15 @@ fn loud_tone_through_the_cartridge_mux_produces_nonzero_output_and_clears_quiet(
     drive_loud_tone(ssc);
 
     let sample = pump(&mut b, 2_000);
-    assert!(sample > 0.0, "loud tone routed through the cartridge mux must be audible: {sample}");
-    assert_eq!(b.read(FF7E) & 0x20, 0x00, "bit 5 (QUIET) must clear while sound is playing");
+    assert!(
+        sample > 0.0,
+        "loud tone routed through the cartridge mux must be audible: {sample}"
+    );
+    assert_eq!(
+        b.read(FF7E) & 0x20,
+        0x00,
+        "bit 5 (QUIET) must clear while sound is playing"
+    );
 }
 
 #[test]
@@ -62,7 +69,11 @@ fn silencing_the_ay_eventually_sets_quiet_again() {
     let ssc = b.cart.as_ssc().unwrap();
     silence(ssc);
     pump(&mut b, 20_000);
-    assert_eq!(b.read(FF7E) & 0x20, 0x20, "bit 5 (QUIET) must set again once the envelope decays");
+    assert_eq!(
+        b.read(FF7E) & 0x20,
+        0x20,
+        "bit 5 (QUIET) must set again once the envelope decays"
+    );
 }
 
 #[test]
@@ -89,7 +100,10 @@ fn sac_tracks_activity_even_when_the_mux_is_not_on_the_cartridge() {
     // The DAC data register was never written (stays 0), so any nonzero
     // sample here could only have come from the cartridge leaking through
     // the (supposedly closed) mux gate.
-    assert!(!heard_cart_audio, "cartridge audio must not reach the speaker when the mux isn't on it");
+    assert!(
+        !heard_cart_audio,
+        "cartridge audio must not reach the speaker when the mux isn't on it"
+    );
     assert_eq!(
         b.read(FF7E) & 0x20,
         0x00,

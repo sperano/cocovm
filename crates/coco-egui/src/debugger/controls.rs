@@ -7,7 +7,12 @@ use eframe::egui;
 use super::{DebuggerPanel, parse_addr};
 
 impl DebuggerPanel {
-    pub(super) fn controls_ui(&mut self, ui: &mut egui::Ui, machine: &mut Machine, running: &mut bool) {
+    pub(super) fn controls_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        machine: &mut Machine,
+        running: &mut bool,
+    ) {
         ui.horizontal(|ui| {
             let run_label = if *running { "Pause" } else { "Run" };
             if ui.button(run_label).clicked() {

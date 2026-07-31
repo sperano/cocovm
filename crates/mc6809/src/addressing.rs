@@ -1,7 +1,7 @@
 //! Effective-address computation and instruction-stream fetching: the
 //! addressing-mode machinery shared by every opcode family in [`crate::exec`].
 
-use crate::{postbyte, Bus, MC6809};
+use crate::{Bus, MC6809, postbyte};
 
 impl MC6809 {
     pub(crate) fn fetch_u8(&mut self, bus: &mut impl Bus) -> u8 {

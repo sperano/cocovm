@@ -73,10 +73,8 @@ impl ACIA6551 {
         self.irq_sources &= !(irq_source::DCD | irq_source::DSR);
         self.update_irq_output();
 
-        const RESET_MASK: u8 = command::DTR
-            | command::RX_IRQ_DISABLE
-            | command::TX_CONTROL_MASK
-            | command::ECHO;
+        const RESET_MASK: u8 =
+            command::DTR | command::RX_IRQ_DISABLE | command::TX_CONTROL_MASK | command::ECHO;
         self.command &= !RESET_MASK;
         self.rts = false;
     }

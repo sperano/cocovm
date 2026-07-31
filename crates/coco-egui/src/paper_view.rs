@@ -199,7 +199,6 @@ impl PaperWindow {
             if self.pending_tear_off {
                 self.tear_off_dialog(ctx, printed_pages);
             }
-
         });
 
         error
@@ -246,25 +245,27 @@ impl PaperWindow {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                egui::Frame::NONE.inner_margin(DIALOG_MARGIN).show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Tear off and discard {printed_pages} page{} of printed output?",
-                            if printed_pages == 1 { "" } else { "s" }
-                        ))
-                        .size(font),
-                    );
-                    ui.add_space(DIALOG_MARGIN as f32);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
-                        if ui.button("Tear Off").clicked() {
-                            self.perform_tear_off();
-                        }
-                        if ui.button("Cancel").clicked() {
-                            self.pending_tear_off = false;
-                        }
+                egui::Frame::NONE
+                    .inner_margin(DIALOG_MARGIN)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Tear off and discard {printed_pages} page{} of printed output?",
+                                if printed_pages == 1 { "" } else { "s" }
+                            ))
+                            .size(font),
+                        );
+                        ui.add_space(DIALOG_MARGIN as f32);
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+                            if ui.button("Tear Off").clicked() {
+                                self.perform_tear_off();
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.pending_tear_off = false;
+                            }
+                        });
                     });
-                });
             });
     }
 

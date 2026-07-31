@@ -117,9 +117,11 @@ impl DWServer {
             State::AwaitSerReadM { buf } => self.feed_ser_readm(buf, byte),
             State::AwaitSerSetStat { buf } => self.feed_ser_setstat(buf, byte),
             State::AwaitReadHeader { ex, buf } => self.feed_read_header(ex, buf, byte),
-            State::AwaitReadExChecksum { expected, pending_error, buf } => {
-                self.feed_read_ex_checksum(expected, pending_error, buf, byte)
-            }
+            State::AwaitReadExChecksum {
+                expected,
+                pending_error,
+                buf,
+            } => self.feed_read_ex_checksum(expected, pending_error, buf, byte),
             State::AwaitWriteBody { buf } => self.feed_write_body(buf, byte),
         }
     }
@@ -127,7 +129,9 @@ impl DWServer {
     /// [`State::AwaitDiscard`]: consume one of `remaining` filler bytes.
     fn feed_discard(&mut self, remaining: u8) {
         if remaining > 1 {
-            self.state = State::AwaitDiscard { remaining: remaining - 1 };
+            self.state = State::AwaitDiscard {
+                remaining: remaining - 1,
+            };
         }
     }
 
@@ -151,7 +155,9 @@ impl DWServer {
         if buf.len() == 2 {
             let statcode = buf[1];
             if statcode == SS_COMST {
-                self.state = State::AwaitDiscard { remaining: COMST_PAYLOAD_LEN as u8 };
+                self.state = State::AwaitDiscard {
+                    remaining: COMST_PAYLOAD_LEN as u8,
+                };
             }
             // Otherwise the transaction is complete: no reply, state stays
             // Idle (already set at the top of `feed`).
@@ -174,14 +180,28 @@ impl DWServer {
     /// [`State::AwaitReadExChecksum`]: accumulate the client's 2-byte
     /// checksum, then reply with [`error::CRC`] on mismatch or
     /// `pending_error` otherwise.
-    fn feed_read_ex_checksum(&mut self, expected: u16, pending_error: u8, mut buf: Vec<u8>, byte: u8) {
+    fn feed_read_ex_checksum(
+        &mut self,
+        expected: u16,
+        pending_error: u8,
+        mut buf: Vec<u8>,
+        byte: u8,
+    ) {
         buf.push(byte);
         if buf.len() == 2 {
             let client_sum = (u16::from(buf[0]) << 8) | u16::from(buf[1]);
-            let status = if client_sum != expected { error::CRC } else { pending_error };
+            let status = if client_sum != expected {
+                error::CRC
+            } else {
+                pending_error
+            };
             self.reply.push_back(status);
         } else {
-            self.state = State::AwaitReadExChecksum { expected, pending_error, buf };
+            self.state = State::AwaitReadExChecksum {
+                expected,
+                pending_error,
+                buf,
+            };
         }
     }
 
@@ -211,7 +231,9 @@ impl DWServer {
             opcode::TIME => self.reply_time(),
             opcode::DWINIT => self.state = State::AwaitDwInitVersion,
             opcode::GETSTAT | opcode::SETSTAT => {
-                self.state = State::AwaitDiscard { remaining: STAT_PAYLOAD_LEN };
+                self.state = State::AwaitDiscard {
+                    remaining: STAT_PAYLOAD_LEN,
+                };
             }
             opcode::SERREAD => self.handle_serread(),
             opcode::SERREADM => self.handle_serreadm(),
@@ -222,7 +244,9 @@ impl DWServer {
             opcode::READ | opcode::REREAD => self.handle_read_opcode(false),
             opcode::READEX | opcode::REREADEX => self.handle_read_opcode(true),
             opcode::WRITE | opcode::REWRITE => {
-                self.state = State::AwaitWriteBody { buf: Vec::with_capacity(WRITE_BODY_LEN) };
+                self.state = State::AwaitWriteBody {
+                    buf: Vec::with_capacity(WRITE_BODY_LEN),
+                };
             }
             _ => {
                 self.unknown_opcodes += 1;
@@ -233,7 +257,8 @@ impl DWServer {
     /// [`opcode::TIME`]: reply with the injected clock's 6-byte encoding.
     fn reply_time(&mut self) {
         let t = (self.clock)();
-        self.reply.push_back(t.year.wrapping_sub(TIME_REPLY_YEAR_BASE) as u8);
+        self.reply
+            .push_back(t.year.wrapping_sub(TIME_REPLY_YEAR_BASE) as u8);
         self.reply.push_back(t.month);
         self.reply.push_back(t.day);
         self.reply.push_back(t.hour);
@@ -252,13 +277,17 @@ impl DWServer {
     /// [`opcode::SERREADM`]: await its 2-byte (channel, count) payload.
     fn handle_serreadm(&mut self) {
         self.vserial_ops += 1;
-        self.state = State::AwaitSerReadM { buf: Vec::with_capacity(2) };
+        self.state = State::AwaitSerReadM {
+            buf: Vec::with_capacity(2),
+        };
     }
 
     /// [`opcode::SERSETSTAT`]: await its 2-byte (channel, statcode) payload.
     fn handle_sersetstat(&mut self) {
         self.vserial_ops += 1;
-        self.state = State::AwaitSerSetStat { buf: Vec::with_capacity(2) };
+        self.state = State::AwaitSerSetStat {
+            buf: Vec::with_capacity(2),
+        };
     }
 
     /// The vserial-family opcodes whose entire remaining payload is `n`
@@ -274,6 +303,9 @@ impl DWServer {
     /// [`opcode::READ`]/[`opcode::REREAD`]/[`opcode::READEX`]/
     /// [`opcode::REREADEX`]: await the rest of the 4-byte header.
     fn handle_read_opcode(&mut self, ex: bool) {
-        self.state = State::AwaitReadHeader { ex, buf: Vec::with_capacity(HEADER_LEN) };
+        self.state = State::AwaitReadHeader {
+            ex,
+            buf: Vec::with_capacity(HEADER_LEN),
+        };
     }
 }

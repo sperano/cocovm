@@ -26,7 +26,10 @@ impl CocoApp {
     /// The Keyboard menu: positional/symbolic mode and the key map.
     fn keyboard_menu_ui(&mut self, ui: &mut egui::Ui) {
         for mode in [KbMode::Positional, KbMode::Symbolic] {
-            if ui.selectable_label(self.kb_mode == mode, mode.label()).clicked() {
+            if ui
+                .selectable_label(self.kb_mode == mode, mode.label())
+                .clicked()
+            {
                 self.set_mode(mode);
             }
         }
@@ -79,5 +82,4 @@ impl CocoApp {
             ui.close();
         }
     }
-
 }

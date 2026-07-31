@@ -83,7 +83,10 @@ impl CocoApp {
         }
         ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
         if ui
-            .add_enabled(direct_port, egui::Button::new("Insert Sound/Speech Cartridge"))
+            .add_enabled(
+                direct_port,
+                egui::Button::new("Insert Sound/Speech Cartridge"),
+            )
             .clicked()
         {
             self.insert_ssc();
@@ -124,7 +127,10 @@ impl CocoApp {
     /// The FD-502 floppy drives: insert, format blank, and eject.
     fn machine_disk_items(&mut self, ui: &mut egui::Ui) {
         for drive in 0..UI_DRIVES {
-            if ui.button(format!("Insert Disk in Drive {drive}…")).clicked() {
+            if ui
+                .button(format!("Insert Disk in Drive {drive}…"))
+                .clicked()
+            {
                 ui.close();
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("Disk image", &["dsk", "jvc", "os9"])
@@ -133,7 +139,10 @@ impl CocoApp {
                     self.request_insert_disk(drive, path);
                 }
             }
-            if ui.button(format!("New Blank Disk in Drive {drive}…")).clicked() {
+            if ui
+                .button(format!("New Blank Disk in Drive {drive}…"))
+                .clicked()
+            {
                 ui.close();
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("Disk image", &["dsk"])
@@ -163,8 +172,9 @@ impl CocoApp {
         for drive in 0..UI_DRIVES {
             if ui.button(format!("Insert VHD {drive}…")).clicked() {
                 ui.close();
-                if let Some(path) =
-                    rfd::FileDialog::new().add_filter("VHD image", &["vhd"]).pick_file()
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("VHD image", &["vhd"])
+                    .pick_file()
                 {
                     self.insert_vhd(drive, path);
                 }
@@ -220,7 +230,10 @@ impl CocoApp {
             ),
             None => "Eject Tape".to_string(),
         };
-        if ui.add_enabled(tape_mounted, egui::Button::new(label)).clicked() {
+        if ui
+            .add_enabled(tape_mounted, egui::Button::new(label))
+            .clicked()
+        {
             self.eject_tape();
             ui.close();
         }

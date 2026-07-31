@@ -77,7 +77,7 @@ pub(crate) mod restore;
 
 pub use codec::{load, save};
 pub use error::SnapshotError;
-pub use hash::{sha256_file, sha256_hex, MediaCheck};
+pub use hash::{MediaCheck, sha256_file, sha256_hex};
 pub use payload::{
     MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SlotROMRef, SnapshotPayload,
 };

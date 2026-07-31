@@ -73,5 +73,8 @@ fn keys_in_use_on_any_mapped_key() {
     };
     assert!(!keys_in_use(idle));
     assert!(keys_in_use(KeyState { left: true, ..idle }));
-    assert!(keys_in_use(KeyState { button1: true, ..idle }));
+    assert!(keys_in_use(KeyState {
+        button1: true,
+        ..idle
+    }));
 }

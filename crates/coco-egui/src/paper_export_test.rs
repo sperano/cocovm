@@ -41,8 +41,7 @@ fn png_round_trips_through_the_image_crate() {
 #[test]
 fn pdf_starts_with_the_pdf_magic_and_has_a_trailer() {
     let dpi = 50.0;
-    let page =
-        paper_render::rasterize(&EmptyDots, 0.0, paper_render::PAGE_HEIGHT_IN, dpi, false);
+    let page = paper_render::rasterize(&EmptyDots, 0.0, paper_render::PAGE_HEIGHT_IN, dpi, false);
     let mut buf = Vec::new();
     write_pdf(std::slice::from_ref(&page), dpi, &mut buf).expect("write_pdf");
 
@@ -56,9 +55,7 @@ fn pdf_starts_with_the_pdf_magic_and_has_a_trailer() {
 fn pdf_page_count_matches_the_pages_given() {
     let dpi = 30.0;
     let pages: Vec<RasterImage> = (0..3)
-        .map(|_| {
-            paper_render::rasterize(&EmptyDots, 0.0, paper_render::PAGE_HEIGHT_IN, dpi, false)
-        })
+        .map(|_| paper_render::rasterize(&EmptyDots, 0.0, paper_render::PAGE_HEIGHT_IN, dpi, false))
         .collect();
     let mut buf = Vec::new();
     write_pdf(&pages, dpi, &mut buf).expect("write_pdf");
@@ -75,8 +72,7 @@ fn pdf_page_count_matches_the_pages_given() {
 #[test]
 fn save_pdf_writes_a_non_empty_file() {
     let dpi = 30.0;
-    let page =
-        paper_render::rasterize(&EmptyDots, 0.0, paper_render::PAGE_HEIGHT_IN, dpi, false);
+    let page = paper_render::rasterize(&EmptyDots, 0.0, paper_render::PAGE_HEIGHT_IN, dpi, false);
     let path = scratch_path("saved.pdf");
 
     save_pdf(std::slice::from_ref(&page), dpi, &path).expect("save_pdf");

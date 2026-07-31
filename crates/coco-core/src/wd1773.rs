@@ -128,7 +128,11 @@ enum FormatState {
     /// `$FE` seen: still gathering the 4 literal ID bytes (track, side, sector, size).
     IdField(Vec<u8>),
     /// The 4 ID bytes are gathered; consuming (ignored) bytes until `$F7`.
-    IdFieldTerm { track: u8, sector: u8, size_code: u8 },
+    IdFieldTerm {
+        track: u8,
+        sector: u8,
+        size_code: u8,
+    },
     /// `$FB`/`$F8` seen: still gathering the sector's data payload (target length also carried).
     DataField(Vec<u8>, usize),
     /// The payload is fully gathered; consuming (ignored) bytes until `$F7`.
@@ -180,10 +184,14 @@ struct Transfer {
 enum Op {
     Idle,
     /// A Type I command settling before INTRQ ([`COMMAND_SETTLE_CYCLES`]).
-    SettlingTypeOne { remaining: u32 },
+    SettlingTypeOne {
+        remaining: u32,
+    },
     /// A Type II/III command whose target track/sector/side isn't on the
     /// mounted image: RNF fires after the same short settle.
-    SettlingNotFound { remaining: u32 },
+    SettlingNotFound {
+        remaining: u32,
+    },
     Transfer(Transfer),
 }
 
@@ -332,8 +340,11 @@ impl WD1773 {
     /// disk-bound half of this check, which needs a reattached
     /// [`JVCDisk`] and so runs later in the restore flow.
     pub(crate) fn validate_restored(&self) -> Result<(), String> {
-        let Op::Transfer(t) = &self.op else { return Ok(()) };
-        if matches!(t.kind, TransferKind::ReadSector | TransferKind::ReadAddress) && t.index > t.buf.len()
+        let Op::Transfer(t) = &self.op else {
+            return Ok(());
+        };
+        if matches!(t.kind, TransferKind::ReadSector | TransferKind::ReadAddress)
+            && t.index > t.buf.len()
         {
             return Err(format!(
                 "Transfer.index ({}) exceeds Transfer.buf length ({}) for a {:?} transfer",
@@ -359,17 +370,21 @@ impl WD1773 {
     /// via [`JVCDisk::format_sector`], which computes its own bounded
     /// offset), so only the two sector-transfer kinds are checked.
     pub(crate) fn validate_transfer_bounds(&self, disk: Option<&JVCDisk>) -> Result<(), String> {
-        let Op::Transfer(t) = &self.op else { return Ok(()) };
+        let Op::Transfer(t) = &self.op else {
+            return Ok(());
+        };
         if !matches!(t.kind, TransferKind::ReadSector | TransferKind::WriteSector) {
             return Ok(());
         }
-        let len = disk
-            .map(|d| d.bytes().len())
-            .ok_or_else(|| "in-flight sector transfer targets a drive with no disk mounted".to_string())?;
-        let end = t
-            .offset
-            .checked_add(t.total)
-            .ok_or_else(|| format!("Transfer.offset ({}) + Transfer.total ({}) overflows", t.offset, t.total))?;
+        let len = disk.map(|d| d.bytes().len()).ok_or_else(|| {
+            "in-flight sector transfer targets a drive with no disk mounted".to_string()
+        })?;
+        let end = t.offset.checked_add(t.total).ok_or_else(|| {
+            format!(
+                "Transfer.offset ({}) + Transfer.total ({}) overflows",
+                t.offset, t.total
+            )
+        })?;
         if end > len {
             return Err(format!(
                 "Transfer.offset ({}) + Transfer.total ({}) = {end} exceeds the mounted disk's {len} bytes",

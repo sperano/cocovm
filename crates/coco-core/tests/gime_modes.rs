@@ -44,7 +44,10 @@ fn width80_registers_switch_to_native_text_and_back() {
     m.bus.write(0xFF9E, 0x00);
     m.run_field();
 
-    assert_eq!((m.fb_width, m.fb_height), (CANVAS_W as u32, CANVAS_H as u32));
+    assert_eq!(
+        (m.fb_width, m.fb_height),
+        (CANVAS_W as u32, CANVAS_H as u32)
+    );
 
     // Back to CoCo-compatible: still the canonical canvas — one stable
     // texture size across every CoCo 3 mode is the point of Option B.
@@ -70,7 +73,10 @@ fn hscreen2_registers_switch_to_native_graphics() {
     m.bus.write(0xFF9E, 0x00);
     m.run_field();
 
-    assert_eq!((m.fb_width, m.fb_height), (CANVAS_W as u32, CANVAS_H as u32));
+    assert_eq!(
+        (m.fb_width, m.fb_height),
+        (CANVAS_W as u32, CANVAS_H as u32)
+    );
     assert_eq!(
         m.framebuffer.len(),
         (m.fb_width * m.fb_height) as usize * coco_core::video::BYTES_PER_PIXEL

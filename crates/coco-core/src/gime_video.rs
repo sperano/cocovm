@@ -235,7 +235,15 @@ fn paint_body_row(
         mode.bytes_per_row
     } else {
         let mode = decode_text(g);
-        paint_text_row(&mode, palette, blink_on, line_in_row, active_w, fetch, active);
+        paint_text_row(
+            &mode,
+            palette,
+            blink_on,
+            line_in_row,
+            active_w,
+            fetch,
+            active,
+        );
         mode.cols * if mode.attributes { 2 } else { 1 }
     }
 }
@@ -341,7 +349,10 @@ fn paint_text_row(
         for cx in 0..CHAR_W {
             let on = underline_here || row_bits & (0x80 >> cx) != 0;
             let color = if on { fg } else { bg };
-            fill(&mut out[x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL], color);
+            fill(
+                &mut out[x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL],
+                color,
+            );
             x += xscale;
         }
     }
@@ -370,7 +381,10 @@ fn paint_graphics_row(
             if x + xscale > active_w {
                 return; // defensive: never paint past the active span
             }
-            fill(&mut out[x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL], color);
+            fill(
+                &mut out[x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL],
+                color,
+            );
             x += xscale;
         }
     }
@@ -464,7 +478,11 @@ pub fn text_lines(g: &GIME, ram: &[u8]) -> Vec<String> {
         let line = (0..mode.cols)
             .map(|col| {
                 let code = scan.fetch(col * bytes_per_char) & CHAR_CODE_MASK;
-                if (0x20..0x7F).contains(&code) { code as char } else { UNPRINTABLE_CHAR }
+                if (0x20..0x7F).contains(&code) {
+                    code as char
+                } else {
+                    UNPRINTABLE_CHAR
+                }
             })
             .collect();
         out.push(line);

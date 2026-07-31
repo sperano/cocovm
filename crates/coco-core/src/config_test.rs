@@ -146,7 +146,10 @@ fn coco3_rejects_any_vdg() {
             monitor: Some(MonitorType::RGB),
             vdg: Some(vdg),
         };
-        assert!(cfg.validate().is_err(), "Coco3 has no VDG, {vdg:?} must be rejected");
+        assert!(
+            cfg.validate().is_err(),
+            "Coco3 has no VDG, {vdg:?} must be rejected"
+        );
     }
 }
 

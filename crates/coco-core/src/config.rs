@@ -234,9 +234,7 @@ impl MachineConfig {
                     ));
                 }
                 if self.monitor.is_none() {
-                    return Err(
-                        "Coco3 needs a monitor type (RGB or composite cable)".to_string()
-                    );
+                    return Err("Coco3 needs a monitor type (RGB or composite cable)".to_string());
                 }
             }
         }
@@ -249,7 +247,10 @@ impl MachineConfig {
                 );
             }
             (MachineVariant::Coco1 | MachineVariant::Coco2, None) => {
-                return Err(format!("{:?} needs a VDG chip (vdg must be set)", self.variant));
+                return Err(format!(
+                    "{:?} needs a VDG chip (vdg must be set)",
+                    self.variant
+                ));
             }
             (MachineVariant::Coco1, Some(VDGVariant::MC6847T1)) => {
                 return Err(

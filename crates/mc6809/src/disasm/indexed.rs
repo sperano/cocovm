@@ -26,11 +26,7 @@ pub(super) fn decode_indexed<F: FnMut(u16) -> u8>(r: &mut Reader<F>) -> String {
     let indirect = pb & postbyte::INDIRECT != 0;
     let body = decode_indexed_body(r, sel, pb & postbyte::MODE_MASK);
 
-    if indirect {
-        format!("[{body}]")
-    } else {
-        body
-    }
+    if indirect { format!("[{body}]") } else { body }
 }
 
 /// The `0 rr nnnnn` postbyte form: a 5-bit signed constant offset, never

@@ -128,7 +128,13 @@ impl SoundSpeechCartridge {
     /// groups advance from [`Cartridge::tick`](crate::cart::Cartridge::tick)
     /// via [`SoundSpeechCartridge::tick_engine`]).
     pub(super) fn start_sound_execute(&mut self, start: usize, cap: usize) {
-        self.engine = Engine { active: true, cursor: start, cap, last_amplitude_nibble: 0, duration_countdown: 0 };
+        self.engine = Engine {
+            active: true,
+            cursor: start,
+            cap,
+            last_amplitude_nibble: 0,
+            duration_countdown: 0,
+        };
         self.advance_engine();
     }
 
@@ -166,9 +172,15 @@ impl SoundSpeechCartridge {
             return;
         }
         match opcode {
-            group::TONE_A | group::TONE_B | group::TONE_C => self.process_tone_group(cursor, opcode),
-            group::NOISE_A | group::NOISE_B | group::NOISE_C => self.process_noise_group(cursor, opcode),
-            group::ENVELOPE_LOW | group::ENVELOPE_HIGH => self.process_standalone_envelope_group(cursor),
+            group::TONE_A | group::TONE_B | group::TONE_C => {
+                self.process_tone_group(cursor, opcode)
+            }
+            group::NOISE_A | group::NOISE_B | group::NOISE_C => {
+                self.process_noise_group(cursor, opcode)
+            }
+            group::ENVELOPE_LOW | group::ENVELOPE_HIGH => {
+                self.process_standalone_envelope_group(cursor)
+            }
             _ => unreachable!("opcode is masked to 3 bits (0-7); all 8 values are handled above"),
         }
     }
@@ -228,7 +240,11 @@ impl SoundSpeechCartridge {
             group::NOISE_C => 2,
             _ => unreachable!("caller only dispatches NOISE_A/B/C here"),
         };
-        let amp = if reuse { self.engine.last_amplitude_nibble } else { raw_amp };
+        let amp = if reuse {
+            self.engine.last_amplitude_nibble
+        } else {
+            raw_amp
+        };
 
         self.ay_write(ay_reg::NOISE_PERIOD, period);
         self.ay_write(vol_reg(ch), amp | if m_flag { group::M_FLAG } else { 0 });
@@ -258,9 +274,9 @@ impl SoundSpeechCartridge {
     /// malformed stream can't desync or infinite-loop the engine.
     fn process_standalone_envelope_group(&mut self, at: usize) {
         let cap = self.engine.cap;
-        let (duration, len) = self
-            .peek_chained_envelope(at, cap)
-            .expect("advance_engine already verified an envelope opcode with a full group available");
+        let (duration, len) = self.peek_chained_envelope(at, cap).expect(
+            "advance_engine already verified an envelope opcode with a full group available",
+        );
         self.engine.cursor = at + len;
         self.engine.duration_countdown = timing::duration_cycles(duration, self.timer_base);
     }
@@ -306,8 +322,16 @@ impl SoundSpeechCartridge {
         let noise_bit = 1 << (mixer::NOISE_DISABLE_SHIFT + ch as u8);
         // Mixer bits are active-low enable: clear the bit to enable that
         // generator for the channel, set it to disable.
-        mixer_val = if tone_enabled { mixer_val & !tone_bit } else { mixer_val | tone_bit };
-        mixer_val = if noise_enabled { mixer_val & !noise_bit } else { mixer_val | noise_bit };
+        mixer_val = if tone_enabled {
+            mixer_val & !tone_bit
+        } else {
+            mixer_val | tone_bit
+        };
+        mixer_val = if noise_enabled {
+            mixer_val & !noise_bit
+        } else {
+            mixer_val | noise_bit
+        };
         self.ay_write(ay_reg::MIXER, mixer_val);
     }
 

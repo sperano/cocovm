@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::drivewire::DWImage;
 use crate::vhd::VHDImage;
-use crate::{drivewire, fdc, vhd, Machine};
+use crate::{Machine, drivewire, fdc, vhd};
 
 /// Everything a snapshot needs besides resolved media bytes: the machine
 /// tree (config travels inside `machine.config`) plus where its media came

@@ -180,19 +180,40 @@ fn timer_firq_from_rom_code_splits_the_border() {
 
     let mut rom = vec![0u8; 32 * 1024];
     let program: &[u8] = &[
-        0x10, 0xCE, 0x1F, 0xF0, // LDS  #$1FF0      stack in low RAM
-        0x86, OLD_BORDER,       // LDA  #OLD_BORDER
-        0xB7, 0xFF, 0x9A,       // STA  $FF9A       border = old colour
-        0x86, 0x20,             // LDA  #intr::TMR
-        0xB7, 0xFF, 0x93,       // STA  $FF93       FIRQENR: timer source
-        0x7F, 0xFF, 0x91,       // CLR  $FF91       INIT1: TINS=0 (hsync rate)
-        0x7F, 0xFF, 0x94,       // CLR  $FF94       timer MSB = 0
-        0x86, SPLIT_LINE as u8, // LDA  #SPLIT_LINE
-        0xB7, 0xFF, 0x95,       // STA  $FF95       timer LSB (restarts count)
-        0x86, 0x10,             // LDA  #init0::FEN
-        0xB7, 0xFF, 0x90,       // STA  $FF90       INIT0: FIRQ out, COCO=0
-        0x1C, 0xAF,             // ANDCC #$AF       unmask FIRQ/IRQ
-        0x20, 0xFE,             // BRA  *           wait for the timer
+        0x10,
+        0xCE,
+        0x1F,
+        0xF0, // LDS  #$1FF0      stack in low RAM
+        0x86,
+        OLD_BORDER, // LDA  #OLD_BORDER
+        0xB7,
+        0xFF,
+        0x9A, // STA  $FF9A       border = old colour
+        0x86,
+        0x20, // LDA  #intr::TMR
+        0xB7,
+        0xFF,
+        0x93, // STA  $FF93       FIRQENR: timer source
+        0x7F,
+        0xFF,
+        0x91, // CLR  $FF91       INIT1: TINS=0 (hsync rate)
+        0x7F,
+        0xFF,
+        0x94, // CLR  $FF94       timer MSB = 0
+        0x86,
+        SPLIT_LINE as u8, // LDA  #SPLIT_LINE
+        0xB7,
+        0xFF,
+        0x95, // STA  $FF95       timer LSB (restarts count)
+        0x86,
+        0x10, // LDA  #init0::FEN
+        0xB7,
+        0xFF,
+        0x90, // STA  $FF90       INIT0: FIRQ out, COCO=0
+        0x1C,
+        0xAF, // ANDCC #$AF       unmask FIRQ/IRQ
+        0x20,
+        0xFE, // BRA  *           wait for the timer
     ];
     rom[..program.len()].copy_from_slice(program);
     let isr: &[u8] = &[
@@ -200,7 +221,7 @@ fn timer_firq_from_rom_code_splits_the_border() {
         0x86, NEW_BORDER, // LDA  #NEW_BORDER
         0xB7, 0xFF, 0x9A, // STA  $FF9A   border = new colour
         0x7F, 0xFF, 0x93, // CLR  $FF93   no further timer FIRQs
-        0x3B,             // RTI
+        0x3B, // RTI
     ];
     let isr_off = (ISR - 0x8000) as usize;
     rom[isr_off..isr_off + isr.len()].copy_from_slice(isr);

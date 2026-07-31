@@ -394,8 +394,8 @@ impl AY8913 {
         // module doc's "Deviation from MAME").
         let mut sum = 0.0f32;
         for ch in 0..3 {
-            let enabled =
-                (self.tone[ch].output || self.tone_disabled(ch)) && (noise_out || self.noise_disabled(ch));
+            let enabled = (self.tone[ch].output || self.tone_disabled(ch))
+                && (noise_out || self.noise_disabled(ch));
             let level = if enabled { self.channel_level(ch) } else { 0 };
             sum += self.dac[level as usize];
         }

@@ -72,7 +72,11 @@ fn cart_audio_reaches_the_speaker_regardless_of_mux_state() {
     // to their own speaker, ignoring SOUND_ENABLE). Fresh bus: SNDEN low,
     // SEL=00 — the internal DAC path is silent either way.
     let mut b = bus_with_orch90();
-    assert_eq!(b.sound_probe(PROBE_DT), [0.0; 2], "latches power on at 0: silent");
+    assert_eq!(
+        b.sound_probe(PROBE_DT),
+        [0.0; 2],
+        "latches power on at 0: silent"
+    );
 
     b.write(LEFT_DAC_REG, 0xFF);
     b.write(RIGHT_DAC_REG, 0xFF);
@@ -123,14 +127,22 @@ fn mpi_dac_writes_ignore_the_slot_select_and_audio_sums() {
     // Analog SND is common to all slots (only SCS*/CTS*/CART* are switched):
     // deselecting the slot leaves the held latches on the wire.
     b.cart.as_multipak().unwrap().set_switch(OTHER_SLOT);
-    assert_eq!(b.cart.sound_levels(), (1.0, 1.0), "held level still on the wire");
+    assert_eq!(
+        b.cart.sound_levels(),
+        (1.0, 1.0),
+        "held level still on the wire"
+    );
     // $FF7A/$FF7B sit in the $FF60-$FF7E extension window, which the MPI
     // does not switch either — the pak full-decodes the address bus, so a
     // write lands regardless of the slot select.
     b.write(LEFT_DAC_REG, 0x00);
     let o = b.cart.as_orch90().unwrap();
     assert_eq!(o.left(), 0x00, "write lands despite the slot select");
-    assert_eq!(b.cart.sound_levels(), (0.0, 1.0), "only the right DAC still held");
+    assert_eq!(
+        b.cart.sound_levels(),
+        (0.0, 1.0),
+        "only the right DAC still held"
+    );
 }
 
 // ---- Real-ROM autostart integration ----------------------------------------------
@@ -155,9 +167,18 @@ const RIGHT_MARKER: u8 = 0x5A;
 /// `LDA #$A5 ; STA $FF7A ; LDA #$5A ; STA $FF7B ; BRA *`.
 fn marker_orch90() -> Orch90 {
     let program = [
-        0x86, LEFT_MARKER, 0xB7, 0xFF, 0x7A, // LDA #imm ; STA $FF7A
-        0x86, RIGHT_MARKER, 0xB7, 0xFF, 0x7B, // LDA #imm ; STA $FF7B
-        0x20, 0xFE, // BRA *
+        0x86,
+        LEFT_MARKER,
+        0xB7,
+        0xFF,
+        0x7A, // LDA #imm ; STA $FF7A
+        0x86,
+        RIGHT_MARKER,
+        0xB7,
+        0xFF,
+        0x7B, // LDA #imm ; STA $FF7B
+        0x20,
+        0xFE, // BRA *
     ];
     let mut image = vec![0u8; 8 * 1024];
     image[..program.len()].copy_from_slice(&program);

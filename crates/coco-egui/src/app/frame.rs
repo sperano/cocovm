@@ -48,7 +48,8 @@ impl CocoApp {
                 }
             }
             let sample_rate = self.machine.audio_sample_rate();
-            self.audio.push_samples(self.machine.take_audio(), sample_rate);
+            self.audio
+                .push_samples(self.machine.take_audio(), sample_rate);
             ctx.request_repaint();
         } else {
             self.last_update = None;

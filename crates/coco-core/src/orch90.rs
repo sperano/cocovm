@@ -100,6 +100,9 @@ impl Cartridge for Orch90 {
     /// left/right writes hard-pan and hold exactly between writes).
     fn sound_levels(&self) -> (f32, f32) {
         const DAC_MAX: f32 = u8::MAX as f32;
-        (f32::from(self.left) / DAC_MAX, f32::from(self.right) / DAC_MAX)
+        (
+            f32::from(self.left) / DAC_MAX,
+            f32::from(self.right) / DAC_MAX,
+        )
     }
 }

@@ -5,9 +5,9 @@
 
 use std::io::Read;
 
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 
 use crate::Machine;
 
@@ -48,7 +48,9 @@ pub fn save(machine: &Machine, media: &MediaRefs) -> Result<Vec<u8>, SnapshotErr
 
     let mut gz = GzEncoder::new(Vec::new(), Compression::default());
     std::io::Write::write_all(&mut gz, &cbor).map_err(|e| SnapshotError::Encode(e.to_string()))?;
-    let compressed = gz.finish().map_err(|e| SnapshotError::Encode(e.to_string()))?;
+    let compressed = gz
+        .finish()
+        .map_err(|e| SnapshotError::Encode(e.to_string()))?;
 
     let mut out = Vec::with_capacity(HEADER_LEN + compressed.len());
     out.extend_from_slice(CONTAINER_MAGIC);
@@ -102,10 +104,15 @@ fn parse_header(bytes: &[u8]) -> Result<Header<'_>, SnapshotError> {
 fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, SnapshotError> {
     let mut out = Vec::new();
     let mut limited = GzDecoder::new(bytes).take(MAX_PAYLOAD_BYTES);
-    limited.read_to_end(&mut out).map_err(|e| SnapshotError::Decode(e.to_string()))?;
+    limited
+        .read_to_end(&mut out)
+        .map_err(|e| SnapshotError::Decode(e.to_string()))?;
     if out.len() as u64 == MAX_PAYLOAD_BYTES {
         let mut probe = [0u8; 1];
-        let more = limited.into_inner().read(&mut probe).map_err(|e| SnapshotError::Decode(e.to_string()))?;
+        let more = limited
+            .into_inner()
+            .read(&mut probe)
+            .map_err(|e| SnapshotError::Decode(e.to_string()))?;
         if more > 0 {
             return Err(SnapshotError::InvalidPayload(
                 "payload exceeds MAX_PAYLOAD_BYTES".to_string(),
@@ -141,7 +148,10 @@ pub fn load(bytes: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     // [`MAX_PAYLOAD_BYTES`] cap is the second line of defense for the
     // schemas that DO proceed to decompression.
     if header.schema > SCHEMA_VERSION {
-        return Err(SnapshotError::SchemaTooNew { found: header.schema, current: SCHEMA_VERSION });
+        return Err(SnapshotError::SchemaTooNew {
+            found: header.schema,
+            current: SCHEMA_VERSION,
+        });
     }
     let cbor = gunzip(header.body)?;
     // `header.schema > SCHEMA_VERSION` already returned above, so only

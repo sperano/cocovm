@@ -64,7 +64,10 @@ fn media_with_disk_rom(disk_bytes: &[u8], disk_path: &str) -> MediaRefs {
             },
         }],
         disks: vec![
-            Some(MediaRef { path: PathBuf::from(disk_path), sha256: snapshot::sha256_hex(disk_bytes) }),
+            Some(MediaRef {
+                path: PathBuf::from(disk_path),
+                sha256: snapshot::sha256_hex(disk_bytes),
+            }),
             None,
             None,
             None,
@@ -78,7 +81,10 @@ fn missing_disk_source_is_missing_media_naming_the_disk_and_its_path() {
     let mut machine = boot_machine();
     let mut cart = DiskCart::new(load_disk_rom());
     let disk_bytes = vec![0u8; ONE_TRACK_BYTES];
-    cart.insert_disk(0, JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"));
+    cart.insert_disk(
+        0,
+        JVCDisk::from_bytes(disk_bytes.clone()).expect("build disk"),
+    );
     machine.insert_cartridge(cart);
 
     let disk_path = "my-floppy.jvc";
@@ -96,7 +102,9 @@ fn missing_disk_source_is_missing_media_naming_the_disk_and_its_path() {
     match err {
         SnapshotError::MissingMedia { descriptions } => {
             assert!(
-                descriptions.iter().any(|d| d.contains("floppy") && d.contains(disk_path)),
+                descriptions
+                    .iter()
+                    .any(|d| d.contains("floppy") && d.contains(disk_path)),
                 "descriptions {descriptions:?} should name the floppy and its path {disk_path:?}"
             );
         }
@@ -110,7 +118,10 @@ fn reattached_disk_with_different_geometry_is_a_media_shape_error() {
     let mut cart = DiskCart::new(load_disk_rom());
     // 35-track headerless image (default geometry).
     let original_bytes = vec![0u8; 35 * ONE_TRACK_BYTES];
-    cart.insert_disk(0, JVCDisk::from_bytes(original_bytes.clone()).expect("build disk"));
+    cart.insert_disk(
+        0,
+        JVCDisk::from_bytes(original_bytes.clone()).expect("build disk"),
+    );
     machine.insert_cartridge(cart);
 
     let media = media_with_disk_rom(&original_bytes, "shifted.jvc");
@@ -129,7 +140,10 @@ fn reattached_disk_with_different_geometry_is_a_media_shape_error() {
     let err = expect_err(snapshot::restore(payload, sources));
     match err {
         SnapshotError::MediaShape { role, detail } => {
-            assert!(role.contains("floppy") && role.contains("drive 0"), "role: {role:?}");
+            assert!(
+                role.contains("floppy") && role.contains("drive 0"),
+                "role: {role:?}"
+            );
             assert!(detail.contains("geometry"), "detail: {detail:?}");
         }
         other => panic!("expected MediaShape, got {other:?}"),

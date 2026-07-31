@@ -4,7 +4,7 @@
 
 use crate::config::MachineVariant;
 
-use super::{Machine, StepEvent, StepKind, CPU_HZ, FAST_TIMER_TICKS_PER_CPU_CYCLE};
+use super::{CPU_HZ, FAST_TIMER_TICKS_PER_CPU_CYCLE, Machine, StepEvent, StepKind};
 
 impl Machine {
     /// Run one video field's worth of emulation (`DESIGN.md` §4).
@@ -70,7 +70,10 @@ impl Machine {
                 } else {
                     false
                 };
-                return StepEvent { kind, field_complete };
+                return StepEvent {
+                    kind,
+                    field_complete,
+                };
             }
             // Degenerate zero-budget line (never reached for real timing): no
             // CPU unit to run — do the trailer and continue to the next line so
@@ -78,7 +81,10 @@ impl Machine {
             let field_complete = self.end_of_line();
             self.line_cycles_spent = 0;
             if field_complete {
-                return StepEvent { kind: StepKind::HaltCycle, field_complete: true };
+                return StepEvent {
+                    kind: StepKind::HaltCycle,
+                    field_complete: true,
+                };
             }
         }
     }

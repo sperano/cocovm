@@ -5,7 +5,7 @@
 //! row or operation family) so no single function has to hold the whole ISA
 //! in view at once.
 
-use crate::{cc, Bus, State, MC6809, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3};
+use crate::{Bus, MC6809, State, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3, cc};
 
 mod exec_data;
 
@@ -136,37 +136,146 @@ impl MC6809 {
             }
 
             // CMPD (result discarded)
-            0x83 => { let m = self.fetch_u16(bus);       self.sub16(self.d(), m); 5 }
-            0x93 => { let m = self.read_direct16(bus);   self.sub16(self.d(), m); 7 }
-            0xA3 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); self.sub16(self.d(), m); 7 + ic }
-            0xB3 => { let m = self.read_extended16(bus); self.sub16(self.d(), m); 8 }
+            0x83 => {
+                let m = self.fetch_u16(bus);
+                self.sub16(self.d(), m);
+                5
+            }
+            0x93 => {
+                let m = self.read_direct16(bus);
+                self.sub16(self.d(), m);
+                7
+            }
+            0xA3 => {
+                let (ea, ic) = self.ea_indexed(bus);
+                let m = bus.read_u16(ea);
+                self.sub16(self.d(), m);
+                7 + ic
+            }
+            0xB3 => {
+                let m = self.read_extended16(bus);
+                self.sub16(self.d(), m);
+                8
+            }
             // CMPY
-            0x8C => { let m = self.fetch_u16(bus);       self.sub16(self.y, m); 5 }
-            0x9C => { let m = self.read_direct16(bus);   self.sub16(self.y, m); 7 }
-            0xAC => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); self.sub16(self.y, m); 7 + ic }
-            0xBC => { let m = self.read_extended16(bus); self.sub16(self.y, m); 8 }
+            0x8C => {
+                let m = self.fetch_u16(bus);
+                self.sub16(self.y, m);
+                5
+            }
+            0x9C => {
+                let m = self.read_direct16(bus);
+                self.sub16(self.y, m);
+                7
+            }
+            0xAC => {
+                let (ea, ic) = self.ea_indexed(bus);
+                let m = bus.read_u16(ea);
+                self.sub16(self.y, m);
+                7 + ic
+            }
+            0xBC => {
+                let m = self.read_extended16(bus);
+                self.sub16(self.y, m);
+                8
+            }
 
             // LDY
-            0x8E => { let v = self.fetch_u16(bus);       self.y = v; self.set_nz16(v); 4 }
-            0x9E => { let v = self.read_direct16(bus);   self.y = v; self.set_nz16(v); 6 }
-            0xAE => { let (ea, ic) = self.ea_indexed(bus); let v = bus.read_u16(ea); self.y = v; self.set_nz16(v); 6 + ic }
-            0xBE => { let v = self.read_extended16(bus); self.y = v; self.set_nz16(v); 7 }
+            0x8E => {
+                let v = self.fetch_u16(bus);
+                self.y = v;
+                self.set_nz16(v);
+                4
+            }
+            0x9E => {
+                let v = self.read_direct16(bus);
+                self.y = v;
+                self.set_nz16(v);
+                6
+            }
+            0xAE => {
+                let (ea, ic) = self.ea_indexed(bus);
+                let v = bus.read_u16(ea);
+                self.y = v;
+                self.set_nz16(v);
+                6 + ic
+            }
+            0xBE => {
+                let v = self.read_extended16(bus);
+                self.y = v;
+                self.set_nz16(v);
+                7
+            }
             // STY
-            0x9F => { let ea = self.ea_direct(bus);      bus.write_u16(ea, self.y); self.set_nz16(self.y); 6 }
-            0xAF => { let (ea, ic) = self.ea_indexed(bus); bus.write_u16(ea, self.y); self.set_nz16(self.y); 6 + ic }
-            0xBF => { let ea = self.ea_extended(bus);    bus.write_u16(ea, self.y); self.set_nz16(self.y); 7 }
+            0x9F => {
+                let ea = self.ea_direct(bus);
+                bus.write_u16(ea, self.y);
+                self.set_nz16(self.y);
+                6
+            }
+            0xAF => {
+                let (ea, ic) = self.ea_indexed(bus);
+                bus.write_u16(ea, self.y);
+                self.set_nz16(self.y);
+                6 + ic
+            }
+            0xBF => {
+                let ea = self.ea_extended(bus);
+                bus.write_u16(ea, self.y);
+                self.set_nz16(self.y);
+                7
+            }
 
             // LDS
-            0xCE => { let v = self.fetch_u16(bus);       self.load_s(v); self.set_nz16(v); 4 }
-            0xDE => { let v = self.read_direct16(bus);   self.load_s(v); self.set_nz16(v); 6 }
-            0xEE => { let (ea, ic) = self.ea_indexed(bus); let v = bus.read_u16(ea); self.load_s(v); self.set_nz16(v); 6 + ic }
-            0xFE => { let v = self.read_extended16(bus); self.load_s(v); self.set_nz16(v); 7 }
+            0xCE => {
+                let v = self.fetch_u16(bus);
+                self.load_s(v);
+                self.set_nz16(v);
+                4
+            }
+            0xDE => {
+                let v = self.read_direct16(bus);
+                self.load_s(v);
+                self.set_nz16(v);
+                6
+            }
+            0xEE => {
+                let (ea, ic) = self.ea_indexed(bus);
+                let v = bus.read_u16(ea);
+                self.load_s(v);
+                self.set_nz16(v);
+                6 + ic
+            }
+            0xFE => {
+                let v = self.read_extended16(bus);
+                self.load_s(v);
+                self.set_nz16(v);
+                7
+            }
             // STS
-            0xDF => { let ea = self.ea_direct(bus);      bus.write_u16(ea, self.s); self.set_nz16(self.s); 6 }
-            0xEF => { let (ea, ic) = self.ea_indexed(bus); bus.write_u16(ea, self.s); self.set_nz16(self.s); 6 + ic }
-            0xFF => { let ea = self.ea_extended(bus);    bus.write_u16(ea, self.s); self.set_nz16(self.s); 7 }
+            0xDF => {
+                let ea = self.ea_direct(bus);
+                bus.write_u16(ea, self.s);
+                self.set_nz16(self.s);
+                6
+            }
+            0xEF => {
+                let (ea, ic) = self.ea_indexed(bus);
+                bus.write_u16(ea, self.s);
+                self.set_nz16(self.s);
+                6 + ic
+            }
+            0xFF => {
+                let ea = self.ea_extended(bus);
+                bus.write_u16(ea, self.s);
+                self.set_nz16(self.s);
+                7
+            }
 
-            0x3F => { self.take_interrupt(bus, VECTOR_SWI2, false, false, true); 20 } // SWI2
+            0x3F => {
+                self.take_interrupt(bus, VECTOR_SWI2, false, false, true);
+                20
+            } // SWI2
 
             _ => 2, // TODO: other $10-page opcodes
         }
@@ -177,17 +286,54 @@ impl MC6809 {
         let op2 = self.fetch_u8(bus);
         match op2 {
             // CMPU
-            0x83 => { let m = self.fetch_u16(bus);       self.sub16(self.u, m); 5 }
-            0x93 => { let m = self.read_direct16(bus);   self.sub16(self.u, m); 7 }
-            0xA3 => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); self.sub16(self.u, m); 7 + ic }
-            0xB3 => { let m = self.read_extended16(bus); self.sub16(self.u, m); 8 }
+            0x83 => {
+                let m = self.fetch_u16(bus);
+                self.sub16(self.u, m);
+                5
+            }
+            0x93 => {
+                let m = self.read_direct16(bus);
+                self.sub16(self.u, m);
+                7
+            }
+            0xA3 => {
+                let (ea, ic) = self.ea_indexed(bus);
+                let m = bus.read_u16(ea);
+                self.sub16(self.u, m);
+                7 + ic
+            }
+            0xB3 => {
+                let m = self.read_extended16(bus);
+                self.sub16(self.u, m);
+                8
+            }
             // CMPS
-            0x8C => { let m = self.fetch_u16(bus);       self.sub16(self.s, m); 5 }
-            0x9C => { let m = self.read_direct16(bus);   self.sub16(self.s, m); 7 }
-            0xAC => { let (ea, ic) = self.ea_indexed(bus); let m = bus.read_u16(ea); self.sub16(self.s, m); 7 + ic }
-            0xBC => { let m = self.read_extended16(bus); self.sub16(self.s, m); 8 }
+            0x8C => {
+                let m = self.fetch_u16(bus);
+                self.sub16(self.s, m);
+                5
+            }
+            0x9C => {
+                let m = self.read_direct16(bus);
+                self.sub16(self.s, m);
+                7
+            }
+            0xAC => {
+                let (ea, ic) = self.ea_indexed(bus);
+                let m = bus.read_u16(ea);
+                self.sub16(self.s, m);
+                7 + ic
+            }
+            0xBC => {
+                let m = self.read_extended16(bus);
+                self.sub16(self.s, m);
+                8
+            }
 
-            0x3F => { self.take_interrupt(bus, VECTOR_SWI3, false, false, true); 20 } // SWI3
+            0x3F => {
+                self.take_interrupt(bus, VECTOR_SWI3, false, false, true);
+                20
+            } // SWI3
 
             _ => 2, // TODO: other $11-page opcodes
         }
@@ -197,24 +343,69 @@ impl MC6809 {
     fn exec_control_transfer(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
         match opcode {
             // JMP — direct / indexed / extended
-            0x0E => { let ea = self.ea_direct(bus); self.pc = ea; 3 }
-            0x6E => { let (ea, ic) = self.ea_indexed(bus); self.pc = ea; 3 + ic }
-            0x7E => { let ea = self.ea_extended(bus); self.pc = ea; 4 }
+            0x0E => {
+                let ea = self.ea_direct(bus);
+                self.pc = ea;
+                3
+            }
+            0x6E => {
+                let (ea, ic) = self.ea_indexed(bus);
+                self.pc = ea;
+                3 + ic
+            }
+            0x7E => {
+                let ea = self.ea_extended(bus);
+                self.pc = ea;
+                4
+            }
 
             // JSR — push return address, then jump
-            0x9D => { let ea = self.ea_direct(bus); self.push16_s(bus, self.pc); self.pc = ea; 7 }
-            0xAD => { let (ea, ic) = self.ea_indexed(bus); self.push16_s(bus, self.pc); self.pc = ea; 7 + ic }
-            0xBD => { let ea = self.ea_extended(bus); self.push16_s(bus, self.pc); self.pc = ea; 8 }
+            0x9D => {
+                let ea = self.ea_direct(bus);
+                self.push16_s(bus, self.pc);
+                self.pc = ea;
+                7
+            }
+            0xAD => {
+                let (ea, ic) = self.ea_indexed(bus);
+                self.push16_s(bus, self.pc);
+                self.pc = ea;
+                7 + ic
+            }
+            0xBD => {
+                let ea = self.ea_extended(bus);
+                self.push16_s(bus, self.pc);
+                self.pc = ea;
+                8
+            }
 
             // BSR / LBSR — relative branch to subroutine
-            0x8D => { let offset = self.fetch_u8(bus) as i8 as i16 as u16; self.push16_s(bus, self.pc); self.pc = self.pc.wrapping_add(offset); 7 }
-            0x17 => { let offset = self.fetch_u16(bus); self.push16_s(bus, self.pc); self.pc = self.pc.wrapping_add(offset); 9 }
+            0x8D => {
+                let offset = self.fetch_u8(bus) as i8 as i16 as u16;
+                self.push16_s(bus, self.pc);
+                self.pc = self.pc.wrapping_add(offset);
+                7
+            }
+            0x17 => {
+                let offset = self.fetch_u16(bus);
+                self.push16_s(bus, self.pc);
+                self.pc = self.pc.wrapping_add(offset);
+                9
+            }
 
             // RTS — pull return address
-            0x39 => { self.pc = self.pull16_s(bus); 5 }
+            0x39 => {
+                self.pc = self.pull16_s(bus);
+                5
+            }
 
             // TFR / EXG
-            0x1F => { let pb = self.fetch_u8(bus); let v = self.tfr_value(pb >> 4, pb & 0x0F); self.reg_write(pb & 0x0F, v); 6 }
+            0x1F => {
+                let pb = self.fetch_u8(bus);
+                let v = self.tfr_value(pb >> 4, pb & 0x0F);
+                self.reg_write(pb & 0x0F, v);
+                6
+            }
             0x1E => {
                 let pb = self.fetch_u8(bus);
                 let (r0, r1) = (pb >> 4, pb & 0x0F);
@@ -226,10 +417,22 @@ impl MC6809 {
             }
 
             // PSHS / PULS / PSHU / PULU
-            0x34 => { let mask = self.fetch_u8(bus); self.psh(bus, mask, true) }
-            0x36 => { let mask = self.fetch_u8(bus); self.psh(bus, mask, false) }
-            0x35 => { let mask = self.fetch_u8(bus); self.pul(bus, mask, true) }
-            0x37 => { let mask = self.fetch_u8(bus); self.pul(bus, mask, false) }
+            0x34 => {
+                let mask = self.fetch_u8(bus);
+                self.psh(bus, mask, true)
+            }
+            0x36 => {
+                let mask = self.fetch_u8(bus);
+                self.psh(bus, mask, false)
+            }
+            0x35 => {
+                let mask = self.fetch_u8(bus);
+                self.pul(bus, mask, true)
+            }
+            0x37 => {
+                let mask = self.fetch_u8(bus);
+                self.pul(bus, mask, false)
+            }
 
             _ => unreachable!("exec_control_transfer called for opcode {opcode:#04X}"),
         }
@@ -238,16 +441,29 @@ impl MC6809 {
     /// ORCC / ANDCC / SEX / ABX / MUL / DAA.
     fn exec_misc_inherent(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
         match opcode {
-            0x1A => { let m = self.fetch_u8(bus); self.cc |= m; 3 }  // ORCC #i8
-            0x1C => { let m = self.fetch_u8(bus); self.cc &= m; 3 }  // ANDCC #i8
-            0x1D => { // SEX — sign-extend B into A; N,Z from D, V unaffected
+            0x1A => {
+                let m = self.fetch_u8(bus);
+                self.cc |= m;
+                3
+            } // ORCC #i8
+            0x1C => {
+                let m = self.fetch_u8(bus);
+                self.cc &= m;
+                3
+            } // ANDCC #i8
+            0x1D => {
+                // SEX — sign-extend B into A; N,Z from D, V unaffected
                 self.a = if self.b & 0x80 != 0 { 0xFF } else { 0x00 };
                 let d = self.d();
                 self.set_nz16_only(d);
                 2
             }
-            0x3A => { self.x = self.x.wrapping_add(self.b as u16); 3 } // ABX (B unsigned)
-            0x3D => { // MUL — D = A*B unsigned; Z from result, C = bit 7 of B
+            0x3A => {
+                self.x = self.x.wrapping_add(self.b as u16);
+                3
+            } // ABX (B unsigned)
+            0x3D => {
+                // MUL — D = A*B unsigned; Z from result, C = bit 7 of B
                 let product = self.a as u16 * self.b as u16;
                 self.set_d(product);
                 self.set_z16(product);
@@ -263,8 +479,12 @@ impl MC6809 {
     /// SWI / RTI / CWAI / SYNC.
     fn exec_interrupt_halt(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
         match opcode {
-            0x3F => { self.take_interrupt(bus, VECTOR_SWI, true, true, true); 19 }  // SWI
-            0x3B => { // RTI — pull CC, then full frame if E set else PC only
+            0x3F => {
+                self.take_interrupt(bus, VECTOR_SWI, true, true, true);
+                19
+            } // SWI
+            0x3B => {
+                // RTI — pull CC, then full frame if E set else PC only
                 self.pul(bus, 0x01, true);
                 if self.cc & cc::ENTIRE != 0 {
                     self.pul(bus, 0xFE, true);
@@ -274,7 +494,8 @@ impl MC6809 {
                     6
                 }
             }
-            0x3C => { // CWAI — clear CC bits, stack full frame, then halt
+            0x3C => {
+                // CWAI — clear CC bits, stack full frame, then halt
                 let m = self.fetch_u8(bus);
                 self.cc &= m;
                 self.cc |= cc::ENTIRE;
@@ -282,7 +503,10 @@ impl MC6809 {
                 self.state = State::Waiting;
                 22
             }
-            0x13 => { self.state = State::Syncing; 2 } // SYNC — halt until interrupt
+            0x13 => {
+                self.state = State::Syncing;
+                2
+            } // SYNC — halt until interrupt
 
             _ => unreachable!("exec_interrupt_halt called for opcode {opcode:#04X}"),
         }

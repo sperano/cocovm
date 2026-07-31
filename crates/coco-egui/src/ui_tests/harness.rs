@@ -57,7 +57,10 @@ pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>,
 
 /// [`click`] with the secondary button — opens the machine-list rows'
 /// context menu.
-pub(super) fn right_click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
+pub(super) fn right_click<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    label: &str,
+) {
     harness.get_by_label(label).hover();
     harness.step();
     harness.get_by_label(label).click_secondary();
@@ -84,7 +87,10 @@ pub(super) fn click_modifiers<S: 'static>(
 /// [`click`] matching by substring — for widgets whose accessible label
 /// carries decoration beyond the visible caption, like submenu buttons'
 /// trailing arrow ("MultiPak Interface ⏵", "Slot 1 ⏵").
-pub(super) fn click_containing<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
+pub(super) fn click_containing<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    label: &str,
+) {
     harness.get_by_label_contains(label).hover();
     harness.step();
     harness.get_by_label_contains(label).click();
@@ -133,7 +139,10 @@ pub(super) fn select_combo_at<S: 'static>(
 /// Lowest-on-screen widget labelled `label` — the open-menu copy of a label
 /// the toolbar shows too ("Reset"): the menu popup hangs below the toolbar
 /// row.
-pub(super) fn lowest_by_label<'t>(harness: &'t AppHarness, label: &'t str) -> egui_kittest::Node<'t> {
+pub(super) fn lowest_by_label<'t>(
+    harness: &'t AppHarness,
+    label: &'t str,
+) -> egui_kittest::Node<'t> {
     harness
         .get_all_by_label(label)
         .max_by(|a, b| a.rect().min.y.total_cmp(&b.rect().min.y))
@@ -142,7 +151,10 @@ pub(super) fn lowest_by_label<'t>(harness: &'t AppHarness, label: &'t str) -> eg
 
 /// Topmost widget labelled `label` — e.g. the right stick's copy of a source
 /// label the Joysticks menu lists once per stick.
-pub(super) fn topmost_by_label<'t>(harness: &'t AppHarness, label: &'t str) -> egui_kittest::Node<'t> {
+pub(super) fn topmost_by_label<'t>(
+    harness: &'t AppHarness,
+    label: &'t str,
+) -> egui_kittest::Node<'t> {
     harness
         .get_all_by_label(label)
         .min_by(|a, b| a.rect().min.y.total_cmp(&b.rect().min.y))
@@ -222,6 +234,9 @@ pub(super) fn manager_harness_with_artifacts(
 /// where a status word like "Running" is deliberately shown twice at once
 /// (the list row's `weak()` copy and the detail pane header's `strong()`
 /// copy, both driven by `manager::vm_status_label`).
-pub(super) fn label_exists<S: 'static>(harness: &egui_kittest::Harness<'static, S>, label: &str) -> bool {
+pub(super) fn label_exists<S: 'static>(
+    harness: &egui_kittest::Harness<'static, S>,
+    label: &str,
+) -> bool {
     harness.get_all_by_label(label).next().is_some()
 }

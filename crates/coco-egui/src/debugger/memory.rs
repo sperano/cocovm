@@ -1,11 +1,11 @@
 //! Memory panel: the Logical/Physical toggle, the hex+ASCII grid (with
 //! watchpoint highlighting), and the watchpoint list underneath it.
 
-use coco_core::config::BLOCK_SIZE;
 use coco_core::Machine;
+use coco_core::config::BLOCK_SIZE;
 use eframe::egui;
 
-use super::{parse_addr, parse_addr_u32, ascii_char, DebuggerPanel, MemoryView};
+use super::{DebuggerPanel, MemoryView, ascii_char, parse_addr, parse_addr_u32};
 
 /// Memory grid dimensions (bytes per row × rows shown per frame).
 const MEM_COLS: usize = 16;
@@ -51,12 +51,14 @@ impl DebuggerPanel {
             .id_salt("dbg_mem_scroll")
             .max_height(320.0)
             .show(ui, |ui| {
-                egui::Grid::new("dbg_mem_grid").striped(true).show(ui, |ui| {
-                    for row in 0..MEM_ROWS {
-                        self.memory_row_ui(ui, machine, row, editable);
-                        ui.end_row();
-                    }
-                });
+                egui::Grid::new("dbg_mem_grid")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for row in 0..MEM_ROWS {
+                            self.memory_row_ui(ui, machine, row, editable);
+                            ui.end_row();
+                        }
+                    });
             });
         ui.separator();
         self.watchpoints_ui(ui);
@@ -65,7 +67,13 @@ impl DebuggerPanel {
     /// One row of the Memory grid: the row's base address, `MEM_COLS` editable
     /// hex byte cells, then the ASCII rendering. Split out of
     /// [`Self::memory_ui`] purely to keep that function's nesting readable.
-    fn memory_row_ui(&mut self, ui: &mut egui::Ui, machine: &mut Machine, row: usize, editable: bool) {
+    fn memory_row_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        machine: &mut Machine,
+        row: usize,
+        editable: bool,
+    ) {
         let logical = self.mem_view == MemoryView::Logical;
         let row_addr_logical = self.mem_addr.wrapping_add((row * MEM_COLS) as u16);
         let ram_len = machine.bus.ram.len().max(1);
@@ -122,7 +130,8 @@ impl DebuggerPanel {
             if ui.button("Add").clicked()
                 && let Some(addr) = parse_addr(&self.watch_goto_text)
             {
-                self.core.add_watchpoint(addr, self.watch_read, self.watch_write);
+                self.core
+                    .add_watchpoint(addr, self.watch_read, self.watch_write);
             }
         });
         let watches: Vec<(u16, bool, bool, bool, u64)> = self

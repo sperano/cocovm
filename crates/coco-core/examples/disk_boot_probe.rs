@@ -60,7 +60,9 @@ fn parse_args() -> (String, Vec<String>, u32) {
     while let Some(arg) = args.next() {
         if arg == "--fields" {
             let value = args.next().expect("--fields requires a value");
-            command_fields = value.parse().unwrap_or_else(|e| panic!("--fields value {value:?}: {e}"));
+            command_fields = value
+                .parse()
+                .unwrap_or_else(|e| panic!("--fields value {value:?}: {e}"));
         } else {
             commands.push(arg);
         }

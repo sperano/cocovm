@@ -27,21 +27,22 @@ pub(crate) fn setup_logging() {
 
 pub(crate) fn banner() {
     let sep = "─".repeat(76);
-    println!("{}{}{}\n{} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {}\n{}{}{}",
-            "╭".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "╮".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
-             "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
-             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
-             "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
-             "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "╰".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
-             "╯".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+    println!(
+        "{}{}{}\n{} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {}\n{}{}{}",
+        "╭".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "╮".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
+        "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
+        "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
+        "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
+        "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "╰".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "╯".if_supports_color(Stream::Stdout, |v| v.dimmed()),
     );
 }
 
@@ -103,12 +104,19 @@ pub(crate) fn log_renderer_info(cc: &eframe::CreationContext<'_>) {
     #[cfg(feature = "wgpu")]
     if let Some(render_state) = cc.wgpu_render_state.as_ref() {
         let info = render_state.adapter.get_info();
-        println!("Renderer: {:?} on {} ({:?}).", info.backend, info.name, info.device_type);
+        println!(
+            "Renderer: {:?} on {} ({:?}).",
+            info.backend, info.name, info.device_type
+        );
         return;
     }
     if let Some(gl) = cc.gl.as_ref() {
         use eframe::glow::HasContext as _;
-        let api = if gl.version().is_embedded { "OpenGL ES" } else { "OpenGL" };
+        let api = if gl.version().is_embedded {
+            "OpenGL ES"
+        } else {
+            "OpenGL"
+        };
         // Safety: eframe made this context current on this thread for the
         // duration of the creation closure, and VERSION/RENDERER are valid
         // `glGetString` enums.

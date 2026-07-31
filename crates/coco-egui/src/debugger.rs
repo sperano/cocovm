@@ -194,7 +194,10 @@ impl DebuggerPanel {
     /// control.
     fn step_in(machine: &mut Machine) {
         for _ in 0..MAX_RAW_STEPS {
-            if matches!(machine.step_instruction().kind, StepKind::Instruction { .. }) {
+            if matches!(
+                machine.step_instruction().kind,
+                StepKind::Instruction { .. }
+            ) {
                 return;
             }
         }

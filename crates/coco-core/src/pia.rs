@@ -52,7 +52,13 @@ pub struct PIAPort {
 impl Default for PIAPort {
     fn default() -> Self {
         // Idle input pins float high on the CoCo (keyboard rows read $FF = no key).
-        Self { output: 0, ddr: 0, control: 0, input: 0xFF, c1_level: true }
+        Self {
+            output: 0,
+            ddr: 0,
+            control: 0,
+            input: 0xFF,
+            c1_level: true,
+        }
     }
 }
 

@@ -32,7 +32,8 @@ pub(crate) const TOAST_SECS: f64 = 4.0;
 
 /// Physical keys `slot` (0-based) binds to: `Num1`/`Num2`/`Num3` for the
 /// three [`QUICK_SLOTS`].
-const QUICK_SLOT_KEYS: [egui::Key; QUICK_SLOTS] = [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3];
+const QUICK_SLOT_KEYS: [egui::Key; QUICK_SLOTS] =
+    [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3];
 
 /// COMMAND+SHIFT+`<n>` quick-saves state slot `slot` — the SHIFTed sibling
 /// of [`load_slot_shortcut`]'s COMMAND+`<n>`. Checked against every existing
@@ -54,10 +55,12 @@ pub(crate) fn load_slot_shortcut(slot: usize) -> egui::KeyboardShortcut {
 /// quick-slot chord, formatted per-platform (⌘ on macOS, Ctrl elsewhere) via
 /// [`egui::Context::format_shortcut`].
 pub(crate) fn slot_shortcuts_hint(ctx: &egui::Context) -> String {
-    let loads: Vec<String> =
-        (0..QUICK_SLOTS).map(|s| ctx.format_shortcut(&load_slot_shortcut(s))).collect();
-    let saves: Vec<String> =
-        (0..QUICK_SLOTS).map(|s| ctx.format_shortcut(&save_slot_shortcut(s))).collect();
+    let loads: Vec<String> = (0..QUICK_SLOTS)
+        .map(|s| ctx.format_shortcut(&load_slot_shortcut(s)))
+        .collect();
+    let saves: Vec<String> = (0..QUICK_SLOTS)
+        .map(|s| ctx.format_shortcut(&save_slot_shortcut(s)))
+        .collect();
     format!(
         "{}: quick-load state slot 1/2/3   ·   {}: quick-save",
         loads.join(" / "),
@@ -126,8 +129,9 @@ impl CocoApp {
         }
         if ui.button("Load State…").clicked() {
             ui.close();
-            if let Some(path) =
-                rfd::FileDialog::new().add_filter("CoCo save state", &["ccstate"]).pick_file()
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("CoCo save state", &["ccstate"])
+                .pick_file()
             {
                 match self.load_state_from(&path) {
                     Ok(()) => self.refresh_window_title(ui.ctx()),
