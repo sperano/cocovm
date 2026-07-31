@@ -8,19 +8,19 @@
 //! print are absent from egui's bundled fonts, so they rendered as blank tofu
 //! boxes — a legend nobody could read, which is the bug this rewrite fixes.
 
+mod layout;
+
 use eframe::egui;
 
 use coco_core::MachineVariant;
 
 use layout::{Cap, Dir, Legend, Slot};
 
-mod layout;
-
-/// Pitch of one key unit and of one row — cap plus the channel around it,
-/// since `layout`'s widths are pitches. A cap is wide enough for "BREAK" at
-/// [`WORD_SIZE`] and tall enough to stack the shifted legend, the CoCo
-/// legend, and the host key without them touching.
+/// Width of one key unit, cap plus the channel around it — `layout`'s widths
+/// are pitches, not cap sizes. Wide enough for "BREAK" at [`WORD_SIZE`].
 const UNIT_W: f32 = 40.0;
+/// Pitch of one row, likewise: tall enough to stack the shifted legend, the
+/// CoCo legend, and the host key without them touching.
 const ROW_H: f32 = 48.0;
 
 /// Half the dark channel between neighbouring caps: each cap is painted
@@ -30,24 +30,30 @@ const CAP_INSET: f32 = 1.5;
 
 /// Inset from a cap's edge to its topmost/bottommost text.
 const CAP_PAD: f32 = 3.0;
+/// Corner rounding of a cap.
 const CAP_RADIUS: f32 = 4.0;
 
-/// Legend sizes: the CoCo key is the cap's identity, the shifted legend and
-/// the host key are annotations on it.
+// Legend sizes: the CoCo key is the cap's identity, the shifted legend and
+// the host key are annotations on it.
+/// The CoCo legend, when it is a single character.
 const MAIN_SIZE: f32 = 17.0;
 /// Word legends (BREAK, ENTER, SHIFT…) are printed smaller so they fit the
 /// cap, exactly as they are on the real keyboard.
 const WORD_SIZE: f32 = 9.5;
+/// The shifted legend above the CoCo one.
 const SHIFT_SIZE: f32 = 9.0;
+/// The host key beneath it.
 const HOST_SIZE: f32 = 9.5;
 
 /// A legend of more than this many characters is a word, not a character.
 const WORD_LEN: usize = 2;
 
-/// Height reserved under the CoCo legend for the host-key line.
+/// Heights reserved above and below the CoCo legend for the two annotation
+/// lines, when a cap has them.
+const SHIFT_LINE_H: f32 = SHIFT_SIZE + 1.0;
 const HOST_LINE_H: f32 = HOST_SIZE + 2.0;
 
-/// Side of an arrow cap's painted triangle.
+/// Side of the square an arrow cap's painted triangle is inscribed in.
 const ARROW_SIZE: f32 = 13.0;
 
 /// Vertical breathing room around the keyboard block.
@@ -78,20 +84,20 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: Mac
                 }
             });
             ui.add_space(SECTION_GAP);
-            footer(ui, ctx, symbolic);
+            footer(ui, ctx);
         });
 }
 
 fn header(ui: &mut egui::Ui, symbolic: bool) {
     if symbolic {
         ui.label("Symbolic mode — type the character you want; it is sent as typed.");
+        // The keys that produce no text are the exception, and they are the
+        // ones people come to this window for, so name them rather than
+        // leaving "you don't have to match the layout" to overreach.
         ui.label(
-            egui::RichText::new(
-                "The keys below are the CoCo's own; in this mode you don't have to \
-                 match its layout.",
-            )
-            .small()
-            .weak(),
+            egui::RichText::new("green = still pressed by position, even in this mode")
+                .small()
+                .color(HOST_GREEN),
         );
     } else {
         ui.label("Positional mode — each host key acts as the CoCo key in the same slot.");
@@ -103,15 +109,16 @@ fn header(ui: &mut egui::Ui, symbolic: bool) {
     }
 }
 
-fn footer(ui: &mut egui::Ui, ctx: &egui::Context, symbolic: bool) {
-    if !symbolic {
-        // Spelled out, not drawn as arrows: this line is plain text, and the
-        // arrow codepoints would come out as tofu boxes here (module doc).
-        ui.small(
-            "Left arrow also on Backspace   ·   CLEAR also on `   ·   \
-             F1/F2 may need Fn on a laptop",
-        );
-    }
+fn footer(ui: &mut egui::Ui, ctx: &egui::Context) {
+    // Unconditional: every key named here is one symbolic mode still routes
+    // by position, so the advice holds in both modes.
+    //
+    // Spelled out, not drawn as arrows: this line is plain text, and the
+    // arrow codepoints would come out as tofu boxes here (module doc).
+    ui.small(
+        "Left arrow also on Backspace   ·   CLEAR also on `   ·   \
+         F1/F2 may need Fn on a laptop",
+    );
     ui.small("F12: positional / symbolic   ·   F10: show/hide this help");
     ui.small(crate::save_state::slot_shortcuts_hint(ctx));
 }
@@ -132,28 +139,32 @@ fn draw_row(ui: &mut egui::Ui, row: layout::Row, symbolic: bool) {
 /// bottom. The two-legend stack mirrors the real caps, which print the
 /// shifted character above the unshifted one.
 fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
-    let pitch = egui::vec2(cap.width * UNIT_W, ROW_H);
-    let (slot, _) = ui.allocate_exact_size(pitch, egui::Sense::hover());
+    let pitch_rect = ui.allocate_space(egui::vec2(cap.width * UNIT_W, ROW_H)).1;
     // The cap is drawn inside its pitch, leaving the channel that separates
     // it from its neighbours (see `CAP_INSET`).
-    let rect = slot.shrink(CAP_INSET);
+    let rect = pitch_rect.shrink(CAP_INSET);
     let visuals = ui.visuals();
     let painter = ui.painter();
     painter.rect_filled(rect, CAP_RADIUS, visuals.widgets.inactive.bg_fill);
 
     let cx = rect.center().x;
-    let shift_h = if cap.shift.is_empty() {
-        0.0
+    let shift_h = if cap.shift.is_some() {
+        SHIFT_LINE_H
     } else {
-        SHIFT_SIZE + 1.0
+        0.0
     };
-    let host_h = if symbolic { 0.0 } else { HOST_LINE_H };
+    // Symbolic mode drops the host line, except on the keys it still routes
+    // by position — those are reached the same way in either mode, so hiding
+    // what to press for them would leave exactly the keys hardest to guess
+    // (BREAK, CLEAR, the arrows, F1/F2) unlabelled.
+    let show_host = !symbolic || cap.routed_in_symbolic();
+    let host_h = if show_host { HOST_LINE_H } else { 0.0 };
 
-    if !cap.shift.is_empty() {
+    if let Some(shift) = cap.shift {
         painter.text(
             egui::pos2(cx, rect.top() + CAP_PAD),
             egui::Align2::CENTER_TOP,
-            cap.shift,
+            shift,
             egui::FontId::proportional(SHIFT_SIZE),
             visuals.weak_text_color(),
         );
@@ -183,7 +194,7 @@ fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
         Legend::Arrow(dir) => paint_arrow(painter, middle, dir, visuals.strong_text_color()),
     }
 
-    if !symbolic {
+    if show_host {
         painter.text(
             egui::pos2(cx, rect.bottom() - CAP_PAD),
             egui::Align2::CENTER_BOTTOM,

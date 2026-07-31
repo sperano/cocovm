@@ -5,6 +5,18 @@
 
 use super::*;
 
+const ALL_VARIANTS: [MachineVariant; 3] = [
+    MachineVariant::Coco1,
+    MachineVariant::Coco2,
+    MachineVariant::Coco3,
+];
+
+/// Tolerance for comparing positions in key units. Deliberately absolute
+/// rather than an ULP count: the sums being compared accumulate through
+/// different sequences of the same constants, and anything below a
+/// hundredth of a key unit is far under one screen pixel anyway.
+const UNIT_TOLERANCE: f32 = 1e-3;
+
 /// Every cap of a layout, in row order.
 fn caps(rows: &[Row]) -> Vec<Cap> {
     rows.iter()
@@ -17,21 +29,17 @@ fn caps(rows: &[Row]) -> Vec<Cap> {
         .collect()
 }
 
-/// Where `row` places the arrow pointing `dir`: its left edge and centre, in
-/// key units from the row's left edge.
-fn arrow_span(row: Row, dir: Dir) -> (f32, f32) {
+/// Where `row` centres the arrow pointing `dir`, in key units from the row's
+/// left edge.
+fn arrow_center(row: Row, dir: Dir) -> f32 {
     let mut x = 0.0;
     for slot in slots(row) {
-        let width = match slot {
-            Slot::Cap(cap) => cap.width,
-            Slot::Gap(units) => *units,
-        };
         if let Slot::Cap(cap) = slot
             && matches!(cap.main, Legend::Arrow(d) if d == dir)
         {
-            return (x, x + width / 2.0);
+            return x + slot.units() / 2.0;
         }
-        x += width;
+        x += slot.units();
     }
     panic!("row has no {dir:?} arrow");
 }
@@ -110,58 +118,74 @@ fn the_arrows_form_a_diamond() {
     // the numbers.
     for variant in [MachineVariant::Coco2, MachineVariant::Coco3] {
         let rows = rows(variant);
-        let (_, up) = arrow_span(rows[1], Dir::Up);
-        let (_, left) = arrow_span(rows[2], Dir::Left);
-        let (_, right) = arrow_span(rows[2], Dir::Right);
-        let (_, down) = arrow_span(rows[3], Dir::Down);
+        // Row 2 carries Up, row 3 Left and Right, row 4 Down.
+        let up = arrow_center(rows[1], Dir::Up);
+        let left = arrow_center(rows[2], Dir::Left);
+        let right = arrow_center(rows[2], Dir::Right);
+        let down = arrow_center(rows[3], Dir::Down);
         assert!(
-            (up - down).abs() < f32::EPSILON * 8.0,
+            (up - down).abs() < UNIT_TOLERANCE,
             "{variant:?}: up at {up} and down at {down} must share a column"
         );
         let midpoint = (left + right) / 2.0;
         assert!(
-            (up - midpoint).abs() < 0.01,
+            (up - midpoint).abs() < UNIT_TOLERANCE,
             "{variant:?}: up/down at {up} must sit between left ({left}) and right ({right})"
         );
     }
 }
 
 #[test]
-fn the_widest_row_is_the_one_the_window_is_sized_from() {
-    // Every row has to fit the window, so nothing may exceed the width the
-    // window reserves.
-    for variant in [
-        MachineVariant::Coco1,
-        MachineVariant::Coco2,
-        MachineVariant::Coco3,
-    ] {
-        let widest = width_units(variant);
-        for (index, row) in rows(variant).iter().enumerate() {
-            assert!(
-                row_units(row) <= widest + f32::EPSILON,
-                "{variant:?} row {index} is wider than the window"
-            );
-        }
-    }
+fn the_keyboard_fits_the_window_it_is_drawn_in() {
+    // `width_units` is the max over the rows, so comparing rows against it
+    // proves nothing. The falsifiable claim is the absolute one: the widest
+    // keyboard has to fit the VM window it is drawn over, whose content is
+    // FB_H * SCALE * TARGET_ASPECT wide (`manager::vm_windows`).
+    let window_w = coco_core::video::FB_H as f32 * crate::SCALE * crate::TARGET_ASPECT;
+    let widest = width_units(MachineVariant::Coco3) * super::super::UNIT_W;
+    assert!(
+        widest < window_w,
+        "the CoCo 3 keyboard is {widest} px wide but the window is only {window_w} px"
+    );
+    // And the CoCo 1/2's keyboard, having fewer keys, must be the narrower.
+    assert!(width_units(MachineVariant::Coco1) < width_units(MachineVariant::Coco3));
 }
 
 #[test]
 fn every_cap_names_a_host_key() {
     // A blank host line is the bug this window exists to avoid: the user has
     // to be able to read what to press for every single key.
-    for variant in [
-        MachineVariant::Coco1,
-        MachineVariant::Coco2,
-        MachineVariant::Coco3,
-    ] {
+    for variant in ALL_VARIANTS {
         for cap in caps(rows(variant)) {
             assert!(
                 !cap.host.trim().is_empty(),
-                "{:?} has a cap with no host key",
-                variant
+                "{variant:?} has a cap with no host key"
             );
         }
     }
+}
+
+#[test]
+fn symbolic_mode_keeps_the_host_key_on_exactly_the_positional_keys() {
+    // These are the keys `keymap::control_key_pos` routes by position even in
+    // symbolic mode, because they produce no text — and so the only ones
+    // whose host key is still worth showing there. Getting this set wrong is
+    // what would leave a user unable to find BREAK or CLEAR again.
+    let mut routed: Vec<&str> = caps(COCO3_ROWS)
+        .iter()
+        .filter(|cap| cap.routed_in_symbolic())
+        .map(|cap| match cap.main {
+            Legend::Text(text) => text,
+            Legend::Arrow(_) => "arrow",
+        })
+        .collect();
+    routed.sort_unstable();
+    assert_eq!(
+        routed,
+        vec![
+            "BREAK", "CLEAR", "ENTER", "F1", "F2", "arrow", "arrow", "arrow", "arrow"
+        ]
+    );
 }
 
 #[test]
@@ -170,17 +194,18 @@ fn shifted_legends_follow_the_coco_not_the_host_keyboard() {
     // exactly the ones a reader would otherwise assume (Service Manual
     // Figure 5-9): the CoCo shifts 2 to a double quote, : to *, - to =, and
     // ; to +, and its 0 has no shifted legend at all.
+    let coco3 = caps(COCO3_ROWS);
     let by_legend = |want: &str| -> Cap {
-        *caps(COCO3_ROWS)
+        *coco3
             .iter()
             .find(|cap| legend(cap) == Some(want))
             .expect("cap present")
     };
-    assert_eq!(by_legend("2").shift, "\"");
-    assert_eq!(by_legend(":").shift, "*");
-    assert_eq!(by_legend("-").shift, "=");
-    assert_eq!(by_legend(";").shift, "+");
-    assert_eq!(by_legend("0").shift, "");
+    assert_eq!(by_legend("2").shift, Some("\""));
+    assert_eq!(by_legend(":").shift, Some("*"));
+    assert_eq!(by_legend("-").shift, Some("="));
+    assert_eq!(by_legend(";").shift, Some("+"));
+    assert_eq!(by_legend("0").shift, None);
     // And the host key for a CoCo cap is its *position*, not its character:
     // CoCo ':' sits where the host's '-' is.
     assert_eq!(by_legend(":").host, "-");

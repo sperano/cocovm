@@ -50,54 +50,86 @@ pub(super) enum Dir {
 }
 
 /// The CoCo legend printed on a cap.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum Legend {
     Text(&'static str),
     Arrow(Dir),
 }
 
 /// One key cap of the drawn keyboard.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Cap {
     /// The unshifted CoCo legend.
     pub(super) main: Legend,
-    /// The legend printed above `main`, reached by holding SHIFT. Empty for
+    /// The legend printed above `main`, reached by holding SHIFT. `None` for
     /// caps that have none — every letter, plus the CoCo's `0` and `@`.
-    pub(super) shift: &'static str,
+    pub(super) shift: Option<&'static str>,
     /// Host key to press for this CoCo key in positional mode.
     pub(super) host: &'static str,
     /// Cap width in key units (1.0 is one letter cap).
     pub(super) width: f32,
 }
 
-/// A row is a left-to-right run of caps and the gaps between clusters.
-#[derive(Clone, Copy)]
+impl Cap {
+    /// Whether symbolic mode still reaches this key by *position* rather than
+    /// by the character typed. These are exactly the keys
+    /// [`crate::keymap::control_key_pos`] routes — the ones that produce no
+    /// text — so they are the only caps whose host key still means anything
+    /// once the user switches modes, and the only ones that keep their host
+    /// line there. Everything else in symbolic mode is reached by typing the
+    /// character, which is what the mode is for.
+    pub(super) fn routed_in_symbolic(&self) -> bool {
+        match self.main {
+            Legend::Arrow(_) => true,
+            Legend::Text(text) => matches!(text, "ENTER" | "CLEAR" | "BREAK" | "F1" | "F2"),
+        }
+    }
+}
+
+/// One position along a row: either a cap or the empty space before the next
+/// cluster.
+#[derive(Clone, Copy, Debug)]
 pub(super) enum Slot {
     Cap(Cap),
     Gap(f32),
 }
 
-/// A row is a sequence of segments rather than one flat list, so the number
-/// row's twelve character caps can be shared between the two layouts while
-/// each closes with its own gap before BREAK.
-pub(super) type Row = &'static [&'static [Slot]];
+impl Slot {
+    /// How much of the row this slot consumes, in key units.
+    pub(super) const fn units(self) -> f32 {
+        match self {
+            Slot::Cap(cap) => cap.width,
+            Slot::Gap(units) => units,
+        }
+    }
+}
 
-/// Widths of the caps that carry a word rather than a character. ENTER is
-/// wider than CLEAR on the real keyboard, and that difference is what makes
-/// the arrow diamond line up: row 3 carries one letter fewer than row 2, so
-/// without it the two rows' right edges would not fall where Tandy's
-/// illustration puts them.
-const W_MOD: f32 = 1.2;
+/// A run of adjacent slots. Rows are built from these rather than written
+/// flat so the character caps can be shared between the two layouts while
+/// each row closes with its own variant-specific gap.
+pub(super) type Segment = &'static [Slot];
+
+/// One row of the keyboard, left to right.
+pub(super) type Row = &'static [Segment];
+
+// Widths of the caps that carry a word rather than a character. ENTER is
+// wider than CLEAR on the real keyboard, and that difference is what makes
+// the arrow diamond line up: row 3 carries one letter fewer than row 2, so
+// without it the two rows' right edges would not fall where Tandy's
+// illustration puts them.
+/// ALT, CTRL and BREAK — the narrower word caps.
+const W_WIDE: f32 = 1.2;
+/// Both SHIFTs, which are the same width as ALT and CTRL.
 const W_SHIFT: f32 = 1.2;
 const W_CLEAR: f32 = 1.4;
 const W_ENTER: f32 = 1.75;
 const W_SPACE: f32 = 9.0;
 
-/// Gaps that place the arrow diamond: Up and Down share one column centred
-/// between Left and Right. Each row's gap is whatever puts its own arrow in
-/// that column, so the values differ per row and per variant rather than
-/// being one shared "cluster gap". `layout_test.rs` checks the resulting
-/// geometry instead of trusting these numbers.
+// Gaps that place the arrow diamond: Up and Down share one column centred
+// between Left and Right. Each row's gap is whatever puts its own arrow in
+// that column, so the values differ per row and per variant rather than
+// being one shared "cluster gap". `layout_test.rs` checks the resulting
+// geometry instead of trusting these numbers.
 const COCO3_BREAK_GAP: f32 = 1.90;
 const COCO3_SIDE_ARROW_GAP: f32 = 0.15;
 const COCO3_DOWN_GAP: f32 = 1.20;
@@ -120,19 +152,22 @@ const ALT_HOST: &str = if cfg!(target_os = "macos") {
 /// MacBook among them — have no Home key at all.
 const CLEAR_HOST: &str = "Home  `";
 
+/// A character cap. An empty `shift` is written as `""` to keep the tables
+/// below readable; it is stored as `None`.
 const fn key(main: &'static str, shift: &'static str, host: &'static str) -> Slot {
     Slot::Cap(Cap {
         main: Legend::Text(main),
-        shift,
+        shift: if shift.is_empty() { None } else { Some(shift) },
         host,
         width: 1.0,
     })
 }
 
+/// A cap legended with a word rather than a character; none of them shift.
 const fn word(main: &'static str, host: &'static str, width: f32) -> Slot {
     Slot::Cap(Cap {
         main: Legend::Text(main),
-        shift: "",
+        shift: None,
         host,
         width,
     })
@@ -141,7 +176,7 @@ const fn word(main: &'static str, host: &'static str, width: f32) -> Slot {
 const fn arrow(dir: Dir, host: &'static str) -> Slot {
     Slot::Cap(Cap {
         main: Legend::Arrow(dir),
-        shift: "",
+        shift: None,
         host,
         width: 1.0,
     })
@@ -166,7 +201,7 @@ const DIGIT_CAPS: &[Slot] = &[
 ];
 
 /// BREAK sits alone at the far right of the number row.
-const BREAK_CAP: Slot = word("BREAK", "Esc", W_MOD);
+const BREAK_CAP: Slot = word("BREAK", "Esc", W_WIDE);
 
 /// Q through @ — row 2's character caps, identical on both machines.
 const QWERTY_CAPS: &[Slot] = &[
@@ -219,12 +254,12 @@ const SPACE_CAP: Slot = word("SPACE", "Space", W_SPACE);
 const COCO3_ROWS: &[Row] = &[
     &[DIGIT_CAPS, &[Slot::Gap(COCO3_BREAK_GAP), BREAK_CAP]],
     &[
-        &[word("ALT", ALT_HOST, W_MOD)],
+        &[word("ALT", ALT_HOST, W_WIDE)],
         QWERTY_CAPS,
         &[CLEAR_CAP, arrow(Dir::Up, "Up")],
     ],
     &[
-        &[word("CTRL", "Ctrl", W_MOD)],
+        &[word("CTRL", "Ctrl", W_WIDE)],
         HOME_CAPS,
         &[
             ENTER_CAP,
@@ -287,17 +322,12 @@ pub(super) fn rows(variant: MachineVariant) -> &'static [Row] {
 
 /// Every slot of a row, across its segments.
 pub(super) fn slots(row: Row) -> impl Iterator<Item = &'static Slot> {
-    row.iter().flat_map(|segment| segment.iter())
+    row.iter().copied().flatten()
 }
 
 /// How wide `row` is, in key units.
 pub(super) fn row_units(row: Row) -> f32 {
-    slots(row)
-        .map(|slot| match slot {
-            Slot::Cap(cap) => cap.width,
-            Slot::Gap(units) => *units,
-        })
-        .sum()
+    slots(row).map(|slot| slot.units()).sum()
 }
 
 /// Width of the widest row, which is what the window sizes itself from.
