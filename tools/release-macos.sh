@@ -78,11 +78,25 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
   <key>NSHumanReadableCopyright</key><string>GPL-3.0-or-later</string>
+  <key>CFBundleIconFile</key><string>cocovm</string>
 </dict>
 </plist>
 PLIST
 plutil -lint "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/cocovm"
+
+# Finder icon: .icns generated from the same 1024px art the running app
+# embeds for its Dock icon, so the two always match.
+ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
+ICONSET="$WORK/cocovm.iconset"
+mkdir "$ICONSET"
+for s in 16 32 128 256 512; do
+  sips -z "$s" "$s" "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}.png" > /dev/null
+  sips -z "$((s * 2))" "$((s * 2))" "$ICON_SRC" \
+    --out "$ICONSET/icon_${s}x${s}@2x.png" > /dev/null
+done
+mkdir -p "$APP/Contents/Resources"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/cocovm.icns"
 
 # Hardened runtime + secure timestamp are notarization requirements.
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
