@@ -49,7 +49,10 @@ fn transport_buttons_walk_the_three_states() {
     let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
     let mut harness =
         manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
-    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+    let state_file = artifacts
+        .path()
+        .join("dev-coco-3")
+        .join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
     assert!(harness.state().entries[0].vm.is_none());
@@ -60,7 +63,10 @@ fn transport_buttons_walk_the_three_states() {
     );
 
     click(&mut harness, "Start");
-    assert!(harness.state().entries[0].vm.is_some(), "Play must launch the VM");
+    assert!(
+        harness.state().entries[0].vm.is_some(),
+        "Play must launch the VM"
+    );
     assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
     assert!(label_exists(&harness, "Running"));
     // One more step so `step_emulation` (which uploads the framebuffer
@@ -68,7 +74,12 @@ fn transport_buttons_walk_the_three_states() {
     // thumbnail staying black: `draw_row_thumbnail` reads exactly this.
     harness.step();
     assert!(
-        harness.state().entries[0].vm.as_ref().unwrap().framebuffer_texture().is_some(),
+        harness.state().entries[0]
+            .vm
+            .as_ref()
+            .unwrap()
+            .framebuffer_texture()
+            .is_some(),
         "a running VM must have an uploaded framebuffer texture for the row thumbnail to show"
     );
 
@@ -83,12 +94,25 @@ fn transport_buttons_walk_the_three_states() {
     {
         let entry = &harness.state().entries[0];
         assert!(entry.suspended, "Suspend must mark the entry");
-        assert!(entry.vm.is_some(), "Suspend must NOT drop the VM (window stays open)");
-        assert!(!entry.vm.as_ref().unwrap().is_running(), "Suspend must pause emulation");
+        assert!(
+            entry.vm.is_some(),
+            "Suspend must NOT drop the VM (window stays open)"
+        );
+        assert!(
+            !entry.vm.as_ref().unwrap().is_running(),
+            "Suspend must pause emulation"
+        );
     }
-    assert!(state_file.is_file(), "Suspend must freeze the machine to disk");
     assert!(
-        artifacts.path().join("dev-coco-3").join("thumbnail.png").exists(),
+        state_file.is_file(),
+        "Suspend must freeze the machine to disk"
+    );
+    assert!(
+        artifacts
+            .path()
+            .join("dev-coco-3")
+            .join("thumbnail.png")
+            .exists(),
         "Suspend must capture the screen preview"
     );
     assert!(label_exists(&harness, "Suspended"));
@@ -101,18 +125,67 @@ fn transport_buttons_walk_the_three_states() {
     {
         let entry = &harness.state().entries[0];
         assert!(!entry.suspended);
-        assert!(entry.vm.as_ref().unwrap().is_running(), "Play must resume emulation");
+        assert!(
+            entry.vm.as_ref().unwrap().is_running(),
+            "Play must resume emulation"
+        );
     }
-    assert!(!state_file.exists(), "resuming must discard the frozen state");
+    assert!(
+        !state_file.exists(),
+        "resuming must discard the frozen state"
+    );
     assert!(label_exists(&harness, "Running"));
 
     click(&mut harness, "Stop");
-    assert!(harness.state().entries[0].vm.is_none(), "Stop must drop the VM");
+    assert!(
+        harness.state().entries[0].vm.is_none(),
+        "Stop must drop the VM"
+    );
     assert!(label_exists(&harness, "Powered Off"));
     harness.step();
     assert!(
         harness.state().entries[0].thumbnail.is_none(),
         "a powered-off row must not show a saved preview — it is black"
+    );
+}
+
+/// The VM window's own Suspend tile (`chrome::toolbar`) sets
+/// `CocoApp::pending_suspend`, but the tile itself is unreachable under
+/// kittest — a VM viewport degrades to the embedded display-only fallback
+/// in headless tests (`draw_running_vms`'s `ViewportClass::Embedded`
+/// branch), which draws no chrome at all. So this drives the plumbing
+/// directly: setting the flag and stepping one frame must produce exactly
+/// the suspend `transport_buttons_walk_the_three_states` gets from clicking
+/// the manager toolbar's own Suspend tile.
+#[test]
+fn vm_window_pending_suspend_flag_suspends_through_the_manager() {
+    let artifacts = TempDir::new("suspend-pending-flag");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts
+        .path()
+        .join("dev-coco-3")
+        .join("suspended.ccstate");
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, "Start");
+
+    harness.state_mut().entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .pending_suspend = true;
+    harness.step();
+
+    let entry = &harness.state().entries[0];
+    assert!(
+        entry.suspended,
+        "the pending_suspend flag must suspend the entry"
+    );
+    assert!(
+        state_file.is_file(),
+        "suspend must freeze the machine to disk"
     );
 }
 
@@ -129,11 +202,20 @@ fn resume_after_window_close_restores_the_frozen_state() {
     let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
     let mut harness =
         manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
-    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+    let state_file = artifacts
+        .path()
+        .join("dev-coco-3")
+        .join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, "Start");
-    harness.state_mut().entries[0].vm.as_mut().unwrap().machine.bus.ram[MARKER_ADDR] = MARKER;
+    harness.state_mut().entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .machine
+        .bus
+        .ram[MARKER_ADDR] = MARKER;
 
     click(&mut harness, "Suspend");
     assert!(state_file.is_file());
@@ -143,7 +225,10 @@ fn resume_after_window_close_restores_the_frozen_state() {
     // frozen state stays.
     harness.state_mut().close_vm_window(0);
     assert!(harness.state().entries[0].vm.is_none());
-    assert!(state_file.is_file(), "closing a suspended window must keep the frozen state");
+    assert!(
+        state_file.is_file(),
+        "closing a suspended window must keep the frozen state"
+    );
     harness.step();
     assert!(label_exists(&harness, "Suspended"));
     assert!(
@@ -160,7 +245,10 @@ fn resume_after_window_close_restores_the_frozen_state() {
         vm.machine.bus.ram[MARKER_ADDR], MARKER,
         "resume must restore the frozen machine, not boot a fresh one"
     );
-    assert!(!state_file.exists(), "resuming must discard the frozen state");
+    assert!(
+        !state_file.exists(),
+        "resuming must discard the frozen state"
+    );
 }
 
 /// A `suspended.ccstate` already on disk at startup seeds the entry as
@@ -186,18 +274,30 @@ fn startup_seeds_suspended_from_disk_and_failed_resume_keeps_it() {
 
     click(&mut harness, "Start");
     let entry = &harness.state().entries[0];
-    assert!(entry.suspended, "a failed restore must keep the machine Suspended");
-    assert!(entry.vm.is_none(), "a failed restore must not leave a half-launched VM");
+    assert!(
+        entry.suspended,
+        "a failed restore must keep the machine Suspended"
+    );
+    assert!(
+        entry.vm.is_none(),
+        "a failed restore must not leave a half-launched VM"
+    );
     // Specifically the snapshot decoder's own error — proving the relaunch
     // succeeded and it was the *restore* that failed, not `start_vm` (which
     // would record a ROM/media error instead and pass these asserts for
     // the wrong reason).
     assert!(
-        entry.launch_error.as_deref().is_some_and(|e| e.contains("not a CoCo save state")),
+        entry
+            .launch_error
+            .as_deref()
+            .is_some_and(|e| e.contains("not a CoCo save state")),
         "the restore failure must reach the detail pane; got {:?}",
         entry.launch_error
     );
-    assert!(state_file.is_file(), "the frozen state must survive a failed resume");
+    assert!(
+        state_file.is_file(),
+        "the frozen state must survive a failed resume"
+    );
 }
 
 /// A suspended VM's window is display-only all the way down to *input*:
@@ -218,12 +318,20 @@ fn suspended_vm_window_ignores_input() {
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, "Start");
     click(&mut harness, "Suspend");
-    let before = harness.state().entries[0].vm.as_ref().unwrap().aspect_correct;
+    let before = harness.state().entries[0]
+        .vm
+        .as_ref()
+        .unwrap()
+        .aspect_correct;
 
     harness.key_press(egui::Key::F9);
     harness.step();
     assert_eq!(
-        harness.state().entries[0].vm.as_ref().unwrap().aspect_correct,
+        harness.state().entries[0]
+            .vm
+            .as_ref()
+            .unwrap()
+            .aspect_correct,
         before,
         "a suspended VM's window must not process app shortcuts"
     );
@@ -232,7 +340,11 @@ fn suspended_vm_window_ignores_input() {
     harness.key_press(egui::Key::F9);
     harness.step();
     assert_eq!(
-        harness.state().entries[0].vm.as_ref().unwrap().aspect_correct,
+        harness.state().entries[0]
+            .vm
+            .as_ref()
+            .unwrap()
+            .aspect_correct,
         !before,
         "a resumed VM's window processes shortcuts again"
     );
@@ -250,7 +362,10 @@ fn window_close_powers_off_running_but_preserves_suspended() {
     let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
     let mut harness =
         manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
-    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+    let state_file = artifacts
+        .path()
+        .join("dev-coco-3")
+        .join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, "Start");
@@ -266,7 +381,10 @@ fn window_close_powers_off_running_but_preserves_suspended() {
     assert!(state_file.is_file());
     click(&mut harness, "Close window");
     let entry = &harness.state().entries[0];
-    assert!(entry.vm.is_none(), "closing a suspended VM's window drops the VM object");
+    assert!(
+        entry.vm.is_none(),
+        "closing a suspended VM's window drops the VM object"
+    );
     assert!(entry.suspended, "…but the machine stays Suspended");
     assert!(state_file.is_file(), "…and the frozen state survives");
 }
@@ -279,7 +397,10 @@ fn stop_on_suspended_machine_discards_the_frozen_state() {
     let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
     let mut harness =
         manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
-    let state_file = artifacts.path().join("dev-coco-3").join("suspended.ccstate");
+    let state_file = artifacts
+        .path()
+        .join("dev-coco-3")
+        .join("suspended.ccstate");
 
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, "Start");

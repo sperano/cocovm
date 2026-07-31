@@ -4,12 +4,13 @@
 
 use eframe::egui;
 
-use crate::new_vm;
 use super::bulk::BulkAction;
 use super::{
-    vm_status_label, CocoApp, ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, SUSPEND_HOVER,
-    THUMBNAIL_ASPECT, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL,
+    CocoApp, ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, THUMBNAIL_ASPECT, THUMBNAIL_CORNER_RADIUS,
+    THUMBNAIL_PLACEHOLDER_FILL, vm_status_label,
 };
+use crate::new_vm;
+use crate::widgets::SUSPEND_HOVER;
 
 impl ManagerApp {
     /// Left panel: the machine list. `ui.set_min_width` (rather than only
@@ -180,7 +181,10 @@ impl ManagerApp {
             let suspended = self.entries[i].suspended;
             let running = self.entries[i].is_running();
             let start_label = if suspended { "Resume" } else { "Start" };
-            if ui.add_enabled(!running, egui::Button::new(start_label)).clicked() {
+            if ui
+                .add_enabled(!running, egui::Button::new(start_label))
+                .clicked()
+            {
                 if suspended {
                     self.resume_vm(i);
                 } else {
@@ -198,13 +202,19 @@ impl ManagerApp {
                 self.select_row_on_error(i);
                 ui.close();
             }
-            if ui.add_enabled(running, egui::Button::new("Reset")).clicked() {
+            if ui
+                .add_enabled(running, egui::Button::new("Reset"))
+                .clicked()
+            {
                 if let Some(vm) = self.entries[i].vm.as_mut() {
                     vm.machine.reset();
                 }
                 ui.close();
             }
-            if ui.add_enabled(self.entries[i].is_alive(), egui::Button::new("Stop")).clicked() {
+            if ui
+                .add_enabled(self.entries[i].is_alive(), egui::Button::new("Stop"))
+                .clicked()
+            {
                 self.stop_vm(i);
                 ui.close();
             }
@@ -235,7 +245,10 @@ impl ManagerApp {
         let flags = self.bulk_flags(&indices);
         let mut picked = None;
         response.context_menu(|ui| {
-            if ui.add_enabled(flags.any_startable, egui::Button::new("Start")).clicked() {
+            if ui
+                .add_enabled(flags.any_startable, egui::Button::new("Start"))
+                .clicked()
+            {
                 picked = Some(BulkAction::Play);
                 ui.close();
             }
@@ -247,17 +260,26 @@ impl ManagerApp {
                 picked = Some(BulkAction::Suspend);
                 ui.close();
             }
-            if ui.add_enabled(flags.any_running, egui::Button::new("Reset")).clicked() {
+            if ui
+                .add_enabled(flags.any_running, egui::Button::new("Reset"))
+                .clicked()
+            {
                 picked = Some(BulkAction::Reset);
                 ui.close();
             }
-            if ui.add_enabled(flags.any_alive, egui::Button::new("Stop")).clicked() {
+            if ui
+                .add_enabled(flags.any_alive, egui::Button::new("Stop"))
+                .clicked()
+            {
                 picked = Some(BulkAction::Stop);
                 ui.close();
             }
             ui.separator();
             if ui.button("Delete…").clicked() {
-                self.pending_delete = indices.iter().map(|&i| self.entries[i].slug.clone()).collect();
+                self.pending_delete = indices
+                    .iter()
+                    .map(|&i| self.entries[i].slug.clone())
+                    .collect();
                 ui.close();
             }
         });
