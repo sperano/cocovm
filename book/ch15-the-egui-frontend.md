@@ -2477,8 +2477,10 @@ reel's angle arithmetic — no `Machine`, no window), the
 paper-render/paper-export tests (pure rasterization, no emulated printer
 attached), the `kbd_help::layout` tests that hold the drawn keyboard to the
 key counts Tandy's service manuals state (57 for the CoCo 3, 53 for the
-CoCo 1/2) and to the arrow diamond's geometry — table data, so no window
-and no machine — and — importantly for this chapter — every
+CoCo 1/2) and to each machine's own arrow placement — the CoCo 3's diamond,
+the CoCo 1/2's arrows at the row ends, a distinction the identical key
+counts cannot catch — table data, so no window and no machine — and —
+importantly for this chapter — every
 `ui_tests::manager_window::*`, `ui_tests::manager_peripherals::*`, and
 `ui_tests::manager_selection::*` test, including the exact
 delete-confirmation test walked in §15.8 above. If you

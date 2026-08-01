@@ -75,7 +75,7 @@ fn coco3_matches_the_service_manual_key_count() {
 fn coco12_matches_the_service_manual_key_count() {
     // "Keyboard: 53-key microprocessor scanned matrix" — Color Computer 2
     // NTSC Service Manual, §2.3 Technical.
-    assert_eq!(row_counts(COCO12_ROWS), vec![13, 13, 13, 13, 1]);
+    assert_eq!(row_counts(COCO12_ROWS), vec![13, 14, 13, 12, 1]);
     assert_eq!(caps(COCO12_ROWS).len(), 53);
 }
 
@@ -93,45 +93,70 @@ fn the_coco3_added_exactly_alt_ctrl_and_the_function_keys() {
     assert_eq!(added, vec!["ALT", "CTRL", "F1", "F2"]);
 }
 
-#[test]
-fn both_layouts_keep_the_arrow_diamond() {
-    // Up closes row 2, left and right close row 3, down closes row 4 — the
-    // diamond the CoCo 3 introduced and which the CoCo 1/2 also arranges
-    // down the right-hand edge.
-    for rows in [COCO3_ROWS, COCO12_ROWS] {
-        let arrows: Vec<Dir> = caps(rows)
-            .iter()
-            .filter_map(|cap| match cap.main {
-                Legend::Arrow(dir) => Some(dir),
-                Legend::Text(_) => None,
-            })
-            .collect();
-        assert_eq!(arrows, vec![Dir::Up, Dir::Left, Dir::Right, Dir::Down]);
-    }
+/// The legend of the cap at `index` in `row`, for pinning a key to a slot.
+fn cap_at(row: Row, index: usize) -> Cap {
+    caps(&[row])[index]
+}
+
+fn is_arrow(cap: &Cap, dir: Dir) -> bool {
+    matches!(cap.main, Legend::Arrow(d) if d == dir)
 }
 
 #[test]
-fn the_arrows_form_a_diamond() {
+fn the_coco3_arranges_its_arrows_in_a_diamond() {
     // Tandy's illustration puts Up and Down in one column centred between
-    // Left and Right. The gap constants that achieve that are fiddly and
-    // per-variant, so assert the geometry they produce rather than trusting
-    // the numbers.
-    for variant in [MachineVariant::Coco2, MachineVariant::Coco3] {
-        let rows = rows(variant);
-        // Row 2 carries Up, row 3 Left and Right, row 4 Down.
-        let up = arrow_center(rows[1], Dir::Up);
-        let left = arrow_center(rows[2], Dir::Left);
-        let right = arrow_center(rows[2], Dir::Right);
-        let down = arrow_center(rows[3], Dir::Down);
-        assert!(
-            (up - down).abs() < UNIT_TOLERANCE,
-            "{variant:?}: up at {up} and down at {down} must share a column"
-        );
-        let midpoint = (left + right) / 2.0;
-        assert!(
-            (up - midpoint).abs() < UNIT_TOLERANCE,
-            "{variant:?}: up/down at {up} must sit between left ({left}) and right ({right})"
-        );
+    // Left and Right. The gap constants that achieve that are fiddly, so
+    // assert the geometry they produce rather than trusting the numbers.
+    let rows = rows(MachineVariant::Coco3);
+    let up = arrow_center(rows[1], Dir::Up);
+    let left = arrow_center(rows[2], Dir::Left);
+    let right = arrow_center(rows[2], Dir::Right);
+    let down = arrow_center(rows[3], Dir::Down);
+    assert!(
+        (up - down).abs() < UNIT_TOLERANCE,
+        "up at {up} and down at {down} must share a column"
+    );
+    let midpoint = (left + right) / 2.0;
+    assert!(
+        (up - midpoint).abs() < UNIT_TOLERANCE,
+        "up/down at {up} must sit between left ({left}) and right ({right})"
+    );
+}
+
+#[test]
+fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
+    // The CoCo 1/2 has no diamond: Up and Down open rows 2 and 3 — the slots
+    // the CoCo 3 gives to ALT and CTRL — and Left/Right close row 2. This is
+    // the placement the 53-key count cannot pin down, and getting it wrong is
+    // exactly the bug this test exists to prevent, so assert the slots.
+    let rows = rows(MachineVariant::Coco2);
+    assert!(is_arrow(&cap_at(rows[1], 0), Dir::Up), "Up opens row 2");
+    assert!(is_arrow(&cap_at(rows[2], 0), Dir::Down), "Down opens row 3");
+
+    let row2 = caps(&[rows[1]]);
+    assert!(
+        is_arrow(&row2[row2.len() - 2], Dir::Left) && is_arrow(&row2[row2.len() - 1], Dir::Right),
+        "Left and Right close row 2, after @"
+    );
+
+    // ENTER and CLEAR share the end of row 3, CLEAR outermost — where the
+    // CoCo 3 instead ends row 2 with CLEAR and row 3 with ENTER.
+    let row3 = caps(&[rows[2]]);
+    assert_eq!(legend(&row3[row3.len() - 2]), Some("ENTER"));
+    assert_eq!(legend(&row3[row3.len() - 1]), Some("CLEAR"));
+
+    // And no arrow anywhere near the CoCo 3's diamond column.
+    for (index, row) in rows.iter().enumerate() {
+        let arrows = caps(&[row])
+            .iter()
+            .filter(|cap| matches!(cap.main, Legend::Arrow(_)))
+            .count();
+        let expected = match index {
+            1 => 3, // Up, Left, Right
+            2 => 1, // Down
+            _ => 0,
+        };
+        assert_eq!(arrows, expected, "row {index} arrow count");
     }
 }
 

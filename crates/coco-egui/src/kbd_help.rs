@@ -84,7 +84,7 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: Mac
                 }
             });
             ui.add_space(SECTION_GAP);
-            footer(ui, ctx);
+            footer(ui, ctx, variant);
         });
 }
 
@@ -109,16 +109,18 @@ fn header(ui: &mut egui::Ui, symbolic: bool) {
     }
 }
 
-fn footer(ui: &mut egui::Ui, ctx: &egui::Context) {
-    // Unconditional: every key named here is one symbolic mode still routes
-    // by position, so the advice holds in both modes.
+fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
+    // Shown in both modes: every key named here is one symbolic mode still
+    // routes by position, so the advice holds either way. The F-key clause is
+    // CoCo 3-only — the CoCo 1/2 has no F1/F2 to press.
     //
     // Spelled out, not drawn as arrows: this line is plain text, and the
     // arrow codepoints would come out as tofu boxes here (module doc).
-    ui.small(
-        "Left arrow also on Backspace   ·   CLEAR also on `   ·   \
-         F1/F2 may need Fn on a laptop",
-    );
+    let mut hints = String::from("Left arrow also on Backspace   ·   CLEAR also on `");
+    if variant == MachineVariant::Coco3 {
+        hints.push_str("   ·   F1/F2 may need Fn on a laptop");
+    }
+    ui.small(hints);
     ui.small("F12: positional / symbolic   ·   F10: show/hide this help");
     ui.small(crate::save_state::slot_shortcuts_hint(ctx));
 }
