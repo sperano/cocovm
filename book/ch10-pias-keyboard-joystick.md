@@ -1754,7 +1754,7 @@ physical key directly to the CoCo matrix position that sits in roughly the
 same place on a real CoCo keyboard. Press the key labeled `-` on a modern
 keyboard and what reaches the matrix is whatever CoCo key occupies that
 physical spot, regardless of what symbol either keyboard prints there.
-[`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L4-L43):
+[`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L4-L75):
 
 ```rust
 /// Positional map: host physical key → CoCo matrix position (MAME's layout).
@@ -1781,6 +1781,18 @@ keyboard, not the symbols printed on a modern one. It's the right mode for
 games, which overwhelmingly read the matrix directly and bypass BASIC's
 symbolic layer entirely; a game that checks for "the key at row 3, column
 3" wants that key to be where the CoCo's arrow key was.
+
+Matching a real CoCo's layout does assume the host has the keys to match it
+with, and one binding in the table has since had to admit otherwise: CLEAR
+is reached by `Home`, which laptop keyboards — every MacBook among them —
+simply do not have, leaving that CoCo key unreachable on the machines many
+readers will run this on. The fix is a second arm on the same position,
+`K::Home | K::Backtick => kbd::CLEAR`, choosing backquote because the CoCo
+keyboard has no backquote of its own and so nothing else competes for it.
+That is worth noticing as a general shape rather than a one-off patch: a
+positional map is a claim about two keyboards, and it breaks whenever the
+host stops holding up its end. Exercise 10.5 has you make the same kind of
+addition for a different key.
 
 Positional mode has one more responsibility that the table doesn't show.
 Modifiers are not matrix positions in egui's event model but a separate

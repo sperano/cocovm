@@ -244,7 +244,8 @@ function whose body is a list of conditions:
     pub(crate) fn windows_ui(&mut self, ctx: &egui::Context) {
         if self.show_kbd_help {
             let symbolic = self.kb_mode == KbMode::Symbolic;
-            kbd_help::window(ctx, &mut self.show_kbd_help, symbolic);
+            let variant = self.machine.config.variant;
+            kbd_help::window(ctx, &mut self.show_kbd_help, symbolic, variant);
         }
         if self.show_about {
             about::window(ctx, &mut self.show_about);
@@ -263,7 +264,7 @@ function whose body is a list of conditions:
     }
 ```
 
-([`crates/coco-egui/src/chrome/windows.rs:5-24`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/windows.rs#L5-L24).) The Orchestra-90
+([`crates/coco-egui/src/chrome/windows.rs:5-26`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/windows.rs#L5-L26).) The Orchestra-90
 branch is the one worth dwelling on, because it demonstrates a subtlety
 that catches people. It requires two conditions: the user has asked for the
 meters *and* an Orchestra-90 cartridge is actually present in the machine
@@ -1164,7 +1165,7 @@ ROM's own scan-and-shift logic (Chapter 10) decides it. The map is a flat
         K::Slash => (5, 7),      // CoCo '/'
 ```
 
-([`crates/coco-egui/src/keymap.rs:5-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L5-L43).) Read those comments
+([`crates/coco-egui/src/keymap.rs:11-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L11-L75).) Read those comments
 carefully: pressing the host's minus key produces a colon on the CoCo,
 because the CoCo's colon key sits where a US keyboard's minus key sits.
 That looks like a bug and is the whole point. Positional mode promises
@@ -1260,7 +1261,7 @@ key at all are silently skipped rather than substituted — pasting text
 containing an em-dash or an accented vowel drops those characters instead
 of injecting something wrong. Keys that produce no text, like Enter and the
 arrows, do not arrive as `Event::Text` and so are handled separately by
-`control_key_pos` ([`crates/coco-egui/src/keymap.rs:46-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L46-L61)), a second,
+`control_key_pos` ([`crates/coco-egui/src/keymap.rs:77-93`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L77-L93)), a second,
 much smaller map for exactly that set.
 
 Switching between the two modes is not free, and the code that does it is
@@ -1314,7 +1315,7 @@ pub(crate) fn is_joystick_key(key: egui::Key) -> bool {
 }
 ```
 
-([`crates/coco-egui/src/keymap.rs:63-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L63-L76).) You saw it guarded by
+([`crates/coco-egui/src/keymap.rs:95-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs#L95-L108).) You saw it guarded by
 `if joystick_keys && is_joystick_key(...) { continue; }` in both
 `drive_matrix_positionally` and `queue_symbolic_taps` above. One predicate,
 two call sites, one rule: whoever owns a physical key owns it exclusively.
@@ -2437,7 +2438,7 @@ and local-only by the project's own convention. This is what happened, not
 a sanitized summary:
 
 ```
-test result: FAILED. 123 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 134 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 **All 37 failures are ROM-required, and only ROM-required.** Every one
@@ -2468,7 +2469,7 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
-**The 123 passing tests are the whole non-ROM surface of the crate**: the
+**The 134 passing tests are the whole non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
@@ -2478,13 +2479,18 @@ in-use-flag tests, the status-icon tests (`ActivityLatch`'s
 prime/hold/decrease rules driven through an injected clock, and the tape
 reel's angle arithmetic — no `Machine`, no window), the
 paper-render/paper-export tests (pure rasterization, no emulated printer
-attached), and — importantly for this chapter — every
+attached), the `kbd_help::layout` tests that hold the drawn keyboard to the
+key counts Tandy's service manuals state (57 for the CoCo 3, 53 for the
+CoCo 1/2) and to each machine's own arrow placement — the CoCo 3's diamond,
+the CoCo 1/2's arrows at the row ends, a distinction the identical key
+counts cannot catch — table data, so no window and no machine — and —
+importantly for this chapter — every
 `ui_tests::manager_window::*`, `ui_tests::manager_peripherals::*`, and
 `ui_tests::manager_selection::*` test, including the exact
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 160 tests should pass.
+checkout with real ROMs present, all 171 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a

@@ -2,6 +2,12 @@ use coco_core::keyboard::{self as kbd, Pos};
 use eframe::egui;
 
 /// Positional map: host physical key → CoCo matrix position (MAME's layout).
+///
+/// One binding is ours rather than MAME's: CLEAR answers to the backquote key
+/// as well as Home. Home is the traditional mapping and stays, but laptop
+/// keyboards — every MacBook among them — have no Home key at all, which left
+/// CLEAR unreachable there. Backquote is free for the purpose: the CoCo
+/// keyboard has no backquote, so nothing else wants it.
 pub(crate) fn key_to_pos(key: egui::Key) -> Option<Pos> {
     use egui::Key as K;
     let pos = match key {
@@ -60,7 +66,7 @@ pub(crate) fn key_to_pos(key: egui::Key) -> Option<Pos> {
         K::ArrowLeft => kbd::LEFT,
         K::ArrowRight => kbd::RIGHT,
         K::Escape => kbd::BREAK,
-        K::Home => kbd::CLEAR,
+        K::Home | K::Backtick => kbd::CLEAR,
         K::F1 => kbd::F1,
         K::F2 => kbd::F2,
         _ => return None,
@@ -78,7 +84,7 @@ pub(crate) fn control_key_pos(key: egui::Key) -> Option<Pos> {
         K::ArrowDown => kbd::DOWN,
         K::ArrowRight => kbd::RIGHT,
         K::Escape => kbd::BREAK,
-        K::Home => kbd::CLEAR,
+        K::Home | K::Backtick => kbd::CLEAR,
         K::F1 => kbd::F1,
         K::F2 => kbd::F2,
         _ => return None,
@@ -106,3 +112,7 @@ pub(crate) fn is_joystick_key(key: egui::Key) -> bool {
 // rule) without pulling a `clap` dependency into the core crate. Each gets a
 // plain string `value_parser` function instead — same shape, no mirror enum
 // (`docs/coco12-plan.md` Phase 5).
+
+#[cfg(test)]
+#[path = "keymap_test.rs"]
+mod tests;

@@ -5,7 +5,8 @@ impl CocoApp {
     pub(crate) fn windows_ui(&mut self, ctx: &egui::Context) {
         if self.show_kbd_help {
             let symbolic = self.kb_mode == KbMode::Symbolic;
-            kbd_help::window(ctx, &mut self.show_kbd_help, symbolic);
+            let variant = self.machine.config.variant;
+            kbd_help::window(ctx, &mut self.show_kbd_help, symbolic, variant);
         }
         if self.show_about {
             about::window(ctx, &mut self.show_about);
