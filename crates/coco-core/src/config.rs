@@ -20,6 +20,17 @@ pub enum MachineVariant {
     Coco3,
 }
 
+impl MachineVariant {
+    /// Every variant, oldest first — the order the UI offers them in. Kept
+    /// here beside the enum so a machine added later cannot be missed by a
+    /// caller that spelled the list out itself.
+    pub const ALL: [MachineVariant; 3] = [
+        MachineVariant::Coco1,
+        MachineVariant::Coco2,
+        MachineVariant::Coco3,
+    ];
+}
+
 /// Which VDG chip is installed — only meaningfully distinct on
 /// [`MachineVariant::Coco2`] (CoCo 1 always shipped the plain chip; CoCo 3
 /// uses the GIME's own character generator, not a real MC6847 at all).

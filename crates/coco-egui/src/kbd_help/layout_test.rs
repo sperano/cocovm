@@ -5,12 +5,6 @@
 
 use super::*;
 
-const ALL_VARIANTS: [MachineVariant; 3] = [
-    MachineVariant::Coco1,
-    MachineVariant::Coco2,
-    MachineVariant::Coco3,
-];
-
 /// Tolerance for comparing positions in key units. Deliberately absolute
 /// rather than an ULP count: the sums being compared accumulate through
 /// different sequences of the same constants, and anything below a
@@ -180,7 +174,7 @@ fn the_keyboard_fits_the_window_it_is_drawn_in() {
 fn every_cap_names_a_host_key() {
     // A blank host line is the bug this window exists to avoid: the user has
     // to be able to read what to press for every single key.
-    for variant in ALL_VARIANTS {
+    for variant in MachineVariant::ALL {
         for cap in caps(rows(variant)) {
             assert!(
                 !cap.host.trim().is_empty(),

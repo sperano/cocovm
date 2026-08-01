@@ -4,11 +4,7 @@ use super::*;
 /// choice lists and `constrain` exist precisely to guarantee this.
 #[test]
 fn every_selectable_config_validates() {
-    for variant in [
-        MachineVariant::Coco1,
-        MachineVariant::Coco2,
-        MachineVariant::Coco3,
-    ] {
+    for variant in MachineVariant::ALL {
         let videos: &[VideoStandard] = if variant == MachineVariant::Coco3 {
             &[VideoStandard::NTSC, VideoStandard::PAL]
         } else {

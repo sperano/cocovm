@@ -21,11 +21,7 @@ pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
     egui::ComboBox::from_id_salt((salt, "machine"))
         .selected_text(crate::machine_label(draft.variant))
         .show_ui(ui, |ui| {
-            for variant in [
-                MachineVariant::Coco1,
-                MachineVariant::Coco2,
-                MachineVariant::Coco3,
-            ] {
+            for variant in MachineVariant::ALL {
                 if ui
                     .selectable_value(&mut draft.variant, variant, crate::machine_label(variant))
                     .changed()
