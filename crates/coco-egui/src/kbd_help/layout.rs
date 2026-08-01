@@ -13,10 +13,9 @@
 //!   Manual* Figure 5-9 ("Keyboard Array"), the same matrix
 //!   [`coco_core::keyboard`]'s position constants encode.
 //! - Key counts check against the manuals' specification pages: 57 keys for
-//!   the CoCo 3 (13 + 14 + 14 + 13 + 3) and 53 for the CoCo 1/2
-//!   (13 + 13 + 13 + 13 + 1). `layout_test.rs` asserts both totals, so a typo
-//!   in this table fails the build rather than silently drawing a keyboard
-//!   Tandy never shipped.
+//!   the CoCo 3 (13 + 14 + 14 + 13 + 3). `layout_test.rs` asserts the totals
+//!   and the per-row counts, so a typo in this table fails the build rather
+//!   than silently drawing a keyboard Tandy never shipped.
 //!
 //! The **CoCo 1/2** plan is *not* the CoCo 3's minus four keys, and assuming
 //! it was is how this table got the arrows wrong once already — the key
@@ -122,38 +121,52 @@ pub(super) type Segment = &'static [Slot];
 /// One row of the keyboard, left to right.
 pub(super) type Row = &'static [Segment];
 
-// Widths of the caps that carry a word rather than a character. ENTER is
-// wider than CLEAR on the real keyboard, and that difference is what makes
-// the arrow diamond line up: row 3 carries one letter fewer than row 2, so
-// without it the two rows' right edges would not fall where Tandy's
-// illustration puts them.
-/// ALT, CTRL and BREAK — the narrower word caps.
-const W_WIDE: f32 = 1.2;
-/// Both SHIFTs, which are the same width as ALT and CTRL.
+// Cap widths, in key units. On both machines ALT/CTRL and the arrows are
+// plain single-width caps; only SHIFT, ENTER, CLEAR, BREAK and the space bar
+// are oversized, and by different amounts on the two keyboards.
+/// ALT and CTRL: single width, like the arrows that take those slots on the
+/// CoCo 1/2.
+const W_MODIFIER: f32 = 1.0;
 const W_SHIFT: f32 = 1.2;
-const W_CLEAR: f32 = 1.4;
-const W_ENTER: f32 = 1.75;
+const W_CLEAR: f32 = 1.15;
+const W_ENTER: f32 = 1.2;
+const W_BREAK: f32 = 1.15;
 const W_SPACE: f32 = 9.0;
-/// CoCo 1/2 proportions (see [`COCO12_ENTER_CAP`]).
+/// CoCo 1/2 proportions: its ENTER and CLEAR share the end of row 3, and its
+/// SHIFTs are visibly wider than the CoCo 3's.
 const W_COCO12_ENTER: f32 = 1.6;
-const W_COCO12_SHIFT: f32 = 1.5;
+const W_COCO12_CLEAR: f32 = 1.4;
+const W_COCO12_SHIFT: f32 = 1.45;
+
+// Row indents. Both keyboards are staggered like a typewriter rather than
+// stacked flush, so each row starts a fraction of a cap right of the one
+// above or below it — most visibly the number row, which sits about half a
+// cap right of the row under it, and the letter columns, which step right as
+// you go down (Q, then A, then Z). Measured off the same sources as the key
+// plans; without them the drawn keyboard reads as a grid again, which is the
+// complaint this window exists to answer.
+const COCO3_ROW1_INDENT: f32 = 0.46;
+const COCO3_ROW3_INDENT: f32 = 0.17;
+const COCO3_ROW4_INDENT: f32 = 0.50;
+const COCO12_ROW1_INDENT: f32 = 0.57;
+const COCO12_ROW3_INDENT: f32 = 0.20;
+const COCO12_ROW4_INDENT: f32 = 0.16;
 
 // Gaps that place the arrow diamond: Up and Down share one column centred
 // between Left and Right. Each row's gap is whatever puts its own arrow in
 // that column, so the values differ per row and per variant rather than
 // being one shared "cluster gap". `layout_test.rs` checks the resulting
 // geometry instead of trusting these numbers.
-const COCO3_BREAK_GAP: f32 = 1.90;
-const COCO3_SIDE_ARROW_GAP: f32 = 0.15;
-const COCO3_DOWN_GAP: f32 = 1.20;
-const COCO3_SPACE_INDENT: f32 = 2.90;
-const COCO3_FN_GAP: f32 = 1.20;
+const COCO3_BREAK_GAP: f32 = 1.04;
+const COCO3_SIDE_ARROW_GAP: f32 = 0.28;
+const COCO3_DOWN_GAP: f32 = 0.25;
+const COCO3_SPACE_INDENT: f32 = 3.00;
+const COCO3_FN_GAP: f32 = 0.65;
 // The CoCo 1/2 has no diamond to place: its arrows sit at the row ends (see
 // the layout table). These are plain alignment values — the number row is
 // indented half a cap relative to the rows below it, as on the real machine,
 // and BREAK follows the `-` cap after a narrow gap.
-const COCO12_ROW1_INDENT: f32 = 0.60;
-const COCO12_BREAK_GAP: f32 = 0.20;
+const COCO12_BREAK_GAP: f32 = 0.18;
 const COCO12_SPACE_INDENT: f32 = 3.20;
 
 /// macOS prints "option" on the key egui reports as Alt.
@@ -217,7 +230,7 @@ const DIGIT_CAPS: &[Slot] = &[
 ];
 
 /// BREAK sits alone at the far right of the number row.
-const BREAK_CAP: Slot = word("BREAK", "Esc", W_WIDE);
+const BREAK_CAP: Slot = word("BREAK", "Esc", W_BREAK);
 
 /// Q through @ — row 2's character caps, identical on both machines.
 const QWERTY_CAPS: &[Slot] = &[
@@ -266,21 +279,29 @@ const SHIFT_CAP: Slot = word("SHIFT", "Shift", W_SHIFT);
 const CLEAR_CAP: Slot = word("CLEAR", CLEAR_HOST, W_CLEAR);
 const ENTER_CAP: Slot = word("ENTER", "Return", W_ENTER);
 const SPACE_CAP: Slot = word("SPACE", "Space", W_SPACE);
-/// The CoCo 1/2's ENTER and SHIFT are proportioned differently from the
-/// CoCo 3's — its row 3 ends with ENTER *and* CLEAR side by side, and its
-/// SHIFTs are visibly wider than a letter cap.
+/// The CoCo 1/2's ENTER, CLEAR and SHIFT are proportioned differently from
+/// the CoCo 3's — its row 3 ends with ENTER *and* CLEAR side by side, and its
+/// SHIFTs are visibly wider.
 const COCO12_ENTER_CAP: Slot = word("ENTER", "Return", W_COCO12_ENTER);
+const COCO12_CLEAR_CAP: Slot = word("CLEAR", CLEAR_HOST, W_COCO12_CLEAR);
 const COCO12_SHIFT_CAP: Slot = word("SHIFT", "Shift", W_COCO12_SHIFT);
 
 const COCO3_ROWS: &[Row] = &[
-    &[DIGIT_CAPS, &[Slot::Gap(COCO3_BREAK_GAP), BREAK_CAP]],
     &[
-        &[word("ALT", ALT_HOST, W_WIDE)],
+        &[Slot::Gap(COCO3_ROW1_INDENT)],
+        DIGIT_CAPS,
+        &[Slot::Gap(COCO3_BREAK_GAP), BREAK_CAP],
+    ],
+    &[
+        &[word("ALT", ALT_HOST, W_MODIFIER)],
         QWERTY_CAPS,
         &[CLEAR_CAP, arrow(Dir::Up, "Up")],
     ],
     &[
-        &[word("CTRL", "Ctrl", W_WIDE)],
+        &[
+            Slot::Gap(COCO3_ROW3_INDENT),
+            word("CTRL", "Ctrl", W_MODIFIER),
+        ],
         HOME_CAPS,
         &[
             ENTER_CAP,
@@ -290,7 +311,7 @@ const COCO3_ROWS: &[Row] = &[
         ],
     ],
     &[
-        &[SHIFT_CAP],
+        &[Slot::Gap(COCO3_ROW4_INDENT), SHIFT_CAP],
         BOTTOM_CAPS,
         &[
             SHIFT_CAP,
@@ -319,11 +340,15 @@ const COCO12_ROWS: &[Row] = &[
         &[arrow(Dir::Left, "Left"), arrow(Dir::Right, "Right")],
     ],
     &[
-        &[arrow(Dir::Down, "Down")],
+        &[Slot::Gap(COCO12_ROW3_INDENT), arrow(Dir::Down, "Down")],
         HOME_CAPS,
-        &[COCO12_ENTER_CAP, CLEAR_CAP],
+        &[COCO12_ENTER_CAP, COCO12_CLEAR_CAP],
     ],
-    &[&[COCO12_SHIFT_CAP], BOTTOM_CAPS, &[COCO12_SHIFT_CAP]],
+    &[
+        &[Slot::Gap(COCO12_ROW4_INDENT), COCO12_SHIFT_CAP],
+        BOTTOM_CAPS,
+        &[COCO12_SHIFT_CAP],
+    ],
     &[&[Slot::Gap(COCO12_SPACE_INDENT), SPACE_CAP]],
 ];
 
