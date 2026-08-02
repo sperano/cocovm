@@ -1,5 +1,6 @@
 //! Direct-boot `CocoApp` menu/toolbar/hotkey tests: transport controls,
-//! Machine/Keyboard/View/Help/Joysticks menus, media-action gating, the
+//! Machine/View/Help/Joysticks menus, the status bar's keyboard menu,
+//! media-action gating, the
 //! MultiPak install/slot/switch flow, save-state menu wiring, error/
 //! confirmation dialogs, the RS-232 pak, and cartridge insertion (GMC).
 
@@ -101,29 +102,10 @@ fn function_key_hotkeys_toggle_aspect_help_and_keyboard_mode() {
     harness.get_by_label("Keyboard: Symbolic (F12)"); // status bar follows
 }
 
-#[test]
-fn keyboard_menu_selects_mode_and_opens_key_layout() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Keyboard");
-    click(&mut harness, "Symbolic");
-    assert!(harness.state().kb_mode == KbMode::Symbolic);
-
-    click(&mut harness, "Keyboard");
-    click(&mut harness, "Key layout (F10)");
-    assert!(harness.state().show_kbd_help);
-
-    // The same menu item toggles the window closed again.
-    click(&mut harness, "Keyboard");
-    click(&mut harness, "Key layout (F10)");
-    assert!(!harness.state().show_kbd_help);
-}
-
-/// The status bar's keyboard entry is a menu button for the same menu
+/// The status bar's keyboard entry is the menu button for the keyboard menu
 /// (`CocoApp::keyboard_menu_ui`): the readout both reports the mode and
 /// changes it. Its items are only in the accessibility tree while the popup
-/// is open, so an exact "Symbolic"/"Key layout (F10)" match is unambiguous
-/// here — the menu bar's Keyboard menu is closed throughout.
+/// is open, so an exact "Symbolic"/"Key layout (F10)" match is unambiguous.
 #[test]
 fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     let mut harness = boot_harness();
@@ -136,6 +118,11 @@ fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     click(&mut harness, "Keyboard: Symbolic (F12)");
     click(&mut harness, "Key layout (F10)");
     assert!(harness.state().show_kbd_help);
+
+    // The same menu item toggles the window closed again.
+    click(&mut harness, "Keyboard: Symbolic (F12)");
+    click(&mut harness, "Key layout (F10)");
+    assert!(!harness.state().show_kbd_help);
 }
 
 /// The icon half of that click target: icon and readout are unioned into

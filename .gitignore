@@ -17,6 +17,7 @@
 # scratch cassette recordings in the repo root
 /tape*.cas
 /tape*.wav
+/untitled.cas
 /printout.txt
 
 # built book editions (tools/build-book.sh)

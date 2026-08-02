@@ -28,9 +28,10 @@ impl CocoApp {
 
     /// The keyboard entry — the one status-bar entry that is also a
     /// control: icon and mode readout are a single click target that pops
-    /// up the menu bar's Keyboard menu (`keyboard_menu_ui` —
-    /// positional/symbolic, then the key layout window), so the mode
-    /// readout is also where the mode is changed.
+    /// up the keyboard menu (`keyboard_menu_ui` — positional/symbolic, then
+    /// the key layout window), so the mode readout is also where the mode is
+    /// changed. This entry is the only way in: the menu bar has no Keyboard
+    /// menu of its own.
     ///
     /// The readout is a frameless button rather than a label: `frame(false)`
     /// zeroes the button padding too, so it lines up with the plain labels

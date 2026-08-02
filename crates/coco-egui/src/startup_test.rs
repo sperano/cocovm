@@ -33,3 +33,14 @@ fn unpack_assets_extracts_gzipped_tar_into_dest() {
         b"\x00\x01"
     );
 }
+
+#[test]
+fn is_rom_file_accepts_roms_and_rejects_appledouble_siblings() {
+    assert!(is_rom_file("coco3.rom"));
+    assert!(is_rom_file("extbas11.rom"));
+    // macOS resource forks unpacked from the asset tarball.
+    assert!(!is_rom_file("._coco3.rom"));
+    assert!(!is_rom_file(".DS_Store"));
+    assert!(!is_rom_file("blank.dsk"));
+    assert!(!is_rom_file("rom"));
+}

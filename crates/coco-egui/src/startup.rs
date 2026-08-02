@@ -25,25 +25,70 @@ pub(crate) fn setup_logging() {
         .init();
 }
 
+/// Inner width of the banner box, in columns.
+const BANNER_WIDTH: usize = 76;
+
+/// Second banner row — placeholder for now.
+const BANNER_SUBTITLE: &str = "habababeu";
+
+/// Dim `s` when stdout is a color-capable terminal, else pass it through.
+fn dim(s: &str) -> String {
+    s.if_supports_color(Stream::Stdout, |v| v.dimmed())
+        .to_string()
+}
+
+/// Whether a directory entry names a ROM image.
+///
+/// Dotfiles are rejected: unpacking the asset tarball on macOS leaves an
+/// AppleDouble `._name.rom` beside every real ROM, which would double the
+/// count.
+fn is_rom_file(name: &str) -> bool {
+    !name.starts_with('.') && name.ends_with(".rom")
+}
+
+/// How many ROM images are installed in [`paths::roms_dir`].
+///
+/// A missing or unreadable directory simply counts as zero.
+pub(crate) fn rom_count() -> usize {
+    let Some(dir) = paths::roms_dir() else {
+        return 0;
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|entry| is_rom_file(&entry.file_name().to_string_lossy()))
+        .count()
+}
+
+/// Print one content row of the banner box, padded out to the right wall.
+fn banner_row(wall: &str, text: &str) {
+    // The leading space eats one of the box's inner columns.
+    println!("{wall} {text:<0$}{wall}", BANNER_WIDTH - 1);
+}
+
 pub(crate) fn banner() {
-    let sep = "─".repeat(76);
+    let fill = dim(&"═".repeat(BANNER_WIDTH));
+    let wall = dim("│");
+    println!("{}{fill}{}", dim("╭"), dim("╮"));
     println!(
-        "{}{}{}\n{} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {}\n{}{}{}",
-        "╭".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        "╮".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        "{wall} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {wall}",
         env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
         "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
         "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        "│".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        "╰".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        sep.if_supports_color(Stream::Stdout, |v| v.dimmed()),
-        "╯".if_supports_color(Stream::Stdout, |v| v.dimmed()),
     );
+    // Light rule, so it reads as an inner divider rather than a box edge.
+    let rule = dim(&"─".repeat(BANNER_WIDTH));
+    println!("{}{rule}{}", dim("├"), dim("┤"));
+    banner_row(&wall, BANNER_SUBTITLE);
+    let roms = rom_count();
+    let plural = if roms == 1 { "" } else { "s" };
+    banner_row(&wall, &format!("{roms} ROM{plural} found"));
+    println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 
 pub(crate) const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v2.tgz";

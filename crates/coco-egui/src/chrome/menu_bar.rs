@@ -14,7 +14,6 @@ impl CocoApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| self.machine_menu_ui(ui));
-                ui.menu_button("Keyboard", |ui| self.keyboard_menu_ui(ui));
                 ui.menu_button("View", |ui| self.view_menu_ui(ui));
                 ui.menu_button("Joysticks", |ui| self.joysticks.menu_ui(ui));
                 ui.menu_button("Sound", |ui| self.audio.menu_ui(ui));
@@ -23,10 +22,9 @@ impl CocoApp {
         });
     }
 
-    /// The Keyboard menu: positional/symbolic mode and the key map. Shared
-    /// with the status bar's keyboard entry, which pops the same menu up
-    /// from the bottom of the window (`chrome::status_bar`'s
-    /// `keyboard_status`).
+    /// The Keyboard menu: positional/symbolic mode and the key map. It has
+    /// no menu-bar button — the status bar's keyboard entry pops it up
+    /// (`chrome::status_bar`'s `keyboard_status`).
     pub(super) fn keyboard_menu_ui(&mut self, ui: &mut egui::Ui) {
         for mode in [KbMode::Positional, KbMode::Symbolic] {
             if ui
