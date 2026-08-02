@@ -1,56 +1,40 @@
 # Chapter 3 — The Indexed Postbyte, Stacks, and the Disassembler
 
-*Week 3. Goal: master the single hardest 200 lines in the CPU. Last week you
-read `MC6809::step()` end to end and watched every opcode land somewhere in
-one big `match`. This week you go back into that `match` and open the one
-addressing mode that got skipped: indexed. You'll also finish the
-subroutine/stack group (`PSH`/`PUL`/`TFR`/`EXG`) and meet the disassembler,
-which mirrors everything you learn here byte-for-byte. Chapter 4 closes out the
-CPU with interrupts — which, not coincidentally, push a stack frame using the
-exact `psh` function you'll read today.*
+*Week 3. Goal: decode indexed addressing and the CPU's compact register
+encodings. This chapter follows a postbyte from instruction fetch to effective
+address, then applies the same bit-level reading to `PSH`/`PUL`, `TFR`/`EXG`,
+and the disassembler.*
 
 ---
 
-Most of the 6809's addressing modes announce themselves in the opcode itself.
+Most 6809 addressing modes identify themselves in the opcode.
 `LDA #$0A` is `$86`, immediate. `LDA <$40` is `$96`, direct. `LDA $0400` is
 `$B6`, extended. Chapter 2 walked all three, and in each case the opcode byte
 told the dispatcher everything it needed to know about where the operand
-would come from; the bytes that followed were nothing but data. Decode was a
-single `match` arm, and the arm knew its own answer.
+would come from. The following bytes supplied the operand.
 
-Indexed addressing does not work that way, and the difference is the whole
-subject of this chapter. There is exactly one indexed `LDA` opcode — `$A6` —
+Indexed addressing moves that choice into a second byte. There is one indexed
+`LDA` opcode, `$A6`, and
 and it does not say which register the address is built from, whether an
 offset is involved, how wide that offset is, whether a register gets modified
-as a side effect, or whether the computed address is the address you want or
-merely a pointer to it. All of that lives in the byte *after* the opcode, a
-byte the 6809 literature calls the *postbyte*. One byte, eight bits, and
-something on the order of a hundred distinct meanings packed into them.
+as a side effect, or whether the computed value is an address or a pointer.
+Those choices live in the byte *after* the opcode, which 6809 documentation
+calls the *postbyte*.
 
-The arithmetic explains the shape. Sixteen sub-modes, four index registers,
-and an indirect flag multiply out to well over a hundred combinations. Giving
-each combination its own opcode would consume half the base page for a single
-instruction, and `LDA` is one of roughly two dozen instructions that need
-indexed addressing. There is no room. So the encoding pushes the choice down
-into a second byte, and every indexed instruction in the ISA shares the same
-second-byte grammar — which is precisely why one decoder function can serve
-all of them, and precisely why getting that one function wrong breaks
-everything at once.
+The full layout combines sixteen sub-modes, four index registers, and an
+indirect flag. Encoding each combination as a separate opcode would consume
+too much of the base opcode page. Instead, every indexed instruction shares
+the same postbyte grammar and the same decoder function.
 
-This week stays entirely inside the `mc6809` crate. No new device, no new
-seam, nothing that touches the CoCo. What you get instead is the last
-genuinely intricate piece of the CPU, two smaller encodings that work the
-same way (`PSH`/`PUL`'s register mask and `TFR`/`EXG`'s nibble pair), and
-finally the disassembler — which is both this chapter's answer key and the
-first component of the debugger that Chapter 16 assembles.
+The chapter remains inside the `mc6809` crate. After indexed addressing, it
+covers the register mask used by `PSH`/`PUL`, the nibble pair used by
+`TFR`/`EXG`, and the disassembler's parallel decoder.
 
 ---
 
-## 3.1 Why 200 lines get a whole week
+## 3.1 Why indexed addressing is centralized
 
-Before opening any code, it helps to establish that the difficulty here is
-not a matter of taste. DESIGN.md ranks the CPU's hard parts "in order of
-pain," and indexed addressing is first on the list, ahead of interrupts:
+DESIGN.md identifies indexed addressing as the CPU's most complex decoder:
 
 > 1. **Indexed addressing** — one postbyte encodes ~a dozen sub-modes:
 >    constant offsets (5/8/16-bit), accumulator offsets (A/B/D), auto
@@ -59,19 +43,16 @@ pain," and indexed addressing is first on the list, ahead of interrupts:
 >    u32 extra_cycles)` and get it bulletproof — a large fraction of all
 >    instructions route through it.
 
-"A large fraction" is doing a lot of work in that sentence, so it's worth
-making the number concrete. Search the executor for calls to `ea_indexed` and
-you will find forty-six of them across two files. Look at how many opcodes
+The executor contains forty-six calls to `ea_indexed` across two files. The
+callers include
 make good on that claim in [`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)
 alone: `LEAX`/`LEAY`/`LEAS`/`LEAU`, indexed `LDA`/`STA`/`LDB`/`STB`/`LDD`/
 `STD`, every indexed 8-bit ALU op (`ADD`/`ADC`/`SUB`/`SBC`/`CMP` for both
 accumulators), indexed `AND`/`OR`/`EOR`/`BIT`, indexed `JMP`/`JSR`, and — via
 the `$10`/`$11` prefix pages of §3.8 — indexed `CMPD`/`CMPY`/`LDY`/`STY`/
 `LDS`/`STS`/`CMPU`/`CMPS`. Every one of those opcodes calls the same
-function, `ea_indexed`, to turn a postbyte into an address. Get that one
-function wrong and you don't break one instruction — you break a fraction of
-the ISA at once, in ways that only show up as wrong pixels several
-instructions later. That's why it earns a whole week of undivided attention.
+function, `ea_indexed`, to turn a postbyte into an address. A defect in that
+function therefore affects many instruction families.
 
 Forty-six call sites actually undercount the opcodes involved, because one of
 those call sites serves an entire sixteen-opcode range at once. The
@@ -92,17 +73,14 @@ indexed forms in a single arm, from
             }
 ```
 
-That arm is the shape every indexed opcode in the crate follows, so read it
-slowly even though its subject is last week's material. The call
+This arm shows the common path for indexed opcodes. The call
 to `ea_indexed` returns two things at once, destructured into `ea` and `ic`:
 the effective address, and the number of *extra* cycles the postbyte cost
 beyond the instruction's own base price. The address goes to the bus, the ALU
 work happens exactly as it would in any other addressing mode, and then the
-last line adds the two costs together — `6 + ic`, where `6` is what indexed
-read-modify-write costs before the postbyte gets a vote. Nothing in this arm
-knows or cares which of the sixteen sub-modes ran. That ignorance is the
-design: `ea_indexed` absorbs the entire complexity of the postbyte and hands
-back a pair of plain integers.
+last line adds the two costs: `6 + ic`, where `6` is the base cost of indexed
+read-modify-write. The caller does not need to know which sub-mode produced
+the address.
 
 There is a second reason this material rewards a full week, and it is the more
 practical of the two. Addressing bugs do not announce themselves. A wrong flag
@@ -121,9 +99,8 @@ get this week's 200 lines right the first time.
 
 ## 3.2 The decode tree: one bit decides everything
 
-Everything in this chapter hangs off a handful of named bit masks, so those
-come first. They live in their own little module, deliberately separate from
-the decoder that uses them, in
+The decoder begins with named masks for the postbyte fields. They live in a
+module separate from the decoder, in
 [`crates/mc6809/src/lib.rs:76-90`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76-L90):
 
 ```rust
@@ -144,14 +121,11 @@ mod postbyte {
 }
 ```
 
-Read the doc comments as a specification rather than as annotation. Two of
-those six constants are marked "valid only when bit 7 is set" and "valid only
-when bit 7 is clear," and that pair of qualifications is the entire structure
-of the postbyte stated in advance: `MODE_MASK` and `OFFSET5_MASK` describe two
-different readings of the same byte, and which reading applies is decided by a
-single bit. `INDIRECT_CYCLES` is the odd one out — a `u32` cycle count rather
-than a `u8` mask — sitting in a module otherwise full of bit patterns, because
-the indirect bit is the one field whose meaning includes a price.
+The doc comments mark `MODE_MASK` as valid when bit 7 is set and
+`OFFSET5_MASK` as valid when bit 7 is clear. They describe two interpretations
+of the same byte, selected by that bit. `INDIRECT_CYCLES` is a `u32` rather
+than a mask because it records the cycle cost of following an indirect
+pointer.
 
 > **Rust corner: a private module as a bitflag namespace.** `postbyte` isn't
 > a `struct` or an `enum` — it's a bare `mod` holding `pub const` bytes, not
@@ -163,8 +137,7 @@ the indirect bit is the one field whose meaning includes a price.
 > with `&`), plain `u8` constants serve better than an enum would — enums
 > don't overlap bit patterns for free.
 
-With the vocabulary in place, here is the branch in `ea_indexed` where the
-whole addressing mode forks
+`ea_indexed` selects between the two layouts
 ([`crates/mc6809/src/addressing.rs:58-67`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L58-L67)):
 
 ```rust
@@ -188,10 +161,9 @@ the two forms have nothing in common past the `rr` field. This is not a fast
 path and a slow path through one decoder; it is two decoders that happen to
 share an entry point.
 
-### The fetch that feeds it
+### Fetching the postbyte
 
-Notice what the first line of `ea_indexed` does before any decoding happens at
-all: `self.fetch_u8(bus)`. That call is not a peek. It is the same
+The first line of `ea_indexed` calls `self.fetch_u8(bus)`. This is the same
 instruction-stream fetch the dispatcher itself uses, and it advances the
 program counter as a side effect
 ([`addressing.rs:7-17`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L7-L17)):
@@ -342,23 +314,20 @@ ignore indirection entirely
     }
 ```
 
-Read that shape carefully — it's the whole chapter in five statements. The
-sub-mode decoder computes an address and an extra-cycle count exactly as if
+The sub-mode decoder computes an address and an extra-cycle count as if
 indirection didn't exist. *Then*, regardless of which sub-mode ran, the
 indirect bit — if set — treats whatever address the sub-mode produced as a
 *pointer*: one more 16-bit bus read at that address to get the real
 effective address, billed at 3 extra cycles (`postbyte::INDIRECT_CYCLES`).
 
-Indirection, in other words, isn't its own sub-mode. It's a post-processing
-step layered uniformly on top of any sub-mode's result. That deserves dwelling
-on, because it is the single largest simplification in the decoder. A design
-that treated indirection as part of the sub-mode table would need roughly
+Indirection is not a separate sub-mode. It is applied uniformly to the
+sub-mode's result. Treating it as part of the sub-mode table would require
+roughly
 twice as many arms, each duplicating its non-indirect twin's arithmetic and
 then adding a dereference. Instead the table has one arm per addressing form,
 and the dereference is written once, in the caller, three lines long.
 
-That uniformity glosses over one datasheet nuance, and the code is honest
-about it rather than silent. The datasheet documents only some sub-modes as
+The datasheet documents only some sub-modes as
 indirectable, and calls `,R+`/`,-R` — the single-step auto increment and
 decrement forms — undefined in combination with indirect. The comments in the
 sub-mode table below say so explicitly. But the code doesn't special-case the
@@ -372,8 +341,7 @@ emit such a postbyte, so the only ways to reach it are hand-assembled bytes or
 data executed by mistake.
 
 Now the sub-mode table itself, `ea_indexed_submode`
-([`addressing.rs:100-171`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L100-L171)), quoted whole because every case matters and you
-will refer back to this constantly:
+([`addressing.rs:100-171`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L100-L171)):
 
 ```rust
     fn ea_indexed_submode(&mut self, bus: &mut impl Bus, sel: u8, mode: u8) -> (u16, u32) {
@@ -593,7 +561,7 @@ extended-indirect row's parenthetical, "register ignored," means what it says:
 
 ---
 
-## 3.4 Seven postbytes, end to end
+## 3.4 Worked postbytes
 
 Tables tell you what a decoder does; traces tell you whether you believe it.
 This section runs seven real postbytes through the code above, one at a time,
@@ -604,7 +572,7 @@ postbyte values, cross-checked against the executor tests in
 [`crates/mc6809/tests/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs).
 
 Six of the seven traces use indexed `LDA`, opcode `$A6`, so that the postbyte
-is the only thing that varies. Here is the arm that runs them, along with its
+is the only thing that varies. This is the arm that runs them, along with its
 neighbors, from
 [`exec/exec_data.rs:103-116`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec/exec_data.rs#L103-L116):
 
@@ -778,7 +746,7 @@ intricate but not deep, and the way through it is to be relentlessly literal.
 
 ---
 
-## 3.5 Auto inc/dec: whose turn is it, old value or new?
+## 3.5 Auto increment and decrement
 
 Of the sixteen sub-modes, four modify the machine as a side effect of computing
 an address, and those four are where correctness gets slippery. The question is
@@ -851,11 +819,11 @@ cycle for the second byte of the step). That's not an accident of encoding:
 pointer to land past a whole *word*, not into the middle of one. The by-1
 forms are for byte-at-a-time buffers.
 
-### The stack discipline hiding in the four arms
+### Using the forms with a stack
 
-There is a reason the four available forms are post-increment and
-pre-decrement rather than all four combinations, and it becomes obvious the
-moment you use `S` or `U` as the register.
+The four forms match the direction of the 6809's descending stacks. With `S`
+or `U`, pre-decrement allocates space before a push and post-increment releases
+space after a pull.
 
 Consider `STA ,-S` followed later by `LDA ,S+`. The store decrements `S` and
 writes at the new, lower address; the load reads at the current address and
@@ -872,7 +840,7 @@ processor uses anywhere, and the four sub-mode slots those forms would have
 occupied are spent on other things instead. Exercise 3.10 sets a trap on
 exactly this point: `,S--` looks like it ought to exist and does not.
 
-### One side effect nobody expects: writing back to `S`
+### Writing back to `S`
 
 Look again at `set_index_reg` from §3.2 and notice that its four arms are not
 symmetric. `X`, `Y`, and `U` are written with a plain assignment. `S` is not:
@@ -976,12 +944,11 @@ mod stack_mask {
 }
 ```
 
-Seven of the eight constants are unremarkable. The eighth has a doc comment
-twice as long as any of its neighbors, and that comment is the section's
-punchline; hold that thought for a moment.
+Seven constants always name the same register. The eighth changes meaning
+with the selected stack and is discussed below.
 
-There are four opcodes in this family — `PSHS`, `PULS`, `PSHU`, `PULU` — and
-they collapse into just two functions, distinguished by a boolean.
+Four opcodes, `PSHS`, `PULS`, `PSHU`, and `PULU`, share two functions selected
+by a boolean.
 [`crates/mc6809/src/stack.rs:26-47`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs#L26-L47)
 implements the push, and the same function serves every explicit stack opcode
 *and* the interrupt-frame code you'll read in full next week:
@@ -1011,8 +978,7 @@ pub(crate) fn psh(&mut self, bus: &mut impl Bus, mask: u8, to_s: bool) -> u32 {
 }
 ```
 
-Three things in that function are load-bearing, and each of them is a decision
-that could have gone another way.
+Three details determine the resulting stack frame.
 
 ### Push order is fixed, not mask order
 
@@ -1023,7 +989,7 @@ encoding tells the CPU which register the programmer thought of first. So the
 order is a property of the instruction rather than of the operand, and the
 function hard-codes it.
 
-The consequence is that the stack layout is completely predictable. `PC` goes
+The stack layout is therefore predictable. `PC` goes
 on first, which means it lands deepest, at the highest address. `CC` goes on
 last, which means it ends up shallowest, at the lowest address — directly under
 the stack pointer. That is why `RTI` (next week) can always find `CC` one byte
@@ -1244,7 +1210,7 @@ mod regsel {
 }
 ```
 
-The gap in the numbering is the interesting part. Codes `0x0`-`0x5` name the
+Codes `0x0`-`0x5` name the
 six 16-bit registers; `0x8`-`0xB` name the four 8-bit ones. Bit 3 of the code,
 in other words, *is* the size flag — set means 8-bit — which is why the size
 test in `regs.rs` can be written as a single comparison rather than a lookup,
@@ -1272,7 +1238,7 @@ per `exec.rs`'s `exec_control_transfer`
             }
 ```
 
-Note what `EXG` does *not* do: it never calls `tfr_value`. It reads both
+`EXG` does not call `tfr_value`. It reads both
 registers into locals, then writes each one back to the other's slot. Both
 reads happen before either write, which is what makes a swap a swap rather than
 a pair of copies where the second overwrites the first — the same reason the
@@ -1376,8 +1342,8 @@ Three documented rules, one function:
 | `A`/`B` → 16-bit | high byte forced to `$FF` | [`stack.rs::tfr_accumulator_to_16_sets_ff_high`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) (`TFR A,X` with `A=$7F` ⇒ `X=$FF7F`) |
 | `CC`/`DP` → 16-bit | both bytes duplicate the source byte | [`stack.rs::tfr_cc_to_16_duplicates_byte`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/stack.rs) (`TFR CC,X` with `CC=$42` ⇒ `X=$4242`) |
 
-The second rule is the one that surprises people, and the test makes the
-surprise explicit by choosing `A = $7F` — a *positive* value in signed terms.
+The second rule is demonstrated with `A = $7F`, a positive value in signed
+terms.
 Sign extension would give `$007F`; the actual result is `$FF7F`. The high byte
 is `$FF` unconditionally, regardless of the source value, which means this is
 not sign extension and not zero extension but a third thing that only makes
@@ -1386,14 +1352,14 @@ from intuition rather than from the datasheet would get this wrong in a way no
 casual test would catch, since most values people test with happen to be
 negative-looking.
 
-Notice the 16→8 truncation isn't handled inside `tfr_value` at all — its
+The 16-to-8 truncation is not handled inside `tfr_value`; its
 `_ => sv` arm returns the full 16-bit source unchanged, and it's the generic
 `reg_write` that does `self.a = value as u8` for an 8-bit destination. The
 size-mismatch *rule* lives in `tfr_value`; the *mechanism* lives in
 `reg_write`. That split is worth naming because it answers a question about
 `EXG` for free.
 
-### Why `EXG` doesn't need `tfr_value`
+### How `EXG` handles the same codes
 
 `EXG` swaps via two independent `reg_read`/`reg_write` calls and never touches
 `tfr_value`, which raises an obvious question: does an 8↔16 `EXG` get the
@@ -1580,7 +1546,7 @@ is the subject of the next section.
 
 ---
 
-## 3.9 The disassembler: table-driven, and never allowed to lie about length
+## 3.9 The disassembler: tables and instruction length
 
 A disassembler is an odd thing to build in Chapter 3 of a CPU course. It executes
 nothing, it is needed by nothing that runs, and the machine boots perfectly
@@ -2137,32 +2103,25 @@ still execute — just not as anything a real assembler would ever emit.
 `ea_indexed_submode`'s `0b1111` arm still runs (`fetch_u16`, no wrap), just
 without the pointer dereference `[...]` implies.
 
-Every hex byte in this table is either lifted directly from a test you've
+Each hex byte in this table is either taken directly from a test
 already read (`$80`-`$8D`, `$94`, `$98`, `$9F`, `$A4`, `$C0`, `$E4`) or
 computed from the same formula those bytes confirm (`$8E`-`$8F`, `$90`-
-`$93`, `$95`-`$97`, `$99`-`$9E`) — nothing here is asserted without a
-verified anchor point. The distinction matters more than it might seem: a
-reference table in a book is exactly the kind of artifact that acquires errors
-by being retyped, and the way to keep one honest is to be able to say, row by
-row, where each number came from.
+`$93`, `$95`-`$97`, `$99`-`$9E`). The tests provide anchor points for the
+formula rather than exhaustive verification of every table entry.
 
 ---
 
 ## 3.11 Reading assignment
 
-The order below matters more this week than most, because the postbyte masks
-are load-bearing for four different files and reading any of those files first
-means reading bit patterns you don't yet have names for.
+Read the files in dependency order:
 
-In this order: **[`lib.rs:76-105`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76-L105)** (`postbyte`/`stack_mask`, load-bearing for
-everything below); **[`addressing.rs:30-192`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L30-L192)** (`ea_indexed` through
-`ea_indexed_submode` — read it twice, once for shape, once sub-mode by
-sub-mode with the §3.3 table open); **[`stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs)** (`psh`/`pul`, under 80
-lines); **[`regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs)** (`reg_read`/`reg_write`/`tfr_value`); **[`exec.rs:58-194`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L58-L194)**
-(`exec_page10`/`exec_page11`); then **[`disasm.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm.rs)**, **[`disasm/tables.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/tables.rs)**,
-**[`disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs)** in that order — data first, rendering logic last;
-finally **[`tests/disasm/rom_and_scan.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/rom_and_scan.rs)**, for the disassembler pointed at
-real, ungenerated ROM bytes instead of hand-picked fixtures.
+1. **[`lib.rs:76-105`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L76-L105)** defines the postbyte and stack masks.
+2. **[`addressing.rs:30-192`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/addressing.rs#L30-L192)** contains `ea_indexed` and its sub-mode decoder. Read it with the
+   §3.10 table open.
+3. **[`stack.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/stack.rs)** and **[`regs.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/regs.rs)** implement the other compact register encodings.
+4. **[`exec.rs:58-194`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs#L58-L194)** contains the `$10` and `$11` prefix pages.
+5. **[`disasm.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm.rs)**, **[`disasm/tables.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/tables.rs)**, and **[`disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs)** show the parallel disassembly path.
+6. **[`tests/disasm/rom_and_scan.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/disasm/rom_and_scan.rs)** applies the disassembler to real ROM bytes.
 
 Then run these tests, and read them while they run:
 
@@ -2188,9 +2147,8 @@ decode indexed postbytes `$8B`, `$F4`, and `$9F` by hand: register field,
 indirect bit, sub-mode, resulting assembly syntax, and total extra cycle
 cost (sub-mode extra, plus 3 more if the indirect bit is set). Then check
 every part of your answer against [`crates/mc6809/src/disasm/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/disasm/indexed.rs) —
-run the byte through `disassemble` if you want the operand string, and trace
-`ea_indexed_submode` by hand for the cycle math. Get the bit arithmetic
-wrong at least once before you get it right; that's the point.
+run the byte through `disassemble` for the operand string, and trace
+`ea_indexed_submode` by hand for the cycle calculation.
 
 **3.2 — `LEAX ,--Y`, both halves (build).** Write a test in the style of
 [`crates/mc6809/tests/indexed.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/indexed.rs) for `LEAX ,--Y` (opcode `$31`) that asserts
@@ -2279,16 +2237,13 @@ needs `roms/coco3.rom`, per this repo's `CLAUDE.md`.)
 
 ## What's next
 
-Chapter 4 finishes the CPU: `nmi`/`irq`/`firq` and the interrupt frames they
-stack, using the exact `psh`/`pul` you read this week with fixed masks
+Chapter 4 adds `nmi`, `irq`, and `firq` plus the interrupt frames they
+stack. These paths use `psh` and `pul` with fixed masks
 (`0xFF` full frame, `PC_CC_MASK` for FIRQ). The twelve-byte frame that
-`pshs_all_registers_cost_17` measured is the same twelve bytes an IRQ pushes,
-and the `nmi_armed` field that kept surfacing in this chapter's margins finally
-gets the section it deserves. You'll meet `CWAI`/`SYNC` as CPU *states* rather
-than instructions — the `State` enum from Chapter 1, finally used — and, since
-the 6809 has no per-instruction conformance suite like the 6502/Z80, the
-three-legged validation strategy this codebase leans on instead: trace-diffing
-against a reference emulator, a self-checking exerciser ROM, and the
-hand-written corner tests you've read all month.
+`pshs_all_registers_cost_17` measured is the same frame an IRQ pushes. The
+chapter also develops `nmi_armed`, `CWAI`, and `SYNC` as CPU states. Because
+the 6809 lacks a per-instruction conformance suite like those available for
+some other processors, validation combines trace comparison, a self-checking
+exerciser ROM, and focused tests.
 
 After that the CPU is done, and Chapter 5 opens the machine.

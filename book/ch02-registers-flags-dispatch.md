@@ -1,27 +1,17 @@
 # Chapter 2 — CPU core I: registers, flags, dispatch, simple addressing
 
-*Week 2. Goal: read `MC6809::step()` and know where every opcode goes. Last
-week you saw the `MC6809` struct from the outside — a bag of registers behind
-a `Bus` trait. This week you open it up. By the end you will be able to take
-any 6809 mnemonic at all — `LDA $0400`, `CMPA #$0D`, `ASL ,X` — and point at
-the exact line of Rust that runs when the real chip would run it, and predict
-every flag it leaves behind without running the emulator to check.*
+*Week 2. Goal: follow an instruction through `MC6809::step()`. By the end of
+this chapter you will be able to locate the implementation of a 6809 mnemonic,
+identify its addressing mode, and predict its result, flags, and cycle cost.*
 
 ---
 
-Chapter 1 made a claim that deserves to be cashed in immediately: that the CPU
-is the *easy* part of an emulator, roughly three weeks of careful
-table-copying from a datasheet, and that the GIME will take longer. This
-chapter is where that claim gets tested. The MC6809 is generally regarded as
-the most elegant 8-bit processor Motorola ever shipped — two accumulators that
-pair into a 16-bit one, four 16-bit pointer registers, a relocatable direct
-page, position-independent addressing modes, and an instruction set orthogonal
-enough that assembly written for it reads almost like a high-level language.
-All of that elegance has to end up in Rust this week, and the surprise is how
-little Rust it takes.
+The MC6809 combines two 8-bit accumulators, four 16-bit pointer registers, a
+relocatable direct page, and position-independent addressing modes. The Rust
+implementation remains readable because it separates three concerns that the
+processor combines during execution.
 
-The reason it takes so little is worth naming before you read any of it. An
-instruction, on any processor, decomposes into three independent questions.
+An instruction decomposes into three questions.
 *Where does the operand come from?* That is the addressing mode. *What
 arithmetic or logic is performed?* That is the operation. *What does the
 result do to the condition codes?* That is the flag rule. On a badly organized
@@ -33,24 +23,18 @@ then combined. This chapter is a tour of the three places this codebase writes
 them down: `addressing.rs` for where operands come from, `exec/exec_data.rs`
 for what the operations do, and `alu.rs` for what happens to the flags.
 
-When you finish, you will have read the entire opcode dispatch table — all of
-it, not a representative excerpt — and hand-traced three instructions end to
-end, counting cycles and flags on paper and then checking against real tests.
-There is nothing to build this week. The reward for reading carefully is that
-when Chapter 4's interrupt code goes wrong, and it will, you will be able to rule
-the ALU out in a minute rather than an afternoon.
+The chapter first maps the opcode dispatch table, then traces three
+instructions through addressing, execution, flags, and cycle accounting. The
+tests provide a second description of the same behavior in concrete values.
 
 ---
 
 ## 2.1 The register file, one more time, in Rust
 
-Every emulator begins with the question of how to represent the machine's
-state, and it is a question with more wrong answers than right ones. Represent
-it too cleverly and every instruction pays a translation tax; represent it too
-literally and you end up hand-maintaining relationships the hardware maintains
-for free. The 6809's register file is a good place to watch that judgment
-being exercised, because two of its nine registers are exactly the cases where
-a designer is tempted to get clever.
+The register file uses plain integer fields, with two deliberate exceptions:
+`D` is a view over `A` and `B`, while the eight condition codes remain bits in
+one byte. These choices keep the representation close to the hardware without
+duplicating state.
 
 Chapter 1 already showed you the whole CPU struct, because there's no way to
 talk about the `Bus` trait without it. Read it again, now looking at the
@@ -82,9 +66,7 @@ indirection — when the code needs `self.a`, it writes `self.a`. Reaching for
 the plainest Rust type that models the hardware fact, and letting the type
 system do less work than you'd expect, is a recurring choice in this codebase.
 
-It is worth being explicit about what that choice buys, because "just use
-plain fields" sounds less like a design decision than like an absence of one.
-The payoff shows up every time you debug. When a test fails and you print the
+Plain fields also make debugging direct. When a test fails and you print the
 CPU, what comes out is nine numbers you can compare directly against an XRoar
 or MAME register dump, in the same units, with no decoding step in between.
 When you set a conditional breakpoint on `self.x == 0x0400`, the expression
@@ -94,7 +76,7 @@ simply not enough repetition for it to earn anything.
 
 ### D is not a register — it's a view
 
-There is no `d: u16` field, and that's worth noticing. `D` on real 6809
+There is no `d: u16` field. `D` on real 6809
 silicon isn't a separate storage cell; it's `A` and `B` read and written as
 one 16-bit unit, A the high byte. The struct doesn't pretend otherwise — it
 stores `a` and `b` independently and computes `D` on demand ([`lib.rs:167`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L167)):
@@ -111,7 +93,7 @@ pub fn set_d(&mut self, value: u16) {
 }
 ```
 
-The hardware fact and nothing more. `LDD #$1234` calls `set_d(0x1234)`,
+For example, `LDD #$1234` calls `set_d(0x1234)`,
 leaving `a = 0x12`, `b = 0x34` — verified byte-for-byte by `ldd_immediate`
 ([`crates/mc6809/tests/loads.rs:116`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/loads.rs#L116)). It is also
 why `EXG A,B` swaps the two halves while `TFR D,X` moves the whole 16-bit
@@ -401,19 +383,13 @@ bring-up."* When a file-level comment and a function-level comment disagree,
 trust the one attached to the code you're actually looking at. This crate has
 roughly two hundred passing tests; it is not a skeleton.
 
-Stale comments are worth a moment of attention rather than an eye-roll,
-because they are a permanent feature of real codebases and this one is
-instructive about *why*. The banner was true on the day it was written and
-became false gradually, one merged milestone at a time, with no single commit
-where anyone was obviously wrong to leave it alone. The function-level comment
-survived because it sits directly above the code it describes, where a reader
-changing that code cannot avoid seeing it. Comments live longer the closer
-they are to what they document. That is an argument for putting the important
-ones on functions rather than on files.
+The banner became false gradually as opcodes were added. The function-level
+comment stayed accurate because it sits beside the code it describes. This is
+a practical reason to keep detailed claims close to the functions they cover.
 
 ### Reading the match
 
-Notice a few things about how this is organized. Some arms decode
+Some arms decode
 completely inline (`0x12 => 2` for `NOP`; the branch range `0x20..=0x2F`) —
 one operand shape, one job. Most arms are `|`-chains of opcode bytes routing
 to one family function: the `exec_load_store` chain
@@ -448,8 +424,7 @@ gets a chance. Overlapping ranges are legal Rust, and the first one wins
 silently — miss this ordering and `JMP` compiles without complaint and
 becomes `NEG`.
 
-Sit with that failure mode, because it is a perfect specimen of the kind of
-bug this course is training you to anticipate. Nothing warns you. The compiler
+Nothing warns you about that failure mode. The compiler
 is happy: overlapping patterns are not an error, and Rust's unreachable-pattern
 lint fires on a *fully* shadowed arm, not on three bytes shadowed out of a
 sixteen-byte range. The tests are happy too, unless one of them happens to
@@ -503,14 +478,13 @@ real, it is on the instruction card, and it is the only place this week where
 a cycle count depends on a runtime condition rather than on the opcode alone.
 
 `exec_page11` is the same shape and much shorter: `CMPU`, `CMPS`, and `SWI3`.
-Two prefix pages, one code shape, no new machinery — which is exactly what you
-want from a feature that exists purely because a byte only holds 256 values.
+Both prefix pages reuse the same fetch, match, and cycle-count structure as
+the base page.
 
 ### Family functions: one `step`, eleven helpers
 
 Below `step` sit eleven `exec_*` functions, five in `exec.rs` and six in
-`exec/exec_data.rs`, and the split between them is worth understanding as a
-piece of navigation advice rather than as trivia. Each function owns a
+`exec/exec_data.rs`. Each function owns a
 contiguous slice of the opcode map and nothing else, so "where does opcode
 `$B6` live?" always has exactly one answer, and finding it is a two-step
 lookup: which arm of `step` claims the byte, then which arm of that family
@@ -556,8 +530,7 @@ pub(super) fn exec_load_store(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 
 }
 ```
 
-Fifteen instructions, fifteen one-line arms, and the whole thing fits on a
-screen. Read it as a grid: six row-groups (`LDA`, `LDB`, `STA`, `STB`, `LDD`,
+Read the function as a grid: six row-groups (`LDA`, `LDB`, `STA`, `STB`, `LDD`,
 `STD`) crossed with the addressing modes each supports. The loads have three
 modes; the stores have two, because "store to an immediate operand" is
 meaningless — there is no address to write to when the operand *is* the
@@ -575,8 +548,7 @@ after `bus.write(ea, self.a)` — which looks redundant until you remember that
 `STA` is specified to leave `N` and `Z` describing `A`. It is a real datasheet
 row, not a copy-paste artifact.
 
-One small inconsistency in the excerpt deserves a mention, so that you don't
-spend time looking for meaning in it. In the `0x86` arm the fetched byte
+One name in the excerpt is inconsistent. In the `0x86` arm the fetched byte
 is bound to `ea`, while the two arms below it bind to `v`. `ea` normally means
 "effective address" everywhere else in this codebase; here it holds an
 immediate *value*. Nothing behaves differently — it is a name that drifted —
@@ -591,8 +563,8 @@ doing nothing. Compare `step`'s own catch-all, `_ => 2`, which is deliberately
 *not* a panic: undecoded opcodes are 2-cycle no-ops "during bring-up." Two
 catch-alls, two different meanings.
 
-The difference between those two catch-alls is a design position worth
-adopting. `step` sits at the boundary between the emulator and arbitrary
+The two catch-alls serve different boundaries. `step` sits between the
+emulator and arbitrary
 6809 code, and arbitrary code contains garbage: a program that jumps into
 data will fetch bytes that are not instructions, and on real silicon that
 produces *something* rather than a halt. Crashing the emulator there would be
@@ -618,7 +590,7 @@ provide.
 > The timing model from §2.7 is enforced by the type checker, which is a
 > considerably better guarantee than a code-review convention.
 
-### The trade-off you're being shown
+### Why use a `match`?
 
 A function-pointer table (`[fn(&mut MC6809, &mut dyn Bus); 256]`, 6502-style)
 buys O(1) dispatch and a compact, data-driven table you could in principle
@@ -659,13 +631,10 @@ assumes an answer to: given an opcode, where does its operand come from?
 
 ## 2.3 Addressing modes: immediate, direct, extended
 
-The 6809's reputation rests largely on its addressing modes. A 6502 programmer
-gets zero page, absolute, and a handful of indexed forms; a 6809 programmer
-gets a relocatable direct page, program-counter-relative addressing that makes
-position-independent code natural rather than heroic, and an indexed mode with
-about a dozen sub-modes hiding behind a single postbyte. All of that richness
-has to be decoded before any instruction can do its work, which makes
-addressing the layer everything else stands on.
+Addressing modes determine where an instruction finds its operands. The 6809
+provides a relocatable direct page, program-counter-relative addressing, and
+an indexed mode with several forms encoded in a postbyte. Addressing must be
+resolved before the operation can run.
 
 Three of those modes are simple enough to cover this week —
 the postbyte-driven indexed mode is next week's hardest 200 lines. All three
@@ -693,9 +662,7 @@ met that rule on `Bus::read_u16` last week; it is hand-written again here
 because these bytes come from the *instruction stream* at `PC` rather than
 from an arbitrary address.
 
-That duplication deserves a defense, since a reader who has just internalized
-"write the endianness rule down once" from Chapter 1 will bristle at seeing it
-written down twice. The two functions do genuinely different things.
+The repeated byte assembly serves two different operations.
 `Bus::read_u16(addr)` reads a word from an address you already computed and
 leaves the CPU alone. `MC6809::fetch_u16` reads a word from wherever `PC`
 happens to point *and advances `PC` by two as a side effect*. Expressing the
@@ -851,8 +818,8 @@ finding it in a day.
 `LDA $0400` pulls a byte out of the text screen to see what BASIC left
 there — one of the most-typed instructions on the platform. `$0400` is the
 top-left character cell of the CoCo's text screen, the address Chapter 1 said
-would become as familiar as `$FF90`. Here is *everything* that happens, in
-order, when the emulator executes the three bytes `$B6 $04 $00`.
+would become as familiar as `$FF90`. The three bytes `$B6 $04 $00` proceed as
+follows.
 
 **Setup.** `PC` points at `$B6`. `self.cc` holds whatever the previous
 instruction left there.
@@ -880,8 +847,8 @@ instruction left there.
 
 Total: three bytes consumed, `PC` advanced by three, `A` loaded, `N`/`Z`/`V`
 set from the loaded byte, `C`/`H` untouched, 5 cycles charged — matching the
-6809 instruction card exactly (`LDA` extended: 5 cycles, 3 bytes). Notice
-what *didn't* need special-casing: `read_extended8` doesn't know it's being
+6809 instruction card exactly (`LDA` extended: 5 cycles, 3 bytes).
+`read_extended8` does not know it is being
 called for a *load* rather than a compare or anything else — the same
 function is reused verbatim by `CMPA`, `ADDA`, `ANDA` extended, and every
 other extended-mode 8-bit read in the ISA. Addressing mode and operation are
@@ -899,10 +866,11 @@ instruction lengths, has to derive them separately, and that difference is
 what makes the two implementations independent enough to be worth
 cross-checking.
 
-### A second trace: `ASL $0400`, read-modify-write end to end
+### Preview: `ASL $0400`
 
-`LDA` only ever *reads*. To see the other half of the addressing-mode story —
-a write coming back out — trace `ASL $0400`, opcode `$78`, with `$0400`
+`LDA` only reads. The next trace previews §2.6's read-modify-write machinery.
+Follow the bus accesses and cycle count here, then return to its flag
+calculation after reading that section. Trace `ASL $0400`, opcode `$78`, with `$0400`
 holding `$41` (ASCII `'A'`, since screen memory holds all kinds of bytes, not
 just glyphs already tagged with the inverse bit). This exercises §2.3's
 extended addressing, §2.6's nibble-keyed RMW dispatch, and the `V`
@@ -953,9 +921,9 @@ not an abstract one. That immediacy is why the platform's culture ran on
 `POKE` — the distance between a byte and a character cell was a single
 store — and Chapter 7 is where the emulator has to honor it.
 
-### A third trace: `ADDA <$40`, watching `DP` do its job
+### Preview: `ADDA <$40`
 
-Both traces so far used extended addressing, where the address is just the
+The previous traces used extended addressing, where the address is the
 two bytes after the opcode — `DP` never enters the picture. To see §2.3's
 "why `DP` exists" claim actually happen, trace `ADDA <$40` (opcode `$9B`,
 the direct-mode row of `exec_alu8`) with `DP = $05` already loaded (say, by
@@ -1056,20 +1024,17 @@ pub(crate) fn add8(&mut self, a: u8, m: u8, carry_in: u8) -> u8 {
 }
 ```
 
-Read the first three lines as a unit, because they are the whole trick. The
+The first three lines use wider intermediates. The
 addition is performed in `u16`, not `u8`, so the ninth bit survives: `sum >
 0xFF` is a direct test for carry-out that needs no bit-twiddling. `let r = sum
 as u8;` then narrows to the byte the register will actually hold, discarding
 that ninth bit *after* it has been consulted. The third line does the same
-thing one nibble down: adding only the low nibbles of both operands, in a type
-wide enough to hold five bits of result, makes `half > 0x0F` a direct test for
-carry out of bit 3. Both flags come from computing in a wider type than the
-answer needs and then looking at what spilled over. That idiom recurs
-throughout this file, and it is the single most useful thing to take away from
-`alu.rs`.
+thing one nibble down: adding only the low nibbles of both operands in a type
+wide enough to hold five bits makes `half > 0x0F` a direct test for carry out
+of bit 3. Both flags come from computing in a wider type and inspecting the
+bits outside the stored result. The same idiom recurs throughout `alu.rs`.
 
-The fourth line — `self.cc &= !(...)` — is the one that is easy to omit and
-brutal to debug. It clears all five flags this function is responsible for
+The fourth line, `self.cc &= !(...)`, clears all five flags this function owns
 *before* any of them is set, so that each `if` below is a pure "set if true"
 rather than a "set if true, and hope the previous instruction left it clear."
 Without it, `add8` could only ever turn flags on, and a `C` set by some
@@ -1097,19 +1062,12 @@ anywhere:
 
 `A` is untouched; only the flags `sub8` sets as a side effect survive.
 
-There is one detail in `let c = self.cc & cc::CARRY;` that is easy to skim
-past and that the dispatch comment in §2.2 calls out explicitly: *"cc::CARRY
-== 0x01, so masking yields 0 or 1."* The carry flag is deliberately the lowest
-bit of `CC`, which means masking it out produces exactly the integer 0 or the
-integer 1 — already the right numeric value to add. No shift, no `if`, no
-`as u8` from a `bool`. Had the datasheet put `C` anywhere else in the byte,
-every `ADC` and `SBC` arm would need a shift, and someone would eventually
-forget one. Bit assignments in a status register are not arbitrary, and this
-is one of the places you can see the hardware designers thinking about the
-same problem.
+The dispatch comment calls out one useful detail: *"cc::CARRY == 0x01, so
+masking yields 0 or 1."* Because carry occupies bit 0, masking produces the
+numeric value required by `ADC` and `SBC` without a shift or conversion.
 
-Since `sub8` is invoked by five instruction families and by `NEG` in §2.6, it
-is worth seeing rather than inferring ([`alu.rs:232`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L232)):
+`sub8` is invoked by five instruction families and by `NEG` in §2.6
+([`alu.rs:232`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/alu.rs#L232)):
 
 ```rust
 /// 8-bit subtract with borrow-in: `a - m - borrow_in`. Sets N, Z, V, C per the
@@ -1164,12 +1122,10 @@ terminator:
 ```
 
 It doesn't *feel* like arithmetic. It feels like a primitive comparison
-operator — the assembly equivalent of `if (a == 0x0D)`. But you now know
-exactly what `CMPA` is: `self.sub8(self.a, m, 0)` with the return value
-thrown away. There is no separate "compare" circuit on the 6809, and there
-is no separate `cmp8` function in this emulator either — `CMPA #$0D` and
-`SUBA #$0D` run *the exact same Rust function* on *the exact same inputs*
-and leave *the exact same flags*. The only difference between the two
+operator, the assembly equivalent of `if (a == 0x0D)`. In this emulator,
+`CMPA` calls `self.sub8(self.a, m, 0)` and discards the returned byte. There is
+no separate `cmp8` function: `CMPA #$0D` and `SUBA #$0D` use the same helper
+and produce the same flags. The only difference between the two
 instructions, anywhere in this codebase, is one line: whether the arm writes
 `sub8`'s return value back into `self.a` or lets it fall on the floor. Every
 conditional branch that gets chained after a `CMP` — `BEQ`, `BNE`, `BLO`,
@@ -1910,28 +1866,20 @@ interrupt code arrives with its own costs (19 cycles for `SWI`, 20 for `SWI2`,
 
 The place where the cycle count is added holds a subtlety of its own. Look at
 the bottom of `step`: `self.cycles += cycles as u64;` runs *after* the
-instruction's effects are complete. The instruction's whole cost is banked at
-its end, not spread across it, which is the same statement as
-"instruction-granular" from the scheduler's point of view. When Chapter 6 asks
+instruction's effects are complete. The scheduler therefore sees time advance
+once per completed instruction. When Chapter 6 asks
 "has 57 cycles elapsed?", the answer moves in jumps of 2 to 22 rather than
-smoothly — the scanline boundary lands wherever an instruction happens to
-finish, up to about twenty cycles late. That imprecision is the budget being
-spent, and knowing exactly where it is spent is what will let you tighten it
-later if some program turns out to notice.
+smoothly. A scanline boundary lands when an instruction finishes rather than
+during the instruction. Chapter 6 examines the resulting timing tolerance.
 
 ---
 
 ## 2.8 How the tests teach
 
-Chapter 1's study method put "read the tests before the implementation" first,
-on the argument that a test states a hardware fact in five lines where the
-implementation spreads it across a decode chain and three helper functions.
-This section makes good on that claim for the material of this chapter, and it
-also introduces the harness every CPU test in the book uses.
+Tests restate the implementation's rules with concrete inputs and outputs.
+This section applies the test harness from Chapter 1 to an overflow case.
 
-The `mc6809` test suite isn't incidental — it's written so that reading one
-test file after reading the source teaches you the same flag rules a second
-way: concretely, with real numbers. Take `adda_signed_overflow` from
+Consider `adda_signed_overflow` from
 [`crates/mc6809/tests/alu.rs:57`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/alu.rs#L57):
 
 ```rust
@@ -1954,8 +1902,7 @@ loading a byte program and pointing `PC` at it, `s.step()` calling
 — so this test asks exactly what you can now answer by hand: what happens
 when `A = 0x7F` and you `ADDA #$01`?
 
-The `flags(&s)` helper is worth knowing by name, because every arithmetic test
-in the suite ends with it. It is a small function that packs the five flags
+The `flags(&s)` helper packs the five flags
 into a tuple in the fixed order `(H, N, Z, V, C)`, defined at the top of both
 `tests/alu.rs` and `tests/logic_rmw.rs` — separately, since Rust compiles each
 integration test file as its own crate. That ordering is a convention you
@@ -2029,41 +1976,23 @@ Choosing values that make the invariant visible costs nothing and is the
 difference between a test that documents behavior and one that merely
 verifies it.
 
-One filename oddity worth flagging while you're in the test directory: the
-two `DAA` tests walked in §2.5 live in [`tests/interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs), not a
-`tests/daa.rs` or `tests/misc_inherent.rs` you might expect from the opcode
-map. The file's own header comment says why — it bundles "the misc inherent
-ops (ORCC/ANDCC/SEX/ABX/MUL/DAA) and the interrupt / halt subsystem"
-together, two unrelated corners of the ISA that happen to share one thing:
-neither fits cleanly into the load/store, ALU, logic, indexed, 16-bit, or
-RMW families this chapter organizes around. Test file boundaries in this
-codebase generally track the `exec_*` family split you learned in §2.2, but
-not perfectly — when a test's contents don't match its filename's obvious
-guess, that's a signal about the *code's* organization, not a bug in the
-tests. `exec_misc_inherent` (§2.2's dispatch table, the `0x1A | 0x1C | 0x1D
-| 0x3A | 0x3D | 0x19` arm) is exactly this leftover-bin shape in the
-executor too — `DAA` sits in a family function whose members have nothing
-in common beyond "not big enough to deserve its own arm."
+The two `DAA` tests live in [`tests/interrupts.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/interrupts.rs). That file also covers the miscellaneous inherent
+operations grouped by `exec_misc_inherent`; test files usually follow the
+executor's family boundaries, though not perfectly.
 
-There is one more thing to take from the test files before you go read them,
-and it is in their headers rather than their bodies. `tests/logic_rmw.rs`
+The test-file headers also record shared rules. `tests/logic_rmw.rs`
 opens with a nine-line summary of flag conventions — *"COM: N,Z; V cleared; C
 forced to 1"*, *"LSR: N forced to 0; V unaffected; C = old bit 0"*, and so on
 — introduced by the phrase *"verified against the Motorola MC6809 CC
-tables."* That header is a specification, written down where the tests that
-enforce it can be read against it. When you extend this suite, extending the
-header is part of the job; a test that pins down a rule nobody wrote down is
-a rule that will get "simplified" away in six months.
+tables."* Keep that summary synchronized when extending the suite so the
+stated rule and its tests remain adjacent.
 
 ---
 
 ## 2.9 Reading assignment
 
-This week's reading is the largest single body of source in the course, and
-the order below is chosen so that each file answers a question the previous
-one raised. Budget an evening. The goal is not to memorize opcode bytes — the
-instruction card exists for that — but to be able to predict, for any opcode,
-which file and which function you'd land in.
+Read the files below in dependency order. The goal is not to memorize opcode
+bytes, but to predict which file and function implement a given opcode.
 
 1. **[`crates/mc6809/src/exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs), all of it** — the `step` match, then each
    `exec_*` family function, until you can say for any opcode byte on your
@@ -2081,7 +2010,7 @@ which file and which function you'd land in.
    [`tests/common/mod.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/tests/common/mod.rs) — a second explanation of §2.5–2.6, in numbers
    instead of formulas.
 
-Run the suite and watch these specific files' worth of tests pass:
+Run the corresponding integration tests:
 
 ```
 cargo test -p mc6809 --test loads --test alu --test logic_rmw
@@ -2189,20 +2118,13 @@ behave like addition's mirror image on `H`.)
 
 ## What's next
 
-Next week you stay inside the CPU and take on the single hardest 200 lines in
-it: the indexed-addressing postbyte, `1 rr i mmmm`, which a large fraction of
-all instructions route through — 5-bit offsets, accumulator offsets, auto
-inc/dec, PC-relative addressing, extended-indirect, and the indirect bit that
-triggers a second memory fetch on top of the first. You'll also meet
-`PSH`/`PUL`'s register-mask encoding, `TFR`/`EXG`'s nibble codes, and the
-disassembler that mirrors the executor byte-for-byte. Keep your instruction
-card handy — you'll be hand-decoding postbytes like `$8B`, `$F4`, and `$9F`
-before the chapter is out.
+Chapter 3 develops the indexed-addressing postbyte, `1 rr i mmmm`. It covers
+5-bit and accumulator offsets, auto-increment and decrement, PC-relative and
+extended-indirect addressing, and the indirect bit's additional memory fetch.
+It also introduces the `PSH`/`PUL` register mask, the `TFR`/`EXG` selector
+nibbles, and the disassembler that parallels the executor.
 
-Two things from this week become load-bearing there. The `(ea, ic)` pair you
-met in `exec_logic8`'s indexed rows is the shape `ea_indexed` returns, and
-`ic` is the reason §2.7 has a "base plus extra" cycle case at all — next week
-explains where every one of those extra cycles comes from. And the three-cast
-sign-extension idiom from §2.2's branch arm reappears immediately, applied to
-a 5-bit field rather than an 8-bit one, which turns out to be the one case
-where `as i8` isn't enough on its own.
+The `(ea, ic)` pair from the indexed rows becomes `ea_indexed`'s result, with
+`ic` supplying the addressing mode's extra cycles. The sign-extension pattern
+from §2.2 also returns for a 5-bit field, where an `as i8` cast alone is not
+enough.

@@ -1,35 +1,24 @@
 # Chapter 1 — The Shape of the Machine
 
-*Week 1. Goal: understand the whole emulator's shape before touching any
-chip. By the end of this chapter you will know what an emulator actually
-is (it's smaller than you think), how the CoCo 3's chips divide up the
-work, and the two abstractions in this codebase that everything else
-hangs off — one of which exists because of the 6809, and one of which
-exists because of Rust.*
+*Week 1. Goal: understand the whole emulator before studying any one chip.
+By the end of this chapter you will know how the CoCo 3 divides its work and
+why this codebase is organized around a bus and an ownership boundary.*
 
 ---
 
-There is a particular kind of intimidation that comes with the phrase
-"write an emulator." It sounds like the sort of project that requires a
-signal-processing background, or at least a deep familiarity with the
-electrical behavior of 1980s silicon. It doesn't. What it requires is
-patience, a data sheet, and a willingness to be relentlessly literal
-about what each chip does. The reason emulators look mysterious from the
-outside is that finished ones are large — this repository is around fifty
-thousand lines — and size reads as complexity. But the size is almost
-entirely *breadth*: one more device, one more register, one more mode
-bit. The depth is shallow, and the shape at the bottom is always the
-same.
+"Write an emulator" sounds like a project for someone steeped in signal
+processing and the electrical behavior of old silicon. Most of the work is
+more ordinary. Read what a chip does, represent its state, and reproduce its
+observable behavior. A finished emulator is large because a computer contains
+many devices, registers, and modes. The challenge is covering that breadth
+without losing track of how the pieces interact.
 
-That shape is what this chapter is about. This week does not write a
-single opcode. Instead it establishes the vocabulary and the mental model
-that the next fifteen weeks are built on: the three moving parts of any
-emulated device, the five chips that divided the CoCo 3's work among
-themselves, and the two design decisions in this codebase that,
-had they gone the other way, would have made the rest of the project
-miserable. One of those decisions comes from the 6809's own hardware
-interface. The other comes from Rust's borrow checker, and it is the one
-that most first-time emulator authors in this language get wrong.
+This chapter builds a map before the implementation begins. It identifies the
+three parts of an emulated device, assigns the CoCo 3's major jobs to its
+chips, and introduces two design decisions used throughout the repository.
+The `Bus` trait reflects the 6809's hardware interface. The split between
+`Machine` and `SystemBus` lets Rust prove that the CPU and its devices can be
+mutated at the same time.
 
 There is no code to run until §1.8, and even that is one command.
 
@@ -37,24 +26,18 @@ There is no code to run until §1.8, and even that is one command.
 
 ## 1.1 What an emulator actually is
 
-Let's strip away the mystique before it has a chance to settle. An
-emulator — any emulator, for any machine — is three things: some state,
-a loop that advances the state, and a seam through which the state
-touches the outside world. That's the whole idea. Everything else is
-detail work. It's worth taking each of the three seriously for a moment,
-because once you can see them in one device you see them in every device,
-and the rest of this book becomes an exercise in pattern recognition
-rather than one in memorization.
+An emulated device needs three things: state, a rule for advancing that state,
+and an interface to the rest of the machine. The details vary by device, but
+this division does not. Recognizing it turns a list of unfamiliar chips into a
+set of related implementation problems.
 
 ### State
 
-*State* is a handful of plain variables that mirror the registers and
-memories of the real chips. Not a model of them, not an abstraction over
-them — a mirror. When the data sheet says the 6809 has an 8-bit
-accumulator called A, the emulator has a `u8` called `a`, and that is the
-entire relationship.
+*State* is the set of values that must persist between operations: registers,
+memory, counters, and device modes. When the data sheet gives the 6809 an
+8-bit accumulator called A, the emulator stores it in a `u8` called `a`.
 
-Here is the proof — real code from
+The CPU struct makes that correspondence visible. This is real code from
 [`crates/mc6809/src/lib.rs:139`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L139),
 not a teaching simplification trimmed for the book. This is the entire
 CPU of the CoCo 3:
@@ -88,17 +71,14 @@ bytes' worth of registers, a cycle counter, and two bookkeeping fields —
 `state` and `nmi_armed` — that we'll unpack properly in Chapter 4 when
 interrupts arrive.
 
-What matters right now is what *isn't* there. There is no microcode
-table. There is no hidden simulation engine, no instruction pipeline, no
-"CPU context" object with a hundred fields of scaffolding. Nine registers
-and three bits of housekeeping is the honest description of an MC6809E,
-and the struct above is nothing more than that description in Rust. If
-you were expecting the CPU to be the hard part of this project, adjust
-that expectation now: the CPU is roughly three weeks of careful
-table-copying from a data sheet. The GIME will take you longer.
+The struct contains no instruction pipeline or general-purpose "CPU context"
+object. It stores the programmer-visible registers, a cycle count, and the
+extra state needed for halting and interrupts. The CPU still requires careful
+work around flags, addressing modes, and timing, but its persistent state is
+compact. The GIME eventually needs more machinery because it combines memory
+mapping, video, timers, and interrupts.
 
-Even the one field that is neither a register nor a counter is smaller
-than you'd guess. `state` is a three-variant enum, and its variants are
+The `state` field is a three-variant enum. Its variants are
 named after two instructions that rarely turn up in everyday 6809
 code, from
 [`lib.rs:123`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L123):
@@ -119,23 +99,16 @@ pub enum State {
 }
 ```
 
-The 6809 could stop itself and wait for the outside world, which is more
-than most 8-bit CPUs of its generation could manage gracefully. We'll
-build both halt states in Chapter 4. For now, notice only that a
-capability which sounds like it needs special machinery is modeled as
-one enum with three cases, and that Rust's `#[default]` attribute lets a
-derived `Default` pick `Running` without anyone writing a constructor. If
-you find yourself reaching for a state machine class, look again — it's
-usually an enum.
+The 6809 can stop and wait for an interrupt. Chapter 4 implements both halt
+states. For now, notice how directly the enum records the three possibilities.
+Rust's `#[default]` attribute also lets the derived `Default` implementation
+select `Running` without a handwritten constructor.
 
 ### A loop
 
-The second part is the loop, and it is embarrassingly short to describe.
-Fetch the byte sitting at `PC`. Decide which instruction that byte names.
-Do to the state exactly what the data sheet says that instruction does.
-Add the instruction's documented cycle cost to a counter. Advance `PC`
-past whatever you consumed. Repeat, forever, or until someone closes the
-window.
+The second part is the loop. Fetch the byte at `PC`. Decode it. Apply the
+instruction's documented effects, add its cycle cost, and advance `PC` past
+the bytes consumed. Then repeat.
 
 That's the *fetch-execute cycle*, and when people say "emulator" they
 usually mean this loop. It is the thing you will build a toy version of
@@ -146,42 +119,30 @@ each iteration claims to have taken.
 
 ### A seam
 
-The third part is the one that determines whether your codebase stays
-pleasant for fifty thousand lines or turns into a plate of spaghetti in
-month two. The CPU cannot live in a vacuum: it has to touch RAM, ROM, the
-keyboard, the video chip, the cassette port. Every one of those touches
-has to go somewhere, and the question is *where*.
+The third part is the interface. The CPU must reach RAM, ROM, and mapped
+devices without knowing their implementations. Every access therefore needs a
+single route out of the CPU.
 
-In this codebase, all of them go through a single narrow interface — a
-trait with exactly two required methods. That interface is the *seam*
-between the CPU and everything else, and choosing it well is the most
-consequential design decision in the whole project. Section 1.3 is
-devoted to it, and to the three deliberate choices packed into its ten
-lines of source.
+In this codebase, every access goes through a trait with two required methods.
+Section 1.3 examines the three design choices encoded in that small interface.
 
 ### The same shape, all the way down
 
-State, loop, seam. The remaining fifty thousand lines of this repository
-are what happens when you take each device on the other side of that seam
-seriously, one at a time. And here is the claim that makes the rest of
-this course tractable: *each of those devices is also just state, a loop,
-and a seam.* The shape recurs at every level.
+State, advancement, interface. The same division applies to the devices the
+CPU accesses, which gives us a consistent way to study each subsystem.
 
-Take one example on faith for now, since Chapter 12 delivers the details.
-Consider the cassette interface — a device that sounds, on the face of
-it, like it should require real signal processing. Its **state** is a
+Consider the cassette interface, which Chapter 12 develops in detail. Its
+**state** is a
 decoded byte stream, a playback position, and a motor flag. Its **loop**
 is "every N cycles, the current bit's tone flips the input line." Its
-**seam** is a single bit that PIA1 hands to the CPU when the ROM polls
-it. A tape deck, with its motor physics, its audio frequencies, and the
-ROM's own demodulation algorithm sitting on the other end of it, reduces
-to the same three-part shape as the CPU does.
+**interface** is a single bit that PIA1 hands to the CPU when the ROM polls
+it. The emulator does not reproduce the motor's physics. It preserves the
+parts the ROM can observe: the byte stream, timing, motor control, and input
+level.
 
-So when you meet a new device in this course — and you will meet a dozen
-— train yourself to ask three questions before anything else. What is the
-state? What is the loop? Where is the seam? If you can answer those, the
-implementation is bookkeeping. If you can't, no amount of code will save
-you.
+For each new device, ask three questions: What state persists? What advances
+it? Which operations connect it to the rest of the machine? The answers define
+the first useful implementation sketch.
 
 ### Interpreting, not translating
 
@@ -196,9 +157,8 @@ The alternative is a *JIT*, a just-in-time translator, which compiles
 each emulated instruction into native host machine code once and then
 jumps straight to the compiled version on every subsequent execution.
 JITs are how you emulate a PlayStation 2 at full speed on commodity
-hardware. They are also wildly, comically unnecessary here, and the
-arithmetic is worth doing once so you stop worrying about performance for
-the rest of the book.
+hardware. They are unnecessary for a CoCo 3 running on a modern computer. A
+rough calculation shows the available margin.
 
 The CoCo 3's CPU runs at 0.895 MHz, or 1.79 MHz after the famous speed
 poke. A modern laptop, conservatively, retires on the order of a billion
@@ -213,15 +173,12 @@ What you buy with that margin is readability. An interpreted core can be
 single-stepped, traced, breakpointed, and read aloud. When Chapter 16 builds
 a debugger that stops mid-instruction and shows you the register file, it
 can do that because there's no compiled artifact standing between the
-source and the behavior. A course — and a debugger — cares enormously
-about those properties, and not at all about performance headroom we will
-never spend.
+source and the behavior. Those properties matter more here than unused
+performance headroom.
 
 ### Cycles are the currency
 
-One habit to start building immediately, because it will feel strange for
-about a week and then feel obvious forever: emulator code does not think
-in seconds. It thinks in *CPU cycles*.
+Emulator code measures time in *CPU cycles*, not seconds.
 
 Every 6809 instruction costs a documented number of cycles. `LDA`
 extended costs five. `NOP` costs two. Those numbers are printed in the
@@ -233,26 +190,22 @@ cycle count. When Chapter 6 builds the timing loop, "run one scanline" will
 literally mean "run instructions until roughly fifty-seven cycles have
 elapsed," and "run one video field" will mean doing that 262 times.
 
-Notice, then, where `cycles: u64` sits: right there in the CPU struct,
-alongside the registers. It is not debug decoration bolted on for
-convenience. It is the machine's clock, and it is stored in the CPU
-because the CPU is the only thing in the system that knows how much time
-has passed.
+This explains why `cycles: u64` sits beside the registers in the CPU struct.
+It is the machine's clock, not a debugging convenience. The CPU updates it
+because instruction execution determines how much emulated time has passed.
 
 ---
 
 ## 1.2 A tour of the machine
 
-What the CoCo 3 *does* is well known to anyone who ever sat in front of
-one. What is far less widely known is who, precisely, was doing each part
-of it — which chip drew the characters, which chip read the keyboard,
-which chip decided that a byte POKEd at 1024 should appear in the
-top-left corner of the screen. Emulating the machine means taking a side
-in that division of labour, so let's meet the cast.
+Using a CoCo 3 does not reveal which chip performs each task. One chip reads
+the keyboard, another produces video, and several cooperate to turn a byte at
+address 1024 into the top-left character on the screen. An emulator must make
+that division explicit.
 
-Five chips matter. Everything else on the board is glue: address
-decoders, buffers, the RF modulator, and a great deal of Tandy's
-cost-engineering.
+The main actors are the 6809E, the GIME, and two PIAs, supported by RAM, ROM,
+and devices on the cartridge port. The remaining board components provide
+address decoding, buffering, and video output.
 
 ```
                        ┌──────────────────────────────┐
@@ -322,23 +275,18 @@ changed one bit.
 BASIC in ROM, and RAM sitting behind the MMU where the CPU can only see
 64K of it at a time.
 
-Finally, **the cartridge port**, which is barely a device at all — it's a
-raw extension of the bus with a chip-select line and two interrupt lines
-brought out to the connector. This is worth internalizing early, because
-it demystifies a whole category of hardware. A disk controller is not
-special hardware as far as the CoCo is concerned. It's a cartridge that
-decodes a few addresses in the I/O page and yanks the HALT and NMI lines
-at the right moments. Chapter 13 will build one, and the surprise will be
-how little the rest of the machine has to know about it.
+Finally, **the cartridge port** extends the bus to a connector, along with a
+chip-select line and two interrupt lines. From the CoCo's perspective, a disk
+controller is a cartridge that decodes addresses in the I/O page and asserts
+HALT and NMI when required. Chapter 13 implements that behavior without
+changing the CPU.
 
-### The one table that ties the course together
+### The I/O page
 
 The 6809 sees 64K, and the top 256 bytes of that space — `$FF00` through
 `$FFFF` — are the **I/O page**, where every device in the machine
-appears. This one page is the meeting point of every subsystem in this
-book. You'll internalize the map properly in Chapter 5 when we implement the
-address decoder, but it's worth a bookmark right now, if only so the week
-numbers give you a sense of the shape of the journey:
+appears. This page is where the CPU reaches the machine's devices. Chapter 5
+implements the address decoder; for now, the table maps the subsystems ahead:
 
 | Address       | Device                                | Chapter     |
 |---------------|---------------------------------------|-------------|
@@ -355,10 +303,8 @@ numbers give you a sense of the shape of the journey:
 run twice as fast, and also the poke that, on the first attempt, broke
 something about as often as it worked. Decimal 65497 is `$FFD9`, which
 lands squarely in the SAM-compatibility row. By Chapter 6 you'll know
-exactly what that poke does to the emulator's main loop, and the answer
-is delightfully anticlimactic: it changes one integer. The thing that
-felt like magic turns out to be a multiplier on a scanline's cycle
-budget.
+exactly what that poke does to the emulator's main loop. The implementation
+changes one integer: the multiplier applied to a scanline's cycle budget.
 
 ### Why the GIME answers to a dead chip's addresses
 
@@ -383,8 +329,7 @@ an option. So the GIME keeps answering at the old addresses, imitating
 the old chips' behavior well enough that software written for a machine
 that no longer exists continues to work.
 
-What is genuinely satisfying is that this codebase mirrors the
-silicon's family history rather than papering over it. There is a real
+The codebase preserves that distinction. There is a real
 `SAM` type in
 [`crates/coco-core/src/sam.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs),
 and it is used *only* when emulating a CoCo 1 or CoCo 2. The CoCo 3 path
@@ -397,10 +342,8 @@ why half the GIME's register map exists at all.
 
 ### Decoding the odd clock
 
-One more number is worth pulling apart while we're taking inventory,
-because it explains something about how all home computers of this era
-were built. The CPU clock is usually quoted as 0.895 MHz, which is a
-strange enough figure to make you wonder who chose it. The exact value in
+The CPU's unusual clock rate shows how tightly the machine's subsystems are
+related. It is usually quoted as 0.895 MHz. The exact value in
 this codebase lives in
 [`crates/coco-core/src/machine.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L26):
 
@@ -432,10 +375,8 @@ counter without any of the subsystems drifting apart.
 
 ## 1.3 Load-bearing abstraction #1: the `Bus` trait
 
-We've established that the CPU needs a seam to reach the outside world.
-Now let's look at the actual seam, see why it is shaped the way it is,
-and notice the three separate design decisions hiding in what looks like
-a trivial interface.
+The CPU reaches the rest of the machine through the `Bus` trait. Its small
+interface encodes three decisions that recur throughout the emulator.
 
 Here it is in full, from
 [`crates/mc6809/src/lib.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L29):
@@ -472,14 +413,12 @@ be equally happy in a Vectrex or a Dragon 32, both of which also used a
 6809. Every `LDA`, every stack push, every interrupt vector fetch, every
 indexed-indirect address resolution funnels through `read` and `write`.
 
-That narrowness is not laziness. Three deliberate decisions are packed
-into those lines, and each one gets cashed in later in the course.
+The consequences of that narrow interface appear immediately in the design.
 
 ### Decision 1: `read` takes `&mut self`
 
-At first glance this looks like a mistake, or at best a Rust novice's
-over-caution. Reading memory doesn't change anything, does it? You look
-at a byte; the byte is still there.
+Ordinary RAM reads do not change RAM, so `&self` may appear sufficient. Device
+registers do not always behave like RAM.
 
 On real hardware, reading absolutely does change things, and the CoCo is
 full of examples. Two you'll meet within a few weeks:
@@ -593,8 +532,8 @@ with two helpers that between them define what a CPU test even is:
     }
 ```
 
-Read `code` slowly, because it is the shape of every CPU test in the
-book. It builds an empty system, drops your hand-assembled bytes at an
+`code` shows the shape of every CPU test in the book. It builds an empty
+system, drops hand-assembled bytes at an
 address, and points `PC` at them. To test `LDA $0400`, you call
 `Sys::code(0x1000, &[0xB6, 0x04, 0x00])`, call `step()`, and assert on
 `sys.cpu.a` and the returned cycle count. No ROM, no GIME, no video
@@ -602,10 +541,8 @@ timing, no boot sequence. Just three bytes and a question.
 
 Meanwhile the real machine implements the identical trait on
 `SystemBus`, which owns all the actual devices — that's Chapter 5's work.
-Same CPU code, byte for byte, running in both worlds. The practical
-consequence is worth stating plainly, because it will save you days: when
-a CPU test fails, you *know* it's the CPU, since there is no machine in
-the room to blame.
+The same CPU code runs in both worlds. When one of these tests fails, the CPU
+or its test is at fault; no other CoCo device is present to cause the failure.
 
 > **Rust corner: monomorphization, or why this costs nothing.**
 > `fn step(&mut self, bus: &mut impl Bus) -> u32` is a generic function,
@@ -690,23 +627,17 @@ accidentally depend on information the real chip never had. If the real
 either, and any behavior we get right, we get right for the right
 reason.
 
-There's a practical dividend as well. Because the seam is two methods,
-implementing it for a new machine is an afternoon's work rather than a
-port. Exercise 1.8 asks you to think about what it would take to run this
-CPU in a Vectrex emulator, and the answer is pleasantly short.
+Because the interface has two methods, adapting the CPU to another machine
+requires a new `Bus` implementation rather than changes to the CPU. Exercise
+1.8 applies that idea to a Vectrex emulator.
 
 ---
 
 ## 1.4 Load-bearing abstraction #2: the borrow-checker strategy
 
-This is the section where Rust stops being an implementation detail and
-starts shaping the architecture. It's also the part that first-time
-emulator authors in this language most reliably get wrong. They tend to
-discover the problem three weeks in, with a half-built machine that won't
-compile and no obvious way forward short of rewriting everything.
-
-Far better to meet it in Chapter 1, on paper, than in Chapter 5 with sunk
-cost.
+Rust's ownership rules shape the emulator's architecture. The problem appears
+as soon as the CPU needs mutable access to itself and to the devices around it,
+so the design addresses it before those devices are implemented.
 
 ### The problem
 
@@ -743,8 +674,7 @@ and the borrow checker stops you cold with error E0499: cannot borrow
 `self` mutably by naming `self.cpu`, and you cannot hand out a second
 overlapping `&mut self` on top of it.
 
-Here's the part worth sitting with: **the checker is right.** This is not
-Rust being pedantic about a pattern that would have been fine. Through
+The overlapping borrow is unsafe. Through
 that second `&mut self`, the CPU could reach back into `self.cpu` — the
 very thing it's currently mutating — and alias itself. Nothing in the
 type system prevents `step` from writing to `self.cpu.pc` through the bus
@@ -752,10 +682,9 @@ reference while `step`'s own `&mut self` believes it has exclusive
 access. In C you'd get away with it because nobody's checking, right up
 until the day you don't.
 
-That traditional C design, where every device holds a pointer back to the
-machine so it can reach anything from anywhere, is precisely the aliasing
-that Rust exists to reject. You are not going to talk the compiler out of
-it.
+In a traditional C design, devices often hold pointers back to the machine.
+Rust rejects that unrestricted aliasing, so the state must be organized
+differently.
 
 So what do people do? The first workaround almost everyone reaches for is
 to wrap every device in `Rc<RefCell<…>>`, which moves the borrow checking
@@ -811,10 +740,9 @@ borrows of both alias nothing and are allowed to coexist. No `Rc`. No
 and a single struct boundary placed along the borrow line makes the
 entire architecture compile.
 
-Take a moment to appreciate how little this cost. The fix is not a
-pattern, or a framework, or a clever lifetime signature. It's a decision
-about which fields live in which struct — made once, in Chapter 1, with the
-borrow checker's rules in mind rather than against them.
+The fix requires no framework or elaborate lifetime signature. It is a
+decision about which fields live in which struct, made to match the borrows
+that must coexist.
 
 > **Rust corner: `Box<[u8]>`, not `Vec<u8>`.** Look at how `SystemBus`
 > stores memory, from
@@ -945,11 +873,9 @@ You'd be writing custom serialization code with an interning table, by
 hand, for a machine with forty devices in it. Somewhere between painful
 and impossible, and either way not a weekend.
 
-Instead, the architecture decision of Chapter 1 quietly purchased the
-flagship feature of Chapter 16. This is the single best example in this
-codebase of an early constraint paying compound interest, and it's the
-argument to make to anyone who thinks the borrow checker is a tax rather
-than a design tool.
+The ownership layout therefore supports Chapter 16's save-state feature
+without a custom object-graph serializer. Here the borrow checker acts as a
+design constraint whose benefits extend beyond memory safety.
 
 > **Rust corner: `#[serde(skip)]`.** Not every field belongs in a
 > snapshot, and the `Machine` struct spells out which ones don't. Look at
@@ -985,10 +911,8 @@ than a design tool.
 
 ### One honest caveat
 
-For the record-keepers, and because a book that claims a codebase is
-perfectly pure is a book you should distrust: the "no shared ownership"
-rule holds absolutely for the *machine state tree*, and bends at exactly
-two host-facing edges.
+The "no shared ownership" rule applies to the *machine state tree*. Two
+host-facing components are exceptions.
 
 The printer capture sink is a shared `Rc<RefCell<Vec<u8>>>` handle,
 because the frontend and the emulated printer port genuinely both need to
@@ -999,10 +923,8 @@ Both live precisely at the boundary where the emulator stops and the host
 begins, both are excluded from save states, and Chapter 14 examines each of
 them in detail.
 
-The lesson survives contact with reality, slightly sharpened: shared
-ownership is *banned* from the state you snapshot, and *tolerated* only
-where the host forces your hand. That's a rule you can actually follow,
-which is more than can be said for purity.
+Shared ownership is excluded from snapshot state and used only at host
+boundaries that require it.
 
 ---
 
@@ -1115,7 +1037,7 @@ to be stricter?
 | Floppy controller | functional state machine, byte-paced delays | Chapter 13 |
 | Serial UART (6551) | byte-granular frames, not bit-serial | Chapter 14 |
 
-Two things in that table are worth pausing on.
+The table shows why fidelity differs by subsystem.
 
 First, the fidelity **varies by subsystem**, and the variation is not
 arbitrary. The cassette is modeled at cycle granularity while the floppy
@@ -1334,10 +1256,9 @@ and
 [`crates/coco-core/src/wd1773.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/wd1773.rs)
 — headers only; the guts are Chapters 12 and 13. Each one states its
 fidelity choice and its reason in the first comment block. Write down, in
-one sentence each, *what piece of 1980s software forced* that choice. The
-habit of asking "who notices?" is this week's real deliverable, and it
-will save you more time over the next fifteen weeks than any single
-technique in the book.
+one sentence each, *what piece of 1980s software forced* that choice. Then
+write down which software can observe each fidelity choice. The same question
+guides the later chapters.
 
 **1.8 — One-way arrows (recall + verify).** From §1.5: which crate
 depends on which? Verify your answer mechanically rather than from
@@ -1345,8 +1266,8 @@ memory — each crate's `Cargo.toml` has a `[dependencies]` section that
 takes ten seconds to read. Then answer the interesting question: if you
 wanted to reuse the `mc6809` crate in a Vectrex emulator, which was also
 a 6809 machine, what exactly would you need to bring along with it? The
-answer should be pleasingly short, and its shortness is the entire point
-of §1.3.
+answer should name the `mc6809` crate and a new implementation of its `Bus`
+trait.
 
 ---
 
