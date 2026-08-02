@@ -476,11 +476,16 @@ pub fn run() -> eframe::Result<()> {
         },
         None => Vec::new(),
     };
+    let machines = entries.len();
     eframe::run_native(
         "cocovm",
         options,
         Box::new(move |cc| {
-            crate::log_renderer_info(cc);
+            crate::banner(&crate::StartupInfo {
+                roms: crate::rom_count(),
+                machines: Some(machines),
+                renderer: crate::renderer_info(cc),
+            });
             Ok(Box::new(ManagerApp::new(
                 photo_view::random(),
                 machines_dir,

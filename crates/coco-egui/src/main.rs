@@ -76,7 +76,9 @@ pub(crate) use rom_load::{
     rs232_eprom_default_path,
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
-pub(crate) use startup::{banner, ensure_assets, log_renderer_info, setup_logging};
+pub(crate) use startup::{
+    StartupInfo, banner, ensure_assets, renderer_info, rom_count, setup_logging,
+};
 pub(crate) use status_icons::{
     StatusActivity, cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon,
     keyboard_icon, mpi_icon, printer_icon, rs232_icon, vhd_icon,
@@ -134,7 +136,6 @@ pub(crate) const TYPE_GAP_FIELDS: u8 = 1;
 
 fn main() -> eframe::Result<()> {
     setup_logging();
-    banner();
     ensure_assets();
 
     // Bare `coco` (no CLI arguments) opens the CocoVM manager window; any
@@ -165,7 +166,12 @@ fn main() -> eframe::Result<()> {
         "cocovm",
         boot::native_options(variant),
         Box::new(move |cc| {
-            log_renderer_info(cc);
+            // Direct boot reads no machine list, so the banner reports only ROMs.
+            banner(&StartupInfo {
+                roms: rom_count(),
+                machines: None,
+                renderer: renderer_info(cc),
+            });
             Ok(Box::new(boot::boot_app(cc, cli, config, rom, rom_source)))
         }),
     )

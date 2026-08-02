@@ -3,6 +3,7 @@ use std::path::Path;
 
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
+use pluralizer::pluralize;
 
 use crate::paths;
 
@@ -28,8 +29,37 @@ pub(crate) fn setup_logging() {
 /// Inner width of the banner box, in columns.
 const BANNER_WIDTH: usize = 76;
 
-/// Second banner row — placeholder for now.
-const BANNER_SUBTITLE: &str = "habababeu";
+/// What the banner box reports below its title rule.
+///
+/// The graphics backend is only known once eframe has built its context, so
+/// the whole box is printed from inside `run_native`'s creation closure
+/// rather than at the top of `main`.
+pub(crate) struct StartupInfo {
+    /// ROM images installed in [`paths::roms_dir`], from [`rom_count`].
+    pub roms: usize,
+    /// Machine definitions the manager loaded. `None` on the direct-boot
+    /// path, which never reads the machine list.
+    pub machines: Option<usize>,
+    /// One-line graphics backend description, from [`renderer_info`].
+    pub renderer: String,
+}
+
+impl StartupInfo {
+    /// `"8 ROMs and 7 machine configurations found."` — the machine half is
+    /// dropped when there is no machine list to speak of.
+    fn inventory(&self) -> String {
+        // Not `pluralize`: it upper-cases the suffix of an all-caps acronym
+        // ("ROMS"), and the initialism reads as "ROMs".
+        let roms = format!("{} ROM{}", self.roms, if self.roms == 1 { "" } else { "s" });
+        match self.machines {
+            Some(n) => {
+                let machines = pluralize("machine configuration", n as isize, true);
+                format!("{roms} and {machines} found.")
+            }
+            None => format!("{roms} found."),
+        }
+    }
+}
 
 /// Dim `s` when stdout is a color-capable terminal, else pass it through.
 fn dim(s: &str) -> String {
@@ -68,7 +98,7 @@ fn banner_row(wall: &str, text: &str) {
     println!("{wall} {text:<0$}{wall}", BANNER_WIDTH - 1);
 }
 
-pub(crate) fn banner() {
+pub(crate) fn banner(info: &StartupInfo) {
     let fill = dim(&"═".repeat(BANNER_WIDTH));
     let wall = dim("│");
     println!("{}{fill}{}", dim("╭"), dim("╮"));
@@ -84,10 +114,8 @@ pub(crate) fn banner() {
     // Light rule, so it reads as an inner divider rather than a box edge.
     let rule = dim(&"─".repeat(BANNER_WIDTH));
     println!("{}{rule}{}", dim("├"), dim("┤"));
-    banner_row(&wall, BANNER_SUBTITLE);
-    let roms = rom_count();
-    let plural = if roms == 1 { "" } else { "s" };
-    banner_row(&wall, &format!("{roms} ROM{plural} found"));
+    banner_row(&wall, &info.inventory());
+    banner_row(&wall, &info.renderer);
     println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 
@@ -135,7 +163,8 @@ pub(crate) fn ensure_assets() {
     }
 }
 
-/// Print which graphics backend eframe actually created, and on what GPU.
+/// Describe which graphics backend eframe actually created, and on what GPU,
+/// as one banner-sized line.
 ///
 /// eframe has no backend-name API: `CreationContext` carries one handle per
 /// compiled backend (`gl` for glow, `wgpu_render_state` behind the `wgpu`
@@ -145,15 +174,14 @@ pub(crate) fn ensure_assets() {
 /// API and GPU directly; glow's cached [`eframe::glow::Version`] (a safe
 /// call) distinguishes OpenGL from OpenGL ES, with only the GPU-name
 /// string needing a raw `glGetString`.
-pub(crate) fn log_renderer_info(cc: &eframe::CreationContext<'_>) {
+pub(crate) fn renderer_info(cc: &eframe::CreationContext<'_>) -> String {
     #[cfg(feature = "wgpu")]
     if let Some(render_state) = cc.wgpu_render_state.as_ref() {
         let info = render_state.adapter.get_info();
-        println!(
+        return format!(
             "Renderer: {:?} on {} ({:?}).",
             info.backend, info.name, info.device_type
         );
-        return;
     }
     if let Some(gl) = cc.gl.as_ref() {
         use eframe::glow::HasContext as _;
@@ -171,10 +199,9 @@ pub(crate) fn log_renderer_info(cc: &eframe::CreationContext<'_>) {
                 gl.get_parameter_string(eframe::glow::RENDERER),
             )
         };
-        println!("{} version: {}, renderer: {}.", api, version, renderer);
-        return;
+        return format!("{api} version: {version} ({renderer}).");
     }
-    println!("Renderer: unknown backend.");
+    "Renderer: unknown backend.".to_string()
 }
 
 #[cfg(test)]
