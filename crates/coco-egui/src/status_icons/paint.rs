@@ -35,6 +35,21 @@ struct Icon<'a> {
     response: egui::Response,
 }
 
+/// How much every icon is enlarged over the base proportions each size
+/// const below is written in. One knob for the whole set: the icons sit in
+/// the status bar next to its text, so they read as one row and have to grow
+/// together — and every icon's internal geometry is a fraction of its own
+/// size const, so scaling the const scales the shape with it.
+///
+/// The status bar's own height ([`crate::STATUS_BAR_H`]) is what bounds this:
+/// the tallest icon plus the panel's frame margin has to fit inside it.
+const ICON_SCALE: f32 = 1.25;
+
+/// An icon size, written in base proportions and scaled by [`ICON_SCALE`].
+const fn icon_size(w: f32, h: f32) -> egui::Vec2 {
+    egui::vec2(w * ICON_SCALE, h * ICON_SCALE)
+}
+
 fn begin_icon(ui: &mut egui::Ui, size: egui::Vec2, active: bool) -> Icon<'_> {
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
     Icon {
@@ -48,10 +63,10 @@ fn begin_icon(ui: &mut egui::Ui, size: egui::Vec2, active: bool) -> Icon<'_> {
 
 /// Status-bar cassette icon size: shell proportions of a compact cassette,
 /// wider than tall.
-const TAPE_ICON_SIZE: egui::Vec2 = egui::vec2(18.0, 13.0);
+const TAPE_ICON_SIZE: egui::Vec2 = icon_size(18.0, 13.0);
 
 /// Corner rounding of the cassette shell.
-const TAPE_ICON_CORNER: f32 = 1.5;
+const TAPE_ICON_CORNER: f32 = 1.5 * ICON_SCALE;
 
 /// Radius of each reel's punched hub circle, as drawn by [`cassette_icon`].
 const REEL_HUB_R: f32 = TAPE_ICON_SIZE.y * 0.20;
@@ -110,10 +125,10 @@ fn draw_reel_spokes(
 }
 
 /// Status-bar floppy icon size: a little 5¼" floppy jacket.
-const DRIVE_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 14.0);
+const DRIVE_ICON_SIZE: egui::Vec2 = icon_size(14.0, 14.0);
 
 /// Corner rounding of the jacket square.
-const DRIVE_ICON_CORNER: f32 = 1.5;
+const DRIVE_ICON_CORNER: f32 = 1.5 * ICON_SCALE;
 
 /// Status-bar floppy activity indicator (see [`DRIVE_ICON_SIZE`]): red
 /// while the drive is selected with its motor on ([`coco_core::fdc`]'s
@@ -158,10 +173,10 @@ pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 }
 
 /// Status-bar VHD icon size: a 3½" hard-drive top-view silhouette.
-const VHD_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 11.0);
+const VHD_ICON_SIZE: egui::Vec2 = icon_size(15.0, 11.0);
 
 /// Corner rounding of the VHD drive housing.
-const VHD_ICON_CORNER: f32 = 1.5;
+const VHD_ICON_CORNER: f32 = 1.5 * ICON_SCALE;
 
 /// Status-bar VHD (virtual hard disk, `$FF80-$FF86` `emudsk`) activity
 /// indicator (see [`VHD_ICON_SIZE`]): red while a READ/WRITE/FLUSH command
@@ -194,7 +209,7 @@ pub(crate) fn vhd_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 }
 
 /// Status-bar DriveWire icon size: a serial-cable-and-plug silhouette.
-const DW_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 10.0);
+const DW_ICON_SIZE: egui::Vec2 = icon_size(15.0, 10.0);
 
 /// Status-bar DriveWire activity indicator (see [`DW_ICON_SIZE`]): red
 /// while a sector has recently been read from or written to that drive
@@ -251,7 +266,7 @@ pub(crate) fn drivewire_icon(ui: &mut egui::Ui, active: bool) -> egui::Response 
 }
 
 /// Status-bar RS-232 icon size: a DB-connector silhouette.
-const RS232_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 9.0);
+const RS232_ICON_SIZE: egui::Vec2 = icon_size(14.0, 9.0);
 
 /// Width of the pin field (the trapezoidal D-sub shield), excluding the ear
 /// studs on each side — see [`rs232_icon`].
@@ -326,7 +341,7 @@ pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 }
 
 /// Status-bar joystick icon size: an analog-stick silhouette.
-const JOYSTICK_ICON_SIZE: egui::Vec2 = egui::vec2(11.0, 13.0);
+const JOYSTICK_ICON_SIZE: egui::Vec2 = icon_size(11.0, 13.0);
 
 /// Status-bar joystick activity indicator (see [`JOYSTICK_ICON_SIZE`]): red
 /// while that port's source is actively being driven
@@ -370,13 +385,13 @@ pub(crate) fn joystick_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 
 /// Status-bar printer icon size: a dot-matrix printer silhouette (body plus
 /// a sheet of paper feeding out its top).
-const PRINTER_ICON_SIZE: egui::Vec2 = egui::vec2(14.0, 13.0);
+const PRINTER_ICON_SIZE: egui::Vec2 = icon_size(14.0, 13.0);
 
 /// Height of the printer body rect, along the bottom of [`PRINTER_ICON_SIZE`].
-const PRINTER_BODY_H: f32 = 7.0;
+const PRINTER_BODY_H: f32 = 7.0 * ICON_SCALE;
 
 /// Size of the paper-sheet rect rising from the body's top.
-const PRINTER_PAPER_SIZE: egui::Vec2 = egui::vec2(8.0, 6.0);
+const PRINTER_PAPER_SIZE: egui::Vec2 = icon_size(8.0, 6.0);
 
 /// Status-bar printer activity indicator (see [`PRINTER_ICON_SIZE`]): red
 /// while a byte has recently been decoded to the live sink
@@ -427,7 +442,7 @@ pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 }
 
 /// Status-bar keyboard-mode icon size: a keyboard silhouette.
-const KEYBOARD_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 9.0);
+const KEYBOARD_ICON_SIZE: egui::Vec2 = icon_size(15.0, 9.0);
 
 /// Status-bar keyboard-mode indicator (see [`KEYBOARD_ICON_SIZE`]). Always
 /// drawn in [`super::ICON_IDLE`] — "activity" doesn't mean anything for the
@@ -455,7 +470,7 @@ pub(crate) fn keyboard_icon(ui: &mut egui::Ui) -> egui::Response {
 }
 
 /// Status-bar cartridge icon size: a ROM-pak silhouette.
-const CART_ICON_SIZE: egui::Vec2 = egui::vec2(13.0, 10.0);
+const CART_ICON_SIZE: egui::Vec2 = icon_size(13.0, 10.0);
 
 /// Status-bar cartridge indicator (see [`CART_ICON_SIZE`]). Always drawn in
 /// [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc comment on why this
@@ -499,7 +514,7 @@ pub(crate) fn cart_icon(ui: &mut egui::Ui) -> egui::Response {
 }
 
 /// Status-bar Multi-Pak Interface icon size: a card-cage silhouette.
-const MPI_ICON_SIZE: egui::Vec2 = egui::vec2(15.0, 11.0);
+const MPI_ICON_SIZE: egui::Vec2 = icon_size(15.0, 11.0);
 
 /// Status-bar Multi-Pak Interface indicator (see [`MPI_ICON_SIZE`]). Always
 /// drawn in [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc comment on

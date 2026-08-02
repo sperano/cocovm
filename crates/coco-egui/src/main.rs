@@ -122,8 +122,12 @@ pub(crate) const TOOLBAR_PANEL_MARGIN_Y: i8 = 2;
 /// tiles' own height ([`BUTTON_SIZE`].y) plus the panel frame's vertical
 /// margin on both edges ([`TOOLBAR_PANEL_MARGIN_Y`]).
 pub(crate) const TOOLBAR_H: f32 = BUTTON_SIZE.y + 2.0 * TOOLBAR_PANEL_MARGIN_Y as f32;
-/// Height reserved for the bottom status bar row when sizing the window.
-pub(crate) const STATUS_BAR_H: f32 = 22.0;
+/// Height of the bottom status bar row: both what the window-sizing math
+/// reserves for it and the panel's own exact height
+/// (`chrome::status_bar`'s `status_bar_ui`), so the two can't drift apart.
+/// Roomier than the text alone needs — it has to clear the device icons,
+/// which are drawn at `status_icons::paint`'s `ICON_SCALE`.
+pub(crate) const STATUS_BAR_H: f32 = 28.0;
 /// Symbolic-mode key timing, in fields: hold a synthesized key then release.
 pub(crate) const TYPE_HOLD_FIELDS: u8 = 2;
 pub(crate) const TYPE_GAP_FIELDS: u8 = 1;

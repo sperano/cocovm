@@ -99,33 +99,33 @@ fn function_key_hotkeys_toggle_aspect_help_and_keyboard_mode() {
         harness.state().kb_mode == KbMode::Symbolic,
         "F12 switches to symbolic keyboard mode"
     );
-    harness.get_by_label("Keyboard: Symbolic (F12)"); // status bar follows
 }
 
 /// The status bar's keyboard entry is the menu button for the keyboard menu
-/// (`CocoApp::keyboard_menu_ui`): the readout both reports the mode and
-/// changes it. Its items are only in the accessibility tree while the popup
-/// is open, so an exact "Symbolic"/"Key layout (F10)" match is unambiguous.
+/// (`CocoApp::keyboard_menu_ui`), so the mode is changed from the same entry
+/// that names the device. Its items are only in the accessibility tree while
+/// the popup is open, so an exact "Symbolic"/"Key layout (F10)" match is
+/// unambiguous — and "Keyboard" is the entry alone, the menu bar having no
+/// Keyboard menu of its own.
 #[test]
 fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     let mut harness = boot_harness();
 
-    click(&mut harness, "Keyboard: Positional (F12)");
+    click(&mut harness, "Keyboard");
     click(&mut harness, "Symbolic");
     assert!(harness.state().kb_mode == KbMode::Symbolic);
-    harness.get_by_label("Keyboard: Symbolic (F12)"); // the readout follows
 
-    click(&mut harness, "Keyboard: Symbolic (F12)");
+    click(&mut harness, "Keyboard");
     click(&mut harness, "Key layout (F10)");
     assert!(harness.state().show_kbd_help);
 
     // The same menu item toggles the window closed again.
-    click(&mut harness, "Keyboard: Symbolic (F12)");
+    click(&mut harness, "Keyboard");
     click(&mut harness, "Key layout (F10)");
     assert!(!harness.state().show_kbd_help);
 }
 
-/// The icon half of that click target: icon and readout are unioned into
+/// The icon half of that click target: icon and label are unioned into
 /// one response, so clicking the painted keyboard opens the same menu. The
 /// icon is painted rather than built from a widget, so what puts it in the
 /// accessibility tree under "Keyboard menu" is `keyboard_status`'s own

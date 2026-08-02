@@ -2,38 +2,54 @@ use coco_core::joystick::{LEFT, RIGHT};
 
 use crate::*;
 
+/// The keyboard entry's readout. Just the device name: the icon beside it
+/// carries the meaning, and the mode itself is one click away in the menu
+/// (and in the entry's hover text), so spelling it out here only made the
+/// bar's first entry the widest one.
+const KEYBOARD_LABEL: &str = "Keyboard";
+
 impl CocoApp {
     /// The status bar: live state readouts, plus the keyboard entry's menu
     /// ([`Self::keyboard_status`]).
+    ///
+    /// Pinned to [`STATUS_BAR_H`] rather than left to size itself around its
+    /// content: that constant is what the window-sizing math already
+    /// reserves for this row (`boot.rs`, `manager::vm_windows`), so an exact
+    /// height is what keeps the reservation and the rendered bar the same
+    /// number. `horizontal_centered` then takes the full panel height, so
+    /// icons and labels ride the middle of the bar instead of hugging its
+    /// top edge.
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                self.keyboard_status(ui);
-                self.cart_status(ui);
-                self.joystick_status(ui);
-                self.rs232_status(ui);
-                self.mpi_status(ui);
-                self.disk_status(ui);
-                self.vhd_status(ui);
-                self.drivewire_status(ui);
-                self.tape_status(ui);
-                self.printer_status(ui);
-                if let Some(toast) = self.toast_message() {
-                    ui.separator();
-                    ui.label(toast);
-                }
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(STATUS_BAR_H)
+            .show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    self.keyboard_status(ui);
+                    self.cart_status(ui);
+                    self.joystick_status(ui);
+                    self.rs232_status(ui);
+                    self.mpi_status(ui);
+                    self.disk_status(ui);
+                    self.vhd_status(ui);
+                    self.drivewire_status(ui);
+                    self.tape_status(ui);
+                    self.printer_status(ui);
+                    if let Some(toast) = self.toast_message() {
+                        ui.separator();
+                        ui.label(toast);
+                    }
+                });
             });
-        });
     }
 
     /// The keyboard entry — the one status-bar entry that is also a
-    /// control: icon and mode readout are a single click target that pops
-    /// up the keyboard menu (`keyboard_menu_ui` — positional/symbolic, then
-    /// the key layout window), so the mode readout is also where the mode is
-    /// changed. This entry is the only way in: the menu bar has no Keyboard
-    /// menu of its own.
+    /// control: icon and [`KEYBOARD_LABEL`] are a single click target that
+    /// pops up the keyboard menu (`keyboard_menu_ui` — positional/symbolic,
+    /// then the key layout window). This entry is the only way in: the menu
+    /// bar has no Keyboard menu of its own. The current mode lives in the
+    /// hover text, since the label no longer spells it out.
     ///
-    /// The readout is a frameless button rather than a label: `frame(false)`
+    /// The label is a frameless button rather than a plain one: `frame(false)`
     /// zeroes the button padding too, so it lines up with the plain labels
     /// of every other entry while still lighting up under the pointer. The
     /// icon is painted, not a widget, so `interact` is what makes its half
@@ -43,13 +59,15 @@ impl CocoApp {
     ///
     /// [`WidgetInfo`]: egui::WidgetInfo
     fn keyboard_status(&mut self, ui: &mut egui::Ui) {
-        let readout = format!("Keyboard: {} (F12)", self.kb_mode.label());
         let icon = keyboard_icon(ui).interact(egui::Sense::click());
         icon.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Keyboard menu")
         });
-        let entry = (icon | ui.add(egui::Button::new(readout).frame(false)))
-            .on_hover_text("Keyboard input mode — click for the keyboard menu (F12 toggles)");
+        let entry =
+            (icon | ui.add(egui::Button::new(KEYBOARD_LABEL).frame(false))).on_hover_text(format!(
+                "Keyboard input mode: {} — click for the keyboard menu (F12 toggles)",
+                self.kb_mode.label()
+            ));
         egui::Popup::menu(&entry)
             // An explicit id, not the union's: that one is the icon's auto
             // id, which is stable only as long as the keyboard stays the
