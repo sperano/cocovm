@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r \".tool_input.command // \\\"\\\"\"); if printf \"%s\" \"$cmd\" | grep -Eq \"(^|[;&|] *)(env +[A-Za-z_0-9=]+ +)*gh pr create\" && ! printf \"%s\" \"$cmd\" | grep -q \"BOOK_OK=1\"; then printf \"%s\" \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"permissionDecision\\\":\\\"deny\\\",\\\"permissionDecisionReason\\\":\\\"Book check gate: before creating this PR, review the branch diff against the chapters in book/ and update any chapter whose material this branch changes (commit the updates so they ride in the PR). If no chapter is affected, tell the user why. Once the check is done, re-run the same command prefixed with: env BOOK_OK=1 (exactly that prefix, at the very start of the command). That re-run triggers one fast gate review, which may block with findings to fix.\\\"}}\"; fi",
+            "statusMessage": "Checking book update gate"
+          }
+        ]
+      }
+    ]
+  }
+}
