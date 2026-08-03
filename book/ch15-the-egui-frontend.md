@@ -975,7 +975,7 @@ pub(crate) fn native_options(variant: MachineVariant) -> eframe::NativeOptions {
 }
 ```
 
-([`crates/coco-egui/src/boot.rs:58-71`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/boot.rs#L58-L71).) Notice the input:
+([`crates/coco-egui/src/boot.rs:66-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/boot.rs#L66-L79).) Notice the input:
 `coco_core::video::FB_H`, the fixed 224-pixel legacy figure, multiplied by
 `SCALE` — for *every* machine variant, including a CoCo 3 whose native
 canvas is 240 rows tall rather than 224. The manager's own per-VM window
@@ -1470,7 +1470,7 @@ pub struct MachineDef {
     pub ui: UIDTO,
 ```
 
-([`crates/coco-egui/src/machine_def.rs:51-68`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L51-L68).) It is deliberately a
+([`crates/coco-egui/src/machine_def.rs:54-71`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L54-L71).) It is deliberately a
 *DTO* — a Data Transfer Object, meaning a struct whose only job is to
 mirror an external data format field for field and be converted to and from
 the types the program actually runs on. It is kept separate from
@@ -1503,7 +1503,7 @@ problem most configuration formats simply lose to:
     pub unknown: toml::Table,
 ```
 
-([`crates/coco-egui/src/machine_def.rs:78-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L78-L79).) Any TOML key the
+([`crates/coco-egui/src/machine_def.rs:83-84`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L83-L84).) Any TOML key the
 loader does not recognize — at the top level, or one level into a known
 section — is both logged via `tracing::warn!` and stashed in this field
 rather than silently dropped. The collection is a plain double loop:
@@ -1518,10 +1518,10 @@ fn extract_unknown(table: &toml::Table) -> toml::Table {
     }
 ```
 
-([`crates/coco-egui/src/machine_def/io.rs:72-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L72-L78).) When the definition
+([`crates/coco-egui/src/machine_def/io.rs:83-89`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L83-L89).) When the definition
 is written back out, `merge_unknown` folds those keys into the freshly
 serialized table before it hits disk
-([`crates/coco-egui/src/machine_def/io.rs:102-121`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L102-L121)).
+([`crates/coco-egui/src/machine_def/io.rs:113-132`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L113-L132)).
 
 The consequence is the thing to remember. Suppose a future build adds a
 `[hardware].turbo_multiplier` key. A user sets it, then opens the same
@@ -1535,7 +1535,7 @@ Distinguish that from the *schema* number, which is handled the opposite
 way. An unrecognized key is forward-compatible and merely warned about; an
 unrecognized schema number is fatal, because it means the shape of the file
 itself may have changed and no key-level reasoning is safe
-([`crates/coco-egui/src/machine_def.rs:38-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L38-L43)). Additive changes are
+([`crates/coco-egui/src/machine_def.rs:41-46`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L41-L46)). Additive changes are
 tolerated; structural ones are refused. That is exactly the right split.
 
 ### Atomic saves: tmp, then rename
@@ -1549,7 +1549,7 @@ tolerated; structural ones are refused. That is exactly the right split.
     fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))?;
 ```
 
-([`crates/coco-egui/src/machine_def/io.rs:207-210`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L207-L210).) The complete new
+([`crates/coco-egui/src/machine_def/io.rs:218-221`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def/io.rs#L218-L221).) The complete new
 contents go to a sibling `.tmp` file first, and only then is that file
 renamed over the real path.
 
@@ -1579,7 +1579,7 @@ those are two different operations with different failure modes.
 `slugify` lowercases, keeps `[a-z0-9]`, collapses every run of other
 characters to a single dash, trims leading and trailing dashes, and falls
 back to `"machine"` if nothing survives
-([`crates/coco-egui/src/machine_def.rs:142-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L142-L161)). Collisions are then
+([`crates/coco-egui/src/machine_def.rs:156-175`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L156-L175)). Collisions are then
 resolved by a function that is pleasingly boring:
 
 ```rust
@@ -1598,7 +1598,7 @@ pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {
 }
 ```
 
-([`crates/coco-egui/src/machine_def.rs:166-178`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L166-L178).) The `taken` predicate is
+([`crates/coco-egui/src/machine_def.rs:180-192`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L180-L192).) The `taken` predicate is
 passed in rather than hard-coded, and the call sites are where the care
 shows. Creating a machine checks *both* the in-memory list and the
 directory on disk, because the in-memory list would miss a `<slug>.toml`
@@ -1619,7 +1619,7 @@ definition's file name."
 
 Why the artifact directory has to follow at all comes down to one function.
 Relative `[media]` paths inside a definition resolve *against the slug's
-own artifact directory* ([`crates/coco-egui/src/machine_def.rs:198-207`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L198-L207)),
+own artifact directory* ([`crates/coco-egui/src/machine_def.rs:212-221`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/machine_def.rs#L212-L221)),
 so a disk image referenced as `"disk0.dsk"` means a different absolute file
 the instant the slug changes. Move the definition without moving the
 directory and every relative media path in it silently points at nothing.
