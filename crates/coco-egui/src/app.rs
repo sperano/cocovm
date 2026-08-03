@@ -28,6 +28,10 @@ pub(crate) struct CocoApp {
     /// (`launch::launch_machine`) or `--display` (`boot::boot_app`), and
     /// live-switchable from the View menu afterwards.
     pub(crate) display: Display,
+    /// The TV chain's knobs (scanline strength, …) — same lifecycle as
+    /// `display`: `[ui]` keys for the starting values, View-menu sliders
+    /// live. Only consulted while `display` is a TV.
+    pub(crate) tv: display::TVSettings,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -197,6 +201,7 @@ impl CocoApp {
             show_orch90: false,
             aspect_correct: true,
             display,
+            tv: display::TVSettings::default(),
             last_update: None,
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),

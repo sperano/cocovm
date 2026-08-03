@@ -28,7 +28,13 @@ const HARDWARE_KEYS: &[&str] = &[
 const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
 const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc", "fd502", "rs232"];
 const PORTS_KEYS: &[&str] = &["serial"];
-const UI_KEYS: &[&str] = &["aspect_correct", "kb_mode", "joy_left", "joy_right"];
+const UI_KEYS: &[&str] = &[
+    "aspect_correct",
+    "kb_mode",
+    "joy_left",
+    "joy_right",
+    "tv_scanline",
+];
 
 /// Sections that nest under the top level, paired with their known-key
 /// lists, so [`warn_unknown_keys`] can recurse one level without extra

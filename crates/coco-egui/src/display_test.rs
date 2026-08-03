@@ -59,33 +59,94 @@ fn luma_saturated_primaries_hit_their_rec601_weights() {
     }
 }
 
+/// What [`expand_scanlines`] does to one byte at the given strength.
+fn dark(v: u8, pct: u8) -> u8 {
+    ((u16::from(v) * scanline_scale(pct) + 128) >> 8) as u8
+}
+
 #[test]
-fn apply_is_identity_for_monitors() {
+fn process_is_identity_for_monitors() {
     for monitor in [MonitorType::RGB, MonitorType::Composite] {
-        let mut bytes = FRAME;
-        apply(Display::Monitor(monitor), FRAME_W, &mut bytes);
-        assert_eq!(bytes, FRAME, "Monitor({monitor:?}) must pass through");
+        let frame = process(
+            Display::Monitor(monitor),
+            TVSettings::default(),
+            FRAME_W,
+            &FRAME,
+        );
+        assert_eq!(
+            frame.pixels, FRAME,
+            "Monitor({monitor:?}) must pass through"
+        );
+        assert_eq!((frame.width, frame.height), (FRAME_W, 1));
     }
 }
 
 #[test]
-fn apply_color_tv_preserves_a_uniform_frame() {
-    // Uniform color: the bandwidth limit has nothing to smear, so the
-    // color TV — no color transform of its own yet — is an exact identity.
-    let frame = uniform_frame([200, 120, 40, 255]);
-    let mut bytes = frame.clone();
-    apply(Display::TV(TV::Color), 4, &mut bytes);
-    assert_eq!(bytes, frame);
+fn process_color_tv_scanline_doubles_a_uniform_frame() {
+    // Uniform color: the bandwidth limit has nothing to smear, so what's
+    // left is exactly the scanline structure — height doubles, even rows
+    // keep the color, odd rows are its dimmed copy.
+    let settings = TVSettings::default();
+    let rgba = [200u8, 120, 40, 255];
+    let src = uniform_frame(rgba);
+    let frame = process(Display::TV(TV::Color), settings, 4, &src);
+    assert_eq!((frame.width, frame.height), (4, 4));
+    let dim: Vec<u8> = rgba[..3]
+        .iter()
+        .map(|&v| dark(v, settings.scanline_pct))
+        .chain([255])
+        .collect();
+    for (i, row) in frame.pixels.chunks_exact(4 * 4).enumerate() {
+        let expected = if i % 2 == 0 { &rgba[..] } else { &dim[..] };
+        for px in row.chunks_exact(4) {
+            assert_eq!(px, expected, "row {i}");
+        }
+    }
+    // The dark half really is darker, and not black.
+    assert!(dim[0] < rgba[0] && dim[0] > 0);
 }
 
 #[test]
-fn apply_bw_greys_every_pixel_and_keeps_alpha() {
-    let frame = uniform_frame([255, 0, 0, 255]);
-    let mut bytes = frame.clone();
-    apply(Display::TV(TV::BW), 4, &mut bytes);
+fn scanline_strength_endpoints() {
+    let rgba = [200u8, 120, 40, 255];
+    let src = uniform_frame(rgba);
+
+    // 0% disables the pass entirely: no doubling, bytes untouched.
+    let off = process(
+        Display::TV(TV::Color),
+        TVSettings { scanline_pct: 0 },
+        4,
+        &src,
+    );
+    assert_eq!(off.height, 2, "0% must not scanline-double");
+    assert_eq!(off.pixels, src);
+
+    // 100% is black gaps.
+    let full = process(
+        Display::TV(TV::Color),
+        TVSettings { scanline_pct: 100 },
+        4,
+        &src,
+    );
+    for row in full.pixels.chunks_exact(4 * 4).skip(1).step_by(2) {
+        for px in row.chunks_exact(4) {
+            assert_eq!(px, [0, 0, 0, 255]);
+        }
+    }
+}
+
+#[test]
+fn process_bw_greys_every_pixel_and_keeps_alpha() {
+    let settings = TVSettings::default();
+    let src = uniform_frame([255, 0, 0, 255]);
+    let frame = process(Display::TV(TV::BW), settings, 4, &src);
     let y = luma(255, 0, 0);
-    for px in bytes.chunks_exact(4) {
-        assert_eq!(px, [y, y, y, 255]);
+    let dark_y = dark(y, settings.scanline_pct);
+    for (i, row) in frame.pixels.chunks_exact(4 * 4).enumerate() {
+        let expected = if i % 2 == 0 { y } else { dark_y };
+        for px in row.chunks_exact(4) {
+            assert_eq!(px, [expected, expected, expected, 255], "row {i}");
+        }
     }
 }
 
@@ -93,27 +154,39 @@ fn apply_bw_greys_every_pixel_and_keeps_alpha() {
 fn tvs_bandwidth_limit_smears_along_the_row_only() {
     // A 3×2 frame: a white impulse in the top row, black bottom row. The
     // 1-2-1 kernel spreads the impulse to its row neighbors (64/128/64
-    // with edge clamp) and must leak nothing into the row below —
-    // scanlines are separate signals.
+    // with edge clamp) and must leak nothing into the source row below —
+    // scanlines are separate signals. With the scanline pass, source row 0
+    // lands in output rows 0 (bright) and 1 (dark); source row 1 in output
+    // rows 2/3, which must stay black.
     #[rustfmt::skip]
-    let mut bytes: Vec<u8> = vec![
+    let src: Vec<u8> = vec![
         0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,
         0, 0, 0, 255,   0, 0, 0, 255,         0, 0, 0, 255,
     ];
-    apply(Display::TV(TV::Color), 3, &mut bytes);
-    let expect_top = [64u8, 128, 64];
-    for (x, &expected) in expect_top.iter().enumerate() {
+    let settings = TVSettings::default();
+    let frame = process(Display::TV(TV::Color), settings, 3, &src);
+    assert_eq!(frame.height, 4);
+    let rows: Vec<&[u8]> = frame.pixels.chunks_exact(3 * 4).collect();
+    let expect_bright = [64u8, 128, 64];
+    for (x, &expected) in expect_bright.iter().enumerate() {
         assert_eq!(
-            &bytes[x * 4..x * 4 + 4],
+            &rows[0][x * 4..x * 4 + 4],
             [expected, expected, expected, 255],
-            "top row pixel {x}"
+            "bright row pixel {x}"
+        );
+        assert_eq!(
+            rows[1][x * 4],
+            dark(expected, settings.scanline_pct),
+            "dark row pixel {x}"
         );
     }
-    assert_eq!(
-        &bytes[12..],
-        [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255],
-        "no vertical bleed"
-    );
+    for row in &rows[2..] {
+        assert_eq!(
+            *row,
+            [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255],
+            "no vertical bleed"
+        );
+    }
 }
 
 /// The whole design table: which signal path each display resolves to, per

@@ -324,6 +324,9 @@ pub struct MachineForm {
     /// The Display-row pick (`[hardware].display`): monitor or (B&W) TV.
     /// Owns `config.monitor` — see [`MachineForm::display_rows`].
     pub display: Display,
+    /// The TV chain's knobs (`[ui].tv_scanline`, …), edited under the
+    /// Display row while a TV is picked.
+    pub tv: crate::display::TVSettings,
     /// The Display group's 4:3 checkbox (`[ui].aspect_correct`).
     pub aspect_correct: bool,
     /// The Ports fieldset's Serial-row pick (`[ports].serial`).

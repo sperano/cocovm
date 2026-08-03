@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use coco_core::MachineConfig;
 
-use crate::display::{Display, TV};
+use crate::display::{Display, TV, TVSettings};
 
 /// `[hardware].variant`. Maps to [`coco_core::MachineVariant`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -359,6 +359,12 @@ fn default_aspect_correct() -> bool {
     true
 }
 
+/// Default for `[ui].tv_scanline`: [`TVSettings::default`]'s strength, so an
+/// absent key means "the tuned look", not "scanlines off".
+fn default_tv_scanline() -> u8 {
+    TVSettings::default().scanline_pct
+}
+
 /// `[ui]` section — section itself optional.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UIDTO {
@@ -374,6 +380,11 @@ pub struct UIDTO {
     /// Absent ⇒ off; see [`Self::joy_left`].
     #[serde(default)]
     pub joy_right: JoySourceDTO,
+    /// Scanline strength of the TV look, `0..=100`
+    /// ([`TVSettings::scanline_pct`]). Kept even while the display is a
+    /// monitor — switching back to a TV restores the tuned strength.
+    #[serde(default = "default_tv_scanline")]
+    pub tv_scanline: u8,
 }
 
 impl Default for UIDTO {
@@ -383,6 +394,7 @@ impl Default for UIDTO {
             kb_mode: KbModeDTO::default(),
             joy_left: JoySourceDTO::default(),
             joy_right: JoySourceDTO::default(),
+            tv_scanline: default_tv_scanline(),
         }
     }
 }

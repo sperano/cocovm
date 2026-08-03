@@ -28,6 +28,7 @@ impl MachineForm {
             // `MachineConfig::default()` is a CoCo 3); seeded from the
             // definition's real choice by `manager::detail_map::seed_form`.
             display: crate::display::Display::from_config(&config),
+            tv: crate::display::TVSettings::default(),
             config,
             cartridge: CartridgeChoice::None,
             mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
@@ -83,6 +84,16 @@ impl MachineForm {
                 }
             }
         });
+        ui.end_row();
+
+        // The TV chain's knobs, only enabled while they'd have an effect
+        // (a monitor never runs the chain). The value is kept either way —
+        // switching back to a TV restores the tuned strength.
+        ui.label(egui::RichText::new("Scanlines").size(font));
+        ui.add_enabled(
+            matches!(self.display, Display::TV(_)),
+            egui::Slider::new(&mut self.tv.scanline_pct, 0..=100).suffix("%"),
+        );
         ui.end_row();
 
         ui.label("");

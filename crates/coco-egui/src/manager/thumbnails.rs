@@ -23,13 +23,21 @@ impl ManagerApp {
         let Some(vm) = entry.vm.as_ref() else {
             return;
         };
-        let (w, h) = (vm.machine.fb_width, vm.machine.fb_height);
         // The raw framebuffer bypasses `upload_framebuffer_texture`'s TV
-        // chain, so run it here on a copy — a B&W machine's saved preview
-        // must not come back in color.
-        let mut pixels = vm.machine.framebuffer.clone();
-        crate::display::apply(vm.display, w as usize, &mut pixels);
-        if let Err(e) = super::write_thumbnail_png(&root.join(&entry.slug), &pixels, w, h) {
+        // chain, so run it here too — a B&W machine's saved preview must
+        // not come back in color (nor a TV's without its scanlines).
+        let frame = crate::display::process(
+            vm.display,
+            vm.tv,
+            vm.machine.fb_width as usize,
+            &vm.machine.framebuffer,
+        );
+        if let Err(e) = super::write_thumbnail_png(
+            &root.join(&entry.slug),
+            &frame.pixels,
+            frame.width as u32,
+            frame.height as u32,
+        ) {
             tracing::warn!("thumbnail for '{}': {e}", entry.slug);
         }
         entry.thumbnail = None;

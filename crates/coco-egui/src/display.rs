@@ -10,11 +10,10 @@
 //! one illegal combination (RGB signal into a B&W TV) simply cannot be
 //! expressed — no invariant to enforce anywhere.
 //!
-//! [`Display::TV`] and [`Display::Monitor`]`(Composite)` render identically
-//! today, but they are distinct states everywhere (enum, `[hardware].display`
-//! TOML value, View-menu entry) because they diverge later: [`apply`] — the
-//! TV chain, which only acts on `TV(_)` — is where RF-degradation/vintage
-//! effects will accumulate, while a composite monitor stays clean.
+//! A composite monitor and a TV share a signal path but not a look:
+//! [`process`] — the TV chain, which only acts on `TV(_)` — is where the
+//! CRT/RF treatment (B&W luma collapse, bandwidth limit, scanlines, and
+//! future vintage effects) accumulates, while a monitor stays clean.
 
 use coco_core::{MachineConfig, MachineVariant, MonitorType};
 use eframe::egui;
@@ -167,7 +166,7 @@ fn luma(r: u8, g: u8, b: u8) -> u8 {
 /// How the display's texture scales to the window: a monitor keeps the
 /// crisp integer-pixel look (`NEAREST`); a CRT TV has no sharp pixel edges
 /// at all, so TVs sample bilinearly — the cheapest single step of the TV
-/// look, done by the GPU during normal drawing rather than in [`apply`].
+/// look, done by the GPU during normal drawing rather than in [`process`].
 pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
     match display {
         Display::Monitor(_) => egui::TextureOptions::NEAREST,
@@ -179,32 +178,116 @@ pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
 /// (`coco_core::video::BYTES_PER_PIXEL`).
 const PX: usize = 4;
 
+/// Default [`TVSettings::scanline_pct`]: the strength the look was tuned
+/// at (the dark half keeps 65% of the line's linear-light brightness).
+const DEFAULT_SCANLINE_PCT: u8 = 35;
+
+/// User-adjustable knobs of the TV chain — a UI preference riding along
+/// with [`Display`] (View-menu sliders live, `[ui]` keys persisted).
+/// Integer percentages, not floats: sliders and TOML both stay clean
+/// (`tv_scanline = 35`, no float dust).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TVSettings {
+    /// Scanline strength, `0..=100`: how much of a line's linear-light
+    /// brightness the dark half between scanlines loses. 0 disables the
+    /// pass entirely (no doubling); 100 is black gaps.
+    pub(crate) scanline_pct: u8,
+}
+
+impl Default for TVSettings {
+    fn default() -> Self {
+        Self {
+            scanline_pct: DEFAULT_SCANLINE_PCT,
+        }
+    }
+}
+
+/// The dark scanline half's per-byte multiplier, ×256
+/// (`out = in · scale >> 8`): the strength is a **linear-light** fraction
+/// kept, and pure scaling commutes with the gamma curve
+/// (`(x^γ·k)^(1/γ) = x·k^(1/γ)`), so one gamma-space multiply per byte is
+/// exact — no linear round trip.
+fn scanline_scale(scanline_pct: u8) -> u16 {
+    let level = 1.0 - f32::from(scanline_pct.min(100)) / 100.0;
+    (level.powf(1.0 / GAMMA) * 256.0).round() as u16
+}
+
 /// [`blur_rows`]' symmetric FIR taps (normalized by [`BLUR_SHIFT`]): the
 /// mild composite/RF softness of a ~4 MHz NTSC luma channel at these dot
 /// rates, not a heavy defocus.
 const BLUR_TAPS: [u16; 3] = [1, 2, 1];
 const BLUR_SHIFT: u16 = 2;
 
-/// The TV chain, applied in place to an RGBA8 frame about to be shown —
-/// the texture upload (`CocoApp::upload_framebuffer_texture`) and the
-/// thumbnail-PNG capture (`manager::thumbnails`). `width` is the frame's
-/// width in pixels (rows are `width · 4` bytes). Monitors pass through
-/// untouched; both TVs get the composite/RF horizontal bandwidth limit
-/// ([`blur_rows`]), and the B&W set collapses to luma first (blurring a
-/// grey keeps it grey, so the order only matters for color).
-pub(crate) fn apply(display: Display, width: usize, bytes: &mut [u8]) {
+/// [`process`]'s output: the frame to actually show, with its own
+/// dimensions — the TV chain's scanline pass doubles the height, so the
+/// output shape is the chain's to decide, not the caller's.
+pub(crate) struct Frame {
+    pub(crate) pixels: Vec<u8>,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+}
+
+/// The TV chain, turning the machine's RGBA8 framebuffer into the frame to
+/// show — the texture upload (`CocoApp::upload_framebuffer_texture`) and
+/// the thumbnail-PNG capture (`manager::thumbnails`). `width` is the
+/// source's width in pixels (rows are `width · 4` bytes). Monitors pass
+/// through untouched. Both TVs get, in order: the B&W luma collapse
+/// (B&W set only — blurring a grey keeps it grey, so the order only
+/// matters for color), the composite/RF horizontal bandwidth limit
+/// ([`blur_rows`]), and the scanline doubling ([`expand_scanlines`]) at
+/// `settings`' strength.
+pub(crate) fn process(display: Display, settings: TVSettings, width: usize, src: &[u8]) -> Frame {
+    let height = src.len() / (width * PX);
+    let mut pixels = src.to_vec();
     let Display::TV(tv) = display else {
-        return;
+        return Frame {
+            pixels,
+            width,
+            height,
+        };
     };
     if tv == TV::BW {
-        for px in bytes.chunks_exact_mut(PX) {
+        for px in pixels.chunks_exact_mut(PX) {
             let y = luma(px[0], px[1], px[2]);
             px[0] = y;
             px[1] = y;
             px[2] = y;
         }
     }
-    blur_rows(width, bytes);
+    blur_rows(width, &mut pixels);
+    if settings.scanline_pct == 0 {
+        return Frame {
+            pixels,
+            width,
+            height,
+        };
+    }
+    Frame {
+        pixels: expand_scanlines(settings.scanline_pct, width, &pixels),
+        width,
+        height: height * 2,
+    }
+}
+
+/// The scanline pass: each source row becomes a full-brightness row plus a
+/// [`scanline_scale`]-dimmed copy — the visible line structure of a CRT
+/// raster, where the beam lights a line and the gap between lines stays
+/// darker. Doubling (rather than darkening rows in place) is what makes
+/// this possible at all: the source rows *are* the scanlines, so an
+/// in-place version would delete half the picture.
+fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8]) -> Vec<u8> {
+    let row_len = width * PX;
+    let scale = scanline_scale(scanline_pct);
+    // +128 for round-to-nearest; scale ≤ 256 keeps the product in u16.
+    let dark = |v: u8| ((u16::from(v) * scale + 128) >> 8) as u8;
+    let mut out = Vec::with_capacity(src.len() * 2);
+    for row in src.chunks_exact(row_len) {
+        out.extend_from_slice(row);
+        for px in row.chunks_exact(PX) {
+            out.extend_from_slice(&[dark(px[0]), dark(px[1]), dark(px[2]), px[3]]);
+        }
+    }
+    out
 }
 
 /// The horizontal bandwidth limit: a [`BLUR_TAPS`] FIR across each row —

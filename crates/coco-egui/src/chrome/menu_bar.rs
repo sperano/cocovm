@@ -78,6 +78,15 @@ impl CocoApp {
                 }
             }
         }
+        // The TV chain's knobs, live like the display choice itself —
+        // drawn only while they'd have a visible effect.
+        if matches!(self.display, Display::TV(_)) {
+            ui.add(
+                egui::Slider::new(&mut self.tv.scanline_pct, 0..=100)
+                    .text("Scanlines")
+                    .suffix("%"),
+            );
+        }
     }
 
     /// The Help menu.

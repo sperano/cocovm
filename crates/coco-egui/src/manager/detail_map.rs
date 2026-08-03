@@ -76,6 +76,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     form.tape = media_choice(&media.tape);
     form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
     form.display = def.display();
+    form.tv.scanline_pct = def.ui.tv_scanline.min(100);
     form.aspect_correct = def.ui.aspect_correct;
     form.serial = def.ports.serial.into();
     // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like
@@ -227,6 +228,7 @@ fn pack_cartridge(
 fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
     def.ports.serial = form.serial.into();
     def.ui.aspect_correct = form.aspect_correct;
+    def.ui.tv_scanline = form.tv.scanline_pct;
     def.ui.joy_right = form.joy_sources[coco_core::joystick::RIGHT].into();
     def.ui.joy_left = form.joy_sources[coco_core::joystick::LEFT].into();
     def.ui.kb_mode = match form.kb_mode {
