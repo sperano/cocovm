@@ -1,15 +1,10 @@
 # Chapter 12 — The Cassette: FSK Modems, 1980 Edition
 
-*Week 12. Goal: a complete, self-contained signal-processing story, start to
-finish, in one subsystem small enough to hold in your head. Chapter 10 gave you
-the PIA — the chip that mediates almost all CoCo I/O — and Chapter 11 walked
-the audio path the PIA's DAC feeds. This week reuses both: the cassette
-"modem" is nothing but a PIA pin and a DAC register, driven by software.
-By the end of this chapter you will know exactly how a byte becomes a tone,
-how a tone becomes a byte again, why the emulator has to model a mechanical
-delay that has nothing to do with data at all, and — the chapter's best
-lesson — what to do when the documentation you're relying on simply stops
-covering the code you need. This closes Part IV.*
+*Week 12. Goal: follow cassette data through modulation, timing, and
+demodulation. The hardware is only a PIA pin, a DAC register, and analog
+circuitry; ROM software supplies the modem. This chapter also shows how to
+recover exact behavior when the available commentary stops short of the
+routine that matters.*
 
 ---
 
@@ -20,14 +15,14 @@ when the CPU writes a byte to `$FF20`. Emulating those parts is careful,
 literal work, but the shape of the work is never in doubt: find the
 document, believe it, encode it.
 
-The cassette interface is the week where that comfort runs out. There is
+The cassette interface is where that comfort runs out. There is
 no cassette chip on a CoCo, no data sheet describing the tape format, and
 — for the specific stretch of ROM that does the work — no disassembly
 with commentary either. What exists is a jack, a comparator, one bit of
 one PIA, and a few hundred bytes of hand-tuned 6809 machine code that
-nobody has annotated. The behavior the emulator has to reproduce is not
-documented anywhere; it is *latent in the ROM*, and the only way to find
-it is to run the ROM and watch.
+nobody has annotated in the local references. The exact behavior needed by
+this emulator is *latent in the ROM*, so the investigation runs the ROM and
+watches it.
 
 That makes this chapter unusual in two ways worth flagging before you
 start. First, it is a complete signal-processing story — modulation,
@@ -1568,18 +1563,13 @@ line-by-line detail an emulator author wants. It does not cover the
 $A000–$BFFF bit-bang routines. That is stated in the module header
 quoted in §12.1, and it is the whole problem.
 
-So there is no available prose describing what tones this ROM emits, at
+So the available references do not describe what tones this ROM emits, at
 what timing, for what reason. There is no data sheet, because there is no
-chip. There is no standard to consult, because the tones are not quite
-the standard ones. The only remaining source of truth is the ROM's own
-bytes, executing.
+chip. General cassette conventions help, but the ROM's exact timing and
+demodulator still have to be recovered from its executing bytes.
 
-Take a moment to appreciate how thoroughly this closes off the normal
-routes. You cannot look it up. You cannot ask the hardware, absent a real
-CoCo, an oscilloscope, and a Saturday. You could read another emulator's
-source, but then you would be copying a number whose provenance you
-cannot check, which is how wrong constants propagate between projects for
-decades. What remains is to run the ROM and watch what it does.
+Another emulator can provide a comparison point, but not provenance for an
+unexplained constant. Here the ROM trace remains the primary evidence.
 
 ### Turning the emulator into an instrument
 

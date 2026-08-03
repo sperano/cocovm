@@ -1,19 +1,9 @@
 # Chapter 9 — Splits, Composite, and PMODEs
 
-*Week 9. Goal: the effects that made demos possible, and the emulation-policy
-questions they force. Chapters 7–8 gave you a raster, VDG text, and the GIME's
-native text/graphics modes rendered from a register snapshot taken once per
-field. This week removes that simplification in two directions at once: the
-register snapshot turns out to be a lie (real software rewrites those
-registers **while the beam is still scanning**, and the picture must show
-both halves), and the "one renderer" story is a lie too — the same 6-bit
-palette value paints a different color depending on which cable is plugged
-into the back of the machine. Both lies have famous symptoms on
-real hardware: the two-tone game screen where the top third and the bottom
-two-thirds clearly came from different POKEs, and the muddy-brown mess a
-composite TV made of colors that looked crisp on an RGB monitor. By the end
-of this chapter you can point at the exact struct and the exact test that
-explain each.*
+*Week 9. Goal: render changes made while a field is being scanned, then map
+the same palette values through RGB and composite output. The first problem
+is temporal; the second is electrical. Together they expose which video
+state is live, which is latched, and where output policy belongs.*
 
 ---
 
@@ -65,8 +55,8 @@ the same render*? If it were a different renderer, this chapter would be
 twice as long and the codebase would have two of everything — two text
 painters, two graphics painters, two sets of tests.
 
-Here is the claim this chapter defends: **composite vs. RGB is not a second
-renderer.** There is exactly one code path that walks video RAM and produces
+The RGB/composite choice does not require a second geometry renderer. In the
+path described here, one code path walks video RAM and produces
 pixels — the `paint_scanline`/`paint_text_row`/`paint_graphics_row` functions
 you read in Chapter 8, untouched since. What changes between an RGB monitor and
 a composite one is a single function call at the very last step, after every
@@ -1305,7 +1295,7 @@ behavior fell out of writing the renderer as a function of the current
 register file rather than of a snapshot — which is the same design instinct
 that made `GIME::color` a pure function in §9.3.
 
-### Live: a palette write recolours only what's below it
+### Live: a palette write recolors only what's below it
 
 ```rust
 #[test]
@@ -1685,7 +1675,7 @@ models," per the source comment. Belt and suspenders against a second FIRQ
 firing before `RTI` retires.
 
 `RTI` (`0x3B`) restores the **partial frame** — just CC and PC, three bytes,
-because FIRQ only ever stacks the partial frame (Chapter 4) — and the CPU drops
+because an ordinary FIRQ entry stacks the partial frame (Chapter 4) — and the CPU drops
 back into `BRA *`, forever, border now `NEW_BORDER`. The choice of FIRQ over
 IRQ is not incidental for this kind of effect: a handler that must land
 within a scanline wants the cheapest possible entry and exit, and three

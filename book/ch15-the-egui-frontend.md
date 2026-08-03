@@ -1,18 +1,10 @@
 # Chapter 15 — The egui frontend: pixels, keys, and real time
 
-*Week 15. Goal: everything host-side, for the graphics-shy. Weeks 1–14 built
-a headless machine — `coco-core` renders into a `Vec<u8>`, records audio
-into a `Vec<[f32; 2]>`, and has never once opened a window. This week you
-finally look at the other side of the seam: `coco-egui`, the ~9,000-line
-crate that turns that headless machine into something you can sit in front
-of. The good news, and the whole point of this chapter: there is far less
-"graphics programming" here than the phrase suggests. By the end you will
-have read every line that touches a GPU in this entire codebase — there are
-perhaps a dozen of them — and spent the rest of your time on arithmetic
-(letterboxing, frame pacing) and plain application state (menus, a VM
-manager, media attach/eject). Rust plus a working picture of what the CoCo 3
-did covers everything this chapter needs except one new idea:
-immediate-mode GUI, which §15.1 builds from nothing.*
+*Week 15. Goal: connect the headless core to a desktop application. The
+frontend uploads pixels, routes input, paces fields, manages machines and
+media, and tests UI behavior without a display. Its central new idea is an
+immediate-mode GUI; most of the remaining work is arithmetic and application
+state rather than low-level graphics programming.*
 
 ---
 
@@ -777,11 +769,10 @@ its native pixel dimensions — and it always is, since a 640-pixel-wide CoCo
 canvas is being stretched across a 1307-pixel-wide rectangle — the hardware
 has to decide what color to put at each destination pixel. *Nearest*
 sampling picks the single closest source pixel and uses it unchanged.
-*Linear* sampling blends the neighboring source pixels together. For a
-CoCo screen, nearest is the only defensible choice: it keeps the machine's
-chunky low-resolution pixels crisp and square-edged when magnified, exactly
-as a real set's phosphor blocks appeared, instead of smearing them into a
-soft blur that no CoCo owner ever saw.
+*Linear* sampling blends the neighboring source pixels together. For this
+frontend, nearest is the intended choice: it keeps the machine's
+low-resolution pixels crisp and square-edged when magnified. A softer
+presentation may suit another display model, but it is not the policy here.
 
 The frontend does use linear sampling — twice, and both times for
 photographs rather than emulated screens. The manager's decorative photo
@@ -2431,17 +2422,16 @@ the keyboard.
 
 ## 15.9 Running the suite — an honest report
 
-A chapter that claims a test suite exists owes you the actual output,
-including the parts that do not pass. Here is `cargo test -p coco-egui`,
-run in a worktree with no `roms/` directory — ROM images are git-ignored
-and local-only by the project's own convention. This is what happened, not
-a sanitized summary:
+This is one recorded `cargo test -p coco-egui` run from the revision used
+to write the chapter, in a worktree with no `roms/` directory. ROM images
+are git-ignored and local-only, so these counts are a dated snapshot rather
+than a permanent expectation:
 
 ```
 test result: FAILED. 134 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-**All 37 failures are ROM-required, and only ROM-required.** Every one
+**In that run, all 37 failures required missing ROM data.** Every one
 traces to the same missing file: most panic right at a
 `std::fs::read`/`load_default_rom` call reading
 `roms/coco3.rom` or (for the FD-502 tests) `roms/disk11.rom`, with a
@@ -2469,7 +2459,7 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
-**The 134 passing tests are the whole non-ROM surface of the crate**: the
+**The 134 passing tests in that run covered the non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s

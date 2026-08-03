@@ -1,42 +1,25 @@
 # Chapter 5 — The Bus: Memory Maps, the SAM, and the GIME MMU
 
-*Week 5. Goal: given any address on any CoCo — 1, 2, or 3 — say with
-certainty what the CPU actually touches. By the end of this chapter
-`SystemBus::read`/`write` will read as plainly as a memory map poster,
-you will know why the reset vector is the one address that can never be
-banked away, and you will have watched a one-line reordering break four
-tests for a reason you can explain in a sentence.*
+*Week 5. Goal: resolve a CPU address on each CoCo model. This chapter follows
+reads and writes through decode priority, the SAM, the GIME's ROM controls,
+and the MMU, including the hardwired reset-vector range.*
 
-Chapters 1 through 4 built a CPU that will execute anything put in front of
-it, provided something on the other end of `Bus::read` and `Bus::write`
-answers honestly. For four weeks that something has been a stub: a flat
-64K array in the test harness, with no ROM, no devices, and no opinions
-whatsoever about which addresses mean what. This week builds the real
-thing.
+The CPU chapters used a flat 64K test bus. A CoCo bus must instead decide
+whether each address reaches RAM, ROM, a device register, or no responding
+device. `SystemBus` implements that decision.
 
-It is worth being precise about how much rides on it. The `mc6809` crate
-does not know a CoCo exists; from here on, `coco-core`'s `SystemBus` is
-the entire outside world as far as the CPU can tell. It is one flat 64K
-address space that, depending on a handful of bits in registers you are
-about to meet, might be RAM, might be one of two different ROMs, might be
-a chip register that clears itself the instant it is read, or might be
-nothing at all — no chip driving the data bus, and a value that comes
-back anyway.
+The `mc6809` crate does not know a CoCo exists. From the CPU's perspective,
+`SystemBus` is one 64K address space. Control bits can make the same logical
+address select RAM, one of two ROM sources, a side-effecting device register,
+or open bus.
 
-That last possibility is a useful early warning about the character of
-this chapter. A memory map looks, on a poster, like a tidy partition of
-the address space into labeled boxes. The real thing is not a partition.
-The boxes overlap, several of them move under software control, one of
-them is nailed down so hard that nothing in the machine can move it, and
-the hardware resolves the ambiguity by strict priority rather than by
-tidiness. Getting that priority order right is most of the intellectual
-work in this chapter; the rest is a long, mechanical walk through the
-I/O page, one device range at a time.
+The ranges overlap and several move under software control. Decode priority
+resolves those overlaps. One small range at the top of memory remains mapped
+to internal ROM regardless of the other controls so the CPU can always fetch
+its vectors.
 
-There is also a fork in the road here that the earlier chapters didn't
-have. The CoCo 1, the CoCo 2, and the CoCo 3 all run the same CPU, but
-they decide what an address means with completely different silicon, and
-this codebase carries two independent decoders as a direct consequence.
+The CoCo 1/2 and CoCo 3 use different address-decoding hardware, so the
+codebase keeps two independent decode paths.
 Section 5.5 tells the older, simpler story; §§5.6–5.10 tell the newer,
 more elaborate one; and §5.4, in between, is the argument for why the two
 are deliberately never merged.
@@ -45,20 +28,12 @@ are deliberately never merged.
 
 ## 5.1 Two chips, one seam
 
-The CPU only ever calls `bus.read(addr)` or `bus.write(addr, val)` with a
-16-bit `addr`. It has no other vocabulary — Chapter 1 made that a deliberate
-design decision, and the payoff arrives now, because it means the entire
-memory system of the machine can be understood as the answer to exactly
-one question: which physical byte, or which chip register, does that
-16-bit number actually name?
+The CPU calls `bus.read(addr)` or `bus.write(addr, val)` with a 16-bit address.
+The bus must resolve that logical address to a physical byte or device
+register.
 
-The honest answer is "it depends," and it depends on more than you might
-expect. It depends on which model of CoCo is being emulated, because the
-two generations put entirely different chips in charge of deciding. It
-depends on bits that software can change at any moment, so the same
-address can name two different things a microsecond apart. And it depends
-on a priority order among overlapping ranges, so knowing every individual
-rule is not enough — you also have to know which rule wins.
+The result depends on the machine model, software-controlled mapping bits,
+and the priority of overlapping ranges.
 
 Start with the generational split, because it is the coarsest of the
 three dependencies and the one that structures the rest of the chapter.
@@ -81,8 +56,8 @@ Sections 5.7 and 5.8 are devoted to that mechanism and to what real
 software did with it.
 
 Both chips live in the same file,
-[`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), and — more surprisingly — inside
-the same struct. `SystemBus` is the type that actually implements the
+[`crates/coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs), and inside
+the same struct. `SystemBus` implements the
 `Bus` trait from Chapter 1, which makes it the concrete thing sitting on the
 far side of the CPU's seam. Read the field list below less as a data
 structure and more as an inventory of the machine: nearly every field is
@@ -114,14 +89,14 @@ then the two PIAs, then the cartridge slot and the virtual hard disk, and
 in the full declaration a further dozen fields covering the keyboard,
 joysticks, cassette, serial port, and the debugger's watchpoint table.
 
-Notice that both `gime: GIME` and `sam: SAM` are present unconditionally,
-on every machine. A CoCo 1 allocates a `GIME` it will never once look at;
+Both `gime: GIME` and `sam: SAM` are present on every machine. A CoCo 1
+allocates a `GIME` it does not use;
 a CoCo 3 allocates a `SAM` it will never once look at. Two decode chips
 that never coexisted in any real machine are both sitting in the struct
 at the same time, which looks like waste until you price the
 alternatives.
 
-What it buys is that `SystemBus` is a single concrete type. There is no
+This keeps `SystemBus` a single concrete type. There is no
 generic parameter, no trait object, and no enum-of-machines standing
 between the CPU's hottest path and a memory access — `bus.read(addr)`
 compiles to a direct call every time, exactly as Chapter 1's discussion of
@@ -143,23 +118,17 @@ before any of the individual rules.
 
 ## 5.2 Decode order: what wins when address ranges overlap
 
-The temptation, faced with a memory map, is to start memorizing ranges.
-Resist it for a few pages, because the ranges are the easy part and they
-are all written down in §5.3's table anyway. The part that has to be in
-your head first is the *order of precedence*, for the simple reason that
-several device ranges physically overlap and a rule that lists a range
-without saying who wins the overlap is not a rule at all. `$FFFE`, the
+Decode priority must be applied before individual ranges can be interpreted.
+Several ranges overlap. `$FFFE`, the
 reset vector, is inside the I/O page, inside the ROM window, and inside
 whatever the MMU happens to be mapping. Three plausible answers; the
 machine has exactly one.
 
-Here is the function that decides, in full, from
+The CoCo 3 path is implemented by
 [`crates/coco-core/src/bus.rs:267-294`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L267-L294). This is the CoCo 3 path; the
 `variant != Coco3` branch near the top peels off to an entirely
-different function that §5.5 takes apart separately. Read it once for
-shape before reading it for detail — what you should notice is that it is
-nothing but a stack of guarded early returns, each one narrower in scope
-than the one below it:
+different function discussed in §5.5. The CoCo 3 path is a sequence of
+guarded early returns:
 
 ```rust
 impl Bus for SystemBus {
@@ -211,9 +180,8 @@ would never execute a single useful instruction. Section 5.13 traces
 exactly this address through reset, and exercise 5.6 asks you to justify
 the ordering from first principles rather than from the code.
 
-The constant's own doc comment is worth reading in full, because it does
-something a range table never can — it says what the range is immune
-*to*, and cites the evidence, from
+The constant's doc comment lists the controls that cannot move the range and
+cites the evidence, from
 [`crates/coco-core/src/bus/regs.rs:85-92`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/regs.rs#L85-L92):
 
 ```rust
@@ -258,8 +226,7 @@ Most accesses a running machine makes land here, which is a good reminder
 that the exotic tiers above are exceptions carved out of an otherwise
 simple story.
 
-Writes walk the identical four tiers, and it's worth seeing them side by
-side rather than taking the symmetry on trust, from
+Writes use the same priority tiers, from
 [`crates/coco-core/src/bus.rs:296-315`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L296-L315):
 
 ```rust
@@ -627,12 +594,8 @@ what happens on the other side of that `variant` check at the top of
 
 ## 5.4 Two machines, two decode paths
 
-Go back to the top of `read`/`write` in §5.2: `if self.variant !=
-MachineVariant::Coco3 { return self.sam_read(addr); }`. That's the
-*entire* CoCo-1/2-vs-CoCo-3 decision — one branch, evaluated once per
-access, immediately routing to one of two independent, unrelated
-functions. The struct's own doc comment explains why this shape and not
-something fancier:
+At the top of `read` and `write`, one variant check routes the access to the
+SAM or GIME decoder. The struct documents that choice:
 
 ```rust
 /// Which machine this bus decodes addresses for. `Bus::read`/`Bus::write`
@@ -643,9 +606,7 @@ pub variant: MachineVariant,
 ```
 *([`bus.rs:38-42`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs#L38-L42))*
 
-Three other designs suggest themselves, and it's worth walking each one
-far enough to see where it fails, because the reasoning generalizes well
-beyond this particular fork.
+The alternatives move complexity elsewhere.
 
 The first is a `dyn Decoder` trait object, one implementation per
 variant, stored in a field and called polymorphically. This is the
@@ -698,7 +659,7 @@ independently configurable stages that can each be reprogrammed without
 touching the other. There is no shared skeleton to factor out; there is
 only one algorithm and a second, unrelated algorithm.
 
-Forcing them into one function would mean the CoCo 1/2 path carries
+Combining them would make the CoCo 1/2 path carry
 machinery it fundamentally does not have — a `phys()` call it must skip,
 an MMU it must not consult, a `rom_enabled()` gate that means something
 different — for the sake of a code-reuse ideal the two chips never
@@ -718,21 +679,12 @@ wearing the same 64K clothes.
 
 ## 5.5 The CoCo 1/2 path: `SAM::map` and the strobe registers
 
-It would be reasonable to skip the older machines entirely — this is a
-CoCo 3 emulator first, and the GIME is where the interesting hardware
-is. Two things argue against skipping. The first is that the CoCo 1/2
-decoder is small enough to hold in your head all at once, which makes it
-an excellent warm-up for the GIME's four tiers: everything the next
-several sections do in stages, this one does in a single pass, and seeing
-the simple version first makes the elaborate version legible. The second
-is that the GIME did not replace the SAM so much as swallow it. Half of
-§5.7 is the CoCo 3 imitating the chip you are about to read, and the
-imitation only makes sense once you know what is being imitated.
+The CoCo 1/2 decoder provides a compact contrast with the GIME's ordered
+stages. The GIME also retains SAM-compatible controls, so the older path
+establishes the behavior that its compatibility layer reproduces.
 
-The MC6883 SAM predates the GIME by half a decade and does its entire job
-in one function. Read `SAM::map` below with two questions in mind: where
-does it return early, and what does the return value carry? Both answers
-matter more than the arithmetic
+The MC6883 SAM resolves an address in one function. Track where it returns
+early and what each `SAMTarget` variant carries
 ([`crates/coco-core/src/sam.rs:140-176`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/sam.rs#L140-L176)):
 
 ```rust
@@ -1442,35 +1394,14 @@ bank into its main 64K view, entering and leaving it in a handful of
 instructions with interrupts masked the whole time — precisely the
 discipline the manual's warning demands.
 
-### OS-9: the same primitive, a genuinely different use
+### Operating-system use
 
-Real multi-tasking OS-9 (Level II, the CoCo 3's native multi-user
-operating system) builds something much bigger on the identical
-hardware feature. In broad strokes — this is software history, not a
-claim about anything `coco-core` itself implements, so take it as
-context rather than a spec — OS-9's kernel keeps its own code, drivers,
-and file managers permanently resident in **one** task register set,
-so that no matter which user process is currently running, an interrupt
-or a system call always lands on stable, unbanked kernel code with
-nothing more than an `INIT1` bit-flip needed to reach it. The **other**
-task register set is the one that actually changes: each time OS-9's
-scheduler dispatches a different process, it copies that process's own
-8-block memory map into the currently inactive register set — while the
-*other* set (wherever the previous process or the kernel currently
-sits) keeps running completely undisturbed — and only then flips the
-task-select bit. The new process's entire 64K view becomes live in one
-write, with no memory actually copied and no process's data ever
-touched by another process's mapping. This is precisely BASIC's
-`SELTASK0`/`SELTASK1` trick, generalized from "reach a graphics buffer
-for a few instructions" to "this is how an entire multi-user operating
-system switches between running programs without a device driver or an
-MMU fault ever knowing the difference." (Source: forum documentation of
-OS-9's task-register usage; see the citation at the end of this
-chapter's Reading assignment. This is not something the local reference
-PDFs cover, and this chapter has not verified the exact polarity of
-which GIME task-register set OS-9 calls "system" versus "user" against
-a primary source — treat the mechanism as solid and the labeling as
-secondhand.)
+The same primitive can support an operating system that prepares an inactive
+map before switching tasks. The GIME changes address translation; software
+must still save CPU registers, arrange stable kernel mappings, and control the
+point at which the task-select bit changes. This chapter does not rely on a
+specific OS-9 task-register convention because that convention has not been
+verified here against a primary source.
 
 ### What the codebase actually tests
 
@@ -1680,9 +1611,7 @@ MMU_BASE..=MMU_LAST => {
 *([`bus/io.rs:146-149`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L146-L149) and [`:84-87`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L84-L87); `MMU_READ_MASK = 0x3F`,
 [`gime.rs:40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L40))*
 
-Be precise about what "modeled" means here, because `gime.rs`'s own
-module header is stale and will mislead you if you trust the prose over
-the code:
+The `gime.rs` module header is stale:
 
 ```rust
 //! STATUS: MMU translate, SAM compatibility strobes, and the video registers
@@ -1707,17 +1636,12 @@ fn mmu_register_write_8_read_low_6() {
 ```
 *([`tests/bus_map.rs:252-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/bus_map.rs#L252-L258))*
 
-The comment is simply out of date; someone implemented the feature and
-didn't update the file banner.
-**Trust the code and the tests over prose comments when they disagree —
-comments don't get exercised by `cargo test`.** This is a useful
-lesson independent of this specific chip: doc comments describe intent
-at the moment they were written and silently rot as the code around
-them changes, while a passing test is a claim the compiler and test
-runner both actively re-verify on every run.
+The implementation and test show that the feature now exists. The header
+should therefore be treated as outdated rather than as the current feature
+list.
 
-There's also a real simplification worth being honest about, separate
-from the stale comment. DESIGN.md's fuller description is "return
+The implementation also makes a deterministic simplification. DESIGN.md's
+fuller description is "return
 `stored & 0x3F | (bus_garbage & 0xC0)`" — i.e., the top two bits on real
 silicon aren't just *zero*, they're whatever noise happened to be on the
 bus, which varies by individual chip and isn't deterministically
@@ -1738,12 +1662,9 @@ faithfully.
 
 ## 5.11 Open bus: where the `$FF` — and the `$00` — come from
 
-You've now seen `OPEN_BUS` fall out of half a dozen unrelated decode
-paths: the I/O page's catch-all, an empty cartridge slot, a truncated
-ROM image, a RAM address past the end of a small machine. It's worth
-collecting every one of these into a single place, because they are
-*not* all the same value, and the difference is a real hardware fact,
-not an inconsistency to paper over.
+Several decode paths return an open-bus value: unclaimed I/O, an empty
+cartridge slot, a truncated ROM image, or an address beyond installed RAM.
+The chosen value depends on the path.
 
 ### What "open bus" means
 
@@ -2145,10 +2066,11 @@ special case routes them to `CONSTANT_RAM_PHYS = 0x7FE00` regardless of
 any MMU state — while the byte one address lower, `$FDFF`, is *outside*
 the pinned page and still obeys the ordinary ROM-window rule. The second
 half of the test writes to it and confirms the write was silently
-dropped, because `$FDFF` is still ROM: `MC1` selects 32K-internal, so
-the write has no effect and the subsequent read still returns
-`marked_rom`'s value. One test, two adjacent addresses, two entirely
-different memory semantics, decided by three bits.
+writes through the ROM overlay into shadow RAM. The subsequent read still
+returns `marked_rom`'s value because `MC1` keeps the read path mapped to
+internal ROM. Switching ROM out would expose the byte written underneath.
+The adjacent `$FDFF` and `$FE00` addresses therefore have different read
+routing even though both writes can reach RAM.
 
 ### Example 3: enabling the MMU and switching task sets
 
@@ -2389,10 +2311,9 @@ task's registers. Write a test that: programs task 0 slot 0 to block
 through it; switches back to task 0; and asserts task 0's original
 marker is still exactly what you wrote, undisturbed by anything that
 happened while task 1 was active. Run it and confirm it passes against
-the real code before moving on — and then, just to feel what "isolation"
-actually buys you, temporarily hard-code `translate()` to always read
-`self.mmu[0]` regardless of `self.task` and watch your own test catch
-it.
+the real code before moving on. Then temporarily hard-code `translate()` to
+read `self.mmu[0]` regardless of `self.task` and confirm that the new test
+catches the defect.
 
 **5.10 — Sizing drill, one machine larger (drill).** §5.9 hand-computed
 the 128K block-aliasing table. Do the same for a **512K** machine (64
@@ -2408,14 +2329,8 @@ DESIGN.md's confirmed-real-config table) rather than the same kind of
 
 ## What's next
 
-Everything in this chapter answers "what does address X touch" for a
-*static* snapshot of the machine's registers. Chapter 6 asks the next
-question: *when*. `run_field()` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)) is the loop that
-actually drives the CPU forward one instruction at a time, converts
-elapsed CPU cycles into scanlines, and decides when hsync and vsync
-fire — the heartbeat that makes "double-speed poke" mean something more
-concrete than "the `cpu_fast` bit you learned to flip in §5.5 is now
-`true`." You already know exactly which register that poke sets
-(`$FFD8`/`$FFD9`, §5.5) and exactly what a scanline eventually reads out
-of RAM through the bus you just mastered (Chapters 7–9); next week is what
-ties the *rate* at which any of that happens back to a wall clock.
+This chapter resolved addresses for a fixed machine state. Chapter 6 adds
+time. `run_field()` ([`machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs)) advances the CPU, converts cycles into
+scanlines, and schedules horizontal and vertical synchronization. It also
+turns the `$FFD8`/`$FFD9` speed control from a stored bit into a change in the
+machine's execution rate.

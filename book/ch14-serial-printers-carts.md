@@ -1,13 +1,9 @@
 # Chapter 14 — Serial: Bit-Banging, a Real UART, and a Printer
 
-*Week 14. Goal: climb three rungs of the same ladder — a software-timed GPIO
-pin, a real hardware UART, and a protocol interpreter built on top of
-either — and, along the way, finish two stories earlier chapters left
-open. Chapter 6's `poll_cart_interrupt` and Chapter 10's PIA1 CB1 path both
-terminate here, in the code that turns a cartridge's interrupt line into a
-running 6809 program. This chapter closes Part V; an elective second half
-covers the cartridge system that makes that termination possible in the
-first place.*
+*Week 14. Goal: compare three layers of serial communication: a
+software-timed PIA pin, a 6551 UART, and a printer protocol consuming the
+resulting bytes. The second half follows cartridge selection and interrupt
+routing far enough to explain how these devices join the machine.*
 
 ---
 
@@ -590,8 +586,8 @@ So the wire is real and tested — three bus-level tests in
 confirm PB0 reads 0 by default and reflects `set_busy` — but no code path
 drives it from print volume. A virtual printer in this emulator is always
 "ready." Ask Chapter 1's question about it: who would notice? Only a program
-that depended on flow control the emulator never needs to apply, and an
-infinite-speed printer never needs to say "slow down." Guessing at the
+that deliberately exercised printer flow control. The current unbounded
+virtual sink never needs to say "slow down." Guessing at the
 trigger threshold would produce a number that looks authoritative in the
 source and isn't; leaving the setter unused leaves the honest shape of
 the hardware in place for the day the fact turns up.
@@ -3168,8 +3164,8 @@ this codebase is byte-level; MAME's is bit-serial. Name one concrete
 category of CoCo software (real or hypothetical) that would behave
 differently under the two models — not "less accurate" in the abstract,
 but a specific observable difference a specific piece of software could
-detect — and explain why nothing that shipped for the Deluxe RS-232 Pak
-actually depended on that difference.
+detect — and explain why ordinary byte-oriented software for the Deluxe
+RS-232 Pak would not depend on that difference.
 
 **14.7 — Recall: the two interrupt paths (recall).** From memory, name
 which `Cartridge` trait method a game pak overrides to auto-boot, which

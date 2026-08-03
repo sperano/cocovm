@@ -1,17 +1,9 @@
 # Chapter 11 — Sound: from a 6-bit DAC to your speakers
 
-*Week 11. Goal: the whole audio path, core to speaker cone — the most
-"systems" chapter in the course. Chapters 1–10 built up a CPU, a bus, a
-scanline clock, a raster, and the PIA chip that mediates most CoCo I/O.
-This week you'll watch all of it converge on a single number twice: once
-where the 6809 writes a byte to `$FF20`, and once, several layers and one
-thread-hop later, where an `f32` lands in a buffer `cpal` is about to hand
-to your sound card. In between are two small problems — "the CPU pokes at
-arbitrary cycles, the host wants a steady stream" and "62.8 kHz isn't
-48 kHz" — and this codebase's answer to each, built up from nothing. No
-digital signal processing background is assumed; every filter in this
-chapter is derived from the audible defect it exists to prevent, not
-from a textbook.*
+*Week 11. Goal: follow sound from a write to `$FF20` to samples consumed by
+the host audio device. The path must translate irregular CPU-timed events
+into a steady stream, filter it, and resample it to the device's chosen
+rate. No digital signal processing background is assumed.*
 
 ---
 
@@ -96,12 +88,12 @@ from PIA0 next door. Take them one at a time.
 ### Six pins and a resistor ladder
 
 The first and most important of the three is the **6-bit DAC** on port A
-pins PA2 through PA7. Those six output pins feed a resistor ladder, an
-*R-2R network*, and the ladder's job is to convert a six-bit binary
+pins PA2 through PA7. Those six output pins feed a resistor network whose
+job is to convert a six-bit binary
 number into a single analog voltage. The trick is arithmetic done in
 copper: each of the six wires contributes current through resistors
 sized so that its contribution is exactly half the contribution of the
-wire above it. Sum the currents and the voltage on the output node is
+wire above it. The resulting voltage on the output node represents
 the binary number the six pins are carrying, scaled to some voltage
 range. There is no clock in a resistor ladder, no register, and nothing
 to configure. It is a purely combinational lump of passive components
@@ -940,7 +932,7 @@ line_rate  =  262 × 59.94  =  15,704.28 Hz
 grid_rate  =  15,704.28 × 4  =  62,817.12 Hz
 ```
 
-**62,817 Hz, not 62,900.** This is a gentler version of Chapter 6's "56,
+**62,817.12 Hz in this timing model, not 62,900.** This is a gentler version of Chapter 6's "56,
 not 57" lesson. It is not a truncation bug this time, since both factors
 here are `f64` and `audio_sample_rate` never rounds. It is just a
 comment, plus a handful of test constants — `sound.rs`'s `PROBE_DT = 1.0
