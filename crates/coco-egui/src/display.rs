@@ -229,9 +229,11 @@ const BLUR_SHIFT: u16 = 2;
 
 /// [`process`]'s output: the frame to actually show, with its own
 /// dimensions — the TV chain's scanline pass doubles the height, so the
-/// output shape is the chain's to decide, not the caller's.
-pub(crate) struct Frame {
-    pub(crate) pixels: Vec<u8>,
+/// output shape is the chain's to decide, not the caller's. `Cow`: a
+/// monitor borrows the framebuffer untouched (zero copies), only a TV
+/// owns a transformed buffer.
+pub(crate) struct Frame<'a> {
+    pub(crate) pixels: std::borrow::Cow<'a, [u8]>,
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
@@ -244,24 +246,24 @@ pub(crate) struct Frame {
 /// (B&W set only — blurring a grey keeps it grey, so the order only
 /// matters for color), the composite/RF horizontal bandwidth limit
 /// ([`blur_rows`]), the RF noise ([`noise_rows`], varied per frame by
-/// `seed`), and the scanline doubling ([`expand_scanlines`]) at
+/// `seed`), and finally the scanline doubling ([`expand_scanlines`]) at
 /// `settings`' strength.
-pub(crate) fn process(
+pub(crate) fn process<'a>(
     display: Display,
     settings: TVSettings,
     seed: u32,
     width: usize,
-    src: &[u8],
-) -> Frame {
+    src: &'a [u8],
+) -> Frame<'a> {
     let height = src.len() / (width * PX);
-    let mut pixels = src.to_vec();
     let Display::TV(tv) = display else {
         return Frame {
-            pixels,
+            pixels: std::borrow::Cow::Borrowed(src),
             width,
             height,
         };
     };
+    let mut pixels = src.to_vec();
     if tv == TV::BW {
         for px in pixels.chunks_exact_mut(PX) {
             let y = luma(px[0], px[1], px[2]);
@@ -274,17 +276,18 @@ pub(crate) fn process(
     if settings.noise_pct > 0 {
         noise_rows(settings.noise_pct, seed, &mut pixels);
     }
-    if settings.scanline_pct == 0 {
-        return Frame {
-            pixels,
-            width,
-            height,
-        };
-    }
+    let (pixels, height) = if settings.scanline_pct == 0 {
+        (pixels, height)
+    } else {
+        (
+            expand_scanlines(settings.scanline_pct, width, &pixels),
+            height * 2,
+        )
+    };
     Frame {
-        pixels: expand_scanlines(settings.scanline_pct, width, &pixels),
+        pixels: std::borrow::Cow::Owned(pixels),
         width,
-        height: height * 2,
+        height,
     }
 }
 
