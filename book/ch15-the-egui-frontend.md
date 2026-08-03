@@ -2445,7 +2445,7 @@ are git-ignored and local-only, so these counts are a dated snapshot rather
 than a permanent expectation:
 
 ```
-test result: FAILED. 135 passed; 38 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 154 passed; 38 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 **In that run, all 38 failures required missing ROM data.** Every one
@@ -2476,7 +2476,7 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
-**The 135 passing tests in that run covered the non-ROM surface of the crate**: the
+**The 154 passing tests in that run covered the non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), the `--log-level` parsing tests and the machine-default tests
 (`default_ram`, `default_vdg`), every `machine_def` round-trip/atomicity/
@@ -2498,7 +2498,7 @@ importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 173 tests should pass.
+checkout with real ROMs present, all 192 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
