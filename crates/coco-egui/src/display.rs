@@ -164,6 +164,17 @@ fn luma(r: u8, g: u8, b: u8) -> u8 {
     t.encode[i.min(ENCODE_STEPS - 1)]
 }
 
+/// How the display's texture scales to the window: a monitor keeps the
+/// crisp integer-pixel look (`NEAREST`); a CRT TV has no sharp pixel edges
+/// at all, so TVs sample bilinearly — the cheapest single step of the TV
+/// look, done by the GPU during normal drawing rather than in [`apply`].
+pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
+    match display {
+        Display::Monitor(_) => egui::TextureOptions::NEAREST,
+        Display::TV(_) => egui::TextureOptions::LINEAR,
+    }
+}
+
 /// The TV chain, applied in place to the frame about to be uploaded
 /// (`CocoApp::upload_framebuffer_texture`): today just the B&W collapse;
 /// future vintage/RF effects for both TV variants land here. Monitors pass

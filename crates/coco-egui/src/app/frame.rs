@@ -82,10 +82,14 @@ impl CocoApp {
         // embedded fallback — inherits from. The machine's own framebuffer
         // stays untouched: the effect is a display preference, not state.
         crate::display::apply(self.display, &mut image);
-        let texture = self.texture.get_or_insert_with(|| {
-            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
-        });
-        texture.set(image, egui::TextureOptions::NEAREST);
+        // NEAREST for monitors, LINEAR for TVs (`texture_options`'s doc).
+        // Passed on every `set`, so switching the display in the View menu
+        // re-filters the very next frame.
+        let options = crate::display::texture_options(self.display);
+        let texture = self
+            .texture
+            .get_or_insert_with(|| ctx.load_texture("coco-fb", image.clone(), options));
+        texture.set(image, options);
     }
 
     /// The CoCo display itself: the letterboxed, (optionally) aspect-

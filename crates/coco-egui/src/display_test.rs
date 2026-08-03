@@ -114,6 +114,22 @@ fn to_monitor_covers_the_design_table() {
 }
 
 #[test]
+fn monitors_sample_nearest_and_tvs_bilinear() {
+    for monitor in [MonitorType::RGB, MonitorType::Composite] {
+        assert_eq!(
+            texture_options(Display::Monitor(monitor)),
+            egui::TextureOptions::NEAREST
+        );
+    }
+    for tv in [TV::Color, TV::BW] {
+        assert_eq!(
+            texture_options(Display::TV(tv)),
+            egui::TextureOptions::LINEAR
+        );
+    }
+}
+
+#[test]
 fn choices_offer_monitors_only_where_a_port_exists() {
     assert_eq!(Display::choices(MachineVariant::Coco3).len(), 4);
     for variant in [MachineVariant::Coco1, MachineVariant::Coco2] {
