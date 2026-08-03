@@ -175,31 +175,60 @@ pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
     }
 }
 
-/// The TV chain, applied in place to the frame about to be uploaded
-/// (`CocoApp::upload_framebuffer_texture`): today just the B&W collapse;
-/// future vintage/RF effects for both TV variants land here. Monitors pass
-/// through untouched.
-pub(crate) fn apply(display: Display, image: &mut egui::ColorImage) {
-    if display != Display::TV(TV::BW) {
+/// RGBA8 bytes per pixel, the framebuffer's own layout
+/// (`coco_core::video::BYTES_PER_PIXEL`).
+const PX: usize = 4;
+
+/// [`blur_rows`]' symmetric FIR taps (normalized by [`BLUR_SHIFT`]): the
+/// mild composite/RF softness of a ~4 MHz NTSC luma channel at these dot
+/// rates, not a heavy defocus.
+const BLUR_TAPS: [u16; 3] = [1, 2, 1];
+const BLUR_SHIFT: u16 = 2;
+
+/// The TV chain, applied in place to an RGBA8 frame about to be shown —
+/// the texture upload (`CocoApp::upload_framebuffer_texture`) and the
+/// thumbnail-PNG capture (`manager::thumbnails`). `width` is the frame's
+/// width in pixels (rows are `width · 4` bytes). Monitors pass through
+/// untouched; both TVs get the composite/RF horizontal bandwidth limit
+/// ([`blur_rows`]), and the B&W set collapses to luma first (blurring a
+/// grey keeps it grey, so the order only matters for color).
+pub(crate) fn apply(display: Display, width: usize, bytes: &mut [u8]) {
+    let Display::TV(tv) = display else {
         return;
+    };
+    if tv == TV::BW {
+        for px in bytes.chunks_exact_mut(PX) {
+            let y = luma(px[0], px[1], px[2]);
+            px[0] = y;
+            px[1] = y;
+            px[2] = y;
+        }
     }
-    for px in &mut image.pixels {
-        let y = luma(px.r(), px.g(), px.b());
-        *px = egui::Color32::from_rgb(y, y, y);
-    }
+    blur_rows(width, bytes);
 }
 
-/// [`apply`] for a raw RGBA8 byte buffer — the thumbnail-PNG path
-/// (`manager::thumbnails`), which never builds a `ColorImage`.
-pub(crate) fn apply_rgba(display: Display, bytes: &mut [u8]) {
-    if display != Display::TV(TV::BW) {
-        return;
-    }
-    for px in bytes.chunks_exact_mut(4) {
-        let y = luma(px[0], px[1], px[2]);
-        px[0] = y;
-        px[1] = y;
-        px[2] = y;
+/// The horizontal bandwidth limit: a [`BLUR_TAPS`] FIR across each row —
+/// horizontal only, because that's what an analog TV signal is: each
+/// scanline is a band-limited waveform, so detail smears along the line
+/// while rows stay perfectly separate. Edges clamp (the border color
+/// extends past the frame). Alpha is untouched.
+fn blur_rows(width: usize, bytes: &mut [u8]) {
+    let row_len = width * PX;
+    let mut scratch = vec![0u8; row_len];
+    for row in bytes.chunks_exact_mut(row_len) {
+        scratch.copy_from_slice(row);
+        for x in 0..width {
+            let prev = &scratch[x.saturating_sub(1) * PX..];
+            let cur = &scratch[x * PX..];
+            let next = &scratch[(x + 1).min(width - 1) * PX..];
+            for c in 0..3 {
+                let sum = prev[c] as u16 * BLUR_TAPS[0]
+                    + cur[c] as u16 * BLUR_TAPS[1]
+                    + next[c] as u16 * BLUR_TAPS[2];
+                // +half for round-to-nearest rather than truncation.
+                row[x * PX + c] = ((sum + (1 << (BLUR_SHIFT - 1))) >> BLUR_SHIFT) as u8;
+            }
+        }
     }
 }
 

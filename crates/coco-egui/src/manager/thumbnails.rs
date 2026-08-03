@@ -28,7 +28,7 @@ impl ManagerApp {
         // chain, so run it here on a copy — a B&W machine's saved preview
         // must not come back in color.
         let mut pixels = vm.machine.framebuffer.clone();
-        crate::display::apply_rgba(vm.display, &mut pixels);
+        crate::display::apply(vm.display, w as usize, &mut pixels);
         if let Err(e) = super::write_thumbnail_png(&root.join(&entry.slug), &pixels, w, h) {
             tracing::warn!("thumbnail for '{}': {e}", entry.slug);
         }

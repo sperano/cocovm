@@ -3,7 +3,8 @@ use eframe::egui;
 
 use super::*;
 
-/// One RGBA test frame: black, white, and the three saturated primaries.
+/// One RGBA test frame (5×1): black, white, and the three saturated
+/// primaries.
 const FRAME: [u8; 20] = [
     0, 0, 0, 255, // black
     255, 255, 255, 255, // white
@@ -11,9 +12,13 @@ const FRAME: [u8; 20] = [
     0, 255, 0, 255, // green
     0, 0, 255, 255, // blue
 ];
+const FRAME_W: usize = FRAME.len() / 4;
 
-fn frame_image() -> egui::ColorImage {
-    egui::ColorImage::from_rgba_unmultiplied([FRAME.len() / 4, 1], &FRAME)
+/// A 4×2 frame of one uniform color — invariant under the bandwidth
+/// limit (blurring a constant is the constant), so TV effects on it show
+/// only the color transform.
+fn uniform_frame(rgba: [u8; 4]) -> Vec<u8> {
+    rgba.repeat(8)
 }
 
 #[test]
@@ -55,42 +60,60 @@ fn luma_saturated_primaries_hit_their_rec601_weights() {
 }
 
 #[test]
-fn apply_is_identity_for_everything_but_the_bw_tv() {
-    for display in [
-        Display::Monitor(MonitorType::RGB),
-        Display::Monitor(MonitorType::Composite),
-        Display::TV(TV::Color),
-    ] {
-        let mut image = frame_image();
-        apply(display, &mut image);
-        assert_eq!(image, frame_image(), "{display:?} must pass through");
-
+fn apply_is_identity_for_monitors() {
+    for monitor in [MonitorType::RGB, MonitorType::Composite] {
         let mut bytes = FRAME;
-        apply_rgba(display, &mut bytes);
-        assert_eq!(bytes, FRAME, "{display:?} must pass through");
+        apply(Display::Monitor(monitor), FRAME_W, &mut bytes);
+        assert_eq!(bytes, FRAME, "Monitor({monitor:?}) must pass through");
     }
+}
+
+#[test]
+fn apply_color_tv_preserves_a_uniform_frame() {
+    // Uniform color: the bandwidth limit has nothing to smear, so the
+    // color TV — no color transform of its own yet — is an exact identity.
+    let frame = uniform_frame([200, 120, 40, 255]);
+    let mut bytes = frame.clone();
+    apply(Display::TV(TV::Color), 4, &mut bytes);
+    assert_eq!(bytes, frame);
 }
 
 #[test]
 fn apply_bw_greys_every_pixel_and_keeps_alpha() {
-    let mut image = frame_image();
-    apply(Display::TV(TV::BW), &mut image);
-    for (px, rgba) in image.pixels.iter().zip(FRAME.chunks_exact(4)) {
-        let y = luma(rgba[0], rgba[1], rgba[2]);
-        assert_eq!(*px, egui::Color32::from_rgb(y, y, y));
-        assert_eq!(px.a(), 255);
+    let frame = uniform_frame([255, 0, 0, 255]);
+    let mut bytes = frame.clone();
+    apply(Display::TV(TV::BW), 4, &mut bytes);
+    let y = luma(255, 0, 0);
+    for px in bytes.chunks_exact(4) {
+        assert_eq!(px, [y, y, y, 255]);
     }
 }
 
 #[test]
-fn apply_and_apply_rgba_agree() {
-    let mut image = frame_image();
-    apply(Display::TV(TV::BW), &mut image);
-    let mut bytes = FRAME;
-    apply_rgba(Display::TV(TV::BW), &mut bytes);
-    for (px, rgba) in image.pixels.iter().zip(bytes.chunks_exact(4)) {
-        assert_eq!([px.r(), px.g(), px.b(), px.a()], rgba);
+fn tvs_bandwidth_limit_smears_along_the_row_only() {
+    // A 3×2 frame: a white impulse in the top row, black bottom row. The
+    // 1-2-1 kernel spreads the impulse to its row neighbors (64/128/64
+    // with edge clamp) and must leak nothing into the row below —
+    // scanlines are separate signals.
+    #[rustfmt::skip]
+    let mut bytes: Vec<u8> = vec![
+        0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,
+        0, 0, 0, 255,   0, 0, 0, 255,         0, 0, 0, 255,
+    ];
+    apply(Display::TV(TV::Color), 3, &mut bytes);
+    let expect_top = [64u8, 128, 64];
+    for (x, &expected) in expect_top.iter().enumerate() {
+        assert_eq!(
+            &bytes[x * 4..x * 4 + 4],
+            [expected, expected, expected, 255],
+            "top row pixel {x}"
+        );
     }
+    assert_eq!(
+        &bytes[12..],
+        [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255],
+        "no vertical bleed"
+    );
 }
 
 /// The whole design table: which signal path each display resolves to, per

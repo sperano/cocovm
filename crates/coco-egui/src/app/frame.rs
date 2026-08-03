@@ -70,18 +70,20 @@ impl CocoApp {
     /// joystick writes live on a machine whose on-disk frozen copy they'd
     /// silently diverge from.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        let mut image = egui::ColorImage::from_rgba_unmultiplied(
+        // The TV chain (B&W collapse, bandwidth limit), applied on a copy
+        // at the single point every consumer of `self.texture` — VM window,
+        // manager preview, embedded fallback — inherits from. The machine's
+        // own framebuffer stays untouched: the effect is a display
+        // preference, not state.
+        let mut pixels = self.machine.framebuffer.clone();
+        crate::display::apply(self.display, self.machine.fb_width as usize, &mut pixels);
+        let image = egui::ColorImage::from_rgba_unmultiplied(
             [
                 self.machine.fb_width as usize,
                 self.machine.fb_height as usize,
             ],
-            &self.machine.framebuffer,
+            &pixels,
         );
-        // The TV chain (B&W collapse today), applied at the single point
-        // every consumer of `self.texture` — VM window, manager preview,
-        // embedded fallback — inherits from. The machine's own framebuffer
-        // stays untouched: the effect is a display preference, not state.
-        crate::display::apply(self.display, &mut image);
         // NEAREST for monitors, LINEAR for TVs (`texture_options`'s doc).
         // Passed on every `set`, so switching the display in the View menu
         // re-filters the very next frame.
