@@ -6,8 +6,8 @@
 
 ```mermaid
 flowchart TD
-    S[step(bus)] --> R{"state == Running?"}
-    R -- No (Syncing/Waiting) --> IDLE[burn 1 idle cycle]
+    S[step] --> R{Running?}
+    R -- No: Syncing/Waiting --> IDLE[burn 1 idle cycle]
     IDLE --> DONE[return 1]
 
     R -- Yes --> OP[fetch_u8 → opcode]
@@ -50,11 +50,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    EAI[ea_indexed(bus)] --> PB[fetch postbyte]
+    EAI[ea_indexed] --> PB[fetch postbyte]
     PB --> HI{bit 7 set?}
-    HI -- No (0rrnnnnn) --> OF5["ea_indexed_offset5:<br/>extract reg sel, signed 5-bit offset,<br/>return reg+offset, cycles=1"]
+    HI -- No: 0rrnnnnn --> OF5["ea_indexed_offset5:<br/>extract reg sel, signed 5-bit offset,<br/>return reg+offset, cycles=1"]
 
-    HI -- Yes (1rri mmmm) --> FULL["ea_indexed_full:<br/>extract reg sel, indirect bit, submode mmmm"]
+    HI -- Yes: 1rri mmmm --> FULL["ea_indexed_full:<br/>extract reg sel, indirect bit, submode mmmm"]
     FULL --> SM[ea_indexed_submode dispatch on mmmm]
 
     SM -- 0000 --> RPLUS[ ,R+ : auto-inc by 1, return pre-inc value, +2cy ]
@@ -69,7 +69,7 @@ flowchart TD
     SM -- 1011 --> DR[D,R : D as offset, +4cy ]
     SM -- 1100 --> N8PC[n,PCR 8-bit : PC-relative byte offset, +1cy ]
     SM -- 1101 --> N16PC[n,PCR 16-bit : PC-relative word offset, +5cy ]
-    SM -- 1111 --> EXTIND[ [n] extended indirect : fetch absolute addr, +2cy ]
+    SM -- 1111 --> EXTIND["[n] extended indirect : fetch absolute addr, +2cy"]
     SM -- other --> ILL[illegal: plain register read, +0cy]
 
     RPLUS --> IND
@@ -86,7 +86,7 @@ flowchart TD
     N16PC --> IND
     EXTIND --> IND
     ILL --> IND
-    OF5 --> DONE[return (ea, extra_cycles)]
+    OF5 --> DONE[return ea, extra_cycles]
 
     IND{indirect?} -- Yes --> INDF[read_u16 at ea, extra += 3]
     INDF --> DONE
@@ -97,18 +97,18 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    NMI[nmi(bus)] --> ARMED{nmi_armed?}
-    ARMED -- No --> RET_N[return (no-op)]
+    NMI[nmi] --> ARMED{nmi_armed?}
+    ARMED -- No --> RET_N[return no-op]
     ARMED -- Yes --> TAKEN[take_interrupt: NMI vector, I+F set, entire=true]
 
-    IRQ[irq(bus)] --> IMASK{I mask set?}
-    IMASK -- Yes --> WK_S{"state == Syncing?"}
+    IRQ[irq] --> IMASK{I mask set?}
+    IMASK -- Yes --> WK_S{Syncing?}
     WK_S -- Yes --> WAKE_S[wake to Running, return false]
     WK_S -- No --> RET_F[return false]
     IMASK -- No --> TAKEN_I[take_interrupt: IRQ vector, set I, clear F, entire=true, return true]
 
-    FIRQ[firq(bus)] --> FMASK{F mask set?}
-    FMASK -- Yes --> WK_F{"state == Syncing?"}
+    FIRQ[firq] --> FMASK{F mask set?}
+    FMASK -- Yes --> WK_F{Syncing?}
     WK_F -- Yes --> WAKE_F[wake to Running, return false]
     WK_F -- No --> RET_FF[return false]
     FMASK -- No --> TAKEN_F[take_interrupt: FIRQ vector, set I+F, entire=false, return true]
@@ -117,14 +117,14 @@ flowchart TD
     TAKEN_I --> TAKE
     TAKEN_F --> TAKE
 
-    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> S{"state == Waiting?"}
-    S -- No (not CWAI) --> FRAME{entire?}
+    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> S{Waiting?}
+    S -- No: not CWAI --> FRAME{entire?}
     FRAME -- Yes --> FULL[set E bit, psh full register mask to S]
     FRAME -- No --> FAST[clear E bit, psh PC+CC only to S]
     FULL --> MASKS
     FAST --> MASKS
-    S -- Yes (CWAI already stacked) --> MASKS[set I/F masks as requested]
-    MASKS --> VEC[pc = read_u16(vector)]
+    S -- Yes: CWAI already stacked --> MASKS[set I/F masks as requested]
+    MASKS --> VEC[pc = read_u16 at vector]
     VEC --> RUN[state = Running]
 ```
 
@@ -181,11 +181,11 @@ flowchart TD
 ```mermaid
 flowchart TD
     BT[branch_taken: cond, cc] --> EX[extract C,Z,N,V from cc]
-    EX --> SW{"cond &amp; 0x0F"}
+    EX --> SW{cond and 0x0F}
     SW -- 0x0 --> T[true - BRA]
     SW -- 0x1 --> F[false - BRN]
-    SW -- 0x2 --> H["!C &amp;&amp; !Z - BHI"]
-    SW -- 0x3 --> LS["C || Z - BLS"]
+    SW -- 0x2 --> H[!C and !Z - BHI]
+    SW -- 0x3 --> LS[C or Z - BLS]
     SW -- 0x4 --> CC[!C - BCC/BHS]
     SW -- 0x5 --> CS[C - BCS/BLO]
     SW -- 0x6 --> NE[!Z - BNE]
@@ -196,8 +196,8 @@ flowchart TD
     SW -- 0xB --> MI[N - BMI]
     SW -- 0xC --> GE[N == V - BGE]
     SW -- 0xD --> LT[N != V - BLT]
-    SW -- 0xE --> GT["!Z &amp;&amp; N == V - BGT"]
-    SW -- 0xF --> LE["Z || N != V - BLE"]
+    SW -- 0xE --> GT[!Z and N == V - BGT]
+    SW -- 0xF --> LE[Z or N != V - BLE]
 ```
 
 ---
