@@ -17,9 +17,15 @@ path = "src/main.rs"
 # std::time-free; the calendar/timezone lookup lives out here —
 # `host_time_source` in main.rs).
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-clap = { version = "4.6.1", features = ["derive"] }
+# `env` lets an `#[arg(env = …)]` fall back to an environment variable, which
+# `load_dotenv` (startup.rs) seeds from the `.env` file.
+clap = { version = "4.6.1", features = ["derive", "env"] }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
+# MIT. Seeds the environment from a `.env` file at startup, so `RUST_LOG` and
+# friends can be set per-checkout instead of per-shell (`load_dotenv` in
+# startup.rs).
+dotenvy = "0.15"
 mc6809 = { path = "../mc6809" }
 eframe = "0.33"
 # MIT. Opts legacy Windows conhost into VT escape processing (no-op
@@ -58,7 +64,7 @@ pluralizer = "0.5.0"
 
 [features]
 # Off by default (the app ships on eframe's glow/OpenGL backend). Enabling
-# this compiles eframe's wgpu backend in; `log_renderer_info` already has
+# this compiles eframe's wgpu backend in; `renderer_info` already has
 # the matching arm reporting the wgpu adapter (backend/GPU name).
 wgpu = ["eframe/wgpu"]
 

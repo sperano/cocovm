@@ -77,7 +77,8 @@ pub(crate) use rom_load::{
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
 pub(crate) use startup::{
-    StartupInfo, banner, ensure_assets, renderer_info, rom_count, setup_logging,
+    StartupInfo, banner, ensure_assets, load_dotenv, renderer_info, rom_count, setup_logging,
+    use_color,
 };
 pub(crate) use status_icons::{
     StatusActivity, cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon,
@@ -135,8 +136,21 @@ pub(crate) const TYPE_HOLD_FIELDS: u8 = 2;
 pub(crate) const TYPE_GAP_FIELDS: u8 = 1;
 
 fn main() -> eframe::Result<()> {
-    setup_logging();
-    ensure_assets();
+    // Before anything reads the environment: `RUST_LOG` below and clap's
+    // `env` fallbacks both see whatever the `.env` file sets.
+    load_dotenv();
+
+    // Before anything writes to stdout: on legacy Windows conhost the banner
+    // and the log subscriber both need the VT opt-in this performs.
+    let use_color = use_color();
+
+    // Parsed before the manager branch below, and unconditionally: with no
+    // arguments every field takes its clap-declared default, which is where
+    // `--log-level`'s `warn` comes from on both paths. The subscriber is
+    // global and installed once, so it cannot be built before the flags it
+    // reads are known.
+    let cli = Cli::parse();
+    setup_logging(use_color, cli.log_level.into());
 
     // Bare `coco` (no CLI arguments) opens the CocoVM manager window; any
     // argument keeps the direct-boot emulator path below.
@@ -144,34 +158,38 @@ fn main() -> eframe::Result<()> {
         return manager::run();
     }
 
-    let cli = Cli::parse();
     let variant = cli.machine;
     let config = boot::config_from_cli(&cli);
     if let Err(e) = config.validate() {
         eprintln!("coco: invalid configuration: {e}");
         std::process::exit(1);
     }
-    let roms_dir = dev_roms_dir();
-    let (rom, rom_source) = match load_rom_with_source(cli.rom.as_deref(), variant, &roms_dir) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("coco: {e}");
-            eprintln!("Pass --rom <PATH> to boot a specific image.");
-            std::process::exit(1);
-        }
-    };
     boot::exit_on_cartridge_port_conflict(&cli);
 
     eframe::run_native(
         "cocovm",
         boot::native_options(variant),
         Box::new(move |cc| {
+            // Same order as the manager path: the banner is the first thing
+            // printed, so the ROM this boot needs is fetched and loaded after
+            // it — which is why the load lives in here rather than in `main`.
             // Direct boot reads no machine list, so the banner reports only ROMs.
             banner(&StartupInfo {
                 roms: rom_count(),
                 machines: None,
                 renderer: renderer_info(cc),
             });
+            ensure_assets();
+            let roms_dir = dev_roms_dir();
+            let (rom, rom_source) =
+                match load_rom_with_source(cli.rom.as_deref(), variant, &roms_dir) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        eprintln!("coco: {e}");
+                        eprintln!("Pass --rom <PATH> to boot a specific image.");
+                        std::process::exit(1);
+                    }
+                };
             Ok(Box::new(boot::boot_app(cc, cli, config, rom, rom_source)))
         }),
     )
