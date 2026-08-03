@@ -77,9 +77,10 @@ fn full_def() -> MachineDef {
             // `minimal_file_uses_defaults` for the defaults).
             joy_left: JoySourceDTO::Keys,
             joy_right: JoySourceDTO::Gamepad,
-            // Away from the default (35) so the round trip exercises a
-            // non-default strength.
+            // Away from the defaults (35/5) so the round trip exercises
+            // non-default strengths.
             tv_scanline: 60,
+            tv_noise: 20,
         },
         unknown: toml::Table::new(),
     }

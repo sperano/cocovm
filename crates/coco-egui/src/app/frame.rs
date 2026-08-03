@@ -76,9 +76,11 @@ impl CocoApp {
         // own framebuffer stays untouched: the effect is a display
         // preference, not state. The chain owns the output shape (scanline
         // doubling), hence the frame's own dimensions here.
+        self.tv_frame = self.tv_frame.wrapping_add(1);
         let frame = crate::display::process(
             self.display,
             self.tv,
+            self.tv_frame,
             self.machine.fb_width as usize,
             &self.machine.framebuffer,
         );

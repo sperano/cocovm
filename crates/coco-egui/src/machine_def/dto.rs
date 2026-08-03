@@ -365,6 +365,11 @@ fn default_tv_scanline() -> u8 {
     TVSettings::default().scanline_pct
 }
 
+/// Default for `[ui].tv_noise` — [`default_tv_scanline`]'s sibling.
+fn default_tv_noise() -> u8 {
+    TVSettings::default().noise_pct
+}
+
 /// `[ui]` section — section itself optional.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UIDTO {
@@ -385,6 +390,11 @@ pub struct UIDTO {
     /// monitor — switching back to a TV restores the tuned strength.
     #[serde(default = "default_tv_scanline")]
     pub tv_scanline: u8,
+    /// RF-noise amount of the TV look, `0..=100`
+    /// ([`TVSettings::noise_pct`]); kept while on a monitor like
+    /// [`Self::tv_scanline`].
+    #[serde(default = "default_tv_noise")]
+    pub tv_noise: u8,
 }
 
 impl Default for UIDTO {
@@ -395,6 +405,7 @@ impl Default for UIDTO {
             joy_left: JoySourceDTO::default(),
             joy_right: JoySourceDTO::default(),
             tv_scanline: default_tv_scanline(),
+            tv_noise: default_tv_noise(),
         }
     }
 }

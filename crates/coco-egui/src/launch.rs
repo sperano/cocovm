@@ -96,6 +96,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // the definition's actual `[hardware].display` choice.
     app.display = def.display();
     app.tv.scanline_pct = def.ui.tv_scanline.min(100);
+    app.tv.noise_pct = def.ui.tv_noise.min(100);
     app.kb_mode = match def.ui.kb_mode {
         machine_def::KbModeDTO::Positional => KbMode::Positional,
         machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,

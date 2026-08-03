@@ -86,6 +86,11 @@ impl CocoApp {
                     .text("Scanlines")
                     .suffix("%"),
             );
+            ui.add(
+                egui::Slider::new(&mut self.tv.noise_pct, 0..=100)
+                    .text("RF noise")
+                    .suffix("%"),
+            );
         }
     }
 

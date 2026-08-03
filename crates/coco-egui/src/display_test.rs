@@ -64,12 +64,22 @@ fn dark(v: u8, pct: u8) -> u8 {
     ((u16::from(v) * scanline_scale(pct) + 128) >> 8) as u8
 }
 
+/// Default settings minus the RF noise — the deterministic baseline the
+/// structural tests run at (noise gets its own tests below).
+fn quiet() -> TVSettings {
+    TVSettings {
+        noise_pct: 0,
+        ..TVSettings::default()
+    }
+}
+
 #[test]
 fn process_is_identity_for_monitors() {
     for monitor in [MonitorType::RGB, MonitorType::Composite] {
         let frame = process(
             Display::Monitor(monitor),
             TVSettings::default(),
+            0,
             FRAME_W,
             &FRAME,
         );
@@ -86,10 +96,10 @@ fn process_color_tv_scanline_doubles_a_uniform_frame() {
     // Uniform color: the bandwidth limit has nothing to smear, so what's
     // left is exactly the scanline structure — height doubles, even rows
     // keep the color, odd rows are its dimmed copy.
-    let settings = TVSettings::default();
+    let settings = quiet();
     let rgba = [200u8, 120, 40, 255];
     let src = uniform_frame(rgba);
-    let frame = process(Display::TV(TV::Color), settings, 4, &src);
+    let frame = process(Display::TV(TV::Color), settings, 0, 4, &src);
     assert_eq!((frame.width, frame.height), (4, 4));
     let dim: Vec<u8> = rgba[..3]
         .iter()
@@ -114,7 +124,11 @@ fn scanline_strength_endpoints() {
     // 0% disables the pass entirely: no doubling, bytes untouched.
     let off = process(
         Display::TV(TV::Color),
-        TVSettings { scanline_pct: 0 },
+        TVSettings {
+            scanline_pct: 0,
+            ..quiet()
+        },
+        0,
         4,
         &src,
     );
@@ -124,7 +138,11 @@ fn scanline_strength_endpoints() {
     // 100% is black gaps.
     let full = process(
         Display::TV(TV::Color),
-        TVSettings { scanline_pct: 100 },
+        TVSettings {
+            scanline_pct: 100,
+            ..quiet()
+        },
+        0,
         4,
         &src,
     );
@@ -137,9 +155,9 @@ fn scanline_strength_endpoints() {
 
 #[test]
 fn process_bw_greys_every_pixel_and_keeps_alpha() {
-    let settings = TVSettings::default();
+    let settings = quiet();
     let src = uniform_frame([255, 0, 0, 255]);
-    let frame = process(Display::TV(TV::BW), settings, 4, &src);
+    let frame = process(Display::TV(TV::BW), settings, 0, 4, &src);
     let y = luma(255, 0, 0);
     let dark_y = dark(y, settings.scanline_pct);
     for (i, row) in frame.pixels.chunks_exact(4 * 4).enumerate() {
@@ -163,8 +181,8 @@ fn tvs_bandwidth_limit_smears_along_the_row_only() {
         0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,
         0, 0, 0, 255,   0, 0, 0, 255,         0, 0, 0, 255,
     ];
-    let settings = TVSettings::default();
-    let frame = process(Display::TV(TV::Color), settings, 3, &src);
+    let settings = quiet();
+    let frame = process(Display::TV(TV::Color), settings, 0, 3, &src);
     assert_eq!(frame.height, 4);
     let rows: Vec<&[u8]> = frame.pixels.chunks_exact(3 * 4).collect();
     let expect_bright = [64u8, 128, 64];
@@ -187,6 +205,45 @@ fn tvs_bandwidth_limit_smears_along_the_row_only() {
             "no vertical bleed"
         );
     }
+}
+
+/// A mid-grey frame processed with noise only (no scanlines): every output
+/// byte stays within the amplitude bound, and the noise is luminance-only
+/// (equal offset on R, G, and B).
+#[test]
+fn noise_is_bounded_luminance_jitter() {
+    let noise_pct = 50u8;
+    let amp = i32::from(noise_pct) * NOISE_FULL / 100;
+    let settings = TVSettings {
+        scanline_pct: 0,
+        noise_pct,
+    };
+    let v = 128u8;
+    let src = uniform_frame([v, v, v, 255]);
+    let frame = process(Display::TV(TV::BW), settings, 7, 4, &src);
+    let mut saw_change = false;
+    for px in frame.pixels.chunks_exact(4) {
+        assert!(px[0] == px[1] && px[1] == px[2], "luminance-only jitter");
+        assert_eq!(px[3], 255, "alpha untouched");
+        let d = (i32::from(px[0]) - i32::from(v)).abs();
+        assert!(d <= amp, "deviation {d} exceeds amplitude {amp}");
+        saw_change |= d != 0;
+    }
+    assert!(saw_change, "50% noise must visibly perturb the frame");
+}
+
+#[test]
+fn noise_varies_with_the_seed_and_is_reproducible() {
+    let settings = TVSettings {
+        scanline_pct: 0,
+        noise_pct: 30,
+    };
+    let src = uniform_frame([128, 128, 128, 255]);
+    let a = process(Display::TV(TV::Color), settings, 1, 4, &src);
+    let b = process(Display::TV(TV::Color), settings, 1, 4, &src);
+    let c = process(Display::TV(TV::Color), settings, 2, 4, &src);
+    assert_eq!(a.pixels, b.pixels, "same seed, same snow");
+    assert_ne!(a.pixels, c.pixels, "a new seed must re-roll the snow");
 }
 
 /// The whole design table: which signal path each display resolves to, per

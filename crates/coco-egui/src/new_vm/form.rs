@@ -89,10 +89,18 @@ impl MachineForm {
         // The TV chain's knobs, only enabled while they'd have an effect
         // (a monitor never runs the chain). The value is kept either way —
         // switching back to a TV restores the tuned strength.
+        let is_tv = matches!(self.display, Display::TV(_));
         ui.label(egui::RichText::new("Scanlines").size(font));
         ui.add_enabled(
-            matches!(self.display, Display::TV(_)),
+            is_tv,
             egui::Slider::new(&mut self.tv.scanline_pct, 0..=100).suffix("%"),
+        );
+        ui.end_row();
+
+        ui.label(egui::RichText::new("RF noise").size(font));
+        ui.add_enabled(
+            is_tv,
+            egui::Slider::new(&mut self.tv.noise_pct, 0..=100).suffix("%"),
         );
         ui.end_row();
 

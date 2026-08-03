@@ -34,6 +34,7 @@ const UI_KEYS: &[&str] = &[
     "joy_left",
     "joy_right",
     "tv_scanline",
+    "tv_noise",
 ];
 
 /// Sections that nest under the top level, paired with their known-key

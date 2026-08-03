@@ -32,6 +32,12 @@ pub(crate) struct CocoApp {
     /// `display`: `[ui]` keys for the starting values, View-menu sliders
     /// live. Only consulted while `display` is a TV.
     pub(crate) tv: display::TVSettings,
+    /// Frame counter feeding the TV chain's noise seed
+    /// (`display::process`), bumped every texture upload so the snow
+    /// shimmers. Pure UI state — never serialized. A suspended VM keeps
+    /// uploading (and so keeps shimmering), which is exactly what a real
+    /// TV showing a frozen picture would do.
+    pub(crate) tv_frame: u32,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -202,6 +208,7 @@ impl CocoApp {
             aspect_correct: true,
             display,
             tv: display::TVSettings::default(),
+            tv_frame: 0,
             last_update: None,
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),

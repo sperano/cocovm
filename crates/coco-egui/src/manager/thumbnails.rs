@@ -26,9 +26,12 @@ impl ManagerApp {
         // The raw framebuffer bypasses `upload_framebuffer_texture`'s TV
         // chain, so run it here too — a B&W machine's saved preview must
         // not come back in color (nor a TV's without its scanlines).
+        // The last upload's seed: the PNG freezes the same instant of
+        // snow the screen showed, like a photograph of the set would.
         let frame = crate::display::process(
             vm.display,
             vm.tv,
+            vm.tv_frame,
             vm.machine.fb_width as usize,
             &vm.machine.framebuffer,
         );

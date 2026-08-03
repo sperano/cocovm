@@ -182,6 +182,10 @@ const PX: usize = 4;
 /// at (the dark half keeps 65% of the line's linear-light brightness).
 const DEFAULT_SCANLINE_PCT: u8 = 35;
 
+/// Default [`TVSettings::noise_pct`]: a whisper of snow — present enough
+/// to feel like an antenna feed, not enough to obscure anything.
+const DEFAULT_NOISE_PCT: u8 = 5;
+
 /// User-adjustable knobs of the TV chain — a UI preference riding along
 /// with [`Display`] (View-menu sliders live, `[ui]` keys persisted).
 /// Integer percentages, not floats: sliders and TOML both stay clean
@@ -192,12 +196,17 @@ pub(crate) struct TVSettings {
     /// brightness the dark half between scanlines loses. 0 disables the
     /// pass entirely (no doubling); 100 is black gaps.
     pub(crate) scanline_pct: u8,
+    /// RF-noise amount, `0..=100`: the luminance jitter amplitude, from
+    /// none (0, pass skipped) to a blizzard of snow (100 ≈ ±[`NOISE_FULL`]
+    /// levels). See [`noise_rows`].
+    pub(crate) noise_pct: u8,
 }
 
 impl Default for TVSettings {
     fn default() -> Self {
         Self {
             scanline_pct: DEFAULT_SCANLINE_PCT,
+            noise_pct: DEFAULT_NOISE_PCT,
         }
     }
 }
@@ -234,9 +243,16 @@ pub(crate) struct Frame {
 /// through untouched. Both TVs get, in order: the B&W luma collapse
 /// (B&W set only — blurring a grey keeps it grey, so the order only
 /// matters for color), the composite/RF horizontal bandwidth limit
-/// ([`blur_rows`]), and the scanline doubling ([`expand_scanlines`]) at
+/// ([`blur_rows`]), the RF noise ([`noise_rows`], varied per frame by
+/// `seed`), and the scanline doubling ([`expand_scanlines`]) at
 /// `settings`' strength.
-pub(crate) fn process(display: Display, settings: TVSettings, width: usize, src: &[u8]) -> Frame {
+pub(crate) fn process(
+    display: Display,
+    settings: TVSettings,
+    seed: u32,
+    width: usize,
+    src: &[u8],
+) -> Frame {
     let height = src.len() / (width * PX);
     let mut pixels = src.to_vec();
     let Display::TV(tv) = display else {
@@ -255,6 +271,9 @@ pub(crate) fn process(display: Display, settings: TVSettings, width: usize, src:
         }
     }
     blur_rows(width, &mut pixels);
+    if settings.noise_pct > 0 {
+        noise_rows(settings.noise_pct, seed, &mut pixels);
+    }
     if settings.scanline_pct == 0 {
         return Frame {
             pixels,
@@ -266,6 +285,33 @@ pub(crate) fn process(display: Display, settings: TVSettings, width: usize, src:
         pixels: expand_scanlines(settings.scanline_pct, width, &pixels),
         width,
         height: height * 2,
+    }
+}
+
+/// Noise amplitude at `noise_pct = 100`, in 8-bit levels: full snow that
+/// still leaves the picture faintly underneath rather than pure static.
+const NOISE_FULL: i32 = 128;
+
+/// The RF noise: per-pixel **luminance** jitter — the same offset on all
+/// three channels, because antenna noise rides the luma of the signal —
+/// varied frame to frame by `seed` so it shimmers instead of sitting like
+/// dirt on the glass. Runs before the scanline doubling: both halves of a
+/// scanline carry the same signal, so they share the same noise. The PRNG
+/// is a plain xorshift32 — decorrelated neighbors are all snow needs.
+fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
+    let amp = i32::from(noise_pct.min(100)) * NOISE_FULL / 100;
+    // Mix the seed so consecutive frame counters land far apart; `| 1`
+    // keeps xorshift out of its zero fixed point.
+    let mut s = seed.wrapping_mul(0x9E37_79B9) | 1;
+    for px in bytes.chunks_exact_mut(PX) {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        // High 16 bits as a signed fraction of `amp`: n ∈ [-amp, amp].
+        let n = (i32::from((s >> 16) as u16 as i16) * amp) >> 15;
+        for c in 0..3 {
+            px[c] = (i32::from(px[c]) + n).clamp(0, 255) as u8;
+        }
     }
 }
 
