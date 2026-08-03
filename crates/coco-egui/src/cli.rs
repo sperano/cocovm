@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 use coco_core::{MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard};
 
+use crate::display::{Display, TV};
+
 /// `clap` value parser for `--machine`.
 pub(crate) fn parse_machine(s: &str) -> Result<MachineVariant, String> {
     match s {
@@ -54,7 +56,31 @@ pub(crate) fn parse_video(s: &str) -> Result<VideoStandard, String> {
     }
 }
 
-/// Composite vs RGB monitor cable. Mirrors [`MonitorType`].
+/// `--display`'s values. Mirrors [`Display`] (`display.rs`).
+#[derive(Clone, Copy, ValueEnum)]
+pub(crate) enum DisplayArg {
+    RGB,
+    #[value(name = "cmp", alias = "composite")]
+    Composite,
+    #[value(name = "tv", alias = "tv-color")]
+    TVColor,
+    #[value(name = "tv-bw")]
+    TVBW,
+}
+
+impl From<DisplayArg> for Display {
+    fn from(d: DisplayArg) -> Self {
+        match d {
+            DisplayArg::RGB => Display::Monitor(MonitorType::RGB),
+            DisplayArg::Composite => Display::Monitor(MonitorType::Composite),
+            DisplayArg::TVColor => Display::TV(TV::Color),
+            DisplayArg::TVBW => Display::TV(TV::BW),
+        }
+    }
+}
+
+/// `--monitor`'s values — the deprecated monitor-only half of
+/// [`DisplayArg`], kept (hidden) so existing invocations don't break.
 #[derive(Clone, Copy, ValueEnum)]
 pub(crate) enum MonitorArg {
     RGB,
@@ -62,11 +88,11 @@ pub(crate) enum MonitorArg {
     Composite,
 }
 
-impl From<MonitorArg> for MonitorType {
+impl From<MonitorArg> for Display {
     fn from(m: MonitorArg) -> Self {
         match m {
-            MonitorArg::RGB => MonitorType::RGB,
-            MonitorArg::Composite => MonitorType::Composite,
+            MonitorArg::RGB => Display::Monitor(MonitorType::RGB),
+            MonitorArg::Composite => Display::Monitor(MonitorType::Composite),
         }
     }
 }
@@ -180,12 +206,17 @@ pub(crate) struct Cli {
     #[arg(long, default_value = "ntsc", value_parser = parse_video)]
     pub(crate) video: VideoStandard,
 
-    /// Composite vs RGB monitor cable (CoCo 3 only — a CoCo 1/2 has no
-    /// monitor port, just RF out to a TV). Real hardware drives both
-    /// signals simultaneously; this picks which one the emulated monitor
-    /// decodes (also toggleable live from the View menu). Defaults to RGB
-    /// on a CoCo 3.
+    /// What the video output is plugged into: an RGB or composite monitor
+    /// (CoCo 3 only — a CoCo 1/2 has no monitor port), or a color or B&W TV
+    /// on the RF output (any machine; a TV always decodes the composite
+    /// signal — the RF modulator is fed from it). Also switchable live from
+    /// the View menu. Defaults to an RGB monitor on a CoCo 3, a color TV on
+    /// a CoCo 1/2.
     #[arg(long, value_enum)]
+    pub(crate) display: Option<DisplayArg>,
+
+    /// Deprecated alias for the monitor half of `--display` (rgb, cmp).
+    #[arg(long, value_enum, hide = true, conflicts_with = "display")]
     pub(crate) monitor: Option<MonitorArg>,
 
     /// Also save a `.wav` of the tape audio alongside the canonical `.cas`

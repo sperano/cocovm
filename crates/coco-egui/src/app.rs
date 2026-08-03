@@ -22,6 +22,12 @@ pub(crate) struct CocoApp {
     /// (see the call site in `update`).
     pub(crate) show_orch90: bool,
     pub(crate) aspect_correct: bool,
+    /// What the video output is plugged into — monitor or (B&W) TV
+    /// (`display.rs`). A UI preference like `aspect_correct`: seeded from
+    /// the config here, overridden by the definition's `[hardware].display`
+    /// (`launch::launch_machine`) or `--display` (`boot::boot_app`), and
+    /// live-switchable from the View menu afterwards.
+    pub(crate) display: Display,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -176,6 +182,10 @@ impl CocoApp {
         hdbdos_mode: bool,
         save_tape_wav: bool,
     ) -> Self {
+        // Lossy for a CoCo 3 TV (serialized as composite) — launch/boot
+        // overwrite it with the definition's/CLI's real choice afterwards
+        // (`Display::from_config`'s doc).
+        let display = Display::from_config(&config);
         let mut app = Self {
             machine: Machine::new(config, rom),
             texture: None,
@@ -186,6 +196,7 @@ impl CocoApp {
             show_about: false,
             show_orch90: false,
             aspect_correct: true,
+            display,
             last_update: None,
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),

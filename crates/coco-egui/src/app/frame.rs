@@ -70,13 +70,18 @@ impl CocoApp {
     /// joystick writes live on a machine whose on-disk frozen copy they'd
     /// silently diverge from.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        let image = egui::ColorImage::from_rgba_unmultiplied(
+        let mut image = egui::ColorImage::from_rgba_unmultiplied(
             [
                 self.machine.fb_width as usize,
                 self.machine.fb_height as usize,
             ],
             &self.machine.framebuffer,
         );
+        // The TV chain (B&W collapse today), applied at the single point
+        // every consumer of `self.texture` — VM window, manager preview,
+        // embedded fallback — inherits from. The machine's own framebuffer
+        // stays untouched: the effect is a display preference, not state.
+        crate::display::apply(self.display, &mut image);
         let texture = self.texture.get_or_insert_with(|| {
             ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
         });

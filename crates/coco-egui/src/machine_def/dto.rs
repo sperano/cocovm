@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use coco_core::MachineConfig;
 
+use crate::display::{Display, TV};
+
 /// `[hardware].variant`. Maps to [`coco_core::MachineVariant`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MachineVariantDTO {
@@ -143,6 +145,45 @@ impl From<MonitorDTO> for MonitorType {
     }
 }
 
+/// `[hardware].display`. Maps to [`crate::display::Display`] — the display
+/// device on the video cable (monitor or color/B&W TV, `display.rs`).
+/// Supersedes [`MonitorDTO`]'s `monitor` key: `display` wins when both are
+/// present, and saves write only `display`
+/// ([`super::MachineDef::display`] / [`HardwareDTO::from_config`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DisplayDTO {
+    #[serde(rename = "rgb")]
+    RGB,
+    #[serde(rename = "cmp")]
+    Composite,
+    #[serde(rename = "tv")]
+    TVColor,
+    #[serde(rename = "tv-bw")]
+    TVBW,
+}
+
+impl From<Display> for DisplayDTO {
+    fn from(display: Display) -> Self {
+        match display {
+            Display::Monitor(MonitorType::RGB) => DisplayDTO::RGB,
+            Display::Monitor(MonitorType::Composite) => DisplayDTO::Composite,
+            Display::TV(TV::Color) => DisplayDTO::TVColor,
+            Display::TV(TV::BW) => DisplayDTO::TVBW,
+        }
+    }
+}
+
+impl From<DisplayDTO> for Display {
+    fn from(display: DisplayDTO) -> Self {
+        match display {
+            DisplayDTO::RGB => Display::Monitor(MonitorType::RGB),
+            DisplayDTO::Composite => Display::Monitor(MonitorType::Composite),
+            DisplayDTO::TVColor => Display::TV(TV::Color),
+            DisplayDTO::TVBW => Display::TV(TV::BW),
+        }
+    }
+}
+
 /// `[hardware].vdg`. Maps to [`coco_core::VDGVariant`]. Optional in the file
 /// — when absent, [`super::MachineDef::to_machine_config`] defaults it per variant
 /// the same way `main.rs`'s CLI path and `new_vm.rs`'s `constrain_draft` do:
@@ -204,11 +245,18 @@ pub struct HardwareDTO {
     pub variant: MachineVariantDTO,
     pub ram: RAMDTO,
     pub video: VideoStandardDTO,
-    /// Absent ⇒ per-variant default: RGB on a CoCo 3, nothing on a CoCo 1/2
-    /// (no monitor port — RF TV only; an explicit key there fails
-    /// [`MachineConfig::validate`]).
+    /// Legacy display key, read but never written since `display` (below)
+    /// superseded it: `display` wins when both are present; alone, it maps
+    /// to the monitor half of [`crate::display::Display`]
+    /// ([`super::MachineDef::display`]). An explicit key on a CoCo 1/2
+    /// still fails [`MachineConfig::validate`] (no monitor port).
     #[serde(default)]
     pub monitor: Option<MonitorDTO>,
+    /// Absent (and no legacy `monitor` either) ⇒ per-variant default: an
+    /// RGB monitor on a CoCo 3, a color TV on a CoCo 1/2
+    /// ([`crate::display::Display::default_for`]).
+    #[serde(default)]
+    pub display: Option<DisplayDTO>,
     /// Absent ⇒ per-variant default; see [`VDGVariantDTO`].
     #[serde(default)]
     pub vdg: Option<VDGVariantDTO>,
@@ -218,20 +266,23 @@ pub struct HardwareDTO {
 }
 
 impl HardwareDTO {
-    /// Build the `[hardware]` section from a config the "New…" dialog or the
+    /// Build the `[hardware]` section from a config the "New…" flow or the
     /// manager's detail-pane form produced (`new_vm::config_form_rows`
     /// already ran [`MachineConfig::validate`]-compatible constraints on
-    /// it). `monitor`/`vdg` are written exactly when the machine has the
-    /// port/chip (`Some` per the config); a CoCo 1/2 file carries no
-    /// `monitor` key and a CoCo 3 file no `vdg` key. `rom` is passed
-    /// through as-is: the custom-ROM path isn't part of [`MachineConfig`]
-    /// and has no editor yet.
-    pub fn from_config(config: &MachineConfig, rom: Option<String>) -> Self {
+    /// it). `display` is taken separately — the form's own pick, not
+    /// derivable from the config (a CoCo 3 TV and a composite monitor both
+    /// resolve to `monitor: Composite`); the legacy `monitor` key is never
+    /// written. `vdg` is written exactly when the machine has the chip
+    /// (`Some` per the config) — a CoCo 3 file carries no `vdg` key. `rom`
+    /// is passed through as-is: the custom-ROM path isn't part of
+    /// [`MachineConfig`] and has no editor yet.
+    pub fn from_config(config: &MachineConfig, display: Display, rom: Option<String>) -> Self {
         Self {
             variant: config.variant.into(),
             ram: config.memory.into(),
             video: config.video.into(),
-            monitor: config.monitor.map(Into::into),
+            monitor: None,
+            display: Some(display.into()),
             vdg: config.vdg.map(Into::into),
             rom,
         }

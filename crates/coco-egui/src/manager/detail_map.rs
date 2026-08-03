@@ -75,6 +75,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     form.disks = [media_choice(&media.disk0), media_choice(&media.disk1)];
     form.tape = media_choice(&media.tape);
     form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
+    form.display = def.display();
     form.aspect_correct = def.ui.aspect_correct;
     form.serial = def.ports.serial.into();
     // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like
@@ -142,8 +143,11 @@ impl ManagerApp {
         form: &mut new_vm::MachineForm,
     ) -> Result<machine_def::MachineDef, String> {
         let mut def = base.clone();
-        def.hardware =
-            machine_def::HardwareDTO::from_config(&form.config, base.hardware.rom.clone());
+        def.hardware = machine_def::HardwareDTO::from_config(
+            &form.config,
+            form.display,
+            base.hardware.rom.clone(),
+        );
         pack_cartridge(form, &mut def)?;
         self.pack_media(slug, form, &mut def)?;
         pack_ui(form, &mut def);

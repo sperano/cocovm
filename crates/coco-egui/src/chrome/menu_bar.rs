@@ -60,18 +60,22 @@ impl CocoApp {
             egui::Checkbox::new(&mut self.show_orch90, "Orchestra-90 Levels"),
         );
         ui.separator();
-        // Swapping the monitor cable doesn't erase machine state,
-        // so this takes effect live rather than requiring a
-        // power cycle.
-        for (mt, label) in [
-            (MonitorType::RGB, "RGB monitor"),
-            (MonitorType::Composite, "Composite monitor"),
-        ] {
+        // Swapping the display cable doesn't erase machine state, so this
+        // takes effect live rather than requiring a power cycle. Monitor
+        // choices exist only where a monitor port does (CoCo 3); a CoCo 1/2
+        // offers just the two TVs (`Display::choices`).
+        let variant = self.machine.config.variant;
+        for display in Display::choices(variant) {
             if ui
-                .selectable_label(self.machine.bus.gime.monitor == mt, label)
+                .selectable_label(self.display == *display, display.label())
                 .clicked()
             {
-                self.machine.bus.gime.monitor = mt;
+                self.display = *display;
+                // A CoCo 1/2 has no GIME palette to steer (`None`) — its
+                // renderer never consults `gime.monitor`.
+                if let Some(monitor) = display.to_monitor(variant) {
+                    self.machine.bus.gime.monitor = monitor;
+                }
             }
         }
     }

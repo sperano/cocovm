@@ -4,10 +4,10 @@
 //! draws it as its own titled radio-button group (`manager::detail`), not
 //! a grid row.
 
-use coco_core::{MachineConfig, MachineVariant, MonitorType, VDGVariant, VideoStandard};
+use coco_core::{MachineConfig, MachineVariant, VDGVariant, VideoStandard};
 use eframe::egui;
 
-use super::{constrain, monitor_label, vdg_label, video_label};
+use super::{constrain, vdg_label, video_label};
 
 /// The Model row (which CoCo this machine is), label + combo box — the
 /// detail pane hosts it inside its "Machine" titled group. Must be called
@@ -33,10 +33,13 @@ pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
     ui.end_row();
 }
 
-/// The conditional VDG row (CoCo 2 only), the Video row, and the
-/// conditional Monitor row (CoCo 3 only) — see the inline comments below —
-/// [`machine_rows`]'s sibling, hosted by the detail pane's "Display"
-/// titled group in its own grid.
+/// The conditional VDG row (CoCo 2 only) and the Video row — see the inline
+/// comments below — [`machine_rows`]'s sibling, hosted by the detail pane's
+/// "Display" titled group in its own grid. The display-device row itself
+/// (monitor/TV) lives in [`super::MachineForm::display_rows`]: the choice
+/// isn't part of [`MachineConfig`] (it owns `config.monitor` but also
+/// distinguishes a CoCo 3 TV from a composite monitor), so it rides on the
+/// form like the cartridge does.
 pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
@@ -79,27 +82,4 @@ pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
         });
     });
     ui.end_row();
-
-    // Monitor cable choice exists only on the CoCo 3 (RGB and composite
-    // ports); a CoCo 1/2 outputs RF to a TV, full stop, and its config
-    // carries `monitor: None` — see `constrain` and
-    // [`MachineConfig::validate`].
-    if draft.variant == MachineVariant::Coco3 {
-        ui.label(egui::RichText::new("Monitor").size(font));
-        // A `None` draft (possible only transiently) displays as RGB — the
-        // same fallback the config's own defaulting applies — without
-        // writing `Some` back until the user actually clicks.
-        let selected = draft.monitor.unwrap_or(MonitorType::RGB);
-        ui.horizontal(|ui| {
-            for monitor in [MonitorType::RGB, MonitorType::Composite] {
-                if ui
-                    .radio(selected == monitor, monitor_label(monitor))
-                    .clicked()
-                {
-                    draft.monitor = Some(monitor);
-                }
-            }
-        });
-        ui.end_row();
-    }
 }

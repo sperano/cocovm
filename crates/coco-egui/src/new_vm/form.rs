@@ -7,6 +7,7 @@
 use coco_core::joystick::{LEFT, RIGHT};
 use eframe::egui;
 
+use crate::display::Display;
 use crate::joy::JoySource;
 
 use super::config_form;
@@ -20,9 +21,14 @@ impl MachineForm {
     /// An all-defaults form. `salt` is a per-host constant — see the
     /// field doc.
     pub(crate) fn new(salt: &'static str) -> Self {
+        let config = coco_core::MachineConfig::default();
         Self {
             salt,
-            config: coco_core::MachineConfig::default(),
+            // The default config's implied display (an RGB monitor —
+            // `MachineConfig::default()` is a CoCo 3); seeded from the
+            // definition's real choice by `manager::detail_map::seed_form`.
+            display: crate::display::Display::from_config(&config),
+            config,
             cartridge: CartridgeChoice::None,
             mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
             disks: std::array::from_fn(|_| MediaChoice::None),
@@ -48,17 +54,52 @@ impl MachineForm {
         config_form::machine_rows(ui, self.salt, &mut self.config);
     }
 
-    /// The VDG/Video/Monitor rows plus the 4:3 aspect checkbox — the detail
-    /// pane hosts these inside its "Display" titled group, in that group's
-    /// own grid. The checkbox needs no field label (the group names the
-    /// topic); the empty label cell keeps it aligned with the combos.
-    /// Aspect is a `[ui]` preference — the launched window's *starting*
-    /// state; F9 keeps working as a live toggle.
+    /// The VDG/Video rows, the Display row (monitor or TV — `display.rs`),
+    /// and the 4:3 aspect checkbox — the detail pane hosts these inside its
+    /// "Display" titled group, in that group's own grid. The checkbox needs
+    /// no field label (the group names the topic); the empty label cell
+    /// keeps it aligned with the combos. Aspect is a `[ui]` preference —
+    /// the launched window's *starting* state; F9 keeps working as a live
+    /// toggle.
+    ///
+    /// The Display pick owns `config.monitor`: the sync below re-constrains
+    /// it after a model change in [`Self::machine_rows`] (a monitor pick
+    /// snaps to the default TV where no monitor port exists — `constrain`'s
+    /// display-shaped sibling) and re-derives the config's signal path, so
+    /// the config always validates against the current variant.
     pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {
+        self.constrain_display();
+        let variant = self.config.variant;
+
         config_form::display_rows(ui, self.salt, &mut self.config);
+
+        let font = ui.style().text_styles[&egui::TextStyle::Button].size;
+        ui.label(egui::RichText::new("Display").size(font));
+        ui.horizontal(|ui| {
+            for &display in Display::choices(variant) {
+                if ui.radio(self.display == display, display.label()).clicked() {
+                    self.display = display;
+                    self.config.monitor = display.to_monitor(variant);
+                }
+            }
+        });
+        ui.end_row();
+
         ui.label("");
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
         ui.end_row();
+    }
+
+    /// `constrain`'s display-shaped sibling: snap a monitor pick to the
+    /// default TV where the current model has no monitor port, then
+    /// re-derive `config.monitor` from the pick — the Display row is that
+    /// field's only writer.
+    pub(crate) fn constrain_display(&mut self) {
+        let variant = self.config.variant;
+        if !Display::choices(variant).contains(&self.display) {
+            self.display = Display::default_for(variant);
+        }
+        self.config.monitor = self.display.to_monitor(variant);
     }
 
     /// The media rows: Cassette, Cartridge (with its nested MPI-slot/Disk

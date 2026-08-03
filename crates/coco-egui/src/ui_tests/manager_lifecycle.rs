@@ -24,12 +24,23 @@ fn launch_honors_ui_settings() {
     );
     def.ui.aspect_correct = false;
     def.ui.kb_mode = machine_def::KbModeDTO::Symbolic;
+    def.hardware.display = Some(machine_def::DisplayDTO::TVBW);
 
     let vm = launch_machine(&def, "ui-prefs").expect("a default CoCo 3 definition launches");
     assert!(!vm.aspect_correct, "[ui].aspect_correct must reach the VM");
     assert!(
         vm.kb_mode == KbMode::Symbolic,
         "[ui].kb_mode must reach the VM"
+    );
+    assert_eq!(
+        vm.display,
+        Display::TV(crate::display::TV::BW),
+        "[hardware].display must reach the VM"
+    );
+    assert_eq!(
+        vm.machine.bus.gime.monitor,
+        coco_core::MonitorType::Composite,
+        "a TV decodes the composite signal path"
     );
 }
 

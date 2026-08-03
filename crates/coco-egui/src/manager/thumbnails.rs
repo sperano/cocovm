@@ -24,9 +24,12 @@ impl ManagerApp {
             return;
         };
         let (w, h) = (vm.machine.fb_width, vm.machine.fb_height);
-        if let Err(e) =
-            super::write_thumbnail_png(&root.join(&entry.slug), &vm.machine.framebuffer, w, h)
-        {
+        // The raw framebuffer bypasses `upload_framebuffer_texture`'s TV
+        // chain, so run it here on a copy — a B&W machine's saved preview
+        // must not come back in color.
+        let mut pixels = vm.machine.framebuffer.clone();
+        crate::display::apply_rgba(vm.display, &mut pixels);
+        if let Err(e) = super::write_thumbnail_png(&root.join(&entry.slug), &pixels, w, h) {
             tracing::warn!("thumbnail for '{}': {e}", entry.slug);
         }
         entry.thumbnail = None;
