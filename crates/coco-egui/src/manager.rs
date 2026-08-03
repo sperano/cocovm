@@ -486,6 +486,10 @@ pub fn run() -> eframe::Result<()> {
                 machines: Some(machines),
                 renderer: crate::renderer_info(cc),
             });
+            // Assets are fetched *after* the banner, so the box is the first
+            // thing printed: a fresh install reports 0 ROMs and downloads
+            // them below. The manager only needs ROMs when a VM is launched.
+            crate::ensure_assets();
             Ok(Box::new(ManagerApp::new(
                 photo_view::random(),
                 machines_dir,

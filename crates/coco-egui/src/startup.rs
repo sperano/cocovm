@@ -4,23 +4,49 @@ use std::path::Path;
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
 use pluralizer::pluralize;
+use tracing_subscriber::filter::LevelFilter;
 
 use crate::paths;
 
-pub(crate) fn setup_logging() {
-    // Legacy Windows conhost only interprets VT escape codes after the app
-    // opts in; a no-op everywhere else. On failure, fall back to plain text.
-    let vt_ok = enable_ansi_support::enable_ansi_support().is_ok();
-    let use_color = vt_ok && std::io::IsTerminal::is_terminal(&std::io::stdout());
-    // Leveled stdout logging, colored only when stdout is a terminal.
-    // `RUST_LOG` filters per module (e.g. `RUST_LOG=info,eframe=warn` or
-    // `RUST_LOG=coco_egui::audio=debug`); without it, only `warn` and above
-    // is shown.
+/// Seed the environment from a `.env` file, before anything reads it.
+///
+/// Two lookups, because the two ways the app starts have different working
+/// directories: from a terminal, `dotenv` walks up from the CWD, which finds
+/// a checkout's own `.env`; from Finder or an `.app` bundle the CWD is `/`,
+/// so that walk finds nothing and the per-user config directory answers
+/// instead. Real environment variables always win — neither call overwrites
+/// a key that is already set — and a missing file is not an error.
+pub(crate) fn load_dotenv() {
+    let _ = dotenvy::dotenv();
+    if let Some(dir) = paths::config_dir() {
+        let _ = dotenvy::from_path(dir.join(".env"));
+    }
+}
+
+/// Whether stdout can carry ANSI color: the console took the VT opt-in and
+/// stdout is a terminal.
+///
+/// Legacy Windows conhost only interprets escape codes after the app opts in
+/// — a no-op everywhere else — so this has to run before anything colors
+/// stdout. [`banner`] depends on the opt-in too, but not on this return
+/// value: `owo_colors`' `if_supports_color` detects the terminal itself.
+pub(crate) fn use_color() -> bool {
+    enable_ansi_support::enable_ansi_support().is_ok()
+        && std::io::IsTerminal::is_terminal(&std::io::stdout())
+}
+
+/// Install the global log subscriber: leveled stdout logging at `level`,
+/// colored only when `use_color` says stdout can take it.
+///
+/// `level` is only the *default* directive — `RUST_LOG` still wins when set,
+/// because it can filter per module (`RUST_LOG=info,eframe=warn`,
+/// `RUST_LOG=coco_egui::audio=debug`), which `--log-level` cannot express.
+pub(crate) fn setup_logging(use_color: bool, level: LevelFilter) {
     tracing_subscriber::fmt()
         .with_ansi(use_color)
         .with_env_filter(
             tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+                .with_default_directive(level.into())
                 .from_env_lossy(),
         )
         .init();
@@ -114,8 +140,8 @@ pub(crate) fn banner(info: &StartupInfo) {
     // Light rule, so it reads as an inner divider rather than a box edge.
     let rule = dim(&"─".repeat(BANNER_WIDTH));
     println!("{}{rule}{}", dim("├"), dim("┤"));
-    banner_row(&wall, &info.inventory());
     banner_row(&wall, &info.renderer);
+    banner_row(&wall, &info.inventory());
     println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 

@@ -36,6 +36,36 @@ fn default_ram_is_512k_for_coco3_and_64k_for_coco1_2() {
 }
 
 #[test]
+fn log_level_maps_onto_its_level_filter() {
+    let pairs = [
+        (LogLevel::Error, LevelFilter::ERROR),
+        (LogLevel::Warn, LevelFilter::WARN),
+        (LogLevel::Info, LevelFilter::INFO),
+        (LogLevel::Debug, LevelFilter::DEBUG),
+        (LogLevel::Trace, LevelFilter::TRACE),
+    ];
+    for (level, filter) in pairs {
+        assert_eq!(LevelFilter::from(level), filter, "{level:?}");
+    }
+}
+
+#[test]
+fn log_level_comes_from_the_flag_and_defaults_to_warn() {
+    use clap::Parser as _;
+
+    // `try_parse_from` so a bad argument fails the test instead of exiting
+    // the test binary; argv[0] stands in for the program name.
+    let parse = |args: &[&str]| Cli::try_parse_from(args).map(|cli| cli.log_level);
+    assert_eq!(parse(&["cocovm"]), Ok(LogLevel::Warn));
+    assert_eq!(
+        parse(&["cocovm", "--log-level", "debug"]),
+        Ok(LogLevel::Debug)
+    );
+    assert_eq!(parse(&["cocovm", "-L", "trace"]), Ok(LogLevel::Trace));
+    assert!(parse(&["cocovm", "-L", "chatty"]).is_err());
+}
+
+#[test]
 fn default_vdg_is_t1_for_coco2_and_plain_elsewhere() {
     assert_eq!(
         default_vdg(MachineVariant::Coco2),
