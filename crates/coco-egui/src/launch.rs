@@ -95,8 +95,11 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // can't tell a CoCo 3 TV from a composite monitor — overwrite it with
     // the definition's actual `[hardware].display` choice.
     app.display = def.display();
-    app.tv.scanline_pct = def.ui.tv_scanline.min(100);
-    app.tv.noise_pct = def.ui.tv_noise.min(100);
+    app.tv = crate::display::TVSettings {
+        scanline_pct: def.ui.tv_scanline,
+        noise_pct: def.ui.tv_noise,
+    }
+    .clamped();
     app.kb_mode = match def.ui.kb_mode {
         machine_def::KbModeDTO::Positional => KbMode::Positional,
         machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,

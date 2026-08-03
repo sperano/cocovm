@@ -82,21 +82,21 @@ fn blur_smears_along_the_row_only() {
     // with edge clamp) and must leak nothing into the row below —
     // scanlines are separate signals.
     #[rustfmt::skip]
-    let mut bytes: Vec<u8> = vec![
+    let src: Vec<u8> = vec![
         0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,
         0, 0, 0, 255,   0, 0, 0, 255,         0, 0, 0, 255,
     ];
-    blur_rows(3, &mut bytes);
+    let out = blur_rows(3, &src);
     let expect_top = [64u8, 128, 64];
     for (x, &expected) in expect_top.iter().enumerate() {
         assert_eq!(
-            &bytes[x * 4..x * 4 + 4],
+            &out[x * 4..x * 4 + 4],
             [expected, expected, expected, 255],
             "top row pixel {x}"
         );
     }
     assert_eq!(
-        &bytes[12..],
+        &out[12..],
         [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255],
         "no vertical bleed"
     );

@@ -65,12 +65,12 @@ impl CocoApp {
         // choices exist only where a monitor port does (CoCo 3); a CoCo 1/2
         // offers just the two TVs (`Display::choices`).
         let variant = self.machine.config.variant;
-        for display in Display::choices(variant) {
+        for &display in Display::choices(variant) {
             if ui
-                .selectable_label(self.display == *display, display.label())
+                .selectable_label(self.display == display, display.label())
                 .clicked()
             {
-                self.display = *display;
+                self.display = display;
                 // A CoCo 1/2 has no GIME palette to steer (`None`) — its
                 // renderer never consults `gime.monitor`.
                 if let Some(monitor) = display.to_monitor(variant) {
@@ -82,12 +82,12 @@ impl CocoApp {
         // drawn only while they'd have a visible effect.
         if matches!(self.display, Display::TV(_)) {
             ui.add(
-                egui::Slider::new(&mut self.tv.scanline_pct, 0..=100)
+                egui::Slider::new(&mut self.tv.scanline_pct, 0..=crate::display::MAX_PCT)
                     .text("Scanlines")
                     .suffix("%"),
             );
             ui.add(
-                egui::Slider::new(&mut self.tv.noise_pct, 0..=100)
+                egui::Slider::new(&mut self.tv.noise_pct, 0..=crate::display::MAX_PCT)
                     .text("RF noise")
                     .suffix("%"),
             );

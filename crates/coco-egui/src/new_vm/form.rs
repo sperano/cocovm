@@ -27,7 +27,7 @@ impl MachineForm {
             // The default config's implied display (an RGB monitor —
             // `MachineConfig::default()` is a CoCo 3); seeded from the
             // definition's real choice by `manager::detail_map::seed_form`.
-            display: crate::display::Display::from_config(&config),
+            display: Display::from_config(&config),
             tv: crate::display::TVSettings::default(),
             config,
             cartridge: CartridgeChoice::None,
@@ -93,14 +93,14 @@ impl MachineForm {
         ui.label(egui::RichText::new("Scanlines").size(font));
         ui.add_enabled(
             is_tv,
-            egui::Slider::new(&mut self.tv.scanline_pct, 0..=100).suffix("%"),
+            egui::Slider::new(&mut self.tv.scanline_pct, 0..=crate::display::MAX_PCT).suffix("%"),
         );
         ui.end_row();
 
         ui.label(egui::RichText::new("RF noise").size(font));
         ui.add_enabled(
             is_tv,
-            egui::Slider::new(&mut self.tv.noise_pct, 0..=100).suffix("%"),
+            egui::Slider::new(&mut self.tv.noise_pct, 0..=crate::display::MAX_PCT).suffix("%"),
         );
         ui.end_row();
 

@@ -76,8 +76,11 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     form.tape = media_choice(&media.tape);
     form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
     form.display = def.display();
-    form.tv.scanline_pct = def.ui.tv_scanline.min(100);
-    form.tv.noise_pct = def.ui.tv_noise.min(100);
+    form.tv = crate::display::TVSettings {
+        scanline_pct: def.ui.tv_scanline,
+        noise_pct: def.ui.tv_noise,
+    }
+    .clamped();
     form.aspect_correct = def.ui.aspect_correct;
     form.serial = def.ports.serial.into();
     // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like

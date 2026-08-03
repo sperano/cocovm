@@ -15,6 +15,9 @@
 //! CRT/RF treatment (B&W luma collapse, bandwidth limit, scanlines, and
 //! future vintage effects) accumulates, while a monitor stays clean.
 
+use std::borrow::Cow;
+use std::sync::LazyLock;
+
 use coco_core::{MachineConfig, MachineVariant, MonitorType};
 use eframe::egui;
 
@@ -136,7 +139,7 @@ struct LumaTables {
     encode: Box<[u8; ENCODE_STEPS]>,
 }
 
-static LUMA_TABLES: std::sync::LazyLock<LumaTables> = std::sync::LazyLock::new(|| {
+static LUMA_TABLES: LazyLock<LumaTables> = LazyLock::new(|| {
     let channel = |weight: f32| std::array::from_fn(|v| weight * (v as f32 / 255.0).powf(GAMMA));
     let mut encode = Box::new([0u8; ENCODE_STEPS]);
     for (i, out) in encode.iter_mut().enumerate() {
@@ -157,7 +160,7 @@ static LUMA_TABLES: std::sync::LazyLock<LumaTables> = std::sync::LazyLock::new(|
 /// noticeably too dark on a modern display — saturated green lands at 149
 /// instead of the ~200 the eye expects (user feedback 2026-08-02).
 fn luma(r: u8, g: u8, b: u8) -> u8 {
-    let t = &*LUMA_TABLES;
+    let t = &LUMA_TABLES;
     let y = t.r[r as usize] + t.g[g as usize] + t.b[b as usize];
     let i = (y * (ENCODE_STEPS - 1) as f32).round() as usize;
     t.encode[i.min(ENCODE_STEPS - 1)]
@@ -177,6 +180,10 @@ pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
 /// RGBA8 bytes per pixel, the framebuffer's own layout
 /// (`coco_core::video::BYTES_PER_PIXEL`).
 const PX: usize = 4;
+
+/// Upper bound of every [`TVSettings`] percentage knob — slider ranges and
+/// the clamp loaded values pass through ([`TVSettings::clamped`]).
+pub(crate) const MAX_PCT: u8 = 100;
 
 /// Default [`TVSettings::scanline_pct`]: the strength the look was tuned
 /// at (the dark half keeps 65% of the line's linear-light brightness).
@@ -202,6 +209,18 @@ pub(crate) struct TVSettings {
     pub(crate) noise_pct: u8,
 }
 
+impl TVSettings {
+    /// Both knobs clamped to `0..=`[`MAX_PCT`] — the one place the range
+    /// invariant is enforced for values arriving from outside the sliders
+    /// (a hand-edited definition file's `tv_scanline = 250`).
+    pub(crate) fn clamped(self) -> Self {
+        Self {
+            scanline_pct: self.scanline_pct.min(MAX_PCT),
+            noise_pct: self.noise_pct.min(MAX_PCT),
+        }
+    }
+}
+
 impl Default for TVSettings {
     fn default() -> Self {
         Self {
@@ -217,23 +236,25 @@ impl Default for TVSettings {
 /// (`(x^γ·k)^(1/γ) = x·k^(1/γ)`), so one gamma-space multiply per byte is
 /// exact — no linear round trip.
 fn scanline_scale(scanline_pct: u8) -> u16 {
-    let level = 1.0 - f32::from(scanline_pct.min(100)) / 100.0;
+    let level = 1.0 - f32::from(scanline_pct.min(MAX_PCT)) / f32::from(MAX_PCT);
     (level.powf(1.0 / GAMMA) * 256.0).round() as u16
 }
 
-/// [`blur_rows`]' symmetric FIR taps (normalized by [`BLUR_SHIFT`]): the
+/// [`blur_rows`]' symmetric FIR taps (normalized by [`BLUR_SUM`]): the
 /// mild composite/RF softness of a ~4 MHz NTSC luma channel at these dot
 /// rates, not a heavy defocus.
 const BLUR_TAPS: [u16; 3] = [1, 2, 1];
-const BLUR_SHIFT: u16 = 2;
+/// Derived, so re-tuning the taps can't silently break normalization.
+const BLUR_SUM: u16 = BLUR_TAPS[0] + BLUR_TAPS[1] + BLUR_TAPS[2];
 
 /// [`process`]'s output: the frame to actually show, with its own
 /// dimensions — the TV chain's scanline pass doubles the height, so the
 /// output shape is the chain's to decide, not the caller's. `Cow`: a
 /// monitor borrows the framebuffer untouched (zero copies), only a TV
 /// owns a transformed buffer.
+#[derive(Debug)]
 pub(crate) struct Frame<'a> {
-    pub(crate) pixels: std::borrow::Cow<'a, [u8]>,
+    pub(crate) pixels: Cow<'a, [u8]>,
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
@@ -258,21 +279,19 @@ pub(crate) fn process<'a>(
     let height = src.len() / (width * PX);
     let Display::TV(tv) = display else {
         return Frame {
-            pixels: std::borrow::Cow::Borrowed(src),
+            pixels: Cow::Borrowed(src),
             width,
             height,
         };
     };
-    let mut pixels = src.to_vec();
-    if tv == TV::BW {
-        for px in pixels.chunks_exact_mut(PX) {
-            let y = luma(px[0], px[1], px[2]);
-            px[0] = y;
-            px[1] = y;
-            px[2] = y;
-        }
-    }
-    blur_rows(width, &mut pixels);
+    // A color TV blurs straight from the framebuffer; the B&W set
+    // collapses to luma first (blurring a grey keeps it grey, so the
+    // order only matters for color).
+    let signal: Cow<[u8]> = match tv {
+        TV::Color => Cow::Borrowed(src),
+        TV::BW => Cow::Owned(collapse_to_luma(src)),
+    };
+    let mut pixels = blur_rows(width, &signal);
     if settings.noise_pct > 0 {
         noise_rows(settings.noise_pct, seed, &mut pixels);
     }
@@ -285,10 +304,21 @@ pub(crate) fn process<'a>(
         )
     };
     Frame {
-        pixels: std::borrow::Cow::Owned(pixels),
+        pixels: Cow::Owned(pixels),
         width,
         height,
     }
+}
+
+/// The B&W set's picture: every pixel replaced by its [`luma`] grey,
+/// alpha carried through.
+fn collapse_to_luma(src: &[u8]) -> Vec<u8> {
+    let mut out = src.to_vec();
+    for px in out.chunks_exact_mut(PX) {
+        let y = luma(px[0], px[1], px[2]);
+        px[..3].fill(y);
+    }
+    out
 }
 
 /// Noise amplitude at `noise_pct = 100`, in 8-bit levels: full snow that
@@ -302,7 +332,7 @@ const NOISE_FULL: i32 = 128;
 /// scanline carry the same signal, so they share the same noise. The PRNG
 /// is a plain xorshift32 — decorrelated neighbors are all snow needs.
 fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
-    let amp = i32::from(noise_pct.min(100)) * NOISE_FULL / 100;
+    let amp = i32::from(noise_pct.min(MAX_PCT)) * NOISE_FULL / i32::from(MAX_PCT);
     // Mix the seed so consecutive frame counters land far apart; `| 1`
     // keeps xorshift out of its zero fixed point.
     let mut s = seed.wrapping_mul(0x9E37_79B9) | 1;
@@ -311,9 +341,9 @@ fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
         s ^= s >> 17;
         s ^= s << 5;
         // High 16 bits as a signed fraction of `amp`: n ∈ [-amp, amp].
-        let n = (i32::from((s >> 16) as u16 as i16) * amp) >> 15;
-        for c in 0..3 {
-            px[c] = (i32::from(px[c]) + n).clamp(0, 255) as u8;
+        let n = (i32::from((s >> 16) as i16) * amp) >> 15;
+        for c in &mut px[..3] {
+            *c = (i32::from(*c) + n).clamp(0, 255) as u8;
         }
     }
 }
@@ -343,25 +373,29 @@ fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8]) -> Vec<u8> {
 /// horizontal only, because that's what an analog TV signal is: each
 /// scanline is a band-limited waveform, so detail smears along the line
 /// while rows stay perfectly separate. Edges clamp (the border color
-/// extends past the frame). Alpha is untouched.
-fn blur_rows(width: usize, bytes: &mut [u8]) {
+/// extends past the frame). Alpha is carried through. A `src → dst`
+/// producer rather than in-place, so the color-TV path can read the
+/// framebuffer directly with no scratch copies.
+fn blur_rows(width: usize, src: &[u8]) -> Vec<u8> {
     let row_len = width * PX;
-    let mut scratch = vec![0u8; row_len];
-    for row in bytes.chunks_exact_mut(row_len) {
-        scratch.copy_from_slice(row);
+    let mut out = Vec::with_capacity(src.len());
+    for row in src.chunks_exact(row_len) {
         for x in 0..width {
-            let prev = &scratch[x.saturating_sub(1) * PX..];
-            let cur = &scratch[x * PX..];
-            let next = &scratch[(x + 1).min(width - 1) * PX..];
+            let window = |i: usize| &row[i * PX..][..PX];
+            let prev = window(x.saturating_sub(1));
+            let cur = window(x);
+            let next = window((x + 1).min(width - 1));
             for c in 0..3 {
-                let sum = prev[c] as u16 * BLUR_TAPS[0]
-                    + cur[c] as u16 * BLUR_TAPS[1]
-                    + next[c] as u16 * BLUR_TAPS[2];
+                let sum = u16::from(prev[c]) * BLUR_TAPS[0]
+                    + u16::from(cur[c]) * BLUR_TAPS[1]
+                    + u16::from(next[c]) * BLUR_TAPS[2];
                 // +half for round-to-nearest rather than truncation.
-                row[x * PX + c] = ((sum + (1 << (BLUR_SHIFT - 1))) >> BLUR_SHIFT) as u8;
+                out.push(((sum + BLUR_SUM / 2) / BLUR_SUM) as u8);
             }
+            out.push(cur[3]);
         }
     }
+    out
 }
 
 #[cfg(test)]

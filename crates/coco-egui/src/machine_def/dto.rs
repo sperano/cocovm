@@ -154,9 +154,11 @@ impl From<MonitorDTO> for MonitorType {
 pub enum DisplayDTO {
     #[serde(rename = "rgb")]
     RGB,
-    #[serde(rename = "cmp")]
+    /// Alias: the legacy `monitor` key spelled it `"composite"`, and the
+    /// CLI accepts both — a hand-migrated file must too.
+    #[serde(rename = "cmp", alias = "composite")]
     Composite,
-    #[serde(rename = "tv")]
+    #[serde(rename = "tv", alias = "tv-color")]
     TVColor,
     #[serde(rename = "tv-bw")]
     TVBW,
