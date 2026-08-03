@@ -624,8 +624,8 @@ therefore three lines, and its `write_byte` body is empty.
 Four sinks ship in the crate. `NoopSink` discards. `CaptureSink` appends
 to a shared buffer and is what the tests use. `DMP105Handle` — §14.5's
 whole subject — feeds a printer interpreter. And `FileSink` is the "print
-to a text file" implementation behind the CLI's `--print-capture` flag
-and the GUI's Machine menu, which is worth reading because its
+to a text file" implementation behind the Machine menu's "Start Print
+Capture…", which is worth reading because its
 `write_byte` makes two decisions a naive version wouldn't
 ([`crates/coco-core/src/bitbanger.rs:198-214`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bitbanger.rs#L198-L214)):
 
