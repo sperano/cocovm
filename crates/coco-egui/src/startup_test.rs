@@ -44,3 +44,26 @@ fn is_rom_file_accepts_roms_and_rejects_appledouble_siblings() {
     assert!(!is_rom_file("blank.dsk"));
     assert!(!is_rom_file("rom"));
 }
+
+#[test]
+fn inventory_pluralizes_both_halves_and_drops_absent_machines() {
+    let info = |roms, machines| StartupInfo {
+        roms,
+        machines,
+        renderer: String::new(),
+    };
+    assert_eq!(
+        info(8, Some(7)).inventory(),
+        "8 ROMs and 7 machine configurations found."
+    );
+    assert_eq!(
+        info(1, Some(1)).inventory(),
+        "1 ROM and 1 machine configuration found."
+    );
+    assert_eq!(
+        info(0, Some(0)).inventory(),
+        "0 ROMs and 0 machine configurations found."
+    );
+    // Direct boot loads no machine list.
+    assert_eq!(info(8, None).inventory(), "8 ROMs found.");
+}

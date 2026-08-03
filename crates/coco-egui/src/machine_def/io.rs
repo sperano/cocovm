@@ -6,8 +6,6 @@
 use std::fs;
 use std::path::Path;
 
-use pluralizer::pluralize;
-
 use super::{CURRENT_SCHEMA, MachineDef};
 
 const TOP_LEVEL_KEYS: &[&str] = &[
@@ -175,10 +173,6 @@ pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
         results.push((stem.to_string(), load_one(&path)?));
     }
     results.sort_by(|a, b| a.0.cmp(&b.0));
-    println!(
-        "Found {}.",
-        pluralize("machine configuration", results.len() as isize, true)
-    );
     Ok(results)
 }
 
