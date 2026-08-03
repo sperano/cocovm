@@ -1,34 +1,23 @@
 # Chapter 16 — The Debugger and Save States: the Payoff of Every Earlier Decision
 
-*Week 16, the last week. Goal: watch fifteen weeks of architecture decisions
-turn into two features you can actually click on — the debugger panel and
-the save-state slots — and understand exactly which decision paid for which
-feature, and what each one cost. Then a real retrospective: not
-"what's next" (there is no next chapter), but an honest accounting of the
-whole course's design.*
+*Week 16. Goal: build the debugger and save-state system, then account for
+the architectural choices that make them possible. Both features reuse the
+core's stepping, inspection, ownership, and serialization boundaries, but
+each adds substantial policy at the boundary between emulated and host
+state.*
 
 ---
 
-## 16.1 Nothing here is new machinery
+## 16.1 Existing seams, new features
 
-Every other chapter in this course introduced a subsystem: a chip, a
-protocol, a rendering path. This one introduces almost no new *mechanism*.
-The debugger is a `for` loop around `Machine::step_instruction` — the exact
-function Chapter 6 built to make `run_field` resumable. Save states are one
-`#[derive(Serialize, Deserialize)]` on a struct that was designed, in Chapter 1,
-specifically so that derive would work. If Chapter 1's `Machine` had been
-built the "obvious" way — `Rc<RefCell<...>>` everywhere, a raw C-style
-back-pointer graph — this chapter would be the hardest one in the book,
-requiring a bespoke serialization format and a hand-written debugger hook
-threaded through every device. Instead it is closer to a victory lap: the
-constraints already paid for it.
+The debugger reuses `Machine::step_instruction`, the function Chapter 6
+needed for resumable execution. Save states reuse a `Machine` state tree
+designed for `Serialize` and `Deserialize`. Those seams remove invasive
+hooks, but they do not finish either feature: breakpoint policy, safe memory
+inspection, file compatibility, excluded host resources, and restore-time
+reinjection all remain to be designed.
 
-That is also why this chapter reads differently from the other fifteen. Most
-chapters built something. This one mostly *reads receipts* — it opens files
-you have already half-seen in passing footnotes ("we'll get to this in week
-16") and shows you the bill has already been settled. Four promises made
-early in the course come due here, and you should be able to name all four
-before reading the sections that redeem them:
+Four promises made earlier in the course come due here:
 
 1. **Chapter 1** promised a `peek()` twin to `Bus::read` so the debugger
    couldn't corrupt the machine by looking at it, and promised that banning
@@ -2857,3 +2846,13 @@ handshake itself. Write it up as you would a debugging session for a
 colleague: what you set (breakpoints, watchpoints), what you saw, and what
 it proved about how the software uses the hardware you have now spent
 sixteen weeks learning to emulate.
+
+---
+
+## What's next
+
+The course ends here, but the method does not. Choose one observable gap,
+identify the software or hardware that can notice it, and build the smallest
+test that distinguishes the current model from the required behavior. The
+debugger, trace ring, snapshots, and headless core now form the lab bench for
+that work.

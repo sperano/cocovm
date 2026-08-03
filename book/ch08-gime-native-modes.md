@@ -1,21 +1,15 @@
 # Chapter 8 — GIME Native Modes: Registers, Text Attributes, Graphics, Palette
 
-*Week 8. Goal: read a `$FF90–$FF9F` register dump and describe the exact
-screen it produces — columns or pixels, colors, where in RAM the data
-lives — without running the emulator. Chapter 7 reached the green BASIC
-prompt through the CoCo's oldest trick: pretending to be a VDG. This week
-leaves that pretense behind and takes up the chip this course set out to
-study. Every register a program pokes to get `WIDTH 80` or `HSCREEN 2` —
-and several more that BASIC pokes on the programmer's behalf — gets a
-name, a bit layout, and a line of Rust that reads it.*
+*Week 8. Goal: decode the GIME-native video registers. Given `$FF98–$FF9F`,
+this chapter determines the text or graphics geometry, physical RAM source,
+palette use, and per-scanline rendering behavior.*
 
 ---
 
 ## 8.0 Where this picks up
 
-Chapter 7 ended on a working but slightly deflating fact: the CoCo 3's
-power-on BASIC prompt is not drawn by the chip this course is about. It is
-VDG-compatible 32×16 text, decoded through the SAM-compat page register,
+The power-on BASIC prompt uses VDG-compatible 32×16 text decoded through the
+SAM-compatible page register,
 using MC6847 glyphs. The GIME renders it, but only because `INIT0` bit 7
 (`COCO`) tells it to pretend to be the chip it replaced. Everything
 the machine does before a program says otherwise is a 1980 video mode
@@ -31,13 +25,11 @@ stops reading through the CPU's 16-bit logical address space and starts
 reading *physical* RAM directly. That last change has the most
 far-reaching consequences, and §8.1 spends the most time on it.
 
-This chapter is that register file: what each bit means, what a legal
+This chapter explains that register file: what each bit means, what a legal
 combination looks like, and how
 [`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs)
 turns eight bytes of registers plus a block of RAM into pixels. The module
-opens with a doc comment that is, in effect, this chapter's thesis
-compressed into eighteen lines, and it is worth reading before anything
-else so the shape of the destination is clear:
+opens with a compact summary:
 
 ```rust
 //! GIME-native hi-res text and graphics scanout (INIT0 COCO=0; `DESIGN.md` §6).
@@ -89,10 +81,7 @@ computed once at mode-switch time and cached for the rest of the field.
 Every frame, every scanline, the renderer re-reads these bytes and decodes
 them fresh.
 
-That is a deliberate design point, and it is worth sitting with for a
-moment before the bit tables arrive, because it changes how the rest of the
-chapter reads. The registers are not configuration *for* the renderer; the
-registers *are* the mode. There is no place in this codebase that records
+The registers are the renderer's current mode. There is no place in this codebase that records
 "the machine is currently in `HSCREEN 2`." If you want to know the mode,
 you read `$FF98` and `$FF99` and decode them, exactly as a piece of 6809
 code would have to. That fidelity costs a few microseconds of redundant
@@ -1594,9 +1583,9 @@ no "mode change takes effect next frame" logic.
 
 But three pieces of state are not read live. They are sampled exactly once,
 at the very start of a field, and held fixed no matter what the registers
-do afterwards. That grouping is not this codebase's invention; it mirrors
-which registers MAME's `gime.cpp` samples in `new_frame`, which in turn
-mirrors the chip.
+do afterwards. That grouping matches the model in MAME's `gime.cpp`, whose
+`new_frame` routine samples the same registers. The agreement is useful
+evidence for the model; it is not a complete account of the physical chip.
 
 ```rust
 /// Per-field video scanout state, latched at field start — the register group

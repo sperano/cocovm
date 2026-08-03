@@ -1,16 +1,10 @@
 # Chapter 13 — Disks: the WD1773 State Machine, and Three Ways to Store Bytes
 
-*Week 13. Goal: device protocol emulation in the large. Every chapter since
-Chapter 5 has been about hardware the CoCo *had*: chips soldered to the board,
-with a fixed job. This week is different — it's about a *job* (get a
-256-byte sector from a spinning disk, or from something pretending to be
-one, into the CPU's hands) implemented three separate times in this
-codebase, by three devices that share nothing except the job. By the end
-you'll know the WD1773 floppy controller's command state machine well
-enough to trace a sector read byte by byte, you'll finally see the payoff
-of Chapter 6's HALT-before-interrupt promise, and you'll have a vocabulary —
-real chip, register interface, wire protocol — for classifying every
-storage device an emulator author is likely to meet.*
+*Week 13. Goal: compare three storage interfaces with different contracts.
+The WD1773 exposes a paced controller state machine; VHD moves blocks through
+a compact register interface; DriveWire frames requests as a protocol. Their
+differences determine what software can observe and therefore what the
+emulator must model.*
 
 ---
 
@@ -32,8 +26,7 @@ accidents of authorship. Section 13.1 turns those differences into a
 vocabulary, and the rest of the chapter earns it a line of code at a
 time.
 
-There is a second reason this chapter is the longest in the book. The
-WD1773 is the first device in the course that can *stop the CPU*. Every
+The WD1773 is also the first device in the course that can *stop the CPU*. Every
 chip so far has been a passive participant in the machine's timing —
 asked for a byte, told about a scanline, handed a cycle count. The
 floppy controller reaches back through the cartridge port and holds the
@@ -54,10 +47,10 @@ no disk images — so most of §13.13's lab work runs in any checkout.
 
 ## 13.1 Three philosophies for one job
 
-Strip away the acronyms and every storage device this chapter covers does
-exactly one thing: hand the CPU 256 bytes it asked for, identified by some
-address, eventually. That's it. A floppy disk, a hard disk image, and a
-network socket to a PC all reduce to the same contract. What differs is
+Strip away the acronyms and every storage device this chapter covers moves
+an addressed block of bytes between storage and the machine. The examples
+often use 256-byte sectors, but their formats and commands are not identical.
+What differs is
 *how much of 1980s reality* each device's protocol makes the software
 negotiate — and this codebase happens to implement all three points on
 that spectrum, side by side, for the same machine:
@@ -72,9 +65,8 @@ that spectrum, side by side, for the same machine:
    access at a time, and if you show up late for a byte, the byte is
    gone. Emulating it means emulating the state machine, not just the
    sector.
-2. **VHD** ([`crates/coco-core/src/vhd.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs)) is not a real chip — MAME
-   invented it as an emulator-native shortcut, and NitrOS-9's `emudsk`
-   driver was written specifically to exploit it. It has no timing, no
+2. **VHD** ([`crates/coco-core/src/vhd.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/vhd.rs)) is an emulator-native
+   shortcut supported by MAME and NitrOS-9's `emudsk` driver. It has no timing, no
    command dispatch beyond a single byte, no byte-at-a-time handshake.
    You write a 24-bit sector number and a buffer address into seven
    registers, write one command byte, and the *entire* sector has already
@@ -82,11 +74,9 @@ that spectrum, side by side, for the same machine:
    inertia to model.
 3. **DriveWire** ([`crates/coco-core/src/drivewire.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire.rs) +
    [`drivewire/protocol.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/protocol.rs) + [`drivewire/transfer.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/drivewire/transfer.rs)) isn't local hardware
-   at all. It's an RPC protocol carried over a two-byte "Becker port" at
-   `$FF41`/`$FF42`, originally designed to let a real CoCo talk to a *PC*
-   holding the actual disk images over a serial cable (today, in this
-   emulator, the "PC" is just in-process Rust, but the protocol doesn't
-   know that). Because the two ends can't see each other's state, every
+   at all. In this emulator it is exposed through the two-register Becker
+   interface at `$FF41`/`$FF42`, while the server is in-process Rust.
+   Because the two ends can't see each other's state, every
    transaction needs framing, a checksum, and a timeout — problems neither
    the WD1773 nor VHD has to solve: on real hardware the WD1773 *is*
    physically wired to the drive, and VHD is a polite fiction that

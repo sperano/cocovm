@@ -1,22 +1,13 @@
 # Chapter 7 — How a Raster Works, and the Legacy VDG Text Mode
 
-*Week 7. Goal: go from "a TV scans lines" to a fully decoded green BASIC
-prompt, with zero GPU involved anywhere. Chapters 2–4 gave you a CPU; Chapter 5
-gave you a bus; Chapter 6 gave you a clock that calls `render_scanline()` once
-per line. This week that function stops being an empty promise and starts
-actually painting pixels — and the first thing it paints turns out not to be
-what forty years of CoCo folklore would suggest. The natural instinct is to
-"start with the GIME." Here is why that instinct leads to Chapter 7 rather than
-Chapter 1: nothing the GIME draws is visible until a CPU executes ROM
-code over a bus on a clock. Now all three previous parts of the course pay
-off at once, on the most familiar screen the machine ever produced.*
+*Week 7. Goal: render the CoCo's legacy text screen without a GPU. This chapter
+builds a raster and framebuffer model, then decodes the GIME's MC6847-compatible
+text mode into the green BASIC prompt.*
 
 ---
 
-Video is the subsystem that finally makes an emulator feel like a machine
-rather than a test suite. It is also, for a reader coming from systems
-programming rather than graphics, the subsystem most likely to be handed
-over as vocabulary instead of understanding. Words like *raster*,
+Video introduces vocabulary that systems programmers may not have used.
+Terms such as *raster*,
 *scanline*, *framebuffer*, and *blit* get used as though everyone had been
 issued a copy of the definitions at some point. This chapter assumes nobody
 was. Section 7.2 builds the entire model from an electron beam upward, and
@@ -24,20 +15,15 @@ it does so before a single line of Rust, because every function in the video
 subsystem is trivial once the picture behind it is clear, and inscrutable
 before that.
 
-Here is the good news, stated up front so the rest of the chapter reads as
-confirmation rather than suspense: the "graphics math" in this codebase is
-one multiplication and one addition. There is no matrix anywhere, no
-transform, no blending, no sampling. A pixel lives at a computable byte
+The core renderer uses no transforms, blending, or sampling. A pixel lives at a computable byte
 offset in a flat array, and every renderer in `coco-core` — this week's
 text mode, next week's GIME graphics, Chapter 9's PMODE bitmaps — is a loop
 that decides which color to write at which offset. Once that formula is in
 hand, the difficulty of a video mode is entirely a question of decoding
 bytes, and decoding bytes is what the previous six weeks were about.
 
-The second half of the chapter is about one specific screen, and it opens
-with a fact that surprises most people who owned the machine. The green
-prompt a CoCo 3 shows at power-up is not produced by any of the GIME's own
-video modes. It is produced by the GIME imitating the MC6847 Video Display
+The green prompt shown at power-up is produced by the GIME's compatibility
+implementation of the MC6847 Video Display
 Generator, a chip that is not on the CoCo 3's board at all, in a
 32-column-by-16-row text mode inherited whole from 1980. Everything in that
 mode — the character cell, the font ROM, the inverse-video bit, the blocky
@@ -55,9 +41,7 @@ exactly what §7.8's lab bench and §7.9's tests do.
 
 ## 7.1 Why this is where video finally starts
 
-Before the new material, a short recap of the machinery this chapter plugs
-into, because the seam between Chapter 6 and Chapter 7 is a single function call,
-and it helps to see both sides of it at once.
+Chapter 6 connects to the video renderer through one function call.
 
 Chapter 6 built the clock. Its central loop runs the CPU in slices of one
 scanline's worth of cycles, and after each slice it runs a per-line trailer
@@ -88,15 +72,16 @@ pub(super) fn end_of_line(&mut self) -> bool {
 
 The important structural fact is that `render_scanline()`
 ([`crates/coco-core/src/machine/render.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L29))
-was already being called on every line back in Chapter 6, in cycle-accurate
-lockstep with the CPU. It was simply not doing anything a human could see.
+was already being called on every line back in Chapter 6, after the CPU had
+reached that line's instruction-granular cycle budget. It was simply not
+doing anything a human could see.
 Everything the video subsystem needed — a line counter, a field boundary, a
-guarantee that the CPU had run exactly the right number of cycles before
+guarantee that the CPU had reached each scanline budget before
 each call — was in place, and the function on the other end of the call was
 geometry bookkeeping with no pixels behind it. This week fills it in. By the
 end of the chapter, calling that function 262 times, of which 192 land
-inside the active body of a 32×16 text screen, produces the exact frame a
-real CoCo 3 puts on a television at cold boot.
+inside the active body of a 32×16 text screen, produces the CoCo 3 cold-boot
+display through the emulator's scanline model.
 
 That ordering — clock first, pixels second — is worth defending, because
 the instinct almost everyone brings to a CoCo emulator is "start with the
@@ -2050,12 +2035,10 @@ byte and reads its geometry from a chip that no longer exists, GIME-native
 modes have a register for everything, read physical RAM with the MMU
 bypassed, and can put sixteen colors on screen at once.
 
-Almost none of this week's groundwork is wasted, which is the point of
-having built it first. The canonical 640×240 canvas is the same canvas. The
+The canonical 640×240 canvas remains unchanged. The
 palette-register-to-RGBA pipeline is the same pipeline, `rgb_color` and all.
 The per-scanline call chain, the `FieldScan` latch, and the row cursor are
 all unchanged. Chapter 8 is the same raster and the same painter with a
 completely different register file deciding what to paint.
 
-Bring the `$FF90`–`$FF9F` memory map from Chapter 1's table. You are about to
-need every byte of it.
+Chapter 8 uses the `$FF90`–`$FF9F` register map introduced in Chapter 1.

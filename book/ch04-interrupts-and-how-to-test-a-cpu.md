@@ -1,45 +1,27 @@
 # Chapter 4 — CPU core III: interrupts, halt states, and how to test a CPU with no test suite
 
-*Week 4, the last week inside the CPU crate before week 5 opens the bus. Goal:
-know both interrupt stack frames cold — every byte, every address — and come
-away with a validation strategy you can reuse on any CPU core you ever write,
-because the 6809 will not hand you one for free.*
+*Week 4. Goal: implement and verify the 6809's interrupt paths. This chapter
+maps both stack frames byte by byte, explains interrupt masking and halt
+states, and develops a validation strategy for a processor without a standard
+per-instruction conformance suite.*
 
 ---
 
-Chapters 2 and 3 built a CPU that does exactly what it is told: fetch the byte at
-`PC`, decode it, do what the data sheet says, advance. That model is complete
-and it is also a fiction. Nothing in a real computer executes undisturbed. The
-video hardware pulses a line sixty times a second because a television is
-waiting for it. A disk controller yanks a line because a byte just arrived in
-a shift register and will be gone in a few dozen microseconds if nobody takes
-it. A keyboard scan has to happen whether or not the running program feels
-like polling. An *interrupt* is the mechanism by which a piece of hardware
-reaches into the CPU and takes the program counter away from whatever was
-using it.
+Chapters 2 and 3 followed instructions requested by the running program. A
+machine also has asynchronous events. Video timing, disk transfers, and
+keyboard scanning cannot wait for application code to poll at a convenient
+moment. An *interrupt* suspends the current instruction stream and transfers
+control to a handler.
 
-The 6809's answer to that problem is unusually elaborate for an eight-bit
-chip. Six exception vectors, not one. Two hardware interrupt lines with
-deliberately different costs, so that latency-critical devices need not pay
-for the state that leisurely ones require. Three software-interrupt
-instructions. Two instructions whose entire purpose is to stop the CPU and
-wait. That richness is why interrupts get their own week, and it is why this
-chapter spends its first half being pedantic about bytes: an interrupt is a
-promise that the interrupted program will never know it happened, and keeping
-that promise means the state that goes onto the stack and the state that comes
-back off have to agree down to the last byte and the last address.
+The 6809 provides six exception vectors, two hardware interrupt lines with
+different stack costs, three software-interrupt instructions, and two halt
+instructions. Correct return from an interrupt depends on the exact stack
+layout, so the chapter begins with the bytes pushed by each path.
 
-The chapter's second half looks like a different subject entirely — it is
-about testing — and it belongs here for a reason worth stating up front.
-Interrupt bugs are the canonical example of the bug you cannot see. A frame
-that is one byte too short does not crash anything; it returns to an address
-that is off by one, in a routine that will not run for another ten thousand
-instructions, and the symptom shows up as BASIC printing a wrong character on
-a screen you were not watching. There is no per-instruction conformance suite
-for the 6809 to catch that for you. So the second half of this chapter is
-about what to do instead, and about reading a real ROM boot trace closely
-enough that the first divergent line becomes an accusation rather than a
-starting point for a search.
+The second half turns to validation. An incorrect frame can return to a
+plausible but wrong address and fail thousands of instructions later. Without
+a standard 6809 conformance suite, the repository combines focused tests, a
+self-checking exerciser, and trace comparison against a reference emulator.
 
 By the end of the week the CPU crate is finished. Chapter 5 opens the bus.
 
@@ -47,12 +29,9 @@ By the end of the week the CPU crate is finished. Chapter 5 opens the bus.
 
 ## 4.1 Two shapes of interrupt frame
 
-Start with the promise. When an interrupt fires, the code that was running has
-to be able to resume as though nothing happened — same accumulators, same
-index registers, same flags, same next instruction. The only place to keep
-that state is the stack, and the only agent that can put it there is the CPU
-itself, automatically, before the handler gets a chance to clobber anything.
-So every exception on the 6809 begins with a push.
+When an interrupt fires, the interrupted code must later resume with the same
+registers, flags, and next instruction. The CPU preserves that state on the
+stack before entering the handler.
 
 Every 6809 exception — `NMI`, `IRQ`, `FIRQ`, `SWI`, `SWI2`, `SWI3` — does the
 same three things: save enough state to resume later, block re-entrant
@@ -61,13 +40,12 @@ is *how much* state "enough" means. Five of the six save everything: `A`,
 `B`, `DP`, `X`, `Y`, `U`, `CC`, `PC` — twelve bytes, the **full frame**.
 `FIRQ` alone saves only `CC` and `PC` — three bytes, the **partial frame**.
 
-That asymmetry is the whole point of `FIRQ`, whose name is short for "fast
-interrupt request." A device with light, latency-sensitive work — a UART about
+`FIRQ`, or fast interrupt request, uses the partial frame. A device with
+latency-sensitive work, such as a UART about
 to overrun, a disk controller with a byte sitting in its shift register — gets
 in and out fast. Nine fewer bytes to push and nine fewer to pull add up to real
 time saved at 0.895 MHz, where a single bus cycle is a little over a
-microsecond. The trade is not free, and it is worth naming now because it
-shapes how `FIRQ` handlers have to be written: a handler entered through the
+microsecond. A handler entered through the
 partial frame arrives with `A`, `B`, `X`, `Y`, `U`, and `DP` *not* saved. If it
 touches any of them it must save and restore them itself. The 6809 does not
 offer to do that work, and it does not stop the handler from being careless
@@ -139,9 +117,8 @@ fn exec_interrupt_halt(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
 }
 ```
 
-Four opcodes, one function, and the whole of this chapter's first half is
-visible in it. Read the `RTI` arm slowly, because it is the piece that proves
-the frame shape is data-driven rather than opcode-driven. The first `pul` uses
+The `RTI` arm shows that the stacked `E` flag selects the frame size. The first
+`pul` uses
 mask `0x01`, which is `stack_mask::CC` alone: pull exactly one byte, and put
 it in `CC`. Only *after* that byte has landed does the `if` run, and it tests
 a bit of the value that was just read off the stack — not a bit of some
@@ -152,10 +129,10 @@ bytes and the arm reports 15 cycles. If `E` came back clear, mask `0x80` pulls
 as literals at the point each branch is taken, and §4.4 will have something to
 say about why they are literals rather than a formula.
 
-The other three arms are previews. `SWI` at `$3F` is the software interrupt,
+The other three arms introduce later sections. `SWI` at `$3F` is the software interrupt,
 covered at the end of §4.2. `CWAI` at `$3C` and `SYNC` at `$13` are the two
-halt instructions, and they are §4.4's entire subject. Notice already that
-`CWAI` calls `psh` with mask `0xFF` — every register, the full frame — before
+halt instructions, covered in §4.4. `CWAI` calls `psh` with mask `0xFF` —
+every register, the full frame — before
 any interrupt has arrived at all. That is not a typo, and it is the most
 interesting thing in this function.
 
@@ -483,8 +460,7 @@ from it without a gap:
 | `$FFF4–$FFF5` | `VECTOR_SWI2`  | SWI2 (`$10 3F`)               |
 | `$FFF2–$FFF3` | `VECTOR_SWI3`  | SWI3 (`$11 3F`)               |
 
-Fourteen bytes, packed tight, at the one place in a 64K space that a hardware
-designer can rely on. This is also the first hint of a constraint the next
+These fourteen bytes create a constraint for the next
 chapter has to satisfy: whatever else the memory map does — and the CoCo 3's
 MMU can move almost anything anywhere — these fourteen bytes had better still
 read out of ROM when the CPU asks for them, or a reset lands at an arbitrary
@@ -532,7 +508,7 @@ pub fn firq(&mut self, bus: &mut impl Bus) -> bool {
 }
 ```
 
-The two functions are structurally identical, differing in only three places:
+The two functions differ in three places:
 which `CC` bit gates them, which vector they take, and what they pass for the
 last three arguments of `take_interrupt`. The `bool` they return is the honest
 answer to "was this serviced?", and the caller in Chapter 6 uses it for nothing at
@@ -540,10 +516,9 @@ all, which turns out to be correct — a masked line is still asserted, and the
 device holding it down will still be holding it down the next time anyone
 checks.
 
-The nested `if State::Syncing` inside the masked branch looks like a stray, and
-it is the most easily missed behavior in the file. It is §4.4's business; for
-now note only that the masked path is not a no-op. It declines to service the
-interrupt and still has a side effect.
+The nested `if State::Syncing` gives the masked path one side effect: it wakes
+a CPU halted by `SYNC` even though the interrupt is not serviced. Section 4.4
+returns to that behavior.
 
 `take_interrupt`'s last two boolean parameters, `set_i` and `set_f`, decide
 which masks get *set on entry* — what stops a second interrupt from preempting
@@ -558,7 +533,7 @@ the handler before it can save context. Reading straight off each call site:
 | `SWI2`    | no       | no       | full     |
 | `SWI3`    | no       | no       | full     |
 
-`IRQ` is the odd one out in the "sets both" column, and it is deliberate. An
+`IRQ` is the only hardware entry in the table that does not set both masks. An
 `IRQ` handler runs with `I` set, so a second `IRQ` cannot preempt it and
 re-enter the same code, but `F` is left exactly as the interrupted program had
 it. If `F` was clear, a `FIRQ` can still get through — the slow interrupt does
@@ -575,10 +550,7 @@ off the source.
 
 ### `take_interrupt`, one call at a time
 
-Six exceptions, six different combinations of frame shape and mask behavior,
-and exactly one function that implements all of them. Nothing else anywhere in
-the crate stacks a frame or vectors `PC`, which makes this the single most
-load-bearing function in the chapter and worth reading in full:
+One function implements all six combinations of frame size, masks, and vector:
 
 ```rust
 // crates/mc6809/src/lib.rs:226-254
@@ -613,8 +585,7 @@ fn take_interrupt(
 }
 ```
 
-Five parameters, and the six call sites each pick a different combination.
-Here they are, every one, with the exact line each lives on:
+The six call sites select different parameter combinations:
 
 ```rust
 self.take_interrupt(bus, VECTOR_NMI,  true,  true,  true);  // nmi()  — lib.rs:197
@@ -801,9 +772,7 @@ pub fn nmi(&mut self, bus: &mut impl Bus) {
 }
 ```
 
-This is not an implementation liberty. It is a documented property of the real
-chip, and the reasoning behind it is a small masterpiece of hardware
-pragmatism worth walking through slowly.
+This behavior follows the processor's documented NMI arming rule.
 
 `RESET` does not initialize `S`. Look back at the reset sequence and it sets
 `DP`, sets both masks, loads `PC` — and says nothing about the stack pointer.
@@ -829,8 +798,7 @@ until a program has explicitly loaded a real value into `S` at least once. It
 is not a mask — no instruction can turn it back off — it is an arming
 condition, one-way, cleared only by reset.
 
-The struct field and its doc comment say all of that in one place, which is
-why the field is worth quoting with its neighbors:
+The struct field records the rule and the write paths that must honor it:
 
 ```rust
 // crates/mc6809/src/lib.rs:139-159
@@ -855,11 +823,10 @@ comment on the third is the longest in the struct for a reason: it is the only
 place in the crate where a data-sheet rule, its rationale, and the complete
 list of things that must honor it are written down together.
 
-### Keeping the promise in four places
+### Routing writes to `S` through `load_s`
 
-"Any instruction that writes `S`" is a promise the codebase has to keep at
-*every* point where code can name `S` as a destination, and there are four of
-them. Missing one would not break a test — it would produce a CPU on which
+Four instruction paths can name `S` as a destination. Missing one could
+produce a CPU on which
 `NMI` occasionally stays deaf for the rest of a boot, depending on how the ROM
 happened to set up its stack.
 
@@ -1067,9 +1034,7 @@ pub enum State {
 }
 ```
 
-Chapter 1 met this enum in passing as one of the two non-register fields on
-`MC6809` and promised to explain it in Chapter 4. Here it is, and the entire
-transition table fits in six rows:
+The state transitions fit in six rows:
 
 | From      | Event                                                        | To        |
 |-----------|--------------------------------------------------------------|-----------|
@@ -1086,9 +1051,7 @@ arms. The masked-`Syncing` row is the nested `if` inside `irq()`/`firq()`. The
 last two serviced rows are `take_interrupt`'s closing `self.state =
 State::Running`. And the `reset()` row is `reset()`'s fourth line.
 
-What the table does not show is what happens *while* halted. For that, look at
-`step()`'s very first act, which is to consult this field before fetching
-anything:
+While halted, `step()` checks the state before fetching anything:
 
 ```rust
 // crates/mc6809/src/exec.rs:30-36
@@ -1119,13 +1082,13 @@ through `nmi()`, `irq()`, or `firq()`, called from outside — which in the real
 emulator means the bus, once a device asserts a line. A CPU in `Syncing` or
 `Waiting` with no machine attached idles forever, correctly.
 
-### `SYNC`: wake me when anything happens
+### `SYNC`: wake on interrupt activity
 
 `SYNC` is the lighter of the two halts, and its implementation is the shortest
 arm in `exec_interrupt_halt`: set `state` to `Syncing`, return 2 cycles, done.
 No frame, no vector, no mask changes.
 
-Its contract is where the interest lies: wake on *any* interrupt activity,
+Its contract is to wake on *any* interrupt activity,
 serviced or not. That is why the mask checks inside `irq()` and `firq()`, back
 in §4.2, explicitly test `self.state == State::Syncing` and flip it back to
 `Running` even on the branch where the line is masked and `false` is about to
@@ -1133,8 +1096,7 @@ be returned. A masked `IRQ` arriving during a `SYNC` does not get serviced —
 no frame is pushed, `PC` does not move to any vector — but it does end the
 wait, and execution resumes with the instruction immediately after the `SYNC`.
 
-That behavior is not an oddity to be tolerated; it is the whole reason the
-instruction exists. Consider a routine that needs to know the instant a device
+Consider a routine that needs to know when a device
 becomes ready but has nothing useful to do until then. Polling in a tight loop
 burns cycles and, on a machine sharing its bus with video hardware, burns them
 at exactly the wrong time. Masking the line and executing `SYNC` gets the same
@@ -1143,7 +1105,7 @@ CPU resumes at the next instruction, and the program does its own dispatch in
 straight-line code with no handler, no frame, and no `RTI`. Wake on the event,
 decide for yourself what it meant.
 
-### `CWAI`: pay the cost before the bill arrives
+### `CWAI`: stack before waiting
 
 `CWAI` — "clear condition codes and wait for interrupt" — is heavier, and the
 weight is precisely the point. Its arm in `exec_interrupt_halt` does four
@@ -1171,7 +1133,7 @@ if self.state != State::Waiting {
 }
 ```
 
-That single condition is the entire optimization. A `CWAI`'d CPU goes straight
+With that condition, a `CWAI`'d CPU goes straight
 to setting masks and loading `PC`, because the frame-sized part of the job
 already happened during `CWAI`'s own 22 cycles — cycles that were spent while
 the machine was idle rather than while a device was waiting. This is why
@@ -1257,8 +1219,10 @@ Flat, tiny, and independent of which line eventually fires — that is the
 concrete version of the "twelve bus writes already spent" claim, and it is why
 `CWAI` is the right tool for code that already knows an interrupt is imminent.
 
-Here is the honest headline, though, and it is a bigger deal than any of those
-estimates: **none of this is actually costed.** Search `take_interrupt`,
+### Implementation limitation: external interrupt cycles
+
+The current core does not add cycles for externally delivered interrupts.
+Search `take_interrupt`,
 `nmi`, `irq`, and `firq` for any write to `self.cycles` and there is not one.
 The field is touched in exactly two places in the entire crate, both inside
 `exec.rs`'s `step()`:
@@ -1286,8 +1250,8 @@ Chapter 6), and `take_interrupt`'s body — the function all three share — nev
 once mentions `self.cycles`. `psh`'s return value, the one thing in this whole
 area that does compute a byte-accurate cost, is discarded every time
 `take_interrupt` calls it: `self.psh(bus, 0xFF, true);` with no assignment, no
-`+=`, nothing. An externally delivered interrupt is, as far as this CPU
-crate's clock is concerned, free.
+`+=`, nothing. The CPU's cycle counter therefore omits the entry cost of an
+externally delivered interrupt.
 
 > **Rust corner: a return value nobody reads.** `psh` is declared
 > `fn psh(&mut self, bus: &mut impl Bus, mask: u8, to_s: bool) -> u32` and its
@@ -1314,24 +1278,12 @@ crate's clock is concerned, free.
 > general habit is worth adopting: when a function returns something a caller
 > could plausibly forget, make forgetting it a deliberate act.
 
-Is the uncosted interrupt a bug? Not obviously. It is the same policy
-[`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 states
-outright for the rest of the core — "don't try to be cycle-*exact*
-mid-instruction at first; instruction-granular cycle counts are enough" — and
-it is the fidelity budget from Chapter 1 being spent deliberately rather than
-carelessly. Nothing in this codebase currently needs sub-instruction interrupt
-latency. The CoCo's timing-sensitive software mostly cares about *which
-scanline* a handler runs on, which is Chapter 6's coarser granularity, not
-whether the handler's first instruction lands 10 or 19 cycles after the line
-asserted.
-
-But it is a real, specific gap, and knowing exactly where it lives beats
-assuming that a `cycles` field on a struct called `MC6809` accounts for
-everything that happens to that CPU. If you ever trace-diff against a
-reference emulator that *does* cost this — real MAME does — this is precisely
-where the two traces would start disagreeing on cycle counts while agreeing on
-every register value. Which is a useful thing to know before spending an
-afternoon hunting a decoder bug that is not there.
+This is a specific timing limitation, not evidence that the interrupt state
+transitions are incorrect. A trace comparison against an implementation that
+charges interrupt entry may therefore disagree on cycles while the register
+state remains aligned. Whether to add that accounting is a fidelity decision
+that should be verified against the processor timing documentation and the
+machine scheduler.
 
 ### FIRQ inside an IRQ handler: nesting and the E flag
 
@@ -1426,23 +1378,11 @@ the week: knowing whether any of it is right.
 
 ## 4.5 The 6809 testing problem
 
-Here is the uncomfortable fact this whole codebase's CPU-testing strategy
-is built around: **there is no per-instruction conformance suite for the
-6809.** [TomHarte/SingleStepTests](https://github.com/SingleStepTests) —
-one JSON case per opcode per addressing mode, generated from real silicon,
-the gold standard for validating a CPU core — covers the 6502 family, the
-Z80, the 68000, the 8088. Not the 6800/6809 family.
+This repository does not have a standard per-instruction 6809 conformance
+suite comparable to those available for several other processors.
 
-Think about what that difference is worth. Write a 6502 emulator and you can
-download ten thousand machine-generated cases, run them in a loop, and know
-*mechanically* whether your core is byte-for-byte correct — including the flag
-behavior in the rare-condition corners nobody would think to test by hand.
-Write a 6809 emulator and that safety net does not exist. What is left is
-hand-verifying flag behavior by eye and trusting your own arithmetic about
-carries and overflows, and that is a trap. A subtle rare-condition bug — `SBC`
-with a carry-in in the one edge case you did not check — can sit dormant for
-months and corrupt a save state at the worst possible moment. The bug does not
-announce itself. It waits.
+Without that coverage, unusual flag combinations and addressing cases require
+several independent validation methods.
 
 [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 lays
 out a three-legged reply to this, and this codebase takes each leg seriously.
@@ -1459,15 +1399,11 @@ implementation — XRoar or MAME, both of which have had 6809 cores hammered on
 for decades by a larger community than one codebase can muster — and compare a
 per-instruction trace, register by register.
 
-The property that makes this so effective is worth stating precisely, because
-it is stronger than "diffing helps." **The first line where the two traces
-disagree is the bug.** Not "roughly where the bug is," and not "a place to
-start looking" — the *exact* instruction, because everything before that line
-was, by definition, identical in both machines. Same registers, same memory,
-same `PC`. Whatever ran between the last matching line and the first
-mismatching one is the only thing that could have caused the difference. A
-class of debugging that normally means bisecting a few thousand opcodes
-collapses into reading one.
+With identical inputs and event schedules, the first trace divergence
+localizes the first observable disagreement. The responsible cause lies after
+the last matching state and no later than the first mismatching one. Reference
+bugs and differences in memory, timing, or trace alignment must still be ruled
+out.
 
 This only works if both sides produce a trace in the same shape, so this
 codebase carries the machinery as first-class infrastructure rather than as a
@@ -1574,7 +1510,7 @@ a second mode reintroduce interrupts, hsync, and the GIME timer via
 `-cart1` run. Two modes, in difficulty order, so a failure in the first is
 never confounded by the second's timing.
 
-### A worked example: reading a trace like a detective
+### A worked trace comparison
 
 Here is real output, from actually running `cargo run -p coco-core
 --example trace -- 13` against `roms/coco3.rom` — the first thirteen
@@ -1676,8 +1612,7 @@ Chapter 8 story (the GIME palette); for this chapter, the label is enough to
 confirm the trace is reading the ROM correctly, which is the whole point of
 cross-checking against an independent source.
 
-Two independent sources agreeing is worth more than either alone, and it is
-worth being clear about *why* they are independent. The trace came from
+The two sources are independent. The trace came from
 executing bytes through this emulator's own decoder. The listing came from a
 human reading the same bytes with a data sheet in 1993. If this emulator's
 `LDS` decoder were wrong, the trace would show a different mnemonic or a
@@ -1777,8 +1712,7 @@ Same wrinkle as before: `LEAX 20,PCR`'s disassembled operand is the raw
 offset; `$C02B + 20 ($14) = $C03F`, which is exactly the `X` the very next
 trace line shows, and exactly `BEGMOVE`.
 
-This is a natural place to stop tracing, and it's worth being explicit
-about *why* rather than just running out of room. `ENDMOVE` and `BEGMOVE`
+The trace stops here because `ENDMOVE` and `BEGMOVE`
 are both labels with fixed addresses in the same listing — `ENDMOVE =
 $C36C`, `BEGMOVE = $C03F` — so the amount of code this loop relocates is
 computable without stepping through it at all: `$C36C - $C03F = $32D =
@@ -2233,11 +2167,8 @@ cargo test -p mc6809 --test interrupts
 
 ## 4.8 Exercises
 
-The mix is the usual one — build, sabotage, read, recall — with one addition
-this week. Several exercises ask for a prediction *written down before*
-running anything. Take that seriously: the gap between what you predicted and
-what happened is the actual lesson, and it evaporates if you run the command
-first.
+Several exercises require a written prediction before execution. Compare the
+prediction with the observed result before revising the explanation.
 
 **4.1 — Draw both frames (recall + draw).** Suppose `S = $3000` the instant
 before (a) an `IRQ` fires and (b) an `FIRQ` fires (`CC = $00` in both cases).
@@ -2266,12 +2197,11 @@ tables. Revert the change afterward.)
 
 **4.4 — A frame that doesn't double-stack (build).** Write a new test,
 modeled on `cwai_stacks_frame_then_interrupt_skips_restacking`, but wake the
-`CWAI`'d CPU with `nmi()` instead of `irq()` (remember `nmi_armed` must be
-`true` first, or use the reset-then-`LDS` pattern from
-`nmi_is_ignored_until_the_first_program_load_of_s`). Assert that (a) `S`
-doesn't move a second time, and (b) the stacked `CC` byte still has `E=1`
-even though this wake-up path would normally mean a partial frame — the
-subtlety at the end of §4.4, proved with an assertion instead of prose.
+`CWAI`'d CPU with `firq()` instead of `irq()`; ensure `F` is clear so the line
+is serviced. Assert that (a) `S` does not move a second time, and (b) the
+stacked `CC` byte still has `E=1`, even though `FIRQ` normally creates a
+partial frame. This verifies that `CWAI`'s existing frame determines what
+`RTI` will restore.
 
 **4.5 — Reproduce the trace, then predict past where this chapter stopped
 (read + verify).** From the repo root (with `roms/coco3.rom` present), run
@@ -2356,12 +2286,11 @@ in miniature, without needing a real assembler or the actual test file.
 
 ## What's next
 
-Chapter 5 leaves the CPU crate behind. From here on `mc6809` mostly just sits
-there, correct, generic over whatever `Bus` you hand it — three weeks of
-careful work that now becomes infrastructure for everything else.
+Chapter 5 leaves the CPU crate and implements the machine around its `Bus`
+interface.
 
 We open [`coco-core/src/bus.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus.rs)
-and ask the question this chapter's vector table quietly assumed an answer to:
+and answer a question assumed by this chapter's vector table:
 when the CPU reads `$FFFE`, what actually intercepts that read before it
 becomes a plain RAM access? Every exception in this chapter ended with
 `bus.read_u16(vector)`, and every one of them took for granted that those
@@ -2369,7 +2298,6 @@ fourteen bytes at the top of memory would come back from ROM rather than from
 whatever the MMU had most recently mapped there. Making that true is the first
 thing Chapter 5 has to get right.
 
-The answer is the decode order — hardwired vectors first, then the I/O page,
-then ROM, then the GIME's MMU — and it is also the first time the CoCo 1/2's
-SAM and the CoCo 3's GIME visibly diverge into two genuinely different
-address-translation paths.
+The decode order handles hardwired vectors first, followed by the I/O page,
+ROM, and the GIME's MMU. It also separates the CoCo 1/2's SAM translation path
+from the CoCo 3's GIME path.
