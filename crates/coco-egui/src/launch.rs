@@ -1,6 +1,5 @@
-//! The manager's boot path: turning a saved machine definition into a running
-//! [`CocoApp`]. The CLI's equivalent, starting from parsed flags instead, is
-//! [`crate::boot`].
+//! The manager's boot path, and the only one in the app: turning a saved
+//! machine definition into a running [`CocoApp`].
 
 use std::fs;
 use std::path::PathBuf;
@@ -37,14 +36,14 @@ struct Peripherals {
 }
 
 /// Build a running [`CocoApp`] from a saved machine definition
-/// (`machine_def::MachineDef`): the same steps the CLI branch performs — load
-/// the ROM (an explicit `[hardware].rom` if set, else the same `./roms`
-/// resolution the CLI path uses), mount `[media]` (cart/disks/vhds/tape),
-/// `[peripherals]` (MPI/RTC/RS-232), and `[ports]` (the built-in serial
-/// port's host sink) with the same `CocoApp` methods and ordering, and
-/// enforce the same single-cartridge-port rule — but every failure is a
-/// returned `Err` here instead of a process exit, since the caller (the
-/// manager's Start button, `manager.rs`) must show it in the detail pane
+/// (`machine_def::MachineDef`): load the ROM (an explicit `[hardware].rom`
+/// if set, else the default `./roms` resolution), mount `[media]`
+/// (cart/disks/vhds/tape), `[peripherals]` (MPI/RTC/RS-232), and `[ports]`
+/// (the built-in serial port's host sink) via the relevant `CocoApp`
+/// methods, in that order, enforcing the single-cartridge-port rule below —
+/// but every failure is a returned `Err` here instead of a process exit,
+/// since the caller (the manager's Start button, `manager.rs`) must show it
+/// in the detail pane
 /// rather than crash the whole app (`docs/plan-machine-persistence.md`
 /// step 5). On any mount-time failure (a bad disk/VHD/cassette image, or a
 /// disk-BASIC ROM read failure inside `mpi_insert_fd502` — not just a missing
@@ -80,10 +79,6 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     if let Some(err) = app.cart_error.take() {
         return Err(err);
     }
-
-    // Built by the manager, not a direct CLI boot — gates the VM window's
-    // own Suspend tile (`CocoApp::managed`'s doc).
-    app.managed = true;
 
     // The definition's [ui] preferences are the launched window's *starting*
     // state; F9 (aspect), F12 (keyboard mode), and the Joysticks menu keep
@@ -125,11 +120,13 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
     }
 }
 
-/// The same rule the CLI branch enforces by hand (clap's declarative
-/// `conflicts_with` can't express "only when --mpi is absent"): cart,
-/// disk0/disk1 (which imply the FD-502), rtc, and rs232 all want the single
-/// cartridge port unless an MPI is installed. rs232 additionally has no
-/// MPI-slot support at all yet (no `mpi_insert_rs232`), so `mpi && rs232` is
+/// Enforced by hand rather than declaratively (there's no `clap` here to
+/// lean on, and the rule only applies "when `--mpi` is absent" — conditional
+/// on another field, which a flat set of struct constraints can't express
+/// either): cart, disk0/disk1 (which imply the FD-502), rtc, and rs232 all
+/// want the single cartridge port unless an MPI is installed. rs232
+/// additionally has no MPI-slot support at all yet (no `mpi_insert_rs232`),
+/// so `mpi && rs232` is
 /// rejected even though an MPI would otherwise lift the one-peripheral
 /// limit.
 fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), String> {
@@ -170,8 +167,8 @@ fn new_app(
     peripherals: &Peripherals,
 ) -> CocoApp {
     // No definition field for these UI preferences yet (`machine_def.rs`'s
-    // schema doc); matches the CLI defaults — `--tape-wav` off, no DriveWire
-    // disks, Becker port disabled, HDB-DOS off.
+    // schema doc); a launched machine always starts with tape-wav off, no
+    // DriveWire disks, Becker port disabled, and HDB-DOS off.
     const SAVE_TAPE_WAV: bool = false;
     const BECKER_ENABLED: bool = false;
     const HDBDOS_MODE: bool = false;
@@ -212,10 +209,9 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
             }
         }
     } else if peripherals.rtc {
-        // cart/fd502/rs232 (disk media is handled by the `CocoApp::new` call
-        // above, same as the CLI's non-mpi branch) and rtc are mutually
-        // exclusive here — `check_cartridge_port` already rejected any
-        // combination of them without an MPI.
+        // cart/fd502/rs232 (disk media is handled by the `new_app` call
+        // above) and rtc are mutually exclusive here — `check_cartridge_port`
+        // already rejected any combination of them without an MPI.
         app.insert_rtc();
     } else if peripherals.rs232 {
         // Starts on the inert Loopback endpoint; TCP/PTY stay a

@@ -1,8 +1,7 @@
-//! The CocoVM manager window: the VirtualBox/Parallels-style main window a
-//! bare `coco` (no CLI arguments) opens instead of booting a machine
-//! directly. Toolbar across the top, machine list down the left (one row per
-//! `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and a detail/edit
-//! pane on the right for the selected machine — or, with no machine
+//! The CocoVM manager window: the VirtualBox/Parallels-style main window
+//! `coco` always opens. Toolbar across the top, machine list down the left
+//! (one row per `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and
+//! a detail/edit pane on the right for the selected machine — or, with no machine
 //! selected, a random photo asset filling the pane.
 //!
 //! Launching a machine (`plan-machine-persistence.md` step 5) is wired up:
@@ -14,8 +13,9 @@
 //! viewport's own child `egui::Context` delivers that window's keyboard/
 //! mouse input, so focus routing comes for free from egui
 //! (`docs/plan-machine-persistence.md` "DECIDED: in-process, one native
-//! window per running VM"). The direct-boot emulator (`CocoApp`) is
-//! otherwise untouched and still serves every CLI invocation with arguments.
+//! window per running VM"). The app always opens this manager window; a
+//! future CLI will be rebuilt on top of the manager's own machine
+//! definitions.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -483,7 +483,7 @@ pub fn run() -> eframe::Result<()> {
         Box::new(move |cc| {
             crate::banner(&crate::StartupInfo {
                 roms: crate::rom_count(),
-                machines: Some(machines),
+                machines,
                 renderer: crate::renderer_info(cc),
             });
             // Assets are fetched *after* the banner, so the box is the first

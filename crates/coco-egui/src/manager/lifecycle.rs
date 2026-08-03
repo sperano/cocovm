@@ -17,8 +17,7 @@ use super::{
 
 /// Display name (and slug source) of a freshly created machine
 /// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s
-/// model, the same default the bare-invocation direct-boot path (`main.rs`)
-/// starts from.
+/// model, the same default `ui_tests::harness::boot_harness` boots for tests.
 fn default_new_name() -> String {
     crate::machine_label(MachineConfig::default().variant).to_string()
 }
@@ -167,9 +166,10 @@ impl ManagerApp {
 
     /// Stop — the power switch (⏹ button, row context menu, and a *running*
     /// VM window's close box via [`super::vm_windows`]'s
-    /// `close_vm_window`): flush dirty disks/tape back to their files —
-    /// the same exit contract `CocoApp::on_exit` runs for the direct-boot
-    /// window — then drop the VM, returning the row to Powered Off. On a
+    /// `close_vm_window`): flush dirty disks/tape back to their files
+    /// (`CocoApp::flush_media`, the same one `eframe::App::on_exit` calls for
+    /// the test-only window in `app.rs`) — then drop the VM, returning the
+    /// row to Powered Off. On a
     /// Suspended machine (VM alive or not) this also discards the frozen
     /// state file — powering off is explicitly "throw the saved state
     /// away". The saved screenshot is deleted along with it (not just the

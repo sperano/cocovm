@@ -31,8 +31,9 @@ impl CocoApp {
     /// user-showable). Deliberately does NOT touch the window title: the
     /// caller's `egui::Context` may belong to a different viewport than the
     /// machine's own window (the manager's resume path runs on the MANAGER
-    /// window's context), so direct-boot call sites reissue the title
-    /// themselves via [`Self::refresh_window_title`].
+    /// window's context), so a VM-window call site (the Machine menu's Load
+    /// State/quick-load) reissues the title itself via
+    /// [`Self::refresh_window_title`].
     pub(crate) fn load_state_from(&mut self, path: &Path) -> Result<(), String> {
         let bytes =
             std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
@@ -57,10 +58,9 @@ impl CocoApp {
     /// idempotent). Split out of [`Self::load_state_from`] because
     /// `ctx.send_viewport_cmd` targets the context's *current* viewport:
     /// the manager's resume path runs on the manager window's root context
-    /// and must never retitle it, while every direct-boot call site
-    /// (`boot.rs`'s `--state`, the Machine menu's Load State/quick-load) IS
-    /// the machine's own window and calls this right after a successful
-    /// load.
+    /// and must never retitle it, while a VM window's own call site (the
+    /// Machine menu's Load State/quick-load) IS the machine's own window and
+    /// calls this right after a successful load.
     pub(crate) fn refresh_window_title(&self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "cocovm — {}",

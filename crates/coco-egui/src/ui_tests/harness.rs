@@ -1,5 +1,6 @@
 //! Shared `egui_kittest` test infrastructure for every topic module under
-//! `ui_tests`: harness construction (direct-boot and manager), the click/
+//! `ui_tests`: harness construction (a bare `CocoApp` window and the manager
+//! window), the click/
 //! hover/combo-select interaction helpers (see the parent module doc for
 //! the interaction conventions they encode), and small fixture builders
 //! (`sample_entry`, `sample_coco2_entry`).
@@ -15,8 +16,9 @@ use crate::*;
 pub(super) type AppHarness = egui_kittest::Harness<'static, CocoApp>;
 pub(super) type ManagerHarness = egui_kittest::Harness<'static, manager::ManagerApp>;
 
-/// Boot a default (CoCo 3) machine into a kittest harness, exactly as
-/// `main()` would with no CLI arguments.
+/// Boot a default (CoCo 3) machine into a kittest harness — a bare
+/// `CocoApp::new` call with no `machine_def::MachineDef` behind it, unlike a
+/// manager-launched VM (`launch::launch_machine`).
 pub(super) fn boot_harness() -> AppHarness {
     let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
     let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)

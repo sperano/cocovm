@@ -16,10 +16,10 @@ use super::ManagerApp;
 /// real: this fallback only ever shows the bare display, never chrome.
 const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
-/// Window size of a launched VM's own native OS window: the same formula
-/// `main()` uses for the direct-boot window (`main.rs`'s `SCALE`/
-/// `TARGET_ASPECT`/`MENU_BAR_H`/`TOOLBAR_H`/`STATUS_BAR_H`), sized for the
-/// aspect-corrected (wider) image so it always fits.
+/// Window size of a launched VM's own native OS window, from the crate
+/// root's own sizing constants (`crate::SCALE`/`TARGET_ASPECT`/`MENU_BAR_H`/
+/// `TOOLBAR_H`/`STATUS_BAR_H`), sized for the aspect-corrected (wider) image
+/// so it always fits.
 fn vm_window_inner_size() -> egui::Vec2 {
     let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
     let win_w = img_h * crate::TARGET_ASPECT;

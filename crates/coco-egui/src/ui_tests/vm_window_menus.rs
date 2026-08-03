@@ -1,6 +1,6 @@
-//! Direct-boot `CocoApp` menu/toolbar/hotkey tests: transport controls,
-//! Machine/View/Help/Joysticks menus, the status bar's keyboard menu,
-//! media-action gating, the
+//! VM window menu/toolbar/hotkey tests, driving a `CocoApp` opened directly
+//! (not through the manager): transport controls, Machine/View/Help/
+//! Joysticks menus, the status bar's keyboard menu, media-action gating, the
 //! MultiPak install/slot/switch flow, save-state menu wiring, error/
 //! confirmation dialogs, the RS-232 pak, and cartridge insertion (GMC).
 
@@ -29,20 +29,19 @@ fn machine_menu_reset_keeps_the_ui_alive() {
 
 /// The VM window's own toolbar: the same four transport tiles
 /// (Start/Suspend/Stop/Reset) the manager toolbar draws, via the shared
-/// `toolbar_button` widget. A direct boot is never manager-owned
-/// (`CocoApp::managed` stays `false` unless `launch_machine` sets it), and a
-/// chrome-bearing VM window only ever exists while Running, so Start and
-/// Suspend are permanently disabled here; Stop and Reset stay live. With no
-/// menu open, "Reset" can only be the toolbar tile — the Machine menu's own
-/// "Reset" item only joins the accessibility tree while that menu is open
-/// (`harness.rs`'s `lowest_by_label` doc covers the collision once it is).
+/// `toolbar_button` widget. A chrome-bearing VM window only ever exists while
+/// Running, so Start is permanently disabled here; Suspend, Stop, and Reset
+/// stay live. With no menu open, "Reset" can only be the toolbar tile — the
+/// Machine menu's own "Reset" item only joins the accessibility tree while
+/// that menu is open (`harness.rs`'s `lowest_by_label` doc covers the
+/// collision once it is).
 #[test]
-fn toolbar_shows_transport_tiles_disabled_for_direct_boot() {
+fn toolbar_shows_start_disabled_and_others_live() {
     let mut harness = boot_harness();
 
     // One pass over all four tiles: each label is looked up (asserting it
     // exists) exactly once, and its enabled/disabled state checked in the
-    // same step rather than re-querying "Start"/"Suspend" a second time.
+    // same step rather than re-querying "Start" a second time.
     let expectations = [
         (
             "Start",
@@ -50,10 +49,7 @@ fn toolbar_shows_transport_tiles_disabled_for_direct_boot() {
                 "Start is always disabled in the VM window: a chrome-bearing window only exists while Running",
             ),
         ),
-        (
-            "Suspend",
-            Some("Suspend needs the manager (CocoApp::managed); a direct boot has none"),
-        ),
+        ("Suspend", None),
         ("Stop", None),
         ("Reset", None),
     ];

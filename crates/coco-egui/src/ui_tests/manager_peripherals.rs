@@ -233,8 +233,8 @@ fn manager_edit_with_joy_sources_records_them() {
 /// Disk 0 = Blank in the pane: a 0-byte blank image lands in the machine's
 /// artifact dir the moment it's picked, and `[media].disk0` records it by
 /// relative path. (The manager flow's Blank is the picker-free one, so this
-/// drives the whole path headlessly — direct boot's Blank opens a native
-/// save dialog.)
+/// drives the whole path headlessly — the VM window's own Insert Disk ▸
+/// Blank instead opens a native save dialog.)
 #[test]
 fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
     let machines = TempDir::new("create-blank-machines");

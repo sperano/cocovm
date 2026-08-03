@@ -3,10 +3,11 @@
 //! [`MachineForm`] holds the full editable draft and draws every row; it
 //! never touches a machine or a file itself. Its one host is the manager's
 //! detail pane (`manager::draw_detail_ok`), which draws the form over a
-//! saved machine definition and auto-saves each change. (The direct-boot
-//! "Machine → New…" dialog that used to co-host it was removed — machine
-//! creation belongs to the manager; user decision 2026-07-28.) The
-//! `constrain` rules below therefore live in exactly one place.
+//! saved machine definition and auto-saves each change. (A "Machine → New…"
+//! dialog that used to co-host it, back when the app could also boot a
+//! machine directly from the command line, was removed — machine creation
+//! belongs to the manager; user decision 2026-07-28.) The `constrain` rules
+//! below therefore live in exactly one place.
 
 use std::path::PathBuf;
 
@@ -108,8 +109,8 @@ pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
 
 /// The form's Cartridge row. Not part of [`MachineConfig`] — the
 /// cartridge port is populated after machine construction (the same way
-/// the CLI and the Machine menu do it) — so it rides alongside the config
-/// in [`MachineForm`] and is packed into the definition's
+/// `launch::mount_peripherals` and the Machine menu do it) — so it rides
+/// alongside the config in [`MachineForm`] and is packed into the definition's
 /// `[peripherals]`/`[media]` sections by the manager
 /// (`manager::detail::pack_def`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -275,7 +276,7 @@ impl From<Option<SerialDTO>> for SerialChoice {
 /// PAL isn't modeled ([`MachineConfig::validate`]'s rules).
 fn constrain(draft: &mut MachineConfig) {
     if !ram_choices(draft.variant).contains(&draft.memory) {
-        // Same per-family default `main.rs`'s CLI path seeds `--ram` from.
+        // Snap to the new family's own default RAM size.
         draft.memory = crate::default_ram(draft.variant);
     }
     if draft.variant != MachineVariant::Coco3 {

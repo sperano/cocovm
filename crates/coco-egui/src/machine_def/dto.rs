@@ -188,8 +188,8 @@ impl From<DisplayDTO> for Display {
 
 /// `[hardware].vdg`. Maps to [`coco_core::VDGVariant`]. Optional in the file
 /// — when absent, [`super::MachineDef::to_machine_config`] defaults it per variant
-/// the same way `main.rs`'s CLI path and `new_vm.rs`'s `constrain_draft` do:
-/// the T1 (CoCo 2B) on a CoCo 2, the plain MC6847 elsewhere (the only choice
+/// the same way `new_vm.rs`'s `constrain_draft` does: the T1 (CoCo 2B) on a
+/// CoCo 2, the plain MC6847 elsewhere (the only choice
 /// `MachineConfig::validate` accepts there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VDGVariantDTO {

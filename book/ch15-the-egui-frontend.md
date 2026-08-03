@@ -92,7 +92,7 @@ immediate mode there is no persistent widget tree at all. Instead, your
 ```
 
 That is the *entire* trait implementation — three lines at
-[`crates/coco-egui/src/app.rs:318-320`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L318-L320), forwarding to a plain inherent
+[`crates/coco-egui/src/app.rs:313-315`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L313-L315), forwarding to a plain inherent
 method. Everything else in that file is ordinary `impl CocoApp`. There is
 no widget registration, no event handler installation, no constructor that
 builds a layout. The window is whatever `update` draws this time around,
@@ -148,7 +148,7 @@ checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
 
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
-([`crates/coco-egui/src/app.rs:11-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L164)) that between them constitute the
+([`crates/coco-egui/src/app.rs:11-156`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L156)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
 `self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
@@ -619,7 +619,7 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 ```
 
-([`crates/coco-egui/src/main.rs:97-102`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L97-L102).) Both exist to prevent the same
+([`crates/coco-egui/src/main.rs:101-106`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L101-L106).) Both exist to prevent the same
 disease, which has a name: *the spiral of death*.
 
 Imagine there were no cap on fields per update. The host stalls for a
@@ -943,7 +943,7 @@ doc comment on `TARGET_ASPECT`:
 > framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
 > is stretched horizontally to this ratio so pixels are ~3% wider than
 > tall, as on real hardware.
-> ([`crates/coco-egui/src/main.rs:93-96`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L93-L96))
+> ([`crates/coco-egui/src/main.rs:97-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L97-L100))
 
 That 288×224 figure is `coco_core::video::FB_W` and `FB_H` — the CoCo 1
 and 2 legacy VDG canvas, which is a 256×192 active area plus a 16-pixel
@@ -966,34 +966,28 @@ against a reference emulator pixel for pixel.
 
 There is a small curiosity here that is worth a look precisely because it
 demonstrates how forgiving immediate mode is about mistakes. Here is the
-function that picks the *initial* operating-system window size, before any
-frame has ever run:
+function that picks a launched VM's *initial* operating-system window size,
+before any frame has ever run:
 
 ```rust
-pub(crate) fn native_options(variant: MachineVariant) -> eframe::NativeOptions {
-    // Size for the aspect-corrected (wider) image so it always fits; the
-    // uncorrected image is narrower and simply leaves margin.
-    let img_h = coco_core::video::FB_H as f32 * SCALE;
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
-        .expect("embedded icon PNG is valid");
-    eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([img_h * TARGET_ASPECT, img_h + MENU_BAR_H + TOOLBAR_H + STATUS_BAR_H])
-            .with_icon(icon)
-            .with_title(format!("cocovm — {}", machine_label(variant))),
-        ..Default::default()
-    }
+fn vm_window_inner_size() -> egui::Vec2 {
+    let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
+    let win_w = img_h * crate::TARGET_ASPECT;
+    let win_h = img_h + crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
+    egui::vec2(win_w, win_h)
 }
 ```
 
-([`crates/coco-egui/src/boot.rs:66-79`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/boot.rs#L66-L79).) Notice the input:
+([`crates/coco-egui/src/manager/vm_windows.rs:23-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L23-L28).) Notice the input:
 `coco_core::video::FB_H`, the fixed 224-pixel legacy figure, multiplied by
-`SCALE` — for *every* machine variant, including a CoCo 3 whose native
-canvas is 240 rows tall rather than 224. The manager's own per-VM window
-does the identical thing
-([`crates/coco-egui/src/manager/vm_windows.rs:23-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L23-L28)), deliberately, with a
-comment saying it uses "the same formula `main()` uses for the direct-boot
-window."
+`SCALE` — for *every* machine variant the manager can launch, including a
+CoCo 3 whose native canvas is 240 rows tall rather than 224. It is the one
+and only formula for a VM window's starting size: every machine variant
+the manager launches gets the same starting rectangle, `draw_running_vms`
+passing it straight to `ViewportBuilder::with_inner_size` alongside the
+window's title (the VM's own name, not a machine-variant label — the
+manager identifies windows by the VM the user named, not by what chip is
+inside).
 
 That is an approximation, and it is not a bug, because of what the number
 is *for*. It seeds the window's starting size and nothing else.
@@ -1333,7 +1327,7 @@ press has to survive across multiple 60 Hz `KEYIN` scans of the ROM to
 register at all; a press and release confined to a single field can land
 entirely between two scans and simply vanish. The tuned constants are
 `TYPE_HOLD_FIELDS = 2` and `TYPE_GAP_FIELDS = 1`
-([`crates/coco-egui/src/main.rs:127-129`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L127-L129)): hold each synthesized keypress
+([`crates/coco-egui/src/main.rs:135-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L135-L137)): hold each synthesized keypress
 for two fields, safely longer than one scan interval, then release for one
 field before the next tap begins, so that two identical consecutive
 characters — the `"AA"` in a pasted `DATA` statement — read as two separate
@@ -1433,16 +1427,25 @@ Everything up to here has been the emulator's own window. This section is
 about a second window entirely — and about a category of code the course
 has not touched in fourteen weeks.
 
-Run the `coco` binary with no arguments and you do not get a booted
-machine at all. You get the *manager*: a window in the style of VirtualBox
-or Parallels, listing every machine you have defined, with a deck-style
-transport — power on, suspend to disk, power off — and a detail pane for
-editing hardware and attached media.
-The dispatch is three lines in `main()` — "bare `coco` (no CLI arguments)
-opens the CocoVM manager window; any argument keeps the direct-boot
-emulator path" ([`crates/coco-egui/src/main.rs:136-140`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L136-L140)) — and everything
-downstream of it is in [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its
-submodules.
+Run the `coco` binary — no arguments, or several — and you do not get a
+booted machine at all. You get the *manager*: a window in the style of
+VirtualBox or Parallels, listing every machine you have defined, with a
+deck-style transport — power on, suspend to disk, power off — and a detail
+pane for editing hardware and attached media.
+The dispatch in `main()` is unconditional now: "the app always opens the
+CocoVM manager window" ([`crates/coco-egui/src/main.rs:155-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L155-L157)) — and
+everything downstream of it is in
+[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its submodules. `coco` used to fork on
+argument count instead — no arguments opened the manager, any argument at
+all booted a machine directly from a much larger CLI surface (`--machine`,
+`--ram`, `--rom`, DriveWire and cassette flags, and so on) — but that
+direct-boot path predated machine definitions, and once the manager could
+express every one of those choices as data, keeping a second, parallel way
+to express them in flags was pure duplication. Every capability the old
+flags exposed is still reachable, just from the manager's Machine menu
+instead of a boot-time argument; only the shortcut of skipping the manager
+window entirely is gone, and a future CLI will be rebuilt on top of the
+manager's own machine definitions rather than beside them.
 
 This is worth studying for two reasons that have nothing to do with the
 6809. First, it is the shape any serious frontend eventually needs around a
@@ -1722,13 +1725,13 @@ Starting is short:
 ```
 
 ([`crates/coco-egui/src/manager/lifecycle.rs:71-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L71-L78).) `launch_machine`
-is the manager's counterpart to the CLI's `boot::boot_app`; both build a
-`CocoApp` from a config plus a set of mounted media, and the two modules'
-doc comments name each other as siblings
-([`crates/coco-egui/src/launch.rs:39-53`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L39-L53)). The important difference is
-error handling: the CLI path prints and exits, while this one must return
-an `Err` for the detail pane to display, since crashing the manager because
-one machine's disk image is missing would be absurd. On failure `vm` is
+is `launch.rs`'s one job — turning a saved machine definition into a
+running `CocoApp` — and its own doc comment describes exactly that
+handoff ([`crates/coco-egui/src/launch.rs:39-53`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L39-L53)). The property worth
+noticing is its error handling: every mount-time failure comes back as a
+returned `Err` for the detail pane to display, never a `panic!` or a
+process exit, since crashing the whole manager because one machine's disk
+image is missing would be absurd. On failure `vm` is
 left untouched at `None`, so a failed Start leaves a Powered Off row
 rather than a half-constructed one.
 
@@ -1775,8 +1778,8 @@ Stopping is the power switch:
 ```
 
 ([`crates/coco-egui/src/manager/lifecycle.rs:172-190`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L172-L190).) Flush dirty
-media — the same `flush_media` that `CocoApp::on_exit` runs for the
-direct-boot window — drop the `Box`, and discard both halves of any frozen
+media — the same `flush_media` that `CocoApp::on_exit` runs whenever a VM
+window's own OS close box is used instead — drop the `Box`, and discard both halves of any frozen
 state: the `.ccstate` and the screenshot, since a powered-off row shows a
 black preview, never a stale picture. Dropping the `Box` is what shuts the
 machine down; there is no `shutdown()` method, because Rust's ownership
@@ -1847,12 +1850,13 @@ machine takes the straightforward path:
 ([`crates/coco-egui/src/manager/vm_windows.rs:138-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L138-L162), comment lines
 elided.) That single
 `vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
-§15.3 established. The *entire* direct-boot experience — menu bar, toolbar,
+§15.3 established. The *entire* `CocoApp` experience — menu bar, toolbar,
 status bar, the letterboxed display, every dialog — runs unmodified inside
 this child viewport, through the very same `window_ui` this chapter has
 been reading all along. There is no second implementation of the emulator
 window for the manager to maintain, and no risk of the two drifting apart,
-because there is only one.
+because there is only one — the manager is the only thing that ever
+constructs a `CocoApp` at all.
 
 The `pending_suspend` flag drained on the way back is that same shared
 window talking to the manager: the VM window's toolbar shows the manager's
@@ -2135,7 +2139,7 @@ code, because each line is a bug somebody already paid for:
 ### Booting a harness
 
 [`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs) is the shared infrastructure every test file in
-`ui_tests/` imports. Booting a direct-boot app harness looks like this:
+`ui_tests/` imports. Booting a bare `CocoApp` harness looks like this:
 
 ```rust
 pub(super) fn boot_harness() -> AppHarness {
@@ -2168,10 +2172,12 @@ pub(super) fn boot_harness() -> AppHarness {
 ([`crates/coco-egui/src/ui_tests/harness.rs:20-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L20-L44).) Three things in
 there are worth calling out.
 
-`Harness::new_eframe` takes the same `CocoApp::new` constructor the real
-`boot_app` calls, with the same ten arguments, and no test-only shortcuts.
-There is no `CocoApp::new_for_testing`. Whatever the harness exercises is
-what the application does.
+`Harness::new_eframe` takes the same `CocoApp::new` constructor the
+manager's own launch path calls
+([`crates/coco-egui/src/launch.rs:171-182`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L171-L182), inside the private
+`new_app` helper `launch_machine` builds on), with the same ten arguments,
+and no test-only shortcuts. There is no `CocoApp::new_for_testing`.
+Whatever the harness exercises is what the application does.
 
 `harness.step()` is one simulated frame. It runs `update()` exactly as a
 real event loop would, and it is called *manually*, exactly once per unit
@@ -2187,7 +2193,7 @@ frame, therefore absent from the tree the test searches — and the failure
 looks like "the menu item does not exist."
 
 The manager harness does the same dance with `ManagerApp::new`, and adds
-one discipline the direct-boot harness does not need:
+one discipline the bare `CocoApp` harness does not need:
 
 ```rust
 pub(super) fn manager_harness_with_artifacts(
@@ -2439,10 +2445,10 @@ are git-ignored and local-only, so these counts are a dated snapshot rather
 than a permanent expectation:
 
 ```
-test result: FAILED. 134 passed; 37 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 154 passed; 38 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-**In that run, all 37 failures required missing ROM data.** Every one
+**In that run, all 38 failures required missing ROM data.** Every one
 traces to the same missing file: most panic right at a
 `std::fs::read`/`load_default_rom` call reading
 `roms/coco3.rom` or (for the FD-502 tests) `roms/disk11.rom`, with a
@@ -2456,7 +2462,7 @@ reason. The failing set breaks down cleanly into four groups:
 - `launch::tests::*` (4) — unit tests of `launch_machine` itself, each
   building a full `CocoApp` from a saved definition and so loading the
   real ROM.
-- `ui_tests::direct_boot_menus::*` (18) — every kittest test that calls
+- `ui_tests::vm_window_menus::*` (19) — every kittest test that calls
   `boot_harness()`, which requires the real system ROM to construct a
   `CocoApp` at all.
 - `ui_tests::manager_lifecycle::*` (9 of the file's 10) — the tests that
@@ -2470,9 +2476,10 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
-**The 134 passing tests in that run covered the non-ROM surface of the crate**: the
+**The 154 passing tests in that run covered the non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
-`Machine`), every CLI parser test, every `machine_def` round-trip/atomicity/
+`Machine`), the `--log-level` parsing tests and the machine-default tests
+(`default_ram`, `default_vdg`), every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
 round-trip and both halves of the all-black skip heuristic), the
 `Selection` set-arithmetic tests from §15.8, the joystick math and
@@ -2491,7 +2498,7 @@ importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 171 tests should pass.
+checkout with real ROMs present, all 192 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
@@ -2508,7 +2515,7 @@ the emulated hardware buys.
 
 In this order:
 
-1. **[`crates/coco-egui/src/main.rs:1-129`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L129)** — the crate's module list (a
+1. **[`crates/coco-egui/src/main.rs:1-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L137)** — the crate's module list (a
    map of everything this chapter did and didn't cover) and the constants
    block: `SCALE`, `TARGET_ASPECT`, `MAX_FIELDS_PER_UPDATE`, `MAX_FRAME_DT`,
    `TYPE_HOLD_FIELDS`/`TYPE_GAP_FIELDS`.

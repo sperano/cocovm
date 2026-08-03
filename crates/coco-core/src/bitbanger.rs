@@ -334,10 +334,11 @@ impl BitBanger {
     }
 
     /// Start "print to text file" capture at `path` (create/truncate — see
-    /// [`FileSink::create`]), so both the CLI (`--print-capture`) and the GUI
-    /// (the Machine menu's "Start Print Capture…") can drive it through the
-    /// same call. `translate_cr_to_lf` picks the session's line-ending mode
-    /// (see [`FileSink`]). Leaves any in-flight frame untouched, like
+    /// [`FileSink::create`]), so both a machine definition's
+    /// `[ports].serial = "file"` (`coco-egui`'s `launch::mount_serial`) and
+    /// the GUI (the Machine menu's "Start Print Capture…") can drive it
+    /// through the same call. `translate_cr_to_lf` picks the session's
+    /// line-ending mode (see [`FileSink`]). Leaves any in-flight frame untouched, like
     /// [`Self::set_sink`].
     pub fn start_file_capture(
         &mut self,

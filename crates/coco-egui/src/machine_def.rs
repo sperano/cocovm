@@ -100,8 +100,8 @@ impl MachineDef {
         let monitor = self.display().to_monitor(variant);
         let vdg: Option<VDGVariant> = match self.hardware.vdg {
             Some(dto) => Some(dto.into()),
-            // Shared with main.rs's CLI path and new_vm.rs's `constrain` —
-            // see VdgDto's doc comment and `default_vdg`'s.
+            // Shared with new_vm.rs's `constrain` — see VdgDto's doc comment
+            // and `default_vdg`'s.
             None => crate::default_vdg(variant),
         };
         let config = MachineConfig {
