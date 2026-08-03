@@ -92,8 +92,8 @@ impl Display {
     /// The display a validated config implies, for paths that predate this
     /// type (a save state's config, `MachineConfig::default()`). Lossy in
     /// one direction only: a CoCo 3 TV serializes as composite, so callers
-    /// holding the real choice (a definition's `[hardware].display`, the
-    /// CLI's `--display`) must overwrite this afterwards.
+    /// holding the real choice (a definition's `[hardware].display`) must
+    /// overwrite this afterwards.
     pub(crate) const fn from_config(config: &MachineConfig) -> Self {
         match config.monitor {
             Some(monitor) => Display::Monitor(monitor),
