@@ -92,7 +92,7 @@ immediate mode there is no persistent widget tree at all. Instead, your
 ```
 
 That is the *entire* trait implementation — three lines at
-[`crates/coco-egui/src/app.rs:295-297`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L295-L297), forwarding to a plain inherent
+[`crates/coco-egui/src/app.rs:318-320`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L318-L320), forwarding to a plain inherent
 method. Everything else in that file is ordinary `impl CocoApp`. There is
 no widget registration, no event handler installation, no constructor that
 builds a layout. The window is whatever `update` draws this time around,
@@ -148,7 +148,7 @@ checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
 
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
-([`crates/coco-egui/src/app.rs:11-148`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L148)) that between them constitute the
+([`crates/coco-egui/src/app.rs:11-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L164)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
 `self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
@@ -431,7 +431,7 @@ short enough to hold in your head at once:
 
 ([`crates/coco-egui/src/app/frame.rs:29-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L29-L62).) That last call is the
 texture upload, split into its own method
-(`upload_framebuffer_texture`, [`crates/coco-egui/src/app/frame.rs:71-83`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L71-L83))
+(`upload_framebuffer_texture`, [`crates/coco-egui/src/app/frame.rs:72-97`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L72-L97))
 because a *suspended* VM's window runs only that step — §15.6 explains
 why. Five things happen, in
 this order, every time the host asks for a frame. Host input is read and
@@ -588,7 +588,7 @@ This is precisely what the `field_debt` doc comment promises:
 > fields run when it reaches 1, the remainder carries over. This decouples
 > emulation speed from the host refresh rate (120 Hz displays no longer
 > run the CoCo at double speed).
-> ([`crates/coco-egui/src/app.rs:28-31`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L28-L31))
+> ([`crates/coco-egui/src/app.rs:44-47`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L44-L47))
 
 Run the same table at 60 Hz, where `dt ≈ 0.01667`, and something subtler
 shows up. Each call adds about 0.999 fields of debt, so `due` is 1 on
@@ -736,25 +736,34 @@ the CoCo's screen actually changed — immediate mode again: there is no
 against.
 
 ```rust
-        let image = egui::ColorImage::from_rgba_unmultiplied(
-            [
-                self.machine.fb_width as usize,
-                self.machine.fb_height as usize,
-            ],
+        let frame = crate::display::process(
+            self.display,
+            self.tv,
+            self.tv_frame,
+            self.machine.fb_width as usize,
             &self.machine.framebuffer,
         );
-        let texture = self.texture.get_or_insert_with(|| {
-            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
-        });
-        texture.set(image, egui::TextureOptions::NEAREST);
+        let image =
+            egui::ColorImage::from_rgba_unmultiplied([frame.width, frame.height], &frame.pixels);
+        let options = crate::display::texture_options(self.display);
+        let texture = self
+            .texture
+            .get_or_insert_with(|| ctx.load_texture("coco-fb", image.clone(), options));
+        texture.set(image, options);
 ```
 
-Four steps, and only the last two reach a GPU. `self.machine.framebuffer`
+Five steps, and only the last two reach a GPU. `self.machine.framebuffer`
 is the plain `Vec<u8>` of RGBA bytes that Chapter 7 taught you to render into
 — the exact same buffer the headless PPM-writing examples in
 `coco-core/examples/` dump to disk, with no frontend involved at all.
-`ColorImage::from_rgba_unmultiplied` wraps that byte slice together with
-its width and height into a CPU-side image description; nothing has crossed
+`display::process` is the TV chain: when the machine's display is a
+monitor it hands that buffer straight through (a borrowed `Cow` — no copy,
+no work); when it is a TV it applies the whole CRT treatment — B&W luma
+collapse, composite bandwidth limit, RF noise, scanline doubling — and
+returns a transformed buffer with its *own* dimensions, which is why the
+`ColorImage` takes its size from `frame` rather than the machine.
+`ColorImage::from_rgba_unmultiplied` wraps those bytes together with
+width and height into a CPU-side image description; nothing has crossed
 into graphics-driver territory yet. `get_or_insert_with` allocates a GPU
 texture handle exactly *once*, on the first frame the app ever draws, and
 every frame after that reuses the same handle. And `texture.set(...)` is
@@ -762,27 +771,29 @@ the line that crosses into GPU territory on *every* frame: it uploads this
 frame's bytes into the already-allocated texture, replacing last frame's
 contents.
 
-`egui::TextureOptions::NEAREST` is the option that makes the picture look
-right, and it deserves a paragraph because it is the only piece of graphics
-vocabulary this chapter needs. When a texture is drawn at a size other than
+That `options` value is the piece that deserves a paragraph, because it is
+the only piece of graphics vocabulary this chapter needs. When a texture is
+drawn at a size other than
 its native pixel dimensions — and it always is, since a 640-pixel-wide CoCo
 canvas is being stretched across a 1307-pixel-wide rectangle — the hardware
 has to decide what color to put at each destination pixel. *Nearest*
 sampling picks the single closest source pixel and uses it unchanged.
-*Linear* sampling blends the neighboring source pixels together. For this
-frontend, nearest is the intended choice: it keeps the machine's
-low-resolution pixels crisp and square-edged when magnified. A softer
-presentation may suit another display model, but it is not the policy here.
+*Linear* sampling blends the neighboring source pixels together. The
+frontend chooses per display device (`display::texture_options`): a
+monitor uploads with `NEAREST`, keeping the machine's low-resolution
+pixels crisp and square-edged when magnified, while a TV deliberately
+uploads with `LINEAR` — a CRT tube has no sharp pixel edges at all, and
+that soft scale is the cheapest single ingredient of the TV look.
 
-The frontend does use linear sampling — twice, and both times for
+Linear sampling appears twice more, both times for
 photographs rather than emulated screens. The manager's decorative photo
 pane uploads with `TextureOptions::LINEAR`
 ([`crates/coco-egui/src/manager.rs:377-380`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L377-L380)), and so does a suspended
 machine's saved screen thumbnail when it is loaded back from its PNG
-([`crates/coco-egui/src/manager/thumbnails.rs:57-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L57-L61)). Both are being
+([`crates/coco-egui/src/manager/thumbnails.rs:71-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L71-L75)). Both are being
 scaled *down* into a small area rather than up, and a photograph shrunk
-with nearest sampling looks harsh and aliased. Same API, opposite choice,
-for a reason you can state in one sentence.
+with nearest sampling looks harsh and aliased. Same API, and a choice you
+can justify in one sentence either way.
 
 ### One rectangle, and the arithmetic that places it
 
@@ -818,7 +829,7 @@ than graphics API calls:
     }
 ```
 
-([`crates/coco-egui/src/app/frame.rs:83-108`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L83-L108).) Find
+([`crates/coco-egui/src/app/frame.rs:108-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L108-L133).) Find
 `ui.put(rect, egui::Image::new(sized))` in the middle of that. It is the
 display path's second and last GPU-facing call: draw one textured quad,
 sized to `rect`. Every line above it exists to decide what `rect`
@@ -840,7 +851,7 @@ The final line, `self.display_rect = rect`, is the one piece of state
 
 > Letterboxed display rect from the last frame's `CentralPanel`, used to map
 > pointer position to joystick axes. One frame stale (see `drive_joysticks`).
-> ([`crates/coco-egui/src/app.rs:37-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L37-L39))
+> ([`crates/coco-egui/src/app.rs:53-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L53-L55))
 
 Mouse-as-joystick needs to convert "the pointer is at this window position"
 into "the stick is this far right and this far down," and that conversion
@@ -919,7 +930,7 @@ That is the whole payoff of computing `aspect` *before* the fit logic runs,
 as a mode-agnostic scalar, rather than hard-coding "stretch to 4:3" into
 the layout math. The doc comment says so directly: "This keeps the frontend
 mode-agnostic — any renderer's buffer size fits"
-([`crates/coco-egui/src/app/frame.rs:86-88`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L86-L88)). A CoCo 1 in a legacy VDG
+([`crates/coco-egui/src/app/frame.rs:112-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L112-L114)). A CoCo 1 in a legacy VDG
 mode hands this function a 288×224 buffer instead of a 640×240 one and
 needs no code change whatsoever, because the function never assumed a size.
 
@@ -1924,7 +1935,7 @@ drawn a second time in a smaller rectangle, one extra quad and no extra
 upload. A Powered Off machine shows plain black, like the screen of a
 machine with no power. And a Suspended one shows the *frozen frame*: at
 suspend time, `write_entry_thumbnail`
-([`crates/coco-egui/src/manager/thumbnails.rs:18-34`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L18-L34)) captures the
+([`crates/coco-egui/src/manager/thumbnails.rs:18-48`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L18-L48)) captures the
 framebuffer as a plain PNG at `<artifact-dir>/<slug>/thumbnail.png`, so
 the row keeps showing that exact frame after the VM
 window closes, and even across manager restarts. Powering off deletes it
@@ -1934,7 +1945,7 @@ frozen machine it depicts.
 While the suspended VM object is still alive its (unchanging) live texture
 serves as the preview for free; the PNG is loaded back lazily, only once
 the object is gone
-([`crates/coco-egui/src/manager/thumbnails.rs:42-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L42-L62)).
+([`crates/coco-egui/src/manager/thumbnails.rs:56-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L56-L76)).
 
 One small heuristic in the PNG writer deserves attention:
 
