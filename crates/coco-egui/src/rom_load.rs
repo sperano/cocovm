@@ -171,9 +171,9 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
-/// Dev-tree ROM directory (`./roms`, git-ignored): where the direct-boot CLI
-/// path and the manager's [`launch_machine`] both default-resolve system and
-/// peripheral ROMs from. (TODO, per `Self::ensure_disk_controller`: read from
+/// Dev-tree ROM directory (`./roms`, git-ignored): where the manager's
+/// [`launch_machine`] default-resolves system and peripheral ROMs from.
+/// (TODO, per `Self::ensure_disk_controller`: read from
 /// a user asset dir once one exists for these — `paths::roms_dir` today only
 /// covers what `ensure_assets` downloads.)
 pub(crate) fn dev_roms_dir() -> PathBuf {

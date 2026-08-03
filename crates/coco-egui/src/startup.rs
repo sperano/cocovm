@@ -63,27 +63,20 @@ const BANNER_WIDTH: usize = 76;
 pub(crate) struct StartupInfo {
     /// ROM images installed in [`paths::roms_dir`], from [`rom_count`].
     pub roms: usize,
-    /// Machine definitions the manager loaded. `None` on the direct-boot
-    /// path, which never reads the machine list.
-    pub machines: Option<usize>,
+    /// Machine definitions the manager loaded.
+    pub machines: usize,
     /// One-line graphics backend description, from [`renderer_info`].
     pub renderer: String,
 }
 
 impl StartupInfo {
-    /// `"8 ROMs and 7 machine configurations found."` — the machine half is
-    /// dropped when there is no machine list to speak of.
+    /// `"8 ROMs and 7 machine configurations found."`
     fn inventory(&self) -> String {
         // Not `pluralize`: it upper-cases the suffix of an all-caps acronym
         // ("ROMS"), and the initialism reads as "ROMs".
         let roms = format!("{} ROM{}", self.roms, if self.roms == 1 { "" } else { "s" });
-        match self.machines {
-            Some(n) => {
-                let machines = pluralize("machine configuration", n as isize, true);
-                format!("{roms} and {machines} found.")
-            }
-            None => format!("{roms} found."),
-        }
+        let machines = pluralize("machine configuration", self.machines as isize, true);
+        format!("{roms} and {machines} found.")
     }
 }
 

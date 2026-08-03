@@ -1,6 +1,6 @@
-//! Direct-boot `CocoApp` menu/toolbar/hotkey tests: transport controls,
-//! Machine/View/Help/Joysticks menus, the status bar's keyboard menu,
-//! media-action gating, the
+//! VM window menu/toolbar/hotkey tests, driving a `CocoApp` opened directly
+//! (not through the manager): transport controls, Machine/View/Help/
+//! Joysticks menus, the status bar's keyboard menu, media-action gating, the
 //! MultiPak install/slot/switch flow, save-state menu wiring, error/
 //! confirmation dialogs, the RS-232 pak, and cartridge insertion (GMC).
 

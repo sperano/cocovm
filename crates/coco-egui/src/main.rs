@@ -15,7 +15,6 @@
 mod about;
 mod app;
 mod audio;
-mod boot;
 mod chrome;
 mod cli;
 mod debugger;
@@ -70,7 +69,7 @@ pub(crate) use host::{host_dw_clock, host_now, host_time_source};
 pub(crate) use keymap::{control_key_pos, is_joystick_key, key_to_pos};
 pub(crate) use launch::launch_machine;
 pub(crate) use mpi::{
-    DEFAULT_MPI_SWITCH_SLOT, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState,
+    DEFAULT_MPI_SWITCH_SLOT, DEFAULT_RTC_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState,
 };
 pub(crate) use rom_load::{
     Coco12ROMResult, ROM_DB_PSEUDO_PATH_PREFIX, ROMSource, compose_coco12_rom, dev_roms_dir,
@@ -146,55 +145,16 @@ fn main() -> eframe::Result<()> {
     // and the log subscriber both need the VT opt-in this performs.
     let use_color = use_color();
 
-    // Parsed before the manager branch below, and unconditionally: with no
-    // arguments every field takes its clap-declared default, which is where
-    // `--log-level`'s `warn` comes from on both paths. The subscriber is
-    // global and installed once, so it cannot be built before the flags it
-    // reads are known.
+    // Parsed before the manager runs below: with no arguments `--log-level`
+    // takes its clap-declared default (`warn`). The subscriber is global and
+    // installed once, so it cannot be built before the flags it reads are
+    // known.
     let cli = Cli::parse();
     setup_logging(use_color, cli.log_level.into());
 
-    // Bare `coco` (no CLI arguments) opens the CocoVM manager window; any
-    // argument keeps the direct-boot emulator path below.
-    if std::env::args_os().len() == 1 {
-        return manager::run();
-    }
-
-    let variant = cli.machine;
-    let config = boot::config_from_cli(&cli);
-    if let Err(e) = config.validate() {
-        eprintln!("coco: invalid configuration: {e}");
-        std::process::exit(1);
-    }
-    boot::exit_on_cartridge_port_conflict(&cli);
-
-    eframe::run_native(
-        "cocovm",
-        boot::native_options(variant),
-        Box::new(move |cc| {
-            // Same order as the manager path: the banner is the first thing
-            // printed, so the ROM this boot needs is fetched and loaded after
-            // it — which is why the load lives in here rather than in `main`.
-            // Direct boot reads no machine list, so the banner reports only ROMs.
-            banner(&StartupInfo {
-                roms: rom_count(),
-                machines: None,
-                renderer: renderer_info(cc),
-            });
-            ensure_assets();
-            let roms_dir = dev_roms_dir();
-            let (rom, rom_source) =
-                match load_rom_with_source(cli.rom.as_deref(), variant, &roms_dir) {
-                    Ok(result) => result,
-                    Err(e) => {
-                        eprintln!("coco: {e}");
-                        eprintln!("Pass --rom <PATH> to boot a specific image.");
-                        std::process::exit(1);
-                    }
-                };
-            Ok(Box::new(boot::boot_app(cc, cli, config, rom, rom_source)))
-        }),
-    )
+    // The app always opens the CocoVM manager window; a direct-boot CLI path
+    // will be rebuilt on top of the manager's own machine definitions later.
+    manager::run()
 }
 
 #[cfg(test)]

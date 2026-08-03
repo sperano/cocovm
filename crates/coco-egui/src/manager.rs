@@ -14,8 +14,9 @@
 //! viewport's own child `egui::Context` delivers that window's keyboard/
 //! mouse input, so focus routing comes for free from egui
 //! (`docs/plan-machine-persistence.md` "DECIDED: in-process, one native
-//! window per running VM"). The direct-boot emulator (`CocoApp`) is
-//! otherwise untouched and still serves every CLI invocation with arguments.
+//! window per running VM"). The app always opens this manager window; a
+//! future CLI will be rebuilt on top of the manager's own machine
+//! definitions.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -483,7 +484,7 @@ pub fn run() -> eframe::Result<()> {
         Box::new(move |cc| {
             crate::banner(&crate::StartupInfo {
                 roms: crate::rom_count(),
-                machines: Some(machines),
+                machines,
                 renderer: crate::renderer_info(cc),
             });
             // Assets are fetched *after* the banner, so the box is the first

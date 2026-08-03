@@ -10,13 +10,9 @@ pub(crate) const MPI_SLOT_COUNT: usize = coco_core::cart::mpi::SLOT_COUNT;
 /// default (also MAME's default — `coco_multi.cpp` `MULTI_SLOT_LOOKUP`).
 pub(crate) const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 
-/// MPI slot `--rtc` targets (slot 3): --cart takes slot 1 and the FD-502
-/// slot 4, mirroring the conventional layout the `--mpi` CLI wiring builds.
+/// MPI slot the RTC defaults to (slot 3): a cartridge takes slot 1 and the
+/// FD-502 slot 4, the conventional layout the manager's "New…" dialog builds.
 pub(crate) const DEFAULT_RTC_SLOT: usize = 2;
-
-/// MPI slot `--ssc` targets (slot 2): alongside --cart in slot 1, --rtc in
-/// slot 3, and the FD-502 in slot 4.
-pub(crate) const DEFAULT_SSC_SLOT: usize = 1;
 
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
 /// cold restart (or just the status bar / menu labels) can describe it
