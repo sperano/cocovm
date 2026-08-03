@@ -6,7 +6,7 @@
 
 ```mermaid
 flowchart TD
-    S[step(bus)] --> R{state == Running?}
+    S[step(bus)] --> R{"state == Running?"}
     R -- No (Syncing/Waiting) --> IDLE[burn 1 idle cycle]
     IDLE --> DONE[return 1]
 
@@ -102,13 +102,13 @@ flowchart TD
     ARMED -- Yes --> TAKEN[take_interrupt: NMI vector, I+F set, entire=true]
 
     IRQ[irq(bus)] --> IMASK{I mask set?}
-    IMASK -- Yes --> WK_S{state == Syncing?}
+    IMASK -- Yes --> WK_S{"state == Syncing?"}
     WK_S -- Yes --> WAKE_S[wake to Running, return false]
     WK_S -- No --> RET_F[return false]
     IMASK -- No --> TAKEN_I[take_interrupt: IRQ vector, set I, clear F, entire=true, return true]
 
     FIRQ[firq(bus)] --> FMASK{F mask set?}
-    FMASK -- Yes --> WK_F{state == Syncing?}
+    FMASK -- Yes --> WK_F{"state == Syncing?"}
     WK_F -- Yes --> WAKE_F[wake to Running, return false]
     WK_F -- No --> RET_FF[return false]
     FMASK -- No --> TAKEN_F[take_interrupt: FIRQ vector, set I+F, entire=false, return true]
@@ -117,7 +117,7 @@ flowchart TD
     TAKEN_I --> TAKE
     TAKEN_F --> TAKE
 
-    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> S{state == Waiting?}
+    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> S{"state == Waiting?"}
     S -- No (not CWAI) --> FRAME{entire?}
     FRAME -- Yes --> FULL[set E bit, psh full register mask to S]
     FRAME -- No --> FAST[clear E bit, psh PC+CC only to S]
