@@ -75,7 +75,8 @@ impl StartupInfo {
         // Not `pluralize`: it upper-cases the suffix of an all-caps acronym
         // ("ROMS"), and the initialism reads as "ROMs".
         let roms = format!("{} ROM{}", self.roms, if self.roms == 1 { "" } else { "s" });
-        let machines = pluralize("machine configuration", self.machines as isize, true);
+        let machine_count = isize::try_from(self.machines).unwrap_or(isize::MAX);
+        let machines = pluralize("machine configuration", machine_count, true);
         format!("{roms} and {machines} found.")
     }
 }

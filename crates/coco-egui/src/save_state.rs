@@ -1,7 +1,6 @@
 //! Frontend save-state UX (`docs/plan-save-states.md` "Frontend UX"): the
 //! Machine-menu Save/Load State + Quick Save/Load slots, their keyboard
-//! chords, the `--state` CLI flag (`main.rs`'s `Cli`), and the status-bar
-//! toast — all built on top of the engine in
+//! chords, and the status-bar toast — all built on top of the engine in
 //! [`coco_core::snapshot`], which this module is the only caller of.
 //!
 //! [`CocoApp::save_state_to`]/[`CocoApp::load_state_from`] are the two

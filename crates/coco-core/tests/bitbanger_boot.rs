@@ -113,9 +113,9 @@ fn llist_captures_program_text_and_returns_to_ok_prompt() {
     }
 
     // Attach the capture sink only once BASIC has settled at the `OK` prompt
-    // — matching the real feature's usage (the menu's "Start Print
-    // Capture…"/`--print-capture` both start against an already-running
-    // machine) and sidestepping a cold-boot artifact upstream of this sink:
+    // — matching the real feature's usage (the menu's "Start Print Capture…"
+    // always starts against an already-running machine) and sidestepping a
+    // cold-boot artifact upstream of this sink:
     // the ROM's PIA1 DDRA setup ($A02F "LDX #$FF20" init routine) briefly
     // flips PA1 from mark to space for ~30 CPU cycles while reconfiguring the
     // pin direction, well under one bit-time (1486 cycles) and irrelevant to

@@ -18,6 +18,7 @@ mod audio;
 mod chrome;
 mod cli;
 mod debugger;
+mod defaults;
 mod display;
 mod host;
 mod joy;
@@ -49,6 +50,7 @@ use std::path::{Path, PathBuf};
 pub(crate) use app::{CocoApp, PendingDiskAction};
 use chrono::{Datelike, Timelike};
 use clap::Parser;
+use cli::Cli;
 use coco_core::cart::{GamesMasterCartridge, MultiPak, ROMPak};
 use coco_core::drivewire::{self, DWImage, DWTime};
 use coco_core::fdc::{DiskCart, JVCDisk};
@@ -63,7 +65,7 @@ use joy::JoystickInputs;
 // Re-exported rather than plainly imported: the modules carved out of this file
 // were all crate-root items until recently, and `manager`, `save_state` and the
 // `ui_tests` harness still reach for them as `crate::…`.
-pub(crate) use cli::{Cli, default_ram, default_vdg, machine_label};
+pub(crate) use defaults::{default_ram, default_vdg, machine_label};
 pub(crate) use display::Display;
 pub(crate) use host::{host_dw_clock, host_now, host_time_source};
 pub(crate) use keymap::{control_key_pos, is_joystick_key, key_to_pos};
@@ -152,8 +154,8 @@ fn main() -> eframe::Result<()> {
     let cli = Cli::parse();
     setup_logging(use_color, cli.log_level.into());
 
-    // The app always opens the CocoVM manager window; a direct-boot CLI path
-    // will be rebuilt on top of the manager's own machine definitions later.
+    // The app always opens the CocoVM manager window; a future CLI will be
+    // rebuilt on top of the manager's own machine definitions.
     manager::run()
 }
 

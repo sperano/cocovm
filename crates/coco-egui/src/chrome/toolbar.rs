@@ -3,9 +3,6 @@ use crate::*;
 /// Disabled-hover text for the Start tile — see [`CocoApp::toolbar_ui`]'s
 /// doc for why Start is unconditionally disabled here.
 const START_DISABLED_HOVER: &str = "This machine is already running";
-/// Disabled-hover text for the Suspend tile when this window isn't
-/// manager-owned ([`CocoApp::managed`]'s doc).
-const SUSPEND_DISABLED_HOVER: &str = "Only available for machines started from the CocoVM manager";
 /// Hover text for the Stop tile.
 const STOP_HOVER: &str = "Shut down this machine — same as closing the window";
 /// Hover text for the Reset tile.
@@ -49,21 +46,20 @@ impl CocoApp {
                     let _ = toolbar_button(ui, PLAY_GLYPH, START_LABEL, false)
                         .on_disabled_hover_text(START_DISABLED_HOVER);
 
-                    if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, self.managed)
+                    if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, true)
                         .on_hover_text(SUSPEND_HOVER)
-                        .on_disabled_hover_text(SUSPEND_DISABLED_HOVER)
                         .clicked()
                     {
                         self.pending_suspend = true;
                     }
 
                     // Deliberately the same path as the window's close box,
-                    // already documented as the power switch elsewhere: a
-                    // managed window's close routes to `stop_vm`
-                    // (`manager::vm_windows::close_vm_window`), and a direct-boot
-                    // window's close runs `CocoApp::on_exit`'s media flush.
-                    // `ctx` here is this (child) viewport's own context, so the
-                    // command targets this VM window, not the manager.
+                    // already documented as the power switch elsewhere: this
+                    // window's close routes to `stop_vm`
+                    // (`manager::vm_windows::close_vm_window`), which flushes
+                    // dirty media before dropping the VM. `ctx` here is this
+                    // (child) viewport's own context, so the command targets
+                    // this VM window, not the manager.
                     if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, true)
                         .on_hover_text(STOP_HOVER)
                         .clicked()

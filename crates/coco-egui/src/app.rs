@@ -146,14 +146,6 @@ pub(crate) struct CocoApp {
     /// angle (`status_icons.rs`). Purely UI state — not serialized, not
     /// touched by save/load state.
     pub(crate) activity: StatusActivity,
-    /// Whether this app was built by the manager's launch path
-    /// (`launch::launch_machine`, set alongside `aspect_correct` there) as
-    /// opposed to a direct CLI boot (`boot.rs`, left `false`). Gates the VM
-    /// window's own Suspend tile (`chrome::toolbar`): suspending needs the
-    /// manager's slug-keyed artifact directory and `.ccstate` machinery
-    /// (`manager::lifecycle::suspend_vm`), which a direct-boot window has no
-    /// access to and no meaning for.
-    pub(crate) managed: bool,
     /// Set by the VM window's Suspend tile (`chrome::toolbar`); consumed by
     /// [`crate::manager::ManagerApp::draw_running_vms`] after the viewport
     /// closure returns. Just a *request* — `CocoApp` cannot suspend itself
@@ -173,12 +165,11 @@ impl CocoApp {
     /// `CreationContext` isn't taken here (unlike most `eframe::App`
     /// constructors): nothing in this struct's setup touches egui context
     /// state (fonts, wgpu/glow handles), so it's a plain constructor
-    /// callable from anywhere a machine needs to be built — the direct-boot
-    /// `main()` (which does have a `CreationContext` in its `run_native`
-    /// closure but never needed to pass it in) and the CocoVM manager's
-    /// `launch_machine` (`plan-machine-persistence.md` step 5), which builds
-    /// VMs from inside `ManagerApp::update` where no `CreationContext`
-    /// exists at all.
+    /// callable from anywhere a machine needs to be built — the CocoVM
+    /// manager's `launch_machine` (`plan-machine-persistence.md` step 5),
+    /// which builds VMs from inside `ManagerApp::update` where no
+    /// `CreationContext` exists at all, and the `ui_tests` harness, which
+    /// builds a `CocoApp` directly with no `CreationContext` either.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         config: MachineConfig,
@@ -235,7 +226,6 @@ impl CocoApp {
             rom_source,
             toast: None,
             activity: StatusActivity::default(),
-            managed: false,
             pending_suspend: false,
         };
         if let Some(path) = cart_path {
@@ -264,12 +254,12 @@ impl CocoApp {
         app
     }
 
-    /// Write modified floppies and tape back to their files — the exit
-    /// contract [`eframe::App::on_exit`] runs for the direct-boot window,
-    /// and the same one a manager-owned VM needs on Stop or on the
-    /// manager's own `on_exit` (`ManagerApp`'s `eframe::App` impl in
+    /// Write modified floppies and tape back to their files — the contract
+    /// a manager-owned VM needs on Stop (`manager::lifecycle::stop_vm`) or
+    /// on the manager's own `on_exit` (`ManagerApp`'s `eframe::App` impl in
     /// `manager.rs`, `docs/plan-machine-persistence.md` "one native window
-    /// per running VM").
+    /// per running VM"), and the one [`eframe::App::on_exit`] below still
+    /// runs for the test-only `CocoApp` window (`ui_tests::harness`).
     pub(crate) fn flush_media(&mut self) {
         self.flush_dirty_disks();
         self.write_back_tape();
@@ -308,6 +298,11 @@ impl CocoApp {
     }
 }
 
+/// Test scaffolding only: production code never runs a `CocoApp` through
+/// `eframe::run_native` (the manager calls [`CocoApp::window_ui`] and
+/// [`CocoApp::flush_media`] directly on VMs it owns), but `ui_tests::harness`'s
+/// `boot_harness` still builds a plain `egui_kittest::Harness<CocoApp>`, which
+/// needs this impl to exist.
 impl eframe::App for CocoApp {
     /// Write modified floppies and tape back to their files on quit — a BASIC
     /// `SAVE`/`CSAVE` only exists in the in-memory image until then.

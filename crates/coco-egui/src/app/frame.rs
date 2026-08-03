@@ -137,11 +137,10 @@ impl CocoApp {
     /// `eframe::App::update` ran before this method existed. `pub(crate)` so
     /// the manager's per-VM immediate viewport (`manager.rs`'s
     /// `draw_running_vms`, `ViewportClass::Default`/native case) can call it
-    /// directly on a VM it owns, reproducing the direct-boot window's full
-    /// chrome inside its own native OS window
-    /// (`docs/plan-machine-persistence.md` "one native window per running
-    /// VM"). The trait method below (kept for the direct-boot CLI path,
-    /// which stays byte-for-byte identical) just forwards here.
+    /// directly on a VM it owns, drawing this same full chrome inside its own
+    /// native OS window (`docs/plan-machine-persistence.md` "one native
+    /// window per running VM"). The `eframe::App` impl below (test scaffolding
+    /// only — see its doc comment in `app.rs`) just forwards here.
     pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {
         self.step_emulation(ctx);
         self.draw_chrome(ctx);

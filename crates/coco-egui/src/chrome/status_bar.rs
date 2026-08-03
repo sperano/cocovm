@@ -14,7 +14,7 @@ impl CocoApp {
     ///
     /// Pinned to [`STATUS_BAR_H`] rather than left to size itself around its
     /// content: that constant is what the window-sizing math already
-    /// reserves for this row (`boot.rs`, `manager::vm_windows`), so an exact
+    /// reserves for this row (`manager::vm_windows`), so an exact
     /// height is what keeps the reservation and the rendered bar the same
     /// number. `horizontal_centered` then takes the full panel height, so
     /// icons and labels ride the middle of the bar instead of hugging its

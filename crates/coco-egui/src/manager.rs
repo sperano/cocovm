@@ -1,8 +1,7 @@
-//! The CocoVM manager window: the VirtualBox/Parallels-style main window a
-//! bare `coco` (no CLI arguments) opens instead of booting a machine
-//! directly. Toolbar across the top, machine list down the left (one row per
-//! `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and a detail/edit
-//! pane on the right for the selected machine — or, with no machine
+//! The CocoVM manager window: the VirtualBox/Parallels-style main window
+//! `coco` always opens. Toolbar across the top, machine list down the left
+//! (one row per `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and
+//! a detail/edit pane on the right for the selected machine — or, with no machine
 //! selected, a random photo asset filling the pane.
 //!
 //! Launching a machine (`plan-machine-persistence.md` step 5) is wired up:

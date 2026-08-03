@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
 
-/// Read an explicit `--rom` image as-is: a CoCo 3 image, or — for CoCo 1/2 —
-/// an already pre-composed flat layout (see the `Cli::rom` doc).
+/// Read an explicit system ROM image as-is: a CoCo 3 image, or — for CoCo 1/2
+/// — an already pre-composed flat layout (extbas at offset 0, Color BASIC at
+/// offset $2000).
 pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
     match std::fs::read(path) {
         Ok(bytes) => {
@@ -19,7 +20,7 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
 /// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
 /// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
 /// the manager reports them inline in its detail pane
-/// (`launch_machine`'s contract); `main` prints them and exits.
+/// (`launch_machine`'s contract).
 pub(crate) fn load_default_rom(
     variant: MachineVariant,
     roms_dir: &Path,
@@ -62,7 +63,7 @@ pub(crate) fn load_default_rom(
 /// files"; `bus.rs::SAM_BAS_ROM_OFFSET`.
 pub(crate) const COCO12_BAS_OFFSET: usize = 8 * 1024;
 
-/// Color BASIC dumps accepted for `--machine coco1`/`coco2` (any one is
+/// Color BASIC dumps accepted for the CoCo 1/2 machine kinds (any one is
 /// enough to boot), newest-preferred among the versions these machines
 /// actually shipped with: 1.2 first, down to 1.0. `bas13.rom` (the CoCo 2B's
 /// Color BASIC, shipped with the MC6847T1 boards) boots fine too but is the
@@ -92,8 +93,9 @@ pub(crate) fn find_rom(roms_dir: &Path, candidates: &[&str]) -> Option<(PathBuf,
 }
 
 /// What [`compose_coco12_rom`] found (or didn't) while composing the flat
-/// image, so the CLI-facing caller can report it and the pure composition
-/// logic stays unit-testable without touching `std::process::exit`.
+/// image, so the caller ([`load_default_rom`]) can report it and the pure
+/// composition logic stays unit-testable without touching
+/// `std::process::exit`.
 pub(crate) enum Coco12ROMResult {
     Composed {
         image: Box<[u8]>,
@@ -198,9 +200,10 @@ pub(crate) fn rs232_eprom_default_path() -> PathBuf {
 /// record and re-resolve it without a second copy of the boot-time ROM logic
 /// ([`load_default_rom`]/[`load_explicit_rom`]/[`compose_coco12_rom`]).
 pub(crate) enum ROMSource {
-    /// Loaded verbatim from a real file: `roms/coco3.rom`, or any explicit
-    /// `--rom` (which, for CoCo 1/2, must already be the composed flat
-    /// layout — see `Cli::rom`'s doc). Hashed and re-read by path directly.
+    /// Loaded verbatim from a real file: `roms/coco3.rom`, or an explicit
+    /// `[hardware].rom` in a machine definition (which, for CoCo 1/2, must
+    /// already be the composed flat layout: extbas at offset 0, Color BASIC
+    /// at offset $2000). Hashed and re-read by path directly.
     File(PathBuf),
     /// A CoCo 1/2 flat image composed at boot from separate Color/Extended
     /// Color BASIC dumps under [`dev_roms_dir`] ([`compose_coco12_rom`]) —
@@ -232,8 +235,7 @@ pub(crate) fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
 
 /// [`load_explicit_rom`]/[`load_default_rom`], plus the [`ROMSource`] a
 /// snapshot needs to re-resolve/hash whichever path was taken — the single
-/// place `main()`'s CLI path and [`launch_machine`]
-/// all get both together, so they can't drift apart.
+/// place [`launch_machine`] gets both together, so they can't drift apart.
 pub(crate) fn load_rom_with_source(
     explicit: Option<&Path>,
     variant: MachineVariant,
