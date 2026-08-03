@@ -52,12 +52,9 @@ flowchart TD
 flowchart TD
     EAI[ea_indexed(bus)] --> PB[fetch postbyte]
     PB --> HI{bit 7 set?}
-    HI -- No (0rrnnnnn) --> OF5[ea_indexed_offset5:
-    extract reg sel, signed 5-bit offset,
-    return reg+offset, cycles=1]
+    HI -- No (0rrnnnnn) --> OF5["ea_indexed_offset5:<br/>extract reg sel, signed 5-bit offset,<br/>return reg+offset, cycles=1"]
 
-    HI -- Yes (1rri mmmm) --> FULL[ea_indexed_full:
-    extract reg sel, indirect bit, submode mmmm]
+    HI -- Yes (1rri mmmm) --> FULL["ea_indexed_full:<br/>extract reg sel, indirect bit, submode mmmm"]
     FULL --> SM[ea_indexed_submode dispatch on mmmm]
 
     SM -- 0000 --> RPLUS[ ,R+ : auto-inc by 1, return pre-inc value, +2cy ]
@@ -184,11 +181,11 @@ flowchart TD
 ```mermaid
 flowchart TD
     BT[branch_taken: cond, cc] --> EX[extract C,Z,N,V from cc]
-    EX --> SW{cond & 0x0F}
+    EX --> SW{"cond &amp; 0x0F"}
     SW -- 0x0 --> T[true - BRA]
     SW -- 0x1 --> F[false - BRN]
-    SW -- 0x2 --> H[!C && !Z - BHI]
-    SW -- 0x3 --> LS[C || Z - BLS]
+    SW -- 0x2 --> H["!C &amp;&amp; !Z - BHI"]
+    SW -- 0x3 --> LS["C || Z - BLS"]
     SW -- 0x4 --> CC[!C - BCC/BHS]
     SW -- 0x5 --> CS[C - BCS/BLO]
     SW -- 0x6 --> NE[!Z - BNE]
@@ -199,8 +196,8 @@ flowchart TD
     SW -- 0xB --> MI[N - BMI]
     SW -- 0xC --> GE[N == V - BGE]
     SW -- 0xD --> LT[N != V - BLT]
-    SW -- 0xE --> GT[!Z && N == V - BGT]
-    SW -- 0xF --> LE[Z || N != V - BLE]
+    SW -- 0xE --> GT["!Z &amp;&amp; N == V - BGT"]
+    SW -- 0xF --> LE["Z || N != V - BLE"]
 ```
 
 ---
@@ -213,7 +210,7 @@ Sequence of the caller (e.g. coco-core) driving the CPU:
 
 ```mermaid
 sequenceDiagram
-    participant Emu as Emulator (coco-core)
+    participant Emu as "Emulator (coco-core)"
     participant CPU as MC6809
     participant Bus as Bus impl
 
