@@ -70,17 +70,30 @@ impl CocoApp {
     /// joystick writes live on a machine whose on-disk frozen copy they'd
     /// silently diverge from.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        let image = egui::ColorImage::from_rgba_unmultiplied(
-            [
-                self.machine.fb_width as usize,
-                self.machine.fb_height as usize,
-            ],
+        // The TV chain (B&W collapse, bandwidth limit, scanlines), run at
+        // the single point every consumer of `self.texture` — VM window,
+        // manager preview, embedded fallback — inherits from. The machine's
+        // own framebuffer stays untouched: the effect is a display
+        // preference, not state. The chain owns the output shape (scanline
+        // doubling), hence the frame's own dimensions here.
+        self.tv_frame = self.tv_frame.wrapping_add(1);
+        let frame = crate::display::process(
+            self.display,
+            self.tv,
+            self.tv_frame,
+            self.machine.fb_width as usize,
             &self.machine.framebuffer,
         );
-        let texture = self.texture.get_or_insert_with(|| {
-            ctx.load_texture("coco-fb", image.clone(), egui::TextureOptions::NEAREST)
-        });
-        texture.set(image, egui::TextureOptions::NEAREST);
+        let image =
+            egui::ColorImage::from_rgba_unmultiplied([frame.width, frame.height], &frame.pixels);
+        // NEAREST for monitors, LINEAR for TVs (`texture_options`'s doc).
+        // Passed on every `set`, so switching the display in the View menu
+        // re-filters the very next frame.
+        let options = crate::display::texture_options(self.display);
+        let texture = self
+            .texture
+            .get_or_insert_with(|| ctx.load_texture("coco-fb", image.clone(), options));
+        texture.set(image, options);
     }
 
     /// The CoCo display itself: the letterboxed, (optionally) aspect-

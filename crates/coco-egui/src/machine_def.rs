@@ -22,11 +22,10 @@
 
 use std::path::{Path, PathBuf};
 
-use coco_core::{
-    MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
-};
+use coco_core::{MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 use serde::{Deserialize, Serialize};
 
+use crate::display::Display;
 use crate::paths;
 
 mod dto;
@@ -35,6 +34,10 @@ mod io;
 pub use dto::{
     HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PeripheralsDTO, PortsDTO, SerialDTO, UIDTO,
 };
+// Only tests build definitions with an explicit display DTO so far —
+// production writers go through `HardwareDTO::from_config`.
+#[cfg(test)]
+pub use dto::DisplayDTO;
 pub use io::{load_all, save};
 
 /// Schema version this build writes, and the newest it accepts on load.
@@ -90,16 +93,11 @@ impl MachineDef {
         let variant: MachineVariant = self.hardware.variant.into();
         let memory: MemorySize = self.hardware.ram.into();
         let video: VideoStandard = self.hardware.video.into();
-        let monitor: Option<MonitorType> = match self.hardware.monitor {
-            Some(dto) => Some(dto.into()),
-            // Absent key ⇒ the machine's own default: RGB where a monitor
-            // port exists (CoCo 3), nothing where it doesn't. An explicit
-            // key on a CoCo 1/2 flows through so `validate` rejects it.
-            None => match variant {
-                MachineVariant::Coco3 => Some(MonitorType::RGB),
-                MachineVariant::Coco1 | MachineVariant::Coco2 => None,
-            },
-        };
+        // A monitor choice flows through even on a CoCo 1/2 so `validate`
+        // rejects it with the real reason (no monitor port); a TV resolves
+        // to the composite path / no monitor per variant
+        // (`Display::to_monitor`).
+        let monitor = self.display().to_monitor(variant);
         let vdg: Option<VDGVariant> = match self.hardware.vdg {
             Some(dto) => Some(dto.into()),
             // Shared with main.rs's CLI path and new_vm.rs's `constrain` —
@@ -117,16 +115,32 @@ impl MachineDef {
         Ok(config)
     }
 
+    /// The display device this definition asks for: `[hardware].display`,
+    /// else the legacy `monitor` key it superseded (mapped to the monitor
+    /// half of [`Display`]), else the per-variant default. The full choice —
+    /// [`MachineDef::to_machine_config`] only keeps its signal-path
+    /// projection (`config.monitor`), which can't distinguish a CoCo 3 TV
+    /// from a composite monitor.
+    pub fn display(&self) -> Display {
+        match (self.hardware.display, self.hardware.monitor) {
+            (Some(display), _) => display.into(),
+            (None, Some(monitor)) => Display::Monitor(monitor.into()),
+            (None, None) => Display::default_for(self.hardware.variant.into()),
+        }
+    }
+
     /// Build a fresh definition from a config the manager's "New…" dialog
     /// produced (`manager.rs`'s Create flow). `media`/`peripherals`/`ui`
     /// start at their defaults — the dialog doesn't attach media or toggle
-    /// peripherals; that happens afterward in the detail pane.
+    /// peripherals; that happens afterward in the detail pane. The display
+    /// is likewise the config-implied one (`Display::from_config`) — the
+    /// Create flow offers no TV choice; that too happens in the detail pane.
     pub fn from_config(name: String, created: Option<String>, config: &MachineConfig) -> Self {
         Self {
             schema: CURRENT_SCHEMA,
             name,
             created,
-            hardware: HardwareDTO::from_config(config, None),
+            hardware: HardwareDTO::from_config(config, Display::from_config(config), None),
             media: MediaDTO::default(),
             peripherals: PeripheralsDTO::default(),
             ports: PortsDTO::default(),

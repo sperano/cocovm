@@ -22,6 +22,22 @@ pub(crate) struct CocoApp {
     /// (see the call site in `update`).
     pub(crate) show_orch90: bool,
     pub(crate) aspect_correct: bool,
+    /// What the video output is plugged into — monitor or (B&W) TV
+    /// (`display.rs`). A UI preference like `aspect_correct`: seeded from
+    /// the config here, overridden by the definition's `[hardware].display`
+    /// (`launch::launch_machine`) or `--display` (`boot::boot_app`), and
+    /// live-switchable from the View menu afterwards.
+    pub(crate) display: Display,
+    /// The TV chain's knobs (scanline strength, …) — same lifecycle as
+    /// `display`: `[ui]` keys for the starting values, View-menu sliders
+    /// live. Only consulted while `display` is a TV.
+    pub(crate) tv: display::TVSettings,
+    /// Frame counter feeding the TV chain's noise seed
+    /// (`display::process`), bumped every texture upload so the snow
+    /// shimmers. Pure UI state — never serialized. A suspended VM keeps
+    /// uploading (and so keeps shimmering), which is exactly what a real
+    /// TV showing a frozen picture would do.
+    pub(crate) tv_frame: u32,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -176,6 +192,10 @@ impl CocoApp {
         hdbdos_mode: bool,
         save_tape_wav: bool,
     ) -> Self {
+        // Lossy for a CoCo 3 TV (serialized as composite) — launch/boot
+        // overwrite it with the definition's/CLI's real choice afterwards
+        // (`Display::from_config`'s doc).
+        let display = Display::from_config(&config);
         let mut app = Self {
             machine: Machine::new(config, rom),
             texture: None,
@@ -186,6 +206,9 @@ impl CocoApp {
             show_about: false,
             show_orch90: false,
             aspect_correct: true,
+            display,
+            tv: display::TVSettings::default(),
+            tv_frame: 0,
             last_update: None,
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),

@@ -198,6 +198,16 @@ impl CocoApp {
 
         self.reinject_host_only_resources();
 
+        // The display device is a UI pref (not in the snapshot), but the
+        // GIME's monitor path came back from the snapshot's config — loading
+        // a state saved under an RGB monitor into a session watching a TV
+        // would otherwise leave the TV decoding the RGB unpack, the exact
+        // combination `display::Display` exists to rule out. Re-assert the
+        // pref's signal path, same as a View-menu display click.
+        if let Some(monitor) = self.display.to_monitor(self.machine.config.variant) {
+            self.machine.bus.gime.monitor = monitor;
+        }
+
         // Now that the RTC's host time source is back (just above),
         // `RestoreNote::RTCPlaceholderTime` no longer describes this
         // session's state — it's only true for a caller that DOESN'T

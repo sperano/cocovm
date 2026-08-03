@@ -75,6 +75,12 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     form.disks = [media_choice(&media.disk0), media_choice(&media.disk1)];
     form.tape = media_choice(&media.tape);
     form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
+    form.display = def.display();
+    form.tv = crate::display::TVSettings {
+        scanline_pct: def.ui.tv_scanline,
+        noise_pct: def.ui.tv_noise,
+    }
+    .clamped();
     form.aspect_correct = def.ui.aspect_correct;
     form.serial = def.ports.serial.into();
     // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like
@@ -142,8 +148,11 @@ impl ManagerApp {
         form: &mut new_vm::MachineForm,
     ) -> Result<machine_def::MachineDef, String> {
         let mut def = base.clone();
-        def.hardware =
-            machine_def::HardwareDTO::from_config(&form.config, base.hardware.rom.clone());
+        def.hardware = machine_def::HardwareDTO::from_config(
+            &form.config,
+            form.display,
+            base.hardware.rom.clone(),
+        );
         pack_cartridge(form, &mut def)?;
         self.pack_media(slug, form, &mut def)?;
         pack_ui(form, &mut def);
@@ -223,6 +232,8 @@ fn pack_cartridge(
 fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
     def.ports.serial = form.serial.into();
     def.ui.aspect_correct = form.aspect_correct;
+    def.ui.tv_scanline = form.tv.scanline_pct;
+    def.ui.tv_noise = form.tv.noise_pct;
     def.ui.joy_right = form.joy_sources[coco_core::joystick::RIGHT].into();
     def.ui.joy_left = form.joy_sources[coco_core::joystick::LEFT].into();
     def.ui.kb_mode = match form.kb_mode {

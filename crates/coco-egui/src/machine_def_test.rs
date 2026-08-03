@@ -1,7 +1,9 @@
 use super::dto::{
-    JoySourceDTO, MachineVariantDTO, MonitorDTO, RAMDTO, SerialDTO, VDGVariantDTO, VideoStandardDTO,
+    DisplayDTO, JoySourceDTO, MachineVariantDTO, RAMDTO, SerialDTO, VDGVariantDTO, VideoStandardDTO,
 };
 use super::*;
+use crate::display::TV;
+use coco_core::MonitorType;
 use std::fs;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -43,7 +45,10 @@ fn full_def() -> MachineDef {
             variant: MachineVariantDTO::Coco3,
             ram: RAMDTO::K512,
             video: VideoStandardDTO::NTSC,
-            monitor: Some(MonitorDTO::RGB),
+            // What saves write: `display` only, never the legacy `monitor`
+            // key (`HardwareDTO::from_config`).
+            monitor: None,
+            display: Some(DisplayDTO::RGB),
             vdg: None,
             rom: Some("/path/custom.rom".to_string()),
         },
@@ -72,6 +77,10 @@ fn full_def() -> MachineDef {
             // `minimal_file_uses_defaults` for the defaults).
             joy_left: JoySourceDTO::Keys,
             joy_right: JoySourceDTO::Gamepad,
+            // Away from the defaults (35/5) so the round trip exercises
+            // non-default strengths.
+            tv_scanline: 60,
+            tv_noise: 20,
         },
         unknown: toml::Table::new(),
     }
@@ -204,6 +213,10 @@ monitor = "rgb"
     // Default VDG is per-variant: a CoCo 3 has none at all.
     let config = def.to_machine_config().expect("should validate");
     assert_eq!(config.vdg, None);
+
+    // The legacy `monitor` key (no `display`) maps to the monitor half of
+    // `Display`.
+    assert_eq!(def.display(), Display::Monitor(MonitorType::RGB));
 }
 
 #[test]
@@ -223,6 +236,79 @@ video = "ntsc"
     let config = loaded[0].1.to_machine_config().expect("should validate");
     assert_eq!(config.vdg, Some(VDGVariant::MC6847T1));
     assert_eq!(config.monitor, None, "no monitor key, no monitor port");
+    assert_eq!(
+        loaded[0].1.display(),
+        Display::TV(TV::Color),
+        "a CoCo 1/2's default display is the color TV — its only real option"
+    );
+}
+
+/// `[hardware].display = "tv-bw"` round-trips and resolves to the
+/// composite signal path on a CoCo 3 (the TV hangs off the RF modulator,
+/// which is fed the composite signal — never the RGB unpack).
+#[test]
+fn display_tv_bw_round_trips_and_forces_composite() {
+    let dir = TempDir::new("display-tv-bw");
+    let mut def = full_def();
+    def.hardware.display = Some(DisplayDTO::TVBW);
+    save(dir.path(), "bw", &def).expect("save should succeed");
+
+    let loaded = load_all(dir.path()).expect("every file is valid");
+    assert_eq!(&loaded[0].1, &def);
+    assert_eq!(loaded[0].1.display(), Display::TV(TV::BW));
+    let config = loaded[0].1.to_machine_config().expect("should validate");
+    assert_eq!(config.monitor, Some(MonitorType::Composite));
+
+    let contents = fs::read_to_string(dir.path().join("bw.toml")).unwrap();
+    assert!(
+        contents.contains("display = \"tv-bw\""),
+        "TOML must record the display:\n{contents}"
+    );
+}
+
+/// `display` supersedes the legacy `monitor` key: it wins when both are
+/// present, and a legacy-only file re-saves with `display` instead.
+#[test]
+fn display_supersedes_the_legacy_monitor_key() {
+    let dir = TempDir::new("display-legacy");
+    fs::write(
+        dir.path().join("legacy.toml"),
+        r#"
+schema = 1
+name = "Legacy"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "composite"
+display = "tv"
+"#,
+    )
+    .unwrap();
+    let loaded = load_all(dir.path()).expect("legacy monitor key must still load");
+    let def = &loaded[0].1;
+    assert_eq!(
+        def.display(),
+        Display::TV(TV::Color),
+        "display wins over the legacy monitor key"
+    );
+
+    // The detail pane's save path (`HardwareDTO::from_config`) rewrites the
+    // hardware section without the legacy key.
+    let mut def = def.clone();
+    def.hardware = HardwareDTO::from_config(
+        &def.to_machine_config().expect("should validate"),
+        def.display(),
+        None,
+    );
+    save(dir.path(), "legacy", &def).expect("save should succeed");
+    let contents = fs::read_to_string(dir.path().join("legacy.toml")).unwrap();
+    assert!(
+        !contents.contains("monitor"),
+        "a re-save must not write the superseded key:\n{contents}"
+    );
+    assert!(contents.contains("display = \"tv\""), "{contents}");
 }
 
 #[test]

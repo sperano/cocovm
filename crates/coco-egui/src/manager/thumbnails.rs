@@ -23,10 +23,24 @@ impl ManagerApp {
         let Some(vm) = entry.vm.as_ref() else {
             return;
         };
-        let (w, h) = (vm.machine.fb_width, vm.machine.fb_height);
-        if let Err(e) =
-            super::write_thumbnail_png(&root.join(&entry.slug), &vm.machine.framebuffer, w, h)
-        {
+        // The raw framebuffer bypasses `upload_framebuffer_texture`'s TV
+        // chain, so run it here too — a B&W machine's saved preview must
+        // not come back in color (nor a TV's without its scanlines).
+        // The last upload's seed: the PNG freezes the same instant of
+        // snow the screen showed, like a photograph of the set would.
+        let frame = crate::display::process(
+            vm.display,
+            vm.tv,
+            vm.tv_frame,
+            vm.machine.fb_width as usize,
+            &vm.machine.framebuffer,
+        );
+        if let Err(e) = super::write_thumbnail_png(
+            &root.join(&entry.slug),
+            &frame.pixels,
+            frame.width as u32,
+            frame.height as u32,
+        ) {
             tracing::warn!("thumbnail for '{}': {e}", entry.slug);
         }
         entry.thumbnail = None;

@@ -4,7 +4,7 @@
 //! MultiPak install/slot/switch flow, save-state menu wiring, error/
 //! confirmation dialogs, the RS-232 pak, and cartridge insertion (GMC).
 
-use coco_core::MachineVariant;
+use coco_core::{MachineVariant, MonitorType};
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::rom_load::load_default_rom;
@@ -142,24 +142,33 @@ fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
 }
 
 #[test]
-fn view_menu_toggles_aspect_and_switches_monitor_type() {
+fn view_menu_toggles_aspect_and_switches_display() {
     let mut harness = boot_harness();
+    assert_eq!(
+        harness.state().display,
+        Display::Monitor(MonitorType::RGB),
+        "a CoCo 3 direct boot defaults to the RGB monitor"
+    );
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 
     click(&mut harness, "View");
     click(&mut harness, "4:3 aspect (F9)");
     assert!(!harness.state().aspect_correct);
 
+    // Picking a TV steers the GIME to the composite path too: the TV hangs
+    // off the RF modulator, which is fed the composite signal.
     click(&mut harness, "View");
-    click(&mut harness, "Composite monitor");
+    click(&mut harness, "B&W TV");
+    assert_eq!(harness.state().display, Display::TV(crate::display::TV::BW));
     assert_eq!(
         harness.state().machine.bus.gime.monitor,
         MonitorType::Composite,
-        "monitor swap takes effect live, no power cycle"
+        "display swap takes effect live, no power cycle"
     );
 
     click(&mut harness, "View");
     click(&mut harness, "RGB monitor");
+    assert_eq!(harness.state().display, Display::Monitor(MonitorType::RGB));
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 }
 

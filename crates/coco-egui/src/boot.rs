@@ -2,13 +2,27 @@
 //! [`CocoApp`]. The manager's equivalent, starting from a saved machine
 //! definition instead, is [`crate::launch::launch_machine`].
 
-use coco_core::{MachineConfig, MachineVariant, MonitorType};
+use coco_core::{MachineConfig, MachineVariant};
 use eframe::egui;
 
 use crate::{
-    Cli, CocoApp, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, MENU_BAR_H, MPI_SLOT_COUNT, ROMSource, SCALE,
-    STATUS_BAR_H, TARGET_ASPECT, TOOLBAR_H, default_ram, default_vdg, machine_label,
+    Cli, CocoApp, DEFAULT_RTC_SLOT, DEFAULT_SSC_SLOT, Display, MENU_BAR_H, MPI_SLOT_COUNT,
+    ROMSource, SCALE, STATUS_BAR_H, TARGET_ASPECT, TOOLBAR_H, default_ram, default_vdg,
+    machine_label,
 };
+
+/// The display device the CLI flags ask for: `--display`, else the
+/// deprecated `--monitor` it superseded (clap rejects giving both), else
+/// the per-variant default. A monitor choice on a CoCo 1/2 flows through
+/// so `validate` rejects it with the real reason (no monitor port) instead
+/// of the flag being silently ignored (`Display::to_monitor`).
+fn display_from_cli(cli: &Cli) -> Display {
+    match (cli.display, cli.monitor) {
+        (Some(display), _) => display.into(),
+        (None, Some(monitor)) => monitor.into(),
+        (None, None) => Display::default_for(cli.machine),
+    }
+}
 
 /// The machine the CLI flags describe. Rejected by `validate` at the call
 /// site if the flags don't make sense together for the chosen variant.
@@ -18,13 +32,7 @@ pub(crate) fn config_from_cli(cli: &Cli) -> MachineConfig {
         variant,
         video: cli.video,
         memory: cli.ram.unwrap_or_else(|| default_ram(variant)),
-        // An explicit --monitor on a CoCo 1/2 flows through as Some so
-        // `validate` rejects it with the real reason (no monitor port)
-        // instead of silently ignoring the flag.
-        monitor: match variant {
-            MachineVariant::Coco3 => Some(cli.monitor.map_or(MonitorType::RGB, Into::into)),
-            MachineVariant::Coco1 | MachineVariant::Coco2 => cli.monitor.map(Into::into),
-        },
+        monitor: display_from_cli(cli).to_monitor(variant),
         // No CLI flag for this yet; same family default as the "New…"
         // dialog and the manager's detail pane (`default_vdg`).
         vdg: default_vdg(variant),
@@ -83,6 +91,11 @@ pub(crate) fn boot_app(
     rom_source: ROMSource,
 ) -> CocoApp {
     let mut app = new_app(&cli, config, rom, rom_source);
+    // `CocoApp::new` derived a display from the config's signal path, which
+    // can't tell a CoCo 3 TV from a composite monitor — overwrite it with
+    // the flags' actual choice (same as `launch_machine` does from the
+    // definition's `[hardware].display`).
+    app.display = display_from_cli(&cli);
     mount_cli_hardware(&mut app, &cli);
 
     // --state loads before --print-capture starts (reversed from the rest of

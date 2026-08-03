@@ -91,6 +91,15 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // begin, exactly like the hardware section controls the machine's
     // construction.
     app.aspect_correct = def.ui.aspect_correct;
+    // `CocoApp::new` derived a display from the config's signal path, which
+    // can't tell a CoCo 3 TV from a composite monitor — overwrite it with
+    // the definition's actual `[hardware].display` choice.
+    app.display = def.display();
+    app.tv = crate::display::TVSettings {
+        scanline_pct: def.ui.tv_scanline,
+        noise_pct: def.ui.tv_noise,
+    }
+    .clamped();
     app.kb_mode = match def.ui.kb_mode {
         machine_def::KbModeDTO::Positional => KbMode::Positional,
         machine_def::KbModeDTO::Symbolic => KbMode::Symbolic,

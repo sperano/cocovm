@@ -24,6 +24,9 @@ fn launch_honors_ui_settings() {
     );
     def.ui.aspect_correct = false;
     def.ui.kb_mode = machine_def::KbModeDTO::Symbolic;
+    def.hardware.display = Some(machine_def::DisplayDTO::TVBW);
+    def.ui.tv_scanline = 80;
+    def.ui.tv_noise = 9;
 
     let vm = launch_machine(&def, "ui-prefs").expect("a default CoCo 3 definition launches");
     assert!(!vm.aspect_correct, "[ui].aspect_correct must reach the VM");
@@ -31,6 +34,18 @@ fn launch_honors_ui_settings() {
         vm.kb_mode == KbMode::Symbolic,
         "[ui].kb_mode must reach the VM"
     );
+    assert_eq!(
+        vm.display,
+        Display::TV(crate::display::TV::BW),
+        "[hardware].display must reach the VM"
+    );
+    assert_eq!(
+        vm.machine.bus.gime.monitor,
+        coco_core::MonitorType::Composite,
+        "a TV decodes the composite signal path"
+    );
+    assert_eq!(vm.tv.scanline_pct, 80, "[ui].tv_scanline must reach the VM");
+    assert_eq!(vm.tv.noise_pct, 9, "[ui].tv_noise must reach the VM");
 }
 
 /// The three-state round trip through the actual toolbar transport

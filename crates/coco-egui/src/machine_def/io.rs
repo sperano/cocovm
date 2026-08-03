@@ -18,11 +18,22 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "ports",
     "ui",
 ];
-const HARDWARE_KEYS: &[&str] = &["variant", "ram", "video", "monitor", "vdg", "rom"];
+// `monitor` stays listed though saves no longer write it — legacy files
+// carrying it must load without an unknown-key warning (`DisplayDTO`'s doc).
+const HARDWARE_KEYS: &[&str] = &[
+    "variant", "ram", "video", "monitor", "display", "vdg", "rom",
+];
 const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
 const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc", "fd502", "rs232"];
 const PORTS_KEYS: &[&str] = &["serial"];
-const UI_KEYS: &[&str] = &["aspect_correct", "kb_mode", "joy_left", "joy_right"];
+const UI_KEYS: &[&str] = &[
+    "aspect_correct",
+    "kb_mode",
+    "joy_left",
+    "joy_right",
+    "tv_scanline",
+    "tv_noise",
+];
 
 /// Sections that nest under the top level, paired with their known-key
 /// lists, so [`warn_unknown_keys`] can recurse one level without extra

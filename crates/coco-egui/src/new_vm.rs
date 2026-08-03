@@ -10,11 +10,10 @@
 
 use std::path::PathBuf;
 
-use coco_core::{
-    MachineConfig, MachineVariant, MemorySize, MonitorType, VDGVariant, VideoStandard,
-};
+use coco_core::{MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 use eframe::egui;
 
+use crate::display::Display;
 use crate::machine_def::SerialDTO;
 
 mod config_form;
@@ -90,13 +89,6 @@ const fn video_label(video: VideoStandard) -> &'static str {
     match video {
         VideoStandard::NTSC => "NTSC",
         VideoStandard::PAL => "PAL",
-    }
-}
-
-const fn monitor_label(monitor: MonitorType) -> &'static str {
-    match monitor {
-        MonitorType::RGB => "RGB",
-        MonitorType::Composite => "Composite",
     }
 }
 
@@ -288,12 +280,11 @@ fn constrain(draft: &mut MachineConfig) {
     }
     if draft.variant != MachineVariant::Coco3 {
         draft.video = VideoStandard::NTSC;
-        // A stock CoCo 1/2's only output is the RF modulator into a TV —
-        // there is no monitor port ([`MachineConfig::validate`]).
-        draft.monitor = None;
-    } else {
-        draft.monitor = Some(draft.monitor.unwrap_or(MonitorType::RGB));
     }
+    // `draft.monitor` is deliberately not touched here: the form's Display
+    // pick owns it ([`MachineForm::display_rows`]'s re-constrain + sync),
+    // since the config's signal path alone can't tell a CoCo 3 TV from a
+    // composite monitor.
     // Only runs on model-change clicks, so an explicit MC6847 pick made
     // while staying on CoCo 2 sticks; switching models re-seeds the
     // family default (the T1 "CoCo 2B" for CoCo 2, the only-possible
@@ -330,7 +321,13 @@ pub struct MachineForm {
     /// (`$FF80-$FF86`, `SystemBus::vhd`), not cartridge hardware, so the
     /// VHD rows need no controller.
     pub vhds: [MediaChoice; crate::UI_DRIVES],
-    /// The Display row: 4:3 aspect correction (`[ui].aspect_correct`).
+    /// The Display-row pick (`[hardware].display`): monitor or (B&W) TV.
+    /// Owns `config.monitor` — see [`MachineForm::display_rows`].
+    pub display: Display,
+    /// The TV chain's knobs (`[ui].tv_scanline`, …), edited under the
+    /// Display row while a TV is picked.
+    pub tv: crate::display::TVSettings,
+    /// The Display group's 4:3 checkbox (`[ui].aspect_correct`).
     pub aspect_correct: bool,
     /// The Ports fieldset's Serial-row pick (`[ports].serial`).
     pub serial: SerialChoice,

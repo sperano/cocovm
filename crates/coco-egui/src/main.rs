@@ -19,6 +19,7 @@ mod boot;
 mod chrome;
 mod cli;
 mod debugger;
+mod display;
 mod host;
 mod joy;
 mod kbd_help;
@@ -57,13 +58,14 @@ use coco_core::orch90::Orch90;
 use coco_core::rtc::{DistoRTC, RTCTime};
 use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::vhd::VHDImage;
-use coco_core::{Machine, MachineConfig, MonitorType};
+use coco_core::{Machine, MachineConfig};
 use eframe::egui;
 use joy::JoystickInputs;
 // Re-exported rather than plainly imported: the modules carved out of this file
 // were all crate-root items until recently, and `manager`, `save_state` and the
 // `ui_tests` harness still reach for them as `crate::…`.
 pub(crate) use cli::{Cli, default_ram, default_vdg, machine_label};
+pub(crate) use display::Display;
 pub(crate) use host::{host_dw_clock, host_now, host_time_source};
 pub(crate) use keymap::{control_key_pos, is_joystick_key, key_to_pos};
 pub(crate) use launch::launch_machine;
