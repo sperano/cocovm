@@ -1,26 +1,15 @@
 # Chapter 6 — Time: the scanline loop, sync pulses, and "it's alive"
 
-*Week 6. Goal: understand `run_field()` — the heartbeat every other chapter
-plugs into. Chapters 2–4 gave you a CPU that can execute any instruction
-correctly; Chapter 5 gave you a bus that resolves any address correctly. Neither
-one, on its own, produces a running machine — a CPU with a bus is just a
-function you can call, not something that boots. This week adds the missing
-ingredient: a clock. By the end you will know exactly how many CPU cycles
-fit in one scanline on real NTSC hardware, and why the loop is built to be
-paused and resumed one instruction at a time. Then comes the payoff: a real
-1980s ROM booting to a prompt and answering `PRINT 2+2`, from cold reset,
-with nothing but this loop driving it.*
+*Week 6. Goal: understand how `run_field()` advances the machine. This chapter
+derives the scanline cycle budget, follows synchronization and interrupt
+delivery, and explains why execution can pause after any instruction. It ends
+by booting Color BASIC and running `PRINT 2+2` headlessly.*
 
 ---
 
-Five weeks of work have produced something that is, strictly speaking, not
-yet a computer. It is a very good *calculator*: hand it an opcode and it
-will tell you, correctly and repeatably, what the 6809 would have done with
-that opcode, down to the flag bits and the cycle count. Hand it an address
-and the bus will tell you which of RAM, ROM, or a device register the CoCo
-would have selected. Every fact in the machine is right. What is missing is
-the one thing that turns a pile of correct facts into a running system:
-*something has to decide when each of those facts happens*.
+The CPU advances one instruction per call, and the bus resolves one address
+per access. Neither component schedules the next instruction, scanline, audio
+flush, or synchronization edge. The machine loop supplies that schedule.
 
 That is a bigger gap than it sounds. A CoCo 3 sitting at the BASIC prompt
 is not idle in any interesting sense — it is running an interrupt handler
@@ -33,24 +22,19 @@ timing. Chapter 6 is where the emulator stops being a library and starts being
 a machine.
 
 The chapter is a guided tour of one file. `crates/coco-core/src/machine/run.rs`
-is under two hundred lines including its comments, and it contains the
-entire timing model: the field loop, the resumable per-instruction
+is under two hundred lines including its comments. It contains the field loop,
+the resumable per-instruction
 primitive underneath it, the priority order in which HALT, interrupts, and
 the CPU get their turn, and the per-scanline trailer where video, audio,
 sync pulses, and the GIME's interval timer all get fed. Along the way the
-chapter does the arithmetic that produces the loop's magic numbers, follows
+chapter derives the loop's timing constants, follows
 a single sync pulse through four function calls until it lands in the CPU's
 IRQ vector, and — since this file is what a debugger drives — takes a
 detour into `debug.rs` to see what "resumable" actually buys.
 
-Two things make this week different from the four before it. The first is
-that everything here is *observable*: the sections that make claims about
-instruction counts and interrupt cadence back them with numbers produced by
-actually running the code, not by reasoning about it. The second is that
-the payoff arrives at the end of the chapter rather than the end of the
-course. Section 6.8 boots a real 1980s ROM to a prompt, types at it, and
-asserts on the answer, in a headless `cargo test` that finishes in a
-fraction of a second.
+The timing claims are checked with instruction counts and interrupt cadence
+from running tests. Section 6.8 then boots the ROM, types a BASIC expression,
+and asserts on the rendered answer.
 
 ---
 
@@ -65,11 +49,9 @@ cycles that instruction cost, and its obligations end there.
 
 Call that function in a bare `loop {}` and it will execute billions of
 instructions per second on modern hardware, because nothing is stopping it.
-The real 6809E in a CoCo 3 executed 894,886 of them per second, no more and
-no less, because its clock pin was wired to a crystal that oscillates at a
-fixed rate. Silicon has no choice about pacing; software has nothing *but*
-choices, and unless it makes one deliberately it will pick the fastest one
-available.
+The real 6809E in a CoCo 3 received 894,886 clock cycles per second. Each
+instruction consumed several of those cycles. Software must reproduce that
+pacing deliberately.
 
 An emulator that spins `cpu.step` in a tight loop therefore computes the
 right *values* in the wrong *amount of time*, which sounds like an academic
@@ -112,8 +94,7 @@ in a way no amount of internal accuracy can compensate for: too fast, too
 slow, or — the worst of the three — choppy, where the average rate is
 correct but the individual fields arrive in clumps.
 
-The scanline is the natural unit that satisfies both at once, and it is
-worth being explicit about why, because "run one field at a time" and "run
+The scanline is the unit used to satisfy both constraints. "Run one field at a time" and "run
 one instruction at a time" are both defensible alternatives. A scanline is
 small enough to schedule video and audio work accurately, because a real
 CoCo's picture can change *within* a field and not just between fields —
@@ -121,7 +102,7 @@ the screen-split effects that are Chapter 9's subject depend on exactly that.
 And a whole field's worth of scanlines is precisely the quantum the host's
 60 Hz repaint wants to be handed. One unit, both constraints.
 
-### The design sketch, and what survived it
+### From design sketch to implementation
 
 `DESIGN.md` §4 committed to this model before any of the code existed, and
 its sketch of the loop is short enough to quote in full. Read it as a
@@ -225,7 +206,7 @@ It wasn't. It comes from dividing the NTSC colorburst-derived crystal, at
 NTSC color subcarrier, which is the frequency the video output has to
 respect if color is going to survive the trip to a television set.
 
-The direction of causation is worth stating plainly, because it explains
+The direction of causation explains
 every strange constant in this chapter. Nobody chose a CPU speed and then
 found a crystal to produce it. Somebody chose a *television standard*, the
 crystal followed from the color subcarrier, and the CPU clock is what
@@ -823,7 +804,7 @@ whether to stop.
 > a discriminant) that cloning is cheaper than borrowing, so the derive
 > lets callers use them like `i32`s without a second thought.
 
-### Resumability's payoff: a live look at `Debugger::run_until`
+### How `Debugger::run_until` uses resumability
 
 Chapter 16's chapter is titled "the payoff of every earlier decision," but one
 piece of that payoff already exists in this codebase today. It is worth
@@ -1884,7 +1865,7 @@ Written as a chain, it is seven calls deep: `end_of_line` →
 code. What follows is what happens
 when one of them isn't there at all.
 
-### The war story
+### Debugging the missing sync interrupt
 
 Here's the discovery [`DESIGN.md`](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §4 documents under a dated implementation
 note, and it's worth telling as what it actually was: a debugging session
@@ -2688,22 +2669,11 @@ stack frame first — the vector target, or the instruction that was
 
 ## What's next
 
-Every device this course has built so far — the CPU, the bus, the PIA's
-Cx1 latch — has been necessary but, until this week, silent: correct
-values with no clock driving them into view. `run_field` is what turns
-"correct" into "alive," and every remaining chapter assumes it's running
-underneath. From here on, "the machine" means something that ticks.
+`run_field` supplies the timing assumed by the remaining device chapters.
 
-Chapter 7 starts Part III, video, and it starts by asking the question this
-chapter deliberately left unopened: what does `render_scanline` — called
-every single line, right after `hsync`, quoted but never explained in §6.5
-— actually *do*? You already know precisely when it runs and how often,
-which is more than half of what a video chapter usually has to establish
-before it can begin.
+Chapter 7 begins the video path by implementing `render_scanline`, which this
+chapter schedules once per line.
 
-The answer has a surprise in it. The CoCo 3 BASIC screen you are about to
-reproduce is not drawn by the GIME's flagship native video hardware at all.
-It is the old MC6847 VDG's text mode, faithfully imitated by a chip that
-replaced it — one more example, after the SAM strobes of Chapter 5 and the
-legacy PIA interrupt path of this week, of the machine's history outliving
-its successor silicon.
+The initial CoCo 3 BASIC screen uses the GIME's compatibility implementation
+of the MC6847 VDG text mode. Chapter 7 follows that path before introducing
+native GIME video.

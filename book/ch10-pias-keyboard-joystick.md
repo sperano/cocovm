@@ -1,29 +1,14 @@
 # Chapter 10 — The PIAs, the Keyboard Matrix, and the Joystick ADC-by-Comparator
 
-*Week 10. Goal: understand the chip that mediates almost all CoCo I/O. Parts
-I–III gave you a CPU, a bus, and a GIME that can paint a screen — an
-impressive machine that still can't hear you. Every key pressed and every
-joystick wiggle on a real CoCo passes through a pair of 1977-vintage
-parallel-port chips before the CPU ever sees it, and one of those chips also
-happens to generate the interrupt that keeps stock BASIC's idle loop alive.
-This week you finally deliver on the promise made in Chapter 1: reading a PIA
-data register clears an interrupt flag, and that single fact is why
-`Bus::read` takes `&mut self`. By the end you'll be able to trace a
-keypress from a finger on a keycap to a character on the screen, and explain
-why the CoCo's "joystick port" contains no analog-to-digital converter at
-all.*
+*Week 10. Goal: understand the PIAs that mediate most CoCo I/O. You will
+trace a keypress through the keyboard matrix, follow interrupt side effects
+through `Bus::read`, and see how software measures a joystick with a DAC and
+a comparator instead of an analog-to-digital converter.*
 
 ---
 
-Nine weeks in, the emulator has an odd asymmetry. It can execute
-every 6809 instruction, resolve every indexed addressing mode, decode a
-64K address space through an MMU, keep time to the scanline, and paint a
-raster in half a dozen video modes. What it cannot do is notice that a
-human being exists. Everything built so far flows outward: bytes become
-pixels, cycles become fields. Nothing flows in.
-
-This week reverses the arrow, and the chip that does the reversing is
-almost comically humble compared to the GIME. The MC6821 has no video
+The emulator can now run software and paint its output, but it cannot yet
+accept input. The MC6821 is modest beside the GIME. It has no video
 scanout, no memory management, no timer, no palette. It has sixteen
 pins of general-purpose parallel I/O, four registers, and a
 single genuinely clever trick involving a bit that decides, instruction
@@ -2120,7 +2105,7 @@ not a mistake in the test. Once you've confirmed the failures match, revert
 with an exact `Edit` back to `==` (don't `git checkout` — that's a shared
 path) and confirm `git status` is clean.
 
-**10.3 — Add a third joystick axis mode (build).** `Joysticks` currently
+**10.3 — Add a normalized host-input helper (build).** `Joysticks` currently
 models exactly two ports × two axes, matching the CoCo's two DE-9 joystick
 ports. Add a `set_axis_from_mouse`-style helper (name it what you like)
 that takes a normalized `f32` in `[-1.0, 1.0]` and converts it to the 0–63

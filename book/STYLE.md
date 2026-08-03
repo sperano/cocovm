@@ -2,10 +2,13 @@
 
 This file governs the prose of every chapter in `book/`. It exists because the
 first drafts read like lecture notes — technically dense, but compressed to the
-point of being tiring. The target register is an O'Reilly-quality technical
-book: a knowledgeable author writing for a professional audience, in full
-sentences, with room to breathe. Expansion means richer explanation, not
-padding.
+point of being tiring. The target is the clarity and momentum of a first-rate,
+project-driven technical book. *Crafting Interpreters* is the touchstone:
+concrete examples, careful sequencing, short declarative sentences, and enough
+personality to sustain a long technical argument. This is a target for the
+reading experience, not a license to imitate another author's wording, jokes,
+chapter templates, or recurring devices. Expansion means richer explanation,
+not padding.
 
 ## The audience
 
@@ -53,6 +56,35 @@ for pleasure as much as for learning.
 - **Explain like the reader is smart but new.** Never hand-wave with "simply"
   or "just"; never assume graphics, DSP, or emulation vocabulary that hasn't
   been introduced. Introduce a term in italics once, then use it plainly.
+
+## Rhythm and restraint
+
+- **Prefer explanation to performance.** State the fact, show the mechanism,
+  and let the consequence land. Do not append a sentence that merely announces
+  that the preceding material was surprising, satisfying, important, or
+  elegant.
+- **Earn the flourish.** A short rhetorical sentence can punctuate a section,
+  but not every paragraph. As a working limit, use at most one conspicuous
+  flourish per subsection. Remove it when the example already supplies the
+  emphasis.
+- **Keep one governing image.** Use the book's concrete vocabulary—state,
+  cycles, addresses, fields, and device boundaries—before reaching for a
+  metaphor. Do not mix wires, seams, arrows, currents, threads, ladders, and
+  archaeology in the same explanation.
+- **Vary sentence length deliberately.** Use short declarative sentences for
+  conclusions and longer sentences for qualifications. Split sentences that
+  carry more than one turn of argument. Avoid chains of clauses joined by em
+  dashes.
+- **Demonstrate importance.** Replace "this matters because" with an example,
+  a failure mode, a test, or a later use whenever one is available. Give the
+  reader evidence before the conclusion.
+- **Trust the reader.** Do not repeat a claim in three forms, narrate an
+  obvious transition, or explain what emotion an example should produce. Cut
+  throat-clearing such as "it is worth noting," "take a moment," and "here is
+  the part to remember" unless it changes how the material should be read.
+- **Use second person for actions, not reactions.** Tell the reader where to
+  look, what to run, or what to predict. Do not tell the reader what will feel
+  obvious, pleasant, satisfying, or surprising.
 
 ## Structure conventions (keep these)
 
