@@ -7,8 +7,7 @@ use crate::font6847::{MC6847_FONT, MC6847T1_FONT};
 
 use super::{
     BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, CELL_H, CELL_W, COLS, FB_H, FB_W, PALETTE_LEN, ROWS,
-    TEXT_BG_INDEX,
-    TEXT_FG_INDEX, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, paint_px,
+    TEXT_BG_INDEX, TEXT_FG_INDEX, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, paint_px,
 };
 
 /// Number of glyphs in the font (VDG codes $00–$3F).

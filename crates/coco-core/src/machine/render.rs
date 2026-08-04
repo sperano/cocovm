@@ -43,7 +43,7 @@ impl Machine {
             return;
         };
         if row >= raster::CANVAS_H {
-            return; // blanking lines 240..262
+            return; // blanking lines 243..262
         }
         if scan.legacy {
             self.paint_legacy_scanline(row);
@@ -170,7 +170,7 @@ impl Machine {
 
     /// Render one video field into `framebuffer` at field end. Only the CoCo
     /// 1/2 renders here — a whole-frame snapshot at the fixed VDG geometry
-    /// (those machines have their own raster; the 640×240 canvas is a CoCo 3
+    /// (those machines have their own raster; the 744×243 canvas is a CoCo 3
     /// GIME artefact). Every CoCo 3 field — GIME-native or legacy — was
     /// already painted line by line ([`Machine::render_scanline`]) and is
     /// complete by the time the field wraps.

@@ -5,8 +5,7 @@
 use coco_core::gime::init0;
 use coco_core::video::{
     AlphaGenerator, BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN,
-    SCREEN_LEN,
-    TEXT_BG_INDEX, TEXT_FG_INDEX, render_text,
+    SCREEN_LEN, TEXT_BG_INDEX, TEXT_FG_INDEX, render_text,
 };
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
@@ -210,7 +209,10 @@ fn semigraphics4_renders_2x2_color_blocks() {
     let quad_y = CELL_H / 2;
     // Upper-left quadrant: lit → SG_COLOR.
     assert_eq!(px(&fb, BORDER_X, BORDER_TOP), SG_COLOR);
-    assert_eq!(px(&fb, BORDER_X + quad_x - 1, BORDER_TOP + quad_y - 1), SG_COLOR);
+    assert_eq!(
+        px(&fb, BORDER_X + quad_x - 1, BORDER_TOP + quad_y - 1),
+        SG_COLOR
+    );
     // Upper-right quadrant: unlit → SG_OFF.
     assert_eq!(px(&fb, BORDER_X + quad_x, BORDER_TOP), SG_OFF);
     // Lower-left quadrant: unlit → SG_OFF.

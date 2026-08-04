@@ -6,6 +6,7 @@
 use coco_core::MonitorType;
 use coco_core::gime::{GIME, vmode};
 use coco_core::gime_video::render_field;
+use coco_core::raster::WIDE_BORDER_X;
 use coco_core::video::BYTES_PER_PIXEL;
 
 fn px(fb: &[u8], fb_w: usize, x: usize, y: usize) -> [u8; 4] {
@@ -119,13 +120,13 @@ fn render_text_routes_through_composite_decode() {
     let (fb_w, _) = render_field(&g, &ram, false, &mut fb);
 
     // 'A' row 0 is 0x10: native pixel 3 lit -> foreground (palette reg 1).
-    // 40 columns is a wide canonical mode: xscale 2, no side border, body
-    // starts at canvas row 25 (LPF=%00).
+    // 40 columns is a wide canonical mode: xscale 2 behind the 52 px
+    // wide-mode border, body starts at canvas row 25 (LPF=%00).
     let expected_fg = g.color(0x01);
     assert_ne!(
         expected_fg,
         GIME::rgb_color(0x01),
         "test is only meaningful if composite and RGB decode differ here"
     );
-    assert_eq!(px(&fb, fb_w, 3 * 2, 25), expected_fg);
+    assert_eq!(px(&fb, fb_w, WIDE_BORDER_X + 3 * 2, 25), expected_fg);
 }

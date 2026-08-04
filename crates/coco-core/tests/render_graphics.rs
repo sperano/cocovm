@@ -73,7 +73,11 @@ fn two_color_unpacks_msb_first_with_border() {
 
     assert_eq!(px(&fb, 0, 0), BD, "corner is border");
     assert_eq!(px(&fb, BORDER_X, BORDER_TOP), C1, "MSB pixel = colour 1");
-    assert_eq!(px(&fb, BORDER_X + 1, BORDER_TOP), C0, "next pixel = colour 0");
+    assert_eq!(
+        px(&fb, BORDER_X + 1, BORDER_TOP),
+        C0,
+        "next pixel = colour 0"
+    );
 }
 
 #[test]
@@ -115,7 +119,9 @@ fn mismatched_v_and_gm_pairing_follows_v_for_vertical_cadence() {
     render_graphics(&data, &mode, &[C0, C1], BD, &mut fb);
 
     let row_pixels = |fb: &[u8], y: usize| -> Vec<[u8; 4]> {
-        (0..8).map(|x| px(fb, BORDER_X + x, BORDER_TOP + y)).collect()
+        (0..8)
+            .map(|x| px(fb, BORDER_X + x, BORDER_TOP + y))
+            .collect()
     };
 
     for row in 0..mode.rows {

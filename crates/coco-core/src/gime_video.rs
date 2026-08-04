@@ -9,7 +9,7 @@
 //! Unlike the CoCo-compatible modes, GIME-native scanout addresses *physical*
 //! RAM directly — the vertical offset registers give the start address and the
 //! MMU is bypassed (SEB Unravelled II). Rendering is per scanline into the
-//! canonical 640×240 raster (`raster.rs`, Option B): [`paint_scanline`] paints
+//! canonical 744×243 raster (`raster.rs`, Option B): [`paint_scanline`] paints
 //! one canvas row from the LIVE registers plus the per-field latched state in
 //! [`FieldScan`], so mid-frame register writes take effect on the next line —
 //! except the field-latched group ($FF9D/$FF9E base, $FF9C smooth-scroll
@@ -21,7 +21,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::font_gime::{GIME_FONT, GLYPH_ROWS};
 use crate::gime::{self, GIME, hoff, vmode, vres};
-use crate::raster::{CANVAS_H, CANVAS_W, NON_WIDE_ACTIVE_W, NON_WIDE_BORDER_X, vertical_window};
+use crate::raster::{
+    CANVAS_H, CANVAS_W, NON_WIDE_ACTIVE_W, NON_WIDE_BORDER_X, WIDE_ACTIVE_W, WIDE_BORDER_X,
+    vertical_window,
+};
 use crate::video::{BYTES_PER_PIXEL, PALETTE_LEN};
 
 /// Character cell width in pixels (fixed by the 8-bit font rows).
@@ -53,8 +56,8 @@ const ROW_FETCH_WRAP: usize = 0x100;
 
 /// Mask for the HRES field's low bit ($FF99 bit 2): the "wide" flag in
 /// MAME's pixel path (`render_scanline`: `wide = !legacy && (ff99 & 0x04)`).
-/// Wide modes fill the full 640 canvas px with no border; non-wide modes
-/// fill the centre 512. (MAME's `update_geometry` tests bit 3 instead, but
+/// Wide modes fill the centre 640 canvas px, non-wide modes the centre
+/// 512; the rest is border. (MAME's `update_geometry` tests bit 3 instead, but
 /// only for field-sync timing — the emitted pixel widths follow bit 2.)
 const WIDE_HRES_MASK: usize = 0x01;
 
@@ -196,20 +199,18 @@ fn in_active_rows(g: &GIME, row: usize) -> bool {
 
 /// Fill a body row's side borders per the LIVE wide flag ($FF99 HRES low
 /// bit), returning the active-area `(x0, width)` slice bounds within it.
-/// Wide modes fill the full `CANVAS_W` with no border; non-wide modes leave
-/// the border strips.
+/// Wide modes get a `WIDE_BORDER_X` strip each side of their 640 px body,
+/// non-wide modes a `NON_WIDE_BORDER_X` strip around 512 px.
 fn paint_side_borders(g: &GIME, row_px: &mut [u8], border: [u8; 4]) -> (usize, usize) {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
     let wide = hres & WIDE_HRES_MASK != 0;
     let (x0, active_w) = if wide {
-        (0, CANVAS_W)
+        (WIDE_BORDER_X, WIDE_ACTIVE_W)
     } else {
         (NON_WIDE_BORDER_X, NON_WIDE_ACTIVE_W)
     };
-    if !wide {
-        fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
-        fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
-    }
+    fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
+    fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
     (x0, active_w)
 }
 
@@ -391,7 +392,7 @@ fn paint_graphics_row(
 }
 
 /// Render a full GIME-native field into `fb` (resized to the canonical
-/// 640×240) from the CURRENT register latch — the whole-field equivalent of
+/// 744×243) from the CURRENT register latch — the whole-field equivalent of
 /// stepping [`paint_scanline`] over every visible row. Headless tests poke
 /// registers and call this; the machine loop instead paints line by line so
 /// mid-frame changes split the raster. Returns the canvas dimensions.

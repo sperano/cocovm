@@ -9,7 +9,7 @@
 //! the video registers.
 
 use coco_core::gime::{GIME, vmode};
-use coco_core::raster::{CANVAS_H, CANVAS_W};
+use coco_core::raster::{CANVAS_H, CANVAS_W, WIDE_BORDER_X};
 use coco_core::video::BYTES_PER_PIXEL;
 use coco_core::{Machine, MachineConfig};
 
@@ -91,18 +91,18 @@ fn palette_write_mid_field_recolors_only_lines_below_it() {
     let fb = &m.framebuffer;
     let split = SPLIT_LINE as usize;
     assert_eq!(
-        px(fb, 0, split - 1),
+        px(fb, WIDE_BORDER_X, split - 1),
         GIME::rgb_color(0x01),
         "body above the split keeps the old palette"
     );
     assert_eq!(
-        px(fb, 0, split),
+        px(fb, WIDE_BORDER_X, split),
         GIME::rgb_color(0x02),
         "the split line onward has the new palette"
     );
     // Both orders: the same field shows both colours at once.
-    assert_eq!(px(fb, 0, 30), GIME::rgb_color(0x01));
-    assert_eq!(px(fb, 0, 200), GIME::rgb_color(0x02));
+    assert_eq!(px(fb, WIDE_BORDER_X, 30), GIME::rgb_color(0x01));
+    assert_eq!(px(fb, WIDE_BORDER_X, 200), GIME::rgb_color(0x02));
 }
 
 #[test]
@@ -123,14 +123,14 @@ fn video_base_write_mid_field_waits_for_the_next_field() {
     finish_field(&mut m);
     let marker_canvas_row = 25 + MARKER_ROW;
     assert_eq!(
-        px(&m.framebuffer, 0, marker_canvas_row),
+        px(&m.framebuffer, WIDE_BORDER_X, marker_canvas_row),
         GIME::rgb_color(5),
         "mid-field base write must NOT retarget this field (MAME new_frame)"
     );
 
     finish_field(&mut m);
     assert_eq!(
-        px(&m.framebuffer, 0, marker_canvas_row),
+        px(&m.framebuffer, WIDE_BORDER_X, marker_canvas_row),
         GIME::rgb_color(7),
         "the next field latches the new base"
     );
@@ -155,12 +155,12 @@ fn mode_switch_mid_field_splits_text_and_graphics() {
 
     let fb = &m.framebuffer;
     assert_eq!(
-        px(fb, 0, 30),
+        px(fb, WIDE_BORDER_X, 30),
         GIME::rgb_color(0),
         "graphics decode above the split (zeroed RAM → palette 0)"
     );
     assert_eq!(
-        px(fb, 0, SPLIT_LINE as usize + 1),
+        px(fb, WIDE_BORDER_X, SPLIT_LINE as usize + 1),
         GIME::rgb_color(2),
         "text decode below the split"
     );
