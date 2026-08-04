@@ -189,7 +189,7 @@ this concrete. Here is the whole thing:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:22-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L22-L44).) The toast at the
+([`crates/coco-egui/src/chrome/status_bar.rs:16-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L16-L38).) The toast at the
 end is a conditional widget, not a label that gets shown and hidden:
 whether the bar ends with a toast is decided fresh, sixty times a second,
 by asking `toast_message()`. The first two entries, `keyboard_status` and
@@ -210,7 +210,7 @@ are where the conditional-widget idea gets interesting. Each one is written like
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:121-126`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L121-L126).) The `cart_icon`
+([`crates/coco-egui/src/chrome/status_bar.rs:118-123`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L118-L123).) The `cart_icon`
 call ahead of the label is one of twelve small device silhouettes the bar
 paints from `Painter` primitives
 ([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the

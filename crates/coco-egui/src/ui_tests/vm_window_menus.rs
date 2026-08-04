@@ -99,24 +99,29 @@ fn function_key_hotkeys_toggle_aspect_help_and_keyboard_mode() {
 
 /// The status bar's keyboard entry is the menu button for the keyboard menu
 /// (`CocoApp::keyboard_menu_ui`), so the mode is changed from the same entry
-/// that names the device. Its items are only in the accessibility tree while
-/// the popup is open, so an exact "Symbolic"/"Key layout (F10)" match is
-/// unambiguous — and "Keyboard" is the entry alone, the menu bar having no
-/// Keyboard menu of its own.
+/// that shows the current mode — the entry's label IS the mode name, so it
+/// reads "Positional" at boot and "Symbolic" after the switch. While the
+/// popup is open, the entry and the selected menu item share the current
+/// mode's label — this test stays unambiguous only because it clicks the
+/// entry with the popup closed and, once open, clicks labels the entry
+/// doesn't carry. A test that needs the entry while the popup is up should
+/// go through the icon's distinct "Keyboard menu" handle instead (as the
+/// sibling test below does).
 #[test]
 fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     let mut harness = boot_harness();
 
-    click(&mut harness, "Keyboard");
+    click(&mut harness, "Positional");
     click(&mut harness, "Symbolic");
     assert!(harness.state().kb_mode == KbMode::Symbolic);
 
-    click(&mut harness, "Keyboard");
+    // The entry now carries the new mode's name.
+    click(&mut harness, "Symbolic");
     click(&mut harness, "Key layout (F10)");
     assert!(harness.state().show_kbd_help);
 
     // The same menu item toggles the window closed again.
-    click(&mut harness, "Keyboard");
+    click(&mut harness, "Symbolic");
     click(&mut harness, "Key layout (F10)");
     assert!(!harness.state().show_kbd_help);
 }
