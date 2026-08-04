@@ -24,7 +24,7 @@ impl CocoApp {
     /// display this frame: [`Self::window_ui`] (full native window) and the
     /// manager's `ViewportClass::Embedded` fallback both call this before
     /// drawing anything, so a VM keeps emulating even in the degraded
-    /// single-window case (`docs/plan-machine-persistence.md` "one native
+    /// single-window case ( "one native
     /// window per running VM").
     pub(crate) fn step_emulation(&mut self, ctx: &egui::Context) {
         self.handle_input(ctx);
@@ -102,7 +102,7 @@ impl CocoApp {
     /// manager's `ViewportClass::Embedded` fallback can show just this —
     /// without the rest of [`Self::draw_chrome`] — inside a plain
     /// `egui::Window` instead of a full-window `CentralPanel`
-    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// ( "one native window per running
     /// VM"). Requires [`Self::step_emulation`] to have already run this
     /// frame (it uploads `self.texture`, `unwrap`ped below).
     pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
@@ -140,7 +140,7 @@ impl CocoApp {
     /// the manager's per-VM immediate viewport (`manager.rs`'s
     /// `draw_running_vms`, `ViewportClass::Default`/native case) can call it
     /// directly on a VM it owns, drawing this same full chrome inside its own
-    /// native OS window (`docs/plan-machine-persistence.md` "one native
+    /// native OS window ( "one native
     /// window per running VM"). The `eframe::App` impl below (test scaffolding
     /// only — see its doc comment in `app.rs`) just forwards here.
     pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {

@@ -1,4 +1,4 @@
-//! Interactive debugger UI (`docs/plan-debugger.md` §3): Controls, Registers,
+//! Interactive debugger UI: Controls, Registers,
 //! Disassembly, Memory, Stack, and Hardware-state panels, toggled with F11
 //! (see `main.rs`'s `handle_input` — F9/F10/F12 are already taken).
 //!
@@ -15,7 +15,7 @@
 //! needing a second "why did we stop"
 //! flag. Every read view (disassembly, memory, stack) goes through
 //! [`coco_core::SystemBus::peek`] — never `read` — so simply having the
-//! debugger open can never perturb PIA/GIME/cart state (`docs/plan-debugger.md`
+//! debugger open can never perturb PIA/GIME/cart state (
 //! §2, "side-effect-free reads").
 //!
 //! Widgets are editable only while paused (`ui.add_enabled(!running, ..)`);
@@ -205,7 +205,7 @@ impl DebuggerPanel {
 
     /// Step Over: temp-breakpoints past a call instruction (JSR/BSR/LBSR) so
     /// the callee runs to completion in one step; falls back to Step In for
-    /// every other opcode (`docs/plan-debugger.md` §3).
+    /// every other opcode.
     fn step_over(&mut self, machine: &mut Machine) {
         let pc = machine.cpu.pc;
         let insn = disassemble(&mut |a| machine.bus.peek(a), pc);
@@ -218,7 +218,7 @@ impl DebuggerPanel {
     }
 
     /// Step Out: run until S rises past its value at the start of the call
-    /// (`docs/plan-debugger.md` §3) — i.e. until the enclosing subroutine's
+    /// — i.e. until the enclosing subroutine's
     /// RTS has popped the return address. Checked after every real
     /// instruction, so (unlike Step Over/Run-to-Cursor) this does not chain
     /// through `Debugger::run_until` and consequently does not stop early for

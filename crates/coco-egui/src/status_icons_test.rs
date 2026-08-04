@@ -89,8 +89,7 @@ fn reel_advances_forward_with_playback_position() {
 #[test]
 fn reel_forward_accumulation_past_tau_wraps_via_rem_euclid() {
     // 45 bytes at REEL_ANGLE_PER_BYTE (TAU/40) is more than one full turn —
-    // the previously untested forward-wrap counterpart to the rewind case
-    // below.
+    // the forward-wrap counterpart to the rewind case below.
     let mut reel = TapeReel::default();
     let raw = 45.0 * REEL_ANGLE_PER_BYTE;
     assert!(

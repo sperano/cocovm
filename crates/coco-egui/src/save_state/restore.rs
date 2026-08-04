@@ -27,7 +27,7 @@ impl CocoApp {
     /// [`CocoApp::machine`] wholesale and re-syncing every piece of
     /// frontend state a snapshot can't carry on its own — see
     /// [`Self::apply_restored_machine`]. Version/magic/media errors surface
-    /// verbatim (by design, per `docs/plan-save-states.md` — they're already
+    /// verbatim (by design — they're already
     /// user-showable). Deliberately does NOT touch the window title: the
     /// caller's `egui::Context` may belong to a different viewport than the
     /// machine's own window (the manager's resume path runs on the MANAGER
@@ -70,7 +70,7 @@ impl CocoApp {
 
     /// Resolve a decoded payload's [`MediaRefs`] into [`MediaSources`] for
     /// [`snapshot::restore`], plus warnings for every hash mismatch found
-    /// along the way (per `docs/plan-save-states.md`: "load with warning").
+    /// along the way ("load with warning").
     /// A referenced file that's simply missing/unreadable is left absent
     /// from the returned [`MediaSources`] rather than erroring here —
     /// [`snapshot::restore`] itself collects every still-missing reference
@@ -92,7 +92,7 @@ impl CocoApp {
         // Every loop below caps at this build's own `DRIVE_COUNT` even though
         // `media.*` is a `Vec` that a hand-edited (or genuinely newer-schema)
         // payload could make longer: `MediaSources`' arrays are fixed at
-        // that size (`docs/plan-save-states.md` phase-5 review — indexing
+        // that size ( phase-5 review — indexing
         // past it would panic), and any entry beyond it is separately
         // rejected with a proper [`snapshot::SnapshotError::InvalidPayload`]
         // by [`snapshot::restore`] right after this function returns, so

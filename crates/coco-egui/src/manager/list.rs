@@ -157,7 +157,7 @@ impl ManagerApp {
     /// current multi-selection; the bulk menu
     /// ([`Self::draw_bulk_row_context_menu`]) when `i` is one of *several*
     /// selected rows. Either way, right-click deliberately never moves the
-    /// selection cue itself (user decision 2026-07-23) — only the
+    /// selection cue itself — only the
     /// single-row menu's "Show config" does, because showing the detail
     /// pane *is* selecting.
     fn draw_row_context_menu(&mut self, response: egui::Response, i: usize) {
@@ -328,7 +328,7 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
 /// the emulator's own display corrects to (framebuffer pixels aren't
 /// square, so the texture's raw aspect would stretch the picture). It's one
 /// extra quad reusing an already-uploaded texture, not an extra upload
-/// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM" bullet).
+///.
 /// A paused VM's texture simply stops changing, so the thumbnail freezes on
 /// its last frame with no special casing needed. With no texture — a
 /// stopped machine, or a VM whose first frame hasn't uploaded one yet —

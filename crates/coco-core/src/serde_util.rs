@@ -1,7 +1,7 @@
 //! Small serde helpers for shapes serde's own derive/std impls don't cover
 //! directly — currently just fixed-size byte arrays wider than serde's
 //! built-in array impl ceiling (`[T; 1..=32]`; see `ssc.rs`'s
-//! `ram: [u8; 512]`, `docs/plan-save-states.md`).
+//! `ram: [u8; 512]`).
 
 use serde::{Deserializer, Serializer};
 

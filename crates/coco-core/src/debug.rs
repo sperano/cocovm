@@ -1,12 +1,12 @@
 //! Debug core: the [`Debugger`] the frontend owns and drives, plus the
-//! side-effect-free primitives the machine exposes for it (`docs/plan-debugger.md`
+//! side-effect-free primitives the machine exposes for it (
 //! §2). The [`Debugger`] holds PC breakpoints and memory watchpoints, runs the
 //! machine one instruction at a time via [`Machine::step_instruction`] until a
 //! stop condition trips ([`Debugger::run_until`]), and keeps an instruction
 //! trace ring for "how did I get here" / MAME trace-diffing.
 //!
 //! The design deliberately leaves room for the deferred features
-//! (`docs/plan-debugger.md` "Explicitly deferred"): conditional breakpoints hang
+//!: conditional breakpoints hang
 //! off [`Breakpoint`], watch expressions off [`Watchpoint`].
 
 use std::collections::{HashMap, VecDeque};
@@ -42,7 +42,7 @@ pub struct WatchHit {
 /// [`crate::SystemBus`] for the duration of a [`Debugger::run_until`]. Kept
 /// minimal so the per-access bus check is a single map lookup, and installed as
 /// `None` when empty so a debugged run with no watchpoints keeps the bus's fast
-/// path (`docs/plan-debugger.md` §2).
+/// path.
 #[derive(Clone, Default)]
 pub struct WatchTable {
     entries: HashMap<u16, WatchDirs>,

@@ -5,8 +5,7 @@
 //! cartridge register side effects, and no watchpoint hook. Devices whose real
 //! read mutates return a last-latched value (GIME status registers, via their
 //! public `*_pending` fields) or open bus (most cartridge I/O). The debugger UI
-//! uses this for its disassembly, memory, and stack views (`docs/plan-debugger.md`
-//! §2).
+//! uses this for its disassembly, memory, and stack views.
 
 use crate::config::MachineVariant;
 use crate::gime;

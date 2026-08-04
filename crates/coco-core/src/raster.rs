@@ -1,4 +1,4 @@
-//! Canonical 640×240 raster geometry (Option B, `docs/plan-per-scanline-video.md`).
+//! Canonical 640×240 raster geometry (Option B).
 //!
 //! One fixed-size RGBA canvas for every GIME-native mode, matching MAME's
 //! coco3 visible window (`coco3.cpp` `set_raw(..., 912, 0, 640, 262, 1, 240)`).

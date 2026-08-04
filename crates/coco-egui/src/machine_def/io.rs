@@ -50,7 +50,7 @@ const KNOWN_SECTIONS: &[(&str, &[&str])] = &[
 /// Log a `tracing::warn` naming `path` and the key for every TOML key not in
 /// the known schema, at the top level and one level into each known
 /// section. Unknown keys are forward-compat, not fatal — the file still
-/// loads (`plan-machine-persistence.md` "Decisions").
+/// loads .
 fn warn_unknown_keys(table: &toml::Table, path: &Path) {
     check_known_keys(table, TOP_LEVEL_KEYS, path, "");
     for &(section, known) in KNOWN_SECTIONS {
@@ -159,9 +159,8 @@ fn load_one(path: &Path) -> Result<MachineDef, String> {
 /// machines yet), but ANY other problem — an unreadable directory, an
 /// unreadable file, bad TOML, an unsupported schema, a config that fails
 /// [`super::MachineDef::to_machine_config`]'s call to `MachineConfig::validate`
-/// — fails the whole load: a config problem is fatal at startup by design
-/// (user decision 2026-07-19, superseding the earlier per-row error-badge
-/// behavior), never a silently degraded machine list.
+/// — fails the whole load: a config problem is fatal at startup by design, never
+/// a silently degraded machine list.
 pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,

@@ -11,7 +11,7 @@ use super::{Cartridge, IO_OPEN_BUS};
 /// ⚠ This address collides with the DriveWire Becker port's data register.
 /// MAME resolves it by intercepting Becker *ahead* of the cartridge decode,
 /// shadowing the GMC's PSG; when the Becker port lands here
-/// (`docs/plan-drivewire-becker.md`), the bus must keep that precedence and
+///, the bus must keep that precedence and
 /// the UI must refuse to enable both at once.
 const GMC_PSG_REG: u16 = 0xFF41;
 
@@ -57,7 +57,7 @@ impl GamesMasterCartridge {
 
     /// Restore-path-only: re-inject the banked ROM image after a snapshot
     /// restore — delegates to the inner [`BankedROMPak::reattach_image`]
-    /// (`docs/plan-save-states.md`).
+    ///.
     pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
         self.rom.reattach_image(bytes)
     }

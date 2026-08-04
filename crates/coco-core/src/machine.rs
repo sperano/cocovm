@@ -71,7 +71,7 @@ pub struct Machine {
     /// mode-dependent: each renderer fills a native-size buffer and the frontend
     /// scales to fit (`video-output-architecture` Option A). Skipped: cheap to
     /// rebuild (it's just the render target), rebuilt to the legacy geometry by
-    /// [`Machine::after_restore`] (`docs/plan-save-states.md`).
+    /// [`Machine::after_restore`].
     #[serde(skip)]
     pub framebuffer: Vec<u8>,
     #[serde(skip)]
@@ -80,8 +80,7 @@ pub struct Machine {
     pub fb_height: u32,
     /// Scratch buffer for the VDG graphics video-RAM snapshot
     /// (`render_coco_graphics`), reused every field instead of reallocating.
-    /// Skipped: derived scratch, regrows on demand from the `Default` empty
-    /// `Vec` (`docs/plan-save-states.md`).
+    /// Skipped: derived scratch, regrows on demand from the `Default` empty `Vec`.
     #[serde(skip)]
     graphics_scratch: Vec<u8>,
     /// Stereo speaker samples on the oversampled grid
@@ -90,7 +89,7 @@ pub struct Machine {
     /// via [`Machine::take_audio`] and resamples to the host rate.
     /// Self-capping so headless use (tests, no audio sink) doesn't grow it
     /// unboundedly. Skipped: derived scratch, regrows on demand from the
-    /// `Default` empty `Vec` (`docs/plan-save-states.md`).
+    /// `Default` empty `Vec`.
     #[serde(skip)]
     audio_buffer: Vec<[f32; 2]>,
     /// `SystemBus::cycle_clock` at the start of the scanline being executed
@@ -194,7 +193,7 @@ impl Machine {
     }
 
     /// Restore-time fixups for every `#[serde(skip)]` field, after a
-    /// snapshot round-trip (`docs/plan-save-states.md`): the convention is
+    /// snapshot round-trip: the convention is
     /// that every skipped field is either rebuilt here or re-injected via an
     /// explicit `reattach_*`/`set_*` call. Safe to call before any ROM/media
     /// reattachment — this touches only derived scratch, never copyrighted
@@ -246,7 +245,7 @@ impl Machine {
 
     /// The scanline within the current field (`0..lines_per_field`) execution
     /// is currently parked at — the debugger's status bar and its "Step
-    /// Scanline" control (`docs/plan-debugger.md` §3) are the only consumers;
+    /// Scanline" control are the only consumers;
     /// everything inside the crate uses the private `line` field directly.
     pub fn current_scanline(&self) -> u32 {
         self.line

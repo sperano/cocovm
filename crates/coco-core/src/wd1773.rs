@@ -364,7 +364,7 @@ impl WD1773 {
     /// [`JVCDisk::write_byte`]/[`JVCDisk::read_bytes`] index straight into
     /// `data` with no bounds check of their own, so an out-of-range pair
     /// would panic the instant the transfer resumes
-    /// (`docs/plan-save-states.md`). Read Address/Write Track transfers
+    ///. Read Address/Write Track transfers
     /// never index `data` by `offset` at all (Read Address's `buf` is a
     /// fixed 6-byte reply built at dispatch time; Write Track lays sectors
     /// via [`JVCDisk::format_sector`], which computes its own bounded

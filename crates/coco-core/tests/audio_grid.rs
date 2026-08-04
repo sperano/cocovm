@@ -1,4 +1,4 @@
-//! The event-timestamped audio grid (`docs/plan-audio-pipeline.md`):
+//! The event-timestamped audio grid:
 //! sub-scanline DAC timing must land in the right grid slot, and a level
 //! pulse entirely inside one scanline — invisible to the old once-per-line
 //! point sampler, the digitized-PCM aliasing defect — must reach the grid.

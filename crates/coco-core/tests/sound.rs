@@ -1,7 +1,7 @@
 //! Speaker output path: DAC through the analog mux (SNDEN + SEL=00) and the
 //! always-connected single-bit sound (`DESIGN.md` §7; Tandy Service Manual mux
 //! table via MAME coco.cpp), probed through the event-timestamped stereo
-//! pipeline's mixer (`SystemBus::sound_probe`; `docs/plan-audio-pipeline.md`).
+//! pipeline's mixer (`SystemBus::sound_probe`).
 
 /// Generator step for probes; the internal sources here are all latches, so
 /// the value only feeds (absent) generator clocks.

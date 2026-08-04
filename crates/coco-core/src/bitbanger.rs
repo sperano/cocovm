@@ -102,8 +102,7 @@ pub trait PrinterSink {
     /// after a snapshot restore. Lets the save-state restore flow
     /// (`crate::snapshot::restore`) tell "print capture was active at save
     /// time, now stopped" apart from "print capture was never active", even
-    /// though both restore to functionally the same no-op sink
-    /// (`docs/plan-save-states.md`). Default: not that marker.
+    /// though both restore to functionally the same no-op sink. Default: not that marker.
     fn was_file_capture_stopped_by_restore(&self) -> bool {
         false
     }
@@ -120,8 +119,8 @@ impl PrinterSink for NoopSink {
 /// Marker sink `sink_serde::deserialize` installs when the snapshot recorded
 /// [`sink_serde::SinkState::FileCapture`]: behaves exactly like [`NoopSink`]
 /// (a restored file handle is frontend-owned and can't be reopened without
-/// frontend involvement — `docs/plan-save-states.md` "on restore, capture is
-/// simply stopped"), but is a distinct type so
+/// frontend involvement — "on restore, capture is simply stopped"), but is a
+/// distinct type so
 /// [`PrinterSink::was_file_capture_stopped_by_restore`] can report that
 /// capture *was* running, for the snapshot restore flow's standing notes.
 struct StoppedFileCaptureSink;
@@ -161,7 +160,7 @@ impl PrinterSink for CaptureSink {
     }
 }
 
-/// "Print to text file" sink (`docs/printer-plan.md` T2): appends every
+/// "Print to text file" sink: appends every
 /// decoded byte to a file. By default bytes are written unmodified —
 /// BASIC's line ending is a bare CR (`$0D`, `bitbanger-spec.md` "Framing")
 /// and a faithful capture keeps it, so a captured `LLIST` reads back
@@ -213,7 +212,7 @@ impl PrinterSink for FileSink {
         }
     }
 
-    /// `docs/plan-save-states.md`: "on restore, capture is simply stopped" —
+    /// "on restore, capture is simply stopped" —
     /// the open file handle is frontend-owned and doesn't survive a
     /// snapshot, but `sink_serde::deserialize` still needs to know a file
     /// capture *was* active so the paper/text distinction isn't lost on the
@@ -269,8 +268,7 @@ pub struct BitBanger {
     bytes_out: u64,
     /// The trait object is serialized through the small state enum in
     /// [`sink_serde`], not directly — the DMP-105/paper state must survive
-    /// a snapshot even though the sink itself doesn't own a serializable
-    /// shape (`docs/plan-save-states.md`).
+    /// a snapshot even though the sink itself doesn't own a serializable shape.
     #[serde(with = "sink_serde")]
     sink: Box<dyn PrinterSink>,
 }
@@ -356,7 +354,7 @@ impl BitBanger {
     }
 
     /// Attach a [`DMP105`](crate::dmp105::DMP105) interpreter as the live
-    /// sink (`docs/printer-plan.md` T4): same shape as
+    /// sink: same shape as
     /// [`Self::start_file_capture`], but returns a cloned
     /// [`DMP105Handle`] (the `CaptureSink` `Rc<RefCell<_>>` pattern) rather
     /// than nothing, since — unlike text capture — the frontend needs to
@@ -378,7 +376,7 @@ impl BitBanger {
 
     /// True if this `BitBanger` just came back from a snapshot restore whose
     /// sink was a live file capture at save time (`crate::snapshot::restore`'s
-    /// standing-notes step, `docs/plan-save-states.md`).
+    /// standing-notes step).
     pub fn capture_was_stopped_on_restore(&self) -> bool {
         self.sink.was_file_capture_stopped_by_restore()
     }
@@ -463,8 +461,7 @@ impl BitBanger {
 /// itself isn't `Serialize`/`Deserialize` (and shouldn't be — a serialized
 /// `Box<dyn PrinterSink>` would either need typetag machinery for a
 /// two-implementation seam or leak host file handles into the snapshot), so
-/// this maps it to and from the small [`SinkState`] enum instead
-/// (`docs/plan-save-states.md`).
+/// this maps it to and from the small [`SinkState`] enum instead.
 // `pub`, not `pub(crate)`: `PrinterSink` itself is public API (implemented
 // by `coco-egui`), and its `snapshot` method's return type must be at least
 // as visible as the trait or rustc's `private_interfaces` lint fires.
@@ -477,7 +474,7 @@ pub mod sink_serde {
     /// What actually needs to survive a snapshot, per live sink kind: a
     /// no-op sink and a file capture both restore to [`NoopSink`] (`FileSink`
     /// holds an open host file handle, frontend-owned — "on restore, capture
-    /// is simply stopped", `docs/plan-save-states.md`), while a DMP-105 sink
+    /// is simply stopped"), while a DMP-105 sink
     /// carries its whole interpreter/paper state across.
     #[derive(Serialize, Deserialize)]
     pub enum SinkState {

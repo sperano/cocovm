@@ -42,12 +42,12 @@ impl CpuSnapshot {
 }
 
 const WARMUP_STEPS: u32 = 200_000;
-/// The plan's acceptance bar (`docs/plan-save-states.md` "Acceptance"):
+/// The plan's acceptance bar:
 /// "a 1M-instruction trace.rs-style log from the restore point is
 /// identical to an unsnapshotted run."
 const LOCKSTEP_STEPS: u32 = 1_000_000;
 
-/// THE acceptance gate (`docs/plan-save-states.md` "Acceptance", phase 3
+/// THE acceptance gate ("Acceptance", phase 3
 /// spec item 1): boot on the real ROM, warm up well into BASIC's idle loop,
 /// save through the engine, restore into a fresh `Machine`, then run
 /// [`LOCKSTEP_STEPS`] (1M) instructions on both the original and the

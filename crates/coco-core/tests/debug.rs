@@ -1,6 +1,6 @@
 //! Debug core coverage: the resumable `step_instruction`/`run_field`
 //! equivalence, side-effect-free `peek`, and the `Debugger`'s breakpoints,
-//! watchpoints, and trace ring (`docs/plan-debugger.md` §2).
+//! watchpoints, and trace ring.
 
 use std::path::PathBuf;
 

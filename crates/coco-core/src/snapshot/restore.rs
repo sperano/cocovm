@@ -146,7 +146,7 @@ fn restore_system_rom(
 /// image (`from_bytes`/`new` reject an empty one), so their presence always
 /// means a `MediaRefs` entry was recorded and a source is required. A
 /// DeluxeRS232's EPROM is optional even at construction
-/// (`docs/plan-deluxe-rs232.md`: "the pak works ROM-less"), and that
+/// ("the pak works ROM-less"), and that
 /// optionality can't be recovered from the deserialized tree — `eprom` is
 /// itself `#[serde(skip)]` and always comes back `None` regardless of
 /// whether one was mounted. So a DeluxeRS232 only requires its source when

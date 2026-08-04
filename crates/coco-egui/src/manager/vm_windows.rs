@@ -28,7 +28,7 @@ fn vm_window_inner_size() -> egui::Vec2 {
 }
 
 impl ManagerApp {
-    /// One native OS window per running VM (`docs/plan-machine-persistence.md`
+    /// One native OS window per running VM (
     /// "DECIDED: in-process, one native window per running VM"): an
     /// immediate viewport per entry with a VM, keyed by a stable id derived
     /// from the slug so egui reuses the same OS window across frames instead

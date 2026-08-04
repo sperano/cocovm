@@ -1,5 +1,5 @@
 //! Phase-1 smoke tests for the serde derive pass over `Machine` and its
-//! whole device tree (`docs/plan-save-states.md`, `docs/plan-machine-persistence.md`).
+//! whole device tree.
 //! Not the real save-state format yet — that's a later phase, once the CBOR
 //! snapshot is wrapped in the container format the persistence plan
 //! describes. This just proves the derive pass itself is trace-faithful: a

@@ -326,7 +326,7 @@ fn default_clock() -> DWTime {
 /// `#[serde(default = "...")]` for [`DWServer::clock`]: matches
 /// [`DWServer::new`]'s own default (a closure has no serializable shape, so
 /// this is what a restored server falls back to until the frontend calls
-/// [`DWServer::set_clock`] again — `docs/plan-save-states.md`).
+/// [`DWServer::set_clock`] again .
 fn default_dw_clock() -> DWClock {
     Box::new(default_clock)
 }
@@ -345,7 +345,7 @@ fn checksum_of(sector: &[u8]) -> u16 {
 pub struct DWServer {
     /// Skipped: each mounted image can hold an open host `File` handle —
     /// remounted by path on restore via [`DWServer::reattach`]
-    /// (`docs/plan-save-states.md`).
+    ///.
     #[serde(skip)]
     drives: [Option<DWImage>; DRIVE_COUNT],
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
@@ -356,7 +356,7 @@ pub struct DWServer {
     hdbdos: bool,
     /// Skipped: a closure has no serializable shape. Restored to
     /// [`default_dw_clock`] until the frontend calls [`DWServer::set_clock`]
-    /// again (`docs/plan-save-states.md`).
+    /// again.
     #[serde(skip, default = "default_dw_clock")]
     clock: DWClock,
     sectors_read: u64,
@@ -417,7 +417,7 @@ impl DWServer {
     /// restore, WITHOUT clearing `dirty[drive]` (unlike [`DWServer::mount`])
     /// — the restored dirty flag is itself real machine state, not reset by
     /// remounting the same image the snapshot already had open
-    /// (`docs/plan-save-states.md`).
+    ///.
     pub fn reattach(&mut self, drive: usize, image: DWImage) {
         self.drives[drive] = Some(image);
     }

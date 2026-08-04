@@ -18,7 +18,7 @@ pub(crate) const fn machine_label(variant: MachineVariant) -> &'static str {
 }
 
 /// Per-variant default RAM size, used by the VM manager's "New…" dialog
-/// (`docs/coco12-plan.md` Phase 5).
+///.
 pub(crate) fn default_ram(variant: MachineVariant) -> MemorySize {
     match variant {
         MachineVariant::Coco3 => MemorySize::K512,

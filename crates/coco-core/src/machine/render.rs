@@ -17,7 +17,7 @@ impl Machine {
     }
 
     /// Paint the current scanline of the canonical raster (Option B,
-    /// `docs/plan-per-scanline-video.md`), called from [`Machine::end_of_line`]
+    ///), called from [`Machine::end_of_line`]
     /// at every line so mid-frame register writes take effect on the next line.
     ///
     /// At line 0 the per-field register group is latched (MAME `new_frame`):
@@ -238,7 +238,7 @@ impl Machine {
     /// MMU on CoCo 3) from that base — the same low-64K simplification as
     /// `render_coco_text`. The vertical cadence (RAM rows fetched) comes from
     /// the SAM V0-V2 bits: the GIME's own SAM-compat overlay on CoCo 3, the
-    /// primary `Sam` on CoCo 1/2 (`docs/coco12-plan.md` Phase 3).
+    /// primary `Sam` on CoCo 1/2.
     fn render_coco_graphics(&mut self) {
         self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;

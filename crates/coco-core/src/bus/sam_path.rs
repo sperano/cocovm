@@ -3,7 +3,7 @@
 //! separate ROM-window/I/O-page/MMU layers, so there's no need for
 //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
 //! touches `self.gime` — no MMU translate, no interrupt raises, no timer
-//! (`docs/coco12-plan.md` Phase 2; the field-loop gating that keeps it that
+//! (Phase 2; the field-loop gating that keeps it that
 //! way for `hsync`/`fs_*` is Phase 4).
 
 use crate::sam::SAMTarget;
@@ -18,7 +18,7 @@ impl SystemBus {
     /// Bounds-check a `SAM::map` RAM target against installed RAM. Unlike the
     /// GIME path (which masks/wraps into a smaller machine's high blocks),
     /// out-of-range plain-SAM RAM is just truncated for now: reads/writes
-    /// past the installed size fall off the bus (`docs/coco12-plan.md`).
+    /// past the installed size fall off the bus.
     pub(super) fn sam_ram_index(&self, phys: usize) -> Option<usize> {
         (phys < self.ram.len()).then_some(phys)
     }

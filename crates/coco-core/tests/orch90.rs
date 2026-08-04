@@ -1,6 +1,6 @@
 //! Orchestra-90/CC coverage: `$FF7A`/`$FF7B` DAC latch decode through the
 //! widened `$FF60-$FF7E` cartridge I/O window, the mux-independent mono mix
-//! (Tier 1, `docs/plan-orchestra-90.md`), MPI slot behaviour, and the
+//! Tier 1), MPI slot behaviour, and the
 //! autostart FIRQ boot path against the real `roms/coco3.rom`.
 
 use std::path::PathBuf;

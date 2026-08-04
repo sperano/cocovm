@@ -125,9 +125,7 @@ impl JoystickInputs {
             }
         };
         Self {
-            // Both ports off until opted in (user decision 2026-07-29,
-            // replacing the original right-stick-on-mouse default): a mouse
-            // silently driving the pots surprised more than it helped, and
+            // Both ports off until opted in: a mouse silently driving the
             // the Joysticks menu / manager form make enabling one a click.
             sources: [JoySource::None, JoySource::None],
             gilrs,

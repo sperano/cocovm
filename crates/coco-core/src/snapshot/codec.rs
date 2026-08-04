@@ -20,7 +20,7 @@ use super::{CONTAINER_MAGIC, CONTAINER_VERSION, HEADER_LEN, SCHEMA_VERSION};
 /// gzip's own length field is attacker-controlled and not to be trusted
 /// (a "decompression bomb": a tiny crafted file that inflates to gigabytes).
 /// 64 MiB comfortably covers today's real ceiling — 2 MB max RAM
-/// (`docs/plan-save-states.md` "2048K stock GIME") plus every other device's
+/// plus every other device's
 /// state, cassette capture buffers, and DMP-105 paper-feed scratch — with
 /// generous headroom for growth; nothing legitimate should ever come close.
 const MAX_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
