@@ -51,8 +51,16 @@ pub(crate) struct CocoApp {
     /// cpal output stream, resampler, and volume/mute state (`audio.rs`).
     pub(crate) audio: audio::AudioOutput,
     /// Letterboxed display rect from the last frame's `CentralPanel`, used to map
-    /// pointer position to joystick axes. One frame stale (see `drive_joysticks`).
+    /// pointer position to joystick axes and to gate the mouse fire buttons to
+    /// presses starting on the display. One frame stale (see `drive_joysticks`).
     pub(crate) display_rect: egui::Rect,
+    /// Layer `draw_display` drew the display on last frame: the background
+    /// layer for a full native window's `CentralPanel`, or the `egui::Window`'s
+    /// own layer in the manager's embedded fallback. Paired with `display_rect`
+    /// to gate the mouse fire buttons — a press whose topmost egui layer is
+    /// neither this nor bare panel landed on a popup/window floating over the
+    /// display (see `joy::press_began_on_display`).
+    pub(crate) display_layer: egui::LayerId,
     /// Whether the next inserted cartridge should tie CART* to Q (auto-run at
     /// power-up). Consulted at insert time, not retroactively — see
     /// `ROMPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
@@ -204,6 +212,7 @@ impl CocoApp {
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),
             display_rect: egui::Rect::NOTHING,
+            display_layer: egui::LayerId::background(),
             audio: audio::AudioOutput::new(),
             autostart_cart: true,
             cart_path: None,
