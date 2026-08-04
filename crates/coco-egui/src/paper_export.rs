@@ -1,4 +1,4 @@
-//! PNG/PDF export for the virtual fanfold paper (`docs/printer-plan.md` T6):
+//! PNG/PDF export for the virtual fanfold paper:
 //! pure byte-producing functions consumed by `paper_view.rs`'s save-dialog
 //! wiring. Kept separate from the egui-free `paper_render.rs` rasterizer
 //! (T5) so that module stays free of an `image`/PDF dependency, per its own

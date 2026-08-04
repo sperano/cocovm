@@ -1,4 +1,4 @@
-//! Phase 6 (first slice, `docs/coco12-plan.md`): a CoCo 2 running real
+//! Phase 6 (first slice,): a CoCo 2 running real
 //! Extended Color BASIC 1.1 + Color BASIC 1.2 ROMs boots to the sign-on
 //! banner and evaluates `PRINT 2+2` — the milestone that proves the SAM
 //! primary memory map (Phase 2), the VDG-native colour/mode dispatch (Phase
@@ -24,7 +24,7 @@ fn coco2_boots_extended_color_basic_and_evaluates_print() {
 
     // The 6809 hardware vectors always read through the SAM's $FFE0-$FFFF ->
     // $BFE0-$BFFF mirror onto Color BASIC's own ROM, regardless of the SAM's
-    // TY/M1 state (`docs/coco12-plan.md`; `sam.rs::VECTOR_MIRROR_BASE`). Check
+    // TY/M1 state. Check
     // the reset vector explicitly: it must match the last two bytes of the
     // real bas12.rom dump, not just "some" value.
     let expected_reset_hi = bas_rom[BAS_VECTOR_OFFSET + 0x1E]; // $BFFE

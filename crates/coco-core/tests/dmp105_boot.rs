@@ -1,4 +1,4 @@
-//! End-to-end smoke test for the DMP-105 interpreter (`docs/printer-plan.md`
+//! End-to-end smoke test for the DMP-105 interpreter (
 //! T4): boot the real Super Extended Color BASIC ROM, `LLIST` a one-liner
 //! through the bit-banger port with a [`DMP105Handle`] attached as the sink,
 //! and assert the paper picked up plausible content — proving the whole

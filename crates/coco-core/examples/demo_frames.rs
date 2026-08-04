@@ -1,7 +1,7 @@
 //! Run a DECB `LOADM` binary (a demo like SockMaster's Boink) headless and
 //! dump canonical-raster frames as PPM — the harness for eyeballing
 //! per-scanline effects against MAME screenshots
-//! (`docs/plan-per-scanline-video.md` §3).
+//!.
 //!
 //! Usage: `cargo run -p coco-core --example demo_frames -- <file.bin> <outdir> [128|512|2048]`
 //!

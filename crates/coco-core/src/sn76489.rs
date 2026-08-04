@@ -1,6 +1,6 @@
 //! TI SN76489A programmable sound generator: 3 square-wave tone channels and
 //! 1 noise channel, each with a 4-bit attenuator — the music chip on the
-//! Games Master Cartridge (`docs/plan-games-master-cartridge.md`).
+//! Games Master Cartridge.
 //!
 //! Every behavioural fact here is verified against MAME
 //! `src/devices/sound/sn76496.cpp` (the SN76489**A** constructor variant:
@@ -77,7 +77,7 @@ fn build_vol_table() -> [f32; 16] {
 pub struct SN76489A {
     /// Internal tick rate: crystal / 16. Stored (not skipped) so a restored
     /// chip doesn't need the original crystal handed back in at rebuild time
-    /// (`docs/plan-save-states.md`).
+    ///.
     tick_hz: f64,
     /// Raw register file — tone periods keep all 10 bits, attenuation and
     /// noise-control registers only ever hold their low 4 bits.
@@ -101,7 +101,7 @@ pub struct SN76489A {
     tick_frac: f64,
     /// Amplitude lookup for attenuation codes 0-15. Skipped: pure
     /// construction-time scratch, rebuilt by [`SN76489A::after_restore`]
-    /// via [`build_vol_table`] (`docs/plan-save-states.md`).
+    /// via [`build_vol_table`].
     #[serde(skip)]
     vol_table: [f32; 16],
 }
@@ -148,7 +148,7 @@ impl SN76489A {
     }
 
     /// Restore-time fixup after a snapshot round-trip
-    /// (`docs/plan-save-states.md`): rebuilds `vol_table`, the skipped
+    ///: rebuilds `vol_table`, the skipped
     /// construction-time lookup table, via the same [`build_vol_table`]
     /// helper [`SN76489A::new`] uses.
     pub fn after_restore(&mut self) {

@@ -28,7 +28,7 @@ impl DebuggerPanel {
                             // Candidate return-address annotation: disassemble
                             // whatever is AT this 16-bit stack value, so a
                             // genuine return address reads as recognizable code
-                            // next to it (`docs/plan-debugger.md` §3) — not every
+                            // next to it — not every
                             // slot holds one (locals, saved registers), so this
                             // is a best-effort hint, not a claim.
                             let insn = disassemble(&mut |a| machine.bus.peek(a), word);

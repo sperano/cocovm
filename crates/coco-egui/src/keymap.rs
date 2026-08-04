@@ -111,7 +111,7 @@ pub(crate) fn is_joystick_key(key: egui::Key) -> bool {
 // in `coco-core`), so none of them can derive `clap::ValueEnum` here (orphan
 // rule) without pulling a `clap` dependency into the core crate. Each gets a
 // plain string `value_parser` function instead — same shape, no mirror enum
-// (`docs/coco12-plan.md` Phase 5).
+//.
 
 #[cfg(test)]
 #[path = "keymap_test.rs"]

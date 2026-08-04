@@ -1,4 +1,4 @@
-//! The per-scanline contract (Option B, `docs/plan-per-scanline-video.md`):
+//! The per-scanline contract (Option B):
 //! register writes mid-field take effect on the next scanline — raster
 //! splits — while the field-latched group ($FF9D/$FF9E video base) stays
 //! immune until the next field, per MAME `gime.cpp` `new_frame` (memory

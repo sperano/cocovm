@@ -10,7 +10,7 @@
 //!
 //! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`).
 //! F11 toggles the interactive debugger (Controls/Registers/Disassembly/Memory/
-//! Stack/Hardware panels — `debugger.rs`, `docs/plan-debugger.md` §3).
+//! Stack/Hardware panels — `debugger.rs`, §3).
 
 mod about;
 mod app;

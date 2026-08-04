@@ -119,7 +119,7 @@ pub struct SoundSpeechCartridge {
     // ---- Host byte protocol state (see the module doc comment) ----------
     /// Flat 8×64-byte buffer RAM — see the [`ram`] module doc comment.
     /// `ram::SIZE` (512) exceeds serde's built-in array impl ceiling (32),
-    /// hence the small helper module (`docs/plan-save-states.md`).
+    /// hence the small helper module.
     #[serde(with = "crate::serde_util::byte_array")]
     ram: [u8; ram::SIZE],
     /// Top-level protocol dispatch state — see [`Mode`].
@@ -303,7 +303,7 @@ impl Cartridge for SoundSpeechCartridge {
     /// [`SoundSpeechCartridge::advance_engine`](engine) (and its callees)
     /// index `self.ram` off `engine.cursor`/`engine.cap` the same way, with
     /// no bounds check of their own against `ram::SIZE`
-    /// (`docs/plan-save-states.md`). `cursor`/`cap` are ordinary
+    ///. `cursor`/`cap` are ordinary
     /// deserialized fields a hand-crafted payload can set past the end of
     /// `ram`.
     fn validate_restored(&self) -> Result<(), String> {

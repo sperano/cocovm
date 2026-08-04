@@ -127,7 +127,7 @@ pub trait Cartridge {
     /// without consuming it (unlike [`Cartridge::take_nmi`]) — the
     /// debugger's hardware-state panel uses this to show the cart port's NMI
     /// line without perturbing the pending edge a running program still
-    /// needs to see (`docs/plan-debugger.md` §3, "cart line states").
+    /// needs to see.
     fn nmi_pending(&self) -> bool {
         false
     }
@@ -167,12 +167,12 @@ pub trait Cartridge {
         0.0
     }
     /// Restore-time fixups after a snapshot round-trip
-    /// (`docs/plan-save-states.md`): rebuild any `#[serde(skip)]`
+    ///: rebuild any `#[serde(skip)]`
     /// construction-time scratch (lookup tables, etc.) that this cartridge's
     /// own `Serialize`/`Deserialize` impl left at its `Default`. Default:
     /// nothing to rebuild — most cartridges have no such scratch.
     fn after_restore(&mut self) {}
-    /// Restore-time payload-shape validation (`docs/plan-save-states.md`):
+    /// Restore-time payload-shape validation:
     /// checked once by [`crate::snapshot::restore::validate_payload_shape`], before
     /// any media is reattached, against index/cursor/cap-style deserialized
     /// fields this cartridge indexes its own buffers with — Rust's own

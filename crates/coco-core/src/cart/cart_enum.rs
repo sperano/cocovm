@@ -50,7 +50,7 @@ pub enum Cart {
     /// type-level doc. Skipped: a boxed trait object has no serializable
     /// shape, so serializing a machine with one inserted is a hard error
     /// (`serde`'s generated `Err` for a skipped variant, not a panic) —
-    /// `docs/plan-save-states.md`'s documented intent, since only
+    /// documented intent, since only
     /// integration-test rigs can ever hit this variant.
     #[serde(skip)]
     Custom(Box<dyn Cartridge>),
@@ -156,7 +156,7 @@ impl Cart {
     }
     /// See [`Cartridge::after_restore`]. Called by [`crate::SystemBus::after_restore`]
     /// after a snapshot round-trip; safe to call before ROM/media
-    /// reattachment (`docs/plan-save-states.md`).
+    /// reattachment.
     pub fn after_restore(&mut self) {
         with_each_cart!(self, cart => cart.after_restore())
     }
@@ -251,7 +251,7 @@ impl Default for Cart {
     }
 }
 
-/// Save-state support (`docs/plan-save-states.md`): walking every cartridge
+/// Save-state support: walking every cartridge
 /// reachable from the expansion port and detecting the one variant that
 /// can't be snapshotted at all.
 impl Cart {
@@ -279,7 +279,7 @@ impl Cart {
     /// shape. [`crate::snapshot::save`] checks this before attempting to
     /// encode a machine, so a test double surfaces as a clean
     /// `SnapshotError::CustomCartNotSnapshotable` instead of a raw serde
-    /// error (`docs/plan-save-states.md`).
+    /// error.
     pub fn contains_custom(&self) -> bool {
         match self {
             Cart::Custom(_) => true,
@@ -291,7 +291,7 @@ impl Cart {
     /// True if this cart is a [`MultiPak`] with a `Cart::MultiPak` nested in
     /// one of its own slots — not valid hardware (a real MPI's slots are
     /// passive backplane connectors, not another MPI), and reachable only
-    /// from a hand-crafted payload (`docs/plan-save-states.md`).
+    /// from a hand-crafted payload.
     /// [`crate::snapshot::restore::validate_payload_shape`] checks this BEFORE any
     /// [`Cart::slots_mut`] walk: that method only descends one MPI level by
     /// design, so a nested MPI would silently skip the inner slots' ROM

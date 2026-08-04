@@ -13,11 +13,9 @@ impl CocoApp {
     /// (Start/Suspend/Stop/Reset) the manager window's own toolbar draws,
     /// built from the same shared [`toolbar_button`] widget
     /// (`widgets.rs`) — so a launched machine's own window presents the
-    /// identical transport row the manager does. "⌨ Keys (F10)" and
-    /// "4:3 (F9)", which used to live here, are not relocated: they already
-    /// exist as the Keyboard menu's "Key layout (F10)" and the View menu's
-    /// "4:3 aspect (F9)" (plus their F-key hotkeys), so this row no longer
-    /// duplicates them.
+    /// identical transport row the manager does. ("⌨ Keys (F10)" and
+    /// "4:3 aspect (F9)" already live in the Keyboard and View menus,
+    /// so this row doesn't duplicate them.)
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
         // Explicit rather than relying on `TopBottomPanel`'s own default
         // frame: this pins the panel's inner margin to our named constants

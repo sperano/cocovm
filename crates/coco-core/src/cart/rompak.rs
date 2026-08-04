@@ -60,7 +60,7 @@ impl std::error::Error for ROMPakError {}
 pub struct ROMPak {
     /// Skipped: COPYRIGHTED pak bytes (always a 32K mirror-fill) never
     /// travel through a snapshot; re-injected on restore via
-    /// [`ROMPak::reattach_image`] (`docs/plan-save-states.md`). Deserializes
+    /// [`ROMPak::reattach_image`]. Deserializes
     /// to an empty `Box<[u8]>` until reattached.
     #[serde(skip)]
     image: Box<[u8]>,
@@ -102,7 +102,7 @@ impl ROMPak {
     /// restore, leaving `autostart` untouched (unlike
     /// [`ROMPak::from_bytes`], which always takes a fresh value for it) — the
     /// deserialized `autostart` is itself the restored machine state
-    /// (`docs/plan-save-states.md`). Same validation and mirror-fill as
+    ///. Same validation and mirror-fill as
     /// [`ROMPak::from_bytes`].
     pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         if bytes.is_empty() {
@@ -211,7 +211,7 @@ impl std::error::Error for BankedPakError {}
 pub struct BankedROMPak {
     /// Skipped: COPYRIGHTED pak bytes (always a 128K mirror-fill) never
     /// travel through a snapshot; re-injected on restore via
-    /// [`BankedROMPak::reattach_image`] (`docs/plan-save-states.md`).
+    /// [`BankedROMPak::reattach_image`].
     /// Deserializes to an empty `Box<[u8]>` until reattached.
     #[serde(skip)]
     image: Box<[u8]>,
@@ -254,7 +254,7 @@ impl BankedROMPak {
 
     /// Restore-path-only: re-inject this pak's image after a snapshot
     /// restore, leaving `bank`/`autostart` untouched — both are themselves
-    /// restored machine state (`docs/plan-save-states.md`). Same validation
+    /// restored machine state. Same validation
     /// and mirror-fill as [`BankedROMPak::from_bytes`].
     pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
         if bytes.is_empty() {

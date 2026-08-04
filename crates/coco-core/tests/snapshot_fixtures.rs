@@ -1,5 +1,5 @@
 //! Golden-fixture gate: "snapshots load forever"
-//! (`docs/plan-machine-persistence.md` "Golden-fixture gate", phase 3 spec
+//! ("Golden-fixture gate", phase 3 spec
 //! item 5). Every fixture committed under `tests/fixtures/snapshots/` must
 //! still load, restore, and continue trace-identically in every future
 //! build. This file is both the generator (run once by hand, `#[ignore]`d)

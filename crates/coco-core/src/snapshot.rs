@@ -1,13 +1,11 @@
 //! Save-state snapshot engine: the `.ccstate` container format, media
 //! references, and the restore flow that turns a decoded payload plus
-//! resolved media bytes back into a running [`Machine`](crate::Machine)
-//! (`docs/plan-save-states.md`, `docs/plan-machine-persistence.md`).
+//! resolved media bytes back into a running [`Machine`](crate::Machine).
 //!
 //! ## Compatibility contract
 //!
 //! **A snapshot written today must load in every future version**
-//! (`docs/plan-machine-persistence.md` "Snapshot compatibility contract",
-//! user requirement 2026-07-16). The payload is CBOR (`ciborium`), not a
+//! (user requirement 2026-07-16). The payload is CBOR (`ciborium`), not a
 //! positional format like bincode/postcard: CBOR carries field names with
 //! the data, so serde's evolution tools (`#[serde(default)]`/`alias`) work
 //! across versions instead of every struct needing hand-rolled versioning.

@@ -1,4 +1,4 @@
-//! The "Printer Paper" window (`docs/printer-plan.md` T5): a scrollable,
+//! The "Printer Paper" window: a scrollable,
 //! auto-following view of the DMP-105's virtual fanfold paper, built on the
 //! pure rasterizer in [`crate::paper_render`].
 //!

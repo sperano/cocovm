@@ -1,5 +1,5 @@
 //! Headless sign-off example for the virtual fanfold-paper renderer
-//! (`docs/printer-plan.md` T5 visual spec): feeds a canned byte stream
+//!: feeds a canned byte stream
 //! through a real [`DMP105Handle`], rasterizes the whole printed roll (plus
 //! one trailing blank page, same "+2 pages" rule the live window uses), and
 //! writes two PNGs so a human can eyeball the result without launching the

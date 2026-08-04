@@ -50,7 +50,7 @@ pub const TEXT_FG_INDEX: usize = 13;
 /// Number of resolved palette entries (GIME palette registers).
 pub const PALETTE_LEN: usize = 16;
 
-// --- CoCo 1/2 fixed VDG colour source (`docs/coco12-plan.md` Phase 3) -----------
+// --- CoCo 1/2 fixed VDG colour source -----------
 //
 // A CoCo 1/2 has no palette registers: the MC6847's colours are hardwired analog
 // levels. `VDG_FIXED_PALETTE` reproduces MAME's `mc6847_base_device::s_palette`
@@ -112,7 +112,7 @@ pub fn vdg_graphics_border_index(css: bool) -> usize {
 /// existing CoCo 3 behaviour, unchanged by this enum: the ROM initializes
 /// those registers to the VDG defaults) or the hardwired VDG RGB table
 /// (`VdgFixed` — CoCo 1/2, which has no palette registers to program). See
-/// `docs/coco12-plan.md` Phase 3.
+///
 pub enum ColorSource<'a> {
     GIMEPalette(&'a [[u8; 4]; PALETTE_LEN]),
     VDGFixed,

@@ -88,7 +88,7 @@ impl SystemBus {
         // below stay exactly as-is, but the GIME border/keyboard/cart-EI0
         // interrupt sources it would also raise here don't exist — the GIME
         // struct must stay completely inert on that path
-        // (`docs/coco12-plan.md` Phase 4).
+        //.
         let is_gime = self.variant == MachineVariant::Coco3;
         self.pia0.a.set_c1(false);
         if is_gime {

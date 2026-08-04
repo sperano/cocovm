@@ -282,7 +282,7 @@ impl Cartridge for MultiPak {
     }
 
     /// Recurses into every slot — each slot's own cartridge rebuilds its own
-    /// skipped scratch, if any (`docs/plan-save-states.md`).
+    /// skipped scratch, if any.
     fn after_restore(&mut self) {
         for slot in &mut self.slots {
             slot.after_restore();
@@ -293,7 +293,7 @@ impl Cartridge for MultiPak {
     /// with its index — nesting itself (a `Cart::MultiPak` slot holding
     /// another `Cart::MultiPak`) is rejected earlier, structurally, by
     /// [`Cart::contains_nested_multipak`], before [`Cart::slots_mut`]/this
-    /// walk ever runs (`docs/plan-save-states.md`).
+    /// walk ever runs.
     fn validate_restored(&self) -> Result<(), String> {
         for (i, slot) in self.slots.iter().enumerate() {
             slot.validate_restored()

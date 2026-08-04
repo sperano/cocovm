@@ -1,5 +1,5 @@
 //! Machine configuration: machine variant, video standard, and installed RAM.
-//! See `DESIGN.md` §4, §3 and `docs/coco12-plan.md`.
+//! See `DESIGN.md` §4, §3 and
 
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +7,7 @@ use crate::gime::MonitorType;
 
 /// Which physical machine is emulated. CoCo 1 and CoCo 2 are software- and
 /// timing-identical (same SAM, same plain MC6847, same PIA wiring — MAME uses
-/// one `coco` driver for both, per `docs/coco12-plan.md`); the variant only
+/// one `coco` driver for both, per); the variant only
 /// changes default RAM size and ROM set. The CoCo 2B's MC6847T1 (lowercase,
 /// SG6 removal) is a deliberately deferred follow-up, not modeled here yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,7 +83,7 @@ impl VideoStandard {
     /// lines) + part of the bottom border (26 lines) + 1 = 244. This is
     /// GIME-specific — the plain MC6847 (CoCo 1/2) falling edge is at line
     /// 216 instead (`mc6847.cpp`/`gime.cpp` header comment;
-    /// `docs/coco12-plan.md`).
+    ///).
     pub const fn fs_falling_line(self, variant: MachineVariant) -> u32 {
         match self {
             VideoStandard::NTSC => match variant {
@@ -126,7 +126,7 @@ impl VideoStandard {
 /// addresses up to 2 MB; 512K was only Tandy's shipped max, not a chip limit.
 /// Note the write-8 / read-low-6 register asymmetry handled in the MMU model.
 /// `K4`/`K16`/`K32`/`K64` are the plain-SAM (CoCo 1/2) sizes the real MC6883
-/// supports. See `DESIGN.md` §3 and `docs/coco12-plan.md`.
+/// supports. See `DESIGN.md` §3 and
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemorySize {
     /// CoCo 1/2 only.
@@ -195,9 +195,9 @@ impl MachineConfig {
     ///   16K×1 DRAMs plus the factory 64K upgrade — CoCo 2 service manual
     ///   26-3026/26-3027 §3.3; no 4K or 32K CoCo 2 ever shipped), and the
     ///   128K/512K/2048K sizes the CoCo 3's GIME MMU addresses
-    ///   (`docs/coco12-plan.md`).
+    ///  .
     /// - CoCo 1/2 are NTSC-only for now: PAL VDG timing is out of scope
-    ///   (`docs/coco12-plan.md` "What's missing").
+    ///  .
     /// - [`VDGVariant::MC6847T1`] is only valid on [`MachineVariant::Coco2`]:
     ///   CoCo 1 never had a T1 board, and CoCo 3 has no real MC6847 at all
     ///   (the GIME does its own text character generation).

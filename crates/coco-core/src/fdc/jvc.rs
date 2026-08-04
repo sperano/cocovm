@@ -158,7 +158,7 @@ pub struct JVCDisk {
     /// Skipped: a mounted disk image's contents are media, referenced by
     /// path+hash in the snapshot container (a later phase) rather than
     /// embedded — floppy images can be copyrighted commercial software.
-    /// Re-injected via [`JVCDisk::reattach_data`] (`docs/plan-save-states.md`).
+    /// Re-injected via [`JVCDisk::reattach_data`].
     /// Deserializes to an empty `Vec` until reattached.
     #[serde(skip)]
     data: Vec<u8>,
@@ -231,7 +231,7 @@ impl JVCDisk {
     /// Restore-path-only: re-inject a mounted disk's raw bytes after a
     /// snapshot restore (`data` is `#[serde(skip)]` — mounted disk images
     /// are media, referenced by path+hash rather than embedded, since they
-    /// can be copyrighted commercial software; `docs/plan-save-states.md`).
+    /// can be copyrighted commercial software).
     /// Re-derives geometry from `bytes` exactly like [`JVCDisk::from_bytes`]
     /// and verifies it matches the geometry the snapshot recorded before
     /// setting `data` — [`JVCError::GeometryChanged`] means the file changed

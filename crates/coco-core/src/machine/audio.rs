@@ -1,6 +1,6 @@
 //! The audio grid bridge: renders each scanline's latched-input events into
 //! the oversampled stereo sample grid the frontend drains
-//! (`docs/plan-audio-pipeline.md`).
+//!.
 
 use crate::audio;
 
@@ -25,7 +25,7 @@ impl Machine {
     }
 
     /// Render the scanline that just executed to [`audio::OVERSAMPLE`]
-    /// stereo grid samples (`docs/plan-audio-pipeline.md`).
+    /// stereo grid samples.
     ///
     /// Latched inputs replay from the cycle-timestamped events the bus
     /// recorded during the line: each grid slot holds the state in effect

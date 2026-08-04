@@ -439,7 +439,7 @@ fn stop_on_suspended_machine_discards_the_frozen_state() {
 /// Two machines — a CoCo 3 and a CoCo 2 — start independently in the same
 /// manager and both keep stepping across further frames without panicking:
 /// the "DECIDED: in-process, one native window per running VM" acceptance
-/// scenario (`docs/plan-machine-persistence.md`), minus the pacing/audio
+/// scenario, minus the pacing/audio
 /// independence a headless harness has no way to observe.
 #[test]
 fn starting_two_machines_runs_both() {

@@ -94,7 +94,7 @@ pub(super) const HARDWIRED_ROM_BASE: u16 = 0xFFE0;
 pub(super) const OPEN_BUS: u8 = 0xFF;
 
 /// Plain-SAM path only: flat 32K ROM image offset where Color BASIC starts —
-/// extbas at 0, bas at $2000 (`docs/coco12-plan.md` "ROM files").
+/// extbas at 0, bas at $2000.
 pub(super) const SAM_BAS_ROM_OFFSET: usize = 0x2000;
 /// Plain-SAM path only: base CPU address of the cartridge CTS* ROM window,
 /// added back to a `SAMTarget::Cart` offset before calling

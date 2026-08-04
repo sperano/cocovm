@@ -3,10 +3,8 @@
 //! [`MachineForm`] holds the full editable draft and draws every row; it
 //! never touches a machine or a file itself. Its one host is the manager's
 //! detail pane (`manager::draw_detail_ok`), which draws the form over a
-//! saved machine definition and auto-saves each change. (A "Machine → New…"
-//! dialog that used to co-host it, back when the app could also boot a
-//! machine directly from the command line, was removed — machine creation
-//! belongs to the manager; user decision 2026-07-28.) The `constrain` rules
+//! saved machine definition and auto-saves each change. Machine creation
+//! belongs to the manager. The `constrain` rules
 //! below therefore live in exactly one place.
 
 use std::path::PathBuf;

@@ -1,4 +1,4 @@
-//! Phase 6 acceptance test 4: cassette CSAVE/CLOAD (`docs/coco12-plan.md`)
+//! Phase 6 acceptance test 4: cassette CSAVE/CLOAD
 //!
 //! The cassette deck (`Cassette`, `bus.rs`'s PIA1 record/playback wiring) is
 //! entirely machine-neutral — confirmed by inspection: `bus.rs::sam_io_write`'s

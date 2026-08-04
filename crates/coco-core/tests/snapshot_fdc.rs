@@ -1,7 +1,7 @@
 //! Save-state coverage for the trickiest device to snapshot correctly: the
 //! FD-502 disk controller mid-sector-transfer, with HALT* actually asserted
 //! at the moment of the snapshot — standalone and nested behind a
-//! Multi-Pak Interface (`docs/plan-save-states.md` "Acceptance": "Snapshot
+//! Multi-Pak Interface ("Acceptance": "Snapshot
 //! mid-disk-read (HALT asserted) restores without corrupting the
 //! transfer"; phase 3 spec items 2-3).
 //!

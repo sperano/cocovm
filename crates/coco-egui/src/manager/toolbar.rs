@@ -1,10 +1,8 @@
 //! The manager window's toolbar: [`ManagerApp::draw_toolbar`], built from the
 //! shared icon-over-label tile widget in [`crate::widgets`] (also used by the
 //! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
-//! Suspend – Stop – Reset – separator – Settings – separator – Help (user
-//! decision 2026-07-29): the four transport tiles that used to live in the
-//! detail pane's transport row and the bulk pane's transport row now live
-//! here instead, acting on the current selection through the same
+//! Suspend – Stop – Reset – separator – Settings – separator – Help.
+//! The four transport tiles act on the current selection through the same
 //! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch the bulk
 //! context menu uses — one code path, three surfaces.
 
@@ -27,9 +25,8 @@ const HELP_ICON: &str = "❓";
 
 /// Disabled-hover text shared by every transport tile when nothing at all
 /// is selected — distinct from the flags-driven reason below it, so the
-/// tile teaches *why* it's off from either starting point (selection-neutral
-/// per user decision 2026-07-29, since the tiles now act on a selection of
-/// any size rather than one fixed row).
+/// tile teaches *why* it's off from either starting point (selection-neutral,
+/// since the tiles now act on a selection of any size rather than one fixed row).
 const SELECT_A_MACHINE_HOVER: &str = "Select a machine first";
 /// Disabled-hover text shared by Suspend and Reset — both gated on
 /// [`super::bulk::BulkFlags::any_running`]. Reset's running-only rule

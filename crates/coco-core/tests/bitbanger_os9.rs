@@ -1,5 +1,5 @@
 //! End-to-end regression for the bit-banger printer port under NitrOS-9
-//! (`docs/printer-plan.md` T3): boot the real EOU 1.0.1 Level 2 disk images
+//!: boot the real EOU 1.0.1 Level 2 disk images
 //! to a shell (same asset pattern as `tests/vhd_boot.rs`), run `echo hello
 //! >/p`, and assert the bytes reaching a [`CaptureSink`] match exactly what
 //! the shell's `/p` redirection sent — proving the bit-banger decoder works

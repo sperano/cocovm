@@ -1,5 +1,5 @@
 //! Shared dot-matrix "paper" model for the DMP printer family
-//! (`docs/printer-plan.md` T4, "Family context": DMP-105 today, DMP-130/Epson
+//! ( "Family context": DMP-105 today, DMP-130/Epson
 //! dialects later share this raster, not the per-model control-code
 //! interpreters).
 //!
@@ -10,7 +10,7 @@
 //!
 //! Two independent fixed-point axes, chosen so every documented pitch/feed
 //! value converts to an exact integer — no floats anywhere in position
-//! accounting (`docs/printer-plan.md` T4 direction):
+//! accounting:
 //!
 //! - **Vertical** ([`Y_UNITS_PER_INCH`]): 1/72", matching every documented
 //!   vertical fact directly — the three text line-feed pitches (1/6", 1/8",

@@ -1,5 +1,5 @@
 //! Deterministic coverage for the CoCo 1/2 fixed-VDG colour source
-//! (`docs/coco12-plan.md` Phase 3): the legacy text/SG4/graphics renderers
+//!: the legacy text/SG4/graphics renderers
 //! must resolve to the exact MAME `mc6847.cpp` `s_palette` RGB values, not
 //! the GIME palette registers (which don't exist on these machines). Style
 //! mirrors `tests/render.rs`/`tests/render_graphics.rs`, but driven through

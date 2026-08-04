@@ -1,8 +1,8 @@
-//! Phase 6 acceptance test 5 (`docs/coco12-plan.md`): a CoCo 1 running real
+//! Phase 6 acceptance test 5: a CoCo 1 running real
 //! Color BASIC 1.2 alone (no Extended Color BASIC) boots to the plain
 //! "COLOR BASIC 1.2" sign-on banner — not "EXTENDED COLOR BASIC" — and
 //! evaluates `PRINT 2+2`. This exercises the open-bus extbas window
-//! (`docs/coco12-plan.md` "ROM files": "Extended Color BASIC missing → still
+//! ("ROM files": "Extended Color BASIC missing → still
 //! boot (Color BASIC only, open-bus filler $FF for the extbas half"), which
 //! `coco2_boot.rs`'s extbas+bas machine never touches.
 //!
@@ -20,7 +20,7 @@ use mc6809::Bus;
 /// [`OPEN_BUS_FILLER`] instead of real Extended BASIC ROM contents.
 const BAS_OFFSET: usize = 8 * 1024;
 /// Open-bus fill byte for the (absent) extbas half, per
-/// `docs/coco12-plan.md` "ROM files".
+///
 const OPEN_BUS_FILLER: u8 = 0xFF;
 
 fn try_load(name: &str) -> Option<Vec<u8>> {
@@ -36,7 +36,7 @@ fn try_load(name: &str) -> Option<Vec<u8>> {
 fn boot_machine() -> Option<(Machine, Vec<u8>)> {
     let Some(bas) = try_load("bas12.rom") else {
         eprintln!(
-            "skipping coco1_boot: bas12.rom not present in roms/ (see docs/coco12-plan.md \"ROM files\")"
+            "skipping coco1_boot: bas12.rom not present in roms/"
         );
         return None;
     };
@@ -95,7 +95,7 @@ fn coco1_boots_color_basic_only_and_evaluates_print() {
 
     // Sanity check the open-bus extbas window before booting: every byte
     // through the $8000-$9FFF flat-image half must read the conventional
-    // open-bus filler, per `docs/coco12-plan.md`.
+    // open-bus filler, per
     for addr in 0x8000..0x9FFFu16 {
         assert_eq!(
             m.bus.read(addr),

@@ -1,6 +1,6 @@
 //! MC6883 SAM primary memory map (CoCo 1/2, no GIME): control-strobe latching,
 //! the TY=0/TY=1 memory map, the $FFE0-$FFFF vector mirror, and P1 banking
-//! (`docs/coco12-plan.md`; MAME `6883sam.cpp`). Style mirrors the GIME's own
+//!. Style mirrors the GIME's own
 //! `tests/sam_video.rs` (build a `SystemBus` directly, poke strobe addresses).
 
 use coco_core::cart::Cart;
@@ -239,7 +239,7 @@ fn p1_is_inert_without_m1() {
 
 #[test]
 fn display_base_after_setting_f2() {
-    // "BASIC sets F2 -> $0400" (docs/coco12-plan.md) means the 7-bit F
+    // "BASIC sets F2 -> $0400" means the 7-bit F
     // register's *decimal value* becomes 2 (the classic default text-screen
     // base), which is bit F1 alone (value 2), not the individually-named F2
     // bit (value 4, which would give $0800). F1_SET sets that bit.

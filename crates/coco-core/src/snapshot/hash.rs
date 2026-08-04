@@ -53,7 +53,7 @@ pub enum MediaCheck {
     /// The file exists and still hashes to `sha256`.
     Ok,
     /// The file exists but hashes to something else — the frontend should
-    /// offer "load with warning", per `docs/plan-save-states.md`.
+    /// offer "load with warning".
     Mismatch { actual: String },
     /// The file doesn't exist, or couldn't be read for any other reason —
     /// the frontend should treat this as an error (prompt to re-locate it).

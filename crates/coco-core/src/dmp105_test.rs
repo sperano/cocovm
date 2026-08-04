@@ -4,7 +4,7 @@ use crate::dmp105_font;
 /// Render `paper`'s dots in `[y0, y1)` as a compact debug string: one
 /// line per row, `#`/`.` per dot column between `x0` and `x1` — a small
 /// helper for debugging test failures, not a fixture format tests
-/// assert against (per `docs/printer-plan.md` T4's "compact expected-
+/// assert against (per 
 /// pattern representations ... not giant ASCII-art fixtures").
 #[allow(dead_code)]
 fn ascii_art(paper: &Paper, x0: u32, x1: u32, y0: u32, y1: u32, step: u32) -> String {

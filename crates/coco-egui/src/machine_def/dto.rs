@@ -294,8 +294,8 @@ impl HardwareDTO {
 /// `[media]` section — every key optional, the section itself optional.
 /// Relative paths are meant to resolve against the machine's artifact
 /// directory (`data_dir()/machines/<slug>`), never embedded
-/// (`plan-machine-persistence.md` "Media by reference, never embedded");
-/// no caller resolves media paths yet (`plan-machine-persistence.md` step 5,
+/// ;
+/// no caller resolves media paths yet (step 5,
 /// launch/media mounting — not implemented).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MediaDTO {
@@ -379,9 +379,8 @@ pub struct UIDTO {
     pub aspect_correct: bool,
     #[serde(default)]
     pub kb_mode: KbModeDTO,
-    /// Absent ⇒ off, matching `JoystickInputs::new` (user decision
-    /// 2026-07-29: nothing drives a port until it's opted in — same for
-    /// both ports).
+    /// Absent ⇒ off, matching `JoystickInputs::new`: nothing drives a port
+    /// until it's opted in — same for both ports.
     #[serde(default)]
     pub joy_left: JoySourceDTO,
     /// Absent ⇒ off; see [`Self::joy_left`].

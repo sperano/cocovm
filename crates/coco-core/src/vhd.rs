@@ -159,7 +159,7 @@ pub(crate) struct VHDDrive {
     pub(crate) buffer_addr: u16,
     pub(crate) status: u8,
     /// Skipped: an open host `File` handle. Remounted by path on restore via
-    /// [`VHD::reattach_image`] (`docs/plan-save-states.md`).
+    /// [`VHD::reattach_image`].
     #[serde(skip)]
     pub(crate) image: Option<VHDImage>,
 }
@@ -251,7 +251,7 @@ impl VHD {
     /// Restore-path-only: re-inject a mounted image after a snapshot
     /// restore, WITHOUT resetting `lrn`/`buffer_addr`/`status` the way
     /// [`VHD::insert`] does — all three are themselves restored machine
-    /// state, exactly as deserialized (`docs/plan-save-states.md`).
+    /// state, exactly as deserialized.
     pub fn reattach_image(&mut self, drive: usize, image: VHDImage) {
         self.drives[drive].image = Some(image);
     }

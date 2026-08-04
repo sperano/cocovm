@@ -1,5 +1,5 @@
 //! Pure, egui-free rasterizer for the virtual fanfold "paper" window
-//! (`docs/printer-plan.md` T5 visual spec). Turns a [`DotSource`] (the
+//!. Turns a [`DotSource`] (the
 //! DMP-105's abstract dot-matrix impressions, `coco_core::printer`/`dmp105`)
 //! into an RGBA8 raster of period-correct tractor-feed stationery: tractor
 //! strips with sprocket holes on both edges, a dotted perforation line
@@ -23,7 +23,7 @@
 use coco_core::printer::{X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
 
 // ---------------------------------------------------------------------
-// Geometry constants (`docs/printer-plan.md` T5 visual spec — exact values).
+// Geometry constants.
 // ---------------------------------------------------------------------
 
 /// Overall sheet width, tractor strip to tractor strip.
