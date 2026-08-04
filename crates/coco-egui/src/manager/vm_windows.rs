@@ -16,17 +16,28 @@ use super::ManagerApp;
 /// real: this fallback only ever shows the bare display, never chrome.
 const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
+/// Vertical points left to the host OS's own chrome (menu bar, window
+/// title bar, Dock edge) when clamping a VM window to the monitor.
+const HOST_CHROME_MARGIN: f32 = 64.0;
+
 /// Window size of a launched VM's own native OS window, from the crate
 /// root's own sizing constants (`crate::SCALE`/`TARGET_ASPECT`/`MENU_BAR_H`/
 /// `TOOLBAR_H`/`STATUS_BAR_H`), sized for the aspect-corrected image.
 /// 972×~835 pt at the full-visible-picture geometry (243 rows × SCALE) —
-/// tall enough to overflow an 800-pt-logical laptop screen; clamp to the
-/// host screen if that's ever reported.
-fn vm_window_inner_size() -> egui::Vec2 {
-    let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
+/// taller than an 800-pt-logical laptop screen, so the image height is
+/// clamped to what the monitor can show (minus [`HOST_CHROME_MARGIN`])
+/// when egui reports one; `draw_display` letterboxes inside whatever
+/// height survives, so a clamped window just shows a smaller picture.
+fn vm_window_inner_size(ctx: &egui::Context) -> egui::Vec2 {
+    let chrome_h = crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
+    let mut img_h = coco_core::video::FB_H as f32 * crate::SCALE;
+    if let Some(monitor) = ctx.input(|i| i.viewport().monitor_size)
+        && monitor.y > HOST_CHROME_MARGIN + chrome_h
+    {
+        img_h = img_h.min(monitor.y - HOST_CHROME_MARGIN - chrome_h);
+    }
     let win_w = img_h * crate::TARGET_ASPECT;
-    let win_h = img_h + crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
-    egui::vec2(win_w, win_h)
+    egui::vec2(win_w, img_h + chrome_h)
 }
 
 impl ManagerApp {
@@ -56,7 +67,7 @@ impl ManagerApp {
             let slug = self.entries[i].slug.clone();
             let name = self.entries[i].def.name.clone();
             let viewport_id = egui::ViewportId::from_hash_of(("vm-window", &slug));
-            let inner_size = vm_window_inner_size();
+            let inner_size = vm_window_inner_size(ctx);
             let builder = egui::ViewportBuilder::default()
                 .with_title(name.clone())
                 .with_inner_size(inner_size);

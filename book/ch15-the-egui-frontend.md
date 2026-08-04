@@ -994,23 +994,32 @@ function that picks a launched VM's *initial* operating-system window size,
 before any frame has ever run:
 
 ```rust
-fn vm_window_inner_size() -> egui::Vec2 {
-    let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
+fn vm_window_inner_size(ctx: &egui::Context) -> egui::Vec2 {
+    let chrome_h = crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
+    let mut img_h = coco_core::video::FB_H as f32 * crate::SCALE;
+    if let Some(monitor) = ctx.input(|i| i.viewport().monitor_size)
+        && monitor.y > HOST_CHROME_MARGIN + chrome_h
+    {
+        img_h = img_h.min(monitor.y - HOST_CHROME_MARGIN - chrome_h);
+    }
     let win_w = img_h * crate::TARGET_ASPECT;
-    let win_h = img_h + crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
-    egui::vec2(win_w, win_h)
+    egui::vec2(win_w, img_h + chrome_h)
 }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:25-30`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L25-L30).) Notice the input:
+([`crates/coco-egui/src/manager/vm_windows.rs:31-41`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L31-L41).) Notice the input:
 `coco_core::video::FB_H`, the legacy framebuffer height, multiplied by
 `SCALE` — for *every* machine variant the manager can launch. That
 happens to be an honest height for all of them, since the CoCo 3 canvas
-deliberately shares the legacy frame's 243 visible lines (§7.3), but the
-width is sized for the aspect-*corrected* picture only: switch correction
-off and the ~15%-wider square-pixel view no longer fits the window's width
-at full height, so the first uncorrected frame draws slightly smaller,
-letterboxed. It is the one and only formula for a VM window's starting
+deliberately shares the legacy frame's 243 visible lines (§7.3). The `if`
+is the one concession to the host: 243 rows at ×3 scale plus chrome is
+~835 points, taller than an 800-point-logical laptop screen, so the image
+height is clamped to what the current monitor can show (minus a margin
+for the OS's own menu bar and title bar) whenever egui reports one. And
+the width is sized for the aspect-*corrected* picture only: switch
+correction off and the ~15%-wider square-pixel view no longer fits the
+window's width at full height, so the first uncorrected frame draws
+slightly smaller, letterboxed. It is the one and only formula for a VM window's starting
 size: every machine variant the manager launches gets the same starting
 rectangle, `draw_running_vms` passing it straight to
 `ViewportBuilder::with_inner_size` alongside the window's title (the VM's
@@ -1844,7 +1853,7 @@ The loop's core is three lines:
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:69-72`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L69-L72).) The
+([`crates/coco-egui/src/manager/vm_windows.rs:80-83`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L80-L83).) The
 `viewport_id` above it is
 `egui::ViewportId::from_hash_of(("vm-window", &slug))`, which gives each
 VM's window a stable identity across frames. That stability is what makes
@@ -1875,7 +1884,7 @@ machine takes the straightforward path:
             }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:140-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L140-L164), comment lines
+([`crates/coco-egui/src/manager/vm_windows.rs:151-175`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L151-L175), comment lines
 elided.) That single
 `vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
 §15.3 established. The *entire* `CocoApp` experience — menu bar, toolbar,
@@ -1895,7 +1904,7 @@ machinery, applies it after the loop exactly as it applies close
 requests.
 
 A *Suspended* machine whose window is still open takes a middle branch
-([`crates/coco-egui/src/manager/vm_windows.rs:117-139`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L117-L139)):
+([`crates/coco-egui/src/manager/vm_windows.rs:128-150`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L128-L150)):
 the framebuffer-texture upload plus the display, no chrome, and no
 `step_emulation` either, since its `handle_input` would keep the
 quick-load/quick-save shortcuts and keyboard/joystick writes live. The
@@ -1919,7 +1928,7 @@ bare display:
 (for a Running machine — a suspended one gets the same
 texture-upload-only gating here as in the native branch), followed by an
 anchored `egui::Window` whose body is just `vm.draw_display(ui)`
-([`crates/coco-egui/src/manager/vm_windows.rs:87-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L87-L113)). Two decisions
+([`crates/coco-egui/src/manager/vm_windows.rs:98-124`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L98-L124)). Two decisions
 in that fallback are worth reading the comments for. It skips
 `draw_chrome` because two independent sets of menu bars and status bars
 drawn into one shared context would interleave into a single confusing
