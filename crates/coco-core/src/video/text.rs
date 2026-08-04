@@ -6,7 +6,8 @@ use crate::font_gime::GIME_LOWRES_FONT;
 use crate::font6847::{MC6847_FONT, MC6847T1_FONT};
 
 use super::{
-    BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, COLS, FB_H, FB_W, PALETTE_LEN, ROWS, TEXT_BG_INDEX,
+    BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, CELL_H, CELL_W, COLS, FB_H, FB_W, PALETTE_LEN, ROWS,
+    TEXT_BG_INDEX,
     TEXT_FG_INDEX, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, paint_px,
 };
 
@@ -248,8 +249,8 @@ fn blit_semigraphics4(
 ) {
     let on = palette[((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize];
     let off = palette[SG4_OFF_INDEX];
-    let x0 = BORDER + col * CELL_W;
-    let y0 = BORDER + row * CELL_H;
+    let x0 = BORDER_X + col * CELL_W;
+    let y0 = BORDER_TOP + row * CELL_H;
     for cy in 0..CELL_H {
         let bottom = cy >= CELL_H / 2;
         for cx in 0..CELL_W {
@@ -275,8 +276,8 @@ fn blit_cell(
     fg: [u8; 4],
     bg: [u8; 4],
 ) {
-    let x0 = BORDER + col * CELL_W;
-    let y0 = BORDER + row * CELL_H;
+    let x0 = BORDER_X + col * CELL_W;
+    let y0 = BORDER_TOP + row * CELL_H;
     for (cy, &bits) in glyph.iter().enumerate() {
         for cx in 0..CELL_W {
             let on = bits & (0x80 >> cx) != 0;

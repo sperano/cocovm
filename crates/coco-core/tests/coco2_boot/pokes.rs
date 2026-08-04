@@ -74,8 +74,8 @@ fn coco2_pmode_switches_to_graphics_with_fixed_vdg_colors() {
     let on = coco_core::video::VDG_FIXED_PALETTE[on_index];
     let interior = px(
         &m.framebuffer,
-        coco_core::video::BORDER,
-        coco_core::video::BORDER,
+        coco_core::video::BORDER_X,
+        coco_core::video::BORDER_TOP,
     );
     assert!(
         interior == off || interior == on,

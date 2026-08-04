@@ -10,7 +10,7 @@
 //! reconcile the two: if a program sets V and GM to a non-standard pairing, the
 //! vertical cadence follows V and the horizontal decode follows GM independently.
 
-use super::{ACTIVE_H, ACTIVE_W, BORDER, BYTES_PER_PIXEL, FB_H, FB_W, paint_px};
+use super::{ACTIVE_H, ACTIVE_W, BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, FB_H, FB_W, paint_px};
 
 /// PIA1 $FF22 bit 7: 1 = VDG graphics, 0 = alphanumeric/semigraphics.
 pub const VDG_AG: u8 = 0x80;
@@ -166,11 +166,11 @@ pub fn render_graphics(
     }
 }
 
-/// Fill an `w`×`h` block of the active area (offset by [`BORDER`]) with one colour.
+/// Fill an `w`×`h` block of the active area (offset by [`BORDER_X`]/[`BORDER_TOP`]) with one colour.
 fn blit_block(fb: &mut [u8], x: usize, y: usize, w: usize, h: usize, color: [u8; 4]) {
     for dy in 0..h {
         for dx in 0..w {
-            let idx = ((BORDER + y + dy) * FB_W + (BORDER + x + dx)) * BYTES_PER_PIXEL;
+            let idx = ((BORDER_TOP + y + dy) * FB_W + (BORDER_X + x + dx)) * BYTES_PER_PIXEL;
             fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
         }
     }

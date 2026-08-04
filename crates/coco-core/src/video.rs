@@ -32,10 +32,27 @@ pub const ROWS: usize = 16;
 /// Active display geometry.
 pub const ACTIVE_W: usize = COLS * CELL_W; // 256
 pub const ACTIVE_H: usize = ROWS * CELL_H; // 192
-/// Border thickness around the active area.
-pub const BORDER: usize = 16;
-pub const FB_W: usize = ACTIVE_W + 2 * BORDER; // 288
-pub const FB_H: usize = ACTIVE_H + 2 * BORDER; // 224
+/// Side-border width: the full visible NTSC line beyond the active area —
+/// MAME `mc6847.cpp` `CLOCKS_L_OR_R_BORDER` (29 VDG clocks × 2 px/clock).
+/// The framebuffer thus spans everything an NTSC set shows, so stretching
+/// it to exactly 4:3 (`coco-egui`'s `TARGET_ASPECT`) reproduces the tube.
+pub const BORDER_X: usize = 58;
+/// Top/bottom border heights: the visible field is 25 border + 192 active +
+/// 26 border = 243 of NTSC's 262 lines — MAME `mc6847.cpp`
+/// `LINES_TOP_BORDER`/`LINES_BOTTOM_BORDER` (shared by the GIME, whose
+/// canvas keeps the same 243-line window — `raster.rs`).
+pub const BORDER_TOP: usize = 25;
+pub const BORDER_BOTTOM: usize = 26;
+pub const FB_W: usize = ACTIVE_W + 2 * BORDER_X; // 372
+pub const FB_H: usize = BORDER_TOP + ACTIVE_H + BORDER_BOTTOM; // 243
+
+/// Aspect the framebuffer shows at when its pixels are drawn square — the
+/// frontend's uncorrected (F9-off) view. Identical for both geometries by
+/// construction: the legacy frame undoubled (372/243) and the CoCo 3 canvas
+/// with its half-height dots line-doubled (744/486) are the same ratio,
+/// because `raster.rs` derives its canvas from this window at exactly twice
+/// the dot rate. ≈1.531 — the true NTSC picture (4:3) is ~15% narrower.
+pub const SQUARE_PIXEL_ASPECT: f32 = FB_W as f32 / FB_H as f32;
 
 pub const BYTES_PER_PIXEL: usize = 4;
 

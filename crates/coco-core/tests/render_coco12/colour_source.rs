@@ -6,7 +6,7 @@
 //! `Machine` (like `render.rs`'s `text_renderer_follows_sam_page_register`)
 //! since the colour-source dispatch lives in `lib.rs`, not `video.rs` itself.
 
-use coco_core::video::{BORDER, CELL_H, CELL_W, VDG_FIXED_PALETTE};
+use coco_core::video::{BORDER_TOP, BORDER_X, CELL_H, CELL_W, VDG_FIXED_PALETTE};
 use mc6809::Bus;
 
 use super::common::{SCREEN_BASE, boot_parked_machine, px};
@@ -34,8 +34,8 @@ fn text_uses_fixed_green_set_by_default() {
         "text border must be fixed black"
     );
     let mut fg_seen = false;
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
+    for y in BORDER_TOP..BORDER_TOP + CELL_H {
+        for x in BORDER_X..BORDER_X + CELL_W {
             let p = px(&m.framebuffer, x, y);
             assert!(
                 p == fg || p == bg,
@@ -57,8 +57,8 @@ fn text_uses_fixed_orange_set_when_css_set() {
     let fg = VDG_FIXED_PALETTE[15]; // ALPHANUMERIC BRIGHT ORANGE
     let bg = VDG_FIXED_PALETTE[14]; // ALPHANUMERIC DARK ORANGE
     let mut fg_seen = false;
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
+    for y in BORDER_TOP..BORDER_TOP + CELL_H {
+        for x in BORDER_X..BORDER_X + CELL_W {
             let p = px(&m.framebuffer, x, y);
             assert!(
                 p == fg || p == bg,
@@ -84,22 +84,22 @@ fn semigraphics4_uses_fixed_vdg_colors() {
     let quad_x = CELL_W / 2;
     let quad_y = CELL_H / 2;
     assert_eq!(
-        px(&m.framebuffer, BORDER, BORDER),
+        px(&m.framebuffer, BORDER_X, BORDER_TOP),
         on,
         "upper-left quadrant lit"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER + quad_x, BORDER),
+        px(&m.framebuffer, BORDER_X + quad_x, BORDER_TOP),
         off,
         "upper-right quadrant unlit"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER, BORDER + quad_y),
+        px(&m.framebuffer, BORDER_X, BORDER_TOP + quad_y),
         off,
         "lower-left quadrant unlit"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER + quad_x, BORDER + quad_y),
+        px(&m.framebuffer, BORDER_X + quad_x, BORDER_TOP + quad_y),
         on,
         "lower-right quadrant lit"
     );
@@ -128,12 +128,12 @@ fn pmode4_style_graphics_uses_fixed_colors_and_green_border() {
         "graphics border must be green (CSS=0)"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER, BORDER),
+        px(&m.framebuffer, BORDER_X, BORDER_TOP),
         c1,
         "MSB pixel = colour 1 (on)"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER + 1, BORDER),
+        px(&m.framebuffer, BORDER_X + 1, BORDER_TOP),
         c0,
         "next pixel = colour 0 (off)"
     );

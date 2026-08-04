@@ -3,7 +3,8 @@
 //! pixel-doubling that scales lower resolutions into the 256×192 active area.
 
 use coco_core::video::{
-    BORDER, BYTES_PER_PIXEL, FB_H, FB_W, decode_vdg_graphics, render_graphics, vdg_palette_indices,
+    BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, FB_H, FB_W, decode_vdg_graphics, render_graphics,
+    vdg_palette_indices,
 };
 
 const C0: [u8; 4] = [0x10, 0x10, 0x10, 0xFF];
@@ -71,8 +72,8 @@ fn two_color_unpacks_msb_first_with_border() {
     render_graphics(&data, &mode, &[C0, C1], BD, &mut fb);
 
     assert_eq!(px(&fb, 0, 0), BD, "corner is border");
-    assert_eq!(px(&fb, BORDER, BORDER), C1, "MSB pixel = colour 1");
-    assert_eq!(px(&fb, BORDER + 1, BORDER), C0, "next pixel = colour 0");
+    assert_eq!(px(&fb, BORDER_X, BORDER_TOP), C1, "MSB pixel = colour 1");
+    assert_eq!(px(&fb, BORDER_X + 1, BORDER_TOP), C0, "next pixel = colour 0");
 }
 
 #[test]
@@ -84,11 +85,11 @@ fn four_color_maps_two_bit_values_and_doubles_width() {
     render_graphics(&data, &mode, &[C0, C1, C2, C3], BD, &mut fb);
 
     // Each logical pixel is 2 host pixels wide.
-    assert_eq!(px(&fb, BORDER, BORDER), C0);
-    assert_eq!(px(&fb, BORDER + 1, BORDER), C0, "pixel 0 doubled");
-    assert_eq!(px(&fb, BORDER + 2, BORDER), C1);
-    assert_eq!(px(&fb, BORDER + 4, BORDER), C2);
-    assert_eq!(px(&fb, BORDER + 6, BORDER), C3);
+    assert_eq!(px(&fb, BORDER_X, BORDER_TOP), C0);
+    assert_eq!(px(&fb, BORDER_X + 1, BORDER_TOP), C0, "pixel 0 doubled");
+    assert_eq!(px(&fb, BORDER_X + 2, BORDER_TOP), C1);
+    assert_eq!(px(&fb, BORDER_X + 4, BORDER_TOP), C2);
+    assert_eq!(px(&fb, BORDER_X + 6, BORDER_TOP), C3);
 }
 
 #[test]
@@ -114,7 +115,7 @@ fn mismatched_v_and_gm_pairing_follows_v_for_vertical_cadence() {
     render_graphics(&data, &mode, &[C0, C1], BD, &mut fb);
 
     let row_pixels = |fb: &[u8], y: usize| -> Vec<[u8; 4]> {
-        (0..8).map(|x| px(fb, BORDER + x, BORDER + y)).collect()
+        (0..8).map(|x| px(fb, BORDER_X + x, BORDER_TOP + y)).collect()
     };
 
     for row in 0..mode.rows {

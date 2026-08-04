@@ -1,4 +1,4 @@
-use coco_core::video::{BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_W};
+use coco_core::video::{BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_W};
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 use mc6809::Bus;
 
@@ -93,7 +93,7 @@ pub fn sample_cell(
     let mut out = [[false; CELL_W]; CELL_H];
     for (cy, row_out) in out.iter_mut().enumerate() {
         for (cx, bit) in row_out.iter_mut().enumerate() {
-            let p = px(fb, BORDER + col * CELL_W + cx, BORDER + row * CELL_H + cy);
+            let p = px(fb, BORDER_X + col * CELL_W + cx, BORDER_TOP + row * CELL_H + cy);
             *bit = if p == on_color {
                 true
             } else if p == off_color {

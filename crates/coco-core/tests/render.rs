@@ -4,7 +4,8 @@
 
 use coco_core::gime::init0;
 use coco_core::video::{
-    AlphaGenerator, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN, SCREEN_LEN,
+    AlphaGenerator, BORDER_TOP, BORDER_X, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN,
+    SCREEN_LEN,
     TEXT_BG_INDEX, TEXT_FG_INDEX, render_text,
 };
 use coco_core::{Machine, MachineConfig};
@@ -61,8 +62,8 @@ fn border_and_active_area_use_their_colors() {
 
     assert_eq!(px(&fb, 0, 0), BD);
     assert_eq!(px(&fb, FB_W - 1, FB_H - 1), BD);
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
+    for y in BORDER_TOP..BORDER_TOP + CELL_H {
+        for x in BORDER_X..BORDER_X + CELL_W {
             assert_eq!(px(&fb, x, y), BG);
         }
     }
@@ -83,8 +84,8 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     );
 
     let mut fg_pixels = 0;
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
+    for y in BORDER_TOP..BORDER_TOP + CELL_H {
+        for x in BORDER_X..BORDER_X + CELL_W {
             if px(&fb, x, y) == FG {
                 fg_pixels += 1;
             }
@@ -92,8 +93,8 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     }
     assert!(fg_pixels > 0, "'@' cell rendered no foreground pixels");
 
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER + CELL_W..BORDER + 2 * CELL_W {
+    for y in BORDER_TOP..BORDER_TOP + CELL_H {
+        for x in BORDER_X + CELL_W..BORDER_X + 2 * CELL_W {
             assert_eq!(px(&fb, x, y), BG, "blank cell should be all background");
         }
     }
@@ -115,8 +116,8 @@ fn inverse_video_swaps_fg_and_bg() {
     );
 
     let mut counts = (0, 0);
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
+    for y in BORDER_TOP..BORDER_TOP + CELL_H {
+        for x in BORDER_X..BORDER_X + CELL_W {
             match px(&fb, x, y) {
                 p if p == FG => counts.0 += 1,
                 p if p == BG => counts.1 += 1,
@@ -208,12 +209,12 @@ fn semigraphics4_renders_2x2_color_blocks() {
     let quad_x = CELL_W / 2;
     let quad_y = CELL_H / 2;
     // Upper-left quadrant: lit → SG_COLOR.
-    assert_eq!(px(&fb, BORDER, BORDER), SG_COLOR);
-    assert_eq!(px(&fb, BORDER + quad_x - 1, BORDER + quad_y - 1), SG_COLOR);
+    assert_eq!(px(&fb, BORDER_X, BORDER_TOP), SG_COLOR);
+    assert_eq!(px(&fb, BORDER_X + quad_x - 1, BORDER_TOP + quad_y - 1), SG_COLOR);
     // Upper-right quadrant: unlit → SG_OFF.
-    assert_eq!(px(&fb, BORDER + quad_x, BORDER), SG_OFF);
+    assert_eq!(px(&fb, BORDER_X + quad_x, BORDER_TOP), SG_OFF);
     // Lower-left quadrant: unlit → SG_OFF.
-    assert_eq!(px(&fb, BORDER, BORDER + quad_y), SG_OFF);
+    assert_eq!(px(&fb, BORDER_X, BORDER_TOP + quad_y), SG_OFF);
     // Lower-right quadrant: lit → SG_COLOR.
-    assert_eq!(px(&fb, BORDER + quad_x, BORDER + quad_y), SG_COLOR);
+    assert_eq!(px(&fb, BORDER_X + quad_x, BORDER_TOP + quad_y), SG_COLOR);
 }
