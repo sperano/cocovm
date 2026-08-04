@@ -18,8 +18,10 @@ const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
 /// Window size of a launched VM's own native OS window, from the crate
 /// root's own sizing constants (`crate::SCALE`/`TARGET_ASPECT`/`MENU_BAR_H`/
-/// `TOOLBAR_H`/`STATUS_BAR_H`), sized for the aspect-corrected (wider) image
-/// so it always fits.
+/// `TOOLBAR_H`/`STATUS_BAR_H`), sized for the aspect-corrected image.
+/// 972×~835 pt at the full-visible-picture geometry (243 rows × SCALE) —
+/// tall enough to overflow an 800-pt-logical laptop screen; clamp to the
+/// host screen if that's ever reported.
 fn vm_window_inner_size() -> egui::Vec2 {
     let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
     let win_w = img_h * crate::TARGET_ASPECT;

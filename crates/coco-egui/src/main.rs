@@ -96,9 +96,11 @@ pub(crate) use widgets::{
 
 /// Integer scale factor for the (small) CoCo framebuffer.
 pub(crate) const SCALE: f32 = 3.0;
-/// Physical aspect the CoCo frame fills on an NTSC set (4:3). The framebuffer is
-/// 288×224 (≈1.29:1); when aspect correction is on, the image is stretched
-/// horizontally to this ratio so pixels are ~3% wider than tall, as on real hardware.
+/// Physical aspect the CoCo frame fills on an NTSC set: exactly 4:3,
+/// because the render buffers cover the machine's full visible picture
+/// (`coco_core::video`/`raster` — border to border, 243 of 262 lines).
+/// With correction off, the frame shows at its square-pixel aspect instead
+/// ([`coco_core::video::SQUARE_PIXEL_ASPECT`], ≈1.53 — ~15% wider).
 pub(crate) const TARGET_ASPECT: f32 = 4.0 / 3.0;
 /// Cap on emulated fields run in one UI update: catches up after short host
 /// stalls (~130 ms) but drops time beyond that instead of spiralling.

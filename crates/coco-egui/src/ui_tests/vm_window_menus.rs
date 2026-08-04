@@ -151,6 +151,39 @@ fn view_menu_toggles_aspect() {
     assert!(!harness.state().aspect_correct);
 }
 
+/// The toggle must visibly change the letterboxed display rect — and by the
+/// same ratio on a TV as on a monitor. Regression test for the F9 item
+/// doing nothing: the uncorrected aspect used to derive from the processed
+/// texture, and the TV chain's scanline doubling happened to land exactly
+/// on 4:3, cancelling the toggle (`app/frame.rs`'s `draw_display` doc).
+#[test]
+fn aspect_toggle_changes_the_display_rect_on_monitors_and_tvs() {
+    let aspect_of = |harness: &AppHarness| {
+        let rect = harness.state().display_rect;
+        rect.width() / rect.height()
+    };
+    for display in [
+        Display::Monitor(MonitorType::RGB),
+        Display::TV(display::TV::Color),
+    ] {
+        let mut harness = boot_harness();
+        harness.state_mut().display = display;
+        harness.step();
+        assert!(
+            (aspect_of(&harness) - TARGET_ASPECT).abs() < 0.01,
+            "{display:?}: corrected view letterboxes at 4:3"
+        );
+
+        harness.key_press(egui::Key::F9);
+        harness.step();
+        harness.step();
+        assert!(
+            (aspect_of(&harness) - coco_core::video::SQUARE_PIXEL_ASPECT).abs() < 0.01,
+            "{display:?}: uncorrected view letterboxes at the square-pixel aspect"
+        );
+    }
+}
+
 /// The status bar's display entry is the menu button for the display menu
 /// (`CocoApp::display_menu_ui`) — the View menu no longer carries the
 /// choice. The entry's label is the short form of the current selection

@@ -107,14 +107,17 @@ impl CocoApp {
     /// frame (it uploads `self.texture`, `unwrap`ped below).
     pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
         let tex = self.texture.as_ref().unwrap();
-        let tex_size = tex.size_vec2();
-        // Aspect the displayed frame should have, independent of the buffer's
-        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
-        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        // Aspect the displayed frame should have: the 4:3 tube when
+        // corrected, else the square-pixel view of the machine's visible
+        // window (identical for both renderer geometries — `video.rs`'s
+        // constant doc). NOT derived from the texture: the TV chain's
+        // scanline doubling changes the texture's shape but not the
+        // picture's, so a tex-derived aspect would disagree between a
+        // monitor and a TV showing the same machine.
         let aspect = if self.aspect_correct {
             TARGET_ASPECT
         } else {
-            tex_size.x / tex_size.y
+            coco_core::video::SQUARE_PIXEL_ASPECT
         };
         // Largest rect of that aspect that fits the panel, centered (letterboxed).
         let avail = ui.available_rect_before_wrap();
