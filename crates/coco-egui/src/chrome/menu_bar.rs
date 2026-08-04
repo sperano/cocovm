@@ -1,5 +1,6 @@
 //! The menu bar. Each menu that is more than a handful of items lives in its
-//! own submodule; the short ones (Keyboard, View, Help) stay here.
+//! own submodule; the short ones (Keyboard, View, Help, and the status
+//! bar's display menu) stay here.
 
 use crate::*;
 
@@ -41,8 +42,9 @@ impl CocoApp {
         }
     }
 
-    /// The View menu: scaling, aspect correction, and the optional
-    /// Orchestra-90 level meters and monitor type.
+    /// The View menu: aspect correction, the debugger, and the optional
+    /// windows. The display choice lives in the status bar's display entry
+    /// alone ([`Self::display_menu_ui`]), not here.
     fn view_menu_ui(&mut self, ui: &mut egui::Ui) {
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
         ui.separator();
@@ -59,11 +61,18 @@ impl CocoApp {
             orch90_present,
             egui::Checkbox::new(&mut self.show_orch90, "Orchestra-90 Levels"),
         );
-        ui.separator();
-        // Swapping the display cable doesn't erase machine state, so this
-        // takes effect live rather than requiring a power cycle. Monitor
-        // choices exist only where a monitor port does (CoCo 3); a CoCo 1/2
-        // offers just the two TVs (`Display::choices`).
+    }
+
+    /// The display choice and the TV chain's knobs — what the status bar's
+    /// display entry pops up (`chrome::status_bar`'s `display_status`).
+    /// That entry is the only way in: the menu bar's View menu no longer
+    /// carries the display choice.
+    ///
+    /// Swapping the display cable doesn't erase machine state, so this
+    /// takes effect live rather than requiring a power cycle. Monitor
+    /// choices exist only where a monitor port does (CoCo 3); a CoCo 1/2
+    /// offers just the two TVs (`Display::choices`).
+    pub(super) fn display_menu_ui(&mut self, ui: &mut egui::Ui) {
         let variant = self.machine.config.variant;
         for &display in Display::choices(variant) {
             if ui

@@ -203,7 +203,7 @@ impl CocoApp {
         // a state saved under an RGB monitor into a session watching a TV
         // would otherwise leave the TV decoding the RGB unpack, the exact
         // combination `display::Display` exists to rule out. Re-assert the
-        // pref's signal path, same as a View-menu display click.
+        // pref's signal path, same as a display-menu click.
         if let Some(monitor) = self.display.to_monitor(self.machine.config.variant) {
             self.machine.bus.gime.monitor = monitor;
         }

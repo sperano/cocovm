@@ -469,6 +469,103 @@ pub(crate) fn keyboard_icon(ui: &mut egui::Ui) -> egui::Response {
     response
 }
 
+/// Status-bar display icon size, shared by the monitor and TV silhouettes
+/// so the entry keeps its footprint when the display choice changes.
+const DISPLAY_ICON_SIZE: egui::Vec2 = icon_size(14.0, 11.0);
+
+/// Status-bar display indicator, monitor form (see [`DISPLAY_ICON_SIZE`]).
+/// Always drawn in [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc
+/// comment on why this isn't a light. A bezel rect with the screen punched
+/// out of it, on a thin neck-and-base stand.
+pub(crate) fn monitor_icon(ui: &mut egui::Ui) -> egui::Response {
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, DISPLAY_ICON_SIZE, false);
+
+    // Bezel: the upper rect, leaving the bottom to the stand.
+    let bezel = egui::Rect::from_min_size(
+        rect.min,
+        egui::vec2(DISPLAY_ICON_SIZE.x, DISPLAY_ICON_SIZE.y * 0.72),
+    );
+    painter.rect_filled(bezel, 1.5, shell);
+    painter.rect_filled(bezel.shrink(DISPLAY_ICON_SIZE.y * 0.14), 1.0, punch);
+
+    // Stand: a neck dropping from the bezel and a base line along the bottom.
+    let stand_stroke = egui::Stroke::new(1.5f32, shell);
+    painter.line_segment(
+        [
+            egui::pos2(rect.center().x, bezel.bottom()),
+            egui::pos2(rect.center().x, rect.bottom() - 1.0),
+        ],
+        stand_stroke,
+    );
+    let base_dx = DISPLAY_ICON_SIZE.x * 0.22;
+    painter.line_segment(
+        [
+            egui::pos2(rect.center().x - base_dx, rect.bottom() - 1.0),
+            egui::pos2(rect.center().x + base_dx, rect.bottom() - 1.0),
+        ],
+        stand_stroke,
+    );
+    response
+}
+
+/// Status-bar display indicator, TV form (see [`DISPLAY_ICON_SIZE`]).
+/// Always drawn in [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc
+/// comment on why this isn't a light. A CRT-set body with the screen
+/// punched out toward the left, a punched knob dot on the control-panel
+/// strip at the right, and two rabbit-ear antenna lines rising from the
+/// body's top.
+pub(crate) fn tv_icon(ui: &mut egui::Ui) -> egui::Response {
+    let Icon {
+        rect,
+        shell,
+        punch,
+        painter,
+        response,
+    } = begin_icon(ui, DISPLAY_ICON_SIZE, false);
+
+    // Body: below the antenna's headroom.
+    let body = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.top() + DISPLAY_ICON_SIZE.y * 0.28),
+        egui::vec2(DISPLAY_ICON_SIZE.x, DISPLAY_ICON_SIZE.y * 0.72),
+    );
+    painter.rect_filled(body, 1.5, shell);
+
+    // Rabbit ears: a V from the body's top center to the icon's top corners.
+    let ear_stroke = egui::Stroke::new(1.0f32, shell);
+    let ear_root = egui::pos2(rect.center().x, body.top());
+    for ear_dx in [-DISPLAY_ICON_SIZE.x * 0.22, DISPLAY_ICON_SIZE.x * 0.22] {
+        painter.line_segment(
+            [ear_root, egui::pos2(rect.center().x + ear_dx, rect.top())],
+            ear_stroke,
+        );
+    }
+
+    // Screen: punched toward the left, leaving the control strip.
+    let inset = DISPLAY_ICON_SIZE.y * 0.14;
+    let screen = egui::Rect::from_min_max(
+        body.min + egui::vec2(inset, inset),
+        egui::pos2(
+            body.right() - DISPLAY_ICON_SIZE.x * 0.32,
+            body.bottom() - inset,
+        ),
+    );
+    painter.rect_filled(screen, 1.0, punch);
+
+    // Knob: one punched dot on the control strip.
+    let knob = egui::pos2(
+        (screen.right() + body.right()) / 2.0,
+        body.center().y - DISPLAY_ICON_SIZE.y * 0.1,
+    );
+    painter.circle_filled(knob, DISPLAY_ICON_SIZE.y * 0.09, punch);
+    response
+}
+
 /// Status-bar cartridge icon size: a ROM-pak silhouette.
 const CART_ICON_SIZE: egui::Vec2 = icon_size(13.0, 10.0);
 

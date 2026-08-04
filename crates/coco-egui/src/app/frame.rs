@@ -87,8 +87,8 @@ impl CocoApp {
         let image =
             egui::ColorImage::from_rgba_unmultiplied([frame.width, frame.height], &frame.pixels);
         // NEAREST for monitors, LINEAR for TVs (`texture_options`'s doc).
-        // Passed on every `set`, so switching the display in the View menu
-        // re-filters the very next frame.
+        // Passed on every `set`, so switching the display in the status
+        // bar's display menu re-filters the very next frame.
         let options = crate::display::texture_options(self.display);
         let texture = self
             .texture
