@@ -25,6 +25,7 @@ impl CocoApp {
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     self.keyboard_status(ui);
+                    self.display_status(ui);
                     self.cart_status(ui);
                     self.joystick_status(ui);
                     self.rs232_status(ui);
@@ -42,12 +43,13 @@ impl CocoApp {
             });
     }
 
-    /// The keyboard entry — the one status-bar entry that is also a
-    /// control: icon and [`KEYBOARD_LABEL`] are a single click target that
-    /// pops up the keyboard menu (`keyboard_menu_ui` — positional/symbolic,
-    /// then the key layout window). This entry is the only way in: the menu
-    /// bar has no Keyboard menu of its own. The current mode lives in the
-    /// hover text, since the label no longer spells it out.
+    /// The keyboard entry — a status-bar entry that is also a control
+    /// (like [`Self::display_status`]): icon and [`KEYBOARD_LABEL`] are a
+    /// single click target that pops up the keyboard menu
+    /// (`keyboard_menu_ui` — positional/symbolic, then the key layout
+    /// window). This entry is the only way in: the menu bar has no Keyboard
+    /// menu of its own. The current mode lives in the hover text, since the
+    /// label no longer spells it out.
     ///
     /// The label is a frameless button rather than a plain one: `frame(false)`
     /// zeroes the button padding too, so it lines up with the plain labels
@@ -83,6 +85,37 @@ impl CocoApp {
             // and paints one clipped frame before snapping up.
             .align(egui::RectAlign::TOP_START)
             .show(|ui| self.keyboard_menu_ui(ui));
+    }
+
+    /// The display entry — the bar's other entry that is also a control,
+    /// built exactly like [`Self::keyboard_status`]: a painted icon
+    /// (monitor or TV set, tracking the current [`Display`]) and a short
+    /// frameless-button label form one click target that pops up the
+    /// display menu (`display_menu_ui` — the choices plus the TV knobs);
+    /// like the keyboard entry, this is the only way in — the View menu
+    /// doesn't carry the choice. The full device name lives in the hover
+    /// text; the label is [`Display::short_label`]. See the keyboard
+    /// entry's comments for why the popup gets an explicit id and a
+    /// `TOP_START` anchor.
+    fn display_status(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        let icon = match self.display {
+            Display::Monitor(_) => monitor_icon(ui),
+            Display::TV(_) => tv_icon(ui),
+        }
+        .interact(egui::Sense::click());
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Display menu")
+        });
+        let entry = (icon | ui.add(egui::Button::new(self.display.short_label()).frame(false)))
+            .on_hover_text(format!(
+                "Display: {} — click for the display menu",
+                self.display.label()
+            ));
+        egui::Popup::menu(&entry)
+            .id(ui.id().with("display_menu"))
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.display_menu_ui(ui));
     }
 
     fn cart_status(&self, ui: &mut egui::Ui) {

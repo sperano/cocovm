@@ -138,7 +138,23 @@ fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
 }
 
 #[test]
-fn view_menu_toggles_aspect_and_switches_display() {
+fn view_menu_toggles_aspect() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "View");
+    click(&mut harness, "4:3 aspect (F9)");
+    assert!(!harness.state().aspect_correct);
+}
+
+/// The status bar's display entry is the menu button for the display menu
+/// (`CocoApp::display_menu_ui`) — the View menu no longer carries the
+/// choice. The entry's label is the short form of the current selection
+/// ("RGB", …), the menu items the full names — distinct in the
+/// accessibility tree while the popup is open, except for "B&W TV", whose
+/// short and full forms coincide; that's why the reopen below goes through
+/// the icon's "Display menu" name instead of the entry label.
+#[test]
+fn status_bar_display_entry_switches_display() {
     let mut harness = boot_harness();
     assert_eq!(
         harness.state().display,
@@ -147,13 +163,9 @@ fn view_menu_toggles_aspect_and_switches_display() {
     );
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 
-    click(&mut harness, "View");
-    click(&mut harness, "4:3 aspect (F9)");
-    assert!(!harness.state().aspect_correct);
-
     // Picking a TV steers the GIME to the composite path too: the TV hangs
     // off the RF modulator, which is fed the composite signal.
-    click(&mut harness, "View");
+    click(&mut harness, "RGB");
     click(&mut harness, "B&W TV");
     assert_eq!(harness.state().display, Display::TV(crate::display::TV::BW));
     assert_eq!(
@@ -162,7 +174,9 @@ fn view_menu_toggles_aspect_and_switches_display() {
         "display swap takes effect live, no power cycle"
     );
 
-    click(&mut harness, "View");
+    // The entry's label tracks the selection; the icon half of the click
+    // target works too, under `display_status`'s `widget_info` name.
+    click(&mut harness, "Display menu");
     click(&mut harness, "RGB monitor");
     assert_eq!(harness.state().display, Display::Monitor(MonitorType::RGB));
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);

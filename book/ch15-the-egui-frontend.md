@@ -138,7 +138,7 @@ Look at the checkbox that toggles aspect correction, in the View menu:
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
 ```
 
-([`crates/coco-egui/src/chrome/menu_bar.rs:43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L43).) The signature is the
+([`crates/coco-egui/src/chrome/menu_bar.rs:49`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L49).) The signature is the
 whole lesson. `ui.checkbox` takes a `&mut bool` — a mutable borrow of a
 field that belongs to `CocoApp`. It draws the box in whichever state that
 bool currently holds, and, if the click landed on it this frame, it flips
@@ -165,37 +165,41 @@ this concrete. Here is the whole thing:
 
 ```rust
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                self.keyboard_status(ui);
-                self.cart_status(ui);
-                self.joystick_status(ui);
-                self.rs232_status(ui);
-                self.mpi_status(ui);
-                self.disk_status(ui);
-                self.vhd_status(ui);
-                self.drivewire_status(ui);
-                self.tape_status(ui);
-                self.printer_status(ui);
-                if let Some(toast) = self.toast_message() {
-                    ui.separator();
-                    ui.label(toast);
-                }
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(STATUS_BAR_H)
+            .show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    self.keyboard_status(ui);
+                    self.display_status(ui);
+                    self.cart_status(ui);
+                    self.joystick_status(ui);
+                    self.rs232_status(ui);
+                    self.mpi_status(ui);
+                    self.disk_status(ui);
+                    self.vhd_status(ui);
+                    self.drivewire_status(ui);
+                    self.tape_status(ui);
+                    self.printer_status(ui);
+                    if let Some(toast) = self.toast_message() {
+                        ui.separator();
+                        ui.label(toast);
+                    }
+                });
             });
-        });
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:8-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L8-L27).) The toast at the
+([`crates/coco-egui/src/chrome/status_bar.rs:22-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L22-L44).) The toast at the
 end is a conditional widget, not a label that gets shown and hidden:
 whether the bar ends with a toast is decided fresh, sixty times a second,
-by asking `toast_message()`. The first entry, `keyboard_status`, is the
-bar's one control as well as a readout: it `|`-unions the icon's response
-with the mode readout's frameless button into a single click target and
-hangs the menu bar's own Keyboard menu off it with
-`egui::Popup::menu(&entry)` — a menu that, like the toast, exists only on
-the frames it is open. The other nine `*_status` calls are where the
-conditional-widget idea gets interesting. Each one is written like this:
+by asking `toast_message()`. The first two entries, `keyboard_status` and
+`display_status`, are the bar's controls as well as readouts: each
+`|`-unions its icon's response with a frameless-button readout into a
+single click target and hangs a menu off it with
+`egui::Popup::menu(&entry)` — the Keyboard menu, and the display menu
+(monitor or TV choice plus the TV knobs) — menus that, like the toast,
+exist only on the frames they are open. The other nine `*_status` calls
+are where the conditional-widget idea gets interesting. Each one is written like this:
 
 ```rust
     fn cart_status(&self, ui: &mut egui::Ui) {
@@ -206,8 +210,8 @@ conditional-widget idea gets interesting. Each one is written like this:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:69-74`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L69-L74).) The `cart_icon`
-call ahead of the label is one of ten small device silhouettes the bar
+([`crates/coco-egui/src/chrome/status_bar.rs:121-126`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L121-L126).) The `cart_icon`
+call ahead of the label is one of twelve small device silhouettes the bar
 paints from `Painter` primitives
 ([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the
 same per-frame function-call discipline as everything else here, a
@@ -294,7 +298,7 @@ exists but is disabled:
         );
 ```
 
-([`crates/coco-egui/src/chrome/menu_bar.rs:53-57`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L53-L57).) "Enabled" is not
+([`crates/coco-egui/src/chrome/menu_bar.rs:59-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L59-L63).) "Enabled" is not
 a property set on a persistent object and later unset; it is an argument
 passed to a function that is called again next frame with a freshly
 computed value. Insert an Orchestra-90 cartridge and the menu item becomes
@@ -2445,10 +2449,10 @@ are git-ignored and local-only, so these counts are a dated snapshot rather
 than a permanent expectation:
 
 ```
-test result: FAILED. 154 passed; 38 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 154 passed; 39 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-**In that run, all 38 failures required missing ROM data.** Every one
+**In that run, all 39 failures required missing ROM data.** Every one
 traces to the same missing file: most panic right at a
 `std::fs::read`/`load_default_rom` call reading
 `roms/coco3.rom` or (for the FD-502 tests) `roms/disk11.rom`, with a
@@ -2462,7 +2466,7 @@ reason. The failing set breaks down cleanly into four groups:
 - `launch::tests::*` (4) — unit tests of `launch_machine` itself, each
   building a full `CocoApp` from a saved definition and so loading the
   real ROM.
-- `ui_tests::vm_window_menus::*` (19) — every kittest test that calls
+- `ui_tests::vm_window_menus::*` (20) — every kittest test that calls
   `boot_harness()`, which requires the real system ROM to construct a
   `CocoApp` at all.
 - `ui_tests::manager_lifecycle::*` (9 of the file's 10) — the tests that
@@ -2498,7 +2502,7 @@ importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 192 tests should pass.
+checkout with real ROMs present, all 193 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a

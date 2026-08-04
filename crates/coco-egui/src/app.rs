@@ -25,12 +25,12 @@ pub(crate) struct CocoApp {
     /// What the video output is plugged into — monitor or (B&W) TV
     /// (`display.rs`). A UI preference like `aspect_correct`: seeded from
     /// the config here, overridden by the definition's `[hardware].display`
-    /// (`launch::launch_machine`), and live-switchable from the View menu
-    /// afterwards.
+    /// (`launch::launch_machine`), and live-switchable from the status bar's
+    /// display entry afterwards.
     pub(crate) display: Display,
     /// The TV chain's knobs (scanline strength, …) — same lifecycle as
-    /// `display`: `[ui]` keys for the starting values, View-menu sliders
-    /// live. Only consulted while `display` is a TV.
+    /// `display`: `[ui]` keys for the starting values, the display menu's
+    /// sliders live. Only consulted while `display` is a TV.
     pub(crate) tv: display::TVSettings,
     /// Frame counter feeding the TV chain's noise seed
     /// (`display::process`), bumped every texture upload so the snow

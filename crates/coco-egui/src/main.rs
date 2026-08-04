@@ -85,7 +85,7 @@ pub(crate) use startup::{
 };
 pub(crate) use status_icons::{
     StatusActivity, cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon,
-    keyboard_icon, mpi_icon, printer_icon, rs232_icon, vhd_icon,
+    keyboard_icon, monitor_icon, mpi_icon, printer_icon, rs232_icon, tv_icon, vhd_icon,
 };
 pub(crate) use typeahead::{KbMode, TypeAhead};
 pub(crate) use widgets::{

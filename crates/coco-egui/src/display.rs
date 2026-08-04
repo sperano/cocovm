@@ -43,7 +43,7 @@ pub(crate) enum Display {
     TV(TV),
 }
 
-/// Every choice, in the View menu's / detail form's display order.
+/// Every choice, in the display menu's / detail form's display order.
 const ALL: [Display; 4] = [
     Display::Monitor(MonitorType::RGB),
     Display::Monitor(MonitorType::Composite),
@@ -107,6 +107,18 @@ impl Display {
             Display::Monitor(MonitorType::RGB) => "RGB monitor",
             Display::Monitor(MonitorType::Composite) => "Composite monitor",
             Display::TV(TV::Color) => "Color TV",
+            Display::TV(TV::BW) => "B&W TV",
+        }
+    }
+
+    /// Status-bar label: just the signal or set — the icon beside it already
+    /// says monitor vs. TV, and [`Self::label`] lives in the entry's hover
+    /// text (same compaction as the bar's keyboard entry).
+    pub(crate) const fn short_label(self) -> &'static str {
+        match self {
+            Display::Monitor(MonitorType::RGB) => "RGB",
+            Display::Monitor(MonitorType::Composite) => "Composite",
+            Display::TV(TV::Color) => "TV",
             Display::TV(TV::BW) => "B&W TV",
         }
     }
@@ -194,7 +206,7 @@ const DEFAULT_SCANLINE_PCT: u8 = 35;
 const DEFAULT_NOISE_PCT: u8 = 5;
 
 /// User-adjustable knobs of the TV chain — a UI preference riding along
-/// with [`Display`] (View-menu sliders live, `[ui]` keys persisted).
+/// with [`Display`] (display-menu sliders live, `[ui]` keys persisted).
 /// Integer percentages, not floats: sliders and TOML both stay clean
 /// (`tv_scanline = 35`, no float dust).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
