@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- The emulated picture now covers the full visible NTSC frame, border to
+  border: side borders are wider everywhere, the wide GIME modes
+  (80-column text, 640-pixel graphics) gain the side borders they were
+  missing, and VM windows are slightly taller to fit the 243-line frame.
+- 4:3 aspect correction (on by default) now reproduces the exact shape of
+  the picture on a real tube, and the "4:3 aspect (F9)" toggle works
+  everywhere again — it was a no-op on TV displays. With correction off,
+  the picture shows at its true square-pixel proportions.
+
 ## [0.6.2] - 2026-07-30
 
 ### Added

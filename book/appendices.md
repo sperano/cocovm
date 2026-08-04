@@ -771,7 +771,7 @@ diagnostic/demo code deliberately probing GIME register behavior. **What it
 would force**, per `ch09`'s own framing of the question (§9.17 exercise 9.6):
 `end_of_line`/`run_field`'s fixed `lines_per_field` assumption (`ch06`)
 would have to become mutable mid-field rather than read once per field, and
-`render_scanline`'s canvas math — currently a fixed `CANVAS_H = 240` — would
+`render_scanline`'s canvas math — currently a fixed `CANVAS_H = 243` — would
 need to handle the active line count itself changing under it without
 corrupting framebuffer geometry. A small register read turns into a
 structural assumption breaking in two different files.
@@ -848,16 +848,16 @@ exactly as documented:
 
 ```
 $ cargo run -p coco-core --example gime_demo -- /tmp/ppm
-wrote /tmp/ppm/text80.ppm (640x240)
-wrote /tmp/ppm/hscreen2.ppm (640x240)
+wrote /tmp/ppm/text80.ppm (744x243)
+wrote /tmp/ppm/hscreen2.ppm (744x243)
 ```
 
 [`gime_demo.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/gime_demo.rs) synthesizes an 80-column attribute text screen and an
 HSCREEN-2 color-bar frame entirely by poking `GIME` registers and RAM
 directly — no ROM, no CPU execution at all — then calls `gime_video`'s
-renderer and writes the resulting framebuffer as a PPM. The 640×240
+renderer and writes the resulting framebuffer as a PPM. The 744×243
 dimensions match the canonical raster canvas `ch07` introduces
-([`raster.rs:16`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L16)), confirming the example renders through the same code path
+([`raster.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L29)), confirming the example renders through the same code path
 the real machine's video pipeline does, just with hand-poked registers
 standing in for ROM-driven ones.
 
@@ -900,7 +900,7 @@ shareable, ImageMagick handles it in one line:
 convert text80.ppm text80.png
 ```
 
-`gime_demo.rs`'s output, confirmed above, is a normal 640×240 24-bit PPM —
+`gime_demo.rs`'s output, confirmed above, is a normal 744×243 24-bit PPM —
 nothing about the format needs special handling beyond what any of those
 tools already do.
 

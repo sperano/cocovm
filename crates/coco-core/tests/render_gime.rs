@@ -34,7 +34,7 @@ const VRES_TEXT80_ATTR: u8 = 0x15;
 /// px, xscale 2.
 const VRES_TEXT40: u8 = 0x04;
 /// $FF99 for 64-column text without attributes: HRES=%100. Non-wide: 512
-/// native px, xscale 1, 64 px side borders.
+/// native px, xscale 1, 116 px side borders.
 const VRES_TEXT64: u8 = 0x10;
 /// $FF98 for graphics: BP=1, 1 line per row.
 const GFX: u8 = vmode::BP;

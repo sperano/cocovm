@@ -111,7 +111,7 @@ pub fn sample_cell(
 }
 
 /// [`sample_cell`] for the CoCo 3, whose legacy modes render on the
-/// canonical 640×240 raster: non-wide 512 px body behind a 64 px border
+/// canonical 744×243 raster: non-wide 512 px body behind a 116 px border
 /// (native pixels doubled, so a cell pixel spans 2 canvas px — the left one
 /// is sampled), body top at row 25 (LPF=%00).
 pub fn sample_cell_canonical(

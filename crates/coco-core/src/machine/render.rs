@@ -10,7 +10,7 @@ use super::{BYTES_PER_PIXEL, FB_HEIGHT, FB_WIDTH, Machine, TEXT_BORDER_COLOR};
 
 impl Machine {
     /// Current scanline within the field (`0..lines_per_field`): the canonical
-    /// raster row being painted (rows ≥ 240 are vertical blanking). Exposed
+    /// raster row being painted (rows ≥ 243 are vertical blanking). Exposed
     /// for scanline-timed tests and debug UI.
     pub fn scanline(&self) -> u32 {
         self.line

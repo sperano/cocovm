@@ -623,7 +623,7 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 ```
 
-([`crates/coco-egui/src/main.rs:101-106`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L101-L106).) Both exist to prevent the same
+([`crates/coco-egui/src/main.rs:105-110`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L105-L110).) Both exist to prevent the same
 disease, which has a name: *the spiral of death*.
 
 Imagine there were no cap on fields per update. The host stalls for a
@@ -778,7 +778,7 @@ contents.
 That `options` value is the piece that deserves a paragraph, because it is
 the only piece of graphics vocabulary this chapter needs. When a texture is
 drawn at a size other than
-its native pixel dimensions — and it always is, since a 640-pixel-wide CoCo
+its native pixel dimensions — and it always is, since a 744-pixel-wide CoCo
 canvas is being stretched across a 1307-pixel-wide rectangle — the hardware
 has to decide what color to put at each destination pixel. *Nearest*
 sampling picks the single closest source pixel and uses it unchanged.
@@ -807,14 +807,17 @@ than graphics API calls:
 ```rust
     pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
         let tex = self.texture.as_ref().unwrap();
-        let tex_size = tex.size_vec2();
-        // Aspect the displayed frame should have, independent of the buffer's
-        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
-        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        // Aspect the displayed frame should have: the 4:3 tube when
+        // corrected, else the square-pixel view of the machine's visible
+        // window (identical for both renderer geometries — `video.rs`'s
+        // constant doc). NOT derived from the texture: the TV chain's
+        // scanline doubling changes the texture's shape but not the
+        // picture's, so a tex-derived aspect would disagree between a
+        // monitor and a TV showing the same machine.
         let aspect = if self.aspect_correct {
             TARGET_ASPECT
         } else {
-            tex_size.x / tex_size.y
+            coco_core::video::SQUARE_PIXEL_ASPECT
         };
         // Largest rect of that aspect that fits the panel, centered (letterboxed).
         let avail = ui.available_rect_before_wrap();
@@ -833,7 +836,7 @@ than graphics API calls:
     }
 ```
 
-([`crates/coco-egui/src/app/frame.rs:108-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L108-L133).) Find
+([`crates/coco-egui/src/app/frame.rs:108-136`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L108-L136).) Find
 `ui.put(rect, egui::Image::new(sized))` in the middle of that. It is the
 display path's second and last GPU-facing call: draw one textured quad,
 sized to `rect`. Every line above it exists to decide what `rect`
@@ -879,8 +882,9 @@ set. Trace the algorithm as four steps:
 
 1. Decide the *target aspect ratio*, independent of the texture's actual
    pixel dimensions. That is `TARGET_ASPECT = 4.0 / 3.0` when aspect
-   correction is on — the real shape of an NTSC picture — or the texture's
-   own raw width-over-height when correction is off.
+   correction is on — the real shape of an NTSC picture — or
+   `coco_core::video::SQUARE_PIXEL_ASPECT` (≈1.53, the frame drawn with
+   square pixels) when correction is off.
 2. Assume the panel's *full width* first, and derive the height that aspect
    demands: `h = w / aspect`.
 3. If that guess is *taller* than the panel, the width assumption was
@@ -893,8 +897,8 @@ set. Trace the algorithm as four steps:
    the panel is created in `window_ui`.
 
 Now plug in real numbers. Take a CoCo 3 running in a GIME-native mode, so
-its canvas is the canonical 640×240 raster (`raster::CANVAS_W` and
-`CANVAS_H`, [`crates/coco-core/src/raster.rs:15-18`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L15-L18), Chapter 7), inside a
+its canvas is the canonical 744×243 raster (`raster::CANVAS_W` and
+`CANVAS_H`, [`crates/coco-core/src/raster.rs:27-32`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L27-L32), Chapter 7), inside a
 1920×1080 window. Subtract the fixed chrome heights `coco-egui` reserves —
 `MENU_BAR_H` at 22, `TOOLBAR_H` at 56 (not a literal but computed: the
 toolbar's 52-pixel transport tiles, `BUTTON_SIZE.y`, plus the panel's
@@ -915,56 +919,72 @@ constraint, so the leftover space is horizontal: roughly
 `(1920 − 1306.7) / 2 ≈ 307` pixels of black bar down each side. That is
 pillarboxing.
 
-**Aspect-uncorrected**, so `aspect = tex_size.x / tex_size.y = 640/240 ≈
-2.6667` — the raw, non-square-pixel shape of the canvas itself:
+**Aspect-uncorrected**, so `aspect = SQUARE_PIXEL_ASPECT = 372/243 ≈
+1.5309` — the frame's own pixels drawn square:
 
 ```
-w = 1920                 (try full width)
-h = 1920 / 2.6667 = 720  (fits inside 980 — no clamp needed)
+w = 1920                   (try full width)
+h = 1920 / 1.5309 = 1254   (taller than the 980 available!)
+→ clamp: h = 980
+  w = 980 × 1.5309 = 1500.3
 ```
 
-The final rectangle is **1920 × 720**, centered. Width was the binding
-constraint this time, the `if` did not fire, and the leftover space is
-vertical: `(980 − 720) / 2 = 130` pixels of black bar top and
-bottom. That is letterboxing.
+The final rectangle is **1500 × 980**, centered — the same height as the
+corrected picture but about 15% wider, with narrower bars of roughly
+`(1920 − 1500.3) / 2 ≈ 210` pixels each side. That widening *is* the F9
+toggle: pressing it swaps which `aspect` value feeds the identical fit
+logic, and the picture stretches or relaxes in place. (In a panel
+proportionally wider than the target aspect — an ultrawide monitor, say —
+the same algorithm letterboxes instead: the width guess survives, the `if`
+never fires, and the leftover space lands top and bottom.)
 
 Two different final rectangles, same algorithm, same source texture. The
 only thing that changed between them was which `aspect` value was fed in.
 That is the whole payoff of computing `aspect` *before* the fit logic runs,
-as a mode-agnostic scalar, rather than hard-coding "stretch to 4:3" into
-the layout math. The doc comment says so directly: "This keeps the frontend
-mode-agnostic — any renderer's buffer size fits"
-([`crates/coco-egui/src/app/frame.rs:112-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L112-L114)). A CoCo 1 in a legacy VDG
-mode hands this function a 288×224 buffer instead of a 640×240 one and
-needs no code change whatsoever, because the function never assumed a size.
+as a single scalar, rather than hard-coding "stretch to 4:3" into the
+layout math. Notice what the scalar is *not* derived from: the texture.
+The excerpt's comment explains why — the TV chain's scanline doubling
+(§15.6) hands this function a texture twice as tall as the machine's
+framebuffer, and an aspect read off `tex_size` would therefore disagree
+between a monitor and a TV showing the same machine. Both target aspects
+are properties of the *machine's picture*, not of whichever processed
+buffer happens to carry it, and both renderer geometries — the CoCo 1/2's
+372×243 frame and the CoCo 3's 744×243 canvas — share the same two values
+by construction, so the function never assumes a size.
 
 ### Why the pixels aren't square in the first place
 
 One more number is worth internalizing, and it comes from `main.rs`'s own
 doc comment on `TARGET_ASPECT`:
 
-> Physical aspect the CoCo frame fills on an NTSC set (4:3). The
-> framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
-> is stretched horizontally to this ratio so pixels are ~3% wider than
-> tall, as on real hardware.
-> ([`crates/coco-egui/src/main.rs:97-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L97-L100))
+> Physical aspect the CoCo frame fills on an NTSC set: exactly 4:3,
+> because the render buffers cover the machine's full visible picture
+> (`coco_core::video`/`raster` — border to border, 243 of 262 lines).
+> With correction off, the frame shows at its square-pixel aspect instead
+> ([`coco_core::video::SQUARE_PIXEL_ASPECT`], ≈1.53 — ~15% wider).
+> ([`crates/coco-egui/src/main.rs:99-104`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L99-L104))
 
-That 288×224 figure is `coco_core::video::FB_W` and `FB_H` — the CoCo 1
-and 2 legacy VDG canvas, which is a 256×192 active area plus a 16-pixel
-border on every side ([`crates/coco-core/src/video.rs:33-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L33-L38)). Do the
-division: `4/3 ÷ (288/224) ≈ 1.037`, a 3.7% horizontal stretch, which
-matches the "~3%" the comment claims.
+The word "exactly" is earning its keep there. A television's visible
+picture is 4:3 by definition — that is the broadcast standard's shape — so
+a framebuffer that covers *all* of the visible picture, border to border
+and 243 of the field's 262 lines (Chapter 7, §7.2.2), must fill exactly
+4:3 when it reaches the glass. The correction is exact because the crop is
+complete.
 
-This is not an emulator quirk to apologize for. Real NTSC CoCos drove
-non-square pixels onto a 4:3 tube in exactly this way, because the
-hardware's dot clock and the television's physical aspect ratio were never
-designed to agree pixel for pixel — the dot clock came from the color
-subcarrier (Chapter 1, §1.2), and the tube's shape came from a broadcast
-standard set decades earlier. `TARGET_ASPECT` is the frontend choosing to
-reproduce that historical mismatch rather than "fix" it into square pixels
-that no CoCo owner ever actually saw. Turning aspect correction off with F9
-is the other choice, and it is the right one when comparing a screenshot
-against a reference emulator pixel for pixel.
+But the frame is 372 pixels wide and 243 tall, and `372/243 ≈ 1.53` is not
+`4/3 ≈ 1.33`. Squeezing 1.53 worth of square pixels into a 4:3 rectangle
+means each pixel lands about 15% narrower than tall on the tube — and that
+is not an emulator quirk to apologize for, it is what the hardware did.
+The VDG's dot clock came from the color subcarrier (Chapter 1, §1.2), and
+the tube's shape came from a broadcast standard set decades earlier; the
+two were never designed to agree pixel for pixel, so real NTSC CoCos drove
+non-square pixels onto the 4:3 glass exactly as `TARGET_ASPECT` reproduces.
+Turning aspect correction off with F9 is the other choice — every pixel
+square, the picture ~15% wider than any CoCo owner ever saw it — and it is
+the right one when inspecting pixel art or comparing a screenshot against a
+reference emulator's output. (For MAME specifically, Chapter 7's canvas doc
+records the recipe: MAME's 640×240 visible window sits inside the canvas at
+a fixed offset, so the comparison is a crop, never a rescale.)
 
 ### The initial window size, and why getting it wrong is harmless
 
@@ -982,16 +1002,20 @@ fn vm_window_inner_size() -> egui::Vec2 {
 }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:23-28`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L23-L28).) Notice the input:
-`coco_core::video::FB_H`, the fixed 224-pixel legacy figure, multiplied by
-`SCALE` — for *every* machine variant the manager can launch, including a
-CoCo 3 whose native canvas is 240 rows tall rather than 224. It is the one
-and only formula for a VM window's starting size: every machine variant
-the manager launches gets the same starting rectangle, `draw_running_vms`
-passing it straight to `ViewportBuilder::with_inner_size` alongside the
-window's title (the VM's own name, not a machine-variant label — the
-manager identifies windows by the VM the user named, not by what chip is
-inside).
+([`crates/coco-egui/src/manager/vm_windows.rs:25-30`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L25-L30).) Notice the input:
+`coco_core::video::FB_H`, the legacy framebuffer height, multiplied by
+`SCALE` — for *every* machine variant the manager can launch. That
+happens to be an honest height for all of them, since the CoCo 3 canvas
+deliberately shares the legacy frame's 243 visible lines (§7.3), but the
+width is sized for the aspect-*corrected* picture only: switch correction
+off and the ~15%-wider square-pixel view no longer fits the window's width
+at full height, so the first uncorrected frame draws slightly smaller,
+letterboxed. It is the one and only formula for a VM window's starting
+size: every machine variant the manager launches gets the same starting
+rectangle, `draw_running_vms` passing it straight to
+`ViewportBuilder::with_inner_size` alongside the window's title (the VM's
+own name, not a machine-variant label — the manager identifies windows by
+the VM the user named, not by what chip is inside).
 
 That is an approximation, and it is not a bug, because of what the number
 is *for*. It seeds the window's starting size and nothing else.
@@ -1331,7 +1355,7 @@ press has to survive across multiple 60 Hz `KEYIN` scans of the ROM to
 register at all; a press and release confined to a single field can land
 entirely between two scans and simply vanish. The tuned constants are
 `TYPE_HOLD_FIELDS = 2` and `TYPE_GAP_FIELDS = 1`
-([`crates/coco-egui/src/main.rs:135-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L135-L137)): hold each synthesized keypress
+([`crates/coco-egui/src/main.rs:137-139`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L137-L139)): hold each synthesized keypress
 for two fields, safely longer than one scan interval, then release for one
 field before the next tap begins, so that two identical consecutive
 characters — the `"AA"` in a pasted `DATA` statement — read as two separate
@@ -1437,7 +1461,7 @@ VirtualBox or Parallels, listing every machine you have defined, with a
 deck-style transport — power on, suspend to disk, power off — and a detail
 pane for editing hardware and attached media.
 The dispatch in `main()` is unconditional now: "the app always opens the
-CocoVM manager window" ([`crates/coco-egui/src/main.rs:155-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L155-L157)) — and
+CocoVM manager window" ([`crates/coco-egui/src/main.rs:157-159`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L157-L159)) — and
 everything downstream of it is in
 [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its submodules. `coco` used to fork on
 argument count instead — no arguments opened the manager, any argument at
@@ -1820,7 +1844,7 @@ The loop's core is three lines:
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:67-70`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L67-L70).) The
+([`crates/coco-egui/src/manager/vm_windows.rs:69-72`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L69-L72).) The
 `viewport_id` above it is
 `egui::ViewportId::from_hash_of(("vm-window", &slug))`, which gives each
 VM's window a stable identity across frames. That stability is what makes
@@ -1851,7 +1875,7 @@ machine takes the straightforward path:
             }
 ```
 
-([`crates/coco-egui/src/manager/vm_windows.rs:138-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L138-L162), comment lines
+([`crates/coco-egui/src/manager/vm_windows.rs:140-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L140-L164), comment lines
 elided.) That single
 `vm.window_ui(child_ctx)` call is the payoff for everything §15.2 and
 §15.3 established. The *entire* `CocoApp` experience — menu bar, toolbar,
@@ -1871,7 +1895,7 @@ machinery, applies it after the loop exactly as it applies close
 requests.
 
 A *Suspended* machine whose window is still open takes a middle branch
-([`crates/coco-egui/src/manager/vm_windows.rs:115-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L115-L137)):
+([`crates/coco-egui/src/manager/vm_windows.rs:117-139`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L117-L139)):
 the framebuffer-texture upload plus the display, no chrome, and no
 `step_emulation` either, since its `handle_input` would keep the
 quick-load/quick-save shortcuts and keyboard/joystick writes live. The
@@ -1895,7 +1919,7 @@ bare display:
 (for a Running machine — a suspended one gets the same
 texture-upload-only gating here as in the native branch), followed by an
 anchored `egui::Window` whose body is just `vm.draw_display(ui)`
-([`crates/coco-egui/src/manager/vm_windows.rs:85-111`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L85-L111)). Two decisions
+([`crates/coco-egui/src/manager/vm_windows.rs:87-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs#L87-L113)). Two decisions
 in that fallback are worth reading the comments for. It skips
 `draw_chrome` because two independent sets of menu bars and status bars
 drawn into one shared context would interleave into a single confusing
@@ -2519,7 +2543,7 @@ the emulated hardware buys.
 
 In this order:
 
-1. **[`crates/coco-egui/src/main.rs:1-137`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L137)** — the crate's module list (a
+1. **[`crates/coco-egui/src/main.rs:1-139`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L1-L139)** — the crate's module list (a
    map of everything this chapter did and didn't cover) and the constants
    block: `SCALE`, `TARGET_ASPECT`, `MAX_FIELDS_PER_UPDATE`, `MAX_FRAME_DT`,
    `TYPE_HOLD_FIELDS`/`TYPE_GAP_FIELDS`.
@@ -2556,14 +2580,15 @@ cargo test -p coco-egui
 
 **15.1 — Letterbox arithmetic (compute).** A `CentralPanel` measures
 **1200 × 700** pixels (already net of menu/toolbar/status chrome). The
-mounted texture is the CoCo 3's 640×240 canonical canvas. Compute the
-final displayed rectangle, by hand, for (a) aspect correction **on**
-(`aspect = 4/3`) and (b) aspect correction **off** (`aspect = 640/240`).
-For each, state which axis is the binding constraint and how large the
-margin bars are on the other axis. Then do it again for a panel of
-**500 × 900** (a narrow, portrait-oriented window) with correction on —
-notice which branch of `draw_display`'s `if h > avail.height()` fires this
-time, and why it's the opposite branch from part (a).
+machine is a CoCo 3 on the 744×243 canonical canvas. Compute the final
+displayed rectangle, by hand, for (a) aspect correction **on**
+(`aspect = 4/3`) and (b) aspect correction **off**
+(`aspect = SQUARE_PIXEL_ASPECT = 372/243`). For each, state which axis is
+the binding constraint and how large the margin bars are on the other
+axis. Then do it again for a panel of **500 × 900** (a narrow,
+portrait-oriented window) with correction on — notice which branch of
+`draw_display`'s `if h > avail.height()` fires this time, and why it's the
+opposite branch from part (a).
 
 **15.2 — `field_debt` simulation (compute).** A machine runs NTSC
 (`field_rate_hz() = 59.94`). `update()` is called at these wall-clock

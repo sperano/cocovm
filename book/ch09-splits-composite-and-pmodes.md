@@ -426,7 +426,7 @@ values): the low nibble selects a **hue**, and the high bits select a
 luminance steps at hue `0` are gray — which is exactly the `0x00/0x10/0x20/0x30`
 family above. This matches the real GIME/CoCo palette-register convention
 documented in SEB Unravelled II, and it's directly testable:
-`composite_decode_grey_anchors` ([`tests/composite.rs:16-26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L16-L26))
+`composite_decode_grey_anchors` ([`tests/composite.rs:17-27`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L17-L27))
 is precisely these four values:
 
 ```rust
@@ -532,7 +532,7 @@ Now the colors, and a number this chapter needs to get right. Precision
 matters here, because an earlier pass at this material claimed "roughly a
 120° hue shift" for palette value `0x01` under BPI. The actual test data
 doesn't support that number. `composite_decode_hue_and_bpi`
-([`tests/composite.rs:28-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L28-L38)):
+([`tests/composite.rs:29-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L29-L39)):
 
 ```rust
 #[test]
@@ -631,7 +631,7 @@ The averaging is an unweighted mean, one third each, not a perceptual
 luminance weighting — the source comment traces it to MAME's
 `update_composite`, and matching the reference implementation is the whole
 requirement. `composite_moch_averages_channels`
-([`tests/composite.rs:40-50`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L40-L50)) nails down
+([`tests/composite.rs:41-51`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L41-L51)) nails down
 the exact arithmetic, including the truncation, because "average" is
 ambiguous until you specify the rounding:
 
@@ -665,7 +665,7 @@ verify without running the code.
 `MonitorType::RGB` never looks at `MOCH` or `BPI` at all, and there is a
 test that says so out loud rather than leaving it as an inference from the
 `match` — `rgb_monitor_ignores_bpi_and_moch`
-([`tests/composite.rs:52-60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L52-L60)):
+([`tests/composite.rs:53-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L53-L61)):
 
 ```rust
 #[test]
@@ -726,7 +726,7 @@ not a crash, not a garbled screen, but a screen that looks entirely
 reasonable to anyone who hasn't seen the real thing.
 
 The regression test that guards this is `eou_greyscale_regression`
-([`tests/composite.rs:62-85`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L62-L85)), and it's worth reading end to end because it
+([`tests/composite.rs:63-86`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L63-L86)), and it's worth reading end to end because it
 encodes exactly the property real software depended on — achromatic *and*
 monotonically brighter — not just "matches these four hex triples":
 
@@ -868,7 +868,7 @@ in [`tests/composite.rs`](https://github.com/sperano/cocovm/blob/main/crates/coc
 turns it into something executable by rendering an actual field — a real
 character, through the real text painter, into a real framebuffer — and
 checking the pixel that comes out the far end
-([`tests/composite.rs:98-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L98-L125)):
+([`tests/composite.rs:105-132`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/composite.rs#L105-L132)):
 
 ```rust
 #[test]
@@ -889,15 +889,15 @@ fn render_text_routes_through_composite_decode() {
     let (fb_w, _) = render_field(&g, &ram, false, &mut fb);
 
     // 'A' row 0 is 0x10: native pixel 3 lit -> foreground (palette reg 1).
-    // 40 columns is a wide canonical mode: xscale 2, no side border, body
-    // starts at canvas row 25 (LPF=%00).
+    // 40 columns is a wide canonical mode: xscale 2 behind the 52 px
+    // wide-mode border, body starts at canvas row 25 (LPF=%00).
     let expected_fg = g.color(0x01);
     assert_ne!(
         expected_fg,
         GIME::rgb_color(0x01),
         "test is only meaningful if composite and RGB decode differ here"
     );
-    assert_eq!(px(&fb, fb_w, 3 * 2, 25), expected_fg);
+    assert_eq!(px(&fb, fb_w, WIDE_BORDER_X + 3 * 2, 25), expected_fg);
 }
 ```
 
@@ -918,11 +918,11 @@ The failure message says so in plain language: "test is only meaningful if
 composite and RGB decode differ here."
 
 The second assertion then checks one specific framebuffer pixel — column
-`3 × 2`, row `25` — against `g.color(0x01)`, not against a hardcoded triple.
-Its coordinates come straight from Chapter 8's geometry: the glyph's top row
-lights native pixel 3, a 40-column mode is wide so each native pixel is two
-canvas pixels with no side border, and `LPF=%00` starts the body at canvas
-row 25. Chase the value backwards through the code and the chain is the
+`WIDE_BORDER_X + 3 × 2`, row `25` — against `g.color(0x01)`, not against a
+hardcoded triple. Its coordinates come straight from Chapter 8's geometry:
+the glyph's top row lights native pixel 3, a 40-column mode is wide so each
+native pixel is two canvas pixels in a body that starts 52 border pixels in
+from the left edge, and `LPF=%00` starts the body at canvas row 25. Chase the value backwards through the code and the chain is the
 whole claim of this half of the chapter: `render_field` → `paint_scanline` →
 `resolve_colors` → `GIME::color` → `COMPOSITE_PALETTE`. Not one of those
 functions was written for composite output, not one of them branches on
@@ -979,7 +979,7 @@ pub(super) fn render_scanline(&mut self) {
         return;
     };
     if row >= raster::CANVAS_H {
-        return; // blanking lines 240..262
+        return; // blanking lines 243..262
     }
     if scan.legacy {
         self.paint_legacy_scanline(row);
@@ -1005,9 +1005,9 @@ split mechanism, stated in one sentence: **most registers are read fresh
 every line; a small, named group is read once, at line 0, and frozen for the
 rest of the field.**
 
-The early `return` for lines 240 and up is worth a glance in passing, since
-it explains a number this chapter uses repeatedly. The canonical raster is
-262 lines tall but only 240 of them are visible; the rest is vertical
+The early `return` for lines 243 and up is worth a glance in passing, since
+it explains a number this chapter uses repeatedly. The field is 262 lines
+tall but only 243 of them are visible; the rest is vertical
 blanking, when a real CRT is dragging its beam back to the top. Those lines
 still tick the machine loop — the timer still counts, interrupts still fire
 — but they have nowhere to paint. A program can perfectly well write a
@@ -1017,7 +1017,7 @@ rather than a split arranges one.
 
 ### `FieldScan`: the latch, made a value
 
-`FieldScan` ([`gime_video.rs:117-159`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L117-L159)) is that freeze, reified as a struct
+`FieldScan` ([`gime_video.rs:120-162`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L120-L162)) is that freeze, reified as a struct
 instead of scattered `if self.line == 0` checks:
 
 ```rust
@@ -1076,7 +1076,7 @@ restores mid-field correctly, which is Chapter 16 collecting on Chapter 1's
 plain-owned-tree discipline yet again.
 
 `row_base` and `line_in_row` aren't just latched once and left alone,
-though. `advance_scan` ([`gime_video.rs:247-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L247-L258))
+though. `advance_scan` ([`gime_video.rs:256-267`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L256-L267))
 mutates them at the bottom of every body row:
 
 ```rust
@@ -1109,7 +1109,7 @@ just changed shape. You'll see that precise scenario as §9.9's fourth test.
 
 Liveness at the other end of the function is equally uncontrived. Deciding
 whether a canvas row is even inside the active picture is itself a live
-read ([`gime_video.rs:191-195`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L191-L195)):
+read ([`gime_video.rs:194-198`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L194-L198)):
 
 ```rust
 fn in_active_rows(g: &GIME, row: usize) -> bool {
@@ -1178,6 +1178,11 @@ const BASE: usize = (VOFF as usize) << 3;
 /// (rows 25..217 for LPF=%00).
 const SPLIT_LINE: u32 = 100;
 
+fn px(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
+    let i = (y * CANVAS_W + x) * BYTES_PER_PIXEL;
+    fb[i..i + 4].try_into().unwrap()
+}
+
 /// A CoCo 3 machine in GIME-native 320×192×16 graphics with an identity
 /// palette, running zero-ROM filler code.
 fn gime_graphics_machine() -> Machine {
@@ -1219,7 +1224,7 @@ palette indirection.)
 `SPLIT_LINE = 100` is chosen to sit comfortably inside the active picture,
 and the comment's "rows 25..217 for LPF=%00" is not a magic number either.
 It comes from the canonical raster's vertical placement table
-([`raster.rs:33-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L33-L40)):
+([`raster.rs:56-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L56-L63)):
 
 ```rust
 pub const fn vertical_window(lpf: usize) -> (usize, usize) {
@@ -1287,7 +1292,7 @@ whether the frame around the picture is one color or two.
 
 What's worth appreciating is how little code exists to make this work.
 `paint_side_borders` and the "not in the active window" fill both call
-`resolve_colors(g)` fresh, every line ([`gime_video.rs:161-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L161-L168),
+`resolve_colors(g)` fresh, every line ([`gime_video.rs:164-171`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L164-L171),
 Chapter 8's code, unmodified), and `resolve_colors` reads `g.border` straight
 off the live `GIME`. Liveness here isn't a feature that was added; it's what
 happens when nothing was added to *prevent* it. The correct emulator
@@ -1311,11 +1316,19 @@ fn palette_write_mid_field_recolors_only_lines_below_it() {
 
     let fb = &m.framebuffer;
     let split = SPLIT_LINE as usize;
-    assert_eq!(px(fb, 0, split - 1), GIME::rgb_color(0x01), "body above the split keeps the old palette");
-    assert_eq!(px(fb, 0, split), GIME::rgb_color(0x02), "the split line onward has the new palette");
+    assert_eq!(
+        px(fb, WIDE_BORDER_X, split - 1),
+        GIME::rgb_color(0x01),
+        "body above the split keeps the old palette"
+    );
+    assert_eq!(
+        px(fb, WIDE_BORDER_X, split),
+        GIME::rgb_color(0x02),
+        "the split line onward has the new palette"
+    );
     // Both orders: the same field shows both colours at once.
-    assert_eq!(px(fb, 0, 30), GIME::rgb_color(0x01));
-    assert_eq!(px(fb, 0, 200), GIME::rgb_color(0x02));
+    assert_eq!(px(fb, WIDE_BORDER_X, 30), GIME::rgb_color(0x01));
+    assert_eq!(px(fb, WIDE_BORDER_X, 200), GIME::rgb_color(0x02));
 }
 ```
 
@@ -1329,7 +1342,7 @@ the pixels already painted keep the old meaning?
 
 They do, because `resolve_colors` rebuilds the whole 16-entry resolved-color
 array from `g.palette` on every single call to `paint_scanline`
-([`gime_video.rs:264-273`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L264-L273)).
+([`gime_video.rs:273-283`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L273-L283)).
 That per-line rebuild looked, in Chapter 8, like a small performance
 compromise — sixteen `GIME::color` calls per scanline instead of sixteen per
 field. This test is the bill coming due in the other direction: the rebuild
@@ -1365,14 +1378,14 @@ fn video_base_write_mid_field_waits_for_the_next_field() {
     finish_field(&mut m);
     let marker_canvas_row = 25 + MARKER_ROW;
     assert_eq!(
-        px(&m.framebuffer, 0, marker_canvas_row),
+        px(&m.framebuffer, WIDE_BORDER_X, marker_canvas_row),
         GIME::rgb_color(5),
         "mid-field base write must NOT retarget this field (MAME new_frame)"
     );
 
     finish_field(&mut m);
     assert_eq!(
-        px(&m.framebuffer, 0, marker_canvas_row),
+        px(&m.framebuffer, WIDE_BORDER_X, marker_canvas_row),
         GIME::rgb_color(7),
         "the next field latches the new base"
     );
@@ -1444,8 +1457,16 @@ fn mode_switch_mid_field_splits_text_and_graphics() {
     finish_field(&mut m);
 
     let fb = &m.framebuffer;
-    assert_eq!(px(fb, 0, 30), GIME::rgb_color(0), "graphics decode above the split (zeroed RAM → palette 0)");
-    assert_eq!(px(fb, 0, SPLIT_LINE as usize + 1), GIME::rgb_color(2), "text decode below the split");
+    assert_eq!(
+        px(fb, WIDE_BORDER_X, 30),
+        GIME::rgb_color(0),
+        "graphics decode above the split (zeroed RAM → palette 0)"
+    );
+    assert_eq!(
+        px(fb, WIDE_BORDER_X, SPLIT_LINE as usize + 1),
+        GIME::rgb_color(2),
+        "text decode below the split"
+    );
 }
 ```
 
@@ -1457,7 +1478,7 @@ next is its attributes. Both halves paint into the same field.
 
 `$FF98`'s BP bit (graphics/text select) is in the *live* group, same as the
 border — `paint_body_row` re-checks `g.vmode & vmode::BP` on every call
-([`gime_video.rs:220-241`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L220-L241)), dispatching to `paint_graphics_row` or
+([`gime_video.rs:221-250`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L221-L250)), dispatching to `paint_graphics_row` or
 `paint_text_row` fresh each line. So a program can flip from a graphics
 canvas to a text status bar partway down the screen, and the emulator does
 exactly what the register file says to do, one line at a time, with no
@@ -1497,7 +1518,7 @@ mechanism a real raster-split demo used: **an interrupt handler**, running as
 ordinary 6809 code, timed by the GIME's own interval timer.
 
 `timer_firq_from_rom_code_splits_the_border`
-([`tests/scanline_split.rs:174-239`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs#L174-L239)) is the test that closes that gap. It
+([`tests/scanline_split.rs:175-260`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs#L175-L260)) is the test that closes that gap. It
 proves the whole path — timer hardware, interrupt controller, FIRQ delivery,
 and the live-register raster split — works end to end, with **zero harness
 register pokes**. It hand-assembles a tiny ROM and lets the emulated CPU do
@@ -2061,19 +2082,28 @@ directly, because both modes cost the same 6K of a machine that had 16K.
 memory.)
 
 The geometry test states three of those rows as executable fact
-([`tests/render_graphics.rs:36-46`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_graphics.rs#L36-L46)):
+([`tests/render_graphics.rs:36-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_graphics.rs#L36-L55)):
 
 ```rust
 #[test]
 fn decodes_pmode_geometry() {
     let m = decode_vdg_graphics(RG6, V_RG6);
-    assert_eq!((m.bytes_per_row, m.rows, m.bpp, m.logical_w), (32, 192, 1, 256));
+    assert_eq!(
+        (m.bytes_per_row, m.rows, m.bpp, m.logical_w),
+        (32, 192, 1, 256)
+    );
 
     let m = decode_vdg_graphics(CG6, V_CG6);
-    assert_eq!((m.bytes_per_row, m.rows, m.bpp, m.logical_w), (32, 192, 2, 128));
+    assert_eq!(
+        (m.bytes_per_row, m.rows, m.bpp, m.logical_w),
+        (32, 192, 2, 128)
+    );
 
     let m = decode_vdg_graphics(RG3, V_RG3);
-    assert_eq!((m.bytes_per_row, m.rows, m.bpp, m.logical_w), (16, 192, 1, 128));
+    assert_eq!(
+        (m.bytes_per_row, m.rows, m.bpp, m.logical_w),
+        (16, 192, 1, 128)
+    );
 }
 ```
 
@@ -2202,8 +2232,12 @@ fn two_color_unpacks_msb_first_with_border() {
     render_graphics(&data, &mode, &[C0, C1], BD, &mut fb);
 
     assert_eq!(px(&fb, 0, 0), BD, "corner is border");
-    assert_eq!(px(&fb, BORDER, BORDER), C1, "MSB pixel = colour 1");
-    assert_eq!(px(&fb, BORDER + 1, BORDER), C0, "next pixel = colour 0");
+    assert_eq!(px(&fb, BORDER_X, BORDER_TOP), C1, "MSB pixel = colour 1");
+    assert_eq!(
+        px(&fb, BORDER_X + 1, BORDER_TOP),
+        C0,
+        "next pixel = colour 0"
+    );
 }
 
 #[test]
@@ -2215,11 +2249,11 @@ fn four_color_maps_two_bit_values_and_doubles_width() {
     render_graphics(&data, &mode, &[C0, C1, C2, C3], BD, &mut fb);
 
     // Each logical pixel is 2 host pixels wide.
-    assert_eq!(px(&fb, BORDER, BORDER), C0);
-    assert_eq!(px(&fb, BORDER + 1, BORDER), C0, "pixel 0 doubled");
-    assert_eq!(px(&fb, BORDER + 2, BORDER), C1);
-    assert_eq!(px(&fb, BORDER + 4, BORDER), C2);
-    assert_eq!(px(&fb, BORDER + 6, BORDER), C3);
+    assert_eq!(px(&fb, BORDER_X, BORDER_TOP), C0);
+    assert_eq!(px(&fb, BORDER_X + 1, BORDER_TOP), C0, "pixel 0 doubled");
+    assert_eq!(px(&fb, BORDER_X + 2, BORDER_TOP), C1);
+    assert_eq!(px(&fb, BORDER_X + 4, BORDER_TOP), C2);
+    assert_eq!(px(&fb, BORDER_X + 6, BORDER_TOP), C3);
 }
 ```
 
@@ -2445,7 +2479,7 @@ connects the legacy modes just covered straight back to §9.8–9.11's split
 mechanism, and because it is the clearest example in the codebase of a
 fidelity choice being made per machine variant rather than globally.
 
-`Machine::paint_legacy_scanline` ([`machine/render.rs:75-171`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L75-L171))
+`Machine::paint_legacy_scanline` ([`machine/render.rs:75-169`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L75-L169))
 is the CoCo 3's **per-line** legacy renderer — called from the very same
 `render_scanline` dispatcher as the GIME-native path, once per canvas row,
 reading `$FF22` and `sam_video` fresh every single line:
@@ -2469,7 +2503,7 @@ Every register this function touches — `$FF22`, the SAM V bits, and the
 border via `video::legacy_border_value(ff22)` — is read live, exactly like
 the GIME-native "live" group from §9.8's table. And the function ends by
 advancing the same shared cursor the native painter does
-([`machine/render.rs:164-170`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L164-L170)):
+([`machine/render.rs:162-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L162-L168)):
 
 ```rust
         // Advance the shared vertical counter (MAME `record_full_body_scanline`).
@@ -2498,7 +2532,7 @@ dispatch, no per-line anything. `Machine::render_field` returns immediately
 for a CoCo 3 (`if self.config.variant == MachineVariant::Coco3 { return; }`)
 and only does real work for the older machines, and what it does is render
 the *entire* field in one shot at field end, from a single snapshot read
-through the bus ([`machine/render.rs:229-279`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L229-L279)):
+through the bus ([`machine/render.rs:242-284`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/render.rs#L242-L284)):
 
 ```rust
 fn render_coco_graphics(&mut self) {
@@ -2514,7 +2548,7 @@ fn render_coco_graphics(&mut self) {
 
 This isn't an oversight, and it isn't laziness either — it's a scope
 decision with a reason attached. A real CoCo 1 or 2 has no GIME sitting
-between the CPU and the VDG, so there is no canonical 640×240 raster to
+between the CPU and the VDG, so there is no canonical 744×243 raster to
 paint into one line at a time in the first place. The VDG has its own,
 entirely separate raster geometry (`docs/coco12-plan.md` Phase 3, cited
 directly in the comments here), and this codebase renders it as a
@@ -2665,7 +2699,7 @@ two test files in the middle are the ones to read most slowly.
    cargo test -p coco-core --test composite
    ```
 3. **[`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs), `FieldScan` and `paint_scanline`**
-   ([`gime_video.rs:117–299`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L117-L299)) — re-read `advance_scan` in particular; it's
+   ([`gime_video.rs:120–308`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L120-L308)) — re-read `advance_scan` in particular; it's
    the one function that's *not* purely "live" or purely "latched," and
    understanding why (cursor advances live, origin frozen) is the key to
    the fourth [`scanline_split.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/scanline_split.rs) test. A useful exercise while reading:
@@ -2679,7 +2713,7 @@ two test files in the middle are the ones to read most slowly.
    ```
    cargo test -p coco-core --test scanline_split
    ```
-5. **[`crates/coco-core/src/video/graphics.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs), all of it** (178 lines) —
+5. **[`crates/coco-core/src/video/graphics.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video/graphics.rs), all of it** (177 lines) —
    `decode_vdg_graphics`, the palette-index tables, the MSB-first unpacker.
    Start with the module doc comment; it states the two-chip independence
    this chapter's §9.12 is built around, in nine lines.
@@ -2786,7 +2820,7 @@ field rate comes entirely from a static `VideoStandard` chosen once at
 machine-configuration time. Sketch what would have to change to honor a
 live `H50` write instead: which fixed assumption in `end_of_line`/`run.rs`
 (Chapter 6) would break first, and what would `render_scanline`'s canvas-row
-math (§9.8, `CANVAS_H = 240` fixed) have to do differently mid-field if the
+math (§9.8, `CANVAS_H = 243` fixed) have to do differently mid-field if the
 line count *itself* could change under it? You do not need to implement
 this — the point is naming the load-bearing assumption that a "just read the
 register live, like the border" fix would violate, and that a border write

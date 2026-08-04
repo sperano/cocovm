@@ -43,7 +43,7 @@ opens with a compact summary:
 //! Unlike the CoCo-compatible modes, GIME-native scanout addresses *physical*
 //! RAM directly — the vertical offset registers give the start address and the
 //! MMU is bypassed (SEB Unravelled II). Rendering is per scanline into the
-//! canonical 640×240 raster (`raster.rs`, Option B): [`paint_scanline`] paints
+//! canonical 744×243 raster (`raster.rs`, Option B): [`paint_scanline`] paints
 //! one canvas row from the LIVE registers plus the per-field latched state in
 //! [`FieldScan`], so mid-frame register writes take effect on the next line —
 //! except the field-latched group ($FF9D/$FF9E base, $FF9C smooth-scroll
@@ -431,7 +431,7 @@ the same function a palette register's contents would pass through. The
 renderer's `resolve_colors` in §8.4 handles it as a separate return value
 for exactly this reason. Every pixel outside the active display area, on
 every scanline, is this one color — the top and bottom border rows in
-their entirety, and the left and right strips on non-wide modes. A program
+their entirety, and the left and right strips beside the body. A program
 that wants a striped border does not write sixteen registers; it writes
 this one register repeatedly, timed against the beam, which is Chapter 9's
 opening trick.
@@ -509,7 +509,7 @@ fn advance_scan(scan: &mut FieldScan, g: &GIME, row_bytes: usize) {
 }
 ```
 
-([`gime_video.rs:243-258`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L243-L258).)
+([`gime_video.rs:252-267`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L252-L267).)
 `HVEN_ROW_BYTES` is 256
 ([`gime.rs:135-136`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime.rs#L135-L136)).
 Note what else this function reveals, since it will matter in §8.5: the row
@@ -525,7 +525,7 @@ The fetch itself carries the register's real oddity. Every read wraps at a
     let fetch = |i: usize| ram[(row_base + ((x_offset + i) % ROW_FETCH_WRAP)) % ram.len()];
 ```
 
-([`gime_video.rs:231`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L231),
+([`gime_video.rs:232`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L232),
 where `ROW_FETCH_WRAP` is `0x100`.) Read that modulo carefully. It is not
 conditioned on `HVEN` at all: the fetch offset always wraps at 256 bytes
 within the row, even when `HVEN` is off and the row itself is narrower than
@@ -543,25 +543,47 @@ bounds, wrapping it into the installed range instead. A 128K machine whose
 video base was left at a 512K address shows *something* rather than
 crashing the emulator, which is the correct failure mode for a renderer.
 
-### Wide and non-wide: where the 640-pixel canvas comes from
+### Wide and non-wide: where the 744-pixel canvas comes from
 
 One more piece of geometry has to be in place before the worked examples,
 because both of them turn on it. Every GIME-native mode in this codebase
 renders into the same fixed-size canvas:
 
 ```rust
-/// Canonical canvas width: MAME's coco3 visible width.
-pub const CANVAS_W: usize = 640;
-/// Canonical canvas height: MAME's coco3 visible lines.
-pub const CANVAS_H: usize = 240;
+/// Canonical canvas width: the full visible NTSC line at the GIME dot
+/// clock — twice the legacy VDG framebuffer's width, same time window.
+pub const CANVAS_W: usize = 2 * video::FB_W;
+/// Canonical canvas height: the visible NTSC field (25 + 192 + 26 lines),
+/// shared with the legacy framebuffer.
+pub const CANVAS_H: usize = video::FB_H;
 
-/// Active-content width of non-wide modes; the rest of the 640 is border.
+/// Active-content width of wide modes ($FF99 HRES bit 2 set): MAME's whole
+/// coco3 visible window, a 640-dot span inside this canvas's visible line.
+pub const WIDE_ACTIVE_W: usize = 640;
+/// Horizontal border width each side of a wide mode's 640 px body. 52 GIME
+/// dots — narrower in *time* than `video::BORDER_X`'s 58 VDG pixels (which
+/// are 2 dots each): the wide body swallows most of the line.
+pub const WIDE_BORDER_X: usize = (CANVAS_W - WIDE_ACTIVE_W) / 2;
+
+/// Active-content width of non-wide modes; the rest of the line is border.
 pub const NON_WIDE_ACTIVE_W: usize = 512;
 /// Horizontal border width each side of a non-wide mode's 512 px body.
 pub const NON_WIDE_BORDER_X: usize = (CANVAS_W - NON_WIDE_ACTIVE_W) / 2;
 ```
 
-([`crates/coco-core/src/raster.rs:15-23`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L15-L23).)
+([`crates/coco-core/src/raster.rs:27-45`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L27-L45).)
+The numbers those expressions produce are 744 by 243, and the derivation is
+worth one paragraph because nothing about it is arbitrary. The canvas
+covers the *full visible NTSC picture* — the same window of time the legacy
+VDG framebuffer spans, which per MAME's `mc6847.cpp` is 186 of the 228 VDG
+clocks in a line and 243 of the 262 lines in a field — sampled at the GIME
+dot clock, which runs at exactly twice the VDG pixel rate. Twice the legacy
+framebuffer's 372-pixel width is 744; the 243 visible rows are shared
+unchanged. MAME's own coco3 screen crops that picture to the widest active
+span, 640×240, and that window embeds in this canvas at the fixed offset
+(52, 0) — so comparing a rendered frame against MAME is still a crop, never
+a rescale.
+
 The module's own doc comment calls this "Option B": one fixed-size RGBA
 canvas for every GIME-native mode, with every legal mode reaching it by an
 *integer* horizontal scale. A 320-pixel-wide mode doubles each pixel; a
@@ -575,51 +597,55 @@ decides:
 ```rust
 /// Mask for the HRES field's low bit ($FF99 bit 2): the "wide" flag in
 /// MAME's pixel path (`render_scanline`: `wide = !legacy && (ff99 & 0x04)`).
-/// Wide modes fill the full 640 canvas px with no border; non-wide modes
-/// fill the centre 512. (MAME's `update_geometry` tests bit 3 instead, but
+/// Wide modes fill the centre 640 canvas px, non-wide modes the centre
+/// 512; the rest is border. (MAME's `update_geometry` tests bit 3 instead, but
 /// only for field-sync timing — the emitted pixel widths follow bit 2.)
 const WIDE_HRES_MASK: usize = 0x01;
 ```
 
-([`gime_video.rs:54-59`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L54-L59).)
+([`gime_video.rs:57-62`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L57-L62).)
 The mask is `0x01` rather than `0x04` because it is applied to the `HRES`
 field *after* it has been shifted down to a plain 0–7 value, where bit 2 of
 the register has become bit 0 of the field. The function that uses it does
-two jobs at once — paint the side borders if there are any, and report back
-where the active span starts and how wide it is:
+two jobs at once — paint the side borders, and report back where the active
+span starts and how wide it is:
 
 ```rust
+/// Fill a body row's side borders per the LIVE wide flag ($FF99 HRES low
+/// bit), returning the active-area `(x0, width)` slice bounds within it.
+/// Wide modes get a `WIDE_BORDER_X` strip each side of their 640 px body,
+/// non-wide modes a `NON_WIDE_BORDER_X` strip around 512 px.
 fn paint_side_borders(g: &GIME, row_px: &mut [u8], border: [u8; 4]) -> (usize, usize) {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
     let wide = hres & WIDE_HRES_MASK != 0;
     let (x0, active_w) = if wide {
-        (0, CANVAS_W)
+        (WIDE_BORDER_X, WIDE_ACTIVE_W)
     } else {
         (NON_WIDE_BORDER_X, NON_WIDE_ACTIVE_W)
     };
-    if !wide {
-        fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
-        fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
-    }
+    fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
+    fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
     (x0, active_w)
 }
 ```
 
-([`gime_video.rs:201-214`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L201-L214).)
-A wide mode returns `(0, 640)` and paints no side border at all, because
-there is none: the active picture reaches both edges of the visible raster.
-A non-wide mode returns `(64, 512)`, having first filled the 64-pixel strip
-on each side with the `$FF9A` color. Everything downstream — the text
-painter, the graphics painter, and their `xscale` computations — works
-inside that returned span and never needs to know which case it got.
+([`gime_video.rs:200-215`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L200-L215).)
+A wide mode returns `(52, 640)`: a 640-pixel body behind a 52-pixel strip
+of `$FF9A` color on each side. A non-wide mode returns `(116, 512)`, with
+its narrower body behind correspondingly deeper borders. Either way both
+strips get filled — the visible NTSC line is wider than any active span
+the chip can emit, so even the widest mode shows some border. Everything
+downstream — the text painter, the graphics painter, and their `xscale`
+computations — works inside that returned span and never needs to know
+which case it got.
 
 Two rules of thumb fall out of this and will be used repeatedly below.
 Every `HRES` field value with its low bit set is wide, and every `HSCREEN`
 mode BASIC can set up turns out to be one. A 40-column text screen is wide
 too, which surprises people who expect narrower to mean smaller: 40 columns
-of 8-pixel glyphs is 320 native pixels, doubled to fill all 640, with no
-border strip. The 64-column mode, by contrast, is *not* wide — 512 native
-pixels, centered, with 64 pixels of border on each side.
+of 8-pixel glyphs is 320 native pixels, doubled to fill the 640-pixel wide
+body behind its 52-pixel borders. The 64-column mode, by contrast, is *not*
+wide — 512 native pixels, centered, with 116 pixels of border on each side.
 
 ### Worked example: decoding `WIDTH 80`'s real register image
 
@@ -677,7 +703,7 @@ dividing the 192 active lines by the 8-line character row. Attributes mean
 two bytes per cell, so each row of 80 characters occupies 160 bytes and the
 whole screen occupies `160 × 24 = 3,840` bytes, running from physical
 `$6C000` through `$6CEFF`. And because `HRES = 5` has its low bit set, this
-is a wide mode: the full 640-pixel canvas, no border columns left or right,
+is a wide mode: a 640-pixel body behind 52 pixels of border each side,
 `xscale = 1`, one native pixel per canvas pixel.
 
 Hold on to that 160-byte row pitch. It reappears, as a literal `160`, in a
@@ -716,7 +742,7 @@ pub fn decode_text(g: &GIME) -> TextMode {
 }
 ```
 
-([`gime_video.rs:73-82`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L73-L82).)
+([`gime_video.rs:76-85`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L76-L85).)
 No branching on mode, no validation, no error case. Mask the field, index
 the table, test one bit, call the two helper methods. Any of the eight
 `HRES` values is legal and produces one of the four legal column counts;
@@ -738,7 +764,7 @@ const ATTR_COLOR_MASK: u8 = 0x07;
 const ATTR_FG_BASE: usize = 8;
 ```
 
-([`gime_video.rs:30-36`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L30-L36).)
+([`gime_video.rs:33-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L33-L39).)
 One byte, four fields, no wasted bits. Bit 7 marks the cell as blinking.
 Bit 6 marks it as underlined. Bits 5 through 3 hold a three-bit foreground
 color, 0 to 7, which is added to `ATTR_FG_BASE` to land in palette
@@ -766,7 +792,7 @@ const NO_ATTR_BG: usize = 0;
 const NO_ATTR_FG: usize = 1;
 ```
 
-([`gime_video.rs:37-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L37-L40).)
+([`gime_video.rs:40-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L40-L43).)
 Every character on the screen uses palette register 1 for its foreground
 and register 0 for its background. Fourteen of the sixteen palette
 registers are unreachable in that mode. In exchange, the screen
@@ -830,7 +856,7 @@ fn underline_line(lines_per_row: usize) -> Option<usize> {
 }
 ```
 
-([`gime_video.rs:170-179`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L170-L179).)
+([`gime_video.rs:173-182`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L173-L182).)
 An underline is one specific scanline of the character cell, forced fully
 lit regardless of what the glyph's own pixels say. Which scanline depends
 on how tall the cell is, and the mapping is not simply "the last one." For
@@ -904,7 +930,7 @@ That one `bool` travels down through `paint_scanline` into
 ```
 
 `BLANK_CHAR` is `0x20`, a space
-([`gime_video.rs:41-42`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L41-L42),
+([`gime_video.rs:44-45`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L44-L45),
 whose comment credits MAME's `get_data_with_attributes`). Note what this
 is *not*: blink is not implemented by drawing the glyph and then hiding it,
 nor by swapping foreground for background. The character code itself is
@@ -1012,7 +1038,7 @@ fn paint_text_row(
 }
 ```
 
-([`gime_video.rs:303-348`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L303-L348).)
+([`gime_video.rs:312-360`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L312-L360).)
 Walk it in the order it executes.
 
 The four setup lines establish everything that is constant across the row.
@@ -1076,7 +1102,7 @@ the background color.
 >
 > The construction site is `paint_body_row`, which builds exactly one
 > closure and hands it to whichever painter the mode bit selects
-> ([`gime_video.rs:231-240`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L231-L240)):
+> ([`gime_video.rs:232-249`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L232-L249)):
 >
 > ```rust
 >     let fetch = |i: usize| ram[(row_base + ((x_offset + i) % ROW_FETCH_WRAP)) % ram.len()];
@@ -1133,7 +1159,7 @@ pub fn decode_graphics(g: &GIME) -> GraphicsMode {
 }
 ```
 
-([`gime_video.rs:102-115`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L102-L115).)
+([`gime_video.rs:105-118`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L105-L118).)
 The first three lines are the same table-indexing pattern as `decode_text`,
 and `width: bytes_per_row * 8 / bpp` is the arithmetic just described:
 eight bits per byte, divided among pixels.
@@ -1150,11 +1176,11 @@ quirk, and the function's own doc comment states the provenance:
 /// aliases CRES=0 to the CRES=1 renderer there, so this decode does too.
 ```
 
-([`gime_video.rs:96-101`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L96-L101).)
+([`gime_video.rs:99-104`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L99-L104).)
 Follow the arithmetic that the quirk prevents. At 160 bytes per row and one
 bit per pixel, `width` would come out as `160 × 8 / 1 = 1280` pixels — five
-times the width of a 256-pixel VDG screen, on a machine whose canonical
-raster is 640 pixels wide. The chip does not do this. The combination is
+times the width of a 256-pixel VDG screen, on a machine whose widest
+active span is 640 pixels. The chip does not do this. The combination is
 listed as "not guaranteed" in the reference book, MAME aliases it to the
 two-bits-per-pixel renderer, and this codebase follows MAME. The comparison
 `bytes_per_row > gime::GFX_BYTES_PER_ROW[5]` is written against the table
@@ -1203,7 +1229,7 @@ fn paint_graphics_row(
 }
 ```
 
-([`gime_video.rs:352-377`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L352-L377).)
+([`gime_video.rs:364-392`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L364-L392).)
 Compare its shape to `paint_text_row`: the same `xscale` computation, the
 same `fetch`/`fill` vocabulary, the same single pass writing every pixel
 once. What is gone is the font. A graphics pixel *is* its own palette
@@ -1270,9 +1296,10 @@ a color count for each. Running those four bytes through the
 Three observations, in increasing order of usefulness.
 
 Every `HRES` field in the table, `%101` and `%111`, has its low bit set.
-Every `HSCREEN` mode is therefore a wide mode in the §8.1 sense: the full
-640-pixel canvas, no side borders, with `xscale` doing the work of turning
-320 native pixels into 640 canvas pixels where necessary.
+Every `HSCREEN` mode is therefore a wide mode in the §8.1 sense: a
+640-pixel active span behind the 52-pixel side borders, with `xscale` doing
+the work of turning 320 native pixels into 640 canvas pixels where
+necessary.
 
 `HSCREEN 1` and `HSCREEN 3` share an `HRES` field, and so share a bytes-per-row
 figure of 80, despite producing pictures of different widths. `HSCREEN 2`
@@ -1473,7 +1500,7 @@ fn resolve_colors(g: &GIME) -> ([[u8; 4]; PALETTE_LEN], [u8; 4]) {
 }
 ```
 
-([`gime_video.rs:161-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L161-L168).)
+([`gime_video.rs:164-171`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L164-L171).)
 `paint_scanline` calls this once, at the top of every scanline, converting
 all sixteen palette registers plus the border into resolved RGBA up front.
 The resulting array is what gets handed down to `paint_text_row` and
@@ -1485,7 +1512,7 @@ lookup.
 
 The grain of that caching is a deliberate choice with consequences in both
 directions. Resolving per *pixel* would mean running the `× 0x55`
-arithmetic, or a 64-entry composite lookup, up to 640 times per scanline to
+arithmetic, or a 64-entry composite lookup, up to 744 times per scanline to
 produce what are only ever sixteen distinct answers. Resolving per *field*
 would be cheaper still, and would be wrong: a program that changes a
 palette register partway down the screen expects the change to show up
@@ -1602,7 +1629,7 @@ pub struct FieldScan {
 }
 ```
 
-([`gime_video.rs:117-140`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L117-L140),
+([`gime_video.rs:120-143`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L120-L143),
 doc comment and fields.) Three fields, and each one answers a question that
 a mid-field register change would otherwise make unanswerable.
 
@@ -1647,7 +1674,7 @@ when that value makes sense for the current row height:
     }
 ```
 
-([`gime_video.rs:143-158`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L143-L158).)
+([`gime_video.rs:146-161`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L146-L161).)
 The guard is the clause `vsc >= lpr`, and it handles a register combination
 that is easy to write and impossible to honor: a smooth-scroll seed of 5
 in a mode whose character rows are only 2 scanlines tall. Starting at line
@@ -1746,7 +1773,7 @@ pub fn paint_scanline(
 }
 ```
 
-([`gime_video.rs:264-299`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L264-L299).)
+([`gime_video.rs:273-308`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L273-L308).)
 Count the live register reads. `resolve_colors` reads all sixteen palette
 registers and `$FF9A`. `in_active_rows` reads `$FF99`'s `LPF` field.
 `paint_side_borders` reads `$FF99`'s `HRES` field. The `x_offset`
@@ -1780,10 +1807,10 @@ fn in_active_rows(g: &GIME, row: usize) -> bool {
 }
 ```
 
-([`gime_video.rs:188-195`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L188-L195).)
+([`gime_video.rs:191-198`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L191-L198).)
 And `vertical_window` is the vertical counterpart of the wide/non-wide
 table from §8.1 — another lookup that places an active body of a given
-height inside a fixed 240-row canvas:
+height inside a fixed 243-row canvas:
 
 ```rust
 pub const fn vertical_window(lpf: usize) -> (usize, usize) {
@@ -1796,10 +1823,10 @@ pub const fn vertical_window(lpf: usize) -> (usize, usize) {
 }
 ```
 
-([`raster.rs:33-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L33-L40).)
+([`raster.rs:56-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L56-L63).)
 Each pair is a top-border row count and a body row count, and the doc
 comment above it records that the 192, 200, and 225 cases come from MAME's
-`update_geometry`, where each sums with its bottom border to exactly 240.
+`update_geometry`, where each sums with its bottom border to exactly 243.
 The `LPF = %10` case is the glitched one from §8.1 and gets a centered
 approximation rather than a measured number.
 
@@ -1870,18 +1897,18 @@ covered, an 80-column attribute text screen and an `HSCREEN 2` color-bar
 graphics screen, and writes each to a PPM file for eyeballing.
 
 ```
-cargo run -p coco-core --example gime_demo /tmp
+cargo run -p coco-core --example gime_demo /tmp/ppm
 ```
 
 This runs with nothing but `cargo` and the crate — confirmed by running it
 in a checkout that has no `roms/` directory at all. It prints:
 
 ```
-wrote /tmp/text80.ppm (640x240)
-wrote /tmp/hscreen2.ppm (640x240)
+wrote /tmp/ppm/text80.ppm (744x243)
+wrote /tmp/ppm/hscreen2.ppm (744x243)
 ```
 
-Both files are the full canonical 640×240 raster the real machine loop
+Both files are the full canonical 744×243 raster the real machine loop
 produces, generated by the same `render_field` the tests use. Being able to
 produce a real frame with six lines of setup and no ROM is worth pausing
 on: it means every claim in §8.1 through §8.4 can be checked visually in
@@ -1989,7 +2016,7 @@ pub fn text_lines(g: &GIME, ram: &[u8]) -> Vec<String> {
 }
 ```
 
-([`gime_video.rs:456-476`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L456-L476).)
+([`gime_video.rs:471-495`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L471-L495).)
 Three details connect back to earlier sections. `mode.lines.checked_div(
 mode.lines_per_row)` is the 192 ÷ 8 = 24 arithmetic from §8.1's worked
 example, written defensively — `checked_div` returning `None` on the
@@ -1998,7 +2025,7 @@ panic. The range test `(0x20..0x7F).contains(&code)` is §8.2's font layout
 turned into a filter: codes below `$20` are the accented and special
 glyphs, and rather than print a misleading control character the function
 substitutes `UNPRINTABLE_CHAR`, which is `'.'`
-([`gime_video.rs:441-444`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L441-L444)).
+([`gime_video.rs:456-459`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L456-L459)).
 And `scan.next_line()` is called `lines_per_row` times per text row, which
 is how a function that renders no scanlines still walks the same addresses
 a scanline renderer would.
@@ -2014,7 +2041,7 @@ the goal plainly:
 /// `record_scanline_res` / `new_frame`.
 ```
 
-([`gime_video.rs:393-396`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L393-L396).)
+([`gime_video.rs:408-411`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L408-L411).)
 `Scanout::fetch` implements the same 256-byte seam wrap as
 `paint_body_row`'s closure, and `Scanout::new` applies the same `HVEN`
 pitch rule and the same vertical-scroll guard as `FieldScan::latch`. The
@@ -2068,7 +2095,7 @@ per row.
 [`crates/coco-core/tests/render_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_gime.rs)
 is deterministic, ROM-free coverage for everything this chapter has walked
 through: the decode functions, RAM scanout, attribute colors, blink,
-underline, and bit unpacking. Fourteen tests, no fixtures, no boot
+underline, and bit unpacking. Fifteen tests, no fixtures, no boot
 sequence, and a whole-file run measured in milliseconds.
 
 Two helpers make every test in the file readable, and they are worth
@@ -2115,8 +2142,8 @@ pub fn render_field(g: &GIME, ram: &[u8], blink_on: bool, fb: &mut Vec<u8>) -> (
 }
 ```
 
-([`gime_video.rs:384-391`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L384-L391).)
-Latch once, then call `paint_scanline` for all 240 canvas rows in order.
+([`gime_video.rs:399-406`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs#L399-L406).)
+Latch once, then call `paint_scanline` for all 243 canvas rows in order.
 Because the registers never change during that loop, the result is exactly
 what a real field would look like if no program touched a video register
 mid-frame. The function's own doc comment is careful about this: it is "the
@@ -2149,14 +2176,16 @@ therefore `xscale = 2`.
 Now the glyph. `'A'` is `$41`, and `GIME_FONT[0x41]`'s row 0 is `0x10`.
 Only bit 4 is set, and since `0x80 >> cx` walks from the left, bit 4
 corresponds to native pixel index 3. At `xscale = 2`, native pixel 3 covers
-canvas x = 6 and x = 7.
+body x = 6 and x = 7 — and the wide body starts 52 border pixels in from
+the canvas edge, at `WIDE_BORDER_X`.
 
-So the prediction is: canvas pixels (6, TOP) and (7, TOP) are foreground,
-canvas pixel (0, TOP) is background, and because this mode has no attribute
-bytes, foreground means palette register 1 and background means register 0
-— the fixed `NO_ATTR_FG`/`NO_ATTR_BG` pair from §8.2. The test asserts
-exactly that, writing the coordinates as `3 * 2` and `3 * 2 + 1` so the
-derivation stays visible in the source.
+So the prediction is: canvas pixels (58, TOP) and (59, TOP) are foreground,
+canvas pixel (52, TOP) — the body's first column — is background, and
+because this mode has no attribute bytes, foreground means palette register
+1 and background means register 0 — the fixed `NO_ATTR_FG`/`NO_ATTR_BG`
+pair from §8.2. The test asserts exactly that, writing the coordinates as
+`WIDE_BORDER_X + 3 * 2` and `WIDE_BORDER_X + 3 * 2 + 1` so the derivation
+stays visible in the source.
 
 There is a fourth assertion, on `px(&fb, 0, 0)`. Canvas row 0 is well above
 `TOP = 25`, the first active row for `LPF = 0`'s 192-line body, so it is
@@ -2182,10 +2211,11 @@ bytes per row, 4 bits per pixel, 320 pixels wide, 16 colors. Wide, so
 
 `0x5C` is `0b0101_1100`. Per §8.3's MSB-first walk at 4 bpp, pixel 0 is the
 high nibble, `0101` = 5, and pixel 1 is the low nibble, `1100` = 12. At
-`xscale = 2`, native pixel 0 covers canvas x 0–1 and native pixel 1 covers
-canvas x 2–3. Predict `px(&fb, 0, TOP)` and `px(&fb, 1, TOP)` both equal
-`GIME::rgb_color(5)`, and `px(&fb, 2, TOP)` equals `GIME::rgb_color(12)`.
-All three hold.
+`xscale = 2`, native pixel 0 covers body x 0–1 and native pixel 1 covers
+body x 2–3, each offset by the 52-pixel wide-mode border. Predict
+`px(&fb, WIDE_BORDER_X, TOP)` and `px(&fb, WIDE_BORDER_X + 1, TOP)` both
+equal `GIME::rgb_color(5)`, and `px(&fb, WIDE_BORDER_X + 2, TOP)` equals
+`GIME::rgb_color(12)`. All three hold.
 
 The fourth assertion is the interesting one, because it tests something the
 first three cannot. The test plants a second byte at `ram[BASE + 160]` and
@@ -2215,14 +2245,14 @@ This is §8.1's `HVEN` mechanism exercised directly. The register value
 With `HVEN` on, `fetch(i)` reads `ram[row_base + (x_offset + i) % 256]`, so
 the byte at `row_base + 2` is what `i = 0` returns and therefore what lands
 at pixel 0. `0xF0`'s high nibble is 15, so predict
-`px(&fb, 0, TOP) == GIME::rgb_color(15)`. Confirmed.
+`px(&fb, WIDE_BORDER_X, TOP) == GIME::rgb_color(15)`. Confirmed.
 
 The row pitch under `HVEN` is fixed at 256 bytes regardless of the mode's
 actual `bytes_per_row`, which for this shape would otherwise be 160. So
 row 1's data lives at `row_base + 256`, and the test plants its byte at
 `+256 +2` to account for the same 2-byte X shift, predicting
-`px(&fb, 0, TOP + 1) == GIME::rgb_color(9)` from `0x90`'s high nibble. Also
-confirmed.
+`px(&fb, WIDE_BORDER_X, TOP + 1) == GIME::rgb_color(9)` from `0x90`'s high
+nibble. Also confirmed.
 
 One honest limitation is worth naming, because a reader who takes the test
 name at face value will look for something that is not there. Nothing in
@@ -2243,7 +2273,7 @@ is the test this chapter's syllabus entry calls out by name. It boots the
 actual `coco3.rom`, runs it to the BASIC prompt, then pokes the exact
 register sequences from §8.1 and §8.3's worked examples — the `WIDTH 80`
 and `HSCREEN 2` images, verbatim — at the live machine, and checks that the
-framebuffer dimensions stay locked to the canonical 640×240 canvas across
+framebuffer dimensions stay locked to the canonical 744×243 canvas across
 the switch. It is an integration test in the fullest sense this course has
 available: real ROM bytes, a real boot, a real register-write sequence that
 a real BASIC program would issue.
@@ -2294,7 +2324,7 @@ If the ROM is available, run it. There is real pedagogical value in
 watching the exact bytes decoded by hand actually flip a live, booted
 machine's video mode. If it is not available, the substantive work has
 still been done, and it is worth being clear about why. Everything this
-test *checks* — that the framebuffer stays 640×240 across the mode switch,
+test *checks* — that the framebuffer stays 744×243 across the mode switch,
 because "one stable texture size across every CoCo 3 mode is the point of
 Option B," per the test's own comment — is a narrower claim than what
 §8.1's worked example already established by hand. The hand decode said
@@ -2322,7 +2352,7 @@ tests — narrowing from "what the registers say" to "what the pixels do."
    §8.1 lives here. Read the doc comments as carefully as the code — three
    of the five tables document a hardware misbehaviour that the constant
    alone does not reveal.
-2. **[`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs), in full (477 lines).** `decode_text`
+2. **[`crates/coco-core/src/gime_video.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/gime_video.rs), in full (495 lines).** `decode_text`
    and `decode_graphics` first, then `FieldScan` and `resolve_colors`, then
    `paint_scanline` and its two callees. This is the chapter's centre of
    gravity; read the module doc comment at the top again once you've read
@@ -2337,14 +2367,14 @@ tests — narrowing from "what the registers say" to "what the pixels do."
    up `GIME_FONT[0x41]` and confirm that its eight bytes really do draw a
    capital A when read as a bitmap.
 5. **[`crates/coco-core/tests/render_gime.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/render_gime.rs), in full.** Predict every test
-   this chapter didn't walk (there are eleven more) before reading its
+   this chapter didn't walk (there are twelve more) before reading its
    assertions.
 
 Run the ROM-free suite while you read:
 
 ```
 cargo test -p coco-core --test render_gime
-cargo run -p coco-core --example gime_demo /tmp
+cargo run -p coco-core --example gime_demo /tmp/ppm
 ```
 
 If (and only if) you have `roms/coco3.rom` available:
@@ -2361,8 +2391,9 @@ cargo test -p coco-core --test gime_irq
 **8.1 — Register dump to screen description (recall).** Given this
 register dump — not one used as a worked example anywhere in this chapter
 — describe the screen precisely: mode (text/graphics), columns or pixel
-width, colors available, whether the display is wide or has side borders,
-and the physical video base address.
+width, colors available, whether the display is wide (a 640-pixel body
+behind 52-pixel borders) or non-wide (512 behind 116), and the physical
+video base address.
 
 ```
 $FF90 = $4C
@@ -2408,15 +2439,16 @@ attributes at all — non-attribute text and every graphics test read no
 cargo test -p coco-core --test render_gime
 ```
 
-and compare the failure list to your prediction. (For reference — don't
+and compare the failure list to your prediction.
+(For reference — don't
 peek until you've made your own prediction — sabotaging this constant
-this way produces exactly 5 failures out of 14 tests, all of them the ones
+this way produces exactly 5 failures out of 15 tests, all of them the ones
 that assert on an *attributed* foreground color: blink, underline, the
 second-row pitch check, the vertical-scroll check, and the direct
 `text_attributes_select_fg_bg_palettes` test. Everything else — the
 no-attribute test, every graphics test, the border tests — stays green,
 because none of them ever read a foreground color through
-`ATTR_FG_BASE`.) Revert the constant, re-run the suite to confirm all 14
+`ATTR_FG_BASE`.) Revert the constant, re-run the suite to confirm all 15
 pass again, and check `git status` shows no changes to the file before you
 move on — leaving a sabotaged constant in the tree is the one way to turn
 this exercise into tomorrow's very confusing bug report.
@@ -2427,9 +2459,9 @@ screen — you worked out its exact `$FF99` value in §8.3's HSCREEN table —
 filled with a simple pattern of your choosing (vertical stripes, a
 gradient, anything that isn't solid one color). Write it to a third PPM
 and confirm by eye that it's genuinely 4-color, 320-pixel-wide content
-occupying the full 640-canvas width (no border columns) — cross-check
-against the `HSCREEN 1` row in your own §8.3 table before you conclude
-you've got the register value right.
+doubled across the 640-pixel wide-mode span, with the 52-pixel border
+strips on either side — cross-check against the `HSCREEN 1` row in your
+own §8.3 table before you conclude you've got the register value right.
 
 **8.5 — Why physical, not logical? (essay, five sentences max).** §8.1
 argued that `$FF9D`/`$FF9E` must address physical RAM directly, bypassing

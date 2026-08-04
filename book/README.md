@@ -225,8 +225,8 @@ at once.
 *Goal: from "TV scans lines" to the green BASIC prompt, with zero GPU.*
 
 - Raster fundamentals for the graphics-shy: fields, active area vs border,
-  why everything in weeks 6–9 is per-scanline. The canonical 640×240 RGBA
-  canvas ([`raster.rs:16`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L16)) that every mode renders into; the frontend only
+  why everything in weeks 6–9 is per-scanline. The canonical 744×243 RGBA
+  canvas ([`raster.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L29)) that every mode renders into; the frontend only
   scales it (that separation is what makes the core headless-testable).
 - The surprise the codebase documents ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §6 correction): the CoCo 3
   BASIC prompt is drawn in **VDG-compatible 32×16 text mode**, not a GIME
@@ -452,7 +452,7 @@ than you might fear.*
 - UI testing with kittest ([`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)): headless egui, queries by
   accessibility label. Tests that read like scripts.
 
-**Reading:** [`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs), [`app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs), [`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs), [`main.rs:91-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L91-L168),
+**Reading:** [`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs), [`app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs), [`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs), [`main.rs:93-165`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L93-L165),
 [`manager/lifecycle.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs), [`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs).
 **Exercises:** (1) explain `field_debt` and what goes wrong with naive
 "one field per repaint" on a 120 Hz monitor; (2) add a 2× turbo menu item;

@@ -1,7 +1,7 @@
 //! Integration coverage for the GIME-native video dispatch: booting the real ROM
 //! to the (VDG-compatible) BASIC prompt, then programming the GIME registers the
 //! way WIDTH 80 / HSCREEN do must switch the machine to per-scanline painting
-//! of the canonical 640×240 raster (Option B), and back cleanly to the VDG
+//! of the canonical 744×243 raster (Option B), and back cleanly to the VDG
 //! whole-field geometry. Register values are the ROM's own video-register
 //! images (SEB Unravelled II, tables at LE03C/LE071).
 

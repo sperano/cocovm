@@ -321,10 +321,11 @@ This is where "start with the GIME" actually means a lot of surface area. Split 
     MAME's GPL-2.0+ `vdg_t1_fontdata8x12`, pending a licensing decision — see
     `NOTICE.md`.
 
-Render to an RGBA `framebuffer: Vec<u8>` sized to the max active area (border
-included). Per-scanline write into it; at VSYNC upload as an `egui::ColorImage` →
-`TextureHandle`, drawn in the `CentralPanel` integer-scaled to the right aspect
-ratio. Geometry to get right: active area vs. border (`$FF9A` border color), and
+Render to an RGBA `framebuffer: Vec<u8>` covering the full visible picture,
+border to border. Per-scanline write into it; at VSYNC upload as an
+`egui::ColorImage` → `TextureHandle`, drawn in the `CentralPanel` letterboxed at
+exact 4:3 (or at the square-pixel aspect with correction off). Geometry to get
+right: active area vs. border (`$FF9A` border color), and
 the vertical/horizontal offset+scroll registers (`$FF9C–$FF9F`) that set where in
 physical RAM the raster reads from.
 
