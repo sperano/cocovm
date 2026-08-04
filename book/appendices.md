@@ -857,7 +857,7 @@ HSCREEN-2 color-bar frame entirely by poking `GIME` registers and RAM
 directly — no ROM, no CPU execution at all — then calls `gime_video`'s
 renderer and writes the resulting framebuffer as a PPM. The 744×243
 dimensions match the canonical raster canvas `ch07` introduces
-([`raster.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L29)), confirming the example renders through the same code path
+([`raster.rs:35`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L35)), confirming the example renders through the same code path
 the real machine's video pipeline does, just with hand-poked registers
 standing in for ROM-driven ones.
 

@@ -59,8 +59,8 @@ const THUMBNAIL_PLACEHOLDER_FILL: egui::Color32 = egui::Color32::BLACK;
 /// Row-thumbnail aspect ratio — always the emulator's own aspect-corrected
 /// display shape ([`crate::TARGET_ASPECT`]), never the framebuffer's raw
 /// pixel aspect: buffer pixels aren't square (the CoCo 3 canonical raster is
-/// 744×243 — half-height dots), so drawing at the texture's own aspect would
-/// stretch the picture (`draw_row_thumbnail`).
+/// 744×243 — dots twice as tall as wide), so drawing at the texture's own
+/// aspect would stretch the picture (`draw_row_thumbnail`).
 const THUMBNAIL_ASPECT: f32 = crate::TARGET_ASPECT;
 /// Inner padding of one list row's frame.
 const ROW_MARGIN: f32 = 8.0;

@@ -226,7 +226,7 @@ at once.
 
 - Raster fundamentals for the graphics-shy: fields, active area vs border,
   why everything in weeks 6–9 is per-scanline. The canonical 744×243 RGBA
-  canvas ([`raster.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L29)) that every mode renders into; the frontend only
+  canvas ([`raster.rs:35`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L35)) that every mode renders into; the frontend only
   scales it (that separation is what makes the core headless-testable).
 - The surprise the codebase documents ([DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §6 correction): the CoCo 3
   BASIC prompt is drawn in **VDG-compatible 32×16 text mode**, not a GIME

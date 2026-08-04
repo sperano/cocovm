@@ -4,12 +4,13 @@
 //! visible NTSC picture: the same time window the legacy VDG framebuffer
 //! spans (`video.rs` — 186 of 228 VDG clocks per line, 243 of 262 lines,
 //! MAME `mc6847.cpp`), sampled at the GIME dot clock, which is exactly twice
-//! the VDG pixel rate. Hence [`CANVAS_W`]` = 2 × `[`video::FB_W`] and
-//! [`CANVAS_H`]` = `[`video::FB_H`]. MAME's own coco3 visible window
-//! (`coco3.cpp` `set_raw(..., 912, 0, 640, 262, 1, 240)`) crops the border
-//! to the widest active span; it embeds in this canvas at the fixed offset
-//! `(`[`WIDE_BORDER_X`]`, 0)`, rows `0..240`, so trace-diffing a frame
-//! against MAME is still a crop, never a rescale.
+//! the VDG pixel rate. Hence `CANVAS_W = 2 × FB_W` and `CANVAS_H = FB_H`.
+//! MAME's own coco3 visible window (`coco3.cpp` `set_raw(..., 912, 0, 640,
+//! 262, 1, 240)`) crops the border to the widest active span and the field
+//! to raw lines `1..=239`; since canvas row == machine line == MAME's raw
+//! line, that window is the canvas rectangle `x 52..692, y 1..240`
+//! ([`WIDE_BORDER_X`] dots in), so trace-diffing a frame against MAME is
+//! still a crop, never a rescale.
 //!
 //! Every legal mode reaches the canvas by an INTEGER horizontal scale:
 //! active content is 512 px behind a [`NON_WIDE_BORDER_X`] border or 640 px
@@ -24,9 +25,14 @@
 
 use crate::video;
 
+/// GIME dots per legacy VDG framebuffer pixel: the GIME dot clock is
+/// exactly twice the VDG pixel rate, so the same visible time window
+/// holds twice the dots.
+const GIME_DOTS_PER_VDG_PIXEL: usize = 2;
+
 /// Canonical canvas width: the full visible NTSC line at the GIME dot
 /// clock — twice the legacy VDG framebuffer's width, same time window.
-pub const CANVAS_W: usize = 2 * video::FB_W;
+pub const CANVAS_W: usize = GIME_DOTS_PER_VDG_PIXEL * video::FB_W;
 /// Canonical canvas height: the visible NTSC field (25 + 192 + 26 lines),
 /// shared with the legacy framebuffer.
 pub const CANVAS_H: usize = video::FB_H;
@@ -39,10 +45,21 @@ pub const WIDE_ACTIVE_W: usize = 640;
 /// are 2 dots each): the wide body swallows most of the line.
 pub const WIDE_BORDER_X: usize = (CANVAS_W - WIDE_ACTIVE_W) / 2;
 
-/// Active-content width of non-wide modes; the rest of the line is border.
-pub const NON_WIDE_ACTIVE_W: usize = 512;
+/// Active-content width of non-wide modes — the VDG active area at the
+/// GIME dot rate, so a non-wide body sits behind the very same border as
+/// the legacy framebuffer's (2 × [`video::BORDER_X`] dots); the rest of
+/// the line is border.
+pub const NON_WIDE_ACTIVE_W: usize = GIME_DOTS_PER_VDG_PIXEL * video::ACTIVE_W;
 /// Horizontal border width each side of a non-wide mode's 512 px body.
 pub const NON_WIDE_BORDER_X: usize = (CANVAS_W - NON_WIDE_ACTIVE_W) / 2;
+
+// The frontend's square-pixel view relies on the canvas line-doubled
+// (CANVAS_W × 2·CANVAS_H) having exactly the legacy frame's aspect
+// (`video::SQUARE_PIXEL_ASPECT`), and both `/ 2` border splits above
+// truncating nothing.
+const _: () = assert!(CANVAS_W * video::FB_H == GIME_DOTS_PER_VDG_PIXEL * video::FB_W * CANVAS_H);
+const _: () = assert!((CANVAS_W - WIDE_ACTIVE_W).is_multiple_of(2));
+const _: () = assert!((CANVAS_W - NON_WIDE_ACTIVE_W).is_multiple_of(2));
 
 /// Vertical placement of the active body inside the 243 visible rows,
 /// indexed by the $FF99 LPF field: `(top border rows, body rows)`.

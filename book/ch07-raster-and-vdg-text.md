@@ -231,7 +231,7 @@ universal in graphics work: four bytes per pixel, in the order red, green,
 blue, alpha. Alpha is opacity, and in this emulator it is always `0xFF`,
 fully opaque, because nothing here ever needs to see through one pixel to
 another. `BYTES_PER_PIXEL` is `4`
-([`crates/coco-core/src/video.rs:57`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L57)),
+([`crates/coco-core/src/video.rs:63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L63)),
 and it is a named constant rather than a literal `4` sprinkled through the
 code for the usual reason: the number appears in every index calculation in
 the subsystem, and a named constant makes each of those calculations
@@ -318,7 +318,7 @@ is never more sophisticated than the loop above.
 The geometry constants those expressions lean on are all declared together,
 and reading them as a group is the fastest way to internalize the shape of a
 VDG text screen
-([`crates/coco-core/src/video.rs:25-48`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L25-L48)):
+([`crates/coco-core/src/video.rs:25-52`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L25-L52)):
 
 ```rust
 /// VDG character cell: 8 pixels wide × 12 raster lines (matches the font rows).
@@ -331,11 +331,16 @@ pub const ROWS: usize = 16;
 /// Active display geometry.
 pub const ACTIVE_W: usize = COLS * CELL_W; // 256
 pub const ACTIVE_H: usize = ROWS * CELL_H; // 192
-/// Side-border width: the full visible NTSC line beyond the active area —
-/// MAME `mc6847.cpp` `CLOCKS_L_OR_R_BORDER` (29 VDG clocks × 2 px/clock).
-/// The framebuffer thus spans everything an NTSC set shows, so stretching
-/// it to exactly 4:3 (`coco-egui`'s `TARGET_ASPECT`) reproduces the tube.
-pub const BORDER_X: usize = 58;
+/// The visible border each side of the active line, in VDG clocks — MAME
+/// `mc6847.cpp` `CLOCKS_L_OR_R_BORDER`.
+const CLOCKS_L_OR_R_BORDER: usize = 29;
+/// Framebuffer pixels per VDG clock (MAME's bitmap-pixel domain: the
+/// 6847's clock × 2 gives 256 active pixels per line).
+const PX_PER_VDG_CLOCK: usize = 2;
+/// Side-border width: the full visible NTSC line beyond the active area.
+/// The framebuffer thus spans everything an NTSC set shows, so a 4:3
+/// presentation of it reproduces the tube exactly.
+pub const BORDER_X: usize = CLOCKS_L_OR_R_BORDER * PX_PER_VDG_CLOCK; // 58
 /// Top/bottom border heights: the visible field is 25 border + 192 active +
 /// 26 border = 243 of NTSC's 262 lines — MAME `mc6847.cpp`
 /// `LINES_TOP_BORDER`/`LINES_BOTTOM_BORDER` (shared by the GIME, whose
@@ -353,10 +358,11 @@ picture is 256 by 192 pixels, which is the native resolution of every
 CoCo-compatible video mode this book will meet, text and graphics alike. The
 border is where the framebuffer stops being about the VDG and starts being
 about the television: the frame spans everything an NTSC set actually
-shows — 58 border pixels on each side of the active line (the 29 VDG clocks
-MAME's `mc6847.cpp` models, at two pixels per clock) and a 25-line top /
-26-line bottom border around the active rows, 243 visible lines of the 262
-in a field. The whole legacy framebuffer is therefore 372 by 243. Notice
+shows — 58 border pixels on each side of the active line (the 29 VDG
+clocks MAME's `mc6847.cpp` models, at two framebuffer pixels per clock,
+both spelled as the named constants they come from) and a 25-line top /
+26-line bottom border around the active rows, 243 visible lines of the
+262 in a field. The whole legacy framebuffer is therefore 372 by 243. Notice
 that the constants are *derived* rather than restated: `ACTIVE_W` is
 written as `COLS * CELL_W`, not as `256`. That is the same discipline
 Chapter 1 praised in the CPU's register struct — say the thing once, in the
@@ -461,8 +467,8 @@ machine can enter.
 The codebase's answer, for the CoCo 3, is a single fixed-size canvas that
 every video mode renders into: this week's legacy text, next week's
 GIME-native text and graphics, Chapter 9's advanced modes, all of them. The
-whole module that defines it is under seventy lines, and it repays reading
-in full
+whole module that defines it is eighty lines, and it repays reading in
+full
 ([`crates/coco-core/src/raster.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs)):
 
 ```rust
@@ -472,12 +478,13 @@ in full
 //! visible NTSC picture: the same time window the legacy VDG framebuffer
 //! spans (`video.rs` — 186 of 228 VDG clocks per line, 243 of 262 lines,
 //! MAME `mc6847.cpp`), sampled at the GIME dot clock, which is exactly twice
-//! the VDG pixel rate. Hence [`CANVAS_W`]` = 2 × `[`video::FB_W`] and
-//! [`CANVAS_H`]` = `[`video::FB_H`]. MAME's own coco3 visible window
-//! (`coco3.cpp` `set_raw(..., 912, 0, 640, 262, 1, 240)`) crops the border
-//! to the widest active span; it embeds in this canvas at the fixed offset
-//! `(`[`WIDE_BORDER_X`]`, 0)`, rows `0..240`, so trace-diffing a frame
-//! against MAME is still a crop, never a rescale.
+//! the VDG pixel rate. Hence `CANVAS_W = 2 × FB_W` and `CANVAS_H = FB_H`.
+//! MAME's own coco3 visible window (`coco3.cpp` `set_raw(..., 912, 0, 640,
+//! 262, 1, 240)`) crops the border to the widest active span and the field
+//! to raw lines `1..=239`; since canvas row == machine line == MAME's raw
+//! line, that window is the canvas rectangle `x 52..692, y 1..240`
+//! ([`WIDE_BORDER_X`] dots in), so trace-diffing a frame against MAME is
+//! still a crop, never a rescale.
 //!
 //! Every legal mode reaches the canvas by an INTEGER horizontal scale:
 //! active content is 512 px behind a [`NON_WIDE_BORDER_X`] border or 640 px
@@ -486,9 +493,14 @@ in full
 
 use crate::video;
 
+/// GIME dots per legacy VDG framebuffer pixel: the GIME dot clock is
+/// exactly twice the VDG pixel rate, so the same visible time window
+/// holds twice the dots.
+const GIME_DOTS_PER_VDG_PIXEL: usize = 2;
+
 /// Canonical canvas width: the full visible NTSC line at the GIME dot
 /// clock — twice the legacy VDG framebuffer's width, same time window.
-pub const CANVAS_W: usize = 2 * video::FB_W;
+pub const CANVAS_W: usize = GIME_DOTS_PER_VDG_PIXEL * video::FB_W;
 /// Canonical canvas height: the visible NTSC field (25 + 192 + 26 lines),
 /// shared with the legacy framebuffer.
 pub const CANVAS_H: usize = video::FB_H;
@@ -501,10 +513,21 @@ pub const WIDE_ACTIVE_W: usize = 640;
 /// are 2 dots each): the wide body swallows most of the line.
 pub const WIDE_BORDER_X: usize = (CANVAS_W - WIDE_ACTIVE_W) / 2;
 
-/// Active-content width of non-wide modes; the rest of the line is border.
-pub const NON_WIDE_ACTIVE_W: usize = 512;
+/// Active-content width of non-wide modes — the VDG active area at the
+/// GIME dot rate, so a non-wide body sits behind the very same border as
+/// the legacy framebuffer's (2 × [`video::BORDER_X`] dots); the rest of
+/// the line is border.
+pub const NON_WIDE_ACTIVE_W: usize = GIME_DOTS_PER_VDG_PIXEL * video::ACTIVE_W;
 /// Horizontal border width each side of a non-wide mode's 512 px body.
 pub const NON_WIDE_BORDER_X: usize = (CANVAS_W - NON_WIDE_ACTIVE_W) / 2;
+
+// The frontend's square-pixel view relies on the canvas line-doubled
+// (CANVAS_W × 2·CANVAS_H) having exactly the legacy frame's aspect
+// (`video::SQUARE_PIXEL_ASPECT`), and both `/ 2` border splits above
+// truncating nothing.
+const _: () = assert!(CANVAS_W * video::FB_H == GIME_DOTS_PER_VDG_PIXEL * video::FB_W * CANVAS_H);
+const _: () = assert!((CANVAS_W - WIDE_ACTIVE_W).is_multiple_of(2));
+const _: () = assert!((CANVAS_W - NON_WIDE_ACTIVE_W).is_multiple_of(2));
 
 pub const fn vertical_window(lpf: usize) -> (usize, usize) {
     match lpf {
@@ -517,7 +540,7 @@ pub const fn vertical_window(lpf: usize) -> (usize, usize) {
 ```
 
 Read this slowly. The design decision it embodies is worth considerably more
-than seventy lines suggest, and three separate ideas are packed into it.
+than eighty lines suggest, and three separate ideas are packed into it.
 
 ### One fixed size, for every mode, forever
 
@@ -548,14 +571,17 @@ The specific numbers are not arbitrary either. The canvas covers the same
 stretch of the television's scan that §7.2.2's legacy framebuffer covers —
 everything an NTSC set shows — sampled at the GIME's dot clock, which runs
 at exactly twice the VDG's pixel rate. That is why `CANVAS_W` is written as
-`2 * video::FB_W` rather than as a number: 744 is 372 doubled, and the two
-buffers describe the same physical picture at two resolutions, which is
-what lets the frontend letterbox both to the same 4:3 without knowing which
-machine produced them. MAME's own visible window for the CoCo 3 — 640×240,
-the widest active span with the border cropped away — embeds inside this
-canvas at a fixed offset, so a frame produced by this emulator and a frame
-produced by MAME can still be diffed pixel-for-pixel: crop the canvas at
-`(WIDE_BORDER_X, 0)`, rows 0 through 239, and compare. That is the
+`GIME_DOTS_PER_VDG_PIXEL * video::FB_W` rather than as a number: 744 is
+372 doubled, and the two buffers describe the same physical picture at two
+resolutions, which is what lets the frontend letterbox both to the same
+4:3 without knowing which machine produced them — a relationship the
+`const` assertions at the bottom of the module pin down so no future edit
+can break it silently. MAME's own visible window for the CoCo 3 —
+the widest 640-dot active span with the border cropped away, raw lines 1
+through 239 — embeds inside this canvas at a fixed offset, so a frame
+produced by this emulator and a frame produced by MAME can still be
+diffed pixel-for-pixel: crop the canvas to `x 52..692, y 1..240` and
+compare. That is the
 headless-testability payoff the syllabus promised, and it is worth being
 concrete about what it buys: a test can allocate a 744×243 `Vec<u8>`, call
 the renderer, and assert on individual pixel colors, with no window, no
@@ -619,7 +645,7 @@ silently disagreeing with a hardcoded literal three files away.
 > **Rust corner: `chunks_exact_mut` for a run of identical pixels.** The
 > integer scale this section keeps mentioning — 256 native pixels stretched
 > to fill 512 canvas pixels — is implemented by one small function, `paint_px`
-> ([`crates/coco-core/src/video.rs:165`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L165)):
+> ([`crates/coco-core/src/video.rs:171`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L171)):
 > ```rust
 > fn paint_px(out: &mut [u8], x: &mut usize, xscale: usize, color: [u8; 4]) {
 >     for px in out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
@@ -857,7 +883,7 @@ with, now traced to the single `if` that implements it.
 With the mode settled, the question becomes what the renderer reads. The
 legacy text screen is 512 bytes — `COLS * ROWS`, thirty-two by sixteen,
 declared at
-[`crates/coco-core/src/video.rs:29-60`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L29-L60)
+[`crates/coco-core/src/video.rs:29-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L29-L66)
 — living in ordinary RAM at a base address the SAM's page register points
 at. On a CoCo 3 that register is the GIME's SAM-compatibility page overlay,
 and the base address it produces is simply the page number times 512
@@ -1498,7 +1524,7 @@ the ROM programmed at boot.
 ### Which registers legacy text reads
 
 Two constants name the registers this mode uses
-([`crates/coco-core/src/video.rs:64-65`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L64-L65)):
+([`crates/coco-core/src/video.rs:70-71`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L70-L71)):
 
 ```rust
 pub const TEXT_BG_INDEX: usize = 12;
@@ -1550,7 +1576,7 @@ small lesson in how to model two machines that differ in exactly one respect. A
 CoCo 1 or 2 has no palette registers whatsoever; its colors are hardwired
 analog levels in the MC6847. So instead of snapshotting registers, that path
 resolves a fixed table
-([`crates/coco-core/src/video.rs:83-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L83-L100)),
+([`crates/coco-core/src/video.rs:89-106`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L89-L106)),
 whose last eight entries show the shared index layout clearly:
 
 ```rust
@@ -1573,7 +1599,7 @@ programs into its palette registers at cold start, which is the reason the
 two machines can share every other piece of the legacy renderer.
 
 The `ColorSource` enum that dispatches between them
-([`crates/coco-core/src/video.rs:133-160`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L133-L160))
+([`crates/coco-core/src/video.rs:139-166`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L139-L166))
 carries one asymmetry worth understanding, because it explains a `css`
 parameter that has been threading through every signature in this chapter.
 The `$FF22` CSS bit selects the orange alphanumeric color set instead of

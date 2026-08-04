@@ -1,6 +1,8 @@
 //! The per-frame loop: crediting wall-clock time to emulated fields,
 //! running them, and getting the resulting framebuffer onto the screen.
 
+use coco_core::video::SQUARE_PIXEL_ASPECT;
+
 use crate::*;
 
 impl CocoApp {
@@ -117,7 +119,7 @@ impl CocoApp {
         let aspect = if self.aspect_correct {
             TARGET_ASPECT
         } else {
-            coco_core::video::SQUARE_PIXEL_ASPECT
+            SQUARE_PIXEL_ASPECT
         };
         // Largest rect of that aspect that fits the panel, centered (letterboxed).
         let avail = ui.available_rect_before_wrap();

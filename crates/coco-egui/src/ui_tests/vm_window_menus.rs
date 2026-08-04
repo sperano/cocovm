@@ -158,6 +158,9 @@ fn view_menu_toggles_aspect() {
 /// on 4:3, cancelling the toggle (`app/frame.rs`'s `draw_display` doc).
 #[test]
 fn aspect_toggle_changes_the_display_rect_on_monitors_and_tvs() {
+    /// Letterbox-rect ratio tolerance — far below the ~0.2 gap between the
+    /// two expected aspects, well above f32 rounding in the fit math.
+    const ASPECT_EPS: f32 = 0.01;
     let aspect_of = |harness: &AppHarness| {
         let rect = harness.state().display_rect;
         rect.width() / rect.height()
@@ -168,17 +171,20 @@ fn aspect_toggle_changes_the_display_rect_on_monitors_and_tvs() {
     ] {
         let mut harness = boot_harness();
         harness.state_mut().display = display;
+        // The TV arm only exercises the doubling path while scanlines are
+        // on — pin the strength so a future default of 0 can't silently
+        // turn this into a second copy of the monitor arm.
+        harness.state_mut().tv.scanline_pct = display::MAX_PCT;
         harness.step();
         assert!(
-            (aspect_of(&harness) - TARGET_ASPECT).abs() < 0.01,
+            (aspect_of(&harness) - TARGET_ASPECT).abs() < ASPECT_EPS,
             "{display:?}: corrected view letterboxes at 4:3"
         );
 
         harness.key_press(egui::Key::F9);
         harness.step();
-        harness.step();
         assert!(
-            (aspect_of(&harness) - coco_core::video::SQUARE_PIXEL_ASPECT).abs() < 0.01,
+            (aspect_of(&harness) - coco_core::video::SQUARE_PIXEL_ASPECT).abs() < ASPECT_EPS,
             "{display:?}: uncorrected view letterboxes at the square-pixel aspect"
         );
     }

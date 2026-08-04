@@ -134,8 +134,9 @@ fn text_without_attributes_uses_palette_0_and_1() {
 }
 
 #[test]
-fn non_wide_mode_gets_116px_side_borders() {
-    // 64 columns is non-wide: 512 native px centred with 116 px borders.
+fn non_wide_mode_gets_side_borders() {
+    // 64 columns is non-wide: 512 native px centred behind
+    // NON_WIDE_BORDER_X-wide borders.
     let mut g = gime_with(TEXT_LPR8, VRES_TEXT64);
     g.border = 0x12;
     let mut ram = vec![0u8; RAM_LEN];
@@ -146,12 +147,13 @@ fn non_wide_mode_gets_116px_side_borders() {
     assert_eq!(
         px(&fb, NON_WIDE_BORDER_X - 1, TOP),
         GIME::rgb_color(0x12),
-        "left border ends at x=115"
+        "left border ends at x={}",
+        NON_WIDE_BORDER_X - 1
     );
     assert_eq!(
         px(&fb, NON_WIDE_BORDER_X + 3, TOP),
         GIME::rgb_color(1),
-        "active area starts at x=116"
+        "active area starts at x={NON_WIDE_BORDER_X}"
     );
     assert_eq!(
         px(&fb, CANVAS_W - 1, TOP),
@@ -161,9 +163,10 @@ fn non_wide_mode_gets_116px_side_borders() {
 }
 
 #[test]
-fn wide_mode_gets_52px_side_borders() {
-    // 80 columns is wide: the 640 px body still sits behind 52 px of
-    // border each side — the visible line is wider than any active span.
+fn wide_mode_gets_side_borders() {
+    // 80 columns is wide: the 640 px body still sits behind
+    // WIDE_BORDER_X-wide borders — the visible line is wider than any
+    // active span.
     let mut g = gime_with(TEXT_LPR8, VRES_TEXT80_ATTR);
     g.border = 0x12;
     let ram = vec![0u8; RAM_LEN];
@@ -173,12 +176,19 @@ fn wide_mode_gets_52px_side_borders() {
     assert_eq!(
         px(&fb, WIDE_BORDER_X - 1, TOP),
         GIME::rgb_color(0x12),
-        "left border ends at x=51"
+        "left border ends at x={}",
+        WIDE_BORDER_X - 1
+    );
+    let body_start = px(&fb, WIDE_BORDER_X, TOP);
+    assert_ne!(
+        body_start,
+        GIME::rgb_color(0x12),
+        "the body is not border from x={WIDE_BORDER_X}"
     );
     assert_eq!(
-        px(&fb, WIDE_BORDER_X, TOP),
+        body_start,
         GIME::rgb_color(0),
-        "body (all-background text) starts at x=52"
+        "body (all-background text) starts at x={WIDE_BORDER_X}"
     );
     assert_eq!(
         px(&fb, CANVAS_W - 1, TOP),

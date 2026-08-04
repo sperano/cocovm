@@ -898,7 +898,7 @@ set. Trace the algorithm as four steps:
 
 Now plug in real numbers. Take a CoCo 3 running in a GIME-native mode, so
 its canvas is the canonical 744×243 raster (`raster::CANVAS_W` and
-`CANVAS_H`, [`crates/coco-core/src/raster.rs:27-32`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L27-L32), Chapter 7), inside a
+`CANVAS_H`, [`crates/coco-core/src/raster.rs:33-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L33-L38), Chapter 7), inside a
 1920×1080 window. Subtract the fixed chrome heights `coco-egui` reserves —
 `MENU_BAR_H` at 22, `TOOLBAR_H` at 56 (not a literal but computed: the
 toolbar's 52-pixel transport tiles, `BUTTON_SIZE.y`, plus the panel's

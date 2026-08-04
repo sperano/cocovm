@@ -550,9 +550,14 @@ because both of them turn on it. Every GIME-native mode in this codebase
 renders into the same fixed-size canvas:
 
 ```rust
+/// GIME dots per legacy VDG framebuffer pixel: the GIME dot clock is
+/// exactly twice the VDG pixel rate, so the same visible time window
+/// holds twice the dots.
+const GIME_DOTS_PER_VDG_PIXEL: usize = 2;
+
 /// Canonical canvas width: the full visible NTSC line at the GIME dot
 /// clock — twice the legacy VDG framebuffer's width, same time window.
-pub const CANVAS_W: usize = 2 * video::FB_W;
+pub const CANVAS_W: usize = GIME_DOTS_PER_VDG_PIXEL * video::FB_W;
 /// Canonical canvas height: the visible NTSC field (25 + 192 + 26 lines),
 /// shared with the legacy framebuffer.
 pub const CANVAS_H: usize = video::FB_H;
@@ -565,13 +570,16 @@ pub const WIDE_ACTIVE_W: usize = 640;
 /// are 2 dots each): the wide body swallows most of the line.
 pub const WIDE_BORDER_X: usize = (CANVAS_W - WIDE_ACTIVE_W) / 2;
 
-/// Active-content width of non-wide modes; the rest of the line is border.
-pub const NON_WIDE_ACTIVE_W: usize = 512;
+/// Active-content width of non-wide modes — the VDG active area at the
+/// GIME dot rate, so a non-wide body sits behind the very same border as
+/// the legacy framebuffer's (2 × [`video::BORDER_X`] dots); the rest of
+/// the line is border.
+pub const NON_WIDE_ACTIVE_W: usize = GIME_DOTS_PER_VDG_PIXEL * video::ACTIVE_W;
 /// Horizontal border width each side of a non-wide mode's 512 px body.
 pub const NON_WIDE_BORDER_X: usize = (CANVAS_W - NON_WIDE_ACTIVE_W) / 2;
 ```
 
-([`crates/coco-core/src/raster.rs:27-45`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L27-L45).)
+([`crates/coco-core/src/raster.rs:28-54`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L28-L54).)
 The numbers those expressions produce are 744 by 243, and the derivation is
 worth one paragraph because nothing about it is arbitrary. The canvas
 covers the *full visible NTSC picture* — the same window of time the legacy
@@ -580,9 +588,10 @@ clocks in a line and 243 of the 262 lines in a field — sampled at the GIME
 dot clock, which runs at exactly twice the VDG pixel rate. Twice the legacy
 framebuffer's 372-pixel width is 744; the 243 visible rows are shared
 unchanged. MAME's own coco3 screen crops that picture to the widest active
-span, 640×240, and that window embeds in this canvas at the fixed offset
-(52, 0) — so comparing a rendered frame against MAME is still a crop, never
-a rescale.
+span — 640 dots across, raw lines 1 through 239 — and that window embeds
+in this canvas as the rectangle `x 52..692, y 1..240` (canvas rows and
+MAME's raw lines share the same numbering) — so comparing a rendered frame
+against MAME is still a crop, never a rescale.
 
 The module's own doc comment calls this "Option B": one fixed-size RGBA
 canvas for every GIME-native mode, with every legal mode reaching it by an
@@ -1823,7 +1832,7 @@ pub const fn vertical_window(lpf: usize) -> (usize, usize) {
 }
 ```
 
-([`raster.rs:56-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L56-L63).)
+([`raster.rs:73-80`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L73-L80).)
 Each pair is a top-border row count and a body row count, and the doc
 comment above it records that the 192, 200, and 225 cases come from MAME's
 `update_geometry`, where each sums with its bottom border to exactly 243.

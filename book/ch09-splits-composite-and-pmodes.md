@@ -1224,7 +1224,7 @@ palette indirection.)
 `SPLIT_LINE = 100` is chosen to sit comfortably inside the active picture,
 and the comment's "rows 25..217 for LPF=%00" is not a magic number either.
 It comes from the canonical raster's vertical placement table
-([`raster.rs:56-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L56-L63)):
+([`raster.rs:73-80`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/raster.rs#L73-L80)):
 
 ```rust
 pub const fn vertical_window(lpf: usize) -> (usize, usize) {
