@@ -2,12 +2,6 @@ use coco_core::joystick::{LEFT, RIGHT};
 
 use crate::*;
 
-/// The keyboard entry's readout. Just the device name: the icon beside it
-/// carries the meaning, and the mode itself is one click away in the menu
-/// (and in the entry's hover text), so spelling it out here only made the
-/// bar's first entry the widest one.
-const KEYBOARD_LABEL: &str = "Keyboard";
-
 impl CocoApp {
     /// The status bar: live state readouts, plus the keyboard entry's menu
     /// ([`Self::keyboard_status`]).
@@ -44,12 +38,16 @@ impl CocoApp {
     }
 
     /// The keyboard entry — a status-bar entry that is also a control
-    /// (like [`Self::display_status`]): icon and [`KEYBOARD_LABEL`] are a
-    /// single click target that pops up the keyboard menu
-    /// (`keyboard_menu_ui` — positional/symbolic, then the key layout
-    /// window). This entry is the only way in: the menu bar has no Keyboard
-    /// menu of its own. The current mode lives in the hover text, since the
-    /// label no longer spells it out.
+    /// (like [`Self::display_status`]): icon and mode label
+    /// ("Positional"/"Symbolic") are a single click target that pops up the
+    /// keyboard menu (`keyboard_menu_ui` — positional/symbolic, then the
+    /// key layout window). This entry is the only way in: the menu bar has
+    /// no Keyboard menu of its own.
+    ///
+    /// Naming the mode means the two labels differ in width, so toggling
+    /// (F12) nudges every entry to the right — accepted: seeing the active
+    /// mode at a glance beats a fixed-width first entry, and the hover text
+    /// keeps the device name ("Keyboard input mode") the label drops.
     ///
     /// The label is a frameless button rather than a plain one: `frame(false)`
     /// zeroes the button padding too, so it lines up with the plain labels
@@ -65,11 +63,10 @@ impl CocoApp {
         icon.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Keyboard menu")
         });
-        let entry =
-            (icon | ui.add(egui::Button::new(KEYBOARD_LABEL).frame(false))).on_hover_text(format!(
-                "Keyboard input mode: {} — click for the keyboard menu (F12 toggles)",
-                self.kb_mode.label()
-            ));
+        let mode = self.kb_mode.label();
+        let entry = (icon | ui.add(egui::Button::new(mode).frame(false))).on_hover_text(format!(
+            "Keyboard input mode: {mode} — click for the keyboard menu (F12 toggles)"
+        ));
         egui::Popup::menu(&entry)
             // An explicit id, not the union's: that one is the icon's auto
             // id, which is stable only as long as the keyboard stays the
