@@ -157,7 +157,11 @@ impl CocoApp {
     /// ports. Called once per `update()`, before running any emulated fields, so
     /// the pot/button state a field sees is this frame's, not last frame's.
     pub(crate) fn drive_joysticks(&mut self, ctx: &egui::Context) {
-        self.joysticks
-            .apply(ctx, self.display_rect, &mut self.machine);
+        self.joysticks.apply(
+            ctx,
+            self.display_rect,
+            self.display_layer,
+            &mut self.machine,
+        );
     }
 }

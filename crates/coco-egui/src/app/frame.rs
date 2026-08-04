@@ -128,8 +128,10 @@ impl CocoApp {
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
         ui.put(rect, egui::Image::new(sized));
         // Remembered for `drive_joysticks` next frame, to map pointer
-        // position to joystick axes (see the `display_rect` field doc).
+        // position to joystick axes and gate the mouse fire buttons (see
+        // the `display_rect` and `display_layer` field docs).
         self.display_rect = rect;
+        self.display_layer = ui.layer_id();
     }
 
     /// The full app window for one frame: emulation step, every menu/toolbar/

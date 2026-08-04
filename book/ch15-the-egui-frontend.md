@@ -92,7 +92,7 @@ immediate mode there is no persistent widget tree at all. Instead, your
 ```
 
 That is the *entire* trait implementation — three lines at
-[`crates/coco-egui/src/app.rs:313-315`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L313-L315), forwarding to a plain inherent
+[`crates/coco-egui/src/app.rs:322-324`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L322-L324), forwarding to a plain inherent
 method. Everything else in that file is ordinary `impl CocoApp`. There is
 no widget registration, no event handler installation, no constructor that
 builds a layout. The window is whatever `update` draws this time around,
@@ -148,7 +148,7 @@ checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
 
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
-([`crates/coco-egui/src/app.rs:11-156`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L156)) that between them constitute the
+([`crates/coco-egui/src/app.rs:11-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L164)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
 `self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
@@ -828,16 +828,18 @@ than graphics API calls:
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
         ui.put(rect, egui::Image::new(sized));
         // Remembered for `drive_joysticks` next frame, to map pointer
-        // position to joystick axes (see the `display_rect` field doc).
+        // position to joystick axes and gate the mouse fire buttons (see
+        // the `display_rect` and `display_layer` field docs).
         self.display_rect = rect;
+        self.display_layer = ui.layer_id();
     }
 ```
 
-([`crates/coco-egui/src/app/frame.rs:108-133`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L108-L133).) Find
+([`crates/coco-egui/src/app/frame.rs:108-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L108-L135).) Find
 `ui.put(rect, egui::Image::new(sized))` in the middle of that. It is the
 display path's second and last GPU-facing call: draw one textured quad,
 sized to `rect`. Every line above it exists to decide what `rect`
-should *be*, and the line below it merely records the answer.
+should *be*, and the lines below it merely record the answer.
 
 This is the entirety of "3D graphics" in this codebase — one 2D rectangle,
 textured. No shaders that you write. No vertex buffers that you manage. No
@@ -850,16 +852,24 @@ eframe's wgpu backend in instead ([`crates/coco-egui/Cargo.toml:59-63`](https://
 banner prints which one is live ([`crates/coco-egui/src/startup.rs:102-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/startup.rs#L102-L125)),
 and nothing in this chapter changes between them.
 
-The final line, `self.display_rect = rect`, is the one piece of state
-`draw_display` leaves behind, and it is there for a non-obvious consumer:
+The final two lines, `self.display_rect = rect` and `self.display_layer =
+ui.layer_id()`, are the only state `draw_display` leaves behind, and they
+are there for a non-obvious consumer:
 
 > Letterboxed display rect from the last frame's `CentralPanel`, used to map
-> pointer position to joystick axes. One frame stale (see `drive_joysticks`).
-> ([`crates/coco-egui/src/app.rs:53-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L53-L55))
+> pointer position to joystick axes and to gate the mouse fire buttons to
+> presses starting on the display. One frame stale (see `drive_joysticks`).
+> ([`crates/coco-egui/src/app.rs:53-56`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L53-L56))
 
 Mouse-as-joystick needs to convert "the pointer is at this window position"
 into "the stick is this far right and this far down," and that conversion
-needs to know where inside the window the CoCo picture actually is. Since
+needs to know where inside the window the CoCo picture actually is. The
+same remembered rect — paired with the egui layer the display was drawn
+on — also decides whether a mouse press counts as a joystick fire button
+at all: a click on the chrome around the display, or on a menu popup
+floating over it, stays a UI click instead of doubling as a fire-button
+press (`joy::press_began_on_display`, latched per button in
+`joy::JoystickInputs::update_mouse_fire`). Since
 `drive_joysticks` runs at the *top* of `step_emulation` and `draw_display`
 runs at the *bottom* of the frame, the rect the joystick code reads is
 always one frame old. The doc comment says so plainly rather than
@@ -2449,7 +2459,7 @@ are git-ignored and local-only, so these counts are a dated snapshot rather
 than a permanent expectation:
 
 ```
-test result: FAILED. 154 passed; 39 failed; 0 ignored; 0 measured; 0 filtered out
+test result: FAILED. 159 passed; 39 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 **In that run, all 39 failures required missing ROM data.** Every one
@@ -2480,14 +2490,16 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
-**The 154 passing tests in that run covered the non-ROM surface of the crate**: the
+**The 159 passing tests in that run covered the non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), the `--log-level` parsing tests and the machine-default tests
 (`default_ram`, `default_vdg`), every `machine_def` round-trip/atomicity/
 slug test, the three thumbnail tests from §15.6 (`write_thumbnail_png`'s
 round-trip and both halves of the all-black skip heuristic), the
-`Selection` set-arithmetic tests from §15.8, the joystick math and
-in-use-flag tests, the status-icon tests (`ActivityLatch`'s
+`Selection` set-arithmetic tests from §15.8, the joystick math,
+in-use-flag, and mouse-fire-gating tests (the latter driving real egui
+passes through a bare `egui::Context` — events, no window), the
+status-icon tests (`ActivityLatch`'s
 prime/hold/decrease rules driven through an injected clock, and the tape
 reel's angle arithmetic — no `Machine`, no window), the
 paper-render/paper-export tests (pure rasterization, no emulated printer
@@ -2502,7 +2514,7 @@ importantly for this chapter — every
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
 will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 193 tests should pass.
+checkout with real ROMs present, all 198 tests should pass.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
