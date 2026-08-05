@@ -92,6 +92,10 @@ pub(crate) struct CocoApp {
     /// written canonical `.cas`, also synthesize and write a `.wav` of the
     /// tape audio (`coco_core::cassette_wav::synthesize_wav`) alongside it.
     pub(crate) save_tape_wav: bool,
+    /// The tape menu's "Seek to byte" field ([`CocoApp::tape_menu_ui`]),
+    /// edited live and committed to [`coco_core::cassette::Cassette::seek`]
+    /// on Enter — not live-rebound on each keystroke, like `rs232_tcp_addr`.
+    pub(crate) tape_seek_text: String,
     /// Destination path of the active bit-banger "print to text file"
     /// capture, if any — shown in the Machine
     /// menu and gates "Stop Print Capture", like `tape_path` does for the
@@ -222,6 +226,7 @@ impl CocoApp {
             dw_paths: std::array::from_fn(|_| None),
             tape_path: None,
             save_tape_wav,
+            tape_seek_text: String::new(),
             print_capture_path: None,
             print_capture_lf: false,
             pending_disk_action: None,

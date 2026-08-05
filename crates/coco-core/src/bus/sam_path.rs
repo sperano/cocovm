@@ -97,12 +97,7 @@ impl SystemBus {
                 self.pia0.write((addr & 0x03) as u8, val);
                 self.note_audio_write(); // CA2/CB2 are the sound mux selects
             }
-            PIA1_BASE..=PIA1_LAST => {
-                self.pia1.write((addr & 0x03) as u8, val);
-                let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
-                self.cassette.record_dac(dac, self.pia1.a.c2_output());
-                self.note_audio_write(); // DAC / PB1 / SNDEN / relay
-            }
+            PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
             CART_BASE..=CART_LAST => {
                 self.cart.write(addr, val);
                 self.note_audio_write(); // latched cart DACs

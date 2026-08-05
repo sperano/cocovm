@@ -67,9 +67,23 @@ impl CocoApp {
         self.tape_path = None;
     }
 
-    /// Finalize any pending recording and, if the tape changed, save it back
-    /// (like [`Self::write_back_disk`]; on failure the tape stays mounted
-    /// and dirty so a later retry can succeed).
+    /// Finalize any pending recording and save it back
+    /// ([`Self::save_tape_bytes`]) — for callers that are themselves ending a
+    /// capture (eject, rewind, seek). The per-frame auto-save hook
+    /// (`step_emulation`) calls [`Self::save_tape_bytes`] directly instead,
+    /// since by the time it runs the core's own idle auto-finalize has
+    /// already landed the recording (see that hook's doc comment).
+    pub(crate) fn write_back_tape(&mut self) {
+        self.machine.bus.cassette.finalize_recording();
+        self.save_tape_bytes();
+    }
+
+    /// Save the mounted tape back to disk if it changed (like
+    /// [`Self::write_back_disk`]; on failure the tape stays mounted and
+    /// dirty so a later retry can succeed) — the save half of
+    /// [`Self::write_back_tape`], split out so the per-frame auto-save hook
+    /// can save a recording the core already finalized without also
+    /// re-finalizing (which would fold any new in-flight capture into it).
     ///
     /// The canonical save is always a `.cas` — `tape_path` with its
     /// extension forced to `.cas` (a no-op if it already was one, e.g. a
@@ -80,8 +94,7 @@ impl CocoApp {
     /// [`Self::save_tape_wav`] is on, a `.wav` of the tape audio
     /// ([`coco_core::cassette_wav::synthesize_wav`]) is additionally
     /// written alongside it, next to (not instead of) the `.cas`.
-    pub(crate) fn write_back_tape(&mut self) {
-        self.machine.bus.cassette.finalize_recording();
+    pub(crate) fn save_tape_bytes(&mut self) {
         let Some(path) = self.tape_path.clone() else {
             return;
         };

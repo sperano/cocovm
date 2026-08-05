@@ -148,7 +148,7 @@ checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
 
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
-([`crates/coco-egui/src/app.rs:11-164`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L164)) that between them constitute the
+([`crates/coco-egui/src/app.rs:11-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L168)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
 `self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
@@ -171,6 +171,7 @@ this concrete. Here is the whole thing:
                 ui.horizontal_centered(|ui| {
                     self.keyboard_status(ui);
                     self.display_status(ui);
+                    self.tape_status(ui);
                     self.cart_status(ui);
                     self.joystick_status(ui);
                     self.rs232_status(ui);
@@ -178,7 +179,6 @@ this concrete. Here is the whole thing:
                     self.disk_status(ui);
                     self.vhd_status(ui);
                     self.drivewire_status(ui);
-                    self.tape_status(ui);
                     self.printer_status(ui);
                     if let Some(toast) = self.toast_message() {
                         ui.separator();
@@ -189,16 +189,31 @@ this concrete. Here is the whole thing:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:16-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L16-L38).) The toast at the
+([`crates/coco-egui/src/chrome/status_bar.rs:17-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L17-L39).) The toast at the
 end is a conditional widget, not a label that gets shown and hidden:
 whether the bar ends with a toast is decided fresh, sixty times a second,
-by asking `toast_message()`. The first two entries, `keyboard_status` and
-`display_status`, are the bar's controls as well as readouts: each
+by asking `toast_message()`. The first three entries — `keyboard_status`,
+`display_status`, and `tape_status` — are the bar's controls as well as
+readouts: each
 `|`-unions its icon's response with a frameless-button readout into a
 single click target and hangs a menu off it with
-`egui::Popup::menu(&entry)` — the Keyboard menu, and the display menu
-(monitor or TV choice plus the TV knobs) — menus that, like the toast,
-exist only on the frames they are open. The other nine `*_status` calls
+`egui::Popup::menu(&entry)` — the Keyboard menu, the display menu
+(monitor or TV choice plus the TV knobs), and the tape menu (the whole
+cassette deck: insert, new, rewind, seek to a byte, eject, and the .wav
+toggle; the Machine menu no longer carries any of it) — menus that, like
+the toast, exist only on the frames they are open. Unlike the other two,
+the tape entry keeps live readout duties on top of its control role: the
+painted cassette reddens while the motor relay is closed, its reels turn
+with the tape position, and the label carries the mounted file name and
+a `[pos/len]` byte counter that moves during `CSAVE` as well as `CLOAD`,
+courtesy of Chapter 12's live record counter. With no tape mounted it
+still draws, reading "No tape" — the deck is always there to click. One
+egui subtlety hides in its popup: the menu default of closing on any
+click would dismiss the popup the moment the seek field was clicked for
+typing, so the tape menu uses `CloseOnClickOutside` and lets each action
+item close the menu itself
+([`crates/coco-egui/src/chrome/status_bar.rs:252-289`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L252-L289)).
+The other eight `*_status` calls
 are where the conditional-widget idea gets interesting. Each one is written like this:
 
 ```rust
@@ -210,7 +225,7 @@ are where the conditional-widget idea gets interesting. Each one is written like
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:118-123`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L118-L123).) The `cart_icon`
+([`crates/coco-egui/src/chrome/status_bar.rs:119-124`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L119-L124).) The `cart_icon`
 call ahead of the label is one of twelve small device silhouettes the bar
 paints from `Painter` primitives
 ([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the
@@ -1041,7 +1056,30 @@ is this frame's, not last frame's:
         self.consume_app_shortcuts(ctx);
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
-        self.handle_hotkeys_and_paste(&events);
+        // The F-key hotkeys toggle UI, never reach the machine, and text
+        // widgets don't consume F-keys — so they stay live even while one
+        // is focused (F11 must dismiss the debugger from its own goto box).
+        self.handle_hotkeys(&events);
+
+        // `wants_keyboard_input()` reports "some widget currently holds egui
+        // focus", not "a text widget is focused": a click only ever focuses
+        // a text-editing widget, but Tab can focus any clickable one (every
+        // `Sense::click` widget is focusable), and Escape clears focus
+        // again. The case this gate exists for is a focused text widget
+        // (the tape menu's seek field, the RS-232 address, a debugger goto
+        // box…) owning the keyboard: none of its keystrokes may reach the
+        // CoCo matrix or the symbolic type-ahead, and a paste must land in
+        // the widget, not the machine. Releasing the matrix (idempotent)
+        // also unsticks any key that was held down when the widget grabbed
+        // focus, since its release event will never get here. A stray
+        // Tab-focused button gates input the same way, but Escape releases
+        // it.
+        if ctx.wants_keyboard_input() {
+            self.machine.bus.keyboard.release_all();
+            return;
+        }
+
+        self.handle_paste(&events);
         if self.kb_mode == KbMode::Symbolic {
             self.queue_symbolic_taps(&events);
         }
@@ -1058,21 +1096,43 @@ is this frame's, not last frame's:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:25-43`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L25-L43).) `ctx.input(|i| ...)` is
+([`crates/coco-egui/src/app/input.rs:25-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L25-L66).) `ctx.input(|i| ...)` is
 egui's own read of this frame's raw events — every key press and release,
 every mouse move, every paste since the last frame — handed to you inside a
 closure. This function copies out the two things it needs and leaves
 immediately, which is deliberate: with the events cloned into a local
-`Vec`, the three consumers below can each iterate the whole list
+`Vec`, the consumers below can each iterate the whole list
 independently, in order, without holding anything borrowed from the context
 while they mutate `self`.
 
-Four things then happen, in a specific order, and the order encodes a
+Five things then happen, in a specific order, and the order encodes a
 priority. App-level shortcuts go first and are *consumed*, so
-they never reach the CoCo at all. Hotkeys and clipboard paste go second.
-Symbolic-mode text queuing goes third. And direct matrix driving goes last
-— only in positional mode, and only when no paste or type-ahead burst is
-still draining.
+they never reach the CoCo at all. F-key hotkeys go second. Then comes a
+gate: when any widget holds egui's keyboard focus, the emulated matrix is
+released and everything downstream is skipped. Clipboard paste and
+symbolic-mode text queuing follow, behind the gate. And direct matrix
+driving goes last — only in positional mode, and only when no paste or
+type-ahead burst is still draining.
+
+The gate is the subtle one, and its comment carries most of the
+reasoning. A machine that treats the whole window as its keyboard has to
+notice when it no longer owns the keys: type `100` into the tape menu's
+seek-to-byte field, or an address into the RS-232 dialog, and without the
+gate every keystroke would *also* land in the CoCo matrix, poking a
+BASIC line into whatever program is running. `wants_keyboard_input()` is
+egui's "some widget has focus" signal, and the response is deliberately
+blunt — release every matrix key and skip the rest of input handling
+until focus clears. Releasing rather than merely skipping matters for a
+key that was held *when* the widget grabbed focus: its release event
+will be swallowed by the widget too, so without `release_all()` the CoCo
+would see that key stuck down forever. The hotkeys run *before* the gate
+because a text widget never consumes an F-key, and F11 must be able to
+dismiss the debugger even from the debugger's own goto box; paste runs
+*after* it because a paste while a text field is focused belongs to the
+field, not to the machine. The keys-mode joystick applies the same gate
+from its own polling path
+([`crates/coco-egui/src/joy.rs:183-195`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy.rs#L183-L195)),
+so arrows typed at a focused field don't nudge an emulated stick either.
 
 ### Shortcuts the CoCo never sees
 
@@ -1100,7 +1160,7 @@ application rather than to the emulated machine:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:49-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L49-L66).) The word doing the work
+([`crates/coco-egui/src/app/input.rs:72-89`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L72-L89).) The word doing the work
 is `consume_shortcut`, and its doc comment on the enclosing function
 explains why it must run first: these shortcuts are "consumed before the
 event snapshot `handle_input` takes, so the keypress never reaches the CoCo
@@ -1111,14 +1171,20 @@ nothing with it — swallowing it is still better than letting the positional
 matrix type an `N` into BASIC. The quick-save and quick-load slots are
 Chapter 16's feature, wired up here.
 
-The second stage handles keys the application claims without consuming, plus
-the clipboard:
+The second stage handles keys the application claims without consuming;
+the clipboard has its own function on the far side of the focus gate:
 
 ```rust
-    pub(crate) fn handle_hotkeys_and_paste(&mut self, events: &[egui::Event]) {
+    fn handle_hotkeys(&mut self, events: &[egui::Event]) {
         for ev in events {
-            match ev {
-                egui::Event::Key { key, pressed: true, repeat: false, .. } => match key {
+            if let egui::Event::Key {
+                key,
+                pressed: true,
+                repeat: false,
+                ..
+            } = ev
+            {
+                match key {
                     egui::Key::F12 => {
                         let next = match self.kb_mode {
                             KbMode::Positional => KbMode::Symbolic,
@@ -1130,20 +1196,31 @@ the clipboard:
                     egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
                     egui::Key::F11 => self.debugger.open = !self.debugger.open,
                     _ => {}
-                },
-                egui::Event::Paste(text) => self.enqueue_text(text),
-                _ => {}
+                }
+            }
+        }
+    }
+
+    /// Clipboard paste into the machine, keyboard-mode-agnostic. egui/eframe
+    /// normalises the platform paste shortcut (Cmd+V / Ctrl+V) into a single
+    /// `Event::Paste`, so this works the same on macOS, Windows, and Linux.
+    fn handle_paste(&mut self, events: &[egui::Event]) {
+        for ev in events {
+            if let egui::Event::Paste(text) = ev {
+                self.enqueue_text(text);
             }
         }
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:70-90`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L70-L90).) Two details repay a second
+([`crates/coco-egui/src/app/input.rs:93-128`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L93-L128).) These two used to be one
+function; the focus gate split them, since the hotkeys must run before
+it and the paste after. Two details repay a second
 look. The pattern `pressed: true, repeat: false` means these toggles fire
 once per physical press and ignore the operating system's auto-repeat —
 holding F9 down does not strobe aspect correction on and off forty times a
 second. And `Event::Paste` is a single event regardless of platform,
-because, as the function's own doc comment notes, egui and eframe normalize
+because, as `handle_paste`'s doc comment says, egui and eframe normalize
 the platform paste shortcut — ⌘V on macOS, Ctrl+V elsewhere — into one
 event. The frontend never has to know which operating system it is on.
 
@@ -1188,14 +1265,24 @@ keyboard regardless of what glyph a modern operating system thinks that key
 produces. The implementation is a direct, continuous mirror:
 
 ```rust
-    pub(crate) fn drive_matrix_positionally(&mut self, events: &[egui::Event], mods: egui::Modifiers) {
+    pub(crate) fn drive_matrix_positionally(
+        &mut self,
+        events: &[egui::Event],
+        mods: egui::Modifiers,
+    ) {
         let joystick_keys = self.joysticks.keys_active();
         let kb = &mut self.machine.bus.keyboard;
         kb.set(kbd::SHIFT, mods.shift);
         kb.set(kbd::CTRL, mods.ctrl);
         kb.set(kbd::ALT, mods.alt);
         for ev in events {
-            if let egui::Event::Key { key, physical_key, pressed, .. } = ev {
+            if let egui::Event::Key {
+                key,
+                physical_key,
+                pressed,
+                ..
+            } = ev
+            {
                 let k = physical_key.unwrap_or(*key);
                 if k == egui::Key::F12 {
                     continue;
@@ -1211,7 +1298,7 @@ produces. The implementation is a direct, continuous mirror:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:115-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L115-L135).) The three modifier
+([`crates/coco-egui/src/app/input.rs:155-185`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L155-L185).) The three modifier
 lines are set from egui's `Modifiers` snapshot rather than from events,
 because a modifier is a *level*, not an edge — what matters is whether
 Shift is down right now, not whether it was pressed this frame. Then every
@@ -2107,8 +2194,24 @@ device without those properties skips every step. Exercise 15.6 asks you to
 state that in one sentence after tracing the chain yourself.
 
 Every other file in the directory repeats this shape with whatever
-specifics its device demands. A cartridge has no dirty concept at all. A
-cassette's write-back optionally also synthesizes a `.wav` alongside the
+specifics its device demands. A cartridge has no dirty concept at all.
+The cassette, in [`media/tape.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/tape.rs),
+diverges the furthest, and in the opposite direction from the floppy: it
+saves *eagerly* rather than at boundaries. Chapter 12's deck finalizes a
+recording on its own about two emulated seconds after the motor stops,
+and raises a one-shot flag the frontend consumes every frame in
+`step_emulation` — `take_recording_landed()`, answered with
+`save_tape_bytes()` ([`crates/coco-egui/src/app/frame.rs:50-61`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L50-L61)) —
+so a `CSAVE`'s bytes hit the host file moments after the save finishes,
+with no eject, no quit, and no flush call site to forget. That is why
+`save_tape_bytes` exists as the save half of `write_back_tape`, split
+out: the per-frame hook must not re-finalize (the core already did, and
+re-finalizing would fold a newly started capture into the landed
+recording), while eject, rewind, and seek — which end a capture
+themselves — still call `write_back_tape` and get both halves. The dirty
+flag survives only as save-failure state, keeping the retry behavior the
+floppy path established; a
+cassette's save also optionally synthesizes a `.wav` alongside the
 canonical `.cas`, per Chapter 12. This directory is also where the loose end
 from Chapter 14's closing paragraph finally gets tied off: the DMP-105's
 protocol and fixed-point paper coordinates were Chapter 14's material, while
@@ -2453,8 +2556,9 @@ the keyboard.
 
 ## 15.9 Running the suite — an honest report
 
-This is one recorded `cargo test -p coco-egui` run from the revision used
-to write the chapter, in a worktree with no `roms/` directory. ROM images
+This is one recorded `cargo test -p coco-egui` run from the revision this
+chapter was first written against, in a worktree with no `roms/`
+directory. ROM images
 are git-ignored and local-only, so these counts are a dated snapshot rather
 than a permanent expectation:
 
@@ -2490,6 +2594,12 @@ reason. The failing set breaks down cleanly into four groups:
   Start that failed for want of a ROM leaves the same nothing behind
   that a real Stop would.
 
+The status-bar tape tests added since that snapshot —
+`ui_tests::vm_window_tape` and the seek-field gating test in
+`vm_window_menus` — all call `boot_harness()` and so join the third
+group: ROM-gated, because building a `CocoApp` at all requires the real
+system ROM.
+
 **The 159 passing tests in that run covered the non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
 `Machine`), the `--log-level` parsing tests and the machine-default tests
@@ -2513,8 +2623,9 @@ importantly for this chapter — every
 `ui_tests::manager_selection::*` test, including the exact
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
-will show you precisely this split; if you're working from the main
-checkout with real ROMs present, all 198 tests should pass.
+will show you this same split, plus the tape tests failing with the rest
+of the ROM-gated group; with real ROMs present, the whole suite passes —
+`205 passed; 0 failed` as of this revision, re-run for this chapter.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a
@@ -2550,7 +2661,10 @@ In this order:
    and **[`manager/vm_windows.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs)** — the module doc comment at the top of
    [`manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) first, then the files in that order.
 6. **[`crates/coco-egui/src/media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs)** in full — then skim
-   [`media/tape.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/tape.rs) and note everywhere it *differs* from the disk pattern.
+   [`media/tape.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/tape.rs) and note everywhere it *differs* from the disk pattern:
+   the `write_back_tape`/`save_tape_bytes` split, and the per-frame
+   auto-save hook in [`app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs) that makes tape saving eager where
+   floppy saving waits for a boundary (§15.7).
 7. **[`crates/coco-egui/src/ui_tests.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests.rs)**'s module doc, then
    **[`crates/coco-egui/src/ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs)** in full, then
    **[`crates/coco-egui/src/ui_tests/manager_window.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs)** and **[`manager_selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_selection.rs)** —

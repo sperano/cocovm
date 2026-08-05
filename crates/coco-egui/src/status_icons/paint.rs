@@ -94,9 +94,10 @@ pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) ->
         response,
     } = begin_icon(ui, TAPE_ICON_SIZE, active);
     painter.rect_filled(rect, TAPE_ICON_CORNER, shell);
-    // The two reel hubs, side by side above the mid-line (the head window
-    // occupies a real shell's bottom edge, unreadable at this size).
-    let hub_y = rect.center().y - TAPE_ICON_SIZE.y * 0.08;
+    // The two reel hubs, side by side on the shell's mid-line (a real
+    // shell's head window along the bottom edge is unreadable at this size,
+    // so nothing else competes for the vertical space).
+    let hub_y = rect.center().y;
     let hub_dx = TAPE_ICON_SIZE.x * 0.22;
     for hub_x in [rect.center().x - hub_dx, rect.center().x + hub_dx] {
         let hub = egui::pos2(hub_x, hub_y);

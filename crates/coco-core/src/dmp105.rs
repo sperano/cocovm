@@ -6,7 +6,7 @@
 //! what's deliberately left out (e.g. exact BUSY assertion granularity, the
 //! European character set's per-code glyph mapping).
 //!
-//! 
+//!
 //! DMP-family-shared paper model; this module holds everything specific to
 //! the DMP-105's own control-code dialect, so a DMP-130/Epson dialect (V3)
 //! can share the paper without inheriting 105-only parsing.

@@ -31,21 +31,21 @@ const ICON_IDLE: egui::Color32 = egui::Color32::from_gray(70);
 /// single-frame flicker.
 const ACTIVITY_HOLD: std::time::Duration = std::time::Duration::from_millis(200);
 
-/// Reel rotation credited per tape byte of playback movement (CLOAD/CSAVE
-/// read position advancing or rewinding — [`crate::CocoApp::tape_status`]'s
-/// `cassette.position()`). Not a physically accurate angular rate (a real
-/// reel's angular speed changes with how much tape is spooled on it) — this
-/// is a status-icon approximation picked so a reel visibly turns at typical
-/// CLOAD speeds (one full turn per 40 bytes) without spinning distractingly
-/// fast.
+/// Reel rotation credited per tape byte of position movement (CLOAD's read
+/// head advancing, CSAVE's live record count, or a rewind —
+/// [`crate::CocoApp::tape_status`]'s `cassette.position()`). Not a
+/// physically accurate angular rate (a real reel's angular speed changes
+/// with how much tape is spooled on it) — this is a status-icon
+/// approximation picked so a reel visibly turns at typical CLOAD speeds
+/// (one full turn per 40 bytes) without spinning distractingly fast.
 const REEL_ANGLE_PER_BYTE: f32 = std::f32::consts::TAU / 40.0;
 
 /// Reel rotation speed, in radians/second, while the motor runs but the
-/// tape position isn't moving: CSAVE (recording never advances
-/// `Cassette::position`'s `pos`) and the brief motor spin-up before
-/// playback position starts moving. Picked to look like a cassette motor at
-/// speed, not calibrated against a real deck.
-const RECORD_REEL_SPEED: f32 = std::f32::consts::TAU * 0.8;
+/// tape position isn't moving: the spin-up stretch before playback or
+/// recording starts moving the position, and `MOTOR ON` with the tape
+/// parked (at its end, or nothing being written). Picked to look like a
+/// cassette motor at speed, not calibrated against a real deck.
+const MOTOR_REEL_SPEED: f32 = std::f32::consts::TAU * 0.8;
 
 /// Cassette status icon's reel state: the current draw angle, plus the tape
 /// byte position as of the last [`Self::advance`] call, so the next call
@@ -64,14 +64,14 @@ impl TapeReel {
     ///
     /// - If tape position moved since the last call (`pos != last_pos`),
     ///   the reel turns by the moved distance (`REEL_ANGLE_PER_BYTE` per
-    ///   byte) — forward for playback, backward for a rewind. `pos` and
-    ///   `last_pos` are byte offsets (never negative), so the signed
-    ///   distance moved is recovered by reinterpreting a wrapping
+    ///   byte) — forward for playback or recording, backward for a rewind.
+    ///   `pos` and `last_pos` are byte offsets (never negative), so the
+    ///   signed distance moved is recovered by reinterpreting a wrapping
     ///   subtraction as `isize` rather than by subtracting directly, which
     ///   would panic/wrap on a rewind.
     /// - Else, if the motor is running (position parked but the relay is
-    ///   closed — CSAVE, or spin-up before playback moves), the reel keeps
-    ///   turning at [`RECORD_REEL_SPEED`].
+    ///   closed — spin-up before the position moves, or `MOTOR ON` with the
+    ///   tape parked), the reel keeps turning at [`MOTOR_REEL_SPEED`].
     /// - Else (motor off), the angle is unchanged: the reel parks.
     ///
     /// The angle is wrapped into `0..TAU` before being stored and returned.
@@ -80,7 +80,7 @@ impl TapeReel {
             let delta = pos.wrapping_sub(self.last_pos) as isize;
             self.angle + delta as f32 * REEL_ANGLE_PER_BYTE
         } else if motor {
-            self.angle + dt * RECORD_REEL_SPEED
+            self.angle + dt * MOTOR_REEL_SPEED
         } else {
             self.angle
         };

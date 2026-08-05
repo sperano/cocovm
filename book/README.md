@@ -368,7 +368,8 @@ favorite chapter.*
 - `.cas` (decoded bytes) vs `.wav` (audio) round-tripping
   (`cassette_wav.rs`); [`examples/cassette_calibrate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/examples/cassette_calibrate.rs).
 
-**Reading:** [`cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs), [`cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette_wav.rs); tests [`cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs),
+**Reading:** [`cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs), [`cassette/demodulate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette/demodulate.rs), [`cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette_wav.rs); tests [`cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs),
+[`cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette_wav.rs),
 [`coco2_boot/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco2_boot/cassette.rs).
 **Exercises:** (1) compute both FSK half-periods in CPU cycles and find the
 constants in the source; (2) CSAVE a program in the emulator, export WAV,

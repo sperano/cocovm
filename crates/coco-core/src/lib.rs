@@ -44,3 +44,8 @@ pub use bus::SystemBus;
 pub use config::{MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 pub use gime::{GIME, MonitorType};
 pub use machine::{Machine, StepEvent, StepKind};
+
+/// The normal-speed CPU clock ([`machine`]'s private constant, re-exported
+/// crate-wide so other modules can derive cycle counts from the real clock
+/// instead of duplicating the value) — [`cassette::RECORD_IDLE_FINALIZE_CYCLES`].
+pub(crate) use machine::CPU_HZ;

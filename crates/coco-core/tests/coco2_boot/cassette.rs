@@ -1,9 +1,10 @@
 //! Phase 6 acceptance test 4: cassette CSAVE/CLOAD
 //!
 //! The cassette deck (`Cassette`, `bus.rs`'s PIA1 record/playback wiring) is
-//! entirely machine-neutral — confirmed by inspection: `bus.rs::sam_io_write`'s
-//! PIA1 branch feeds `Cassette::record_dac` exactly like the GIME path's
-//! `io_write` does, and `Machine::pia1_pa_pins`'s cassette-input bit doesn't
+//! entirely machine-neutral — confirmed by inspection: the SAM and GIME bus
+//! paths both route PIA1 writes through the shared `SystemBus::write_pia1`
+//! (one Port-A-gated `record_dac` tap for both), and
+//! `Machine::pia1_pa_pins`'s cassette-input bit doesn't
 //! consult `self.config.variant` at all. This is a regression guard for that
 //! wiring on the plain-SAM bus path, mirroring `tests/cassette.rs`'s
 //! `csave_rewind_cload_round_trips_a_basic_program` almost line-for-line, with

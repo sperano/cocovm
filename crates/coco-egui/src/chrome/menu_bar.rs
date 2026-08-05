@@ -1,6 +1,6 @@
 //! The menu bar. Each menu that is more than a handful of items lives in its
 //! own submodule; the short ones (Keyboard, View, Help, and the status
-//! bar's display menu) stay here.
+//! bar's display and tape menus) stay here.
 
 use crate::*;
 
@@ -101,6 +101,78 @@ impl CocoApp {
                     .suffix("%"),
             );
         }
+    }
+
+    /// The cassette deck — insert, create, rewind, seek to a byte position,
+    /// and eject a tape, plus the .wav save toggle — what the status bar's
+    /// tape entry pops up (`chrome::status_bar`'s `tape_status`). That entry
+    /// is the only way in: the Machine menu no longer carries the deck.
+    pub(super) fn tape_menu_ui(&mut self, ui: &mut egui::Ui) {
+        if ui.button("Insert Tape…").clicked() {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Cassette image", &["cas", "wav"])
+                .pick_file()
+            {
+                self.insert_tape(path);
+            }
+        }
+        if ui.button("New Tape…").clicked() {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Cassette image", &["cas"])
+                .set_file_name("untitled.cas")
+                .save_file()
+            {
+                self.new_tape(path);
+            }
+        }
+        let tape_mounted = self.tape_path.is_some();
+        if ui
+            .add_enabled(tape_mounted, egui::Button::new("Rewind Tape"))
+            .clicked()
+        {
+            self.machine.bus.cassette.rewind();
+            ui.close();
+        }
+        self.tape_seek_ui(ui, tape_mounted);
+        let label = match &self.tape_path {
+            Some(p) => format!(
+                "Eject Tape ({})",
+                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+            ),
+            None => "Eject Tape".to_string(),
+        };
+        if ui
+            .add_enabled(tape_mounted, egui::Button::new(label))
+            .clicked()
+        {
+            self.eject_tape();
+            ui.close();
+        }
+        ui.checkbox(&mut self.save_tape_wav, "Also save tape audio (.wav)");
+    }
+
+    /// The "Seek to byte" row of [`Self::tape_menu_ui`], split out to keep
+    /// that function under the project's line-count guideline: a text field
+    /// committed with Enter, moving the deck's head straight to a byte
+    /// position ([`coco_core::cassette::Cassette::seek`]).
+    fn tape_seek_ui(&mut self, ui: &mut egui::Ui, tape_mounted: bool) {
+        ui.add_enabled_ui(tape_mounted, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Seek to byte:");
+                let response = ui
+                    .add(egui::TextEdit::singleline(&mut self.tape_seek_text).desired_width(60.0));
+                if response.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    && let Ok(pos) = self.tape_seek_text.trim().parse::<usize>()
+                {
+                    self.machine.bus.cassette.seek(pos);
+                    self.tape_seek_text.clear();
+                    ui.close();
+                }
+            });
+        });
     }
 
     /// The Help menu.

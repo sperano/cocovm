@@ -27,7 +27,7 @@ watches it.
 That makes this chapter unusual in two ways worth flagging before you
 start. First, it is a complete signal-processing story — modulation,
 demodulation, thresholds, clock recovery, byte framing — told end to end
-in about 450 lines of Rust, which is small enough to read in one sitting
+in about 650 lines of Rust, which is small enough to read in one sitting
 and general enough that the vocabulary transfers to any serial protocol
 you meet later. Second, it is the chapter where the *method* matters more
 than the result. The constants at the top of `cassette.rs` are worth
@@ -73,13 +73,15 @@ booted ROM in this codebase's own end-to-end test, which §12.10 walks in
 full:
 
 ```rust
-// crates/coco-core/tests/cassette.rs:341-349
+// crates/coco-core/tests/cassette.rs:481-491
 let blocks = parse_blocks(&tape);
 assert_eq!(blocks[0].0, BLOCK_NAMEFILE);
 assert_eq!(&blocks[0].1[..8], b"X       ", "namefile name");
 assert_eq!(blocks[0].1.len(), 15, "namefile payload is 15 bytes");
 assert!(
-    blocks[1..blocks.len() - 1].iter().all(|(t, _)| *t == BLOCK_DATA),
+    blocks[1..blocks.len() - 1]
+        .iter()
+        .all(|(t, _)| *t == BLOCK_DATA),
     "middle blocks are data blocks"
 );
 assert_eq!(blocks.last().unwrap().0, BLOCK_EOF);
@@ -134,9 +136,11 @@ can renegotiate.
 
 ### The fidelity contract, stated up front
 
-The whole thing lives in one file, and that file's header states its
-fidelity contract in the first fourteen lines. Read it closely, because
-every section from here on is an expansion of one sentence in it:
+The whole thing lives in one module — `cassette.rs`, with the
+demodulation pipeline in a submodule it owns — and the module header
+states its fidelity contract in the first fourteen lines. Read it
+closely, because every section from here on is an expansion of one
+sentence in it:
 
 ```rust
 // crates/coco-core/src/cassette.rs:1-14
@@ -231,7 +235,7 @@ Here are the constants exactly as measured, from the top of
 rather than two, for a reason the doc comment states and §12.8 returns to:
 
 ```rust
-// crates/coco-core/src/cassette.rs:18-31
+// crates/coco-core/src/cassette.rs:24-37
 /// Half-cycle durations, in CPU cycles, of the tape sine the stock ROM
 /// writes — measured empirically against `roms/coco3.rom` with
 /// `examples/cassette_calibrate.rs` (modal midpoint-crossing spacings). The
@@ -270,7 +274,7 @@ conversion anywhere on the hot path.
 
 The conversion still matters for talking about the signal, and it is one
 division. The CoCo's clock is `CPU_HZ = 894_886.0`
-([`crates/coco-core/src/machine.rs:26`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L26)),
+([`crates/coco-core/src/machine.rs:29`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine.rs#L29)),
 which is the NTSC color subcarrier of 3.579545 MHz divided by 4 — the
 same constant Chapter 1 introduced by a different route, as the 28.636363
 MHz crystal divided by 32. A period expressed in cycles becomes a
@@ -457,12 +461,18 @@ the state. The `Cassette` struct is compact, and every field in it earns
 its place:
 
 ```rust
-// crates/coco-core/src/cassette.rs:80-116
+// crates/coco-core/src/cassette.rs:104-186
 #[derive(Default, Serialize, Deserialize)]
 pub struct Cassette {
     clock: u64,
     last_level: Option<u8>,
     capture: Vec<Transition>,
+    #[serde(default)]
+    record_bits: u64,
+    #[serde(default)]
+    record_high: bool,
+    #[serde(default)]
+    record_anchor: usize,
     mounted: bool,
     #[serde(skip)]
     tape: Vec<u8>,
@@ -472,23 +482,39 @@ pub struct Cassette {
     spinup_left: u32,
     motor_was_on: bool,
     dirty: bool,
+    #[serde(default)]
+    idle_cycles: u64,
+    #[serde(default)]
+    recording_landed: bool,
 }
 ```
 
 (The doc comments are trimmed here to make the shape visible; the
 annotated original sits above the fold in
-[`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L80-L116),
+[`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L104-L186),
 and it repays a second pass once this chapter is finished, because
 several of those comments presuppose facts §12.6 and §12.10 have not
 covered yet.)
 
-The eleven fields sort into four groups. `clock`, `pos`, `bit`,
+The sixteen fields sort into four groups. `clock`, `pos`, `bit`,
 `bit_elapsed`, `spinup_left` and `motor_was_on` are **playback** state:
 where the deck's read head currently is, expressed both as a
-tape-position and as a sub-bit timing offset. `last_level` and `capture`
-are **recording** state: what the deck is hearing from the DAC right now,
-and everything it has heard so far this session. `tape` is the mounted
-medium itself. `mounted` and `dirty` are bookkeeping.
+tape-position and as a sub-bit timing offset. `last_level`, `capture`,
+`record_bits`, `record_high`, `record_anchor` and `idle_cycles` are
+**recording** state: what the deck is hearing from the DAC right now,
+everything it has heard so far this session, a running estimate of how
+many bits that amounts to, where on the tape the recording started, and
+how long the motor has been quiet since — all of which §12.6 gives
+meaning to. `tape` is the mounted medium itself. `mounted`, `dirty` and
+`recording_landed` are bookkeeping.
+
+Five of the fields carry a `#[serde(default)]` attribute, and the reason
+previews Chapter 16. They were added after save-state snapshots of this
+struct already existed in the wild, so a snapshot written before they
+existed must still restore: `serde` fills each one with its zero value,
+which by construction reproduces the deck's behavior from before the
+field was introduced. Each field's doc comment says exactly what that
+fallback means for it.
 
 One struct, both directions, because it is one physical deck. At any
 given moment it is either playing or being recorded onto, never both —
@@ -502,7 +528,7 @@ Of those fields, `clock` is the one whose doc comment contains a fact you
 would not guess and would miss if you skimmed:
 
 ```rust
-// crates/coco-core/src/cassette.rs:82-86
+// crates/coco-core/src/cassette.rs:106-110
     /// Motor-on cycle clock: advanced by [`Cassette::tick`] only while the
     /// motor relay (PIA1 CA2) is energized — tape position doesn't move
     /// otherwise. Freezing it across motor-off gaps also collapses the
@@ -534,9 +560,13 @@ either, it is arguably the more faithful model as well.
 > do it in one line:
 >
 > ```rust
-> // crates/coco-core/src/cassette.rs:125-134
+> // crates/coco-core/src/cassette.rs:195-208
 > pub fn insert_tape(&mut self, bytes: Vec<u8>) {
->     *self = Self { mounted: true, tape: bytes, ..Self::default() };
+>     *self = Self {
+>         mounted: true,
+>         tape: bytes,
+>         ..Self::default()
+>     };
 > }
 >
 > pub fn eject_tape(&mut self) {
@@ -544,7 +574,7 @@ either, it is arguably the more faithful model as well.
 > }
 > ```
 >
-> Neither function hand-resets eleven fields one at a time. The expression
+> Neither function hand-resets sixteen fields one at a time. The expression
 > `Self { mounted: true, tape: bytes, ..Self::default() }` is Rust's
 > *struct update syntax*: build a fresh value from `Default`, override
 > the fields you name, and take the rest from the default. Assigning that
@@ -555,7 +585,7 @@ either, it is arguably the more faithful model as well.
 > exactly the bug class this file's own doc comments worry about
 > elsewhere, which is a stale `pos`, `bit` or `spinup_left` surviving a
 > tape swap and corrupting the next load. There is no way to add a
-> twelfth field to `Cassette` later and forget to reset it here, because
+> seventeenth field to `Cassette` later and forget to reset it here, because
 > nothing here names fields to reset. `Default` does that job once, in
 > one place, and every reset site inherits the fix for free.
 >
@@ -578,7 +608,7 @@ including `pos` and `bit`, does come back from the snapshot, and the
 restore path has to reattach the bytes without disturbing it:
 
 ```rust
-// crates/coco-core/src/cassette.rs:156-162
+// crates/coco-core/src/cassette.rs:231-237
     pub fn reattach_tape(&mut self, bytes: Vec<u8>) -> Result<(), String> {
         if self.bit >= 8 {
             return Err(format!(
@@ -595,7 +625,7 @@ does: `current_bit_is_one` shifts a byte right by `bit` with no bounds
 check of its own, and a shift wider than the type panics in debug builds
 and becomes a masked shift — the shift amount wrapped to the type's
 width — in release ones. The function's own doc comment
-([`cassette.rs:140-155`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L140-L155))
+([`cassette.rs:214-230`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L214-L230))
 walks through the other two failure modes it screens for: a restored
 `pos` past the end of a tape file that has changed shape since the
 snapshot was taken, and the subtler case of `pos == tape.len()` with a
@@ -618,15 +648,24 @@ machine, and its cadence was chosen for a reason the doc comment states
 plainly:
 
 ```rust
-// crates/coco-core/src/cassette.rs:222-226
+// crates/coco-core/src/cassette.rs:332-340
     /// Advance the motor-on cycle clock and the playback position. Called
     /// once per instruction from `Machine::run_cycles`, alongside
     /// `bus.cart.tick` (same per-instruction cadence as the FD-502
     /// precedent) — per-scanline would be far too coarse against the
-    /// ~217-cycle half-periods of the 1-bit tone.
+    /// ~217-cycle half-periods of the 1-bit tone. While the motor is off, a
+    /// pending in-flight recording's idle time is also tracked here,
+    /// auto-finalizing once it crosses [`RECORD_IDLE_FINALIZE_CYCLES`] (see
+    /// [`Cassette::finalize_recording`]) so a CSAVE that finishes without an
+    /// explicit rewind/eject still lands on the tape.
 ```
 
-That last clause is the fidelity budget from Chapter 1, spent explicitly. A
+The comment's last sentence names a recording-side job this section will
+not explain — what an "in-flight recording" is, or why one should
+finalize itself after enough silence, is §12.6's material. What matters
+here is the cadence.
+
+The per-scanline clause is the fidelity budget from Chapter 1, spent explicitly. A
 scanline on this machine is on the order of fifty-seven CPU cycles at
 normal speed, and a video field is 262 of them; most devices in this
 emulator are perfectly happy being ticked once per scanline or once per
@@ -640,7 +679,7 @@ Here is the call site, sitting between the cartridge and the bit-banger
 in `step_cpu_unit`:
 
 ```rust
-// crates/coco-core/src/machine/run.rs:118-119
+// crates/coco-core/src/machine/run.rs:124-125
 self.bus.cart.tick(cycles);
 self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
 ```
@@ -653,19 +692,26 @@ what that costs in §12.7.
 
 ### The tick loop
 
-`tick` is the whole playback engine, and at thirty-three lines it is
+`tick` is the whole playback engine, and at forty lines it is
 short enough to read in one pass before analyzing it:
 
 ```rust
-// crates/coco-core/src/cassette.rs:227-259
+// crates/coco-core/src/cassette.rs:341-380
 pub fn tick(&mut self, cycles: u32, motor_on: bool) {
     if motor_on && !self.motor_was_on {
         self.spinup_left = MOTOR_SPINUP_CYCLES;
     }
     self.motor_was_on = motor_on;
     if !motor_on {
+        if !self.capture.is_empty() {
+            self.idle_cycles += u64::from(cycles);
+            if self.idle_cycles >= RECORD_IDLE_FINALIZE_CYCLES {
+                self.finalize_recording();
+            }
+        }
         return;
     }
+    self.idle_cycles = 0;
     if self.spinup_left > 0 {
         self.spinup_left = self.spinup_left.saturating_sub(cycles);
         return;
@@ -705,7 +751,14 @@ Chapter 10 and will see again in the disk controller's HALT logic in week
 13.
 
 **Motor off means nothing moves, full stop.** No clock advance, no bit
-progress, no partial credit. This early return is also why the recorder's
+progress, no partial credit. The one thing the motor-off branch *does* do
+is count: if a recording capture is pending, the silent cycles accumulate
+in `idle_cycles` toward the auto-finalize threshold §12.6 derives — time
+passing with the motor off is information about the recording, even
+though it is nothing to the tape. The `self.idle_cycles = 0` on the
+motor-on side is the other half of that bargain: any relay closure resets
+the count, so only an *unbroken* stretch of silence ever reaches the
+threshold. This early return is also why the recorder's
 `record_dac` resets `last_level` to `None` on motor-off: the relay
 opening is a hard boundary between sessions on both sides of the deck,
 and both sides honor it identically.
@@ -735,13 +788,17 @@ them they answer what the tape's next bit wants and how long its tone
 burst lasts:
 
 ```rust
-// crates/coco-core/src/cassette.rs:277-283
+// crates/coco-core/src/cassette.rs:402-412
 fn current_bit_is_one(&self) -> bool {
     self.tape[self.pos] >> self.bit & 1 == 1
 }
 
 fn current_bit_period(&self) -> u32 {
-    if self.current_bit_is_one() { ONE_BIT_PERIOD } else { ZERO_BIT_PERIOD }
+    if self.current_bit_is_one() {
+        ONE_BIT_PERIOD
+    } else {
+        ZERO_BIT_PERIOD
+    }
 }
 ```
 
@@ -759,12 +816,16 @@ single bit that eventually reaches the CPU — is computed on demand, from
 that position, by a function with no side effects at all:
 
 ```rust
-// crates/coco-core/src/cassette.rs:261-275
+// crates/coco-core/src/cassette.rs:390-400
 pub fn input_bit(&self) -> bool {
     if !self.motor_was_on || self.spinup_left > 0 || !self.playing() {
         return true;
     }
-    let high = if self.current_bit_is_one() { ONE_BIT_HIGH } else { ZERO_BIT_HIGH };
+    let high = if self.current_bit_is_one() {
+        ONE_BIT_HIGH
+    } else {
+        ZERO_BIT_HIGH
+    };
     self.bit_elapsed >= high
 }
 ```
@@ -791,7 +852,7 @@ first shows through, and it names a genuine piece of reverse engineering
 rather than a design choice:
 
 ```rust
-// crates/coco-core/src/cassette.rs:261-268
+// crates/coco-core/src/cassette.rs:382-389
 /// The squared tape signal as PA0 sees it: idle high with no tape moving
 /// (or still spinning up), otherwise a square wave — the SALT
 /// zero-crossing detector's rendering of the tape sine — with each bit
@@ -925,20 +986,35 @@ reconstruct what was lost.
 ### Capturing the DAC
 
 The raw material is DAC writes. Every write anywhere in PIA1's address
-range is checked for a change to the cassette-out level:
+range — on either bus path, since the GIME I/O page and the plain-SAM
+path see the exact same PIA1 wiring — lands in one shared helper:
 
 ```rust
-// crates/coco-core/src/bus/io.rs:104-113
-PIA1_BASE..=PIA1_LAST => {
-    self.pia1.write((addr & 0x03) as u8, val);
-    // Cassette record-out is a direct, unconditional tap of the DAC
-    // (not gated by SNDEN/the mux — `cassette-verified-facts`), fed
-    // on every PIA1 write since any of them (port A output/DDR or
-    // CRA, which carries the motor relay) can change it.
-    let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
-    self.cassette.record_dac(dac, self.pia1.a.c2_output());
-    self.note_audio_write(); // DAC / PB1 / SNDEN / relay
-}
+// crates/coco-core/src/bus/io.rs:149-172
+    /// PIA1 register write ($FF20-$FF23, mirrored through $FF3F): the PIA
+    /// register write itself, the Port-A-gated cassette DAC tap, and the
+    /// sound-mux touch — shared by both this (GIME I/O-page) path and the
+    /// plain-SAM path (`sam_path.rs`'s `sam_io_write`), which see the exact
+    /// same PIA1 wiring.
+    pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
+        let reg = addr & PIA1_REG_MASK;
+        self.pia1.write(reg as u8, val);
+        // Cassette record-out is a direct, unconditional tap of the DAC
+        // (not gated by SNDEN/the mux — `cassette-verified-facts`), but
+        // it only samples on Port A output/DDR writes, not CRA ($FF21)
+        // writes: MAME's `update_cassout()` is called exclusively from
+        // `pia1_pa_changed()`, never from `pia1_ca2_w()` (the CA2
+        // motor-relay callback) — and `write_control()`'s CRA path
+        // never touches `port.output`/`port.ddr` anyway, so a CRA-only
+        // write can't change the DAC value. Sampling on CRA writes
+        // would just re-announce the unchanged level as a spurious
+        // transition right after motor-off resets `last_level`.
+        if reg == PIA1_PORT_A_OFFSET {
+            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+            self.cassette.record_dac(dac, self.pia1.a.c2_output());
+        }
+        self.note_audio_write(); // DAC / PB1 / SNDEN / relay
+    }
 ```
 
 The expression `(output & ddr & 0xFC) >> 2` is the same 6-bit DAC
@@ -950,43 +1026,77 @@ contributes nothing to the analog output no matter what the output
 register holds, and modeling that keeps the emulator honest during the
 brief windows when the ROM is reconfiguring the port.
 
-The important word in that comment, though, is **unconditional**. Unlike
+The important word in that comment is **unconditional**. Unlike
 the speaker path, the cassette tap does not consult the sound-enable bit
 or the mux selection. The DAC always feeds the tape record line, whether
 or not anything would be audible, which matches the hardware: the DAC's
 analog output is wired straight to the record circuit, and the
 sound-enable and mux logic only ever affected what reached the speaker.
-The comment also explains why the tap is fed on *every* PIA1 write rather
-than only on writes to the data register — a write to the direction
-register changes which pins drive the DAC, and a write to the control
-register can change the motor relay, so any of the four addresses can
-change what the tape is receiving.
 
-`record_dac` itself is deliberately unclever:
+The `if reg == PIA1_PORT_A_OFFSET` gate around the tap deserves its own
+confession, because an earlier revision of this code — and an earlier
+version of this chapter — did not have it. The tap used to fire on every
+PIA1 write, all four registers, on the reasoning that any of them could
+change what the tape receives: the output register obviously, the
+direction register because of the `& ddr` mask, and the control register
+because it carries the motor relay. That reasoning sounds airtight and is
+wrong on its last clause, in a way that checking the code instead of the
+prose exposes. A CRA write never touches `output` or `ddr` — the PIA's
+own `write_control` path cannot reach either register — so the DAC value
+recomputed after one is, by construction, the value that was already
+there. The relay state the tap passes along does change on a CRA write,
+but `record_dac` reads the relay fresh on the *next* Port A write anyway.
+The claim was re-verified against MAME's CoCo driver, which models this
+exact wiring: its `update_cassout()` is called exclusively from
+`pia1_pa_changed()`, the Port A change callback, and never from
+`pia1_ca2_w()`, the relay callback. Sampling on CRA writes was not merely
+redundant, either — because motor-off resets `last_level`, re-announcing
+an unchanged level right after a relay write could fabricate a transition
+the ROM never produced. The lesson is the one §12.8 teaches at greater
+length: an argument about what the hardware does, however plausible, is
+a hypothesis until something independent confirms it.
+
+`record_dac` itself has three jobs, and the first is
+deliberately unclever:
 
 ```rust
-// crates/coco-core/src/cassette.rs:285-298
+// crates/coco-core/src/cassette.rs:420-444
 pub fn record_dac(&mut self, level: u8, motor_on: bool) {
     if !motor_on {
         self.last_level = None; // next motor-on write starts a fresh run
         return;
     }
     if self.last_level != Some(level) {
-        self.capture.push(Transition { level, cycle: self.clock });
+        if self.capture.is_empty() {
+            // First transition of a fresh in-flight recording: anchor
+            // the eventual splice at the head's current position.
+            self.record_anchor = self.pos;
+        }
+        self.capture.push(Transition {
+            level,
+            cycle: self.clock,
+        });
         self.last_level = Some(level);
+        // The live record counter (see `record_bits`): one rising
+        // midpoint crossing per tone cycle written.
+        let high = level > DAC_LIVE_MIDPOINT;
+        if high && !self.record_high {
+            self.record_bits += 1;
+        }
+        self.record_high = high;
     }
 }
 ```
 
-This is **sparse, event-timestamped storage**: a `Transition { level,
-cycle }` is appended only on an actual change, never one entry per cycle
-and never one entry per write. A program spending ten seconds in `CSAVE`
-writes the DAC an enormous number of times, but if you keep only the
-changes you retain exactly the information a demodulator needs — when the
-signal moved, and to what — without ever materializing a dense sample
-array. Chapter 11 built its entire audio-event grid on the same principle,
-and recognizing it here as the same idea solving the same class of
-problem is worth more than either instance in isolation.
+The capture itself is **sparse, event-timestamped storage**: a
+`Transition { level, cycle }` is appended only on an actual change, never
+one entry per cycle and never one entry per write. A program spending ten
+seconds in `CSAVE` writes the DAC an enormous number of times, but if you
+keep only the changes you retain exactly the information a demodulator
+needs — when the signal moved, and to what — without ever materializing a
+dense sample array. Chapter 11 built its entire audio-event grid on the
+same principle, and recognizing it here as the same idea solving the same
+class of problem is worth more than either instance in isolation.
 
 Notice also what the motor-off branch does: it clears `last_level` rather
 than merely returning. That matters because of the frozen clock from
@@ -996,15 +1106,70 @@ opened, because in the capture's timeline those two writes are adjacent
 and a suppressed transition would silently merge two tone cycles into
 one.
 
+The second job is one line and easy to miss: the very first transition of
+a fresh capture records `pos` into `record_anchor`. That is the deck
+noting *where on the tape the head was when recording started*, and it is
+the whole basis of the splice model this section ends with. Nothing moves
+`pos` while a capture is in flight, so the anchor stays valid until the
+capture is finalized or discarded.
+
+The third job is the live record counter, and it exists for the benefit
+of a status bar two crates away. During playback, a user interface can
+show tape position by asking where the read head is; during `CSAVE`, the
+read head is parked and a counter that only knew about `pos` would sit
+still for the whole save — the emulator equivalent of a real deck's
+counter failing to turn while recording, which no real deck ever did.
+Rather than demodulate the growing capture every frame to find out how
+far the recording has come, the deck counts rising crossings of the DAC
+midpoint as they arrive: one per tone cycle, hence one per bit, hence a
+byte per eight. The midpoint it judges against is nominal rather than
+measured:
+
+```rust
+// crates/coco-core/src/cassette.rs:81-89
+/// The 6-bit cassette DAC's full scale (levels 0–63).
+const DAC_FULL_SCALE: u8 = 63;
+
+/// DAC midpoint the live record counter judges crossings against: half of
+/// [`DAC_FULL_SCALE`]. [`demodulate`] re-derives its midpoint from the
+/// finished capture's own maximum; the live counter has to classify each
+/// sample as it arrives, so it uses the nominal midpoint — the stock ROM's
+/// CSAVE sine swings the full scale, so both land on the same crossings.
+const DAC_LIVE_MIDPOINT: u8 = DAC_FULL_SCALE / 2;
+```
+
+That comment is drawing a distinction worth pausing on. The real
+demodulator (below) computes its threshold from the finished capture's
+own observed maximum, because it can afford to — it has the whole signal
+in hand. The live counter classifies each sample the moment it arrives
+and has no "whole signal" to consult, so it assumes the ROM's full-swing
+sine and uses the nominal midpoint. For the stock ROM the two thresholds
+select the same crossings; for a hypothetical program writing a
+quarter-amplitude sine, the live estimate would undercount while the
+eventual decode stayed correct — an acceptable trade for a number whose
+only consumer is a position readout. `position()` folds the estimate into
+what it reports: while a capture is in flight on a mounted tape, position
+is `record_anchor` plus the counted bits over eight, and the reported
+length grows along with it once the recording runs past the old tape's
+end ([`cassette.rs:280-299`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L280-L299)).
+The estimate can sit one bit high — a burst in progress has registered
+its opening crossing before its closing one — and the accurate count only
+ever comes from the finalize's own decode, which the doc comment is
+candid about.
+
 ### From transitions to bit periods
 
 `finalize_recording` hands the whole capture to `demodulate`, which is a
 two-stage pipeline: transitions become bits in `capture_to_bits`, and
-bits become bytes in `bits_to_bytes`. The first stage is where the signal
+bits become bytes in `bits_to_bytes`. The pipeline lives in its own
+submodule, [`crates/coco-core/src/cassette/demodulate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette/demodulate.rs)
+— split out of `cassette.rs` to keep that file under the project's size
+guideline, while the measured constants both it and `cassette_wav` need
+stay in the parent module. The first stage is where the signal
 processing happens:
 
 ```rust
-// crates/coco-core/src/cassette.rs:333-377
+// crates/coco-core/src/cassette/demodulate.rs:37-81
 fn capture_to_bits(capture: &[Transition]) -> Vec<Option<bool>> {
     let Some(max) = capture.iter().map(|t| t.level).max() else {
         return Vec::new();
@@ -1070,7 +1235,7 @@ Two lines in the middle deserve their own comment, and they have one in
 the source:
 
 ```rust
-// crates/coco-core/src/cassette.rs:344-347
+// crates/coco-core/src/cassette/demodulate.rs:48-51
     // A capture that starts on the high side starts mid-cycle: count the
     // first period from its first sample, or the opening bit is lost.
     let mut last_rise: Option<u64> = side.then_some(capture[0].cycle);
@@ -1090,13 +1255,18 @@ run, is one of the bits the receiver needs most — would vanish.
 
 A measured period is only half the job. The other half is the
 comparison that turns a duration into a value, and the constants that
-define it:
+define it. The full periods are summed from the half-period measurements in the
+parent module, where `cassette_wav` can share them; the two decision
+thresholds belong to the demodulator alone and live beside it:
 
 ```rust
-// crates/coco-core/src/cassette.rs:48-58
+// crates/coco-core/src/cassette.rs:70-71
 pub(crate) const ZERO_BIT_PERIOD: u32 = ZERO_BIT_HIGH + ZERO_BIT_LOW;
 pub(crate) const ONE_BIT_PERIOD: u32 = ONE_BIT_HIGH + ONE_BIT_LOW;
+```
 
+```rust
+// crates/coco-core/src/cassette/demodulate.rs:11-18
 /// Demodulation decision boundary between the two measured periods
 /// (midpoint of 455 and 793): a full period at or below this is a 1 bit.
 const BIT_PERIOD_THRESHOLD: u64 = (ZERO_BIT_PERIOD as u64 + ONE_BIT_PERIOD as u64) / 2;
@@ -1125,7 +1295,8 @@ There is a discrepancy in that excerpt worth catching, because it is
 exactly the sort of thing that only surfaces when you check the
 arithmetic instead of trusting the prose. The doc comment above
 `BIT_PERIOD_THRESHOLD` says "midpoint of 455 and 793" — not 434 and 814,
-which are the values the constants two lines below it actually produce.
+which are the values the two period constants it is computed from
+actually hold.
 Both pairs average to the same 624, since 455 + 793 = 1248 and 434 + 814
 = 1248, so both midpoints land in the same place; but they are visibly
 not the same measurement.
@@ -1236,13 +1407,19 @@ it by scanning the incoming bits for a known pattern before trusting any
 of them, and `bits_to_bytes` re-implements that same strategy:
 
 ```rust
-// crates/coco-core/src/cassette.rs:379-450
+// crates/coco-core/src/cassette/demodulate.rs:83-160
+/// How far through a locked (byte-aligned) block [`bits_to_bytes`]'s reader is.
 enum BlockState {
+    /// Bit-level hunt: sliding window looking for LEADER runs, then SYNC.
     Hunt,
+    /// Byte-aligned after a sync: `seen` bytes read so far; `total` is
+    /// type + length + payload + checksum + trailer, known once the
+    /// length byte (the second one) arrives.
     Locked { seen: usize, total: usize },
 }
 
-const BLOCK_OVERHEAD: usize = 4; // type + length + checksum + trailer $55
+/// Block bytes besides the payload: type, length, checksum, trailer $55.
+const BLOCK_OVERHEAD: usize = 4;
 
 fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
     let mut out = Vec::new();
@@ -1273,10 +1450,16 @@ fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
                     out.push(SYNC);
                     leader_count = 0;
                     window_bits = 0;
-                    state = BlockState::Locked { seen: 0, total: usize::MAX };
+                    state = BlockState::Locked {
+                        seen: 0,
+                        total: usize::MAX,
+                    };
                 }
             }
-            BlockState::Locked { ref mut seen, ref mut total } => {
+            BlockState::Locked {
+                ref mut seen,
+                ref mut total,
+            } => {
                 if window_bits < 8 {
                     continue;
                 }
@@ -1284,6 +1467,7 @@ fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
                 window_bits = 0;
                 *seen += 1;
                 if *seen == 2 {
+                    // `window` is the length byte: the payload size.
                     *total = usize::from(window) + BLOCK_OVERHEAD;
                 }
                 if *seen >= *total {
@@ -1292,6 +1476,8 @@ fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
             }
         }
     }
+    // A trailing leader run with no sync after it (e.g. the stream ended
+    // mid-gap) is still tape content.
     out.extend(std::iter::repeat_n(LEADER, leader_count));
     out
 }
@@ -1380,43 +1566,193 @@ gives the reader a fresh chance to re-synchronize. An emulator that
 treated a discontinuity as fatal would be modeling a stricter medium
 than the one it is pretending to be.
 
-### Deciding whether the recording counts
+### Where the recording lands: the splice
 
-The last piece is the one that decides whether any of this work becomes
-the mounted tape:
+The last piece decides whether any of this work becomes the mounted
+tape, and *where* on it:
 
 ```rust
-// crates/coco-core/src/cassette.rs:305-313
+// crates/coco-core/src/cassette.rs:470-490
     pub fn finalize_recording(&mut self) {
         let decoded = demodulate(&self.capture);
+        // Captured before the unconditional reset below zeroes the field:
+        // the splice point this capture started at.
+        let anchor = self.record_anchor;
         self.capture.clear();
         self.last_level = None;
+        self.record_bits = 0;
+        self.record_high = false;
+        self.record_anchor = 0;
+        self.idle_cycles = 0;
         if self.mounted && decoded.contains(&SYNC) {
-            self.tape = decoded;
+            self.tape.truncate(anchor);
+            self.tape.extend(decoded);
+            self.pos = self.tape.len();
+            self.bit = 0;
+            self.bit_elapsed = 0;
             self.dirty = true;
+            self.recording_landed = true;
         }
     }
 ```
 
+Start with the two `tape` lines, because they encode a model of how a
+real deck behaves. Recording on a physical cassette starts wherever the
+head happens to be: everything before that point survives untouched, and
+everything from that point on is overwritten by the new signal. The code
+says exactly that — truncate the tape at the anchor `record_dac` planted
+when the capture began, then graft the decoded bytes on in its place. An
+anchor of zero, which is what a capture started right after
+`insert_tape` or a rewind gets, truncates everything and amounts to
+replacing the whole tape.
+
+The payoff is that multi-file tapes work the way they did in 1981.
+`CSAVE"A"`, rewind, `CLOAD` — which plays file A back and parks the head
+just past its EOF block — then `CSAVE"B"` puts file B on the tape *after*
+file A, because the second capture's anchor is the parked head position.
+An earlier revision of this code replaced the whole tape on every
+finalize, which made that everyday two-program workflow silently destroy
+file A; §12.10 reads the end-to-end test that now pins the multi-file
+behavior against the real ROM.
+
+The truncation deserves one more sentence of honesty, because a
+byte-granular tape cannot fully imitate a physical one. On a real
+cassette, recording thirty seconds over the front of a five-minute file
+leaves the tail of the old signal physically present after the new
+recording ends — garbled at the boundary, but there. This deck discards
+everything at or after the anchor instead. The old bytes there have no
+defined relationship to the new recording's length — splicing decoded
+*bytes* has no notion of "three minutes further along the reel" — so
+keeping some arbitrary suffix would fabricate a tape no deck ever
+produced. Only what came strictly before the point recording started is
+preserved, which is the defensible subset of the physical behavior.
+
+After a successful splice the head parks at the end of the new material
+(`pos = tape.len()`), which is also where a real deck's head sits when
+the motor stops — ready for the *next* `CSAVE` to append. The `dirty`
+flag records that the tape's bytes no longer match the file they came
+from, and `recording_landed` is a separate, single-shot event flag whose
+consumer this section comes back to in a moment.
+
 The guard `decoded.contains(&SYNC)` is doing something genuinely
 important. Remember from this section's first excerpt that the DAC tap
-is unconditional: *every* DAC write reaches the recorder while the motor
-relay is closed, including writes that were meant for the speaker. A
-program that plays sound effects with the relay energized will leave
+is unconditional: *every* Port A write reaches the recorder while the
+motor relay is closed, including writes that were meant for the speaker.
+A program that plays sound effects with the relay energized will leave
 noise in the capture, and demodulating noise produces a byte stream with
 no sync byte in it, because sync bytes only arise from real block
 structure.
 
 So a capture without a sync is discarded and the existing tape is kept.
 The practical effect is the one that matters at the user interface: a
-`CLOAD` followed by a rewind does not wipe the tape. The rewind path
-calls `finalize_recording` first — that is how `CSAVE` → rewind →
-`CLOAD` works without an explicit eject
-([`cassette.rs:213-220`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs#L213-L220))
-— and without this guard, every rewind after a load would replace a
-perfectly good tape with the demodulated garbage of whatever the DAC
-happened to be doing. One `contains` call, one whole class of data-loss
-bug prevented.
+`CLOAD` followed by a rewind does not wipe the tape. Without this guard,
+every rewind after a load would splice the demodulated garbage of
+whatever the DAC happened to be doing over a perfectly good tape. One
+`contains` call, one whole class of data-loss bug prevented. Note that a
+discarded capture also skips `recording_landed` — noise does not count
+as a recording having landed.
+
+### Moving the head: seek, and rewind as a special case
+
+The deck exposes one head-motion primitive, and rewind is its zero case:
+
+```rust
+// crates/coco-core/src/cassette.rs:312-330
+    /// Rewind to the start: shorthand for [`Cassette::seek`]`(0)`.
+    pub fn rewind(&mut self) {
+        self.seek(0);
+    }
+
+    /// Move the read/record head to a byte position, for the UI's "seek to
+    /// byte" control — first folding any pending recording into the tape
+    /// (same reason [`Cassette::rewind`] always has: the head is about to
+    /// move, and finalizing parks it at the splice end before this overrides
+    /// that). Clamps to the tape's end rather than erroring: a real deck
+    /// can't be wound past the end of the reel either. Landing mid-block is
+    /// harmless the same way a mis-parked real tape is — CLOAD's leader hunt
+    /// just re-syncs on the next leader run it meets.
+    pub fn seek(&mut self, pos: usize) {
+        self.finalize_recording();
+        self.pos = pos.min(self.tape.len());
+        self.bit = 0;
+        self.bit_elapsed = 0;
+    }
+```
+
+The `finalize_recording` call on the way in is why `CSAVE` → rewind →
+`CLOAD` works with no explicit eject: moving the head folds any pending
+capture into the tape first, and only then repositions. The other two
+choices are both "behave like the mechanism." Seeking past the end
+clamps instead of erroring, because a reel cannot be wound past its own
+length; and seeking into the middle of a block is allowed, because a
+mis-parked tape was an ordinary Tuesday in 1981 — the ROM's leader hunt
+re-synchronizes at the next leader run it encounters, exactly as
+the `Hunt` state above re-implements.
+
+### Knowing when a recording is over
+
+One question remains, and it is quietly the hardest one in the recording
+path: *when is a recording finished?* The ROM never says. `CSAVE` writes
+its last byte, opens the relay, and walks away; no register changes
+state, no signal marks the end. Worse, a motor-off gap cannot naively be
+read as "done," because `CSAVE` legitimately drops the relay for about
+half a second *in the middle of* every save, between the namefile block
+and the data blocks — the same blind `LA7D1` delay §12.7 derives to the
+cycle. The
+only honest signal available is duration: a gap far longer than any
+intra-operation pause.
+
+```rust
+// crates/coco-core/src/cassette.rs:49-63
+/// Motor-off duration, while an in-flight recording capture is pending,
+/// after which the recording auto-finalizes without requiring an explicit
+/// rewind or eject. CSAVE legitimately drops the motor for ~0.5 s between
+/// its namefile and data blocks (the ROM's blind `LA7D1` delay — see
+/// [`MOTOR_SPINUP_CYCLES`]'s doc), so "recording finished" can only be
+/// detected as "motor stayed off much longer than any intra-operation
+/// gap"; 2 s clears that with wide margin while still saving promptly.
+const RECORD_IDLE_FINALIZE_SECONDS: f64 = 2.0;
+
+/// [`RECORD_IDLE_FINALIZE_SECONDS`] expressed in CPU cycles at the real
+/// clock ([`crate::CPU_HZ`]). `pub` (mirrors
+/// [`crate::drivewire::TRANSACTION_TIMEOUT_CYCLES`]'s pattern) so the
+/// workspace's test suites can tick past the threshold without re-deriving
+/// or duplicating the cycle count.
+pub const RECORD_IDLE_FINALIZE_CYCLES: u64 = (crate::CPU_HZ * RECORD_IDLE_FINALIZE_SECONDS) as u64;
+```
+
+The two-second figure is derived, not picked from the air: it needs to
+sit far above CSAVE's ~0.5-second internal gap, so that a mid-save pause
+never finalizes half a recording, and low enough that the finished
+recording reaches the tape promptly. Four times the largest legitimate
+gap is a wide margin on one side and under three seconds of latency on
+the other. The counting itself is the `idle_cycles` arithmetic already
+visible in `tick`'s motor-off branch back in §12.5: silence accumulates
+only while a capture is pending, any relay closure resets it, and
+crossing the threshold calls `finalize_recording` — so a `CSAVE` that
+finishes and is then *left alone* lands on the tape about two emulated
+seconds later, no rewind or eject required.
+
+That is also what `recording_landed` is for. The deck cannot write a
+host file — Chapter 1's core/frontend split puts the filesystem on the
+other side of the seam — so it raises a flag instead, and the frontend
+consumes it:
+
+```rust
+// crates/coco-core/src/cassette.rs:276-278
+    pub fn take_recording_landed(&mut self) -> bool {
+        std::mem::take(&mut self.recording_landed)
+    }
+```
+
+`std::mem::take` swaps `false` into the field and returns what was
+there, making the flag a one-shot event: the frontend polls it every
+frame, sees `true` exactly once per landed recording, and saves the tape
+back to its file — Chapter 15 walks that hook. Consuming rather than
+reading matters for the failure path, too: if the disk write fails, the
+frontend keeps its own dirty state and retries on the next boundary
+instead of hammering a full save attempt every frame against a flag that
+never clears.
 
 ---
 
@@ -1429,7 +1765,7 @@ promised would recur: sometimes what an emulator has to reproduce is not
 a chip at all, but an *assumption* baked into the ROM's timing.
 
 ```rust
-// crates/coco-core/src/cassette.rs:33-41
+// crates/coco-core/src/cassette.rs:39-47
 /// Motor spin-up: cycles after the relay closes before the tape reaches
 /// speed and bits start flowing. The ROM pairs every motor-on with a blind
 /// ~0.5 s countdown (`LA7D1`: 65536 iterations x 8 cycles, Color BASIC
@@ -1442,10 +1778,8 @@ const MOTOR_SPINUP_CYCLES: u32 = 65536 * 8;
 ```
 
 Start with the number. `65536 * 8` is 524,288 cycles, and dividing by
-`CPU_HZ` gives approximately **0.586 seconds** — matching both the
-comment's "~0.5 s" and the codebase's own test comment, which spells out
-the same figure at
-[`tests/cassette.rs:58`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs#L58).
+`CPU_HZ` gives approximately **0.586 seconds** — matching the comment's
+"~0.5 s".
 That it lands on a tidy `512 * 1024` is a coincidence rather than the
 point, and reading it as a round binary figure gets the derivation
 backwards. The ROM's own delay loop at `LA7D1` runs 65,536 iterations of
@@ -1621,13 +1955,14 @@ hang, loop, never turn the motor off — and bound its own resource use
 rather than filling memory. Measurement code deserves the same defensive
 instincts as production code, and gets them less often.
 
-This worktree does not have `roms/coco3.rom`, since `roms/` is
-git-ignored and present only on the machine this course was authored on,
-so the probe was not re-run while this chapter was written and no claim
-is made otherwise. What the source *does* make fully readable, without
-the ROM in hand, is the methodology — and the constants the probe
-produced are the ones baked into `cassette.rs` today, checkable by anyone
-with a copy of the ROM.
+`roms/` is git-ignored and lives only on the machine this course was
+authored on, so a fresh clone of this repository cannot run the probe,
+and the probe was not re-run while this chapter was being revised; no
+claim is made otherwise. What the source *does* make fully readable,
+without the ROM in hand, is the methodology — and the constants the
+probe produced are the ones baked into `cassette.rs` today, checkable by
+anyone with a copy of the ROM, which the end-to-end tests in §12.10
+exercise it against.
 
 ### Two analyses, and why they disagree
 
@@ -1992,39 +2327,65 @@ now that you know what machinery is being exercised.
 
 ## 12.10 Reading the tests
 
-[`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs)
-splits cleanly into two halves: tests that need nothing but the
-`Cassette` and `cassette_wav` APIs, which always run, and one end-to-end
-test against the real `roms/coco3.rom`. Running the file on a checkout
-without `roms/` — a fresh clone or a git worktree, since Chapter 1
-established that the directory is git-ignored and lives only in the main
-checkout — confirms exactly that split:
+The suite is two files now. [`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs)
+holds the deck itself — playback/demodulator symmetry, motor gating, the
+record-side behaviors §12.6 built, and two end-to-end tests against the
+real `roms/coco3.rom` — while the WAV export/import round trips of §12.9
+live in the sibling
+[`crates/coco-core/tests/cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette_wav.rs),
+split out to stay under the project's file-size guideline. The framing
+and FSK-encoding helpers the two files used to duplicate — `tape_block`,
+`record_bytes_fsk`, `SPINUP_BURN_CYCLES` — now live in
+[`crates/coco-core/src/cassette/test_support.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette/test_support.rs),
+a `#[doc(hidden)]` public module: integration tests see `coco-core` as an
+external crate, so `pub(crate)` would not reach them, and hiding the
+module from the documentation keeps it off the real API surface.
+
+Here is the actual output of running both, on a machine with `roms/`
+present — which means the two end-to-end tests genuinely boot the ROM,
+type at it, and wait out its tape operations, and the fifteen-second wall
+time is almost entirely theirs:
 
 ```
 $ cargo test -p coco-core --test cassette
-running 8 tests
-skipping csave_rewind_cload_round_trips_a_basic_program: roms/ not present
-test csave_rewind_cload_round_trips_a_basic_program ... ok
+running 10 tests
 test motor_off_freezes_the_tape_and_records_nothing ... ok
-test wav_decode_rejects_truncated_header ... ok
+test idle_finalize_discards_a_syncless_capture_without_the_flag ... ok
+test position_tracks_a_recording_in_flight ... ok
+test recording_finalizes_itself_after_motor_idle ... ok
+test seek_finalizes_a_pending_recording_first ... ok
+test seek_moves_the_head_and_clamps_to_the_tape_end ... ok
+test recording_splices_at_the_head_position ... ok
 test playback_waveform_demodulates_back_to_the_same_bytes ... ok
+test csave_rewind_cload_round_trips_a_basic_program ... ok
+test csave_cload_csave_builds_a_two_file_tape ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.99s
+```
+
+```
+$ cargo test -p coco-core --test cassette_wav
+running 5 tests
 test wav_decode_rejects_non_pcm_format_tag ... ok
+test wav_decode_rejects_truncated_header ... ok
 test wav_round_trip_preserves_the_tape_bytes ... ok
 test wav_round_trip_survives_inverted_polarity ... ok
 test wav_round_trip_via_16_bit_pcm ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 ```
 
-That is the actual output of running it, not a hypothetical, and there is
-one detail in it worth noticing: `csave_rewind_cload_round_trips_a_basic_program`
-still reports `... ok`. It is not marked `#[ignore]`. It is an ordinary
-test that runs, looks for the ROM at `../../roms/coco3.rom`, prints a
-message to `stderr` when it is not there, and returns early. That pattern
-has appeared before in this course — [`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs)
+On a checkout without `roms/` — a fresh clone, since Chapter 1
+established that the directory is git-ignored — the counts come out the
+same, and the reason is a pattern worth knowing. The two `csave_*` tests
+are not marked `#[ignore]`; each is an ordinary test that runs, looks
+for the ROM at `../../roms/coco3.rom`, prints a message to `stderr` when
+it is not there, and returns early, still reporting `... ok`. That
+pattern has appeared before in this course —
+[`tests/coco1_boot.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs)
 in Chapter 6 does the same thing — and it will appear again in disks and
-serial in Chapters 13 and 14. Every other test in the file needs nothing but
-the code you have already read.
+serial in Chapters 13 and 14. Every other test in both files needs
+nothing but the code you have already read.
 
 ### `playback_waveform_demodulates_back_to_the_same_bytes`
 
@@ -2033,9 +2394,11 @@ is a strong one: the whole modulation pipeline must be its own inverse,
 with no ROM involved anywhere.
 
 ```rust
-// crates/coco-core/tests/cassette.rs:36-73 (excerpt)
+// crates/coco-core/tests/cassette.rs:25-65
 #[test]
 fn playback_waveform_demodulates_back_to_the_same_bytes() {
+    /// Coarse instruction-sized tick, deliberately not a divisor of either
+    /// bit period so phase error accumulates if the deck mishandles it.
     const TICK_CYCLES: u32 = 7;
 
     let mut tape = vec![LEADER; 16];
@@ -2047,17 +2410,26 @@ fn playback_waveform_demodulates_back_to_the_same_bytes() {
     let mut deck = Cassette::new();
     deck.insert_tape(tape.clone());
 
+    // Sample the squared output into synthetic full-swing DAC transitions.
+    // PA0 carries the SALT-inverted rendering of the tape signal, while the
+    // demodulator consumes the DAC (record-side) domain — so map PA0 low to
+    // DAC high. Skip the motor spin-up (tape not yet rolling, line idle).
     let mut capture: Vec<Transition> = Vec::new();
     let mut clock = 0u64;
     let mut last = None;
-    deck.tick(600_000, true);
+    // Burn through the motor spin-up in one gulp; the tape holds still and
+    // the line idles until it drains.
+    deck.tick(SPINUP_BURN_CYCLES, true);
     assert_eq!(deck.position().0, 0, "tape must hold still through spin-up");
     while deck.playing() {
         deck.tick(TICK_CYCLES, true);
         clock += u64::from(TICK_CYCLES);
         let level = if deck.input_bit() { 0 } else { 63 };
         if last != Some(level) {
-            capture.push(Transition { level, cycle: clock });
+            capture.push(Transition {
+                level,
+                cycle: clock,
+            });
             last = Some(level);
         }
     }
@@ -2094,8 +2466,10 @@ accidentally masked. A test that ticked in units of 814 would pass
 against a badly broken implementation. Choose the granularity that
 stresses the general case, not the convenient one.
 
-**`deck.tick(600_000, true)` in a single call** burns through the entire
-524,288-cycle spin-up latency in one jump, which is legitimate precisely
+**`deck.tick(SPINUP_BURN_CYCLES, true)` in a single call** burns through
+the entire 524,288-cycle spin-up latency in one jump — the constant is
+`test_support`'s 600,000, picked to comfortably clear the threshold —
+which is legitimate precisely
 because `tick` accumulates a cycle budget rather than assuming small
 increments. The assertion immediately after it, `deck.position().0 == 0`,
 directly checks §12.7's "the tape must hold still" claim rather than
@@ -2121,18 +2495,25 @@ A short, sharp confirmation of the motor-gating claims from §12.5 and
 correctly:
 
 ```rust
-// crates/coco-core/tests/cassette.rs:75-86
+// crates/coco-core/tests/cassette.rs:67-85
 #[test]
 fn motor_off_freezes_the_tape_and_records_nothing() {
     let mut deck = Cassette::new();
     deck.insert_tape(vec![LEADER; 8]);
     deck.tick(10_000, false);
-    assert_eq!(deck.position().0, 0, "tape must not move with the motor off");
+    assert_eq!(
+        deck.position().0,
+        0,
+        "tape must not move with the motor off"
+    );
     assert!(deck.input_bit(), "input idles high with the motor off");
 
     deck.record_dac(63, false);
     deck.record_dac(0, false);
-    assert!(deck.capture().is_empty(), "nothing records with the motor off");
+    assert!(
+        deck.capture().is_empty(),
+        "nothing records with the motor off"
+    );
 }
 ```
 
@@ -2145,15 +2526,77 @@ checking a real invariant that spans two otherwise unrelated code paths:
 the motor line gates *everything*, not just the side of the deck you
 happened to be thinking about when you wrote the gate.
 
+### The record-side tests
+
+The six tests between those two and the ROM pair check everything §12.6
+added, and each one pins a behavior a user would notice missing.
+`position_tracks_a_recording_in_flight` feeds sixteen bare full-swing
+tone cycles into the record tap and asserts `position()` reports two
+bytes — the live counter moving before any finalize — then finalizes and
+asserts the sync-less capture was discarded and the counter fell back to
+the parked playback position. `seek_moves_the_head_and_clamps_to_the_tape_end`
+and `seek_finalizes_a_pending_recording_first` are §12.6's seek contract
+verbatim: the head lands where asked, `usize::MAX` clamps to the tape's
+length, and seeking with a capture pending folds it into the tape rather
+than dropping it.
+
+The splice model gets the most thorough of the six:
+
+```rust
+// crates/coco-core/tests/cassette.rs:140-153 (excerpt)
+    // Record file B starting from the parked head position.
+    record_bytes_fsk(&mut deck, &tape_b);
+    assert!(
+        deck.position().0 >= tape_a.len(),
+        "the live estimate must count from the splice anchor, not from 0"
+    );
+
+    deck.finalize_recording();
+    let expected = [tape_a.clone(), tape_b.clone()].concat();
+    assert_eq!(
+        deck.tape_bytes(),
+        expected.as_slice(),
+        "the tape must hold both files back to back"
+    );
+```
+
+`recording_splices_at_the_head_position` plays a framed file A to the
+end, records a framed file B from the parked head using
+`record_bytes_fsk` — the `test_support` helper that drives the record
+tap at the ROM's own measured tone timings, one full-swing period per
+bit — and asserts the finalized tape holds both files back to back. Its
+closing act rewinds and records a file C, asserting the whole tape is
+replaced: anchor zero reproducing the old whole-tape behavior, exactly
+as `finalize_recording`'s doc comment promises.
+
+Auto-finalize gets a pair. `recording_finalizes_itself_after_motor_idle`
+records a block, idles the motor for *half* the threshold and asserts
+nothing happened — a CSAVE-style intra-operation gap must survive — then
+crosses the threshold and asserts the capture was consumed, the bytes
+landed, and `take_recording_landed` reports `true` exactly once and
+`false` thereafter. `idle_finalize_discards_a_syncless_capture_without_the_flag`
+runs the same idle-out with stray sync-less noise and asserts the tape
+is untouched and the landed flag never fires. Between them they pin both
+edges of the two-second derivation from §12.6: long enough to span
+CSAVE's internal gap, decisive once genuinely idle.
+
 ### `csave_rewind_cload_round_trips_a_basic_program`
 
 The full end-to-end test walks §12.1's entire ritual in code. It mounts a
 blank tape, types a program, issues `CSAVE"X"`, waits for the motor to go
 idle, and rewinds — which finalizes the recording, since
-`Cassette::rewind` calls `finalize_recording` first, so `CSAVE` → rewind
-→ `CLOAD` works with no eject cycle. It then checks the block structure,
-types `NEW` to wipe BASIC's program, loads it back with `CLOAD`, runs it,
-and checks the screen for the program's actual output.
+`Cassette::rewind` is `seek(0)` and seek finalizes first, so `CSAVE` →
+rewind → `CLOAD` works with no eject cycle. It then checks the block
+structure, types `NEW` to wipe BASIC's program, loads it back with
+`CLOAD`, runs it, and checks the screen for the program's actual output.
+Along the way it asserts the live record counter did its job against the
+real ROM, not just the synthetic tap: after `CSAVE` finishes but before
+the rewind, `position()` must have moved, and the estimate must
+approximate the finalized tape's length to within a few bytes of slack —
+the decoder spends a handful of bits re-hunting alignment across the
+namefile→data motor gap, so the two counts agree only approximately, and
+the test says so rather than asserting an equality that would be lying
+about the mechanism.
 
 This is the test whose block-structure assertions opened the chapter in
 §12.1, and you now have every piece of machinery needed to read the rest
@@ -2166,9 +2609,19 @@ tape operation. And `parse_blocks` re-derives the block structure from
 the decoded bytes and asserts every checksum, which means the test is
 verifying the *format*, not merely that some bytes survived a round trip.
 
-The test needs `roms/coco3.rom`, so on a checkout without it — as
-confirmed by actually running the suite above — it exercises only its own
-early-return path.
+Its sibling `csave_cload_csave_builds_a_two_file_tape` is the splice
+test's scenario driven through the real ROM end to end: `CSAVE"A"`,
+rewind, `CLOAD` — parking the head after A's blocks — then `CSAVE"B"`,
+and the assertions demand namefile blocks for both `A` and `B` on the
+finalized tape, in order, each followed by an EOF block, and then that
+*both* files `CLOAD` back in sequence. The second `CLOAD` is the
+assertion that matters: it can only succeed if the head parked after A's
+data rather than the tape having been wiped down to just B, which is
+precisely the failure the old whole-tape-replace behavior would have
+produced.
+
+Both need `roms/coco3.rom`, so on a checkout without it they exercise
+only their early-return paths.
 [`crates/coco-core/tests/coco2_boot/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco2_boot/cassette.rs)
 runs a near-identical scenario against a CoCo 2 boot, using
 `extbas11.rom` and `bas12.rom`, and its header explains why that
@@ -2217,12 +2670,15 @@ disk tests do exactly the same thing, for the same reason.
 
 In this order:
 
-1. **[`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs),
-   the whole file (~451 lines).** Read the module header first, then the
-   constants block (lines 1–66), then `Cassette::tick` and `input_bit`
-   for playback (§12.5), then `record_dac`, `demodulate`,
-   `capture_to_bits` and `bits_to_bytes` for recording (§12.6). By now
-   every doc comment in this file should read as a claim you can verify
+1. **[`crates/coco-core/src/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette.rs)
+   (~491 lines) and
+   [`cassette/demodulate.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/cassette/demodulate.rs)
+   (~160), whole files.** Read the module header first, then the
+   constants block (lines 1–89), then `Cassette::tick` and `input_bit`
+   for playback (§12.5), then `record_dac`, `finalize_recording` and
+   `seek` for recording (§12.6), and finally `demodulate.rs`'s
+   `capture_to_bits` and `bits_to_bytes`. By now
+   every doc comment in these files should read as a claim you can verify
    rather than a fact to take on faith — and where a comment says
    "verified empirically," you should be able to describe what the
    verification would have looked like.
@@ -2237,17 +2693,20 @@ In this order:
    Notice what it captures (raw DAC transitions) as distinct from what
    it computes from that capture (two different histograms), and connect
    both back to §12.8.
-4. **[`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs).**
-   You have now read every test in this file in §12.10. Re-read
+4. **[`crates/coco-core/tests/cassette.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette.rs)
+   and [`tests/cassette_wav.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/cassette_wav.rs).**
+   You have now read every test in both files in §12.10. Re-read
    `playback_waveform_demodulates_back_to_the_same_bytes` once more, end
    to end without stopping, and confirm that you can predict what
    `demodulate(&capture)` returns before you reach the assertion.
 
-Then run the ROM-free suite and confirm you see the same eight tests this
-chapter did:
+Then run both suites and confirm you see the same ten and five tests this
+chapter did (without `roms/`, the two end-to-end tests skip and still
+report `ok`, so the counts match either way):
 
 ```
 cargo test -p coco-core --test cassette
+cargo test -p coco-core --test cassette_wav
 ```
 
 ---
@@ -2268,15 +2727,22 @@ frequencies.
 **12.2 — Threshold sensitivity (verify, then reason).** This one was
 actually run rather than merely reasoned about, and it should be
 reproduced: temporarily change `BIT_PERIOD_THRESHOLD`'s definition in
-`cassette.rs` to a literal `499` (≈ `624 * 0.8`, a −20% shift) and run
-`cargo test -p coco-core --test cassette`. All 8 tests still pass — the
-synthetic playback test's periods (814 and 434) sit far enough from 624
-(190 cycles either way, ≈30.4% of 624) that a 20% threshold shift doesn't
-cross either one. Now push it further: try `430` (just below the
-1-bit's own period of 434) and re-run — `playback_waveform_demodulates_back_to_the_same_bytes`
-fails, because *every* 1-bit in the test's synthetic tape now measures a
-period (434) exceeding the threshold (430) and gets classified as a 0.
-Two things to explain in your own words: (a) why the ±20% case in the
+`cassette/demodulate.rs` to a literal `499` (≈ `624 * 0.8`, a −20%
+shift) and run `cargo test -p coco-core --test cassette` and
+`--test cassette_wav`. All 10 and all 5 tests still pass — the measured
+periods (814 and 434) sit far enough from 624 (190 cycles either way,
+≈30.4% of 624) that a 20% threshold shift doesn't cross either one. Now
+push it further: try `430` (just below the 1-bit's own period of 434)
+and re-run. Six of the ten deck tests fail —
+`playback_waveform_demodulates_back_to_the_same_bytes`,
+`recording_splices_at_the_head_position`,
+`recording_finalizes_itself_after_motor_idle`,
+`seek_finalizes_a_pending_recording_first`, and both `csave_*`
+end-to-end tests (those two only when `roms/` is present; without it
+they skip, leaving four failures) — because every 1-bit driven at the
+measured timing now measures a period (434) exceeding the threshold
+(430) and gets classified as a 0. Yet all 5 WAV tests *still pass*.
+Three things to explain in your own words: (a) why the ±20% case in the
 syllabus's own framing doesn't break *this* codebase's tests at all — what
 would need to be true of the test fixture for it to be threshold-sensitive
 in that range, and why isn't it? (b) Once you push far enough to break
@@ -2286,44 +2752,55 @@ to change about how the test's tape is synthesized for the question "which
 pattern fails first" to even have an answer? (Hint: compare how
 `ZERO_BIT_HIGH`/`ZERO_BIT_LOW` encode *measured* asymmetry within one bit
 against how the test's synthetic capture generates bits with zero
-per-instance jitter.) Revert your edit to the real formula
+per-instance jitter.) (c) Why do the WAV round trips survive `430`?
+Follow a 1-bit through `push_sine_cycle`: 434 cycles becomes a
+whole number of 44.1 kHz samples (21), and 21 samples converted back
+through `sample_to_cycle` measure ≈426 cycles — sample-rate quantization
+*shortened* the period below the sabotaged threshold. Revert your edit
+to the real formula
 (`(ZERO_BIT_PERIOD as u64 + ONE_BIT_PERIOD as u64) / 2`) and confirm
-`cargo test -p coco-core --test cassette` is clean and `git status` is
-clean before moving on.
+both suites are clean and `git status` is clean before moving on.
 
 **12.3 — Sabotage the bit order, and watch leader survive (sabotage,
-verified).** In `bits_to_bytes`, change
+verified).** In `cassette/demodulate.rs`'s `bits_to_bytes`, change
 `window = window >> 1 | u8::from(bit) << 7;` to
 `window = window << 1 | u8::from(bit);` — assembling each byte MSB-first
 instead of LSB-first. Predict the outcome before you run
-`cargo test -p coco-core --test cassette`. The verified outcome:
-**3 of 8 tests fail**
-(`playback_waveform_demodulates_back_to_the_same_bytes`,
-`wav_round_trip_preserves_the_tape_bytes`,
+`cargo test -p coco-core --test cassette` and `--test cassette_wav`. The
+verified outcome: **6 of the 10 deck tests fail**
+(`playback_waveform_demodulates_back_to_the_same_bytes`, the three
+record-side tests that decode a real FSK capture —
+`recording_splices_at_the_head_position`,
+`recording_finalizes_itself_after_motor_idle`,
+`seek_finalizes_a_pending_recording_first` — and, with `roms/` present,
+both `csave_*` end-to-end tests) **plus 2 of the 5 WAV tests**
+(`wav_round_trip_preserves_the_tape_bytes`,
 `wav_round_trip_survives_inverted_polarity`) — and the failure output is
-the interesting part: the demodulated output's *leader and sync bytes
-still come out correct* (`85, 85, ..., 60, ...` at the start of both
-`left` and `right` in the assertion diff), while every byte after the
-sync diverges. Explain why, using two facts about the specific bytes
-`LEADER = 0x55` and `SYNC = 0x3C`: `0x3C` (`00111100`) is a literal
-bit-palindrome, so byte-order doesn't affect whether it's recognized at
-all; `0x55` (`01010101`) is a period-2 alternating pattern, and an 8-bit
-window sliced from an infinite alternating bitstream is `0x55` or `0xAA`
-depending only on *phase*, regardless of which shift convention
-assembled it — so the sliding hunt in `Hunt` state still locks on
-correctly even under the sabotaged shift. Only once real (non-repeating,
-non-palindromic) payload data starts flowing does the bug become visible.
-Revert your edit exactly (back to
+the interesting part: the demodulated output's *opening leader run and
+sync byte still come out correct* (`85, 85, ..., 60, ...` at the start
+of both `left` and `right` in the assertion diff), while the payload
+bytes after the sync diverge — and the tape's *interior* leader run
+comes out as `170` instead of `85`. Explain all of it using two facts
+about the specific bytes `LEADER = 0x55` and `SYNC = 0x3C`: `0x3C`
+(`00111100`) is a literal bit-palindrome, so byte-order doesn't affect
+whether it's recognized at all; `0x55` (`01010101`) is a period-2
+alternating pattern, and an 8-bit window sliced from an alternating
+bitstream is `0x55` or `0xAA` (`170`) depending only on *phase*,
+regardless of which shift convention assembled it — so the sliding hunt
+in `Hunt` state still locks on, and whether a given leader run prints as
+`85` or `170` depends only on where the preceding bits left the phase.
+Only once real (non-repeating, non-palindromic) payload data starts
+flowing does the bug become visible. Revert your edit exactly (back to
 `window = window >> 1 | u8::from(bit) << 7; // LSB arrives first`),
-re-run the test suite to confirm all 8 pass again, and confirm
+re-run both suites to confirm all 10 and all 5 pass again, and confirm
 `git status` shows a clean tree.
 
 **12.4 — Build: demodulate a byte you chose yourself (build).** Using
 only the public API (`Cassette::new`, `insert_tape`, `tick`, `playing`,
 `input_bit`, and `cassette::{demodulate, Transition}`), write a new test
 that mounts a tiny hand-picked tape — say `vec![0x55, 0x55, 0x3C, 0xA5,
-0x00, checksum, 0x55]` framed as one block via a helper like this
-chapter's `tape_block` — plays it all the way through the way
+0x00, checksum, 0x55]` framed as one block via
+`cassette::test_support::tape_block` — plays it all the way through the way
 `playback_waveform_demodulates_back_to_the_same_bytes` does (burn the
 spin-up in one `tick`, then loop `tick`/`input_bit` capturing transitions
 on every level change, translating PA0 polarity to DAC polarity as
@@ -2367,9 +2844,9 @@ it in Audacity or any waveform viewer. Zoom in far enough to see
 individual cycles and find the leader run (long, uniform, one frequency),
 the sync transition (a visible frequency change), and try reading the
 first data byte's bits by eye, LSB first, using §12.2's two frequencies
-as your guide. This exercise depends on resources this worktree doesn't
-have (`roms/`), so treat it as a lab you run on a machine that does, not
-one you can complete here — but it's the single most direct way to
+as your guide. This exercise depends on the git-ignored `roms/`
+directory the repository does not ship, so treat it as a lab you run on
+a machine that has the ROM — but it's the single most direct way to
 confirm everything this chapter told you about the signal actually looks
 like that on a real waveform.
 

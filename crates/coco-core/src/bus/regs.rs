@@ -7,6 +7,16 @@ pub(super) const IO_BASE: u16 = 0xFF00;
 pub(super) const PIA0_LAST: u16 = 0xFF1F;
 pub(super) const PIA1_BASE: u16 = 0xFF20;
 pub(super) const PIA1_LAST: u16 = 0xFF3F;
+/// Register-select mask within each 4-byte mirrored PIA block
+/// (`MC6821::write`/`read`'s `reg & 0x03` decode in `pia.rs`).
+pub(super) const PIA1_REG_MASK: u16 = 0x03;
+/// Offset of PIA1 Port A's data/DDR register within each 4-byte mirrored
+/// PIA block (0 = Port A, 1 = CRA, 2 = Port B, 3 = CRB — see
+/// [`PIA1_REG_MASK`]). Cassette record-out only samples the DAC
+/// on writes here, not on CRA ($FF21) writes — MAME's `update_cassout()` is
+/// called only from `pia1_pa_changed()`, never from `pia1_ca2_w()` (the
+/// motor-relay callback); see `SystemBus::write_pia1` in `io.rs`.
+pub(super) const PIA1_PORT_A_OFFSET: u16 = 0x00;
 pub(super) const CART_BASE: u16 = 0xFF40;
 // $FF40-$FF5F is the "standard" SCS* window; $FF60-$FF7E is unmapped on the
 // motherboard, so some carts (the RS-232 Pak, Orchestra-90, the Sound/Speech

@@ -35,9 +35,7 @@ fn try_load(name: &str) -> Option<Vec<u8>> {
 /// `compose_coco12_rom` builds when no Extended BASIC dump is found.
 fn boot_machine() -> Option<(Machine, Vec<u8>)> {
     let Some(bas) = try_load("bas12.rom") else {
-        eprintln!(
-            "skipping coco1_boot: bas12.rom not present in roms/"
-        );
+        eprintln!("skipping coco1_boot: bas12.rom not present in roms/");
         return None;
     };
     let mut image = vec![OPEN_BUS_FILLER; BAS_OFFSET];

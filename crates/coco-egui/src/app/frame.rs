@@ -47,6 +47,18 @@ impl CocoApp {
                     break;
                 }
             }
+            // Recordings save themselves ~2 s after the motor stops, via the
+            // core's own idle auto-finalize (`Cassette::tick`) — no
+            // eject/quit needed. A rewind saves too, but not because of
+            // anything here: `Cassette::rewind` finalizes and sets the
+            // landed flag itself, so this hook picks it up the very next
+            // frame. Only the save half (`Self::save_tape_bytes`, not
+            // `Self::write_back_tape`) runs here — re-finalizing would fold
+            // any capture that started in this same field into the
+            // already-landed recording, discarding its leader-only prefix.
+            if self.machine.bus.cassette.take_recording_landed() {
+                self.save_tape_bytes();
+            }
             let sample_rate = self.machine.audio_sample_rate();
             self.audio
                 .push_samples(self.machine.take_audio(), sample_rate);

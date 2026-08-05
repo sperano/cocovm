@@ -3,8 +3,9 @@ use coco_core::joystick::{LEFT, RIGHT};
 use crate::*;
 
 impl CocoApp {
-    /// The status bar: live state readouts, plus the keyboard entry's menu
-    /// ([`Self::keyboard_status`]).
+    /// The status bar: live state readouts, plus the menus of the three
+    /// entries that are also controls ([`Self::keyboard_status`],
+    /// [`Self::display_status`], [`Self::tape_status`]).
     ///
     /// Pinned to [`STATUS_BAR_H`] rather than left to size itself around its
     /// content: that constant is what the window-sizing math already
@@ -20,6 +21,7 @@ impl CocoApp {
                 ui.horizontal_centered(|ui| {
                     self.keyboard_status(ui);
                     self.display_status(ui);
+                    self.tape_status(ui);
                     self.cart_status(ui);
                     self.joystick_status(ui);
                     self.rs232_status(ui);
@@ -27,7 +29,6 @@ impl CocoApp {
                     self.disk_status(ui);
                     self.vhd_status(ui);
                     self.drivewire_status(ui);
-                    self.tape_status(ui);
                     self.printer_status(ui);
                     if let Some(toast) = self.toast_message() {
                         ui.separator();
@@ -230,23 +231,58 @@ impl CocoApp {
         }
     }
 
+    /// The tape entry — the bar's third entry that is also a control, built
+    /// like [`Self::keyboard_status`] and [`Self::display_status`]: the
+    /// painted cassette and a frameless-button label form one click target
+    /// that pops up the tape menu (`tape_menu_ui` — insert/new/rewind/eject
+    /// and the .wav toggle); like the other two, this entry is the only way
+    /// in — the Machine menu no longer carries the cassette deck. Unlike
+    /// the other two it keeps its readout duties: the icon reddens while
+    /// the motor runs (relay closed — CLOAD/CSAVE/MOTOR ON) and its reels
+    /// turn with the tape; the label carries the mounted file and the tape
+    /// position in bytes (the read head during playback, bytes recorded so
+    /// far during CSAVE — [`coco_core::cassette::Cassette::position`]) —
+    /// but unlike the disk/DriveWire entries, no dirty mark: recordings now
+    /// auto-save themselves (idle auto-finalize, or at rewind —
+    /// [`coco_core::cassette::Cassette::finalize_recording`]) rather than
+    /// staying dirty until an eject. With nothing mounted the label reads
+    /// "No tape" (the deck is always there to click, tape or no tape). See
+    /// the keyboard entry's comments for why the popup gets an explicit id
+    /// and a `TOP_START` anchor.
     fn tape_status(&mut self, ui: &mut egui::Ui) {
-        let Some(path) = &self.tape_path else { return };
-        // The icon reddens while the motor runs (relay closed —
-        // CLOAD/CSAVE/MOTOR ON); the counter is the playback position in
-        // tape bytes; "*" as for floppies.
+        ui.separator();
+        // The relay is the deck's, so the motor light works with no tape
+        // mounted (MOTOR ON) — but the reels are the cassette's, so they
+        // only turn while one is in.
         let motor = self.machine.bus.pia1.a.c2_output();
         let (pos, len) = self.machine.bus.cassette.position();
-        let dirty = self.machine.bus.cassette.dirty();
         let dt = ui.input(|i| i.stable_dt);
-        let angle = self.activity.tape_reel.advance(pos, motor, dt);
-        ui.separator();
-        cassette_icon(ui, motor, angle).on_hover_text("Tape motor");
-        ui.label(format!(
-            "Tape: {}{} [{pos}/{len}]",
-            file_name(path),
-            dirty_mark(dirty)
+        let angle = self
+            .activity
+            .tape_reel
+            .advance(pos, motor && self.tape_path.is_some(), dt);
+        let icon = cassette_icon(ui, motor, angle).interact(egui::Sense::click());
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Tape menu")
+        });
+        let label = match &self.tape_path {
+            Some(path) => format!("{} [{pos}/{len}]", file_name(path)),
+            None => "No tape".to_string(),
+        };
+        let entry = (icon | ui.add(egui::Button::new(label).frame(false))).on_hover_text(format!(
+            "Cassette deck: {} — click for the tape menu",
+            self.tape_path.as_deref().map_or("no tape", file_name)
         ));
+        // Not the menu-default `CloseOnClick`: that closes on clicks *inside*
+        // the popup too, which kills the seek field the moment it's clicked
+        // for typing. Every action item in `tape_menu_ui` calls `ui.close()`
+        // itself, so items still dismiss the menu; only the seek field and
+        // the .wav checkbox keep it open.
+        egui::Popup::menu(&entry)
+            .id(ui.id().with("tape_menu"))
+            .align(egui::RectAlign::TOP_START)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| self.tape_menu_ui(ui));
     }
 
     /// Shown whenever a printer sink is plugged into the bit-banger:
