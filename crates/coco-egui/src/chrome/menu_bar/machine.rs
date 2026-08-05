@@ -5,7 +5,9 @@ use crate::*;
 
 impl CocoApp {
     /// The Machine menu: cartridges, the MultiPak and its slots, disk
-    /// and VHD drives, DriveWire, the cassette deck, and print capture.
+    /// and VHD drives, DriveWire, and print capture. The cassette deck
+    /// lives in the status bar's tape entry alone
+    /// (`CocoApp::tape_menu_ui`), not here.
     pub(super) fn machine_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("Reset").clicked() {
             self.machine.reset();
@@ -27,8 +29,6 @@ impl CocoApp {
         self.machine_vhd_items(ui);
         ui.separator();
         ui.menu_button("DriveWire", |ui| self.drivewire_menu_ui(ui));
-        ui.separator();
-        self.machine_tape_items(ui);
         ui.separator();
         self.machine_print_items(ui);
     }
@@ -192,52 +192,6 @@ impl CocoApp {
                 ui.close();
             }
         }
-    }
-
-    /// The cassette deck: insert, create, rewind, and eject a tape.
-    fn machine_tape_items(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Insert Tape…").clicked() {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Cassette image", &["cas", "wav"])
-                .pick_file()
-            {
-                self.insert_tape(path);
-            }
-        }
-        if ui.button("New Tape…").clicked() {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Cassette image", &["cas"])
-                .set_file_name("untitled.cas")
-                .save_file()
-            {
-                self.new_tape(path);
-            }
-        }
-        let tape_mounted = self.tape_path.is_some();
-        if ui
-            .add_enabled(tape_mounted, egui::Button::new("Rewind Tape"))
-            .clicked()
-        {
-            self.machine.bus.cassette.rewind();
-            ui.close();
-        }
-        let label = match &self.tape_path {
-            Some(p) => format!(
-                "Eject Tape ({})",
-                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
-            ),
-            None => "Eject Tape".to_string(),
-        };
-        if ui
-            .add_enabled(tape_mounted, egui::Button::new(label))
-            .clicked()
-        {
-            self.eject_tape();
-            ui.close();
-        }
-        ui.checkbox(&mut self.save_tape_wav, "Also save tape audio (.wav)");
     }
 
     /// Bit-banger print capture to a host text file.

@@ -23,7 +23,10 @@ const TEXT_BORDER_COLOR: u8 = 0x00;
 
 /// NTSC CPU clock at normal speed: the 28.636363 MHz crystal / 32 (MAME
 /// `coco3.cpp`). The SAM R1 bit doubles it (crystal / 16, ~1.79 MHz).
-const CPU_HZ: f64 = 894_886.0;
+/// `pub(crate)` (re-exported as `crate::CPU_HZ` in `lib.rs`) so other
+/// modules can derive cycle counts from the real clock instead of
+/// duplicating the value — `cassette.rs`'s `RECORD_IDLE_FINALIZE_CYCLES`.
+pub(crate) const CPU_HZ: f64 = 894_886.0;
 
 /// GIME timer input clocks per normal-speed CPU cycle with INIT1 TINS=1. The
 /// fast timer clock is 3.579545 MHz (279.365 ns — hardware-measured; MAME
@@ -227,8 +230,8 @@ impl Machine {
         self.bus.after_restore();
     }
 
-    /// The CPU clock (the private `CPU_HZ` constant above) for callers
-    /// converting cycle counts to wall-clock time outside the run loop —
+    /// The CPU clock (the `CPU_HZ` constant above) for callers converting
+    /// cycle counts to wall-clock time outside the run loop —
     /// e.g. `cassette_wav`'s WAV encode/decode, which times tape bit
     /// periods in CPU cycles the same way
     /// [`Cassette::tick`](crate::cassette::Cassette::tick) does. Always the

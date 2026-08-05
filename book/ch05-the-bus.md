@@ -468,36 +468,47 @@ port A.
 
 The second pattern is that *some writes fan out to more than one device*.
 Cassette output is the mirror image of cassette input, and it does not
-live behind an address of its own at all. It is tapped directly off
-whatever PIA1 write just happened, because the six-bit sound DAC and the
-cassette recording circuit are physically the same port pins:
+live behind an address of its own at all. It is tapped directly off the
+PIA1 Port A write that just happened, because the six-bit sound DAC and
+the cassette recording circuit are physically the same port pins:
 
 ```rust
-PIA1_BASE..=PIA1_LAST => {
-    self.pia1.write((addr & 0x03) as u8, val);
-    // Cassette record-out is a direct, unconditional tap of the DAC
-    // (not gated by SNDEN/the mux) fed on every PIA1 write since any of
-    // them (port A output/DDR or CRA, which carries the motor relay)
-    // can change it.
-    let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
-    self.cassette.record_dac(dac, self.pia1.a.c2_output());
-    self.note_audio_write(); // DAC / PB1 / SNDEN / relay
-}
+    pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
+        let reg = addr & PIA1_REG_MASK;
+        self.pia1.write(reg as u8, val);
+        // Cassette record-out is a direct, unconditional tap of the DAC
+        // (not gated by SNDEN/the mux — `cassette-verified-facts`), but
+        // it only samples on Port A output/DDR writes, not CRA ($FF21)
+        // writes: MAME's `update_cassout()` is called exclusively from
+        // `pia1_pa_changed()`, never from `pia1_ca2_w()` (the CA2
+        // motor-relay callback) — and `write_control()`'s CRA path
+        // never touches `port.output`/`port.ddr` anyway, so a CRA-only
+        // write can't change the DAC value. Sampling on CRA writes
+        // would just re-announce the unchanged level as a spurious
+        // transition right after motor-off resets `last_level`.
+        if reg == PIA1_PORT_A_OFFSET {
+            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+            self.cassette.record_dac(dac, self.pia1.a.c2_output());
+        }
+        self.note_audio_write(); // DAC / PB1 / SNDEN / relay
+    }
 ```
-*([`bus/io.rs:104-113`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L104-L113))*
+*([`bus/io.rs:154-172`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/bus/io.rs#L154-L172); both bus
+paths' `PIA1_BASE..=PIA1_LAST` write arms dispatch here)*
 
-Every single PIA1 write re-derives the current six-bit DAC value and
-feeds it to `cassette.record_dac`, including writes with no apparent
-connection to the cassette. The comment explains why in one
-clause: any of the four PIA1 registers can change what the recording
-circuit sees. A write to the output register obviously can. So can a
-write to the data-direction register, since a pin switched from input to
-output starts driving whatever the output register already held — which
-is why the mask is `output & ddr` rather than `output` alone. And so can
-a write to the control register, because that is where the cassette motor
-relay lives. From the cassette's point of view there is no such thing as
-an irrelevant PIA1 write, so the emulator does not try to guess which
-ones matter. Chapters 11 and 12 both build directly on this tap.
+Every PIA1 write lands in this helper, and a write to Port A's data or
+direction register re-derives the current six-bit DAC value and feeds it
+to `cassette.record_dac`. A write to the output register obviously
+changes what the recording circuit sees. So does a write to the
+data-direction register, since a pin switched from input to output
+starts driving whatever the output register already held — which is why
+the mask is `output & ddr` rather than `output` alone. A write to the
+control register, by contrast, cannot change the DAC value at all — the
+CRA path never touches the output or direction registers — so the tap
+does not sample there, a boundary the comment pins to MAME's model of
+the same wiring. The `note_audio_write` call still runs for every
+register, because the sound path cares about more than the DAC. Chapters
+11 and 12 both build directly on this tap.
 
 The third pattern is *a device group with its own small sub-dispatch*.
 Where the PIAs mirror four registers across a 32-byte range, other

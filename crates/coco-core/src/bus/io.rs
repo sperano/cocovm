@@ -9,9 +9,9 @@ use super::regs::{
     BECKER_DATA, BECKER_STATUS, BORDER_REG, CART_BASE, CART_LAST, FIRQENR_REG, GIME_LAST,
     GIME_RESERVED_BASE, GIME_RESERVED_LAST, HOFFSET_REG, INIT0_REG, INIT1_REG, IO_BASE, IRQENR_REG,
     MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE, PALETTE_LAST, PIA0_LAST,
-    PIA1_BASE, PIA1_LAST, TIMER_LSB_REG, TIMER_MSB_REG, VBANK_REG, VHD_BUFFER_HI, VHD_BUFFER_LO,
-    VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO, VHD_LRN_MID, VHD_SELECT, VMODE_REG, VOFFSET0_REG,
-    VOFFSET1_REG, VRES_REG, VSCROLL_REG,
+    PIA1_BASE, PIA1_LAST, PIA1_PORT_A_OFFSET, PIA1_REG_MASK, TIMER_LSB_REG, TIMER_MSB_REG,
+    VBANK_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO,
+    VHD_LRN_MID, VHD_SELECT, VMODE_REG, VOFFSET0_REG, VOFFSET1_REG, VRES_REG, VSCROLL_REG,
 };
 use super::{SystemBus, mmu_index};
 
@@ -101,16 +101,7 @@ impl SystemBus {
                 self.pia0.write((addr & 0x03) as u8, val);
                 self.note_audio_write(); // CA2/CB2 are the sound mux selects
             }
-            PIA1_BASE..=PIA1_LAST => {
-                self.pia1.write((addr & 0x03) as u8, val);
-                // Cassette record-out is a direct, unconditional tap of the DAC
-                // (not gated by SNDEN/the mux — `cassette-verified-facts`), fed
-                // on every PIA1 write since any of them (port A output/DDR or
-                // CRA, which carries the motor relay) can change it.
-                let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
-                self.cassette.record_dac(dac, self.pia1.a.c2_output());
-                self.note_audio_write(); // DAC / PB1 / SNDEN / relay
-            }
+            PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
             CART_BASE..=CART_LAST => {
                 self.cart.write(addr, val);
                 self.note_audio_write(); // latched cart DACs (Orchestra-90)
@@ -153,5 +144,30 @@ impl SystemBus {
             gime::SAM_BASE..=gime::SAM_LAST => self.gime.write_sam(addr),
             _ => { /* unmapped — TODO */ }
         }
+    }
+
+    /// PIA1 register write ($FF20-$FF23, mirrored through $FF3F): the PIA
+    /// register write itself, the Port-A-gated cassette DAC tap, and the
+    /// sound-mux touch — shared by both this (GIME I/O-page) path and the
+    /// plain-SAM path (`sam_path.rs`'s `sam_io_write`), which see the exact
+    /// same PIA1 wiring.
+    pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
+        let reg = addr & PIA1_REG_MASK;
+        self.pia1.write(reg as u8, val);
+        // Cassette record-out is a direct, unconditional tap of the DAC
+        // (not gated by SNDEN/the mux — `cassette-verified-facts`), but
+        // it only samples on Port A output/DDR writes, not CRA ($FF21)
+        // writes: MAME's `update_cassout()` is called exclusively from
+        // `pia1_pa_changed()`, never from `pia1_ca2_w()` (the CA2
+        // motor-relay callback) — and `write_control()`'s CRA path
+        // never touches `port.output`/`port.ddr` anyway, so a CRA-only
+        // write can't change the DAC value. Sampling on CRA writes
+        // would just re-announce the unchanged level as a spurious
+        // transition right after motor-off resets `last_level`.
+        if reg == PIA1_PORT_A_OFFSET {
+            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+            self.cassette.record_dac(dac, self.pia1.a.c2_output());
+        }
+        self.note_audio_write(); // DAC / PB1 / SNDEN / relay
     }
 }

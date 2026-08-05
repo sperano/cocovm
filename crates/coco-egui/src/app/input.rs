@@ -26,7 +26,30 @@ impl CocoApp {
         self.consume_app_shortcuts(ctx);
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
-        self.handle_hotkeys_and_paste(&events);
+        // The F-key hotkeys toggle UI, never reach the machine, and text
+        // widgets don't consume F-keys — so they stay live even while one
+        // is focused (F11 must dismiss the debugger from its own goto box).
+        self.handle_hotkeys(&events);
+
+        // `wants_keyboard_input()` reports "some widget currently holds egui
+        // focus", not "a text widget is focused": a click only ever focuses
+        // a text-editing widget, but Tab can focus any clickable one (every
+        // `Sense::click` widget is focusable), and Escape clears focus
+        // again. The case this gate exists for is a focused text widget
+        // (the tape menu's seek field, the RS-232 address, a debugger goto
+        // box…) owning the keyboard: none of its keystrokes may reach the
+        // CoCo matrix or the symbolic type-ahead, and a paste must land in
+        // the widget, not the machine. Releasing the matrix (idempotent)
+        // also unsticks any key that was held down when the widget grabbed
+        // focus, since its release event will never get here. A stray
+        // Tab-focused button gates input the same way, but Escape releases
+        // it.
+        if ctx.wants_keyboard_input() {
+            self.machine.bus.keyboard.release_all();
+            return;
+        }
+
+        self.handle_paste(&events);
         if self.kb_mode == KbMode::Symbolic {
             self.queue_symbolic_taps(&events);
         }
@@ -65,19 +88,18 @@ impl CocoApp {
         }
     }
 
-    /// UI hotkeys (never forwarded) and clipboard paste, both
-    /// keyboard-mode-agnostic. egui/eframe normalises the platform paste
-    /// shortcut (Cmd+V / Ctrl+V) into a single `Event::Paste`, so this works
-    /// the same on macOS, Windows, and Linux.
-    pub(crate) fn handle_hotkeys_and_paste(&mut self, events: &[egui::Event]) {
+    /// UI hotkeys, never forwarded to the machine and (unlike the paste
+    /// path) not gated on text-widget focus — see `handle_input`.
+    fn handle_hotkeys(&mut self, events: &[egui::Event]) {
         for ev in events {
-            match ev {
-                egui::Event::Key {
-                    key,
-                    pressed: true,
-                    repeat: false,
-                    ..
-                } => match key {
+            if let egui::Event::Key {
+                key,
+                pressed: true,
+                repeat: false,
+                ..
+            } = ev
+            {
+                match key {
                     egui::Key::F12 => {
                         let next = match self.kb_mode {
                             KbMode::Positional => KbMode::Symbolic,
@@ -89,9 +111,18 @@ impl CocoApp {
                     egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
                     egui::Key::F11 => self.debugger.open = !self.debugger.open,
                     _ => {}
-                },
-                egui::Event::Paste(text) => self.enqueue_text(text),
-                _ => {}
+                }
+            }
+        }
+    }
+
+    /// Clipboard paste into the machine, keyboard-mode-agnostic. egui/eframe
+    /// normalises the platform paste shortcut (Cmd+V / Ctrl+V) into a single
+    /// `Event::Paste`, so this works the same on macOS, Windows, and Linux.
+    fn handle_paste(&mut self, events: &[egui::Event]) {
+        for ev in events {
+            if let egui::Event::Paste(text) = ev {
+                self.enqueue_text(text);
             }
         }
     }

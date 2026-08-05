@@ -117,14 +117,14 @@ fn reel_spins_backward_on_rewind() {
 
 #[test]
 fn reel_keeps_turning_while_parked_with_motor_running() {
-    // Position didn't move (CSAVE never advances it) but the motor's on:
-    // the reel still turns, at RECORD_REEL_SPEED.
+    // Position didn't move (spin-up, or MOTOR ON with the tape parked) but
+    // the motor's on: the reel still turns, at MOTOR_REEL_SPEED.
     let mut reel = TapeReel {
         last_pos: 50,
         ..Default::default()
     };
     let angle = reel.advance(50, true, 0.5);
-    assert!((angle - RECORD_REEL_SPEED * 0.5).abs() < 1e-6);
+    assert!((angle - MOTOR_REEL_SPEED * 0.5).abs() < 1e-6);
 }
 
 #[test]

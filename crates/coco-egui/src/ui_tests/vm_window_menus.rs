@@ -1,8 +1,12 @@
 //! VM window menu/toolbar/hotkey tests, driving a `CocoApp` opened directly
 //! (not through the manager): transport controls, Machine/View/Help/
-//! Joysticks menus, the status bar's keyboard menu, media-action gating, the
-//! MultiPak install/slot/switch flow, save-state menu wiring, error/
-//! confirmation dialogs, the RS-232 pak, and cartridge insertion (GMC).
+//! Joysticks menus, the status bar's keyboard/display menus,
+//! media-action gating, the MultiPak install/slot/switch flow, save-state
+//! menu wiring, error/confirmation dialogs, the RS-232 pak, and cartridge
+//! insertion (GMC). The status bar's tape entry/menu — mounting, seeking,
+//! and the auto-save/keyboard-focus interactions — lives in the sibling
+//! [`super::vm_window_tape`], except the plain disabled-without-a-tape gating
+//! checked here alongside the rest of `media_actions_are_disabled_until_media_is_present`.
 
 use coco_core::{MachineVariant, MonitorType};
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -253,17 +257,29 @@ fn joysticks_menu_assigns_a_source_to_the_right_stick() {
     assert!(app.joysticks.sources[coco_core::joystick::LEFT] == joy::JoySource::None);
 }
 
+/// With no tape mounted the seek field is disabled along with the rest of
+/// the mount-gated tape-menu items (`media_actions_are_disabled_until_media_is_present`
+/// covers Rewind/Eject the same way).
+#[test]
+fn status_bar_tape_menu_seek_field_is_disabled_without_a_tape() {
+    let mut harness = boot_harness();
+
+    click(&mut harness, "Tape menu");
+    assert!(
+        harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .accesskit_node()
+            .is_disabled(),
+        "the seek field should be disabled with no tape mounted"
+    );
+}
+
 #[test]
 fn media_actions_are_disabled_until_media_is_present() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    for label in [
-        "Eject Cartridge",
-        "Eject Tape",
-        "Rewind Tape",
-        "Stop Print Capture",
-    ] {
+    for label in ["Eject Cartridge", "Stop Print Capture"] {
         assert!(
             harness.get_by_label(label).accesskit_node().is_disabled(),
             "{label} should be disabled with nothing inserted"
@@ -276,6 +292,19 @@ fn media_actions_are_disabled_until_media_is_present() {
                 .get_by_label(&format!("Eject Drive {drive}"))
                 .accesskit_node()
                 .is_disabled()
+        );
+    }
+
+    // The tape actions live in the status bar's tape menu, not the Machine
+    // menu — gated the same way. Toggle the Machine menu closed first so the
+    // tape entry's click opens its popup rather than just dismissing the
+    // open one.
+    click(&mut harness, "Machine");
+    click(&mut harness, "Tape menu");
+    for label in ["Rewind Tape", "Eject Tape"] {
+        assert!(
+            harness.get_by_label(label).accesskit_node().is_disabled(),
+            "{label} should be disabled with no tape mounted"
         );
     }
 }

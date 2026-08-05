@@ -70,7 +70,7 @@ impl From<JoySource> for JoySourceDTO {
 
 /// Host-side keys driving `JoySource::Keys`: arrows for the axes, Z/X for the
 /// two fire buttons (mirroring the analog stick's button 0/1).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct KeyState {
     left: bool,
     right: bool,
@@ -181,6 +181,15 @@ impl JoystickInputs {
     }
 
     fn key_state(ctx: &egui::Context) -> KeyState {
+        // Same gate as `CocoApp::handle_input`: `wants_keyboard_input()`
+        // means "some widget holds egui focus" — via a click on a
+        // text-editing widget, or Tab onto any clickable one (Escape
+        // releases it) — not specifically a text widget. Keeps arrows/Z/X
+        // typed into the seek field or a debugger goto box from also
+        // nudging the emulated stick.
+        if ctx.wants_keyboard_input() {
+            return KeyState::default();
+        }
         ctx.input(|i| KeyState {
             left: i.key_down(egui::Key::ArrowLeft),
             right: i.key_down(egui::Key::ArrowRight),
