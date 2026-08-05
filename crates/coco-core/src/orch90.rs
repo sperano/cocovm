@@ -2,7 +2,7 @@
 //! software-driven stereo digital audio, plus an 8K program ROM.
 //!
 //! Facts verified against MAME `src/devices/bus/coco/coco_orch90.cpp` and
-//! `docs/Lomont_CoCoHardware.pdf` (see `docs/plan-orchestra-90.md`):
+//! `docs/Lomont_CoCoHardware.pdf`:
 //! `$FF7A` latches the left channel, `$FF7B` the right — both write-only
 //! (74LS374 octal latch feeding an R-2R ladder per channel; no read path).
 //! There is no on-cart timer or interrupt: sample timing is entirely the
@@ -11,7 +11,7 @@
 //!
 //! Tier 1 (this module): latch decode + mono mix via
 //! [`crate::cart::Cartridge::sound_level`]. Stereo output at full sample
-//! rate is the audio-pipeline plan (`docs/plan-audio-pipeline.md`).
+//! rate is the audio-pipeline plan.
 
 use serde::{Deserialize, Serialize};
 
@@ -66,7 +66,7 @@ impl Orch90 {
 
     /// Restore-path-only: re-inject the 8K program ROM after a snapshot
     /// restore — delegates to the inner [`ROMPak::reattach_image`]
-    /// (`docs/plan-save-states.md`).
+    ///.
     pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(bytes)
     }

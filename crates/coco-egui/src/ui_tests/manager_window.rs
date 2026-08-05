@@ -217,7 +217,7 @@ fn manager_click_below_the_list_clears_the_selection() {
 
 /// Right-clicking a list row opens its context menu *without* moving the
 /// visual selection — the menu's items act on the row under the cursor, not
-/// on `selected` (user decision 2026-07-23). The one exception is "Show
+/// on `selected`. The one exception is "Show
 /// config", whose whole job is to select; it (like every pick) also closes
 /// the menu.
 #[test]
@@ -311,7 +311,7 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
 
 /// "New" creates a definition file *immediately* — default name under a
 /// uniquified slug, saved, selected, no dialog and no Create button (macOS
-/// System-Settings-style, user decision 2026-07-24). A second "New"
+/// System-Settings-style). A second "New"
 /// uniquifies against the first.
 #[test]
 fn manager_new_creates_a_definition_file_immediately() {
@@ -360,7 +360,7 @@ fn manager_new_creates_a_definition_file_immediately() {
 }
 
 /// Editing in the detail pane saves immediately — there are no Save/Revert
-/// buttons anymore (auto-save, user decision 2026-07-24) — while merely
+/// buttons anymore (auto-save) — while merely
 /// selecting a row must not rewrite its file.
 #[test]
 fn manager_detail_edits_save_immediately() {

@@ -1,6 +1,6 @@
 //! Tandy Deluxe RS-232 Program Pak (26-2226): a 6551 ACIA at `$FF68-$FF6B`
 //! plus a 4K EPROM in the CTS window, glued to a host [`SerialEndpoint`].
-//! Facts per `docs/plan-deluxe-rs232.md`, MAME-authoritative
+//! Facts from MAME-authoritative
 //! (`src/devices/bus/coco/coco_rs232.cpp`): the ACIA decodes the full
 //! address bus itself (the pak sits outside the SCS* window, reached via
 //! the bus's `$FF60-$FF7E` spare-window routing), its `_IRQ` output drives
@@ -52,7 +52,7 @@ pub struct DeluxeRS232 {
     /// serializable shape. Deserializes to a fresh [`Loopback`] via
     /// `default_endpoint` below; the frontend re-plugs a real backend after
     /// restore through [`DeluxeRS232::set_endpoint`]
-    /// (`docs/plan-save-states.md`).
+    ///.
     #[serde(skip, default = "default_endpoint")]
     endpoint: Box<dyn SerialEndpoint>,
     /// 4K EPROM image (the BASIC `DOS`/terminal ROM), if one was provided —
@@ -61,7 +61,7 @@ pub struct DeluxeRS232 {
     /// (CTS reads answer open-bus). Skipped: COPYRIGHTED ROM bytes never
     /// travel through a snapshot; `None` is the correct restored default
     /// until the frontend re-injects it via the existing
-    /// [`DeluxeRS232::set_eprom`] (`docs/plan-save-states.md`).
+    /// [`DeluxeRS232::set_eprom`].
     #[serde(skip)]
     eprom: Option<Box<[u8]>>,
     /// Cycles since the endpoint was last polled (see [`HOST_POLL_INTERVAL`]).

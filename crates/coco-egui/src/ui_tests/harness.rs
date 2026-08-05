@@ -185,7 +185,7 @@ pub(super) fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
 
 /// A minimal valid CoCo 2 `Ok` entry — [`sample_entry`]'s default is CoCo 3,
 /// so pairing this with it gives two distinct machine families for
-/// `starting_two_machines_runs_both` (`docs/plan-machine-persistence.md`
+/// `starting_two_machines_runs_both` (
 /// step 5's acceptance scenario: "a CoCo 3 and a newly created, launched
 /// CoCo 2").
 pub(super) fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {

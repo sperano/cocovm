@@ -1,12 +1,12 @@
 //! `SAM` — the MC6883 Synchronous Address Multiplexer's primary memory map, for
-//! the plain CoCo 1/2 machine (no GIME). See `docs/coco12-plan.md`.
+//! the plain CoCo 1/2 machine (no GIME). See
 //!
 //! This is a standalone model, deliberately **not** shared with the GIME's own
 //! SAM-compatibility overlay (`gime.rs::write_sam`/`SAM_BASE`..): the GIME keeps
 //! modelling its own CoCo-3-compatible strobes independently, and this file
 //! duplicates the handful of constants that describe (verified against MAME
 //! `6883sam.cpp`, the CoCo 2 NTSC Service Manual SAM register map pp. 8-10, and
-//! Bob Russell's memory map — see `docs/coco12-plan.md`). The small duplication
+//! Bob Russell's memory map — see). The small duplication
 //! is intentional: it keeps the CoCo 3 path completely untouched.
 
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ const CART_ROM_LAST: u16 = 0xFEFF;
 /// vectors) — independent of TY, M1, or P1. The service manual documents only
 /// the narrower $FFF2–$FFFF -> $BFF2–$BFFF vector mirror, but MAME's decode
 /// (`6883sam.cpp`: `offset >= 0xffe0` selects ROM slot 1 with `offset &
-/// 0x1fff`) is the full 32 bytes; follow MAME (`docs/coco12-plan.md`).
+/// 0x1fff`) is the full 32 bytes; follow MAME.
 const VECTOR_MIRROR_BASE: u16 = 0xFFE0;
 /// `BAS_ROM` offset the vector mirror starts at: $BFE0 - $A000.
 const BAS_MIRROR_OFFSET: usize = 0xBFE0 - BAS_ROM_BASE as usize;
@@ -73,7 +73,7 @@ pub enum SAMTarget {
     OpenBus,
 }
 
-/// MC6883 SAM register state (`docs/coco12-plan.md` bit table). All 16 bits
+/// MC6883 SAM register state. All 16 bits
 /// power up clear. Fields are `pub` (matching `gime::GIME`'s style) so tests
 /// can inspect latched state directly, same as `sam_video.rs` does for the
 /// GIME's compatibility overlay; [`SAM::map`]/[`SAM::display_base`]/
@@ -82,7 +82,7 @@ pub enum SAMTarget {
 pub struct SAM {
     /// VDG-counter mode bits V0-V2, packed as `V2:V1:V0` (0-7). Latched but
     /// not consulted here — `video.rs`'s legacy-graphics vertical cadence
-    /// lookup uses it (`docs/coco12-plan.md`).
+    /// lookup uses it.
     pub v: u8,
     /// Display-offset bits F0-F6 (0-127); `display_base = f * PAGE_UNIT`.
     pub f: u8,
@@ -102,7 +102,7 @@ pub struct SAM {
     /// Map type: false = ROM map, true = all-RAM (system ROM disabled). Color
     /// BASIC Unravelled's appendix has $FFDE/$FFDF backwards; MAME, Bob
     /// Russell, and the service manual (p. 8) agree TY=1 (set, $FFDF) is
-    /// all-RAM (`docs/coco12-plan.md`).
+    /// all-RAM.
     pub ty: bool,
 }
 
@@ -136,7 +136,7 @@ impl SAM {
     }
 
     /// Decode a CPU address to its target, per the plan's TY=0/TY=1 memory
-    /// map table (`docs/coco12-plan.md`; MAME `6883sam.cpp`).
+    /// map table.
     pub fn map(&self, addr: u16) -> SAMTarget {
         // The vector mirror and the $FF00+ fixed page win regardless of TY —
         // "the mirror region stays ROM" even in all-RAM mode.
@@ -191,7 +191,7 @@ impl SAM {
     /// fetching ROM, slow for RAM) — MAME does not model that dependence
     /// either (its own TODO) and just doubles the clock for either bit set.
     /// Matching MAME for now; not attempting address-dependent timing without
-    /// a better source (`docs/coco12-plan.md` "Speed poke").
+    /// a better source.
     pub fn cpu_fast(&self) -> bool {
         self.r0 || self.r1
     }

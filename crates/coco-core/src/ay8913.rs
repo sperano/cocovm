@@ -192,13 +192,13 @@ pub struct AY8913 {
     /// Precomputed once per instance (cheap: 16 entries) — see
     /// [`build_volume_table`]. Skipped: pure construction-time scratch,
     /// left at its `Default` (all-zero — silent, not correct) until
-    /// [`AY8913::after_restore`] rebuilds it (`docs/plan-save-states.md`).
+    /// [`AY8913::after_restore`] rebuilds it.
     #[serde(skip)]
     dac: [f32; 16],
     /// Box-filter accumulator for [`AY8913::drain`]: running sum of the
     /// per-internal-step mixed output since the last drain. Skipped:
     /// per-drain accumulator, correctly resets to zero
-    /// (`docs/plan-save-states.md`).
+    ///.
     #[serde(skip)]
     sample_sum: f32,
     #[serde(skip)]
@@ -247,7 +247,7 @@ impl AY8913 {
     }
 
     /// Restore-time fixup after a snapshot round-trip
-    /// (`docs/plan-save-states.md`): rebuilds `dac`, the skipped
+    ///: rebuilds `dac`, the skipped
     /// construction-time lookup table, via the same [`build_volume_table`]
     /// helper [`AY8913::new`] uses. Idempotent — safe to call even though
     /// nothing else needs fixing up.

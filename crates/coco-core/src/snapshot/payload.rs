@@ -114,7 +114,7 @@ pub struct RestoredMachine {
 
 /// A non-fatal condition [`super::restore`] leaves for the caller to surface: state
 /// that came back in a documented placeholder form rather than fully
-/// restored (`docs/plan-save-states.md`). Typed rather than raw strings so a
+/// restored. Typed rather than raw strings so a
 /// caller can react to a specific condition programmatically — e.g. the egui
 /// frontend re-injects the Disto RTC's host time source right after
 /// `restore` returns and then drops [`RestoreNote::RTCPlaceholderTime`]

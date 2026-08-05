@@ -101,15 +101,18 @@ pub struct JoystickInputs {
     /// held button or an axis deflected past [`PAD_DEFLECT`]; a keyboard
     /// port lights on any of its six mapped keys; `None` never lights.
     ///
-    /// For the mouse source specifically, [`mouse_in_use`] lights on
-    /// `primary_down`/`secondary_down` from anywhere in the egui input
-    /// state — not gated by pointer position over the display. This
-    /// matches [`Self::apply`]'s own button handling just above it (also
-    /// ungated by `display_rect`): the emulated fire button tracks whatever
-    /// the host mouse buttons are doing regardless of where the pointer
-    /// sits, so a click anywhere in the window lights this indicator too,
-    /// not only clicks over the CoCo display.
+    /// For the mouse source specifically, [`mouse_in_use`] receives the
+    /// same gated button states [`Self::apply`] pushes to the machine —
+    /// the [`Self::mouse_fire`] latches — so the indicator lights exactly
+    /// when the emulated fire button is held, never on clicks landing on
+    /// the chrome around the display.
     pub in_use: [bool; 2],
+    /// Per-host-button latches (0 = primary, 1 = secondary): whether that
+    /// button is down *and* its press began on the CoCo display (see
+    /// [`press_began_on_display`]). Maintained by [`Self::update_mouse_fire`]
+    /// from each button's own press/release events; this IS the emulated
+    /// fire-button state for any `Mouse`-sourced port.
+    mouse_fire: [bool; 2],
 }
 
 impl JoystickInputs {
@@ -122,15 +125,14 @@ impl JoystickInputs {
             }
         };
         Self {
-            // Both ports off until opted in (user decision 2026-07-29,
-            // replacing the original right-stick-on-mouse default): a mouse
-            // silently driving the pots surprised more than it helped, and
+            // Both ports off until opted in: a mouse silently driving the
             // the Joysticks menu / manager form make enabling one a click.
             sources: [JoySource::None, JoySource::None],
             gilrs,
             pad_axes: [0.0, 0.0],
             pad_buttons: [false, false],
             in_use: [false, false],
+            mouse_fire: [false, false],
         }
     }
 
@@ -180,6 +182,62 @@ impl JoystickInputs {
         }
     }
 
+    /// Update the [`Self::mouse_fire`] latches from this frame's
+    /// pointer-button events. Mouse buttons only count as fire buttons when
+    /// the press began on the CoCo display itself — a click on the chrome
+    /// (menu bar, status bar) or on anything egui floats over the display
+    /// (menu popups, dialog windows) must not reach the machine. Gating on
+    /// where the press *began* rather than the live pointer position keeps a
+    /// fire button held through a drag that started on the display and
+    /// strayed off it, the same way the axes hold their last pot values
+    /// off-display.
+    ///
+    /// Latched per button from its own `Event::PointerButton` rather than
+    /// read from egui's `PointerState::press_origin`, which is shared across
+    /// buttons: any press overwrites it and any release clears it, so with
+    /// two buttons down one button's release would drop (or un-gate) the
+    /// other's still-held press.
+    fn update_mouse_fire(
+        &mut self,
+        ctx: &egui::Context,
+        display_rect: egui::Rect,
+        display_layer: egui::LayerId,
+        primary_down: bool,
+        secondary_down: bool,
+    ) {
+        // Collected first: `ctx.layer_id_at` below must not run inside the
+        // `ctx.input` closure (both take the context lock).
+        let button_events: Vec<(egui::Pos2, usize, bool)> = ctx.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|ev| match ev {
+                    egui::Event::PointerButton {
+                        pos,
+                        button,
+                        pressed,
+                        ..
+                    } => {
+                        let slot = match button {
+                            egui::PointerButton::Primary => 0,
+                            egui::PointerButton::Secondary => 1,
+                            _ => return None,
+                        };
+                        Some((*pos, slot, *pressed))
+                    }
+                    _ => None,
+                })
+                .collect()
+        });
+        for (pos, slot, pressed) in button_events {
+            self.mouse_fire[slot] = pressed
+                && press_began_on_display(pos, ctx.layer_id_at(pos), display_rect, display_layer);
+        }
+        // A latch must never outlive its button: if the release never arrived
+        // as an event (focus loss, missed events), clear it here.
+        self.mouse_fire[0] &= primary_down;
+        self.mouse_fire[1] &= secondary_down;
+    }
+
     fn key_state(ctx: &egui::Context) -> KeyState {
         // Same gate as `CocoApp::handle_input`: `wants_keyboard_input()`
         // means "some widget holds egui focus" — via a click on a
@@ -202,8 +260,17 @@ impl JoystickInputs {
 
     /// Poll gamepad events and push the current axis/button state of every
     /// non-`None` port onto the bus. Call once per `update()`, before running
-    /// any emulated fields.
-    pub fn apply(&mut self, ctx: &egui::Context, display_rect: egui::Rect, machine: &mut Machine) {
+    /// any emulated fields. `display_rect`/`display_layer` are where (and on
+    /// which egui layer) `draw_display` put the CoCo picture — one frame
+    /// stale, see the `CocoApp` field docs — and gate which mouse presses
+    /// count as fire buttons ([`Self::update_mouse_fire`]).
+    pub fn apply(
+        &mut self,
+        ctx: &egui::Context,
+        display_rect: egui::Rect,
+        display_layer: egui::LayerId,
+        machine: &mut Machine,
+    ) {
         self.poll_gamepad();
 
         let (pointer_pos, primary_down, secondary_down) = ctx.input(|i| {
@@ -213,6 +280,14 @@ impl JoystickInputs {
                 i.pointer.secondary_down(),
             )
         });
+        self.update_mouse_fire(
+            ctx,
+            display_rect,
+            display_layer,
+            primary_down,
+            secondary_down,
+        );
+        let [fire0, fire1] = self.mouse_fire;
         let keys = Self::key_state(ctx);
 
         for stick in [RIGHT, LEFT] {
@@ -243,12 +318,12 @@ impl JoystickInputs {
                             .joysticks
                             .set_axis(stick, AXIS_Y, pot_from_unit(ny));
                     }
-                    machine.bus.joysticks.set_button(stick, 0, primary_down);
-                    machine.bus.joysticks.set_button(stick, 1, secondary_down);
+                    machine.bus.joysticks.set_button(stick, 0, fire0);
+                    machine.bus.joysticks.set_button(stick, 1, fire1);
                     // Buttons only: pointer motion alone would light this
                     // constantly whenever the pointer merely sits over the
                     // display.
-                    mouse_in_use(primary_down, secondary_down)
+                    mouse_in_use(fire0, fire1)
                 }
                 JoySource::Gamepad => {
                     let x = pot_from_bipolar(self.pad_axes[0]);
@@ -311,11 +386,40 @@ fn axis_from_keys(negative: bool, positive: bool) -> u8 {
     }
 }
 
+/// Whether a mouse press at `origin` counts as starting on the CoCo display —
+/// the gate `JoySource::Mouse`'s fire buttons are latched through, evaluated
+/// at each button's own press event. `origin_layer` is the topmost egui layer
+/// at that position, if any. Two conditions:
+///
+/// - Geometric: the origin lies inside `display_rect`. Clicks on the chrome
+///   (menu bar, status bar) originate outside it and never fire, even if the
+///   pointer is later dragged onto the display.
+/// - Layer: nothing egui floats above the display owns the origin. Popups,
+///   menus, and dialog windows are egui `Area`s, and `Context::layer_id_at`
+///   reports the topmost *interactable* one at a position — or `None` over
+///   bare panels, since panels aren't `Area`s. (Non-interactable areas such
+///   as tooltips are skipped the same way, so a press under a tooltip still
+///   counts as on-display — matching how egui itself routes such clicks.)
+///   So the full native window's display (a plain `CentralPanel`) shows up
+///   as `None`, the manager's embedded fallback (the display inside an
+///   `egui::Window`) as that window's own layer — which is exactly
+///   `display_layer` — and anything else is an overlay whose clicks must
+///   not double as fire-button presses.
+fn press_began_on_display(
+    origin: egui::Pos2,
+    origin_layer: Option<egui::LayerId>,
+    display_rect: egui::Rect,
+    display_layer: egui::LayerId,
+) -> bool {
+    display_rect.contains(origin) && origin_layer.is_none_or(|layer| layer == display_layer)
+}
+
 /// `JoySource::Mouse`'s "in use" test for the status bar's joystick
 /// activity light: buttons only (see [`JoystickInputs::in_use`]'s doc
-/// comment for why pointer position doesn't count).
-fn mouse_in_use(primary_down: bool, secondary_down: bool) -> bool {
-    primary_down || secondary_down
+/// comment for why pointer position doesn't count). Takes the already
+/// display-gated fire-button states, not the raw host button states.
+fn mouse_in_use(fire0: bool, fire1: bool) -> bool {
+    fire0 || fire1
 }
 
 /// `JoySource::Gamepad`'s "in use" test: either mapped button held, or

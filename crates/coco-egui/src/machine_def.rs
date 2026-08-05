@@ -1,5 +1,5 @@
 //! Versioned machine-definition file format: the persisted "cold" layer for
-//! the CocoVM manager (`docs/plan-machine-persistence.md`). A machine
+//! the CocoVM manager. A machine
 //! definition is a small, human-editable TOML file describing hardware +
 //! attached media + peripherals, one per file under
 //! `config_dir()/machines/<slug>.toml`.
@@ -8,7 +8,7 @@
 //! struct whose only job is to mirror an external data format field-for-field
 //! and be converted to/from the types the program actually runs on — rather
 //! than `coco_core::MachineConfig` reused directly as the file format
-//! (`plan-machine-persistence.md` "Decisions"): a struct with its own serde
+//! : a struct with its own serde
 //! derives and readable
 //! kebab/lowercase strings ("512k", "mc6847t1") means internal `coco-core`
 //! refactors never silently change what's on disk, and the manager gets one
@@ -18,7 +18,7 @@
 //! a config it can't fully read.
 //!
 //! `manager.rs` wires this module in for the list rows, "New…" flow, and
-//! detail/edit pane (`plan-machine-persistence.md` steps 2-4).
+//! detail/edit pane .
 
 use std::path::{Path, PathBuf};
 
@@ -41,18 +41,18 @@ pub use dto::DisplayDTO;
 pub use io::{load_all, save};
 
 /// Schema version this build writes, and the newest it accepts on load.
-/// Bump only on a breaking change to the TOML shape (`plan-machine-persistence.md`);
+/// Bump only on a breaking change to the TOML shape ();
 /// unknown *keys* stay forward-compatible (warned, not fatal) — only an
 /// unknown *schema* number is fatal, since it means the shape itself may have
 /// changed underneath us.
 pub const CURRENT_SCHEMA: u32 = 1;
 
 /// `chrono` format string for `[created]` — an ISO date, informational only
-/// (`plan-machine-persistence.md` schema: `created = "2026-07-16"`).
+/// .
 pub const DATE_FORMAT: &str = "%Y-%m-%d";
 
 /// A machine definition, as read from / written to `<slug>.toml`. See the
-/// module doc and `docs/plan-machine-persistence.md` for the schema.
+/// module doc for the schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MachineDef {
     /// Must equal [`CURRENT_SCHEMA`] to load; see that constant's doc.
@@ -153,7 +153,7 @@ impl MachineDef {
 /// Lowercase, `[a-z0-9]` kept; every run of other characters collapses to a
 /// single `-`; the result is trimmed of leading/trailing `-`; an empty
 /// result becomes `"machine"`. Used to derive a slug from a machine's
-/// display name at creation time (`plan-machine-persistence.md` "Identity =
+/// display name at creation time ("Identity =
 /// slug").
 pub fn slugify(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
@@ -204,7 +204,7 @@ pub fn machines_dir() -> Option<PathBuf> {
 /// Resolve one `[media]` path (`MediaDto`'s fields) the way the schema
 /// promises: absolute paths are used exactly as given; relative paths
 /// resolve against this machine's artifact directory,
-/// `data_dir()/machines/<slug>` (`plan-machine-persistence.md` "Media by
+/// `data_dir()/machines/<slug>` ("Media by
 /// reference, never embedded" — mirrors [`machines_dir`], which is the
 /// `config_dir()` sibling holding the *definition* files, not media). Falls
 /// back to interpreting a relative path against the process's current

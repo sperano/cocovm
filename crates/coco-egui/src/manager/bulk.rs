@@ -1,8 +1,7 @@
 //! The bulk detail pane: shown in [`super::ManagerApp`]'s central panel in
 //! place of a single machine's edit form whenever more than one row is
 //! selected (`manager.rs`'s `update`) — just a summary line and a pointer to
-//! the toolbar, which is where the transport buttons that used to live here
-//! now sit (user decision 2026-07-29, `toolbar.rs`'s doc). There is no bulk
+//! the toolbar. There is no bulk
 //! edit form: `EditState` only ever describes one machine
 //! (`manager.rs`'s doc on the `edit` field), so a multi-selection can only
 //! run transport actions, not edit definitions.

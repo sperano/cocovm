@@ -14,7 +14,7 @@ impl CocoApp {
     /// fallback can skip it entirely: drawing two apps' menu bars/status
     /// bars into one shared `ctx` would interleave them into a single
     /// confusing window, so that fallback shows only [`Self::draw_display`]
-    /// (`docs/plan-machine-persistence.md` "one native window per running
+    /// ( "one native window per running
     /// VM").
     pub(crate) fn draw_chrome(&mut self, ctx: &egui::Context) {
         self.menu_bar_ui(ctx);

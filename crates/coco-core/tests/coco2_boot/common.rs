@@ -16,7 +16,7 @@ pub fn try_load(name: &str) -> Option<Vec<u8>> {
 }
 
 /// Compose the flat 16K ROM image the plain-SAM bus path expects: extbas at
-/// offset 0, bas at offset `BAS_OFFSET` (`docs/coco12-plan.md` "ROM files";
+/// offset 0, bas at offset `BAS_OFFSET` ("ROM files";
 /// `bus.rs::SAM_BAS_ROM_OFFSET`). Returns `None` (test should skip) if either
 /// file is missing.
 fn load_coco2_rom() -> Option<Box<[u8]>> {
@@ -35,7 +35,7 @@ pub fn boot_machine() -> Option<(Machine, Vec<u8>)> {
     if extbas.is_none() || bas.is_none() {
         eprintln!(
             "skipping coco2_boot: extbas11.rom/bas12.rom not present in roms/ \
-             (see docs/coco12-plan.md \"ROM files\")"
+             (see the ROM files spec)"
         );
         return None;
     }

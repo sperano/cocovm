@@ -172,7 +172,7 @@ const NOON: u8 = 12;
 
 /// Placeholder time the restored default `now` closure yields until the
 /// frontend re-injects a real host time source via
-/// [`DistoRTC::set_time_source`] (`docs/plan-save-states.md`) — an
+/// [`DistoRTC::set_time_source`] — an
 /// obviously-fake epoch, not a guess at the real time.
 const RESTORED_PLACEHOLDER_TIME: RTCTime = RTCTime {
     year: 1970,
@@ -207,7 +207,7 @@ pub struct MSM6242 {
     /// Never travels through a snapshot (a closure has no serializable
     /// shape) — skipped, restored to [`default_time_source`] until
     /// [`MSM6242::set_time_source`]/[`DistoRTC::set_time_source`]
-    /// re-injects the real one (`docs/plan-save-states.md`).
+    /// re-injects the real one.
     #[serde(skip, default = "default_time_source")]
     now: TimeSource,
     /// Emulated-clock minus host-clock, in seconds.
@@ -289,7 +289,7 @@ impl MSM6242 {
 
     /// Restore-path-only: re-inject the host time source after a snapshot
     /// restore (`now` is `#[serde(skip)]` — a closure can't round-trip
-    /// through a snapshot at all; `docs/plan-save-states.md`). `offset_secs`
+    /// through a snapshot at all). `offset_secs`
     /// came back from the snapshot untouched, so plugging in the real clock
     /// here resumes exactly where the snapshot left off, not at a fresh
     /// zero offset the way [`MSM6242::new`] would.
@@ -491,7 +491,7 @@ impl DistoRTC {
 
     /// Restore-path-only: re-inject the host time source after a snapshot
     /// restore — delegates into [`MSM6242::set_time_source`]
-    /// (`docs/plan-save-states.md`).
+    ///.
     pub fn set_time_source(&mut self, now: TimeSource) {
         self.rtc.set_time_source(now);
     }

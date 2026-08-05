@@ -1,7 +1,7 @@
 //! 6551 ACIA (MOS 6551 / Rockwell R6551 / WDC W65C51 — not a Motorola
 //! MC-prefixed part), the UART at the heart of the Tandy Deluxe RS-232
 //! Program Pak. Register/bit semantics are MAME-authoritative
-//! (`src/devices/machine/mos6551.cpp`, master) per `docs/plan-deluxe-rs232.md`
+//! (`src/devices/machine/mos6551.cpp`, master).
 //! task 2 — every fact below was checked against that source, not derived
 //! from a datasheet.
 //!
@@ -217,7 +217,7 @@ pub struct ACIA6551 {
 
     /// RTS output state, derived from the transmitter-control field on every
     /// command write. Tracked for a future host wire — no external effect
-    /// yet (`docs/plan-deluxe-rs232.md` task 2 spec).
+    /// yet.
     rts: bool,
 
     /// Byte latched out of TDR at transmit-start, shifting for the duration

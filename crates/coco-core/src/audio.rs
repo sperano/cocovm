@@ -1,4 +1,4 @@
-//! Event-timestamped stereo audio pipeline (`docs/plan-audio-pipeline.md`).
+//! Event-timestamped stereo audio pipeline.
 //!
 //! The old path point-sampled one mono level per scanline (~15.7 kHz), which
 //! aliased software-timed DAC playback (digitized speech writes `$FF20` far

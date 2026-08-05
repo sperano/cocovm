@@ -1,4 +1,4 @@
-//! Deluxe RS-232 Program Pak integration coverage (`docs/plan-deluxe-rs232.md`
+//! Deluxe RS-232 Program Pak integration coverage
 //! "Testing / acceptance"): the `$FF60-$FF7E` spare-window bus routing, the
 //! loopback round-trip ("byte written to `$FF68` reappears at `$FF68` with
 //! RDRF set"), the ACIA-IRQ → CART* → PIA1 CB1 → FIRQ chain, the no-regression

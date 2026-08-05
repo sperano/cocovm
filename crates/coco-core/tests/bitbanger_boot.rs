@@ -1,4 +1,4 @@
-//! End-to-end regression for the bit-banger printer port (`docs/printer-plan.md`
+//! End-to-end regression for the bit-banger printer port (
 //! T2): boot the real Super Extended Color BASIC ROM, type a short program,
 //! `LLIST` it, and assert the decoded bytes reaching an in-memory
 //! [`CaptureSink`] match the listing BASIC actually sent — proving the whole

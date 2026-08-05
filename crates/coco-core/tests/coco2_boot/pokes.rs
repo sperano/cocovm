@@ -1,4 +1,4 @@
-//! Phase 6 acceptance tests 1-3 (`docs/coco12-plan.md`): PMODE/SCREEN
+//! Phase 6 acceptance tests 1-3: PMODE/SCREEN
 //! graphics dispatch, the SAM R1 speed poke, and the SAM TY all-RAM flip —
 //! each exercised through real ROM code typed at the `OK` prompt.
 
@@ -8,7 +8,7 @@ use super::common::{
     SETTLE_FIELDS, assert_print_2_plus_2_works, boot_machine, boot_to_prompt, run_fields, type_line,
 };
 
-/// Phase 6 acceptance test 1 (`docs/coco12-plan.md`): `PMODE 4,1:SCREEN 1,1`
+/// Phase 6 acceptance test 1: `PMODE 4,1:SCREEN 1,1`
 /// switches PIA1 $FF22's A/G bit on, `Machine::video_mode_summary` reports
 /// the CoCo-compatible graphics dispatch, and the framebuffer's border and
 /// interior pixels resolve through the fixed VDG palette
@@ -18,7 +18,7 @@ use super::common::{
 /// `PMODE`/`SCREEN` must run from a *running program*, not typed directly at
 /// the `OK` prompt: verified empirically against the real ROMs (traced via a
 /// temporary `sam_write`/`sam_io_write` probe during development, since
-/// nothing in `docs/coco12-plan.md` documents it) — Color BASIC's idle loop
+/// nothing in) — Color BASIC's idle loop
 /// (waiting for a keystroke at the prompt) re-asserts the SAM V0-V2/F0-F6
 /// strobes and PIA1 $FF22 back to its text-mode defaults every field, so a
 /// direct-mode `SCREEN 1,1` (or a raw `POKE 65314,...`) is visibly clobbered
@@ -84,7 +84,7 @@ fn coco2_pmode_switches_to_graphics_with_fixed_vdg_colors() {
     );
 }
 
-/// Phase 6 acceptance test 2 (`docs/coco12-plan.md`): `POKE 65497,0` ($FFD9,
+/// Phase 6 acceptance test 2: `POKE 65497,0` ($FFD9,
 /// SAM R1 strobe) doubles the CPU rate, and `POKE 65496,0` ($FFD8) restores
 /// it — matching the bus-level coverage in `tests/sam.rs`/`tests/speed.rs`,
 /// exercised here through real ROM code typed at the `OK` prompt, with a
@@ -112,7 +112,7 @@ fn coco2_speed_poke_toggles_sam_r1_and_keeps_running() {
     assert_print_2_plus_2_works(&mut m);
 }
 
-/// Phase 6 acceptance test 3 (`docs/coco12-plan.md`): on a live-booted
+/// Phase 6 acceptance test 3: on a live-booted
 /// machine, strobing SAM TY set (`$FFDF`) with M1 already set (64K) switches
 /// $A000-$BFFF from ROM to RAM — matching `sam.rs`'s
 /// `ty1_with_m1_maps_all_ram_through_feff_banking_out_rom` unit test, but

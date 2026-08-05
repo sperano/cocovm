@@ -2,7 +2,7 @@
 //! RoboCop/Predator banked-pak circuit), the `$FF41` SN76489A port routed
 //! through the bus, the unconditional speaker mix, and MPI behaviour —
 //! registers follow the SCS-selected slot while audio plays from any slot
-//! (`docs/plan-games-master-cartridge.md`; MAME `coco_gmc.cpp`,
+//! (; MAME `coco_gmc.cpp`,
 //! `coco_pak.cpp`).
 
 use coco_core::cart::{

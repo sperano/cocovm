@@ -51,8 +51,16 @@ pub(crate) struct CocoApp {
     /// cpal output stream, resampler, and volume/mute state (`audio.rs`).
     pub(crate) audio: audio::AudioOutput,
     /// Letterboxed display rect from the last frame's `CentralPanel`, used to map
-    /// pointer position to joystick axes. One frame stale (see `drive_joysticks`).
+    /// pointer position to joystick axes and to gate the mouse fire buttons to
+    /// presses starting on the display. One frame stale (see `drive_joysticks`).
     pub(crate) display_rect: egui::Rect,
+    /// Layer `draw_display` drew the display on last frame: the background
+    /// layer for a full native window's `CentralPanel`, or the `egui::Window`'s
+    /// own layer in the manager's embedded fallback. Paired with `display_rect`
+    /// to gate the mouse fire buttons — a press whose topmost egui layer is
+    /// neither this nor bare panel landed on a popup/window floating over the
+    /// display (see `joy::press_began_on_display`).
+    pub(crate) display_layer: egui::LayerId,
     /// Whether the next inserted cartridge should tie CART* to Q (auto-run at
     /// power-up). Consulted at insert time, not retroactively — see
     /// `ROMPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
@@ -89,7 +97,7 @@ pub(crate) struct CocoApp {
     /// on Enter — not live-rebound on each keystroke, like `rs232_tcp_addr`.
     pub(crate) tape_seek_text: String,
     /// Destination path of the active bit-banger "print to text file"
-    /// capture, if any (`docs/printer-plan.md` T2) — shown in the Machine
+    /// capture, if any — shown in the Machine
     /// menu and gates "Stop Print Capture", like `tape_path` does for the
     /// cassette deck. Unlike disk/tape images, there is nothing to write
     /// back on eject: `coco_core::bitbanger::FileSink` writes straight
@@ -116,7 +124,7 @@ pub(crate) struct CocoApp {
     /// Source path of the Deluxe RS-232 pak's optional EPROM dump, if one was
     /// found and installed at insert time ([`Self::insert_rs232`]) — the
     /// save-state counterpart of `cart_path` for this one cart, since the
-    /// pak can legitimately run ROM-less (`docs/plan-deluxe-rs232.md`).
+    /// pak can legitimately run ROM-less.
     pub(crate) rs232_eprom_path: Option<PathBuf>,
     /// Listen address for the RS-232 pak's TCP endpoint, edited in the menu
     /// and applied when "TCP" is (re)selected — not live-rebound on each
@@ -127,12 +135,12 @@ pub(crate) struct CocoApp {
     /// paks). An RTC in a Multi-Pak slot is tracked by [`MPISlot::DistoRTC`]
     /// instead.
     pub(crate) rtc_direct: bool,
-    /// The virtual fanfold-paper window (`docs/printer-plan.md` T5), showing
+    /// The virtual fanfold-paper window, showing
     /// the DMP-105's dot-matrix output on period-correct tractor-feed
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     pub(crate) paper_window: paper_view::PaperWindow,
-    /// The interactive debugger (`docs/plan-debugger.md` §3): breakpoints,
+    /// The interactive debugger: breakpoints,
     /// watchpoints, and the Controls/Registers/Disassembly/Memory/Stack/
     /// Hardware panel cluster, toggled with F11.
     pub(crate) debugger: debugger::DebuggerPanel,
@@ -170,7 +178,7 @@ impl CocoApp {
     /// constructors): nothing in this struct's setup touches egui context
     /// state (fonts, wgpu/glow handles), so it's a plain constructor
     /// callable from anywhere a machine needs to be built — the CocoVM
-    /// manager's `launch_machine` (`plan-machine-persistence.md` step 5),
+    /// manager's `launch_machine` ,
     /// which builds VMs from inside `ManagerApp::update` where no
     /// `CreationContext` exists at all, and the `ui_tests` harness, which
     /// builds a `CocoApp` directly with no `CreationContext` either.
@@ -208,6 +216,7 @@ impl CocoApp {
             field_debt: 0.0,
             joysticks: JoystickInputs::new(),
             display_rect: egui::Rect::NOTHING,
+            display_layer: egui::LayerId::background(),
             audio: audio::AudioOutput::new(),
             autostart_cart: true,
             cart_path: None,
@@ -262,7 +271,7 @@ impl CocoApp {
     /// Write modified floppies and tape back to their files — the contract
     /// a manager-owned VM needs on Stop (`manager::lifecycle::stop_vm`) or
     /// on the manager's own `on_exit` (`ManagerApp`'s `eframe::App` impl in
-    /// `manager.rs`, `docs/plan-machine-persistence.md` "one native window
+    /// `manager.rs`, "one native window
     /// per running VM"), and the one [`eframe::App::on_exit`] below still
     /// runs for the test-only `CocoApp` window (`ui_tests::harness`).
     pub(crate) fn flush_media(&mut self) {
@@ -272,10 +281,8 @@ impl CocoApp {
 
     /// Set whether emulation advances — exposed so the manager's
     /// Suspend/Resume can freeze and un-freeze a VM it doesn't otherwise
-    /// reach into (`running` has no `pub` visibility). The old user-facing
-    /// Run/Pause toggle is gone (three-state model, user decision
-    /// 2026-07-27); besides suspend, only the debugger still stops the
-    /// clock, and it assigns `running` directly.
+    /// reach into (`running` has no `pub` visibility). Besides suspend, only
+    /// the debugger still stops the clock, and it assigns `running` directly.
     pub(crate) fn set_running(&mut self, running: bool) {
         self.running = running;
     }
@@ -292,7 +299,7 @@ impl CocoApp {
     /// The framebuffer texture [`Self::step_emulation`] uploads every
     /// frame — `None` only before the VM's very first frame runs. Exposed
     /// so the manager's list-row thumbnail
-    /// (`docs/plan-machine-persistence.md` step 6, "Running/paused VM"
+    /// ( step 6, "Running/paused VM"
     /// bullet) can draw the *same* `TextureHandle` in a second place: one
     /// `egui::Context` serves every viewport, so reusing the handle here
     /// costs one extra quad, not an extra upload — and a paused VM's

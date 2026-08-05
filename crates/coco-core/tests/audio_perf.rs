@@ -1,4 +1,4 @@
-//! Coarse perf guard for the audio pipeline (`docs/plan-audio-pipeline.md`
+//! Coarse perf guard for the audio pipeline (
 //! risk list): a busy field loop must stay far faster than real time even
 //! in debug builds — event recording on the io_write path and the 4-slot
 //! grid flush are supposed to be branch-cheap.

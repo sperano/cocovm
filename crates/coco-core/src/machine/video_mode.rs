@@ -14,7 +14,7 @@ impl Machine {
     ///
     /// CoCo 1/2 (no GIME) never has INIT0/$FF98 to consult: they always run the
     /// VDG-native path, chosen purely by PIA1 $FF22 bit 7 (A/G) —
-    /// `docs/coco12-plan.md` Phase 3. CoCo 3 keeps its existing INIT0 COCO /
+    ///
     /// $FF98 BP dispatch, unchanged.
     fn video_mode(&self) -> VideoMode {
         match self.config.variant {
@@ -45,7 +45,7 @@ impl Machine {
 
     /// CoCo-compatible video/text base address, per variant: the GIME's own
     /// SAM-compat page register (CoCo 3, unchanged) or the primary SAM's F-bits
-    /// (CoCo 1/2 — `docs/coco12-plan.md` Phase 3).
+    /// (CoCo 1/2 —).
     pub(super) fn legacy_display_base(&self) -> u16 {
         match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.sam_display_base(),
@@ -54,7 +54,7 @@ impl Machine {
     }
 
     /// Resolve the 16-entry colour table the CoCo-compatible text/graphics
-    /// renderers read from, per variant (`docs/coco12-plan.md` Phase 3):
+    /// renderers read from, per variant:
     /// CoCo 3 snapshots the GIME palette registers (existing behaviour,
     /// unchanged); CoCo 1/2 has none, so it resolves the fixed VDG RGB table.
     /// `css` (PIA1 $FF22 bit 3) only matters for the fixed-VDG path — see

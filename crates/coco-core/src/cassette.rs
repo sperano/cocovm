@@ -148,7 +148,7 @@ pub struct Cassette {
     /// The mounted tape's decoded byte stream (.cas content). Skipped: a
     /// mounted tape's bytes are media (commercial tapes are copyrighted),
     /// referenced by path+hash rather than embedded in a snapshot; restored
-    /// via [`Cassette::reattach_tape`] (`docs/plan-save-states.md`).
+    /// via [`Cassette::reattach_tape`].
     #[serde(skip)]
     tape: Vec<u8>,
     /// Playback position: next byte, next bit (0–7, LSB first), and CPU
@@ -214,7 +214,7 @@ impl Cassette {
     /// Restore-path-only: re-inject a mounted tape's bytes after a snapshot
     /// restore, without resetting the deserialized playback/record state
     /// (`pos`/`bit`/`bit_elapsed`/`capture`/…) the way [`Cassette::insert_tape`]
-    /// would (`docs/plan-save-states.md`). `tape` itself is `#[serde(skip)]`
+    /// would. `tape` itself is `#[serde(skip)]`
     /// (media bytes are never embedded in a snapshot); everything else on
     /// `self` already came back from the snapshot as-is. Errors (instead of
     /// panicking) if the restored `pos` no longer fits the reattached tape —
@@ -224,7 +224,7 @@ impl Cassette {
     /// shifts a byte right by `bit` with no bounds check of its own, which
     /// panics on overflow in debug builds and becomes a masked shift (the
     /// amount wrapped to the type's width) in release
-    /// (`docs/plan-save-states.md`). Also confirms `pos`/`bit` consistency
+    ///. Also confirms `pos`/`bit` consistency
     /// exactly at end-of-tape: [`Cassette::tick`] only ever advances `pos`
     /// in the same step that wraps `bit` back to 0, so `pos == tape.len()`
     /// with a nonzero `bit` is itself a sign of a corrupted payload.

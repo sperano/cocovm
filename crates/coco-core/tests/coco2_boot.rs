@@ -1,4 +1,4 @@
-//! Phase 6 (`docs/coco12-plan.md`): a CoCo 2 running real Extended Color
+//! Phase 6: a CoCo 2 running real Extended Color
 //! BASIC 1.1 + Color BASIC 1.2 ROMs, covering the sign-on boot, PMODE/speed/
 //! all-RAM pokes, and a cassette CSAVE/CLOAD round trip.
 //!

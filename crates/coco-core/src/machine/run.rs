@@ -155,7 +155,7 @@ impl Machine {
         // per normal-speed CPU cycle, 2 per double-speed cycle — TINS=0 counts
         // horizontal syncs (1 per line). No such timer exists on the plain-SAM
         // path (CoCo 1/2) — the GIME stays completely inert there
-        // (`docs/coco12-plan.md` Phase 4). `line_budget` is this line's sampled
+        //. `line_budget` is this line's sampled
         // cycle count — the old loop's `cycles_per_line`.
         if self.config.variant == MachineVariant::Coco3 {
             let ticks = if self.bus.gime.timer_is_fast() {
@@ -191,7 +191,7 @@ impl Machine {
     fn cycles_per_field(&self) -> u32 {
         // Speed-poke source differs per variant: the GIME's own R1 latch on
         // CoCo 3, the plain SAM's R0|R1 strobes on CoCo 1/2
-        // (`docs/coco12-plan.md` Phase 4; `SAM::cpu_fast`'s KNOWN GAP note).
+        //.
         let cpu_fast = match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.cpu_fast,
             MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.cpu_fast(),

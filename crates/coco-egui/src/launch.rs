@@ -44,7 +44,7 @@ struct Peripherals {
 /// but every failure is a returned `Err` here instead of a process exit,
 /// since the caller (the manager's Start button, `manager.rs`) must show it
 /// in the detail pane
-/// rather than crash the whole app (`docs/plan-machine-persistence.md`
+/// rather than crash the whole app (
 /// step 5). On any mount-time failure (a bad disk/VHD/cassette image, or a
 /// disk-BASIC ROM read failure inside `mpi_insert_fd502` — not just a missing
 /// path, caught early below) the partially-built VM is discarded rather than

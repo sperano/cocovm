@@ -1,5 +1,5 @@
 //! Deterministic coverage for the CoCo 1/2 fixed-VDG colour source
-//! (`docs/coco12-plan.md` Phase 3), the MC6847/MC6847T1 font/lowercase
+//!, the MC6847/MC6847T1 font/lowercase
 //! divergence, and the CoCo 3's own GIME-generated CoCo-compatible text.
 //! Style mirrors `tests/render.rs`/`tests/render_graphics.rs`, but driven
 //! through `Machine` (like `render.rs`'s

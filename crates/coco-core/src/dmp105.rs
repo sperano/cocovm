@@ -6,7 +6,7 @@
 //! what's deliberately left out (e.g. exact BUSY assertion granularity, the
 //! European character set's per-code glyph mapping).
 //!
-//! `docs/printer-plan.md` T4's "Family context": [`crate::printer`] holds the
+//!
 //! DMP-family-shared paper model; this module holds everything specific to
 //! the DMP-105's own control-code dialect, so a DMP-130/Epson dialect (V3)
 //! can share the paper without inheriting 105-only parsing.
@@ -284,7 +284,7 @@ impl DMP105 {
 
     /// Render one glyph at the current head position, advance `x` by one
     /// character cell, and apply the active style bits
-    /// (`docs/printer-plan.md` T4): bold is a second pass one dot column to
+    ///: bold is a second pass one dot column to
     /// the right; elongation doubles every glyph dot column (and thus the
     /// cell advance) horizontally; underline draws a full-cell-width rule on
     /// the descender row.
@@ -380,7 +380,7 @@ impl DMP105Handle {
     /// Restore-path-only: rebuild a handle around an already-deserialized
     /// [`DMP105`] state (`sink_serde::SinkState::DMP105` — see
     /// `bitbanger.rs`), wrapping it in a fresh `Rc<RefCell<_>>`
-    /// (`docs/plan-save-states.md`). Unlike [`DMP105Handle::new`], this
+    ///. Unlike [`DMP105Handle::new`], this
     /// starts from real restored state rather than power-on defaults.
     pub(crate) fn from_state(state: DMP105) -> Self {
         Self(Rc::new(RefCell::new(state)))
@@ -422,7 +422,7 @@ impl PrinterSink for DMP105Handle {
 
     /// The whole interpreter/paper state, cloned out of the shared
     /// `Rc<RefCell<_>>` — `DMP105` is plain data (`Clone` derive), so this
-    /// is a deep-but-cheap snapshot (`docs/plan-save-states.md`).
+    /// is a deep-but-cheap snapshot.
     fn snapshot(&self) -> SinkState {
         SinkState::DMP105(self.0.borrow().clone())
     }

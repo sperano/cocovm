@@ -123,9 +123,8 @@ impl ManagerApp {
 
         self.draw_name_field(ui, index, &mut edit);
         ui.add_space(DETAIL_SECTION_GAP);
-        // The transport buttons themselves moved to the toolbar (user
-        // decision 2026-07-29, `toolbar.rs`'s doc) — this pane keeps just
-        // the status they used to sit above, plus the last launch failure.
+        // The transport buttons moved to the toolbar — this pane keeps just
+        // the status, plus the last launch failure.
         ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         if let Some(err) = &self.entries[index].launch_error {
             ui.colored_label(ui.visuals().error_fg_color, err);
@@ -166,7 +165,7 @@ impl ManagerApp {
     }
 
     /// Auto-save: every change writes straight back to the definition file
-    /// (no Save/Revert — user decision 2026-07-24; the write is atomic,
+    /// (no Save/Revert; the write is atomic,
     /// `machine_def::save`). On a persistent failure this retries every
     /// frame — harmless for a tiny file, and it keeps the error label
     /// current.

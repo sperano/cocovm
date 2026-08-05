@@ -1,5 +1,5 @@
 //! Host-side serial wire backends for the Deluxe RS-232 Program Pak
-//! (`docs/plan-deluxe-rs232.md` "Host serial backend"): the
+//! "Host serial backend": the
 //! [`SerialEndpoint`] seam the 6551 ACIA transmits into and receives from,
 //! with TCP / Unix PTY / loopback implementations. Kept in `coco-core`
 //! (std-only, no host-audio-style deps); the egui frontend chooses which
@@ -12,7 +12,7 @@
 //! CPU loop, so a backend that could block would stall emulation.
 //!
 //! [`Loopback`] is the test/CI endpoint and the acceptance-test seam
-//! (`docs/plan-deluxe-rs232.md` "Testing / acceptance": "byte written to
+//! ("Testing / acceptance": "byte written to
 //! `$FF68` reappears at `$FF68`"). [`TCPEndpoint`] and [`PTYEndpoint`] are
 //! the real host-facing backends the egui frontend offers.
 
@@ -32,7 +32,7 @@ pub trait SerialEndpoint {
     /// byte, exactly like real hardware with an unplugged RS-232 cable.
     fn tx(&mut self, b: u8);
     /// Data Carrier Detect: is something connected on the host side? Feeds
-    /// the ACIA's status register DCD bit (`docs/plan-deluxe-rs232.md`
+    /// the ACIA's status register DCD bit
     /// "Status bits: ... 5 DCD").
     fn dcd(&self) -> bool;
 }
@@ -41,7 +41,7 @@ pub trait SerialEndpoint {
 /// out of [`Self::poll_rx`], in order. `dcd()` is always true (nothing to
 /// disconnect). This is the test/CI endpoint — no host I/O at all — and the
 /// acceptance-test seam for "byte written to `$FF68` reappears at `$FF68`"
-/// (`docs/plan-deluxe-rs232.md` "Testing / acceptance").
+/// ("Testing / acceptance").
 #[derive(Debug, Default)]
 pub struct Loopback {
     queue: VecDeque<u8>,

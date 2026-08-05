@@ -4,7 +4,7 @@
 //! a detail/edit pane on the right for the selected machine — or, with no machine
 //! selected, a random photo asset filling the pane.
 //!
-//! Launching a machine (`plan-machine-persistence.md` step 5) is wired up:
+//! Launching a machine  is wired up:
 //! the detail pane's Start button calls `crate::launch_machine` and, once a
 //! `MachineEntry` holds a running `CocoApp`, `ManagerApp::update` opens it in
 //! its own native OS window every frame — an *immediate viewport*, the same
@@ -12,7 +12,7 @@
 //! that module's doc comment). All VM state stays on the main thread; each
 //! viewport's own child `egui::Context` delivers that window's keyboard/
 //! mouse input, so focus routing comes for free from egui
-//! (`docs/plan-machine-persistence.md` "DECIDED: in-process, one native
+//! ( "DECIDED: in-process, one native
 //! window per running VM"). The app always opens this manager window; a
 //! future CLI will be rebuilt on top of the manager's own machine
 //! definitions.
@@ -69,7 +69,7 @@ const ROW_CORNER_RADIUS: f32 = 4.0;
 
 /// List-row / detail-pane status labels for the three machine states
 /// (Powered Off / Running / Suspended). Not stored in the definition file
-/// (`plan-machine-persistence.md` "Decisions" — "Runtime status … is never
+/// ("Decisions" — "Runtime status … is never
 /// persisted"): a function of [`MachineEntry::vm`] and
 /// [`MachineEntry::suspended`] at draw time (Suspended's persistence is the
 /// [`SUSPEND_STATE_FILE`] itself), see [`vm_status_label`].
@@ -151,7 +151,7 @@ impl MachineEntry {
     /// `slug` + a freshly loaded/created `def`, with no VM running yet and
     /// no stale launch error — the state every entry starts in, whether
     /// loaded from disk ([`ManagerApp`]'s `run`) or just created (`Self`'s
-    /// callers previously wrote out the `vm`/`launch_error` fields by hand;
+    /// callers wrote out the `vm`/`launch_error` fields by hand;
     /// this constructor is what keeps that from drifting as more per-entry
     /// runtime state gets added later).
     pub(crate) fn new(slug: String, def: machine_def::MachineDef) -> Self {
@@ -253,8 +253,7 @@ fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), St
 
 /// The detail pane's working state for the selected entry: the shared
 /// [`new_vm::MachineForm`] over its definition, auto-saved on every change
-/// (macOS System Settings style — no Save/Revert, user decision
-/// 2026-07-24).
+/// (macOS System Settings style — no Save/Revert).
 struct EditState {
     /// Which entry this state belongs to — a mismatch (a different row was
     /// clicked) means it must be reseeded before it's shown again.
@@ -359,11 +358,11 @@ impl ManagerApp {
 impl eframe::App for ManagerApp {
     /// Flush every running VM's dirty disks/tape on quit — the manager
     /// window is the root viewport, so closing it closes every VM at once
-    /// (`docs/plan-machine-persistence.md` "Lifetime rule"); this mirrors
+    ///; this mirrors
     /// `CocoApp::on_exit`'s own contract for each of them.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // Quit is the power switch for running VMs (user decision
-        // 2026-07-27 — no auto-suspend on quit); a suspended VM's state and
+        // Quit is the power switch for running VMs — no auto-suspend on quit);
+        // a suspended VM's state and
         // preview are already on disk from suspend time, so neither needs
         // anything written here.
         for entry in &mut self.entries {
@@ -462,7 +461,7 @@ pub fn run() -> eframe::Result<()> {
     let machines_dir = machine_def::machines_dir();
     // A machine definition that can't be read or doesn't validate is fatal:
     // exit with the reason rather than open a manager with a silently
-    // wrong machine list (user decision 2026-07-19).
+    // wrong machine list.
     let entries: Vec<MachineEntry> = match machines_dir.as_deref() {
         Some(dir) => match machine_def::load_all(dir) {
             Ok(defs) => defs

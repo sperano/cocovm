@@ -134,7 +134,7 @@ impl DiskCart {
 
     /// Restore-path-only: re-inject the Disk Extended Color BASIC ROM image
     /// after a snapshot restore — delegates to the inner
-    /// [`ROMPak::reattach_image`] (`docs/plan-save-states.md`). Unlike
+    /// [`ROMPak::reattach_image`]. Unlike
     /// [`DiskCart::new`], returns a `Result` instead of panicking: a restore
     /// path must not crash the process on a bad ROM.
     pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), ROMPakError> {
@@ -160,7 +160,7 @@ impl DiskCart {
 
     /// Mutable twin of [`DiskCart::disk`]: the snapshot restore flow uses
     /// this to reach [`JVCDisk::reattach_data`] for whichever drives came
-    /// back from a snapshot with a disk mounted (`docs/plan-save-states.md`).
+    /// back from a snapshot with a disk mounted.
     pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JVCDisk> {
         self.drives[drive].as_mut()
     }

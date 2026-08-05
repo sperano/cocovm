@@ -59,7 +59,7 @@ pub(crate) fn load_default_rom(
 
 /// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
 /// primary-SAM path expects is Extended Color BASIC at offset 0 (8K), Color
-/// BASIC at offset [`COCO12_BAS_OFFSET`] (8K) — `docs/coco12-plan.md` "ROM
+/// BASIC at offset [`COCO12_BAS_OFFSET`] (8K) —
 /// files"; `bus.rs::SAM_BAS_ROM_OFFSET`.
 pub(crate) const COCO12_BAS_OFFSET: usize = 8 * 1024;
 
@@ -74,13 +74,13 @@ pub(crate) const COCO_BASIC_CANDIDATES: &[&str] =
     &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
 
 /// Newest-preferred Extended Color BASIC dumps; optional
-/// (`docs/coco12-plan.md` "ROM files": a Color-BASIC-only machine still
+/// ("ROM files": a Color-BASIC-only machine still
 /// boots).
 pub(crate) const EXTENDED_BASIC_CANDIDATES: &[&str] = &["extbas11.rom", "extbas10.rom"];
 
 /// Fill byte for the Extended Color BASIC half of the flat image when no
 /// Extended BASIC dump is present — the conventional open-bus value used
-/// elsewhere in the emulator (`docs/coco12-plan.md`).
+/// elsewhere in the emulator.
 pub(crate) const OPEN_BUS_FILLER: u8 = 0xFF;
 
 /// Find the first of `candidates` that exists under `roms_dir`, returning its
@@ -109,8 +109,8 @@ pub(crate) enum Coco12ROMResult {
 /// Search `roms_dir` for the newest-present Color BASIC dump (required) and
 /// Extended Color BASIC dump (optional) and lay them out the way `bus.rs`'s
 /// plain-SAM decode expects. Missing Extended BASIC leaves that half of the
-/// image at [`OPEN_BUS_FILLER`] rather than failing (`docs/coco12-plan.md`
-/// "ROM files": a Color-BASIC-only machine still boots). Pure (no I/O side
+/// image at [`OPEN_BUS_FILLER`] rather than failing — a Color-BASIC-only
+/// machine still boots. Pure (no I/O side
 /// effects beyond reading `roms_dir`, no process exit) so it's unit-testable.
 pub(crate) fn compose_coco12_rom(roms_dir: &Path) -> Coco12ROMResult {
     let Some((bas_path, bas_bytes)) = find_rom(roms_dir, COCO_BASIC_CANDIDATES) else {

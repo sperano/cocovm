@@ -146,7 +146,7 @@ pub(crate) const RESET_LABEL: &str = "Reset";
 /// Hover text of the Suspend transport control everywhere it appears (the
 /// manager toolbar tile, the manager's row/bulk context-menu items, and the
 /// VM window's own Suspend tile) — the *heavy* freeze built on the
-/// save-states engine (`docs/plan-save-states.md`).
+/// save-states engine.
 pub(crate) const SUSPEND_HOVER: &str = "Suspend the machine — freeze it to disk; resume later, even after \
      quitting the manager.";
 
