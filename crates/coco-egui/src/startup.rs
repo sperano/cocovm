@@ -53,7 +53,7 @@ pub(crate) fn setup_logging(use_color: bool, level: LevelFilter) {
 }
 
 /// Inner width of the banner box, in columns.
-const BANNER_WIDTH: usize = 76;
+const BANNER_WIDTH: usize = 74;
 
 /// What the banner box reports below its title rule.
 ///
@@ -123,7 +123,7 @@ pub(crate) fn banner(info: &StartupInfo) {
     let wall = dim("│");
     println!("{}{fill}{}", dim("╭"), dim("╮"));
     println!(
-        "{wall} CoCoVM v{} {} A Tandy {}{}{} Color Computers emulator {} © 2026 Éric Spérano {wall}",
+        "{wall} CoCoVM {} {} A Tandy {}{}{} Color Computer emulator {} © 2026 Éric Spérano {wall}",
         env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
         "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
