@@ -1,7 +1,8 @@
 use crate::*;
 
-/// The host's local wall clock, read once (RTC sync).
-pub(crate) fn host_now() -> RTCTime {
+/// The host's local wall clock — [`host_time_source`]'s closure re-reads it
+/// on every RTC register access.
+fn host_now() -> RTCTime {
     use chrono::{Datelike, Timelike};
     let now = chrono::Local::now();
     RTCTime {
