@@ -1,12 +1,14 @@
 //! VM window menu/toolbar/hotkey tests, driving a `CocoApp` opened directly
-//! (not through the manager): transport controls, Machine/View/Help/
-//! Joysticks menus, the status bar's keyboard/display menus,
+//! (not through the manager): transport controls, the Machine/View/Help
+//! menus, the status bar's keyboard/display menus,
 //! media-action gating, the MultiPak install/slot/switch flow, save-state
 //! menu wiring, error/confirmation dialogs, the RS-232 pak, and cartridge
 //! insertion (GMC). The status bar's tape entry/menu — mounting, seeking,
 //! and the auto-save/keyboard-focus interactions — lives in the sibling
 //! [`super::vm_window_tape`], except the plain disabled-without-a-tape gating
 //! checked here alongside the rest of `media_actions_are_disabled_until_media_is_present`.
+//! The status bar's joysticks entry/menu lives in the sibling
+//! [`super::vm_window_joysticks`].
 
 use coco_core::{MachineVariant, MonitorType};
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -219,42 +221,6 @@ fn help_about_toggles_the_about_window() {
             .query_by_label("A Tandy Color Computer 3 emulator")
             .is_none()
     );
-}
-
-#[test]
-fn status_bar_shows_no_joystick_entries_by_default() {
-    let mut harness = boot_harness();
-    harness.step();
-    // Default config: both sticks off (`JoySource::None`) — see
-    // `JoystickInputs::new`. `joystick_status` only ever emits a "JR"/"JL"
-    // entry for a port whose source isn't `JoySource::None`, so neither
-    // should appear until the Joysticks menu assigns one.
-    assert!(
-        harness.query_by_label_contains("JR:").is_none(),
-        "the right stick's source is None by default, so it shouldn't get a status-bar entry"
-    );
-    assert!(
-        harness.query_by_label_contains("JL:").is_none(),
-        "the left stick's source is None by default, so it shouldn't get a status-bar entry"
-    );
-}
-
-#[test]
-fn joysticks_menu_assigns_a_source_to_the_right_stick() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Joysticks");
-    // Both sticks list the same four source labels; the right stick's list
-    // is drawn first, so its "Keys" entry is the topmost one.
-    topmost_by_label(&harness, "Keys").hover();
-    harness.step();
-    topmost_by_label(&harness, "Keys").click();
-    harness.step();
-    harness.step();
-
-    let app = harness.state();
-    assert!(app.joysticks.sources[coco_core::joystick::RIGHT] == joy::JoySource::Keys);
-    assert!(app.joysticks.sources[coco_core::joystick::LEFT] == joy::JoySource::None);
 }
 
 /// With no tape mounted the seek field is disabled along with the rest of

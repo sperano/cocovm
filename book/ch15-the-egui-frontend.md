@@ -138,7 +138,7 @@ Look at the checkbox that toggles aspect correction, in the View menu:
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
 ```
 
-([`crates/coco-egui/src/chrome/menu_bar.rs:49`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L49).) The signature is the
+([`crates/coco-egui/src/chrome/menu_bar.rs:50`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L50).) The signature is the
 whole lesson. `ui.checkbox` takes a `&mut bool` — a mutable borrow of a
 field that belongs to `CocoApp`. It draws the box in whichever state that
 bool currently holds, and, if the click landed on it this frame, it flips
@@ -172,8 +172,8 @@ this concrete. Here is the whole thing:
                     self.keyboard_status(ui);
                     self.display_status(ui);
                     self.tape_status(ui);
-                    self.cart_status(ui);
                     self.joystick_status(ui);
+                    self.cart_status(ui);
                     self.rs232_status(ui);
                     self.mpi_status(ui);
                     self.disk_status(ui);
@@ -189,31 +189,37 @@ this concrete. Here is the whole thing:
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:17-39`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L17-L39).) The toast at the
+([`crates/coco-egui/src/chrome/status_bar.rs:18-40`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L18-L40).) The toast at the
 end is a conditional widget, not a label that gets shown and hidden:
 whether the bar ends with a toast is decided fresh, sixty times a second,
-by asking `toast_message()`. The first three entries — `keyboard_status`,
-`display_status`, and `tape_status` — are the bar's controls as well as
-readouts: each
+by asking `toast_message()`. The first four entries — `keyboard_status`,
+`display_status`, `tape_status`, and `joystick_status` — are the bar's
+controls as well as readouts: each
 `|`-unions its icon's response with a frameless-button readout into a
 single click target and hangs a menu off it with
 `egui::Popup::menu(&entry)` — the Keyboard menu, the display menu
-(monitor or TV choice plus the TV knobs), and the tape menu (the whole
+(monitor or TV choice plus the TV knobs), the tape menu (the whole
 cassette deck: insert, new, rewind, seek to a byte, eject, and the .wav
-toggle; the Machine menu no longer carries any of it) — menus that, like
-the toast, exist only on the frames they are open. Unlike the other two,
-the tape entry keeps live readout duties on top of its control role: the
-painted cassette reddens while the motor relay is closed, its reels turn
-with the tape position, and the label carries the mounted file name and
-a `[pos/len]` byte counter that moves during `CSAVE` as well as `CLOAD`,
-courtesy of Chapter 12's live record counter. With no tape mounted it
-still draws, reading "No tape" — the deck is always there to click. One
-egui subtlety hides in its popup: the menu default of closing on any
+toggle; the Machine menu no longer carries any of it), and the joysticks
+menu (a source pick per port, plus gamepad status; the menu bar has no
+Joysticks button — this entry is the only way in) — menus that, like
+the toast, exist only on the frames they are open. Unlike the first two,
+the tape and joysticks entries keep live readout duties on top of their
+control roles. The painted cassette reddens while the motor relay is
+closed, its reels turn with the tape position, and the label carries the
+mounted file name and a `[pos/len]` byte counter that moves during
+`CSAVE` as well as `CLOAD`, courtesy of Chapter 12's live record
+counter. The joystick icon lights while either port is actively being
+driven, and the label names each assigned port's source — "R: Keys ·
+L: Mouse". With no tape mounted the deck still draws, reading "No tape",
+and with both ports off the joysticks entry reads "No joysticks" —
+there is always something to click. One
+egui subtlety hides in the tape popup: the menu default of closing on any
 click would dismiss the popup the moment the seek field was clicked for
 typing, so the tape menu uses `CloseOnClickOutside` and lets each action
 item close the menu itself
-([`crates/coco-egui/src/chrome/status_bar.rs:252-289`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L252-L289)).
-The other eight `*_status` calls
+([`crates/coco-egui/src/chrome/status_bar.rs:296-330`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L296-L330)).
+The other seven `*_status` calls
 are where the conditional-widget idea gets interesting. Each one is written like this:
 
 ```rust
@@ -225,7 +231,7 @@ are where the conditional-widget idea gets interesting. Each one is written like
     }
 ```
 
-([`crates/coco-egui/src/chrome/status_bar.rs:119-124`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L119-L124).) The `cart_icon`
+([`crates/coco-egui/src/chrome/status_bar.rs:120-125`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/status_bar.rs#L120-L125).) The `cart_icon`
 call ahead of the label is one of twelve small device silhouettes the bar
 paints from `Painter` primitives
 ([`crates/coco-egui/src/status_icons/paint.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/status_icons/paint.rs)) — the
@@ -313,7 +319,7 @@ exists but is disabled:
         );
 ```
 
-([`crates/coco-egui/src/chrome/menu_bar.rs:59-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L59-L63).) "Enabled" is not
+([`crates/coco-egui/src/chrome/menu_bar.rs:60-64`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L60-L64).) "Enabled" is not
 a property set on a persistent object and later unset; it is an argument
 passed to a function that is called again next frame with a freshly
 computed value. Insert an Orchestra-90 cartridge and the menu item becomes
@@ -1131,7 +1137,7 @@ dismiss the debugger even from the debugger's own goto box; paste runs
 *after* it because a paste while a text field is focused belongs to the
 field, not to the machine. The keys-mode joystick applies the same gate
 from its own polling path
-([`crates/coco-egui/src/joy.rs:183-195`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy.rs#L183-L195)),
+([`crates/coco-egui/src/joy.rs:246-254`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy.rs#L246-L254)),
 so arrows typed at a focused field don't nudge an emulated stick either.
 
 ### Shortcuts the CoCo never sees
@@ -2598,7 +2604,10 @@ The status-bar tape tests added since that snapshot —
 `ui_tests::vm_window_tape` and the seek-field gating test in
 `vm_window_menus` — all call `boot_harness()` and so join the third
 group: ROM-gated, because building a `CocoApp` at all requires the real
-system ROM.
+system ROM. The joystick-entry tests have since moved out of
+`vm_window_menus` into a sibling `ui_tests::vm_window_joysticks`,
+gaining a third test in the move; they boot the same harness and stay
+in that group.
 
 **The 159 passing tests in that run covered the non-ROM surface of the crate**: the
 audio DSP unit tests (DC blocker, low-pass, resampler — pure math, no
@@ -2623,9 +2632,10 @@ importantly for this chapter — every
 `ui_tests::manager_selection::*` test, including the exact
 delete-confirmation test walked in §15.8 above. If you
 have this worktree open and no `roms/` directory, `cargo test -p coco-egui`
-will show you this same split, plus the tape tests failing with the rest
-of the ROM-gated group; with real ROMs present, the whole suite passes —
-`205 passed; 0 failed` as of this revision, re-run for this chapter.
+will show you this same split, plus the tape and joystick tests failing
+with the rest of the ROM-gated group; with real ROMs present, the whole
+suite passes — `206 passed; 0 failed` as of this revision, re-run for
+this chapter.
 
 The split is the same line Chapter 1 drew, showing up in the test
 results. The tests that need a

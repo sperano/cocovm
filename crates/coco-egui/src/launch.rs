@@ -81,10 +81,10 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     }
 
     // The definition's [ui] preferences are the launched window's *starting*
-    // state; F9 (aspect), F12 (keyboard mode), and the Joysticks menu keep
-    // working as live toggles afterwards — the file controls where they
-    // begin, exactly like the hardware section controls the machine's
-    // construction.
+    // state; F9 (aspect), F12 (keyboard mode), and the status bar's
+    // joysticks entry keep working as live toggles afterwards — the file
+    // controls where they begin, exactly like the hardware section controls
+    // the machine's construction.
     app.aspect_correct = def.ui.aspect_correct;
     // `CocoApp::new` derived a display from the config's signal path, which
     // can't tell a CoCo 3 TV from a composite monitor — overwrite it with

@@ -330,7 +330,7 @@ inspection rather than by squinting at decimal points.
 PAL runs at the same CPU clock and produces slightly different numbers. The
 CoCo 1 and CoCo 2 don't support PAL in this emulator at all —
 `MachineConfig::validate` rejects the combination outright at
-[`config.rs:213-217`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L213-L217)
+[`config.rs:222-227`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/config.rs#L222-L227)
 — so every PAL figure below describes a CoCo 3 in practice. The arithmetic
 is still worth seeing, because the way the two standards nearly cancel out
 is the whole reason the design sketch could claim they were the same:

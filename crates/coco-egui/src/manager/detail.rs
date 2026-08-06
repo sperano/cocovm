@@ -33,7 +33,8 @@ fn form_grid(salt: (&str, &str)) -> egui::Grid {
 /// the same draft as every grid row, so the caller's autosave picks them up
 /// like any other form edit. Joysticks and Keyboard are both `[ui]`
 /// preferences like aspect — the launched window's *starting* state; the
-/// Joysticks menu and F12 keep working as live toggles afterwards.
+/// status bar's joysticks entry and F12 keep working as live toggles
+/// afterwards.
 fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Machine", |ui| {
         form_grid(("detail_form_machine", slug)).show(ui, |ui| {
