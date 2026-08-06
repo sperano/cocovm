@@ -35,17 +35,17 @@ fn machine_menu_reset_keeps_the_ui_alive() {
 
 /// The VM window's own toolbar: the same four transport tiles
 /// (Start/Suspend/Stop/Reset) the manager toolbar draws, via the shared
-/// `toolbar_button` widget. A chrome-bearing VM window only ever exists while
-/// Running, so Start is permanently disabled here; Suspend, Stop, and Reset
-/// stay live. With no menu open, "Reset" can only be the toolbar tile — the
-/// Machine menu's own "Reset" item only joins the accessibility tree while
-/// that menu is open (`harness.rs`'s `lowest_by_label` doc covers the
-/// collision once it is).
+/// `toolbar_button` widget, plus the VM-only Debug tile. A chrome-bearing VM
+/// window only ever exists while Running, so Start is permanently disabled
+/// here; Suspend, Stop, Reset, and Debug stay live. With no menu open,
+/// "Reset" can only be the toolbar tile — the Machine menu's own "Reset"
+/// item only joins the accessibility tree while that menu is open
+/// (`harness.rs`'s `lowest_by_label` doc covers the collision once it is).
 #[test]
 fn toolbar_shows_start_disabled_and_others_live() {
     let mut harness = boot_harness();
 
-    // One pass over all four tiles: each label is looked up (asserting it
+    // One pass over all five tiles: each label is looked up (asserting it
     // exists) exactly once, and its enabled/disabled state checked in the
     // same step rather than re-querying "Start" a second time.
     let expectations = [
@@ -58,6 +58,7 @@ fn toolbar_shows_start_disabled_and_others_live() {
         ("Suspend", None),
         ("Stop", None),
         ("Reset", None),
+        ("Debug", None),
     ];
     for (label, disabled_reason) in expectations {
         let is_disabled = harness.get_by_label(label).accesskit_node().is_disabled();
@@ -71,6 +72,40 @@ fn toolbar_shows_start_disabled_and_others_live() {
     assert!(
         harness.state().running,
         "the toolbar's Reset tile must leave the machine on"
+    );
+}
+
+/// The Debug tile and its shortcut are the debugger's two toggles (the View
+/// menu no longer carries one), flipping the same `DebuggerPanel::open`.
+/// The open debugger is only ever closed with ⌘D here, never the tile: in
+/// this harness the debugger renders as *embedded* floating windows
+/// (kittest has no multi-viewport support), and "Debug: Controls" /
+/// "Debug: Disassembly" (`default_pos` y=40) land over the toolbar and
+/// swallow its clicks — an embedded-fallback artifact a real (separate-OS-
+/// window) debugger viewport doesn't have.
+#[test]
+fn debug_tile_and_shortcut_toggle_the_debugger() {
+    let mut harness = boot_harness();
+    assert!(!harness.state().debugger.open);
+
+    click(&mut harness, "Debug");
+    assert!(
+        harness.state().debugger.open,
+        "the Debug tile must open the debugger"
+    );
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+    harness.step();
+    assert!(
+        !harness.state().debugger.open,
+        "the debugger shortcut must close the debugger"
+    );
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+    harness.step();
+    assert!(
+        harness.state().debugger.open,
+        "the debugger shortcut must open it again"
     );
 }
 

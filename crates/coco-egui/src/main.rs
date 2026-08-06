@@ -9,8 +9,9 @@
 //! - Symbolic — the character you type is injected via the CoCo keys that produce it.
 //!
 //! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`).
-//! F11 toggles the interactive debugger (Controls/Registers/Disassembly/Memory/
-//! Stack/Hardware panels — `debugger.rs`, §3).
+//! The toolbar's Debug tile (or ⌘D / Ctrl+D) toggles the interactive debugger
+//! (Controls/Registers/Disassembly/Memory/Stack/Hardware panels —
+//! `debugger.rs`, §3).
 
 mod about;
 mod app;
@@ -67,7 +68,7 @@ use joy::JoystickInputs;
 // `ui_tests` harness still reach for them as `crate::…`.
 pub(crate) use defaults::{default_ram, default_vdg, machine_label};
 pub(crate) use display::Display;
-pub(crate) use host::{host_dw_clock, host_now, host_time_source};
+pub(crate) use host::{host_dw_clock, host_time_source};
 pub(crate) use keymap::{control_key_pos, is_joystick_key, key_to_pos};
 pub(crate) use launch::launch_machine;
 pub(crate) use mpi::{
@@ -91,7 +92,7 @@ pub(crate) use typeahead::{KbMode, TypeAhead};
 pub(crate) use widgets::{
     BUTTON_GAP, BUTTON_SIZE, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH,
     STOP_LABEL, SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, UI_DRIVES, titled_group,
-    toolbar_button, window_title,
+    toolbar_button, toolbar_separator, window_title,
 };
 
 /// Integer scale factor for the (small) CoCo framebuffer.

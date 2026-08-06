@@ -43,13 +43,12 @@ impl CocoApp {
         }
     }
 
-    /// The View menu: aspect correction, the debugger, and the optional
-    /// windows. The display choice lives in the status bar's display entry
-    /// alone ([`Self::display_menu_ui`]), not here.
+    /// The View menu: aspect correction and the optional windows. The
+    /// display choice lives in the status bar's display entry alone
+    /// ([`Self::display_menu_ui`]), not here; the debugger toggle is the
+    /// toolbar's Debug tile / ⌘D, not a menu item.
     fn view_menu_ui(&mut self, ui: &mut egui::Ui) {
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
-        ui.separator();
-        ui.checkbox(&mut self.debugger.open, "Debugger (F11)");
         ui.separator();
         let mut paper_open = self.paper_window.open;
         if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
