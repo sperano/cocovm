@@ -3,9 +3,10 @@ use coco_core::joystick::{LEFT, RIGHT};
 use crate::*;
 
 impl CocoApp {
-    /// The status bar: live state readouts, plus the menus of the three
+    /// The status bar: live state readouts, plus the menus of the four
     /// entries that are also controls ([`Self::keyboard_status`],
-    /// [`Self::display_status`], [`Self::tape_status`]).
+    /// [`Self::display_status`], [`Self::tape_status`],
+    /// [`Self::joystick_status`]).
     ///
     /// Pinned to [`STATUS_BAR_H`] rather than left to size itself around its
     /// content: that constant is what the window-sizing math already
@@ -22,8 +23,8 @@ impl CocoApp {
                     self.keyboard_status(ui);
                     self.display_status(ui);
                     self.tape_status(ui);
-                    self.cart_status(ui);
                     self.joystick_status(ui);
+                    self.cart_status(ui);
                     self.rs232_status(ui);
                     self.mpi_status(ui);
                     self.disk_status(ui);
@@ -123,20 +124,63 @@ impl CocoApp {
         ui.label(format!("Cart: {}", file_name(path)));
     }
 
-    /// One entry per port whose source isn't `JoySource::None` — "JR"/"JL"
-    /// matching the Joysticks menu's "Right stick"/"Left stick" naming
-    /// (`joy.rs`'s `menu_ui`), lit while that port is actively being driven.
-    fn joystick_status(&self, ui: &mut egui::Ui) {
-        for (stick, prefix, side) in [(RIGHT, "JR", "right"), (LEFT, "JL", "left")] {
+    /// The joysticks entry — built like [`Self::keyboard_status`],
+    /// [`Self::display_status`], and [`Self::tape_status`]: a painted
+    /// joystick icon and a frameless-button label form one click target that
+    /// pops up the joysticks menu (`JoystickInputs::menu_ui` — per-port
+    /// source picks, plus gamepad status); like the others, this entry is
+    /// the only way in — the menu bar no longer has a Joysticks button. It
+    /// keeps its readout duty too: the icon lights while either port is
+    /// actively being driven ([`joy::JoystickInputs::in_use`]), and the label
+    /// names every port whose source isn't `JoySource::None` — "R"/"L"
+    /// matching the menu's "Right stick"/"Left stick" naming (`joy.rs`'s
+    /// `menu_ui`) — joined with " · ", e.g. "R: Keys · L: Mouse". With both
+    /// ports off (the default — [`joy::JoystickInputs::new`]) the label
+    /// reads "No joysticks" rather than disappearing, so there's always
+    /// something to click. See the keyboard entry's comments for why the
+    /// popup gets an explicit id and a `TOP_START` anchor.
+    fn joystick_status(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        let either_active = self.joysticks.in_use[RIGHT] || self.joysticks.in_use[LEFT];
+        let icon = joystick_icon(ui, either_active).interact(egui::Sense::click());
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Joysticks menu")
+        });
+        let assigned: Vec<String> = [(RIGHT, "R"), (LEFT, "L")]
+            .into_iter()
+            .filter_map(|(stick, prefix)| {
+                let source = self.joysticks.sources[stick];
+                (source != joy::JoySource::None).then(|| format!("{prefix}: {}", source.label()))
+            })
+            .collect();
+        let label = if assigned.is_empty() {
+            "No joysticks".to_string()
+        } else {
+            assigned.join(" · ")
+        };
+        // The icon's single light merges both ports; the hover keeps the
+        // per-port diagnostic ("which stick is my input reaching?") the old
+        // two-icon layout carried in its separate lights. An unassigned
+        // port reads "off", not the raw `None` variant name.
+        let port_hover = |stick: usize| {
             let source = self.joysticks.sources[stick];
             if source == joy::JoySource::None {
-                continue;
+                "off".to_string()
+            } else if self.joysticks.in_use[stick] {
+                format!("{} (active)", source.label())
+            } else {
+                source.label().to_string()
             }
-            ui.separator();
-            joystick_icon(ui, self.joysticks.in_use[stick])
-                .on_hover_text(format!("Joystick {side} — button/axis active"));
-            ui.label(format!("{prefix}: {}", source.label()));
-        }
+        };
+        let entry = (icon | ui.add(egui::Button::new(label).frame(false))).on_hover_text(format!(
+            "Joysticks — right: {}, left: {} — click for the joysticks menu",
+            port_hover(RIGHT),
+            port_hover(LEFT)
+        ));
+        egui::Popup::menu(&entry)
+            .id(ui.id().with("joysticks_menu"))
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.joysticks.menu_ui(ui));
     }
 
     fn rs232_status(&mut self, ui: &mut egui::Ui) {

@@ -433,8 +433,8 @@ impl MachineForm {
     /// reads naturally in that order to a user, the same left-to-right
     /// layout as the two DIN sockets on the back of the machine. `[ui]`
     /// preferences like aspect/keyboard mode: the launched window's
-    /// *starting* state; the Joysticks menu keeps working as a live toggle
-    /// afterwards.
+    /// *starting* state; the status bar's joysticks entry keeps working as
+    /// a live toggle afterwards.
     pub(crate) fn joystick_row(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Left:");

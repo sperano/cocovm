@@ -194,10 +194,8 @@ impl MachineConfig {
     ///   in: 4K/16K/32K/64K for the CoCo 1, 16K/64K for the CoCo 2 (base
     ///   16K×1 DRAMs plus the factory 64K upgrade — CoCo 2 service manual
     ///   26-3026/26-3027 §3.3; no 4K or 32K CoCo 2 ever shipped), and the
-    ///   128K/512K/2048K sizes the CoCo 3's GIME MMU addresses
-    ///  .
-    /// - CoCo 1/2 are NTSC-only for now: PAL VDG timing is out of scope
-    ///  .
+    ///   128K/512K/2048K sizes the CoCo 3's GIME MMU addresses.
+    /// - CoCo 1/2 are NTSC-only for now: PAL VDG timing is out of scope.
     /// - [`VDGVariant::MC6847T1`] is only valid on [`MachineVariant::Coco2`]:
     ///   CoCo 1 never had a T1 board, and CoCo 3 has no real MC6847 at all
     ///   (the GIME does its own text character generation).

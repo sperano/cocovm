@@ -1,6 +1,7 @@
 //! Joystick input sources: drive the CoCo's two analog ports
 //! (`coco_core::joystick`) from the mouse, a gamepad (via `gilrs`), or the
-//! keyboard, per-port selectable from the "Joysticks" menu.
+//! keyboard, per-port selectable from the joysticks menu the status bar's
+//! joysticks entry pops up ([`JoystickInputs::menu_ui`]).
 
 use coco_core::Machine;
 use coco_core::joystick::{AXIS_CENTER, AXIS_MAX, AXIS_X, AXIS_Y, LEFT, RIGHT};
@@ -125,8 +126,11 @@ impl JoystickInputs {
             }
         };
         Self {
-            // Both ports off until opted in: a mouse silently driving the
-            // the Joysticks menu / manager form make enabling one a click.
+            // Both ports off until opted in (user decision 2026-07-29,
+            // replacing the original right-stick-on-mouse default): a mouse
+            // silently driving the pots surprised more than it helped, and
+            // both the status bar's joysticks entry and the manager form
+            // make enabling one a click away.
             sources: [JoySource::None, JoySource::None],
             gilrs,
             pad_axes: [0.0, 0.0],
@@ -354,9 +358,12 @@ impl JoystickInputs {
     }
 
     /// "Joysticks" menu contents: a flat list of selectable sources per port, plus
-    /// gamepad status. Deliberately not a nested `ComboBox` — a combo's own popup
-    /// fights the menu's dismiss-on-outside-click handling in egui, so selections
-    /// inside it don't register reliably.
+    /// gamepad status. Popped up by the status bar's joysticks entry
+    /// (`chrome::status_bar`'s `joystick_status`) — the only way in; the menu
+    /// bar has no Joysticks button of its own. Deliberately not a nested
+    /// `ComboBox` — a combo's own popup fights the menu's
+    /// dismiss-on-outside-click handling in egui, so selections inside it
+    /// don't register reliably.
     pub fn menu_ui(&mut self, ui: &mut egui::Ui) {
         for (stick, name) in [(RIGHT, "Right stick"), (LEFT, "Left stick")] {
             ui.label(egui::RichText::new(name).strong());
