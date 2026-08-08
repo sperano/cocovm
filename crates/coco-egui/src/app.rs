@@ -142,7 +142,7 @@ pub(crate) struct CocoApp {
     pub(crate) paper_window: paper_view::PaperWindow,
     /// The interactive debugger: breakpoints,
     /// watchpoints, and the Controls/Registers/Disassembly/Memory/Stack/
-    /// Hardware panel cluster, toggled with F11.
+    /// Hardware panel cluster, toggled with the toolbar's Debug tile or ⌘D.
     pub(crate) debugger: debugger::DebuggerPanel,
     /// Where the currently-loaded system ROM image came from, for
     /// [`Self::save_state_to`] (`save_state.rs`) to record and re-resolve —

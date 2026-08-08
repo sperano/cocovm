@@ -203,16 +203,32 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.step();
 
     // The F-key UI hotkeys are NOT gated: text widgets don't consume
-    // F-keys, and F11 must be able to dismiss the debugger from its own
-    // goto box (`CocoApp::handle_hotkeys` runs before the focus gate).
+    // F-keys (`CocoApp::handle_hotkeys` runs before the focus gate).
+    let aspect_before = harness.state().aspect_correct;
+    harness.key_press(egui::Key::F9);
+    harness.step();
+    assert_ne!(
+        harness.state().aspect_correct,
+        aspect_before,
+        "F-key hotkeys must stay live while a text widget is focused"
+    );
+    harness.key_press(egui::Key::F9);
+    harness.step();
+
+    // ⌘D is likewise not gated: consumed in `consume_app_shortcuts` before
+    // this frame's widgets run, so it stays live while a VM-window text
+    // widget (like this seek field) owns focus. (Dismissal from the
+    // debugger's own native window is the separate in-viewport consume in
+    // `DebuggerPanel::windows_ui`, unreachable under kittest's embedded
+    // fallback.)
     assert!(!harness.state().debugger.open);
-    harness.key_press(egui::Key::F11);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
     harness.step();
     assert!(
         harness.state().debugger.open,
-        "F-key hotkeys must stay live while a text widget is focused"
+        "the debugger shortcut must stay live while a text widget is focused"
     );
-    harness.key_press(egui::Key::F11);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
     harness.step();
 }
 

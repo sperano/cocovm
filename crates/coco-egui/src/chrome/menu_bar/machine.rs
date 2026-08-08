@@ -94,7 +94,11 @@ impl CocoApp {
         }
     }
 
-    /// The Disto real-time clock plugged straight into the port.
+    /// The Disto real-time clock plugged straight into the port. No manual
+    /// "sync to host clock" item: the RTC always runs on the injected host
+    /// clock (`host_time_source`), and a guest-side `setime` offset sticking
+    /// until the next power cycle is real MSM6242 behavior (`coco-core`'s
+    /// `rtc.rs`).
     fn machine_rtc_items(&mut self, ui: &mut egui::Ui) {
         let direct_port = self.mpi.is_none();
         if ui
@@ -112,14 +116,6 @@ impl CocoApp {
             .clicked()
         {
             self.eject_rtc();
-            ui.close();
-        }
-        let rtc_present = self.machine.bus.cart.as_disto_rtc().is_some();
-        if ui
-            .add_enabled(rtc_present, egui::Button::new("Sync RTC to Host Clock"))
-            .clicked()
-        {
-            self.sync_rtc_to_host();
             ui.close();
         }
     }

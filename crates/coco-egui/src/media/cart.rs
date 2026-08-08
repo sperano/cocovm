@@ -422,12 +422,4 @@ impl CocoApp {
         }
         self.machine.power_cycle();
     }
-
-    /// Set the emulated RTC (wherever it is — port or MPI slot) back to the
-    /// host's clock, discarding any offset a guest-side `setime` introduced.
-    pub(crate) fn sync_rtc_to_host(&mut self) {
-        if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
-            rtc.rtc().set_time(host_now());
-        }
-    }
 }

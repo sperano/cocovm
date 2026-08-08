@@ -28,7 +28,7 @@ impl CocoApp {
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
         // The F-key hotkeys toggle UI, never reach the machine, and text
         // widgets don't consume F-keys — so they stay live even while one
-        // is focused (F11 must dismiss the debugger from its own goto box).
+        // is focused.
         self.handle_hotkeys(&events);
 
         // `wants_keyboard_input()` reports "some widget currently holds egui
@@ -86,6 +86,16 @@ impl CocoApp {
                 self.quick_load(slot, ctx);
             }
         }
+        // ⌘D toggles the debugger (also the toolbar's Debug tile). Consumed
+        // here — before this frame's widgets run — so it stays live even
+        // while a text widget in the VM window owns egui focus (the tape
+        // seek field, the RS-232 address), and the consumed `D` never
+        // reaches the CoCo matrix. This only sees the VM viewport's input;
+        // ⌘D typed in the debugger's own native window is consumed by
+        // `DebuggerPanel::windows_ui` instead.
+        if ctx.input_mut(|i| i.consume_shortcut(&debugger::DEBUGGER_SHORTCUT)) {
+            self.debugger.toggle();
+        }
     }
 
     /// UI hotkeys, never forwarded to the machine and (unlike the paste
@@ -109,7 +119,6 @@ impl CocoApp {
                     }
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
                     egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
-                    egui::Key::F11 => self.debugger.open = !self.debugger.open,
                     _ => {}
                 }
             }

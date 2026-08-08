@@ -8,12 +8,24 @@ const STOP_HOVER: &str = "Shut down this machine — same as closing the window"
 /// Hover text for the Reset tile.
 const RESET_HOVER: &str = "Press the reset button";
 
+/// Debug tile glyph — U+1F41E lady beetle, verified present in egui's
+/// bundled NotoEmoji-Regular (monochrome, so it tints with the widget text
+/// color like the manager toolbar's own emoji icons).
+const DEBUG_GLYPH: &str = "🐞";
+/// Caption under [`DEBUG_GLYPH`].
+const DEBUG_LABEL: &str = "Debug";
+/// Hover text for the Debug tile; [`CocoApp::toolbar_ui`] appends the
+/// platform-formatted [`debugger::DEBUGGER_SHORTCUT`].
+const DEBUG_HOVER: &str = "Open or close the debugger";
+
 impl CocoApp {
     /// The VM window's toolbar: the same four transport tiles
     /// (Start/Suspend/Stop/Reset) the manager window's own toolbar draws,
     /// built from the same shared [`toolbar_button`] widget
     /// (`widgets.rs`) — so a launched machine's own window presents the
-    /// identical transport row the manager does. ("⌨ Keys (F10)" and
+    /// identical transport row the manager does — plus, after a separator,
+    /// the VM-only Debug tile toggling the debugger
+    /// ([`debugger::DEBUGGER_SHORTCUT`]). ("⌨ Keys (F10)" and
     /// "4:3 aspect (F9)" already live in the Keyboard and View menus,
     /// so this row doesn't duplicate them.)
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
@@ -70,6 +82,21 @@ impl CocoApp {
                         .clicked()
                     {
                         self.machine.reset();
+                    }
+
+                    toolbar_separator(ui);
+
+                    // Same toggle as ⌘D (`CocoApp::consume_app_shortcuts`);
+                    // hover text formats the shortcut per-platform.
+                    let debug_hover = format!(
+                        "{DEBUG_HOVER} ({})",
+                        ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)
+                    );
+                    if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, true)
+                        .on_hover_text(debug_hover)
+                        .clicked()
+                    {
+                        self.debugger.toggle();
                     }
                 });
             });

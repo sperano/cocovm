@@ -1,6 +1,7 @@
 //! Interactive debugger UI: Controls, Registers,
-//! Disassembly, Memory, Stack, and Hardware-state panels, toggled with F11
-//! (see `main.rs`'s `handle_input` — F9/F10/F12 are already taken).
+//! Disassembly, Memory, Stack, and Hardware-state panels, toggled with the
+//! VM toolbar's Debug tile or [`DEBUGGER_SHORTCUT`] (⌘D / Ctrl+D, consumed
+//! in `CocoApp::consume_app_shortcuts`).
 //!
 //! Shown as its own native OS window (an egui *immediate viewport*, like the
 //! printer's `paper_view`), so the panels never cover the emulated screen;
@@ -34,6 +35,15 @@ mod hardware;
 mod memory;
 mod registers;
 mod stack;
+
+/// The debugger toggle: ⌘D on macOS, Ctrl+D on Windows/Linux
+/// ([`egui::Modifiers::COMMAND`] resolves to the platform's primary
+/// modifier). Checked against every existing binding: the bare F-keys
+/// (F9/F10/F12, `app/input.rs`), `new_vm::NEW_MACHINE_SHORTCUT` = ⌘N, the
+/// manager-only select-all ⌘A (`manager.rs`), and the ⌘`<n>`/⌘⇧`<n>` state
+/// slots (`save_state.rs`).
+pub(crate) const DEBUGGER_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::D);
 
 /// Instructions handed to one [`Debugger::run_until`] call before this module
 /// re-checks its own bookkeeping. Comfortably above one field's instruction
@@ -70,7 +80,8 @@ enum MemoryView {
 /// Panel toggle plus every panel's own navigation/edit state, and the
 /// [`Debugger`] core it drives. One instance lives in `CocoApp`.
 pub struct DebuggerPanel {
-    /// Master F11 toggle — when false, `windows_ui` draws nothing.
+    /// Master toggle (the VM toolbar's Debug tile / [`DEBUGGER_SHORTCUT`]) —
+    /// when false, `windows_ui` draws nothing.
     pub open: bool,
     core: Debugger,
 
@@ -274,13 +285,30 @@ impl DebuggerPanel {
                 // the viewport is unpainted.
                 egui::CentralPanel::default().show(ctx, |_ui| {});
                 // The OS close button: accept the close by not showing the
-                // viewport next frame (mirrors the F11 / View-menu toggle).
+                // viewport next frame (mirrors the Debug tile / ⌘D toggle).
                 if ctx.input(|i| i.viewport().close_requested()) {
+                    self.open = false;
+                }
+                // ⌘D typed while this native window holds OS keyboard focus
+                // lands in *this* viewport's `InputState`, invisible to the
+                // VM window's `consume_app_shortcuts` — so the close half of
+                // the toggle is consumed here too. Skipped on the embedded
+                // fallback, where there is only one shared `InputState` and
+                // `consume_app_shortcuts` has already consumed the chord
+                // earlier this frame.
+                if ctx.input_mut(|i| i.consume_shortcut(&DEBUGGER_SHORTCUT)) {
                     self.open = false;
                 }
             }
             self.panel_windows(ctx, machine, running);
         });
+    }
+
+    /// The one debugger open/close toggle, shared by the VM toolbar's Debug
+    /// tile and [`DEBUGGER_SHORTCUT`] (`CocoApp::consume_app_shortcuts`) so
+    /// the two surfaces can't drift.
+    pub fn toggle(&mut self) {
+        self.open = !self.open;
     }
 
     /// The six panel windows. Inside [`Self::windows_ui`]'s viewport closure
