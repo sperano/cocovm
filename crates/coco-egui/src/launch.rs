@@ -8,7 +8,7 @@ use coco_core::MachineVariant;
 
 use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
-    CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, dev_roms_dir,
+    CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, installed_roms_dir,
     machine_def,
 };
 
@@ -40,7 +40,7 @@ struct Peripherals {
 
 /// Build a running [`CocoApp`] from a saved machine definition
 /// (`machine_def::MachineDef`): load the ROM (an explicit `[hardware].rom`
-/// if set, else the default `./roms` resolution), mount `[media]`
+/// if set, else the default [`installed_roms_dir`] resolution), mount `[media]`
 /// (cart/disks/vhds/tape), `[peripherals]` (MPI/RTC/RS-232), and `[ports]`
 /// (the built-in serial port's host sink) via the relevant `CocoApp`
 /// methods, in that order, enforcing the single-cartridge-port rule below —
@@ -107,9 +107,10 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
 }
 
 /// The definition's system ROM — an explicit `[hardware].rom` loaded verbatim
-/// ([`load_explicit_rom`]), else the default [`dev_roms_dir`] resolution
-/// ([`load_default_rom`]) — paired with the [`ROMSource`] a snapshot needs to
-/// re-resolve/hash whichever path was taken, so the two can't drift apart.
+/// ([`load_explicit_rom`]), else the default [`installed_roms_dir`]
+/// resolution ([`load_default_rom`]) — paired with the [`ROMSource`] a
+/// snapshot needs to re-resolve/hash whichever path was taken, so the two
+/// can't drift apart.
 fn load_rom(
     explicit: Option<&Path>,
     variant: MachineVariant,
@@ -120,7 +121,7 @@ fn load_rom(
             ROMSource::File(path.to_path_buf()),
         )),
         None => {
-            let roms_dir = dev_roms_dir();
+            let roms_dir = installed_roms_dir();
             let rom = load_default_rom(variant, &roms_dir)?;
             let source = match variant {
                 MachineVariant::Coco3 => ROMSource::File(roms_dir.join("coco3.rom")),

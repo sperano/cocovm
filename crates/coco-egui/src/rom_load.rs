@@ -15,8 +15,9 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
     }
 }
 
-/// Load the default boot ROM set for `variant` from `roms_dir` (copyrighted
-/// and git-ignored, `./roms`): `coco3.rom` for the CoCo 3, or a flat image
+/// Load the default boot ROM set for `variant` from `roms_dir` (in
+/// production always [`installed_roms_dir`]; tests pass fixture
+/// directories): `coco3.rom` for the CoCo 3, or a flat image
 /// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
 /// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
 /// the manager reports them inline in its detail pane
@@ -173,26 +174,29 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
-/// Dev-tree ROM directory (`./roms`, git-ignored): where the manager's
-/// [`launch_machine`] default-resolves system and peripheral ROMs from.
-/// (TODO, per `Self::ensure_disk_controller`: read from
-/// a user asset dir once one exists for these — `paths::roms_dir` today only
-/// covers what `ensure_assets` downloads.)
-pub(crate) fn dev_roms_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms")
+/// The per-user installed ROM directory ([`crate::paths::roms_dir`],
+/// populated from the asset tarball by [`crate::startup::ensure_assets`]):
+/// where the manager's [`launch_machine`] default-resolves system and
+/// peripheral ROMs from.
+///
+/// The `expect` fires only when no home directory can be determined — a
+/// state `ensure_assets` already turned into a process exit before the
+/// manager could launch anything.
+pub(crate) fn installed_roms_dir() -> PathBuf {
+    crate::paths::roms_dir().expect("no home directory (checked at startup by ensure_assets)")
 }
 
 /// Where [`CocoApp::ensure_disk_controller`]/[`CocoApp::mpi_insert_fd502`]
 /// (and, for save-state hashing, [`save_state`]) read the FD-502's Disk
 /// BASIC ROM from.
 pub(crate) fn disk_basic_rom_path() -> PathBuf {
-    dev_roms_dir().join("disk11.rom")
+    installed_roms_dir().join("disk11.rom")
 }
 
 /// Where [`CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional
 /// EPROM dump from, if present.
 pub(crate) fn rs232_eprom_default_path() -> PathBuf {
-    dev_roms_dir().join("rs232.rom")
+    installed_roms_dir().join("rs232.rom")
 }
 
 /// Where the currently-loaded system ROM image came from — tracked so
@@ -206,12 +210,12 @@ pub(crate) enum ROMSource {
     /// at offset $2000). Hashed and re-read by path directly.
     File(PathBuf),
     /// A CoCo 1/2 flat image composed at boot from separate Color/Extended
-    /// Color BASIC dumps under [`dev_roms_dir`] ([`compose_coco12_rom`]) —
-    /// no single backing file. The snapshot records a pseudo-path
-    /// ([`rom_db_pseudo_path`]) instead of a real one; restore recomposes
-    /// from [`dev_roms_dir`] (the only roms dir every construction site
-    /// uses — no per-instance value to carry here) and hash-compares
-    /// against the snapshot's recorded hash.
+    /// Color BASIC dumps under [`installed_roms_dir`]
+    /// ([`compose_coco12_rom`]) — no single backing file. The snapshot
+    /// records a pseudo-path ([`rom_db_pseudo_path`]) instead of a real
+    /// one; restore recomposes from [`installed_roms_dir`] (the only roms
+    /// dir every construction site uses — no per-instance value to carry
+    /// here) and hash-compares against the snapshot's recorded hash.
     ComposedCoco12,
 }
 
