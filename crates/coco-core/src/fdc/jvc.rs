@@ -284,9 +284,18 @@ impl JVCDisk {
         self.write_protected = write_protected;
     }
 
-    /// Set since construction/last clear by a write to the image.
+    /// Set by a write to the image since construction or the last
+    /// [`JVCDisk::mark_saved`].
     pub fn dirty(&self) -> bool {
         self.dirty
+    }
+
+    /// Clear the dirty flag once [`JVCDisk::bytes`] has been written back to
+    /// its file (mirrors [`crate::cassette::Cassette::mark_saved`]) — so a
+    /// later write-back with nothing new to save can skip re-writing an
+    /// unchanged file.
+    pub fn mark_saved(&mut self) {
+        self.dirty = false;
     }
 
     /// The full image bytes (header included), e.g. for writing a modified

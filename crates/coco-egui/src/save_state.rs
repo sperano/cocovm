@@ -196,4 +196,4 @@ impl CocoApp {
 
 #[cfg(test)]
 #[path = "save_state_test.rs"]
-mod tests;
+pub(crate) mod tests;

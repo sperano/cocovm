@@ -21,8 +21,17 @@ impl CocoApp {
     /// or full disk mid-write can never leave a truncated state file behind
     /// (a torn `suspended.ccstate` would read as a phantom Suspended
     /// machine on the manager's next launch).
+    ///
+    /// A flush failure aborts the whole save — propagated before
+    /// [`Self::build_media_refs`] runs, so no `.ccstate`/`.tmp` file is
+    /// written at all — leaving the dirty media mounted and unsaved rather
+    /// than snapshotting a stale on-disk copy as if it were current
+    /// (`manager::lifecycle::suspend_vm` relies on this: a failed suspend
+    /// must leave the machine Running with nothing but the frozen error to
+    /// show for it, not a suspended entry pointing at data that was never
+    /// actually written back).
     pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
-        self.flush_media();
+        self.flush_media()?;
         let media = self.build_media_refs()?;
         let bytes = snapshot::save(&self.machine, &media).map_err(|e| e.to_string())?;
         let tmp_path = path.with_extension("ccstate.tmp");

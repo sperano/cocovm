@@ -359,15 +359,19 @@ impl eframe::App for ManagerApp {
     /// Flush every running VM's dirty disks/tape on quit — the manager
     /// window is the root viewport, so closing it closes every VM at once
     ///; this mirrors
-    /// `CocoApp::on_exit`'s own contract for each of them.
+    /// `CocoApp::on_exit`'s own contract for each of them. A flush failure
+    /// is only `tracing::warn!`-logged: the whole app is going away, so
+    /// there's no dialog left to show it in.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Quit is the power switch for running VMs — no auto-suspend on quit);
         // a suspended VM's state and
         // preview are already on disk from suspend time, so neither needs
         // anything written here.
         for entry in &mut self.entries {
-            if let Some(vm) = entry.vm.as_mut() {
-                vm.flush_media();
+            if let Some(vm) = entry.vm.as_mut()
+                && let Err(e) = vm.flush_media()
+            {
+                tracing::warn!("could not flush media for '{}' on exit: {e}", entry.slug);
             }
         }
     }

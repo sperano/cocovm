@@ -29,7 +29,9 @@ impl CocoApp {
         } else {
             bytes
         };
-        self.write_back_tape();
+        if let Err(e) = self.write_back_tape() {
+            self.cart_error = Some(e);
+        }
         self.machine.bus.cassette.insert_tape(tape);
         self.tape_path = Some(path);
     }
@@ -43,7 +45,9 @@ impl CocoApp {
             .open(&path)
         {
             Ok(_) => {
-                self.write_back_tape();
+                if let Err(e) = self.write_back_tape() {
+                    self.cart_error = Some(e);
+                }
                 self.machine.bus.cassette.insert_tape(Vec::new());
                 self.tape_path = Some(path);
             }
@@ -60,9 +64,12 @@ impl CocoApp {
         }
     }
 
-    /// Eject the tape, saving an unfinished recording back to its file first.
+    /// Eject the tape, saving an unfinished recording back to its file
+    /// first. Failures land in [`Self::cart_error`].
     pub(crate) fn eject_tape(&mut self) {
-        self.write_back_tape();
+        if let Err(e) = self.write_back_tape() {
+            self.cart_error = Some(e);
+        }
         self.machine.bus.cassette.eject_tape();
         self.tape_path = None;
     }
@@ -73,9 +80,9 @@ impl CocoApp {
     /// (`step_emulation`) calls [`Self::save_tape_bytes`] directly instead,
     /// since by the time it runs the core's own idle auto-finalize has
     /// already landed the recording (see that hook's doc comment).
-    pub(crate) fn write_back_tape(&mut self) {
+    pub(crate) fn write_back_tape(&mut self) -> Result<(), String> {
         self.machine.bus.cassette.finalize_recording();
-        self.save_tape_bytes();
+        self.save_tape_bytes()
     }
 
     /// Save the mounted tape back to disk if it changed (like
@@ -93,26 +100,25 @@ impl CocoApp {
     /// again — from then on the app tracks the `.cas` sibling. When
     /// [`Self::save_tape_wav`] is on, a `.wav` of the tape audio
     /// ([`coco_core::cassette_wav::synthesize_wav`]) is additionally
-    /// written alongside it, next to (not instead of) the `.cas`.
-    pub(crate) fn save_tape_bytes(&mut self) {
+    /// written alongside it, next to (not instead of) the `.cas` — a
+    /// failure on that second write is also an `Err`, but unlike the `.cas`
+    /// half it is NOT retried by a later flush: `mark_saved` has already
+    /// run (the `.cas`, the canonical data, did land and is not rolled
+    /// back), so the next flush of a still-clean tape is a no-op and the
+    /// `.wav` stays missing until the tape dirties again.
+    pub(crate) fn save_tape_bytes(&mut self) -> Result<(), String> {
         let Some(path) = self.tape_path.clone() else {
-            return;
+            return Ok(());
         };
         if !self.machine.bus.cassette.dirty() {
-            return;
+            return Ok(());
         }
         let cas_path = path.with_extension("cas");
-        match std::fs::write(&cas_path, self.machine.bus.cassette.tape_bytes()) {
-            Ok(()) => {
-                self.machine.bus.cassette.mark_saved();
-                if cas_path != path {
-                    self.tape_path = Some(cas_path.clone());
-                }
-            }
-            Err(e) => {
-                self.cart_error = Some(format!("could not save {}: {e}", cas_path.display()));
-                return;
-            }
+        std::fs::write(&cas_path, self.machine.bus.cassette.tape_bytes())
+            .map_err(|e| format!("could not save {}: {e}", cas_path.display()))?;
+        self.machine.bus.cassette.mark_saved();
+        if cas_path != path {
+            self.tape_path = Some(cas_path.clone());
         }
         if self.save_tape_wav {
             let wav_path = cas_path.with_extension("wav");
@@ -120,9 +126,9 @@ impl CocoApp {
                 self.machine.bus.cassette.tape_bytes(),
                 self.machine.cpu_hz(),
             );
-            if let Err(e) = std::fs::write(&wav_path, wav) {
-                self.cart_error = Some(format!("could not save {}: {e}", wav_path.display()));
-            }
+            std::fs::write(&wav_path, wav)
+                .map_err(|e| format!("could not save {}: {e}", wav_path.display()))?;
         }
+        Ok(())
     }
 }

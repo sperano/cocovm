@@ -269,14 +269,24 @@ impl CocoApp {
     }
 
     /// Write modified floppies and tape back to their files — the contract
-    /// a manager-owned VM needs on Stop (`manager::lifecycle::stop_vm`) or
-    /// on the manager's own `on_exit` (`ManagerApp`'s `eframe::App` impl in
-    /// `manager.rs`, "one native window
+    /// a manager-owned VM needs on Stop (`manager::lifecycle::stop_vm`), on
+    /// suspend (`manager::lifecycle::suspend_vm`, via
+    /// [`Self::save_state_to`]), or on the manager's own `on_exit`
+    /// (`ManagerApp`'s `eframe::App` impl in `manager.rs`, "one native window
     /// per running VM"), and the one [`eframe::App::on_exit`] below still
     /// runs for the test-only `CocoApp` window (`ui_tests::harness`).
-    pub(crate) fn flush_media(&mut self) {
-        self.flush_dirty_disks();
-        self.write_back_tape();
+    ///
+    /// Tries the disks AND the tape even when one side fails — they're
+    /// independent media, so a bad floppy write-back shouldn't also skip
+    /// saving the tape — and joins both error messages with `\n`.
+    pub(crate) fn flush_media(&mut self) -> Result<(), String> {
+        let disks = self.flush_dirty_disks();
+        let tape = self.write_back_tape();
+        match (disks, tape) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(e), Ok(())) | (Ok(()), Err(e)) => Err(e),
+            (Err(d), Err(t)) => Err(format!("{d}\n{t}")),
+        }
     }
 
     /// Set whether emulation advances — exposed so the manager's
@@ -317,9 +327,14 @@ impl CocoApp {
 /// needs this impl to exist.
 impl eframe::App for CocoApp {
     /// Write modified floppies and tape back to their files on quit — a BASIC
-    /// `SAVE`/`CSAVE` only exists in the in-memory image until then.
+    /// `SAVE`/`CSAVE` only exists in the in-memory image until then. The app
+    /// is going away either way, so there's no dialog left to show a failure
+    /// in; it's only `tracing::warn!`-logged (matching
+    /// `manager::lifecycle::stop_vm`'s own on-the-way-out handling).
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.flush_media();
+        if let Err(e) = self.flush_media() {
+            tracing::warn!("could not flush media on exit: {e}");
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
