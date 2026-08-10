@@ -5,6 +5,8 @@
 mod audio;
 mod render;
 mod run;
+
+pub use render::ActiveRect;
 mod video_mode;
 
 use mc6809::{Bus, MC6809};

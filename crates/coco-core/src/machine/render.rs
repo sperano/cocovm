@@ -8,12 +8,72 @@ use crate::{gime, gime_video, raster, video};
 
 use super::{BYTES_PER_PIXEL, FB_HEIGHT, FB_WIDTH, Machine, TEXT_BORDER_COLOR};
 
+/// The active (non-border) picture rectangle within the framebuffer, in
+/// framebuffer pixels — [`Machine::active_rect`]'s return type. `u32` to
+/// match [`Machine::fb_width`]/[`Machine::fb_height`], the dimensions a
+/// consumer pairs it with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActiveRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 impl Machine {
     /// Current scanline within the field (`0..lines_per_field`): the canonical
     /// raster row being painted (rows ≥ 240 are vertical blanking). Exposed
     /// for scanline-timed tests and debug UI.
     pub fn scanline(&self) -> u32 {
         self.line
+    }
+
+    /// The active (non-border) picture rectangle in framebuffer pixel
+    /// coordinates — the same geometry the renderers paint, exposed for the
+    /// frontend's pointer→joystick mapping (mouse axes should track the
+    /// pointer over the active picture, not the bordered field). Computed on
+    /// demand, no caching to go stale.
+    ///
+    /// CoCo 1/2: the fixed VDG geometry ([`video::BORDER`], [`video::ACTIVE_W`]/
+    /// [`video::ACTIVE_H`]).
+    ///
+    /// CoCo 3 (always the 640×240 canvas, `raster.rs`): legacy fields are
+    /// always non-wide (`paint_legacy_scanline` below); GIME-native fields
+    /// take `gime_video::active_span`'s wide/non-wide split — the very
+    /// decode `paint_side_borders` paints from. Whether the field IS legacy
+    /// comes from the latched `field_scan` when one exists: a mid-field
+    /// INIT0 COCO flip waits for the next field's latch (`render_scanline`),
+    /// so the latch — not the live bit — is what's on screen. Vertical
+    /// placement is `gime_video::active_rows`, shared with the painters'
+    /// row windowing; its LPF read (like the wide bit) is live, matching
+    /// the painters exactly.
+    pub fn active_rect(&self) -> ActiveRect {
+        if self.config.variant != MachineVariant::Coco3 {
+            return ActiveRect {
+                x: video::BORDER as u32,
+                y: video::BORDER as u32,
+                width: video::ACTIVE_W as u32,
+                height: video::ACTIVE_H as u32,
+            };
+        }
+
+        let legacy = self.field_scan.as_ref().map_or_else(
+            || self.bus.gime.init0 & gime::init0::COCO != 0,
+            |s| s.legacy,
+        );
+        let (x, w) = if legacy {
+            (raster::NON_WIDE_BORDER_X, raster::NON_WIDE_ACTIVE_W)
+        } else {
+            gime_video::active_span(&self.bus.gime)
+        };
+        let (top, body) = gime_video::active_rows(&self.bus.gime);
+
+        ActiveRect {
+            x: x as u32,
+            y: top as u32,
+            width: w as u32,
+            height: body as u32,
+        }
     }
 
     /// Paint the current scanline of the canonical raster (Option B,
@@ -80,8 +140,7 @@ impl Machine {
 
         // Vertical placement from the live LPF bits — the GIME applies LPF
         // even in legacy modes (MAME `update_geometry`).
-        let lpf = ((self.bus.gime.vres & gime::vres::LPF_MASK) >> gime::vres::LPF_SHIFT) as usize;
-        let (top, body) = raster::vertical_window(lpf);
+        let (top, body) = gime_video::active_rows(&self.bus.gime);
         if row < top || row >= top + body {
             for px in row_px.chunks_exact_mut(BYTES_PER_PIXEL) {
                 px.copy_from_slice(&border);
