@@ -71,13 +71,101 @@ impl ManagerApp {
     /// the only warning about that). A powered-off entry always has
     /// `vm: None`, so this only ever replaces `None` with `Some`; callers
     /// route a Running or Suspended entry elsewhere ([`Self::resume_vm`]).
+    /// Counts as a fresh start ([`Self::record_start`]) — [`Self::resume_vm`]
+    /// launches through [`Self::launch_vm`] directly for its cold-relaunch
+    /// case, so *that* launch never counts.
     pub(super) fn start_vm(&mut self, index: usize) {
-        let entry = &mut self.entries[index];
-        entry.launch_error = None;
-        match crate::launch_machine(&entry.def, &entry.slug) {
-            Ok(vm) => entry.vm = Some(Box::new(vm)),
-            Err(e) => entry.launch_error = Some(e),
+        if self.launch_vm(index) {
+            self.record_start(index);
         }
+    }
+
+    /// Launch `entries[index]`'s saved definition into a fresh `CocoApp`,
+    /// with no stats bookkeeping — the mechanics [`Self::start_vm`] (a fresh
+    /// start, which counts) and [`Self::resume_vm`]'s cold-relaunch case (a
+    /// launch immediately overwritten by a restored snapshot, which must
+    /// not) both need underneath. Returns whether the launch succeeded.
+    fn launch_vm(&mut self, index: usize) -> bool {
+        self.entries[index].launch_error = None;
+        match crate::launch_machine(&self.entries[index].def, &self.entries[index].slug) {
+            Ok(vm) => {
+                self.entries[index].vm = Some(Box::new(vm));
+                true
+            }
+            Err(e) => {
+                self.entries[index].launch_error = Some(e);
+                false
+            }
+        }
+    }
+
+    /// Increment `starts` and persist `entries[index]`'s definition — called
+    /// by [`Self::start_vm`] after a successful fresh launch only. Resume's
+    /// cold-relaunch path calls [`Self::launch_vm`] directly and never
+    /// reaches this, so neither a Suspend → close window → Resume cycle nor
+    /// a Suspend → quit → relaunch → Resume one (`entry.suspended`
+    /// rehydrates from the on-disk `.ccstate` either way) counts as a start.
+    fn record_start(&mut self, index: usize) {
+        self.entries[index].def.stats.starts += 1;
+        self.save_entry_def(index);
+    }
+
+    /// Persist `entries[index]`'s current definition to its `<slug>.toml`,
+    /// clearing [`ManagerApp::save_error`] on success or recording the
+    /// failure otherwise (the convention `manager::detail`'s `autosave` and
+    /// `commit_name` both follow) — the write path a stats-only change (no
+    /// form edit involved) uses, bypassing the detail pane's `autosave`
+    /// dirty-check. On success, also keeps a live edit session for this same
+    /// entry in step: if `self.edit` is seeded from `entries[index]`, its
+    /// auto-save baseline (`EditState::packed`) is resynced to the
+    /// just-saved definition, the same way `commit_name` keeps `packed.name`
+    /// current — otherwise the next keystroke's repack would see a stats-only
+    /// diff and redundantly re-save.
+    fn save_entry_def(&mut self, index: usize) {
+        let Some(dir) = self.machines_dir.clone() else {
+            self.save_error = Some(NO_CONFIG_DIR.to_string());
+            return;
+        };
+        match machine_def::save(&dir, &self.entries[index].slug, &self.entries[index].def) {
+            Ok(()) => {
+                self.save_error = None;
+                if let Some(edit) = self.edit.as_mut()
+                    && edit.slug == self.entries[index].slug
+                {
+                    edit.packed = self.entries[index].def.clone();
+                }
+            }
+            Err(e) => self.save_error = Some(e),
+        }
+    }
+
+    /// Fold `secs` (whole seconds already drained by
+    /// [`crate::CocoApp::take_session_runtime`], which keeps any fractional
+    /// remainder in the live `session_runtime` for next time) into
+    /// `entries[index]`'s persisted runtime total and save, when nonzero. A
+    /// no-op save avoidance: folding zero elapsed seconds (e.g. a suspend/stop
+    /// that happens within the same second as the last fold) doesn't touch the
+    /// file.
+    fn fold_elapsed_runtime(&mut self, index: usize, secs: u64) {
+        if secs == 0 {
+            return;
+        }
+        self.entries[index].def.stats.runtime_secs += secs;
+        self.save_entry_def(index);
+    }
+
+    /// Drain `entries[index]`'s live VM session runtime (if any — a no-op for
+    /// an entry with no live VM) via [`Self::fold_elapsed_runtime`]. Shared by
+    /// [`Self::suspend_vm`], [`Self::stop_vm`], and [`ManagerApp::on_exit`]
+    /// (`manager.rs`) — each calls this while the VM is still in place
+    /// (`entries[index].vm`), before whatever happens to it next (pause,
+    /// `take()`, flush).
+    pub(super) fn fold_runtime_into_def(&mut self, index: usize) {
+        let Some(vm) = self.entries[index].vm.as_mut() else {
+            return;
+        };
+        let secs = vm.take_session_runtime();
+        self.fold_elapsed_runtime(index, secs);
     }
 
     /// Suspend (the ⏸ transport button, Running machines only): freeze the
@@ -107,14 +195,14 @@ impl ManagerApp {
         }
         let entry = &mut self.entries[index];
         let vm = entry.vm.as_mut().expect("checked Some above");
-        match vm.save_state_to(&path) {
-            Ok(()) => {
-                vm.set_running(false);
-                entry.suspended = true;
-                entry.launch_error = None;
-            }
-            Err(e) => entry.launch_error = Some(e),
+        if let Err(e) = vm.save_state_to(&path) {
+            entry.launch_error = Some(e);
+            return;
         }
+        vm.set_running(false);
+        entry.suspended = true;
+        entry.launch_error = None;
+        self.fold_runtime_into_def(index);
     }
 
     /// Play on a Suspended machine: bring it back to Running. Two shapes —
@@ -123,7 +211,13 @@ impl ManagerApp {
     /// (VM dropped), in which case a fresh launch restores the frozen state
     /// over itself (`CocoApp::load_state_from` replaces the machine
     /// wholesale, so what the launch booted is irrelevant — it only has to
-    /// succeed). Either way a successful resume deletes the
+    /// succeed). That cold-relaunch case goes through [`Self::launch_vm`]
+    /// directly, never [`Self::start_vm`]: Resume must never count as a
+    /// fresh start (`machine_def::StatsDTO::starts`'s doc), whether the VM
+    /// object survived or had to be relaunched — and whether the app itself
+    /// stayed up (window closed) or was quit and relaunched (`entry.suspended`
+    /// rehydrates from the on-disk `.ccstate` either way). Either way a
+    /// successful resume deletes the
     /// [`super::SUSPEND_STATE_FILE`]: the running machine immediately
     /// diverges from the frozen copy, and a stale file would misreport
     /// Suspended after the next power-off. A failed relaunch/restore keeps
@@ -135,10 +229,10 @@ impl ManagerApp {
             return;
         };
         if self.entries[index].vm.is_none() {
-            self.start_vm(index);
+            self.launch_vm(index);
             let entry = &mut self.entries[index];
             let Some(vm) = entry.vm.as_mut() else {
-                return; // launch failed; start_vm already recorded the error
+                return; // launch failed; launch_vm already recorded the error
             };
             if let Err(e) = vm.load_state_from(&path) {
                 entry.vm = None;
@@ -166,10 +260,12 @@ impl ManagerApp {
 
     /// Stop — the power switch (⏹ button, row context menu, and a *running*
     /// VM window's close box via [`super::vm_windows`]'s
-    /// `close_vm_window`): flush dirty disks/tape back to their files
-    /// (`CocoApp::flush_media`, the same one `eframe::App::on_exit` calls for
-    /// the test-only window in `app.rs`) — then drop the VM, returning the
-    /// row to Powered Off. On a
+    /// `close_vm_window`): fold the session's runtime
+    /// ([`Self::fold_runtime_into_def`], while the VM is still in
+    /// `entries[index].vm` for it to find), flush dirty disks/tape back to
+    /// their files (`CocoApp::flush_media`, the same one
+    /// `eframe::App::on_exit` calls for the test-only window in `app.rs`) —
+    /// then drop the VM, returning the row to Powered Off. On a
     /// Suspended machine (VM alive or not) this also discards the frozen
     /// state file — powering off is explicitly "throw the saved state
     /// away". The saved screenshot is deleted along with it (not just the
@@ -178,6 +274,7 @@ impl ManagerApp {
     /// keep-previous-on-black rule as a *previous power cycle's* screen the
     /// next time Suspend fires during a blanked display.
     pub(super) fn stop_vm(&mut self, index: usize) {
+        self.fold_runtime_into_def(index);
         if let Some(mut vm) = self.entries[index].vm.take() {
             vm.flush_media();
         }
@@ -296,3 +393,7 @@ impl ManagerApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "lifecycle_test.rs"]
+mod tests;

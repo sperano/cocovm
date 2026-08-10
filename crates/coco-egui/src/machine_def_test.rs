@@ -1,5 +1,6 @@
 use super::dto::{
-    DisplayDTO, JoySourceDTO, MachineVariantDTO, RAMDTO, SerialDTO, VDGVariantDTO, VideoStandardDTO,
+    DisplayDTO, JoySourceDTO, MachineVariantDTO, RAMDTO, SerialDTO, StatsDTO, VDGVariantDTO,
+    VideoStandardDTO,
 };
 use super::*;
 use crate::display::TV;
@@ -81,6 +82,12 @@ fn full_def() -> MachineDef {
             // non-default strengths.
             tv_scanline: 60,
             tv_noise: 20,
+        },
+        // Away from the defaults (0/0) so the round trip exercises
+        // non-default stats.
+        stats: StatsDTO {
+            runtime_secs: 12_345,
+            starts: 7,
         },
         unknown: toml::Table::new(),
     }
@@ -217,6 +224,30 @@ monitor = "rgb"
     // The legacy `monitor` key (no `display`) maps to the monitor half of
     // `Display`.
     assert_eq!(def.display(), Display::Monitor(MonitorType::RGB));
+}
+
+/// A file with no `[stats]` section — every definition written before this
+/// field existed — loads with a zeroed [`StatsDTO`] and no unknown-key
+/// warning (`io::KNOWN_SECTIONS` lists `stats`, same as every other
+/// always-present section).
+#[test]
+fn missing_stats_section_defaults_to_zero() {
+    let dir = TempDir::new("missing-stats");
+    let toml_text = r#"
+schema = 1
+name = "No Stats Yet"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+"#;
+    fs::write(dir.path().join("no-stats.toml"), toml_text).unwrap();
+
+    let loaded = load_all(dir.path()).expect("a file with no [stats] section should still load");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].1.stats, StatsDTO::default());
 }
 
 #[test]

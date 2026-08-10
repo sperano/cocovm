@@ -17,6 +17,7 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "peripherals",
     "ports",
     "ui",
+    "stats",
 ];
 // `monitor` stays listed though saves no longer write it — legacy files
 // carrying it must load without an unknown-key warning (`DisplayDTO`'s doc).
@@ -34,6 +35,7 @@ const UI_KEYS: &[&str] = &[
     "tv_scanline",
     "tv_noise",
 ];
+const STATS_KEYS: &[&str] = &["runtime_secs", "starts"];
 
 /// Sections that nest under the top level, paired with their known-key
 /// lists, so [`warn_unknown_keys`] can recurse one level without extra
@@ -45,6 +47,7 @@ const KNOWN_SECTIONS: &[(&str, &[&str])] = &[
     ("peripherals", PERIPHERALS_KEYS),
     ("ports", PORTS_KEYS),
     ("ui", UI_KEYS),
+    ("stats", STATS_KEYS),
 ];
 
 /// Log a `tracing::warn` naming `path` and the key for every TOML key not in

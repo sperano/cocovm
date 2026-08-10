@@ -32,7 +32,8 @@ mod dto;
 mod io;
 
 pub use dto::{
-    HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PeripheralsDTO, PortsDTO, SerialDTO, UIDTO,
+    HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PeripheralsDTO, PortsDTO, SerialDTO, StatsDTO,
+    UIDTO,
 };
 // Only tests build definitions with an explicit display DTO so far —
 // production writers go through `HardwareDTO::from_config`.
@@ -71,6 +72,10 @@ pub struct MachineDef {
     pub ports: PortsDTO,
     #[serde(default)]
     pub ui: UIDTO,
+    /// `[stats]` section — see [`StatsDTO`]. Read-only from the form's point
+    /// of view; only `manager::lifecycle` writes it.
+    #[serde(default)]
+    pub stats: StatsDTO,
     /// Keys the loader (`io::load_one`) found in the source file but doesn't
     /// know about (top-level, and one level into each known section) — the
     /// same set it warns about via `tracing::warn`. Never serialized itself
@@ -145,6 +150,7 @@ impl MachineDef {
             peripherals: PeripheralsDTO::default(),
             ports: PortsDTO::default(),
             ui: UIDTO::default(),
+            stats: StatsDTO::default(),
             unknown: toml::Table::new(),
         }
     }

@@ -359,14 +359,19 @@ impl eframe::App for ManagerApp {
     /// Flush every running VM's dirty disks/tape on quit — the manager
     /// window is the root viewport, so closing it closes every VM at once
     ///; this mirrors
-    /// `CocoApp::on_exit`'s own contract for each of them.
+    /// `CocoApp::on_exit`'s own contract for each of them. Also folds each
+    /// live VM's session runtime into its persisted `[stats].runtime_secs`
+    /// total (`manager::lifecycle::fold_runtime_into_def`), the same as Stop.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // Quit is the power switch for running VMs — no auto-suspend on quit);
-        // a suspended VM's state and
-        // preview are already on disk from suspend time, so neither needs
-        // anything written here.
-        for entry in &mut self.entries {
-            if let Some(vm) = entry.vm.as_mut() {
+        // Quit is the power switch for running VMs — no auto-suspend on quit;
+        // a suspended VM's state and preview are already on disk from suspend
+        // time, so neither needs anything written here. A live VM's session
+        // runtime is folded into its persisted total the same way Stop does,
+        // so lifetime runtime doesn't undercount just because the user quit
+        // instead of powering off first.
+        for index in 0..self.entries.len() {
+            self.fold_runtime_into_def(index);
+            if let Some(vm) = self.entries[index].vm.as_mut() {
                 vm.flush_media();
             }
         }

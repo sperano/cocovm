@@ -5,17 +5,37 @@ use crate::*;
 
 impl CocoApp {
     /// Emulated fields owed for this update, from wall-clock time at the
-    /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
+    /// machine's field rate (60 Hz NTSC / 50 Hz PAL). Also accumulates
+    /// [`Self::session_runtime`] from the same [`MAX_FRAME_DT`]-clamped
+    /// `dt` that feeds `field_debt` — session runtime means "time the
+    /// machine was actually emulating", so a host stall (window drag, app
+    /// hidden) contributes at most `MAX_FRAME_DT` to it too, the same cap
+    /// that keeps the emulated catch-up from bursting after a long gap.
     pub(crate) fn fields_due(&mut self) -> usize {
         let now = std::time::Instant::now();
-        let dt = match self.last_update.replace(now) {
-            Some(prev) => (now - prev).as_secs_f64().min(MAX_FRAME_DT),
-            None => 0.0,
-        };
+        let elapsed = self
+            .last_update
+            .replace(now)
+            .map_or(std::time::Duration::ZERO, |prev| now - prev);
+        let clamped = elapsed.min(std::time::Duration::from_secs_f64(MAX_FRAME_DT));
+        self.session_runtime += clamped;
+        let dt = clamped.as_secs_f64();
         self.field_debt += dt * self.machine.config.video.field_rate_hz();
         let due = (self.field_debt as usize).min(MAX_FIELDS_PER_UPDATE);
         self.field_debt = (self.field_debt - due as f64).min(1.0);
         due
+    }
+
+    /// Drain whole seconds from [`CocoApp::session_runtime`], carrying any
+    /// fractional remainder forward instead of discarding it — called when
+    /// folding into the persisted `[stats].runtime_secs` total
+    /// (`manager::lifecycle::fold_runtime_into_def`), so the same whole
+    /// second is never folded in twice and a sub-second remainder never
+    /// silently bleeds away on a fold that lands mid-second.
+    pub(crate) fn take_session_runtime(&mut self) -> u64 {
+        let secs = self.session_runtime.as_secs();
+        self.session_runtime -= std::time::Duration::from_secs(secs);
+        secs
     }
 
     /// Advance emulation for one host frame — input, joysticks, the

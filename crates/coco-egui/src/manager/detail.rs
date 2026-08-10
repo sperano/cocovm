@@ -83,6 +83,94 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     });
 }
 
+/// [`humanize_runtime`]'s unit breakpoints.
+const SECS_PER_MINUTE: u64 = 60;
+const SECS_PER_HOUR: u64 = 60 * SECS_PER_MINUTE;
+const SECS_PER_DAY: u64 = 24 * SECS_PER_HOUR;
+
+/// How often the detail pane asks for its next repaint while showing a
+/// running machine's ticking Runtime row (see [`draw_statistics`]'s call
+/// site).
+const STATS_REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Humanize a whole-seconds duration as its two largest nonzero-scale
+/// units — `"2 d 3 h"`, `"3 h 12 m"`, `"12 m 5 s"` — dropping to a single
+/// unit once under a minute (`"42 s"`, `"0 s"`): there's nothing smaller
+/// than seconds to pair it with. Pure so it's unit-testable without an egui
+/// context (`detail_test.rs`).
+fn humanize_runtime(total_secs: u64) -> String {
+    if total_secs >= SECS_PER_DAY {
+        let days = total_secs / SECS_PER_DAY;
+        let hours = (total_secs % SECS_PER_DAY) / SECS_PER_HOUR;
+        format!("{days} d {hours} h")
+    } else if total_secs >= SECS_PER_HOUR {
+        let hours = total_secs / SECS_PER_HOUR;
+        let minutes = (total_secs % SECS_PER_HOUR) / SECS_PER_MINUTE;
+        format!("{hours} h {minutes} m")
+    } else if total_secs >= SECS_PER_MINUTE {
+        let minutes = total_secs / SECS_PER_MINUTE;
+        let seconds = total_secs % SECS_PER_MINUTE;
+        format!("{minutes} m {seconds} s")
+    } else {
+        format!("{total_secs} s")
+    }
+}
+
+/// The persisted runtime total plus, live, whatever a *running* VM has
+/// accumulated this session — so the number ticks while it's open. Pure so
+/// it's unit-testable without an egui context (`detail_test.rs`), like
+/// [`humanize_runtime`].
+fn displayed_runtime_secs(entry: &super::MachineEntry) -> u64 {
+    let live = entry
+        .vm
+        .as_ref()
+        .map_or(std::time::Duration::ZERO, |vm| vm.session_runtime);
+    entry.def.stats.runtime_secs + live.as_secs()
+}
+
+/// "Started" row text — `"N times"`, correctly singular for one
+/// (`"1 time"`, not "1 times"). Pure, like [`humanize_runtime`], for the
+/// same reason.
+fn started_label(starts: u32) -> String {
+    if starts == 1 {
+        "1 time".to_string()
+    } else {
+        format!("{starts} times")
+    }
+}
+
+/// Read-only "Statistics" block: created date (omitted if never recorded —
+/// only true for a definition hand-written before this field existed, since
+/// every definition the manager itself creates sets it), cumulative
+/// powered-on runtime ([`displayed_runtime_secs`]), and boot count. Never
+/// edited here — folding/incrementing happens in `manager::lifecycle`, this
+/// just reads.
+fn draw_statistics(ui: &mut egui::Ui, slug: &str, entry: &super::MachineEntry) {
+    titled_group(ui, "Statistics", |ui| {
+        form_grid(("detail_form_stats", slug)).show(ui, |ui| {
+            if let Some(created) = &entry.def.created {
+                ui.label("Created");
+                ui.label(created);
+                ui.end_row();
+            }
+            ui.label("Runtime");
+            ui.label(humanize_runtime(displayed_runtime_secs(entry)));
+            ui.end_row();
+            ui.label("Started");
+            ui.label(started_label(entry.def.stats.starts));
+            ui.end_row();
+        });
+    });
+    if entry.is_running() {
+        // Native-viewport case: this pane's own window must ask for its
+        // next repaint itself to keep the Runtime row ticking once a
+        // second. The manager's Embedded fallback (no native viewports
+        // available) already repaints every frame via `step_emulation`
+        // (`app/frame.rs`), so this is redundant but harmless there.
+        ui.ctx().request_repaint_after(STATS_REPAINT_INTERVAL);
+    }
+}
+
 impl ManagerApp {
     /// Right pane for the selected entry: its edit form.
     pub(super) fn draw_detail(&mut self, ui: &mut egui::Ui, index: usize) {
@@ -130,6 +218,9 @@ impl ManagerApp {
         if let Some(err) = &self.entries[index].launch_error {
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
+        ui.add_space(DETAIL_SECTION_GAP);
+
+        draw_statistics(ui, &slug, &self.entries[index]);
         ui.add_space(DETAIL_SECTION_GAP);
 
         draw_form_sections(ui, &slug, &mut edit.form);
@@ -223,3 +314,7 @@ impl ManagerApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "detail_test.rs"]
+mod tests;
