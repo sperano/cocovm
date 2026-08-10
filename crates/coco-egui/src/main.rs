@@ -76,8 +76,7 @@ pub(crate) use mpi::{
 };
 pub(crate) use rom_load::{
     Coco12ROMResult, ROM_DB_PSEUDO_PATH_PREFIX, ROMSource, compose_coco12_rom, dev_roms_dir,
-    disk_basic_rom_path, load_rom_with_source, report_rom_validation, rom_db_pseudo_path,
-    rs232_eprom_default_path,
+    disk_basic_rom_path, report_rom_validation, rom_db_pseudo_path, rs232_eprom_default_path,
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
 pub(crate) use startup::{

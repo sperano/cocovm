@@ -2,11 +2,14 @@
 //! machine definition into a running [`CocoApp`].
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use coco_core::MachineVariant;
+
+use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
     CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, dev_roms_dir,
-    load_rom_with_source, machine_def,
+    machine_def,
 };
 
 /// File name [`launch_machine`] captures `[ports].serial = "file"` to,
@@ -53,8 +56,7 @@ struct Peripherals {
 pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
     let config = def.to_machine_config()?;
     let explicit_rom = def.hardware.rom.as_ref().map(PathBuf::from);
-    let (rom, rom_source) =
-        load_rom_with_source(explicit_rom.as_deref(), config.variant, &dev_roms_dir())?;
+    let (rom, rom_source) = load_rom(explicit_rom.as_deref(), config.variant)?;
 
     let media = resolve_media(def, slug);
     let peripherals = Peripherals {
@@ -102,6 +104,31 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     app.joysticks.sources[coco_core::joystick::RIGHT] = def.ui.joy_right.into();
     app.joysticks.sources[coco_core::joystick::LEFT] = def.ui.joy_left.into();
     Ok(app)
+}
+
+/// The definition's system ROM — an explicit `[hardware].rom` loaded verbatim
+/// ([`load_explicit_rom`]), else the default [`dev_roms_dir`] resolution
+/// ([`load_default_rom`]) — paired with the [`ROMSource`] a snapshot needs to
+/// re-resolve/hash whichever path was taken, so the two can't drift apart.
+fn load_rom(
+    explicit: Option<&Path>,
+    variant: MachineVariant,
+) -> Result<(Box<[u8]>, ROMSource), String> {
+    match explicit {
+        Some(path) => Ok((
+            load_explicit_rom(path)?,
+            ROMSource::File(path.to_path_buf()),
+        )),
+        None => {
+            let roms_dir = dev_roms_dir();
+            let rom = load_default_rom(variant, &roms_dir)?;
+            let source = match variant {
+                MachineVariant::Coco3 => ROMSource::File(roms_dir.join("coco3.rom")),
+                MachineVariant::Coco1 | MachineVariant::Coco2 => ROMSource::ComposedCoco12,
+            };
+            Ok((rom, source))
+        }
+    }
 }
 
 fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {

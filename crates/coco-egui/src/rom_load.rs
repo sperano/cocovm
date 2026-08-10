@@ -233,30 +233,6 @@ pub(crate) fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
     PathBuf::from(format!("{ROM_DB_PSEUDO_PATH_PREFIX}{label}"))
 }
 
-/// [`load_explicit_rom`]/[`load_default_rom`], plus the [`ROMSource`] a
-/// snapshot needs to re-resolve/hash whichever path was taken — the single
-/// place [`launch_machine`] gets both together, so they can't drift apart.
-pub(crate) fn load_rom_with_source(
-    explicit: Option<&Path>,
-    variant: MachineVariant,
-    roms_dir: &Path,
-) -> Result<(Box<[u8]>, ROMSource), String> {
-    match explicit {
-        Some(path) => Ok((
-            load_explicit_rom(path)?,
-            ROMSource::File(path.to_path_buf()),
-        )),
-        None => {
-            let rom = load_default_rom(variant, roms_dir)?;
-            let source = match variant {
-                MachineVariant::Coco3 => ROMSource::File(roms_dir.join("coco3.rom")),
-                MachineVariant::Coco1 | MachineVariant::Coco2 => ROMSource::ComposedCoco12,
-            };
-            Ok((rom, source))
-        }
-    }
-}
-
 #[cfg(test)]
 #[path = "rom_load_test.rs"]
 mod tests;
