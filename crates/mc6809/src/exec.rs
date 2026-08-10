@@ -12,7 +12,7 @@ mod exec_data;
 impl MC6809 {
     /// Execute one instruction; returns the cycles it consumed.
     ///
-    /// Partial decode: NOP, 8/16-bit load/store, LEA, and the full 8-bit ALU —
+    /// Decodes NOP, 8/16-bit load/store, LEA, and the full 8-bit ALU —
     /// arithmetic (ADD/ADC/SUB/SBC/CMP), logic (AND/OR/EOR/BIT), and
     /// read-modify-write (NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR) for A, B,
     /// and memory — across immediate / direct / extended / indexed addressing
@@ -25,8 +25,8 @@ impl MC6809 {
     /// (`ORCC`/`ANDCC`/`SEX`/`ABX`/`MUL`/`DAA`); and the interrupt/halt set
     /// (`SWI`/`SWI2`/`SWI3`, `RTI`, `CWAI`, `SYNC`). External interrupts are
     /// delivered via [`Self::irq`]/[`Self::firq`]/[`Self::nmi`]. This is the
-    /// complete 6809 user-mode ISA; only a handful of illegal opcodes remain
-    /// undecoded and are treated as 2-cycle NOPs during bring-up.
+    /// complete 6809 user-mode ISA; only a handful of illegal opcodes are
+    /// undecoded and execute as 2-cycle NOPs.
     pub fn step(&mut self, bus: &mut impl Bus) -> u32 {
         if self.state != State::Running {
             // Halted by SYNC/CWAI: burn an idle cycle until the machine delivers
@@ -114,7 +114,7 @@ impl MC6809 {
                 self.exec_rmw(bus, opcode)
             }
 
-            _ => 2, // TODO: unimplemented opcode
+            _ => 2, // illegal opcode: 2-cycle NOP
         };
         self.cycles += cycles as u64;
         cycles
@@ -277,11 +277,11 @@ impl MC6809 {
                 20
             } // SWI2
 
-            _ => 2, // TODO: other $10-page opcodes
+            _ => 2, // illegal $10-page opcode: 2-cycle NOP
         }
     }
 
-    /// `$11`-prefixed page: 16-bit compares of U and S (plus SWI3, TODO).
+    /// `$11`-prefixed page: 16-bit compares of U and S, plus SWI3.
     fn exec_page11(&mut self, bus: &mut impl Bus) -> u32 {
         let op2 = self.fetch_u8(bus);
         match op2 {
@@ -335,7 +335,7 @@ impl MC6809 {
                 20
             } // SWI3
 
-            _ => 2, // TODO: other $11-page opcodes
+            _ => 2, // illegal $11-page opcode: 2-cycle NOP
         }
     }
 

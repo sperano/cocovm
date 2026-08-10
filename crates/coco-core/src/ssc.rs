@@ -281,7 +281,7 @@ impl Cartridge for SoundSpeechCartridge {
     /// Circuit — unconditionally, since `$FF7E` bit 5 must reflect the
     /// cartridge's own output regardless of whether `SystemBus`'s sound mux
     /// is currently selecting it (see the [`sac`] module doc comment).
-    /// [`SystemBus::sound_sample`](crate::bus::SystemBus::sound_sample)
+    /// [`SystemBus::sound_probe`](crate::bus::SystemBus::sound_probe)
     /// calls this exactly once per sample and only mixes the returned value
     /// in when the mux selects the cartridge input.
     fn audio_sample(&mut self) -> f32 {

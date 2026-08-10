@@ -1,8 +1,13 @@
 //! `SystemBus` — address decode for RAM/ROM through the MMU plus the fixed I/O
 //! page. Implements the CPU's `Bus` trait. See `DESIGN.md` §3.
 //!
-//! STATUS: skeleton. Device ranges are decoded to the right peripherals, but most
-//! peripheral registers are stubs and ROM mapping / vector fetch is TODO.
+//! Decodes the full machine. On CoCo 3: MMU-translated RAM, the ROM windows
+//! and hardwired vector fetch, and live peripherals on the I/O page — the
+//! PIAs (with the bit-banger and cassette hanging off them), GIME registers,
+//! SAM strobes, the cartridge/SCS window (FDC, MPI, paks), and the
+//! Becker-port and VHD intercepts. CoCo 1/2 takes the separate plain-SAM
+//! whole-address decode (`sam_path`) instead. Enough to boot and run the
+//! real Color BASIC ROM family (`tests/` boot suites).
 
 mod audio_bridge;
 mod io;
