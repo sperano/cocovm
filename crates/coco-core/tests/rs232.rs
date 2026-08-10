@@ -31,6 +31,12 @@ const CTL_19200_8N1: u8 = 0x0F;
 /// TX frame (~466) + host-poll latency (128) + RX frame (~466), doubled.
 const ROUND_TRIP_BUDGET: u32 = 2 * (466 + 128 + 466);
 
+/// Wall-clock bound on every kernel-socket wait in
+/// [`tcp_endpoint_round_trip_through_the_bus`]. Only ever reached on
+/// genuine failure, so generosity costs nothing on the happy path — 2 s
+/// proved too tight on a heavily loaded host (Vikunja #190).
+const SOCKET_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 fn bus() -> SystemBus {
     SystemBus::new(
         MachineVariant::Coco3,
@@ -55,6 +61,17 @@ fn run(bus: &mut SystemBus, cycles: u32) {
         bus.cart.tick(step);
         bus.poll_cart_interrupt();
         remaining -= step;
+    }
+}
+
+/// Tick the bus until an ACIA status bit in `mask` rises, failing with
+/// `what` after [`SOCKET_TIMEOUT`] — the bounded wait for everything the
+/// kernel socket layer delivers asynchronously to the tick loop.
+fn tick_until_status(bus: &mut SystemBus, mask: u8, what: &str) {
+    let deadline = std::time::Instant::now() + SOCKET_TIMEOUT;
+    while bus.read(ACIA_STATUS) & mask == 0 {
+        assert!(std::time::Instant::now() < deadline, "{what}");
+        run(bus, ROUND_TRIP_BUDGET);
     }
 }
 
@@ -201,31 +218,38 @@ fn tcp_endpoint_round_trip_through_the_bus() {
 
     let mut client = std::net::TcpStream::connect(addr).expect("connect to the pak");
     client
-        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .set_read_timeout(Some(SOCKET_TIMEOUT))
         .expect("set read timeout");
 
     bus.write(ACIA_CONTROL, CTL_19200_8N1);
     bus.write(ACIA_COMMAND, command::DTR);
 
-    // CPU -> host: the accept happens inside the pak's throttled host poll,
-    // so keep ticking while the client waits for the byte.
+    // Wait for the pak to accept the client before transmitting: `tx` on an
+    // unattached endpoint drops the byte (serial.rs's unplugged-cable
+    // contract), and `connect` returning does not guarantee the listener's
+    // accept has happened yet — under host load that window once flaked this
+    // test. The endpoint's `dcd()` reports attachment, surfaced as the
+    // ACIA's DCD status bit by the host poll, so tick until it rises —
+    // the same carrier check real CoCo software performs before sending.
+    tick_until_status(&mut bus, status::DCD, "pak never accepted the client");
+
+    // CPU -> host: the byte is guaranteed a connected stream now, so once
+    // the TX frame completes it is in the socket and the timed read below
+    // observes it.
     bus.write(ACIA_DATA, b'H');
     run(&mut bus, ROUND_TRIP_BUDGET);
     let mut byte = [0u8; 1];
     client.read_exact(&mut byte).expect("host sees the TX byte");
     assert_eq!(byte[0], b'H');
 
-    // Host -> CPU: poll with a bounded retry loop — kernel socket delivery
-    // isn't synchronous with our tick loop.
+    // Host -> CPU: kernel socket delivery isn't synchronous with our tick
+    // loop, so poll until the byte lands in RDR.
     client.write_all(b"K").expect("send a byte to the pak");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while bus.read(ACIA_STATUS) & status::RDRF == 0 {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "byte from the host never reached RDR"
-        );
-        run(&mut bus, ROUND_TRIP_BUDGET);
-    }
+    tick_until_status(
+        &mut bus,
+        status::RDRF,
+        "byte from the host never reached RDR",
+    );
     assert_eq!(bus.read(ACIA_DATA), b'K');
 }
 
