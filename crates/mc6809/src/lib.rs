@@ -4,9 +4,12 @@
 //! 6502/68000). Validate via flexemu's `cputest.txt` self-checking program and by
 //! trace-diffing against XRoar/MAME. See `DESIGN.md` §5.
 //!
-//! STATUS: skeleton. Registers, reset, the `Bus` seam, and a flat test bus are in
-//! place; only a few opcodes are decoded. The full opcode set, the `$10`/`$11`
-//! prefix pages, indexed addressing, and interrupts are TODO.
+//! The complete documented 6809 user-mode ISA is implemented — every
+//! documented instruction including the `$10`/`$11` prefix pages, all
+//! addressing modes, and the interrupt set (`SWI`/`SWI2`/`SWI3`, `RTI`,
+//! `CWAI`, `SYNC`, plus external NMI/IRQ/FIRQ delivery) — with
+//! per-instruction cycle counts ([`MC6809::step`]). Undecoded illegal
+//! opcodes execute as 2-cycle NOPs.
 
 #![forbid(unsafe_code)]
 

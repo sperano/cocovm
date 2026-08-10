@@ -1,8 +1,12 @@
 //! GIME — MMU + video + timer + interrupt controller. See `DESIGN.md` §3, §4, §6.
 //!
-//! STATUS: MMU translate, SAM compatibility strobes, and the video registers
-//! ($FF98–$FF9F) are modelled; native scanout lives in `gime_video`. The timer,
-//! GIME-sourced interrupts, and the write-8/read-6 register asymmetry are TODO.
+//! Modelled here: MMU translate, SAM compatibility strobes, the video
+//! registers ($FF98–$FF9F), the 12-bit interval timer (1986-revision
+//! reload, [`TIMER_RELOAD_OFFSET`]), and the IRQ/FIRQ interrupt structure
+//! ($FF92/$FF93 enables with latched status, [`intr`]). The write-8/read-6
+//! MMU readback asymmetry is this module's [`MMU_READ_MASK`], applied by
+//! `SystemBus` on the register read path. Native scanout lives in
+//! `gime_video`.
 
 use serde::{Deserialize, Serialize};
 
@@ -169,8 +173,9 @@ pub const TIMER_VALUE_MASK: u16 = 0x0FFF;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GIME {
     /// MMU task registers: `[task][logical 8K slot]` -> physical block number.
-    /// Writes store the full 8 bits; reads return only the low 6 reliably
-    /// (`DESIGN.md` §3 — read path not yet modelled).
+    /// Writes store the full 8 bits; register reads return only the low 6
+    /// (`DESIGN.md` §3 — `SystemBus` applies [`MMU_READ_MASK`] on the read
+    /// path).
     pub mmu: [[u8; SLOTS_PER_TASK]; TASK_COUNT],
     pub task: usize,
     pub mmu_enabled: bool,

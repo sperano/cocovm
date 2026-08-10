@@ -2,9 +2,10 @@
 //! decode (RAM/ROM/cart/I/O/open-bus) in one step, unlike the GIME path's
 //! separate ROM-window/I/O-page/MMU layers, so there's no need for
 //! `phys`/`is_rom_window`/`rom_read` equivalents here. This path never
-//! touches `self.gime` — no MMU translate, no interrupt raises, no timer
-//! (Phase 2; the field-loop gating that keeps it that
-//! way for `hsync`/`fs_*` is Phase 4).
+//! touches `self.gime` — no MMU translate, no interrupt raises, no timer;
+//! the `hsync`/`fs_*` edge handlers (`sync.rs`) gate their GIME raises on
+//! the variant the same way, so the GIME struct stays completely inert on a
+//! CoCo 1/2.
 
 use crate::sam::SAMTarget;
 
