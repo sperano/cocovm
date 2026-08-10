@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use super::*;
-use crate::{ROMSource, dev_roms_dir, disk_basic_rom_path};
+use crate::rom_load::COCO3_ROM_FILE;
+use crate::{ROMSource, disk_basic_rom_path, installed_roms_dir};
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
 use coco_core::snapshot;
 use coco_core::{MachineConfig, fdc};
@@ -70,10 +71,10 @@ impl Drop for ReadOnly<'_> {
 }
 
 /// Scratch directory holding only the fixture files a given test writes
-/// into it, under `target/` (git-ignored, unlike the workspace `roms/`
-/// this test also reads from for the system ROM and the FD-502's
-/// `disk11.rom` — both real, local-only dumps per the project's
-/// `./roms` convention, same as every other test that mounts an FD-502).
+/// into it, under `target/` (git-ignored, unlike the installed
+/// [`installed_roms_dir`] this test also reads from for the system ROM and
+/// the FD-502's `disk11.rom` — both real dumps installed by
+/// `ensure_assets`, same as every other test that mounts an FD-502).
 fn scratch_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp-test-save-state")
@@ -87,19 +88,19 @@ fn scratch_dir(name: &str) -> PathBuf {
 /// cartridge share the single cartridge port on real hardware, so an MPI
 /// is the only way to combine them — produces [`MediaRefs`] whose hashes
 /// match [`snapshot::sha256_file`] of every file involved: the two
-/// fixtures this test wrote, the real `roms/coco3.rom` system ROM, and
-/// the real `roms/disk11.rom` the FD-502 always loads
+/// fixtures this test wrote, the installed `coco3.rom` system ROM, and
+/// the installed `disk11.rom` the FD-502 always loads
 /// ([`disk_basic_rom_path`]).
 #[test]
 fn build_media_refs_hashes_match_the_mounted_files() {
-    let roms_dir = dev_roms_dir();
-    let rom_path = roms_dir.join("coco3.rom");
+    let roms_dir = installed_roms_dir();
+    let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("roms/coco3.rom is required (git-ignored, local-only)")
+        .expect("installed coco3.rom is required (ensure_assets)")
         .into_boxed_slice();
     assert!(
         disk_basic_rom_path().is_file(),
-        "roms/disk11.rom is required (git-ignored, local-only)"
+        "installed disk11.rom is required (ensure_assets)"
     );
 
     let dir = scratch_dir("media-refs");
@@ -189,10 +190,10 @@ fn build_media_refs_hashes_match_the_mounted_files() {
 /// failure tests below, which each mount exactly one piece of media
 /// themselves.
 fn boot_app() -> CocoApp {
-    let roms_dir = dev_roms_dir();
-    let rom_path = roms_dir.join("coco3.rom");
+    let roms_dir = installed_roms_dir();
+    let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("roms/coco3.rom is required (git-ignored, local-only)")
+        .expect("installed coco3.rom is required (ensure_assets)")
         .into_boxed_slice();
     CocoApp::new(
         MachineConfig::default(),

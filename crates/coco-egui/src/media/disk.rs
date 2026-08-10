@@ -26,7 +26,6 @@ impl CocoApp {
                     .to_string(),
             );
         }
-        // TODO! will need to read from config ~/.share/cocovm or something, there should be some helper for this, maybe in paths.rs
         let path = disk_basic_rom_path();
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;

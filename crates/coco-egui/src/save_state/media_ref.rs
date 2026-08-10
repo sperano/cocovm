@@ -10,7 +10,7 @@ use coco_core::cart::Cart;
 use coco_core::snapshot::{self, MediaCheck, MediaRef, MediaRefs};
 
 use crate::{
-    Coco12ROMResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, dev_roms_dir,
+    Coco12ROMResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, installed_roms_dir,
 };
 
 /// The recorded `mpi_slot: None` cart-ROM path, if any — shared by
@@ -121,7 +121,8 @@ pub(super) fn is_rom_db_pseudo_path(path: &Path) -> bool {
 
 /// [`coco_core::snapshot::MediaSources::system_rom`]: a real path reads and
 /// verifies like any other reference; a [`ROM_DB_PSEUDO_PATH_PREFIX`]
-/// pseudo-path recomposes the CoCo 1/2 flat image from [`dev_roms_dir`] and
+/// pseudo-path recomposes the CoCo 1/2 flat image from
+/// [`installed_roms_dir`] and
 /// hash-compares (never "missing" purely because the pseudo-path itself
 /// isn't a real file — only when no local Color BASIC dump exists to
 /// compose from at all).
@@ -131,7 +132,7 @@ pub(super) fn resolve_system_rom(
 ) -> Option<Box<[u8]>> {
     let mr = media.system_rom.as_ref()?;
     if is_rom_db_pseudo_path(&mr.path) {
-        return match compose_coco12_rom(&dev_roms_dir()) {
+        return match compose_coco12_rom(&installed_roms_dir()) {
             Coco12ROMResult::Composed { image, .. } => {
                 let actual = snapshot::sha256_hex(&image);
                 if actual != mr.sha256 {
