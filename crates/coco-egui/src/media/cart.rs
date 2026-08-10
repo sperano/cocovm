@@ -20,7 +20,7 @@ impl CocoApp {
         };
         match ROMPak::from_bytes(&bytes, self.autostart_cart) {
             Ok(pak) => {
-                self.flush_dirty_disks();
+                self.flush_dirty_disks_or_report();
                 self.machine.insert_cartridge(pak);
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
@@ -51,7 +51,7 @@ impl CocoApp {
         };
         match GamesMasterCartridge::from_bytes(&bytes, self.autostart_cart) {
             Ok(cart) => {
-                self.flush_dirty_disks();
+                self.flush_dirty_disks_or_report();
                 self.machine.insert_cartridge(cart);
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
@@ -80,7 +80,7 @@ impl CocoApp {
         };
         match Orch90::from_rom_bytes(&bytes) {
             Ok(cart) => {
-                self.flush_dirty_disks();
+                self.flush_dirty_disks_or_report();
                 self.machine.insert_cartridge(cart);
                 self.machine.power_cycle();
                 self.cart_path = Some(path);
@@ -96,7 +96,7 @@ impl CocoApp {
     /// Eject the current cartridge and power-cycle the machine (cartridge
     /// swaps are machine-off operations on real hardware).
     pub(crate) fn eject_cartridge(&mut self) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         self.machine.eject_cartridge();
         self.machine.power_cycle();
         self.cart_path = None;
@@ -114,7 +114,7 @@ impl CocoApp {
     /// CTS window; the pak is fully usable ROM-less otherwise (OS-9 drivers
     /// and `PEEK`/`POKE` code drive the ACIA registers directly).
     pub(crate) fn insert_rs232(&mut self) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         let mut pak = coco_core::rs232::DeluxeRS232::new();
         let rom_path = rs232_eprom_default_path();
         let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
@@ -181,7 +181,7 @@ impl CocoApp {
     /// and no autostart concept — unlike [`Self::insert_cartridge`]'s ROM
     /// paks, this can't fail.
     pub(crate) fn insert_ssc(&mut self) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         self.machine.insert_cartridge(SoundSpeechCartridge::new());
         self.machine.power_cycle();
         self.cart_path = None;
@@ -196,7 +196,7 @@ impl CocoApp {
     /// plugged directly into the port for an empty 4-slot MPI with its
     /// front-panel switch on slot 4 ([`DEFAULT_MPI_SWITCH_SLOT`]).
     pub(crate) fn insert_multipak(&mut self) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         self.machine
             .insert_cartridge(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT));
         self.machine.power_cycle();
@@ -214,7 +214,7 @@ impl CocoApp {
     /// Remove the Multi-Pak Interface — and everything plugged into it —
     /// restoring the plain empty cartridge slot.
     pub(crate) fn eject_multipak(&mut self) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         self.machine.eject_cartridge();
         self.machine.power_cycle();
         self.mpi = None;
@@ -236,7 +236,7 @@ impl CocoApp {
         };
         match ROMPak::from_bytes(&bytes, self.autostart_cart) {
             Ok(pak) => {
-                self.flush_dirty_disks();
+                self.flush_dirty_disks_or_report();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
                     mp.insert(slot, pak);
                 }
@@ -263,7 +263,7 @@ impl CocoApp {
         };
         match GamesMasterCartridge::from_bytes(&bytes, self.autostart_cart) {
             Ok(cart) => {
-                self.flush_dirty_disks();
+                self.flush_dirty_disks_or_report();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
                     mp.insert(slot, cart);
                 }
@@ -291,7 +291,7 @@ impl CocoApp {
         };
         match Orch90::from_rom_bytes(&bytes) {
             Ok(cart) => {
-                self.flush_dirty_disks();
+                self.flush_dirty_disks_or_report();
                 if let Some(mp) = self.machine.bus.cart.as_multipak() {
                     mp.insert(slot, cart);
                 }
@@ -327,7 +327,7 @@ impl CocoApp {
                 return;
             }
         };
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
             mp.insert(slot, DiskCart::new(rom.into_boxed_slice()));
         }
@@ -343,7 +343,7 @@ impl CocoApp {
     /// cartridge port — any number of slots can each hold one (unlike the
     /// FD-502's single-controller restriction).
     pub(crate) fn mpi_insert_ssc(&mut self, slot: usize) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
             mp.insert(slot, SoundSpeechCartridge::new());
         }
@@ -360,7 +360,7 @@ impl CocoApp {
             Some(MPISlot::FD502)
         );
         if was_fd502 {
-            self.flush_dirty_disks();
+            self.flush_dirty_disks_or_report();
             self.disk_paths = [None, None];
         }
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
@@ -389,7 +389,7 @@ impl CocoApp {
     /// RTC has no boot ROM, so this pairs with a VHD boot (NitrOS-9 `emudsk`)
     /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
     pub(crate) fn insert_rtc(&mut self) {
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         self.machine
             .insert_cartridge(DistoRTC::new(host_time_source()));
         self.machine.power_cycle();

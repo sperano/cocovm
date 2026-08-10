@@ -31,7 +31,7 @@ impl CocoApp {
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
-        self.flush_dirty_disks();
+        self.flush_dirty_disks_or_report();
         self.machine
             .insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
         // Power cycle, not warm reset: the DK probe that links Disk BASIC
@@ -75,7 +75,11 @@ impl CocoApp {
                 .map_err(|e| format!("could not read {}: {e}", path.display()))?;
             let disk =
                 JVCDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-            self.write_back_disk(drive); // whatever was in the drive first
+            // Whatever was in the drive first; a failed write-back reports
+            // through `cart_error` but doesn't block mounting the new disk.
+            if let Err(e) = self.write_back_disk(drive) {
+                self.cart_error = Some(e);
+            }
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
             self.disk_paths[drive] = Some(path);
@@ -109,7 +113,11 @@ impl CocoApp {
             }
             let disk =
                 JVCDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
-            self.write_back_disk(drive); // whatever was in the drive first
+            // Whatever was in the drive first; a failed write-back reports
+            // through `cart_error` but doesn't block mounting the new disk.
+            if let Err(e) = self.write_back_disk(drive) {
+                self.cart_error = Some(e);
+            }
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
             self.disk_paths[drive] = Some(path);
@@ -121,9 +129,11 @@ impl CocoApp {
     }
 
     /// Eject the floppy in `drive`, writing a modified image back to its file
-    /// first (like MAME/VCC, in-place).
+    /// first (like MAME/VCC, in-place). Failures land in [`Self::cart_error`].
     pub(crate) fn eject_disk(&mut self, drive: usize) {
-        self.write_back_disk(drive);
+        if let Err(e) = self.write_back_disk(drive) {
+            self.cart_error = Some(e);
+        }
         if let Some(cart) = self.machine.bus.cart.as_disk_cart() {
             cart.eject_disk(drive);
         }
@@ -131,30 +141,54 @@ impl CocoApp {
     }
 
     /// If the floppy in `drive` was written to, save the image back to its
-    /// source file. Failures land in [`Self::cart_error`] (the in-memory disk
-    /// is left mounted and still dirty, so a later retry can succeed).
-    pub(crate) fn write_back_disk(&mut self, drive: usize) {
+    /// source file and mark it saved ([`JVCDisk::mark_saved`]). On
+    /// failure the in-memory disk is left mounted and still dirty, so a
+    /// later retry can succeed; callers decide how to surface the error
+    /// (most route it to [`Self::cart_error`] via
+    /// [`Self::flush_dirty_disks_or_report`] or inline, but
+    /// [`Self::flush_dirty_disks`] instead collects it to aggregate with
+    /// its sibling drives' errors).
+    pub(crate) fn write_back_disk(&mut self, drive: usize) -> Result<(), String> {
         let Some(path) = self.disk_paths[drive].clone() else {
-            return;
+            return Ok(());
         };
         let Some(cart) = self.machine.bus.cart.as_disk_cart() else {
-            return;
+            return Ok(());
         };
-        let Some(disk) = cart.disk(drive) else {
-            return;
+        let Some(disk) = cart.disk_mut(drive) else {
+            return Ok(());
         };
         if !disk.dirty() {
-            return;
+            return Ok(());
         }
-        if let Err(e) = std::fs::write(&path, disk.bytes()) {
-            self.cart_error = Some(format!("could not save {}: {e}", path.display()));
-        }
+        std::fs::write(&path, disk.bytes())
+            .map_err(|e| format!("could not save {}: {e}", path.display()))?;
+        disk.mark_saved();
+        Ok(())
     }
 
     /// Write every modified floppy back to its file (controller swap, exit).
-    pub(crate) fn flush_dirty_disks(&mut self) {
-        for drive in 0..UI_DRIVES {
-            self.write_back_disk(drive);
+    /// Tries every drive even after one fails — each drive's data is
+    /// independent, so one bad write-back shouldn't leave a healthy drive's
+    /// changes unsaved too — and joins every error message with `\n`.
+    pub(crate) fn flush_dirty_disks(&mut self) -> Result<(), String> {
+        let errors: Vec<String> = (0..UI_DRIVES)
+            .filter_map(|drive| self.write_back_disk(drive).err())
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("\n"))
+        }
+    }
+
+    /// [`Self::flush_dirty_disks`], reporting a failure through
+    /// [`Self::cart_error`] instead of propagating it — the shape every
+    /// call site that isn't itself building a `Result` (cartridge/MPI swaps,
+    /// controller setup) wants.
+    pub(crate) fn flush_dirty_disks_or_report(&mut self) {
+        if let Err(e) = self.flush_dirty_disks() {
+            self.cart_error = Some(e);
         }
     }
 

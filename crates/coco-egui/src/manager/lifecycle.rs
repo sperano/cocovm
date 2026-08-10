@@ -169,7 +169,11 @@ impl ManagerApp {
     /// `close_vm_window`): flush dirty disks/tape back to their files
     /// (`CocoApp::flush_media`, the same one `eframe::App::on_exit` calls for
     /// the test-only window in `app.rs`) — then drop the VM, returning the
-    /// row to Powered Off. On a
+    /// row to Powered Off, regardless of whether the flush succeeded. Unlike
+    /// the two `on_exit`s, the *row* outlives its VM, so a flush failure
+    /// (dirty media dropped with the VM — real data loss) lands in
+    /// `launch_error`, the same transport-row label Start and Suspend use,
+    /// rather than only in the log. On a
     /// Suspended machine (VM alive or not) this also discards the frozen
     /// state file — powering off is explicitly "throw the saved state
     /// away". The saved screenshot is deleted along with it (not just the
@@ -178,8 +182,10 @@ impl ManagerApp {
     /// keep-previous-on-black rule as a *previous power cycle's* screen the
     /// next time Suspend fires during a blanked display.
     pub(super) fn stop_vm(&mut self, index: usize) {
-        if let Some(mut vm) = self.entries[index].vm.take() {
-            vm.flush_media();
+        if let Some(mut vm) = self.entries[index].vm.take()
+            && let Err(e) = vm.flush_media()
+        {
+            self.entries[index].launch_error = Some(e);
         }
         let entry = &mut self.entries[index];
         entry.suspended = false;
