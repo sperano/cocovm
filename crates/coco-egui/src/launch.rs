@@ -120,15 +120,7 @@ fn load_rom(
             load_explicit_rom(path)?,
             ROMSource::File(path.to_path_buf()),
         )),
-        None => {
-            let roms_dir = installed_roms_dir();
-            let rom = load_default_rom(variant, &roms_dir)?;
-            let source = match variant {
-                MachineVariant::Coco3 => ROMSource::File(roms_dir.join("coco3.rom")),
-                MachineVariant::Coco1 | MachineVariant::Coco2 => ROMSource::ComposedCoco12,
-            };
-            Ok((rom, source))
-        }
+        None => load_default_rom(variant, &installed_roms_dir()),
     }
 }
 

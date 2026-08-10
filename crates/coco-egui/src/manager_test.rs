@@ -2,6 +2,7 @@ use std::path::Path;
 
 use super::*;
 use crate::machine_def::tests::TempDir;
+use crate::rom_load::COCO3_ROM_FILE;
 use crate::save_state::tests::ReadOnly;
 use crate::{ROMSource, installed_roms_dir};
 use coco_core::{MachineConfig, fdc};
@@ -67,7 +68,7 @@ fn black_frame_is_still_written_when_no_previous_thumbnail_exists() {
 /// runs while the file is still writable).
 fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
     let roms_dir = installed_roms_dir();
-    let rom_path = roms_dir.join("coco3.rom");
+    let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
         .expect("installed coco3.rom is required (ensure_assets)")
         .into_boxed_slice();

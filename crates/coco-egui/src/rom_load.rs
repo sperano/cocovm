@@ -15,24 +15,30 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
     }
 }
 
+/// The CoCo 3's single system ROM image under a roms dir — the file
+/// [`load_default_rom`] reads and records as its [`ROMSource::File`].
+pub(crate) const COCO3_ROM_FILE: &str = "coco3.rom";
+
 /// Load the default boot ROM set for `variant` from `roms_dir` (in
 /// production always [`installed_roms_dir`]; tests pass fixture
-/// directories): `coco3.rom` for the CoCo 3, or a flat image
+/// directories): [`COCO3_ROM_FILE`] for the CoCo 3, or a flat image
 /// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
-/// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
-/// the manager reports them inline in its detail pane
+/// ([`compose_coco12_rom`]) — paired with the [`ROMSource`] a snapshot needs
+/// to re-resolve/hash the same bytes, built here so the file read and the
+/// recorded source can't drift apart. Failures are returned rather than
+/// fatal because the manager reports them inline in its detail pane
 /// (`launch_machine`'s contract).
 pub(crate) fn load_default_rom(
     variant: MachineVariant,
     roms_dir: &Path,
-) -> Result<Box<[u8]>, String> {
+) -> Result<(Box<[u8]>, ROMSource), String> {
     match variant {
         MachineVariant::Coco3 => {
-            let path = roms_dir.join("coco3.rom");
+            let path = roms_dir.join(COCO3_ROM_FILE);
             match std::fs::read(&path) {
                 Ok(bytes) => {
                     report_rom_validation(&path, &bytes);
-                    Ok(bytes.into_boxed_slice())
+                    Ok((bytes.into_boxed_slice(), ROMSource::File(path)))
                 }
                 Err(e) => Err(format!("could not load {}: {e}", path.display())),
             }
@@ -47,7 +53,7 @@ pub(crate) fn load_default_rom(
                         EXTENDED_BASIC_CANDIDATES.join(", ")
                     ),
                 }
-                Ok(image)
+                Ok((image, ROMSource::ComposedCoco12))
             }
             Coco12ROMResult::NoColorBasic => Err(format!(
                 "no Color BASIC ROM found: place one of {} in {}",

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::*;
+use crate::rom_load::COCO3_ROM_FILE;
 use crate::{ROMSource, disk_basic_rom_path, installed_roms_dir};
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
 use coco_core::snapshot;
@@ -87,13 +88,13 @@ fn scratch_dir(name: &str) -> PathBuf {
 /// cartridge share the single cartridge port on real hardware, so an MPI
 /// is the only way to combine them — produces [`MediaRefs`] whose hashes
 /// match [`snapshot::sha256_file`] of every file involved: the two
-/// fixtures this test wrote, the real `roms/coco3.rom` system ROM, and
-/// the real `roms/disk11.rom` the FD-502 always loads
+/// fixtures this test wrote, the installed `coco3.rom` system ROM, and
+/// the installed `disk11.rom` the FD-502 always loads
 /// ([`disk_basic_rom_path`]).
 #[test]
 fn build_media_refs_hashes_match_the_mounted_files() {
     let roms_dir = installed_roms_dir();
-    let rom_path = roms_dir.join("coco3.rom");
+    let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
         .expect("installed coco3.rom is required (ensure_assets)")
         .into_boxed_slice();
@@ -190,7 +191,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
 /// themselves.
 fn boot_app() -> CocoApp {
     let roms_dir = installed_roms_dir();
-    let rom_path = roms_dir.join("coco3.rom");
+    let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
         .expect("installed coco3.rom is required (ensure_assets)")
         .into_boxed_slice();

@@ -1,9 +1,9 @@
 //! `launch_machine` tests for the peripherals/ports this module mounts
 //! beyond the base `CocoApp::new` construction — the RS-232 Pak, the
 //! printer serial sink, and the MPI/RS-232 conflict `check_cartridge_port`
-//! rejects. Reads the real `roms/coco3.rom` (git-ignored, local-only), like
-//! every other test in this crate that boots a real machine
-//! (`save_state_test.rs`'s doc comment).
+//! rejects. Boots through `launch_machine`'s production ROM resolution, so
+//! it reads the installed `coco3.rom` (`installed_roms_dir`, populated by
+//! `ensure_assets` — `save_state_test.rs`'s doc comment).
 
 use coco_core::MachineConfig;
 
