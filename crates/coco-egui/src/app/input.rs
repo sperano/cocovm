@@ -197,11 +197,64 @@ impl CocoApp {
     /// ports. Called once per `update()`, before running any emulated fields, so
     /// the pot/button state a field sees is this frame's, not last frame's.
     pub(crate) fn drive_joysticks(&mut self, ctx: &egui::Context) {
+        let active_rect = self.active_screen_rect();
         self.joysticks.apply(
             ctx,
             self.display_rect,
+            active_rect,
             self.display_layer,
             &mut self.machine,
         );
     }
+
+    /// The active (non-border) picture's ON-SCREEN rect: [`Machine::active_rect`]'s
+    /// framebuffer-pixel geometry, scaled into `self.display_rect` by
+    /// [`scale_active_rect`] — mouse-as-joystick tracks the active picture,
+    /// not the full bordered display.
+    ///
+    /// The fb dims read here are consistent with the texture behind the
+    /// one-frame-stale `display_rect`: `drive_joysticks` runs at the top of
+    /// `update`, BEFORE this frame's `step_emulation` re-renders and
+    /// re-uploads — so `fb_width`/`fb_height` still describe the frame
+    /// `draw_display` fit `display_rect` to. A reorder that moves joystick
+    /// polling after `step_emulation` would quietly break that pairing.
+    fn active_screen_rect(&self) -> egui::Rect {
+        scale_active_rect(
+            self.machine.active_rect(),
+            self.machine.fb_width,
+            self.machine.fb_height,
+            self.display_rect,
+        )
+    }
 }
+
+/// Scale a framebuffer-pixel [`coco_core::ActiveRect`] into the on-screen
+/// `display` rect. Correct for ANY per-axis linear stretch between the two:
+/// the whole framebuffer is stretched over the whole `display` rect with no
+/// crop or interior letterbox (`CocoApp::draw_display`), and `sx`/`sy` are
+/// computed independently — so the TV chain's height-only scanline doubling
+/// (`display::expand_scanlines`) and `draw_display`'s 4:3 aspect fit are
+/// both absorbed. What it can NOT survive is a crop or non-linear warp
+/// between framebuffer and screen; none exists today. Falls back to
+/// `display` itself when the framebuffer has zero width/height — shouldn't
+/// happen, but avoids dividing by zero.
+fn scale_active_rect(
+    active: coco_core::ActiveRect,
+    fb_w: u32,
+    fb_h: u32,
+    display: egui::Rect,
+) -> egui::Rect {
+    if fb_w == 0 || fb_h == 0 {
+        return display;
+    }
+    let sx = display.width() / fb_w as f32;
+    let sy = display.height() / fb_h as f32;
+    egui::Rect::from_min_size(
+        display.left_top() + egui::vec2(active.x as f32 * sx, active.y as f32 * sy),
+        egui::vec2(active.width as f32 * sx, active.height as f32 * sy),
+    )
+}
+
+#[cfg(test)]
+#[path = "input_test.rs"]
+mod tests;

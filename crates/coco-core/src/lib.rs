@@ -43,7 +43,7 @@ pub mod wd1773;
 pub use bus::SystemBus;
 pub use config::{MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 pub use gime::{GIME, MonitorType};
-pub use machine::{Machine, StepEvent, StepKind};
+pub use machine::{ActiveRect, Machine, StepEvent, StepKind};
 
 /// The normal-speed CPU clock ([`machine`]'s private constant, re-exported
 /// crate-wide so other modules can derive cycle counts from the real clock

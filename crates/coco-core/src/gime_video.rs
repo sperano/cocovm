@@ -56,6 +56,7 @@ const ROW_FETCH_WRAP: usize = 0x100;
 /// Wide modes fill the full 640 canvas px with no border; non-wide modes
 /// fill the centre 512. (MAME's `update_geometry` tests bit 3 instead, but
 /// only for field-sync timing — the emitted pixel widths follow bit 2.)
+///
 const WIDE_HRES_MASK: usize = 0x01;
 
 /// A decoded GIME hi-res text mode.
@@ -185,28 +186,43 @@ fn fill(px: &mut [u8], color: [u8; 4]) {
     }
 }
 
-/// True when canvas `row` falls within the active (non-border) vertical
-/// window, from the LIVE LPF bits (applies even mid-frame; the glitched %10
-/// value is approximated, see [`vertical_window`]).
-fn in_active_rows(g: &GIME, row: usize) -> bool {
-    let lpf = ((g.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize;
-    let (top, body) = vertical_window(lpf);
-    row >= top && row < top + body
-}
-
-/// Fill a body row's side borders per the LIVE wide flag ($FF99 HRES low
-/// bit), returning the active-area `(x0, width)` slice bounds within it.
-/// Wide modes fill the full `CANVAS_W` with no border; non-wide modes leave
-/// the border strips.
-fn paint_side_borders(g: &GIME, row_px: &mut [u8], border: [u8; 4]) -> (usize, usize) {
+/// The active (non-border) horizontal span `(x0, width)` of a GIME-native
+/// row, from the LIVE wide flag ($FF99 HRES low bit, [`WIDE_HRES_MASK`]):
+/// wide modes fill the full `CANVAS_W`, non-wide modes the centre 512. The
+/// single decode both [`paint_side_borders`] and `Machine::active_rect`
+/// build on, so the painted borders and the reported geometry can't drift.
+pub(crate) fn active_span(g: &GIME) -> (usize, usize) {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
-    let wide = hres & WIDE_HRES_MASK != 0;
-    let (x0, active_w) = if wide {
+    if hres & WIDE_HRES_MASK != 0 {
         (0, CANVAS_W)
     } else {
         (NON_WIDE_BORDER_X, NON_WIDE_ACTIVE_W)
-    };
-    if !wide {
+    }
+}
+
+/// The active (non-border) vertical window `(top, body)` in canvas rows,
+/// from the LIVE LPF bits (the glitched %10 value is approximated, see
+/// [`vertical_window`]). Shared by [`in_active_rows`], the legacy painter's
+/// vertical placement (`Machine::paint_legacy_scanline`), and
+/// `Machine::active_rect`.
+pub(crate) fn active_rows(g: &GIME) -> (usize, usize) {
+    let lpf = ((g.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize;
+    vertical_window(lpf)
+}
+
+/// True when canvas `row` falls within [`active_rows`]'s window (applies
+/// even mid-frame — the LPF bits are read live).
+fn in_active_rows(g: &GIME, row: usize) -> bool {
+    let (top, body) = active_rows(g);
+    row >= top && row < top + body
+}
+
+/// Fill a body row's side borders per [`active_span`]'s LIVE wide flag,
+/// returning the active-area `(x0, width)` slice bounds within it.
+fn paint_side_borders(g: &GIME, row_px: &mut [u8], border: [u8; 4]) -> (usize, usize) {
+    let (x0, active_w) = active_span(g);
+    // Wide spans (x0 == 0, full-width) have no border strips to fill.
+    if x0 != 0 {
         fill(&mut row_px[..x0 * BYTES_PER_PIXEL], border);
         fill(&mut row_px[(x0 + active_w) * BYTES_PER_PIXEL..], border);
     }

@@ -267,11 +267,17 @@ impl JoystickInputs {
     /// any emulated fields. `display_rect`/`display_layer` are where (and on
     /// which egui layer) `draw_display` put the CoCo picture — one frame
     /// stale, see the `CocoApp` field docs — and gate which mouse presses
-    /// count as fire buttons ([`Self::update_mouse_fire`]).
+    /// count as fire buttons ([`Self::update_mouse_fire`]) and (geometrically)
+    /// whether the mouse axes update at all. `active_rect` is the on-screen
+    /// sub-rect of `display_rect` the mouse axes are normalized OVER (the
+    /// active picture, not the emulated border); a pointer
+    /// inside `display_rect` but outside `active_rect` still drives the
+    /// axes, pinned to full deflection ([`pot_axes_from_pointer`]).
     pub fn apply(
         &mut self,
         ctx: &egui::Context,
         display_rect: egui::Rect,
+        active_rect: egui::Rect,
         display_layer: egui::LayerId,
         machine: &mut Machine,
     ) {
@@ -307,20 +313,17 @@ impl JoystickInputs {
                 }
                 JoySource::Mouse => {
                     // Only update the axes while the pointer is actually over the
-                    // display; when it leaves, the pot holds its last position.
+                    // display (border included — the gate stays `display_rect`);
+                    // when it leaves, the pot holds its last position. The axes
+                    // themselves are normalized over `active_rect`, so a pointer
+                    // in the border pins them at full deflection rather than
+                    // needing to leave the picture to reach it.
                     if let Some(pos) = pointer_pos
                         && display_rect.contains(pos)
+                        && let Some((px, py)) = pot_axes_from_pointer(pos, active_rect)
                     {
-                        let nx = (pos.x - display_rect.left()) / display_rect.width();
-                        let ny = (pos.y - display_rect.top()) / display_rect.height();
-                        machine
-                            .bus
-                            .joysticks
-                            .set_axis(stick, AXIS_X, pot_from_unit(nx));
-                        machine
-                            .bus
-                            .joysticks
-                            .set_axis(stick, AXIS_Y, pot_from_unit(ny));
+                        machine.bus.joysticks.set_axis(stick, AXIS_X, px);
+                        machine.bus.joysticks.set_axis(stick, AXIS_Y, py);
                     }
                     machine.bus.joysticks.set_button(stick, 0, fire0);
                     machine.bus.joysticks.set_button(stick, 1, fire1);
@@ -446,6 +449,28 @@ fn keys_in_use(keys: KeyState) -> bool {
 /// a 0..=63 pot value.
 fn pot_from_unit(frac: f32) -> u8 {
     (frac.clamp(0.0, 1.0) * AXIS_MAX as f32).round() as u8
+}
+
+/// Map a mouse pointer position to `(pot_x, pot_y)` normalized over
+/// `active_rect` — the on-screen active-picture sub-rect of the display, so
+/// mouse-as-joystick tracks the active picture, not the emulated border.
+/// [`pot_from_unit`] clamps each axis to 0.0..=1.0 first,
+/// so a pointer outside `active_rect` (but still on the display, in the
+/// border) pins that axis at full deflection instead of overshooting.
+///
+/// `None` on a degenerate `active_rect` (zero-size, negative, or NaN
+/// extents — the negated comparison is what catches NaN), which would
+/// otherwise turn into NaN normalized coords and corrupt the pot state.
+/// Shouldn't happen in practice: `scale_active_rect` (`app/input.rs`)
+/// already refuses a zero-size framebuffer; this is the last line of
+/// defense at the seam where the axes are actually written.
+fn pot_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u8, u8)> {
+    if !(active_rect.width() > 0.0 && active_rect.height() > 0.0) {
+        return None;
+    }
+    let nx = (pos.x - active_rect.left()) / active_rect.width();
+    let ny = (pos.y - active_rect.top()) / active_rect.height();
+    Some((pot_from_unit(nx), pot_from_unit(ny)))
 }
 
 /// Map a gilrs-style -1.0..=1.0 analog axis to a 0..=63 pot value.

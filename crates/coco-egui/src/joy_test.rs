@@ -16,6 +16,58 @@ fn pot_from_bipolar_maps_full_range() {
     assert_eq!(pot_from_bipolar(0.0), 32);
 }
 
+/// A display rect with a bordered active sub-rect inside it, for the mouse
+/// axis-mapping tests: the active picture is inset from the
+/// full (bordered) display, like `active_screen_rect` derives from
+/// `Machine::active_rect`.
+const ACTIVE: egui::Rect =
+    egui::Rect::from_min_max(egui::pos2(20.0, 20.0), egui::pos2(100.0, 80.0));
+
+#[test]
+fn pot_axes_from_pointer_maps_over_the_active_rect() {
+    // Left edge of the active area -> full-left X; vertical center -> center Y.
+    assert_eq!(
+        pot_axes_from_pointer(egui::pos2(20.0, 50.0), ACTIVE),
+        Some((AXIS_MIN, 32))
+    );
+    // Center of the active area -> center on both axes.
+    assert_eq!(
+        pot_axes_from_pointer(egui::pos2(60.0, 50.0), ACTIVE),
+        Some((32, 32))
+    );
+    // Bottom-right corner -> full deflection on both axes.
+    assert_eq!(
+        pot_axes_from_pointer(egui::pos2(100.0, 80.0), ACTIVE),
+        Some((AXIS_MAX, AXIS_MAX))
+    );
+}
+
+#[test]
+fn pot_axes_from_pointer_clamps_a_pointer_in_the_border() {
+    // Left of the active area (but still geometrically inside a larger
+    // display rect, i.e. in the border) pins the X axis at full-left rather
+    // than going negative.
+    assert_eq!(
+        pot_axes_from_pointer(egui::pos2(0.0, 50.0), ACTIVE),
+        Some((AXIS_MIN, 32))
+    );
+    // Past the bottom-right corner pins both axes at full deflection rather
+    // than overshooting.
+    assert_eq!(
+        pot_axes_from_pointer(egui::pos2(200.0, 200.0), ACTIVE),
+        Some((AXIS_MAX, AXIS_MAX))
+    );
+}
+
+#[test]
+fn pot_axes_from_pointer_guards_a_zero_size_active_rect() {
+    let degenerate = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(0.0, 0.0));
+    assert_eq!(
+        pot_axes_from_pointer(egui::pos2(5.0, 5.0), degenerate),
+        None
+    );
+}
+
 #[test]
 fn axis_from_keys_centers_on_conflict_or_no_input() {
     assert_eq!(axis_from_keys(false, false), AXIS_CENTER);
