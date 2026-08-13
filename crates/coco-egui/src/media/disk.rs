@@ -30,7 +30,9 @@ impl CocoApp {
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
-        self.flush_dirty_disks_or_report();
+        // No flush needed: past the early returns no disk cart can exist (a
+        // disk cart returns at the top; with an MPI installed we refuse
+        // above), so there is nothing to save back.
         self.machine
             .insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
         // Power cycle, not warm reset: the DK probe that links Disk BASIC
@@ -190,12 +192,21 @@ impl CocoApp {
     }
 
     /// [`Self::flush_dirty_disks`], reporting a failure through
-    /// [`Self::cart_error`] instead of propagating it — the shape every
-    /// call site that isn't itself building a `Result` (cartridge/MPI swaps,
-    /// controller setup) wants.
-    pub(crate) fn flush_dirty_disks_or_report(&mut self) {
-        if let Err(e) = self.flush_dirty_disks() {
-            self.cart_error = Some(e);
+    /// [`Self::cart_error`] instead of propagating it, and returning whether
+    /// it's safe to proceed: `true` iff every drive's flush succeeded, i.e.
+    /// no disk is left dirty-and-unsaved. Every cartridge/MPI-slot swap that
+    /// would destroy the disk cart (and, with it, whatever floppies are
+    /// mounted) must check this before mutating anything — `false` means
+    /// abort the swap so the caller can retry later, per
+    /// [`Self::write_back_disk`]'s "later retry can succeed" contract.
+    #[must_use]
+    pub(crate) fn flush_dirty_disks_or_report(&mut self) -> bool {
+        match self.flush_dirty_disks() {
+            Ok(()) => true,
+            Err(e) => {
+                self.cart_error = Some(e);
+                false
+            }
         }
     }
 

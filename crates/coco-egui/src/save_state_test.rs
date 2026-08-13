@@ -219,11 +219,63 @@ pub(crate) fn boot_app() -> CocoApp {
 /// A one-track JVC image, the minimal `write_byte`-able fixture — every
 /// FD-502 write-back test needs at least one track to dirty.
 ///
-/// `pub(crate)`: `disk_test.rs` reuses it, like [`boot_app`].
+/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
 pub(crate) fn write_one_track_disk(path: &Path) {
     let sector_size = 128usize << fdc::DEFAULT_SECTOR_SIZE_CODE;
     let one_track = fdc::DEFAULT_SECTORS_PER_TRACK * sector_size * fdc::DEFAULT_SIDES;
     std::fs::write(path, vec![0u8; one_track]).expect("write disk fixture");
+}
+
+/// The byte every write-back test writes to dirty a mounted disk, and
+/// checks for in the saved-back file afterward.
+///
+/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+pub(crate) const DIRTY_BYTE: u8 = 0xAA;
+
+/// Whether the disk mounted in `drive` (an FD-502 must already be present)
+/// has an unsaved change.
+///
+/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+pub(crate) fn is_dirty(app: &mut CocoApp, drive: usize) -> bool {
+    app.machine
+        .bus
+        .cart
+        .as_disk_cart()
+        .expect("FD-502 mounted")
+        .disk(drive)
+        .expect("drive mounted")
+        .dirty()
+}
+
+/// Write [`DIRTY_BYTE`] to byte 0 of the disk mounted in `drive`, dirtying
+/// it.
+///
+/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+pub(crate) fn write_dirty_byte(app: &mut CocoApp, drive: usize) {
+    app.machine
+        .bus
+        .cart
+        .as_disk_cart()
+        .expect("FD-502 mounted")
+        .disk_mut(drive)
+        .expect("drive mounted")
+        .write_byte(0, DIRTY_BYTE);
+}
+
+/// Mount `disk_path` in `drive` — creating a direct-port FD-502 if none is
+/// present yet, or landing in one already mounted (directly or in an MPI
+/// slot) — and dirty byte 0, asserting each step succeeds.
+///
+/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+pub(crate) fn mount_and_dirty(app: &mut CocoApp, drive: usize, disk_path: &Path) {
+    app.insert_disk(drive, disk_path.to_path_buf());
+    assert!(
+        app.cart_error.is_none(),
+        "mounting the disk: {:?}",
+        app.cart_error
+    );
+    write_dirty_byte(app, drive);
+    assert!(is_dirty(app, drive), "writing a byte must dirty the disk");
 }
 
 /// `save_state_to` must fail — before writing any `.ccstate`, and without
@@ -255,7 +307,7 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
         .expect("FD-502 just inserted")
         .disk_mut(0)
         .expect("drive 0 mounted")
-        .write_byte(0, 0xAA);
+        .write_byte(0, DIRTY_BYTE);
     let is_dirty = |app: &mut CocoApp| {
         app.machine
             .bus
@@ -298,7 +350,10 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
         "a successful save-back must clear dirty"
     );
     let saved = std::fs::read(&disk_path).expect("read saved disk");
-    assert_eq!(saved[0], 0xAA, "the write-back must have actually landed");
+    assert_eq!(
+        saved[0], DIRTY_BYTE,
+        "the write-back must have actually landed"
+    );
 }
 
 /// [`save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails`]'s tape
