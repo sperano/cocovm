@@ -19,8 +19,12 @@ const LEADER: u8 = 0x55;
 /// than `Permissions::set_readonly(false)`, which on Unix clears every
 /// write-protect bit and leaves the file world-writable (clippy
 /// `permissions_set_readonly_false`).
+///
+/// `pub(crate)`: `disk_test.rs`/`tape_test.rs` reuse it for the
+/// insert/new/eject write-back-preservation coverage, the same
+/// cross-test-module sharing as [`ReadOnly`] itself.
 #[cfg(unix)]
-fn ensure_writable(path: &Path) {
+pub(crate) fn ensure_writable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     if let Ok(meta) = std::fs::metadata(path) {
         let mut perms = meta.permissions();
@@ -35,7 +39,7 @@ fn ensure_writable(path: &Path) {
 /// and [`ReadOnly`]'s drop already restores the exact original permissions —
 /// nothing extra to defend against, so the defensive cleanup is a no-op.
 #[cfg(not(unix))]
-fn ensure_writable(_path: &Path) {}
+pub(crate) fn ensure_writable(_path: &Path) {}
 
 /// Make `path` read-only for the duration of the value — used to simulate a
 /// write-back failure (`EACCES`/`EPERM`) without needing actual filesystem
@@ -189,7 +193,10 @@ fn build_media_refs_hashes_match_the_mounted_files() {
 /// A bare booted machine — no cart, no media mounted yet — for the flush-
 /// failure tests below, which each mount exactly one piece of media
 /// themselves.
-fn boot_app() -> CocoApp {
+///
+/// `pub(crate)`: `disk_test.rs`/`tape_test.rs` reuse it, like
+/// [`ensure_writable`] and [`ReadOnly`].
+pub(crate) fn boot_app() -> CocoApp {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
@@ -209,6 +216,16 @@ fn boot_app() -> CocoApp {
     )
 }
 
+/// A one-track JVC image, the minimal `write_byte`-able fixture — every
+/// FD-502 write-back test needs at least one track to dirty.
+///
+/// `pub(crate)`: `disk_test.rs` reuses it, like [`boot_app`].
+pub(crate) fn write_one_track_disk(path: &Path) {
+    let sector_size = 128usize << fdc::DEFAULT_SECTOR_SIZE_CODE;
+    let one_track = fdc::DEFAULT_SECTORS_PER_TRACK * sector_size * fdc::DEFAULT_SIDES;
+    std::fs::write(path, vec![0u8; one_track]).expect("write disk fixture");
+}
+
 /// `save_state_to` must fail — before writing any `.ccstate`, and without
 /// clearing the disk's dirty flag — when a floppy's write-back can't reach
 /// its file, then succeed and clear dirty once the file is writable again
@@ -221,9 +238,7 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
     let dir = scratch_dir("disk-flush-failure");
     let disk_path = dir.join("dirty.dsk");
     ensure_writable(&disk_path);
-    let sector_size = 128usize << fdc::DEFAULT_SECTOR_SIZE_CODE;
-    let one_track = fdc::DEFAULT_SECTORS_PER_TRACK * sector_size * fdc::DEFAULT_SIDES;
-    std::fs::write(&disk_path, vec![0u8; one_track]).expect("write disk fixture");
+    write_one_track_disk(&disk_path);
 
     let mut app = boot_app();
     app.insert_disk(0, disk_path.clone());
