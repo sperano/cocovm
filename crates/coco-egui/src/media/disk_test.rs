@@ -1,9 +1,8 @@
 use super::*;
-use crate::save_state::tests::{ReadOnly, boot_app, ensure_writable, write_one_track_disk};
-
-/// The byte every test below writes to dirty a mounted disk, and checks for
-/// in the saved-back file afterward.
-const DIRTY_BYTE: u8 = 0xAA;
+use crate::save_state::tests::{
+    DIRTY_BYTE, ReadOnly, boot_app, ensure_writable, is_dirty, mount_and_dirty,
+    write_one_track_disk,
+};
 
 /// Scratch directory holding only the fixture files a given test writes
 /// into it, under `target/` (git-ignored), mirroring
@@ -14,41 +13,6 @@ fn scratch_dir(name: &str) -> PathBuf {
         .join(name);
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     dir
-}
-
-fn is_dirty(app: &mut CocoApp, drive: usize) -> bool {
-    app.machine
-        .bus
-        .cart
-        .as_disk_cart()
-        .expect("FD-502 mounted")
-        .disk(drive)
-        .expect("drive mounted")
-        .dirty()
-}
-
-fn write_dirty_byte(app: &mut CocoApp, drive: usize) {
-    app.machine
-        .bus
-        .cart
-        .as_disk_cart()
-        .expect("FD-502 mounted")
-        .disk_mut(drive)
-        .expect("drive mounted")
-        .write_byte(0, DIRTY_BYTE);
-}
-
-/// Mount `disk_path` in `drive` and dirty byte 0, asserting each step
-/// succeeds — the common setup shared by every test below.
-fn mount_and_dirty(app: &mut CocoApp, drive: usize, disk_path: &Path) {
-    app.insert_disk(drive, disk_path.to_path_buf());
-    assert!(
-        app.cart_error.is_none(),
-        "mounting the disk: {:?}",
-        app.cart_error
-    );
-    write_dirty_byte(app, drive);
-    assert!(is_dirty(app, drive), "writing a byte must dirty the disk");
 }
 
 /// `insert_disk` over a dirty disk whose backing file has gone read-only
