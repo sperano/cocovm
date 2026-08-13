@@ -12,6 +12,7 @@ use coco_core::gime::DISABLED_MMU_BASE;
 use coco_core::vhd::{SECTOR_SIZE, VHDImage, command, status};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 // ---- register addresses ($FF80-$FF86; see DESIGN.md and crate::bus) -------
 
@@ -29,16 +30,14 @@ const DESELECT: u8 = 5;
 const OPEN_BUS: u8 = 0xFF;
 
 fn load_rom(name: &str) -> Box<[u8]> {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()
 }
 
 fn boot_machine() -> Machine {
-    Machine::new(MachineConfig::default(), load_rom("coco3.rom"))
+    Machine::new(MachineConfig::default(), load_rom(COCO3))
 }
 
 /// Select `drive` (0 or 1) via `$FF86`.

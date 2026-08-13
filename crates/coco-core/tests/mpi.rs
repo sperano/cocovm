@@ -5,12 +5,11 @@
 //! boot integration with the FD-502 nested in slot 4. Facts per MAME
 //! `coco_multi.cpp` (`coco_multipak_device`) — see `crate::cart` doc comments.
 
-use std::path::PathBuf;
-
 use coco_core::cart::{Cart, Cartridge, MultiPak, ROMPak};
 use coco_core::fdc::DiskCart;
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
+use test_assets::rom::{COCO3, DISK11};
 
 /// `$FF7F`: the MPI's own select register (see `crate::bus::MPI_CONTROL_REG`).
 const MPI_CONTROL: u16 = 0xFF7F;
@@ -311,9 +310,7 @@ fn tick_advances_every_slot_regardless_of_selection() {
 /// when the (git-ignored) ROM image isn't present, so this test skips
 /// gracefully in an asset-less checkout.
 fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path).ok().map(Vec::into_boxed_slice)
 }
 
@@ -333,8 +330,7 @@ fn screen_row(m: &mut Machine, row: u16) -> String {
 #[test]
 fn mpi_with_fd502_in_slot4_and_switch_on_slot4_boots_disk_basic() {
     const FIELDS: usize = 400;
-    let (Some(coco), Some(disk_rom)) = (try_load_rom("coco3.rom"), try_load_rom("disk11.rom"))
-    else {
+    let (Some(coco), Some(disk_rom)) = (try_load_rom(COCO3), try_load_rom(DISK11)) else {
         eprintln!(
             "skipping mpi_with_fd502_in_slot4_and_switch_on_slot4_boots_disk_basic: roms/ assets not present"
         );

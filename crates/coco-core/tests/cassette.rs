@@ -4,12 +4,11 @@
 //! live in the sibling `cassette_wav.rs` (split out to stay under the
 //! project's file-size guideline).
 
-use std::path::PathBuf;
-
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
 use coco_core::cassette::{Cassette, RECORD_IDLE_FINALIZE_CYCLES, Transition, demodulate};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 /// Leader/sync/framing bytes (Service Manual §5.10, `cassette-verified-facts`).
 const LEADER: u8 = 0x55;
@@ -317,9 +316,7 @@ fn seek_finalizes_a_pending_recording_first() {
 // ============================================================================
 
 fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path).ok().map(Vec::into_boxed_slice)
 }
 
@@ -436,7 +433,7 @@ fn csave_rewind_cload_round_trips_a_basic_program() {
     const BLOCK_DATA: u8 = 0x01;
     const BLOCK_EOF: u8 = 0xFF;
 
-    let Some(rom) = try_load_rom("coco3.rom") else {
+    let Some(rom) = try_load_rom(COCO3) else {
         eprintln!("skipping csave_rewind_cload_round_trips_a_basic_program: roms/ not present");
         return;
     };
@@ -530,7 +527,7 @@ fn csave_cload_csave_builds_a_two_file_tape() {
     const BLOCK_NAMEFILE: u8 = 0x00;
     const BLOCK_EOF: u8 = 0xFF;
 
-    let Some(rom) = try_load_rom("coco3.rom") else {
+    let Some(rom) = try_load_rom(COCO3) else {
         eprintln!("skipping csave_cload_csave_builds_a_two_file_tape: roms/ not present");
         return;
     };

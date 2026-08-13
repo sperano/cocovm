@@ -2,6 +2,7 @@
 //! must never land mid-instruction.
 
 use mc6809::disasm::disassemble;
+use test_assets::rom::COCO3;
 
 /// Hand-decoded from `roms/coco3.rom` starting at the RESET entry point.
 /// Reset vector at file offset 0x7FFE-0x7FFF ($FFFE-$FFFF) reads `8C 1B` ->
@@ -35,7 +36,7 @@ use mc6809::disasm::disassemble;
 /// ```
 #[test]
 fn rom_reset_entry_point_disassembles_as_hand_decoded() {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     let rom = std::fs::read(&path).expect("roms/coco3.rom (git-ignored, local-only)");
     // ROM maps to $8000-$FFFF; file offset = addr - $8000.
     let reset_vector = ((rom[0x7FFE] as u16) << 8) | rom[0x7FFF] as u16;

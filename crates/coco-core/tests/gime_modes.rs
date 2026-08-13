@@ -5,17 +5,16 @@
 //! whole-field geometry. Register values are the ROM's own video-register
 //! images (SEB Unravelled II, tables at LE03C/LE071).
 
-use std::path::PathBuf;
-
 use coco_core::raster::{CANVAS_H, CANVAS_W};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 /// Fields to run before poking modes — enough to reach the idle BASIC prompt.
 const BOOT_FIELDS: usize = 120;
 
 fn boot_machine() -> Machine {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     let rom = std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice();

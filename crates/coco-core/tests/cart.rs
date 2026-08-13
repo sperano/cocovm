@@ -3,11 +3,10 @@
 //! two ways a pak reaches the CPU — the autostart FIRQ boot path (fact 1/2)
 //! and BASIC's cold-start `DK` disk-controller probe (`docs/cartridges.md`).
 
-use std::path::PathBuf;
-
 use coco_core::cart::{Cartridge, ROM_PAK_MAX_LEN, ROMPak, ROMPakError};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::{COCO3, DISK11};
 
 // ---- ROMPak::from_bytes: rejection and mirror-fill ----------------------------
 
@@ -95,16 +94,14 @@ fn mirror_fill_equals_plain_repetition_for_any_size() {
 // ---- Real-ROM integration ------------------------------------------------------
 
 fn load_rom(name: &str) -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()
 }
 
 fn boot_machine() -> Machine {
-    Machine::new(MachineConfig::default(), load_rom("coco3.rom"))
+    Machine::new(MachineConfig::default(), load_rom(COCO3))
 }
 
 /// Decode a text-screen row to ASCII (same VDG alphanumeric decode as
@@ -188,7 +185,7 @@ fn disk_basic_pak_integrates_at_cold_start() {
     // (`docs/cartridges.md`).
     const FIELDS: usize = 400;
     let mut m = boot_machine();
-    m.insert_cartridge(ROMPak::from_bytes(&load_rom("disk11.rom"), false).unwrap());
+    m.insert_cartridge(ROMPak::from_bytes(&load_rom(DISK11), false).unwrap());
     m.reset();
     for _ in 0..FIELDS {
         m.run_field();

@@ -3,12 +3,11 @@
 //! Tier 1), MPI slot behaviour, and the
 //! autostart FIRQ boot path against the real `roms/coco3.rom`.
 
-use std::path::PathBuf;
-
 use coco_core::cart::{Cartridge, MultiPak};
 use coco_core::orch90::{LEFT_DAC_REG, Orch90, RIGHT_DAC_REG};
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 /// An Orch-90 with an all-zero (harmless) 8K ROM image, for bus-level tests
 /// that never execute cart code.
@@ -148,7 +147,7 @@ fn mpi_dac_writes_ignore_the_slot_select_and_audio_sums() {
 // ---- Real-ROM autostart integration ----------------------------------------------
 
 fn load_coco3_rom() -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

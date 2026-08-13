@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/mc6809", "crates/coco-core", "crates/coco-egui"]
+members = ["crates/mc6809", "crates/coco-core", "crates/coco-egui", "crates/test-assets"]
 
 [workspace.package]
 version = "0.6.2"

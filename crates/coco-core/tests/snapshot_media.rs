@@ -9,9 +9,10 @@ use std::path::PathBuf;
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError};
 use coco_core::{Machine, MachineConfig};
+use test_assets::rom::{COCO3, DISK11};
 
 fn rom_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom")
+    test_assets::rom(COCO3)
 }
 
 fn load_rom() -> Box<[u8]> {
@@ -21,7 +22,7 @@ fn load_rom() -> Box<[u8]> {
 }
 
 fn disk_rom_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/disk11.rom")
+    test_assets::rom(DISK11)
 }
 
 fn load_disk_rom() -> Box<[u8]> {

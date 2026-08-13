@@ -10,6 +10,7 @@ use coco_core::cart::{Cartridge, MultiPak};
 use coco_core::config::MachineConfig;
 use coco_core::rtc::{DistoRTC, RTCTime};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 const RTC_DATA: u16 = 0xFF50;
 /// Register-select latch as `clock2_disto4.asm` (Disto 4-N-1) uses it.
@@ -240,7 +241,7 @@ fn stop_loses_the_time_spent_stopped() {
 
 #[test]
 fn reads_route_through_the_machine_bus_scs_window() {
-    let mut m = Machine::new(MachineConfig::default(), load_rom("coco3.rom"));
+    let mut m = Machine::new(MachineConfig::default(), load_rom(COCO3));
     m.insert_cartridge(fixed_rtc());
     m.power_cycle();
     m.bus.write(RTC_SELECT_DISTO4, REG_S1);
@@ -270,9 +271,7 @@ fn rtc_in_a_multipak_slot_answers_when_scs_selected() {
 
 /// Same ROM-loading convention as `tests/cart.rs`.
 fn load_rom(name: &str) -> Box<[u8]> {
-    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

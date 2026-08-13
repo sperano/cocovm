@@ -2,9 +2,10 @@ use std::path::PathBuf;
 
 use coco_core::snapshot::{self, MediaRef, MediaRefs, SnapshotError};
 use coco_core::{Machine, MachineConfig};
+use test_assets::rom::COCO3;
 
 pub fn rom_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom")
+    test_assets::rom(COCO3)
 }
 
 pub fn load_rom() -> Box<[u8]> {

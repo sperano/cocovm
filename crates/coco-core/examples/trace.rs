@@ -13,14 +13,14 @@
 //! Usage: `cargo run -p coco-core --example trace -- [max_instrs] [cart.ccc]`
 
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
 
 use coco_core::cart::ROMPak;
 use coco_core::debug::TraceEntry;
 use coco_core::{Machine, MachineConfig, StepKind};
+use test_assets::rom::COCO3;
 
 fn load_rom() -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

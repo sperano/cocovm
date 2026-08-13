@@ -31,19 +31,16 @@ use coco_core::bitbanger::{self, CaptureSink};
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig};
+use test_assets::{
+    disk::{EOU_BOOT, EOU_SYSTEM_VHD},
+    rom::{COCO3, DISK11},
+};
 
 /// NitrOS-9's `/p` driver holds true 600 baud at the CoCo 3's doubled
 /// (`$FFD9`) clock by running its delay loop for twice the cycles Color
 /// BASIC's speed-oblivious driver would (see module doc comment and
 /// `docs/bitbanger-spec.md`).
 const OS9_PRINTER_BIT_PERIOD: u32 = 2 * bitbanger::DEFAULT_BIT_PERIOD;
-
-fn asset(dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(dir)
-        .join(name)
-}
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {
     for _ in 0..3 {
@@ -140,14 +137,14 @@ fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
     const MAX_BOOT_FIELDS: usize = 12_000;
 
     let (Ok(coco), Ok(disk_rom), Ok(dsk)) = (
-        std::fs::read(asset("roms", "coco3.rom")),
-        std::fs::read(asset("roms", "disk11.rom")),
-        std::fs::read(asset("disks", "68EMU.dsk")),
+        std::fs::read(test_assets::rom(COCO3)),
+        std::fs::read(test_assets::rom(DISK11)),
+        std::fs::read(test_assets::disk(EOU_BOOT)),
     ) else {
         eprintln!("skipping NitrOS-9 /p boot test: roms/ or disks/ assets not present");
         return None;
     };
-    let vhd_src = asset("disks", "68SDC.VHD");
+    let vhd_src = test_assets::disk(EOU_SYSTEM_VHD);
     if !vhd_src.exists() {
         eprintln!("skipping NitrOS-9 /p boot test: disks/68SDC.VHD not present");
         return None;

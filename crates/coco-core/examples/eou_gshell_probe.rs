@@ -8,14 +8,7 @@
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig, MonitorType};
-use std::path::PathBuf;
-
-fn asset(dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(dir)
-        .join(name)
-}
+use test_assets::{disk, rom};
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {
     for _ in 0..3 {
@@ -76,10 +69,10 @@ fn dump_video(m: &Machine, label: &str) {
 }
 
 fn main() {
-    let coco = std::fs::read(asset("roms", "coco3.rom")).expect("coco3.rom");
-    let disk_rom = std::fs::read(asset("roms", "disk11.rom")).expect("disk11.rom");
-    let dsk = std::fs::read(asset("disks", "68EMU.dsk")).expect("68EMU.dsk");
-    let vhd_src = asset("disks", "68SDC.VHD");
+    let coco = std::fs::read(test_assets::rom(rom::COCO3)).expect("coco3.rom");
+    let disk_rom = std::fs::read(test_assets::rom(rom::DISK11)).expect("disk11.rom");
+    let dsk = std::fs::read(test_assets::disk(disk::EOU_BOOT)).expect("68EMU.dsk");
+    let vhd_src = test_assets::disk(disk::EOU_SYSTEM_VHD);
     let vhd_copy = std::env::temp_dir().join("cocovm-eou-probe.VHD");
     std::fs::copy(&vhd_src, &vhd_copy).expect("copy VHD");
     let vhd_file = std::fs::File::options()

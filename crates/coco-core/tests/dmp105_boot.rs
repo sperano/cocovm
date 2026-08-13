@@ -10,15 +10,14 @@
 //! Skips gracefully if `roms/` isn't present, matching
 //! `tests/bitbanger_boot.rs`.
 
-use std::path::PathBuf;
-
 use coco_core::bitbanger::PrinterSink;
 use coco_core::dmp105::DMP105Handle;
 use coco_core::printer::Y_UNITS_PER_INCH;
 use coco_core::{Machine, MachineConfig};
+use test_assets::rom::COCO3;
 
 fn load_rom() -> Option<Box<[u8]>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     std::fs::read(&path).ok().map(Vec::into_boxed_slice)
 }
 

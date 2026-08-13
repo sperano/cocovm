@@ -13,3 +13,6 @@ serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
 serde = ["dep:serde"]
+
+[dev-dependencies]
+test-assets = { package = "cocovm-test-assets", path = "../test-assets" }

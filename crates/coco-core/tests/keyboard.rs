@@ -1,11 +1,10 @@
 //! Keyboard matrix coverage: the row-sense logic, the symbolic char map, and an
 //! end-to-end "type at the BASIC prompt and see it echo" test against the real ROM.
 
-use std::path::PathBuf;
-
 use coco_core::keyboard::{Keyboard, char_key};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 // ---- row sense --------------------------------------------------------------
 
@@ -51,7 +50,7 @@ fn char_key_maps_letters_and_symbols() {
 // ---- end-to-end typing ------------------------------------------------------
 
 fn boot_to_prompt() -> Machine {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     let rom = std::fs::read(&path).unwrap().into_boxed_slice();
     let mut m = Machine::new(MachineConfig::default(), rom);
     // Run until BASIC prints OK.

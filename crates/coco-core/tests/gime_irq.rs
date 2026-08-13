@@ -2,11 +2,10 @@
 //! enable/status, $FF94/$FF95 timer). Semantics per SEB Unravelled II (Fig 14,
 //! interrupt chapter) and MAME `gime.cpp` (reload offset, clear-on-disable).
 
-use std::path::PathBuf;
-
 use coco_core::gime::{TIMER_RELOAD_OFFSET, init0, intr};
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus, keyboard};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 const IRQENR: u16 = 0xFF92;
 const FIRQENR: u16 = 0xFF93;
@@ -168,7 +167,7 @@ fn keyboard_interrupt_fires_on_falling_edge_only() {
 // ---- Real-ROM integration ------------------------------------------------------
 
 fn boot_machine() -> Machine {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     let rom = std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice();

@@ -30,20 +30,17 @@ use std::path::{Path, PathBuf};
 use coco_core::cart::ROMPak;
 use coco_core::drivewire::DWImage;
 use coco_core::{Machine, MachineConfig};
-
-fn asset(dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(dir)
-        .join(name)
-}
+use test_assets::{
+    disk::{BLANK02, NOS9_L2_COCO3_BECKER, SPETRIS},
+    rom::{COCO3, HDBDW3BC3},
+};
 
 /// Loads `roms/coco3.rom` and `roms/hdbdw3bc3.rom`, or `eprintln!`s a skip
 /// notice tagged with `label` and returns `None` if either is absent.
 fn load_roms(label: &str) -> Option<(Vec<u8>, Vec<u8>)> {
     let (Ok(coco), Ok(hdbdos)) = (
-        std::fs::read(asset("roms", "coco3.rom")),
-        std::fs::read(asset("roms", "hdbdw3bc3.rom")),
+        std::fs::read(test_assets::rom(COCO3)),
+        std::fs::read(test_assets::rom(HDBDW3BC3)),
     ) else {
         eprintln!("skipping {label}: roms/coco3.rom or roms/hdbdw3bc3.rom not present");
         return None;
@@ -51,12 +48,12 @@ fn load_roms(label: &str) -> Option<(Vec<u8>, Vec<u8>)> {
     Some((coco, hdbdos))
 }
 
-/// Resolves `dir/name` under the repo root, or `eprintln!`s a skip notice
+/// Resolves `disks/name` under the repo root, or `eprintln!`s a skip notice
 /// tagged with `label` and returns `None` if it isn't present.
-fn require_disk_asset(dir: &str, name: &str, label: &str) -> Option<PathBuf> {
-    let path = asset(dir, name);
+fn require_disk_asset(name: &str, label: &str) -> Option<PathBuf> {
+    let path = test_assets::disk(name);
     if !path.exists() {
-        eprintln!("skipping {label}: {dir}/{name} not present");
+        eprintln!("skipping {label}: disks/{name} not present");
         return None;
     }
     Some(path)
@@ -197,7 +194,7 @@ fn hdbdos_dir_lists_drivewire_disk() {
     let Some((coco, hdbdos)) = load_roms("DriveWire DIR test") else {
         return;
     };
-    let Some(dsk_path) = require_disk_asset("disks", "spetris.dsk", "DriveWire DIR test") else {
+    let Some(dsk_path) = require_disk_asset(SPETRIS, "DriveWire DIR test") else {
         return;
     };
     // Read-only handle: DIR never writes, and this must not perturb the
@@ -252,7 +249,7 @@ fn hdbdos_save_writes_through_drivewire() {
     let Some((coco, hdbdos)) = load_roms("DriveWire SAVE test") else {
         return;
     };
-    let Some(blank_src) = require_disk_asset("disks", "blank02.dsk", "DriveWire SAVE test") else {
+    let Some(blank_src) = require_disk_asset(BLANK02, "DriveWire SAVE test") else {
         return;
     };
 
@@ -369,11 +366,8 @@ fn nitros9_l2_boots_over_drivewire_to_shell_prompt() {
     let Some((coco, hdbdos)) = load_roms("NitrOS-9/DriveWire boot test") else {
         return;
     };
-    let Some(dsk_src) = require_disk_asset(
-        "disks",
-        "nos96809l2v030300coco3_becker.dsk",
-        "NitrOS-9/DriveWire boot test",
-    ) else {
+    let Some(dsk_src) = require_disk_asset(NOS9_L2_COCO3_BECKER, "NitrOS-9/DriveWire boot test")
+    else {
         return;
     };
 
