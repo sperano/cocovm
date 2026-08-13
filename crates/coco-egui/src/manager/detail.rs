@@ -7,7 +7,7 @@
 
 use eframe::egui;
 
-use crate::{machine_def, new_vm, titled_group};
+use crate::{humanize_runtime, machine_def, new_vm, titled_group};
 
 use super::detail_map;
 use super::{DETAIL_SECTION_GAP, EditState, ManagerApp, NO_CONFIG_DIR, vm_status_label};
@@ -83,49 +83,22 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     });
 }
 
-/// [`humanize_runtime`]'s unit breakpoints.
-const SECS_PER_MINUTE: u64 = 60;
-const SECS_PER_HOUR: u64 = 60 * SECS_PER_MINUTE;
-const SECS_PER_DAY: u64 = 24 * SECS_PER_HOUR;
-
 /// How often the detail pane asks for its next repaint while showing a
 /// running machine's ticking Runtime row (see [`draw_statistics`]'s call
 /// site).
 const STATS_REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// Humanize a whole-seconds duration as its two largest nonzero-scale
-/// units — `"2 d 3 h"`, `"3 h 12 m"`, `"12 m 5 s"` — dropping to a single
-/// unit once under a minute (`"42 s"`, `"0 s"`): there's nothing smaller
-/// than seconds to pair it with. Pure so it's unit-testable without an egui
-/// context (`detail_test.rs`).
-fn humanize_runtime(total_secs: u64) -> String {
-    if total_secs >= SECS_PER_DAY {
-        let days = total_secs / SECS_PER_DAY;
-        let hours = (total_secs % SECS_PER_DAY) / SECS_PER_HOUR;
-        format!("{days} d {hours} h")
-    } else if total_secs >= SECS_PER_HOUR {
-        let hours = total_secs / SECS_PER_HOUR;
-        let minutes = (total_secs % SECS_PER_HOUR) / SECS_PER_MINUTE;
-        format!("{hours} h {minutes} m")
-    } else if total_secs >= SECS_PER_MINUTE {
-        let minutes = total_secs / SECS_PER_MINUTE;
-        let seconds = total_secs % SECS_PER_MINUTE;
-        format!("{minutes} m {seconds} s")
-    } else {
-        format!("{total_secs} s")
-    }
-}
-
-/// The persisted runtime total plus, live, whatever a *running* VM has
-/// accumulated this session — so the number ticks while it's open. Pure so
-/// it's unit-testable without an egui context (`detail_test.rs`), like
-/// [`humanize_runtime`].
+/// The runtime total to display: a live VM's own `CocoApp::total_runtime`
+/// when one exists (so the number ticks while it's open), else the persisted
+/// `[stats].runtime_secs` — one source of truth while a VM is alive, the same
+/// formula the status bar uses (`chrome::status_bar`'s `runtime_status`).
+/// Pure so it's unit-testable without an egui context (`detail_test.rs`),
+/// like [`humanize_runtime`].
 fn displayed_runtime_secs(entry: &super::MachineEntry) -> u64 {
-    let live = entry
-        .vm
-        .as_ref()
-        .map_or(std::time::Duration::ZERO, |vm| vm.session_runtime);
-    entry.def.stats.runtime_secs + live.as_secs()
+    match entry.vm.as_ref() {
+        Some(vm) => vm.total_runtime.as_secs(),
+        None => entry.def.stats.runtime_secs,
+    }
 }
 
 /// "Started" row text — `"N times"`, correctly singular for one
@@ -220,9 +193,6 @@ impl ManagerApp {
         }
         ui.add_space(DETAIL_SECTION_GAP);
 
-        draw_statistics(ui, &slug, &self.entries[index]);
-        ui.add_space(DETAIL_SECTION_GAP);
-
         draw_form_sections(ui, &slug, &mut edit.form);
         if self.entries[index].is_alive() {
             ui.add_space(DETAIL_SECTION_GAP);
@@ -231,6 +201,9 @@ impl ManagerApp {
             // only a cold start from power off does.
             ui.small("Changes apply the next time this machine starts from power off.");
         }
+
+        ui.add_space(DETAIL_SECTION_GAP);
+        draw_statistics(ui, &slug, &self.entries[index]);
 
         self.autosave(&slug, index, &mut edit);
         if let Some(err) = &self.save_error {

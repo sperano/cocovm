@@ -227,7 +227,7 @@ pub(super) fn manager_harness_with_artifacts(
         manager::ManagerApp::new(None, machines_dir, artifacts_root, entries)
     });
     // Tall enough for the whole detail pane — Machine/RAM/Display/
-    // Peripherals/Ports/Joysticks/Keyboard plus the Statistics block above
+    // Peripherals/Ports/Joysticks/Keyboard plus the Statistics block below
     // them — to land in the AccessKit tree; like the `CocoApp` harness
     // above, egui only reports on-screen widgets, so a too-short viewport
     // silently drops the lower fieldsets' combos from position-indexed

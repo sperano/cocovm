@@ -35,6 +35,12 @@ impl CocoApp {
                         ui.separator();
                         ui.label(toast);
                     }
+                    // Genuinely the bar's last entry only while no toast is
+                    // showing — a toast (`Self::set_toast`) pushes it one
+                    // slot right for as long as the toast is visible. Accepted
+                    // tradeoff, not a bug: toasts are rare and short-lived
+                    // (`save_state::TOAST_SECS`).
+                    self.runtime_status(ui);
                 });
             });
     }
@@ -350,6 +356,25 @@ impl CocoApp {
             "Printer: {}",
             capture_path.map_or("DMP-105", file_name)
         ));
+    }
+
+    /// The bar's last entry (except when a toast is showing — see the call
+    /// site in `status_bar_ui`): cumulative powered-on time
+    /// (`CocoApp::total_runtime`'s doc), the same total the detail pane's
+    /// Statistics block shows for a running machine (`manager::detail`'s
+    /// `displayed_runtime_secs`), read here straight off the app instead of
+    /// reaching back into the manager. A plain label, not a click target
+    /// like the other entries — nothing to toggle — so it needs no painted
+    /// icon. No extra repaint plumbing: the window already repaints every
+    /// frame while running (`step_emulation`), and while paused the runtime
+    /// doesn't advance either.
+    fn runtime_status(&self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.label(format!(
+            "Runtime: {}",
+            humanize_runtime(self.total_runtime.as_secs())
+        ))
+        .on_hover_text("Total powered-on time, all sessions");
     }
 }
 

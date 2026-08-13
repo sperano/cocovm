@@ -86,7 +86,7 @@ fn on_exit_folds_live_runtime_into_the_persisted_total() {
         "launch should succeed: {:?}",
         manager.entries[0].launch_error
     );
-    manager.entries[0].vm.as_mut().unwrap().session_runtime = std::time::Duration::from_secs(77);
+    manager.entries[0].vm.as_mut().unwrap().total_runtime = std::time::Duration::from_secs(77);
 
     manager.on_exit(None);
 

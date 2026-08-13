@@ -183,6 +183,17 @@ fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
     assert!(harness.state().kb_mode == KbMode::Symbolic);
 }
 
+/// The status bar's last entry — cumulative powered-on runtime
+/// (`CocoApp::total_runtime`'s doc) — shows on a freshly booted window
+/// even before any session time has accrued: `boot_harness` builds a bare
+/// `CocoApp` with `total_runtime` at its default `Duration::ZERO`, so the
+/// label reads exactly "Runtime: 0 s".
+#[test]
+fn status_bar_shows_the_runtime_entry() {
+    let harness = boot_harness();
+    harness.get_by_label("Runtime: 0 s");
+}
+
 #[test]
 fn view_menu_toggles_aspect() {
     let mut harness = boot_harness();

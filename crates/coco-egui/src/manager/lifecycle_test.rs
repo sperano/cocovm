@@ -1,6 +1,7 @@
 //! `manager::lifecycle` tests for the per-VM stats this module maintains:
-//! `start_vm` recording a boot count, and `suspend_vm`/`stop_vm` folding a
-//! live VM's session runtime into the persisted total. Boots a real machine
+//! `start_vm` recording a boot count and seeding a fresh VM's live runtime
+//! total from the persisted one, and `suspend_vm`/`stop_vm` folding that
+//! live total back into the persisted total. Boots a real machine
 //! via `crate::launch_machine`, which reads the real `roms/coco3.rom`
 //! (git-ignored, local-only) the same way `launch_test.rs` does — no special
 //! setup needed, since ROM lookup resolves through `CARGO_MANIFEST_DIR` at
@@ -67,7 +68,7 @@ fn start_vm_increments_starts_and_persists() {
     );
 }
 
-/// `stop_vm` folds whatever `session_runtime` had accumulated into the
+/// `stop_vm` folds whatever `total_runtime` had accumulated into the
 /// persisted total; a second stop with nothing newly accumulated (zero
 /// elapsed) is a no-op that leaves the total untouched.
 #[test]
@@ -88,8 +89,8 @@ fn stop_vm_folds_runtime_and_zero_elapsed_is_a_noop() {
         manager.entries[0].launch_error
     );
     // Deterministic accumulated time instead of sleeping for real —
-    // `CocoApp::session_runtime` is `pub(crate)`.
-    manager.entries[0].vm.as_mut().unwrap().session_runtime = std::time::Duration::from_secs(125);
+    // `CocoApp::total_runtime` is `pub(crate)`.
+    manager.entries[0].vm.as_mut().unwrap().total_runtime = std::time::Duration::from_secs(125);
     manager.stop_vm(0);
     assert_eq!(manager.entries[0].def.stats.runtime_secs, 125);
 
@@ -142,7 +143,7 @@ fn suspend_vm_folds_runtime() {
         "launch should succeed: {:?}",
         manager.entries[0].launch_error
     );
-    manager.entries[0].vm.as_mut().unwrap().session_runtime = std::time::Duration::from_secs(42);
+    manager.entries[0].vm.as_mut().unwrap().total_runtime = std::time::Duration::from_secs(42);
     manager.suspend_vm(0);
     assert!(
         manager.entries[0].launch_error.is_none(),
@@ -153,6 +154,96 @@ fn suspend_vm_folds_runtime() {
 
     let loaded = machine_def::load_all(machines_dir.path()).expect("reload should succeed");
     assert_eq!(loaded[0].1.stats.runtime_secs, 42);
+}
+
+/// `fold_runtime_into_def` is an idempotent assignment from the live VM's
+/// `total_runtime` (truncated to whole seconds) into the persisted total —
+/// folding twice with nothing new accrued between the calls must leave the
+/// def, and the live field itself, exactly as they were after the first
+/// fold (`fold_runtime_into_def`'s doc).
+#[test]
+fn fold_runtime_into_def_is_idempotent() {
+    let machines_dir = TempDir::new("lifecycle-fold-idempotent-machines");
+    let artifacts_root = TempDir::new("lifecycle-fold-idempotent-artifacts");
+    let mut manager = test_manager(
+        machines_dir.path(),
+        artifacts_root.path(),
+        "lifecycle-fold-idempotent",
+        base_def(),
+    );
+
+    manager.start_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    manager.entries[0].vm.as_mut().unwrap().total_runtime =
+        std::time::Duration::from_secs_f64(105.4);
+
+    manager.fold_runtime_into_def(0);
+    assert_eq!(
+        manager.entries[0].def.stats.runtime_secs, 105,
+        "truncated to whole seconds"
+    );
+
+    // Poke a sentinel onto the on-disk file — something `machine_def::save`'s
+    // serializer would never itself produce — so a spurious re-save by the
+    // second, no-op fold below is caught even where the round-tripped
+    // *content* would otherwise match byte-for-byte.
+    let toml_path = machines_dir.path().join("lifecycle-fold-idempotent.toml");
+    let mut sentinel_contents = fs::read_to_string(&toml_path).expect("file should exist");
+    sentinel_contents.push_str("\n# sentinel: an idempotent fold must not rewrite this file\n");
+    fs::write(&toml_path, &sentinel_contents).expect("sentinel write should succeed");
+
+    // Fold again with the VM untouched: idempotent, and folding never
+    // touches the live field, only reads it.
+    manager.fold_runtime_into_def(0);
+    assert_eq!(
+        manager.entries[0].def.stats.runtime_secs, 105,
+        "a second fold with nothing newly accrued must not change the total"
+    );
+    assert_eq!(
+        fs::read_to_string(&toml_path).expect("file should still exist"),
+        sentinel_contents,
+        "a no-op fold must not touch the file at all"
+    );
+    assert_eq!(
+        manager.entries[0].vm.as_ref().unwrap().total_runtime,
+        std::time::Duration::from_secs_f64(105.4),
+        "folding never touches the live VM's own total_runtime"
+    );
+}
+
+/// The review's finding this test guards: `launch_machine` must seed a
+/// freshly launched VM's `total_runtime` from the def's persisted
+/// `[stats].runtime_secs`, so a machine that already has accrued time shows
+/// it immediately rather than starting back at zero.
+#[test]
+fn start_vm_seeds_total_runtime_from_the_persisted_total() {
+    let machines_dir = TempDir::new("lifecycle-seed-machines");
+    let artifacts_root = TempDir::new("lifecycle-seed-artifacts");
+    let mut def = base_def();
+    def.stats.runtime_secs = 4242;
+    let mut manager = test_manager(
+        machines_dir.path(),
+        artifacts_root.path(),
+        "lifecycle-seed",
+        def,
+    );
+
+    manager.start_vm(0);
+
+    assert_eq!(
+        manager.entries[0]
+            .vm
+            .as_ref()
+            .expect("launch should succeed")
+            .total_runtime
+            .as_secs(),
+        4242,
+        "the launch-time seed must carry the persisted total into the live VM"
+    );
 }
 
 /// A full Stop → Start → Suspend → Resume → Stop cycle ends with

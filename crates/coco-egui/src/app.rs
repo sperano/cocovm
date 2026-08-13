@@ -165,19 +165,20 @@ pub(crate) struct CocoApp {
     /// `.ccstate` → pause) is manager-owned
     /// (`manager::lifecycle::suspend_vm`).
     pub(crate) pending_suspend: bool,
-    /// Cumulative wall-clock time this VM has spent `running` since it was
-    /// (re)launched or last drained by [`Self::take_session_runtime`] — the
-    /// manager's per-launch runtime tally, folded into the persisted
-    /// `[stats].runtime_secs` total on Suspend/Stop/quit
-    /// (`manager::lifecycle::fold_runtime_into_def`). Accumulated in
+    /// Cumulative powered-on time across all of this machine's sessions,
+    /// including the one running right now. Accumulated in
     /// [`Self::fields_due`] (`app/frame.rs`) from the same `MAX_FRAME_DT`-
     /// clamped `dt` that feeds `field_debt`, so a host stall is credited at
     /// most that cap rather than its full unclamped length. Naturally stops
     /// advancing whenever `last_update` is `None` (paused/suspended — see
     /// that field's doc) — `fields_due` is only ever called from the
     /// `running` branch of `step_emulation`, so a paused interval (debugger
-    /// breakpoint included) never reaches this field at all.
-    pub(crate) session_runtime: std::time::Duration,
+    /// breakpoint included) never reaches this field at all. Seeded at
+    /// launch from the persisted `[stats].runtime_secs`
+    /// (`launch::launch_machine`), and persisted back by
+    /// [`crate::manager::lifecycle::fold_runtime_into_def`] on
+    /// Suspend/Stop/quit.
+    pub(crate) total_runtime: std::time::Duration,
 }
 
 /// See [`CocoApp::pending_disk_action`].
@@ -227,7 +228,7 @@ impl CocoApp {
             tv_frame: 0,
             last_update: None,
             field_debt: 0.0,
-            session_runtime: std::time::Duration::ZERO,
+            total_runtime: std::time::Duration::ZERO,
             joysticks: JoystickInputs::new(),
             display_rect: egui::Rect::NOTHING,
             display_layer: egui::LayerId::background(),

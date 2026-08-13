@@ -139,33 +139,31 @@ impl ManagerApp {
         }
     }
 
-    /// Fold `secs` (whole seconds already drained by
-    /// [`crate::CocoApp::take_session_runtime`], which keeps any fractional
-    /// remainder in the live `session_runtime` for next time) into
-    /// `entries[index]`'s persisted runtime total and save, when nonzero. A
-    /// no-op save avoidance: folding zero elapsed seconds (e.g. a suspend/stop
-    /// that happens within the same second as the last fold) doesn't touch the
-    /// file.
-    fn fold_elapsed_runtime(&mut self, index: usize, secs: u64) {
-        if secs == 0 {
-            return;
-        }
-        self.entries[index].def.stats.runtime_secs += secs;
-        self.save_entry_def(index);
-    }
-
-    /// Drain `entries[index]`'s live VM session runtime (if any — a no-op for
-    /// an entry with no live VM) via [`Self::fold_elapsed_runtime`]. Shared by
+    /// Write `entries[index]`'s live VM's [`CocoApp::total_runtime`] into its
+    /// persisted `[stats].runtime_secs`, when it actually changed. Idempotent:
+    /// a fold within the same second as the last one (nothing new accrued at
+    /// whole-second granularity) writes nothing, since `total_runtime` only
+    /// ever grows and truncating it to whole seconds loses no information —
+    /// the fractional remainder simply stays in `total_runtime` for the next
+    /// fold to pick up. A no-op for an entry with no live VM. Shared by
     /// [`Self::suspend_vm`], [`Self::stop_vm`], and [`ManagerApp::on_exit`]
     /// (`manager.rs`) — each calls this while the VM is still in place
     /// (`entries[index].vm`), before whatever happens to it next (pause,
     /// `take()`, flush).
+    ///
+    /// The def's runtime total only ever advances through this method while
+    /// a VM is alive (launch seeds `total_runtime` from the def — see
+    /// `launch::launch_machine` — and the field only grows from there), so
+    /// this assignment can't go backwards in practice.
     pub(super) fn fold_runtime_into_def(&mut self, index: usize) {
-        let Some(vm) = self.entries[index].vm.as_mut() else {
+        let Some(vm) = self.entries[index].vm.as_ref() else {
             return;
         };
-        let secs = vm.take_session_runtime();
-        self.fold_elapsed_runtime(index, secs);
+        let total = vm.total_runtime.as_secs();
+        if total != self.entries[index].def.stats.runtime_secs {
+            self.entries[index].def.stats.runtime_secs = total;
+            self.save_entry_def(index);
+        }
     }
 
     /// Suspend (the ⏸ transport button, Running machines only): freeze the
