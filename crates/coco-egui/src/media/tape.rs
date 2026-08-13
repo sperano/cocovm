@@ -8,8 +8,13 @@ impl CocoApp {
     /// demodulated via [`coco_core::cassette_wav::decode_wav`] — sniffed by
     /// the `RIFF` magic on the loaded bytes, not the file extension, since a
     /// picked file's extension isn't authoritative), writing back whatever
-    /// was in the deck first. Failures land in [`Self::cart_error`] and
-    /// leave the currently mounted tape untouched.
+    /// was in the deck first. A write-back failure that leaves the old tape
+    /// still dirty (the canonical `.cas` never landed) aborts the mount,
+    /// preserving the old tape, its dirty flag, and its tracked path for a
+    /// later retry; a failure that hits only the optional `.wav` sibling
+    /// (the `.cas` already landed and the tape is clean — see
+    /// [`Self::save_tape_bytes`]) reports through [`Self::cart_error`] but
+    /// proceeds, since there is nothing left to retry.
     pub(crate) fn insert_tape(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -29,21 +34,38 @@ impl CocoApp {
         } else {
             bytes
         };
-        self.write_back_tape();
+        if let Err(e) = self.write_back_tape() {
+            self.cart_error = Some(e);
+            if self.machine.bus.cassette.dirty() {
+                return;
+            }
+        }
         self.machine.bus.cassette.insert_tape(tape);
         self.tape_path = Some(path);
     }
 
     /// Create a brand-new blank tape at `path` and mount it, ready for CSAVE.
     /// Refuses to overwrite an existing file (mirrors [`Self::new_blank_disk`]).
+    /// Whatever was in the deck first is flushed before the new file is even
+    /// created. A write-back failure that leaves the old tape still dirty
+    /// aborts the whole operation, leaving neither a stray empty file on
+    /// disk nor the old tape disturbed; a failure that hits only the
+    /// optional `.wav` sibling (the tape is already clean — see
+    /// [`Self::save_tape_bytes`]) reports through [`Self::cart_error`] but
+    /// proceeds, since there is nothing left to retry.
     pub(crate) fn new_tape(&mut self, path: PathBuf) {
+        if let Err(e) = self.write_back_tape() {
+            self.cart_error = Some(e);
+            if self.machine.bus.cassette.dirty() {
+                return;
+            }
+        }
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&path)
         {
             Ok(_) => {
-                self.write_back_tape();
                 self.machine.bus.cassette.insert_tape(Vec::new());
                 self.tape_path = Some(path);
             }
@@ -60,9 +82,21 @@ impl CocoApp {
         }
     }
 
-    /// Eject the tape, saving an unfinished recording back to its file first.
+    /// Eject the tape, saving an unfinished recording back to its file
+    /// first. A write-back failure that leaves the tape still dirty (the
+    /// canonical `.cas` never landed) aborts the eject — the tape stays
+    /// mounted, dirty, and tracked at its path, and the error lands in
+    /// [`Self::cart_error`] so a later retry can succeed; a failure that
+    /// hits only the optional `.wav` sibling (the tape is already clean —
+    /// see [`Self::save_tape_bytes`]) reports through [`Self::cart_error`]
+    /// but still ejects, since there is nothing left to retry.
     pub(crate) fn eject_tape(&mut self) {
-        self.write_back_tape();
+        if let Err(e) = self.write_back_tape() {
+            self.cart_error = Some(e);
+            if self.machine.bus.cassette.dirty() {
+                return;
+            }
+        }
         self.machine.bus.cassette.eject_tape();
         self.tape_path = None;
     }
@@ -73,9 +107,9 @@ impl CocoApp {
     /// (`step_emulation`) calls [`Self::save_tape_bytes`] directly instead,
     /// since by the time it runs the core's own idle auto-finalize has
     /// already landed the recording (see that hook's doc comment).
-    pub(crate) fn write_back_tape(&mut self) {
+    pub(crate) fn write_back_tape(&mut self) -> Result<(), String> {
         self.machine.bus.cassette.finalize_recording();
-        self.save_tape_bytes();
+        self.save_tape_bytes()
     }
 
     /// Save the mounted tape back to disk if it changed (like
@@ -93,26 +127,25 @@ impl CocoApp {
     /// again — from then on the app tracks the `.cas` sibling. When
     /// [`Self::save_tape_wav`] is on, a `.wav` of the tape audio
     /// ([`coco_core::cassette_wav::synthesize_wav`]) is additionally
-    /// written alongside it, next to (not instead of) the `.cas`.
-    pub(crate) fn save_tape_bytes(&mut self) {
+    /// written alongside it, next to (not instead of) the `.cas` — a
+    /// failure on that second write is also an `Err`, but unlike the `.cas`
+    /// half it is NOT retried by a later flush: `mark_saved` has already
+    /// run (the `.cas`, the canonical data, did land and is not rolled
+    /// back), so the next flush of a still-clean tape is a no-op and the
+    /// `.wav` stays missing until the tape dirties again.
+    pub(crate) fn save_tape_bytes(&mut self) -> Result<(), String> {
         let Some(path) = self.tape_path.clone() else {
-            return;
+            return Ok(());
         };
         if !self.machine.bus.cassette.dirty() {
-            return;
+            return Ok(());
         }
         let cas_path = path.with_extension("cas");
-        match std::fs::write(&cas_path, self.machine.bus.cassette.tape_bytes()) {
-            Ok(()) => {
-                self.machine.bus.cassette.mark_saved();
-                if cas_path != path {
-                    self.tape_path = Some(cas_path.clone());
-                }
-            }
-            Err(e) => {
-                self.cart_error = Some(format!("could not save {}: {e}", cas_path.display()));
-                return;
-            }
+        std::fs::write(&cas_path, self.machine.bus.cassette.tape_bytes())
+            .map_err(|e| format!("could not save {}: {e}", cas_path.display()))?;
+        self.machine.bus.cassette.mark_saved();
+        if cas_path != path {
+            self.tape_path = Some(cas_path.clone());
         }
         if self.save_tape_wav {
             let wav_path = cas_path.with_extension("wav");
@@ -120,9 +153,13 @@ impl CocoApp {
                 self.machine.bus.cassette.tape_bytes(),
                 self.machine.cpu_hz(),
             );
-            if let Err(e) = std::fs::write(&wav_path, wav) {
-                self.cart_error = Some(format!("could not save {}: {e}", wav_path.display()));
-            }
+            std::fs::write(&wav_path, wav)
+                .map_err(|e| format!("could not save {}: {e}", wav_path.display()))?;
         }
+        Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tape_test.rs"]
+mod tests;

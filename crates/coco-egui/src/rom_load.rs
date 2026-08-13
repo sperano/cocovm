@@ -15,23 +15,30 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
     }
 }
 
-/// Load the default boot ROM set for `variant` from `roms_dir` (copyrighted
-/// and git-ignored, `./roms`): `coco3.rom` for the CoCo 3, or a flat image
+/// The CoCo 3's single system ROM image under a roms dir — the file
+/// [`load_default_rom`] reads and records as its [`ROMSource::File`].
+pub(crate) const COCO3_ROM_FILE: &str = "coco3.rom";
+
+/// Load the default boot ROM set for `variant` from `roms_dir` (in
+/// production always [`installed_roms_dir`]; tests pass fixture
+/// directories): [`COCO3_ROM_FILE`] for the CoCo 3, or a flat image
 /// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
-/// ([`compose_coco12_rom`]). Failures are returned rather than fatal because
-/// the manager reports them inline in its detail pane
+/// ([`compose_coco12_rom`]) — paired with the [`ROMSource`] a snapshot needs
+/// to re-resolve/hash the same bytes, built here so the file read and the
+/// recorded source can't drift apart. Failures are returned rather than
+/// fatal because the manager reports them inline in its detail pane
 /// (`launch_machine`'s contract).
 pub(crate) fn load_default_rom(
     variant: MachineVariant,
     roms_dir: &Path,
-) -> Result<Box<[u8]>, String> {
+) -> Result<(Box<[u8]>, ROMSource), String> {
     match variant {
         MachineVariant::Coco3 => {
-            let path = roms_dir.join("coco3.rom");
+            let path = roms_dir.join(COCO3_ROM_FILE);
             match std::fs::read(&path) {
                 Ok(bytes) => {
                     report_rom_validation(&path, &bytes);
-                    Ok(bytes.into_boxed_slice())
+                    Ok((bytes.into_boxed_slice(), ROMSource::File(path)))
                 }
                 Err(e) => Err(format!("could not load {}: {e}", path.display())),
             }
@@ -46,7 +53,7 @@ pub(crate) fn load_default_rom(
                         EXTENDED_BASIC_CANDIDATES.join(", ")
                     ),
                 }
-                Ok(image)
+                Ok((image, ROMSource::ComposedCoco12))
             }
             Coco12ROMResult::NoColorBasic => Err(format!(
                 "no Color BASIC ROM found: place one of {} in {}",
@@ -173,26 +180,29 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
-/// Dev-tree ROM directory (`./roms`, git-ignored): where the manager's
-/// [`launch_machine`] default-resolves system and peripheral ROMs from.
-/// (TODO, per `Self::ensure_disk_controller`: read from
-/// a user asset dir once one exists for these — `paths::roms_dir` today only
-/// covers what `ensure_assets` downloads.)
-pub(crate) fn dev_roms_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms")
+/// The per-user installed ROM directory ([`crate::paths::roms_dir`],
+/// populated from the asset tarball by [`crate::startup::ensure_assets`]):
+/// where the manager's [`launch_machine`] default-resolves system and
+/// peripheral ROMs from.
+///
+/// The `expect` fires only when no home directory can be determined — a
+/// state `ensure_assets` already turned into a process exit before the
+/// manager could launch anything.
+pub(crate) fn installed_roms_dir() -> PathBuf {
+    crate::paths::roms_dir().expect("no home directory (checked at startup by ensure_assets)")
 }
 
 /// Where [`CocoApp::ensure_disk_controller`]/[`CocoApp::mpi_insert_fd502`]
 /// (and, for save-state hashing, [`save_state`]) read the FD-502's Disk
 /// BASIC ROM from.
 pub(crate) fn disk_basic_rom_path() -> PathBuf {
-    dev_roms_dir().join("disk11.rom")
+    installed_roms_dir().join("disk11.rom")
 }
 
 /// Where [`CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional
 /// EPROM dump from, if present.
 pub(crate) fn rs232_eprom_default_path() -> PathBuf {
-    dev_roms_dir().join("rs232.rom")
+    installed_roms_dir().join("rs232.rom")
 }
 
 /// Where the currently-loaded system ROM image came from — tracked so
@@ -206,12 +216,12 @@ pub(crate) enum ROMSource {
     /// at offset $2000). Hashed and re-read by path directly.
     File(PathBuf),
     /// A CoCo 1/2 flat image composed at boot from separate Color/Extended
-    /// Color BASIC dumps under [`dev_roms_dir`] ([`compose_coco12_rom`]) —
-    /// no single backing file. The snapshot records a pseudo-path
-    /// ([`rom_db_pseudo_path`]) instead of a real one; restore recomposes
-    /// from [`dev_roms_dir`] (the only roms dir every construction site
-    /// uses — no per-instance value to carry here) and hash-compares
-    /// against the snapshot's recorded hash.
+    /// Color BASIC dumps under [`installed_roms_dir`]
+    /// ([`compose_coco12_rom`]) — no single backing file. The snapshot
+    /// records a pseudo-path ([`rom_db_pseudo_path`]) instead of a real
+    /// one; restore recomposes from [`installed_roms_dir`] (the only roms
+    /// dir every construction site uses — no per-instance value to carry
+    /// here) and hash-compares against the snapshot's recorded hash.
     ComposedCoco12,
 }
 
@@ -231,30 +241,6 @@ pub(crate) fn rom_db_pseudo_path(variant: MachineVariant) -> PathBuf {
         MachineVariant::Coco3 => "coco3",
     };
     PathBuf::from(format!("{ROM_DB_PSEUDO_PATH_PREFIX}{label}"))
-}
-
-/// [`load_explicit_rom`]/[`load_default_rom`], plus the [`ROMSource`] a
-/// snapshot needs to re-resolve/hash whichever path was taken — the single
-/// place [`launch_machine`] gets both together, so they can't drift apart.
-pub(crate) fn load_rom_with_source(
-    explicit: Option<&Path>,
-    variant: MachineVariant,
-    roms_dir: &Path,
-) -> Result<(Box<[u8]>, ROMSource), String> {
-    match explicit {
-        Some(path) => Ok((
-            load_explicit_rom(path)?,
-            ROMSource::File(path.to_path_buf()),
-        )),
-        None => {
-            let rom = load_default_rom(variant, roms_dir)?;
-            let source = match variant {
-                MachineVariant::Coco3 => ROMSource::File(roms_dir.join("coco3.rom")),
-                MachineVariant::Coco1 | MachineVariant::Coco2 => ROMSource::ComposedCoco12,
-            };
-            Ok((rom, source))
-        }
-    }
 }
 
 #[cfg(test)]

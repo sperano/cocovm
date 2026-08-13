@@ -64,8 +64,10 @@ impl CocoApp {
             // `Self::write_back_tape`) runs here — re-finalizing would fold
             // any capture that started in this same field into the
             // already-landed recording, discarding its leader-only prefix.
-            if self.machine.bus.cassette.take_recording_landed() {
-                self.save_tape_bytes();
+            if self.machine.bus.cassette.take_recording_landed()
+                && let Err(e) = self.save_tape_bytes()
+            {
+                self.cart_error = Some(e);
             }
             let sample_rate = self.machine.audio_sample_rate();
             self.audio
