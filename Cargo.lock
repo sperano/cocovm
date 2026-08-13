@@ -785,6 +785,7 @@ name = "coco-core"
 version = "0.6.2"
 dependencies = [
  "ciborium",
+ "cocovm-test-assets",
  "flate2",
  "libc",
  "mc6809",
@@ -800,6 +801,7 @@ dependencies = [
  "chrono",
  "clap",
  "coco-core",
+ "cocovm-test-assets",
  "cpal",
  "dotenvy",
  "eframe",
@@ -819,6 +821,13 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+]
+
+[[package]]
+name = "cocovm-test-assets"
+version = "0.6.2"
+dependencies = [
+ "etcetera",
 ]
 
 [[package]]
@@ -2230,6 +2239,7 @@ dependencies = [
 name = "mc6809"
 version = "0.6.2"
 dependencies = [
+ "cocovm-test-assets",
  "serde",
 ]
 

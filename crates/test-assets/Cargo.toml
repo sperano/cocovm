@@ -1,0 +1,18 @@
+[package]
+name = "cocovm-test-assets"
+version.workspace = true
+edition = "2024"
+# Dev-dependency of the permissively dual-licensed `mc6809` crate as well as
+# the rest of the (GPL-3.0-or-later) workspace, so it can't inherit the
+# workspace default license — it needs to be usable under either.
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "test_assets"
+
+[lints]
+workspace = true
+
+[dependencies]
+etcetera = "0.11.0"

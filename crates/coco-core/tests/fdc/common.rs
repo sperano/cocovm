@@ -1,24 +1,21 @@
-use std::path::PathBuf;
-
 use coco_core::cart::Cartridge;
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::{COCO3, DISK11};
 
 /// Default geometry, one 18-sector/256-byte/1-side track's worth of bytes.
 pub const ONE_TRACK_BYTES: usize = 18 * 256;
 
 pub fn load_rom(name: &str) -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()
 }
 
 pub fn disk_cart() -> DiskCart {
-    DiskCart::new(load_rom("disk11.rom"))
+    DiskCart::new(load_rom(DISK11))
 }
 
 /// One track, one sector, every byte the given marker — enough to identify
@@ -75,7 +72,7 @@ pub const FIRST_BYTE_LATENCY: u32 = 30 * DRQ_INTERVAL;
 pub const CRC_TRAILER: u32 = 2 * DRQ_INTERVAL;
 
 pub fn boot_machine() -> Machine {
-    Machine::new(MachineConfig::default(), load_rom("coco3.rom"))
+    Machine::new(MachineConfig::default(), load_rom(COCO3))
 }
 
 pub fn screen_row(m: &mut Machine, row: u16) -> String {
@@ -181,9 +178,7 @@ pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JVCDisk {
 /// (git-ignored) ROM image isn't present, so the LOADM regression below skips
 /// gracefully in an asset-less checkout.
 pub fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path).ok().map(Vec::into_boxed_slice)
 }
 
@@ -243,8 +238,6 @@ pub fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JVCDisk 
 
 /// Like [`try_load_rom`], but for a disk image under the git-ignored `disks/`.
 pub fn try_load_disk(name: &str) -> Option<Vec<u8>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../disks")
-        .join(name);
+    let path = test_assets::disk(name);
     std::fs::read(&path).ok()
 }

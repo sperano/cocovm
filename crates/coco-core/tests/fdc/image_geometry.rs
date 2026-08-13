@@ -1,9 +1,8 @@
 //! JVC image geometry (jvc_dsk.cpp) and OS-9 LSN0 geometry sniffing for
 //! headerless images (os9_dsk.cpp find_size).
 
-use std::path::PathBuf;
-
 use coco_core::fdc::{JVCDisk, JVCError};
+use test_assets::disk::NOS9_L2_COCO3_40_TRACK;
 
 use super::common::ONE_TRACK_BYTES;
 
@@ -235,8 +234,7 @@ fn headerless_disk_with_no_os9_signature_is_unaffected_by_the_sniff() {
 /// absent, following `load_rom`'s pattern below.
 #[test]
 fn real_nitros9_40_track_disk_parses_as_40_tracks_2_sides() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../disks/NOS9_6809_L2_v030300_coco3_40d_1.dsk");
+    let path = test_assets::disk(NOS9_L2_COCO3_40_TRACK);
     let Ok(bytes) = std::fs::read(&path) else {
         eprintln!(
             "skipping real_nitros9_40_track_disk_parses_as_40_tracks_2_sides: {} not present",

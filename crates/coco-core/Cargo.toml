@@ -19,3 +19,6 @@ sha2 = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+test-assets = { package = "cocovm-test-assets", path = "../test-assets" }

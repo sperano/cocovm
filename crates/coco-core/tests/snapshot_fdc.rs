@@ -20,6 +20,7 @@ use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotROMRef};
 use coco_core::wd1773::status;
 use coco_core::{Machine, MachineConfig};
 use mc6809::{Bus, MC6809, State};
+use test_assets::rom::{COCO3, DISK11};
 
 /// Same CPU-trace-identity snapshot as the other snapshot test files (see
 /// `snapshot_roundtrip.rs`'s doc comment for the rationale; duplicated here
@@ -58,16 +59,14 @@ impl CPUSnapshot {
 }
 
 fn load_rom(name: &str) -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()
 }
 
 fn boot_machine() -> Machine {
-    Machine::new(MachineConfig::default(), load_rom("coco3.rom"))
+    Machine::new(MachineConfig::default(), load_rom(COCO3))
 }
 
 /// One headerless track (18 sectors x 256B), every sector filled with the
@@ -205,7 +204,7 @@ fn assert_transfer_completes_identically(original: &mut Machine, restored: &mut 
 #[test]
 fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
     let mut original = boot_machine();
-    let disk_rom = load_rom("disk11.rom");
+    let disk_rom = load_rom(DISK11);
     let disk_bytes = index_pattern_disk_bytes();
     let mut cart = DiskCart::new(disk_rom.clone());
     cart.insert_disk(
@@ -225,16 +224,16 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
     );
 
     let media = MediaRefs {
-        system_rom: Some(media_ref("coco3.rom", &load_rom("coco3.rom"))),
+        system_rom: Some(media_ref(COCO3, &load_rom(COCO3))),
         cart_roms: vec![SlotROMRef {
             mpi_slot: None,
-            rom: media_ref("disk11.rom", &disk_rom),
+            rom: media_ref(DISK11, &disk_rom),
         }],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
         ..MediaRefs::default()
     };
     let sources = MediaSources {
-        system_rom: Some(load_rom("coco3.rom")),
+        system_rom: Some(load_rom(COCO3)),
         cart_roms: vec![(None, disk_rom.to_vec())],
         disks: [Some(disk_bytes.clone()), None, None, None],
         ..MediaSources::default()
@@ -262,7 +261,7 @@ const ROMPAK_SLOT: usize = 0;
 #[test]
 fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     let mut original = boot_machine();
-    let disk_rom = load_rom("disk11.rom");
+    let disk_rom = load_rom(DISK11);
     let disk_bytes = index_pattern_disk_bytes();
     let mut disk_cart = DiskCart::new(disk_rom.clone());
     disk_cart.insert_disk(
@@ -296,7 +295,7 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     );
 
     let media = MediaRefs {
-        system_rom: Some(media_ref("coco3.rom", &load_rom("coco3.rom"))),
+        system_rom: Some(media_ref(COCO3, &load_rom(COCO3))),
         cart_roms: vec![
             SlotROMRef {
                 mpi_slot: Some(ROMPAK_SLOT as u8),
@@ -304,14 +303,14 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
             },
             SlotROMRef {
                 mpi_slot: Some(FDC_SLOT as u8),
-                rom: media_ref("disk11.rom", &disk_rom),
+                rom: media_ref(DISK11, &disk_rom),
             },
         ],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
         ..MediaRefs::default()
     };
     let sources = MediaSources {
-        system_rom: Some(load_rom("coco3.rom")),
+        system_rom: Some(load_rom(COCO3)),
         cart_roms: vec![
             (Some(ROMPAK_SLOT as u8), pak_image.clone()),
             (Some(FDC_SLOT as u8), disk_rom.to_vec()),

@@ -500,7 +500,7 @@ fn rs232_menu_inserts_and_removes_the_pak() {
 
 #[test]
 fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
-    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+    let roms_dir = test_assets::roms_dir();
     let (rom, rom_source) = load_default_rom(MachineVariant::Coco3, &roms_dir)
         .expect("roms/coco3.rom is required (git-ignored, local-only)");
 

@@ -5,17 +5,12 @@
 //!
 //!     cargo run -p coco-core --example vdg_font_probe <outdir>
 
-use std::path::PathBuf;
-
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 
 const BOOT_FIELDS: usize = 120;
 
 fn try_load(name: &str) -> Option<Vec<u8>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
-    std::fs::read(&path).ok()
+    std::fs::read(test_assets::rom(name)).ok()
 }
 
 fn write_ppm(path: &str, fb: &[u8], w: usize, h: usize) {

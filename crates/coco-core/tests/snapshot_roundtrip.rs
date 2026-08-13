@@ -6,14 +6,13 @@
 //! machine mid-BASIC-idle-loop round-trips through CBOR and keeps executing
 //! identically to an un-serialized twin.
 
-use std::path::PathBuf;
-
 use coco_core::cart::{Cart, Cartridge};
 use coco_core::{Machine, MachineConfig};
 use mc6809::{MC6809, State};
+use test_assets::rom::COCO3;
 
 fn load_rom() -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

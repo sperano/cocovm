@@ -2,19 +2,18 @@
 //! equivalence, side-effect-free `peek`, and the `Debugger`'s breakpoints,
 //! watchpoints, and trace ring.
 
-use std::path::PathBuf;
-
 use coco_core::debug::{Debugger, StopReason, TraceEntry, WatchKind, WatchTable};
 use coco_core::pia::cr;
 use coco_core::{Machine, MachineConfig, StepKind};
 use mc6809::{Bus, MC6809};
+use test_assets::rom::COCO3;
 
 /// CoCo 3 legacy text-screen base (SAM page): cold-start BASIC clears it, so a
 /// write watch here trips deterministically during boot.
 const TEXT_SCREEN_BASE: u16 = 0x0400;
 
 fn load_rom() -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

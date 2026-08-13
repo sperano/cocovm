@@ -4,16 +4,15 @@
 //! §10). This is the first "run real code" milestone; a per-instruction trace
 //! diff against XRoar/MAME (step 3) will catch subtler bugs later.
 
-use std::path::PathBuf;
-
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 /// Cold-start entry point in the diskless CoCo 3 ROM (reset vector `$FFFE`).
 const RESET_ENTRY: u16 = 0x8C1B;
 
 fn load_rom() -> Box<[u8]> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
         .into_boxed_slice()

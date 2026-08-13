@@ -9,10 +9,9 @@
 //! Skipped (not failed) if `roms/bas12.rom` isn't present locally, matching
 //! `tests/coco2_boot.rs`.
 
-use std::path::PathBuf;
-
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 use mc6809::Bus;
+use test_assets::rom::BAS12;
 
 /// Color BASIC occupies the high 8K ($A000-$BFFF) of the flat image, same
 /// offset the plain-SAM bus expects extbas+bas machines to use
@@ -24,9 +23,7 @@ const BAS_OFFSET: usize = 8 * 1024;
 const OPEN_BUS_FILLER: u8 = 0xFF;
 
 fn try_load(name: &str) -> Option<Vec<u8>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path).ok()
 }
 
@@ -34,7 +31,7 @@ fn try_load(name: &str) -> Option<Vec<u8>> {
 /// half, `bas12.rom` at `BAS_OFFSET` — exactly what `coco-egui`'s
 /// `compose_coco12_rom` builds when no Extended BASIC dump is found.
 fn boot_machine() -> Option<(Machine, Vec<u8>)> {
-    let Some(bas) = try_load("bas12.rom") else {
+    let Some(bas) = try_load(BAS12) else {
         eprintln!("skipping coco1_boot: bas12.rom not present in roms/");
         return None;
     };

@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
+use test_assets::rom::{BAS12, EXTBAS11};
 
 /// Extended Color BASIC occupies the low 8K of the flat ROM image ($8000-$9FFF).
 pub const EXTBAS_LEN: usize = 8 * 1024;
@@ -9,9 +8,7 @@ pub const EXTBAS_LEN: usize = 8 * 1024;
 pub const BAS_OFFSET: usize = 8 * 1024;
 
 pub fn try_load(name: &str) -> Option<Vec<u8>> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../roms")
-        .join(name);
+    let path = test_assets::rom(name);
     std::fs::read(&path).ok()
 }
 
@@ -20,8 +17,8 @@ pub fn try_load(name: &str) -> Option<Vec<u8>> {
 /// `bus.rs::SAM_BAS_ROM_OFFSET`). Returns `None` (test should skip) if either
 /// file is missing.
 fn load_coco2_rom() -> Option<Box<[u8]>> {
-    let extbas = try_load("extbas11.rom")?;
-    let bas = try_load("bas12.rom")?;
+    let extbas = try_load(EXTBAS11)?;
+    let bas = try_load(BAS12)?;
     assert_eq!(extbas.len(), EXTBAS_LEN, "extbas11.rom: unexpected size");
     assert_eq!(bas.len(), BAS_OFFSET, "bas12.rom: unexpected size");
     let mut image = extbas;
@@ -30,8 +27,8 @@ fn load_coco2_rom() -> Option<Box<[u8]>> {
 }
 
 pub fn boot_machine() -> Option<(Machine, Vec<u8>)> {
-    let extbas = try_load("extbas11.rom");
-    let bas = try_load("bas12.rom");
+    let extbas = try_load(EXTBAS11);
+    let bas = try_load(BAS12);
     if extbas.is_none() || bas.is_none() {
         eprintln!(
             "skipping coco2_boot: extbas11.rom/bas12.rom not present in roms/ \

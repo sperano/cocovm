@@ -5,11 +5,10 @@
 //! a manifest typo, and every boot test downstream would chase ghosts.
 
 use coco_core::rom_db::{self, Validation};
-use std::path::PathBuf;
 
 #[test]
 fn local_roms_match_manifest() {
-    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
+    let roms_dir = test_assets::roms_dir();
     let mut checked = 0;
     for known in rom_db::KNOWN_ROMS {
         let path = roms_dir.join(known.file);

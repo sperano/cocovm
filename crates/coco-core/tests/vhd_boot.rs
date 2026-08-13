@@ -11,13 +11,10 @@ use coco_core::cart::MultiPak;
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig};
-
-fn asset(dir: &str, name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(dir)
-        .join(name)
-}
+use test_assets::{
+    disk::{EOU_BOOT, EOU_SYSTEM_VHD},
+    rom::{COCO3, DISK11},
+};
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {
     for _ in 0..3 {
@@ -75,14 +72,14 @@ fn setup_machine(through_mpi: bool) -> Option<(Machine, PathBuf)> {
     const MPI_FDC_SLOT: usize = 3;
 
     let (Ok(coco), Ok(disk_rom), Ok(dsk)) = (
-        std::fs::read(asset("roms", "coco3.rom")),
-        std::fs::read(asset("roms", "disk11.rom")),
-        std::fs::read(asset("disks", "68EMU.dsk")),
+        std::fs::read(test_assets::rom(COCO3)),
+        std::fs::read(test_assets::rom(DISK11)),
+        std::fs::read(test_assets::disk(EOU_BOOT)),
     ) else {
         eprintln!("skipping EOU VHD boot test: roms/ or disks/ assets not present");
         return None;
     };
-    let vhd_src = asset("disks", "68SDC.VHD");
+    let vhd_src = test_assets::disk(EOU_SYSTEM_VHD);
     if !vhd_src.exists() {
         eprintln!("skipping EOU VHD boot test: disks/68SDC.VHD not present");
         return None;

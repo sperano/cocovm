@@ -3,10 +3,9 @@
 //! housekeeping, and paints the sign-on banner + `OK` prompt into the 32×16
 //! VDG text screen at logical $0400. Verified against the real `roms/coco3.rom`.
 
-use std::path::PathBuf;
-
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 /// Logical base of the CoCo-compatible 32×16 text screen.
 const TEXT_BASE: u16 = 0x0400;
@@ -24,7 +23,7 @@ fn vdg_to_ascii(code: u8) -> char {
 }
 
 fn boot_machine() -> Machine {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let path = test_assets::rom(COCO3);
     let rom = std::fs::read(&path).unwrap().into_boxed_slice();
     Machine::new(MachineConfig::default(), rom)
 }

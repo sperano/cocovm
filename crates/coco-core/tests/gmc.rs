@@ -11,6 +11,7 @@ use coco_core::cart::{
 };
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 /// `$FF40`: the bank latch.
 const BANK_REG: u16 = 0xFF40;
@@ -186,8 +187,7 @@ const LONE_TONE_LEVEL: f32 = 0.25 * 0.75;
 
 #[test]
 fn autostarted_cart_code_plays_a_tone_through_the_speaker() {
-    let rom_path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms/coco3.rom");
+    let rom_path = test_assets::rom(COCO3);
     let rom = std::fs::read(&rom_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", rom_path.display()))
         .into_boxed_slice();
