@@ -66,7 +66,10 @@ impl CocoApp {
     }
 
     /// Mount the floppy image at `path` in `drive`, inserting the FD-502
-    /// controller first if needed. Failures land in [`Self::cart_error`].
+    /// controller first if needed. Failures land in [`Self::cart_error`]; a
+    /// failed write-back of whatever was in `drive` first aborts the mount,
+    /// leaving the old disk mounted, dirty, and tracked at its path for a
+    /// later retry.
     pub(crate) fn insert_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
@@ -74,11 +77,10 @@ impl CocoApp {
                 .map_err(|e| format!("could not read {}: {e}", path.display()))?;
             let disk =
                 JVCDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-            // Whatever was in the drive first; a failed write-back reports
-            // through `cart_error` but doesn't block mounting the new disk.
-            if let Err(e) = self.write_back_disk(drive) {
-                self.cart_error = Some(e);
-            }
+            // Whatever was in the drive first; a failed write-back aborts the
+            // whole mount so the old disk, its dirty flag, and its tracked
+            // path are all preserved for a later retry.
+            self.write_back_disk(drive)?;
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
             self.disk_paths[drive] = Some(path);
@@ -91,10 +93,18 @@ impl CocoApp {
 
     /// Create a brand-new, blank (0-track) floppy image at `path` and mount it
     /// in `drive`, inserting the FD-502 controller first if needed. Refuses to
-    /// overwrite an existing file. Failures land in [`Self::cart_error`].
+    /// overwrite an existing file. Failures land in [`Self::cart_error`]; a
+    /// failed write-back of whatever was in `drive` first aborts before the
+    /// new file is even created, leaving the old disk mounted, dirty, and
+    /// tracked at its path for a later retry.
     pub(crate) fn new_blank_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
+            // Whatever was in the drive first, flushed before the new file
+            // is even created: a failed write-back aborts the whole
+            // operation, leaving neither a stray empty image on disk nor the
+            // old disk disturbed.
+            self.write_back_disk(drive)?;
             match std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -112,11 +122,6 @@ impl CocoApp {
             }
             let disk =
                 JVCDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
-            // Whatever was in the drive first; a failed write-back reports
-            // through `cart_error` but doesn't block mounting the new disk.
-            if let Err(e) = self.write_back_disk(drive) {
-                self.cart_error = Some(e);
-            }
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
             self.disk_paths[drive] = Some(path);
@@ -128,10 +133,13 @@ impl CocoApp {
     }
 
     /// Eject the floppy in `drive`, writing a modified image back to its file
-    /// first (like MAME/VCC, in-place). Failures land in [`Self::cart_error`].
+    /// first (like MAME/VCC, in-place). A failed write-back aborts the
+    /// eject — the disk stays mounted, dirty, and tracked at its path — and
+    /// lands in [`Self::cart_error`] so a later retry can succeed.
     pub(crate) fn eject_disk(&mut self, drive: usize) {
         if let Err(e) = self.write_back_disk(drive) {
             self.cart_error = Some(e);
+            return;
         }
         if let Some(cart) = self.machine.bus.cart.as_disk_cart() {
             cart.eject_disk(drive);
@@ -219,3 +227,7 @@ impl CocoApp {
         self.vhd_paths[drive] = None;
     }
 }
+
+#[cfg(test)]
+#[path = "disk_test.rs"]
+mod tests;
