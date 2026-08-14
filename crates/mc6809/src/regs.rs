@@ -61,4 +61,31 @@ impl MC6809 {
             _ => sv, // same size, or 16 → 8 (reg_write truncates to the LSB)
         }
     }
+
+    /// The 16-bit values EXG reads from postbyte registers `r0` (first-named)
+    /// and `r1` before either is written, per the 6809's documented exchange
+    /// rules (6x09 Instruction Sets, EXG). Unlike TFR, an 8-bit operand's
+    /// widening depends on whether the *first-named* register is 8-bit, not on
+    /// the operand's own size — this is what makes `EXG CC,X` and `EXG X,CC`
+    /// widen CC differently even though CC is read both times.
+    pub(crate) fn exg_values(&self, r0: u8, r1: u8) -> (u16, u16) {
+        let first_is_8bit = !Self::reg_is16(r0);
+        (
+            self.exg_value(r0, first_is_8bit),
+            self.exg_value(r1, first_is_8bit),
+        )
+    }
+
+    fn exg_value(&self, code: u8, first_is_8bit: bool) -> u16 {
+        let sv = self.reg_read(code);
+        if Self::reg_is16(code) {
+            return sv;
+        }
+        let b = sv & 0x00FF;
+        match code {
+            regsel::A | regsel::B => 0xFF00 | b, // A/B: always $FF in the high byte
+            _ if first_is_8bit => (b << 8) | b,  // CC/DP, first-named 8-bit: duplicate
+            _ => 0xFF00 | b,                     // CC/DP, first-named 16-bit: pad $FF
+        }
+    }
 }
