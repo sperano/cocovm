@@ -145,6 +145,9 @@ pub struct MC6809 {
     pub x: u16,
     pub y: u16,
     pub u: u16,
+    /// Hardware stack pointer. Writing this field directly bypasses NMI
+    /// arming ([`Self::nmi_armed`]); use [`Self::load_s`] for a write that
+    /// should count as the program's stack setup.
     pub s: u16,
     pub pc: u16,
     pub dp: u8,
@@ -154,10 +157,12 @@ pub struct MC6809 {
     /// Running vs halted (SYNC/CWAI).
     pub state: State,
     /// NMI is not recognized until the first program load of the stack
-    /// pointer after reset (MC6809 datasheet) — before S is valid an NMI
-    /// frame push would scribble through a garbage pointer. Set by any
-    /// instruction that writes S (LDS, LEAS, TFR/EXG, indexed `,S++`-style
-    /// writeback), cleared by reset.
+    /// pointer after reset (MC6809 programming manual §1.11.10.1) — before S
+    /// is valid an NMI frame push would scribble through a garbage pointer.
+    /// Cleared by reset; set by every path that routes through
+    /// [`Self::load_s`]: LDS, LEAS, TFR/EXG into S, PULU with the S bit, and
+    /// indexed auto-inc/dec writeback through S. The S arithmetic inside
+    /// PSHS/PULS, RTS/RTI, JSR, and interrupt frames does not arm.
     pub nmi_armed: bool,
 }
 
@@ -185,8 +190,16 @@ impl MC6809 {
         self.nmi_armed = false;
     }
 
-    /// Load the stack pointer from program action, arming NMI recognition.
-    fn load_s(&mut self, v: u16) {
+    /// Load the stack pointer as a program action, arming NMI recognition
+    /// ([`Self::nmi_armed`]). External writers (e.g. the debugger's register
+    /// editor) should use this rather than writing `s` directly.
+    //
+    // The manual doesn't enumerate which instructions count as "loading" S
+    // and the references disagree (XRoar arms on any S write including
+    // PSHS/PULS; MAME only on LDS/LEAS/TFR into S): our arming set is
+    // XRoar's minus the push/pull pointer-movement cases, a superset of
+    // MAME's.
+    pub fn load_s(&mut self, v: u16) {
         self.s = v;
         self.nmi_armed = true;
     }

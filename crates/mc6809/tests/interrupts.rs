@@ -243,8 +243,9 @@ fn nmi_is_non_maskable() {
 
 #[test]
 fn nmi_is_ignored_until_the_first_program_load_of_s() {
-    // MC6809 datasheet: after reset, NMI is not recognized until S is loaded —
-    // a frame push through a garbage pointer would corrupt memory.
+    // MC6809 programming manual §1.11.10.1: after reset, NMI is not recognized
+    // until S is loaded — a frame push through a garbage pointer would corrupt
+    // memory.
     let mut s = Sys::code(0x1000, &[0x10, 0xCE, 0x20, 0x00, 0x12]); // LDS #$2000 ; NOP
     s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
     s.bus.load(0xFFFE, &[0x10, 0x00]); // reset vector -> $1000
@@ -255,6 +256,41 @@ fn nmi_is_ignored_until_the_first_program_load_of_s() {
     s.cpu.nmi(&mut s.bus);
     assert_eq!(s.cpu.pc, 0x6000, "NMI must vector once S is loaded");
     assert_eq!(s.cpu.s, 0x2000 - 12);
+}
+
+#[test]
+fn nmi_armed_when_pulu_loads_s() {
+    // PULU with the S bit in the postbyte is a program load of S and must arm
+    // NMI recognition just like LDS (see `nmi_armed` docs).
+    let mut s = Sys::code(0x1000, &[0xCE, 0x30, 0x00, 0x37, 0x40, 0x12]); // LDU #$3000 ; PULU S ; NOP
+    s.bus.load(0x3000, &[0x20, 0x00]); // U stack holds the S value to pull
+    s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
+    s.bus.load(0xFFFE, &[0x10, 0x00]); // reset vector -> $1000
+    s.cpu.reset(&mut s.bus);
+    s.step(); // LDU #$3000 must not arm recognition
+    s.cpu.nmi(&mut s.bus);
+    assert_eq!(s.cpu.pc, 0x1003, "unarmed NMI must be ignored");
+    assert_eq!(s.step(), 7); // PULU S arms recognition (5 base + 2 bytes)
+    assert_eq!(s.cpu.s, 0x2000);
+    assert_eq!(s.cpu.u, 0x3002, "PULU must advance U past the pulled word");
+    s.cpu.nmi(&mut s.bus);
+    assert_eq!(s.cpu.pc, 0x6000, "NMI must vector once PULU loads S");
+    assert_eq!(s.cpu.s, 0x2000 - 12);
+}
+
+#[test]
+fn nmi_not_armed_by_pshs_pointer_movement() {
+    // Stack traffic *via* S is not a program load of S: PSHS moves the pointer
+    // but must leave NMI recognition unarmed (see `nmi_armed` docs).
+    let mut s = Sys::code(0x1000, &[0x34, 0x06, 0x12]); // PSHS A,B ; NOP
+    s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
+    s.bus.load(0xFFFE, &[0x10, 0x00]); // reset vector -> $1000
+    s.cpu.reset(&mut s.bus);
+    s.cpu.s = 0x8000; // direct field write: garbage S, does not arm
+    s.step(); // PSHS A,B
+    s.cpu.nmi(&mut s.bus);
+    assert_eq!(s.cpu.pc, 0x1002, "PSHS must not arm NMI recognition");
+    assert_eq!(s.cpu.s, 0x8000 - 2);
 }
 
 // ======================================================================
