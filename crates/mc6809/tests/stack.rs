@@ -155,7 +155,7 @@ fn exg_a_b() {
     let cycles = s.step();
     assert_eq!(s.cpu.a, 0x22);
     assert_eq!(s.cpu.b, 0x11);
-    assert_eq!(cycles, 6);
+    assert_eq!(cycles, 8);
 }
 
 #[test]
@@ -166,6 +166,88 @@ fn exg_x_y() {
     s.step();
     assert_eq!(s.cpu.x, 0x2222);
     assert_eq!(s.cpu.y, 0x1111);
+}
+
+#[test]
+fn exg_a_x_sets_ff_high() {
+    // EXG A,X: A is first-named (8-bit) -> both operands read/write as
+    // 16-bit with A/X's widening rules; A ends up as X's low byte.
+    let mut s = Sys::code(0x0000, &[0x1E, 0x81]); // EXG A,X
+    s.cpu.a = 0x12;
+    s.cpu.x = 0x3456;
+    let cycles = s.step();
+    assert_eq!(s.cpu.x, 0xFF12);
+    assert_eq!(s.cpu.a, 0x56);
+    assert_eq!(cycles, 8);
+}
+
+#[test]
+fn exg_x_a_same_as_a_x() {
+    // EXG X,A: A/B widening is order-independent, so this matches EXG A,X.
+    let mut s = Sys::code(0x0000, &[0x1E, 0x18]); // EXG X,A
+    s.cpu.a = 0x12;
+    s.cpu.x = 0x3456;
+    s.step();
+    assert_eq!(s.cpu.x, 0xFF12);
+    assert_eq!(s.cpu.a, 0x56);
+}
+
+#[test]
+fn exg_cc_x_duplicates() {
+    // EXG CC,X: CC is first-named (8-bit) -> CC's read duplicates its byte
+    // into both halves.
+    let mut s = Sys::code(0x0000, &[0x1E, 0xA1]); // EXG CC,X
+    s.cpu.cc = 0x42;
+    s.cpu.x = 0x3456;
+    s.step();
+    assert_eq!(s.cpu.x, 0x4242);
+    assert_eq!(s.cpu.cc, 0x56);
+}
+
+#[test]
+fn exg_x_cc_pads_ff() {
+    // EXG X,CC: X is first-named (16-bit) -> CC's read pads $FF instead of
+    // duplicating, unlike EXG CC,X. Order matters for CC/DP.
+    let mut s = Sys::code(0x0000, &[0x1E, 0x1A]); // EXG X,CC
+    s.cpu.cc = 0x42;
+    s.cpu.x = 0x3456;
+    s.step();
+    assert_eq!(s.cpu.x, 0xFF42);
+    assert_eq!(s.cpu.cc, 0x56);
+}
+
+#[test]
+fn exg_a_d_acts_like_a_b() {
+    // EXG A,D: A overlaps D's high half, and the write order (D then A)
+    // makes A's later write override D's $FF MSB, reducing to EXG A,B.
+    let mut s = Sys::code(0x0000, &[0x1E, 0x80]); // EXG A,D
+    s.cpu.a = 0x11;
+    s.cpu.b = 0x22;
+    s.step();
+    assert_eq!(s.cpu.a, 0x22);
+    assert_eq!(s.cpu.b, 0x11);
+}
+
+#[test]
+fn exg_d_a_leaves_ff_in_a() {
+    // EXG D,A: D is first-named (16-bit), so the later D write clobbers A
+    // with D's original low byte's $FF-padded exchange, leaving A=$FF.
+    let mut s = Sys::code(0x0000, &[0x1E, 0x08]); // EXG D,A
+    s.cpu.a = 0x11;
+    s.cpu.b = 0x22;
+    s.step();
+    assert_eq!(s.cpu.a, 0xFF);
+    assert_eq!(s.cpu.b, 0x11);
+}
+
+#[test]
+fn exg_invalid_code_gives_ffff() {
+    // EXG X,<invalid $C>: the 6x09 Instruction Sets doc specifies an invalid
+    // encoding exchanges a constant $FF/$FFFF; the write to it is dropped.
+    let mut s = Sys::code(0x0000, &[0x1E, 0x1C]); // EXG X,$C
+    s.cpu.x = 0x3456;
+    s.step();
+    assert_eq!(s.cpu.x, 0xFFFF);
 }
 
 // ======================================================================

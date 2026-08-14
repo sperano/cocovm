@@ -409,11 +409,11 @@ impl MC6809 {
             0x1E => {
                 let pb = self.fetch_u8(bus);
                 let (r0, r1) = (pb >> 4, pb & 0x0F);
-                let v0 = self.reg_read(r0);
-                let v1 = self.reg_read(r1);
-                self.reg_write(r0, v1);
+                let (v0, v1) = self.exg_values(r0, r1);
+                // r1 first: EXG A,D relies on the later A write overriding D's MSB.
                 self.reg_write(r1, v0);
-                6
+                self.reg_write(r0, v1);
+                8
             }
 
             // PSHS / PULS / PSHU / PULU
