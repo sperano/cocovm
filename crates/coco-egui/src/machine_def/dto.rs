@@ -410,3 +410,22 @@ impl Default for UIDTO {
         }
     }
 }
+
+/// `[stats]` section — read-only usage statistics the manager maintains
+/// itself (never edited via the form): cumulative powered-on time and the
+/// count of times this machine has been launched from Powered Off (Resume
+/// doesn't count — see `manager::lifecycle::resume_vm`'s doc). Section
+/// always present, like `[ui]`/`[peripherals]`; absent in a legacy file it
+/// simply defaults to zero.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct StatsDTO {
+    /// Cumulative powered-on runtime, in whole seconds — folded in from a
+    /// live VM's session runtime on Suspend, Stop, and quit
+    /// (`manager::lifecycle::fold_runtime_into_def`).
+    #[serde(default)]
+    pub runtime_secs: u64,
+    /// Number of times this machine has been launched from Powered Off
+    /// (`manager::lifecycle::start_vm`).
+    #[serde(default)]
+    pub starts: u32,
+}

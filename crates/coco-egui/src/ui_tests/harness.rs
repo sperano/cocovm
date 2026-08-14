@@ -225,7 +225,13 @@ pub(super) fn manager_harness_with_artifacts(
     let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
         manager::ManagerApp::new(None, machines_dir, artifacts_root, entries)
     });
-    harness.set_size(egui::vec2(1080.0, 720.0));
+    // Tall enough for the whole detail pane — Machine/RAM/Display/
+    // Peripherals/Ports/Joysticks/Keyboard plus the Statistics block below
+    // them — to land in the AccessKit tree; like the `CocoApp` harness
+    // above, egui only reports on-screen widgets, so a too-short viewport
+    // silently drops the lower fieldsets' combos from position-indexed
+    // queries (`select_combo_at`).
+    harness.set_size(egui::vec2(1080.0, 1400.0));
     harness.step();
     harness
 }

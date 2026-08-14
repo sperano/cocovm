@@ -88,6 +88,9 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     // controls where they begin, exactly like the hardware section controls
     // the machine's construction.
     app.aspect_correct = def.ui.aspect_correct;
+    // Seeds the status bar's cumulative Runtime readout (`CocoApp::total_runtime`'s
+    // doc) with whatever this machine had already accrued before this launch.
+    app.total_runtime = std::time::Duration::from_secs(def.stats.runtime_secs);
     // `CocoApp::new` derived a display from the config's signal path, which
     // can't tell a CoCo 3 TV from a composite monitor — overwrite it with
     // the definition's actual `[hardware].display` choice.

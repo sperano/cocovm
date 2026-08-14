@@ -39,6 +39,7 @@ mod paths;
 mod photo_view;
 mod rom_load;
 mod rs232;
+mod runtime_fmt;
 mod save_state;
 mod startup;
 mod status_icons;
@@ -79,6 +80,7 @@ pub(crate) use rom_load::{
     installed_roms_dir, report_rom_validation, rom_db_pseudo_path, rs232_eprom_default_path,
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
+pub(crate) use runtime_fmt::humanize_runtime;
 pub(crate) use startup::{
     StartupInfo, banner, ensure_assets, load_dotenv, renderer_info, rom_count, setup_logging,
     use_color,

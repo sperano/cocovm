@@ -5,13 +5,21 @@ use crate::*;
 
 impl CocoApp {
     /// Emulated fields owed for this update, from wall-clock time at the
-    /// machine's field rate (60 Hz NTSC / 50 Hz PAL).
+    /// machine's field rate (60 Hz NTSC / 50 Hz PAL). Also accumulates
+    /// [`Self::total_runtime`] from the same [`MAX_FRAME_DT`]-clamped
+    /// `dt` that feeds `field_debt` — runtime means "time the machine was
+    /// actually emulating", so a host stall (window drag, app hidden)
+    /// contributes at most `MAX_FRAME_DT` to it too, the same cap that keeps
+    /// the emulated catch-up from bursting after a long gap.
     pub(crate) fn fields_due(&mut self) -> usize {
         let now = std::time::Instant::now();
-        let dt = match self.last_update.replace(now) {
-            Some(prev) => (now - prev).as_secs_f64().min(MAX_FRAME_DT),
-            None => 0.0,
-        };
+        let elapsed = self
+            .last_update
+            .replace(now)
+            .map_or(std::time::Duration::ZERO, |prev| now - prev);
+        let clamped = elapsed.min(std::time::Duration::from_secs_f64(MAX_FRAME_DT));
+        self.total_runtime += clamped;
+        let dt = clamped.as_secs_f64();
         self.field_debt += dt * self.machine.config.video.field_rate_hz();
         let due = (self.field_debt as usize).min(MAX_FIELDS_PER_UPDATE);
         self.field_debt = (self.field_debt - due as f64).min(1.0);

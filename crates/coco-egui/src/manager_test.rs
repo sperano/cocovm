@@ -6,6 +6,7 @@ use crate::rom_load::COCO3_ROM_FILE;
 use crate::save_state::tests::ReadOnly;
 use crate::{ROMSource, installed_roms_dir};
 use coco_core::{MachineConfig, fdc};
+use eframe::App;
 
 impl ManagerApp {
     /// The detail pane's current draft name, when one is shown — `ui_tests.rs`
@@ -60,6 +61,42 @@ fn black_frame_is_still_written_when_no_previous_thumbnail_exists() {
     let dir = TempDir::new("thumb-black-first");
     write_thumbnail_png(dir.path(), &BLACK_FRAME, 2, 2).unwrap();
     assert!(dir.path().join(THUMBNAIL_FILE).exists());
+}
+
+/// Quit is the power switch for every running VM at once
+/// (`ManagerApp::on_exit`'s doc): each live VM's runtime must fold
+/// into its persisted total the same way `Self::stop_vm` does, both in
+/// memory and on disk. Boots a real machine via `crate::launch_machine`,
+/// same as `manager::lifecycle`'s own tests.
+#[test]
+fn on_exit_folds_live_runtime_into_the_persisted_total() {
+    let machines_dir = TempDir::new("manager-on-exit-machines");
+    let artifacts_root = TempDir::new("manager-on-exit-artifacts");
+    let def = machine_def::MachineDef::from_config(
+        "On Exit Test".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    let mut manager = ManagerApp::new(
+        None,
+        Some(machines_dir.path().to_path_buf()),
+        Some(artifacts_root.path().to_path_buf()),
+        vec![MachineEntry::new("on-exit-test".to_string(), def)],
+    );
+
+    manager.start_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    manager.entries[0].vm.as_mut().unwrap().total_runtime = std::time::Duration::from_secs(77);
+
+    manager.on_exit(None);
+
+    assert_eq!(manager.entries[0].def.stats.runtime_secs, 77);
+    let loaded = machine_def::load_all(machines_dir.path()).expect("reload should succeed");
+    assert_eq!(loaded[0].1.stats.runtime_secs, 77);
 }
 
 /// A booted machine with a dirty floppy mounted in drive 0 (not yet

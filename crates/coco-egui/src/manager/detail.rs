@@ -7,7 +7,7 @@
 
 use eframe::egui;
 
-use crate::{machine_def, new_vm, titled_group};
+use crate::{humanize_runtime, machine_def, new_vm, titled_group};
 
 use super::detail_map;
 use super::{DETAIL_SECTION_GAP, EditState, ManagerApp, NO_CONFIG_DIR, vm_status_label};
@@ -83,6 +83,67 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     });
 }
 
+/// How often the detail pane asks for its next repaint while showing a
+/// running machine's ticking Runtime row (see [`draw_statistics`]'s call
+/// site).
+const STATS_REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The runtime total to display: a live VM's own `CocoApp::total_runtime`
+/// when one exists (so the number ticks while it's open), else the persisted
+/// `[stats].runtime_secs` — one source of truth while a VM is alive, the same
+/// formula the status bar uses (`chrome::status_bar`'s `runtime_status`).
+/// Pure so it's unit-testable without an egui context (`detail_test.rs`),
+/// like [`humanize_runtime`].
+fn displayed_runtime_secs(entry: &super::MachineEntry) -> u64 {
+    match entry.vm.as_ref() {
+        Some(vm) => vm.total_runtime.as_secs(),
+        None => entry.def.stats.runtime_secs,
+    }
+}
+
+/// "Started" row text — `"N times"`, correctly singular for one
+/// (`"1 time"`, not "1 times"). Pure, like [`humanize_runtime`], for the
+/// same reason.
+fn started_label(starts: u32) -> String {
+    if starts == 1 {
+        "1 time".to_string()
+    } else {
+        format!("{starts} times")
+    }
+}
+
+/// Read-only "Statistics" block: created date (omitted if never recorded —
+/// only true for a definition hand-written before this field existed, since
+/// every definition the manager itself creates sets it), cumulative
+/// powered-on runtime ([`displayed_runtime_secs`]), and boot count. Never
+/// edited here — folding/incrementing happens in `manager::lifecycle`, this
+/// just reads.
+fn draw_statistics(ui: &mut egui::Ui, slug: &str, entry: &super::MachineEntry) {
+    titled_group(ui, "Statistics", |ui| {
+        form_grid(("detail_form_stats", slug)).show(ui, |ui| {
+            if let Some(created) = &entry.def.created {
+                ui.label("Created");
+                ui.label(created);
+                ui.end_row();
+            }
+            ui.label("Runtime");
+            ui.label(humanize_runtime(displayed_runtime_secs(entry)));
+            ui.end_row();
+            ui.label("Started");
+            ui.label(started_label(entry.def.stats.starts));
+            ui.end_row();
+        });
+    });
+    if entry.is_running() {
+        // Native-viewport case: this pane's own window must ask for its
+        // next repaint itself to keep the Runtime row ticking once a
+        // second. The manager's Embedded fallback (no native viewports
+        // available) already repaints every frame via `step_emulation`
+        // (`app/frame.rs`), so this is redundant but harmless there.
+        ui.ctx().request_repaint_after(STATS_REPAINT_INTERVAL);
+    }
+}
+
 impl ManagerApp {
     /// Right pane for the selected entry: its edit form.
     pub(super) fn draw_detail(&mut self, ui: &mut egui::Ui, index: usize) {
@@ -140,6 +201,9 @@ impl ManagerApp {
             // only a cold start from power off does.
             ui.small("Changes apply the next time this machine starts from power off.");
         }
+
+        ui.add_space(DETAIL_SECTION_GAP);
+        draw_statistics(ui, &slug, &self.entries[index]);
 
         self.autosave(&slug, index, &mut edit);
         if let Some(err) = &self.save_error {
@@ -223,3 +287,7 @@ impl ManagerApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "detail_test.rs"]
+mod tests;
