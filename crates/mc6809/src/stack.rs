@@ -110,7 +110,10 @@ impl MC6809 {
             if from_s {
                 self.u = v;
             } else {
-                self.s = v;
+                // PULU loading S is a program load of S and must arm NMI
+                // recognition (see `nmi_armed`); the plain pointer writebacks
+                // below are on the non-arming side of that boundary.
+                self.load_s(v);
             }
         }
         if mask & stack_mask::PC != 0 {

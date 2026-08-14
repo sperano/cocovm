@@ -50,10 +50,18 @@ impl DebuggerPanel {
                 );
                 ui.end_row();
                 ui.label("S");
-                ui.add_enabled(
-                    editable,
-                    egui::DragValue::new(&mut machine.cpu.s).hexadecimal(4, false, true),
-                );
+                let mut s_reg = machine.cpu.s;
+                if ui
+                    .add_enabled(
+                        editable,
+                        egui::DragValue::new(&mut s_reg).hexadecimal(4, false, true),
+                    )
+                    .changed()
+                {
+                    // A hand-set stack pointer counts as the program's stack
+                    // setup: route through load_s so NMI arming is preserved.
+                    machine.cpu.load_s(s_reg);
+                }
                 ui.end_row();
                 ui.label("PC");
                 ui.add_enabled(
