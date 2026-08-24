@@ -187,6 +187,18 @@ pub(crate) enum PendingDiskAction {
     NewBlank { drive: usize, path: PathBuf },
 }
 
+/// The "DriveWire enabled" half of [`AppParams`]: its HDB-DOS flag and
+/// mounted disk images, bundled behind one `Option` so "HDB-DOS on but
+/// Becker off" and "DW disks without DriveWire" are unrepresentable.
+#[derive(Default)]
+pub(crate) struct DriveWireLaunch {
+    /// Serve HDB-DOS sector addressing instead of plain DriveWire —
+    /// forwarded to `DWServer::set_hdbdos_mode`.
+    pub(crate) hdbdos_mode: bool,
+    /// Images to mount, one slot per DriveWire drive.
+    pub(crate) disk_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
+}
+
 /// Everything [`CocoApp::new`] mounts or configures beyond the machine
 /// itself. `Default` is a bare machine: no media, DriveWire off, tape-wav
 /// capture off — what every test call site wants outright, and what the
@@ -197,18 +209,12 @@ pub(crate) struct AppParams {
     pub(crate) cart_path: Option<PathBuf>,
     pub(crate) disk_paths: [Option<PathBuf>; UI_DRIVES],
     pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
+    /// `Some` boots with the Becker port enabled ([`DriveWireLaunch`]).
     /// Not yet reachable from a machine definition — the schema
     /// (`machine_def.rs`) has no DriveWire fields, so production always
-    /// leaves this all-`None`; kept so the future per-machine setting has a
-    /// slot.
-    pub(crate) dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
-    /// Like `dw_paths`: no `[peripherals]` field drives this yet — always
-    /// `false` at construction, toggled at runtime in the DriveWire menu
+    /// passes `None`; DriveWire is enabled at runtime in its menu
     /// (`chrome/menu_bar/drivewire.rs`).
-    pub(crate) becker_enabled: bool,
-    /// Only meaningful with `becker_enabled`; same "no schema field yet"
-    /// status.
-    pub(crate) hdbdos_mode: bool,
+    pub(crate) drivewire: Option<DriveWireLaunch>,
     /// UI preference, not persisted per-machine yet — always `false` at
     /// launch, toggled at runtime in the tape menu (status bar's Cassette
     /// deck entry, `chrome/menu_bar.rs`'s `tape_menu_ui`).
@@ -234,9 +240,7 @@ impl CocoApp {
             cart_path,
             disk_paths,
             vhd_paths,
-            dw_paths,
-            becker_enabled,
-            hdbdos_mode,
+            drivewire,
             save_tape_wav,
         } = params;
         // Lossy for a CoCo 3 TV (serialized as composite) — launch/boot
@@ -300,9 +304,9 @@ impl CocoApp {
                 app.insert_vhd(drive, path);
             }
         }
-        if becker_enabled {
-            app.enable_drivewire(hdbdos_mode);
-            for (drive, path) in dw_paths.into_iter().enumerate() {
+        if let Some(dw) = drivewire {
+            app.enable_drivewire(dw.hdbdos_mode);
+            for (drive, path) in dw.disk_paths.into_iter().enumerate() {
                 if let Some(path) = path {
                     app.insert_dw_disk(drive, path);
                 }
@@ -384,3 +388,7 @@ impl eframe::App for CocoApp {
         self.window_ui(ctx);
     }
 }
+
+#[cfg(test)]
+#[path = "app_test.rs"]
+mod tests;
