@@ -4,7 +4,12 @@
 use crate::*;
 
 impl CocoApp {
-
+    /// Power the machine off and on. The core side
+    /// ([`coco_core::Machine::power_cycle`]) resets the hardware and its
+    /// derived state, including its own rendered-but-undrained samples; the
+    /// host side ([`crate::audio::AudioOutput::reset`]) drops the ring buffer and filter
+    /// history that already left the core, so nothing of the powered-off
+    /// machine's sound plays after the discontinuity.
     pub(crate) fn power_cycle(&mut self) {
         self.machine.power_cycle();
         self.audio.reset();

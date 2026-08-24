@@ -286,6 +286,14 @@ impl Machine {
     /// state. The cartridge and cassette stay in their slots: this is what
     /// really happens when a cartridge is swapped on real hardware, which is
     /// only ever done machine-off.
+    ///
+    /// What survives: media and peripherals (cartridge, cassette, VHD,
+    /// DriveWire server, keyboard/joystick input state, monitor cable) and
+    /// the monotonic `SystemBus::cycle_clock`. What resets: RAM, GIME, SAM,
+    /// both PIAs, the CPU, the field-scan position, and every piece of
+    /// derived electrical state — the sampled keyboard/CART* interrupt edge
+    /// history, the latched audio inputs plus their queued events, and any
+    /// rendered-but-undrained audio samples.
     pub fn power_cycle(&mut self) {
         // Monitor type isn't GIME hardware state — it's which cable is
         // plugged into the back of the machine — so it survives a power
@@ -304,7 +312,26 @@ impl Machine {
         self.line = 0;
         self.line_cycles_spent = 0;
         self.line_budget = 0;
+        // `reset()` first: it resets the cartridge, whose latched sound
+        // outputs feed the audio state re-latched below.
         self.reset();
+        self.bus.reset_edge_history();
+        self.reset_audio_grid();
+    }
+
+    /// Restart the audio grid at power-on: the bus re-latches its inputs
+    /// from the reset hardware and drops queued events, samples already
+    /// rendered but not yet drained by [`Machine::take_audio`] are dropped
+    /// (they are the powered-off machine's sound — the same treatment a
+    /// snapshot restore gives them), and the next line flush starts from
+    /// now with that state. `cycle_clock` itself is not reset — it only
+    /// needs to be monotonic (see `SystemBus::cycle_clock`) — so the grid's
+    /// left edge is simply moved up to it.
+    fn reset_audio_grid(&mut self) {
+        self.bus.reset_audio_latch();
+        self.audio_buffer.clear();
+        self.audio_line_start = self.bus.cycle_clock;
+        self.audio_line_inputs = self.bus.audio_inputs;
     }
 
     /// Plug a cartridge into the expansion port. Real cartridges are only

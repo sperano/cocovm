@@ -37,6 +37,18 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
+    /// Forget the sampled interrupt-input history ([`SystemBus::hsync`]'s
+    /// keyboard-line sample and [`SystemBus::poll_cart_interrupt`]'s CART*
+    /// level) so the next sample sees a fresh edge. Power-on only: a freshly
+    /// powered GIME/PIA has no memory of the line levels, so an input that
+    /// was already asserted before power-off (a held key, an ACIA IRQ) must
+    /// fire on its first post-power sample rather than being swallowed as
+    /// "no transition".
+    pub(crate) fn reset_edge_history(&mut self) {
+        self.kbd_line_low = false;
+        self.prev_cart_int = false;
+    }
+
     /// Sample the level-driven CART* interrupt ([`Cartridge::cart_interrupt`],
     /// e.g. the Deluxe RS-232's 6551 ACIA IRQ) and convert transitions into
     /// what the shared physical pin feeds: PIA1 CB1 sees the line level itself
