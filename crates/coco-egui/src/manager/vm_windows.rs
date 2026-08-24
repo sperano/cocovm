@@ -39,14 +39,15 @@ impl ManagerApp {
     /// Close requests (the native window's close box, or the embedded
     /// fallback's `egui::Window` close button) and suspend requests (the VM
     /// window's own Suspend tile, `chrome::toolbar`, via `CocoApp::
-    /// pending_suspend`) are each collected into a list and applied
-    /// ([`Self::close_vm_window`], [`Self::suspend_vm`]) after the loop —
-    /// deferred because both need `&mut self.entries[i]`, which would
-    /// conflict with the `vm` this loop already holds taken out of that
-    /// same slot for the duration of the viewport closure.
+    /// pending_suspend`) are dispatched ([`Self::close_vm_window`],
+    /// [`Self::suspend_vm`]) inline, right after the VM goes back into its
+    /// entry each iteration: at that point no borrow of `self` is held
+    /// anymore, and neither call inserts or removes entries, so the index
+    /// loop stays valid.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
-        let mut to_stop: Vec<usize> = Vec::new();
-        let mut to_suspend: Vec<usize> = Vec::new();
+        // Indices suspended this frame — only for `focus_first_failed_row`
+        // below, which needs the whole batch to focus the *first* failure.
+        let mut suspends: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
             if self.entries[i].vm.is_none() {
                 continue;
@@ -61,9 +62,8 @@ impl ManagerApp {
 
             // Taken out of the entry so the viewport closure below can hold
             // and mutate it without a conflicting borrow of `self` (the
-            // closure also needs to push into `to_stop`, a local, not
-            // `self` — so no `self` borrow is held across the closure at
-            // all here).
+            // closure also sets `close_requested`, a local, not `self` — so
+            // no `self` borrow is held across the closure at all here).
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
             let suspended = self.entries[i].suspended;
             let mut close_requested = false;
@@ -156,16 +156,11 @@ impl ManagerApp {
                 // Close wins over suspend: closing already tears the VM
                 // down via `close_vm_window`, which would just discard
                 // whatever `suspend_vm` had frozen a moment later anyway.
-                to_stop.push(i);
+                self.close_vm_window(i);
             } else if suspend_requested {
-                to_suspend.push(i);
+                self.suspend_vm(i);
+                suspends.push(i);
             }
-        }
-        for i in to_stop {
-            self.close_vm_window(i);
-        }
-        for &i in &to_suspend {
-            self.suspend_vm(i);
         }
         // A failed suspend records `entries[i].launch_error`, and the
         // detail pane is its only rendering surface, so focus the first
@@ -174,7 +169,7 @@ impl ManagerApp {
         // here: `entries[i].suspended` is now true, so next frame's loop
         // takes the `suspended` branch above and the window flips to
         // display-only on its own.
-        self.focus_first_failed_row(&to_suspend);
+        self.focus_first_failed_row(&suspends);
     }
 
     /// The VM window's close box: the power switch for a Running machine
