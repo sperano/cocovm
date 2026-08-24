@@ -156,9 +156,11 @@ impl Resampler {
 /// audio state: the DC blockers, anti-alias filters, resampler, and
 /// volume/mute controls.
 pub struct AudioOutput {
-    /// `None` when no output device/config/stream could be opened — every
-    /// other method then degrades to a no-op instead of touching cpal.
-    stream: Option<cpal::Stream>,
+    /// The live cpal stream, held only so it keeps playing for as long as
+    /// this `AudioOutput` does (dropping it stops the device). `None` when no
+    /// output device/config/stream could be opened — see [`Self::is_enabled`]
+    /// for the gate every producer-side method degrades through.
+    _stream: Option<cpal::Stream>,
     /// Stereo frames at the device's rate, shared with the stream's callback
     /// thread: `push_samples` (producer) pushes resampled frames; the cpal
     /// callback (consumer) pops one per output frame and maps L/R onto the
@@ -184,34 +186,80 @@ impl AudioOutput {
     pub fn new() -> Self {
         let ring = Arc::new(Mutex::new(VecDeque::new()));
         match Self::try_build_stream(Arc::clone(&ring)) {
-            Ok((stream, device_rate, ring_cap)) => Self {
-                stream: Some(stream),
-                ring,
-                ring_cap,
-                device_rate,
-                muted: false,
-                volume: DEFAULT_VOLUME,
-                dc: [DCBlocker::default(); 2],
-                lowpass: None,
-                lowpass_rate: 0.0,
-                resampler: Resampler::default(),
-            },
+            Ok((stream, device_rate, ring_cap)) => {
+                Self::from_parts(Some(stream), ring, device_rate, ring_cap)
+            }
             Err(e) => {
                 tracing::warn!("audio output unavailable: {e}");
-                Self {
-                    stream: None,
-                    ring,
-                    ring_cap: 0,
-                    device_rate: 0.0,
-                    muted: false,
-                    volume: DEFAULT_VOLUME,
-                    dc: [DCBlocker::default(); 2],
-                    lowpass: None,
-                    lowpass_rate: 0.0,
-                    resampler: Resampler::default(),
-                }
+                Self::from_parts(None, ring, 0.0, 0)
             }
         }
+    }
+
+    /// A device-less pipeline that still runs the full producer path
+    /// (filters, resampler, ring buffer) at `device_rate`, so tests can
+    /// exercise everything short of cpal. Nothing ever drains the ring:
+    /// [`Self::push_samples`] simply keeps it bounded at `ring_cap`.
+    #[cfg(test)]
+    pub(crate) fn headless(device_rate: f64) -> Self {
+        let ring_cap = ring_capacity(device_rate);
+        Self::from_parts(
+            None,
+            Arc::new(Mutex::new(VecDeque::new())),
+            device_rate,
+            ring_cap,
+        )
+    }
+
+    fn from_parts(
+        stream: Option<cpal::Stream>,
+        ring: Arc<Mutex<VecDeque<[f32; 2]>>>,
+        device_rate: f64,
+        ring_cap: usize,
+    ) -> Self {
+        Self {
+            _stream: stream,
+            ring,
+            ring_cap,
+            device_rate,
+            muted: false,
+            volume: DEFAULT_VOLUME,
+            dc: [DCBlocker::default(); 2],
+            lowpass: None,
+            lowpass_rate: 0.0,
+            resampler: Resampler::default(),
+        }
+    }
+
+    /// Whether there is anywhere for samples to go: a live cpal stream, or a
+    /// test-only headless pipeline (`device_rate` set, no stream).
+    fn is_enabled(&self) -> bool {
+        self.device_rate > 0.0
+    }
+
+    /// Forget everything about the audio stream so far — for a state
+    /// discontinuity (state restore, power cycle) after which the samples
+    /// still queued and the filters' memory describe a machine that no
+    /// longer exists. Drops the ring buffer's backlog (up to
+    /// `RING_BUFFER_SECS` of the OLD machine's sound, which would otherwise
+    /// play after the load) and returns every DC blocker, anti-alias
+    /// low-pass, and the resampler to their just-constructed state, so no
+    /// filter history — possibly from a different source rate (NTSC↔PAL) —
+    /// bleeds into the new stream. The low-pass is redesigned lazily by the
+    /// next `push_samples`, exactly as on first use. Volume/mute are user
+    /// prefs and survive.
+    pub fn reset(&mut self) {
+        lock(&self.ring).clear();
+        self.dc = [DCBlocker::default(); 2];
+        self.lowpass = None;
+        self.lowpass_rate = 0.0;
+        self.resampler = Resampler::default();
+    }
+
+    /// Frames waiting in the ring buffer for the device to consume.
+    #[cfg(test)]
+    pub(crate) fn queued_frames(&self) -> usize {
+        lock(&self.ring).len()
     }
 
     /// Open the default output device at its default config and start playing
@@ -228,7 +276,7 @@ impl AudioOutput {
         let supported = device.default_output_config().map_err(|e| e.to_string())?;
         let channels = supported.channels() as usize;
         let device_rate = supported.sample_rate() as f64;
-        let ring_cap = ((device_rate * RING_BUFFER_SECS) as usize).max(1);
+        let ring_cap = ring_capacity(device_rate);
         let stream_config: cpal::StreamConfig = supported.into();
 
         // Decay applied to the held-over frame on every underrun frame, derived
@@ -279,7 +327,7 @@ impl AudioOutput {
     /// `machine.audio_sample_rate()`). A no-op when no output device was
     /// found.
     pub fn push_samples(&mut self, samples: impl Iterator<Item = [f32; 2]>, source_rate: f64) {
-        if self.stream.is_none() {
+        if !self.is_enabled() {
             return;
         }
         // (Re)design the anti-alias filters when the source rate first
@@ -329,13 +377,19 @@ impl AudioOutput {
     /// label when no output device is available (mirrors
     /// `JoystickInputs::menu_ui`'s "Gamepad: unavailable" line).
     pub fn menu_ui(&mut self, ui: &mut egui::Ui) {
-        if self.stream.is_none() {
+        if !self.is_enabled() {
             ui.add_enabled(false, egui::Label::new("No audio device"));
             return;
         }
         ui.checkbox(&mut self.muted, "Mute");
         ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).text("Volume"));
     }
+}
+
+/// [`AudioOutput::ring_cap`] for a device at `device_rate` Hz:
+/// `RING_BUFFER_SECS` worth of frames, never zero.
+fn ring_capacity(device_rate: f64) -> usize {
+    ((device_rate * RING_BUFFER_SECS) as usize).max(1)
 }
 
 /// Lock `ring`, recovering from mutex poisoning instead of propagating a panic

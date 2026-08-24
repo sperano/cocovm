@@ -38,7 +38,7 @@ impl CocoApp {
         // Power cycle, not warm reset: the DK probe that links Disk BASIC
         // only runs on the ROM's cold-start path (a warm reset leaves the
         // DOS ROM unlinked and the drives dead).
-        self.machine.power_cycle();
+        self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.rs232 = None;
