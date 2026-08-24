@@ -187,9 +187,13 @@ pub(crate) enum PendingDiskAction {
     NewBlank { drive: usize, path: PathBuf },
 }
 
-/// The "DriveWire enabled" half of [`AppParams`]: its HDB-DOS flag and
-/// mounted disk images, bundled behind one `Option` so "HDB-DOS on but
-/// Becker off" and "DW disks without DriveWire" are unrepresentable.
+/// The "DriveWire enabled" half of [`AppParams`]. As three sibling fields
+/// (`becker_enabled: bool`, `hdbdos_mode`, `dw_paths`) the type allowed
+/// `hdbdos_mode: true` with the Becker port off, and DW disk paths that
+/// `CocoApp::new` silently discarded when `becker_enabled` was false.
+/// Now the flag and the disks exist only inside the payload of
+/// [`AppParams::drivewire`]'s `Some`, and the payload's presence is
+/// itself "Becker on" — so neither state can be written at all.
 #[derive(Default)]
 pub(crate) struct DriveWireLaunch {
     /// Serve HDB-DOS sector addressing instead of plain DriveWire —
