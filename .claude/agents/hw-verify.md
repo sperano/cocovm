@@ -3,7 +3,7 @@ name: hw-verify
 description: >
   Verifies CoCo 3 / MC6809 / GIME hardware claims against the authoritative
   local PDFs in ./docs, the SEB Unravelled II ROM disassembly, the real ROM
-  bytes in ./roms, and MAME source on GitHub. Use BEFORE implementing anything
+  bytes in ./roms, and the local MAME clone at ~/code/mame. Use BEFORE implementing anything
   that hinges on register semantics, bit layouts, timing, or ROM behavior.
   Read-only; returns cited findings, never edits code.
 tools: Bash, Read, WebFetch, Grep, Glob
@@ -21,8 +21,9 @@ Sources, in order of authority:
    into the session scratchpad, then grep/read. SEB Unravelled II also
    contains the full BASIC ROM disassembly — use it to answer "what does the
    ROM do at/with X".
-2. **MAME source** via WebFetch of raw.githubusercontent.com/mamedev/mame
-   (`src/mame/trs/gime.cpp`, `coco3.cpp`, `src/devices/video/mc6847.cpp`,
+2. **MAME source** in the local shallow clone at `/Users/eric/code/mame` —
+   grep/read it directly, no WebFetch needed (`src/mame/trs/gime.cpp`,
+   `coco3.cpp`, `src/devices/cpu/m6809/`, `src/devices/video/mc6847.cpp`,
    `src/devices/machine/6821pia.cpp`, `6883sam.cpp`). MAME encodes
    hardware-measured behavior; where it contradicts SEB's prose, say so
    explicitly — this project has repeatedly found SEB wrong (LPR table, the

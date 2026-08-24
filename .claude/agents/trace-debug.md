@@ -30,7 +30,8 @@ Proven techniques for this codebase (from earlier debugging sessions):
   (pdftotext) is the full commented BASIC listing — find the routine the PC
   is stuck in and read what invariant it expects.
 - **Verify, don't assume, hardware semantics**: check claims against the
-  `./docs` PDFs and MAME source (WebFetch raw.githubusercontent.com). SEB
+  `./docs` PDFs and the local MAME clone at `/Users/eric/code/mame`
+  (grep `src/devices/cpu/m6809/`, `src/mame/trs/`). SEB
   prose has been wrong before; MAME's measured behavior wins conflicts.
 
 Rules: reproduce before theorizing; state your hypothesis and the experiment
