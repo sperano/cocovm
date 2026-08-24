@@ -105,22 +105,26 @@ impl ManagerApp {
         self.focus_first_failed_row(&acted);
     }
 
-    /// Stop every row that isn't already Powered Off. `stop_vm` has no
-    /// failure path, so unlike Play/Suspend this never needs
-    /// [`Self::focus_first_failed_row`].
+    /// Stop every row that isn't already Powered Off. `stop_vm` can fail —
+    /// a dirty-media flush error, or a suspend checkpoint it could not
+    /// discard (the row then *stays* Suspended) — so like Play/Suspend the
+    /// acted-on rows are checked with [`Self::focus_first_failed_row`].
     fn bulk_stop(&mut self, indices: &[usize]) {
+        let mut acted = Vec::new();
         for &i in indices {
             if self.entries[i].is_alive() {
                 self.stop_vm(i);
+                acted.push(i);
             }
         }
+        self.focus_first_failed_row(&acted);
     }
 
     /// Reset every running row, never a suspended one: resetting a frozen
     /// machine's live object without touching its `.ccstate` would silently
     /// desync the two, exactly the divergence `resume_vm`'s own contract
-    /// goes out of its way to avoid. `Machine::reset` cannot fail, so —
-    /// like [`Self::bulk_stop`] — no error surfacing is needed.
+    /// goes out of its way to avoid. `Machine::reset` cannot fail, so no
+    /// error surfacing is needed.
     fn bulk_reset(&mut self, indices: &[usize]) {
         for &i in indices {
             if self.entries[i].is_running()

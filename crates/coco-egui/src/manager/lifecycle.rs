@@ -214,19 +214,26 @@ impl ManagerApp {
     /// fresh start (`machine_def::StatsDTO::starts`'s doc), whether the VM
     /// object survived or had to be relaunched — and whether the app itself
     /// stayed up (window closed) or was quit and relaunched (`entry.suspended`
-    /// rehydrates from the on-disk `.ccstate` either way). Either way a
-    /// successful resume deletes the
-    /// [`super::SUSPEND_STATE_FILE`]: the running machine immediately
-    /// diverges from the frozen copy, and a stale file would misreport
-    /// Suspended after the next power-off. A failed relaunch/restore keeps
-    /// the file and the Suspended state — the frozen copy is still the
-    /// truth, and the error shows in the transport row.
+    /// rehydrates from the on-disk `.ccstate` either way).
+    ///
+    /// Either way the [`super::SUSPEND_STATE_FILE`] is *consumed*: deleted
+    /// strictly before the entry is declared Running. Startup classifies a
+    /// machine as Suspended solely by that file's existence
+    /// ([`ManagerApp::new`]), so marking Running while the file survives
+    /// would let the next quit — or a crash — resurrect the by-then-stale
+    /// checkpoint over the newer session. A resume that cannot delete the
+    /// file therefore fails: the entry stays Suspended (the cold-relaunch
+    /// shape drops its just-restored VM again; the warm shape keeps its VM
+    /// paused in place), the error shows in the transport row, and the file
+    /// — still the truth — stays restorable. A failed relaunch/restore
+    /// keeps the file and the Suspended state the same way.
     pub(super) fn resume_vm(&mut self, index: usize) {
         let Some(path) = self.suspend_state_path_for(index) else {
             self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
             return;
         };
-        if self.entries[index].vm.is_none() {
+        let cold = self.entries[index].vm.is_none();
+        if cold {
             self.launch_vm(index);
             let entry = &mut self.entries[index];
             let Some(vm) = entry.vm.as_mut() else {
@@ -238,6 +245,19 @@ impl ManagerApp {
                 return;
             }
         }
+        // NotFound still counts as consumed: the paused VM (or the restore
+        // that just succeeded) holds the state, and there is no file left to
+        // misreport Suspended later.
+        if let Err(e) = fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            let entry = &mut self.entries[index];
+            if cold {
+                entry.vm = None; // back to Suspended with the window closed
+            }
+            entry.launch_error = Some(format!("could not remove {}: {e}", path.display()));
+            return;
+        }
         let entry = &mut self.entries[index];
         entry
             .vm
@@ -246,14 +266,6 @@ impl ManagerApp {
             .set_running(true);
         entry.suspended = false;
         entry.launch_error = None;
-        if let Err(e) = fs::remove_file(&path)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            // The machine IS running; a leftover state file is only a
-            // misleading label after the next power-off — worth a warning,
-            // not worth failing the resume.
-            tracing::warn!("could not remove {}: {e}", path.display());
-        }
     }
 
     /// Stop — the power switch (⏹ button, row context menu, and a *running*
@@ -275,28 +287,62 @@ impl ManagerApp {
     /// cached texture): a powered-off machine has no preview, and a stale
     /// PNG left behind would resurface via `write_thumbnail_png`'s
     /// keep-previous-on-black rule as a *previous power cycle's* screen the
-    /// next time Suspend fires during a blanked display.
+    /// next time Suspend fires during a blanked display. A discard that
+    /// *fails* leaves the entry Suspended, with the error in `launch_error`:
+    /// the file is what startup re-reads ([`ManagerApp::new`]), so clearing
+    /// the flag anyway would show Powered Off now only to resurrect
+    /// Suspended on the next launch — the same file-is-truth rule
+    /// [`Self::resume_vm`] enforces. The preview (PNG and cached texture)
+    /// is only wiped once the state file actually is: a row that stays
+    /// Suspended keeps its frozen-frame preview. A flush failure and a
+    /// discard failure on the same power-off are both surfaced,
+    /// newline-joined (`CocoApp::flush_media`'s own two-error convention) —
+    /// the discard message must never clobber a data-loss one — while a
+    /// fully successful stop clears `launch_error` like the other
+    /// transports, so [`Self::focus_first_failed_row`] after a bulk Stop
+    /// never trips on a stale message.
     pub(super) fn stop_vm(&mut self, index: usize) {
         self.fold_runtime_into_def(index);
-        if let Some(mut vm) = self.entries[index].vm.take()
-            && let Err(e) = vm.flush_media()
-        {
-            self.entries[index].launch_error = Some(e);
-        }
+        let flush_error = self.entries[index]
+            .vm
+            .take()
+            .and_then(|mut vm| vm.flush_media().err());
         let entry = &mut self.entries[index];
-        entry.suspended = false;
-        entry.thumbnail = None;
-        entry.thumbnail_load_attempted = false;
+        let mut discard_error = None;
         if let Some(root) = &self.artifacts_root {
             let dir = root.join(&entry.slug);
-            for file in [SUSPEND_STATE_FILE, THUMBNAIL_FILE] {
-                if let Err(e) = fs::remove_file(dir.join(file))
-                    && e.kind() != std::io::ErrorKind::NotFound
-                {
-                    tracing::warn!("could not remove {file} for '{}': {e}", entry.slug);
+            let state_path = dir.join(SUSPEND_STATE_FILE);
+            match fs::remove_file(&state_path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    discard_error =
+                        Some(format!("could not discard {}: {e}", state_path.display()));
+                }
+                _ => {
+                    entry.suspended = false;
+                    entry.thumbnail = None;
+                    entry.thumbnail_load_attempted = false;
+                    if let Err(e) = fs::remove_file(dir.join(THUMBNAIL_FILE))
+                        && e.kind() != std::io::ErrorKind::NotFound
+                    {
+                        tracing::warn!(
+                            "could not remove {THUMBNAIL_FILE} for '{}': {e}",
+                            entry.slug
+                        );
+                    }
                 }
             }
+        } else {
+            // No artifact root means Suspend could never have written a
+            // state file (or thumbnail), so there is nothing on disk to
+            // stay in step with.
+            entry.suspended = false;
+            entry.thumbnail = None;
+            entry.thumbnail_load_attempted = false;
         }
+        entry.launch_error = match (flush_error, discard_error) {
+            (Some(flush), Some(discard)) => Some(format!("{flush}\n{discard}")),
+            (either, None) | (None, either) => either,
+        };
     }
 
     /// `entries[index]`'s [`SUSPEND_STATE_FILE`] path — `None` when no
