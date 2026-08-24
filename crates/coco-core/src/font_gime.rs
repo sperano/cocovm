@@ -1,8 +1,8 @@
 //! GIME internal character-generator font for the hi-res text modes.
 //!
-//! LICENSING: copied from MAME's `src/devices/video/gime.cpp`
-//! (`gime_device::hires_font`), GPL-2.0+ — same pending licensing decision as
-//! `font6847.rs`; see `NOTICE.md`.
+//! LICENSING: verbatim from MAME's `src/mame/trs/gime.cpp`
+//! (`gime_device::hires_font`), BSD-3-Clause, copyright Nathan Woods — see
+//! NOTICE.md for the full attribution and license text.
 //!
 //! 128 glyphs indexed by the character byte's low 7 bits. The layout is ASCII
 //! from $20 up (lowercase with descenders at $60-$7F); $00-$1F are accented
@@ -156,8 +156,9 @@ pub const GIME_FONT: [[u8; GLYPH_ROWS]; 128] = [
 /// the same true-lowercase semantics as the MC6847T1 (PIA1 $FF22 GM0 bit +
 /// per-character inverse bit — see `crate::video::resolve_alpha_cell`).
 ///
-/// LICENSING: copied from MAME (GPL-2.0+) — same pending licensing decision
-/// as `font6847.rs`'s tables and this file's `GIME_FONT`; see `NOTICE.md`.
+/// LICENSING: verbatim from MAME's `src/mame/trs/gime.cpp`
+/// (`gime_device::lowres_font`), BSD-3-Clause, copyright Nathan Woods — see
+/// NOTICE.md for the full attribution and license text.
 #[rustfmt::skip]
 pub const GIME_LOWRES_FONT: [[u8; 12]; 96] = [
     [0x00, 0x38, 0x44, 0x04, 0x34, 0x4C, 0x4C, 0x38, 0x00, 0x00, 0x00, 0x00], // @
