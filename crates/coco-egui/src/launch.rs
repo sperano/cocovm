@@ -8,8 +8,8 @@ use coco_core::MachineVariant;
 
 use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
-    CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, installed_roms_dir,
-    machine_def,
+    AppParams, CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES,
+    installed_roms_dir, machine_def,
 };
 
 /// File name [`launch_machine`] captures `[ports].serial = "file"` to,
@@ -189,12 +189,6 @@ fn new_app(
     media: &Media,
     peripherals: &Peripherals,
 ) -> CocoApp {
-    // No definition field for these UI preferences yet (`machine_def.rs`'s
-    // schema doc); a launched machine always starts with tape-wav off, no
-    // DriveWire disks, Becker port disabled, and HDB-DOS off.
-    const SAVE_TAPE_WAV: bool = false;
-    const BECKER_ENABLED: bool = false;
-    const HDBDOS_MODE: bool = false;
     let (cart, disks) = if peripherals.mpi {
         (None, [None, None])
     } else {
@@ -204,13 +198,14 @@ fn new_app(
         config,
         rom,
         rom_source,
-        cart,
-        disks,
-        media.vhds.clone(),
-        std::array::from_fn(|_| None),
-        BECKER_ENABLED,
-        HDBDOS_MODE,
-        SAVE_TAPE_WAV,
+        AppParams {
+            cart_path: cart,
+            disk_paths: disks,
+            vhd_paths: media.vhds.clone(),
+            // DriveWire and tape-wav stay at their defaults: no definition
+            // field drives them yet (see the `AppParams` field docs).
+            ..AppParams::default()
+        },
     )
 }
 

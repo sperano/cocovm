@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::*;
 use crate::rom_load::COCO3_ROM_FILE;
-use crate::{ROMSource, disk_basic_rom_path, installed_roms_dir};
+use crate::{AppParams, ROMSource, disk_basic_rom_path, installed_roms_dir};
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
 use coco_core::snapshot;
 use coco_core::{MachineConfig, fdc};
@@ -117,13 +117,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
         MachineConfig::default(),
         rom,
         ROMSource::File(rom_path.clone()),
-        None,
-        [None, None],
-        [None, None],
-        std::array::from_fn(|_| None),
-        false,
-        false,
-        false,
+        AppParams::default(),
     );
     app.insert_multipak();
     app.mpi_insert_rompak(0, cart_path.clone());
@@ -206,13 +200,7 @@ pub(crate) fn boot_app() -> CocoApp {
         MachineConfig::default(),
         rom,
         ROMSource::File(rom_path),
-        None,
-        [None, None],
-        [None, None],
-        std::array::from_fn(|_| None),
-        false,
-        false,
-        false,
+        AppParams::default(),
     )
 }
 

@@ -187,28 +187,58 @@ pub(crate) enum PendingDiskAction {
     NewBlank { drive: usize, path: PathBuf },
 }
 
+/// Everything [`CocoApp::new`] mounts or configures beyond the machine
+/// itself. `Default` is a bare machine: no media, DriveWire off, tape-wav
+/// capture off — what every test call site wants outright, and what the
+/// production launcher (`launch::new_app`) wants for everything but the
+/// media it mounts.
+#[derive(Default)]
+pub(crate) struct AppParams {
+    pub(crate) cart_path: Option<PathBuf>,
+    pub(crate) disk_paths: [Option<PathBuf>; UI_DRIVES],
+    pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
+    /// Not yet reachable from a machine definition — the schema
+    /// (`machine_def.rs`) has no DriveWire fields, so production always
+    /// leaves this all-`None`; kept so the future per-machine setting has a
+    /// slot.
+    pub(crate) dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
+    /// Like `dw_paths`: no `[peripherals]` field drives this yet — always
+    /// `false` at construction, toggled at runtime in the DriveWire menu
+    /// (`chrome/menu_bar/drivewire.rs`).
+    pub(crate) becker_enabled: bool,
+    /// Only meaningful with `becker_enabled`; same "no schema field yet"
+    /// status.
+    pub(crate) hdbdos_mode: bool,
+    /// UI preference, not persisted per-machine yet — always `false` at
+    /// launch, toggled at runtime in the tape menu (status bar's Cassette
+    /// deck entry, `chrome/menu_bar.rs`'s `tape_menu_ui`).
+    pub(crate) save_tape_wav: bool,
+}
+
 impl CocoApp {
     /// `CreationContext` isn't taken here (unlike most `eframe::App`
     /// constructors): nothing in this struct's setup touches egui context
     /// state (fonts, wgpu/glow handles), so it's a plain constructor
     /// callable from anywhere a machine needs to be built — the CocoVM
-    /// manager's `launch_machine` ,
+    /// manager's `launch_machine`,
     /// which builds VMs from inside `ManagerApp::update` where no
     /// `CreationContext` exists at all, and the `ui_tests` harness, which
     /// builds a `CocoApp` directly with no `CreationContext` either.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         config: MachineConfig,
         rom: Box<[u8]>,
         rom_source: ROMSource,
-        cart_path: Option<PathBuf>,
-        disk_paths: [Option<PathBuf>; UI_DRIVES],
-        vhd_paths: [Option<PathBuf>; UI_DRIVES],
-        dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
-        becker_enabled: bool,
-        hdbdos_mode: bool,
-        save_tape_wav: bool,
+        params: AppParams,
     ) -> Self {
+        let AppParams {
+            cart_path,
+            disk_paths,
+            vhd_paths,
+            dw_paths,
+            becker_enabled,
+            hdbdos_mode,
+            save_tape_wav,
+        } = params;
         // Lossy for a CoCo 3 TV (serialized as composite) — launch/boot
         // overwrite it with the definition's/CLI's real choice afterwards
         // (`Display::from_config`'s doc).
@@ -277,8 +307,6 @@ impl CocoApp {
                     app.insert_dw_disk(drive, path);
                 }
             }
-        } else {
-            app.dw_paths = std::array::from_fn(|_| None);
         }
         app
     }

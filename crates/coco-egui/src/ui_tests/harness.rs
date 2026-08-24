@@ -28,13 +28,7 @@ pub(super) fn boot_harness() -> AppHarness {
             MachineConfig::default(),
             rom,
             rom_source,
-            None,
-            [None, None],
-            [None, None],
-            std::array::from_fn(|_| None),
-            false,
-            false,
-            false,
+            AppParams::default(),
         )
     });
     // Room for the full Machine menu: egui only puts on-screen widgets in
