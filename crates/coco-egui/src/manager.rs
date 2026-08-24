@@ -214,9 +214,15 @@ const THUMBNAIL_FILE: &str = "thumbnail.png";
 /// File name of a suspended machine's frozen state (the save-states
 /// `.ccstate` format — `coco_core::snapshot` via `CocoApp::save_state_to`),
 /// inside its artifact directory. Its existence IS the persistent Suspended
-/// state: written by Suspend, deleted by Resume (resuming discards the
-/// frozen copy, VirtualBox-style) and by Stop (powering off a suspended
-/// machine discards it too).
+/// state: written by Suspend, consumed by Resume (deleted strictly before
+/// the machine is declared Running — resuming discards the frozen copy,
+/// VirtualBox-style) and by Stop (powering off a suspended machine discards
+/// it too). Neither lets the in-memory state contradict a file it failed to
+/// delete: a resume that cannot consume the file fails outright, and a stop
+/// that cannot discard it leaves the entry Suspended
+/// (`manager::lifecycle`) — otherwise [`ManagerApp::new`]'s
+/// existence check would resurrect a checkpoint the running session had
+/// already moved past.
 const SUSPEND_STATE_FILE: &str = "suspended.ccstate";
 
 /// `<artifacts_root>/<slug>/suspended.ccstate`.

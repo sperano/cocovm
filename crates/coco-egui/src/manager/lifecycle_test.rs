@@ -13,6 +13,8 @@ use coco_core::MachineConfig;
 
 use super::*;
 use crate::machine_def::tests::TempDir;
+#[cfg(unix)]
+use crate::save_state::tests::ReadOnly;
 
 /// A minimal CoCo 3 definition, mirroring `launch_test.rs`'s `base_def`.
 fn base_def() -> machine_def::MachineDef {
@@ -336,5 +338,226 @@ fn cold_resume_does_not_add_a_second_start() {
     assert_eq!(
         manager.entries[0].def.stats.starts, 1,
         "a cold resume (relaunch + restore) must not be counted as a fresh start"
+    );
+}
+
+/// Vikunja #178: `resume_vm` must consume `suspended.ccstate` *before*
+/// declaring the machine Running — startup classifies Suspended solely by
+/// that file's existence, so a Running entry with the file still on disk
+/// would let the next quit or crash resurrect the stale checkpoint over the
+/// newer session. With deletion injected to fail (read-only artifact dir —
+/// unix permission semantics, hence the cfg), the resume itself must fail:
+/// entry still Suspended, its VM still paused in place, the error surfaced,
+/// the checkpoint kept. A simulated restart then re-seeds Suspended — a
+/// *consistent* classification, because the failed resume never let the
+/// machine run past the checkpoint — and once the directory is writable
+/// again the same resume succeeds and consumes the file.
+#[cfg(unix)]
+#[test]
+fn failed_checkpoint_cleanup_fails_the_resume_and_survives_restart() {
+    let machines_dir = TempDir::new("lifecycle-cleanup-fail-machines");
+    let artifacts_root = TempDir::new("lifecycle-cleanup-fail-artifacts");
+    let slug = "lifecycle-cleanup-fail";
+    let mut manager = test_manager(machines_dir.path(), artifacts_root.path(), slug, base_def());
+
+    manager.start_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    manager.suspend_vm(0);
+    assert!(
+        manager.entries[0].suspended,
+        "suspend should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+
+    let state_file = suspend_state_path(artifacts_root.path(), slug);
+    let artifact_dir = artifacts_root.path().join(slug);
+    {
+        let _read_only = ReadOnly::new(&artifact_dir);
+        manager.resume_vm(0);
+    }
+
+    let entry = &manager.entries[0];
+    assert!(
+        entry.suspended,
+        "a resume that cannot consume the checkpoint must fail and stay Suspended"
+    );
+    assert!(
+        !entry.is_running(),
+        "the entry must not read Running while the checkpoint file persists"
+    );
+    assert!(
+        !entry
+            .vm
+            .as_ref()
+            .expect("a failed warm resume keeps the paused VM")
+            .is_running(),
+        "the VM itself must stay paused"
+    );
+    assert!(
+        entry.launch_error.is_some(),
+        "the cleanup failure must be reported"
+    );
+    assert!(
+        state_file.is_file(),
+        "the checkpoint must survive the failed resume — it is still the truth"
+    );
+
+    // Simulated restart: a fresh manager over the same directories re-seeds
+    // Suspended from the still-present file, matching the machine's real
+    // state (the failed resume never diverged from the checkpoint).
+    let (loaded_slug, loaded_def) = machine_def::load_all(machines_dir.path())
+        .expect("reload should succeed")
+        .remove(0);
+    let mut restarted = ManagerApp::new(
+        None,
+        Some(machines_dir.path().to_path_buf()),
+        Some(artifacts_root.path().to_path_buf()),
+        vec![MachineEntry::new(loaded_slug, loaded_def)],
+    );
+    assert!(
+        restarted.entries[0].suspended,
+        "restart must re-seed Suspended from the still-present checkpoint"
+    );
+
+    restarted.resume_vm(0);
+    assert!(
+        !restarted.entries[0].suspended,
+        "resume should succeed once the checkpoint can be consumed: {:?}",
+        restarted.entries[0].launch_error
+    );
+    assert!(
+        restarted.entries[0].is_running(),
+        "the resumed machine should be Running"
+    );
+    assert!(
+        !state_file.exists(),
+        "a successful resume consumes the checkpoint"
+    );
+}
+
+/// The cold-relaunch shape of the same #178 guard: with the VM object gone,
+/// a resume that restores the checkpoint but then cannot consume the file
+/// must drop the just-restored VM again and stay Suspended — otherwise a VM
+/// window would sit open on a machine whose on-disk record contradicts it.
+#[cfg(unix)]
+#[test]
+fn cold_resume_with_failed_cleanup_drops_the_vm_and_stays_suspended() {
+    let machines_dir = TempDir::new("lifecycle-cold-cleanup-fail-machines");
+    let artifacts_root = TempDir::new("lifecycle-cold-cleanup-fail-artifacts");
+    let slug = "lifecycle-cold-cleanup-fail";
+    let mut manager = test_manager(machines_dir.path(), artifacts_root.path(), slug, base_def());
+
+    manager.start_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    manager.suspend_vm(0);
+    assert!(
+        manager.entries[0].suspended,
+        "suspend should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    manager.entries[0].vm = None; // window closed while suspended
+
+    let state_file = suspend_state_path(artifacts_root.path(), slug);
+    let artifact_dir = artifacts_root.path().join(slug);
+    {
+        // Read stays allowed (the restore must succeed first); only the
+        // delete fails.
+        let _read_only = ReadOnly::new(&artifact_dir);
+        manager.resume_vm(0);
+    }
+
+    let entry = &manager.entries[0];
+    assert!(
+        entry.suspended,
+        "a cold resume that cannot consume the checkpoint must stay Suspended"
+    );
+    assert!(
+        entry.vm.is_none(),
+        "the just-restored VM must be dropped again, back to window-closed Suspended"
+    );
+    assert!(
+        entry.launch_error.is_some(),
+        "the cleanup failure must be reported"
+    );
+    assert!(
+        state_file.is_file(),
+        "the checkpoint must survive the failed resume"
+    );
+}
+
+/// Stop on a Suspended machine discards the checkpoint; when the discard
+/// itself fails the entry must stay Suspended with the failure surfaced —
+/// the file is what startup re-reads, so clearing the flag anyway would
+/// show Powered Off now only to resurrect Suspended on the next launch.
+/// The row keeps its suspend-time preview too (it still draws as
+/// Suspended), and once the discard can succeed a second Stop powers off
+/// cleanly: flag down, error cleared, both artifact files gone.
+#[cfg(unix)]
+#[test]
+fn stop_that_cannot_discard_the_checkpoint_stays_suspended() {
+    let machines_dir = TempDir::new("lifecycle-stop-discard-fail-machines");
+    let artifacts_root = TempDir::new("lifecycle-stop-discard-fail-artifacts");
+    let slug = "lifecycle-stop-discard-fail";
+    let mut manager = test_manager(machines_dir.path(), artifacts_root.path(), slug, base_def());
+
+    manager.start_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    manager.suspend_vm(0);
+    assert!(
+        manager.entries[0].suspended,
+        "suspend should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+
+    let state_file = suspend_state_path(artifacts_root.path(), slug);
+    let artifact_dir = artifacts_root.path().join(slug);
+    {
+        let _read_only = ReadOnly::new(&artifact_dir);
+        manager.stop_vm(0);
+    }
+
+    let thumbnail_file = artifact_dir.join("thumbnail.png");
+    let entry = &manager.entries[0];
+    assert!(
+        entry.suspended,
+        "a stop that cannot discard the checkpoint must leave the entry Suspended"
+    );
+    assert!(entry.vm.is_none(), "stop still drops the VM object");
+    assert!(
+        entry.launch_error.is_some(),
+        "the discard failure must be reported"
+    );
+    assert!(
+        state_file.is_file(),
+        "the checkpoint must survive the failed discard"
+    );
+    assert!(
+        thumbnail_file.is_file(),
+        "a row that stays Suspended keeps its suspend-time preview"
+    );
+
+    // With the directory writable again the same Stop powers off cleanly.
+    manager.stop_vm(0);
+    let entry = &manager.entries[0];
+    assert!(!entry.suspended, "the retried stop should power off");
+    assert!(
+        entry.launch_error.is_none(),
+        "a fully successful stop clears the error, like the other transports"
+    );
+    assert!(
+        !state_file.exists() && !thumbnail_file.exists(),
+        "powering off discards both artifact files"
     );
 }

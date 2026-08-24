@@ -216,6 +216,7 @@ impl ManagerApp {
                 .clicked()
             {
                 self.stop_vm(i);
+                self.select_row_on_error(i);
                 ui.close();
             }
             ui.separator();
