@@ -74,9 +74,10 @@ notice requirement.
   repo or the assets tarball; whenever it ships or is rendered in-app,
   this credit must also be shown to the user (e.g. the About window).
 
-## Local, git-ignored assets (not distributed)
+## Local assets (not distributed with the repository)
 
-- `roms/` — copyrighted Tandy/Microsoft ROM images (`coco3.rom`, `disk11.rom`).
-- `docs/*.pdf` — copyrighted reference PDFs.
-
-Both are excluded via `.gitignore`.
+- `~/.local/share/cocovm/roms/` — copyrighted Tandy/Microsoft ROM images
+  (`coco3.rom`, `disk11.rom`, …), installed outside the repo by the app's
+  first-run asset download.
+- `docs/*.pdf` — copyrighted reference PDFs, excluded via `.gitignore`
+  (as is any repo-root `roms/`, as a safety net).

@@ -9,5 +9,6 @@ Virtual ][-level polish.
   per-machine suspend/resume
 - `book/` — a 16-chapter course that builds the emulator from scratch
 
-Run `cargo run` to open the VM manager. ROM images are not included; place
-`coco3.rom` in `./roms/`.
+Run `cargo run` to open the VM manager. ROM images are not included in the
+repository; the manager downloads them on first launch into its data
+directory (`~/.local/share/cocovm/roms/` on Linux/macOS).
