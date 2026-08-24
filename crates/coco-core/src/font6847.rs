@@ -21,10 +21,10 @@
 //! corresponding inverse-video uppercase glyph regardless of any PIA1 bit
 //! (MAME's `character_map` ctor gates `is_lower_case` on `is_mc6847t1`).
 //!
-//! SOURCE / LICENSING: both tables are taken from MAME's `mc6847.cpp`
-//! (`vdg_fontdata8x12` and `vdg_t1_fontdata8x12`, GPL-2.0+). They are
-//! included here pending a licensing decision for the project — see the note
-//! in the module tree. Do not ship as-is without resolving the license.
+//! SOURCE / LICENSING: both tables are verbatim from MAME's
+//! `src/devices/video/mc6847.cpp` (`vdg_fontdata8x12` and
+//! `vdg_t1_fontdata8x12`), BSD-3-Clause, copyright Nathan Woods — see
+//! NOTICE.md for the full attribution and license text.
 
 /// The original MC6847's internal character generator: 64 characters, 12 rows
 /// each, VDG internal-code order ($00 = '@'). Glyphs occupy rows 3-10 of the

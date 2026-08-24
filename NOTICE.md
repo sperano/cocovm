@@ -21,19 +21,24 @@ permissive code may be combined into a GPL work), never the reverse — keep
 
 ## Bundled third-party material
 
-Both character-generator bitmap tables were copied from **MAME**. The source
-files are per-file licensed **BSD-3-Clause**, copyright **Nathan Woods**
-(verified against the file headers 2026-07-01 — an earlier version of this
-notice recorded them as GPL-2.0-or-later, which was wrong). BSD-3-Clause is
-GPL-compatible; the attribution below satisfies its notice requirement.
+The character-generator font tables and composite palette tables were copied
+from **MAME**. The source files are per-file licensed **BSD-3-Clause**,
+copyright **Nathan Woods** (verified against the file headers 2026-07-01 — an
+earlier version of this notice recorded them as GPL-2.0-or-later, which was
+wrong). BSD-3-Clause is GPL-compatible; the attribution below satisfies its
+notice requirement.
 
-- **MC6847 font (`crates/coco-core/src/font6847.rs`)** — `vdg_t1_fontdata8x12`
-  from `src/devices/video/mc6847.cpp`.
-- **GIME hi-res font (`crates/coco-core/src/font_gime.rs`)** —
-  `gime_device::hires_font` from `src/mame/trs/gime.cpp`.
-- **Composite-monitor palette tables (`crates/coco-core/src/gime.rs`,
+- **MC6847 fonts (`crates/coco-core/src/font6847.rs`)** — `vdg_fontdata8x12`
+  and `vdg_t1_fontdata8x12` from `src/devices/video/mc6847.cpp`.
+- **GIME fonts (`crates/coco-core/src/font_gime.rs`)** —
+  `gime_device::hires_font` and `gime_device::lowres_font` from
+  `src/mame/trs/gime.cpp`.
+- **Composite-monitor palette tables (`crates/coco-core/src/gime/palette.rs`,
   `COMPOSITE_PALETTE` / `COMPOSITE_PALETTE_180`)** —
   `gime_device::get_composite_color` from `src/mame/trs/gime.cpp`.
+- **VDG fixed palette (`crates/coco-core/src/video.rs`,
+  `VDG_FIXED_PALETTE`)** — `mc6847_base_device::s_palette` from
+  `src/devices/video/mc6847.cpp`.
 
 > Copyright (c) Nathan Woods (MAME project).
 >

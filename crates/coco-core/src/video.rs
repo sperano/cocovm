@@ -62,7 +62,9 @@ pub const PALETTE_LEN: usize = 16;
 
 /// Palette index of the eight VDG colours (0-7), the 2-colour graphics table
 /// (8-11: black/green/black/buff), and the two alphanumeric colour sets
-/// (12-13 green, 14-15 orange) — MAME `mc6847.cpp` `s_palette`.
+/// (12-13 green, 14-15 orange) — RGB values verbatim from MAME
+/// `src/devices/video/mc6847.cpp` `s_palette` (BSD-3-Clause, Nathan Woods;
+/// see NOTICE.md).
 pub const VDG_FIXED_PALETTE: [[u8; 4]; PALETTE_LEN] = [
     [0x30, 0xd2, 0x00, 0xFF], // 0  GREEN
     [0xc1, 0xe5, 0x00, 0xFF], // 1  YELLOW

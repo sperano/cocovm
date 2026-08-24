@@ -318,8 +318,7 @@ This is where "start with the GIME" actually means a lot of surface area. Split 
     with bit 6 set, so the prompt is **black glyphs on green** (`#00FF00`) with a
     black border — verified against a MAME screenshot. CSS orange set, semigraphics
     (bit 7), and native GIME text are TODO. FONT LICENSING: `src/font6847.rs` is
-    MAME's GPL-2.0+ `vdg_t1_fontdata8x12`, pending a licensing decision — see
-    `NOTICE.md`.
+    MAME's `vdg_t1_fontdata8x12` (BSD-3-Clause, Nathan Woods) — see `NOTICE.md`.
 
 Render to an RGBA `framebuffer: Vec<u8>` sized to the max active area (border
 included). Per-scanline write into it; at VSYNC upload as an `egui::ColorImage` →
