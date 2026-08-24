@@ -4,7 +4,7 @@ use super::*;
 use crate::machine_def::tests::TempDir;
 use crate::rom_load::COCO3_ROM_FILE;
 use crate::save_state::tests::ReadOnly;
-use crate::{ROMSource, installed_roms_dir};
+use crate::{AppParams, ROMSource, installed_roms_dir};
 use coco_core::{MachineConfig, fdc};
 use eframe::App;
 
@@ -113,13 +113,7 @@ fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
         MachineConfig::default(),
         rom,
         ROMSource::File(rom_path),
-        None,
-        [None, None],
-        [None, None],
-        std::array::from_fn(|_| None),
-        false,
-        false,
-        false,
+        AppParams::default(),
     );
     vm.insert_disk(0, disk_path.to_path_buf());
     assert!(

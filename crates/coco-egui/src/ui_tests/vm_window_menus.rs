@@ -530,13 +530,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
             MachineConfig::default(),
             rom,
             rom_source,
-            None,
-            [None, None],
-            [None, None],
-            std::array::from_fn(|_| None),
-            false,
-            false,
-            false,
+            AppParams::default(),
         )
     });
     // Drive the app-glue directly (the menu item's click handler opens a

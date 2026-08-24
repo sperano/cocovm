@@ -49,7 +49,7 @@ mod widgets;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-pub(crate) use app::{CocoApp, PendingDiskAction};
+pub(crate) use app::{AppParams, CocoApp, PendingDiskAction};
 use chrono::{Datelike, Timelike};
 use clap::Parser;
 use cli::Cli;
