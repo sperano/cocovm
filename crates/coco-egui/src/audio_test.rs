@@ -110,3 +110,34 @@ fn underrun_decay_reaches_floor_within_fade_window() {
     }
     assert!(held <= UNDERRUN_FADE_FLOOR * 1.01);
 }
+
+#[test]
+fn reset_empties_ring_and_returns_filters_to_default() {
+    // 62.9 kHz source into a 48 kHz device: decimating, so the low-pass is
+    // designed too. A sign-alternating signal (not a DC step, which the DC
+    // blocker would have decayed to ~0 by now) leaves every filter holding
+    // real, non-negligible history.
+    let mut out = AudioOutput::headless(48_000.0);
+    let alternating = (0..4000).map(|i| if i % 2 == 0 { [1.0, -1.0] } else { [-1.0, 1.0] });
+    out.push_samples(alternating, 62_866.0);
+    assert!(out.queued_frames() > 0, "pipeline must be prefilled");
+    assert!(out.lowpass.is_some(), "decimating path designs a low-pass");
+    let history = out.dc[0].prev_out.abs();
+    assert!(
+        history > 1e-3,
+        "DC blocker must carry history, got {history}"
+    );
+    assert_ne!(out.resampler.prev, [0.0; 2]);
+    assert!(out.resampler.pos > 0.0);
+
+    out.reset();
+
+    assert_eq!(out.queued_frames(), 0);
+    assert!(out.lowpass.is_none());
+    assert_eq!(out.lowpass_rate, 0.0);
+    for ch in out.dc {
+        assert_eq!((ch.prev_in, ch.prev_out), (0.0, 0.0));
+    }
+    assert_eq!(out.resampler.pos, 0.0);
+    assert_eq!(out.resampler.prev, [0.0; 2]);
+}

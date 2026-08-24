@@ -4,6 +4,12 @@
 use crate::*;
 
 impl CocoApp {
+
+    pub(crate) fn power_cycle(&mut self) {
+        self.machine.power_cycle();
+        self.audio.reset();
+    }
+
     /// Emulated fields owed for this update, from wall-clock time at the
     /// machine's field rate (60 Hz NTSC / 50 Hz PAL). Also accumulates
     /// [`Self::total_runtime`] from the same [`MAX_FRAME_DT`]-clamped

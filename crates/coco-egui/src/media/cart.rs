@@ -24,7 +24,7 @@ impl CocoApp {
                     return;
                 }
                 self.machine.insert_cartridge(pak);
-                self.machine.power_cycle();
+                self.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
@@ -57,7 +57,7 @@ impl CocoApp {
                     return;
                 }
                 self.machine.insert_cartridge(cart);
-                self.machine.power_cycle();
+                self.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
@@ -89,7 +89,7 @@ impl CocoApp {
                     return;
                 }
                 self.machine.insert_cartridge(cart);
-                self.machine.power_cycle();
+                self.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
                 self.mpi = None; // plugging straight into the port removes any MPI
@@ -109,7 +109,7 @@ impl CocoApp {
             return;
         }
         self.machine.eject_cartridge();
-        self.machine.power_cycle();
+        self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
@@ -138,7 +138,7 @@ impl CocoApp {
             None
         };
         self.machine.insert_cartridge(pak);
-        self.machine.power_cycle();
+        self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None;
@@ -200,7 +200,7 @@ impl CocoApp {
             return;
         }
         self.machine.insert_cartridge(SoundSpeechCartridge::new());
-        self.machine.power_cycle();
+        self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None; // plugging straight into the port removes any MPI
@@ -219,7 +219,7 @@ impl CocoApp {
         }
         self.machine
             .insert_cartridge(MultiPak::new(DEFAULT_MPI_SWITCH_SLOT));
-        self.machine.power_cycle();
+        self.power_cycle();
         self.mpi = Some(MPIState {
             switch: DEFAULT_MPI_SWITCH_SLOT,
             slots: std::array::from_fn(|_| MPISlot::Empty),
@@ -240,7 +240,7 @@ impl CocoApp {
             return;
         }
         self.machine.eject_cartridge();
-        self.machine.power_cycle();
+        self.power_cycle();
         self.mpi = None;
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -298,7 +298,7 @@ impl CocoApp {
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MPISlot::ROMPak(path);
                 }
-                self.machine.power_cycle();
+                self.power_cycle();
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -328,7 +328,7 @@ impl CocoApp {
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MPISlot::GamesMasterCartridge(path);
                 }
-                self.machine.power_cycle();
+                self.power_cycle();
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -359,7 +359,7 @@ impl CocoApp {
                 if let Some(mpi) = &mut self.mpi {
                     mpi.slots[slot] = MPISlot::Orch90(path);
                 }
-                self.machine.power_cycle();
+                self.power_cycle();
             }
             Err(e) => {
                 self.cart_error = Some(format!("{}: {e}", path.display()));
@@ -398,7 +398,7 @@ impl CocoApp {
             mpi.slots[slot] = MPISlot::FD502;
         }
         self.disk_paths = [None, None];
-        self.machine.power_cycle();
+        self.power_cycle();
     }
 
     /// Insert the Sound/Speech Cartridge into MPI `slot`. Mirrors
@@ -415,7 +415,7 @@ impl CocoApp {
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::SoundSpeechCartridge;
         }
-        self.machine.power_cycle();
+        self.power_cycle();
     }
 
     /// Eject whatever is plugged into MPI `slot`, restoring its empty slot.
@@ -431,7 +431,7 @@ impl CocoApp {
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::Empty;
         }
-        self.machine.power_cycle();
+        self.power_cycle();
     }
 
     /// Move the MPI's front-panel switch to `slot`. A running program's own
@@ -458,7 +458,7 @@ impl CocoApp {
         }
         self.machine
             .insert_cartridge(DistoRTC::new(host_time_source()));
-        self.machine.power_cycle();
+        self.power_cycle();
         self.rtc_direct = true;
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -468,7 +468,7 @@ impl CocoApp {
     /// Eject a directly-plugged Disto RTC, restoring the empty port.
     pub(crate) fn eject_rtc(&mut self) {
         self.machine.eject_cartridge();
-        self.machine.power_cycle();
+        self.power_cycle();
         self.rtc_direct = false;
     }
 
@@ -491,7 +491,7 @@ impl CocoApp {
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::DistoRTC;
         }
-        self.machine.power_cycle();
+        self.power_cycle();
     }
 }
 

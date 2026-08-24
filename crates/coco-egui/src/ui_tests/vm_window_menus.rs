@@ -438,6 +438,42 @@ fn save_state_then_load_state_round_trip() {
     harness.get_by_label_contains("State loaded");
 }
 
+/// A load must not play out the pre-load machine's sound: whatever
+/// `AudioOutput` still had queued (and every filter's memory of it) is
+/// dropped by `load_state_from`, so the first audio heard after a restore
+/// is the restored machine's own.
+#[test]
+fn load_state_drops_queued_audio_from_before_the_load() {
+    let mut harness = boot_harness();
+    let dir = TempDir::new("load-state-audio");
+    let path = dir.path().join("slot.ccstate");
+    harness
+        .state_mut()
+        .save_state_to(&path)
+        .unwrap_or_else(|e| panic!("save_state_to failed: {e}"));
+
+    // Stand in for the real device (absent on CI) with a headless
+    // pipeline and let a few frames of emulation fill it.
+    harness.state_mut().audio = audio::AudioOutput::headless(48_000.0);
+    for _ in 0..8 {
+        harness.step();
+    }
+    assert!(
+        harness.state().audio.queued_frames() > 0,
+        "running frames must queue audio in the headless pipeline"
+    );
+
+    harness
+        .state_mut()
+        .load_state_from(&path)
+        .unwrap_or_else(|e| panic!("load_state_from failed: {e}"));
+    assert_eq!(
+        harness.state().audio.queued_frames(),
+        0,
+        "restore must drop every frame queued before the load"
+    );
+}
+
 #[test]
 fn cartridge_error_dialog_dismisses_with_ok() {
     let mut harness = boot_harness();

@@ -241,7 +241,10 @@ impl CocoApp {
         // (`Self::step_emulation`'s own doc). `Machine.audio_buffer` is
         // `#[serde(skip)]`, rebuilt empty by `Machine::after_restore`
         // (already run inside `snapshot::restore`), so there's no stale
-        // backlog on the core side to drop here.
+        // backlog on the core side to drop here — but the FRONTEND side
+        // still holds up to `RING_BUFFER_SECS` of the pre-load machine's
+        // sound plus its filter history, which `AudioOutput::reset` drops.
+        self.audio.reset();
         self.last_update = None;
         self.field_debt = 0.0;
         self.type_ahead.clear();
