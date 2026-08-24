@@ -4,13 +4,7 @@
 use crate::*;
 
 impl CocoApp {
-    /// Power-cycle the machine ([`coco_core::Machine::power_cycle`]) and
-    /// forget the frontend's audio backlog and filter history with it
-    /// ([`audio::AudioOutput::reset`]): the cold start is a discontinuity
-    /// in the speaker signal, and the ring buffer would otherwise play out
-    /// the previous machine's last quarter second over the new one's boot.
-    /// The only way the frontend should power-cycle — a bare
-    /// `self.machine.power_cycle()` leaves the audio side stale.
+
     pub(crate) fn power_cycle(&mut self) {
         self.machine.power_cycle();
         self.audio.reset();
