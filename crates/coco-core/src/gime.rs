@@ -65,7 +65,8 @@ pub mod init0 {
 
 /// INIT1 ($FF91) bit assignments (SEB Unravelled II).
 pub mod init1 {
-    /// Timer input select: 1 = ~70 ns (14.318 MHz), 0 = ~63.5 µs (horizontal rate).
+    /// Timer input select: 1 = 279.365 ns (3.579545 MHz; verified against MAME
+    /// `gime.cpp`), 0 = ~63.5 µs (horizontal rate).
     pub const TINS: u8 = 0x20;
     /// Task register select: 0 = $FFA0 set, 1 = $FFA8 set.
     pub const TR: u8 = 0x01;
