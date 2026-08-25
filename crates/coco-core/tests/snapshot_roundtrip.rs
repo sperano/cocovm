@@ -75,7 +75,7 @@ const LOCKSTEP_STEPS: u32 = 50_000;
 fn snapshot_round_trip_continues_trace_identically() {
     let mut original = boot_machine();
     for _ in 0..WARMUP_STEPS {
-        original.step();
+        original.step_cpu_raw();
     }
 
     let mut bytes = Vec::new();
@@ -108,8 +108,8 @@ fn snapshot_round_trip_continues_trace_identically() {
 
     // Lockstep both machines and compare full CPU state after every step.
     for i in 0..LOCKSTEP_STEPS {
-        original.step();
-        restored.step();
+        original.step_cpu_raw();
+        restored.step_cpu_raw();
         assert_eq!(
             CpuSnapshot::of(&original.cpu),
             CpuSnapshot::of(&restored.cpu),

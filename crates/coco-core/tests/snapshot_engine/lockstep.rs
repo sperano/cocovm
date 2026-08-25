@@ -58,10 +58,10 @@ const LOCKSTEP_STEPS: u32 = 1_000_000;
 /// Deliberately driven by `Machine::step_instruction` — the full per-scanline
 /// pipeline (GIME timer ticks, PIA field-sync IRQs, audio-event flushing,
 /// cartridge ticking, and the resumable `line`/`line_cycles_spent` state) —
-/// not the bare CPU-only `Machine::step`. The snapshot lands mid-field at an
-/// arbitrary instruction boundary, which is exactly what the frontend's
-/// save-while-running does, and any of that loop state left out of the serde
-/// tree diverges the IRQ timing within a field or two.
+/// not the bare CPU-only `Machine::step_cpu_raw`. The snapshot lands
+/// mid-field at an arbitrary instruction boundary, which is exactly what
+/// the frontend's save-while-running does, and any of that loop state left
+/// out of the serde tree diverges the IRQ timing within a field or two.
 #[test]
 fn full_round_trip_continues_trace_identically() {
     let mut original = boot_machine();
