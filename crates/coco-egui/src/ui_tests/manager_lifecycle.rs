@@ -26,6 +26,7 @@ fn launch_honors_ui_settings() {
     def.hardware.display = Some(machine_def::DisplayDTO::TVBW);
     def.ui.tv_scanline = 80;
     def.ui.tv_noise = 9;
+    def.ui.tv_overscan = 7;
 
     let vm = launch_machine(&def, "ui-prefs").expect("a default CoCo 3 definition launches");
     assert!(!vm.aspect_correct, "[ui].aspect_correct must reach the VM");
@@ -45,6 +46,7 @@ fn launch_honors_ui_settings() {
     );
     assert_eq!(vm.tv.scanline_pct, 80, "[ui].tv_scanline must reach the VM");
     assert_eq!(vm.tv.noise_pct, 9, "[ui].tv_noise must reach the VM");
+    assert_eq!(vm.tv.overscan_pct, 7, "[ui].tv_overscan must reach the VM");
 }
 
 /// The three-state round trip through the actual toolbar transport buttons:

@@ -34,6 +34,7 @@ const UI_KEYS: &[&str] = &[
     "joy_right",
     "tv_scanline",
     "tv_noise",
+    "tv_overscan",
 ];
 const STATS_KEYS: &[&str] = &["runtime_secs", "starts"];
 

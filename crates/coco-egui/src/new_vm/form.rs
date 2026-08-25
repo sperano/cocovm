@@ -87,6 +87,17 @@ impl MachineForm {
         );
         ui.end_row();
 
+        ui.label(egui::RichText::new("Overscan").size(font));
+        ui.add_enabled(
+            is_tv,
+            egui::Slider::new(
+                &mut self.tv.overscan_pct,
+                0..=crate::display::MAX_OVERSCAN_PCT,
+            )
+            .suffix("%"),
+        );
+        ui.end_row();
+
         ui.label("");
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect correction");
         ui.end_row();

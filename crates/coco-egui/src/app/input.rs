@@ -182,31 +182,40 @@ impl CocoApp {
     /// [`Machine::active_rect`]. Must run before `step_emulation` re-renders, or
     /// `fb_width`/`fb_height` desync from the one-frame-stale `display_rect`.
     fn active_screen_rect(&self) -> egui::Rect {
+        let uv = crate::display::texture_uv(self.display, self.tv);
         scale_active_rect(
             self.machine.active_rect(),
             self.machine.fb_width,
             self.machine.fb_height,
             self.display_rect,
+            uv,
         )
     }
 }
 
-/// Scale a framebuffer-pixel [`coco_core::ActiveRect`] into the on-screen `display` rect.
-/// Correct for any per-axis linear stretch; falls back to `display` if the framebuffer is
-/// zero-sized.
+/// Scale a framebuffer-pixel [`coco_core::ActiveRect`] into the on-screen
+/// `display` rect through the normalized source `uv` crop. Correct for any
+/// per-axis linear stretch; falls back to `display` for degenerate inputs.
 fn scale_active_rect(
     active: coco_core::ActiveRect,
     fb_w: u32,
     fb_h: u32,
     display: egui::Rect,
+    uv: egui::Rect,
 ) -> egui::Rect {
-    if fb_w == 0 || fb_h == 0 {
+    if fb_w == 0 || fb_h == 0 || uv.width() <= 0.0 || uv.height() <= 0.0 {
         return display;
     }
-    let sx = display.width() / fb_w as f32;
-    let sy = display.height() / fb_h as f32;
+    let source_size = egui::vec2(fb_w as f32 * uv.width(), fb_h as f32 * uv.height());
+    let source_origin = egui::pos2(fb_w as f32 * uv.min.x, fb_h as f32 * uv.min.y);
+    let sx = display.width() / source_size.x;
+    let sy = display.height() / source_size.y;
     egui::Rect::from_min_size(
-        display.left_top() + egui::vec2(active.x as f32 * sx, active.y as f32 * sy),
+        display.left_top()
+            + egui::vec2(
+                (active.x as f32 - source_origin.x) * sx,
+                (active.y as f32 - source_origin.y) * sy,
+            ),
         egui::vec2(active.width as f32 * sx, active.height as f32 * sy),
     )
 }

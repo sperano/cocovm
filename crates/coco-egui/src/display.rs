@@ -183,9 +183,14 @@ pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
 /// (`coco_core::video::BYTES_PER_PIXEL`).
 const PX: usize = 4;
 
-/// Upper bound of every [`TVSettings`] percentage knob — slider ranges and
-/// the clamp loaded values pass through ([`TVSettings::clamped`]).
+/// Upper bound of the scanline and RF-noise percentage knobs — slider ranges
+/// and the clamp loaded values pass through ([`TVSettings::clamped`]).
 pub(crate) const MAX_PCT: u8 = 100;
+
+/// Upper bound of the TV overscan crop on each texture edge. Keeping this
+/// below 50% guarantees a non-empty centered UV rectangle even for values
+/// loaded from a hand-edited definition.
+pub(crate) const MAX_OVERSCAN_PCT: u8 = 10;
 
 /// Default [`TVSettings::scanline_pct`]: the strength the look was tuned
 /// at (the dark half keeps 65% of the line's linear-light brightness).
@@ -194,6 +199,10 @@ const DEFAULT_SCANLINE_PCT: u8 = 35;
 /// Default [`TVSettings::noise_pct`]: a whisper of snow — present enough
 /// to feel like an antenna feed, not enough to obscure anything.
 const DEFAULT_NOISE_PCT: u8 = 5;
+
+/// Default TV overscan crop on each edge. A 5% crop shows 90% of each
+/// dimension, matching the portion of the full signal a typical CRT exposed.
+const DEFAULT_OVERSCAN_PCT: u8 = 5;
 
 /// User-adjustable knobs of the TV chain — a UI preference riding along
 /// with [`Display`] (display-menu sliders live, `[ui]` keys persisted).
@@ -209,15 +218,20 @@ pub(crate) struct TVSettings {
     /// none (0, pass skipped) to a blizzard of snow (100 ≈ ±[`NOISE_FULL`]
     /// levels). See [`noise_rows`].
     pub(crate) noise_pct: u8,
+    /// Centered display-time crop on each edge, `0..=`[`MAX_OVERSCAN_PCT`]:
+    /// 0 exposes the complete blanking-to-blanking signal; 5 shows the
+    /// CRT-like middle 90%.
+    pub(crate) overscan_pct: u8,
 }
 
 impl TVSettings {
-    /// Both knobs clamped to `0..=`[`MAX_PCT`] — enforces the range for
-    /// values from outside the sliders (a hand-edited `tv_scanline = 250`).
+    /// Knobs clamped to their slider ranges — enforces values loaded from a
+    /// hand-edited definition (for example, `tv_scanline = 250`).
     pub(crate) fn clamped(self) -> Self {
         Self {
             scanline_pct: self.scanline_pct.min(MAX_PCT),
             noise_pct: self.noise_pct.min(MAX_PCT),
+            overscan_pct: self.overscan_pct.min(MAX_OVERSCAN_PCT),
         }
     }
 }
@@ -227,8 +241,22 @@ impl Default for TVSettings {
         Self {
             scanline_pct: DEFAULT_SCANLINE_PCT,
             noise_pct: DEFAULT_NOISE_PCT,
+            overscan_pct: DEFAULT_OVERSCAN_PCT,
         }
     }
+}
+
+/// Normalized texture coordinates exposed by `display`. Monitors show the
+/// complete signal; TVs crop the same percentage from every edge, preserving
+/// the source aspect ratio without touching framebuffer dimensions or pixels.
+pub(crate) fn texture_uv(display: Display, settings: TVSettings) -> egui::Rect {
+    let edge = match display {
+        Display::Monitor(_) => 0.0,
+        Display::TV(_) => {
+            f32::from(settings.overscan_pct.min(MAX_OVERSCAN_PCT)) / f32::from(MAX_PCT)
+        }
+    };
+    egui::Rect::from_min_max(egui::pos2(edge, edge), egui::pos2(1.0 - edge, 1.0 - edge))
 }
 
 /// Dark-half per-byte multiplier, ×256 (`out = in · scale >> 8`). Pure

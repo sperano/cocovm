@@ -70,6 +70,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     form.tv = crate::display::TVSettings {
         scanline_pct: def.ui.tv_scanline,
         noise_pct: def.ui.tv_noise,
+        overscan_pct: def.ui.tv_overscan,
     }
     .clamped();
     form.aspect_correct = def.ui.aspect_correct;
@@ -212,6 +213,7 @@ fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
     def.ui.aspect_correct = form.aspect_correct;
     def.ui.tv_scanline = form.tv.scanline_pct;
     def.ui.tv_noise = form.tv.noise_pct;
+    def.ui.tv_overscan = form.tv.overscan_pct;
     def.ui.joy_right = form.joy_sources[coco_core::joystick::RIGHT].into();
     def.ui.joy_left = form.joy_sources[coco_core::joystick::LEFT].into();
     def.ui.kb_mode = match form.kb_mode {
