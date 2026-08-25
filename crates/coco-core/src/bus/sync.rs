@@ -37,6 +37,13 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
+    /// Power-on: forget the sampled keyboard-line and CART* levels so an
+    /// input still asserted from before power-off fires on its first sample.
+    pub(crate) fn reset_edge_history(&mut self) {
+        self.kbd_line_low = false;
+        self.prev_cart_int = false;
+    }
+
     /// Sample the level-driven CART* interrupt ([`Cartridge::cart_interrupt`],
     /// e.g. the Deluxe RS-232's 6551 ACIA IRQ) and convert transitions into
     /// what the shared physical pin feeds: PIA1 CB1 sees the line level itself

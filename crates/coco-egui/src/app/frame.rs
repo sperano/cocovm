@@ -4,7 +4,7 @@
 use crate::*;
 
 impl CocoApp {
-
+    /// Power-cycle the core and drop the host-side audio it already emitted.
     pub(crate) fn power_cycle(&mut self) {
         self.machine.power_cycle();
         self.audio.reset();

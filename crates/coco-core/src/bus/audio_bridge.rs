@@ -41,6 +41,13 @@ impl SystemBus {
         crate::audio::mix(&inputs, cassette_bit, ay, generators)
     }
 
+    /// Power-on: drop queued events and re-latch the inputs from the reset
+    /// PIAs and cartridge.
+    pub(crate) fn reset_audio_latch(&mut self) {
+        self.audio_events.clear();
+        self.audio_inputs = self.snapshot_audio_inputs();
+    }
+
     /// Record a cycle-timestamped audio event if the write that just landed
     /// changed any latched audio input. Called on the PIA and
     /// cartridge-window write paths only, and cheap even there: one

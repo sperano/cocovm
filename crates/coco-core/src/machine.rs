@@ -286,6 +286,10 @@ impl Machine {
     /// state. The cartridge and cassette stay in their slots: this is what
     /// really happens when a cartridge is swapped on real hardware, which is
     /// only ever done machine-off.
+    ///
+    /// Survives: media, peripherals, input state, monitor cable, the
+    /// monotonic `SystemBus::cycle_clock`. Resets: RAM, GIME, SAM, PIAs, CPU,
+    /// field position, interrupt edge history, latched/queued/rendered audio.
     pub fn power_cycle(&mut self) {
         // Monitor type isn't GIME hardware state — it's which cable is
         // plugged into the back of the machine — so it survives a power
@@ -304,7 +308,19 @@ impl Machine {
         self.line = 0;
         self.line_cycles_spent = 0;
         self.line_budget = 0;
+        // `reset()` first: the re-latch below reads the reset cartridge.
         self.reset();
+        self.bus.reset_edge_history();
+        self.reset_audio_grid();
+    }
+
+    /// Power-on: re-latch inputs, drop queued events and undrained samples,
+    /// and start the next line at the (still monotonic) `cycle_clock`.
+    fn reset_audio_grid(&mut self) {
+        self.bus.reset_audio_latch();
+        self.audio_buffer.clear();
+        self.audio_line_start = self.bus.cycle_clock;
+        self.audio_line_inputs = self.bus.audio_inputs;
     }
 
     /// Plug a cartridge into the expansion port. Real cartridges are only
