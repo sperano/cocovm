@@ -3,6 +3,14 @@ for Virtual ][-level polish. Workspace: `crates/mc6809` (CPU),
 `crates/coco-core` (headless machine), `crates/coco-egui` (frontend + VM
 manager). `book/` is a 16-chapter course built from this codebase.
 
+## Vikunja task workflow
+
+- Always create a dedicated git worktree and branch before editing for a
+  Vikunja task. Never implement a Vikunja task directly in the primary
+  worktree or on `main`.
+- Finish every Vikunja task by creating a pull request.
+- Temporarily skip the book PR hooks when creating these pull requests.
+
 ## Local resources (copyrighted, present only on this machine)
 
 - `./docs/` — authoritative reference PDFs (6809/6309 instruction sets, MC6809
@@ -17,3 +25,5 @@ manager). `book/` is a 16-chapter course built from this codebase.
   (`ensure_assets`, `crates/coco-egui/src/startup.rs`); tests resolve them
   via `crates/test-assets`. There is no repo-root `roms/` directory — don't
   create one.
+- `~/code/mame/` — local MAME source checkout. Use it to verify device and
+  machine behavior instead of fetching MAME source from the web.
