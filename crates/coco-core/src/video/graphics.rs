@@ -1,14 +1,16 @@
 //! VDG resolution graphics (CoCo-compatible PMODE, `DESIGN.md` §6).
 //!
 //! All VDG graphics modes scan out into the same 256×192 active area as text, so
-//! lower-resolution modes are pixel-doubled to fill it. The horizontal decode (bytes
-//! per row, bits per pixel, colour set) comes from PIA1 $FF22 (A/G, GM2–0, CSS); the
-//! display base from the SAM page register; and the actual colours from the GIME
-//! palette (SEB Fig 13). The *vertical* cadence (how many RAM rows are fetched, and
-//! how many times each is repeated to fill the 192-line active area) instead comes
-//! from the SAM V0–V2 bits — see [`LEGACY_GFX_LINES_PER_ROW`]. Real hardware doesn't
-//! reconcile the two: if a program sets V and GM to a non-standard pairing, the
-//! vertical cadence follows V and the horizontal decode follows GM independently.
+//! lower-resolution modes are pixel-doubled to fill it. On real hardware the SAM's
+//! V0–V2 bits own pitch on *both* axes — bytes fetched per row and how many times
+//! each row is repeated to fill the 192-line active area (see
+//! [`LEGACY_GFX_LINES_PER_ROW`]) — while PIA1 $FF22 (A/G, GM2–0, CSS) only drives
+//! the VDG's own pixel decode (bits per pixel, colour set); the display base comes
+//! from the SAM page register, and colours from the GIME palette (SEB Fig 13). SAM
+//! can't see GM, so a mismatched V/GM pairing is physically possible. Our decode
+//! simplifies this by deriving bytes-per-row from GM, which matches hardware for
+//! every standard PMODE/V pairing but diverges on a mismatched one — see task 196
+//! for the fix.
 
 use super::{ACTIVE_H, ACTIVE_W, BORDER, BYTES_PER_PIXEL, FB_H, FB_W, paint_px};
 
@@ -65,10 +67,12 @@ pub struct VDGGraphicsMode {
 /// Mask for the 3-bit SAM V value (`V2:V1:V0`) passed to [`decode_vdg_graphics`].
 const SAM_VIDEO_MASK: u8 = 0x07;
 
-/// Decodes the VDG graphics mode: horizontal geometry (bytes/row, bpp,
-/// width) from PIA1 $FF22 GM2-0; vertical geometry (RAM rows, see
-/// [`LEGACY_GFX_LINES_PER_ROW`]) from SAM V0-V2, independently — a
-/// mismatched GM/V pairing is not reconciled, on hardware or here.
+/// Decodes the VDG graphics mode: bpp and logical width come from PIA1
+/// $FF22 GM2-0 (the real VDG pixel decode); bytes-per-row is also derived
+/// from GM2-0 here as a simplification (see the module doc) rather than
+/// hardware's SAM-driven pitch. Vertical geometry (RAM rows, see
+/// [`LEGACY_GFX_LINES_PER_ROW`]) comes from SAM V0-V2, independently — a
+/// mismatched GM/V pairing isn't reconciled, on hardware or here.
 pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VDGGraphicsMode {
     let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
     // (logical width, 4-colour?) for GM2..GM0 = 0..7.
