@@ -59,36 +59,7 @@ impl ManagerApp {
             .fill(fill)
             .inner_margin(ROW_MARGIN)
             .corner_radius(ROW_CORNER_RADIUS)
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    let content_height = row_content_height(ui);
-                    // Preview priority: live VM framebuffer, else a
-                    // window-closed Suspended machine's saved thumbnail,
-                    // else the black placeholder.
-                    let entry = &self.entries[i];
-                    let texture = entry
-                        .vm
-                        .as_deref()
-                        .and_then(CocoApp::framebuffer_texture)
-                        .or(entry.thumbnail.as_ref().filter(|_| entry.suspended));
-                    draw_row_thumbnail(ui, content_height, texture);
-
-                    let def = &self.entries[i].def;
-                    let config = def
-                        .to_machine_config()
-                        .expect("list entries are validated on load/save");
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(&def.name).strong());
-                        ui.label(format!(
-                            "{} · {}",
-                            crate::machine_label(config.variant),
-                            new_vm::ram_label(config.memory),
-                        ));
-                        ui.weak(vm_status_label(&self.entries[i]));
-                    });
-                });
-            })
+            .show(ui, |ui| self.draw_machine_row_content(ui, i))
             .response
             .rect;
 
@@ -98,6 +69,41 @@ impl ManagerApp {
             self.apply_row_click(ui, i);
         }
         self.draw_row_context_menu(response, i);
+    }
+
+    /// Thumbnail and text columns inside one row's selection frame.
+    fn draw_machine_row_content(&self, ui: &mut egui::Ui, i: usize) {
+        ui.set_min_width(ui.available_width());
+        ui.horizontal(|ui| {
+            let content_height = row_content_height(ui);
+            // Preview priority: live VM framebuffer, else a window-closed
+            // Suspended machine's saved thumbnail, else the black placeholder.
+            let entry = &self.entries[i];
+            let texture = entry
+                .vm
+                .as_deref()
+                .and_then(CocoApp::framebuffer_texture)
+                .or(entry.thumbnail.as_ref().filter(|_| entry.suspended));
+            let uv = entry.vm.as_deref().map_or_else(
+                || definition_texture_uv(&entry.def),
+                |vm| crate::display::texture_uv(vm.display, vm.tv),
+            );
+            draw_row_thumbnail(ui, content_height, texture, uv);
+
+            let def = &entry.def;
+            let config = def
+                .to_machine_config()
+                .expect("list entries are validated on load/save");
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new(&def.name).strong());
+                ui.label(format!(
+                    "{} · {}",
+                    crate::machine_label(config.variant),
+                    new_vm::ram_label(config.memory),
+                ));
+                ui.weak(vm_status_label(entry));
+            });
+        });
     }
 
     /// A plain click selects `i` alone; Shift extends/replaces the
@@ -285,6 +291,7 @@ fn draw_row_thumbnail(
     ui: &mut egui::Ui,
     height: f32,
     texture: Option<&egui::TextureHandle>,
+    uv: egui::Rect,
 ) -> egui::Rect {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(height * THUMBNAIL_ASPECT, height),
@@ -294,12 +301,19 @@ fn draw_row_thumbnail(
     let painter = ui.painter();
     painter.rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
     if let Some(texture) = texture {
-        painter.image(
-            texture.id(),
-            rect,
-            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
+        painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
     }
     rect
+}
+
+/// Texture crop for a stopped or window-closed suspended VM, reconstructed
+/// from the same persisted preferences that seed a live [`CocoApp`].
+fn definition_texture_uv(def: &crate::machine_def::MachineDef) -> egui::Rect {
+    let settings = crate::display::TVSettings {
+        scanline_pct: def.ui.tv_scanline,
+        noise_pct: def.ui.tv_noise,
+        overscan_pct: def.ui.tv_overscan,
+    }
+    .clamped();
+    crate::display::texture_uv(def.display(), settings)
 }

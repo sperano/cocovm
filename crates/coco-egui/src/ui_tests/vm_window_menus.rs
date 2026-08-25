@@ -197,9 +197,15 @@ fn status_bar_display_entry_switches_display() {
         MonitorType::Composite,
         "display swap takes effect live, no power cycle"
     );
+    assert_eq!(
+        harness.state().tv.overscan_pct,
+        crate::display::TVSettings::default().overscan_pct
+    );
+
+    click(&mut harness, "Display menu");
+    assert!(label_exists(&harness, "Overscan"));
 
     // The entry's label tracks the selection; the icon half of the click target works too.
-    click(&mut harness, "Display menu");
     click(&mut harness, "RGB monitor");
     assert_eq!(harness.state().display, Display::Monitor(MonitorType::RGB));
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);

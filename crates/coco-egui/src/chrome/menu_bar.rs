@@ -86,6 +86,14 @@ impl CocoApp {
                     .text("RF noise")
                     .suffix("%"),
             );
+            ui.add(
+                egui::Slider::new(
+                    &mut self.tv.overscan_pct,
+                    0..=crate::display::MAX_OVERSCAN_PCT,
+                )
+                .text("Overscan")
+                .suffix("%"),
+            );
         }
     }
 

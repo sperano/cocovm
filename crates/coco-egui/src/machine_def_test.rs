@@ -3,7 +3,7 @@ use super::dto::{
     VideoStandardDTO,
 };
 use super::*;
-use crate::display::TV;
+use crate::display::{TV, TVSettings};
 use coco_core::MonitorType;
 use std::fs;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -76,9 +76,10 @@ fn full_def() -> MachineDef {
             // non-default values.
             joy_left: JoySourceDTO::Keys,
             joy_right: JoySourceDTO::Gamepad,
-            // Away from the defaults (35/5) so the round trip exercises non-default strengths.
+            // Away from the defaults (35/5/5) so the round trip exercises all TV settings.
             tv_scanline: 60,
             tv_noise: 20,
+            tv_overscan: 7,
         },
         // Away from the defaults (0/0) so the round trip exercises non-default stats.
         stats: StatsDTO {
@@ -201,6 +202,11 @@ monitor = "rgb"
     // opted in.
     assert_eq!(def.ui.joy_left, JoySourceDTO::None);
     assert_eq!(def.ui.joy_right, JoySourceDTO::None);
+    assert_eq!(
+        def.ui.tv_overscan,
+        TVSettings::default().overscan_pct,
+        "an absent tv_overscan key uses the CRT-like default"
+    );
 
     // Default VDG is per-variant: a CoCo 3 has none at all.
     let config = def.to_machine_config().expect("should validate");

@@ -365,6 +365,11 @@ fn default_tv_noise() -> u8 {
     TVSettings::default().noise_pct
 }
 
+/// Default for `[ui].tv_overscan` — [`default_tv_scanline`]'s sibling.
+fn default_tv_overscan() -> u8 {
+    TVSettings::default().overscan_pct
+}
+
 /// `[ui]` section — section itself optional.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UIDTO {
@@ -389,6 +394,11 @@ pub struct UIDTO {
     /// [`Self::tv_scanline`].
     #[serde(default = "default_tv_noise")]
     pub tv_noise: u8,
+    /// Centered TV overscan crop per edge
+    /// ([`TVSettings::overscan_pct`]); kept while on a monitor like
+    /// [`Self::tv_scanline`], and clamped to the slider range at launch.
+    #[serde(default = "default_tv_overscan")]
+    pub tv_overscan: u8,
 }
 
 impl Default for UIDTO {
@@ -400,6 +410,7 @@ impl Default for UIDTO {
             joy_right: JoySourceDTO::default(),
             tv_scanline: default_tv_scanline(),
             tv_noise: default_tv_noise(),
+            tv_overscan: default_tv_overscan(),
         }
     }
 }

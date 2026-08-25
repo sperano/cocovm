@@ -33,6 +33,10 @@ fn dark(v: u8, pct: u8) -> u8 {
     ((u16::from(v) * scanline_scale(pct) + 128) >> 8) as u8
 }
 
+fn uv_edge(pct: u8) -> f32 {
+    f32::from(pct) / f32::from(MAX_PCT)
+}
+
 // ---- luma ----
 
 #[test]
@@ -248,6 +252,41 @@ fn monitors_sample_nearest_and_tvs_bilinear() {
             egui::TextureOptions::LINEAR
         );
     }
+}
+
+#[test]
+fn tv_texture_uv_defaults_to_five_percent_per_edge() {
+    let edge = uv_edge(DEFAULT_OVERSCAN_PCT);
+    let uv = texture_uv(Display::TV(TV::Color), TVSettings::default());
+    assert_eq!(uv.min, egui::pos2(edge, edge));
+    assert_eq!(uv.max, egui::pos2(1.0 - edge, 1.0 - edge));
+    assert_eq!(uv.width(), uv.height(), "equal edge crop preserves aspect");
+}
+
+#[test]
+fn texture_uv_exposes_full_signal_for_monitors_and_zero_overscan() {
+    let full = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
+    let settings = TVSettings {
+        overscan_pct: 0,
+        ..TVSettings::default()
+    };
+    assert_eq!(texture_uv(Display::TV(TV::BW), settings), full);
+    assert_eq!(
+        texture_uv(Display::Monitor(MonitorType::RGB), TVSettings::default()),
+        full
+    );
+}
+
+#[test]
+fn tv_texture_uv_clamps_hand_edited_overscan() {
+    let edge = uv_edge(MAX_OVERSCAN_PCT);
+    let settings = TVSettings {
+        overscan_pct: u8::MAX,
+        ..TVSettings::default()
+    };
+    let uv = texture_uv(Display::TV(TV::Color), settings);
+    assert_eq!(uv.min, egui::pos2(edge, edge));
+    assert_eq!(uv.max, egui::pos2(1.0 - edge, 1.0 - edge));
 }
 
 #[test]

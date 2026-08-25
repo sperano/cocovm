@@ -110,7 +110,8 @@ impl CocoApp {
         }
         let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
-        ui.put(rect, egui::Image::new(sized));
+        let uv = crate::display::texture_uv(self.display, self.tv);
+        ui.put(rect, egui::Image::new(sized).uv(uv));
         // Remembered for `drive_joysticks` next frame (pointer → joystick axes, mouse fire gating).
         self.display_rect = rect;
         self.display_layer = ui.layer_id();

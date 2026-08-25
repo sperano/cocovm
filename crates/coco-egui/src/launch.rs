@@ -77,6 +77,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     app.tv = crate::display::TVSettings {
         scanline_pct: def.ui.tv_scanline,
         noise_pct: def.ui.tv_noise,
+        overscan_pct: def.ui.tv_overscan,
     }
     .clamped();
     app.kb_mode = match def.ui.kb_mode {
