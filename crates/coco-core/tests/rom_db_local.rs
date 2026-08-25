@@ -1,6 +1,5 @@
-//! Validate whatever known-named ROMs are present in the git-ignored `roms/`
-//! directory against the MAME-derived manifest. Absent files are skipped
-//! (the directory only exists on machines that own the dumps); a present
+//! Validate whatever known-named ROMs are present in the XDG ROM directory
+//! against the MAME-derived manifest. Absent files are skipped; a present
 //! file with wrong contents is a hard failure — it means a corrupt dump or
 //! a manifest typo, and every boot test downstream would chase ghosts.
 

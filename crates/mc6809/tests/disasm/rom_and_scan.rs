@@ -37,7 +37,7 @@ use test_assets::rom::COCO3;
 #[test]
 fn rom_reset_entry_point_disassembles_as_hand_decoded() {
     let path = test_assets::rom(COCO3);
-    let rom = std::fs::read(&path).expect("roms/coco3.rom (git-ignored, local-only)");
+    let rom = std::fs::read(&path).expect("coco3.rom in the cocovm XDG data directory");
     // ROM maps to $8000-$FFFF; file offset = addr - $8000.
     let reset_vector = ((rom[0x7FFE] as u16) << 8) | rom[0x7FFF] as u16;
     assert_eq!(reset_vector, 0x8C1B, "reset vector changed — ROM mismatch");

@@ -22,7 +22,7 @@ pub(super) type ManagerHarness = egui_kittest::Harness<'static, manager::Manager
 pub(super) fn boot_harness() -> AppHarness {
     let roms_dir = test_assets::roms_dir();
     let (rom, rom_source) = load_default_rom(MachineVariant::Coco3, &roms_dir)
-        .expect("roms/coco3.rom is required (git-ignored, local-only)");
+        .expect("coco3.rom is required in the cocovm XDG data directory");
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
             MachineConfig::default(),

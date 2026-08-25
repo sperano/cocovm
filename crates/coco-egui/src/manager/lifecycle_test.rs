@@ -2,10 +2,8 @@
 //! `start_vm` recording a boot count and seeding a fresh VM's live runtime
 //! total from the persisted one, and `suspend_vm`/`stop_vm` folding that
 //! live total back into the persisted total. Boots a real machine
-//! via `crate::launch_machine`, which reads the real `roms/coco3.rom`
-//! (git-ignored, local-only) the same way `launch_test.rs` does — no special
-//! setup needed, since ROM lookup resolves through `CARGO_MANIFEST_DIR` at
-//! compile time, not a runtime-relative path.
+//! via `crate::launch_machine`, which reads the real `coco3.rom` from the
+//! cocovm XDG data directory the same way `launch_test.rs` does.
 
 use std::fs;
 

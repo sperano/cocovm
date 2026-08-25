@@ -22,6 +22,7 @@
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::char_key;
 use coco_core::{Machine, MachineConfig};
+use test_assets::rom;
 
 const BOOT_FIELDS: u32 = 300;
 const FIELDS_PER_KEY: u32 = 4;
@@ -76,8 +77,12 @@ fn parse_args() -> (String, Vec<String>, u32) {
 fn main() {
     let (disk_path, commands, command_fields) = parse_args();
 
-    let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
-    let disk_rom = std::fs::read("roms/disk11.rom").unwrap().into_boxed_slice();
+    let rom = std::fs::read(test_assets::rom(rom::COCO3))
+        .unwrap()
+        .into_boxed_slice();
+    let disk_rom = std::fs::read(test_assets::rom(rom::DISK11))
+        .unwrap()
+        .into_boxed_slice();
     let disk = JVCDisk::from_bytes(std::fs::read(&disk_path).unwrap()).unwrap();
     println!(
         "mounted {disk_path}: {} tracks, {} sectors/track, {} side(s)",

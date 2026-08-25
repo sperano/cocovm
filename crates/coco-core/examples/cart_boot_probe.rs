@@ -5,6 +5,7 @@
 
 use coco_core::cart::ROMPak;
 use coco_core::{Machine, MachineConfig};
+use test_assets::rom;
 
 fn write_ppm(m: &Machine, path: &str) {
     let (w, h) = (m.fb_width as usize, m.fb_height as usize);
@@ -19,7 +20,9 @@ fn write_ppm(m: &Machine, path: &str) {
 fn main() {
     let cart_path = std::env::args().nth(1).expect("cart path");
     let dir = std::env::args().nth(2).unwrap_or_else(|| ".".into());
-    let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
+    let rom = std::fs::read(test_assets::rom(rom::COCO3))
+        .unwrap()
+        .into_boxed_slice();
     let cart = std::fs::read(&cart_path).unwrap();
     let mut m = Machine::new(MachineConfig::default(), rom);
     m.insert_cartridge(ROMPak::from_bytes(&cart, true).unwrap());

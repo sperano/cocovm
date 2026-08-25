@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 use coco_core::{Machine, MachineConfig, MemorySize};
 use mc6809::Bus;
+use test_assets::rom;
 
 /// Fields to run before injecting — enough to reach the idle BASIC prompt.
 const BOOT_FIELDS: usize = 150;
@@ -37,9 +38,8 @@ fn main() {
         _ => MemorySize::K512,
     };
 
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let rom = std::fs::read(root.join("roms/coco3.rom"))
-        .expect("roms/coco3.rom (git-ignored, local-only)")
+    let rom = std::fs::read(test_assets::rom(rom::COCO3))
+        .expect("coco3.rom in the cocovm XDG data directory")
         .into_boxed_slice();
     let bin = std::fs::read(&bin_path).unwrap_or_else(|e| panic!("{}: {e}", bin_path.display()));
 

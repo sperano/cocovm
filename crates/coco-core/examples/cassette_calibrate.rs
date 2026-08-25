@@ -23,6 +23,7 @@ use std::cmp::Reverse;
 
 use coco_core::keyboard::char_key;
 use coco_core::{Machine, MachineConfig};
+use test_assets::rom;
 
 const BOOT_FIELDS: u32 = 300;
 const FIELDS_PER_KEY: u32 = 4;
@@ -49,7 +50,9 @@ fn type_line(m: &mut Machine, text: &str) {
 }
 
 fn main() {
-    let rom = std::fs::read("roms/coco3.rom").unwrap().into_boxed_slice();
+    let rom = std::fs::read(test_assets::rom(rom::COCO3))
+        .unwrap()
+        .into_boxed_slice();
     let mut m = Machine::new(MachineConfig::default(), rom);
     m.reset();
     for _ in 0..BOOT_FIELDS {

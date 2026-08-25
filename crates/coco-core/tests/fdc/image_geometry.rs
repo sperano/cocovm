@@ -229,9 +229,9 @@ fn headerless_disk_with_no_os9_signature_is_unaffected_by_the_sniff() {
     assert_eq!(disk.sides(), 1);
 }
 
-/// The real NitrOS-9 Level 2 CoCo3 40-track disk image, if present
-/// (git-ignored, local-only asset — see `CLAUDE.md`). Skips gracefully when
-/// absent, following `load_rom`'s pattern below.
+/// The real NitrOS-9 Level 2 CoCo3 40-track disk image, if present in the
+/// cocovm XDG data directory. Skips gracefully when absent, following
+/// `load_rom`'s pattern below.
 #[test]
 fn real_nitros9_40_track_disk_parses_as_40_tracks_2_sides() {
     let path = test_assets::disk(NOS9_L2_COCO3_40_TRACK);
