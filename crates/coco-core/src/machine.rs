@@ -31,8 +31,8 @@ const TEXT_BORDER_COLOR: u8 = 0x00;
 pub(crate) const CPU_HZ: f64 = 894_886.0;
 
 /// GIME timer input clocks per normal-speed CPU cycle with INIT1 TINS=1. The
-/// fast timer clock is 3.579545 MHz (279.365 ns — hardware-measured; MAME
-/// `gime.cpp`. SEB's "70 ns" is wrong), exactly 4× the 0.89 MHz CPU clock —
+/// fast timer clock is 3.579545 MHz (279.365 ns — verified against MAME
+/// `gime.cpp`; SEB's "70 ns" is wrong), exactly 4× the 0.89 MHz CPU clock —
 /// and 2× the double-speed CPU clock, since the timer runs off the fixed
 /// video crystal and ignores the CPU rate. With TINS=0 the input is the
 /// ~63.5 µs horizontal sync: one tick per scanline.
