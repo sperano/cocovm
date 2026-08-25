@@ -9,7 +9,7 @@
 use super::{LEADER, ONE_BIT_PERIOD, SYNC, Transition, ZERO_BIT_PERIOD};
 
 /// Demodulation decision boundary between the two measured periods
-/// (midpoint of 455 and 793): a full period at or below this is a 1 bit.
+/// (midpoint of 434 and 814): a full period at or below this is a 1 bit.
 const BIT_PERIOD_THRESHOLD: u64 = (ZERO_BIT_PERIOD as u64 + ONE_BIT_PERIOD as u64) / 2;
 
 /// A period twice the 0-bit's is no tone at all: a discontinuity (motor

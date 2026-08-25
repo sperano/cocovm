@@ -11,10 +11,11 @@
 //! Findings from this probe (CSAVE"X" of `10 PRINT "HI"`, cross-checked by
 //! decoding the captured waveform and matching it against the known tokenized
 //! program bytes and block checksums — see `cassette.rs` demodulator):
-//! - Each bit is one full DAC sine cycle: a 0-bit measures ~793 CPU cycles
-//!   (~1128 Hz), a 1-bit ~455 cycles (~1967 Hz) — close to, but not exactly,
+//! - Each bit is one full DAC sine cycle: a 0-bit measures ~814 CPU cycles
+//!   (~1100 Hz), a 1-bit ~434 cycles (~2060 Hz) — close to, but not exactly,
 //!   the canonical 1200/2400 Hz (a hand-tuned ROM delay loop, not a crystal-
 //!   locked tone; the ROM's own hysteresis demodulator tolerates the drift).
+//!   Matches `cassette.rs`'s `ZERO_BIT_PERIOD`/`ONE_BIT_PERIOD`.
 //! - Bit order is LSB-first.
 //! - Block framing and checksum exactly match `cassette-verified-facts`:
 //!   `$55* $3C type len data… checksum`, checksum = `sum(type,len,data) & 0xFF`.
@@ -60,10 +61,26 @@ fn main() {
     }
     type_line(&mut m, "10 PRINT \"HI\"");
     type_line(&mut m, "CSAVE\"X\"");
+    // Stop shortly after the motor drops rather than running the full
+    // SAVE_FIELDS budget: capture() auto-finalizes (and empties) once the
+    // motor's been off for RECORD_IDLE_FINALIZE_CYCLES, so lingering past
+    // that erases the very capture we're here to inspect.
+    const IDLE_STOP_FIELDS: u32 = 30;
+    let mut seen_on = false;
+    let mut off_streak = 0u32;
     for _ in 0..SAVE_FIELDS {
         m.run_field();
         if m.bus.cassette.capture().len() > 200_000 {
             break; // safety valve
+        }
+        if m.bus.pia1.a.c2_output() {
+            seen_on = true;
+            off_streak = 0;
+        } else if seen_on {
+            off_streak += 1;
+            if off_streak >= IDLE_STOP_FIELDS {
+                break;
+            }
         }
     }
 
