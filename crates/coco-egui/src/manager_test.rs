@@ -94,6 +94,63 @@ fn on_exit_folds_live_runtime_into_the_persisted_total() {
     assert_eq!(loaded[0].1.stats.runtime_secs, 77);
 }
 
+/// A name committed while its VM is running leaves slug migration pending.
+/// Quit must flush and drop the VM before moving both slug-keyed filesystem
+/// objects, or the rename is lost when the in-memory flag disappears.
+#[test]
+fn on_exit_migrates_a_rename_deferred_while_running() {
+    const OLD_SLUG: &str = "before-rename";
+    const NEW_SLUG: &str = "after-rename";
+    const ARTIFACT_FILE: &str = "disk.img";
+
+    let machines_dir = TempDir::new("manager-on-exit-rename-machines");
+    let artifacts_root = TempDir::new("manager-on-exit-rename-artifacts");
+    let def = machine_def::MachineDef::from_config(
+        "Before Rename".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    machine_def::save(machines_dir.path(), OLD_SLUG, &def).expect("seed definition");
+    let old_artifacts = artifacts_root.path().join(OLD_SLUG);
+    fs::create_dir(&old_artifacts).expect("seed artifact directory");
+    fs::write(old_artifacts.join(ARTIFACT_FILE), b"artifact").expect("seed artifact");
+    let mut manager = ManagerApp::new(
+        None,
+        Some(machines_dir.path().to_path_buf()),
+        Some(artifacts_root.path().to_path_buf()),
+        vec![MachineEntry::new(OLD_SLUG.to_string(), def)],
+    );
+
+    manager.start_vm(0);
+    assert!(manager.entries[0].vm.is_some(), "VM should launch");
+    manager.entries[0].def.name = "After Rename".to_string();
+    machine_def::save(machines_dir.path(), OLD_SLUG, &manager.entries[0].def)
+        .expect("commit renamed definition under old slug");
+    manager.entries[0].rename_pending = true;
+
+    manager.on_exit(None);
+
+    assert_eq!(manager.entries[0].slug, NEW_SLUG);
+    assert!(manager.entries[0].vm.is_none());
+    assert!(
+        !machines_dir
+            .path()
+            .join(format!("{OLD_SLUG}.toml"))
+            .exists()
+    );
+    assert!(
+        machines_dir
+            .path()
+            .join(format!("{NEW_SLUG}.toml"))
+            .is_file()
+    );
+    assert!(!artifacts_root.path().join(OLD_SLUG).exists());
+    assert_eq!(
+        fs::read(artifacts_root.path().join(NEW_SLUG).join(ARTIFACT_FILE)).unwrap(),
+        b"artifact"
+    );
+}
+
 /// A booted machine with a dirty floppy mounted in drive 0. The caller wraps
 /// [`ReadOnly`] around `disk_path` separately, so the initial write-back
 /// runs while the file is still writable.
