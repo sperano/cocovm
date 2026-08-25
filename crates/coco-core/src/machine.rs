@@ -219,8 +219,25 @@ impl Machine {
         CPU_HZ
     }
 
-    /// Execute one CPU instruction; returns cycles consumed.
-    pub fn step(&mut self) -> u32 {
+    /// Execute one CPU instruction via the raw MC6809 core only. Returns
+    /// cycles consumed.
+    ///
+    /// Unlike [`Machine::step_instruction`], this bypasses every part of the
+    /// machine execution boundary: HALT* (the cartridge HALT line has no
+    /// effect), NMI/FIRQ/IRQ polling and servicing, cartridge/cassette/
+    /// bitbanger peripheral ticks, `bus.cycle_clock`, scanline/field timing
+    /// (hsync, the two field-sync edges, `render_scanline`/`render_field`),
+    /// GIME interval-timer ticks, and audio sampling. A loop of this is a
+    /// materially different (and, on the CoCo 3, non-interrupt-driven)
+    /// emulator from one built on `step_instruction`.
+    ///
+    /// Only reach for this where that divergence is exactly what's wanted:
+    /// deterministic pre-interrupt cold-start traces, and lockstep CPU-state
+    /// comparisons that intentionally hold peripheral timing out of scope.
+    /// Everything else — including anything that expects IRQ-driven
+    /// behavior, correct audio/video, or real peripheral pacing — must use
+    /// [`Machine::step_instruction`] or [`Machine::run_field`].
+    pub fn step_cpu_raw(&mut self) -> u32 {
         self.cpu.step(&mut self.bus)
     }
 

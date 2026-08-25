@@ -52,7 +52,7 @@ fn cold_start_configures_rom_and_jumps_into_upper_half() {
 
     let mut m = boot_machine();
     for _ in 0..ROM_CONFIG_STEPS {
-        m.step();
+        m.step_cpu_raw();
     }
 
     // The GIME latched the INIT0/INIT1 writes (proves the I/O decode is live).
@@ -73,7 +73,7 @@ fn boot_initializes_palette_via_io_writes() {
     const STEPS: usize = 5_000;
     let mut m = boot_machine();
     for _ in 0..STEPS {
-        m.step(); // any out-of-range bus access would panic here
+        m.step_cpu_raw(); // any out-of-range bus access would panic here
     }
     // The palette loop writes A=$12 across the bank; at minimum the registers are
     // no longer all-zero, confirming palette-range I/O writes reached the GIME.

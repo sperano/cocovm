@@ -9,8 +9,8 @@
 //! construction mirrors `tests/mpi.rs`. Unlike those files, transfers here
 //! are driven through a full [`Machine`] (not a bare `DiskCart`/`SystemBus`),
 //! via [`Machine::step_instruction`] — the only stepping primitive that
-//! ticks the cartridge (`Machine::step` used elsewhere in the snapshot test
-//! suite is CPU-only and never advances FDC timing at all).
+//! ticks the cartridge (`Machine::step_cpu_raw` used elsewhere in the
+//! snapshot test suite is CPU-only and never advances FDC timing at all).
 
 use std::path::PathBuf;
 
