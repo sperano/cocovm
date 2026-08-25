@@ -19,8 +19,9 @@ impl MC6809 {
         v
     }
 
-    /// PSHS/PSHU. `to_s` selects the S stack, else U. Push order is PC, U/S, Y,
-    /// X, DP, B, A, CC (highest address first); bit 6 pushes the *other* stack pointer.
+    /// PSHS/PSHU. `to_s` selects the S stack, else U; bit 6 in `mask` pushes
+    /// the *other* stack pointer. Push order is PC, U/S, Y, X, DP, B, A, CC
+    /// (highest address first). Returns the cycle count (base + 1 per byte).
     pub(crate) fn psh(&mut self, bus: &mut impl Bus, mask: u8, to_s: bool) -> u32 {
         // 16-bit push stores low byte first (higher address), leaving the value big-endian.
         let mut sp = if to_s { self.s } else { self.u };

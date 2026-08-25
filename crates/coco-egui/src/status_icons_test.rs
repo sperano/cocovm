@@ -62,7 +62,8 @@ fn a_second_change_before_the_first_hold_expires_resets_the_hold_from_itself() {
     latch.observe_at(10, base);
     latch.observe_at(11, at(base, 1)); // first change; hold alone would expire at t=1+HOLD
     latch.observe_at(12, at(base, 50)); // second change, well inside that hold window
-    // Past the first change's hold alone, but still within the hold re-extended by the second: proves the timer reset.
+    // Past the first change's hold alone, but still within the hold re-extended by the second:
+    // proves the timer reset.
     assert!(latch.observe_at(12, at(base, 1) + ACTIVITY_HOLD));
     // Past the second change's own hold window: idle again.
     assert!(!latch.observe_at(12, at(base, 50) + ACTIVITY_HOLD));
@@ -82,7 +83,8 @@ fn reel_advances_forward_with_playback_position() {
 
 #[test]
 fn reel_forward_accumulation_past_tau_wraps_via_rem_euclid() {
-    // 45 bytes at REEL_ANGLE_PER_BYTE is more than one full turn — the forward-wrap counterpart to the rewind case below.
+    // 45 bytes at REEL_ANGLE_PER_BYTE is more than one full turn — the forward-wrap counterpart
+    // to the rewind case below.
     let mut reel = TapeReel::default();
     let raw = 45.0 * REEL_ANGLE_PER_BYTE;
     assert!(
@@ -100,7 +102,8 @@ fn reel_spins_backward_on_rewind() {
         ..Default::default()
     };
     let angle = reel.advance(100, true, 0.0);
-    // Rewinding must turn the reel the opposite way, wrapped into 0..TAU — a bare negative angle would break radian comparisons.
+    // Rewinding must turn the reel the opposite way, wrapped into 0..TAU — a bare negative
+    // angle would break radian comparisons.
     let expected = (-10.0 * REEL_ANGLE_PER_BYTE).rem_euclid(TAU);
     assert!((angle - expected).abs() < 1e-6);
 }

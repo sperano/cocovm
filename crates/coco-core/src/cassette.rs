@@ -254,7 +254,8 @@ impl Cassette {
     }
 
     /// Consume the "a recording just landed" event (true once per landed
-    /// finalize, see [`Cassette::finalize_recording`]) so a failed disk write doesn't retry every frame.
+    /// finalize, see [`Cassette::finalize_recording`]) so a failed disk
+    /// write doesn't retry every frame.
     pub fn take_recording_landed(&mut self) -> bool {
         std::mem::take(&mut self.recording_landed)
     }

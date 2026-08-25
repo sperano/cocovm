@@ -25,7 +25,8 @@ impl CocoApp {
             self.eject_cartridge();
             ui.close();
         }
-        // Re-read instead of reusing `installed`: a Remove click above already cleared it this frame.
+        // Re-read instead of reusing `installed`: a Remove click above already cleared it this
+        // frame.
         if self.rs232.is_some() {
             ui.separator();
             self.rs232_endpoint_items(ui);

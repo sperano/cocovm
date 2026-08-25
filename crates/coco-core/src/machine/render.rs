@@ -29,7 +29,8 @@ impl Machine {
 
     /// The active (non-border) picture rectangle in framebuffer pixel
     /// coordinates, for the frontend's pointer→joystick mapping. Whether the
-    /// field is legacy comes from the latched `field_scan` when one exists, not the live INIT0 COCO bit.
+    /// field is legacy comes from the latched `field_scan` when one exists,
+    /// not the live INIT0 COCO bit.
     pub fn active_rect(&self) -> ActiveRect {
         if self.config.variant != MachineVariant::Coco3 {
             return ActiveRect {
@@ -99,7 +100,8 @@ impl Machine {
     }
 
     /// Paint one canvas row of a CoCo 3 legacy (VDG-compatible) field, reading
-    /// mode bits, palette, and border live each line. The border is NOT fixed black — it follows [`video::legacy_border_value`].
+    /// mode bits, palette, and border live each line. The border is NOT
+    /// fixed black — it follows [`video::legacy_border_value`].
     fn paint_legacy_scanline(&mut self, row: usize) {
         let ff22 = self.bus.pia1.b.output;
         let border = self.bus.gime.color(video::legacy_border_value(ff22));
@@ -193,7 +195,8 @@ impl Machine {
     }
 
     /// Render one video field into `framebuffer` at field end. Only CoCo 1/2
-    /// renders here as a whole-frame snapshot; CoCo 3 fields are already painted line by line by [`Machine::render_scanline`].
+    /// renders here as a whole-frame snapshot; CoCo 3 fields are already
+    /// painted line by line by [`Machine::render_scanline`].
     pub(super) fn render_field(&mut self) {
         if self.config.variant == MachineVariant::Coco3 {
             return;
@@ -225,7 +228,8 @@ impl Machine {
                 video::VDG_FIXED_PALETTE[video::TEXT_BORDER_INDEX]
             }
         };
-        // CoCo 3 has no VDG chip: text mode uses the GIME's own compat-text generator, not `self.config.vdg`.
+        // CoCo 3 has no VDG chip: text mode uses the GIME's own compat-text
+        // generator, not `self.config.vdg`.
         let generator = match self.config.variant {
             MachineVariant::Coco3 => video::AlphaGenerator::GIME,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
@@ -270,7 +274,8 @@ impl Machine {
             *byte = self.bus.read(base.wrapping_add(i as u16));
         }
 
-        // The legacy graphics border is not black: green (CSS=0) or buff (CSS=1); CoCo 3 stays fixed black.
+        // The legacy graphics border is not black: green (CSS=0) or buff
+        // (CSS=1); CoCo 3 stays fixed black.
         let border = match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.color(TEXT_BORDER_COLOR),
             MachineVariant::Coco1 | MachineVariant::Coco2 => {

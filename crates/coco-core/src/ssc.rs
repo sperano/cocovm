@@ -102,7 +102,8 @@ pub struct SoundSpeechCartridge {
     /// Last byte latched from a `$FF7E` write (the "Port A latch" the real
     /// TMS7040 firmware reads and interprets as a command/data byte).
     /// Stored for tests/debug; the actual interpretation happens in
-    /// [`SoundSpeechCartridge::dispatch`], invoked synchronously from [`SoundSpeechCartridge::write_data`].
+    /// [`SoundSpeechCartridge::dispatch`], invoked synchronously from
+    /// [`SoundSpeechCartridge::write_data`].
     host_latch: u8,
     busy: bool,
     /// E-clock cycles remaining before [`SoundSpeechCartridge::busy`] synthetically clears —
@@ -177,7 +178,8 @@ impl SoundSpeechCartridge {
         let falling_edge = self.prev_reset_bit0 && !bit0;
         self.prev_reset_bit0 = bit0;
         if falling_edge {
-            // Falling edge also resets the AY and readies the firmware for a new command (MAME coco_ssc_device).
+            // Falling edge also resets the AY and readies the firmware for a
+            // new command (MAME coco_ssc_device).
             self.ay.reset();
             self.busy = false;
             self.busy_countdown = 0;
@@ -206,7 +208,8 @@ impl SoundSpeechCartridge {
         self.host_latch = val;
         self.busy = true;
         self.busy_countdown = BUSY_HOLD_CYCLES;
-        // Real hardware asserts TMS7000 INT3 here; not modelled — we interpret the byte synchronously instead.
+        // Real hardware asserts TMS7000 INT3 here; not modelled — we
+        // interpret the byte synchronously instead.
         self.dispatch(val);
     }
 

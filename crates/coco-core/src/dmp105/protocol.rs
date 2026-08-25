@@ -76,7 +76,8 @@ impl DMP105 {
     }
 
     /// Graphics mode dispatch (`dmp105-protocol.md` §5): bit 7 set is always
-    /// data; bit 7 clear is a recognized control code or else ignored (never printed — no `X`-glyph fallback in Graphics mode).
+    /// data; bit 7 clear is a recognized control code or else ignored (never
+    /// printed — no `X`-glyph fallback in Graphics mode).
     fn dispatch_graphics(&mut self, b: u8) {
         if b & 0x80 != 0 {
             self.plot_graphics_byte(b);
@@ -156,7 +157,8 @@ impl DMP105 {
             }
             // Immediate feed applies in both modes, unlike the latched-only 5B below.
             esc::FEED_IMMEDIATE => self.y = self.y.saturating_add(u32::from(ops[0])),
-            // Latched feed is CP-mode only; in Graphics mode it falls to the catch-all, consumed but inert.
+            // Latched feed is CP-mode only; in Graphics mode it falls to the
+            // catch-all, consumed but inert.
             esc::FEED_LATCH if self.mode == Mode::CharacterPrint => {
                 self.lf_pitch_units = u32::from(ops[0]);
             }
@@ -165,7 +167,9 @@ impl DMP105 {
     }
 
     /// Execute `28 n c` / `1C n c`: repeat `c` `n` times (in Graphics mode,
-    /// only if `c`'s MSB is set). Dispatches `c` through the per-mode handlers directly, never through [`DMP105::feed`] — recursing there would let `1C 1C 1C` rebuild its own spawning state unboundedly.
+    /// only if `c`'s MSB is set). Dispatches `c` through the per-mode
+    /// handlers directly, never through [`DMP105::feed`] — recursing there
+    /// would let `1C 1C 1C` rebuild its own spawning state unboundedly.
     fn execute_repeat(&mut self, n: u8, c: u8) {
         if self.mode == Mode::Graphics && c & 0x80 == 0 {
             return;

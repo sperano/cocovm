@@ -31,7 +31,8 @@ impl ManagerApp {
             return;
         };
         let name = default_new_name();
-        // Checks both the in-memory list and the directory itself, since `entries` misses a file written by another instance.
+        // Checks both the in-memory list and the directory itself, since
+        // `entries` misses a file written by another instance.
         let taken = |candidate: &str| {
             self.entries.iter().any(|e| e.slug == candidate)
                 || dir.join(format!("{candidate}.toml")).exists()
@@ -178,7 +179,8 @@ impl ManagerApp {
                 return;
             }
         }
-        // NotFound still counts as consumed — the VM already holds the state, so there's nothing left to misreport Suspended.
+        // NotFound still counts as consumed — the VM already holds the
+        // state, so there's nothing left to misreport Suspended.
         if let Err(e) = fs::remove_file(&path)
             && e.kind() != std::io::ErrorKind::NotFound
         {
@@ -234,7 +236,8 @@ impl ManagerApp {
                 }
             }
         } else {
-            // No artifact root means Suspend never wrote a state file or thumbnail, so there's nothing on disk to reconcile.
+            // No artifact root means Suspend never wrote a state file or
+            // thumbnail, so there's nothing on disk to reconcile.
             entry.suspended = false;
             entry.thumbnail = None;
             entry.thumbnail_load_attempted = false;
@@ -286,7 +289,8 @@ impl ManagerApp {
             if old_dir.exists()
                 && let Err(e) = fs::rename(&old_dir, root.join(&new))
             {
-                // Roll back: a stale slug beats [media] entries resolving against a mismatched directory.
+                // Roll back: a stale slug beats [media] entries resolving
+                // against a mismatched directory.
                 let _ = fs::rename(&new_path, &old_path);
                 self.save_error = Some(format!("{}: {e}", old_dir.display()));
                 return;

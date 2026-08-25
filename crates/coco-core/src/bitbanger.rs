@@ -188,7 +188,8 @@ impl PrinterSink for FileSink {
         } else {
             b
         };
-        // Best-effort: I/O errors here have no useful recovery path and shouldn't infect the hot CPU loop.
+        // Best-effort: I/O errors here have no useful recovery path and
+        // shouldn't infect the hot CPU loop.
         let _ = self.file.write_all(&[b]);
         if b == b'\r' || b == b'\n' {
             let _ = self.file.flush();
@@ -373,7 +374,8 @@ impl BitBanger {
                 while sample < TOTAL_SAMPLES && elapsed >= self.sample_threshold(sample) {
                     if sample == START_SAMPLE {
                         if pa1_mark {
-                            // Glitch, not a start bit: abandon the frame silently, not a framing error.
+                            // Glitch, not a start bit: abandon the frame
+                            // silently, not a framing error.
                             false_start = true;
                             break;
                         }
@@ -383,7 +385,8 @@ impl BitBanger {
                         self.sink.write_byte(bits);
                         self.bytes_out += 1;
                     } else {
-                        // Stop bit read space: framing error, discard the byte, and resync from Idle.
+                        // Stop bit read space: framing error, discard the
+                        // byte, and resync from Idle.
                         self.framing_errors += 1;
                     }
                     sample += 1;

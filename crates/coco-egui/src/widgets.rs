@@ -26,7 +26,8 @@ pub(crate) fn titled_group<R>(
 
     let font = egui::TextStyle::Body.resolve(ui.style());
     let color = ui.visuals().strong_text_color();
-    // Measured up front to size the gap; the visible title is the Label drawn below, in the same Body font and strong color.
+    // Measured up front to size the gap; the visible title is the Label drawn below, in the
+    // same Body font and strong color.
     let galley = ui.fonts_mut(|f| f.layout_no_wrap(title.to_owned(), font, color));
     // Room above the box for the half of the title that overhangs the border line.
     ui.add_space(galley.size().y / 2.0);
@@ -50,7 +51,8 @@ pub(crate) fn titled_group<R>(
         egui::pos2(gap_start + TITLE_PAD, rect.top() - galley.size().y / 2.0),
         galley.size(),
     );
-    // A bare child Ui at the title's rect, not `ui.put`: `put` would snap the parent's cursor back up and let later content overlap it.
+    // A bare child Ui at the title's rect, not `ui.put`: `put` would snap the parent's cursor
+    // back up and let later content overlap it.
     let mut title_ui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(title_rect)
@@ -150,7 +152,8 @@ pub(crate) fn toolbar_button(
     enabled: bool,
 ) -> egui::Response {
     ui.add_enabled_ui(enabled, |ui| {
-        // Not necessarily the same as `enabled`: `is_enabled` also ANDs in the parent's enabledness.
+        // Not necessarily the same as `enabled`: `is_enabled` also ANDs in the parent's
+        // enabledness.
         let effective_enabled = ui.is_enabled();
         let (rect, response) = ui.allocate_exact_size(BUTTON_SIZE, egui::Sense::click());
         response.widget_info(|| {

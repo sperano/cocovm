@@ -215,7 +215,8 @@ impl SystemBus {
     }
 
     /// True when `addr` reads ROM: the `$8000–$FDFF` window when ROM is mapped,
-    /// plus `$FE00–$FEFF` when INIT0 MC3 is clear (MC3 set diverts that page to constant RAM instead).
+    /// plus `$FE00–$FEFF` when INIT0 MC3 is clear (MC3 set diverts that page
+    /// to constant RAM instead).
     fn is_rom_window(&self, addr: u16) -> bool {
         if !self.gime.rom_enabled() {
             return false;
@@ -228,7 +229,8 @@ impl SystemBus {
 
     /// Read ROM for a logical address in the `$8000–$FFFF` window. INIT0
     /// MC1:MC0 splits the window between internal ROM and external cartridge
-    /// ROM (CTS*); `$FFE0–$FFFF` is exempt and always reads internal ROM (see [`HARDWIRED_ROM_BASE`]).
+    /// ROM (CTS*); `$FFE0–$FFFF` is exempt and always reads internal ROM
+    /// (see [`HARDWIRED_ROM_BASE`]).
     fn rom_read(&mut self, addr: u16) -> u8 {
         if addr < HARDWIRED_ROM_BASE && self.gime.rom_is_external(addr) {
             return self.cart.rom_read(addr);

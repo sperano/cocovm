@@ -64,7 +64,8 @@ fn blank_paper_in_print_area_is_pure_paper_color_no_ink() {
 }
 
 /// A single marked dot produces an ink-colored pixel at the expected mapped position: pick
-/// coordinates landing exactly on a pixel center so the AA coverage is fully saturated (1.0) and reproducible.
+/// coordinates landing exactly on a pixel center so the AA coverage is fully saturated (1.0)
+/// and reproducible.
 #[test]
 fn single_dot_marks_ink_at_the_mapped_pixel() {
     let dpi = RASTER_DPI;
@@ -92,7 +93,8 @@ fn twenty_two_sprocket_holes_per_page_same_phase_every_page() {
     // Algebraic claim from the module doc comment.
     assert_eq!(PAGE_HEIGHT_IN / SPROCKET_HOLE_PITCH_IN, 22.0);
 
-    // Hole k=22 (page 2's first hole) must sit at exactly SPROCKET_HOLE_TOP_OFFSET_IN past page 2's own top.
+    // Hole k=22 (page 2's first hole) must sit at exactly SPROCKET_HOLE_TOP_OFFSET_IN
+    // past page 2's own top.
     let page2_top = PAGE_HEIGHT_IN;
     let hole_23_y = SPROCKET_HOLE_TOP_OFFSET_IN + 22.0 * SPROCKET_HOLE_PITCH_IN;
     assert_eq!(hole_23_y - page2_top, SPROCKET_HOLE_TOP_OFFSET_IN);
@@ -131,7 +133,8 @@ fn green_bar_band_alternates_and_resets_at_each_page_top() {
         "band 2 must be non-green again"
     );
 
-    // Crossing into the next page resets the phase: the first band after the page-top boundary must always be non-green.
+    // Crossing into the next page resets the phase: the first band after the page-top boundary
+    // must always be non-green.
     assert!(
         !is_green_band(PAGE_HEIGHT_IN + 0.01),
         "band 0 of the next page must be non-green"
@@ -139,7 +142,8 @@ fn green_bar_band_alternates_and_resets_at_each_page_top() {
 }
 
 /// Perforation dots/dashes are anti-aliased, so a pixel at a rounded integer column/row won't
-/// necessarily land on the exact sub-pixel center — checking "not pure paper color" isolates "some perforation ink landed here" without being brittle to rounding.
+/// necessarily land on the exact sub-pixel center — checking "not pure paper color" isolates
+/// "some perforation ink landed here" without being brittle to rounding.
 #[test]
 fn vertical_perforation_lines_land_at_mapped_columns() {
     let dpi = 100.0;
@@ -163,7 +167,8 @@ fn vertical_perforation_lines_land_at_mapped_columns() {
 #[test]
 fn page_perforation_dash_appears_at_page_height_but_not_at_zero() {
     let dpi = 100.0;
-    // A body x-range clear of the vertical perforation lines and sprocket holes, so only a page-perforation dash can paint here.
+    // A body x-range clear of the vertical perforation lines and sprocket holes, so only a
+    // page-perforation dash can paint here.
     let x0 = (1.0f32 * dpi).round() as u32;
     let x1 = (8.5f32 * dpi).round() as u32;
 

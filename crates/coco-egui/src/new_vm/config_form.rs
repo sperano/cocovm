@@ -10,7 +10,8 @@ use eframe::egui;
 use super::{constrain, vdg_label, video_label};
 
 /// The Model row (which CoCo this machine is), label + combo box — the detail pane hosts
-/// it inside its "Machine" titled group. Must be called inside an already-open two-column [`egui::Grid`]; `salt` distinguishes the combo's persistent id across call sites.
+/// it inside its "Machine" titled group. Must be called inside an already-open two-column
+/// [`egui::Grid`]; `salt` distinguishes the combo's persistent id across call sites.
 pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
@@ -31,11 +32,13 @@ pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
 }
 
 /// The conditional VDG row (CoCo 2 only) and the Video row — [`machine_rows`]'s sibling,
-/// hosted by the detail pane's "Display" titled group. The monitor/TV row itself lives in [`super::MachineForm::display_rows`].
+/// hosted by the detail pane's "Display" titled group. The monitor/TV row itself lives in
+/// [`super::MachineForm::display_rows`].
 pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
-    // The VDG choice only exists on the CoCo 2 — CoCo 1 always shipped plain MC6847, CoCo 3's GIME does its own character generation.
+    // The VDG choice only exists on the CoCo 2 — CoCo 1 always shipped plain MC6847, CoCo 3's
+    // GIME does its own character generation.
     if draft.variant == MachineVariant::Coco2 {
         ui.label(egui::RichText::new("VDG").size(font));
         let selected = draft.vdg.unwrap_or(VDGVariant::MC6847T1);

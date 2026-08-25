@@ -22,7 +22,8 @@ impl CocoApp {
     /// The VM window's toolbar: the transport tiles (Start/Suspend/Stop/Reset) plus a
     /// VM-only Debug tile. Keyboard/aspect controls live in menus, so aren't duplicated here.
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
-        // Explicit margin, not the default: keeps this in sync with `crate::TOOLBAR_H`'s window-sizing math.
+        // Explicit margin, not the default: keeps this in sync with `crate::TOOLBAR_H`'s
+        // window-sizing math.
         let frame = egui::Frame::side_top_panel(&ctx.style()).inner_margin(
             egui::Margin::symmetric(TOOLBAR_PANEL_MARGIN_X, TOOLBAR_PANEL_MARGIN_Y),
         );
@@ -43,7 +44,8 @@ impl CocoApp {
                         self.pending_suspend = true;
                     }
 
-                    // Same path as the window's close box: routes through `stop_vm`, flushing dirty media.
+                    // Same path as the window's close box: routes through `stop_vm`, flushing
+                    // dirty media.
                     if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, true)
                         .on_hover_text(STOP_HOVER)
                         .clicked()

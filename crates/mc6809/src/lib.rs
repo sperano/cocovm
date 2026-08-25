@@ -233,7 +233,8 @@ impl MC6809 {
     }
 
     /// Common interrupt sequence: stacks the frame (unless `CWAI` already did),
-    /// sets the requested masks, and vectors. `entire` selects the full frame (E=1) vs FIRQ's partial (E=0).
+    /// sets the requested masks, and vectors. `entire` selects the full frame (E=1)
+    /// vs FIRQ's partial (E=0).
     fn take_interrupt(
         &mut self,
         bus: &mut impl Bus,

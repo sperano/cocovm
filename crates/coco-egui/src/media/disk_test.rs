@@ -15,7 +15,8 @@ fn scratch_dir(name: &str) -> PathBuf {
 }
 
 /// `insert_disk` over a dirty disk whose backing file has gone read-only must abort the
-/// mount entirely — the old disk stays mounted, dirty, and tracked; the new image is never installed.
+/// mount entirely — the old disk stays mounted, dirty, and tracked; the
+/// new image is never installed.
 #[test]
 fn insert_disk_fails_and_preserves_dirty_old_disk_when_write_back_fails() {
     let dir = scratch_dir("insert-write-back-failure");
@@ -131,7 +132,8 @@ fn eject_disk_fails_then_succeeds_after_write_access_is_restored() {
         assert_eq!(app.disk_paths[0], Some(disk_path.clone()));
     }
 
-    // `cart_error` is sticky (not auto-cleared), so reset it here to observe the retry's own outcome.
+    // `cart_error` is sticky (not auto-cleared), so reset it here to
+    // observe the retry's own outcome.
     app.cart_error = None;
     app.eject_disk(0);
     assert!(

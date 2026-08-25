@@ -269,7 +269,8 @@ impl AY8913 {
     }
 
     /// Advance the generators by `master_clocks` AY master-clock cycles
-    /// (already 2× the CoCo E-clock — see `docs/ssc-spec.md`), accumulating samples for [`AY8913::drain`].
+    /// (already 2× the CoCo E-clock — see `docs/ssc-spec.md`), accumulating
+    /// samples for [`AY8913::drain`].
     pub fn step(&mut self, master_clocks: u32) {
         self.clock_accum += master_clocks;
         while self.clock_accum >= MASTER_CLOCK_DIVIDER {
@@ -337,7 +338,8 @@ impl AY8913 {
     /// One internal step (master_clock/8): advance tone/noise/envelope, gate
     /// and sum the three channels into the running [`AY8913::drain`] average.
     fn internal_step(&mut self) {
-        // Toggles every `period` steps, clamped to at least 1 to avoid an infinite loop at period 0 (MAME `std::max<int>(1, tone->period)`).
+        // Toggles every `period` steps, clamped to at least 1 to avoid an
+        // infinite loop at period 0 (MAME `std::max<int>(1, tone->period)`).
         for ch_idx in 0..3 {
             let period = self.tone_period(ch_idx).max(1);
             let tone = &mut self.tone[ch_idx];
@@ -348,7 +350,8 @@ impl AY8913 {
             }
         }
 
-        // A second prescaler halves the period rate; the LFSR shifts once per two prescaler toggles (MAME `sound_stream_update`).
+        // A second prescaler halves the period rate; the LFSR shifts once
+        // per two prescaler toggles (MAME `sound_stream_update`).
         self.noise_count += 1;
         if self.noise_count >= self.noise_period() {
             self.noise_count = 0;
@@ -363,7 +366,8 @@ impl AY8913 {
         let env_period = self.env_period() * ENVELOPE_STEP_MULTIPLIER;
         self.envelope.step_once(env_period);
 
-        // Gates each channel by (ToneOn|ToneDisable) & (NoiseOn|NoiseDisable) — MAME: both disabled means constant-1 output, not 0.
+        // Gates each channel by (ToneOn|ToneDisable) & (NoiseOn|NoiseDisable)
+        // — MAME: both disabled means constant-1 output, not 0.
         let mut sum = 0.0f32;
         for ch in 0..3 {
             let enabled = (self.tone[ch].output || self.tone_disabled(ch))

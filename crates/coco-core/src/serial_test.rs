@@ -121,7 +121,8 @@ mod pty {
     /// Put `fd`'s termios into raw mode: without it, cooked-mode line
     /// buffering holds master->slave bytes until a newline, hiding them from `read`.
     fn set_raw(fd: libc::c_int) {
-        // SAFETY: `fd` is a valid, open fd for the call; `term` is initialized by `tcgetattr` before use.
+        // SAFETY: `fd` is a valid, open fd for the call; `term` is
+        // initialized by `tcgetattr` before use.
         unsafe {
             let mut term: libc::termios = std::mem::zeroed();
             assert_eq!(libc::tcgetattr(fd, &mut term), 0, "tcgetattr failed");

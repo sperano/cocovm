@@ -296,7 +296,8 @@ pub fn rasterize<D: DotSource>(
     dpi: f32,
     green_bar: bool,
 ) -> RasterImage {
-    // Sanity check: printable body must fit within the tractor-strip-to-tractor-strip span (guards against a future constant edit breaking this).
+    // Sanity check: printable body must fit within the tractor-strip-to-tractor-strip span
+    // (guards against a future constant edit breaking this).
     #[allow(clippy::assertions_on_constants)]
     {
         debug_assert!(PRINT_AREA_LEFT_IN + PRINT_AREA_WIDTH_IN <= PAPER_WIDTH_IN - STRIP_WIDTH_IN);
@@ -444,7 +445,8 @@ fn paint_ink_dots<D: DotSource>(
     let dot_radius_px = dot_radius_in * dpi;
     let y0_in = top_in;
     let y1_in = top_in + height_in;
-    // Pad the y-unit query range: a dot's center can sit just outside [y0, y1] while its circle still bleeds into view.
+    // Pad the y-unit query range: a dot's center can sit just outside [y0, y1] while its circle
+    // still bleeds into view.
     let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64 - DOT_QUERY_PAD_Y_UNITS as i64)
         .max(0) as u32;
     let y1_units = (y1_in * Y_UNITS_PER_INCH as f32).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;

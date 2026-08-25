@@ -20,7 +20,8 @@ fn strategy() -> Result<impl AppStrategy, etcetera::HomeDirError> {
 }
 
 /// Directory for user configuration (`~/.config/cocovm` on Linux/macOS).
-/// Returns `None` if no home directory can be determined; not created — callers must `fs::create_dir_all`.
+/// Returns `None` if no home directory can be determined; not created — callers must
+/// `fs::create_dir_all`.
 pub fn config_dir() -> Option<PathBuf> {
     strategy().ok().map(|s| s.config_dir())
 }

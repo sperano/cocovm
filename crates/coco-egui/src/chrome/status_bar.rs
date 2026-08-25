@@ -101,7 +101,8 @@ impl CocoApp {
         } else {
             assigned.join(" · ")
         };
-        // Icon merges both ports; hover gives the per-port detail ("off", not the raw variant name).
+        // Icon merges both ports; hover gives the per-port detail ("off", not the raw variant
+        // name).
         let port_hover = |stick: usize| {
             let source = self.joysticks.sources[stick];
             if source == joy::JoySource::None {
@@ -239,7 +240,8 @@ impl CocoApp {
             "Cassette deck: {} — click for the tape menu",
             self.tape_path.as_deref().map_or("no tape", file_name)
         ));
-        // CloseOnClickOutside, not the default: the default would close the popup on a seek-field click too.
+        // CloseOnClickOutside, not the default: the default would close the popup on a
+        // seek-field click too.
         egui::Popup::menu(&entry)
             .id(ui.id().with("tape_menu"))
             .align(egui::RectAlign::TOP_START)

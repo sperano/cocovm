@@ -285,7 +285,8 @@ impl GIME {
     }
 
     /// True when `addr` in the ROM window maps to the external (cartridge)
-    /// ROM, per INIT0 MC1:MC0: `00`/`01` = 16K+16K split at `$C000`, `10` = 32K internal, `11` = 32K external.
+    /// ROM, per INIT0 MC1:MC0: `00`/`01` = 16K+16K split at `$C000`, `10` =
+    /// 32K internal, `11` = 32K external.
     pub fn rom_is_external(&self, addr: u16) -> bool {
         match self.init0 & (init0::MC1 | init0::MC0) {
             0b10 => false,

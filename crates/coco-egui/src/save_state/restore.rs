@@ -64,7 +64,8 @@ impl CocoApp {
         let system_rom = resolve_system_rom(media, &mut warnings);
         let cart_roms = resolve_cart_roms(media, &mut warnings);
 
-        // Caps at DRIVE_COUNT: media.* may be a longer Vec, but snapshot::restore rejects oversized payloads separately.
+        // Caps at DRIVE_COUNT: media.* may be a longer Vec, but snapshot::restore rejects
+        // oversized payloads separately.
         let mut disks: [Option<Vec<u8>>; fdc::DRIVE_COUNT] = Default::default();
         for (i, mr) in media.disks.iter().enumerate().take(fdc::DRIVE_COUNT) {
             if let Some(mr) = mr {
@@ -161,7 +162,8 @@ impl CocoApp {
                 .map(|n| n.to_string()),
         );
 
-        // Re-link the paper window only if the restored sink is a live DMP-105; a file capture restores stopped.
+        // Re-link the paper window only if the restored sink is a live DMP-105; a file capture
+        // restores stopped.
         match self.machine.bus.bitbanger.dmp105_handle() {
             Some(handle) => self.paper_window.resync(Some(handle)),
             None => self.paper_window.detach(),
@@ -172,7 +174,8 @@ impl CocoApp {
         self.rebuild_cart_mirrors(media);
         self.rebuild_media_path_mirrors(media);
 
-        // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring buffer/filter history.
+        // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring
+        // buffer/filter history.
         self.audio.reset();
         self.last_update = None;
         self.field_debt = 0.0;

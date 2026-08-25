@@ -35,7 +35,8 @@ fn tone_toggles_once_per_period_internal_steps() {
             prev = ay.tone[0].output;
         }
     }
-    // A toggle happens once every TONE_PERIOD internal steps (f = clock/(16*TONE_PERIOD) in master-clock terms).
+    // A toggle happens once every TONE_PERIOD internal steps (f =
+    // clock/(16*TONE_PERIOD) in master-clock terms).
     let expected = INTERNAL_STEPS / u32::from(TONE_PERIOD);
     assert!(
         edges.abs_diff(expected) <= 1,
@@ -149,12 +150,14 @@ fn mixer_disable_bits_gate_the_channel() {
     ay.write_reg(reg::TONE_A_FINE, 4);
     ay.write_reg(reg::TONE_A_COARSE, 0);
 
-    // Both disabled (active-low bits set) forces the gate constant true (MAME: output is 1, not 0, when both are disabled).
+    // Both disabled (active-low bits set) forces the gate constant true
+    // (MAME: output is 1, not 0, when both are disabled).
     ay.write_reg(reg::MIXER, 0b0000_1001);
     ay.step(2_000 * MASTER_CLOCK_DIVIDER);
     let constant = ay.drain();
 
-    // Tone enabled, noise still off: gate follows the ~50%-duty square wave, so the average output drops.
+    // Tone enabled, noise still off: gate follows the ~50%-duty square
+    // wave, so the average output drops.
     ay.write_reg(reg::MIXER, 0b0000_1000);
     ay.step(2_000 * MASTER_CLOCK_DIVIDER);
     let toggling = ay.drain();

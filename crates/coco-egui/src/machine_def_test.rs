@@ -72,7 +72,8 @@ fn full_def() -> MachineDef {
         ui: UIDTO {
             aspect_correct: false,
             kb_mode: KbModeDTO::Symbolic,
-            // Both away from their shared `None` default, so the round trip exercises non-default values.
+            // Both away from their shared `None` default, so the round trip exercises
+            // non-default values.
             joy_left: JoySourceDTO::Keys,
             joy_right: JoySourceDTO::Gamepad,
             // Away from the defaults (35/5) so the round trip exercises non-default strengths.
@@ -196,7 +197,8 @@ monitor = "rgb"
     assert_eq!(def.ports.serial, None);
     assert!(def.ui.aspect_correct);
     assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
-    // Absent joy_left/joy_right ⇒ same defaults `JoystickInputs::new` boots with: off until opted in.
+    // Absent joy_left/joy_right ⇒ same defaults `JoystickInputs::new` boots with: off until
+    // opted in.
     assert_eq!(def.ui.joy_left, JoySourceDTO::None);
     assert_eq!(def.ui.joy_right, JoySourceDTO::None);
 
@@ -304,7 +306,8 @@ display = "tv"
         "display wins over the legacy monitor key"
     );
 
-    // The detail pane's save path (`HardwareDTO::from_config`) rewrites the hardware section without the legacy key.
+    // The detail pane's save path (`HardwareDTO::from_config`) rewrites the hardware section
+    // without the legacy key.
     let mut def = def.clone();
     def.hardware = HardwareDTO::from_config(
         &def.to_machine_config().expect("should validate"),

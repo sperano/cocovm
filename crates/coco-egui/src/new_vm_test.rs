@@ -19,7 +19,9 @@ fn every_selectable_config_validates() {
         };
         for &memory in ram_choices(variant) {
             for &video in videos {
-                // The form's Display row is the only writer of `config.monitor`, so the monitor axis is exactly its per-variant choice list.
+                // The form's Display row is the only writer of
+                // `config.monitor`, so the monitor axis is exactly its
+                // per-variant choice list.
                 for &display in Display::choices(variant) {
                     for &vdg in vdgs {
                         let config = MachineConfig {
@@ -41,7 +43,9 @@ fn every_selectable_config_validates() {
 }
 
 /// Switching model away from CoCo 3 must snap GIME-only RAM and PAL back to plain-SAM-valid
-/// values (and vice versa), and re-seed the VDG family default. `constrain` deliberately doesn't touch `config.monitor` — the form's Display pick owns that.
+/// values (and vice versa), and re-seed the VDG family default.
+/// `constrain` deliberately doesn't touch `config.monitor` — the form's
+/// Display pick owns that.
 #[test]
 fn constrain_draft_snaps_family_specific_fields() {
     let mut config = MachineConfig {
@@ -89,7 +93,8 @@ fn constrain_display_snaps_to_tv_where_no_monitor_port_exists() {
     );
     assert!(form.config.validate().is_ok());
 
-    // A TV pick survives the trip back to CoCo 3, resolving to the composite path, not the RGB default.
+    // A TV pick survives the trip back to CoCo 3, resolving to the
+    // composite path, not the RGB default.
     form.config.variant = MachineVariant::Coco3;
     constrain(&mut form.config);
     form.constrain_display();

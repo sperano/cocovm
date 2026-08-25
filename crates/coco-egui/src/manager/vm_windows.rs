@@ -31,7 +31,8 @@ impl ManagerApp {
     /// window across frames. Called once per `ManagerApp::update`, after
     /// the manager's own panels.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
-        // Indices suspended this frame, for `focus_first_failed_row` below to focus the first failure.
+        // Indices suspended this frame, for `focus_first_failed_row` below
+        // to focus the first failure.
         let mut suspends: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
             if self.entries[i].vm.is_none() {
@@ -51,14 +52,18 @@ impl ManagerApp {
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {
-                    // Embedded fallback: draws just the VM's display in a plain `egui::Window`, never the full chrome, to avoid interleaving two panel sets into one window.
+                    // Embedded fallback: draws just the VM's display in a
+                    // plain `egui::Window`, never the full chrome, to avoid
+                    // interleaving two panel sets into one window.
                     if suspended {
                         vm.upload_framebuffer_texture(child_ctx);
                     } else {
                         vm.step_emulation(child_ctx);
                     }
                     let mut open = true;
-                    // Capped at EMBEDDED_FALLBACK_SIZE, not the native window's full size, which would eat clicks meant for the manager's panels.
+                    // Capped at EMBEDDED_FALLBACK_SIZE, not the native
+                    // window's full size, which would eat clicks meant for
+                    // the manager's panels.
                     egui::Window::new(crate::window_title(child_ctx, &name))
                         .id(egui::Id::new(("vm-window-embedded", slug.as_str())))
                         .open(&mut open)
@@ -72,7 +77,9 @@ impl ManagerApp {
                         close_requested = true;
                     }
                 } else if suspended {
-                    // A suspended window is a viewing port onto the frozen frame, never a control surface — full chrome could diverge it from the on-disk state.
+                    // A suspended window is a viewing port onto the frozen
+                    // frame, never a control surface — full chrome could
+                    // diverge it from the on-disk state.
                     vm.upload_framebuffer_texture(child_ctx);
                     egui::CentralPanel::default()
                         .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
@@ -88,18 +95,23 @@ impl ManagerApp {
                 }
             });
 
-            // Reads `pending_suspend` here rather than threading it out of the branch that can set it, so this `take` is correct regardless of which branch ran.
+            // Reads `pending_suspend` here rather than threading it out of
+            // the branch that can set it, so this `take` is correct
+            // regardless of which branch ran.
             let suspend_requested = std::mem::take(&mut vm.pending_suspend);
             self.entries[i].vm = Some(vm);
             if close_requested {
-                // Close wins over suspend — closing already tears the VM down, discarding whatever suspend would have frozen anyway.
+                // Close wins over suspend — closing already tears the VM
+                // down, discarding whatever suspend would have frozen
+                // anyway.
                 self.close_vm_window(i);
             } else if suspend_requested {
                 self.suspend_vm(i);
                 suspends.push(i);
             }
         }
-        // Focuses the first failed row across the batch; on success the window flips to display-only on its own next frame.
+        // Focuses the first failed row across the batch; on success the
+        // window flips to display-only on its own next frame.
         self.focus_first_failed_row(&suspends);
     }
 

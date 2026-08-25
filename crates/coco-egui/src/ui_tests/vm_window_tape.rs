@@ -148,7 +148,8 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.state_mut().insert_tape(path);
     harness.step();
 
-    // Sanity: with nothing focused, a held key lands on the matrix — otherwise these asserts are vacuous.
+    // Sanity: with nothing focused, a held key lands on the matrix — otherwise these asserts
+    // are vacuous.
     harness.key_down(egui::Key::A);
     harness.step();
     assert_ne!(

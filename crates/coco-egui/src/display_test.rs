@@ -71,7 +71,8 @@ fn luma_saturated_primaries_hit_their_rec601_weights() {
 
 #[test]
 fn blur_smears_along_the_row_only() {
-    // White impulse in top row; 1-2-1 kernel spreads it (64/128/64) but must not bleed into the row below.
+    // White impulse in top row; 1-2-1 kernel spreads it (64/128/64) but must not bleed into the
+    // row below.
     #[rustfmt::skip]
     let src: Vec<u8> = vec![
         0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,

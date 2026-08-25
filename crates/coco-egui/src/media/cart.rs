@@ -6,7 +6,9 @@ use crate::*;
 
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
-    /// (cartridge swaps are machine-off ops). Aborts on a failed dirty-floppy flush, leaving state untouched; error in [`Self::cart_error`].
+    /// (cartridge swaps are machine-off ops). Aborts on a failed
+    /// dirty-floppy flush, leaving state untouched; error in
+    /// [`Self::cart_error`].
     pub(crate) fn insert_cartridge(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -63,7 +65,8 @@ impl CocoApp {
     }
 
     /// Loads an Orchestra-90/CC ROM from `path` and inserts it. No `autostart_cart` choice
-    /// to honor — [`Orch90::cart_line_ties_q`] always autostarts, like the real pak's CART*-tied-to-Q wiring.
+    /// to honor — [`Orch90::cart_line_ties_q`] always autostarts, like the
+    /// real pak's CART*-tied-to-Q wiring.
     ///
     /// [`Orch90::cart_line_ties_q`]: coco_core::cart::Cartridge::cart_line_ties_q
     pub(crate) fn insert_orch90(&mut self, path: PathBuf) {
@@ -108,7 +111,8 @@ impl CocoApp {
     }
 
     /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint (pick
-    /// TCP/PTY from its submenu). Installs the EPROM dump at `roms/rs232.rom` if present; fully usable ROM-less otherwise.
+    /// TCP/PTY from its submenu). Installs the EPROM dump at
+    /// `roms/rs232.rom` if present; fully usable ROM-less otherwise.
     pub(crate) fn insert_rs232(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -144,7 +148,8 @@ impl CocoApp {
             RS232EndpointKind::TCP => {
                 match coco_core::serial::TCPEndpoint::bind(&self.rs232_tcp_addr) {
                     Ok(ep) => {
-                        // Show the actually-bound address so ":0" (OS-assigned port) displays usably.
+                        // Show the actually-bound address so ":0"
+                        // (OS-assigned port) displays usably.
                         let addr = ep
                             .local_addr()
                             .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
@@ -172,7 +177,8 @@ impl CocoApp {
     }
 
     /// Plugs the Sound/Speech Cartridge into the cartridge slot. No file to load, so
-    /// unlike [`Self::insert_cartridge`] this can't fail — but shares its abort-on-failed-flush contract.
+    /// unlike [`Self::insert_cartridge`] this can't fail — but shares its
+    /// abort-on-failed-flush contract.
     pub(crate) fn insert_ssc(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -207,7 +213,8 @@ impl CocoApp {
     }
 
     /// Removes the Multi-Pak Interface and everything plugged into it, restoring the empty
-    /// slot. Aborts, leaving the MPI in place, if a dirty floppy any of its slots holds fails to flush.
+    /// slot. Aborts, leaving the MPI in place, if a dirty floppy any of
+    /// its slots holds fails to flush.
     pub(crate) fn eject_multipak(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -220,7 +227,8 @@ impl CocoApp {
     }
 
     /// Flushes before replacing MPI `slot`'s contents, but only when it holds the FD-502 —
-    /// other cartridge kinds can't hold a dirty floppy. `false` means the caller must abort without mutating anything.
+    /// other cartridge kinds can't hold a dirty floppy. `false` means the
+    /// caller must abort without mutating anything.
     #[must_use]
     fn mpi_flush_before_replacing_slot(&mut self, slot: usize) -> bool {
         let holds_fd502 = self
@@ -395,7 +403,8 @@ impl CocoApp {
     }
 
     /// Plugs a Disto RTC directly into the cartridge port, running on the host's local
-    /// clock. Has no boot ROM, so pairs with a VHD boot rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
+    /// clock. Has no boot ROM, so pairs with a VHD boot rather than the
+    /// FD-502 — for RTC + floppies, use a Multi-Pak slot.
     pub(crate) fn insert_rtc(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;

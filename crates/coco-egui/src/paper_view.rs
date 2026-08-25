@@ -65,7 +65,8 @@ impl PaperWindow {
     }
 
     /// Detaches the current sink handle: closes the window and drops every cached page texture
-    /// (a fresh handle means fresh, unrelated content). Called when print-file-capture takes the bit-banger's sink out from under this window.
+    /// (a fresh handle means fresh, unrelated content). Called when print-file-capture takes
+    /// the bit-banger's sink out from under this window.
     pub fn detach(&mut self) {
         self.handle = None;
         self.open = false;
@@ -75,7 +76,8 @@ impl PaperWindow {
     }
 
     /// Re-binds this window after a snapshot restore replaces the live machine. `Some(handle)`
-    /// drops every cached page texture but leaves `open` alone; `None` delegates to [`Self::detach`].
+    /// drops every cached page texture but leaves `open` alone; `None` delegates to
+    /// [`Self::detach`].
     pub fn resync(&mut self, handle: Option<DMP105Handle>) {
         match handle {
             Some(handle) => {
@@ -89,7 +91,8 @@ impl PaperWindow {
     }
 
     /// Total pages currently spanning the roll for a given [`PaperExtent`]: always at least one
-    /// page shown, plus one blank page beyond the last printed line. Pure function so it's testable without a live handle.
+    /// page shown, plus one blank page beyond the last printed line. Pure function so it's
+    /// testable without a live handle.
     fn total_pages_for_extent(extent: PaperExtent) -> u32 {
         let last_content_page = if extent.dot_count == 0 {
             0
@@ -101,7 +104,8 @@ impl PaperWindow {
     }
 
     /// Tears off: discards the printed roll ([`DMP105Handle::tear_off`]) and resets every view
-    /// state that referred to the old roll, so the next frame sees a fresh blank page. No-op if no handle is attached.
+    /// state that referred to the old roll, so the next frame sees a fresh blank page. No-op if
+    /// no handle is attached.
     fn perform_tear_off(&mut self) {
         if let Some(handle) = &self.handle {
             handle.tear_off();
@@ -125,7 +129,8 @@ impl PaperWindow {
 
         let extent = handle.paper_extent();
         let total_pages = Self::total_pages_for_extent(extent);
-        // Pages with ink: `total_pages - 1` only counts them when there IS ink — a blank roll still shows paper but has zero printed pages.
+        // Pages with ink: `total_pages - 1` only counts them when there IS ink — a blank roll
+        // still shows paper but has zero printed pages.
         let printed_pages = if extent.dot_count == 0 {
             0
         } else {
@@ -146,7 +151,8 @@ impl PaperWindow {
                 paper_render::WINDOW_BG_COLOR[3],
             );
             if class == egui::ViewportClass::Embedded {
-                // Backend without native multi-window support: fall back to the embedded in-viewport window.
+                // Backend without native multi-window support: fall back to the embedded
+                // in-viewport window.
                 let mut open = self.open;
                 egui::Window::new(crate::window_title(ctx, "Printer Paper"))
                     .open(&mut open)
@@ -184,7 +190,8 @@ impl PaperWindow {
         let Some((y0, y1)) = handle.take_dirty() else {
             return;
         };
-        // Widen by the rasterizer's dot-bleed pad: a dot near a page edge also renders into the adjacent page's texture.
+        // Widen by the rasterizer's dot-bleed pad: a dot near a page edge also renders into the
+        // adjacent page's texture.
         let y0 = y0.saturating_sub(paper_render::DOT_QUERY_PAD_Y_UNITS);
         let y1 = y1.saturating_add(paper_render::DOT_QUERY_PAD_Y_UNITS);
         let y0_in = y0 as f32 / Y_UNITS_PER_INCH as f32;
@@ -239,7 +246,8 @@ impl PaperWindow {
     }
 
     /// Everything inside the paper window: the header row (page count, green bar, Export menu,
-    /// Tear Off) and the scrolling fanfold view. Shared between the native-viewport and embedded-fallback paths of [`Self::ui`].
+    /// Tear Off) and the scrolling fanfold view. Shared between the native-viewport and
+    /// embedded-fallback paths of [`Self::ui`].
     fn contents(
         &mut self,
         ui: &mut egui::Ui,
@@ -308,7 +316,8 @@ impl PaperWindow {
                     .set_file_name("roll.png")
                     .save_file()
                 {
-                    // The whole printed roll plus the trailing blank page, so the image ends on a page boundary.
+                    // The whole printed roll plus the trailing blank page, so the image ends on
+                    // a page boundary.
                     let img = paper_render::rasterize(
                         handle,
                         0.0,
@@ -376,7 +385,8 @@ impl PaperWindow {
     }
 
     /// The scrolling fanfold view: allocates one rect per page at fit-width scale, lazily
-    /// rasterizing/uploading a texture for any page entering the viewport-plus-[`KEEP_MARGIN_PAGES`] keep range, evicting the rest.
+    /// rasterizing/uploading a texture for any page entering the
+    /// viewport-plus-[`KEEP_MARGIN_PAGES`] keep range, evicting the rest.
     fn fanfold_scroll_area(
         &mut self,
         ui: &mut egui::Ui,
@@ -391,7 +401,8 @@ impl PaperWindow {
             PAGE_HEIGHT_IN * RASTER_DPI * scale,
         );
         let keep_margin_px = page_size.y * KEEP_MARGIN_PAGES;
-        // Copied out before the loop: the closure can't re-borrow `self` while `self.pages.entry(...)` holds a mutable borrow.
+        // Copied out before the loop: the closure can't re-borrow `self` while
+        // `self.pages.entry(...)` holds a mutable borrow.
         let green_bar = self.green_bar;
 
         let mut keep_pages: HashSet<u32> = HashSet::new();

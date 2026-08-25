@@ -94,7 +94,8 @@ fn stop_vm_folds_runtime_and_zero_elapsed_is_a_noop() {
     let loaded = machine_def::load_all(machines_dir.path()).expect("reload should succeed");
     assert_eq!(loaded[0].1.stats.runtime_secs, 125);
 
-    // Start again, accumulate nothing, then append a sentinel the serializer would never produce, to catch a spurious rewrite.
+    // Start again, accumulate nothing, then append a sentinel the
+    // serializer would never produce, to catch a spurious rewrite.
     manager.start_vm(0);
     let toml_path = machines_dir.path().join("lifecycle-stop.toml");
     let mut sentinel_contents = fs::read_to_string(&toml_path).expect("file should exist");
@@ -175,7 +176,8 @@ fn fold_runtime_into_def_is_idempotent() {
         "truncated to whole seconds"
     );
 
-    // Append a sentinel the serializer would never produce, so a spurious re-save by the no-op fold below is caught.
+    // Append a sentinel the serializer would never produce, so a spurious
+    // re-save by the no-op fold below is caught.
     let toml_path = machines_dir.path().join("lifecycle-fold-idempotent.toml");
     let mut sentinel_contents = fs::read_to_string(&toml_path).expect("file should exist");
     sentinel_contents.push_str("\n# sentinel: an idempotent fold must not rewrite this file\n");
@@ -294,7 +296,8 @@ fn cold_resume_does_not_add_a_second_start() {
         manager.entries[0].launch_error
     );
 
-    // Simulate the window having been closed: the VM object is gone, but the entry is still Suspended.
+    // Simulate the window having been closed: the VM object is gone, but
+    // the entry is still Suspended.
     manager.entries[0].vm = None;
 
     manager.resume_vm(0);

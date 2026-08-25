@@ -38,7 +38,8 @@ fn random_from_dir(dir: &Path) -> Option<Photo> {
             .flatten()
             .map(|e| e.path())
             .filter(|p| {
-                // Skip hidden files: macOS drops AppleDouble sidecars ("._foo.png") that aren't decodable.
+                // Skip hidden files: macOS drops AppleDouble sidecars ("._foo.png") that aren't
+                // decodable.
                 let hidden = p
                     .file_name()
                     .and_then(|n| n.to_str())

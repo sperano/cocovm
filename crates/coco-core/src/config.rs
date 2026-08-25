@@ -1,5 +1,5 @@
 //! Machine configuration: machine variant, video standard, and installed RAM.
-//! See `DESIGN.md` §4, §3 and
+//! See `DESIGN.md` §3 (address decoding) and §4 (timing model).
 
 use serde::{Deserialize, Serialize};
 
@@ -7,9 +7,9 @@ use crate::gime::MonitorType;
 
 /// Which physical machine is emulated. CoCo 1 and CoCo 2 are software- and
 /// timing-identical (same SAM, same plain MC6847, same PIA wiring — MAME uses
-/// one `coco` driver for both, per); the variant only
-/// changes default RAM size and ROM set. The CoCo 2B's MC6847T1 (lowercase,
-/// SG6 removal) is a deliberately deferred follow-up, not modeled here yet.
+/// one `coco` driver for both); the variant only changes default RAM size
+/// and ROM set. The CoCo 2B's MC6847T1 (lowercase, SG6 removal) is a
+/// deliberately deferred follow-up, not modeled here yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MachineVariant {
     /// SAM (MC6883) + plain MC6847 VDG, no GIME.
@@ -74,24 +74,29 @@ impl VideoStandard {
     }
 
     /// Physical scanline (0-based) where the field-sync line falls: PIA0
-    /// CB1's latch point, and (on the GIME) where VBORD rises (MAME `gime.cpp`/`mc6847.cpp`).
+    /// CB1's latch point, and (on the GIME) where VBORD rises (MAME
+    /// `gime.cpp`/`mc6847.cpp`). 244 = 25 top border + 192 active + 26 bottom + 1.
     pub const fn fs_falling_line(self, variant: MachineVariant) -> u32 {
         match self {
             VideoStandard::NTSC => match variant {
                 MachineVariant::Coco3 => 244,
                 MachineVariant::Coco1 | MachineVariant::Coco2 => 216,
             },
-            // UNVERIFIED: PAL offset unclear from MAME source; falls back to the last scanline (Coco1/2+PAL is rejected earlier by validate()).
+            // UNVERIFIED: PAL offset unclear from MAME source; falls back
+            // to the last scanline (Coco1/2+PAL is rejected earlier by
+            // validate()).
             VideoStandard::PAL => VideoStandard::PAL.lines_per_field() - 1,
         }
     }
 
     /// Physical scanline (0-based) where the field-sync line rises again.
-    /// 248 (MAME `mc6847.cpp`) for every variant; `_variant` exists only for symmetry with [`Self::fs_falling_line`].
+    /// 248 (MAME `mc6847.cpp`) for every variant; `_variant` exists only for
+    /// symmetry with [`Self::fs_falling_line`].
     pub const fn fs_rising_line(self, _variant: MachineVariant) -> u32 {
         match self {
             VideoStandard::NTSC => 248,
-            // UNVERIFIED, see fs_falling_line: PAL edges collapse to the same last scanline until the real offset is confirmed.
+            // UNVERIFIED, see fs_falling_line: PAL edges collapse to the
+            // same last scanline until the real offset is confirmed.
             VideoStandard::PAL => VideoStandard::PAL.lines_per_field() - 1,
         }
     }
@@ -101,7 +106,7 @@ impl VideoStandard {
 /// addresses up to 2 MB; 512K was only Tandy's shipped max, not a chip limit.
 /// Note the write-8 / read-low-6 register asymmetry handled in the MMU model.
 /// `K4`/`K16`/`K32`/`K64` are the plain-SAM (CoCo 1/2) sizes the real MC6883
-/// supports. See `DESIGN.md` §3 and
+/// supports. See `DESIGN.md` §3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemorySize {
     /// CoCo 1/2 only.
@@ -163,7 +168,9 @@ pub struct MachineConfig {
 
 impl MachineConfig {
     /// Reject variant/video/memory/VDG/monitor combinations the emulator
-    /// doesn't support (or that real hardware never shipped) — see the error messages for specifics.
+    /// doesn't support, or that real hardware never shipped (e.g. no 4K or
+    /// 32K CoCo 2 — CoCo 2 service manual 26-3026/26-3027 §3.3); see the
+    /// error messages for specifics.
     pub fn validate(&self) -> Result<(), String> {
         match self.variant {
             MachineVariant::Coco1 | MachineVariant::Coco2 => {

@@ -1,7 +1,8 @@
 use super::*;
 
 /// Feed one bit cell's worth of a fixed PA1 level through `tick` in
-/// `tick_size`-cycle chunks (non-divisor of the bit period, so a phase error from chunking would show up).
+/// `tick_size`-cycle chunks (non-divisor of the bit period, so a phase
+/// error from chunking would show up).
 fn feed_bit(bb: &mut BitBanger, level: bool, cycles_total: u32, tick_size: u32) {
     let mut remaining = cycles_total;
     while remaining > 0 {

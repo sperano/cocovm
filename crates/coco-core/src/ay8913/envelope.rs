@@ -47,7 +47,8 @@ impl Envelope {
 
     /// R13 write: (re)starts the envelope at the top of a fresh ramp (MAME
     /// `envelope_t::set_shape`). CONT=0 shapes fold to their CONT=1 equivalent
-    /// (hold forced on) since real AY-3-8910 silicon only implements 10 of the 16 shape codes distinctly.
+    /// (hold forced on) since real AY-3-8910 silicon only implements 10 of
+    /// the 16 shape codes distinctly.
     pub(super) fn set_shape(&mut self, shape_byte: u8) {
         self.attack = if shape_byte & shape::ATTACK != 0 {
             ENV_STEP_MASK as u8
@@ -87,7 +88,9 @@ impl Envelope {
             self.holding = true;
             self.step = 0;
         } else {
-            // MAME re-checks `alternate` against masked `step`, always true for the only reachable negative value (-1) — fires once per ramp when set.
+            // MAME re-checks `alternate` against masked `step`, always true
+            // for the only reachable negative value (-1) — fires once per
+            // ramp when set.
             if self.alternate && (self.step & (ENV_STEP_MASK + 1)) != 0 {
                 self.attack ^= ENV_STEP_MASK as u8;
             }

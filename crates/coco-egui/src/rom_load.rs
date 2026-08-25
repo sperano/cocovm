@@ -171,7 +171,7 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
 
 /// The per-user installed ROM directory, populated by
 /// [`crate::startup::ensure_assets`]. Panics only if no home directory can be
-/// determined — a state `ensure_assets` already exits the process for.
+/// determined; `ensure_assets` already exits the process before that can happen.
 pub(crate) fn installed_roms_dir() -> PathBuf {
     crate::paths::roms_dir().expect("no home directory (checked at startup by ensure_assets)")
 }

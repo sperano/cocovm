@@ -18,7 +18,8 @@ use super::{SystemBus, mmu_index};
 impl SystemBus {
     /// Becker-port read intercept ($FF41/$FF42): `Some` when the Becker port
     /// is enabled and `addr` is one of the two registers — takes precedence
-    /// over cartridge dispatch on every I/O decode path (MAME installs Becker handlers over the cart range).
+    /// over cartridge dispatch on every I/O decode path (MAME installs
+    /// Becker handlers over the cart range).
     pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
         let dw = self.drivewire.as_mut()?;
         match addr {
@@ -46,7 +47,8 @@ impl SystemBus {
     }
 
     pub(super) fn io_read(&mut self, addr: u16) -> u8 {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's handler-installation order.
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order.
         if let Some(v) = self.becker_read(addr) {
             return v;
         }
@@ -83,7 +85,8 @@ impl SystemBus {
     }
 
     pub(super) fn io_write(&mut self, addr: u16, val: u8) {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's handler-installation order.
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's
+        // handler-installation order.
         if self.becker_write(addr, val) {
             return;
         }
@@ -143,8 +146,9 @@ impl SystemBus {
     pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
         let reg = addr & PIA1_REG_MASK;
         self.pia1.write(reg as u8, val);
-        // Cassette record-out is a direct, unconditional tap of the DAC, but only samples on Port
-        // A output/DDR writes, not CRA writes: MAME's `update_cassout()` runs only from `pia1_pa_changed()`.
+        // Cassette record-out is a direct, unconditional tap of the DAC, but
+        // only samples on Port A output/DDR writes, not CRA writes: MAME's
+        // `update_cassout()` runs only from `pia1_pa_changed()`.
         if reg == PIA1_PORT_A_OFFSET {
             let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
             self.cassette.record_dac(dac, self.pia1.a.c2_output());

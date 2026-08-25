@@ -97,7 +97,8 @@ impl MachineDef {
         let variant: MachineVariant = self.hardware.variant.into();
         let memory: MemorySize = self.hardware.ram.into();
         let video: VideoStandard = self.hardware.video.into();
-        // A monitor choice flows through even on a CoCo 1/2 so `validate` rejects it with the real reason.
+        // A monitor choice flows through even on a CoCo 1/2 so `validate` rejects it with the
+        // real reason.
         let monitor = self.display().to_monitor(variant);
         let vdg: Option<VDGVariant> = match self.hardware.vdg {
             Some(dto) => Some(dto.into()),
@@ -183,7 +184,8 @@ pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {
 }
 
 /// Directory holding every machine definition file (`config_dir()/machines`).
-/// `None` when no home directory can be determined; not created here — [`save`] creates it on demand.
+/// `None` when no home directory can be determined; not created here — [`save`] creates it on
+/// demand.
 pub fn machines_dir() -> Option<PathBuf> {
     paths::config_dir().map(|dir| dir.join("machines"))
 }

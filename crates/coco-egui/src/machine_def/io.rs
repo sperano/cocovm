@@ -185,7 +185,8 @@ pub fn save(dir: &Path, slug: &str, def: &MachineDef) -> Result<(), String> {
     let toml::Value::Table(mut table) =
         toml::Value::try_from(def).map_err(|e| format!("serializing {slug}: {e}"))?
     else {
-        // A struct always serializes to a TOML table; this arm exists only so `save` stays a `Result`.
+        // A struct always serializes to a TOML table; this arm exists only so `save` stays a
+        // `Result`.
         return Err(format!(
             "serializing {slug}: expected a TOML table at the top level"
         ));

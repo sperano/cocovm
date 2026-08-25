@@ -141,7 +141,8 @@ pub(crate) const TYPE_HOLD_FIELDS: u8 = 2;
 pub(crate) const TYPE_GAP_FIELDS: u8 = 1;
 
 fn main() -> eframe::Result<()> {
-    // Before anything reads the environment: RUST_LOG and clap's env fallbacks need `.env` loaded first.
+    // Before anything reads the environment: RUST_LOG and clap's env fallbacks need `.env`
+    // loaded first.
     load_dotenv();
 
     // Before anything writes to stdout: legacy Windows conhost needs the VT opt-in this performs.
@@ -151,7 +152,8 @@ fn main() -> eframe::Result<()> {
     let cli = Cli::parse();
     setup_logging(use_color, cli.log_level.into());
 
-    // The app always opens the CocoVM manager window; a future CLI will build on its machine definitions.
+    // The app always opens the CocoVM manager window; a future CLI will build on its machine
+    // definitions.
     manager::run()
 }
 

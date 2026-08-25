@@ -11,7 +11,8 @@ use super::{Machine, VideoMode};
 
 impl Machine {
     /// Classify the current video mode. CoCo 1/2 (no GIME) always runs the
-    /// VDG-native path (PIA1 $FF22 bit 7 selects graphics vs text); CoCo 3 also checks INIT0 COCO and $FF98 BP.
+    /// VDG-native path (PIA1 $FF22 bit 7 selects graphics vs text); CoCo 3
+    /// also checks INIT0 COCO and $FF98 BP.
     fn video_mode(&self) -> VideoMode {
         match self.config.variant {
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
@@ -49,7 +50,8 @@ impl Machine {
     }
 
     /// Resolve the 16-entry colour table the CoCo-compatible text/graphics
-    /// renderers read from: GIME palette registers on CoCo 3, the fixed VDG RGB table on CoCo 1/2 (`css` only matters there).
+    /// renderers read from: GIME palette registers on CoCo 3, the fixed VDG
+    /// RGB table on CoCo 1/2 (`css` only matters there).
     pub(super) fn legacy_palette(&self, css: bool) -> [[u8; 4]; video::PALETTE_LEN] {
         match self.config.variant {
             MachineVariant::Coco3 => {
@@ -65,8 +67,9 @@ impl Machine {
         }
     }
 
-    /// Decode the current text screen to ASCII lines — a debug/probe helper, not
-    /// a renderer. Graphics modes have no text buffer and return one placeholder line naming the mode.
+    /// Decode the current text screen to ASCII lines — a debug/probe helper,
+    /// not a renderer. Graphics modes have no text buffer and return one
+    /// placeholder line naming the mode.
     pub fn text_screen_lines(&mut self) -> Vec<String> {
         match self.video_mode() {
             VideoMode::CocoText | VideoMode::CocoGraphics => {

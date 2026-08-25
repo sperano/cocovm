@@ -47,7 +47,8 @@ fn select_range_is_inclusive_in_either_direction_and_keeps_the_anchor() {
     assert_eq!(sel.iter().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
     assert_eq!(sel.anchor(), Some(1));
 
-    // Same anchor, extended downward past it — a second Shift-click must measure from the same start.
+    // Same anchor, extended downward past it — a second Shift-click must
+    // measure from the same start.
     sel.select_range(1, 0);
     assert_eq!(sel.iter().collect::<Vec<_>>(), vec![0, 1]);
     assert_eq!(

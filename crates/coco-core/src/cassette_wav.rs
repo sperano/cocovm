@@ -90,7 +90,8 @@ fn build_wav_bytes(samples: &[u8]) -> Vec<u8> {
     let byte_rate = WAV_SAMPLE_RATE_HZ * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
     let block_align = CHANNELS * BITS_PER_SAMPLE / 8;
     let data_len = samples.len() as u32;
-    // RIFF size excludes "RIFF"+size(4) itself: 4 ("WAVE") + 8+16 (fmt chunk) + 8+data_len (data chunk) = 36 + data_len.
+    // RIFF size excludes "RIFF"+size(4) itself: 4 ("WAVE") + 8+16 (fmt
+    // chunk) + 8+data_len (data chunk) = 36 + data_len.
     let riff_len = 36 + data_len;
 
     let mut out = Vec::with_capacity(44 + samples.len());

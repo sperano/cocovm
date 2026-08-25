@@ -160,7 +160,8 @@ fn manager_edit_with_serial_records_the_port() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    // "None" combo order: Cassette, Cartridge, VHD 0, VHD 1, then Serial (Ports renders below Peripherals).
+    // "None" combo order: Cassette, Cartridge, VHD 0, VHD 1, then Serial (Ports renders below
+    // Peripherals).
     select_combo_at(&mut harness, "None", 4, "Printer (DMP-105)");
 
     assert_eq!(harness.state().entries.len(), 1);

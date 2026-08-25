@@ -84,7 +84,8 @@ fn civil_from_days(days: i64) -> (i32, u8, u8) {
 
 impl RTCTime {
     /// Seconds since the 1970-01-01 00:00:00 epoch (proleptic Gregorian).
-    /// Out-of-range month/day are clamped rather than rejected, so a partially-written register file mid-`setime` still returns something.
+    /// Out-of-range month/day are clamped rather than rejected, so a
+    /// partially-written register file mid-`setime` still returns something.
     fn to_secs(self) -> i64 {
         let month = self.month.clamp(1, 12);
         let day = self.day.clamp(1, 31);
@@ -283,7 +284,8 @@ impl MSM6242 {
     }
 
     /// Restore-path-only: re-inject the host time source after a snapshot restore
-    /// (`now` is `#[serde(skip)]`). Resumes exactly where the snapshot left off, not at a fresh offset.
+    /// (`now` is `#[serde(skip)]`). Resumes exactly where the snapshot left
+    /// off, not at a fresh offset.
     pub fn set_time_source(&mut self, now: TimeSource) {
         self.now = now;
     }
@@ -349,7 +351,8 @@ impl MSM6242 {
             }
             REG_CE => self.reg_ce = val,
             REG_CF => {
-                // 12/24 latches only on RESET 1->0 (spec); unlike MAME's bugged transcription, we store what was written.
+                // 12/24 latches only on RESET 1->0 (spec); unlike MAME's
+                // bugged transcription, we store what was written.
                 if val & cf::RESET == 0 && self.reg_cf & cf::RESET != 0 {
                     self.reg_cf = val & (cf::WRITE_MASK | cf::H24);
                 } else {

@@ -23,7 +23,8 @@ pub const NON_WIDE_ACTIVE_W: usize = 512;
 pub const NON_WIDE_BORDER_X: usize = (CANVAS_W - NON_WIDE_ACTIVE_W) / 2;
 
 /// Vertical placement of the active body inside the 240 visible rows, indexed
-/// by LPF; LPF=%10 is a glitched value on real silicon, approximated as 210 centered.
+/// by LPF (MAME `update_geometry`; top+bottom border always sums to 240).
+/// LPF=%10 is a glitched value on real silicon, approximated as 210 centered.
 pub const fn vertical_window(lpf: usize) -> (usize, usize) {
     match lpf {
         0 => (25, 192),

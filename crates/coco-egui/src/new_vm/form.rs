@@ -24,7 +24,8 @@ impl MachineForm {
         let config = coco_core::MachineConfig::default();
         Self {
             salt,
-            // The default config's implied display (RGB monitor, since MachineConfig::default() is a CoCo 3).
+            // The default config's implied display (RGB monitor, since MachineConfig::default()
+            // is a CoCo 3).
             display: Display::from_config(&config),
             tv: crate::display::TVSettings::default(),
             config,
@@ -49,7 +50,8 @@ impl MachineForm {
     }
 
     /// The VDG/Video/Display rows and the 4:3 aspect checkbox, hosted in the detail pane's
-    /// "Display" titled group. Re-constrains the Display pick first, since it owns `config.monitor` and must stay valid for the current variant.
+    /// "Display" titled group. Re-constrains the Display pick first, since it owns
+    /// `config.monitor` and must stay valid for the current variant.
     pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {
         self.constrain_display();
         let variant = self.config.variant;
@@ -68,7 +70,8 @@ impl MachineForm {
         });
         ui.end_row();
 
-        // The TV chain's knobs stay enabled only for a TV pick; the value is kept either way, so switching back restores the tuned strength.
+        // The TV chain's knobs stay enabled only for a TV pick; the value is kept either way,
+        // so switching back restores the tuned strength.
         let is_tv = matches!(self.display, Display::TV(_));
         ui.label(egui::RichText::new("Scanlines").size(font));
         ui.add_enabled(
@@ -104,7 +107,8 @@ impl MachineForm {
     pub(crate) fn media_rows(&mut self, ui: &mut egui::Ui) {
         let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
-        // Form-only rows: the cartridge and media aren't part of `MachineConfig` — see [`CartridgeChoice`].
+        // Form-only rows: the cartridge and media aren't part of `MachineConfig` — see
+        // [`CartridgeChoice`].
         ui.label(egui::RichText::new("Cassette").size(font));
         self.tape_combo(ui);
         ui.end_row();
@@ -119,7 +123,8 @@ impl MachineForm {
         self.cartridge_combo(ui);
         ui.end_row();
 
-        // The cartridge's own rows nest below as an indented sub-form: FD-502's Disk rows directly, or the MPI's four Slot rows.
+        // The cartridge's own rows nest below as an indented sub-form: FD-502's Disk rows
+        // directly, or the MPI's four Slot rows.
         match self.cartridge {
             CartridgeChoice::FD502 => {
                 sub_form_row(ui, |ui| self.disk_rows(ui, font));
@@ -234,7 +239,8 @@ impl MachineForm {
     }
 
     /// One "Slot N:" label + combo (Empty / FD-502 / ROM Pak… / Disto RTC), drawn while the
-    /// MPI is selected. Claiming the FD-502 or RTC releases it from any other slot; ROM Paks may fill any number of slots.
+    /// MPI is selected. Claiming the FD-502 or RTC releases it from any other slot; ROM Paks
+    /// may fill any number of slots.
     fn slot_combo(&mut self, ui: &mut egui::Ui, font: f32, slot: usize) {
         ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
         egui::ComboBox::from_id_salt((self.salt, "mpi_slot", slot))
@@ -386,7 +392,8 @@ impl MachineForm {
     }
 
     /// The Joysticks fieldset's one row, between Ports and Keyboard. Left is shown before Right
-    /// even though the right port is [`RIGHT`] (the CoCo's primary stick) — Left/Right reads naturally in that order to a user.
+    /// even though the right port is [`RIGHT`] (the CoCo's primary stick) — Left/Right reads
+    /// naturally in that order to a user.
     pub(crate) fn joystick_row(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Left:");
@@ -409,7 +416,8 @@ impl MachineForm {
     }
 
     /// The Keyboard fieldset's one row, hosted last in the detail pane's own "Keyboard" titled
-    /// group. A `[ui]` preference: the launched window's starting state; F12 keeps working as a live toggle afterwards.
+    /// group. A `[ui]` preference: the launched window's starting state; F12 keeps working as a
+    /// live toggle afterwards.
     pub(crate) fn keyboard_row(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {

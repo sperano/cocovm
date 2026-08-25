@@ -172,7 +172,8 @@ fn elongation_doubles_dot_spacing_and_cell_advance() {
     feed_str(&mut elongated, b"A");
     assert_eq!(elongated.x, normal_advance * 2);
 
-    // Find the first row-0 dot column from the font data and check it landed at twice the normal spacing.
+    // Find the first row-0 dot column from the font data and check it
+    // landed at twice the normal spacing.
     let dot = Pitch::Normal.dot_spacing();
     let glyph = dmp105_font::ascii_glyph(b'A').unwrap();
     let first_row0_col = glyph
@@ -199,7 +200,8 @@ fn underline_marks_full_cell_width_on_descender_row() {
         .into_iter()
         .map(|(x, _)| x)
         .collect();
-    // A solid rule stepped at `dot` covers x=0 and the last in-range multiple of `dot` before `width`.
+    // A solid rule stepped at `dot` covers x=0 and the last in-range
+    // multiple of `dot` before `width`.
     assert!(rule_dots.contains(&0));
     let last_step = ((width - 1) / dot) * dot;
     assert!(rule_dots.contains(&last_step));
@@ -304,7 +306,10 @@ fn graphics_mode_enter_data_lf_and_exit_round_trip() {
 
 #[test]
 fn graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts() {
-    // See the module doc comment: the manual's "11 full-pitch LFs = 18 graphics LFs" identity does not hold under the individually-verified unit values; this documents that rather than asserting a fabricated resolution.
+    // See the module doc comment: the manual's "11 full-pitch LFs = 18
+    // graphics LFs" identity does not hold under the individually-verified
+    // unit values; this documents that rather than asserting a fabricated
+    // resolution.
     let full_pitch_total = 11 * LF_PITCH_1_6;
     let graphics_total = 18 * GRAPHICS_LF_UNITS;
     assert_eq!(full_pitch_total, 132);

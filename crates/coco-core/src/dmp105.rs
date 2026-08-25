@@ -253,7 +253,8 @@ impl DMP105 {
     }
 
     /// Power-cycle reset (`dmp105-protocol.md` §7: the only reset entry
-    /// point). Restores registers to power-on defaults; does **not** clear the paper — see [`Paper::clear`].
+    /// point). Restores registers to power-on defaults; does **not** clear
+    /// the paper — see [`Paper::clear`].
     pub fn reset(&mut self) {
         let paper = std::mem::take(&mut self.paper);
         *self = Self::default();

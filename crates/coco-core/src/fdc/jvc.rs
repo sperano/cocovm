@@ -307,8 +307,9 @@ impl JVCDisk {
         self.dirty = true;
     }
 
-    /// Lay down one formatted sector during a Write Track, growing the image with zero-filled
-    /// tracks if needed. Silently no-ops on a geometry mismatch — real hardware has no error path.
+    /// Lay down one formatted sector during a Write Track, growing the image
+    /// with zero-filled tracks if needed. Silently no-ops on a geometry
+    /// mismatch — real hardware has no error path.
     pub fn format_sector(
         &mut self,
         track: u8,

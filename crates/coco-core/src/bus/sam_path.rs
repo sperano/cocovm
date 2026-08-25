@@ -49,7 +49,8 @@ impl SystemBus {
                     self.ram[i] = val;
                 }
             }
-            // TY=0 writes to $8000-$FEFF don't write through to RAM (MAME gates write-through on TY); dropped here.
+            // TY=0 writes to $8000-$FEFF don't write through to RAM (MAME
+            // gates write-through on TY); dropped here.
             SAMTarget::RomExt(_)
             | SAMTarget::RomBas(_)
             | SAMTarget::Cart(_)

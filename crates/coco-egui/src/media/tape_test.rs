@@ -144,7 +144,8 @@ fn eject_tape_fails_then_succeeds_after_write_access_is_restored() {
         assert_eq!(app.tape_path, Some(tape_path.clone()));
     }
 
-    // `cart_error` is sticky (not auto-cleared), so reset it here to observe the retry's own outcome.
+    // `cart_error` is sticky (not auto-cleared), so reset it here to
+    // observe the retry's own outcome.
     app.cart_error = None;
     app.eject_tape();
     assert!(
@@ -156,7 +157,8 @@ fn eject_tape_fails_then_succeeds_after_write_access_is_restored() {
 }
 
 /// `eject_tape` must not abort when only the optional `.wav` sibling fails to write — by
-/// then the canonical `.cas` has landed and the tape is clean. The eject proceeds; the `.wav` failure surfaces via [`CocoApp::cart_error`].
+/// then the canonical `.cas` has landed and the tape is clean. The eject
+/// proceeds; the `.wav` failure surfaces via [`CocoApp::cart_error`].
 #[test]
 fn eject_tape_proceeds_when_only_the_wav_sibling_write_fails() {
     let dir = scratch_dir("wav-sibling-write-back-failure");
@@ -177,7 +179,8 @@ fn eject_tape_proceeds_when_only_the_wav_sibling_write_fails() {
     dirty_tape(&mut app);
     let expected_cas_bytes = app.machine.bus.cassette.tape_bytes().to_vec();
 
-    // The .wav sibling must exist first to be made read-only; .cas writes happen first and always succeed here.
+    // The .wav sibling must exist first to be made read-only; .cas writes
+    // happen first and always succeed here.
     std::fs::write(&wav_path, Vec::<u8>::new()).expect("create wav fixture");
     let _ro = ReadOnly::new(&wav_path);
 

@@ -34,7 +34,8 @@ fn machine_menu_reset_keeps_the_ui_alive() {
 }
 
 /// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the VM-only
-/// Debug tile. Start stays permanently disabled (a chrome-bearing window only exists while Running).
+/// Debug tile. Start stays permanently disabled (a chrome-bearing window only exists while
+/// Running).
 #[test]
 fn toolbar_shows_start_disabled_and_others_live() {
     let mut harness = boot_harness();
@@ -272,7 +273,8 @@ fn media_actions_are_disabled_until_media_is_present() {
         );
     }
 
-    // Toggle the Machine menu closed first so the tape entry's click opens its popup, not dismisses one.
+    // Toggle the Machine menu closed first so the tape entry's click opens its popup, not
+    // dismisses one.
     click(&mut harness, "Machine");
     click(&mut harness, "Tape menu");
     for label in ["Rewind Tape", "Eject Tape"] {
@@ -318,7 +320,8 @@ fn multipak_install_slot_and_switch_flow() {
         "the FD-502 in an MPI slot must be reachable through the cart chain"
     );
 
-    // Move the front-panel switch to slot 2; the parent menu's own entry is "Slot 2 ⏵", not "Slot 2".
+    // Move the front-panel switch to slot 2; the parent menu's own entry is "Slot 2 ⏵", not
+    // "Slot 2".
     click(&mut harness, "Machine");
     click_containing(&mut harness, "MultiPak Interface");
     click_containing(&mut harness, "Switch");
@@ -441,7 +444,8 @@ fn cartridge_error_dialog_dismisses_with_ok() {
 #[test]
 fn disk_controller_confirmation_can_be_cancelled() {
     let mut harness = boot_harness();
-    // The state Insert Disk lands in with no FD-502 installed (reached directly; the menu opens a native dialog).
+    // The state Insert Disk lands in with no FD-502 installed (reached directly; the menu opens
+    // a native dialog).
     harness.state_mut().pending_disk_action = Some(PendingDiskAction::Insert {
         drive: 0,
         path: PathBuf::from("nonexistent.dsk"),

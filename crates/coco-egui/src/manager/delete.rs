@@ -133,7 +133,8 @@ impl ManagerApp {
 }
 
 /// The two state warnings a delete confirmation shows — running machines are
-/// shut down first, suspended ones lose their frozen state — worded plural when more than one machine is involved.
+/// shut down first, suspended ones lose their frozen state — worded plural
+/// when more than one machine is involved.
 fn draw_delete_warnings(ui: &mut egui::Ui, plural: bool, running: bool, suspended: bool) {
     if running {
         let text = if plural {

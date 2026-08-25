@@ -65,7 +65,8 @@ fn decode_indexed_body<F: FnMut(u16) -> u8>(r: &mut Reader<F>, sel: u8, mode: u8
             format!("{offset},PCR")
         }
         0b1111 => {
-            // Extended indirect: register field ignored; `[...]` wrap applied uniformly by the caller.
+            // Extended indirect: register field ignored; `[...]` wrap applied
+            // uniformly by the caller.
             let addr = r.u16();
             format!("${addr:04X}")
         }

@@ -161,7 +161,8 @@ impl WD1773 {
 
     /// Read Sector (Type II, `0x8`/`0x9`).
     fn start_read_sector(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
-        // No data yet: DRQ low so a HALT-enabled driver stalls at LDA DATAREG until the first byte lands.
+        // No data yet: DRQ low so a HALT-enabled driver stalls at LDA
+        // DATAREG until the first byte lands.
         self.drq = false;
         let multiple = cmd & type1::UPDATE_TRACK_REG != 0; // bit4, same physical bit as T
         match disk {
@@ -191,7 +192,8 @@ impl WD1773 {
 
     /// Write Sector (Type II, `0xA`/`0xB`).
     fn start_write_sector(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
-        // No sector located yet: DRQ low until the ID field is found and the first byte is requested.
+        // No sector located yet: DRQ low until the ID field is found and the
+        // first byte is requested.
         self.drq = false;
         let multiple = cmd & type1::UPDATE_TRACK_REG != 0;
         match disk {

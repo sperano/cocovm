@@ -88,7 +88,8 @@ impl CocoApp {
     fn collect_cart_roms(&mut self) -> Result<Vec<SlotROMRef>, String> {
         let mut out = Vec::new();
         if let Some(mpi) = &self.mpi {
-            // Snapshot paths first to end the immutable borrow of self.mpi before hashing needs self again.
+            // Snapshot paths first to end the immutable borrow of self.mpi before hashing needs
+            // self again.
             let paths: Vec<(Option<u8>, PathBuf)> = mpi
                 .slots
                 .iter()

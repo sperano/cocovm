@@ -202,7 +202,8 @@ fn releasing_one_mouse_button_keeps_the_other_latched() {
     let ev = vec![button_event(inside, Primary, true)];
     mouse_fire_frame(&ctx, &mut inputs, ev, true, false);
     assert_eq!(inputs.mouse_fire, [true, false]);
-    // Press secondary too, then release it: primary must stay latched (egui's shared press_origin isn't used).
+    // Press secondary too, then release it: primary must stay latched (egui's shared
+    // press_origin isn't used).
     let ev = vec![button_event(inside, Secondary, true)];
     mouse_fire_frame(&ctx, &mut inputs, ev, true, true);
     assert_eq!(inputs.mouse_fire, [true, true]);

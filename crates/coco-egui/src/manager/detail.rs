@@ -118,7 +118,8 @@ fn draw_statistics(ui: &mut egui::Ui, slug: &str, entry: &super::MachineEntry) {
         });
     });
     if entry.is_running() {
-        // Native-viewport windows need this to keep Runtime ticking; redundant but harmless under the Embedded fallback.
+        // Native-viewport windows need this to keep Runtime ticking;
+        // redundant but harmless under the Embedded fallback.
         ui.ctx().request_repaint_after(STATS_REPAINT_INTERVAL);
     }
 }

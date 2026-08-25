@@ -1,7 +1,8 @@
 //! Host-byte protocol interpreter for `$FF7E` writes: top-level command
-//! dispatch ([`SoundSpeechCartridge::dispatch_command`]), buffer-RAM loads ([`SoundSpeechCartridge::feed_load`]),
-//! and `$AF` direct-AY-access mode ([`SoundSpeechCartridge::feed_direct`]). See the `ssc`
-//! module doc comment and `docs/ssc-spec.md` for the full protocol writeup.
+//! dispatch ([`SoundSpeechCartridge::dispatch_command`]), buffer-RAM loads
+//! ([`SoundSpeechCartridge::feed_load`]), and `$AF` direct-AY-access mode
+//! ([`SoundSpeechCartridge::feed_direct`]). See the `ssc` module doc comment
+//! and `docs/ssc-spec.md` for the full protocol writeup.
 
 use serde::{Deserialize, Serialize};
 
@@ -224,7 +225,9 @@ impl SoundSpeechCartridge {
             return;
         }
         if load.cursor >= load.cap {
-            // Capacity exhausted without a terminator: byte is dropped and re-dispatched in Idle mode (manual: "reverts to normal input mode").
+            // Capacity exhausted without a terminator: byte is dropped and
+            // re-dispatched in Idle mode (manual: "reverts to normal input
+            // mode").
             self.mode = Mode::Idle;
             self.dispatch(byte);
             return;

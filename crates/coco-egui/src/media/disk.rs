@@ -5,7 +5,9 @@ use crate::*;
 
 impl CocoApp {
     /// Ensures the FD-502 controller is inserted, creating one (cold-resetting the machine —
-    /// BASIC only probes for Disk BASIC at cold start) if needed. Swapping a floppy in an already-present controller does not reset. Refuses if an MPI is installed; use [`Self::mpi_insert_fd502`] instead.
+    /// BASIC only probes for Disk BASIC at cold start) if needed. Swapping
+    /// a floppy in an already-present controller does not reset. Refuses
+    /// if an MPI is installed; use [`Self::mpi_insert_fd502`] instead.
     pub(crate) fn ensure_disk_controller(&mut self) -> Result<(), String> {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             return Ok(());
@@ -54,7 +56,8 @@ impl CocoApp {
     }
 
     /// Mounts the floppy image at `path` in `drive`, inserting the FD-502 controller first
-    /// if needed. A failed write-back of the drive's old disk aborts the mount, leaving it dirty and tracked for retry.
+    /// if needed. A failed write-back of the drive's old disk aborts the
+    /// mount, leaving it dirty and tracked for retry.
     pub(crate) fn insert_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
@@ -74,7 +77,9 @@ impl CocoApp {
     }
 
     /// Creates a brand-new, blank (0-track) floppy image at `path` and mounts it in `drive`,
-    /// inserting the FD-502 controller first if needed. Refuses to overwrite an existing file; a failed write-back of the drive's old disk aborts before the file is created.
+    /// inserting the FD-502 controller first if needed. Refuses to
+    /// overwrite an existing file; a failed write-back of the drive's old
+    /// disk aborts before the file is created.
     pub(crate) fn new_blank_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
@@ -107,7 +112,8 @@ impl CocoApp {
     }
 
     /// Ejects the floppy in `drive`, writing a modified image back to its file first
-    /// (in-place, like MAME/VCC). A failed write-back aborts the eject, leaving the disk mounted and dirty for a later retry.
+    /// (in-place, like MAME/VCC). A failed write-back aborts the eject,
+    /// leaving the disk mounted and dirty for a later retry.
     pub(crate) fn eject_disk(&mut self, drive: usize) {
         if let Err(e) = self.write_back_disk(drive) {
             self.cart_error = Some(e);
@@ -154,7 +160,9 @@ impl CocoApp {
     }
 
     /// [`Self::flush_dirty_disks`], reporting failure via [`Self::cart_error`] instead of
-    /// propagating it. Returns whether it's safe to proceed — every cartridge/MPI swap that could destroy a disk cart must check this first.
+    /// propagating it. Returns whether it's safe to proceed — every
+    /// cartridge/MPI swap that could destroy a disk cart must check this
+    /// first.
     #[must_use]
     pub(crate) fn flush_dirty_disks_or_report(&mut self) -> bool {
         match self.flush_dirty_disks() {
@@ -167,7 +175,8 @@ impl CocoApp {
     }
 
     /// Mounts the VHD image at `path` in `drive`. Unlike floppies, VHD is a bus-level device
-    /// (`$FF80-$FF86`) independent of the cartridge slot — no controller, no reset, no write-back on eject (writes go straight through).
+    /// (`$FF80-$FF86`) independent of the cartridge slot — no controller,
+    /// no reset, no write-back on eject (writes go straight through).
     pub(crate) fn insert_vhd(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             let file = std::fs::OpenOptions::new()

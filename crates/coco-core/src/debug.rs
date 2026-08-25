@@ -251,8 +251,9 @@ impl Debugger {
 
     // ---- Watchpoints -------------------------------------------------------
 
-    /// Add or replace a memory watchpoint on `addr`, selecting trapped directions via `read`/`write`.
-    /// Enabled on creation; an existing watchpoint's hit count is preserved.
+    /// Add or replace a memory watchpoint on `addr`, selecting trapped
+    /// directions via `read`/`write`. Enabled on creation; an existing
+    /// watchpoint's hit count is preserved.
     pub fn add_watchpoint(&mut self, addr: u16, read: bool, write: bool) {
         let wp = self.watchpoints.entry(addr).or_insert(Watchpoint {
             read,
@@ -335,8 +336,9 @@ impl Debugger {
 
     // ---- The run loop ------------------------------------------------------
 
-    /// Run until a breakpoint, watchpoint, or field boundary trips, or `max_instructions` elapses.
-    /// A breakpoint fires when the PC reaches it, even ahead of an interrupt that would preempt that instruction.
+    /// Run until a breakpoint, watchpoint, or field boundary trips, or
+    /// `max_instructions` elapses. A breakpoint fires when the PC reaches
+    /// it, even ahead of an interrupt that would preempt that instruction.
     pub fn run_until(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
         m.bus.install_watches(self.watch_table());
         let reason = self.run_loop(m, max_instructions);
@@ -347,7 +349,8 @@ impl Debugger {
     fn run_loop(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
         for i in 0..max_instructions {
             let pc = m.cpu.pc;
-            // Skip the breakpoint check on the first iteration so a resumed run doesn't immediately re-trigger where it's parked.
+            // Skip the breakpoint check on the first iteration so a resumed
+            // run doesn't immediately re-trigger where it's parked.
             let stop_at_bp = i > 0 && matches!(self.breakpoints.get(&pc), Some(bp) if bp.enabled);
             if stop_at_bp {
                 let bp = self.breakpoints.get_mut(&pc).expect("just matched above");

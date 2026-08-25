@@ -60,16 +60,19 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     mount_peripherals(&mut app, media, &peripherals);
     mount_serial(&mut app, def.ports.serial, slug);
 
-    // Promote any `cart_error` the insert_*/mpi_insert_* helpers recorded into this launch `Result`.
+    // Promote any `cart_error` the insert_*/mpi_insert_* helpers recorded into this launch
+    // `Result`.
     if let Some(err) = app.cart_error.take() {
         return Err(err);
     }
 
-    // [ui] preferences are the window's starting state only; F9/F12/joysticks stay live toggles afterward.
+    // [ui] preferences are the window's starting state only; F9/F12/joysticks stay live toggles
+    // afterward.
     app.aspect_correct = def.ui.aspect_correct;
     // Seeds the status bar's cumulative Runtime readout with whatever this machine already accrued.
     app.total_runtime = std::time::Duration::from_secs(def.stats.runtime_secs);
-    // `CocoApp::new` derived a display from the signal path alone, which can't tell a CoCo 3 TV from composite.
+    // `CocoApp::new` derived a display from the signal path alone, which can't tell a CoCo 3 TV
+    // from composite.
     app.display = def.display();
     app.tv = crate::display::TVSettings {
         scanline_pct: def.ui.tv_scanline,
@@ -195,7 +198,8 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
             }
         }
     } else if peripherals.rtc {
-        // cart/fd502/rs232 and rtc are mutually exclusive here — `check_cartridge_port` rejected other combos.
+        // cart/fd502/rs232 and rtc are mutually exclusive here — `check_cartridge_port`
+        // rejected other combos.
         app.insert_rtc();
     } else if peripherals.rs232 {
         // Starts on the inert Loopback endpoint; TCP/PTY stay a runtime-menu-only setting.
@@ -203,7 +207,8 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
     } else if peripherals.fd502
         && let Err(e) = app.ensure_disk_controller()
     {
-        // Empty-drive FD-502 only; with disk media set, `CocoApp::new` already inserted the controller.
+        // Empty-drive FD-502 only; with disk media set, `CocoApp::new` already inserted the
+        // controller.
         app.cart_error = Some(e);
     }
 
@@ -217,7 +222,8 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
 /// `launch_machine`'s `cart_error` promotion so failures surface the same way.
 fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
     match serial {
-        // Attached with the paper window closed; output accumulates and View ▸ Printer Paper shows it.
+        // Attached with the paper window closed; output accumulates and View ▸ Printer Paper
+        // shows it.
         Some(machine_def::SerialDTO::Printer) => app.attach_dmp105(),
         Some(machine_def::SerialDTO::File) => {
             let path = machine_def::resolve_media_path(PRINTOUT_FILE, slug);

@@ -201,7 +201,8 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
 }
 
 /// `mpi_insert_rompak` into the FD-502's own slot on a *writable* dirty disk must succeed,
-/// flushing before the swap and clearing `disk_paths` — the success path the abort tests above never exercise.
+/// flushing before the swap and clearing `disk_paths` — the success path
+/// the abort tests above never exercise.
 #[test]
 fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
     let dir = scratch_dir("mpi-rompak-success-flush");

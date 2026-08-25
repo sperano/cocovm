@@ -158,7 +158,8 @@ impl JoystickInputs {
         while let Some(gilrs::Event { event, .. }) = gilrs.next_event() {
             match event {
                 EventType::AxisChanged(Axis::LeftStickX, v, _) => self.pad_axes[0] = v,
-                // gilrs reports stick-up as negative (HID/SDL convention), matching the pot's 0 = up.
+                // gilrs reports stick-up as negative (HID/SDL convention), matching the pot's 0
+                // = up.
                 EventType::AxisChanged(Axis::LeftStickY, v, _) => self.pad_axes[1] = v,
                 EventType::ButtonPressed(Button::DPadLeft, _) => self.pad_axes[0] = -1.0,
                 EventType::ButtonPressed(Button::DPadRight, _) => self.pad_axes[0] = 1.0,
@@ -191,7 +192,8 @@ impl JoystickInputs {
         primary_down: bool,
         secondary_down: bool,
     ) {
-        // Collected first: `ctx.layer_id_at` can't run inside `ctx.input`'s closure (both lock the context).
+        // Collected first: `ctx.layer_id_at` can't run inside `ctx.input`'s closure (both lock
+        // the context).
         let button_events: Vec<(egui::Pos2, usize, bool)> = ctx.input(|i| {
             i.events
                 .iter()
@@ -223,7 +225,8 @@ impl JoystickInputs {
     }
 
     fn key_state(ctx: &egui::Context) -> KeyState {
-        // wants_keyboard_input() means some widget holds focus; keeps typed arrows/Z/X from also nudging the stick.
+        // wants_keyboard_input() means some widget holds focus; keeps typed arrows/Z/X from
+        // also nudging the stick.
         if ctx.wants_keyboard_input() {
             return KeyState::default();
         }
@@ -279,7 +282,8 @@ impl JoystickInputs {
                     false
                 }
                 JoySource::Mouse => {
-                    // Axes update only while the pointer is over `display_rect`; otherwise the pot holds its last position.
+                    // Axes update only while the pointer is over `display_rect`; otherwise the
+                    // pot holds its last position.
                     if let Some(pos) = pointer_pos
                         && display_rect.contains(pos)
                         && let Some((px, py)) = pot_axes_from_pointer(pos, active_rect)

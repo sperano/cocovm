@@ -95,7 +95,8 @@ pub struct GraphicsMode {
 }
 
 /// Decode the graphics mode from the GIME video registers ($FF98/$FF99).
-/// HRES=%110/%111 with CRES=%00 aliases to CRES=1 (MAME `gime.cpp`), matching hardware's undefined case.
+/// HRES=%110/%111 with CRES=%00 aliases to CRES=1 (MAME `gime.cpp`),
+/// matching hardware's undefined case.
 pub fn decode_graphics(g: &GIME) -> GraphicsMode {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
     let bytes_per_row = gime::GFX_BYTES_PER_ROW[hres];
@@ -391,7 +392,8 @@ fn paint_graphics_row(
 }
 
 /// Render a full GIME-native field into `fb` from the CURRENT register latch —
-/// used by headless tests; the machine loop instead paints line-by-line so mid-frame changes split the raster.
+/// used by headless tests; the machine loop instead paints line-by-line so
+/// mid-frame changes split the raster.
 pub fn render_field(g: &GIME, ram: &[u8], blink_on: bool, fb: &mut Vec<u8>) -> (usize, usize) {
     fb.resize(CANVAS_W * CANVAS_H * BYTES_PER_PIXEL, 0);
     let mut scan = FieldScan::latch(g, false);

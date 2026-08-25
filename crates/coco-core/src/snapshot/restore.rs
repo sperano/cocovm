@@ -45,7 +45,8 @@ pub fn restore(
         });
     }
 
-    // Must run after restore_disks: JvcDisk::data is skipped until reattached, else this false-flags every transfer.
+    // Must run after restore_disks: JvcDisk::data is skipped until
+    // reattached, else this false-flags every transfer.
     validate_restored_disk_transfers(&mut machine)?;
 
     machine.after_restore();

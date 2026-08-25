@@ -4,7 +4,8 @@ use crate::*;
 
 impl CocoApp {
     /// Starts "print to text file" capture at `path` (create/truncate); failures
-    /// land in [`Self::cart_error`]. Detaches the paper window first so it doesn't show stale content.
+    /// land in [`Self::cart_error`]. Detaches the paper window first so it
+    /// doesn't show stale content.
     pub(crate) fn start_print_capture(&mut self, path: PathBuf) {
         match self
             .machine

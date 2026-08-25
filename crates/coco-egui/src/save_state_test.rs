@@ -127,7 +127,8 @@ fn build_media_refs_hashes_match_the_mounted_files() {
         .as_ref()
         .expect("system ROM must be recorded");
     assert_eq!(system_rom.path, rom_path);
-    // Hashes the boot-time bytes the machine has, not a fresh re-read; they agree because the file hasn't changed since boot.
+    // Hashes the boot-time bytes the machine has, not a fresh re-read; they agree because the
+    // file hasn't changed since boot.
     assert_eq!(
         system_rom.sha256,
         snapshot::sha256_hex(&app.machine.bus.rom)

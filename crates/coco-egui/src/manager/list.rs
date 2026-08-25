@@ -63,7 +63,9 @@ impl ManagerApp {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let content_height = row_content_height(ui);
-                    // Preview priority: live VM framebuffer, else a window-closed Suspended machine's saved thumbnail, else the black placeholder.
+                    // Preview priority: live VM framebuffer, else a
+                    // window-closed Suspended machine's saved thumbnail,
+                    // else the black placeholder.
                     let entry = &self.entries[i];
                     let texture = entry
                         .vm

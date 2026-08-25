@@ -28,7 +28,8 @@ pub trait SerialEndpoint {
     /// `None` means "nothing waiting right now", never an error.
     fn poll_rx(&mut self) -> Option<u8>;
     /// Transmit one byte to the host side. Non-blocking / best-effort — a
-    /// serial line with nothing attached just eats the byte, like real hardware with an unplugged cable.
+    /// serial line with nothing attached just eats the byte, like real
+    /// hardware with an unplugged cable.
     fn tx(&mut self, b: u8);
     /// Data Carrier Detect: is something connected on the host side?
     /// Feeds the ACIA's status register DCD bit.
@@ -108,7 +109,8 @@ impl TCPEndpoint {
     }
 
     /// Accept a waiting connection if no client is currently attached.
-    /// One client at a time: a pending connection stays in the listener's backlog until the current one goes away.
+    /// One client at a time: a pending connection stays in the listener's
+    /// backlog until the current one goes away.
     fn try_accept(&mut self) {
         if self.client.is_some() {
             return;
@@ -140,7 +142,8 @@ impl SerialEndpoint for TCPEndpoint {
             Ok(_) => Some(byte[0]),
             Err(e) if e.kind() == ErrorKind::WouldBlock => None,
             Err(_) => {
-                // Any other error is treated as a clean disconnect: drop the client and go back to listening.
+                // Any other error is treated as a clean disconnect: drop the
+                // client and go back to listening.
                 self.client = None;
                 None
             }
@@ -187,7 +190,8 @@ impl PTYEndpoint {
     /// Allocate a new PTY pair via `posix_openpt`/`grantpt`/`unlockpt`, then
     /// resolve the slave's device path. The master fd is set non-blocking before returning.
     pub fn new() -> io::Result<Self> {
-        // SAFETY: each libc call's return is checked before the next; fd is closed on every error path.
+        // SAFETY: each libc call's return is checked before the next; fd is
+        // closed on every error path.
         unsafe {
             let master_fd = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
             if master_fd < 0 {

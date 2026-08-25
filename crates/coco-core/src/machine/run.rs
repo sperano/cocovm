@@ -14,7 +14,9 @@ impl Machine {
     }
 
     /// Execute exactly one instruction (or one burned HALT* cycle): peripheral
-    /// ticks, interrupt servicing, and — when it crosses the line's cycle budget — the per-line trailer, run before the next line's first instruction.
+    /// ticks, interrupt servicing, and — when it crosses the line's cycle
+    /// budget — the per-line trailer, run before the next line's first
+    /// instruction.
     pub fn step_instruction(&mut self) -> StepEvent {
         let lines = self.config.video.lines_per_field();
         loop {
@@ -22,7 +24,8 @@ impl Machine {
             if self.line_cycles_spent == 0 {
                 self.line_budget = self.cycles_per_field() / lines;
             }
-            // The `else` below only guards a degenerate zero-budget line; real timing always takes this branch.
+            // The `else` below only guards a degenerate zero-budget line;
+            // real timing always takes this branch.
             if self.line_cycles_spent < self.line_budget {
                 let (cycles, was_instruction) = self.step_cpu_unit();
                 self.line_cycles_spent += cycles;
@@ -56,8 +59,10 @@ impl Machine {
         }
     }
 
-    /// Burn a HALT* cycle or execute one instruction, then tick per-cycle peripherals.
-    /// The instruction right after a HALT* release must run before servicing any pending interrupt — otherwise an FD-502 completion NMI can drop the sector's final byte.
+    /// Burn a HALT* cycle or execute one instruction, then tick per-cycle
+    /// peripherals. The instruction right after a HALT* release must run
+    /// before servicing any pending interrupt — otherwise an FD-502
+    /// completion NMI can drop the sector's final byte.
     fn step_cpu_unit(&mut self) -> (u32, bool) {
         let (cycles, was_instruction) = if self.bus.halt_asserted() {
             self.prev_halted = true;
@@ -82,7 +87,8 @@ impl Machine {
     }
 
     /// Per-scanline trailer run after the line's cycle budget is spent: hsync,
-    /// field-sync edges, an audio sample, and the GIME timer tick. Returns `true` when the field wraps.
+    /// field-sync edges, an audio sample, and the GIME timer tick. Returns
+    /// `true` when the field wraps.
     pub(super) fn end_of_line(&mut self) -> bool {
         let lines = self.config.video.lines_per_field();
         let fs_falling_line = self.config.video.fs_falling_line(self.config.variant);
@@ -95,7 +101,8 @@ impl Machine {
             self.bus.fs_rising();
         }
         self.render_scanline();
-        // Render this line's audio to the oversampled stereo grid; self-caps when nothing drains it.
+        // Render this line's audio to the oversampled stereo grid; self-caps
+        // when nothing drains it.
         if self.audio_buffer.len() >= super::AUDIO_BUFFER_CAP {
             self.audio_buffer.clear();
         }
@@ -134,7 +141,8 @@ impl Machine {
     }
 
     fn cycles_per_field(&self) -> u32 {
-        // Speed-poke source differs per variant: GIME's R1 latch (CoCo 3) vs SAM's R0|R1 strobes (CoCo 1/2).
+        // Speed-poke source differs per variant: GIME's R1 latch (CoCo 3) vs
+        // SAM's R0|R1 strobes (CoCo 1/2).
         let cpu_fast = match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.cpu_fast,
             MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.cpu_fast(),

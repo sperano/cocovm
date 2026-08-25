@@ -45,7 +45,8 @@ impl SystemBus {
     /// Bit 2: RAMSZ, the memory-size sense switch, on CoCo 1/2 only (CoCo 3
     /// has no such switch and floats high). Per MAME `coco.cpp` `pia1_pb_r`:
     /// 16K-32K RAM senses set unconditionally; 64K instead follows PIA0 port
-    /// B's output register bit 6, since Color BASIC's memory-size probe drives that bit while sensing.
+    /// B's output register bit 6, since Color BASIC's memory-size probe
+    /// drives that bit while sensing.
     pub(super) fn pia1_pb_pins(&self) -> u8 {
         const RAMSZ_BIT: u8 = 0x04; // PB2
         /// PIA0 port B bit 6 — Color BASIC's memory-size probe pin.

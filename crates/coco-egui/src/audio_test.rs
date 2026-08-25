@@ -22,7 +22,8 @@ fn resampler_carries_fractional_position_and_prev_frame_across_calls() {
 
 #[test]
 fn resampler_downsamples_when_step_exceeds_one() {
-    // step = 2.0: every other input frame is emitted; the first output still blends against prev=0.0.
+    // step = 2.0: every other input frame is emitted; the first output still blends against
+    // prev=0.0.
     let mut r = Resampler::default();
     let mut out = Vec::new();
     r.process(&[[1.0; 2], [2.0; 2], [3.0; 2], [4.0; 2]], 2.0, &mut out);
@@ -55,7 +56,8 @@ fn dc_blocker_passes_already_centered_signal_without_blowing_up() {
         let x = if i % 2 == 0 { 1.0 } else { -1.0 };
         max_abs = f32::max(max_abs, dc.process(x).abs());
     }
-    // A signal already centered at 0 should stay bounded, not grow — a highpass shouldn't amplify AC.
+    // A signal already centered at 0 should stay bounded, not grow — a highpass shouldn't
+    // amplify AC.
     assert!(max_abs < 2.5, "expected bounded output, got {max_abs}");
 }
 
@@ -100,7 +102,8 @@ fn underrun_decay_reaches_floor_within_fade_window() {
 
 #[test]
 fn reset_empties_ring_and_returns_filters_to_default() {
-    // Decimating input (designs the low-pass) with a sign-alternating signal leaves every filter holding real history.
+    // Decimating input (designs the low-pass) with a sign-alternating signal leaves every
+    // filter holding real history.
     let mut out = AudioOutput::headless(48_000.0);
     let alternating = (0..4000).map(|i| if i % 2 == 0 { [1.0, -1.0] } else { [-1.0, 1.0] });
     out.push_samples(alternating, 62_866.0);

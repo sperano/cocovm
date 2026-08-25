@@ -104,8 +104,10 @@ impl std::fmt::Debug for DiskCart {
 }
 
 impl DiskCart {
-    /// Build a disk controller cartridge serving `rom` through the CTS window; found via the cold-start `DK` probe, not autostart.
-    /// DRQ starts set — a clear DRQ would spuriously assert HALT* before any command runs.
+    /// Build a disk controller cartridge serving `rom` through the CTS
+    /// window; found via the cold-start `DK` probe, not autostart.
+    /// DRQ starts set — a clear DRQ would spuriously assert HALT* before any
+    /// command runs.
     pub fn new(rom: Box<[u8]>) -> Self {
         const AUTOSTART: bool = false;
         let rom = ROMPak::from_bytes(&rom, AUTOSTART)
@@ -120,7 +122,8 @@ impl DiskCart {
         }
     }
 
-    /// Re-inject the ROM image after a snapshot restore; unlike [`DiskCart::new`], must not panic on a bad ROM.
+    /// Re-inject the ROM image after a snapshot restore; unlike
+    /// [`DiskCart::new`], must not panic on a bad ROM.
     pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(rom)
     }

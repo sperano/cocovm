@@ -72,7 +72,8 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: Mac
             ui.set_width(layout::width_units(variant) * UNIT_W);
             header(ui, symbolic);
             ui.add_space(SECTION_GAP);
-            // No spacing of egui's own: layout widths already include the channel; per-item spacing would break the arrow diamond.
+            // No spacing of egui's own: layout widths already include the channel; per-item
+            // spacing would break the arrow diamond.
             ui.scope(|ui| {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 for row in layout::rows(variant) {
@@ -104,7 +105,8 @@ fn header(ui: &mut egui::Ui, symbolic: bool) {
 }
 
 fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
-    // Shown in both modes — symbolic still routes these by position; spelled out since arrow glyphs would render as tofu.
+    // Shown in both modes — symbolic still routes these by position; spelled out since arrow
+    // glyphs would render as tofu.
     let mut hints = String::from("Left arrow also on Backspace   ·   CLEAR also on `");
     if variant == MachineVariant::Coco3 {
         hints.push_str("   ·   F1/F2 may need Fn on a laptop");
@@ -145,7 +147,8 @@ fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
     } else {
         0.0
     };
-    // Symbolic mode drops the host line except on keys still routed by position (BREAK, CLEAR, arrows, F1/F2).
+    // Symbolic mode drops the host line except on keys still routed by position (BREAK, CLEAR,
+    // arrows, F1/F2).
     let show_host = !symbolic || cap.routed_in_symbolic();
     let host_h = if show_host { HOST_LINE_H } else { 0.0 };
 

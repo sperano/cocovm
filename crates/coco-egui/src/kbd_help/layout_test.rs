@@ -58,7 +58,8 @@ fn row_counts(rows: &[Row]) -> Vec<usize> {
 
 #[test]
 fn coco3_matches_the_service_manual_key_count() {
-    // "KEYBOARD: 57 keys" — Color Computer 3 Service Manual §2.1, broken down per row per the p.15 illustration.
+    // "KEYBOARD: 57 keys" — Color Computer 3 Service Manual §2.1, broken down per row per the
+    // p.15 illustration.
     assert_eq!(row_counts(COCO3_ROWS), vec![13, 14, 14, 13, 3]);
     assert_eq!(caps(COCO3_ROWS).len(), 57);
 }
@@ -95,7 +96,8 @@ fn is_arrow(cap: &Cap, dir: Dir) -> bool {
 
 #[test]
 fn the_coco3_arranges_its_arrows_in_a_diamond() {
-    // Gap constants that place the diamond are fiddly, so assert the geometry rather than the numbers.
+    // Gap constants that place the diamond are fiddly, so assert the geometry rather than the
+    // numbers.
     let rows = rows(MachineVariant::Coco3);
     let up = arrow_center(rows[1], Dir::Up);
     let left = arrow_center(rows[2], Dir::Left);
@@ -125,7 +127,8 @@ fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
         "Left and Right close row 2, after @"
     );
 
-    // ENTER/CLEAR share row 3's end, CLEAR outermost — CoCo 3 instead splits them across rows 2 and 3.
+    // ENTER/CLEAR share row 3's end, CLEAR outermost — CoCo 3 instead splits them across rows 2
+    // and 3.
     let row3 = caps(&[rows[2]]);
     assert_eq!(legend(&row3[row3.len() - 2]), Some("ENTER"));
     assert_eq!(legend(&row3[row3.len() - 1]), Some("CLEAR"));
@@ -147,7 +150,8 @@ fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
 
 #[test]
 fn the_keyboard_fits_the_window_it_is_drawn_in() {
-    // The falsifiable claim: the widest keyboard must fit the VM window, FB_H * SCALE * TARGET_ASPECT wide.
+    // The falsifiable claim: the widest keyboard must fit the VM window, FB_H * SCALE *
+    // TARGET_ASPECT wide.
     let window_w = coco_core::video::FB_H as f32 * crate::SCALE * crate::TARGET_ASPECT;
     let widest = width_units(MachineVariant::Coco3) * super::super::UNIT_W;
     assert!(
@@ -173,7 +177,8 @@ fn every_cap_names_a_host_key() {
 
 #[test]
 fn symbolic_mode_keeps_the_host_key_on_exactly_the_positional_keys() {
-    // Keys `control_key_pos` routes by position even in symbolic mode — getting this set wrong strands BREAK/CLEAR.
+    // Keys `control_key_pos` routes by position even in symbolic mode — getting this set wrong
+    // strands BREAK/CLEAR.
     let mut routed: Vec<&str> = caps(COCO3_ROWS)
         .iter()
         .filter(|cap| cap.routed_in_symbolic())
@@ -206,7 +211,8 @@ fn shifted_legends_follow_the_coco_not_the_host_keyboard() {
     assert_eq!(by_legend("-").shift, Some("="));
     assert_eq!(by_legend(";").shift, Some("+"));
     assert_eq!(by_legend("0").shift, None);
-    // Host key is the CoCo cap's position, not its character: CoCo ':' sits where the host's '-' is.
+    // Host key is the CoCo cap's position, not its character: CoCo ':' sits where the host's
+    // '-' is.
     assert_eq!(by_legend(":").host, "-");
     assert_eq!(by_legend("-").host, "=");
     assert_eq!(by_legend("@").host, "[");

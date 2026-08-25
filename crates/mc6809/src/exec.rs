@@ -10,9 +10,8 @@ use crate::{Bus, MC6809, State, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3, cc};
 mod exec_data;
 
 impl MC6809 {
-    /// Executes one instruction; returns the cycles it consumed. Implements
-    /// the full 6809 user-mode ISA; external interrupts are delivered via
-    /// [`Self::irq`]/[`Self::firq`]/[`Self::nmi`].
+    /// Executes one instruction; returns the cycles it consumed. External
+    /// interrupts are delivered via [`Self::irq`]/[`Self::firq`]/[`Self::nmi`].
     pub fn step(&mut self, bus: &mut impl Bus) -> u32 {
         if self.state != State::Running {
             // Halted by SYNC/CWAI: burn an idle cycle until an interrupt resumes execution.
@@ -41,7 +40,8 @@ impl MC6809 {
             0x10 => self.exec_page10(bus),
             0x11 => self.exec_page11(bus),
 
-            // ---- Subroutines/jumps/stack: JMP arms must precede the RMW ranges below or they'd be swallowed ----
+            // ---- Subroutines/jumps/stack: JMP arms must precede the RMW ranges below
+            // or they'd be swallowed ----
             0x0E | 0x6E | 0x7E | 0x9D | 0xAD | 0xBD | 0x8D | 0x17 | 0x39 | 0x1F | 0x1E | 0x34
             | 0x36 | 0x35 | 0x37 => self.exec_control_transfer(bus, opcode),
 
@@ -66,19 +66,22 @@ impl MC6809 {
                 self.exec_indexed(bus, opcode)
             }
 
-            // ---- 8-bit logic (AND/OR/EOR/BIT): N,Z from result, V cleared, C/H unaffected; BIT is flags-only ----
+            // ---- 8-bit logic (AND/OR/EOR/BIT): N,Z from result, V cleared,
+            // C/H unaffected; BIT is flags-only ----
             0x84 | 0x94 | 0xA4 | 0xB4 | 0xC4 | 0xD4 | 0xE4 | 0xF4 | 0x8A | 0x9A | 0xAA | 0xBA
             | 0xCA | 0xDA | 0xEA | 0xFA | 0x88 | 0x98 | 0xA8 | 0xB8 | 0xC8 | 0xD8 | 0xE8 | 0xF8
             | 0x85 | 0x95 | 0xA5 | 0xB5 | 0xC5 | 0xD5 | 0xE5 | 0xF5 => {
                 self.exec_logic8(bus, opcode)
             }
 
-            // ---- 16-bit ALU/ld/st (D,X,U): ADDD/SUBD affect N,Z,V,C; CMPX discards result; LDx/STx set N,Z, clear V ----
+            // ---- 16-bit ALU/ld/st (D,X,U): ADDD/SUBD affect N,Z,V,C; CMPX discards result;
+            // LDx/STx set N,Z, clear V ----
             0xC3 | 0xD3 | 0xE3 | 0xF3 | 0x83 | 0x93 | 0xA3 | 0xB3 | 0x8C | 0x9C | 0xAC | 0xBC
             | 0x8E | 0x9E | 0xAE | 0xBE | 0x9F | 0xAF | 0xBF | 0xCE | 0xDE | 0xEE | 0xFE | 0xDF
             | 0xEF | 0xFF => self.exec_16bit(bus, opcode),
 
-            // ---- 8-bit RMW (NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR): low nibble selects the op; TST never writes back ----
+            // ---- 8-bit RMW (NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR): low nibble selects
+            // the op; TST never writes back ----
             0x40..=0x4F | 0x50..=0x5F | 0x00..=0x0F | 0x60..=0x6F | 0x70..=0x7F => {
                 self.exec_rmw(bus, opcode)
             }

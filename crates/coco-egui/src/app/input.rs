@@ -65,7 +65,8 @@ impl CocoApp {
                 self.quick_load(slot, ctx);
             }
         }
-        // ⌘D toggles the debugger; consumed here so it stays live even while a text widget has focus.
+        // ⌘D toggles the debugger; consumed here so it stays live even while a text widget has
+        // focus.
         if ctx.input_mut(|i| i.consume_shortcut(&debugger::DEBUGGER_SHORTCUT)) {
             self.debugger.toggle();
         }
@@ -191,7 +192,8 @@ impl CocoApp {
 }
 
 /// Scale a framebuffer-pixel [`coco_core::ActiveRect`] into the on-screen `display` rect.
-/// Correct for any per-axis linear stretch; falls back to `display` if the framebuffer is zero-sized.
+/// Correct for any per-axis linear stretch; falls back to `display` if the framebuffer is
+/// zero-sized.
 fn scale_active_rect(
     active: coco_core::ActiveRect,
     fb_w: u32,

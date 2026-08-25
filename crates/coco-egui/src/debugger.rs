@@ -248,7 +248,8 @@ impl DebuggerPanel {
             .with_min_inner_size([480.0, 320.0]);
         ctx.show_viewport_immediate(viewport_id, builder, |ctx, class| {
             if class != egui::ViewportClass::Embedded {
-                // Backdrop for the panel cluster to float over; without it the viewport is unpainted.
+                // Backdrop for the panel cluster to float over; without it the viewport is
+                // unpainted.
                 egui::CentralPanel::default().show(ctx, |_ui| {});
                 if ctx.input(|i| i.viewport().close_requested()) {
                     self.open = false;

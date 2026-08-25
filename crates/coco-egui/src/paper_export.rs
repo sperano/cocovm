@@ -39,7 +39,8 @@ pub fn save_png(img: &RasterImage, path: &Path) -> Result<(), String> {
 }
 
 /// Crops a rasterized page down to just the tractor-strip-to-tractor-strip printable body,
-/// both strips removed: exactly 8.5in, matching US Letter width — the "trimmed" PDF variant's whole reason for existing.
+/// both strips removed: exactly 8.5in, matching US Letter width — the "trimmed" PDF variant's
+/// whole reason for existing.
 pub fn crop_to_trimmed_width(img: &RasterImage, dpi: f32) -> RasterImage {
     let x0 = (STRIP_WIDTH_IN * dpi).round() as u32;
     let x1 = ((PAPER_WIDTH_IN - STRIP_WIDTH_IN) * dpi).round() as u32;
@@ -95,7 +96,8 @@ fn deflate(data: &[u8]) -> Vec<u8> {
 }
 
 /// Builds the minimal PDF body: object numbering is fixed by construction order — obj 1
-/// Catalog, obj 2 Pages, then per page `i` (0-based) obj `3+3*i` Page, `4+3*i` Contents, `5+3*i` Image XObject.
+/// Catalog, obj 2 Pages, then per page `i` (0-based) obj `3+3*i` Page, `4+3*i` Contents,
+/// `5+3*i` Image XObject.
 fn write_pdf<W: Write>(pages: &[RasterImage], dpi: f32, out: &mut W) -> io::Result<()> {
     // obj 1 (Catalog) and obj 2 (Pages) are filled in once every page's object numbers are known.
     let mut objects: Vec<Vec<u8>> = vec![Vec::new(), Vec::new()];

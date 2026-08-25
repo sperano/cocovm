@@ -68,7 +68,8 @@ impl ACIA6551 {
     }
 
     /// RX frame completion: pending byte replaces RDR (OVERRUN if RDRF was
-    /// already set); RDRF's IRQ arms only if rx-IRQ enabled. Echo mode also queues the byte onto TX.
+    /// already set); RDRF's IRQ arms only if rx-IRQ enabled. Echo mode also
+    /// queues the byte onto TX.
     fn complete_rx_frame(&mut self) {
         let byte = self.rx_pending_byte;
         if self.status & status::RDRF != 0 {

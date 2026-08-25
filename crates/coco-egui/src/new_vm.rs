@@ -57,7 +57,9 @@ pub(crate) const FORM_LABEL_MIN_WIDTH: f32 = 70.0;
 const SUB_FORM_INDENT: f32 = 12.0;
 
 /// One outer-grid row holding an indented sub-form: an empty label cell, then the sub-form
-/// shifted [`SUB_FORM_INDENT`] into the combo column. Top-aligned — a plain `horizontal` would vertically center the tall nested grid, opening a gap above its first row.
+/// shifted [`SUB_FORM_INDENT`] into the combo column. Top-aligned — a
+/// plain `horizontal` would vertically center the tall nested grid,
+/// opening a gap above its first row.
 fn sub_form_row(ui: &mut egui::Ui, draw: impl FnOnce(&mut egui::Ui)) {
     ui.label("");
     ui.horizontal_top(|ui| {
@@ -274,7 +276,9 @@ fn constrain(draft: &mut MachineConfig) {
     if draft.variant != MachineVariant::Coco3 {
         draft.video = VideoStandard::NTSC;
     }
-    // `draft.monitor` isn't touched here — the form's Display pick owns it, since config alone can't tell a CoCo 3 TV from a composite monitor.
+    // `draft.monitor` isn't touched here — the form's Display pick owns
+    // it, since config alone can't tell a CoCo 3 TV from a composite
+    // monitor.
     // Only runs on model-change clicks, so an explicit MC6847 pick while staying on CoCo 2 sticks.
     draft.vdg = crate::default_vdg(draft.variant);
 }

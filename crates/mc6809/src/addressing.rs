@@ -154,10 +154,12 @@ impl MC6809 {
                 (self.pc.wrapping_add(ofs), 5)
             }
             0b1111 => {
-                // [n]  extended indirect; base cost + indirect fetch below sum to the datasheet's 5.
+                // [n]  extended indirect; base cost + indirect fetch below sum to the
+                // datasheet's 5.
                 (self.fetch_u16(bus), 2)
             }
-            // Reserved/illegal postbytes: undefined on hardware; fall back to a plain register read.
+            // Reserved/illegal postbytes: undefined on hardware; fall back to a plain
+            // register read.
             _ => (self.index_reg(sel), 0),
         }
     }

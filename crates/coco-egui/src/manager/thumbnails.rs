@@ -19,7 +19,8 @@ impl ManagerApp {
         let Some(vm) = entry.vm.as_ref() else {
             return;
         };
-        // Runs the TV-processing chain here too, since the raw framebuffer bypasses `upload_framebuffer_texture`'s.
+        // Runs the TV-processing chain here too, since the raw framebuffer
+        // bypasses `upload_framebuffer_texture`'s.
         let frame = crate::display::process(
             vm.display,
             vm.tv,

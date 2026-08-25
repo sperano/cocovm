@@ -60,7 +60,8 @@ impl WD1773 {
                 TransferKind::WriteTrack if t.format_enabled => {
                     feed_write_track_byte(&mut t, val, disk.as_deref_mut(), side);
                 }
-                // FM Write Track (format_enabled == false): discard — FM parsing is unimplemented.
+                // FM Write Track (format_enabled == false): discard — FM
+                // parsing is unimplemented.
                 _ => {}
             }
             t.index += 1;
@@ -92,18 +93,23 @@ impl WD1773 {
     /// the CRC trailer delay once `total` bytes are delivered.
     fn advance_read_transfer(&mut self, mut t: Transfer, disk: Option<&mut JVCDisk>, side: u8) {
         if t.index >= t.total {
-            // CRC trailer elapsed after the final data byte; a still-unread byte is a genuine overrun.
+            // CRC trailer elapsed after the final data byte; a still-unread
+            // byte is a genuine overrun.
             if self.drq {
                 self.status_lost_data = true;
             }
             self.finish_transfer(t, disk, side);
             return;
         }
-        // Spec: if the previous byte was never taken, set LOST DATA but keep going — except the very first byte (see first_byte).
+        // Spec: if the previous byte was never taken, set LOST DATA but keep
+        // going — except the very first byte (see first_byte).
         if self.drq && !t.first_byte {
             self.status_lost_data = true;
         }
-        // WD1773 has no side input — side resolves from live DSKREG when the data field streams (after ID search), not at dispatch, since OS-9's RBF driver flips DSKREG between issuing the command and the halting DATAREG read.
+        // WD1773 has no side input — side resolves from live DSKREG when the
+        // data field streams (after ID search), not at dispatch, since
+        // OS-9's RBF driver flips DSKREG between issuing the command and the
+        // halting DATAREG read.
         if t.first_byte
             && t.kind == TransferKind::ReadSector
             && let Some(d) = disk.as_deref()
@@ -116,7 +122,8 @@ impl WD1773 {
         self.drq = true;
         t.index += 1;
         t.first_byte = false;
-        // After the final byte, INTRQ waits out the CRC trailer so the host can collect it before halt-enable clears and NMI fires.
+        // After the final byte, INTRQ waits out the CRC trailer so the host
+        // can collect it before halt-enable clears and NMI fires.
         t.remaining = if t.index >= t.total {
             CRC_TRAILER_CYCLES
         } else {
@@ -157,9 +164,11 @@ impl WD1773 {
                     multiple: true,
                     offset,
                     buf,
-                    // Not exempted: a still-unread byte from the previous sector is a genuine overrun here.
+                    // Not exempted: a still-unread byte from the previous
+                    // sector is a genuine overrun here.
                     first_byte: false,
-                    // Only Read/Write Sector ever set multiple; this continuation never applies to Write Track.
+                    // Only Read/Write Sector ever set multiple; this
+                    // continuation never applies to Write Track.
                     format_state: FormatState::Gap,
                     last_id_field: None,
                     format_enabled: true,

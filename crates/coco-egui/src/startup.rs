@@ -185,7 +185,8 @@ pub(crate) fn renderer_info(cc: &eframe::CreationContext<'_>) -> String {
         } else {
             "OpenGL"
         };
-        // Safety: eframe made this context current for the creation closure; VERSION/RENDERER are valid glGetString enums.
+        // Safety: eframe made this context current for the creation closure; VERSION/RENDERER
+        // are valid glGetString enums.
         let (version, renderer) = unsafe {
             (
                 gl.get_parameter_string(eframe::glow::VERSION),

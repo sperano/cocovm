@@ -369,7 +369,8 @@ impl eframe::App for ManagerApp {
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
         }
 
-        // Migrate pending renames before any panel draws — row indices must stay stable for the frame.
+        // Migrate pending renames before any panel draws — row indices must
+        // stay stable for the frame.
         self.apply_pending_renames();
 
         // ⌘N/Ctrl+N triggers New…; only fires with the manager window focused.
@@ -396,7 +397,8 @@ impl eframe::App for ManagerApp {
                 self.draw_machine_list(ui);
             });
 
-        // Detail form for a single selection, bulk pane for many, or a random photo when nothing's selected.
+        // Detail form for a single selection, bulk pane for many, or a
+        // random photo when nothing's selected.
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.selection.is_empty() {
                 if let Some(texture) = &self.photo_texture {
@@ -439,7 +441,8 @@ pub fn run() -> eframe::Result<()> {
         ..Default::default()
     };
     let machines_dir = machine_def::machines_dir();
-    // A machine definition that fails to load/validate is fatal — exit rather than open with a silently wrong list.
+    // A machine definition that fails to load/validate is fatal — exit
+    // rather than open with a silently wrong list.
     let entries: Vec<MachineEntry> = match machines_dir.as_deref() {
         Some(dir) => match machine_def::load_all(dir) {
             Ok(defs) => defs

@@ -196,7 +196,8 @@ impl Machine {
     }
 
     /// Restore-time fixups for every `#[serde(skip)]` field after a snapshot
-    /// round-trip. A latched `field_scan` must reallocate the canvas-sized framebuffer here, or the next painted line indexes out of bounds.
+    /// round-trip. A latched `field_scan` must reallocate the canvas-sized
+    /// framebuffer here, or the next painted line indexes out of bounds.
     pub fn after_restore(&mut self) {
         if self.field_scan.is_some() {
             self.framebuffer.resize(
@@ -212,7 +213,8 @@ impl Machine {
     }
 
     /// The CPU clock, for callers converting cycle counts to wall-clock time
-    /// outside the run loop. Always the normal-speed clock, regardless of the transient GIME double-speed POKE.
+    /// outside the run loop. Always the normal-speed clock, regardless of
+    /// the transient GIME double-speed POKE.
     pub fn cpu_hz(&self) -> f64 {
         CPU_HZ
     }
@@ -235,14 +237,16 @@ impl Machine {
     }
 
     /// Re-run the CPU reset sequence (re-fetches the reset vector). Does not
-    /// clear RAM. Also resets the cartridge, since RESET* is shared with the CPU's.
+    /// clear RAM. Also resets the cartridge, since RESET* is shared with the
+    /// CPU's.
     pub fn reset(&mut self) {
         self.cpu.reset(&mut self.bus);
         self.bus.cart.reset();
     }
 
     /// Power the machine off and on: clears RAM and returns the GIME/PIAs to
-    /// power-on state, so the ROM runs its full cold-start path. Cartridge and cassette stay in their slots.
+    /// power-on state, so the ROM runs its full cold-start path. Cartridge
+    /// and cassette stay in their slots.
     pub fn power_cycle(&mut self) {
         // Monitor type is which cable is plugged in, not GIME state — survives power cycle.
         let monitor = self.bus.gime.monitor;
