@@ -221,14 +221,8 @@ pub(crate) struct AppParams {
 }
 
 impl CocoApp {
-    /// `CreationContext` isn't taken here (unlike most `eframe::App`
-    /// constructors): nothing in this struct's setup touches egui context
-    /// state (fonts, wgpu/glow handles), so it's a plain constructor
-    /// callable from anywhere a machine needs to be built — the CocoVM
-    /// manager's `launch_machine`,
-    /// which builds VMs from inside `ManagerApp::update` where no
-    /// `CreationContext` exists at all, and the `ui_tests` harness, which
-    /// builds a `CocoApp` directly with no `CreationContext` either.
+    /// No `CreationContext` param, unlike most `eframe::App` constructors:
+    /// nothing here touches egui context state, so this is a plain constructor.
     pub(crate) fn new(
         config: MachineConfig,
         rom: Box<[u8]>,
@@ -242,9 +236,7 @@ impl CocoApp {
             drivewire,
             save_tape_wav,
         } = params;
-        // Lossy for a CoCo 3 TV (serialized as composite) — launch/boot
-        // overwrite it with the definition's/CLI's real choice afterwards
-        // (`Display::from_config`'s doc).
+        // Lossy for a CoCo 3 TV; launch/boot overwrite it with the real choice afterwards.
         let display = Display::from_config(&config);
         let mut app = Self {
             machine: Machine::new(config, rom),
@@ -314,17 +306,8 @@ impl CocoApp {
         app
     }
 
-    /// Write modified floppies and tape back to their files — the contract
-    /// a manager-owned VM needs on Stop (`manager::lifecycle::stop_vm`), on
-    /// suspend (`manager::lifecycle::suspend_vm`, via
-    /// [`Self::save_state_to`]), or on the manager's own `on_exit`
-    /// (`ManagerApp`'s `eframe::App` impl in `manager.rs`, "one native window
-    /// per running VM"), and the one [`eframe::App::on_exit`] below still
-    /// runs for the test-only `CocoApp` window (`ui_tests::harness`).
-    ///
-    /// Tries the disks AND the tape even when one side fails — they're
-    /// independent media, so a bad floppy write-back shouldn't also skip
-    /// saving the tape — and joins both error messages with `\n`.
+    /// Write modified floppies and tape back to their files. Tries both even if
+    /// one fails — independent media — and joins error messages with `\n`.
     pub(crate) fn flush_media(&mut self) -> Result<(), String> {
         let disks = self.flush_dirty_disks();
         let tape = self.write_back_tape();
@@ -335,32 +318,22 @@ impl CocoApp {
         }
     }
 
-    /// Set whether emulation advances — exposed so the manager's
-    /// Suspend/Resume can freeze and un-freeze a VM it doesn't otherwise
-    /// reach into (`running` has no `pub` visibility). Besides suspend, only
-    /// the debugger still stops the clock, and it assigns `running` directly.
+    /// Set whether emulation advances. Exposed since `running` isn't `pub`;
+    /// used by the manager's Suspend/Resume to freeze/un-freeze a VM.
     pub(crate) fn set_running(&mut self, running: bool) {
         self.running = running;
     }
 
-    /// Whether emulation is currently advancing (vs. frozen by Suspend or
-    /// the debugger). Test-only since the user-facing Run/Pause chrome went
-    /// away: production code drives `running` through [`Self::set_running`]
-    /// and never needs to read it back.
+    /// Whether emulation is currently advancing. Test-only — production code
+    /// only ever sets `running`, never reads it back.
     #[cfg(test)]
     pub(crate) fn is_running(&self) -> bool {
         self.running
     }
 
-    /// The framebuffer texture [`Self::step_emulation`] uploads every
-    /// frame — `None` only before the VM's very first frame runs. Exposed
-    /// so the manager's list-row thumbnail
-    /// ( step 6, "Running/paused VM"
-    /// bullet) can draw the *same* `TextureHandle` in a second place: one
-    /// `egui::Context` serves every viewport, so reusing the handle here
-    /// costs one extra quad, not an extra upload — and a paused VM's
-    /// texture simply stops changing, so the thumbnail naturally freezes on
-    /// its last frame with no special-casing needed.
+    /// The framebuffer texture [`Self::step_emulation`] uploads every frame;
+    /// `None` only before the VM's first frame. Exposed so the manager can
+    /// reuse the same handle to draw a list-row thumbnail.
     pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {
         self.texture.as_ref()
     }
@@ -372,11 +345,8 @@ impl CocoApp {
 /// `boot_harness` still builds a plain `egui_kittest::Harness<CocoApp>`, which
 /// needs this impl to exist.
 impl eframe::App for CocoApp {
-    /// Write modified floppies and tape back to their files on quit — a BASIC
-    /// `SAVE`/`CSAVE` only exists in the in-memory image until then. The app
-    /// is going away either way, so there's no dialog left to show a failure
-    /// in; it's only `tracing::warn!`-logged (matching
-    /// `manager::lifecycle::stop_vm`'s own on-the-way-out handling).
+    /// Write modified floppies and tape back to their files on quit. Failures
+    /// are only logged — the app is going away, so there's no dialog to show them in.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Err(e) = self.flush_media() {
             tracing::warn!("could not flush media on exit: {e}");

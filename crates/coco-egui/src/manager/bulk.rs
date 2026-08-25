@@ -58,9 +58,7 @@ impl ManagerApp {
         }
     }
 
-    /// The single dispatch point for a bulk transport action — called from
-    /// the toolbar (`super::toolbar::draw_toolbar`) and the bulk context
-    /// menu (`super::list::draw_bulk_row_context_menu`).
+    /// The single dispatch point for a bulk transport action.
     pub(super) fn apply_bulk(&mut self, action: BulkAction, indices: &[usize]) {
         match action {
             BulkAction::Play => self.bulk_play(indices),
@@ -71,11 +69,9 @@ impl ManagerApp {
     }
 
     /// Resume each suspended row, start each powered-off one, skip anything
-    /// already running — the same per-row rule the single-row context
-    /// menu's Start/Resume item follows. Only the rows actually acted on
-    /// are checked for a fresh [`super::MachineEntry::launch_error`]
-    /// afterward — a *skipped* row's stale error from some earlier attempt
-    /// must not steal focus from a fully successful bulk Play.
+    /// already running. Only acted-on rows are checked for a fresh
+    /// [`super::MachineEntry::launch_error`], so a skipped row's stale error
+    /// can't steal focus from a fully successful bulk Play.
     fn bulk_play(&mut self, indices: &[usize]) {
         let mut acted = Vec::new();
         for &i in indices {
@@ -105,10 +101,9 @@ impl ManagerApp {
         self.focus_first_failed_row(&acted);
     }
 
-    /// Stop every row that isn't already Powered Off. `stop_vm` can fail —
-    /// a dirty-media flush error, or a suspend checkpoint it could not
-    /// discard (the row then *stays* Suspended) — so like Play/Suspend the
-    /// acted-on rows are checked with [`Self::focus_first_failed_row`].
+    /// Stop every row that isn't already Powered Off. `stop_vm` can fail (a
+    /// flush error, or an undischarged suspend checkpoint), so acted-on rows
+    /// are checked with [`Self::focus_first_failed_row`].
     fn bulk_stop(&mut self, indices: &[usize]) {
         let mut acted = Vec::new();
         for &i in indices {
@@ -121,10 +116,8 @@ impl ManagerApp {
     }
 
     /// Reset every running row, never a suspended one: resetting a frozen
-    /// machine's live object without touching its `.ccstate` would silently
-    /// desync the two, exactly the divergence `resume_vm`'s own contract
-    /// goes out of its way to avoid. `Machine::reset` cannot fail, so no
-    /// error surfacing is needed.
+    /// machine's live object without touching its `.ccstate` would desync
+    /// the two. `Machine::reset` cannot fail, so no error surfacing is needed.
     fn bulk_reset(&mut self, indices: &[usize]) {
         for &i in indices {
             if self.entries[i].is_running()
@@ -135,17 +128,10 @@ impl ManagerApp {
         }
     }
 
-    /// After a bulk Play/Suspend: if any row it actually *acted on* (not
-    /// every selected row — a skipped one's stale error would otherwise
-    /// misattribute the failure) recorded a
-    /// [`super::MachineEntry::launch_error`], collapse the selection down
-    /// to just that row so the detail pane — the error's only rendering
-    /// surface — shows why. Mirrors `list::select_row_on_error`; a bulk
-    /// action only ever surfaces the *first* failure this way, the
-    /// documented tradeoff for a batch operation with no dialog of its own.
-    /// `pub(super)`: [`super::ManagerApp::draw_running_vms`] reuses this for
-    /// the VM windows' own Suspend tiles, batching every window's suspend
-    /// request the same way a bulk action batches `acted`.
+    /// If any acted-on row recorded a [`super::MachineEntry::launch_error`],
+    /// collapse the selection to just that row so the detail pane shows why.
+    /// Surfaces only the first failure — the documented tradeoff for a batch
+    /// action with no dialog of its own.
     pub(super) fn focus_first_failed_row(&mut self, acted: &[usize]) {
         if let Some(&i) = acted
             .iter()

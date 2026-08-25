@@ -95,11 +95,8 @@ pub struct GraphicsMode {
 }
 
 /// Decode the graphics mode from the GIME video registers ($FF98/$FF99).
-///
-/// HRES=%110/%111 (128/160 bytes per row) with CRES=%00 is not a guaranteed
-/// combination (SEB Unravelled II Fig 5) and the chip does not produce a
-/// 1024/1280-px picture: MAME `gime.cpp` (cases `0x18/0x19`, `0x1c/0x1d`)
-/// aliases CRES=0 to the CRES=1 renderer there, so this decode does too.
+/// HRES=%110/%111 with CRES=%00 aliases to CRES=1 (MAME `gime.cpp`),
+/// matching hardware's undefined case.
 pub fn decode_graphics(g: &GIME) -> GraphicsMode {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
     let bytes_per_row = gime::GFX_BYTES_PER_ROW[hres];
@@ -142,8 +139,7 @@ pub struct FieldScan {
 
 impl FieldScan {
     /// Latch the per-field register group (MAME `new_frame`). Legacy fields
-    /// seed from the SAM-compat page base with `line_in_row` 0 (MAME:
-    /// `m_line_in_row = COCO ? 0 : vsc`).
+    /// seed from the SAM-compat page base with `line_in_row` 0.
     pub fn latch(g: &GIME, legacy: bool) -> Self {
         let vsc = (g.vertical_scroll & 0x0F) as usize;
         let lpr = g.lines_per_row();
@@ -186,11 +182,8 @@ fn fill(px: &mut [u8], color: [u8; 4]) {
     }
 }
 
-/// The active (non-border) horizontal span `(x0, width)` of a GIME-native
-/// row, from the LIVE wide flag ($FF99 HRES low bit, [`WIDE_HRES_MASK`]):
-/// wide modes fill the full `CANVAS_W`, non-wide modes the centre 512. The
-/// single decode both [`paint_side_borders`] and `Machine::active_rect`
-/// build on, so the painted borders and the reported geometry can't drift.
+/// The active (non-border) horizontal span `(x0, width)` of a GIME-native row,
+/// from the LIVE wide flag: wide fills the full canvas, non-wide the centre 512.
 pub(crate) fn active_span(g: &GIME) -> (usize, usize) {
     let hres = ((g.vres & vres::HRES_MASK) >> vres::HRES_SHIFT) as usize;
     if hres & WIDE_HRES_MASK != 0 {
@@ -200,11 +193,8 @@ pub(crate) fn active_span(g: &GIME) -> (usize, usize) {
     }
 }
 
-/// The active (non-border) vertical window `(top, body)` in canvas rows,
-/// from the LIVE LPF bits (the glitched %10 value is approximated, see
-/// [`vertical_window`]). Shared by [`in_active_rows`], the legacy painter's
-/// vertical placement (`Machine::paint_legacy_scanline`), and
-/// `Machine::active_rect`.
+/// The active (non-border) vertical window `(top, body)` in canvas rows, from
+/// the LIVE LPF bits (the glitched %10 value is approximated, see [`vertical_window`]).
 pub(crate) fn active_rows(g: &GIME) -> (usize, usize) {
     let lpf = ((g.vres & vres::LPF_MASK) >> vres::LPF_SHIFT) as usize;
     vertical_window(lpf)
@@ -229,9 +219,8 @@ fn paint_side_borders(g: &GIME, row_px: &mut [u8], border: [u8; 4]) -> (usize, u
     (x0, active_w)
 }
 
-/// Paint one body row's active span (text or graphics, per the LIVE $FF98 BP
-/// bit) from `row_base`/`x_offset`-derived fetch addresses. Returns the
-/// number of bytes this row consumed, for [`advance_scan`]'s pitch.
+/// Paint one body row's active span (text or graphics, per the LIVE $FF98 BP bit).
+/// Returns the number of bytes this row consumed, for [`advance_scan`]'s pitch.
 #[allow(clippy::too_many_arguments)]
 fn paint_body_row(
     g: &GIME,
@@ -264,10 +253,8 @@ fn paint_body_row(
     }
 }
 
-/// Advance `scan`'s shared vertical counter after painting a body row of
-/// `row_bytes` bytes: the row pointer steps by the CURRENT line's live pitch
-/// once per LPR lines (MAME `record_full_body_scanline`; LPR=%111's huge
-/// count never wraps).
+/// Advance `scan`'s shared vertical counter after painting a body row: the row
+/// pointer steps by the current line's live pitch once per LPR lines.
 fn advance_scan(scan: &mut FieldScan, g: &GIME, row_bytes: usize) {
     let pitch = if g.horizontal_offset & hoff::HVEN != 0 {
         gime::HVEN_ROW_BYTES
@@ -282,9 +269,7 @@ fn advance_scan(scan: &mut FieldScan, g: &GIME, row_bytes: usize) {
 }
 
 /// Paint one canvas row of the canonical raster from the live GIME registers
-/// plus the field-latched state in `scan`, advancing `scan`'s vertical
-/// counters on body rows. `fb` is the full `CANVAS_W`×`CANVAS_H` buffer;
-/// `row` is the canvas row (== machine scanline) to paint.
+/// plus the field-latched state in `scan`, advancing `scan` on body rows.
 pub fn paint_scanline(
     g: &GIME,
     ram: &[u8],
@@ -406,11 +391,9 @@ fn paint_graphics_row(
     }
 }
 
-/// Render a full GIME-native field into `fb` (resized to the canonical
-/// 640×240) from the CURRENT register latch — the whole-field equivalent of
-/// stepping [`paint_scanline`] over every visible row. Headless tests poke
-/// registers and call this; the machine loop instead paints line by line so
-/// mid-frame changes split the raster. Returns the canvas dimensions.
+/// Render a full GIME-native field into `fb` from the CURRENT register latch —
+/// used by headless tests; the machine loop instead paints line-by-line so
+/// mid-frame changes split the raster.
 pub fn render_field(g: &GIME, ram: &[u8], blink_on: bool, fb: &mut Vec<u8>) -> (usize, usize) {
     fb.resize(CANVAS_W * CANVAS_H * BYTES_PER_PIXEL, 0);
     let mut scan = FieldScan::latch(g, false);
@@ -474,15 +457,7 @@ impl<'a> Scanout<'a> {
 const UNPRINTABLE_CHAR: char = '.';
 
 /// Decode a GIME hi-res text field to plain ASCII strings, one per character
-/// row — a debug/probe dump, not a renderer. Shares [`decode_text`] and
-/// [`Scanout`] with the real painters so the two can't drift apart; unlike
-/// [`paint_scanline`] this ignores attribute bytes' colour/blink/underline
-/// fields (only the character byte of each cell is read) and scan lines
-/// (each text row is fetched once, not once per [`TextMode::lines_per_row`]).
-///
-/// Character bytes are ASCII from $20 up (`font_gime.rs`); $00-$1F are
-/// accented/special glyphs with no ASCII equivalent and print as
-/// [`UNPRINTABLE_CHAR`].
+/// row — a debug/probe dump, not a renderer; ignores attribute colour/blink/underline.
 pub fn text_lines(g: &GIME, ram: &[u8]) -> Vec<String> {
     let mode = decode_text(g);
     let bytes_per_char = if mode.attributes { 2 } else { 1 };

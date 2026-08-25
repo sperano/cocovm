@@ -2,12 +2,8 @@ use coco_core::keyboard::{self as kbd, Pos};
 use eframe::egui;
 
 /// Positional map: host physical key → CoCo matrix position (MAME's layout).
-///
-/// One binding is ours rather than MAME's: CLEAR answers to the backquote key
-/// as well as Home. Home is the traditional mapping and stays, but laptop
-/// keyboards — every MacBook among them — have no Home key at all, which left
-/// CLEAR unreachable there. Backquote is free for the purpose: the CoCo
-/// keyboard has no backquote, so nothing else wants it.
+/// CLEAR also answers to backquote — added because laptop keyboards often
+/// lack a Home key.
 pub(crate) fn key_to_pos(key: egui::Key) -> Option<Pos> {
     use egui::Key as K;
     let pos = match key {
@@ -92,9 +88,8 @@ pub(crate) fn control_key_pos(key: egui::Key) -> Option<Pos> {
     Some(pos)
 }
 
-/// Keys claimed by `joy::JoySource::Keys` (arrows for the axes, Z/X for the fire
-/// buttons) once a joystick port uses that source — these stop reaching the CoCo
-/// keyboard matrix so the two consumers don't fight over the same physical keys.
+/// Keys claimed by `joy::JoySource::Keys` (arrows, Z/X) once a port uses that
+/// source — these stop reaching the CoCo keyboard matrix.
 pub(crate) fn is_joystick_key(key: egui::Key) -> bool {
     matches!(
         key,

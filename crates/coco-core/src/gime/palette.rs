@@ -50,9 +50,8 @@ fn unpack_rgb(v: u32) -> [u8; 4] {
 }
 
 impl GIME {
-    /// Convert a 6-bit GIME palette value to RGBA. The register format is
-    /// `RGBrgb` (two bits per channel); each channel scales `0..3` to `0..0xFF`
-    /// via `×0x55` — matching the GIME's RGB output (MAME `gime.cpp`).
+    /// Convert a 6-bit GIME palette value to RGBA. Format is `RGBrgb` (two
+    /// bits/channel); each channel scales `0..3` to `0..0xFF` via `×0x55`.
     pub fn rgb_color(value: u8) -> [u8; 4] {
         let chan = |hi_bit: u8, lo_bit: u8| {
             let v = ((value >> hi_bit) & 1) << 1 | ((value >> lo_bit) & 1);
@@ -61,11 +60,8 @@ impl GIME {
         [chan(5, 2), chan(4, 1), chan(3, 0), 0xFF]
     }
 
-    /// Resolve a 6-bit GIME palette value to RGBA through the currently
-    /// selected monitor path (`self.monitor`). RGB mode is [`Self::rgb_color`]
-    /// unconditionally; composite mode picks [`COMPOSITE_PALETTE`] or
-    /// [`COMPOSITE_PALETTE_180`] per $FF98 BPI, then averages channels to
-    /// grey when $FF98 MOCH is set (MAME `gime.cpp` `update_composite`).
+    /// Resolve a 6-bit GIME palette value to RGBA through `self.monitor`: RGB
+    /// mode is [`Self::rgb_color`]; composite picks a BPI-selected table, greyed if MOCH is set.
     pub fn color(&self, value: u8) -> [u8; 4] {
         match self.monitor {
             MonitorType::RGB => Self::rgb_color(value),

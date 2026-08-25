@@ -90,23 +90,18 @@ pub struct MachineDef {
 }
 
 impl MachineDef {
-    /// Convert to the `coco-core` config, running
-    /// [`MachineConfig::validate`] so a definition that requests an
-    /// unsupported hardware combination (e.g. CoCo 2 + PAL) fails here
+    /// Convert to the `coco-core` config, running [`MachineConfig::validate`]
+    /// so an unsupported hardware combination (e.g. CoCo 2 + PAL) fails here
     /// rather than at boot.
     pub fn to_machine_config(&self) -> Result<MachineConfig, String> {
         let variant: MachineVariant = self.hardware.variant.into();
         let memory: MemorySize = self.hardware.ram.into();
         let video: VideoStandard = self.hardware.video.into();
-        // A monitor choice flows through even on a CoCo 1/2 so `validate`
-        // rejects it with the real reason (no monitor port); a TV resolves
-        // to the composite path / no monitor per variant
-        // (`Display::to_monitor`).
+        // A monitor choice flows through even on a CoCo 1/2 so `validate` rejects it with the
+        // real reason.
         let monitor = self.display().to_monitor(variant);
         let vdg: Option<VDGVariant> = match self.hardware.vdg {
             Some(dto) => Some(dto.into()),
-            // Shared with new_vm.rs's `constrain` — see VdgDto's doc comment
-            // and `default_vdg`'s.
             None => crate::default_vdg(variant),
         };
         let config = MachineConfig {
@@ -121,11 +116,7 @@ impl MachineDef {
     }
 
     /// The display device this definition asks for: `[hardware].display`,
-    /// else the legacy `monitor` key it superseded (mapped to the monitor
-    /// half of [`Display`]), else the per-variant default. The full choice —
-    /// [`MachineDef::to_machine_config`] only keeps its signal-path
-    /// projection (`config.monitor`), which can't distinguish a CoCo 3 TV
-    /// from a composite monitor.
+    /// else the legacy `monitor` key it superseded, else the per-variant default.
     pub fn display(&self) -> Display {
         match (self.hardware.display, self.hardware.monitor) {
             (Some(display), _) => display.into(),
@@ -135,11 +126,8 @@ impl MachineDef {
     }
 
     /// Build a fresh definition from a config the manager's "New…" dialog
-    /// produced (`manager.rs`'s Create flow). `media`/`peripherals`/`ui`
-    /// start at their defaults — the dialog doesn't attach media or toggle
-    /// peripherals; that happens afterward in the detail pane. The display
-    /// is likewise the config-implied one (`Display::from_config`) — the
-    /// Create flow offers no TV choice; that too happens in the detail pane.
+    /// produced. `media`/`peripherals`/`ui` start at their defaults, and the
+    /// display is the config-implied one — both get refined in the detail pane.
     pub fn from_config(name: String, created: Option<String>, config: &MachineConfig) -> Self {
         Self {
             schema: CURRENT_SCHEMA,
@@ -156,11 +144,8 @@ impl MachineDef {
     }
 }
 
-/// Lowercase, `[a-z0-9]` kept; every run of other characters collapses to a
-/// single `-`; the result is trimmed of leading/trailing `-`; an empty
-/// result becomes `"machine"`. Used to derive a slug from a machine's
-/// display name at creation time ("Identity =
-/// slug").
+/// Lowercase, `[a-z0-9]` kept; runs of other characters collapse to a single
+/// `-`, trimmed at the ends; an empty result becomes `"machine"`.
 pub fn slugify(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut prev_dash = false;
@@ -182,9 +167,8 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
-/// `base`, or `base-2`, `base-3`, … — the first candidate for which
-/// `taken` returns `false`. `taken` is typically "does this slug already
-/// have a definition file".
+/// `base`, or `base-2`, `base-3`, … — the first candidate for which `taken`
+/// returns `false`.
 pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {
     if !taken(base) {
         return base.to_string();
@@ -199,24 +183,16 @@ pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {
     }
 }
 
-/// Directory holding every machine definition file
-/// (`config_dir()/machines`). `None` when no home directory can be
-/// determined (mirrors `paths::config_dir`); not created here — [`save`]
-/// creates it on demand.
+/// Directory holding every machine definition file (`config_dir()/machines`).
+/// `None` when no home directory can be determined; not created here — [`save`] creates it on
+/// demand.
 pub fn machines_dir() -> Option<PathBuf> {
     paths::config_dir().map(|dir| dir.join("machines"))
 }
 
-/// Resolve one `[media]` path (`MediaDto`'s fields) the way the schema
-/// promises: absolute paths are used exactly as given; relative paths
-/// resolve against this machine's artifact directory,
-/// `data_dir()/machines/<slug>` ("Media by
-/// reference, never embedded" — mirrors [`machines_dir`], which is the
-/// `config_dir()` sibling holding the *definition* files, not media). Falls
-/// back to interpreting a relative path against the process's current
-/// directory when no data directory can be determined at all (`paths::data_dir`
-/// docs: no home directory found) — a degraded but non-panicking result for
-/// a case unit tests can't easily hit.
+/// Resolve one `[media]` path: absolute paths pass through; relative paths
+/// resolve against this machine's artifact directory, `data_dir()/machines/<slug>`,
+/// falling back to the process's current directory if no data directory exists.
 pub fn resolve_media_path(raw: &str, slug: &str) -> PathBuf {
     let path = Path::new(raw);
     if path.is_absolute() {
@@ -228,11 +204,8 @@ pub fn resolve_media_path(raw: &str, slug: &str) -> PathBuf {
     }
 }
 
-/// Root of every machine's artifact directory (`data_dir()/machines`); a
-/// machine's own artifacts (created blank disks, `thumbnail.png`, later
-/// snapshots) live under `<root>/<slug>`. Split out so the manager can hold
-/// one injectable copy of the root — tests point it at a temp dir instead
-/// of the real per-user data directory.
+/// Root of every machine's artifact directory (`data_dir()/machines`);
+/// artifacts live under `<root>/<slug>`. Split out so tests can inject a temp dir.
 pub fn artifacts_root() -> Option<PathBuf> {
     paths::data_dir().map(|dir| dir.join("machines"))
 }

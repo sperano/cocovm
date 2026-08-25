@@ -7,10 +7,8 @@ use super::protocol::State;
 use super::{DWServer, HEADER_LEN, SECTOR_SIZE, checksum_of, error};
 
 impl DWServer {
-    /// Decode a READ/READEX/WRITE header: byte 0 is the drive number, bytes
-    /// 1..4 are the 24-bit big-endian LSN. In HDB-DOS mode the wire drive
-    /// byte is ignored and both drive and local LSN are derived from the
-    /// LSN alone (see [`super::HDBDOS_SECTORS_PER_DISK`]).
+    /// Decode a READ/READEX/WRITE header: byte 0 is the drive, bytes 1..4 the 24-bit
+    /// big-endian LSN. In HDB-DOS mode both are derived from the LSN alone.
     fn decode_header(&self, header: &[u8]) -> (usize, u64) {
         let wire_drive = header[0] as usize;
         let lsn = (u64::from(header[1]) << 16) | (u64::from(header[2]) << 8) | u64::from(header[3]);
@@ -23,10 +21,8 @@ impl DWServer {
         }
     }
 
-    /// Read the 256-byte sector at `lsn` from `drive`'s mounted image.
-    /// [`error::NOT_READY`] if the drive index is out of range or
-    /// unmounted; [`error::READ`] if the LSN is beyond the image's current
-    /// length or the host read failed.
+    /// Read the 256-byte sector at `lsn` from `drive`'s mounted image. [`error::NOT_READY`] if
+    /// unmounted/out of range, [`error::READ`] past the image's end or on I/O failure.
     fn read_sector(&mut self, drive: usize, lsn: u64) -> Result<[u8; SECTOR_SIZE], u8> {
         let image = self
             .drives
@@ -43,10 +39,8 @@ impl DWServer {
         Ok(sector)
     }
 
-    /// Write `sector` to `drive` at `lsn`. [`error::NOT_READY`] if the
-    /// drive is unmounted/out of range, [`error::WRITE`] on a host I/O
-    /// error, else [`error::OK`] (which also marks the drive dirty and
-    /// bumps [`DWServer::sectors_written`]).
+    /// Write `sector` to `drive` at `lsn`. [`error::NOT_READY`] if unmounted/out of range,
+    /// [`error::WRITE`] on I/O failure, else [`error::OK`] (marks dirty).
     fn write_sector(&mut self, drive: usize, lsn: u64, sector: &[u8]) -> u8 {
         let Some(image) = self.drives.get_mut(drive).and_then(|d| d.as_mut()) else {
             return error::NOT_READY;
@@ -66,9 +60,8 @@ impl DWServer {
         }
     }
 
-    /// Execute a completed READ/REREAD/READEX/REREADEX header: `ex`
-    /// selects the READEX-family wire behaviour (see
-    /// [`State`](super::protocol::State)).
+    /// Execute a completed READ/REREAD/READEX/REREADEX header: `ex` selects
+    /// the READEX-family wire behaviour (see [`State`](super::protocol::State)).
     pub(super) fn execute_read(&mut self, ex: bool, header: &[u8]) {
         let (drive, lsn) = self.decode_header(header);
         if ex {

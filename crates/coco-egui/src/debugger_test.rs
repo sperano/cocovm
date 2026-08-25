@@ -91,9 +91,7 @@ fn step_in_advances_pc() {
 /// exactly one instruction, same as `step_in_advances_pc`).
 #[test]
 fn step_over_falls_back_to_step_in_for_non_call() {
-    // Cold start's first instruction is not a JSR/BSR/LBSR (verified by
-    // `step_in_advances_pc` passing on the same boot state); step_over
-    // must still advance exactly like step_in would.
+    // Cold start's first instruction isn't a JSR/BSR/LBSR, so step_over must advance like step_in.
     let mut via_over = boot_machine();
     let mut via_in = boot_machine();
     let mut panel = DebuggerPanel::new();

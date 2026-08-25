@@ -9,16 +9,14 @@ use coco_core::{MachineConfig, fdc};
 use eframe::App;
 
 impl ManagerApp {
-    /// The detail pane's current draft name, when one is shown — `ui_tests.rs`
-    /// checks that selecting a row seeds the right draft without depending on
-    /// how `egui::TextEdit` exposes its value to the accessibility tree.
+    /// The detail pane's current draft name, when one is shown.
     pub(crate) fn detail_name(&self) -> Option<&str> {
         self.edit.as_ref().map(|e| e.name.as_str())
     }
 
-    /// Mutable access to the detail pane's edit form — `ui_tests.rs` seeds
-    /// ROM Pak picks directly, since the "ROM Pak…" combo items open native
-    /// file dialogs a headless harness cannot drive.
+    /// Mutable access to the detail pane's edit form — needed because the
+    /// "ROM Pak…" combo opens native file dialogs a headless test harness
+    /// can't drive.
     pub(crate) fn edit_form_mut(&mut self) -> Option<&mut new_vm::MachineForm> {
         self.edit.as_mut().map(|e| &mut e.form)
     }
@@ -63,11 +61,8 @@ fn black_frame_is_still_written_when_no_previous_thumbnail_exists() {
     assert!(dir.path().join(THUMBNAIL_FILE).exists());
 }
 
-/// Quit is the power switch for every running VM at once
-/// (`ManagerApp::on_exit`'s doc): each live VM's runtime must fold
-/// into its persisted total the same way `Self::stop_vm` does, both in
-/// memory and on disk. Boots a real machine via `crate::launch_machine`,
-/// same as `manager::lifecycle`'s own tests.
+/// Quit folds every running VM's runtime into its persisted total, same as
+/// Stop, both in memory and on disk.
 #[test]
 fn on_exit_folds_live_runtime_into_the_persisted_total() {
     let machines_dir = TempDir::new("manager-on-exit-machines");
@@ -99,10 +94,9 @@ fn on_exit_folds_live_runtime_into_the_persisted_total() {
     assert_eq!(loaded[0].1.stats.runtime_secs, 77);
 }
 
-/// A booted machine with a dirty floppy mounted in drive 0 (not yet
-/// unwritable — the caller wraps [`ReadOnly`] around `disk_path` separately,
-/// so `insert_disk`'s own write-back of "whatever was in the drive first"
-/// runs while the file is still writable).
+/// A booted machine with a dirty floppy mounted in drive 0. The caller wraps
+/// [`ReadOnly`] around `disk_path` separately, so the initial write-back
+/// runs while the file is still writable.
 fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
@@ -132,16 +126,9 @@ fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
     Box::new(vm)
 }
 
-/// Suspend (`ManagerApp::suspend_vm`) calls `CocoApp::save_state_to`, which
-/// now fails the whole save when a dirty disk can't be written back
-/// (Vikunja #175 — it used to flush unconditionally, silently discard the
-/// unsaved bytes, and mark the entry Suspended anyway). A failed suspend
-/// must leave the entry exactly where it started: not suspended, its VM
-/// alive and still running, the error surfaced in `launch_error`, and no
-/// `suspended.ccstate` written — mirrors
-/// `save_state_test.rs`'s `save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails`
-/// one level up, through the manager's own suspend path instead of calling
-/// `save_state_to` directly.
+/// A failed suspend (dirty disk that can't be written back) must leave the
+/// entry unchanged: not suspended, VM still running, error surfaced, and no
+/// `suspended.ccstate` written.
 #[test]
 fn suspend_fails_and_leaves_the_machine_running_when_disk_write_back_fails() {
     let artifacts = TempDir::new("suspend-flush-failure");

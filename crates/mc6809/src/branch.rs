@@ -4,9 +4,8 @@
 use crate::{MC6809, cc};
 
 impl MC6809 {
-    /// Evaluate a branch condition selected by the opcode's low nibble — shared
+    /// Evaluates a branch condition selected by the opcode's low nibble — shared
     /// by the short `Bcc` and long `LBcc` encodings (0=BRA always … F=BLE).
-    /// Conditions verified against the Atkinson reference (see [[coco-reference-pdfs]]).
     pub(crate) fn branch_taken(&self, cond: u8) -> bool {
         let c = self.cc & cc::CARRY != 0;
         let z = self.cc & cc::ZERO != 0;

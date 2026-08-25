@@ -81,12 +81,8 @@ pub(super) struct Cap {
 
 impl Cap {
     /// Whether symbolic mode still reaches this key by *position* rather than
-    /// by the character typed. These are exactly the keys
-    /// [`crate::keymap::control_key_pos`] routes — the ones that produce no
-    /// text — so they are the only caps whose host key still means anything
-    /// once the user switches modes, and the only ones that keep their host
-    /// line there. Everything else in symbolic mode is reached by typing the
-    /// character, which is what the mode is for.
+    /// by character — exactly the keys [`crate::keymap::control_key_pos`]
+    /// routes, the only ones whose host key still means anything there.
     pub(super) fn routed_in_symbolic(&self) -> bool {
         match self.main {
             Legend::Arrow(_) => true,
@@ -368,9 +364,8 @@ const COCO12_ROWS: &[Row] = &[
     &[&[Slot::Gap(COCO12_SPACE_INDENT), COCO12_SPACE_CAP]],
 ];
 
-/// The keyboard `variant` shipped with. The CoCo 1 and CoCo 2 share a key
-/// plan (they differ in key *feel* — chiclet versus full-travel — which a
-/// mapping legend has no way to show and no reason to).
+/// The keyboard `variant` shipped with. CoCo 1 and CoCo 2 share a key plan —
+/// they differ only in feel (chiclet vs. full-travel), which a legend can't show.
 pub(super) fn rows(variant: MachineVariant) -> &'static [Row] {
     match variant {
         MachineVariant::Coco3 => COCO3_ROWS,

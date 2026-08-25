@@ -61,8 +61,7 @@ fn shift_click_selects_a_range() {
 }
 
 /// A plain click after a multi-selection collapses it back to just the
-/// clicked row and brings the single-machine edit form back — the existing
-/// single-selection behavior, untouched by multi-select.
+/// clicked row and brings the single-machine edit form back.
 #[test]
 fn plain_click_collapses_back_to_single_selection() {
     let entries = vec![
@@ -81,8 +80,7 @@ fn plain_click_collapses_back_to_single_selection() {
 }
 
 /// Right-clicking a row that's part of the current multi-selection opens
-/// the bulk menu: it has "Delete…" but no "Show config" (there is no single
-/// machine to show config for).
+/// the bulk menu: "Delete…" but no "Show config" (no single machine to show config for).
 #[test]
 fn right_click_inside_multi_selection_shows_the_bulk_menu() {
     let entries = vec![
@@ -102,9 +100,8 @@ fn right_click_inside_multi_selection_shows_the_bulk_menu() {
     );
 }
 
-/// Right-clicking a row that is *not* part of the current multi-selection
-/// falls back to the ordinary single-row menu (with "Show config") and, per
-/// the existing right-click invariant, does not change the selection.
+/// Right-clicking a row outside the current multi-selection falls back to
+/// the ordinary single-row menu and does not change the selection.
 #[test]
 fn right_click_outside_selection_shows_the_single_menu_and_does_not_select() {
     let entries = vec![
@@ -129,8 +126,7 @@ fn right_click_outside_selection_shows_the_single_menu_and_does_not_select() {
 }
 
 /// Clicking the empty space below the rows clears a multi-selection just
-/// like it clears a single one (`manager_window.rs`'s
-/// `manager_click_below_the_list_clears_the_selection`).
+/// like it clears a single one.
 #[test]
 fn empty_space_click_clears_a_multi_selection() {
     let entries = vec![
@@ -155,9 +151,8 @@ fn empty_space_click_clears_a_multi_selection() {
     assert!(harness.state().selection.is_empty());
 }
 
-/// Cmd/Ctrl-A selects every row, and only when no widget owns the
-/// keyboard — with the Name field focused (mid-rename), it must be left
-/// alone for the text field's own native select-all instead.
+/// Cmd/Ctrl-A selects every row, but not when a text field owns the
+/// keyboard (e.g. mid-rename) — it defers to the field's own select-all.
 #[test]
 fn cmd_a_selects_every_row_unless_a_text_field_is_focused() {
     let entries = vec![

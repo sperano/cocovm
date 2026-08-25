@@ -10,27 +10,11 @@ use crate::{Bus, MC6809, State, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3, cc};
 mod exec_data;
 
 impl MC6809 {
-    /// Execute one instruction; returns the cycles it consumed.
-    ///
-    /// Decodes NOP, 8/16-bit load/store, LEA, and the full 8-bit ALU —
-    /// arithmetic (ADD/ADC/SUB/SBC/CMP), logic (AND/OR/EOR/BIT), and
-    /// read-modify-write (NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR) for A, B,
-    /// and memory — across immediate / direct / extended / indexed addressing
-    /// (the full indexed postbyte is decoded by [`Self::ea_indexed`]); and the
-    /// full branch set (short `Bcc`, long `LBcc`, `BRA`/`BRN`/`LBRA`/`LBRN`); and
-    /// the subroutine / stack group (`JMP`, `JSR`, `BSR`/`LBSR`, `RTS`, `TFR`,
-    /// `EXG`, `PSHS`/`PULS`/`PSHU`/`PULU`); and the 16-bit ALU / load / store set
-    /// (`ADDD`/`SUBD`, `CMPD`/`CMPX`/`CMPY`/`CMPU`/`CMPS`, `LDX`/`LDY`/`LDU`/`LDS`
-    /// and their stores) via the `$10`/`$11` prefix pages; the misc inherent ops
-    /// (`ORCC`/`ANDCC`/`SEX`/`ABX`/`MUL`/`DAA`); and the interrupt/halt set
-    /// (`SWI`/`SWI2`/`SWI3`, `RTI`, `CWAI`, `SYNC`). External interrupts are
-    /// delivered via [`Self::irq`]/[`Self::firq`]/[`Self::nmi`]. This is the
-    /// complete 6809 user-mode ISA; only a handful of illegal opcodes are
-    /// undecoded and execute as 2-cycle NOPs.
+    /// Executes one instruction; returns the cycles it consumed. External
+    /// interrupts are delivered via [`Self::irq`]/[`Self::firq`]/[`Self::nmi`].
     pub fn step(&mut self, bus: &mut impl Bus) -> u32 {
         if self.state != State::Running {
-            // Halted by SYNC/CWAI: burn an idle cycle until the machine delivers
-            // an interrupt (via nmi/irq/firq) that resumes execution.
+            // Halted by SYNC/CWAI: burn an idle cycle until an interrupt resumes execution.
             self.cycles += 1;
             return 1;
         }
@@ -38,10 +22,7 @@ impl MC6809 {
         let cycles = match opcode {
             0x12 => 2, // NOP
 
-            // ---- Branches -----------------------------------------------------
-            // Offsets are relative to the PC *after* the operand is consumed.
-            // Short Bcc: 8-bit signed offset, 3 cycles (taken or not). Long LBcc:
-            // 16-bit offset, 5 cycles / 6 if taken. LBRA is always, 5 cycles.
+            // ---- Branches: offset is relative to the PC after the operand is fetched ----
             0x20..=0x2F => {
                 let offset = self.fetch_u8(bus) as i8 as i16 as u16;
                 if self.branch_taken(opcode) {
@@ -55,14 +36,12 @@ impl MC6809 {
                 self.pc = self.pc.wrapping_add(offset);
                 5
             }
-            // $10/$11 prefix pages: long conditional branches, the 16-bit ops
-            // targeting Y/D/S/U, and SWI2/SWI3.
+            // $10/$11 prefix pages: long conditional branches, 16-bit Y/D/S/U ops, SWI2/SWI3.
             0x10 => self.exec_page10(bus),
             0x11 => self.exec_page11(bus),
 
-            // ---- Subroutines, jumps, register transfer, stack -----------------
-            // JMP arms MUST precede the RMW range arms below (0x0E/0x6E/0x7E would
-            // otherwise be swallowed by 0x00-0x0F / 0x60-0x6F / 0x70-0x7F).
+            // ---- Subroutines/jumps/stack: JMP arms must precede the RMW ranges below
+            // or they'd be swallowed ----
             0x0E | 0x6E | 0x7E | 0x9D | 0xAD | 0xBD | 0x8D | 0x17 | 0x39 | 0x1F | 0x1E | 0x34
             | 0x36 | 0x35 | 0x37 => self.exec_control_transfer(bus, opcode),
 
@@ -76,40 +55,33 @@ impl MC6809 {
             0x86 | 0x96 | 0xB6 | 0xC6 | 0xD6 | 0xF6 | 0x97 | 0xB7 | 0xD7 | 0xF7 | 0xCC | 0xDC
             | 0xFC | 0xDD | 0xFD => self.exec_load_store(bus, opcode),
 
-            // ---- 8-bit ALU (immediate / direct / extended) --------------------
-            // Cycles: immediate 2, direct 4, extended 5. Carry-in for ADC/SBC is
-            // the current C flag (cc::CARRY == 0x01, so masking yields 0 or 1).
+            // ---- 8-bit ALU: carry-in for ADC/SBC is cc::CARRY masked to 0/1 ----
             0x8B | 0x9B | 0xBB | 0xCB | 0xDB | 0xFB | 0x89 | 0x99 | 0xB9 | 0xC9 | 0xD9 | 0xF9
             | 0x80 | 0x90 | 0xB0 | 0xC0 | 0xD0 | 0xF0 | 0x82 | 0x92 | 0xB2 | 0xC2 | 0xD2 | 0xF2
             | 0x81 | 0x91 | 0xB1 | 0xC1 | 0xD1 | 0xF1 => self.exec_alu8(bus, opcode),
 
-            // ---- Indexed addressing (base cost + postbyte extra cycles) --------
-            // 8-bit load/store base 4; 16-bit LDD/STD base 5; LEA base 4.
+            // ---- Indexed: cost is base + postbyte extra cycles ----
             0x30 | 0x31 | 0x32 | 0x33 | 0xA6 | 0xE6 | 0xA7 | 0xE7 | 0xEC | 0xED | 0xAB | 0xEB
             | 0xA9 | 0xE9 | 0xA0 | 0xE0 | 0xA2 | 0xE2 | 0xA1 | 0xE1 => {
                 self.exec_indexed(bus, opcode)
             }
 
-            // ---- 8-bit logic (AND/OR/EOR/BIT) --------------------------------
-            // N,Z from result; V cleared; C and H unaffected. BIT sets flags only.
-            // Cycles: immediate 2, direct 4, indexed 4+, extended 5.
+            // ---- 8-bit logic (AND/OR/EOR/BIT): N,Z from result, V cleared,
+            // C/H unaffected; BIT is flags-only ----
             0x84 | 0x94 | 0xA4 | 0xB4 | 0xC4 | 0xD4 | 0xE4 | 0xF4 | 0x8A | 0x9A | 0xAA | 0xBA
             | 0xCA | 0xDA | 0xEA | 0xFA | 0x88 | 0x98 | 0xA8 | 0xB8 | 0xC8 | 0xD8 | 0xE8 | 0xF8
             | 0x85 | 0x95 | 0xA5 | 0xB5 | 0xC5 | 0xD5 | 0xE5 | 0xF5 => {
                 self.exec_logic8(bus, opcode)
             }
 
-            // ---- 16-bit ALU / load / store (D, X, U) --------------------------
-            // ADDD/SUBD affect N,Z,V,C. CMPX is sub16 discarded. LDX/LDU/STX/STU
-            // set N,Z and clear V. Cycles: ADD/SUB/CMP imm 4/dir 6/idx 6+/ext 7;
-            // LD imm 3/dir 5/idx 5+/ext 6; ST dir 5/idx 5+/ext 6.
+            // ---- 16-bit ALU/ld/st (D,X,U): ADDD/SUBD affect N,Z,V,C; CMPX discards result;
+            // LDx/STx set N,Z, clear V ----
             0xC3 | 0xD3 | 0xE3 | 0xF3 | 0x83 | 0x93 | 0xA3 | 0xB3 | 0x8C | 0x9C | 0xAC | 0xBC
             | 0x8E | 0x9E | 0xAE | 0xBE | 0x9F | 0xAF | 0xBF | 0xCE | 0xDE | 0xEE | 0xFE | 0xDF
             | 0xEF | 0xFF => self.exec_16bit(bus, opcode),
 
-            // ---- 8-bit read-modify-write (NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR)
-            // Low nibble selects the op (see rmw_apply). Cycles: inherent 2,
-            // direct 6, indexed 6+, extended 7. TST reads but never writes back.
+            // ---- 8-bit RMW (NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR): low nibble selects
+            // the op; TST never writes back ----
             0x40..=0x4F | 0x50..=0x5F | 0x00..=0x0F | 0x60..=0x6F | 0x70..=0x7F => {
                 self.exec_rmw(bus, opcode)
             }

@@ -4,16 +4,9 @@
 use super::Reader;
 use crate::postbyte;
 
-/// Decode one indexed-addressing postbyte into its operand string, mirroring
-/// `MC6809::ea_indexed` byte-for-byte (see that function's doc comment for
-/// the postbyte layout: `1 rr i mmmm` when bit 7 is set, `0 rr nnnnn` — a
-/// non-indirectable 5-bit constant offset — when clear).
-///
-/// Numeric constant offsets (5-bit, 8-bit, 16-bit, and both PCR forms) are
-/// rendered in signed decimal (e.g. `5,Y`, `-1,X`, `300,PCR`) rather than
-/// hex — see the crate-level task report's "indexed offset radix" judgment
-/// call, which follows the task spec's own `LDX 5,Y` example literally.
-/// Absolute addresses (extended indirect `[$XXXX]`) stay hex.
+/// Decodes one indexed-addressing postbyte into its operand string, mirroring
+/// `MC6809::ea_indexed`. Numeric offsets render in signed decimal (e.g. `5,Y`,
+/// `-1,X`); extended indirect `[$XXXX]` stays hex.
 pub(super) fn decode_indexed<F: FnMut(u16) -> u8>(r: &mut Reader<F>) -> String {
     let pb = r.u8();
 
@@ -72,24 +65,18 @@ fn decode_indexed_body<F: FnMut(u16) -> u8>(r: &mut Reader<F>, sel: u8, mode: u8
             format!("{offset},PCR")
         }
         0b1111 => {
-            // Extended indirect: register field ignored. The `[...]` wrap is
-            // applied uniformly below via the postbyte's indirect bit, same
-            // as every other sub-mode (the core does not special-case this
-            // one — see `ea_indexed`'s doc comment).
+            // Extended indirect: register field ignored; `[...]` wrap applied
+            // uniformly by the caller.
             let addr = r.u16();
             format!("${addr:04X}")
         }
-        // Reserved/illegal postbytes (0b0111, 0b1010, 0b1110): the core
-        // falls back to a plain register read with 0 extra bytes. Marked
-        // with a `???` suffix so this doesn't read as a valid addressing
-        // form.
+        // Reserved/illegal postbytes: core falls back to a plain register read; marked `???`.
         _ => format!(",{reg}???"),
     }
 }
 
 /// Index register name for the indexed-postbyte `rr` field (raw, unmasked —
-/// callers pass `pb >> REG_SHIFT` directly, matching `MC6809::index_reg`'s
-/// own calling convention, which masks internally).
+/// callers pass `pb >> REG_SHIFT` directly).
 fn index_reg_name(sel: u8) -> &'static str {
     match sel & 0b11 {
         0b00 => "X",

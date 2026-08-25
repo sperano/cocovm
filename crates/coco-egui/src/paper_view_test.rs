@@ -12,9 +12,7 @@ fn total_pages_for_extent_is_one_blank_page_when_empty() {
 
 #[test]
 fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
-    // A single dot near the top of page 3 (0-indexed page 2): content
-    // reaches page index 2, so total_pages must be 2 + 2 = 4 (pages
-    // 0..=2 have/may-have content, page 3 is the trailing blank one).
+    // A single dot near the top of page 3 (0-indexed page 2): total_pages must be 2 + 2 = 4.
     let extent = PaperExtent {
         max_y: (2.5 * PAGE_HEIGHT_IN * Y_UNITS_PER_INCH as f32) as u32,
         dot_count: 1,
@@ -22,20 +20,15 @@ fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
     assert_eq!(PaperWindow::total_pages_for_extent(extent), 4);
 }
 
-/// Tearing off must both discard the printed roll (the underlying
-/// [`DMP105Handle`]'s extent resets to empty) and reset every bit of
-/// this window's own view state that referred to the old roll's
-/// content — a stale `current_page` or cached texture would otherwise
-/// point past the now-empty roll on the very next `ui()` frame. Tests
-/// the state directly rather than driving a real `egui::Context`/GUI
-/// frame (T6 acceptance: "unit-test the state, not the GUI").
+/// Tearing off must discard the printed roll and reset every bit of this window's own view
+/// state — a stale `current_page` or cached texture would otherwise point past the now-empty
+/// roll. Tests state directly rather than driving a real GUI frame.
 #[test]
 fn tear_off_resets_paper_extent_and_view_state() {
     let mut window = PaperWindow::new();
     let mut handle = DMP105Handle::new();
-    // Print enough real ink (not just bare line feeds, which move the
-    // head but mark no dots) to have non-default extent/cache state to
-    // reset away from.
+    // Print enough real ink (not just line feeds, which mark no dots) to have state to reset
+    // away from.
     for _ in 0..80 {
         for &b in b"HELLO WORLD\r" {
             handle.write_byte(b);
@@ -54,8 +47,7 @@ fn tear_off_resets_paper_extent_and_view_state() {
     assert_eq!(window.current_page, 0);
     assert!(!window.pending_tear_off);
     assert!(window.pages.is_empty());
-    // Torn off, still attached and open: the next `ui()` frame must see
-    // exactly the fresh-roll page count (1 blank page + 1 trailing).
+    // Torn off, still attached and open: the next frame must see the fresh-roll page count.
     assert_eq!(
         PaperWindow::total_pages_for_extent(handle.paper_extent()),
         2

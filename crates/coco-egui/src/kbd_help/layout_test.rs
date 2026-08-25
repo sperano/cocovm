@@ -58,17 +58,15 @@ fn row_counts(rows: &[Row]) -> Vec<usize> {
 
 #[test]
 fn coco3_matches_the_service_manual_key_count() {
-    // "KEYBOARD: 57 keys" — Color Computer 3 Service Manual, §2.1
-    // Specifications, and the illustration in Introducing Your Color
-    // Computer 3 p.15 breaks those 57 down per row exactly like this.
+    // "KEYBOARD: 57 keys" — Color Computer 3 Service Manual §2.1, broken down per row per the
+    // p.15 illustration.
     assert_eq!(row_counts(COCO3_ROWS), vec![13, 14, 14, 13, 3]);
     assert_eq!(caps(COCO3_ROWS).len(), 57);
 }
 
 #[test]
 fn coco12_matches_the_service_manual_key_count() {
-    // "Keyboard: 53-key microprocessor scanned matrix" — Color Computer 2
-    // NTSC Service Manual, §2.3 Technical.
+    // "Keyboard: 53-key microprocessor scanned matrix" — Color Computer 2 NTSC Service Manual §2.3.
     assert_eq!(row_counts(COCO12_ROWS), vec![13, 14, 13, 12, 1]);
     assert_eq!(caps(COCO12_ROWS).len(), 53);
 }
@@ -98,9 +96,8 @@ fn is_arrow(cap: &Cap, dir: Dir) -> bool {
 
 #[test]
 fn the_coco3_arranges_its_arrows_in_a_diamond() {
-    // Tandy's illustration puts Up and Down in one column centred between
-    // Left and Right. The gap constants that achieve that are fiddly, so
-    // assert the geometry they produce rather than trusting the numbers.
+    // Gap constants that place the diamond are fiddly, so assert the geometry rather than the
+    // numbers.
     let rows = rows(MachineVariant::Coco3);
     let up = arrow_center(rows[1], Dir::Up);
     let left = arrow_center(rows[2], Dir::Left);
@@ -119,10 +116,7 @@ fn the_coco3_arranges_its_arrows_in_a_diamond() {
 
 #[test]
 fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
-    // The CoCo 1/2 has no diamond: Up and Down open rows 2 and 3 — the slots
-    // the CoCo 3 gives to ALT and CTRL — and Left/Right close row 2. This is
-    // the placement the 53-key count cannot pin down, and getting it wrong is
-    // exactly the bug this test exists to prevent, so assert the slots.
+    // Placement the 53-key count alone can't pin down — the bug this test exists to catch.
     let rows = rows(MachineVariant::Coco2);
     assert!(is_arrow(&cap_at(rows[1], 0), Dir::Up), "Up opens row 2");
     assert!(is_arrow(&cap_at(rows[2], 0), Dir::Down), "Down opens row 3");
@@ -133,8 +127,8 @@ fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
         "Left and Right close row 2, after @"
     );
 
-    // ENTER and CLEAR share the end of row 3, CLEAR outermost — where the
-    // CoCo 3 instead ends row 2 with CLEAR and row 3 with ENTER.
+    // ENTER/CLEAR share row 3's end, CLEAR outermost — CoCo 3 instead splits them across rows 2
+    // and 3.
     let row3 = caps(&[rows[2]]);
     assert_eq!(legend(&row3[row3.len() - 2]), Some("ENTER"));
     assert_eq!(legend(&row3[row3.len() - 1]), Some("CLEAR"));
@@ -156,10 +150,8 @@ fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
 
 #[test]
 fn the_keyboard_fits_the_window_it_is_drawn_in() {
-    // `width_units` is the max over the rows, so comparing rows against it
-    // proves nothing. The falsifiable claim is the absolute one: the widest
-    // keyboard has to fit the VM window it is drawn over, whose content is
-    // FB_H * SCALE * TARGET_ASPECT wide (`manager::vm_windows`).
+    // The falsifiable claim: the widest keyboard must fit the VM window, FB_H * SCALE *
+    // TARGET_ASPECT wide.
     let window_w = coco_core::video::FB_H as f32 * crate::SCALE * crate::TARGET_ASPECT;
     let widest = width_units(MachineVariant::Coco3) * super::super::UNIT_W;
     assert!(
@@ -172,8 +164,7 @@ fn the_keyboard_fits_the_window_it_is_drawn_in() {
 
 #[test]
 fn every_cap_names_a_host_key() {
-    // A blank host line is the bug this window exists to avoid: the user has
-    // to be able to read what to press for every single key.
+    // A blank host line is the bug this window exists to avoid.
     for variant in MachineVariant::ALL {
         for cap in caps(rows(variant)) {
             assert!(
@@ -186,10 +177,8 @@ fn every_cap_names_a_host_key() {
 
 #[test]
 fn symbolic_mode_keeps_the_host_key_on_exactly_the_positional_keys() {
-    // These are the keys `keymap::control_key_pos` routes by position even in
-    // symbolic mode, because they produce no text — and so the only ones
-    // whose host key is still worth showing there. Getting this set wrong is
-    // what would leave a user unable to find BREAK or CLEAR again.
+    // Keys `control_key_pos` routes by position even in symbolic mode — getting this set wrong
+    // strands BREAK/CLEAR.
     let mut routed: Vec<&str> = caps(COCO3_ROWS)
         .iter()
         .filter(|cap| cap.routed_in_symbolic())
@@ -209,10 +198,7 @@ fn symbolic_mode_keeps_the_host_key_on_exactly_the_positional_keys() {
 
 #[test]
 fn shifted_legends_follow_the_coco_not_the_host_keyboard() {
-    // Spot-check the pairs that differ from a US host keyboard — these are
-    // exactly the ones a reader would otherwise assume (Service Manual
-    // Figure 5-9): the CoCo shifts 2 to a double quote, : to *, - to =, and
-    // ; to +, and its 0 has no shifted legend at all.
+    // Spot-check pairs that differ from a US host keyboard (Service Manual Fig. 5-9).
     let coco3 = caps(COCO3_ROWS);
     let by_legend = |want: &str| -> Cap {
         *coco3
@@ -225,8 +211,8 @@ fn shifted_legends_follow_the_coco_not_the_host_keyboard() {
     assert_eq!(by_legend("-").shift, Some("="));
     assert_eq!(by_legend(";").shift, Some("+"));
     assert_eq!(by_legend("0").shift, None);
-    // And the host key for a CoCo cap is its *position*, not its character:
-    // CoCo ':' sits where the host's '-' is.
+    // Host key is the CoCo cap's position, not its character: CoCo ':' sits where the host's
+    // '-' is.
     assert_eq!(by_legend(":").host, "-");
     assert_eq!(by_legend("-").host, "=");
     assert_eq!(by_legend("@").host, "[");

@@ -142,47 +142,33 @@ impl SystemBus {
     }
 
     /// Restore-time fixups for `#[serde(skip)]` fields, after a snapshot
-    /// round-trip: `watch`/`watch_hit` are
-    /// already correct as their `Default` (`None`); `rom` is re-injected
-    /// separately via [`SystemBus::reattach_rom`] and this must be safe to
-    /// call before that happens, so it doesn't touch `rom` at all. Delegates
-    /// into the cartridge tree, whose own skipped fields (PSG lookup tables)
-    /// need rebuilding the same way.
+    /// round-trip. Delegates into the cartridge tree, whose own skipped fields need rebuilding too.
     pub fn after_restore(&mut self) {
         self.cart.after_restore();
     }
 
-    /// Restore-time payload-shape validation: called once by [`crate::snapshot::restore::validate_payload_shape`], before
-    /// any media is reattached. Only the cart tree needs a walk here — every
-    /// other device's own restore-only checks are either self-contained at
-    /// the call site (`crate::cassette::Cassette::reattach_tape`'s `bit`
-    /// check) or need reattached media themselves and so run later in the
-    /// restore flow (`crate::fdc::DiskCart::validate_restored_transfer`).
+    /// Restore-time payload-shape validation, called once before any media
+    /// is reattached. Only the cart tree needs a walk here.
     pub(crate) fn validate_restored(&self) -> Result<(), String> {
         self.cart.validate_restored()
     }
 
     /// Restore-path-only: re-inject the internal ROM image after a snapshot
-    /// restore (`rom` is `#[serde(skip)]` — COPYRIGHTED bytes never travel
-    /// through a snapshot). Do not call this outside the restore flow; there
-    /// is no user-action equivalent to reuse.
+    /// restore (`rom` is `#[serde(skip)]` — COPYRIGHTED bytes never travel through a snapshot).
     pub fn reattach_rom(&mut self, rom: Box<[u8]>) {
         self.rom = rom;
     }
 
     /// Enable the Becker port, if not already enabled. Idempotent — does
-    /// nothing if a `DwServer` is already installed (so re-enabling doesn't
-    /// discard mounted images or protocol state).
+    /// nothing if a `DwServer` is already installed.
     pub fn enable_drivewire(&mut self) {
         if self.drivewire.is_none() {
             self.drivewire = Some(DWServer::new());
         }
     }
 
-    /// Install the debugger's memory-watch table for the duration of a
-    /// [`crate::debug::Debugger::run_until`]. An empty table installs `None` so
-    /// even a debugged run with no watchpoints keeps the `read`/`write` fast
-    /// path. Also clears any stale hit.
+    /// Install the debugger's memory-watch table. An empty table installs
+    /// `None` so a debugged run with no watchpoints keeps the fast path.
     pub fn install_watches(&mut self, table: crate::debug::WatchTable) {
         self.watch = (!table.is_empty()).then_some(table);
         self.watch_hit = None;
@@ -207,9 +193,7 @@ impl SystemBus {
     }
 
     /// Record a watchpoint access if `watch` is installed and `addr`/`kind`
-    /// match an enabled watch. Keeps the FIRST hit within a step (later
-    /// accesses in the same instruction don't overwrite it). Only reached when
-    /// `watch.is_some()`, so the None path never calls this.
+    /// match an enabled watch. Keeps the FIRST hit within a step.
     fn note_watch(&mut self, addr: u16, kind: crate::debug::WatchKind) {
         if self.watch_hit.is_some() {
             return;
@@ -231,9 +215,8 @@ impl SystemBus {
     }
 
     /// True when `addr` reads ROM: the `$8000–$FDFF` window when ROM is mapped,
-    /// plus the `$FE00–$FEFF` vector page when INIT0 MC3 is clear (see
-    /// [`CONSTANT_RAM_BASE`] — MC3 set diverts that page to constant RAM via
-    /// [`SystemBus::phys`] instead). `$FF00+` is the I/O page / vectors.
+    /// plus `$FE00–$FEFF` when INIT0 MC3 is clear (MC3 set diverts that page
+    /// to constant RAM instead).
     fn is_rom_window(&self, addr: u16) -> bool {
         if !self.gime.rom_enabled() {
             return false;
@@ -244,14 +227,10 @@ impl SystemBus {
         (ROM_WINDOW_BASE..CONSTANT_RAM_BASE).contains(&addr)
     }
 
-    /// Read ROM for a logical address in the `$8000–$FFFF` window.
-    ///
-    /// INIT0 MC1:MC0 splits the window between internal ROM (image offset
-    /// `addr - $8000`) and the external cartridge ROM (CTS*), which an empty
-    /// slot answers with open-bus $00 — matching MAME trace-diff behaviour.
-    /// `$FFE0–$FFFF` is exempt: it always reads internal ROM (see
-    /// [`HARDWIRED_ROM_BASE`]), so callers route that range here directly and
-    /// we skip the external-cartridge check for it.
+    /// Read ROM for a logical address in the `$8000–$FFFF` window. INIT0
+    /// MC1:MC0 splits the window between internal ROM and external cartridge
+    /// ROM (CTS*); `$FFE0–$FFFF` is exempt and always reads internal ROM
+    /// (see [`HARDWIRED_ROM_BASE`]).
     fn rom_read(&mut self, addr: u16) -> u8 {
         if addr < HARDWIRED_ROM_BASE && self.gime.rom_is_external(addr) {
             return self.cart.rom_read(addr);
@@ -269,20 +248,15 @@ fn mmu_index(addr: u16) -> (usize, usize) {
 
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
-        // Debugger watch hook: a single null-check when no watchpoints are
-        // installed (the common case), so the hot path is unchanged.
+        // Single null-check when no watchpoints are installed, so the hot path is unchanged.
         if self.watch.is_some() {
             self.note_watch(addr, crate::debug::WatchKind::Read);
         }
-        // Two independent concrete decode paths, branched once up front
-        // — not a trait object, so both stay
-        // cycle-honest and the GIME path is untouched by the plain-SAM one.
+        // Two independent concrete decode paths, branched once up front, not a trait object.
         if self.variant != MachineVariant::Coco3 {
             return self.sam_read(addr);
         }
-        // Hardwired to internal ROM ahead of everything else — I/O decode,
-        // ROM mapping, and MMU state all take a back seat here (fact behind
-        // `HARDWIRED_ROM_BASE`).
+        // Hardwired to internal ROM ahead of I/O decode, ROM mapping, and MMU state.
         if addr >= HARDWIRED_ROM_BASE {
             return self.rom_read(addr);
         }

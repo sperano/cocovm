@@ -200,9 +200,8 @@ impl Cassette {
         };
     }
 
-    /// Unmount. Callers wanting the recording saved must call
-    /// [`Cassette::finalize_recording`] and write [`Cassette::tape_bytes`]
-    /// back first (mirrors the floppy eject/write-back split).
+    /// Unmount. To save an in-flight recording first, call
+    /// [`Cassette::finalize_recording`] and write [`Cassette::tape_bytes`] back.
     pub fn eject_tape(&mut self) {
         *self = Self::default();
     }
@@ -211,23 +210,8 @@ impl Cassette {
         self.mounted
     }
 
-    /// Restore-path-only: re-inject a mounted tape's bytes after a snapshot
-    /// restore, without resetting the deserialized playback/record state
-    /// (`pos`/`bit`/`bit_elapsed`/`capture`/…) the way [`Cassette::insert_tape`]
-    /// would. `tape` itself is `#[serde(skip)]`
-    /// (media bytes are never embedded in a snapshot); everything else on
-    /// `self` already came back from the snapshot as-is. Errors (instead of
-    /// panicking) if the restored `pos` no longer fits the reattached tape —
-    /// the file changed shape since the snapshot was taken — or if `bit`
-    /// (an ordinary deserialized field a hand-crafted payload can set to
-    /// anything) is out of its `0..8` range: [`Cassette::current_bit_is_one`]
-    /// shifts a byte right by `bit` with no bounds check of its own, which
-    /// panics on overflow in debug builds and becomes a masked shift (the
-    /// amount wrapped to the type's width) in release
-    ///. Also confirms `pos`/`bit` consistency
-    /// exactly at end-of-tape: [`Cassette::tick`] only ever advances `pos`
-    /// in the same step that wraps `bit` back to 0, so `pos == tape.len()`
-    /// with a nonzero `bit` is itself a sign of a corrupted payload.
+    /// Re-inject a mounted tape's bytes after a snapshot restore, without resetting other
+    /// deserialized state. Errors instead of panicking if the restored `pos`/`bit` no longer fit.
     pub fn reattach_tape(&mut self, bytes: Vec<u8>) -> Result<(), String> {
         if self.bit >= 8 {
             return Err(format!(
@@ -269,26 +253,15 @@ impl Cassette {
         self.dirty = false;
     }
 
-    /// Consume the "a recording just landed on the tape" event: true once per
-    /// landed finalize (see [`Cassette::finalize_recording`]), so a failed
-    /// disk write on the frontend side doesn't retry every frame. A discarded
-    /// sync-less capture never sets this.
+    /// Consume the "a recording just landed" event (true once per landed
+    /// finalize, see [`Cassette::finalize_recording`]) so a failed disk
+    /// write doesn't retry every frame.
     pub fn take_recording_landed(&mut self) -> bool {
         std::mem::take(&mut self.recording_landed)
     }
 
-    /// Tape position for UI: (position, length) in tape bytes. During
-    /// playback the position is the read head's; while a recording is in
-    /// flight (an unfinalized capture) it is the live estimate of bytes
-    /// recorded so far — [`Cassette::record_anchor`] (the splice point)
-    /// plus the counted tone cycles, eight bits to the byte — and the
-    /// length grows with it when the recording runs past the mounted
-    /// tape's end, since finalizing will splice the demodulated capture in
-    /// at the anchor, replacing everything from there on. The record branch
-    /// also requires a mounted tape, matching
-    /// [`Cassette::finalize_recording`]'s own requirement — a DAC capture
-    /// with nothing mounted (e.g. sound playback alone, motor on) must not
-    /// report a growing recording estimate.
+    /// Tape position for UI: (position, length) in bytes. During playback it's the read head;
+    /// while recording, the live estimate from [`Cassette::record_anchor`] plus counted bits.
     pub fn position(&self) -> (usize, usize) {
         if !self.mounted || self.capture.is_empty() {
             return (self.pos, self.tape.len());
@@ -314,14 +287,8 @@ impl Cassette {
         self.seek(0);
     }
 
-    /// Move the read/record head to a byte position, for the UI's "seek to
-    /// byte" control — first folding any pending recording into the tape
-    /// (same reason [`Cassette::rewind`] always has: the head is about to
-    /// move, and finalizing parks it at the splice end before this overrides
-    /// that). Clamps to the tape's end rather than erroring: a real deck
-    /// can't be wound past the end of the reel either. Landing mid-block is
-    /// harmless the same way a mis-parked real tape is — CLOAD's leader hunt
-    /// just re-syncs on the next leader run it meets.
+    /// Move the read/record head to a byte position (UI "seek to byte"),
+    /// first finalizing any pending recording; clamps to the tape's end.
     pub fn seek(&mut self, pos: usize) {
         self.finalize_recording();
         self.pos = pos.min(self.tape.len());
@@ -329,15 +296,8 @@ impl Cassette {
         self.bit_elapsed = 0;
     }
 
-    /// Advance the motor-on cycle clock and the playback position. Called
-    /// once per instruction from `Machine::run_cycles`, alongside
-    /// `bus.cart.tick` (same per-instruction cadence as the FD-502
-    /// precedent) — per-scanline would be far too coarse against the
-    /// ~217-cycle half-periods of the 1-bit tone. While the motor is off, a
-    /// pending in-flight recording's idle time is also tracked here,
-    /// auto-finalizing once it crosses [`RECORD_IDLE_FINALIZE_CYCLES`] (see
-    /// [`Cassette::finalize_recording`]) so a CSAVE that finishes without an
-    /// explicit rewind/eject still lands on the tape.
+    /// Advance the motor-on cycle clock and playback position, once per instruction. While the
+    /// motor is off, tracks idle time toward auto-finalizing a pending recording.
     pub fn tick(&mut self, cycles: u32, motor_on: bool) {
         if motor_on && !self.motor_was_on {
             self.spinup_left = MOTOR_SPINUP_CYCLES;
@@ -379,14 +339,8 @@ impl Cassette {
         }
     }
 
-    /// The squared tape signal as PA0 sees it: idle high with no tape moving
-    /// (or still spinning up), otherwise a square wave — the SALT
-    /// zero-crossing detector's rendering of the tape sine — with each bit
-    /// cell opening on its LOW half. The ROM's DAC sine table starts rising,
-    /// but the line reaching PA0 is inverted somewhere in the record→play
-    /// analog path (AC coupling/comparator polarity in the SALT): verified
-    /// empirically — the ROM's `CASON` ($A77C) lock never succeeds with
-    /// high-first cells and locks reliably with low-first.
+    /// The squared tape signal as PA0 sees it: idle high, else a square wave with each
+    /// bit cell opening LOW (SALT's inverted rendering, verified via `CASON` lock behavior).
     pub fn input_bit(&self) -> bool {
         if !self.motor_was_on || self.spinup_left > 0 || !self.playing() {
             return true;
@@ -411,12 +365,8 @@ impl Cassette {
         }
     }
 
-    /// Sample the cassette-out DAC tap after a PIA1 Port A output/DDR write.
-    /// The record output is a direct unconditional tap of the DAC (not gated
-    /// by SNDEN/the mux — `cassette-verified-facts`), but the caller only
-    /// invokes this on Port A writes, not CRA ($FF21) writes — see the call
-    /// sites in `bus/io.rs`/`bus/sam_path.rs`. This only appends when the
-    /// level actually changed and the motor is on.
+    /// Sample the cassette-out DAC tap after a PIA1 Port A output/DDR write;
+    /// only appends when the level actually changed and the motor is on.
     pub fn record_dac(&mut self, level: u8, motor_on: bool) {
         if !motor_on {
             self.last_level = None; // next motor-on write starts a fresh run
@@ -424,8 +374,7 @@ impl Cassette {
         }
         if self.last_level != Some(level) {
             if self.capture.is_empty() {
-                // First transition of a fresh in-flight recording: anchor
-                // the eventual splice at the head's current position.
+                // First transition: anchor the splice at the head's current position.
                 self.record_anchor = self.pos;
             }
             self.capture.push(Transition {
@@ -433,8 +382,7 @@ impl Cassette {
                 cycle: self.clock,
             });
             self.last_level = Some(level);
-            // The live record counter (see `record_bits`): one rising
-            // midpoint crossing per tone cycle written.
+            // record_bits counts one rising midpoint crossing per tone cycle.
             let high = level > DAC_LIVE_MIDPOINT;
             if high && !self.record_high {
                 self.record_bits += 1;
@@ -443,34 +391,11 @@ impl Cassette {
         }
     }
 
-    /// Demodulate the DAC capture and, if it contains at least one valid
-    /// leader+sync, splice it into the tape at [`Cassette::record_anchor`]
-    /// (marking it dirty) — like a real deck, CSAVE records starting at the
-    /// head position rather than replacing the whole reel: everything
-    /// before the anchor survives, and the decoded bytes are grafted on in
-    /// its place. A capture without a sync (stray DAC noise from sound
-    /// playback, or nothing at all) is discarded and the tape kept, so
-    /// rewinding after a CLOAD never wipes the tape.
-    ///
-    /// Content that sat between the anchor and the end of the *old* tape is
-    /// truncated, not preserved past the new content — byte-granular
-    /// splicing can't faithfully represent a partially-overwritten tail (the
-    /// old bytes there have no defined relationship to the new recording's
-    /// length), so anything at or after the anchor in the old tape is
-    /// discarded outright, mirroring how a real deck only ever leaves intact
-    /// what came strictly *before* the point recording started. An anchor of
-    /// 0 (a fresh capture, e.g. right after [`Cassette::insert_tape`] or
-    /// [`Cassette::rewind`]) truncates everything, reproducing the old
-    /// whole-tape-replace behaviour.
-    ///
-    /// Invariant: `record_anchor <= tape.len()` always holds — `pos` (which
-    /// seeds the anchor in [`Cassette::record_dac`]) never exceeds
-    /// `tape.len()`, and nothing else mutates `tape` while a capture is in
-    /// flight.
+    /// Demodulate the DAC capture and, if it contains a valid leader+sync, splice it into the
+    /// tape at [`Cassette::record_anchor`]; a sync-less capture is discarded, tape untouched.
     pub fn finalize_recording(&mut self) {
         let decoded = demodulate(&self.capture);
-        // Captured before the unconditional reset below zeroes the field:
-        // the splice point this capture started at.
+        // Captured before the reset below zeroes the field.
         let anchor = self.record_anchor;
         self.capture.clear();
         self.last_level = None;

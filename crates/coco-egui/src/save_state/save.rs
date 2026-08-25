@@ -13,23 +13,9 @@ use crate::{CocoApp, MPISlot, ROMSource, disk_basic_rom_path, rom_db_pseudo_path
 use super::media_ref::hash_media_ref;
 
 impl CocoApp {
-    /// Flush dirty media first (so path+hash refs describe the on-disk
-    /// truth — [`snapshot::save`]'s own contract), build [`MediaRefs`] from
-    /// the paths this app already tracks, and write the encoded `.ccstate`
-    /// bytes to `path` — tmp-then-rename, the same pattern as
-    /// `machine_def::save` and `manager::write_thumbnail_png`, so a crash
-    /// or full disk mid-write can never leave a truncated state file behind
-    /// (a torn `suspended.ccstate` would read as a phantom Suspended
-    /// machine on the manager's next launch).
-    ///
-    /// A flush failure aborts the whole save — propagated before
-    /// [`Self::build_media_refs`] runs, so no `.ccstate`/`.tmp` file is
-    /// written at all — leaving the dirty media mounted and unsaved rather
-    /// than snapshotting a stale on-disk copy as if it were current
-    /// (`manager::lifecycle::suspend_vm` relies on this: a failed suspend
-    /// must leave the machine Running with nothing but the frozen error to
-    /// show for it, not a suspended entry pointing at data that was never
-    /// actually written back).
+    /// Flush dirty media, build [`MediaRefs`], and write the encoded
+    /// `.ccstate` via tmp-then-rename so a crash mid-write can't leave a
+    /// truncated file. A flush failure aborts before anything is written.
     pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
         self.flush_media()?;
         let media = self.build_media_refs()?;
@@ -43,15 +29,8 @@ impl CocoApp {
         Ok(())
     }
 
-    /// Build this app's [`MediaRefs`] from the paths it already tracks
-    /// (`cart_path`/`mpi`/`rs232_eprom_path`/`disk_paths`/`vhd_paths`/
-    /// `dw_paths`/`tape_path`), hashing each referenced FILE — pak images
-    /// are mirror-filled in memory, so in-memory bytes never equal file
-    /// bytes, hence always [`snapshot::sha256_file`] on the source.
-    ///
-    /// `pub(super)`, not private: `save_state_test.rs` (`super::tests`, a
-    /// sibling of this module under `save_state`) calls it directly to
-    /// check the refs it builds against the mounted fixtures' real hashes.
+    /// Build this app's [`MediaRefs`] from the paths it already tracks,
+    /// always hashing the referenced file (not in-memory bytes, which may differ).
     pub(super) fn build_media_refs(&mut self) -> Result<MediaRefs, String> {
         let system_rom = Some(self.system_rom_media_ref());
         let cart_roms = self.collect_cart_roms()?;
@@ -89,16 +68,9 @@ impl CocoApp {
         })
     }
 
-    /// [`MediaRefs::system_rom`]: the frontend resolved/composed the boot
-    /// ROM at boot time ([`ROMSource`]) — a real file records its path but
-    /// hashes the boot-time bytes live from `self.machine.bus.rom` rather
-    /// than re-reading the file (a ROM file modified mid-session should
-    /// produce a mismatch WARNING on restore, not a silently-passing wrong
-    /// hash computed from bytes the running machine never actually used); a
-    /// CoCo 1/2 `rom_db`-composed image has no single file, so this records
-    /// a pseudo-path ([`rom_db_pseudo_path`]) and hashes the composed bytes
-    /// the same way — this arm already worked this way before this
-    /// function's `File` arm was brought in line with it.
+    /// [`MediaRefs::system_rom`]: hashes the boot-time bytes live from
+    /// `self.machine.bus.rom`, not a re-read of the file, so a ROM edited
+    /// mid-session produces a mismatch warning on restore, not a false pass.
     fn system_rom_media_ref(&self) -> MediaRef {
         let path = match &self.rom_source {
             ROMSource::File(path) => path.clone(),
@@ -111,16 +83,13 @@ impl CocoApp {
     }
 
     /// [`MediaRefs::cart_roms`]: one entry per ROM-bearing cart the app
-    /// tracks a path for — `cart_path`/`mpi` (direct port / MultiPak slots)
-    /// plus the FD-502's Disk BASIC ROM ([`disk_basic_rom_path`]) and the
-    /// Deluxe RS-232 pak's optional EPROM (`rs232_eprom_path`, only present
-    /// when one was actually mounted — the pak also runs ROM-less).
+    /// tracks a path for — direct port/MPI slots, the FD-502's Disk BASIC
+    /// ROM, and the RS-232 pak's optional EPROM.
     fn collect_cart_roms(&mut self) -> Result<Vec<SlotROMRef>, String> {
         let mut out = Vec::new();
         if let Some(mpi) = &self.mpi {
-            // Snapshot the slot paths first — this ends the immutable
-            // borrow of `self.mpi` before the hashing loop below needs
-            // `self` again for `hash_media_ref`'s error path.
+            // Snapshot paths first to end the immutable borrow of self.mpi before hashing needs
+            // self again.
             let paths: Vec<(Option<u8>, PathBuf)> = mpi
                 .slots
                 .iter()

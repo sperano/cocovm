@@ -45,9 +45,8 @@ impl MC6809 {
         }
     }
 
-    /// The value TFR writes to `dst` given `src`, honouring the documented 6809
-    /// behaviour when register sizes differ (16→8 keeps the LSB — handled by
-    /// `reg_write`; A/B→16 sets MSB=$FF; CC/DP→16 duplicates the byte).
+    /// The value TFR writes to `dst` given `src`: 16→8 keeps the LSB (handled
+    /// by `reg_write`); A/B→16 sets MSB=$FF; CC/DP→16 duplicates the byte.
     pub(crate) fn tfr_value(&self, src: u8, dst: u8) -> u16 {
         let sv = self.reg_read(src);
         match (Self::reg_is16(src), Self::reg_is16(dst)) {
@@ -62,12 +61,8 @@ impl MC6809 {
         }
     }
 
-    /// The 16-bit values EXG reads from postbyte registers `r0` (first-named)
-    /// and `r1` before either is written, per the 6809's documented exchange
-    /// rules (6x09 Instruction Sets, EXG). Unlike TFR, an 8-bit operand's
-    /// widening depends on whether the *first-named* register is 8-bit, not on
-    /// the operand's own size — this is what makes `EXG CC,X` and `EXG X,CC`
-    /// widen CC differently even though CC is read both times.
+    /// The 16-bit values EXG reads from `r0` (first-named) and `r1` before
+    /// either is written; an 8-bit operand's widening depends on whether r0 is 8-bit.
     pub(crate) fn exg_values(&self, r0: u8, r1: u8) -> (u16, u16) {
         let first_is_8bit = !Self::reg_is16(r0);
         (

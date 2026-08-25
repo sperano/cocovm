@@ -51,11 +51,8 @@ pub type Glyph = [u8; 9];
 /// Bit position of the descender-row dot within a glyph column byte.
 const DESCENDER_BIT: u8 = 0x80;
 
-/// Author a glyph from row-major ASCII art: 7 body rows top-to-bottom, then
-/// one descender row, each exactly 9 characters wide (`#` = dot, anything
-/// else = no dot) — far more legible to write and review than raw bit
-/// patterns. Transposed here into the column-major [`Glyph`] representation
-/// described in the module doc comment.
+/// Author a glyph from row-major ASCII art (`#` = dot), transposed here into
+/// the column-major [`Glyph`] representation described in the module doc comment.
 const fn glyph(rows: [&str; 8]) -> Glyph {
     let mut cols: Glyph = [0u8; 9];
     let mut r = 0;
@@ -1157,9 +1154,7 @@ pub fn ascii_glyph(code: u8) -> Option<Glyph> {
     }
 }
 
-/// The literal `X` glyph printed for every undefined/unimplemented code
-/// (`dmp105-protocol.md` §3: "Undefined codes ... print literal X in CP
-/// mode").
+/// The literal `X` glyph printed for every undefined/unimplemented code (`dmp105-protocol.md` §3).
 pub fn undefined_glyph() -> Glyph {
     ascii_glyph(b'X').expect("'X' is always present in ASCII_FONT")
 }
@@ -1174,14 +1169,8 @@ pub fn european_glyph(code: u8) -> Option<Glyph> {
     }
 }
 
-/// Sextant-style block-graphics glyph (`$E0-$FE`) — see the module doc
-/// comment: a systematic, unverified placeholder enumeration, not a
-/// transcription of the real ROM table. Builds a 2-column x 3-row grid of 6
-/// sub-blocks, each roughly 4 dot-columns wide x 2-3 rows tall to fill the
-/// 9x7 cell, from the low 6 bits of `code - BLOCK_FIRST`. `$E0` (index 0) is
-/// bit pattern 0, i.e. blank, matching the one verified detail ("$E0 =
-/// blank"). Returns `None` for `code` outside the range or for the index
-/// reserved as undefined (see [`BLOCK_COUNT`]'s doc comment).
+/// Sextant-style block-graphics glyph (`$E0-$FE`) — an unverified systematic
+/// placeholder, not a transcription of the real ROM table (see module doc comment).
 pub fn block_glyph(code: u8) -> Option<Glyph> {
     if !(BLOCK_FIRST..=BLOCK_LAST).contains(&code) {
         return None;
@@ -1194,9 +1183,7 @@ pub fn block_glyph(code: u8) -> Option<Glyph> {
 }
 
 /// Build glyph `index` (0..=62, 6 bits) as a 2x3 grid of sub-blocks: bit 0 =
-/// top-left, bit 1 = top-right, bit 2 = mid-left, bit 3 = mid-right, bit 4 =
-/// bottom-left, bit 5 = bottom-right. Each sub-block fills columns 1-4
-/// (left) or 5-8 (right) and rows 0-1 (top), 2-4 (mid), 5-6 (bottom).
+/// top-left, bit 1 = top-right, ... bit 5 = bottom-right.
 fn sextant_glyph(index: u32) -> Glyph {
     const LEFT_COLS: std::ops::Range<usize> = 1..5;
     const RIGHT_COLS: std::ops::Range<usize> = 5..9;

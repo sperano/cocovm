@@ -39,19 +39,8 @@ mod os9_lsn0 {
     pub const SPT_OFFSET: usize = 0x11;
 }
 
-/// Sniff a headerless image's first 256 bytes as an OS-9 LSN0 identification
-/// sector and return the side count it declares (1 or 2), but only when the
-/// fields are fully self-consistent with `file_len` and this crate's own JVC
-/// default geometry — otherwise `None`, leaving the naive JVC-default parse
-/// untouched.
-///
-/// Trusted only if: DD.SPT equals the JVC default (18 — this crate doesn't
-/// support other sniffed geometries), `DD.TOT * 256 == file_len`, DD.TOT
-/// divides evenly by `DD.SPT * sides`, and the implied track count is nonzero
-/// and within [`MAX_FORMAT_TRACKS`] (MAME's largest floppy table entry is 80
-/// tracks). This rejects both non-OS-9 images (an all-zero LSN0 fails the SPT
-/// check) and disk-shaped-but-not-floppy images like a 1024-track cocosdc
-/// dump (fails the track-count cap).
+/// Sniff a headerless image's first 256 bytes as OS-9 LSN0 and return its declared side count,
+/// only when SPT/TOT/track-count are consistent with `file_len` and the JVC-default geometry.
 fn sniff_os9_sides(bytes: &[u8], file_len: usize) -> Option<usize> {
     let lsn0 = bytes.get(..os9_lsn0::LEN)?;
     let dd_tot = u32::from(lsn0[os9_lsn0::TOT_OFFSET]) << 16
@@ -205,10 +194,7 @@ impl JVCDisk {
         }
         let mut track_count = data_len / track_bytes;
 
-        // Headerless images only (an explicit JVC header keeps full authority):
-        // sniff LSN0 for an OS-9 identification sector. A 2-sided disk whose
-        // side-major bytes were parsed as 1 side needs its track count halved to
-        // match (see `sniff_os9_sides`'s doc comment for the trust conditions).
+        // Headerless only: sniff OS-9 LSN0 for sides, halving track count if 2-sided.
         if header_len == 0 && sides == DEFAULT_SIDES && sniff_os9_sides(&bytes, file_len) == Some(2)
         {
             sides = 2;
@@ -228,14 +214,8 @@ impl JVCDisk {
         })
     }
 
-    /// Restore-path-only: re-inject a mounted disk's raw bytes after a
-    /// snapshot restore (`data` is `#[serde(skip)]` — mounted disk images
-    /// are media, referenced by path+hash rather than embedded, since they
-    /// can be copyrighted commercial software).
-    /// Re-derives geometry from `bytes` exactly like [`JVCDisk::from_bytes`]
-    /// and verifies it matches the geometry the snapshot recorded before
-    /// setting `data` — [`JVCError::GeometryChanged`] means the file changed
-    /// shape since the snapshot was taken.
+    /// Re-inject a mounted disk's raw bytes after a snapshot restore (`data` is `#[serde(skip)]`).
+    /// Errors if the re-derived geometry no longer matches what the snapshot recorded.
     pub fn reattach_data(&mut self, bytes: Vec<u8>) -> Result<(), JVCError> {
         let reparsed = JVCDisk::from_bytes(bytes)?;
         if reparsed.sectors_per_track != self.sectors_per_track
@@ -291,9 +271,7 @@ impl JVCDisk {
     }
 
     /// Clear the dirty flag once [`JVCDisk::bytes`] has been written back to
-    /// its file (mirrors [`crate::cassette::Cassette::mark_saved`]) — so a
-    /// later write-back with nothing new to save can skip re-writing an
-    /// unchanged file.
+    /// its file (mirrors [`crate::cassette::Cassette::mark_saved`]).
     pub fn mark_saved(&mut self) {
         self.dirty = false;
     }
@@ -304,12 +282,8 @@ impl JVCDisk {
         &self.data
     }
 
-    /// Byte offset of `(track, side, sector_id)` in the in-memory image, or
-    /// `None` if out of range.
-    ///
-    /// `offset = header + ((track * sides + side) * spt + (sector_id -
-    /// first_id)) * sector_size` (spec-provided formula, matching MAME
-    /// `jvc_dsk.cpp`'s sector lookup).
+    /// Byte offset of `(track, side, sector_id)` in the image, or `None` if out of range:
+    /// `header + ((track * sides + side) * spt + (sector_id - first_id)) * sector_size`.
     pub fn sector_offset(&self, track: u8, side: u8, sector_id: u8) -> Option<usize> {
         let track = track as usize;
         let side = side as usize;
@@ -333,17 +307,9 @@ impl JVCDisk {
         self.dirty = true;
     }
 
-    /// Lay down one formatted sector during a Write Track (DSKINI-style format).
-    /// Writes `data` at `(track, side, sector_id)` if the geometry matches this
-    /// image's own (side < sides(), sector_id in [first_sector_id,
-    /// first_sector_id+sectors_per_track), 128<<size_code == sector_size()),
-    /// growing the image with zero-filled tracks (capped at
-    /// [`MAX_FORMAT_TRACKS`]) if `track` is beyond the current track count.
-    /// Silently does nothing if the geometry doesn't match (foreign sector ID,
-    /// wrong size code, side >= sides(), including a side-1 write on a
-    /// single-sided image) or the cap is exceeded — real hardware has no error
-    /// path for this, and JvcDisk can't represent a sector outside its own
-    /// geometry (spec).
+    /// Lay down one formatted sector during a Write Track, growing the image
+    /// with zero-filled tracks if needed. Silently no-ops on a geometry
+    /// mismatch — real hardware has no error path.
     pub fn format_sector(
         &mut self,
         track: u8,
@@ -372,13 +338,8 @@ impl JVCDisk {
         self.dirty = true;
     }
 
-    /// Extend the image with zero-filled tracks so `track` exists (lets Write
-    /// Track format a blank/undersized image from nothing), capped at
-    /// [`MAX_FORMAT_TRACKS`]. Returns `false` (image left unchanged) if `track`
-    /// is beyond the cap; otherwise appends zero-filled track(s) after the
-    /// current last track (row order is `track*sides+side`, so tracks are
-    /// contiguous blocks — appending at the end is geometry-safe) and updates
-    /// `track_count`.
+    /// Extend the image with zero-filled tracks so `track` exists, capped at [`MAX_FORMAT_TRACKS`].
+    /// Returns `false` (unchanged) if `track` exceeds the cap.
     fn grow_to_track(&mut self, track: usize) -> bool {
         if track >= MAX_FORMAT_TRACKS {
             return false;

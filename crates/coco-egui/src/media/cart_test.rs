@@ -31,10 +31,8 @@ fn write_rom_pak_fixture(path: &Path) {
     std::fs::write(path, vec![0x11u8; ROM_PAK_SIZE]).expect("write ROM pak fixture");
 }
 
-/// `insert_cartridge` over a direct-port FD-502 with a dirty disk whose
-/// backing file has gone read-only must abort the swap entirely — no
-/// `power_cycle`, no ROM pak installed, the FD-502 and its dirty disk left
-/// exactly as they were — then succeed once write access is restored.
+/// `insert_cartridge` must abort entirely when a dirty disk's backing file is read-only —
+/// nothing swapped, disk left dirty — then succeed once write access is restored.
 #[test]
 fn insert_cartridge_fails_and_preserves_dirty_disk_when_write_back_fails() {
     let dir = scratch_dir("insert-cartridge-write-back-failure");
@@ -136,9 +134,8 @@ fn eject_cartridge_fails_then_succeeds_after_write_access_is_restored() {
     );
 }
 
-/// Pins the MPI conditional-flush rule: an insert into the FD-502's own
-/// slot must abort when its disk fails to write back, but the exact same
-/// failing disk must NOT block an insert into a different slot.
+/// Pins the MPI conditional-flush rule: inserting into the FD-502's own slot aborts on a
+/// failed write-back, but the same failing disk must not block an insert into another slot.
 #[test]
 fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
     let dir = scratch_dir("mpi-rompak-conditional-flush");
@@ -203,12 +200,9 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
     assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));
 }
 
-/// `mpi_insert_rompak` into the FD-502's own slot on a *writable* dirty
-/// disk must succeed: the flush lands before the FD-502 is replaced (the
-/// byte reaches the file), the slot now holds the ROM pak, and
-/// `disk_paths` is cleared — the success path of
-/// [`CocoApp::mpi_flush_before_replacing_slot`], which the abort-path tests
-/// above never exercise.
+/// `mpi_insert_rompak` into the FD-502's own slot on a *writable* dirty disk must succeed,
+/// flushing before the swap and clearing `disk_paths` — the success path
+/// the abort tests above never exercise.
 #[test]
 fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
     let dir = scratch_dir("mpi-rompak-success-flush");
@@ -249,9 +243,7 @@ fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
     );
 }
 
-/// [`mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot`]'s counterpart
-/// for `mpi_insert_rtc`, which — unlike every other MPI insert — had no
-/// flush at all before this guard was added.
+/// [`mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot`]'s counterpart for `mpi_insert_rtc`.
 #[test]
 fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
     let dir = scratch_dir("mpi-rtc-conditional-flush");
@@ -287,9 +279,8 @@ fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
     assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));
 }
 
-/// `mpi_eject_slot` of the FD-502's slot must abort on a failed write-back,
-/// preserving the slot, the mounted disk cart, its dirty disk, and
-/// `disk_paths`.
+/// `mpi_eject_slot` of the FD-502's slot must abort on a failed write-back, preserving the
+/// slot, the disk cart, its dirty disk, and `disk_paths`.
 #[test]
 fn mpi_eject_slot_aborts_when_the_fd502_disk_write_back_fails() {
     let dir = scratch_dir("mpi-eject-conditional-flush");

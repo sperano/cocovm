@@ -1,9 +1,8 @@
 use super::*;
 use crate::paper_render;
 
-/// A scratch path under the OS temp dir, unique per test run (PID + a
-/// per-call counter) so parallel `cargo test` runs of this file never
-/// collide on the same file (`bitbanger.rs`'s `scratch_path` pattern).
+/// A scratch path under the OS temp dir, unique per test run (PID + a per-call counter) so
+/// parallel `cargo test` runs never collide on the same file.
 fn scratch_path(name: &str) -> std::path::PathBuf {
     static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -61,9 +60,7 @@ fn pdf_page_count_matches_the_pages_given() {
     write_pdf(&pages, dpi, &mut buf).expect("write_pdf");
 
     let text = String::from_utf8_lossy(&buf);
-    // "/Type /Page " (trailing space) matches only real Page objects,
-    // not the "/Type /Pages" tree object (immediately followed by "s",
-    // not a space).
+    // "/Type /Page " (trailing space) matches only real Page objects, not "/Type /Pages".
     let page_object_count = text.matches("/Type /Page ").count();
     assert_eq!(page_object_count, pages.len());
     assert!(text.contains("/Count 3"));

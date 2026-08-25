@@ -7,8 +7,7 @@ impl CocoApp {
     pub(super) fn rs232_menu_ui(&mut self, ui: &mut egui::Ui) {
         let direct_port = self.mpi.is_none();
         let installed = self.rs232.is_some();
-        // Like "Insert Cartridge…": the pak plugs straight
-        // into the port, so an installed MPI blocks it.
+        // The pak plugs straight into the port, so an installed MPI blocks it.
         if ui
             .add_enabled(
                 direct_port && !installed,
@@ -26,8 +25,8 @@ impl CocoApp {
             self.eject_cartridge();
             ui.close();
         }
-        // Re-read instead of reusing `installed`: a Remove click above
-        // already cleared `self.rs232` this same frame.
+        // Re-read instead of reusing `installed`: a Remove click above already cleared it this
+        // frame.
         if self.rs232.is_some() {
             ui.separator();
             self.rs232_endpoint_items(ui);

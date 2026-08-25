@@ -22,9 +22,8 @@ fn level_bar(ui: &mut egui::Ui, label: &str, value: u8) {
     });
 }
 
-/// Draw the Orchestra-90 level-meter window. `open` is toggled by the
-/// window's close box. `left`/`right` are the current DAC latch values
-/// (0-255, from [`coco_core::orch90::Orch90::left`]/`right`).
+/// Draws the Orchestra-90 level-meter window; `open` is toggled by the
+/// window's close box.
 pub fn window(ctx: &egui::Context, open: &mut bool, left: u8, right: u8) {
     egui::Window::new(crate::window_title(ctx, "Orchestra-90"))
         .open(open)

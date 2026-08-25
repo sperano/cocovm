@@ -7,9 +7,8 @@ use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, ta
 /// a framed block.
 const LEADER: u8 = 0x55;
 
-/// Scratch directory holding only the fixture files a given test writes
-/// into it, under `target/` (git-ignored), mirroring
-/// `save_state_test.rs`'s `scratch_dir`.
+/// Scratch directory holding only the fixture files a given test writes into it, under
+/// `target/` (git-ignored).
 fn scratch_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp-test-media-tape")
@@ -18,9 +17,7 @@ fn scratch_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// Record one framed block onto the mounted tape and finalize it, dirtying
-/// the cassette (mirrors `save_state_test.rs`'s
-/// `save_state_to_fails_when_tape_write_back_fails`).
+/// Records one framed block onto the mounted tape and finalizes it, dirtying the cassette.
 fn dirty_tape(app: &mut CocoApp) {
     let mut block = vec![LEADER; 16];
     block.extend(tape_block(0x01, b"X"));
@@ -36,9 +33,8 @@ fn dirty_tape(app: &mut CocoApp) {
     );
 }
 
-/// `insert_tape` over a dirty tape whose backing `.cas` has gone read-only
-/// must abort the mount entirely: the old tape stays mounted and dirty, and
-/// `tape_path` still names the old file.
+/// `insert_tape` over a dirty tape whose backing `.cas` has gone read-only must abort the
+/// mount entirely — the old tape stays mounted, dirty, and tracked.
 #[test]
 fn insert_tape_fails_and_preserves_dirty_old_tape_when_write_back_fails() {
     let dir = scratch_dir("insert-write-back-failure");
@@ -74,9 +70,8 @@ fn insert_tape_fails_and_preserves_dirty_old_tape_when_write_back_fails() {
     assert_eq!(app.tape_path, Some(old_path.clone()));
 }
 
-/// `new_tape` with a dirty old tape and a read-only old `.cas` must abort
-/// before creating the new file at all: no stray empty file lands on disk,
-/// and the old tape is preserved exactly like the `insert_tape` case.
+/// `new_tape` with a dirty old tape and a read-only old `.cas` must abort before creating
+/// the new file at all — no stray file lands, and the old tape is preserved.
 #[test]
 fn new_tape_fails_and_creates_no_file_when_write_back_fails() {
     let dir = scratch_dir("new-write-back-failure");
@@ -116,9 +111,8 @@ fn new_tape_fails_and_creates_no_file_when_write_back_fails() {
     assert_eq!(app.tape_path, Some(old_path.clone()));
 }
 
-/// `eject_tape` with a read-only backing `.cas` must abort the eject: the
-/// tape stays mounted, dirty, and tracked at its path. Once write access is
-/// restored, a retried eject succeeds and clears both the deck and the path.
+/// `eject_tape` with a read-only backing `.cas` must abort, leaving the tape mounted, dirty,
+/// and tracked. Once write access is restored, a retried eject succeeds and clears the deck.
 #[test]
 fn eject_tape_fails_then_succeeds_after_write_access_is_restored() {
     let dir = scratch_dir("eject-write-back-failure");
@@ -150,10 +144,8 @@ fn eject_tape_fails_then_succeeds_after_write_access_is_restored() {
         assert_eq!(app.tape_path, Some(tape_path.clone()));
     }
 
-    // `_ro` dropped above restores write access; retry must now succeed.
-    // `cart_error` is a sticky UI field (cleared by the error dialog, not by
-    // the action that set it), so clear it here first to observe the retry's
-    // own outcome rather than the previous failure's leftover message.
+    // `cart_error` is sticky (not auto-cleared), so reset it here to
+    // observe the retry's own outcome.
     app.cart_error = None;
     app.eject_tape();
     assert!(
@@ -164,14 +156,9 @@ fn eject_tape_fails_then_succeeds_after_write_access_is_restored() {
     assert_eq!(app.tape_path, None);
 }
 
-/// `eject_tape` when only the *optional* `.wav` sibling ([`CocoApp::save_tape_wav`])
-/// fails to write must NOT abort: by the time that write is attempted the
-/// canonical `.cas` has already landed and [`coco_core::cassette::Cassette::mark_saved`]
-/// has already run, so the tape is clean and there is nothing left for an
-/// abort to preserve — see [`CocoApp::save_tape_bytes`]'s doc comment. The
-/// eject must still proceed (cassette unmounted, `tape_path` cleared) with
-/// the `.wav` failure surfaced through [`CocoApp::cart_error`], and the
-/// `.cas` on disk must hold the recording that did land.
+/// `eject_tape` must not abort when only the optional `.wav` sibling fails to write — by
+/// then the canonical `.cas` has landed and the tape is clean. The eject
+/// proceeds; the `.wav` failure surfaces via [`CocoApp::cart_error`].
 #[test]
 fn eject_tape_proceeds_when_only_the_wav_sibling_write_fails() {
     let dir = scratch_dir("wav-sibling-write-back-failure");
@@ -192,9 +179,8 @@ fn eject_tape_proceeds_when_only_the_wav_sibling_write_fails() {
     dirty_tape(&mut app);
     let expected_cas_bytes = app.machine.bus.cassette.tape_bytes().to_vec();
 
-    // The `.wav` sibling must already exist to be made read-only: `.cas`
-    // writes happen first and always succeed here, so only the second,
-    // `.wav` write in `save_tape_bytes` is made to fail.
+    // The .wav sibling must exist first to be made read-only; .cas writes
+    // happen first and always succeed here.
     std::fs::write(&wav_path, Vec::<u8>::new()).expect("create wav fixture");
     let _ro = ReadOnly::new(&wav_path);
 

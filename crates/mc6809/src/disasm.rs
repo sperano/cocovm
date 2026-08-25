@@ -37,12 +37,9 @@ pub struct Insn {
     pub operand: String,
 }
 
-/// Disassemble one instruction starting at `pc`. `read` is called at most as
-/// many times as the instruction actually needs (opcode, optional prefix
-/// byte, and operand bytes) — never speculatively, so it is safe to back onto
-/// a live bus with side-effecting reads is not assumed; callers wanting
-/// side-effect-free reads should pass a peek-style closure (see
-/// `coco-core`'s planned `SystemBus::peek`).
+/// Disassembles one instruction starting at `pc`. `read` is called only as
+/// many times as the instruction needs — never speculatively — so it is safe
+/// to call against a live, side-effecting bus.
 pub fn disassemble(read: &mut impl FnMut(u16) -> u8, pc: u16) -> Insn {
     let mut r = Reader {
         read,
@@ -133,9 +130,8 @@ fn decode_base<F: FnMut(u16) -> u8>(r: &mut Reader<F>, opcode: u8) -> (&'static 
     }
 }
 
-/// Render an [`Entry`]'s operand given the mode, consuming exactly the bytes
-/// that mode requires. `raw_byte` is the opcode (base page) or second byte
-/// (prefixed pages) — used only for the illegal-inherent operand rendering.
+/// Renders an [`Entry`]'s operand for its mode, consuming exactly the bytes
+/// that mode requires. `raw_byte` is used only for illegal-inherent rendering.
 fn render<F: FnMut(u16) -> u8>(
     r: &mut Reader<F>,
     raw_byte: u8,
@@ -172,9 +168,8 @@ fn render<F: FnMut(u16) -> u8>(
     (entry.mnemonic, operand)
 }
 
-/// Register name for a TFR/EXG postbyte nibble. Codes 0x6, 0x7, 0xC, 0xD,
-/// 0xE, 0xF are invalid/reserved on real hardware (see `MC6809::reg_read`'s
-/// `_ => 0xFFFF` fallback) — rendered as `?N` rather than guessing a name.
+/// Register name for a TFR/EXG postbyte nibble. Codes 0x6, 0x7, 0xC-0xF are
+/// invalid/reserved on real hardware; rendered as `?N` rather than guessing.
 fn reg_name(code: u8) -> String {
     match code {
         regsel::D => "D".to_string(),
@@ -191,12 +186,8 @@ fn reg_name(code: u8) -> String {
     }
 }
 
-/// Render a PSHS/PULS/PSHU/PULU mask byte as a comma-separated register list.
-/// Display convention (not a hardware fact — the mask is a bitset, not an
-/// order): low-to-high bit order, i.e. CC,A,B,DP,X,Y,(U-or-S),PC. `is_s_op`
-/// selects whether bit 0x40 ("the *other* stack pointer", see
-/// `mc6809::stack_mask::OTHER_STACK_PTR`) names U (for PSHS/PULS) or S (for
-/// PSHU/PULU).
+/// Renders a PSHS/PULS/PSHU/PULU mask byte as a comma-separated register list
+/// (low-to-high bit order); `is_s_op` picks U or S for the shared bit 0x40.
 fn format_stack_mask(mask: u8, is_s_op: bool) -> String {
     let mut regs: Vec<&str> = Vec::with_capacity(8);
     if mask & stack_mask::CC != 0 {

@@ -4,9 +4,8 @@ use crate::save_state::tests::{
     write_one_track_disk,
 };
 
-/// Scratch directory holding only the fixture files a given test writes
-/// into it, under `target/` (git-ignored), mirroring
-/// `save_state_test.rs`'s `scratch_dir`.
+/// Scratch directory holding only the fixture files a given test writes into it, under
+/// `target/` (git-ignored).
 fn scratch_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp-test-media-disk")
@@ -15,10 +14,9 @@ fn scratch_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// `insert_disk` over a dirty disk whose backing file has gone read-only
-/// must abort the mount entirely: the old disk stays mounted and dirty (its
-/// written byte still present), `disk_paths[drive]` still names the old
-/// file, and the new image is never installed.
+/// `insert_disk` over a dirty disk whose backing file has gone read-only must abort the
+/// mount entirely — the old disk stays mounted, dirty, and tracked; the
+/// new image is never installed.
 #[test]
 fn insert_disk_fails_and_preserves_dirty_old_disk_when_write_back_fails() {
     let dir = scratch_dir("insert-write-back-failure");
@@ -62,9 +60,8 @@ fn insert_disk_fails_and_preserves_dirty_old_disk_when_write_back_fails() {
     );
 }
 
-/// `new_blank_disk` over a dirty old disk with a read-only backing file must
-/// abort before creating the new file at all: no stray empty image lands on
-/// disk, and the old disk is preserved exactly like the `insert_disk` case.
+/// `new_blank_disk` over a dirty old disk with a read-only backing file must abort before
+/// creating the new file at all — no stray empty image lands, and the old disk is preserved.
 #[test]
 fn new_blank_disk_fails_and_creates_no_file_when_write_back_fails() {
     let dir = scratch_dir("new-blank-write-back-failure");
@@ -98,10 +95,8 @@ fn new_blank_disk_fails_and_creates_no_file_when_write_back_fails() {
     assert_eq!(app.disk_paths[0], Some(old_path.clone()));
 }
 
-/// `eject_disk` with a read-only backing file must abort the eject: the
-/// disk stays mounted, dirty, and tracked at its path. Once write access is
-/// restored, a retried eject succeeds, writes the pending byte through, and
-/// leaves the drive empty.
+/// `eject_disk` with a read-only backing file must abort, leaving the disk mounted, dirty,
+/// and tracked. Once write access is restored, a retried eject succeeds and empties the drive.
 #[test]
 fn eject_disk_fails_then_succeeds_after_write_access_is_restored() {
     let dir = scratch_dir("eject-write-back-failure");
@@ -137,10 +132,8 @@ fn eject_disk_fails_then_succeeds_after_write_access_is_restored() {
         assert_eq!(app.disk_paths[0], Some(disk_path.clone()));
     }
 
-    // `_ro` dropped above restores write access; retry must now succeed.
-    // `cart_error` is a sticky UI field (cleared by the error dialog, not by
-    // the action that set it), so clear it here first to observe the retry's
-    // own outcome rather than the previous failure's leftover message.
+    // `cart_error` is sticky (not auto-cleared), so reset it here to
+    // observe the retry's own outcome.
     app.cart_error = None;
     app.eject_disk(0);
     assert!(

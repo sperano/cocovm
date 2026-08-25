@@ -16,10 +16,8 @@ use super::ManagerApp;
 /// real: this fallback only ever shows the bare display, never chrome.
 const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
-/// Window size of a launched VM's own native OS window, from the crate
-/// root's own sizing constants (`crate::SCALE`/`TARGET_ASPECT`/`MENU_BAR_H`/
-/// `TOOLBAR_H`/`STATUS_BAR_H`), sized for the aspect-corrected (wider) image
-/// so it always fits.
+/// Window size of a launched VM's own native OS window, sized for the
+/// aspect-corrected (wider) image so it always fits.
 fn vm_window_inner_size() -> egui::Vec2 {
     let img_h = coco_core::video::FB_H as f32 * crate::SCALE;
     let win_w = img_h * crate::TARGET_ASPECT;
@@ -28,25 +26,13 @@ fn vm_window_inner_size() -> egui::Vec2 {
 }
 
 impl ManagerApp {
-    /// One native OS window per running VM (
-    /// "DECIDED: in-process, one native window per running VM"): an
-    /// immediate viewport per entry with a VM, keyed by a stable id derived
-    /// from the slug so egui reuses the same OS window across frames instead
-    /// of respawning it (the same pattern `paper_view::PaperWindow::ui` uses
-    /// for the printer-paper window). Called once per `ManagerApp::update`,
-    /// after the manager's own panels.
-    ///
-    /// Close requests (the native window's close box, or the embedded
-    /// fallback's `egui::Window` close button) and suspend requests (the VM
-    /// window's own Suspend tile, `chrome::toolbar`, via `CocoApp::
-    /// pending_suspend`) are dispatched ([`Self::close_vm_window`],
-    /// [`Self::suspend_vm`]) inline, right after the VM goes back into its
-    /// entry each iteration: at that point no borrow of `self` is held
-    /// anymore, and neither call inserts or removes entries, so the index
-    /// loop stays valid.
+    /// One native OS window per running VM: an immediate viewport per
+    /// entry, keyed by a stable id from the slug so egui reuses the same OS
+    /// window across frames. Called once per `ManagerApp::update`, after
+    /// the manager's own panels.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
-        // Indices suspended this frame — only for `focus_first_failed_row`
-        // below, which needs the whole batch to focus the *first* failure.
+        // Indices suspended this frame, for `focus_first_failed_row` below
+        // to focus the first failure.
         let mut suspends: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
             if self.entries[i].vm.is_none() {
@@ -60,46 +46,24 @@ impl ManagerApp {
                 .with_title(name.clone())
                 .with_inner_size(inner_size);
 
-            // Taken out of the entry so the viewport closure below can hold
-            // and mutate it without a conflicting borrow of `self` (the
-            // closure also sets `close_requested`, a local, not `self` — so
-            // no `self` borrow is held across the closure at all here).
+            // Taken out of the entry so the closure can mutate it without conflicting with `self`.
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
             let suspended = self.entries[i].suspended;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {
-                    // Degraded single-window fallback (kittest and other
-                    // backends without native multi-window support, per
-                    // `paper_view`'s module doc comment on the same
-                    // pattern): don't draw `CocoApp`'s own menu bar/toolbar/
-                    // status bar into the manager's shared `ctx` — that
-                    // would interleave two independent sets of panels into
-                    // one window. Show just the VM's display in a plain
-                    // `egui::Window` instead; full chrome only exists as its
-                    // own native OS window. A running VM still emulates —
-                    // display-only means no chrome, not no execution — while
-                    // a suspended one gets the same input gating as the
-                    // native suspended branch below: texture upload only,
-                    // never `handle_input`.
+                    // Embedded fallback: draws just the VM's display in a
+                    // plain `egui::Window`, never the full chrome, to avoid
+                    // interleaving two panel sets into one window.
                     if suspended {
                         vm.upload_framebuffer_texture(child_ctx);
                     } else {
                         vm.step_emulation(child_ctx);
                     }
                     let mut open = true;
-                    // Anchored, and capped at `EMBEDDED_FALLBACK_SIZE`
-                    // rather than the native window's full
-                    // `inner_size` (found the hard way, via a kittest
-                    // regression: a window that large, even anchored to a
-                    // corner, still spans most of a modest single-window
-                    // canvas — e.g. the whole manager UI under kittest — and
-                    // silently eats clicks meant for the manager's own
-                    // panels underneath, since pointer routing goes to
-                    // whichever window is topmost at that screen position.
-                    // This fallback only ever shows the bare display anyway
-                    // (no chrome), so a smaller preview loses nothing a
-                    // real native window wouldn't already provide instead.
+                    // Capped at EMBEDDED_FALLBACK_SIZE, not the native
+                    // window's full size, which would eat clicks meant for
+                    // the manager's panels.
                     egui::Window::new(crate::window_title(child_ctx, &name))
                         .id(egui::Id::new(("vm-window-embedded", slug.as_str())))
                         .open(&mut open)
@@ -113,21 +77,9 @@ impl ManagerApp {
                         close_requested = true;
                     }
                 } else if suspended {
-                    // A suspended machine's window is a *viewing port onto
-                    // the frozen frame*, never a control surface: the full
-                    // chrome would leave Reset, Load State, disk mounts,
-                    // and the debugger's own Run/Step live on a machine
-                    // whose on-disk frozen copy they'd silently diverge
-                    // from — one stray click and the alive-resume path
-                    // would "resume" a machine that no longer matches what
-                    // the user froze (then delete the state file on top).
-                    // So: display only, same shape as `window_ui` minus
-                    // `draw_chrome` — and minus `step_emulation` too, whose
-                    // `handle_input` would keep the ⌘1/⌘⇧1 quick-load/save
-                    // shortcuts and keyboard/joystick writes live on the
-                    // frozen machine through the same divergence hole. Only
-                    // the texture upload runs, keeping the frozen frame on
-                    // screen.
+                    // A suspended window is a viewing port onto the frozen
+                    // frame, never a control surface — full chrome could
+                    // diverge it from the on-disk state.
                     vm.upload_framebuffer_texture(child_ctx);
                     egui::CentralPanel::default()
                         .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
@@ -143,42 +95,29 @@ impl ManagerApp {
                 }
             });
 
-            // The VM window's own Suspend tile (`chrome::toolbar`) can only
-            // set this on the non-suspended, non-embedded branch above
-            // (`vm.window_ui`) — a suspended window is display-only and
-            // draws no chrome, and there is no window at all for a
-            // Powered Off machine — but reading it here rather than
-            // threading it out of that branch keeps this one `take` correct
-            // regardless of which branch actually ran.
+            // Reads `pending_suspend` here rather than threading it out of
+            // the branch that can set it, so this `take` is correct
+            // regardless of which branch ran.
             let suspend_requested = std::mem::take(&mut vm.pending_suspend);
             self.entries[i].vm = Some(vm);
             if close_requested {
-                // Close wins over suspend: closing already tears the VM
-                // down via `close_vm_window`, which would just discard
-                // whatever `suspend_vm` had frozen a moment later anyway.
+                // Close wins over suspend — closing already tears the VM
+                // down, discarding whatever suspend would have frozen
+                // anyway.
                 self.close_vm_window(i);
             } else if suspend_requested {
                 self.suspend_vm(i);
                 suspends.push(i);
             }
         }
-        // A failed suspend records `entries[i].launch_error`, and the
-        // detail pane is its only rendering surface, so focus the first
-        // failed row across the whole batch (mirrors `apply_bulk`'s own use
-        // of this helper). On success the window needs no further action
-        // here: `entries[i].suspended` is now true, so next frame's loop
-        // takes the `suspended` branch above and the window flips to
-        // display-only on its own.
+        // Focuses the first failed row across the batch; on success the
+        // window flips to display-only on its own next frame.
         self.focus_first_failed_row(&suspends);
     }
 
     /// The VM window's close box: the power switch for a Running machine
     /// ([`Self::stop_vm`]), but for a Suspended one merely drops the VM
-    /// object — the frozen state and screenshot are already on disk from
-    /// suspend time, and the display-only suspended window (above) has no
-    /// control that could have dirtied media since, so there is nothing to
-    /// flush. `pub(crate)` so `ui_tests` closes windows through the exact
-    /// production path instead of re-implementing this branch.
+    /// object — the frozen state is already on disk from suspend time.
     pub(crate) fn close_vm_window(&mut self, index: usize) {
         if self.entries[index].suspended {
             self.entries[index].vm = None;

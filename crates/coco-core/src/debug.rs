@@ -72,9 +72,7 @@ impl WatchTable {
         }
     }
 
-    /// Add a watched address trapping the selected access directions. Used by
-    /// [`Debugger`] to build the installed snapshot (and by tests that drive
-    /// the bus hook directly).
+    /// Add a watched address trapping the selected access directions.
     pub fn watch(&mut self, addr: u16, read: bool, write: bool) {
         self.entries.insert(addr, WatchDirs { read, write });
     }
@@ -253,10 +251,9 @@ impl Debugger {
 
     // ---- Watchpoints -------------------------------------------------------
 
-    /// Add or replace a memory watchpoint on `addr`. `read`/`write` select the
-    /// trapped access directions (at least one should be true to have any
-    /// effect). Enabled on creation; an existing watchpoint's hit count is
-    /// preserved.
+    /// Add or replace a memory watchpoint on `addr`, selecting trapped
+    /// directions via `read`/`write`. Enabled on creation; an existing
+    /// watchpoint's hit count is preserved.
     pub fn add_watchpoint(&mut self, addr: u16, read: bool, write: bool) {
         let wp = self.watchpoints.entry(addr).or_insert(Watchpoint {
             read,
@@ -339,28 +336,9 @@ impl Debugger {
 
     // ---- The run loop ------------------------------------------------------
 
-    /// Run the machine one instruction at a time until a stop condition trips
-    /// or `max_instructions` CPU units (instructions or burned HALT* cycles)
-    /// elapse.
-    ///
-    /// Stop conditions, in the order they're checked each iteration:
-    /// 1. **Breakpoint** — an enabled PC breakpoint at `m.cpu.pc`, checked
-    ///    *before* executing. Skipped on the very first iteration so a run can
-    ///    resume off a breakpoint it's currently parked on rather than
-    ///    immediately re-triggering it.
-    /// 2. **Watchpoint** — an enabled memory watch tripped by the instruction
-    ///    just executed (recorded by the bus mid-step).
-    /// 3. **FieldComplete** — the step crossed a video field boundary.
-    ///
-    /// Watchpoints are installed into the bus only for the duration of this
-    /// call and removed on every exit, so the normal run path
-    /// ([`Machine::run_field`]) never pays for the watch hook.
-    ///
-    /// Note on interrupt timing: [`Machine::step_instruction`] services a
-    /// pending NMI/FIRQ/IRQ at the *start* of the step (matching the hardware's
-    /// end-of-instruction recognition). A PC breakpoint therefore fires when
-    /// the PC *reaches* the address, before any interrupt that would preempt
-    /// that instruction is taken — the breakpoint wins.
+    /// Run until a breakpoint, watchpoint, or field boundary trips, or
+    /// `max_instructions` elapses. A breakpoint fires when the PC reaches
+    /// it, even ahead of an interrupt that would preempt that instruction.
     pub fn run_until(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
         m.bus.install_watches(self.watch_table());
         let reason = self.run_loop(m, max_instructions);
@@ -371,9 +349,8 @@ impl Debugger {
     fn run_loop(&mut self, m: &mut Machine, max_instructions: u64) -> StopReason {
         for i in 0..max_instructions {
             let pc = m.cpu.pc;
-            // Breakpoint check, skipped on the first iteration so a run can
-            // resume off a breakpoint it is currently parked on rather than
-            // re-triggering it immediately.
+            // Skip the breakpoint check on the first iteration so a resumed
+            // run doesn't immediately re-trigger where it's parked.
             let stop_at_bp = i > 0 && matches!(self.breakpoints.get(&pc), Some(bp) if bp.enabled);
             if stop_at_bp {
                 let bp = self.breakpoints.get_mut(&pc).expect("just matched above");

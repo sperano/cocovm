@@ -38,10 +38,9 @@ pub fn save_png(img: &RasterImage, path: &Path) -> Result<(), String> {
         .map_err(|e| format!("could not save {}: {e}", path.display()))
 }
 
-/// Crop a rasterized page down to just the tractor-strip-to-tractor-strip
-/// printable body, both strips removed: `PAPER_WIDTH_IN - 2 *
-/// STRIP_WIDTH_IN == 8.5`in exactly (9.5" - 0.5" - 0.5"), matching US
-/// Letter width — the "trimmed" PDF variant's whole reason for existing.
+/// Crops a rasterized page down to just the tractor-strip-to-tractor-strip printable body,
+/// both strips removed: exactly 8.5in, matching US Letter width — the "trimmed" PDF variant's
+/// whole reason for existing.
 pub fn crop_to_trimmed_width(img: &RasterImage, dpi: f32) -> RasterImage {
     let x0 = (STRIP_WIDTH_IN * dpi).round() as u32;
     let x1 = ((PAPER_WIDTH_IN - STRIP_WIDTH_IN) * dpi).round() as u32;
@@ -74,9 +73,8 @@ pub fn save_pdf(pages: &[RasterImage], dpi: f32, path: &Path) -> Result<(), Stri
         .map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
-/// Drop the alpha channel. [`RasterImage`] is always fully opaque — every
-/// pixel-writing helper in `paper_render.rs` (`blank`, `composite`,
-/// `set_opaque`) sets alpha to `0xFF` — so this loses no information.
+/// Drops the alpha channel. [`RasterImage`] is always fully opaque — every pixel-writing
+/// helper in `paper_render.rs` sets alpha to `0xFF` — so this loses no information.
 fn rgba_to_rgb(img: &RasterImage) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(img.width as usize * img.height as usize * 3);
     for px in img.pixels.chunks_exact(4) {
@@ -97,12 +95,11 @@ fn deflate(data: &[u8]) -> Vec<u8> {
         .expect("finishing an in-memory Vec<u8> encoder never fails")
 }
 
-/// Build the minimal PDF body: object numbering is fixed by construction
-/// order — obj 1 Catalog, obj 2 Pages, then per page `i` (0-based) obj
-/// `3+3*i` Page, `4+3*i` Contents, `5+3*i` Image XObject.
+/// Builds the minimal PDF body: object numbering is fixed by construction order — obj 1
+/// Catalog, obj 2 Pages, then per page `i` (0-based) obj `3+3*i` Page, `4+3*i` Contents,
+/// `5+3*i` Image XObject.
 fn write_pdf<W: Write>(pages: &[RasterImage], dpi: f32, out: &mut W) -> io::Result<()> {
-    // obj 1 (Catalog) and obj 2 (Pages) are filled in once every page's
-    // object numbers are known.
+    // obj 1 (Catalog) and obj 2 (Pages) are filled in once every page's object numbers are known.
     let mut objects: Vec<Vec<u8>> = vec![Vec::new(), Vec::new()];
     let mut page_obj_nums = Vec::with_capacity(pages.len());
 

@@ -17,9 +17,8 @@ use super::{ManagerApp, NO_CONFIG_DIR};
 /// `[media].tape`.
 const BLANK_TAPE_FILE: &str = "tape.cas";
 
-/// File name of the auto-placed blank image the detail pane's
-/// Disk N = Blank pick creates in the machine's artifact directory,
-/// recorded in `[media].diskN` as a relative path.
+/// File name of the auto-placed blank image for Disk N = Blank, recorded in
+/// `[media].diskN` as a relative path.
 fn blank_disk_file(drive: usize) -> String {
     format!("disk{drive}.dsk")
 }
@@ -31,15 +30,7 @@ fn blank_vhd_file(drive: usize) -> String {
 
 /// Seed the detail pane's [`new_vm::MachineForm`] from a saved definition —
 /// the inverse of [`ManagerApp::pack_def`], reconstructing the cartridge
-/// picture the same way `crate::launch_machine` mounts it: with an MPI,
-/// `[media].cart` re-seats in slot 0, the FD-502 in the last slot, the RTC
-/// in its default slot; without one, the single port shows whichever of
-/// pak/RTC/RS-232/FD-502 the definition claims, in that priority (launch
-/// rejects a conflicting combination outright — seeding at least shows one
-/// of them). Disk media implies the FD-502 even when the flag is off (older
-/// files — `launch_machine`'s rule). Under an MPI, `rs232` is ignored: the
-/// RS-232 Pak has no MPI-slot support yet (`CartridgeChoice::RS232`'s doc),
-/// so there's no slot to seed it into.
+/// picture the same way `crate::launch_machine` mounts it.
 pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     let mut form = new_vm::MachineForm::new("detail");
     form.config = def
@@ -83,8 +74,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     .clamped();
     form.aspect_correct = def.ui.aspect_correct;
     form.serial = def.ports.serial.into();
-    // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like
-    // `new_vm::MachineForm::joy_sources` itself.
+    // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like `new_vm::MachineForm::joy_sources`.
     form.joy_sources[coco_core::joystick::RIGHT] = def.ui.joy_right.into();
     form.joy_sources[coco_core::joystick::LEFT] = def.ui.joy_left.into();
     form.kb_mode = match def.ui.kb_mode {
@@ -96,14 +86,9 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
 
 impl ManagerApp {
     /// Resolve one of the edit form's media picks to the string recorded in
-    /// the definition's `[media]` section, creating the backing file for a
-    /// Blank pick: auto-placed in `slug`'s artifact dir as `auto_file`
-    /// (recorded relative — `machine_def::resolve_media_path`). Blank media
-    /// is a 0-byte file — a blank 0-track JVC disk, an empty `.cas` tape or
-    /// `.vhd`, the same starting point `CocoApp::{new_blank_disk, new_tape}`
-    /// use; a leftover file under the same slug is reused rather than
-    /// clobbered. The pick is rewritten to `File(recorded)` afterwards so
-    /// the combo shows the placed file, not a stale "Blank".
+    /// the definition's `[media]` section, creating a 0-byte backing file in
+    /// `slug`'s artifact dir for a Blank pick. Rewrites the pick to
+    /// `File(recorded)` afterward so the combo shows the placed file.
     fn record_media_choice(
         &self,
         slug: &str,
@@ -136,10 +121,8 @@ impl ManagerApp {
         Ok(Some(recorded))
     }
 
-    /// Pack the edit form back into a definition, starting from `base` (the
-    /// entry's current definition) so everything the form doesn't edit —
-    /// `name`, `created`, `[hardware].rom`, unknown keys — passes through
-    /// untouched. Errors (an unrepresentable form, a failed file creation)
+    /// Pack the edit form back into a definition, starting from `base` so
+    /// everything the form doesn't edit passes through untouched. Errors
     /// leave the definition unwritten and land in the pane's error label.
     pub(super) fn pack_def(
         &self,
@@ -160,8 +143,8 @@ impl ManagerApp {
     }
 
     /// Resolve the disk/tape/VHD picks via [`Self::record_media_choice`]
-    /// into `def.media`. This is the write moment for a Blank pick's
-    /// backing file, since with auto-save every change *is* a save.
+    /// into `def.media` — the write moment for a Blank pick's backing file,
+    /// since every change is a save.
     fn pack_media(
         &self,
         slug: &str,
@@ -191,10 +174,8 @@ impl ManagerApp {
 }
 
 /// Pack the cartridge port's peripherals flags and `[media].cart` from the
-/// form's Cartridge/MPI-slot picks. The definition schema has no slot
-/// layout (yet): an FD-502 in an MPI slot is recorded as fd502 = true, a
-/// slotted RTC as rtc = true, and launch_machine re-seats them in their
-/// default slots.
+/// form's Cartridge/MPI-slot picks. The schema has no slot layout: an
+/// MPI-slotted FD-502/RTC is recorded as a plain flag, re-seated by `launch_machine`.
 fn pack_cartridge(
     form: &new_vm::MachineForm,
     def: &mut machine_def::MachineDef,
@@ -204,10 +185,7 @@ fn pack_cartridge(
     def.peripherals.rtc = form.cartridge == new_vm::CartridgeChoice::RTC
         || form.mpi_slots.contains(&new_vm::SlotChoice::RTC);
     def.peripherals.rs232 = form.cartridge == new_vm::CartridgeChoice::RS232;
-    // A ROM Pak — in the port or slotted in the MPI — is recorded as
-    // [media].cart. The schema holds a single pak and no slot layout
-    // (launch_machine re-seats a slotted one in slot 0), so more than
-    // one slotted pak cannot be represented.
+    // A ROM Pak (port or MPI-slotted) is recorded as [media].cart; the schema holds only one.
     let mut slotted_paks = form.mpi_slots.iter().filter_map(|slot| match slot {
         new_vm::SlotChoice::ROMPak(path) => Some(path),
         _ => None,

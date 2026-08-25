@@ -24,9 +24,8 @@ pub struct Photo {
     pub pixels: egui::ColorImage,
 }
 
-/// Pick a random image from the per-user image assets and decode it.
-/// Missing directory, empty directory, or a decode failure all yield `None`
-/// (with a log line), never an error — callers show nothing instead.
+/// Picks a random image from the per-user image assets and decodes it. Missing directory,
+/// empty directory, or a decode failure all yield `None` (with a log line), never an error.
 pub fn random() -> Option<Photo> {
     random_from_dir(&crate::paths::images_dir()?)
 }
@@ -39,9 +38,8 @@ fn random_from_dir(dir: &Path) -> Option<Photo> {
             .flatten()
             .map(|e| e.path())
             .filter(|p| {
-                // Skip hidden files: macOS drops AppleDouble sidecars
-                // ("._foo.png") next to the real assets, and they are
-                // not decodable PNGs.
+                // Skip hidden files: macOS drops AppleDouble sidecars ("._foo.png") that aren't
+                // decodable.
                 let hidden = p
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -63,8 +61,7 @@ fn random_from_dir(dir: &Path) -> Option<Photo> {
     }
     // Stable order before indexing — read_dir order is arbitrary.
     files.sort();
-    // No `rand` dependency: the clock's sub-second nanoseconds are
-    // plenty of entropy to pick one of a few dozen images.
+    // No `rand` dependency: the clock's sub-second nanoseconds are plenty of entropy here.
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos())

@@ -62,8 +62,7 @@ const SECTION_GAP: f32 = 8.0;
 const HOST_GREEN: egui::Color32 = egui::Color32::from_rgb(0x30, 0xC0, 0x30);
 
 /// Draw the keyboard-mapping window. `open` is toggled by the window's close
-/// box; `variant` picks which machine's key plan to draw, since the CoCo 3
-/// added ALT, CTRL, F1 and F2 to the CoCo 1/2's keyboard.
+/// box; `variant` picks the key plan since the CoCo 3 added ALT/CTRL/F1/F2.
 pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: MachineVariant) {
     egui::Window::new(crate::window_title(ctx, "CoCo Keyboard Mapping"))
         .open(open)
@@ -73,10 +72,8 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: Mac
             ui.set_width(layout::width_units(variant) * UNIT_W);
             header(ui, symbolic);
             ui.add_space(SECTION_GAP);
-            // No spacing of egui's own: `layout`'s widths are pitches that
-            // already include the channel between caps, and rows carry
-            // different numbers of caps — per-item spacing would push each
-            // row out by a different amount and break the arrow diamond.
+            // No spacing of egui's own: layout widths already include the channel; per-item
+            // spacing would break the arrow diamond.
             ui.scope(|ui| {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 for row in layout::rows(variant) {
@@ -91,9 +88,7 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: Mac
 fn header(ui: &mut egui::Ui, symbolic: bool) {
     if symbolic {
         ui.label("Symbolic mode — type the character you want; it is sent as typed.");
-        // The keys that produce no text are the exception, and they are the
-        // ones people come to this window for, so name them rather than
-        // leaving "you don't have to match the layout" to overreach.
+        // Name the keys that produce no text — they're what people come to this window for.
         ui.label(
             egui::RichText::new("green = still pressed by position, even in this mode")
                 .small()
@@ -110,12 +105,8 @@ fn header(ui: &mut egui::Ui, symbolic: bool) {
 }
 
 fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
-    // Shown in both modes: every key named here is one symbolic mode still
-    // routes by position, so the advice holds either way. The F-key clause is
-    // CoCo 3-only — the CoCo 1/2 has no F1/F2 to press.
-    //
-    // Spelled out, not drawn as arrows: this line is plain text, and the
-    // arrow codepoints would come out as tofu boxes here (module doc).
+    // Shown in both modes — symbolic still routes these by position; spelled out since arrow
+    // glyphs would render as tofu.
     let mut hints = String::from("Left arrow also on Backspace   ·   CLEAR also on `");
     if variant == MachineVariant::Coco3 {
         hints.push_str("   ·   F1/F2 may need Fn on a laptop");
@@ -139,14 +130,12 @@ fn draw_row(ui: &mut egui::Ui, row: layout::Row, symbolic: bool) {
     });
 }
 
-/// One key cap: the shifted legend small along the top, the CoCo legend large
-/// in the middle, and — in positional mode — the host key in green along the
-/// bottom. The two-legend stack mirrors the real caps, which print the
-/// shifted character above the unshifted one.
+/// One key cap: shifted legend along the top, CoCo legend in the middle,
+/// host key (positional mode) along the bottom — mirroring the real caps'
+/// shifted-above-unshifted print.
 fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
     let pitch_rect = ui.allocate_space(egui::vec2(cap.width * UNIT_W, ROW_H)).1;
-    // The cap is drawn inside its pitch, leaving the channel that separates
-    // it from its neighbours (see `CAP_INSET`).
+    // Drawn inside its pitch, leaving the channel to neighbours (`CAP_INSET`).
     let rect = pitch_rect.shrink(CAP_INSET);
     let visuals = ui.visuals();
     let painter = ui.painter();
@@ -158,10 +147,8 @@ fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
     } else {
         0.0
     };
-    // Symbolic mode drops the host line, except on the keys it still routes
-    // by position — those are reached the same way in either mode, so hiding
-    // what to press for them would leave exactly the keys hardest to guess
-    // (BREAK, CLEAR, the arrows, F1/F2) unlabelled.
+    // Symbolic mode drops the host line except on keys still routed by position (BREAK, CLEAR,
+    // arrows, F1/F2).
     let show_host = !symbolic || cap.routed_in_symbolic();
     let host_h = if show_host { HOST_LINE_H } else { 0.0 };
 
@@ -175,9 +162,7 @@ fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
         );
     }
 
-    // Centre the CoCo legend in whatever vertical room the two annotations
-    // leave, so a plain letter cap and a shifted digit cap still look like
-    // one row of keys.
+    // Centre the CoCo legend in whatever room the annotations leave, so all caps look like one row.
     let top = rect.top() + CAP_PAD + shift_h;
     let bottom = rect.bottom() - CAP_PAD - host_h;
     let middle = egui::pos2(cx, (top + bottom) / 2.0);

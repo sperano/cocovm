@@ -64,9 +64,8 @@ impl DebuggerPanel {
         self.watchpoints_ui(ui);
     }
 
-    /// One row of the Memory grid: the row's base address, `MEM_COLS` editable
-    /// hex byte cells, then the ASCII rendering. Split out of
-    /// [`Self::memory_ui`] purely to keep that function's nesting readable.
+    /// One row of the Memory grid: base address, `MEM_COLS` editable hex byte cells,
+    /// then the ASCII rendering.
     fn memory_row_ui(
         &mut self,
         ui: &mut egui::Ui,

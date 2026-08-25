@@ -159,13 +159,7 @@ impl Pitch {
     }
 
     /// Dots per inch, derived (not directly stated) from
-    /// `dots_per_line() / 8`: the 8" print-line width itself falls out of
-    /// two independently-verified Appendix G facts (80 columns at 10 CPI =
-    /// 8"; 960 dots / 80 columns = 12 dots/char, matching the separately
-    /// verified "12 dots wide at every pitch" cell width) and is confirmed
-    /// self-consistent against all three pitches (960/8=120 -> 12/120=1/10";
-    /// 1152/8=144 -> 12/144=1/12"; 1600/8=200 -> 12/200=1/16.67", each
-    /// exactly matching that pitch's named CPI).
+    /// `dots_per_line() / 8`; self-consistent with each pitch's named CPI.
     const fn dots_per_inch(self) -> u32 {
         self.dots_per_line() / 8
     }
@@ -232,12 +226,8 @@ pub struct DMP105 {
 }
 
 impl Default for DMP105 {
-    /// Power-on defaults (`dmp105-protocol.md` §7): Normal 10 CPI; LF pitch
-    /// 1/6"; NL mode CR+LF; underline/elongation/bold off; bidirectional;
-    /// buffer cleared. Head position (0, 0) is this implementation's choice
-    /// for "start of a fresh roll" — the manual doesn't give the resting
-    /// head position a numeric value, but a blank roll has no other sensible
-    /// origin.
+    /// Power-on defaults (`dmp105-protocol.md` §7): Normal 10 CPI, LF pitch 1/6", NL mode CR+LF.
+    /// Head position (0, 0) is this implementation's choice — the manual gives no numeric value.
     fn default() -> Self {
         Self {
             mode: Mode::CharacterPrint,
@@ -262,12 +252,9 @@ impl DMP105 {
         Self::default()
     }
 
-    /// Power-cycle reset (`dmp105-protocol.md` §7: "No software reset code
-    /// exists" — the only reset entry point is a power cycle). Restores
-    /// every register to its power-on default. Does **not** clear the
-    /// paper: already-printed pages are physical and a power cycle doesn't
-    /// erase them on real hardware either — see [`Paper::clear`] for the
-    /// (separate, explicit) tear-off action that does.
+    /// Power-cycle reset (`dmp105-protocol.md` §7: the only reset entry
+    /// point). Restores registers to power-on defaults; does **not** clear
+    /// the paper — see [`Paper::clear`].
     pub fn reset(&mut self) {
         let paper = std::mem::take(&mut self.paper);
         *self = Self::default();
@@ -283,11 +270,7 @@ impl DMP105 {
     }
 
     /// Render one glyph at the current head position, advance `x` by one
-    /// character cell, and apply the active style bits
-    ///: bold is a second pass one dot column to
-    /// the right; elongation doubles every glyph dot column (and thus the
-    /// cell advance) horizontally; underline draws a full-cell-width rule on
-    /// the descender row.
+    /// cell, and apply bold/elongation/underline style bits.
     fn print_glyph(&mut self, glyph: Glyph) {
         let dot = self.pitch.dot_spacing();
         let col_step = if self.elongation { dot * 2 } else { dot };
@@ -301,16 +284,12 @@ impl DMP105 {
         if self.underline {
             self.draw_underline_rule(dot, CELL_DOTS * col_step);
         }
-        // Saturating, like every head-position advance in this module: a
-        // long-enough stream without CR would otherwise overflow (a panic in
-        // debug builds), and the interpreter must never panic on arbitrary
-        // input. Marks past PRINT_WIDTH_X_UNITS are dropped in mark_dot.
+        // Saturating: the interpreter must never panic on a CR-less stream of arbitrary length.
         self.x = self.x.saturating_add(CELL_DOTS * col_step);
     }
 
-    /// Mark one dot, dropping anything the physical head could never reach
-    /// (past the 8" print zone — see [`PRINT_WIDTH_X_UNITS`]). All ink lands
-    /// through here so the clamp is uniform.
+    /// Mark one dot, dropping anything past the physical print zone (see
+    /// [`PRINT_WIDTH_X_UNITS`]) — all ink lands through here so the clamp is uniform.
     fn mark_dot(&mut self, x: u32, y: u32) {
         if x < PRINT_WIDTH_X_UNITS {
             self.paper.mark(x, y);
@@ -330,9 +309,8 @@ impl DMP105 {
         }
     }
 
-    /// A solid rule across `width` x-units starting at the current `x`,
-    /// stepped at the base (un-elongated) dot spacing so the line stays
-    /// solid even when printing elongated text.
+    /// A solid rule across `width` x-units from the current `x`, stepped at
+    /// the base (un-elongated) dot spacing so it stays solid under elongated text.
     fn draw_underline_rule(&mut self, step: u32, width: u32) {
         let mut cx = self.x;
         let end = self.x.saturating_add(width).min(PRINT_WIDTH_X_UNITS);
@@ -343,9 +321,8 @@ impl DMP105 {
         }
     }
 
-    /// Graphics-mode data byte (`dmp105-protocol.md` §5): bit 0 = top dot
-    /// (weight 1) ... bit 6 = bottom dot (weight 64), bit 7 is always the
-    /// data marker (already tested by the caller), not an 8th pin.
+    /// Graphics-mode data byte (`dmp105-protocol.md` §5): bits 0-6 are dot
+    /// rows top-to-bottom; bit 7 is the data marker, not an 8th pin.
     fn plot_graphics_byte(&mut self, b: u8) {
         let weights = b & 0x7F;
         for row in 0..7u32 {
@@ -378,10 +355,7 @@ impl DMP105Handle {
     }
 
     /// Restore-path-only: rebuild a handle around an already-deserialized
-    /// [`DMP105`] state (`sink_serde::SinkState::DMP105` — see
-    /// `bitbanger.rs`), wrapping it in a fresh `Rc<RefCell<_>>`
-    ///. Unlike [`DMP105Handle::new`], this
-    /// starts from real restored state rather than power-on defaults.
+    /// [`DMP105`] state, wrapping it in a fresh `Rc<RefCell<_>>`.
     pub(crate) fn from_state(state: DMP105) -> Self {
         Self(Rc::new(RefCell::new(state)))
     }
@@ -421,8 +395,7 @@ impl PrinterSink for DMP105Handle {
     }
 
     /// The whole interpreter/paper state, cloned out of the shared
-    /// `Rc<RefCell<_>>` — `DMP105` is plain data (`Clone` derive), so this
-    /// is a deep-but-cheap snapshot.
+    /// `Rc<RefCell<_>>` — a deep-but-cheap snapshot since `DMP105` is plain `Clone` data.
     fn snapshot(&self) -> SinkState {
         SinkState::DMP105(self.0.borrow().clone())
     }

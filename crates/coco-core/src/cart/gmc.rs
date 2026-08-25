@@ -56,8 +56,7 @@ impl GamesMasterCartridge {
     }
 
     /// Restore-path-only: re-inject the banked ROM image after a snapshot
-    /// restore — delegates to the inner [`BankedROMPak::reattach_image`]
-    ///.
+    /// restore — delegates to the inner [`BankedROMPak::reattach_image`].
     pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), BankedPakError> {
         self.rom.reattach_image(bytes)
     }

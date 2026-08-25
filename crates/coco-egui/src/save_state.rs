@@ -35,9 +35,7 @@ const QUICK_SLOT_KEYS: [egui::Key; QUICK_SLOTS] =
     [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3];
 
 /// COMMAND+SHIFT+`<n>` quick-saves state slot `slot` — the SHIFTed sibling
-/// of [`load_slot_shortcut`]'s COMMAND+`<n>`. Checked against every existing
-/// binding (`kbd_help.rs`'s bare F-keys, `new_vm::NEW_MACHINE_SHORTCUT` =
-/// ⌘N): free on every platform `egui::Modifiers::COMMAND` targets.
+/// of [`load_slot_shortcut`]'s COMMAND+`<n>`.
 pub(crate) fn save_slot_shortcut(slot: usize) -> egui::KeyboardShortcut {
     egui::KeyboardShortcut::new(
         egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
@@ -50,9 +48,8 @@ pub(crate) fn load_slot_shortcut(slot: usize) -> egui::KeyboardShortcut {
     egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, QUICK_SLOT_KEYS[slot])
 }
 
-/// One line for the keyboard-help window (`kbd_help.rs`) naming every
-/// quick-slot chord, formatted per-platform (⌘ on macOS, Ctrl elsewhere) via
-/// [`egui::Context::format_shortcut`].
+/// One line for the keyboard-help window naming every quick-slot chord,
+/// formatted per-platform via [`egui::Context::format_shortcut`].
 pub(crate) fn slot_shortcuts_hint(ctx: &egui::Context) -> String {
     let loads: Vec<String> = (0..QUICK_SLOTS)
         .map(|s| ctx.format_shortcut(&load_slot_shortcut(s)))
@@ -100,8 +97,7 @@ impl CocoApp {
     }
 
     /// The current toast text, if one is still within [`TOAST_SECS`] of
-    /// [`Self::set_toast`] — clears itself once expired. Called once per
-    /// frame from the status bar (`main.rs`'s `draw_chrome`).
+    /// [`Self::set_toast`] — clears itself once expired.
     pub(crate) fn toast_message(&mut self) -> Option<String> {
         let (msg, at) = self.toast.as_ref()?;
         if at.elapsed().as_secs_f64() > TOAST_SECS {
@@ -111,9 +107,8 @@ impl CocoApp {
         Some(msg.clone())
     }
 
-    /// The Machine menu's Save/Load State section, drawn right after Reset
-    /// (`main.rs`'s `draw_chrome`): file-dialog Save/Load plus the
-    /// [`QUICK_SLOTS`] Quick Save/Quick Load submenus.
+    /// The Machine menu's Save/Load State section: file-dialog Save/Load plus
+    /// the [`QUICK_SLOTS`] Quick Save/Quick Load submenus.
     pub(crate) fn draw_save_state_menu(&mut self, ui: &mut egui::Ui) {
         if ui.button("Save State…").clicked() {
             ui.close();
@@ -162,9 +157,7 @@ impl CocoApp {
     }
 
     /// Quick Save `slot`: like "Save State…" but to a fixed per-slot path
-    /// under [`paths::data_dir`] instead of an `rfd` dialog, creating
-    /// [`SAVE_STATES_SUBDIR`] on demand. Failures land in
-    /// [`CocoApp::cart_error`], like every other menu action.
+    /// under [`paths::data_dir`], creating [`SAVE_STATES_SUBDIR`] on demand.
     pub(crate) fn quick_save(&mut self, slot: usize) {
         let Some(path) = quick_slot_path(slot) else {
             self.cart_error = Some("no data directory found for quick-save slots".to_string());

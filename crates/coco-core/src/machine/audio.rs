@@ -24,26 +24,13 @@ impl Machine {
         self.config.video.lines_per_field() as f64 * self.config.video.field_rate_hz()
     }
 
-    /// Render the scanline that just executed to [`audio::OVERSAMPLE`]
-    /// stereo grid samples.
-    ///
-    /// Latched inputs replay from the cycle-timestamped events the bus
-    /// recorded during the line: each grid slot holds the state in effect
-    /// at its start (a level change mid-slot lands on the next slot — grid
-    /// resolution, the documented quantization). Generators are sampled
-    /// per slot: the mux-gated cartridge input
-    /// ([`crate::cart::Cartridge::audio_sample`] — the AY drains a quarter-line
-    /// of accumulated output) and the crystal PSG pair
-    /// ([`crate::cart::Cartridge::generator_sample`], wall-clock `dt` so the GIME
-    /// double-speed poke can't retune them). The cassette level is sampled
-    /// once per line — its 1200/2400 Hz square wave is far below even the
-    /// line rate.
+    /// Render the scanline that just executed to [`audio::OVERSAMPLE`] stereo
+    /// grid samples, replaying latched bus events per slot (grid quantization).
     pub(super) fn flush_line_audio(&mut self) {
         let line_start = self.audio_line_start;
         let line_end = self.bus.cycle_clock;
         self.audio_line_start = line_end;
-        // A HALT-free line spans `line_budget` cycles; keep the real span so
-        // event timestamps land in the right slot even on odd lines.
+        // Keep the real span so event timestamps land in the right slot on odd lines.
         let span = line_end.saturating_sub(line_start).max(1);
         let slot_dt = 1.0 / self.audio_sample_rate();
         let cassette_bit = self.bus.cassette.playing() && self.bus.cassette.input_bit();
@@ -62,8 +49,7 @@ impl Machine {
             self.audio_buffer
                 .push(audio::mix(&inputs, cassette_bit, ay, generators));
         }
-        // Events in the final slot's tail take effect from the next line's
-        // first slot: the bus's current state is the next line's start state.
+        // Final-slot-tail events carry over as next line's start state.
         self.audio_line_inputs = self.bus.audio_inputs;
     }
 }

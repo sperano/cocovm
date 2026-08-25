@@ -52,8 +52,7 @@ impl SystemBus {
     fn io_peek(&self, addr: u16) -> u8 {
         match addr {
             IO_BASE..=PIA0_LAST => {
-                // A real read refreshes only port A's input pins; port B keeps
-                // its latched `input` (see `io_read`), so peek does the same.
+                // A real read refreshes only port A's input pins; port B keeps its latched `input`.
                 self.pia0
                     .peek((addr & 0x03) as u8, self.pia0_pa_pins(), self.pia0.b.input)
             }

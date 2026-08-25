@@ -46,8 +46,7 @@ fn full_def() -> MachineDef {
             variant: MachineVariantDTO::Coco3,
             ram: RAMDTO::K512,
             video: VideoStandardDTO::NTSC,
-            // What saves write: `display` only, never the legacy `monitor`
-            // key (`HardwareDTO::from_config`).
+            // What saves write: `display` only, never the legacy `monitor` key.
             monitor: None,
             display: Some(DisplayDTO::RGB),
             vdg: None,
@@ -73,18 +72,15 @@ fn full_def() -> MachineDef {
         ui: UIDTO {
             aspect_correct: false,
             kb_mode: KbModeDTO::Symbolic,
-            // Both away from their shared `None` default, so the round
-            // trip actually exercises non-default values (see
-            // `minimal_file_uses_defaults` for the defaults).
+            // Both away from their shared `None` default, so the round trip exercises
+            // non-default values.
             joy_left: JoySourceDTO::Keys,
             joy_right: JoySourceDTO::Gamepad,
-            // Away from the defaults (35/5) so the round trip exercises
-            // non-default strengths.
+            // Away from the defaults (35/5) so the round trip exercises non-default strengths.
             tv_scanline: 60,
             tv_noise: 20,
         },
-        // Away from the defaults (0/0) so the round trip exercises
-        // non-default stats.
+        // Away from the defaults (0/0) so the round trip exercises non-default stats.
         stats: StatsDTO {
             runtime_secs: 12_345,
             starts: 7,
@@ -105,10 +101,8 @@ fn round_trip_full_definition() {
     assert_eq!(&loaded[0].1, &def);
 }
 
-/// `[peripherals].rs232` and `[ports].serial` round-trip through save/load
-/// like every other peripheral/ports field — [`round_trip_full_definition`]
-/// above already covers `serial = "printer"`; this covers `rs232 = true`
-/// and the other `serial` variant, `"file"`.
+/// `[peripherals].rs232` and `[ports].serial` round-trip through save/load;
+/// this covers `rs232 = true` and the other `serial` variant, `"file"`.
 #[test]
 fn rs232_and_serial_file_round_trip() {
     let dir = TempDir::new("rs232-roundtrip");
@@ -135,11 +129,8 @@ fn rs232_and_serial_file_round_trip() {
     );
 }
 
-/// `[ui].joy_left`/`joy_right` round-trip like every other `[ui]` field —
-/// [`round_trip_full_definition`] above already covers the non-default
-/// `"keys"`/`"gamepad"` pair (`full_def`'s own values); this checks the TOML
-/// text itself, the same way [`rs232_and_serial_file_round_trip`] does for
-/// `[ports].serial`.
+/// `[ui].joy_left`/`joy_right` round-trip like every other `[ui]` field;
+/// this checks the TOML text itself records `"keys"`/`"gamepad"`.
 #[test]
 fn joy_sources_round_trip() {
     let dir = TempDir::new("joy-roundtrip");
@@ -161,15 +152,9 @@ fn joy_sources_round_trip() {
     );
 }
 
-/// The inverse of [`rs232_and_serial_file_round_trip`]'s TOML-text check: a
-/// default `[ports].serial` (`None`, nothing attached) is left out of the
-/// written TOML entirely rather than round-tripping as some empty/null
-/// form — `MachineDef`'s serde derive skips a `None` `Option` field on
-/// serialize (the same way `[hardware]`'s absent `monitor`/`vdg`/`rom` do),
-/// while the `[ports]` table header itself is still always written, even
-/// empty (`io::merge_unknown`'s doc comment). Save-side, unlike
-/// `minimal_file_uses_defaults`, which is the load-side check that a file
-/// omitting `[ports]` altogether parses back to the same default.
+/// A default `[ports].serial` (`None`) is left out of the written TOML
+/// entirely — serde skips `None` `Option` fields — while the `[ports]` table
+/// header itself is still always written, even empty.
 #[test]
 fn default_ports_omits_serial_key_on_save() {
     let dir = TempDir::new("default-ports-save");
@@ -212,8 +197,8 @@ monitor = "rgb"
     assert_eq!(def.ports.serial, None);
     assert!(def.ui.aspect_correct);
     assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
-    // Absent joy_left/joy_right ⇒ the same defaults `JoystickInputs::new`
-    // boots with: both ports off until opted in.
+    // Absent joy_left/joy_right ⇒ same defaults `JoystickInputs::new` boots with: off until
+    // opted in.
     assert_eq!(def.ui.joy_left, JoySourceDTO::None);
     assert_eq!(def.ui.joy_right, JoySourceDTO::None);
 
@@ -221,15 +206,12 @@ monitor = "rgb"
     let config = def.to_machine_config().expect("should validate");
     assert_eq!(config.vdg, None);
 
-    // The legacy `monitor` key (no `display`) maps to the monitor half of
-    // `Display`.
+    // The legacy `monitor` key (no `display`) maps to the monitor half of `Display`.
     assert_eq!(def.display(), Display::Monitor(MonitorType::RGB));
 }
 
-/// A file with no `[stats]` section — every definition written before this
-/// field existed — loads with a zeroed [`StatsDTO`] and no unknown-key
-/// warning (`io::KNOWN_SECTIONS` lists `stats`, same as every other
-/// always-present section).
+/// A file with no `[stats]` section loads with a zeroed [`StatsDTO`] and no
+/// unknown-key warning (`stats` is a known section).
 #[test]
 fn missing_stats_section_defaults_to_zero() {
     let dir = TempDir::new("missing-stats");
@@ -274,9 +256,8 @@ video = "ntsc"
     );
 }
 
-/// `[hardware].display = "tv-bw"` round-trips and resolves to the
-/// composite signal path on a CoCo 3 (the TV hangs off the RF modulator,
-/// which is fed the composite signal — never the RGB unpack).
+/// `[hardware].display = "tv-bw"` round-trips and resolves to the composite
+/// signal path on a CoCo 3 (the TV hangs off the RF modulator).
 #[test]
 fn display_tv_bw_round_trips_and_forces_composite() {
     let dir = TempDir::new("display-tv-bw");
@@ -325,8 +306,8 @@ display = "tv"
         "display wins over the legacy monitor key"
     );
 
-    // The detail pane's save path (`HardwareDTO::from_config`) rewrites the
-    // hardware section without the legacy key.
+    // The detail pane's save path (`HardwareDTO::from_config`) rewrites the hardware section
+    // without the legacy key.
     let mut def = def.clone();
     def.hardware = HardwareDTO::from_config(
         &def.to_machine_config().expect("should validate"),
@@ -376,8 +357,7 @@ monitor = "rgb"
 #[test]
 fn invalid_hardware_combination_errors_via_validate() {
     let dir = TempDir::new("invalid-hw");
-    // CoCo 2 + PAL: rejected by MachineConfig::validate (plain MC6847
-    // PAL timing isn't modeled).
+    // CoCo 2 + PAL: rejected by MachineConfig::validate (plain MC6847 PAL timing isn't modeled).
     fs::write(
         dir.path().join("bad.toml"),
         r#"
@@ -441,11 +421,9 @@ future_ui_field = 42
     assert_eq!(loaded.len(), 1);
 }
 
-/// A Save must not erase keys this build doesn't understand — the
-/// loader treats them as forward-compatible (`unknown_keys_still_load`
-/// above), and the manager's detail pane round-trips every loaded
-/// definition through `save` on every edit, so losing them there would
-/// contradict that compatibility story.
+/// A Save must not erase keys this build doesn't understand — the loader
+/// treats them as forward-compatible, and the detail pane round-trips every
+/// definition through `save` on every edit.
 #[test]
 fn save_preserves_unknown_keys() {
     let dir = TempDir::new("preserve-unknown");
@@ -472,8 +450,7 @@ future_ui_field = 42
     let loaded = load_all(dir.path()).expect("should parse despite unknown keys");
     let mut def = loaded[0].1.clone();
 
-    // A real edit through the detail pane's flow: change something the
-    // form actually owns, then save.
+    // A real edit through the detail pane's flow: change something the form owns, then save.
     def.name = "Has Extras (renamed)".to_string();
     save(dir.path(), "extra", &def).expect("save should succeed");
 
@@ -514,9 +491,8 @@ fn save_is_atomic_no_leftover_tmp_file() {
     assert_eq!(parsed, def);
 }
 
-/// [`MachineDef::from_config`] (the manager's "New…" Create path) must
-/// round-trip back through [`MachineDef::to_machine_config`] to exactly
-/// the config it was built from.
+/// [`MachineDef::from_config`] must round-trip back through
+/// [`MachineDef::to_machine_config`] to exactly the config it was built from.
 #[test]
 fn from_config_round_trips_through_to_machine_config() {
     let config = MachineConfig {

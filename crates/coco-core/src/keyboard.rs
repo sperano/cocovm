@@ -71,13 +71,9 @@ impl Keyboard {
     }
 
     /// Compute the PIA0 port-A row sense for a given port-B column strobe.
-    ///
-    /// Both are active low: a column is selected when its `strobe` bit is 0, and a
-    /// sensed row reads 0 when a held key connects it to a selected column. PA7 is
-    /// left high (joystick comparator).
+    /// Both are active low; PA7 stays high (joystick comparator).
     pub fn sense(&self, strobe: u8) -> u8 {
         let selected = !strobe; // 1 = column currently strobed low
-        // Rows 0..6 sense keys; PA7 (bit 7) stays high (joystick comparator).
         let mut pa = 0xFF;
         for (r, &pressed) in self.rows.iter().enumerate() {
             if pressed & selected != 0 {
@@ -88,9 +84,8 @@ impl Keyboard {
     }
 }
 
-/// Map a character to the CoCo key that produces it, plus whether the CoCo SHIFT
-/// key must be held. Used by symbolic ("natural") keyboard mode. Returns `None`
-/// for characters with no CoCo key.
+/// Map a character to the CoCo key that produces it, plus whether SHIFT must
+/// be held. Returns `None` for characters with no CoCo key.
 pub fn char_key(c: char) -> Option<(Pos, bool)> {
     // Letters: @ A..Z live linearly from (0,0); uppercase needs CoCo shift.
     if c.is_ascii_alphabetic() {

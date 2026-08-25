@@ -17,23 +17,14 @@ const BIT_PERIOD_THRESHOLD: u64 = (ZERO_BIT_PERIOD as u64 + ONE_BIT_PERIOD as u6
 /// re-hunts for a leader when it sees one.
 const PERIOD_BREAK: u64 = 2 * ZERO_BIT_PERIOD as u64;
 
-/// Demodulate a DAC transition capture into the decoded byte stream.
-///
-/// Crossings of the waveform midpoint mark the tone phase; the time between
-/// consecutive *rising* crossings is one full tone cycle = one bit
-/// ([`BIT_PERIOD_THRESHOLD`] splits 1 from 0) — see [`capture_to_bits`]. Byte
-/// alignment is recovered the way the BIOS does it: hunt bit-by-bit for
-/// [`LEADER`] bytes then the [`SYNC`], then read the block structure (type,
-/// length, payload, checksum, trailer) byte-aligned, and go back to hunting
-/// — see [`bits_to_bytes`] — so a glitch between blocks only costs
-/// re-syncing on the next leader, exactly like real tape.
+/// Demodulate a DAC transition capture into the decoded byte stream: crossings mark tone phase
+/// and bit length, then byte alignment is recovered by hunting for [`LEADER`]/[`SYNC`].
 pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
     bits_to_bytes(capture_to_bits(capture))
 }
 
-/// Crossing-detect a DAC transition capture into a demodulated bit stream:
-/// one entry per detected tone cycle, `None` marking a discontinuity (period
-/// too long to be a tone — a motor spin-up glitch or inter-block artifact).
+/// Crossing-detect a capture into a demodulated bit stream: one entry per
+/// tone cycle, `None` marking a discontinuity (spin-up glitch/inter-block gap).
 fn capture_to_bits(capture: &[Transition]) -> Vec<Option<bool>> {
     let Some(max) = capture.iter().map(|t| t.level).max() else {
         return Vec::new();
@@ -45,8 +36,7 @@ fn capture_to_bits(capture: &[Transition]) -> Vec<Option<bool>> {
 
     let mut bits: Vec<Option<bool>> = Vec::new();
     let mut side = capture[0].level > mid;
-    // A capture that starts on the high side starts mid-cycle: count the
-    // first period from its first sample, or the opening bit is lost.
+    // High-side start = mid-cycle start: count that first period too, or the opening bit is lost.
     let mut last_rise: Option<u64> = side.then_some(capture[0].cycle);
     let mut last_fall: Option<u64> = None;
     for t in &capture[1..] {
@@ -66,11 +56,7 @@ fn capture_to_bits(capture: &[Transition]) -> Vec<Option<bool>> {
         }
         side = new_side;
     }
-    // The recording stops with the last tone cycle's closing rise never
-    // written (the ROM turns the motor off right after the final byte), so
-    // the stream's very last bit dangles. Salvage it from its half-width —
-    // without it the tape loses the EOF block's trailer and the ROM's
-    // BITIN ($A755) polls forever for the missing edge on playback.
+    // Salvage the dangling last bit from its half-width, or BITIN hangs.
     if let (Some(rise), Some(fall)) = (last_rise, last_fall)
         && fall > rise
         && fall - rise <= PERIOD_BREAK / 2
@@ -93,11 +79,8 @@ enum BlockState {
 /// Block bytes besides the payload: type, length, checksum, trailer $55.
 const BLOCK_OVERHEAD: usize = 4;
 
-/// Recover byte alignment from a demodulated bit stream ([`capture_to_bits`])
-/// the way the BIOS does it: hunt bit-by-bit for [`LEADER`] runs then a
-/// [`SYNC`], then read one block byte-aligned (type, length, payload,
-/// checksum, trailer) before returning to hunting. A `None` bit (a capture
-/// discontinuity) drops any in-progress hunt/lock and starts over.
+/// Recover byte alignment from a demodulated bit stream: hunt bit-by-bit for [`LEADER`] runs
+/// then [`SYNC`], then read one block byte-aligned before returning to hunting.
 fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
     let mut out = Vec::new();
     let mut state = BlockState::Hunt;
@@ -153,8 +136,7 @@ fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
             }
         }
     }
-    // A trailing leader run with no sync after it (e.g. the stream ended
-    // mid-gap) is still tape content.
+    // A trailing leader run with no following sync is still tape content.
     out.extend(std::iter::repeat_n(LEADER, leader_count));
     out
 }

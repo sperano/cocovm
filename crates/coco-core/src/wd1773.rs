@@ -267,12 +267,10 @@ impl WD1773 {
         Self::default()
     }
 
-    /// Set the density the controller currently operates at (DSKREG bit5,
-    /// `dskreg::DENSITY_AND_NMI_ENABLE` — see `crate::fdc::DiskCart::write`,
-    /// which calls this before every `write_command`). Determines whether a
-    /// subsequently-dispatched Write Track runs the MFM format-stream parser
-    /// (`true`) or falls back to discard-only behavior (`false`, FM — parsing
-    /// FM format streams is unimplemented).
+    /// Sets the density the controller currently operates at (DSKREG bit5).
+    /// Determines whether a subsequently-dispatched Write Track runs the MFM
+    /// format-stream parser (`true`) or discards the stream (`false`, FM —
+    /// unimplemented).
     pub fn set_double_density(&mut self, double_density: bool) {
         self.density_double = double_density;
     }
@@ -294,8 +292,7 @@ impl WD1773 {
             if self.physical_track == 0 {
                 s |= status::TRACK0;
             }
-            // INDEX_PULSE (bit1) intentionally left 0: Disk BASIC doesn't need
-            // it (spec).
+            // INDEX_PULSE (bit1) intentionally left 0: Disk BASIC doesn't need it (spec).
         } else {
             if self.drq {
                 s |= status::DRQ;
@@ -326,19 +323,10 @@ impl WD1773 {
         val
     }
 
-    /// Restore-only structural check, independent of any mounted disk: an
-    /// in-flight Read Sector/Read Address transfer's `index` must not exceed
-    /// its own `buf` — [`WD1773::advance_transfer`] indexes `t.buf[t.index]`
-    /// once `index < total` (already guaranteed by construction, but `index`/
-    /// `total`/`buf` are all ordinary deserialized fields a hand-crafted
-    /// payload can desync from each other). Write Sector/Write Track never
-    /// read from `buf` at all — they write straight through to the disk
-    /// image (`WD1773::write_data`) or discard, leaving `buf` empty
-    /// (`Vec::new()`) for the whole transfer — so `index` legitimately
-    /// exceeds `buf.len()` (0) for those two kinds mid transfer; not checked
-    /// here. See [`crate::fdc::DiskCart::validate_restored_transfer`] for the
-    /// disk-bound half of this check, which needs a reattached
-    /// [`JVCDisk`] and so runs later in the restore flow.
+    /// Restore-only structural check: an in-flight Read Sector/Read Address
+    /// transfer's `index` must not exceed its own `buf`. Write Sector/Write
+    /// Track never read `buf` (they write straight through or discard), so
+    /// `index` legitimately exceeds it for those kinds — not checked here.
     pub(crate) fn validate_restored(&self) -> Result<(), String> {
         let Op::Transfer(t) = &self.op else {
             return Ok(());
@@ -356,19 +344,11 @@ impl WD1773 {
         Ok(())
     }
 
-    /// Restore-only, called AFTER floppy reattachment
-    /// ([`crate::fdc::DiskCart::validate_restored_transfer`]): bound-check an
-    /// in-flight Read/Write Sector transfer's `offset`/`total` against
-    /// `disk`'s actual reattached byte length. `offset`/`total` are ordinary
-    /// deserialized fields a hand-crafted payload can set to anything;
-    /// [`JVCDisk::write_byte`]/[`JVCDisk::read_bytes`] index straight into
-    /// `data` with no bounds check of their own, so an out-of-range pair
-    /// would panic the instant the transfer resumes
-    ///. Read Address/Write Track transfers
-    /// never index `data` by `offset` at all (Read Address's `buf` is a
-    /// fixed 6-byte reply built at dispatch time; Write Track lays sectors
-    /// via [`JVCDisk::format_sector`], which computes its own bounded
-    /// offset), so only the two sector-transfer kinds are checked.
+    /// Restore-only, called after floppy reattachment: bound-checks an
+    /// in-flight Read/Write Sector transfer's `offset`/`total` against the
+    /// reattached disk's actual length — both index straight into `data`
+    /// with no bounds check of their own. Read Address/Write Track never
+    /// index by `offset`, so only these two kinds are checked.
     pub(crate) fn validate_transfer_bounds(&self, disk: Option<&JVCDisk>) -> Result<(), String> {
         let Op::Transfer(t) = &self.op else {
             return Ok(());
@@ -394,10 +374,9 @@ impl WD1773 {
         Ok(())
     }
 
-    /// Advance the command state machine by `cycles` CPU cycles. `disk`/`side`
-    /// are the currently-selected drive (per DSKREG) and its side select —
-    /// needed for the not-found detection and for locating the next sector of
-    /// a multiple-sector transfer.
+    /// Advances the command state machine by `cycles` CPU cycles. `disk`/`side`
+    /// are the currently-selected drive and side select, needed for not-found
+    /// detection and locating the next sector of a multiple-sector transfer.
     pub fn tick(&mut self, mut cycles: u32, mut disk: Option<&mut JVCDisk>, side: u8) {
         while cycles > 0 {
             let consumed = match &mut self.op {

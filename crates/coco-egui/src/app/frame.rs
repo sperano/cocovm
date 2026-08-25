@@ -10,13 +10,9 @@ impl CocoApp {
         self.audio.reset();
     }
 
-    /// Emulated fields owed for this update, from wall-clock time at the
-    /// machine's field rate (60 Hz NTSC / 50 Hz PAL). Also accumulates
-    /// [`Self::total_runtime`] from the same [`MAX_FRAME_DT`]-clamped
-    /// `dt` that feeds `field_debt` — runtime means "time the machine was
-    /// actually emulating", so a host stall (window drag, app hidden)
-    /// contributes at most `MAX_FRAME_DT` to it too, the same cap that keeps
-    /// the emulated catch-up from bursting after a long gap.
+    /// Emulated fields owed for this update, from wall-clock time at the machine's
+    /// field rate. Also accumulates [`Self::total_runtime`], clamped by
+    /// [`MAX_FRAME_DT`] so a host stall can't burst the catch-up.
     pub(crate) fn fields_due(&mut self) -> usize {
         let now = std::time::Instant::now();
         let elapsed = self
@@ -32,26 +28,14 @@ impl CocoApp {
         due
     }
 
-    /// Advance emulation for one host frame — input, joysticks, the
-    /// wall-clock-paced field loop, audio, and the framebuffer texture
-    /// upload. Runs regardless of which chrome (if any) is drawn around the
-    /// display this frame: [`Self::window_ui`] (full native window) and the
-    /// manager's `ViewportClass::Embedded` fallback both call this before
-    /// drawing anything, so a VM keeps emulating even in the degraded
-    /// single-window case ( "one native
-    /// window per running VM").
+    /// Advance emulation for one host frame: input, joysticks, the field loop,
+    /// audio, and the framebuffer upload. Runs before any chrome is drawn.
     pub(crate) fn step_emulation(&mut self, ctx: &egui::Context) {
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
         if self.running {
-            // Run however many fields the wall clock owes us (real-time pacing),
-            // stepping type-ahead per field so paste timing is refresh-agnostic.
-            // Routed through the debugger so an enabled breakpoint/watchpoint
-            // pauses the emulator cleanly instead of running straight through
-            // it — a no-op when no breakpoints/watchpoints are set (the
-            // common case), since `DebuggerPanel::run_field` then always
-            // completes the field, same as `Machine::run_field` directly.
+            // Routed through the debugger so an enabled breakpoint/watchpoint pauses cleanly.
             for _ in 0..self.fields_due() {
                 if self.type_ahead.is_active() {
                     self.type_ahead.advance(&mut self.machine.bus.keyboard);
@@ -61,15 +45,8 @@ impl CocoApp {
                     break;
                 }
             }
-            // Recordings save themselves ~2 s after the motor stops, via the
-            // core's own idle auto-finalize (`Cassette::tick`) — no
-            // eject/quit needed. A rewind saves too, but not because of
-            // anything here: `Cassette::rewind` finalizes and sets the
-            // landed flag itself, so this hook picks it up the very next
-            // frame. Only the save half (`Self::save_tape_bytes`, not
-            // `Self::write_back_tape`) runs here — re-finalizing would fold
-            // any capture that started in this same field into the
-            // already-landed recording, discarding its leader-only prefix.
+            // Only the save half runs here — re-finalizing would fold a same-field
+            // capture into the already-landed recording, discarding its leader.
             if self.machine.bus.cassette.take_recording_landed()
                 && let Err(e) = self.save_tape_bytes()
             {
@@ -81,29 +58,18 @@ impl CocoApp {
             ctx.request_repaint();
         } else {
             self.last_update = None;
-            // Drop any fields owed to the wall clock while paused (debugger
-            // pause included), so resuming doesn't instantly "catch up" on
-            // the paused interval — a clean pause, not just a frozen screen.
+            // Drop fields owed while paused, so resuming doesn't instantly catch up.
             self.field_debt = 0.0;
         }
 
         self.upload_framebuffer_texture(ctx);
     }
 
-    /// Upload the framebuffer as `self.texture` — [`Self::step_emulation`]'s
-    /// final step, and the ONLY part of it a *suspended* VM's window runs
-    /// (`manager::vm_windows`): a frozen machine must keep its picture on
-    /// screen without `handle_input`/`drive_joysticks`, which would leave
-    /// the quick-load/quick-save shortcuts, type-ahead, and keyboard/
-    /// joystick writes live on a machine whose on-disk frozen copy they'd
-    /// silently diverge from.
+    /// Upload the framebuffer as `self.texture`. The only part of
+    /// [`Self::step_emulation`] a suspended VM's window still runs, so its
+    /// picture stays on screen without input handling.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        // The TV chain (B&W collapse, bandwidth limit, scanlines), run at
-        // the single point every consumer of `self.texture` — VM window,
-        // manager preview, embedded fallback — inherits from. The machine's
-        // own framebuffer stays untouched: the effect is a display
-        // preference, not state. The chain owns the output shape (scanline
-        // doubling), hence the frame's own dimensions here.
+        // TV chain (B&W collapse, bandwidth limit, scanlines) — a display preference, not state.
         self.tv_frame = self.tv_frame.wrapping_add(1);
         let frame = crate::display::process(
             self.display,
@@ -114,9 +80,8 @@ impl CocoApp {
         );
         let image =
             egui::ColorImage::from_rgba_unmultiplied([frame.width, frame.height], &frame.pixels);
-        // NEAREST for monitors, LINEAR for TVs (`texture_options`'s doc).
-        // Passed on every `set`, so switching the display in the status
-        // bar's display menu re-filters the very next frame.
+        // NEAREST for monitors, LINEAR for TVs; passed every `set` so switching re-filters
+        // immediately.
         let options = crate::display::texture_options(self.display);
         let texture = self
             .texture
@@ -124,21 +89,12 @@ impl CocoApp {
         texture.set(image, options);
     }
 
-    /// The CoCo display itself: the letterboxed, (optionally) aspect-
-    /// corrected framebuffer texture, filling whatever `ui` it's given.
-    /// Split out of [`Self::window_ui`]'s `CentralPanel` closure so the
-    /// manager's `ViewportClass::Embedded` fallback can show just this —
-    /// without the rest of [`Self::draw_chrome`] — inside a plain
-    /// `egui::Window` instead of a full-window `CentralPanel`
-    /// ( "one native window per running
-    /// VM"). Requires [`Self::step_emulation`] to have already run this
-    /// frame (it uploads `self.texture`, `unwrap`ped below).
+    /// The CoCo display: the letterboxed, optionally aspect-corrected framebuffer
+    /// texture. Requires [`Self::step_emulation`] to have already run this frame.
     pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
         let tex = self.texture.as_ref().unwrap();
         let tex_size = tex.size_vec2();
-        // Aspect the displayed frame should have, independent of the buffer's
-        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
-        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        // 4:3 when corrected, else the raw square-pixel aspect.
         let aspect = if self.aspect_correct {
             TARGET_ASPECT
         } else {
@@ -155,22 +111,14 @@ impl CocoApp {
         let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
         ui.put(rect, egui::Image::new(sized));
-        // Remembered for `drive_joysticks` next frame, to map pointer
-        // position to joystick axes and gate the mouse fire buttons (see
-        // the `display_rect` and `display_layer` field docs).
+        // Remembered for `drive_joysticks` next frame (pointer → joystick axes, mouse fire gating).
         self.display_rect = rect;
         self.display_layer = ui.layer_id();
     }
 
     /// The full app window for one frame: emulation step, every menu/toolbar/
-    /// dialog, then the display, in that order — exactly the body
-    /// `eframe::App::update` ran before this method existed. `pub(crate)` so
-    /// the manager's per-VM immediate viewport (`manager.rs`'s
-    /// `draw_running_vms`, `ViewportClass::Default`/native case) can call it
-    /// directly on a VM it owns, drawing this same full chrome inside its own
-    /// native OS window ( "one native
-    /// window per running VM"). The `eframe::App` impl below (test scaffolding
-    /// only — see its doc comment in `app.rs`) just forwards here.
+    /// dialog, then the display. `pub(crate)` so the manager can call it
+    /// directly on a VM it owns.
     pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {
         self.step_emulation(ctx);
         self.draw_chrome(ctx);

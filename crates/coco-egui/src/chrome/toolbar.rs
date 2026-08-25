@@ -19,25 +19,11 @@ const DEBUG_LABEL: &str = "Debug";
 const DEBUG_HOVER: &str = "Open or close the debugger";
 
 impl CocoApp {
-    /// The VM window's toolbar: the same four transport tiles
-    /// (Start/Suspend/Stop/Reset) the manager window's own toolbar draws,
-    /// built from the same shared [`toolbar_button`] widget
-    /// (`widgets.rs`) — so a launched machine's own window presents the
-    /// identical transport row the manager does — plus, after a separator,
-    /// the VM-only Debug tile toggling the debugger
-    /// ([`debugger::DEBUGGER_SHORTCUT`]). ("⌨ Keys (F10)" and
-    /// "4:3 aspect (F9)" already live in the Keyboard and View menus,
-    /// so this row doesn't duplicate them.)
+    /// The VM window's toolbar: the transport tiles (Start/Suspend/Stop/Reset) plus a
+    /// VM-only Debug tile. Keyboard/aspect controls live in menus, so aren't duplicated here.
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
-        // Explicit rather than relying on `TopBottomPanel`'s own default
-        // frame: this pins the panel's inner margin to our named constants
-        // ([`TOOLBAR_PANEL_MARGIN_X`]/[`TOOLBAR_PANEL_MARGIN_Y`]) — the same
-        // values [`crate::TOOLBAR_H`] uses to size the VM window — so an
-        // egui upgrade that changes `Frame::side_top_panel`'s own default
-        // can't silently desync the window-sizing math from what actually
-        // renders. Built from `side_top_panel` (rather than from scratch) so
-        // everything but the margin — fill color included — still matches
-        // egui's other panels.
+        // Explicit margin, not the default: keeps this in sync with `crate::TOOLBAR_H`'s
+        // window-sizing math.
         let frame = egui::Frame::side_top_panel(&ctx.style()).inner_margin(
             egui::Margin::symmetric(TOOLBAR_PANEL_MARGIN_X, TOOLBAR_PANEL_MARGIN_Y),
         );
@@ -47,12 +33,7 @@ impl CocoApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = BUTTON_GAP;
 
-                    // A chrome-bearing VM window only ever exists while the
-                    // machine is Running: a suspended window is display-only
-                    // (`manager::vm_windows` draws no chrome for it), and there
-                    // is no window at all for a Powered Off machine. So Start
-                    // has nothing to do here — it's shown anyway only so this
-                    // toolbar and the manager's present the same transport row.
+                    // Start is always disabled here: this window only exists while already Running.
                     let _ = toolbar_button(ui, PLAY_GLYPH, START_LABEL, false)
                         .on_disabled_hover_text(START_DISABLED_HOVER);
 
@@ -63,13 +44,8 @@ impl CocoApp {
                         self.pending_suspend = true;
                     }
 
-                    // Deliberately the same path as the window's close box,
-                    // already documented as the power switch elsewhere: this
-                    // window's close routes to `stop_vm`
-                    // (`manager::vm_windows::close_vm_window`), which flushes
-                    // dirty media before dropping the VM. `ctx` here is this
-                    // (child) viewport's own context, so the command targets
-                    // this VM window, not the manager.
+                    // Same path as the window's close box: routes through `stop_vm`, flushing
+                    // dirty media.
                     if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, true)
                         .on_hover_text(STOP_HOVER)
                         .clicked()
@@ -86,8 +62,7 @@ impl CocoApp {
 
                     toolbar_separator(ui);
 
-                    // Same toggle as ⌘D (`CocoApp::consume_app_shortcuts`);
-                    // hover text formats the shortcut per-platform.
+                    // Same toggle as ⌘D; hover text formats the shortcut per-platform.
                     let debug_hover = format!(
                         "{DEBUG_HOVER} ({})",
                         ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)

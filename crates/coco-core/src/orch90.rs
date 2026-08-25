@@ -64,9 +64,7 @@ impl Orch90 {
         self.right
     }
 
-    /// Restore-path-only: re-inject the 8K program ROM after a snapshot
-    /// restore — delegates to the inner [`ROMPak::reattach_image`]
-    ///.
+    /// Restore-path-only: re-inject the 8K program ROM after a snapshot restore.
     pub fn reattach_rom(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(bytes)
     }
@@ -95,9 +93,8 @@ impl Cartridge for Orch90 {
         true
     }
 
-    /// The two DAC latches as a true stereo pair, 0.0–1.0 per channel
-    /// (Tier 2: the event-timestamped pipeline carries them separately, so
-    /// left/right writes hard-pan and hold exactly between writes).
+    /// The two DAC latches as a true stereo pair, 0.0–1.0 per channel;
+    /// left/right writes hard-pan and hold exactly between writes.
     fn sound_levels(&self) -> (f32, f32) {
         const DAC_MAX: f32 = u8::MAX as f32;
         (
