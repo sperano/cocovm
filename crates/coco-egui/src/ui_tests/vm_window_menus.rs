@@ -447,25 +447,45 @@ fn cartridge_error_dialog_dismisses_with_ok() {
     assert!(harness.query_by_label("could not read pak").is_none());
 }
 
+/// Insert Disk/New Blank Disk stay disabled — with a hover explanation — until an FD-502 is
+/// actually present, and enable once the MultiPak Interface flow installs one.
 #[test]
-fn disk_controller_confirmation_can_be_cancelled() {
+fn disk_menu_items_are_disabled_without_an_fd502() {
     let mut harness = boot_harness();
-    // The state Insert Disk lands in with no FD-502 installed (reached directly; the menu opens
-    // a native dialog).
-    harness.state_mut().pending_disk_action = Some(PendingDiskAction::Insert {
-        drive: 0,
-        path: PathBuf::from("nonexistent.dsk"),
-    });
-    harness.step();
 
-    harness.get_by_label_contains("Insert disk controller?");
-    click(&mut harness, "Cancel");
-    let app = harness.state();
-    assert!(app.pending_disk_action.is_none());
-    assert!(
-        app.disk_paths[0].is_none(),
-        "cancelling must not mount the disk"
-    );
+    click(&mut harness, "Machine");
+    for drive in 0..UI_DRIVES {
+        for label in [
+            format!("Insert Disk in Drive {drive}…"),
+            format!("New Blank Disk in Drive {drive}…"),
+        ] {
+            assert!(
+                harness.get_by_label(&label).accesskit_node().is_disabled(),
+                "{label} should be disabled with no FD-502 installed"
+            );
+        }
+    }
+
+    // Plug an FD-502 into an MPI slot, the only way to get one at runtime.
+    click_containing(&mut harness, "MultiPak Interface");
+    click(&mut harness, "Insert MultiPak");
+    click(&mut harness, "Machine");
+    click_containing(&mut harness, "MultiPak Interface");
+    click_containing(&mut harness, "Slot 1");
+    click(&mut harness, "Insert FD-502");
+
+    click(&mut harness, "Machine");
+    for drive in 0..UI_DRIVES {
+        for label in [
+            format!("Insert Disk in Drive {drive}…"),
+            format!("New Blank Disk in Drive {drive}…"),
+        ] {
+            assert!(
+                !harness.get_by_label(&label).accesskit_node().is_disabled(),
+                "{label} should be enabled once an FD-502 is installed"
+            );
+        }
+    }
 }
 
 /// Machine ▸ Deluxe RS-232 Pak ▸ Insert plugs the pak in on the loopback

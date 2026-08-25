@@ -108,11 +108,6 @@ pub(crate) struct CocoApp {
     /// normal host text (faithful raw bytes otherwise). Applies when a
     /// capture starts — an in-progress capture keeps the mode it began with.
     pub(crate) print_capture_lf: bool,
-    /// A disk action waiting on the "this will power-cycle the machine"
-    /// confirmation dialog — set instead of acting when the FD-502 isn't in
-    /// the cartridge slot yet, since inserting it swaps the cartridge and
-    /// cold-restarts the machine (unsaved state is lost).
-    pub(crate) pending_disk_action: Option<PendingDiskAction>,
     /// State of the inserted Multi-Pak Interface, if any — `None` means the
     /// cartridge slot holds a plain cartridge (or nothing), today's default.
     pub(crate) mpi: Option<MPIState>,
@@ -180,12 +175,6 @@ pub(crate) struct CocoApp {
     pub(crate) total_runtime: std::time::Duration,
 }
 
-/// See [`CocoApp::pending_disk_action`].
-pub(crate) enum PendingDiskAction {
-    Insert { drive: usize, path: PathBuf },
-    NewBlank { drive: usize, path: PathBuf },
-}
-
 /// DriveWire launch settings — the payload of [`AppParams::drivewire`],
 /// whose `Some`/`None` is what enables/disables the Becker port at boot.
 #[derive(Default)]
@@ -205,7 +194,6 @@ pub(crate) struct DriveWireLaunch {
 #[derive(Default)]
 pub(crate) struct AppParams {
     pub(crate) cart_path: Option<PathBuf>,
-    pub(crate) disk_paths: [Option<PathBuf>; UI_DRIVES],
     pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
     /// `Some` boots with the Becker port enabled ([`DriveWireLaunch`]).
     /// Not yet reachable from a machine definition — the schema
@@ -230,7 +218,6 @@ impl CocoApp {
     ) -> Self {
         let AppParams {
             cart_path,
-            disk_paths,
             vhd_paths,
             drivewire,
             save_tape_wav,
@@ -268,7 +255,6 @@ impl CocoApp {
             tape_seek_text: String::new(),
             print_capture_path: None,
             print_capture_lf: false,
-            pending_disk_action: None,
             mpi: None,
             rs232: None,
             rs232_eprom_path: None,
@@ -283,11 +269,6 @@ impl CocoApp {
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
-        }
-        for (drive, path) in disk_paths.into_iter().enumerate() {
-            if let Some(path) = path {
-                app.insert_disk(drive, path);
-            }
         }
         for (drive, path) in vhd_paths.into_iter().enumerate() {
             if let Some(path) = path {

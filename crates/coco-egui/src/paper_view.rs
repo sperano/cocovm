@@ -211,8 +211,7 @@ impl PaperWindow {
         }
     }
 
-    /// Confirm/cancel modal for "Tear Off", shown when [`Self::pending_tear_off`] is set. Same
-    /// pattern as `CocoApp`'s `pending_disk_action` dialog.
+    /// Confirm/cancel modal for "Tear Off", shown when [`Self::pending_tear_off`] is set.
     fn tear_off_dialog(&mut self, ctx: &egui::Context, printed_pages: u32) {
         let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
         const DIALOG_MARGIN: i8 = 16;

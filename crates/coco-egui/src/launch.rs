@@ -193,9 +193,9 @@ fn validate_disk_media(media: &Media, cartridge: &Cartridge) -> Result<(), Strin
     Ok(())
 }
 
-/// With an MPI installed, or any cartridge kind beyond a bare ROM Pak, the
-/// port is populated afterward by [`mount_peripherals`] instead — the
-/// constructor only ever loads a ROM Pak directly (`CocoApp::insert_cartridge`).
+/// The constructor only ever loads a ROM Pak directly (`CocoApp::insert_cartridge`);
+/// every other cartridge kind, and the disk media that needs an FD-502 to exist
+/// first, is mounted afterward by [`mount_peripherals`].
 fn new_app(
     config: coco_core::MachineConfig,
     rom: Box<[u8]>,
@@ -207,17 +207,12 @@ fn new_app(
         Cartridge::ROMPak(path) => Some(path.clone()),
         _ => None,
     };
-    let disks = match cartridge {
-        Cartridge::MPI(_) => [None, None],
-        _ => media.disks.clone(),
-    };
     CocoApp::new(
         config,
         rom,
         rom_source,
         AppParams {
             cart_path,
-            disk_paths: disks,
             vhd_paths: media.vhds.clone(),
             // DriveWire and tape-wav stay at their defaults: no definition
             // field drives them yet (see the `AppParams` field docs).
@@ -226,13 +221,14 @@ fn new_app(
     )
 }
 
+/// Installs whichever peripheral claims the cartridge port (or an MPI slot), then
+/// mounts disk media once its FD-502 exists — `validate_disk_media` already
+/// guaranteed one is reachable, so only a failed insert leaves the drives empty.
 fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     match cartridge {
         Cartridge::None | Cartridge::ROMPak(_) => {}
         Cartridge::FD502 => {
-            // Empty-drive FD-502: a no-op if `CocoApp::new` already inserted the controller for
-            // disk media passed through `AppParams`.
-            if let Err(e) = app.ensure_disk_controller() {
+            if let Err(e) = app.insert_disk_controller() {
                 app.cart_error = Some(e);
             }
         }
@@ -254,10 +250,15 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                     Slot::SoundSpeech => app.mpi_insert_ssc(slot),
                 }
             }
-            for (drive, path) in media.disks.into_iter().enumerate() {
-                if let Some(path) = path {
-                    app.insert_disk(drive, path);
-                }
+        }
+    }
+
+    // Query the machine, not the definition: a failed controller insert (bare or slotted)
+    // already left its own cart_error, which a doomed insert_disk would overwrite.
+    if app.machine.bus.cart.as_disk_cart().is_some() {
+        for (drive, path) in media.disks.into_iter().enumerate() {
+            if let Some(path) = path {
+                app.insert_disk(drive, path);
             }
         }
     }

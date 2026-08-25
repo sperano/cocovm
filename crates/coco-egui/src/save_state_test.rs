@@ -224,6 +224,14 @@ pub(crate) fn write_dirty_byte(app: &mut CocoApp, drive: usize) {
 /// Mount `disk_path` in `drive` (creating a direct-port FD-502 if none is
 /// present) and dirty byte 0, asserting each step succeeds.
 pub(crate) fn mount_and_dirty(app: &mut CocoApp, drive: usize, disk_path: &Path) {
+    if app.machine.bus.cart.as_disk_cart().is_none() {
+        assert!(
+            app.mpi.is_none(),
+            "an MPI needs its own mpi_insert_fd502 first; a bare FD-502 would replace it"
+        );
+        app.insert_disk_controller()
+            .unwrap_or_else(|e| panic!("test fixture FD-502 install: {e}"));
+    }
     app.insert_disk(drive, disk_path.to_path_buf());
     assert!(
         app.cart_error.is_none(),
@@ -245,6 +253,8 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
     write_one_track_disk(&disk_path);
 
     let mut app = boot_app();
+    app.insert_disk_controller()
+        .unwrap_or_else(|e| panic!("test fixture FD-502 install: {e}"));
     app.insert_disk(0, disk_path.clone());
     assert!(
         app.cart_error.is_none(),

@@ -4,7 +4,7 @@
 //! launch path (`launch`).
 
 mod cart;
-mod disk;
+pub(crate) mod disk;
 mod drivewire;
 mod printer;
 mod tape;
