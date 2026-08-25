@@ -643,29 +643,22 @@ the function that puts the pieces back together.
 ## 12.5 Playback: bytes become edges
 
 With the state understood, the loop is next. The cassette's loop runs
-from the same place as every other per-instruction device in this
-machine, and its cadence was chosen for a reason the doc comment states
-plainly:
+from the same place as every other cycle-driven device in this machine:
 
 ```rust
-// crates/coco-core/src/cassette.rs:332-340
-    /// Advance the motor-on cycle clock and the playback position. Called
-    /// once per instruction from `Machine::run_cycles`, alongside
-    /// `bus.cart.tick` (same per-instruction cadence as the FD-502
-    /// precedent) — per-scanline would be far too coarse against the
-    /// ~217-cycle half-periods of the 1-bit tone. While the motor is off, a
-    /// pending in-flight recording's idle time is also tracked here,
-    /// auto-finalizing once it crosses [`RECORD_IDLE_FINALIZE_CYCLES`] (see
-    /// [`Cassette::finalize_recording`]) so a CSAVE that finishes without an
-    /// explicit rewind/eject still lands on the tape.
+// crates/coco-core/src/cassette.rs
+    /// Advance the motor-on cycle clock and playback position once per CPU unit. While the motor
+    /// is off, track idle time toward auto-finalizing a pending recording.
+    pub fn tick(&mut self, cycles: u32, motor_on: bool) {
 ```
 
 The comment's last sentence names a recording-side job this section will
-not explain — what an "in-flight recording" is, or why one should
-finalize itself after enough silence, is §12.6's material. What matters
+not explain — why a pending recording should finalize itself after enough
+silence is §12.6's material. What matters
 here is the cadence.
 
-The per-scanline clause is the fidelity budget from Chapter 1, spent explicitly. A
+Here a CPU unit is either an instruction or a burned HALT cycle. Ticking at
+that boundary spends the fidelity budget from Chapter 1 explicitly. A
 scanline on this machine is on the order of fifty-seven CPU cycles at
 normal speed, and a video field is 262 of them; most devices in this
 emulator are perfectly happy being ticked once per scanline or once per

@@ -296,8 +296,8 @@ impl Cassette {
         self.bit_elapsed = 0;
     }
 
-    /// Advance the motor-on cycle clock and playback position, once per instruction. While the
-    /// motor is off, tracks idle time toward auto-finalizing a pending recording.
+    /// Advance the motor-on cycle clock and playback position once per CPU unit. While the motor
+    /// is off, track idle time toward auto-finalizing a pending recording.
     pub fn tick(&mut self, cycles: u32, motor_on: bool) {
         if motor_on && !self.motor_was_on {
             self.spinup_left = MOTOR_SPINUP_CYCLES;

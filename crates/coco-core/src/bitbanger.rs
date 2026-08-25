@@ -12,9 +12,9 @@
 //! only — decoding what the ROM's bit-bang driver transmits on PA1 — since
 //! that's the only direction a virtual printer needs.
 //!
-//! Decoding is an edge-triggered RX state machine, ticked once per
-//! instruction from `Machine::run_cycles` with a CPU-cycle delta and PA1's
-//! current level, the same shape as [`crate::cassette::Cassette::tick`]:
+//! Decoding is an edge-triggered RX state machine, ticked once per CPU unit
+//! as part of [`crate::Machine::step_instruction`], with a cycle delta and
+//! PA1's current level, the same shape as [`crate::cassette::Cassette::tick`]:
 //! idle at mark, a mark→space transition is a start-bit candidate, and each
 //! data/stop bit is sampled at its cell midpoint (`bitbanger-spec.md`
 //! "Decoder spec"). Cycle-based timing (never wall time) is what makes the
