@@ -37,13 +37,8 @@ impl SystemBus {
         self.cart.take_nmi()
     }
 
-    /// Forget the sampled interrupt-input history ([`SystemBus::hsync`]'s
-    /// keyboard-line sample and [`SystemBus::poll_cart_interrupt`]'s CART*
-    /// level) so the next sample sees a fresh edge. Power-on only: a freshly
-    /// powered GIME/PIA has no memory of the line levels, so an input that
-    /// was already asserted before power-off (a held key, an ACIA IRQ) must
-    /// fire on its first post-power sample rather than being swallowed as
-    /// "no transition".
+    /// Power-on: forget the sampled keyboard-line and CART* levels so an
+    /// input still asserted from before power-off fires on its first sample.
     pub(crate) fn reset_edge_history(&mut self) {
         self.kbd_line_low = false;
         self.prev_cart_int = false;

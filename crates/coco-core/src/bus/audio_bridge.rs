@@ -41,11 +41,8 @@ impl SystemBus {
         crate::audio::mix(&inputs, cassette_bit, ay, generators)
     }
 
-    /// Power-on resync of the latched audio state: drop any events queued
-    /// before power-off (they belong to a scanline that will never be
-    /// flushed as such) and re-latch the inputs from the freshly reset PIAs
-    /// and cartridge, so the first post-power write is compared against
-    /// what the hardware actually drives, not the pre-power DAC/mux state.
+    /// Power-on: drop queued events and re-latch the inputs from the reset
+    /// PIAs and cartridge.
     pub(crate) fn reset_audio_latch(&mut self) {
         self.audio_events.clear();
         self.audio_inputs = self.snapshot_audio_inputs();

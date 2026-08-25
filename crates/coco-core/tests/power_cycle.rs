@@ -1,13 +1,6 @@
-//! `Machine::power_cycle` must forget derived electrical state — the sampled
-//! keyboard/CART* interrupt edge history and the latched audio inputs plus
-//! their queued events — not just rebuild the GIME/SAM/PIAs. Each test
-//! starts from a pre-power state that would otherwise leak: an interrupt
-//! input already asserted (its first post-power sample must still count as
-//! an edge), a non-default DAC latch with an unflushed event queue, and
-//! rendered samples nobody has drained yet.
-//!
-//! The machine runs a zero-filled ROM (reset vector → $0000; RAM there is
-//! `NEG <$00`, harmless), so cycles advance deterministically.
+//! `Machine::power_cycle` must reset derived state — interrupt edge history,
+//! latched/queued/rendered audio — not just the GIME/SAM/PIAs. Runs a
+//! zero-filled ROM (reset vector → $0000, harmless `NEG <$00`).
 
 use coco_core::audio::OVERSAMPLE;
 use coco_core::cart::{Cart, Cartridge, IO_OPEN_BUS};
@@ -92,10 +85,9 @@ fn held_key_fires_gime_ei1_on_first_post_power_scanline() {
     let mut m = machine();
     m.bus.keyboard.set(KEY_A, true);
     strobe_all_columns(&mut m);
-    m.bus.hsync(); // samples the row line low: the pre-power edge history
+    m.bus.hsync(); // pre-power: row line sampled low
     m.power_cycle();
-    // The key is still held (the operator never let go) and post-power
-    // software strobes the matrix and enables EI1.
+    // Key still held; post-power software strobes and enables EI1.
     strobe_all_columns(&mut m);
     m.bus.write(INIT0, init0::IEN);
     m.bus.write(IRQENR, intr::EI1);
@@ -110,9 +102,8 @@ fn held_key_fires_gime_ei1_on_first_post_power_scanline() {
 fn asserted_cart_line_fires_pia1_cb1_and_gime_ei0_after_power_cycle() {
     let mut m = machine();
     m.insert_cartridge(Cart::custom(AssertingCart));
-    m.bus.poll_cart_interrupt(); // records CART* asserted: pre-power history
+    m.bus.poll_cart_interrupt(); // pre-power: CART* sampled asserted
     m.power_cycle();
-    // Post-power software arms both listeners on the shared pin.
     m.bus.write(PIA1_CRB, cr::C1_IRQ_ENABLE | cr::DDR_ACCESS);
     m.bus.write(INIT0, init0::FEN);
     m.bus.write(FIRQENR, intr::EI0);
@@ -137,8 +128,8 @@ fn stale_dac_latch_and_queued_events_do_not_leak_into_post_power_audio() {
     );
 
     let mut m = machine();
-    drive_dac_full_scale(&mut m); // latches a loud state and queues events
-    m.power_cycle(); // ...mid-line, before any flush
+    drive_dac_full_scale(&mut m);
+    m.power_cycle(); // mid-line, before any flush
     let first = finish_line(&mut m);
     assert_eq!(
         first, silence,
@@ -153,8 +144,7 @@ fn reprogramming_the_same_dac_value_after_power_cycle_is_audible() {
     finish_line(&mut m);
     m.power_cycle();
     let silent = finish_line(&mut m);
-    // Identical writes to the pre-power ones: the latch was reset, so they
-    // are changes again and must reach the grid.
+    // Same writes as pre-power: the latch was reset, so they are changes.
     drive_dac_full_scale(&mut m);
     let loud = finish_line(&mut m);
     assert_ne!(
@@ -167,7 +157,7 @@ fn reprogramming_the_same_dac_value_after_power_cycle_is_audible() {
 fn undrained_pre_power_samples_are_dropped() {
     let mut m = machine();
     drive_dac_full_scale(&mut m);
-    m.run_field(); // renders a field of loud samples nobody drains
+    m.run_field(); // renders samples nobody drains
     m.power_cycle();
     assert_eq!(
         m.take_audio().count(),
