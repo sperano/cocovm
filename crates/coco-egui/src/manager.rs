@@ -142,8 +142,8 @@ pub struct MachineEntry {
     /// dir couldn't follow the new name yet (the running VM writes
     /// `thumbnail.png` into the artifact dir by path — renaming under it
     /// races). [`ManagerApp::apply_pending_renames`] migrates once the VM is
-    /// gone. Not persisted: quitting with this set leaves the stale slug
-    /// until the next rename commit.
+    /// gone, including during [`ManagerApp::on_exit`] after its final media
+    /// flush.
     rename_pending: bool,
 }
 
@@ -369,7 +369,9 @@ impl eframe::App for ManagerApp {
     /// is only `tracing::warn!`-logged: the whole app is going away, so
     /// there's no dialog left to show it in. Also folds each live VM's
     /// runtime into its persisted `[stats].runtime_secs` total
-    /// (`manager::lifecycle::fold_runtime_into_def`), the same as Stop.
+    /// (`manager::lifecycle::fold_runtime_into_def`), the same as Stop. Once
+    /// every live VM has been flushed and dropped, completes slug migrations
+    /// deferred by renames made while those VMs were running.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Quit is the power switch for running VMs — no auto-suspend on quit;
         // a suspended VM's state and preview are already on disk from suspend
@@ -379,7 +381,7 @@ impl eframe::App for ManagerApp {
         // instead of powering off first.
         for index in 0..self.entries.len() {
             self.fold_runtime_into_def(index);
-            if let Some(vm) = self.entries[index].vm.as_mut()
+            if let Some(mut vm) = self.entries[index].vm.take()
                 && let Err(e) = vm.flush_media()
             {
                 tracing::warn!(
@@ -388,6 +390,7 @@ impl eframe::App for ManagerApp {
                 );
             }
         }
+        self.apply_pending_renames();
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
