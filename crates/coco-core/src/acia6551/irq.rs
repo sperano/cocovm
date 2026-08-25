@@ -38,10 +38,8 @@ impl ACIA6551 {
         self.tx_control() == tx_control::BREAK
     }
 
-    /// Check the DCD/DSR inputs for a change since the last tick and arm
-    /// their IRQ source if DTR is enabled (module doc: MAME ties this to
-    /// the RX clock with admittedly-unresolved exact timing; this model
-    /// resolves it once per `tick` call instead).
+    /// Checks DCD/DSR for a change since the last tick and arms their IRQ
+    /// source if DTR is enabled (resolved once per `tick`, not on a live edge).
     pub(super) fn tick_modem_lines(&mut self) {
         if self.dcd_level != self.dcd_checked {
             self.dcd_checked = self.dcd_level;

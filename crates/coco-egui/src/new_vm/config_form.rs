@@ -9,11 +9,8 @@ use eframe::egui;
 
 use super::{constrain, vdg_label, video_label};
 
-/// The Model row (which CoCo this machine is), label + combo box — the
-/// detail pane hosts it inside its "Machine" titled group. Must be called
-/// inside an already-open two-column [`egui::Grid`]; `salt` distinguishes
-/// the [`egui::ComboBox`]'s persistent id when this is drawn from more
-/// than one call site in the same frame.
+/// The Model row (which CoCo this machine is), label + combo box — the detail pane hosts
+/// it inside its "Machine" titled group. Must be called inside an already-open two-column [`egui::Grid`]; `salt` distinguishes the combo's persistent id across call sites.
 pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
@@ -33,20 +30,12 @@ pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
     ui.end_row();
 }
 
-/// The conditional VDG row (CoCo 2 only) and the Video row — see the inline
-/// comments below — [`machine_rows`]'s sibling, hosted by the detail pane's
-/// "Display" titled group in its own grid. The display-device row itself
-/// (monitor/TV) lives in [`super::MachineForm::display_rows`]: the choice
-/// isn't part of [`MachineConfig`] (it owns `config.monitor` but also
-/// distinguishes a CoCo 3 TV from a composite monitor), so it rides on the
-/// form like the cartridge does.
+/// The conditional VDG row (CoCo 2 only) and the Video row — [`machine_rows`]'s sibling,
+/// hosted by the detail pane's "Display" titled group. The monitor/TV row itself lives in [`super::MachineForm::display_rows`].
 pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
-    // The VDG choice only exists on the CoCo 2 (the CoCo 1 always shipped
-    // the plain MC6847; the CoCo 3 has no VDG — the GIME does its own
-    // character generation), so the row is only rendered for that model;
-    // `constrain` re-seeds the family default for the others.
+    // The VDG choice only exists on the CoCo 2 — CoCo 1 always shipped plain MC6847, CoCo 3's GIME does its own character generation.
     if draft.variant == MachineVariant::Coco2 {
         ui.label(egui::RichText::new("VDG").size(font));
         let selected = draft.vdg.unwrap_or(VDGVariant::MC6847T1);
@@ -60,8 +49,7 @@ pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
         ui.end_row();
     }
 
-    // Two-value choices are radio pairs, not combos — same as the RAM and
-    // Keyboard fieldsets.
+    // Two-value choices are radio pairs, not combos — same as RAM and Keyboard.
     ui.label(egui::RichText::new("Video").size(font));
     ui.horizontal(|ui| {
         ui.radio_value(
@@ -69,8 +57,7 @@ pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
             VideoStandard::NTSC,
             video_label(VideoStandard::NTSC),
         );
-        // CoCo 1/2 PAL timing isn't modeled (`MachineConfig::validate`);
-        // `constrain` already snapped the draft back to NTSC.
+        // CoCo 1/2 PAL timing isn't modeled; `constrain` already snapped the draft back to NTSC.
         let pal_possible = draft.variant == MachineVariant::Coco3;
         ui.add_enabled_ui(pal_possible, |ui| {
             ui.radio_value(

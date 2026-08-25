@@ -2,9 +2,7 @@ use super::*;
 use std::time::{Duration, Instant};
 
 /// Bounded poll-with-retry: real socket/pty I/O crosses the kernel, so
-/// delivery isn't instant even on loopback/localhost. Polls `f` in a
-/// short sleep loop, up to `timeout`, rather than assuming the first
-/// call sees the byte.
+/// delivery isn't instant even on loopback — polls `f` until `timeout`.
 fn poll_until<T>(timeout: Duration, mut f: impl FnMut() -> Option<T>) -> Option<T> {
     let deadline = Instant::now() + timeout;
     loop {
@@ -65,8 +63,7 @@ fn tcp_round_trip_dcd_and_disconnect() {
     let mut client = TcpStream::connect(addr).expect("connect");
     client.set_nonblocking(true).expect("client nonblocking");
 
-    // Wait for the endpoint to accept the connection (each poll_rx
-    // call drives try_accept).
+    // Wait for the endpoint to accept the connection (each poll_rx drives try_accept).
     let connected = poll_until(TEST_TIMEOUT, || {
         ep.poll_rx();
         ep.dcd().then_some(())
@@ -88,9 +85,7 @@ fn tcp_round_trip_dcd_and_disconnect() {
     });
     assert_eq!(echoed, Some(0xAA));
 
-    // Disconnect: dropping the client closes the TCP connection, which
-    // the endpoint should observe as a read returning Ok(0) and fall
-    // back to listening (dcd() false again).
+    // Dropping the client should be observed as a read returning Ok(0), flipping dcd() false.
     drop(client);
     let disconnected = poll_until(TEST_TIMEOUT, || {
         ep.poll_rx();
@@ -123,18 +118,10 @@ mod pty {
         assert!(pty.dcd());
     }
 
-    /// Put `fd`'s termios into raw mode (`cfmakeraw`): no canonical
-    /// line buffering, no echo, no signal characters. The *slave*'s
-    /// termios is normally the connecting host program's business
-    /// (`PtyEndpoint`'s doc comment) — a real terminal emulator
-    /// connecting to the port sets this itself. The test stands in for
-    /// that program, so it must do the same, otherwise the default
-    /// cooked-mode line discipline buffers master->slave bytes until a
-    /// newline before a slave-side `read` can see them.
+    /// Put `fd`'s termios into raw mode: without it, cooked-mode line
+    /// buffering holds master->slave bytes until a newline, hiding them from `read`.
     fn set_raw(fd: libc::c_int) {
-        // SAFETY: `fd` is a valid, open fd for the duration of the
-        // call; `term` is fully initialized by `tcgetattr` before
-        // `cfmakeraw`/`tcsetattr` read it.
+        // SAFETY: `fd` is a valid, open fd for the call; `term` is initialized by `tcgetattr` before use.
         unsafe {
             let mut term: libc::termios = std::mem::zeroed();
             assert_eq!(libc::tcgetattr(fd, &mut term), 0, "tcgetattr failed");
@@ -151,8 +138,7 @@ mod pty {
     fn round_trip_via_slave_device() {
         let mut pty = PTYEndpoint::new().expect("open pty");
 
-        // Open the slave non-blocking too, so a read with nothing
-        // written yet returns EAGAIN instead of hanging the test.
+        // Non-blocking slave: a read with nothing written yet returns EAGAIN instead of hanging.
         let mut slave = OpenOptions::new()
             .read(true)
             .write(true)

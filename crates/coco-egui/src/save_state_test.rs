@@ -12,17 +12,10 @@ use coco_core::{MachineConfig, fdc};
 /// it to get the demodulator to lock on before a framed block.
 const LEADER: u8 = 0x55;
 
-/// Add back the owner-write bit on `path` if it's missing — defensive
-/// cleanup so a test killed mid-assertion (leaving its fixture read-only)
-/// doesn't wedge the *next* run of the same test, which starts by
-/// overwriting that fixture. Flips the one bit via `PermissionsExt` rather
-/// than `Permissions::set_readonly(false)`, which on Unix clears every
-/// write-protect bit and leaves the file world-writable (clippy
-/// `permissions_set_readonly_false`).
-///
-/// `pub(crate)`: `disk_test.rs`/`tape_test.rs` reuse it for the
-/// insert/new/eject write-back-preservation coverage, the same
-/// cross-test-module sharing as [`ReadOnly`] itself.
+/// Add back the owner-write bit on `path` if missing — so a test killed
+/// mid-assertion doesn't wedge the next run. Flips the bit via
+/// `PermissionsExt` rather than `set_readonly(false)`, which clears every
+/// write-protect bit (clippy `permissions_set_readonly_false`).
 #[cfg(unix)]
 pub(crate) fn ensure_writable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -35,9 +28,8 @@ pub(crate) fn ensure_writable(path: &Path) {
     }
 }
 
-/// Non-Unix: `Permissions::set_readonly(false)` would be the only option,
-/// and [`ReadOnly`]'s drop already restores the exact original permissions —
-/// nothing extra to defend against, so the defensive cleanup is a no-op.
+/// Non-Unix no-op: [`ReadOnly`]'s drop already restores the exact original
+/// permissions, so there's nothing extra to defend against.
 #[cfg(not(unix))]
 pub(crate) fn ensure_writable(_path: &Path) {}
 
@@ -74,11 +66,8 @@ impl Drop for ReadOnly<'_> {
     }
 }
 
-/// Scratch directory holding only the fixture files a given test writes
-/// into it, under `target/` (git-ignored, unlike the installed
-/// [`installed_roms_dir`] this test also reads from for the system ROM and
-/// the FD-502's `disk11.rom` — both real dumps installed by
-/// `ensure_assets`, same as every other test that mounts an FD-502).
+/// Scratch directory under `target/` (git-ignored) holding only the
+/// fixture files a given test writes into it.
 fn scratch_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp-test-save-state")
@@ -87,14 +76,9 @@ fn scratch_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// A machine with a ROM pak (direct fixture) and a floppy (direct
-/// fixture) both mounted through a MultiPak — the FD-502 and a plain
-/// cartridge share the single cartridge port on real hardware, so an MPI
-/// is the only way to combine them — produces [`MediaRefs`] whose hashes
-/// match [`snapshot::sha256_file`] of every file involved: the two
-/// fixtures this test wrote, the installed `coco3.rom` system ROM, and
-/// the installed `disk11.rom` the FD-502 always loads
-/// ([`disk_basic_rom_path`]).
+/// A ROM pak and floppy mounted through a MultiPak (the only way to combine
+/// them — FD-502 and cart share the single cartridge port) produce
+/// [`MediaRefs`] whose hashes match [`snapshot::sha256_file`] of every file.
 #[test]
 fn build_media_refs_hashes_match_the_mounted_files() {
     let roms_dir = installed_roms_dir();
@@ -143,10 +127,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
         .as_ref()
         .expect("system ROM must be recorded");
     assert_eq!(system_rom.path, rom_path);
-    // Hashes the boot-time bytes the running machine actually has
-    // (`Self::system_rom_media_ref`'s fix — phase-5 review item 13), not
-    // a fresh re-read of the file; they agree here only because the file
-    // hasn't changed since boot, which is exactly what this asserts.
+    // Hashes the boot-time bytes the machine has, not a fresh re-read; they agree because the file hasn't changed since boot.
     assert_eq!(
         system_rom.sha256,
         snapshot::sha256_hex(&app.machine.bus.rom)
@@ -184,12 +165,8 @@ fn build_media_refs_hashes_match_the_mounted_files() {
     assert!(media.disks[1].is_none());
 }
 
-/// A bare booted machine — no cart, no media mounted yet — for the flush-
-/// failure tests below, which each mount exactly one piece of media
-/// themselves.
-///
-/// `pub(crate)`: `disk_test.rs`/`tape_test.rs` reuse it, like
-/// [`ensure_writable`] and [`ReadOnly`].
+/// A bare booted machine — no cart, no media mounted yet — for the
+/// flush-failure tests below, each of which mounts one piece of media.
 pub(crate) fn boot_app() -> CocoApp {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
@@ -204,10 +181,8 @@ pub(crate) fn boot_app() -> CocoApp {
     )
 }
 
-/// A one-track JVC image, the minimal `write_byte`-able fixture — every
-/// FD-502 write-back test needs at least one track to dirty.
-///
-/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+/// A one-track JVC image, the minimal `write_byte`-able fixture every
+/// FD-502 write-back test needs.
 pub(crate) fn write_one_track_disk(path: &Path) {
     let sector_size = 128usize << fdc::DEFAULT_SECTOR_SIZE_CODE;
     let one_track = fdc::DEFAULT_SECTORS_PER_TRACK * sector_size * fdc::DEFAULT_SIDES;
@@ -222,8 +197,6 @@ pub(crate) const DIRTY_BYTE: u8 = 0xAA;
 
 /// Whether the disk mounted in `drive` (an FD-502 must already be present)
 /// has an unsaved change.
-///
-/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
 pub(crate) fn is_dirty(app: &mut CocoApp, drive: usize) -> bool {
     app.machine
         .bus
@@ -235,10 +208,7 @@ pub(crate) fn is_dirty(app: &mut CocoApp, drive: usize) -> bool {
         .dirty()
 }
 
-/// Write [`DIRTY_BYTE`] to byte 0 of the disk mounted in `drive`, dirtying
-/// it.
-///
-/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+/// Write [`DIRTY_BYTE`] to byte 0 of the disk mounted in `drive`, dirtying it.
 pub(crate) fn write_dirty_byte(app: &mut CocoApp, drive: usize) {
     app.machine
         .bus
@@ -250,11 +220,8 @@ pub(crate) fn write_dirty_byte(app: &mut CocoApp, drive: usize) {
         .write_byte(0, DIRTY_BYTE);
 }
 
-/// Mount `disk_path` in `drive` — creating a direct-port FD-502 if none is
-/// present yet, or landing in one already mounted (directly or in an MPI
-/// slot) — and dirty byte 0, asserting each step succeeds.
-///
-/// `pub(crate)`: `disk_test.rs`/`cart_test.rs` reuse it, like [`boot_app`].
+/// Mount `disk_path` in `drive` (creating a direct-port FD-502 if none is
+/// present) and dirty byte 0, asserting each step succeeds.
 pub(crate) fn mount_and_dirty(app: &mut CocoApp, drive: usize, disk_path: &Path) {
     app.insert_disk(drive, disk_path.to_path_buf());
     assert!(
@@ -266,13 +233,9 @@ pub(crate) fn mount_and_dirty(app: &mut CocoApp, drive: usize, disk_path: &Path)
     assert!(is_dirty(app, drive), "writing a byte must dirty the disk");
 }
 
-/// `save_state_to` must fail — before writing any `.ccstate`, and without
+/// `save_state_to` must fail — before writing any `.ccstate`, without
 /// clearing the disk's dirty flag — when a floppy's write-back can't reach
-/// its file, then succeed and clear dirty once the file is writable again
-/// (the "later retry can succeed" contract `write_back_disk`'s doc promises).
-/// Regression coverage for Vikunja #175: `save_state_to` used to call the
-/// then-infallible `flush_media`, hash whatever stale bytes were already on
-/// disk, and report success even though the dirty disk was never saved.
+/// its file, then succeed once the file is writable again.
 #[test]
 fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
     let dir = scratch_dir("disk-flush-failure");
@@ -344,9 +307,8 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
     );
 }
 
-/// [`save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails`]'s tape
-/// counterpart: a landed recording that can't be written back to its `.cas`
-/// file fails the whole save instead of silently snapshotting stale media.
+/// Tape counterpart of the disk write-back-failure test above: a landed
+/// recording that can't be written back to its `.cas` file fails the whole save.
 #[test]
 fn save_state_to_fails_when_tape_write_back_fails() {
     let dir = scratch_dir("tape-flush-failure");

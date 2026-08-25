@@ -36,11 +36,8 @@ pub const SAM_R1_SET: u16 = 0xFFD9;
 pub const SAM_PAGE_UNIT: u16 = 512;
 
 impl GIME {
-    /// Apply a SAM control-register strobe ($FFC0–$FFDF). V0–V2 ($FFC0–$FFC5)
-    /// select the CoCo-compatible legacy-graphics vertical cadence, F0–F6
-    /// ($FFC6–$FFD3) the CoCo-compatible video base, R1 ($FFD8/$FFD9) the CPU
-    /// rate, and TY ($FFDE/$FFDF) selects the all-RAM map. Not modelled: the
-    /// inert-on-CoCo-3 R0 pair, and P1/M0/M1.
+    /// Apply a SAM control-register strobe ($FFC0–$FFDF): V0–V2 select the
+    /// legacy vertical cadence, F0–F6 the video base, R1 the CPU rate, TY the all-RAM map.
     pub fn write_sam(&mut self, addr: u16) {
         match addr {
             SAM_VDG_BASE..=SAM_VDG_LAST => {

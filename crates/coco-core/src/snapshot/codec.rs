@@ -27,17 +27,10 @@ const MAX_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
 
 // ---- Save ---------------------------------------------------------------
 
-/// Encode `machine` + `media` into a `.ccstate` container: CBOR, gzipped,
-/// with the container header prepended.
-///
-/// The caller must flush dirty media (unsaved floppy/tape edits) BEFORE
-/// building `media`'s hashes and calling this — see the module doc. This
-/// function does no file I/O of its own.
+/// Encodes `machine` + `media` into a `.ccstate` container (CBOR, gzipped,
+/// with header). Caller must flush dirty media before hashing — see module doc.
 pub fn save(machine: &Machine, media: &MediaRefs) -> Result<Vec<u8>, SnapshotError> {
-    // A `Cart::Custom` test double has no serializable shape (phase 1: its
-    // variant is `#[serde(skip)]`). Detect it up front so the failure is a
-    // clean, documented error instead of whatever ciborium's generated
-    // "skipped variant" error happens to say.
+    // Cart::Custom is #[serde(skip)]; fail early with a clear error instead of ciborium's.
     if machine.bus.cart.contains_custom() {
         return Err(SnapshotError::CustomCartNotSnapshotable);
     }
@@ -69,11 +62,9 @@ struct Header<'a> {
     body: &'a [u8],
 }
 
-/// Verify the magic and [`CONTAINER_VERSION`], and split off the schema
-/// field and gzip body. A file too short to even contain a full header is
-/// [`SnapshotError::NotASnapshot`], same as a wrong magic — both mean "this
-/// isn't (recognizably) a CoCo save state", as opposed to a container we
-/// understand but whose *contents* we can't decode.
+/// Verifies magic and [`CONTAINER_VERSION`], splitting off the schema field
+/// and gzip body. Too-short or wrong-magic both mean "not a CoCo save state"
+/// ([`SnapshotError::NotASnapshot`]).
 fn parse_header(bytes: &[u8]) -> Result<Header<'_>, SnapshotError> {
     if bytes.len() < HEADER_LEN || &bytes[..CONTAINER_MAGIC.len()] != CONTAINER_MAGIC {
         return Err(SnapshotError::NotASnapshot);
@@ -94,12 +85,8 @@ fn parse_header(bytes: &[u8]) -> Result<Header<'_>, SnapshotError> {
     })
 }
 
-/// Inflate `bytes` (the gzip body past the container header), capped at
-/// [`MAX_PAYLOAD_BYTES`] via [`std::io::Read::take`] so a crafted file can't
-/// force an unbounded allocation before its (attacker-controlled) length is
-/// ever checked against anything real. If the cap is hit exactly AND the
-/// underlying stream still has more to give, that's a payload genuinely over
-/// the cap (not a coincidentally-cap-sized legitimate one) —
+/// Inflates the gzip body, capped at [`MAX_PAYLOAD_BYTES`] to block
+/// decompression bombs. Hitting the cap with more data still available is
 /// [`SnapshotError::InvalidPayload`], not a truncated decode.
 fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, SnapshotError> {
     let mut out = Vec::new();
@@ -126,27 +113,18 @@ fn decode_payload(cbor: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     ciborium::from_reader(cbor).map_err(|e| SnapshotError::Decode(e.to_string()))
 }
 
-/// Schema-downgrade migration dispatch point. Today's table is empty —
-/// schema 1 is the only schema that has ever existed — so every call falls
-/// through to `None` and [`load`] reports [`SnapshotError::NoMigration`].
-/// When a future breaking change bumps [`SCHEMA_VERSION`], register the old
-/// schema number here with a function that decodes its CBOR shape and
-/// upgrades it to the current one.
+/// Migration dispatch point for old schema versions; empty today (schema 1
+/// is the only one that has existed). Register old-schema decoders here
+/// when [`SCHEMA_VERSION`] bumps.
 fn migrate(_old_schema: u32, _cbor: &[u8]) -> Option<Result<SnapshotPayload, SnapshotError>> {
     None
 }
 
-/// Decode a `.ccstate` container's bytes into a [`SnapshotPayload`]. Pure
-/// decode, no file I/O and no media resolution — that's [`super::restore`]'s job,
-/// once the caller has turned this payload's [`MediaRefs`] into
-/// [`super::MediaSources`].
+/// Decodes a `.ccstate` container's bytes into a [`SnapshotPayload`]. Pure
+/// decode — no file I/O or media resolution; that's [`super::restore`]'s job.
 pub fn load(bytes: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     let header = parse_header(bytes)?;
-    // Checked BEFORE decompressing: a schema newer than this build
-    // understands is rejected outright, so a crafted file claiming one never
-    // pays for (or risks) inflating its gzip body at all — [`gunzip`]'s own
-    // [`MAX_PAYLOAD_BYTES`] cap is the second line of defense for the
-    // schemas that DO proceed to decompression.
+    // Reject newer schemas before decompressing, so a crafted file never pays to inflate its body.
     if header.schema > SCHEMA_VERSION {
         return Err(SnapshotError::SchemaTooNew {
             found: header.schema,
@@ -154,8 +132,7 @@ pub fn load(bytes: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
         });
     }
     let cbor = gunzip(header.body)?;
-    // `header.schema > SCHEMA_VERSION` already returned above, so only
-    // Equal/Less remain here.
+    // Only Equal/Less remain here; Greater already returned above.
     if header.schema == SCHEMA_VERSION {
         return decode_payload(&cbor);
     }

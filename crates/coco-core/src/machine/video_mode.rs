@@ -10,12 +10,8 @@ use crate::{gime, gime_video, video};
 use super::{Machine, VideoMode};
 
 impl Machine {
-    /// Classify the current video mode.
-    ///
-    /// CoCo 1/2 (no GIME) never has INIT0/$FF98 to consult: they always run the
-    /// VDG-native path, chosen purely by PIA1 $FF22 bit 7 (A/G) —
-    ///
-    /// $FF98 BP dispatch, unchanged.
+    /// Classify the current video mode. CoCo 1/2 (no GIME) always runs the
+    /// VDG-native path (PIA1 $FF22 bit 7 selects graphics vs text); CoCo 3 also checks INIT0 COCO and $FF98 BP.
     fn video_mode(&self) -> VideoMode {
         match self.config.variant {
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
@@ -44,8 +40,7 @@ impl Machine {
     }
 
     /// CoCo-compatible video/text base address, per variant: the GIME's own
-    /// SAM-compat page register (CoCo 3, unchanged) or the primary SAM's F-bits
-    /// (CoCo 1/2 —).
+    /// SAM-compat page register (CoCo 3) or the primary SAM's F-bits (CoCo 1/2).
     pub(super) fn legacy_display_base(&self) -> u16 {
         match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.sam_display_base(),
@@ -54,11 +49,7 @@ impl Machine {
     }
 
     /// Resolve the 16-entry colour table the CoCo-compatible text/graphics
-    /// renderers read from, per variant:
-    /// CoCo 3 snapshots the GIME palette registers (existing behaviour,
-    /// unchanged); CoCo 1/2 has none, so it resolves the fixed VDG RGB table.
-    /// `css` (PIA1 $FF22 bit 3) only matters for the fixed-VDG path — see
-    /// [`video::ColorSource::resolve`].
+    /// renderers read from: GIME palette registers on CoCo 3, the fixed VDG RGB table on CoCo 1/2 (`css` only matters there).
     pub(super) fn legacy_palette(&self, css: bool) -> [[u8; 4]; video::PALETTE_LEN] {
         match self.config.variant {
             MachineVariant::Coco3 => {
@@ -74,21 +65,8 @@ impl Machine {
         }
     }
 
-    /// Decode the current text screen to ASCII lines, whichever video mode is
-    /// active — a debug/probe helper, not a renderer (`gime_video::text_lines`
-    /// and `video::decode_alpha_char` do the actual decoding, shared with the
-    /// real renderers so this can't drift from what's actually on screen):
-    ///
-    /// - CoCo-compatible mode (INIT0 COCO=1): the legacy VDG alphanumeric
-    ///   screen at the SAM page base, decoded the same way `render_coco_text`
-    ///   reads it (through the bus, honouring the MMU).
-    /// - GIME hi-res text (INIT0 COCO=0, $FF98 BP=0): the GIME-native text
-    ///   buffer at the vertical-offset registers' physical address.
-    ///
-    /// The two graphics modes (VDG PMODE, GIME HSCREEN) have no text buffer to
-    /// decode; each returns one placeholder line naming the mode. Pair with
-    /// [`Machine::video_mode_summary`] to tell a "genuinely blank screen" apart
-    /// from "this is a graphics-mode screen with nothing to decode".
+    /// Decode the current text screen to ASCII lines — a debug/probe helper, not
+    /// a renderer. Graphics modes have no text buffer and return one placeholder line naming the mode.
     pub fn text_screen_lines(&mut self) -> Vec<String> {
         match self.video_mode() {
             VideoMode::CocoText | VideoMode::CocoGraphics => {
@@ -112,9 +90,7 @@ impl Machine {
     }
 
     /// One-line diagnostic summary of the current video mode and its text/video
-    /// base address. Pairs with [`Machine::text_screen_lines`] to explain an
-    /// unexpectedly blank or garbled dump — most commonly, the machine has
-    /// switched to a graphics mode, which has no text buffer.
+    /// base address. Pairs with [`Machine::text_screen_lines`] to explain a blank or garbled dump.
     pub fn video_mode_summary(&self) -> String {
         match self.video_mode() {
             VideoMode::CocoText => {

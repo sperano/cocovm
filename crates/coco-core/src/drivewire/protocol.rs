@@ -87,12 +87,8 @@ pub(super) enum State {
 }
 
 impl DWServer {
-    /// Becker-port data register write: feed one byte from the client into
-    /// the protocol state machine. `cycle` is a monotonically increasing
-    /// CPU cycle count, used only to detect a stalled transaction (see
-    /// [`TRANSACTION_TIMEOUT_CYCLES`]); compared against the previous
-    /// byte's cycle with `wrapping_sub` so a 64-bit wraparound (unreachable
-    /// in practice, but cheap to get right) can't misfire.
+    /// Becker-port data register write: feed one byte into the protocol state machine.
+    /// `cycle` detects a stalled transaction via `wrapping_sub` against the previous byte's cycle.
     pub fn data_write(&mut self, byte: u8, cycle: u64) {
         if let Some(prev) = self.last_byte_cycle {
             let idle = matches!(self.state, State::Idle);
@@ -148,8 +144,7 @@ impl DWServer {
     }
 
     /// [`State::AwaitSerSetStat`]: accumulate the 2-byte (channel, statcode)
-    /// payload, then branch on the statcode (see [`State::AwaitSerSetStat`]'s
-    /// doc comment).
+    /// payload, then branch on the statcode.
     fn feed_ser_setstat(&mut self, mut buf: Vec<u8>, byte: u8) {
         buf.push(byte);
         if buf.len() == 2 {
@@ -159,8 +154,7 @@ impl DWServer {
                     remaining: COMST_PAYLOAD_LEN as u8,
                 };
             }
-            // Otherwise the transaction is complete: no reply, state stays
-            // Idle (already set at the top of `feed`).
+            // Otherwise the transaction is complete: no reply (state stays Idle).
         } else {
             self.state = State::AwaitSerSetStat { buf };
         }
@@ -177,9 +171,8 @@ impl DWServer {
         }
     }
 
-    /// [`State::AwaitReadExChecksum`]: accumulate the client's 2-byte
-    /// checksum, then reply with [`error::CRC`] on mismatch or
-    /// `pending_error` otherwise.
+    /// [`State::AwaitReadExChecksum`]: accumulate the client's 2-byte checksum, then reply
+    /// with [`error::CRC`] on mismatch or `pending_error` otherwise.
     fn feed_read_ex_checksum(
         &mut self,
         expected: u16,
@@ -290,11 +283,8 @@ impl DWServer {
         };
     }
 
-    /// The vserial-family opcodes whose entire remaining payload is `n`
-    /// bytes to discard with no reply
-    /// ([`opcode::SERWRITE`]/[`opcode::SERGETSTAT`],
-    /// [`opcode::SERINIT`]/[`opcode::SERTERM`], and the
-    /// [`opcode::FASTWRITE_BASE`]..=[`opcode::FASTWRITE_LAST`] family).
+    /// Discard `n` remaining payload bytes with no reply — shared by the serial-op
+    /// opcodes ([`opcode::SERWRITE`] etc.) and the FASTWRITE family.
     fn handle_ser_discard(&mut self, n: u8) {
         self.vserial_ops += 1;
         self.state = State::AwaitDiscard { remaining: n };

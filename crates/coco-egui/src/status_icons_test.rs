@@ -12,8 +12,7 @@ fn at(base: Instant, millis: u64) -> Instant {
 fn priming_does_not_light() {
     let mut latch = ActivityLatch::default();
     let base = Instant::now();
-    // Even a large nonzero first value (e.g. a save state restored with
-    // tx_bytes already at 40000) must not flash on the first observation.
+    // Even a large nonzero first value must not flash on the first observation.
     assert!(!latch.observe_at(40_000, base));
 }
 
@@ -42,8 +41,7 @@ fn a_decrease_also_lights_the_latch() {
     let mut latch = ActivityLatch::default();
     let base = Instant::now();
     latch.observe_at(100, base);
-    // A rewound counter (e.g. after loading an older save state) still
-    // counts as a change and blips the light once.
+    // A rewound counter still counts as a change and blips the light once.
     assert!(latch.observe_at(40, at(base, 1)));
 }
 
@@ -53,8 +51,7 @@ fn same_value_reobserved_within_hold_stays_lit() {
     let base = Instant::now();
     latch.observe_at(10, base);
     latch.observe_at(11, at(base, 1));
-    // Re-observing the same value doesn't reset the hold window, but
-    // doesn't cut it short either.
+    // Re-observing the same value neither resets nor cuts short the hold window.
     assert!(latch.observe_at(11, at(base, 50)));
 }
 
@@ -65,10 +62,7 @@ fn a_second_change_before_the_first_hold_expires_resets_the_hold_from_itself() {
     latch.observe_at(10, base);
     latch.observe_at(11, at(base, 1)); // first change; hold alone would expire at t=1+HOLD
     latch.observe_at(12, at(base, 50)); // second change, well inside that hold window
-    // Past when the FIRST change's hold alone would have expired, but still
-    // within the hold re-extended by the second change: still lit. This is
-    // the only way to prove the timer reset from the second change rather
-    // than just outlasting the first.
+    // Past the first change's hold alone, but still within the hold re-extended by the second: proves the timer reset.
     assert!(latch.observe_at(12, at(base, 1) + ACTIVITY_HOLD));
     // Past the second change's own hold window: idle again.
     assert!(!latch.observe_at(12, at(base, 50) + ACTIVITY_HOLD));
@@ -88,8 +82,7 @@ fn reel_advances_forward_with_playback_position() {
 
 #[test]
 fn reel_forward_accumulation_past_tau_wraps_via_rem_euclid() {
-    // 45 bytes at REEL_ANGLE_PER_BYTE (TAU/40) is more than one full turn —
-    // the forward-wrap counterpart to the rewind case below.
+    // 45 bytes at REEL_ANGLE_PER_BYTE is more than one full turn — the forward-wrap counterpart to the rewind case below.
     let mut reel = TapeReel::default();
     let raw = 45.0 * REEL_ANGLE_PER_BYTE;
     assert!(
@@ -107,17 +100,14 @@ fn reel_spins_backward_on_rewind() {
         ..Default::default()
     };
     let angle = reel.advance(100, true, 0.0);
-    // Rewinding 10 bytes must turn the reel the opposite way, wrapped into
-    // 0..TAU (a bare negative angle would be a bug: the icon compares raw
-    // radians, and comparisons must stay well-defined across a rewind).
+    // Rewinding must turn the reel the opposite way, wrapped into 0..TAU — a bare negative angle would break radian comparisons.
     let expected = (-10.0 * REEL_ANGLE_PER_BYTE).rem_euclid(TAU);
     assert!((angle - expected).abs() < 1e-6);
 }
 
 #[test]
 fn reel_keeps_turning_while_parked_with_motor_running() {
-    // Position didn't move (spin-up, or MOTOR ON with the tape parked) but
-    // the motor's on: the reel still turns, at MOTOR_REEL_SPEED.
+    // Position didn't move, but the motor's on: the reel still turns, at MOTOR_REEL_SPEED.
     let mut reel = TapeReel {
         last_pos: 50,
         ..Default::default()

@@ -1,11 +1,8 @@
 use super::*;
 use crate::dmp105_font;
 
-/// Render `paper`'s dots in `[y0, y1)` as a compact debug string: one
-/// line per row, `#`/`.` per dot column between `x0` and `x1` — a small
-/// helper for debugging test failures, not a fixture format tests
-/// assert against (per
-/// pattern representations ... not giant ASCII-art fixtures").
+/// Render `paper`'s dots in `[y0, y1)` as a compact debug string: one line
+/// per row, `#`/`.` per dot column — a debugging aid, not a fixture format.
 #[allow(dead_code)]
 fn ascii_art(paper: &Paper, x0: u32, x1: u32, y0: u32, y1: u32, step: u32) -> String {
     let mut out = String::new();
@@ -31,18 +28,13 @@ fn feed_str(dmp: &mut DMP105, bytes: &[u8]) {
     }
 }
 
-/// A blank glyph advances `x` (the 12-dot cell) without marking any
-/// dots, so column position between characters can be checked purely
-/// from `dot_spacing() * CELL_DOTS`.
+/// A blank glyph advances `x` by the 12-dot cell without marking any dots.
 fn normal_cell_width() -> u32 {
     CELL_DOTS * Pitch::Normal.dot_spacing()
 }
 
-/// Regression: `1C 1C 1C` (repeat of the repeat introducer) once
-/// re-entered `feed` and rebuilt its own spawning state without bound —
-/// a stack overflow on three bytes of arbitrary traffic. Inside a
-/// repeat, `c` is data: an undefined CP code that prints the `X`
-/// placeholder glyph, `n` times, and the state machine ends clean.
+/// Regression: `1C 1C 1C` must not stack-overflow — inside a repeat, `c` is
+/// data, printed as the undefined-code `X` placeholder `n` times.
 #[test]
 fn repeating_the_repeat_introducer_terminates_and_prints_placeholders() {
     let mut dmp = DMP105::default();
@@ -61,15 +53,13 @@ fn repeating_the_escape_introducer_terminates() {
     let mut dmp = DMP105::default();
     feed_str(&mut dmp, &[control::REPEAT, 2, control::ESC]);
     assert_eq!(dmp.x, 2 * normal_cell_width());
-    // Not left in Pending::Esc: a following 'Z' is a glyph, not a
-    // selector byte.
+    // Not left in Pending::Esc: a following 'Z' is a glyph, not a selector byte.
     feed_str(&mut dmp, b"Z");
     assert_eq!(dmp.x, 3 * normal_cell_width());
 }
 
-/// Head-position arithmetic saturates instead of overflowing (a panic
-/// in debug builds): the interpreter must survive arbitrary input
-/// volumes.
+/// Head-position arithmetic saturates instead of overflowing, so the
+/// interpreter survives arbitrary input volumes.
 #[test]
 fn head_position_saturates_at_extremes() {
     let mut dmp = DMP105 {
@@ -83,9 +73,8 @@ fn head_position_saturates_at_extremes() {
     assert_eq!(dmp.x, u32::MAX);
 }
 
-/// Ink past the physical 8" print zone is dropped — the head can't be
-/// there, and unbounded x would otherwise grow the paper model without
-/// limit on a CR-less stream.
+/// Ink past the physical 8" print zone is dropped, so an unbounded CR-less
+/// stream can't grow the paper model without limit.
 #[test]
 fn marks_beyond_print_width_are_dropped() {
     let mut dmp = DMP105 {
@@ -101,10 +90,7 @@ fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
     let mut dmp = DMP105::new();
     feed_str(&mut dmp, b"HELLO\r");
 
-    // 'H' is the widened uppercase H: a solid vertical stroke at column 1
-    // (all 7 body rows, since the crossbar's row also coincides with the
-    // already-solid stroke) — check it lands exactly at x=0 (first cell)
-    // and y=0 (default head position).
+    // 'H's left stroke is solid across all 7 body rows; check it lands at x=0, y=0.
     let cell = normal_cell_width();
     let col1_dots = dmp.paper.dots_in_range(0, DESCENDER_ROW);
     let h_col1: Vec<u32> = col1_dots
@@ -114,9 +100,7 @@ fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
         .collect();
     assert_eq!(h_col1, vec![0, 1, 2, 3, 4, 5, 6], "H's left stroke column");
 
-    // Five glyph cells wide (H,E,L,L,O), so the next cell after 'O'
-    // starts at x = 5 * cell width — spot check that some dot exists in
-    // O's cell (columns 4*cell..5*cell) and none at exactly 5*cell.
+    // Five glyph cells wide (H,E,L,L,O); spot check ink within O's cell and none just past it.
     let fifth_cell_dots = dmp.paper.dots_in_range(0, DESCENDER_ROW);
     assert!(
         fifth_cell_dots
@@ -129,8 +113,7 @@ fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
         "no ink expected one dot past the fifth cell"
     );
 
-    // CR (default NL mode CR+LF) returns x to 0 and feeds one line at
-    // the default 1/6" pitch (12 y-units).
+    // CR (default NL mode CR+LF) returns x to 0 and feeds one line at the default 1/6" pitch.
     assert_eq!(dmp.x, 0);
     assert_eq!(dmp.y, LF_PITCH_1_6);
 }
@@ -189,10 +172,7 @@ fn elongation_doubles_dot_spacing_and_cell_advance() {
     feed_str(&mut elongated, b"A");
     assert_eq!(elongated.x, normal_advance * 2);
 
-    // Every glyph column of 'A' also lands twice as far apart. Find the
-    // first column with a row-0 dot from the font data itself (rather
-    // than hand-guessing which column that is) and check it landed at
-    // twice the normal dot spacing.
+    // Find the first row-0 dot column from the font data and check it landed at twice the normal spacing.
     let dot = Pitch::Normal.dot_spacing();
     let glyph = dmp105_font::ascii_glyph(b'A').unwrap();
     let first_row0_col = glyph
@@ -219,16 +199,13 @@ fn underline_marks_full_cell_width_on_descender_row() {
         .into_iter()
         .map(|(x, _)| x)
         .collect();
-    // A solid rule stepped at `dot` across the whole cell width means
-    // x=0 and the last in-range multiple of `dot` before `width` must
-    // both be present.
+    // A solid rule stepped at `dot` covers x=0 and the last in-range multiple of `dot` before `width`.
     assert!(rule_dots.contains(&0));
     let last_step = ((width - 1) / dot) * dot;
     assert!(rule_dots.contains(&last_step));
     feed_str(&mut dmp, b"\x0E"); // end underline
     feed_str(&mut dmp, b"B");
-    // 'B' cell (second cell) must NOT get a descender-row rule now that
-    // underline is off.
+    // 'B' cell must NOT get a descender-row rule now that underline is off.
     let second_cell_start = CELL_DOTS * dot;
     let second_cell_end = second_cell_start + CELL_DOTS * dot;
     let rule_in_b_cell = dmp
@@ -257,8 +234,7 @@ fn bold_strikes_every_column_twice_one_dot_over() {
         "bold must double every dot via its one-column-over second pass"
     );
 
-    // Cell advance itself is unaffected by bold (only elongation
-    // changes cell width).
+    // Cell advance itself is unaffected by bold (only elongation changes cell width).
     assert_eq!(bold.x, plain.x);
 }
 
@@ -328,13 +304,7 @@ fn graphics_mode_enter_data_lf_and_exit_round_trip() {
 
 #[test]
 fn graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts() {
-    // See the module doc comment: `dmp105-protocol.md` states "11
-    // full-pitch LFs = 18 graphics LFs exactly", but the individually-
-    // verified numbers for those two facts (12 y-units per default text
-    // LF, 7 y-units per graphics LF) do not actually satisfy that
-    // equality, and no other integer y-unit choice can (126 is not
-    // divisible by 11). This test documents the arithmetic rather than
-    // asserting a fabricated resolution.
+    // See the module doc comment: the manual's "11 full-pitch LFs = 18 graphics LFs" identity does not hold under the individually-verified unit values; this documents that rather than asserting a fabricated resolution.
     let full_pitch_total = 11 * LF_PITCH_1_6;
     let graphics_total = 18 * GRAPHICS_LF_UNITS;
     assert_eq!(full_pitch_total, 132);
@@ -349,9 +319,7 @@ fn graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts() {
 #[test]
 fn head_positioning_sets_absolute_column_including_explicit_zero_band() {
     let mut dmp = DMP105::new();
-    // 1B 10 n1 n2, n1=0 n2=0: the worked example's "mandatory CHR$(0)"
-    // case -- must be accepted as a real 2-byte operand pair, not
-    // skipped because the value is zero.
+    // n1=0 n2=0 must be accepted as a real 2-byte operand pair, not skipped as zero.
     feed_str(&mut dmp, b"\x1B\x10\x00\x00");
     assert_eq!(dmp.x, 0);
 
@@ -385,8 +353,7 @@ fn esc_5a_feeds_immediately_esc_5b_only_latches() {
     let mut immediate = DMP105::new();
     feed_str(&mut immediate, b"\x1B\x5A\x0A"); // ESC 5A 10: feed 10/72" now
     assert_eq!(immediate.y, 10);
-    // Latched pitch is untouched by the immediate feed: a later plain
-    // LF still uses the default 1/6" pitch.
+    // Latched pitch is untouched: a later plain LF still uses the default 1/6" pitch.
     immediate.feed(control::LF);
     assert_eq!(immediate.y, 10 + LF_PITCH_1_6);
 

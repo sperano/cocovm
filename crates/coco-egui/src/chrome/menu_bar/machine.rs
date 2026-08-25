@@ -4,10 +4,9 @@
 use crate::*;
 
 impl CocoApp {
-    /// The Machine menu: cartridges, the MultiPak and its slots, disk
-    /// and VHD drives, DriveWire, and print capture. The cassette deck
-    /// lives in the status bar's tape entry alone
-    /// (`CocoApp::tape_menu_ui`), not here.
+    /// The Machine menu: cartridges, MultiPak, disk/VHD drives, DriveWire,
+    /// and print capture. The cassette deck lives in the status bar's tape
+    /// entry, not here.
     pub(super) fn machine_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("Reset").clicked() {
             self.machine.reset();
@@ -94,11 +93,9 @@ impl CocoApp {
         }
     }
 
-    /// The Disto real-time clock plugged straight into the port. No manual
-    /// "sync to host clock" item: the RTC always runs on the injected host
-    /// clock (`host_time_source`), and a guest-side `setime` offset sticking
-    /// until the next power cycle is real MSM6242 behavior (`coco-core`'s
-    /// `rtc.rs`).
+    /// The Disto real-time clock. No manual sync item — the RTC runs on the
+    /// host clock, and a guest `setime` offset sticking until power-cycle is
+    /// real MSM6242 behavior.
     fn machine_rtc_items(&mut self, ui: &mut egui::Ui) {
         let direct_port = self.mpi.is_none();
         if ui

@@ -190,15 +190,8 @@ impl MC6809 {
         self.nmi_armed = false;
     }
 
-    /// Load the stack pointer as a program action, arming NMI recognition
-    /// ([`Self::nmi_armed`]). External writers (e.g. the debugger's register
-    /// editor) should use this rather than writing `s` directly.
-    //
-    // The manual doesn't enumerate which instructions count as "loading" S
-    // and the references disagree (XRoar arms on any S write including
-    // PSHS/PULS; MAME only on LDS/LEAS/TFR into S): our arming set is
-    // XRoar's minus the push/pull pointer-movement cases, a superset of
-    // MAME's.
+    /// Loads the stack pointer as a program action, arming NMI recognition
+    /// ([`Self::nmi_armed`]); external writers should use this instead of writing `s` directly.
     pub fn load_s(&mut self, v: u16) {
         self.s = v;
         self.nmi_armed = true;
@@ -239,9 +232,8 @@ impl MC6809 {
         true
     }
 
-    /// Common interrupt sequence: stack the frame (unless `CWAI` already did),
-    /// set the requested masks, and vector. `entire` selects the full frame (E=1)
-    /// vs the FIRQ partial frame (E=0).
+    /// Common interrupt sequence: stacks the frame (unless `CWAI` already did),
+    /// sets the requested masks, and vectors. `entire` selects the full frame (E=1) vs FIRQ's partial (E=0).
     fn take_interrupt(
         &mut self,
         bus: &mut impl Bus,

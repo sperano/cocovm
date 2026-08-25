@@ -17,12 +17,8 @@ use super::{SystemBus, mmu_index};
 
 impl SystemBus {
     /// Becker-port read intercept ($FF41/$FF42): `Some` when the Becker port
-    /// is enabled and `addr` is one of the two registers, in which case the
-    /// caller must return it directly — this takes precedence over
-    /// cartridge dispatch (`CART_BASE..=CART_LAST`) on every I/O decode
-    /// path, GIME and plain-SAM alike (MAME installs Becker handlers over
-    /// the cart range). `None` otherwise, so the caller falls through to its
-    /// normal decode (cartridge included).
+    /// is enabled and `addr` is one of the two registers — takes precedence
+    /// over cartridge dispatch on every I/O decode path (MAME installs Becker handlers over the cart range).
     pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
         let dw = self.drivewire.as_mut()?;
         match addr {
@@ -33,9 +29,7 @@ impl SystemBus {
     }
 
     /// Becker-port write intercept: `true` when the Becker port is enabled
-    /// and `addr` was one of the two registers (handled — including $FF41,
-    /// which is swallowed), so the caller must not fall through to its
-    /// normal decode. `false` otherwise.
+    /// and `addr` was one of the two registers (handled, including $FF41 which is swallowed).
     pub(super) fn becker_write(&mut self, addr: u16, val: u8) -> bool {
         if self.drivewire.is_none() {
             return false;
@@ -52,15 +46,13 @@ impl SystemBus {
     }
 
     pub(super) fn io_read(&mut self, addr: u16) -> u8 {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's
-        // handler-installation order over the SCS window.
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's handler-installation order.
         if let Some(v) = self.becker_read(addr) {
             return v;
         }
         match addr {
             IO_BASE..=PIA0_LAST => {
-                // Refresh port A's input pins (keyboard rows + joystick
-                // comparator/buttons) before the PIA read.
+                // Refresh port A's input pins (keyboard rows + joystick) before the PIA read.
                 self.pia0.a.input = self.pia0_pa_pins();
                 self.pia0.read((addr & 0x03) as u8)
             }
@@ -91,8 +83,7 @@ impl SystemBus {
     }
 
     pub(super) fn io_write(&mut self, addr: u16, val: u8) {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's
-        // handler-installation order over the SCS window.
+        // Becker-port precedence over cartridge dispatch — mirrors MAME's handler-installation order.
         if self.becker_write(addr, val) {
             return;
         }
@@ -148,22 +139,12 @@ impl SystemBus {
 
     /// PIA1 register write ($FF20-$FF23, mirrored through $FF3F): the PIA
     /// register write itself, the Port-A-gated cassette DAC tap, and the
-    /// sound-mux touch — shared by both this (GIME I/O-page) path and the
-    /// plain-SAM path (`sam_path.rs`'s `sam_io_write`), which see the exact
-    /// same PIA1 wiring.
+    /// sound-mux touch — shared by both the GIME I/O-page path and the plain-SAM path.
     pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
         let reg = addr & PIA1_REG_MASK;
         self.pia1.write(reg as u8, val);
-        // Cassette record-out is a direct, unconditional tap of the DAC
-        // (not gated by SNDEN/the mux — `cassette-verified-facts`), but
-        // it only samples on Port A output/DDR writes, not CRA ($FF21)
-        // writes: MAME's `update_cassout()` is called exclusively from
-        // `pia1_pa_changed()`, never from `pia1_ca2_w()` (the CA2
-        // motor-relay callback) — and `write_control()`'s CRA path
-        // never touches `port.output`/`port.ddr` anyway, so a CRA-only
-        // write can't change the DAC value. Sampling on CRA writes
-        // would just re-announce the unchanged level as a spurious
-        // transition right after motor-off resets `last_level`.
+        // Cassette record-out is a direct, unconditional tap of the DAC, but only samples on Port
+        // A output/DDR writes, not CRA writes: MAME's `update_cassout()` runs only from `pia1_pa_changed()`.
         if reg == PIA1_PORT_A_OFFSET {
             let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
             self.cassette.record_dac(dac, self.pia1.a.c2_output());

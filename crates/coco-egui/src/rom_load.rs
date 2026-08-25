@@ -2,9 +2,8 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
 
-/// Read an explicit system ROM image as-is: a CoCo 3 image, or — for CoCo 1/2
-/// — an already pre-composed flat layout (extbas at offset 0, Color BASIC at
-/// offset $2000).
+/// Read an explicit system ROM image as-is — a CoCo 3 image, or a pre-composed
+/// CoCo 1/2 flat layout (extbas at offset 0, Color BASIC at offset $2000).
 pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
     match std::fs::read(path) {
         Ok(bytes) => {
@@ -19,15 +18,9 @@ pub(crate) fn load_explicit_rom(path: &Path) -> Result<Box<[u8]>, String> {
 /// [`load_default_rom`] reads and records as its [`ROMSource::File`].
 pub(crate) const COCO3_ROM_FILE: &str = "coco3.rom";
 
-/// Load the default boot ROM set for `variant` from `roms_dir` (in
-/// production always [`installed_roms_dir`]; tests pass fixture
-/// directories): [`COCO3_ROM_FILE`] for the CoCo 3, or a flat image
-/// composed from the newest Color/Extended BASIC dumps present for CoCo 1/2
-/// ([`compose_coco12_rom`]) — paired with the [`ROMSource`] a snapshot needs
-/// to re-resolve/hash the same bytes, built here so the file read and the
-/// recorded source can't drift apart. Failures are returned rather than
-/// fatal because the manager reports them inline in its detail pane
-/// (`launch_machine`'s contract).
+/// Load the default boot ROM set for `variant` from `roms_dir`: the CoCo 3
+/// system ROM, or a composed CoCo 1/2 image. Errors are returned, not fatal —
+/// the manager reports them inline.
 pub(crate) fn load_default_rom(
     variant: MachineVariant,
     roms_dir: &Path,
@@ -113,12 +106,9 @@ pub(crate) enum Coco12ROMResult {
     NoColorBasic,
 }
 
-/// Search `roms_dir` for the newest-present Color BASIC dump (required) and
-/// Extended Color BASIC dump (optional) and lay them out the way `bus.rs`'s
-/// plain-SAM decode expects. Missing Extended BASIC leaves that half of the
-/// image at [`OPEN_BUS_FILLER`] rather than failing — a Color-BASIC-only
-/// machine still boots. Pure (no I/O side
-/// effects beyond reading `roms_dir`, no process exit) so it's unit-testable.
+/// Search `roms_dir` for the newest-present Color BASIC (required) and
+/// Extended Color BASIC (optional) dumps, laid out for `bus.rs`'s plain-SAM
+/// decode. Missing Extended BASIC leaves that half at [`OPEN_BUS_FILLER`].
 pub(crate) fn compose_coco12_rom(roms_dir: &Path) -> Coco12ROMResult {
     let Some((bas_path, bas_bytes)) = find_rom(roms_dir, COCO_BASIC_CANDIDATES) else {
         return Coco12ROMResult::NoColorBasic;
@@ -138,9 +128,8 @@ pub(crate) fn compose_coco12_rom(roms_dir: &Path) -> Coco12ROMResult {
     }
 }
 
-/// One advisory log line per loaded system ROM, checked against the
-/// MAME-derived manifest ([`coco_core::rom_db`]). Never fatal: patched and
-/// homebrew images are legitimate, but a corrupt known dump should say so.
+/// Logs one advisory line per loaded ROM against the MAME-derived manifest
+/// ([`coco_core::rom_db`]). Never fatal — patched/homebrew images are legitimate.
 pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
     use coco_core::rom_db::{self, Validation};
     let name = path
@@ -180,20 +169,14 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
-/// The per-user installed ROM directory ([`crate::paths::roms_dir`],
-/// populated from the asset tarball by [`crate::startup::ensure_assets`]):
-/// where the manager's [`launch_machine`] default-resolves system and
-/// peripheral ROMs from.
-///
-/// The `expect` fires only when no home directory can be determined — a
-/// state `ensure_assets` already turned into a process exit before the
-/// manager could launch anything.
+/// The per-user installed ROM directory, populated by
+/// [`crate::startup::ensure_assets`]. Panics only if no home directory can be
+/// determined — a state `ensure_assets` already exits the process for.
 pub(crate) fn installed_roms_dir() -> PathBuf {
     crate::paths::roms_dir().expect("no home directory (checked at startup by ensure_assets)")
 }
 
-/// Where [`CocoApp::ensure_disk_controller`]/[`CocoApp::mpi_insert_fd502`]
-/// (and, for save-state hashing, [`save_state`]) read the FD-502's Disk
+/// Where the FD-502 disk controller and save-state hashing read the Disk
 /// BASIC ROM from.
 pub(crate) fn disk_basic_rom_path() -> PathBuf {
     installed_roms_dir().join("disk11.rom")

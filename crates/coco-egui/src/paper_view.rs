@@ -64,11 +64,8 @@ impl PaperWindow {
         Self::default()
     }
 
-    /// Detach the current sink handle: closes the window and drops every
-    /// cached page texture (a fresh handle later means fresh, unrelated
-    /// content). Called when print-file-capture takes over the bit-banger's
-    /// sink out from under this window (`CocoApp::start_print_capture`'s
-    /// symmetric rule).
+    /// Detaches the current sink handle: closes the window and drops every cached page texture
+    /// (a fresh handle means fresh, unrelated content). Called when print-file-capture takes the bit-banger's sink out from under this window.
     pub fn detach(&mut self) {
         self.handle = None;
         self.open = false;
@@ -77,15 +74,8 @@ impl PaperWindow {
         self.pending_tear_off = false;
     }
 
-    /// Re-bind this window after a snapshot restore replaces the live
-    /// machine (`crate::CocoApp::load_state_from`). `Some(handle)` — the
-    /// restored bit-banger's sink came back as a live DMP-105 — drops every
-    /// cached page texture (rendered from the old machine's roll, unrelated
-    /// to the restored one) but, unlike [`Self::detach`], leaves `open`
-    /// alone, so a window the user had open stays open, now showing the
-    /// restored paper. `None` — nothing was attached at save time, or it was
-    /// a file capture (always restored as stopped) — has nothing to show, so
-    /// this just delegates to `detach`.
+    /// Re-binds this window after a snapshot restore replaces the live machine. `Some(handle)`
+    /// drops every cached page texture but leaves `open` alone; `None` delegates to [`Self::detach`].
     pub fn resync(&mut self, handle: Option<DMP105Handle>) {
         match handle {
             Some(handle) => {
@@ -98,11 +88,8 @@ impl PaperWindow {
         }
     }
 
-    /// Total pages currently spanning the roll for a given [`PaperExtent`]:
-    /// always at least one page shown, always at least one blank page
-    /// beyond the last printed line — the same "+2 pages" rule
-    /// `examples/paper_preview.rs` uses. Pure function of the extent (not
-    /// `&self`) so it's independently testable without a live handle.
+    /// Total pages currently spanning the roll for a given [`PaperExtent`]: always at least one
+    /// page shown, plus one blank page beyond the last printed line. Pure function so it's testable without a live handle.
     fn total_pages_for_extent(extent: PaperExtent) -> u32 {
         let last_content_page = if extent.dot_count == 0 {
             0
@@ -113,11 +100,8 @@ impl PaperWindow {
         last_content_page + 2
     }
 
-    /// Tear off: discard the printed roll ([`DMP105Handle::tear_off`]) and
-    /// reset every bit of view state that referred to the old roll's
-    /// content, so the next `ui()` frame (or a export call) sees a fresh,
-    /// blank single page rather than stale cached textures or an
-    /// out-of-range `current_page`. No-op if no handle is attached.
+    /// Tears off: discards the printed roll ([`DMP105Handle::tear_off`]) and resets every view
+    /// state that referred to the old roll, so the next frame sees a fresh blank page. No-op if no handle is attached.
     fn perform_tear_off(&mut self) {
         if let Some(handle) = &self.handle {
             handle.tear_off();
@@ -127,11 +111,8 @@ impl PaperWindow {
         self.pending_tear_off = false;
     }
 
-    /// Draw the window if open and a handle is attached; a no-op frame
-    /// otherwise (called unconditionally once per `update()`, like the
-    /// other optional windows in `main.rs`). Returns an error message to
-    /// surface (e.g. via `CocoApp::cart_error`, the app's shared error
-    /// banner) if a PNG/PDF export failed.
+    /// Draws the window if open and a handle is attached; a no-op frame otherwise. Returns an
+    /// error message to surface if a PNG/PDF export failed.
     pub fn ui(&mut self, ctx: &egui::Context) -> Option<String> {
         let handle = self.handle.clone()?;
         if !self.open {
@@ -144,18 +125,14 @@ impl PaperWindow {
 
         let extent = handle.paper_extent();
         let total_pages = Self::total_pages_for_extent(extent);
-        // Pages with any ink on them. `total_pages - 1` (dropping the
-        // trailing blank page) only counts ink pages when there IS ink —
-        // a blank roll still shows paper (`total_pages == 2`) but has zero
-        // printed pages, and the tear-off confirm must not claim otherwise.
+        // Pages with ink: `total_pages - 1` only counts them when there IS ink — a blank roll still shows paper but has zero printed pages.
         let printed_pages = if extent.dot_count == 0 {
             0
         } else {
             total_pages - 1
         };
 
-        // One stable ID so egui reuses the same native OS window across
-        // frames instead of spawning a new one.
+        // One stable ID so egui reuses the same native OS window across frames.
         let viewport_id = egui::ViewportId::from_hash_of("printer-paper");
         let builder = egui::ViewportBuilder::default()
             .with_title("Printer Paper")
@@ -169,9 +146,7 @@ impl PaperWindow {
                 paper_render::WINDOW_BG_COLOR[3],
             );
             if class == egui::ViewportClass::Embedded {
-                // Backend without native multi-window support: fall back to
-                // the embedded in-viewport window this view used before it
-                // became a native one.
+                // Backend without native multi-window support: fall back to the embedded in-viewport window.
                 let mut open = self.open;
                 egui::Window::new(crate::window_title(ctx, "Printer Paper"))
                     .open(&mut open)
@@ -189,8 +164,7 @@ impl PaperWindow {
                     .show(ctx, |ui| {
                         self.contents(ui, &handle, total_pages, printed_pages, &mut error);
                     });
-                // The OS close button: accept the close by not showing the
-                // viewport next frame (mirrors the View-menu checkbox).
+                // The OS close button: accept the close by not showing the viewport next frame.
                 if ctx.input(|i| i.viewport().close_requested()) {
                     self.open = false;
                 }
@@ -210,10 +184,7 @@ impl PaperWindow {
         let Some((y0, y1)) = handle.take_dirty() else {
             return;
         };
-        // Widen by the rasterizer's dot-bleed pad: a dot near a page
-        // edge also renders into the adjacent page's texture, which
-        // must be invalidated too or it keeps a stale sliver at the
-        // seam.
+        // Widen by the rasterizer's dot-bleed pad: a dot near a page edge also renders into the adjacent page's texture.
         let y0 = y0.saturating_sub(paper_render::DOT_QUERY_PAD_Y_UNITS);
         let y1 = y1.saturating_add(paper_render::DOT_QUERY_PAD_Y_UNITS);
         let y0_in = y0 as f32 / Y_UNITS_PER_INCH as f32;
@@ -224,9 +195,8 @@ impl PaperWindow {
             .retain(|&page, _| page < first_page || page > last_page);
     }
 
-    /// Green-bar toggle is a whole-page rendering choice: invalidate the
-    /// whole cache in one shot when it changes, rather than tracking it per
-    /// page.
+    /// Green-bar toggle is a whole-page rendering choice: invalidates the whole cache in one
+    /// shot when it changes, rather than tracking it per page.
     fn invalidate_on_green_bar_change(&mut self) {
         if self.green_bar != self.cached_green_bar {
             self.pages.clear();
@@ -234,9 +204,8 @@ impl PaperWindow {
         }
     }
 
-    /// Confirm/cancel modal for "Tear Off", shown when [`Self::pending_tear_off`]
-    /// is set. Same confirm/cancel modal pattern as `CocoApp`'s
-    /// `pending_disk_action` dialog in `main.rs`.
+    /// Confirm/cancel modal for "Tear Off", shown when [`Self::pending_tear_off`] is set. Same
+    /// pattern as `CocoApp`'s `pending_disk_action` dialog.
     fn tear_off_dialog(&mut self, ctx: &egui::Context, printed_pages: u32) {
         let font = ctx.style().text_styles[&egui::TextStyle::Button].size;
         const DIALOG_MARGIN: i8 = 16;
@@ -269,10 +238,8 @@ impl PaperWindow {
             });
     }
 
-    /// Everything inside the paper window: the header row (page count,
-    /// green bar, Export menu, Tear Off) and the scrolling fanfold view.
-    /// Shared verbatim between the native-viewport and embedded-fallback
-    /// paths of [`Self::ui`].
+    /// Everything inside the paper window: the header row (page count, green bar, Export menu,
+    /// Tear Off) and the scrolling fanfold view. Shared between the native-viewport and embedded-fallback paths of [`Self::ui`].
     fn contents(
         &mut self,
         ui: &mut egui::Ui,
@@ -305,9 +272,8 @@ impl PaperWindow {
         self.fanfold_scroll_area(ui, &ctx, handle, total_pages);
     }
 
-    /// The header row's "Export" menu button: PNG (current page or whole
-    /// roll) and PDF (fanfold with tractor strips, or trimmed 8.5x11)
-    /// exports (T6).
+    /// The header row's "Export" menu button: PNG (current page or whole roll) and PDF (fanfold
+    /// with tractor strips, or trimmed 8.5x11) exports.
     fn export_menu(
         &mut self,
         ui: &mut egui::Ui,
@@ -342,9 +308,7 @@ impl PaperWindow {
                     .set_file_name("roll.png")
                     .save_file()
                 {
-                    // The whole printed roll plus the trailing
-                    // blank page, so the image ends on a page
-                    // boundary (T6).
+                    // The whole printed roll plus the trailing blank page, so the image ends on a page boundary.
                     let img = paper_render::rasterize(
                         handle,
                         0.0,
@@ -411,10 +375,8 @@ impl PaperWindow {
         });
     }
 
-    /// The scrolling fanfold view: allocates one rect per page at fit-width
-    /// scale, lazily rasterizing/uploading a texture for any page that
-    /// enters the viewport-plus-[`KEEP_MARGIN_PAGES`] keep range, and
-    /// evicting cached textures for pages that fall back outside it.
+    /// The scrolling fanfold view: allocates one rect per page at fit-width scale, lazily
+    /// rasterizing/uploading a texture for any page entering the viewport-plus-[`KEEP_MARGIN_PAGES`] keep range, evicting the rest.
     fn fanfold_scroll_area(
         &mut self,
         ui: &mut egui::Ui,
@@ -429,15 +391,11 @@ impl PaperWindow {
             PAGE_HEIGHT_IN * RASTER_DPI * scale,
         );
         let keep_margin_px = page_size.y * KEEP_MARGIN_PAGES;
-        // Copied out before the loop so the per-page texture-building
-        // closure below doesn't need to re-borrow `self` while
-        // `self.pages.entry(...)` already holds a mutable borrow of
-        // the `pages` field.
+        // Copied out before the loop: the closure can't re-borrow `self` while `self.pages.entry(...)` holds a mutable borrow.
         let green_bar = self.green_bar;
 
         let mut keep_pages: HashSet<u32> = HashSet::new();
-        // Page topmost in the viewport this frame — see
-        // `current_page`'s field doc comment.
+        // Page topmost in the viewport this frame.
         let mut current_page_local = self.current_page;
 
         egui::ScrollArea::vertical()

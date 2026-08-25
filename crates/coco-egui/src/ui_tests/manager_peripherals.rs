@@ -11,17 +11,15 @@ use crate::*;
 
 use super::harness::*;
 
-/// "New" creates the machine immediately; picking Cartridge = FD-502 in
-/// the detail pane's form auto-saves `[peripherals].fd502` into the
-/// definition file — no Save button involved.
+/// "New" creates the machine immediately; picking Cartridge = FD-502
+/// auto-saves `[peripherals].fd502` into the definition file.
 #[test]
 fn manager_edit_with_fd502_records_the_peripheral() {
     let dir = TempDir::new("create-fd502");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    // Pane combos showing "None": Cassette (its row sits above Cartridge),
-    // then Cartridge, then the VHDs — Cartridge is second.
+    // Combos showing "None": Cassette, then Cartridge, then the VHDs — Cartridge is second.
     select_combo_at(&mut harness, "None", 1, "FD-502");
 
     assert_eq!(harness.state().entries.len(), 1);
@@ -56,8 +54,7 @@ fn manager_edit_with_mpi_records_the_peripheral() {
 }
 
 /// A Disto RTC — in the port or slotted — records `peripherals.rtc` (the
-/// schema keeps no slot layout; launch re-seats a slotted clock in its
-/// default slot). Fully UI-driven through the pane's combos.
+/// schema keeps no slot layout; launch re-seats a slotted clock in its default slot).
 #[test]
 fn manager_edit_with_rtc_records_the_peripheral() {
     let dir = TempDir::new("create-rtc");
@@ -83,11 +80,8 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     assert!(def.peripherals.rtc && def.peripherals.mpi);
 }
 
-/// A ROM Pak — in the port or in an MPI slot — records `[media].cart`; two
-/// slotted paks exceed what the schema can represent, so that change is
-/// refused with an inline error and nothing is saved. Picks are seeded on
-/// the edit form directly, since the combo's "ROM Pak…" item opens a
-/// native file dialog a headless harness can't drive.
+/// A ROM Pak — in the port or in an MPI slot — records `[media].cart`.
+/// Seeded directly on the edit form: the combo's own item opens a native file dialog.
 #[test]
 fn manager_edit_with_rom_pak_records_the_cart() {
     let pak = PathBuf::from("/paks/game.ccc");
@@ -123,9 +117,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
     assert!(def.peripherals.mpi);
 
-    // Two slotted paks cannot be represented in the schema: the change is
-    // refused with an inline error instead of silently dropping one, and
-    // the definition keeps the single recorded pak.
+    // Two slotted paks can't be represented in the schema: refused with an inline error.
     harness
         .state_mut()
         .edit_form_mut()
@@ -160,25 +152,15 @@ fn manager_edit_with_rs232_records_the_peripheral() {
     );
 }
 
-/// Picking Serial = "Printer (DMP-105)" in the pane's Ports fieldset
-/// auto-saves `[ports].serial = "printer"`; switching to "Print to file"
-/// updates it to `"file"`. The Ports fieldset renders below Peripherals, so
-/// its "None" combo joins the positional "None" pool after the VHDs — this
-/// exercises that ordering, verifying the existing positional Peripherals
-/// tests (e.g. `manager_edit_with_blank_disk0_places_it_in_the_artifact_dir`
-/// above) stay unaffected by the new fieldset landing after them, not
-/// between them. (The Joysticks fieldset below Ports adds two more —
-/// Left's and Right's default "None" — after this one; see
-/// `manager_edit_with_joy_sources_records_them`.)
+/// Picking Serial = "Printer (DMP-105)" auto-saves `[ports].serial =
+/// "printer"`; switching to "Print to file" updates it to `"file"`.
 #[test]
 fn manager_edit_with_serial_records_the_port() {
     let dir = TempDir::new("create-serial");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    // Screen order of the "None"-valued combos: Cassette, Cartridge, VHD 0,
-    // VHD 1, then the Ports fieldset's Serial combo — last, since Ports
-    // renders below Peripherals.
+    // "None" combo order: Cassette, Cartridge, VHD 0, VHD 1, then Serial (Ports renders below Peripherals).
     select_combo_at(&mut harness, "None", 4, "Printer (DMP-105)");
 
     assert_eq!(harness.state().entries.len(), 1);
@@ -203,11 +185,8 @@ fn manager_edit_with_serial_records_the_port() {
     );
 }
 
-/// Picking Left = "Keys" and Right = "Mouse" in the pane's Joysticks
-/// fieldset auto-saves `[ui].joy_left`/`joy_right`. Both ports default to
-/// "None" (nothing drives a port until it's opted in), so the pool of
-/// "None"-valued combos ends with them: Cassette, Cartridge, VHD 0, VHD 1,
-/// Serial (Ports), then Left and Right (Joysticks) — indexes 5 and 6.
+/// Picking Left = "Keys" and Right = "Mouse" auto-saves `[ui].joy_left`/
+/// `joy_right`; both default "None", landing at combo indexes 5 and 6.
 #[test]
 fn manager_edit_with_joy_sources_records_them() {
     let dir = TempDir::new("create-joy-sources");
@@ -230,11 +209,8 @@ fn manager_edit_with_joy_sources_records_them() {
     );
 }
 
-/// Disk 0 = Blank in the pane: a 0-byte blank image lands in the machine's
-/// artifact dir the moment it's picked, and `[media].disk0` records it by
-/// relative path. (The manager flow's Blank is the picker-free one, so this
-/// drives the whole path headlessly — the VM window's own Insert Disk ▸
-/// Blank instead opens a native save dialog.)
+/// Disk 0 = Blank: a 0-byte blank image lands in the machine's artifact dir
+/// the moment it's picked, and `[media].disk0` records it by relative path.
 #[test]
 fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
     let machines = TempDir::new("create-blank-machines");
@@ -247,10 +223,7 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
 
     click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "FD-502");
-    // Screen order of the "None"-valued combos: Cassette (its row sits
-    // above Cartridge), then Disk 0, then Disk 1, then VHD 0, then VHD 1.
-    // A picked Blank is auto-placed on the spot and its combo then shows
-    // the placed file's name, so it leaves the "None" pool immediately.
+    // "None" order: Cassette, Disk 0, Disk 1, VHD 0, VHD 1; each pick leaves the pool immediately.
     select_combo_at(&mut harness, "None", 1, "Blank");
     // Disk 0 now reads "disk0.dsk"; remaining "None"s: Cassette, Disk 1, VHDs.
     select_combo_at(&mut harness, "None", 1, "Blank");

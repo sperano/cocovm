@@ -28,12 +28,10 @@ pub trait SerialEndpoint {
     /// `None` means "nothing waiting right now", never an error.
     fn poll_rx(&mut self) -> Option<u8>;
     /// Transmit one byte to the host side. Non-blocking / best-effort — a
-    /// serial line with nothing attached on the other end just eats the
-    /// byte, exactly like real hardware with an unplugged RS-232 cable.
+    /// serial line with nothing attached just eats the byte, like real hardware with an unplugged cable.
     fn tx(&mut self, b: u8);
-    /// Data Carrier Detect: is something connected on the host side? Feeds
-    /// the ACIA's status register DCD bit
-    /// "Status bits: ... 5 DCD").
+    /// Data Carrier Detect: is something connected on the host side?
+    /// Feeds the ACIA's status register DCD bit.
     fn dcd(&self) -> bool;
 }
 
@@ -110,18 +108,14 @@ impl TCPEndpoint {
     }
 
     /// Accept a waiting connection if no client is currently attached.
-    /// One client at a time (module doc comment): a pending connection is
-    /// left in the listener's backlog until the current client goes away.
+    /// One client at a time: a pending connection stays in the listener's backlog until the current one goes away.
     fn try_accept(&mut self) {
         if self.client.is_some() {
             return;
         }
         match self.listener.accept() {
             Ok((stream, _addr)) => {
-                // A stream inherits nonblocking-ness from neither the
-                // listener nor the OS default, so it must be set
-                // explicitly; if that fails, drop the connection rather
-                // than risk a blocking read/write later.
+                // A stream must be set non-blocking explicitly; drop it if that fails.
                 if stream.set_nonblocking(true).is_ok() {
                     self.client = Some(stream);
                 }
@@ -146,9 +140,7 @@ impl SerialEndpoint for TCPEndpoint {
             Ok(_) => Some(byte[0]),
             Err(e) if e.kind() == ErrorKind::WouldBlock => None,
             Err(_) => {
-                // Any other error (reset, etc.) is treated the same as a
-                // clean disconnect: drop the client and go back to
-                // listening for the next one.
+                // Any other error is treated as a clean disconnect: drop the client and go back to listening.
                 self.client = None;
                 None
             }
@@ -158,15 +150,13 @@ impl SerialEndpoint for TCPEndpoint {
     fn tx(&mut self, b: u8) {
         self.try_accept();
         let Some(stream) = self.client.as_mut() else {
-            // Nothing attached: a serial line with an unplugged cable
-            // silently drops what's sent to it (module doc comment).
+            // Nothing attached: silently drop what's sent, like an unplugged cable.
             return;
         };
         match stream.write_all(&[b]) {
             Ok(()) => {}
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                // Send buffer momentarily full: drop this byte rather
-                // than block the CPU loop.
+                // Send buffer momentarily full: drop this byte rather than block the CPU loop.
             }
             Err(_) => {
                 self.client = None;
@@ -194,13 +184,10 @@ pub struct PTYEndpoint {
 
 #[cfg(unix)]
 impl PTYEndpoint {
-    /// Allocate a new PTY pair: `posix_openpt` the master, `grantpt` +
-    /// `unlockpt` to make the slave usable, then resolve the slave's device
-    /// path. The master fd is set non-blocking before returning.
+    /// Allocate a new PTY pair via `posix_openpt`/`grantpt`/`unlockpt`, then
+    /// resolve the slave's device path. The master fd is set non-blocking before returning.
     pub fn new() -> io::Result<Self> {
-        // SAFETY: each libc call's return value is checked before the next
-        // is made; the fd is closed on every early-return error path so no
-        // fd is leaked.
+        // SAFETY: each libc call's return is checked before the next; fd is closed on every error path.
         unsafe {
             let master_fd = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
             if master_fd < 0 {
@@ -234,19 +221,13 @@ impl PTYEndpoint {
         }
     }
 
-    /// Resolve the slave device path for `master_fd` via `ptsname_r`
-    /// (thread-safe, Linux/glibc). `ptsname_r` is not available on macOS
-    /// (`libc` doesn't bind it there), so macOS/other BSDs fall back to
-    /// `ptsname`, which is not thread-safe but is fine here since PTY
-    /// allocation isn't done concurrently.
+    /// Resolve the slave device path via `ptsname_r` (thread-safe, Linux/glibc).
+    /// Not available on macOS — see the `not(target_os = "linux")` variant below.
     #[cfg(target_os = "linux")]
     unsafe fn slave_name(master_fd: libc::c_int) -> io::Result<String> {
-        // SAFETY: caller (`Self::new`) guarantees `master_fd` is a valid,
-        // just-opened PTY master fd; `buf` is a valid buffer of the given
-        // length for the duration of the call.
+        // SAFETY: `master_fd` is a valid, just-opened PTY master fd; `buf` outlives the call.
         unsafe {
-            // `c_char` signedness is ABI-specific (i8 on x86-64/Apple,
-            // u8 on aarch64 Linux), so the buffer must use the alias.
+            // `c_char` signedness is ABI-specific, so the buffer must use the alias.
             let mut buf = [0 as libc::c_char; 128];
             if libc::ptsname_r(master_fd, buf.as_mut_ptr(), buf.len()) != 0 {
                 return Err(io::Error::last_os_error());
@@ -258,8 +239,7 @@ impl PTYEndpoint {
 
     #[cfg(not(target_os = "linux"))]
     unsafe fn slave_name(master_fd: libc::c_int) -> io::Result<String> {
-        // SAFETY: caller (`Self::new`) guarantees `master_fd` is a valid,
-        // just-opened PTY master fd.
+        // SAFETY: `master_fd` is a valid, just-opened PTY master fd.
         unsafe {
             let ptr = libc::ptsname(master_fd);
             if ptr.is_null() {
@@ -297,8 +277,7 @@ impl PTYEndpoint {
 impl SerialEndpoint for PTYEndpoint {
     fn poll_rx(&mut self) -> Option<u8> {
         let mut byte = [0u8; 1];
-        // SAFETY: `byte` is a valid 1-byte buffer for the duration of the
-        // call; `master_fd` is owned by `self` and open until `Drop`.
+        // SAFETY: `byte` outlives the call; `master_fd` is owned by `self` and open until `Drop`.
         let n = unsafe {
             libc::read(
                 self.master_fd,
@@ -306,28 +285,20 @@ impl SerialEndpoint for PTYEndpoint {
                 byte.len(),
             )
         };
-        // n == 1: got a byte. n <= 0 covers both EAGAIN/EWOULDBLOCK (no
-        // data yet, the common case while nothing is typing) and any other
-        // read error — neither is distinguishable from "no byte right now"
-        // without an errno check the ACIA doesn't need.
+        // n <= 0 covers both EAGAIN and any other read error — both mean "no byte right now".
         if n == 1 { Some(byte[0]) } else { None }
     }
 
     fn tx(&mut self, b: u8) {
         let byte = [b];
-        // SAFETY: `byte` is a valid 1-byte buffer for the call's duration;
-        // the write is best-effort per `SerialEndpoint::tx` — a full pty
-        // buffer or no reader on the slave just drops the byte, matching
-        // an unplugged RS-232 cable.
+        // SAFETY: `byte` outlives the call; a full pty buffer or no reader just drops the byte.
         unsafe {
             libc::write(self.master_fd, byte.as_ptr().cast::<libc::c_void>(), 1);
         }
     }
 
     fn dcd(&self) -> bool {
-        // True from the moment the pty pair exists: unlike a TCP socket,
-        // there's no distinct "someone connected" event for a pty short of
-        // watching the slave's open count, which isn't portably queryable.
+        // No distinct "someone connected" event for a pty short of watching the slave's open count.
         true
     }
 }
@@ -335,8 +306,7 @@ impl SerialEndpoint for PTYEndpoint {
 #[cfg(unix)]
 impl Drop for PTYEndpoint {
     fn drop(&mut self) {
-        // SAFETY: `master_fd` is owned exclusively by this struct and only
-        // ever closed here.
+        // SAFETY: `master_fd` is owned exclusively by this struct and only closed here.
         unsafe {
             libc::close(self.master_fd);
         }

@@ -171,10 +171,8 @@ impl RasterImage {
         Some((y as usize * self.width as usize + x as usize) * 4)
     }
 
-    /// Source-over composite of `rgb` at `alpha` (0.0-1.0, already including
-    /// any anti-aliasing coverage) onto the pixel at (`x`, `y`). The canvas
-    /// is always fully opaque paper, so the destination alpha channel stays
-    /// 255 and only RGB is blended.
+    /// Source-over composite of `rgb` at `alpha` (0.0-1.0, coverage-inclusive) onto the pixel
+    /// at (`x`, `y`). The canvas is always fully opaque, so only RGB is blended.
     fn composite(&mut self, x: i64, y: i64, rgb: [u8; 3], alpha: f32) {
         let Some(off) = self.pixel_offset(x, y) else {
             return;
@@ -190,10 +188,8 @@ impl RasterImage {
         self.pixels[off + 3] = 0xFF;
     }
 
-    /// Hard-set (no blending) a pixel's opaque RGB — used for green-bar
-    /// bands, which have no anti-aliased edge in the T5 spec (band
-    /// boundaries are a per-scanline step function, unlike the circles/
-    /// lines the spec does define a soft edge for).
+    /// Hard-sets (no blending) a pixel's opaque RGB — used for green-bar bands, which have no
+    /// anti-aliased edge in the T5 spec (a per-scanline step, unlike the circles/lines).
     fn set_opaque(&mut self, x: i64, y: i64, rgb: [u8; 3]) {
         let Some(off) = self.pixel_offset(x, y) else {
             return;
@@ -204,9 +200,8 @@ impl RasterImage {
         self.pixels[off + 3] = 0xFF;
     }
 
-    /// Fill a circle of `radius_px` centered at (`cx_px`, `cy_px`) with
-    /// `rgb` at `base_alpha`, anti-aliased over a ~1px edge band per the T5
-    /// spec's formula: `coverage = clamp(radius_px + 0.5 - distance_px, 0, 1)`.
+    /// Fills a circle of `radius_px` centered at (`cx_px`, `cy_px`) with `rgb` at `base_alpha`,
+    /// anti-aliased over a ~1px edge band per the T5 spec's coverage formula.
     fn fill_circle(
         &mut self,
         cx_px: f32,
@@ -232,10 +227,8 @@ impl RasterImage {
         }
     }
 
-    /// Draw a thin ring (a circle's rim only) at `radius_px` with `rim_px`
-    /// thickness, anti-aliased the same way as [`Self::fill_circle`] but
-    /// measuring distance from the ideal rim circle rather than from the
-    /// center outward.
+    /// Draws a thin ring (a circle's rim only) at `radius_px` with `rim_px` thickness,
+    /// anti-aliased like [`Self::fill_circle`] but measuring distance from the rim, not the center.
     fn draw_ring(
         &mut self,
         cx_px: f32,
@@ -286,18 +279,16 @@ impl RasterImage {
     }
 }
 
-/// Whether the green-bar band containing `y_in` (absolute roll-inches) is
-/// green: band index is computed relative to that y's *own page top*, so
-/// every page starts fresh with a non-green band (band 0), per the T5 spec.
+/// Whether the green-bar band containing `y_in` (absolute roll-inches) is green: band index
+/// is relative to that y's own page top, so every page starts fresh with a non-green band.
 fn is_green_band(y_in: f32) -> bool {
     let page_top_in = (y_in / PAGE_HEIGHT_IN).floor() * PAGE_HEIGHT_IN;
     let band_index = ((y_in - page_top_in) / GREEN_BAR_BAND_HEIGHT_IN).floor() as i64;
     band_index.rem_euclid(2) == 1
 }
 
-/// Rasterize a `height_in`-tall slice of the paper roll starting at absolute
-/// roll-y `top_in` (inches), at `dpi`, optionally with green-bar banding.
-/// See the module doc comment for the draw order and every constant used.
+/// Rasterizes a `height_in`-tall slice of the paper roll starting at absolute roll-y `top_in`
+/// (inches), at `dpi`, optionally with green-bar banding.
 pub fn rasterize<D: DotSource>(
     dots: &D,
     top_in: f32,
@@ -305,12 +296,7 @@ pub fn rasterize<D: DotSource>(
     dpi: f32,
     green_bar: bool,
 ) -> RasterImage {
-    // Sanity check on the T5 spec's own geometry constants: the printable
-    // body must fit within the tractor-strip-to-tractor-strip span. Every
-    // operand is itself a fixed constant, so clippy sees this as always
-    // true and would otherwise flag it as foldable — it's still worth
-    // stating explicitly as a guard against a future edit to one constant
-    // silently breaking that relationship.
+    // Sanity check: printable body must fit within the tractor-strip-to-tractor-strip span (guards against a future constant edit breaking this).
     #[allow(clippy::assertions_on_constants)]
     {
         debug_assert!(PRINT_AREA_LEFT_IN + PRINT_AREA_WIDTH_IN <= PAPER_WIDTH_IN - STRIP_WIDTH_IN);
@@ -342,9 +328,8 @@ pub fn rasterize<D: DotSource>(
     image
 }
 
-/// Step 2: green-bar bands, clipped to the tractor-strip-to-tractor-strip
-/// body (not the narrower print line) — a hard-edged per-scanline step, no
-/// AA.
+/// Step 2: green-bar bands, clipped to the tractor-strip-to-tractor-strip body (not the
+/// narrower print line) — a hard-edged per-scanline step, no AA.
 fn paint_green_bar_bands(image: &mut RasterImage, top_in: f32, dpi: f32, height_px: u32) {
     let strip_x0 = (STRIP_WIDTH_IN * dpi).round() as i64;
     let strip_x1 = ((PAPER_WIDTH_IN - STRIP_WIDTH_IN) * dpi).round() as i64;
@@ -382,9 +367,8 @@ fn paint_vertical_perf_lines(image: &mut RasterImage, top_in: f32, height_in: f3
     }
 }
 
-/// Step 4: horizontal dashed page-perforation lines, full width, at every
-/// POSITIVE integer multiple of PAGE_HEIGHT_IN (not at y=0 — that's the
-/// roll's start, not a perforation between two pages).
+/// Step 4: horizontal dashed page-perforation lines, full width, at every positive integer
+/// multiple of `PAGE_HEIGHT_IN` (not y=0 — that's the roll's start, not a perforation).
 fn paint_page_perf_lines(
     image: &mut RasterImage,
     top_in: f32,
@@ -416,9 +400,8 @@ fn paint_page_perf_lines(
     }
 }
 
-/// Step 5: sprocket holes (both strips): fill WINDOW_BG_COLOR, then the
-/// PERF_COLOR rim. Hole phase is continuous from the roll's y = 0 (see the
-/// `SPROCKET_HOLES_PER_PAGE` doc comment above).
+/// Step 5: sprocket holes (both strips): fill `WINDOW_BG_COLOR`, then the `PERF_COLOR` rim.
+/// Hole phase is continuous from the roll's y = 0.
 fn paint_sprocket_holes(image: &mut RasterImage, top_in: f32, height_in: f32, dpi: f32) {
     let hole_radius_in = SPROCKET_HOLE_DIAMETER_IN / 2.0;
     let hole_radius_px = hole_radius_in * dpi;
@@ -448,9 +431,8 @@ fn paint_sprocket_holes(image: &mut RasterImage, top_in: f32, height_in: f32, dp
     }
 }
 
-/// Step 6: ink dots (topmost): alpha-composited via repeated source-over
-/// blending, never manually deduplicated, so overlapping strikes darken
-/// naturally.
+/// Step 6: ink dots (topmost): alpha-composited via repeated source-over blending, never
+/// deduplicated, so overlapping strikes darken naturally.
 fn paint_ink_dots<D: DotSource>(
     image: &mut RasterImage,
     dots: &D,
@@ -462,9 +444,7 @@ fn paint_ink_dots<D: DotSource>(
     let dot_radius_px = dot_radius_in * dpi;
     let y0_in = top_in;
     let y1_in = top_in + height_in;
-    // Pad the y-unit query range: a dot's center can sit just outside
-    // [y0, y1] while its rendered circle still bleeds into view (see
-    // DOT_QUERY_PAD_Y_UNITS's doc comment).
+    // Pad the y-unit query range: a dot's center can sit just outside [y0, y1] while its circle still bleeds into view.
     let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64 - DOT_QUERY_PAD_Y_UNITS as i64)
         .max(0) as u32;
     let y1_units = (y1_in * Y_UNITS_PER_INCH as f32).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;

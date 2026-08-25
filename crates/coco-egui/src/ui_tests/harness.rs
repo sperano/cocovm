@@ -17,8 +17,7 @@ pub(super) type AppHarness = egui_kittest::Harness<'static, CocoApp>;
 pub(super) type ManagerHarness = egui_kittest::Harness<'static, manager::ManagerApp>;
 
 /// Boot a default (CoCo 3) machine into a kittest harness — a bare
-/// `CocoApp::new` call with no `machine_def::MachineDef` behind it, unlike a
-/// manager-launched VM (`launch::launch_machine`).
+/// `CocoApp::new` call, unlike a manager-launched VM (`launch::launch_machine`).
 pub(super) fn boot_harness() -> AppHarness {
     let roms_dir = test_assets::roms_dir();
     let (rom, rom_source) = load_default_rom(MachineVariant::Coco3, &roms_dir)
@@ -31,17 +30,14 @@ pub(super) fn boot_harness() -> AppHarness {
             AppParams::default(),
         )
     });
-    // Room for the full Machine menu: egui only puts on-screen widgets in
-    // the AccessKit tree, so a too-small viewport hides the lower items.
+    // egui only puts on-screen widgets in the AccessKit tree, so size for the full Machine menu.
     harness.set_size(egui::vec2(1024.0, 768.0));
     harness.step();
     harness
 }
 
-/// Click the widget labelled exactly `label`: hover one frame (see module
-/// docs), then press and release across the following two frames — egui
-/// fires `clicked` on the release. Generic over the app type so the same
-/// helper drives both `CocoApp` and `manager::ManagerApp` harnesses.
+/// Click the widget labelled exactly `label`: hover one frame, then press and
+/// release across the next two — egui fires `clicked` on the release.
 pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
     harness.get_by_label(label).hover();
     harness.step();
@@ -63,10 +59,8 @@ pub(super) fn right_click<S: 'static>(
     harness.step();
 }
 
-/// [`click`] with `modifiers` held down for the press/release — Cmd/Ctrl-
-/// click and Shift-click on a machine-list row (`egui_kittest::Node::
-/// click_modifiers`, which both applies and then resets the modifiers, so
-/// nothing leaks into whatever's clicked next).
+/// [`click`] with `modifiers` held for the press/release (e.g. Cmd/Ctrl- or
+/// Shift-click); modifiers reset afterward so they don't leak into the next click.
 pub(super) fn click_modifiers<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     label: &str,
@@ -79,9 +73,8 @@ pub(super) fn click_modifiers<S: 'static>(
     harness.step();
 }
 
-/// [`click`] matching by substring — for widgets whose accessible label
-/// carries decoration beyond the visible caption, like submenu buttons'
-/// trailing arrow ("MultiPak Interface ⏵", "Slot 1 ⏵").
+/// [`click`] matching by substring — for widgets whose accessible label adds
+/// decoration beyond the visible caption (submenu buttons' trailing "⏵").
 pub(super) fn click_containing<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     label: &str,
@@ -93,15 +86,8 @@ pub(super) fn click_containing<S: 'static>(
     harness.step();
 }
 
-/// Select an item in a form combo box (Machine, Cartridge, …),
-/// disambiguated by position: among all combo buttons currently showing
-/// `current` as their value, open the `index`-th in top-to-bottom (then
-/// left-to-right) screen order, then click the wanted item. The combo
-/// button exposes the selected text as its accessibility *value* (egui
-/// sets `WidgetInfo::current_text_value`, not a label), so it is addressed
-/// with `get_by_value`; the popup items are plain selectables, addressed
-/// by label. Positional because more than one combo can show the same
-/// value at once (e.g. several drive combos on "None").
+/// Select an item in a form combo box: among all combos currently showing
+/// `current`, open the `index`-th in screen order and click `target`.
 pub(super) fn select_combo_at<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     current: &str,
@@ -131,9 +117,8 @@ pub(super) fn select_combo_at<S: 'static>(
     click(harness, target);
 }
 
-/// Lowest-on-screen widget labelled `label` — the open-menu copy of a label
-/// the toolbar shows too ("Reset"): the menu popup hangs below the toolbar
-/// row.
+/// Lowest-on-screen widget labelled `label` — the open-menu copy when the
+/// toolbar shows the same label too (e.g. "Reset").
 pub(super) fn lowest_by_label<'t>(
     harness: &'t AppHarness,
     label: &'t str,
@@ -166,9 +151,7 @@ pub(super) fn click_in_menu(harness: &mut AppHarness, label: &str) {
 }
 
 /// A minimal valid entry: a CoCo 3 default config under `name`, built
-/// through [`machine_def::MachineDef::from_config`] like the manager's own
-/// "New…" flow does, so tests don't hand-roll a second copy of the DTO
-/// shape.
+/// through [`machine_def::MachineDef::from_config`] like the manager's own "New…" flow.
 pub(super) fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
     manager::MachineEntry::new(
         slug.to_string(),
@@ -176,11 +159,8 @@ pub(super) fn sample_entry(slug: &str, name: &str) -> manager::MachineEntry {
     )
 }
 
-/// A minimal valid CoCo 2 `Ok` entry — [`sample_entry`]'s default is CoCo 3,
-/// so pairing this with it gives two distinct machine families for
-/// `starting_two_machines_runs_both` (
-/// step 5's acceptance scenario: "a CoCo 3 and a newly created, launched
-/// CoCo 2").
+/// A minimal valid CoCo 2 entry — [`sample_entry`]'s default is CoCo 3, so
+/// pairing the two gives distinct machine families.
 pub(super) fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntry {
     manager::MachineEntry::new(
         slug.to_string(),
@@ -199,8 +179,7 @@ pub(super) fn sample_coco2_entry(slug: &str, name: &str) -> manager::MachineEntr
 }
 
 /// Boot a manager harness with injected entries and (optionally) a real
-/// machines directory for Create/Save to write into — never the user's real
-/// config dir.
+/// machines directory for Create/Save to write into (never the user's real config dir).
 pub(super) fn manager_harness(
     machines_dir: Option<PathBuf>,
     entries: Vec<manager::MachineEntry>,
@@ -219,22 +198,14 @@ pub(super) fn manager_harness_with_artifacts(
     let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
         manager::ManagerApp::new(None, machines_dir, artifacts_root, entries)
     });
-    // Tall enough for the whole detail pane — Machine/RAM/Display/
-    // Peripherals/Ports/Joysticks/Keyboard plus the Statistics block below
-    // them — to land in the AccessKit tree; like the `CocoApp` harness
-    // above, egui only reports on-screen widgets, so a too-short viewport
-    // silently drops the lower fieldsets' combos from position-indexed
-    // queries (`select_combo_at`).
+    // Tall enough for the whole detail pane to land in the AccessKit tree (egui only reports on-screen widgets).
     harness.set_size(egui::vec2(1080.0, 1400.0));
     harness.step();
     harness
 }
 
 /// Whether `label` matches at least one accessible node — unlike
-/// `get_by_label`/`query_by_label` (which require *at most* one match), used
-/// where a status word like "Running" is deliberately shown twice at once
-/// (the list row's `weak()` copy and the detail pane header's `strong()`
-/// copy, both driven by `manager::vm_status_label`).
+/// `get_by_label`/`query_by_label`, which require *at most* one match.
 pub(super) fn label_exists<S: 'static>(
     harness: &egui_kittest::Harness<'static, S>,
     label: &str,

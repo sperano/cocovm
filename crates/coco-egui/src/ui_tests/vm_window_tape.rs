@@ -19,11 +19,8 @@ use super::harness::*;
 /// about block framing.
 const LEADER: u8 = 0x55;
 
-/// The status bar's tape entry is the menu button for the tape menu
-/// (`CocoApp::tape_menu_ui`) — the Machine menu no longer carries the
-/// cassette deck. With nothing mounted the entry's label is "No tape"; both
-/// halves of the click target (label here, the icon's "Tape menu" handle in
-/// the sibling tests) open the same popup.
+/// The status bar's tape entry is the menu button for the tape menu. With
+/// nothing mounted the label is "No tape"; both icon and label halves open it.
 #[test]
 fn status_bar_tape_entry_opens_the_tape_menu() {
     let mut harness = boot_harness();
@@ -35,12 +32,8 @@ fn status_bar_tape_entry_opens_the_tape_menu() {
     assert!(harness.state().save_tape_wav);
 }
 
-/// The entry's readout duties survive the menu conversion: a mounted tape
-/// puts its file name and position counter in the label, the menu's
-/// mount-gated items come alive, and ejecting from that menu returns the
-/// label to "No tape". The mount goes through `new_tape` directly — the menu
-/// item's click handler opens a native file dialog a headless test can't
-/// answer.
+/// A mounted tape puts its file name and position in the label; the mount
+/// goes through `new_tape` directly since the menu item opens a native file dialog.
 #[test]
 fn status_bar_tape_entry_tracks_the_mounted_tape() {
     let mut harness = boot_harness();
@@ -65,10 +58,7 @@ fn status_bar_tape_entry_tracks_the_mounted_tape() {
 }
 
 /// The idle auto-finalize (`Cassette::tick`) and the per-frame save hook
-/// (`CocoApp::step_emulation`) together mean a recording saves itself to
-/// disk with no eject or quit: this drives a recording directly into the
-/// mounted cassette (bypassing the CPU/ROM — nothing is running that would
-/// touch the deck), lets it idle out, and checks the .cas file on disk.
+/// together mean a recording saves itself to disk with no eject or quit.
 #[test]
 fn finalized_recording_saves_to_disk_without_eject() {
     /// Past `RECORD_IDLE_FINALIZE_CYCLES` — crosses the auto-finalize
@@ -112,11 +102,8 @@ fn finalized_recording_saves_to_disk_without_eject() {
     );
 }
 
-/// The tape menu's "Seek to byte" field moves the deck's head directly, for
-/// tape debugging/hand-editing without playing through the whole reel:
-/// typing a byte offset and committing with Enter calls
-/// [`coco_core::cassette::Cassette::seek`], which the entry's label
-/// (`[pos/len]`) then reflects.
+/// The tape menu's "Seek to byte" field moves the deck's head directly:
+/// typing an offset and pressing Enter calls `Cassette::seek`.
 #[test]
 fn status_bar_tape_menu_seeks_to_a_byte_position() {
     let mut harness = boot_harness();
@@ -129,9 +116,7 @@ fn status_bar_tape_menu_seeks_to_a_byte_position() {
     harness.get_by_label("untitled.cas [0/100]");
     click(&mut harness, "Tape menu");
 
-    // Click the field the way a user does — a regression guard for the
-    // popup's close behavior: with the menu-default `CloseOnClick`, this
-    // click would dismiss the whole popup before anything could be typed.
+    // Guards the popup's close behavior: the menu-default CloseOnClick would dismiss it here.
     harness
         .get_by_role(egui::accesskit::Role::TextInput)
         .click();
@@ -147,11 +132,8 @@ fn status_bar_tape_menu_seeks_to_a_byte_position() {
     harness.get_by_label("untitled.cas [50/100]");
 }
 
-/// Keystrokes belong to a focused text widget alone: while the seek field
-/// (or any text input) owns the keyboard, `CocoApp::handle_input` must not
-/// forward keys to the CoCo matrix — and a key already held when the widget
-/// grabs focus must be released there, not left stuck (its release event
-/// will never reach the matrix path).
+/// Keystrokes belong to a focused text widget alone: `handle_input` must not
+/// forward them to the CoCo matrix, and an already-held key must be released on focus.
 #[test]
 fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     /// `Keyboard::sense` with every column strobed (active low) reads all
@@ -166,8 +148,7 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.state_mut().insert_tape(path);
     harness.step();
 
-    // Sanity: with no text widget focused, a held key does land on the
-    // matrix (positional mode) — otherwise the assertions below are vacuous.
+    // Sanity: with nothing focused, a held key lands on the matrix — otherwise these asserts are vacuous.
     harness.key_down(egui::Key::A);
     harness.step();
     assert_ne!(
@@ -176,8 +157,7 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
         "sanity: an unfocused keypress must reach the CoCo matrix"
     );
 
-    // Focus the seek field while the key is still held: the matrix must be
-    // released, not left with A stuck down.
+    // Focus the seek field while the key is still held: the matrix must release it, not stick.
     click(&mut harness, "Tape menu");
     harness
         .get_by_role(egui::accesskit::Role::TextInput)
@@ -202,8 +182,7 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.key_up(egui::Key::Num5);
     harness.step();
 
-    // The F-key UI hotkeys are NOT gated: text widgets don't consume
-    // F-keys (`CocoApp::handle_hotkeys` runs before the focus gate).
+    // F-key hotkeys are NOT gated: handle_hotkeys runs before the focus gate.
     let aspect_before = harness.state().aspect_correct;
     harness.key_press(egui::Key::F9);
     harness.step();
@@ -215,12 +194,7 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.key_press(egui::Key::F9);
     harness.step();
 
-    // ⌘D is likewise not gated: consumed in `consume_app_shortcuts` before
-    // this frame's widgets run, so it stays live while a VM-window text
-    // widget (like this seek field) owns focus. (Dismissal from the
-    // debugger's own native window is the separate in-viewport consume in
-    // `DebuggerPanel::windows_ui`, unreachable under kittest's embedded
-    // fallback.)
+    // ⌘D is likewise not gated: consume_app_shortcuts runs before this frame's widgets.
     assert!(!harness.state().debugger.open);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
     harness.step();
@@ -232,10 +206,8 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.step();
 }
 
-/// The keys-mode joystick polls raw arrow/Z/X state outside `handle_input`
-/// (`Joysticks::apply` → `key_state`), so it needs its own focus gate:
-/// arrows pressed while a text widget owns the keyboard must not nudge the
-/// emulated stick.
+/// The keys-mode joystick polls raw arrow/Z/X state outside `handle_input`,
+/// so it needs its own focus gate against a focused text widget.
 #[test]
 fn typing_in_the_seek_field_does_not_move_a_keys_joystick() {
     let mut harness = boot_harness();
@@ -246,9 +218,7 @@ fn typing_in_the_seek_field_does_not_move_a_keys_joystick() {
     harness.state_mut().insert_tape(path);
     harness.step();
 
-    // The pot comparator is the observable: at center (pot 32) a DAC level
-    // of 16 sits at-or-below the pot, so `compare` reads true; hard left
-    // (pot 0) it reads false.
+    // At center (pot 32), a DAC level of 16 sits at-or-below the pot, so compare() reads true.
     const BELOW_CENTER_DAC: u8 = 16;
     let stick_centered = |harness: &AppHarness| {
         harness.state().machine.bus.joysticks.compare(

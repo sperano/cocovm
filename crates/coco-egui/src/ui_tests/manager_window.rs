@@ -11,10 +11,8 @@ use crate::*;
 
 use super::harness::*;
 
-/// The detail pane's RAM fieldset: the group's title is a real node in the
-/// accessibility tree (the `titled_group` widget promises this), and
-/// clicking a size radio auto-saves the definition like any other form
-/// edit.
+/// The detail pane's RAM fieldset: the group's title is a real accessibility
+/// node, and clicking a size radio auto-saves the definition.
 #[test]
 fn ram_radio_autosaves_the_definition() {
     let dir = TempDir::new("ram-radio");
@@ -57,13 +55,8 @@ fn cmd_n_creates_a_machine_immediately() {
     assert!(dir.path().join("coco-3.toml").is_file());
 }
 
-/// The manager window scaffold: toolbar buttons present — New, the four
-/// transport tiles, Settings, Help — the machine-list panel and photo pane
-/// laid out without a photo injected. This harness has no machines dir (no
-/// home), so "New" must report that instead of creating or panicking, and
-/// with nothing selected (no entries at all, here) the transport tiles must
-/// start disabled — the toolbar's own version of the old detail pane's
-/// "nothing to act on yet" state.
+/// The manager window scaffold: toolbar buttons and panels render with no
+/// photo injected; no machines dir means "New" must report failure, not panic.
 #[test]
 fn manager_window_shows_its_toolbar() {
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
@@ -94,10 +87,7 @@ fn manager_window_shows_its_toolbar() {
 }
 
 /// The divider between the machine list and the photo pane must be
-/// draggable. Regression test for the empty-panel gotcha: a `SidePanel`
-/// whose ui claims no space silently loses its resize drag
-/// (`SidePanel::resizable` docs — hence `take_available_space` in
-/// `ManagerApp::update`).
+/// draggable — a `SidePanel` whose ui claims no space silently loses its resize drag.
 #[test]
 fn manager_list_divider_is_draggable() {
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
@@ -115,8 +105,7 @@ fn manager_list_divider_is_draggable() {
     };
     let before = width(&harness);
 
-    // Grab the divider (the panel's right edge) at mid-height and drag it
-    // 80 px right: hover, press, move while pressed, release.
+    // Grab the divider (the panel's right edge) at mid-height and drag it 80 px right.
     let grab = egui::pos2(before, 360.0);
     let target = egui::pos2(before + 80.0, 360.0);
     harness.hover_at(grab);
@@ -137,8 +126,7 @@ fn manager_list_divider_is_draggable() {
 }
 
 /// With a photo injected, the manager uploads it on the first frame and
-/// keeps rendering (the image itself is not an accessible node — this
-/// guards the upload path against panics/regressions).
+/// keeps rendering without panicking.
 #[test]
 fn manager_window_renders_an_injected_photo() {
     let photo = photo_view::Photo {
@@ -180,11 +168,8 @@ fn manager_list_shows_entries_and_selecting_shows_detail() {
     );
 }
 
-/// Clicking the empty space below the last list row clears the selection —
-/// the detail pane gives way to the photo pane again. Positional click: the
-/// empty area is no accessible node, so this drives the pointer directly
-/// (same primitives as the divider-drag test) at a point well below the
-/// single row but inside the list panel.
+/// Clicking the empty space below the last list row clears the selection.
+/// The empty area is no accessible node, so this drives the pointer directly.
 #[test]
 fn manager_click_below_the_list_clears_the_selection() {
     let entries = vec![sample_entry("alpha", "Alpha CoCo 3")];
@@ -215,11 +200,8 @@ fn manager_click_below_the_list_clears_the_selection() {
     );
 }
 
-/// Right-clicking a list row opens its context menu *without* moving the
-/// visual selection — the menu's items act on the row under the cursor, not
-/// on `selected`. The one exception is "Show
-/// config", whose whole job is to select; it (like every pick) also closes
-/// the menu.
+/// Right-clicking a list row opens its context menu without moving the
+/// visual selection — menu items act on the row under the cursor, not `selected`.
 #[test]
 fn manager_row_right_click_opens_context_menu_without_selecting() {
     let entries = vec![
@@ -255,8 +237,7 @@ fn manager_row_right_click_opens_context_menu_without_selecting() {
 }
 
 /// The context menu's "Delete…" asks for confirmation first: Cancel keeps
-/// the machine untouched; Delete removes the list row and its `<slug>.toml`,
-/// and the selection follows the surviving row as indices shift.
+/// the machine; Delete removes it, and the selection follows the surviving row.
 #[test]
 fn manager_row_context_menu_delete_confirms_and_removes() {
     let dir = TempDir::new("ctx-delete");
@@ -310,9 +291,7 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
 }
 
 /// "New" creates a definition file *immediately* — default name under a
-/// uniquified slug, saved, selected, no dialog and no Create button (macOS
-/// System-Settings-style). A second "New"
-/// uniquifies against the first.
+/// uniquified slug, saved, selected, no dialog. A second "New" uniquifies against the first.
 #[test]
 fn manager_new_creates_a_definition_file_immediately() {
     let dir = TempDir::new("create");
@@ -344,9 +323,7 @@ fn manager_new_creates_a_definition_file_immediately() {
         Some(0),
         "New must select the new row"
     );
-    // Not `get_by_label("CoCo 3")`: the now-visible detail pane's hardware
-    // form has its own "CoCo 3" Machine combo button, so the name would be
-    // ambiguous between that and the list row.
+    // Not get_by_label: the detail pane's own "CoCo 3" Machine combo makes the label ambiguous.
     assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
 
     click_containing(&mut harness, "New");
@@ -359,9 +336,8 @@ fn manager_new_creates_a_definition_file_immediately() {
     assert!(dir.path().join("coco-3-2.toml").is_file());
 }
 
-/// Editing in the detail pane saves immediately — there are no Save/Revert
-/// buttons anymore (auto-save) — while merely
-/// selecting a row must not rewrite its file.
+/// Editing in the detail pane saves immediately (no Save/Revert buttons);
+/// merely selecting a row must not rewrite its file.
 #[test]
 fn manager_detail_edits_save_immediately() {
     let dir = TempDir::new("auto-save");
@@ -404,10 +380,7 @@ fn manager_detail_edits_save_immediately() {
 }
 
 /// Committing a new name (focus leaves the Name field) saves it and
-/// migrates the slug: `<slug>.toml` and the artifact directory follow the
-/// display name. Nothing else persists the slug — relative `[media]`
-/// entries name files *inside* the artifact dir — so a rename is exactly
-/// those two filesystem moves.
+/// migrates the slug: `<slug>.toml` and the artifact directory both follow it.
 #[test]
 fn manager_rename_migrates_definition_file_and_artifact_dir() {
     let machines = TempDir::new("rename-machines");
@@ -424,10 +397,7 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
     );
     click(&mut harness, "Alpha");
 
-    // Type into the Name field — the pane's only text input; by-value
-    // lookup would be ambiguous with the list row's own "Alpha" label —
-    // and commit with Enter: the TextEdit surrenders focus, which is the
-    // commit signal.
+    // The pane's only text input; by-value lookup would be ambiguous with the list row's own label.
     let name_field = || harness.get_by_role(egui::accesskit::Role::TextInput);
     name_field().focus();
     harness.step();

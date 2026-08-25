@@ -59,10 +59,8 @@ const REG_NOISE_CTRL: usize = 6;
 /// The noise generator, viewed as a 4th channel alongside tones 0-2.
 const NOISE_CHANNEL: usize = 3;
 
-/// Build the 16-entry attenuation-code amplitude lookup ([`ATTENUATION_STEP`]
-/// per code, code 15 silent) — shared by [`SN76489A::new`] and
-/// [`SN76489A::after_restore`] so construction and post-snapshot-restore
-/// rebuild can never drift apart.
+/// Builds the 16-entry attenuation amplitude lookup (code 15 silent);
+/// shared by [`SN76489A::new`] and [`SN76489A::after_restore`].
 fn build_vol_table() -> [f32; 16] {
     let mut vol_table = [0.0f32; 16];
     let mut out = CHANNEL_FULL_SCALE;
@@ -117,15 +115,9 @@ impl std::fmt::Debug for SN76489A {
 }
 
 impl SN76489A {
-    /// A chip clocked by a `crystal_hz` crystal (4 MHz on the GMC).
-    ///
-    /// Power-on state per MAME `device_start`: all registers 0 — which means
-    /// **maximum volume** on every channel (attenuation code 0; MAME's
-    /// comment records this as tested on the real SN76489A), tone periods
-    /// treated as $400, noise period 0 (shifts every tick until register 6
-    /// is written), LFSR seeded with the feedback bit. Real GMC software
-    /// initializes the chip immediately, but until it does the chip hums —
-    /// exactly like the real cartridge at power-on.
+    /// A chip clocked by a `crystal_hz` crystal (4 MHz on the GMC). Registers
+    /// power on at 0 — max volume on every channel — so the chip audibly
+    /// hums until software initializes it (MAME `device_start`).
     pub fn new(crystal_hz: f64) -> Self {
         let vol_table = build_vol_table();
         Self {
@@ -147,25 +139,15 @@ impl SN76489A {
         }
     }
 
-    /// Restore-time fixup after a snapshot round-trip
-    ///: rebuilds `vol_table`, the skipped
-    /// construction-time lookup table, via the same [`build_vol_table`]
-    /// helper [`SN76489A::new`] uses.
+    /// Rebuilds `vol_table` (skipped in serialization) after a snapshot
+    /// restore, via the same [`build_vol_table`] helper `new` uses.
     pub fn after_restore(&mut self) {
         self.vol_table = build_vol_table();
     }
 
-    /// A command-byte write (the GMC's `$FF41`). Decode per MAME `write()`:
-    ///
-    /// - LATCH/DATA (bit 7 set): bits 6-4 select the register and become
-    ///   `last_reg`; bits 3-0 merge into the register's low nibble.
-    /// - DATA-only (bit 7 clear): tone-period registers take bits 5-0 as the
-    ///   period's upper 6 bits (completing the 10-bit value); attenuation and
-    ///   noise-control registers just take the low nibble again.
-    ///
-    /// Every write to the noise-control register — latch or continuation —
-    /// resets the LFSR to its seed (MAME does this unconditionally for
-    /// non-NCR chips).
+    /// A command-byte write (GMC `$FF41`). LATCH/DATA bytes select a
+    /// register; DATA-only bytes continue it. Any write to noise control
+    /// (register 6) reseeds the LFSR (MAME `write()`).
     pub fn write(&mut self, data: u8) {
         let low_nibble = u16::from(data & 0x0F);
         let r = if data & LATCH_FLAG != 0 {
@@ -191,8 +173,7 @@ impl SN76489A {
                 } else {
                     self.regs[r]
                 });
-                // A live tone-2 change retunes the noise channel when its
-                // rate mirrors tone 2 (MAME duplicates this in case 4).
+                // A live tone-2 change retunes the noise channel if its rate follows tone 2.
                 if c == 2 && self.regs[REG_NOISE_CTRL] & 0x03 == NOISE_RATE_FOLLOWS_TONE2 {
                     self.period[NOISE_CHANNEL] = self.period[2] << 1;
                 }
@@ -205,8 +186,7 @@ impl SN76489A {
                 self.period[NOISE_CHANNEL] = if rate == NOISE_RATE_FOLLOWS_TONE2 {
                     self.period[2] << 1
                 } else {
-                    // Rates 0-2: shift every 32/64/128 ticks (N/512, N/1024,
-                    // N/2048 of the crystal).
+                    // Rates 0-2: shift every 32/64/128 ticks.
                     1 << (5 + rate)
                 };
                 self.lfsr = LFSR_FEEDBACK;
@@ -215,12 +195,10 @@ impl SN76489A {
         }
     }
 
-    /// Advance the chip `dt` seconds and return its mean output level over
-    /// that interval, 0.0-1.0. Box-filtering instead of point-sampling: tone
-    /// fundamentals reach far above the caller's ~15.7 kHz scanline cadence,
-    /// and the mean keeps those from aliasing into junk while leaving the
-    /// audible range intact. Fractional ticks carry over, so pitch stays
-    /// exact at any calling cadence.
+    /// Advances the chip `dt` seconds, returning mean output level (0.0-1.0).
+    /// Box-filters rather than point-samples to avoid aliasing tone
+    /// frequencies above the caller's scanline cadence; fractional ticks
+    /// carry over, so pitch stays exact.
     pub fn sample(&mut self, dt: f64) -> f32 {
         self.tick_frac += dt * self.tick_hz;
         let ticks = self.tick_frac as u32;
@@ -236,9 +214,8 @@ impl SN76489A {
         acc / ticks as f32
     }
 
-    /// One internal tick (crystal/16): step the three tone counters and the
-    /// noise counter, toggling flip-flops / shifting the LFSR on expiry
-    /// (MAME `sound_stream_update`'s inner loop).
+    /// One internal tick (crystal/16): steps the tone and noise counters,
+    /// toggling flip-flops / shifting the LFSR on expiry.
     fn tick(&mut self) {
         for c in 0..3 {
             self.count[c] -= 1;
@@ -254,9 +231,8 @@ impl SN76489A {
         }
     }
 
-    /// White mode XORs taps $04 and $08 into the feedback bit; periodic mode
-    /// holds tap 2 at 0, so only tap 1 feeds back — a single set bit then
-    /// circulates over 15 shifts (the classic 1/15-duty "periodic noise").
+    /// White mode XORs taps $04/$08 into the feedback bit; periodic mode
+    /// holds tap 2 at 0, so a single set bit circulates over 15 shifts.
     fn shift_lfsr(&mut self) {
         let tap1 = self.lfsr & LFSR_TAP1 != 0;
         let tap2 = self.lfsr & LFSR_TAP2 != 0 && self.regs[REG_NOISE_CTRL] & NOISE_MODE_WHITE != 0;
@@ -266,10 +242,8 @@ impl SN76489A {
         }
     }
 
-    /// Instantaneous summed output, 0.0-1.0: each tone contributes its
-    /// volume while its flip-flop is high, the noise channel while LFSR
-    /// bit 0 is set. Unipolar — the frontend's DC filter removes the offset,
-    /// as with the CoCo's own DAC.
+    /// Instantaneous summed output, 0.0-1.0. Unipolar — the frontend's DC
+    /// filter removes the offset, as with the CoCo's own DAC.
     fn level(&self) -> f32 {
         let mut sum = 0.0;
         for c in 0..3 {

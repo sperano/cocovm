@@ -3,14 +3,12 @@
 use crate::*;
 
 impl CocoApp {
-    /// Enable the Becker port ($FF41/$FF42) with a real wall clock, optionally
-    /// in HDB-DOS sector addressing mode. Idempotent — if already enabled, does
-    /// nothing. Failures land in [`Self::cart_error`].
+    /// Enables the Becker port ($FF41/$FF42) with a real wall clock, optionally
+    /// in HDB-DOS mode. Idempotent; failures land in [`Self::cart_error`].
     pub(crate) fn enable_drivewire(&mut self, hdbdos_mode: bool) {
         self.machine.bus.enable_drivewire();
         if let Some(ref mut dw) = self.machine.bus.drivewire {
             dw.set_hdbdos_mode(hdbdos_mode);
-            // Inject real wall clock from the host.
             dw.set_clock(host_dw_clock());
         }
     }

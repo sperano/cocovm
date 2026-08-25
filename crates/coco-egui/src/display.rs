@@ -64,9 +64,8 @@ impl Display {
         }
     }
 
-    /// Per-variant default when nothing is chosen: the RGB monitor a CoCo 3
-    /// config already defaulted to before this type existed, the color TV
-    /// that was a CoCo 1/2's only possible display.
+    /// Per-variant default when nothing is chosen: RGB monitor on CoCo 3,
+    /// color TV on CoCo 1/2.
     pub(crate) const fn default_for(variant: MachineVariant) -> Self {
         match variant {
             MachineVariant::Coco3 => Display::Monitor(MonitorType::RGB),
@@ -74,11 +73,9 @@ impl Display {
         }
     }
 
-    /// The core-side signal path this display decodes —
-    /// `MachineConfig::monitor`'s value. A TV is downstream of the composite
-    /// signal on a CoCo 3 and of the bare RF output (`None`) on a CoCo 1/2;
-    /// a monitor choice passes through regardless of variant so
-    /// `MachineConfig::validate` can reject it where no port exists.
+    /// The core-side signal (`MachineConfig::monitor`) this display implies:
+    /// composite for a CoCo 3 TV, `None` for a CoCo 1/2 TV; a monitor choice
+    /// passes through so `validate` can reject it where no port exists.
     pub(crate) const fn to_monitor(self, variant: MachineVariant) -> Option<MonitorType> {
         match self {
             Display::Monitor(monitor) => Some(monitor),
@@ -89,10 +86,8 @@ impl Display {
         }
     }
 
-    /// The display a validated config implies, for paths that predate this
-    /// type (a save state's config, `MachineConfig::default()`). Lossy in
-    /// one direction only: a CoCo 3 TV serializes as composite, so callers
-    /// holding the real choice (a definition's `[hardware].display`) must
+    /// The display a validated config implies. Lossy one way: a CoCo 3 TV
+    /// serializes as composite, so callers with the real choice must
     /// overwrite this afterwards.
     pub(crate) const fn from_config(config: &MachineConfig) -> Self {
         match config.monitor {
@@ -111,9 +106,8 @@ impl Display {
         }
     }
 
-    /// Status-bar label: just the signal or set — the icon beside it already
-    /// says monitor vs. TV, and [`Self::label`] lives in the entry's hover
-    /// text (same compaction as the bar's keyboard entry).
+    /// Status-bar label: just the signal/set — the icon beside it already
+    /// distinguishes monitor vs. TV.
     pub(crate) const fn short_label(self) -> &'static str {
         match self {
             Display::Monitor(MonitorType::RGB) => "RGB",
@@ -166,11 +160,9 @@ static LUMA_TABLES: LazyLock<LumaTables> = LazyLock::new(|| {
     }
 });
 
-/// One pixel's grey: Rec.601-weighted luminance computed in **linear
-/// light**, then re-encoded. Weighting the gamma-encoded bytes directly
-/// (analog luma, what the composite Y signal literally carries) reads
-/// noticeably too dark on a modern display — saturated green lands at 149
-/// instead of the ~200 the eye expects (user feedback 2026-08-02).
+/// One pixel's grey: Rec.601-weighted luminance computed in linear light,
+/// then re-encoded — weighting the gamma-encoded bytes directly reads
+/// noticeably too dark on a modern display.
 fn luma(r: u8, g: u8, b: u8) -> u8 {
     let t = &LUMA_TABLES;
     let y = t.r[r as usize] + t.g[g as usize] + t.b[b as usize];
@@ -178,10 +170,8 @@ fn luma(r: u8, g: u8, b: u8) -> u8 {
     t.encode[i.min(ENCODE_STEPS - 1)]
 }
 
-/// How the display's texture scales to the window: a monitor keeps the
-/// crisp integer-pixel look (`NEAREST`); a CRT TV has no sharp pixel edges
-/// at all, so TVs sample bilinearly — the cheapest single step of the TV
-/// look, done by the GPU during normal drawing rather than in [`process`].
+/// How the display's texture scales to the window: monitor stays crisp
+/// (`NEAREST`); TV samples bilinearly to mimic a CRT's soft pixel edges.
 pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
     match display {
         Display::Monitor(_) => egui::TextureOptions::NEAREST,
@@ -222,9 +212,8 @@ pub(crate) struct TVSettings {
 }
 
 impl TVSettings {
-    /// Both knobs clamped to `0..=`[`MAX_PCT`] — the one place the range
-    /// invariant is enforced for values arriving from outside the sliders
-    /// (a hand-edited definition file's `tv_scanline = 250`).
+    /// Both knobs clamped to `0..=`[`MAX_PCT`] — enforces the range for
+    /// values from outside the sliders (a hand-edited `tv_scanline = 250`).
     pub(crate) fn clamped(self) -> Self {
         Self {
             scanline_pct: self.scanline_pct.min(MAX_PCT),
@@ -242,11 +231,9 @@ impl Default for TVSettings {
     }
 }
 
-/// The dark scanline half's per-byte multiplier, ×256
-/// (`out = in · scale >> 8`): the strength is a **linear-light** fraction
-/// kept, and pure scaling commutes with the gamma curve
-/// (`(x^γ·k)^(1/γ) = x·k^(1/γ)`), so one gamma-space multiply per byte is
-/// exact — no linear round trip.
+/// Dark-half per-byte multiplier, ×256 (`out = in · scale >> 8`). Pure
+/// scaling commutes with the gamma curve, so a gamma-space multiply exactly
+/// implements the linear-light fraction kept — no round trip needed.
 fn scanline_scale(scanline_pct: u8) -> u16 {
     let level = 1.0 - f32::from(scanline_pct.min(MAX_PCT)) / f32::from(MAX_PCT);
     (level.powf(1.0 / GAMMA) * 256.0).round() as u16
@@ -271,16 +258,9 @@ pub(crate) struct Frame<'a> {
     pub(crate) height: usize,
 }
 
-/// The TV chain, turning the machine's RGBA8 framebuffer into the frame to
-/// show — the texture upload (`CocoApp::upload_framebuffer_texture`) and
-/// the thumbnail-PNG capture (`manager::thumbnails`). `width` is the
-/// source's width in pixels (rows are `width · 4` bytes). Monitors pass
-/// through untouched. Both TVs get, in order: the B&W luma collapse
-/// (B&W set only — blurring a grey keeps it grey, so the order only
-/// matters for color), the composite/RF horizontal bandwidth limit
-/// ([`blur_rows`]), the RF noise ([`noise_rows`], varied per frame by
-/// `seed`), and finally the scanline doubling ([`expand_scanlines`]) at
-/// `settings`' strength.
+/// The TV chain: framebuffer to displayed frame. A monitor passes through
+/// untouched; a TV gets luma collapse (B&W only), horizontal blur, noise,
+/// then scanline doubling, in that order.
 pub(crate) fn process<'a>(
     display: Display,
     settings: TVSettings,
@@ -296,9 +276,7 @@ pub(crate) fn process<'a>(
             height,
         };
     };
-    // A color TV blurs straight from the framebuffer; the B&W set
-    // collapses to luma first (blurring a grey keeps it grey, so the
-    // order only matters for color).
+    // B&W collapses to luma first; blurring a grey keeps it grey either way.
     let signal: Cow<[u8]> = match tv {
         TV::Color => Cow::Borrowed(src),
         TV::BW => Cow::Owned(collapse_to_luma(src)),
@@ -337,16 +315,12 @@ fn collapse_to_luma(src: &[u8]) -> Vec<u8> {
 /// still leaves the picture faintly underneath rather than pure static.
 const NOISE_FULL: i32 = 128;
 
-/// The RF noise: per-pixel **luminance** jitter — the same offset on all
-/// three channels, because antenna noise rides the luma of the signal —
-/// varied frame to frame by `seed` so it shimmers instead of sitting like
-/// dirt on the glass. Runs before the scanline doubling: both halves of a
-/// scanline carry the same signal, so they share the same noise. The PRNG
-/// is a plain xorshift32 — decorrelated neighbors are all snow needs.
+/// RF noise: the same luminance jitter on all three channels (antenna
+/// noise rides luma, not chroma), via a plain xorshift32 PRNG seeded per
+/// frame so it shimmers rather than sitting still.
 fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
     let amp = i32::from(noise_pct.min(MAX_PCT)) * NOISE_FULL / i32::from(MAX_PCT);
-    // Mix the seed so consecutive frame counters land far apart; `| 1`
-    // keeps xorshift out of its zero fixed point.
+    // `| 1` keeps xorshift out of its zero fixed point.
     let mut s = seed.wrapping_mul(0x9E37_79B9) | 1;
     for px in bytes.chunks_exact_mut(PX) {
         s ^= s << 13;
@@ -360,12 +334,10 @@ fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
     }
 }
 
-/// The scanline pass: each source row becomes a full-brightness row plus a
-/// [`scanline_scale`]-dimmed copy — the visible line structure of a CRT
-/// raster, where the beam lights a line and the gap between lines stays
-/// darker. Doubling (rather than darkening rows in place) is what makes
-/// this possible at all: the source rows *are* the scanlines, so an
-/// in-place version would delete half the picture.
+/// Scanline pass: each row becomes a full-brightness row plus a
+/// [`scanline_scale`]-dimmed copy, mimicking a CRT raster's line/gap
+/// structure. Must double rather than darken in place — the source rows
+/// *are* the scanlines.
 fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8]) -> Vec<u8> {
     let row_len = width * PX;
     let scale = scanline_scale(scanline_pct);
@@ -381,13 +353,9 @@ fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The horizontal bandwidth limit: a [`BLUR_TAPS`] FIR across each row —
-/// horizontal only, because that's what an analog TV signal is: each
-/// scanline is a band-limited waveform, so detail smears along the line
-/// while rows stay perfectly separate. Edges clamp (the border color
-/// extends past the frame). Alpha is carried through. A `src → dst`
-/// producer rather than in-place, so the color-TV path can read the
-/// framebuffer directly with no scratch copies.
+/// Horizontal bandwidth limit: a [`BLUR_TAPS`] FIR across each row only —
+/// an analog signal band-limits per scanline, so rows stay separate while
+/// detail smears along the line. Edges clamp; alpha passes through.
 fn blur_rows(width: usize, src: &[u8]) -> Vec<u8> {
     let row_len = width * PX;
     let mut out = Vec::with_capacity(src.len());

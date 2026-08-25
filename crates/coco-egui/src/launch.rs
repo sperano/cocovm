@@ -38,21 +38,9 @@ struct Peripherals {
     rs232: bool,
 }
 
-/// Build a running [`CocoApp`] from a saved machine definition
-/// (`machine_def::MachineDef`): load the ROM (an explicit `[hardware].rom`
-/// if set, else the default [`installed_roms_dir`] resolution), mount `[media]`
-/// (cart/disks/vhds/tape), `[peripherals]` (MPI/RTC/RS-232), and `[ports]`
-/// (the built-in serial port's host sink) via the relevant `CocoApp`
-/// methods, in that order, enforcing the single-cartridge-port rule below —
-/// but every failure is a returned `Err` here instead of a process exit,
-/// since the caller (the manager's Start button, `manager.rs`) must show it
-/// in the detail pane
-/// rather than crash the whole app (
-/// step 5). On any mount-time failure (a bad disk/VHD/cassette image, or a
-/// disk-BASIC ROM read failure inside `mpi_insert_fd502` — not just a missing
-/// path, caught early below) the partially-built VM is discarded rather than
-/// returned: callers get either a fully-mounted machine or a precise error,
-/// never a half-broken one.
+/// Build a running [`CocoApp`] from a saved machine definition: load the ROM,
+/// mount `[media]`/`[peripherals]`/`[ports]` enforcing the single-cartridge-
+/// port rule below. Any failure returns `Err` instead of a partial VM.
 pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
     let config = def.to_machine_config()?;
     let explicit_rom = def.hardware.rom.as_ref().map(PathBuf::from);
@@ -62,8 +50,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     let peripherals = Peripherals {
         mpi: def.peripherals.mpi,
         rtc: def.peripherals.rtc,
-        // Disk media implies the controller even when the flag is off (older
-        // definition files predate `[peripherals].fd502`).
+        // Disk media implies the controller even when the flag itself is off.
         fd502: def.peripherals.fd502 || media.disks.iter().any(|p| p.is_some()),
         rs232: def.peripherals.rs232,
     };
@@ -73,27 +60,16 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     mount_peripherals(&mut app, media, &peripherals);
     mount_serial(&mut app, def.ports.serial, slug);
 
-    // Every `insert_*`/`mpi_insert_*` helper above records its own failure in
-    // `cart_error` rather than returning a `Result` (it's designed to run from
-    // a live menu click, where the machine keeps running and a dialog reports
-    // the problem). Promote that here into the launch `Result` instead of
-    // returning a VM with a swallowed error nobody's watching for yet.
+    // Promote any `cart_error` the insert_*/mpi_insert_* helpers recorded into this launch `Result`.
     if let Some(err) = app.cart_error.take() {
         return Err(err);
     }
 
-    // The definition's [ui] preferences are the launched window's *starting*
-    // state; F9 (aspect), F12 (keyboard mode), and the status bar's
-    // joysticks entry keep working as live toggles afterwards — the file
-    // controls where they begin, exactly like the hardware section controls
-    // the machine's construction.
+    // [ui] preferences are the window's starting state only; F9/F12/joysticks stay live toggles afterward.
     app.aspect_correct = def.ui.aspect_correct;
-    // Seeds the status bar's cumulative Runtime readout (`CocoApp::total_runtime`'s
-    // doc) with whatever this machine had already accrued before this launch.
+    // Seeds the status bar's cumulative Runtime readout with whatever this machine already accrued.
     app.total_runtime = std::time::Duration::from_secs(def.stats.runtime_secs);
-    // `CocoApp::new` derived a display from the config's signal path, which
-    // can't tell a CoCo 3 TV from a composite monitor — overwrite it with
-    // the definition's actual `[hardware].display` choice.
+    // `CocoApp::new` derived a display from the signal path alone, which can't tell a CoCo 3 TV from composite.
     app.display = def.display();
     app.tv = crate::display::TVSettings {
         scanline_pct: def.ui.tv_scanline,
@@ -109,11 +85,9 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     Ok(app)
 }
 
-/// The definition's system ROM — an explicit `[hardware].rom` loaded verbatim
-/// ([`load_explicit_rom`]), else the default [`installed_roms_dir`]
-/// resolution ([`load_default_rom`]) — paired with the [`ROMSource`] a
-/// snapshot needs to re-resolve/hash whichever path was taken, so the two
-/// can't drift apart.
+/// The definition's system ROM: an explicit `[hardware].rom`
+/// ([`load_explicit_rom`]) or the default resolution ([`load_default_rom`]),
+/// paired with the [`ROMSource`] a snapshot needs to re-resolve it.
 fn load_rom(
     explicit: Option<&Path>,
     variant: MachineVariant,
@@ -143,15 +117,9 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
     }
 }
 
-/// Enforced by hand rather than declaratively (there's no `clap` here to
-/// lean on, and the rule only applies "when `--mpi` is absent" — conditional
-/// on another field, which a flat set of struct constraints can't express
-/// either): cart, disk0/disk1 (which imply the FD-502), rtc, and rs232 all
-/// want the single cartridge port unless an MPI is installed. rs232
-/// additionally has no MPI-slot support at all yet (no `mpi_insert_rs232`),
-/// so `mpi && rs232` is
-/// rejected even though an MPI would otherwise lift the one-peripheral
-/// limit.
+/// Enforced by hand: cart, disk0/disk1 (implying FD-502), rtc, and rs232 all
+/// want the single cartridge port unless an MPI is installed; rs232 has no
+/// MPI-slot support yet, so `mpi && rs232` is rejected too.
 fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), String> {
     if peripherals.mpi && peripherals.rs232 {
         return Err(
@@ -179,8 +147,8 @@ fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), 
     Ok(())
 }
 
-/// With an MPI installed the cart and disks target its slots instead of the
-/// plain single-cartridge model, so the constructor gets neither and
+/// With an MPI installed, cart and disks target its slots instead of the
+/// single-cartridge model, so the constructor gets neither —
 /// [`mount_peripherals`] wires them up afterward.
 fn new_app(
     config: coco_core::MachineConfig,
@@ -227,20 +195,15 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
             }
         }
     } else if peripherals.rtc {
-        // cart/fd502/rs232 (disk media is handled by the `new_app` call
-        // above) and rtc are mutually exclusive here — `check_cartridge_port`
-        // already rejected any combination of them without an MPI.
+        // cart/fd502/rs232 and rtc are mutually exclusive here — `check_cartridge_port` rejected other combos.
         app.insert_rtc();
     } else if peripherals.rs232 {
-        // Starts on the inert Loopback endpoint; TCP/PTY stay a
-        // runtime-menu-only setting (`chrome::menu_bar::rs232`).
+        // Starts on the inert Loopback endpoint; TCP/PTY stay a runtime-menu-only setting.
         app.insert_rs232();
     } else if peripherals.fd502
         && let Err(e) = app.ensure_disk_controller()
     {
-        // Empty-drive FD-502 from `[peripherals].fd502` alone; with disk media
-        // set, `CocoApp::new` already inserted the controller and this is a
-        // no-op Ok.
+        // Empty-drive FD-502 only; with disk media set, `CocoApp::new` already inserted the controller.
         app.cart_error = Some(e);
     }
 
@@ -250,22 +213,16 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals)
 }
 
 /// Wire `[ports].serial` — the built-in bit-banger serial port's host sink,
-/// distinct from the cartridge-port Deluxe RS-232 Pak the peripherals above
-/// mount. Runs after [`mount_peripherals`] and before `launch_machine`'s
-/// `cart_error` promotion, so a failure here (an unwritable artifact
-/// directory, or whatever [`CocoApp::start_print_capture`] itself rejects)
-/// surfaces as a launch error the same way an `insert_*` failure does.
+/// distinct from the cartridge-port RS-232 Pak. Runs before
+/// `launch_machine`'s `cart_error` promotion so failures surface the same way.
 fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
     match serial {
-        // Attached with the paper window closed; output accumulates and
-        // View ▸ Printer Paper shows it (`paper_view`'s module doc — the
-        // window just displays whatever handle it's given).
+        // Attached with the paper window closed; output accumulates and View ▸ Printer Paper shows it.
         Some(machine_def::SerialDTO::Printer) => app.attach_dmp105(),
         Some(machine_def::SerialDTO::File) => {
             let path = machine_def::resolve_media_path(PRINTOUT_FILE, slug);
             if let Some(parent) = path.parent() {
-                // The artifact directory may not exist yet — nothing else
-                // creates it ahead of a `[ports]`-only definition.
+                // The artifact directory may not exist yet for a `[ports]`-only definition.
                 if let Err(e) = fs::create_dir_all(parent) {
                     app.cart_error = Some(format!("{}: {e}", parent.display()));
                     return;

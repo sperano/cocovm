@@ -12,9 +12,7 @@ fn tdr_write_clears_tdre_then_consume_at_start_resets_it() {
     let mut acia = ACIA6551::new();
     acia.write(2, command::DTR); // DTR enabled, tx-IRQ off (RTS_OFF)
     acia.write(0, 0x55);
-    // TDRE is cleared and then immediately re-set by the synchronous
-    // consume-at-start check inside write_tdr, since the transmitter
-    // was idle.
+    // TDRE clears then immediately re-sets via write_tdr's consume-at-start check.
     assert_eq!(acia.read(1) & status::TDRE, status::TDRE);
 }
 
@@ -96,8 +94,7 @@ fn overrun_set_when_second_byte_completes_before_rdr_read_rdr_still_replaces() {
     assert!(acia.rx_ready());
     assert_eq!(acia.read(1) & status::RDRF, status::RDRF);
 
-    // RDR not read yet: receive a second byte, which completes and
-    // must still replace RDR, setting overrun.
+    // RDR not read yet: second byte completes and still replaces RDR, setting overrun.
     acia.receive_byte(0x02);
     acia.tick(cycles);
 
@@ -147,8 +144,7 @@ fn dtr_disabled_blocks_transmit_and_rx_irq() {
     acia.receive_byte(0x11);
     let cycles = acia_test_cycles_per_frame(&acia);
     acia.tick(cycles);
-    // RDRF still sets (a frame still "arrives" physically), but with
-    // DTR disabled the rx-IRQ never arms.
+    // RDRF still sets (frame still "arrives"), but rx-IRQ never arms with DTR disabled.
     assert_eq!(acia.read(1) & status::RDRF, status::RDRF);
     assert!(!acia.irq_asserted());
 }
@@ -191,10 +187,7 @@ fn programmed_reset_preserves_rdrf_and_tdre_irq_sources() {
     assert!(acia.irq_asserted());
 
     acia.write(1, 0); // programmed reset
-    // The IRQ output must still be asserted: TDRE's IRQ source survives
-    // programmed reset even though DTR (and thus tx_irq_enabled()) is
-    // now off (verified MAME divergence from the general command-write
-    // clearing rule).
+    // TDRE's IRQ survives programmed reset even though DTR is now off.
     assert!(acia.irq_asserted());
 }
 
@@ -226,10 +219,8 @@ fn echo_mode_retransmits_received_bytes() {
     assert_eq!(acia.take_tx_byte(), Some(0x5A));
 }
 
-/// Test-only helper mirroring the production `cycles_per_frame` formula
-/// for the ACIA's *current* register configuration, so RX-focused tests
-/// don't have to hardcode a value that only holds for default control
-/// bits.
+/// Test-only helper mirroring `cycles_per_frame` for the ACIA's current
+/// config, so RX tests don't hardcode a value that only holds by default.
 fn acia_test_cycles_per_frame(acia: &ACIA6551) -> u32 {
     acia.cycles_per_frame()
 }

@@ -16,10 +16,8 @@ use super::regs::{
 };
 
 impl SystemBus {
-    /// Bounds-check a `SAM::map` RAM target against installed RAM. Unlike the
-    /// GIME path (which masks/wraps into a smaller machine's high blocks),
-    /// out-of-range plain-SAM RAM is just truncated for now: reads/writes
-    /// past the installed size fall off the bus.
+    /// Bounds-checks a `SAM::map` RAM target against installed RAM. Unlike
+    /// the GIME path, out-of-range plain-SAM RAM is truncated, not wrapped.
     pub(super) fn sam_ram_index(&self, phys: usize) -> Option<usize> {
         (phys < self.ram.len()).then_some(phys)
     }
@@ -51,10 +49,7 @@ impl SystemBus {
                     self.ram[i] = val;
                 }
             }
-            // ROM/cart/open-bus targets: while TY=0 writes to $8000-$FEFF do
-            // not write through to the RAM underneath (MAME gates
-            // write-through on TY) — there's no RAM there at all in our
-            // model, so these are simply dropped.
+            // TY=0 writes to $8000-$FEFF don't write through to RAM (MAME gates write-through on TY); dropped here.
             SAMTarget::RomExt(_)
             | SAMTarget::RomBas(_)
             | SAMTarget::Cart(_)
@@ -63,12 +58,10 @@ impl SystemBus {
         }
     }
 
-    /// The `SAMTarget::Io` sub-decode: PIA0, PIA1, cart SCS*, and the SAM
-    /// control strobes (read-only in effect — a strobe read falls through to
-    /// open bus, matching the plan's memory map).
+    /// The `SAMTarget::Io` sub-decode: PIA0, PIA1, cart SCS*, and SAM control
+    /// strobes (strobe reads fall through to open bus).
     fn sam_io_read(&mut self, addr: u16) -> u8 {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's
-        // handler-installation order over the SCS window.
+        // Becker port takes precedence over cartridge dispatch (mirrors MAME's handler order).
         if let Some(v) = self.becker_read(addr) {
             return v;
         }
@@ -88,8 +81,7 @@ impl SystemBus {
     }
 
     fn sam_io_write(&mut self, addr: u16, val: u8) {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's
-        // handler-installation order over the SCS window.
+        // Becker port takes precedence over cartridge dispatch (mirrors MAME's handler order).
         if self.becker_write(addr, val) {
             return;
         }

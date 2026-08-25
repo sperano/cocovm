@@ -22,14 +22,8 @@ pub const NON_WIDE_ACTIVE_W: usize = 512;
 /// Horizontal border width each side of a non-wide mode's 512 px body.
 pub const NON_WIDE_BORDER_X: usize = (CANVAS_W - NON_WIDE_ACTIVE_W) / 2;
 
-/// Vertical placement of the active body inside the 240 visible rows,
-/// indexed by the $FF99 LPF field: `(top border rows, body rows)`.
-///
-/// 192/200/225 come from MAME `update_geometry` (25/23/8 top-border lines;
-/// each sums with its bottom border to exactly 240). LPF=%10 is the glitched
-/// "zero/infinite" count on real silicon (MAME uses a sentinel; Lomont: the
-/// visible result depends on where in the raster the write lands); 210
-/// centered is this crate's existing sane approximation (`gime::LPF_LINES`).
+/// Vertical placement of the active body inside the 240 visible rows, indexed
+/// by LPF; LPF=%10 is a glitched value on real silicon, approximated as 210 centered.
 pub const fn vertical_window(lpf: usize) -> (usize, usize) {
     match lpf {
         0 => (25, 192),

@@ -17,8 +17,7 @@ fn base_def() -> MachineDef {
 }
 
 /// `[peripherals].rs232 = true` mounts the Deluxe RS-232 Pak straight into
-/// the cartridge port (`mount_peripherals`'s non-MPI `rs232` arm →
-/// `CocoApp::insert_rs232`).
+/// the cartridge port.
 #[test]
 fn rs232_def_mounts_the_pak() {
     let mut def = base_def();
@@ -33,9 +32,7 @@ fn rs232_def_mounts_the_pak() {
 }
 
 /// `[ports].serial = "printer"` attaches a DMP-105 to the bit-banger with
-/// the paper window closed (`mount_serial`'s `Printer` arm) — the window
-/// shows the accumulating output once opened, per `paper_view`'s
-/// sink-ownership doc.
+/// the paper window closed; it shows accumulating output once opened.
 #[test]
 fn printer_def_attaches_the_paper_window_handle() {
     let mut def = base_def();
@@ -51,9 +48,7 @@ fn printer_def_attaches_the_paper_window_handle() {
 }
 
 /// `[ui].joy_left`/`joy_right` reach the launched `CocoApp`'s
-/// `joysticks.sources`, indexed by `coco_core::joystick::{RIGHT, LEFT}` —
-/// the definition's *starting* state, same as `aspect_correct`/`kb_mode`
-/// (`launch_machine`'s doc comment).
+/// `joysticks.sources` as the definition's starting state.
 #[test]
 fn joy_sources_def_reaches_the_app() {
     let mut def = base_def();
@@ -73,8 +68,7 @@ fn joy_sources_def_reaches_the_app() {
 }
 
 /// `mpi = true` + `rs232 = true` is rejected outright — the pak has no
-/// MultiPak-slot support yet, so an MPI can't lift the one-peripheral limit
-/// for it the way it does for the FD-502/RTC (`check_cartridge_port`'s doc).
+/// MultiPak-slot support yet, unlike FD-502/RTC.
 #[test]
 fn mpi_and_rs232_together_errors() {
     let mut def = base_def();

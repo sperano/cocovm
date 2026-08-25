@@ -33,21 +33,13 @@ fn machine_menu_reset_keeps_the_ui_alive() {
     );
 }
 
-/// The VM window's own toolbar: the same four transport tiles
-/// (Start/Suspend/Stop/Reset) the manager toolbar draws, via the shared
-/// `toolbar_button` widget, plus the VM-only Debug tile. A chrome-bearing VM
-/// window only ever exists while Running, so Start is permanently disabled
-/// here; Suspend, Stop, Reset, and Debug stay live. With no menu open,
-/// "Reset" can only be the toolbar tile — the Machine menu's own "Reset"
-/// item only joins the accessibility tree while that menu is open
-/// (`harness.rs`'s `lowest_by_label` doc covers the collision once it is).
+/// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the VM-only
+/// Debug tile. Start stays permanently disabled (a chrome-bearing window only exists while Running).
 #[test]
 fn toolbar_shows_start_disabled_and_others_live() {
     let mut harness = boot_harness();
 
-    // One pass over all five tiles: each label is looked up (asserting it
-    // exists) exactly once, and its enabled/disabled state checked in the
-    // same step rather than re-querying "Start" a second time.
+    // One pass over all five tiles: each label looked up and its enabled state checked once.
     let expectations = [
         (
             "Start",
@@ -75,14 +67,8 @@ fn toolbar_shows_start_disabled_and_others_live() {
     );
 }
 
-/// The Debug tile and its shortcut are the debugger's two toggles (the View
-/// menu no longer carries one), flipping the same `DebuggerPanel::open`.
-/// The open debugger is only ever closed with ⌘D here, never the tile: in
-/// this harness the debugger renders as *embedded* floating windows
-/// (kittest has no multi-viewport support), and "Debug: Controls" /
-/// "Debug: Disassembly" (`default_pos` y=40) land over the toolbar and
-/// swallow its clicks — an embedded-fallback artifact a real (separate-OS-
-/// window) debugger viewport doesn't have.
+/// The Debug tile and shortcut both flip `DebuggerPanel::open`. Only ⌘D
+/// closes it here — the embedded debugger windows land over the toolbar and swallow its clicks.
 #[test]
 fn debug_tile_and_shortcut_toggle_the_debugger() {
     let mut harness = boot_harness();
@@ -138,16 +124,8 @@ fn function_key_hotkeys_toggle_aspect_help_and_keyboard_mode() {
     );
 }
 
-/// The status bar's keyboard entry is the menu button for the keyboard menu
-/// (`CocoApp::keyboard_menu_ui`), so the mode is changed from the same entry
-/// that shows the current mode — the entry's label IS the mode name, so it
-/// reads "Positional" at boot and "Symbolic" after the switch. While the
-/// popup is open, the entry and the selected menu item share the current
-/// mode's label — this test stays unambiguous only because it clicks the
-/// entry with the popup closed and, once open, clicks labels the entry
-/// doesn't carry. A test that needs the entry while the popup is up should
-/// go through the icon's distinct "Keyboard menu" handle instead (as the
-/// sibling test below does).
+/// The status bar's keyboard entry is the menu button for the keyboard menu;
+/// the entry's label IS the current mode name ("Positional" → "Symbolic").
 #[test]
 fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     let mut harness = boot_harness();
@@ -167,11 +145,8 @@ fn status_bar_keyboard_entry_opens_the_keyboard_menu() {
     assert!(!harness.state().show_kbd_help);
 }
 
-/// The icon half of that click target: icon and label are unioned into
-/// one response, so clicking the painted keyboard opens the same menu. The
-/// icon is painted rather than built from a widget, so what puts it in the
-/// accessibility tree under "Keyboard menu" is `keyboard_status`'s own
-/// `widget_info` call.
+/// The icon half of that click target: icon and label are unioned into one
+/// response, so clicking the painted keyboard opens the same menu.
 #[test]
 fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
     let mut harness = boot_harness();
@@ -183,11 +158,8 @@ fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
     assert!(harness.state().kb_mode == KbMode::Symbolic);
 }
 
-/// The status bar's last entry — cumulative powered-on runtime
-/// (`CocoApp::total_runtime`'s doc) — shows on a freshly booted window
-/// even before any session time has accrued: `boot_harness` builds a bare
-/// `CocoApp` with `total_runtime` at its default `Duration::ZERO`, so the
-/// label reads exactly "Runtime: 0 s".
+/// The status bar's runtime entry shows even before any session time has
+/// accrued: a freshly booted `CocoApp` reads exactly "Runtime: 0 s".
 #[test]
 fn status_bar_shows_the_runtime_entry() {
     let harness = boot_harness();
@@ -203,13 +175,8 @@ fn view_menu_toggles_aspect() {
     assert!(!harness.state().aspect_correct);
 }
 
-/// The status bar's display entry is the menu button for the display menu
-/// (`CocoApp::display_menu_ui`) — the View menu no longer carries the
-/// choice. The entry's label is the short form of the current selection
-/// ("RGB", …), the menu items the full names — distinct in the
-/// accessibility tree while the popup is open, except for "B&W TV", whose
-/// short and full forms coincide; that's why the reopen below goes through
-/// the icon's "Display menu" name instead of the entry label.
+/// The status bar's display entry is the menu button for the display menu;
+/// its label (short form) collides with the menu's full "B&W TV" item, unlike other picks.
 #[test]
 fn status_bar_display_entry_switches_display() {
     let mut harness = boot_harness();
@@ -220,8 +187,7 @@ fn status_bar_display_entry_switches_display() {
     );
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 
-    // Picking a TV steers the GIME to the composite path too: the TV hangs
-    // off the RF modulator, which is fed the composite signal.
+    // Picking a TV steers the GIME to the composite path too (the RF modulator feeds off it).
     click(&mut harness, "RGB");
     click(&mut harness, "B&W TV");
     assert_eq!(harness.state().display, Display::TV(crate::display::TV::BW));
@@ -231,8 +197,7 @@ fn status_bar_display_entry_switches_display() {
         "display swap takes effect live, no power cycle"
     );
 
-    // The entry's label tracks the selection; the icon half of the click
-    // target works too, under `display_status`'s `widget_info` name.
+    // The entry's label tracks the selection; the icon half of the click target works too.
     click(&mut harness, "Display menu");
     click(&mut harness, "RGB monitor");
     assert_eq!(harness.state().display, Display::Monitor(MonitorType::RGB));
@@ -307,10 +272,7 @@ fn media_actions_are_disabled_until_media_is_present() {
         );
     }
 
-    // The tape actions live in the status bar's tape menu, not the Machine
-    // menu — gated the same way. Toggle the Machine menu closed first so the
-    // tape entry's click opens its popup rather than just dismissing the
-    // open one.
+    // Toggle the Machine menu closed first so the tape entry's click opens its popup, not dismisses one.
     click(&mut harness, "Machine");
     click(&mut harness, "Tape menu");
     for label in ["Rewind Tape", "Eject Tape"] {
@@ -356,9 +318,7 @@ fn multipak_install_slot_and_switch_flow() {
         "the FD-502 in an MPI slot must be reachable through the cart chain"
     );
 
-    // Move the front-panel switch to slot 2. The Switch popup's exact
-    // "Slot 2" is unique — the parent menu's slot entry is a submenu button
-    // labelled "Slot 2 ⏵".
+    // Move the front-panel switch to slot 2; the parent menu's own entry is "Slot 2 ⏵", not "Slot 2".
     click(&mut harness, "Machine");
     click_containing(&mut harness, "MultiPak Interface");
     click_containing(&mut harness, "Switch");
@@ -383,11 +343,8 @@ fn machine_menu_checkbox_toggles_cartridge_autostart() {
     assert!(!harness.state().autostart_cart);
 }
 
-/// The Machine menu's Save/Load State section ([`crate::save_state`]) shows
-/// both file-dialog items and both quick-slot submenus — the section itself
-/// is mostly untestable headlessly (`rfd` opens a native dialog), so this
-/// just covers visibility/wiring; the actual save/load round trip is
-/// exercised directly through `save_state_to`/`load_state_from` below.
+/// The Machine menu's Save/Load State section shows both file-dialog items
+/// and both quick-slot submenus — `rfd`'s native dialog makes this visibility-only.
 #[test]
 fn machine_menu_shows_save_and_load_state_items() {
     let mut harness = boot_harness();
@@ -399,10 +356,8 @@ fn machine_menu_shows_save_and_load_state_items() {
     harness.get_by_label_contains("Quick Load");
 }
 
-/// A save-then-load round trip driven directly through
-/// `save_state_to`/`load_state_from` against a temp file (not `rfd`, which a
-/// headless test can't drive): the machine keeps running across the load,
-/// and both the save and the load show a status-bar toast.
+/// A save-then-load round trip driven directly through `save_state_to`/
+/// `load_state_from` (not `rfd`, which a headless test can't drive).
 #[test]
 fn save_state_then_load_state_round_trip() {
     let mut harness = boot_harness();
@@ -438,10 +393,8 @@ fn save_state_then_load_state_round_trip() {
     harness.get_by_label_contains("State loaded");
 }
 
-/// A load must not play out the pre-load machine's sound: whatever
-/// `AudioOutput` still had queued (and every filter's memory of it) is
-/// dropped by `load_state_from`, so the first audio heard after a restore
-/// is the restored machine's own.
+/// A load must not play out the pre-load machine's sound: `load_state_from`
+/// drops whatever `AudioOutput` still had queued.
 #[test]
 fn load_state_drops_queued_audio_from_before_the_load() {
     let mut harness = boot_harness();
@@ -452,8 +405,7 @@ fn load_state_drops_queued_audio_from_before_the_load() {
         .save_state_to(&path)
         .unwrap_or_else(|e| panic!("save_state_to failed: {e}"));
 
-    // Stand in for the real device (absent on CI) with a headless
-    // pipeline and let a few frames of emulation fill it.
+    // Stand in for the real device (absent on CI) with a headless pipeline.
     harness.state_mut().audio = audio::AudioOutput::headless(48_000.0);
     for _ in 0..8 {
         harness.step();
@@ -489,8 +441,7 @@ fn cartridge_error_dialog_dismisses_with_ok() {
 #[test]
 fn disk_controller_confirmation_can_be_cancelled() {
     let mut harness = boot_harness();
-    // The state a menu Insert Disk lands in when no FD-502 is installed
-    // (reached directly — the menu path itself opens a native file dialog).
+    // The state Insert Disk lands in with no FD-502 installed (reached directly; the menu opens a native dialog).
     harness.state_mut().pending_disk_action = Some(PendingDiskAction::Insert {
         drive: 0,
         path: PathBuf::from("nonexistent.dsk"),
@@ -508,16 +459,13 @@ fn disk_controller_confirmation_can_be_cancelled() {
 }
 
 /// Machine ▸ Deluxe RS-232 Pak ▸ Insert plugs the pak in on the loopback
-/// endpoint, reachable behind the trait object, and the status bar reports
-/// it; Remove restores the empty slot.
+/// endpoint and the status bar reports it; Remove restores the empty slot.
 #[test]
 fn rs232_menu_inserts_and_removes_the_pak() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    // Not `click_submenu`: its substring match would also hit the
-    // "Insert/Remove Deluxe RS-232 Pak" items once hovering opens the
-    // submenu, so match the arrow-suffixed label exactly.
+    // Not click_submenu: its substring match would also hit the Insert/Remove items once open.
     click(&mut harness, "Deluxe RS-232 Pak ⏵");
     click(&mut harness, "Insert Deluxe RS-232 Pak");
     {
@@ -535,9 +483,7 @@ fn rs232_menu_inserts_and_removes_the_pak() {
     );
 
     click(&mut harness, "Machine");
-    // Not `click_submenu`: its substring match would also hit the
-    // "Insert/Remove Deluxe RS-232 Pak" items once hovering opens the
-    // submenu, so match the arrow-suffixed label exactly.
+    // Not click_submenu: its substring match would also hit the Insert/Remove items once open.
     click(&mut harness, "Deluxe RS-232 Pak ⏵");
     click(&mut harness, "Remove Deluxe RS-232 Pak");
     let app = harness.state_mut();
@@ -569,8 +515,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
             AppParams::default(),
         )
     });
-    // Drive the app-glue directly (the menu item's click handler opens a
-    // native file dialog, which a headless test can't answer).
+    // Drive the app-glue directly: the menu item's click handler opens a native file dialog.
     harness.state_mut().insert_gmc(path.clone());
     harness.step();
 

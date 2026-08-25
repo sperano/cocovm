@@ -84,9 +84,7 @@ fn civil_from_days(days: i64) -> (i32, u8, u8) {
 
 impl RTCTime {
     /// Seconds since the 1970-01-01 00:00:00 epoch (proleptic Gregorian).
-    /// Out-of-range month/day (a partially-written register file mid-`setime`)
-    /// are clamped into the calendar rather than rejected — the running clock
-    /// must keep returning *something* between the driver's digit writes.
+    /// Out-of-range month/day are clamped rather than rejected, so a partially-written register file mid-`setime` still returns something.
     fn to_secs(self) -> i64 {
         let month = self.month.clamp(1, 12);
         let day = self.day.clamp(1, 31);
@@ -183,11 +181,8 @@ const RESTORED_PLACEHOLDER_TIME: RTCTime = RTCTime {
     second: 0,
 };
 
-/// `#[serde(default = "...")]` for [`MSM6242::now`]: a closure that always
-/// returns [`RESTORED_PLACEHOLDER_TIME`], standing in until
-/// [`DistoRTC::set_time_source`] re-injects the host clock the frontend owns
-/// (`now` isn't itself state — it's a closure, so it can't round-trip
-/// through a snapshot at all).
+/// `#[serde(default = "...")]` for [`MSM6242::now`]: yields [`RESTORED_PLACEHOLDER_TIME`]
+/// until [`DistoRTC::set_time_source`] re-injects the real host clock.
 fn default_time_source() -> TimeSource {
     Box::new(|| RESTORED_PLACEHOLDER_TIME)
 }
@@ -287,12 +282,8 @@ impl MSM6242 {
         RTCTime::from_secs(self.current_secs())
     }
 
-    /// Restore-path-only: re-inject the host time source after a snapshot
-    /// restore (`now` is `#[serde(skip)]` — a closure can't round-trip
-    /// through a snapshot at all). `offset_secs`
-    /// came back from the snapshot untouched, so plugging in the real clock
-    /// here resumes exactly where the snapshot left off, not at a fresh
-    /// zero offset the way [`MSM6242::new`] would.
+    /// Restore-path-only: re-inject the host time source after a snapshot restore
+    /// (`now` is `#[serde(skip)]`). Resumes exactly where the snapshot left off, not at a fresh offset.
     pub fn set_time_source(&mut self, now: TimeSource) {
         self.now = now;
     }
@@ -358,12 +349,7 @@ impl MSM6242 {
             }
             REG_CE => self.reg_ce = val,
             REG_CF => {
-                // The 12/24 bit latches only on a RESET 1 -> 0 transition
-                // (spec; MAME `msm6242.cpp` write, CF). Deliberate deviation
-                // from MAME on that branch: MAME keeps the *old* RESET/STOP
-                // bits, leaving RESET stuck at 1 so every later CF write
-                // "transitions" again and re-latches 24/12 — a transcription
-                // artifact, not chip behavior. We store what was written.
+                // 12/24 latches only on RESET 1->0 (spec); unlike MAME's bugged transcription, we store what was written.
                 if val & cf::RESET == 0 && self.reg_cf & cf::RESET != 0 {
                     self.reg_cf = val & (cf::WRITE_MASK | cf::H24);
                 } else {
@@ -474,9 +460,8 @@ impl std::fmt::Debug for DistoRTC {
 }
 
 impl DistoRTC {
-    /// Build the cart around a host time source; the clock starts on the
-    /// source's time (offset 0), like a battery-backed chip that was already
-    /// set.
+    /// Build the cart around a host time source; starts at the source's time
+    /// (offset 0), like a battery-backed chip that was already set.
     pub fn new(now: TimeSource) -> Self {
         Self {
             rtc: MSM6242::new(now),
@@ -489,9 +474,7 @@ impl DistoRTC {
         &mut self.rtc
     }
 
-    /// Restore-path-only: re-inject the host time source after a snapshot
-    /// restore — delegates into [`MSM6242::set_time_source`]
-    ///.
+    /// Restore-path-only: re-inject the host time source after a snapshot restore.
     pub fn set_time_source(&mut self, now: TimeSource) {
         self.rtc.set_time_source(now);
     }
@@ -515,8 +498,7 @@ impl Cartridge for DistoRTC {
         }
     }
 
-    // No `reset` override: the chip is battery-backed, so the RESET* line
-    // doesn't touch the time or control registers.
+    // No `reset` override: the chip is battery-backed, RESET* doesn't touch the registers.
 }
 
 #[cfg(test)]

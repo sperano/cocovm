@@ -56,10 +56,8 @@ pub(crate) const FORM_LABEL_MIN_WIDTH: f32 = 70.0;
 /// steps this much further right.
 const SUB_FORM_INDENT: f32 = 12.0;
 
-/// One outer-grid row holding an indented sub-form: an empty label cell,
-/// then the sub-form shifted [`SUB_FORM_INDENT`] into the combo column.
-/// Top-aligned (`horizontal_top`): a plain `horizontal` vertically centers
-/// the tall nested grid, opening an oversized gap above its first row.
+/// One outer-grid row holding an indented sub-form: an empty label cell, then the sub-form
+/// shifted [`SUB_FORM_INDENT`] into the combo column. Top-aligned — a plain `horizontal` would vertically center the tall nested grid, opening a gap above its first row.
 fn sub_form_row(ui: &mut egui::Ui, draw: impl FnOnce(&mut egui::Ui)) {
     ui.label("");
     ui.horizontal_top(|ui| {
@@ -91,8 +89,6 @@ const fn video_label(video: VideoStandard) -> &'static str {
     }
 }
 
-/// `pub(crate)`: also used by `manager.rs`'s list-row subtitle ("CoCo 3 ·
-/// 512K").
 pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
     match memory {
         MemorySize::K4 => "4K",
@@ -269,26 +265,17 @@ impl From<Option<SerialDTO>> for SerialChoice {
     }
 }
 
-/// Re-constrain a draft after a model change: snap RAM to the new family's
-/// default when the current pick isn't valid for it, and force NTSC where
-/// PAL isn't modeled ([`MachineConfig::validate`]'s rules).
+/// Re-constrains a draft after a model change: snaps RAM to the new family's default when
+/// invalid, and forces NTSC where PAL isn't modeled.
 fn constrain(draft: &mut MachineConfig) {
     if !ram_choices(draft.variant).contains(&draft.memory) {
-        // Snap to the new family's own default RAM size.
         draft.memory = crate::default_ram(draft.variant);
     }
     if draft.variant != MachineVariant::Coco3 {
         draft.video = VideoStandard::NTSC;
     }
-    // `draft.monitor` is deliberately not touched here: the form's Display
-    // pick owns it ([`MachineForm::display_rows`]'s re-constrain + sync),
-    // since the config's signal path alone can't tell a CoCo 3 TV from a
-    // composite monitor.
-    // Only runs on model-change clicks, so an explicit MC6847 pick made
-    // while staying on CoCo 2 sticks; switching models re-seeds the
-    // family default (the T1 "CoCo 2B" for CoCo 2, the only-possible
-    // plain MC6847 on CoCo 1, no VDG at all on CoCo 3 —
-    // `MachineConfig::validate`).
+    // `draft.monitor` isn't touched here — the form's Display pick owns it, since config alone can't tell a CoCo 3 TV from a composite monitor.
+    // Only runs on model-change clicks, so an explicit MC6847 pick while staying on CoCo 2 sticks.
     draft.vdg = crate::default_vdg(draft.variant);
 }
 

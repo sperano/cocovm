@@ -2,9 +2,8 @@ use coco_core::MonitorType;
 
 use super::*;
 
-/// Every config the form can produce must pass core validation — the
-/// choice lists, `constrain`, and `Display::to_monitor` exist precisely to
-/// guarantee this.
+/// Every config the form can produce must pass core validation — the choice lists,
+/// `constrain`, and `Display::to_monitor` exist precisely to guarantee this.
 #[test]
 fn every_selectable_config_validates() {
     for variant in MachineVariant::ALL {
@@ -20,9 +19,7 @@ fn every_selectable_config_validates() {
         };
         for &memory in ram_choices(variant) {
             for &video in videos {
-                // The form's Display row is the only writer of
-                // `config.monitor` (`MachineForm::display_rows`), so the
-                // monitor axis is exactly its per-variant choice list.
+                // The form's Display row is the only writer of `config.monitor`, so the monitor axis is exactly its per-variant choice list.
                 for &display in Display::choices(variant) {
                     for &vdg in vdgs {
                         let config = MachineConfig {
@@ -43,12 +40,8 @@ fn every_selectable_config_validates() {
     }
 }
 
-/// Switching model away from CoCo 3 must snap GIME-only RAM and PAL back
-/// to plain-SAM-valid values (and vice versa for RAM); switching models
-/// re-seeds the VDG family default (T1 on CoCo 2, plain MC6847 on
-/// CoCo 1, none on CoCo 3). `config.monitor` is deliberately not
-/// `constrain`'s to touch — the form's Display pick owns it
-/// (`MachineForm::display_rows`'s re-constrain).
+/// Switching model away from CoCo 3 must snap GIME-only RAM and PAL back to plain-SAM-valid
+/// values (and vice versa), and re-seed the VDG family default. `constrain` deliberately doesn't touch `config.monitor` — the form's Display pick owns that.
 #[test]
 fn constrain_draft_snaps_family_specific_fields() {
     let mut config = MachineConfig {
@@ -79,9 +72,8 @@ fn constrain_draft_snaps_family_specific_fields() {
     assert_eq!(config.vdg, Some(VDGVariant::MC6847));
 }
 
-/// The display half of the re-constrain (`MachineForm::display_rows` runs
-/// it before drawing): a monitor pick snaps to the default TV when the
-/// model loses its monitor port, and the config's signal path follows.
+/// The display half of the re-constrain (run before drawing): a monitor pick snaps to the
+/// default TV when the model loses its monitor port, and the config's signal path follows.
 #[test]
 fn constrain_display_snaps_to_tv_where_no_monitor_port_exists() {
     let mut form = MachineForm::new("test");
@@ -97,8 +89,7 @@ fn constrain_display_snaps_to_tv_where_no_monitor_port_exists() {
     );
     assert!(form.config.validate().is_ok());
 
-    // A TV pick survives the trip back to CoCo 3 — and resolves to the
-    // composite path, not the RGB default.
+    // A TV pick survives the trip back to CoCo 3, resolving to the composite path, not the RGB default.
     form.config.variant = MachineVariant::Coco3;
     constrain(&mut form.config);
     form.constrain_display();

@@ -1,9 +1,7 @@
 use super::*;
 
-/// Scratch directory under `target/` holding only the ROM files a given
-/// test writes into it — deliberately not the real workspace `roms/`
-/// (whose contents vary machine-to-machine), so [`compose_coco12_rom`]'s
-/// candidate-preference logic is exercised deterministically.
+/// Scratch directory under `target/` for a test's own ROM files — not the
+/// real workspace `roms/`, whose contents vary machine-to-machine.
 fn scratch_roms_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp-test-roms")
@@ -62,8 +60,7 @@ fn compose_coco12_rom_prefers_newest_candidate_present() {
 #[test]
 fn compose_coco12_rom_demotes_coco2b_bas13_to_last_resort() {
     let dir = scratch_roms_dir("compose_demotes_bas13");
-    // bas13 pairs with the unmodeled MC6847T1 (CoCo 2B): bas12 must win
-    // over it despite being the older version number.
+    // bas13 (CoCo 2B/MC6847T1) is rarer: bas12 must win despite being older.
     std::fs::write(dir.join("bas13.rom"), vec![0x13u8; COCO12_BAS_OFFSET]).unwrap();
     std::fs::write(dir.join("bas12.rom"), vec![0x12u8; COCO12_BAS_OFFSET]).unwrap();
 

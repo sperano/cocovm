@@ -8,13 +8,9 @@ use eframe::egui;
 use super::{ManagerApp, THUMBNAIL_FILE};
 
 impl ManagerApp {
-    /// Snapshot `entries[index]`'s live VM screen into its artifact dir
-    /// (see [`super::write_thumbnail_png`]) and invalidate the row's cached preview
-    /// texture so the next draw reloads the fresh file — the screenshot
-    /// half of Suspend (`super::lifecycle`'s `suspend_vm`). No-op for an
-    /// entry with no VM or when no artifact root exists. Capture happens
-    /// between update frames, so the framebuffer always holds a whole
-    /// rendered field — never a torn, mid-render frame.
+    /// Snapshot `entries[index]`'s live VM screen into its artifact dir and
+    /// invalidate the row's cached preview texture. No-op with no VM or no
+    /// artifact root.
     pub(super) fn write_entry_thumbnail(&mut self, index: usize) {
         let Some(root) = &self.artifacts_root else {
             return;
@@ -23,11 +19,7 @@ impl ManagerApp {
         let Some(vm) = entry.vm.as_ref() else {
             return;
         };
-        // The raw framebuffer bypasses `upload_framebuffer_texture`'s TV
-        // chain, so run it here too — a B&W machine's saved preview must
-        // not come back in color (nor a TV's without its scanlines).
-        // The last upload's seed: the PNG freezes the same instant of
-        // snow the screen showed, like a photograph of the set would.
+        // Runs the TV-processing chain here too, since the raw framebuffer bypasses `upload_framebuffer_texture`'s.
         let frame = crate::display::process(
             vm.display,
             vm.tv,
@@ -48,11 +40,9 @@ impl ManagerApp {
     }
 
     /// Lazily load a suspended, window-closed entry's saved
-    /// [`THUMBNAIL_FILE`] into a texture the first time its row draws (and
-    /// again after [`Self::write_entry_thumbnail`] invalidates the cache).
-    /// Only suspended machines show a saved preview — a powered-off row is
-    /// deliberately black — so nothing else ever loads one. Failures just
-    /// leave the placeholder — the preview is a cache, never required state.
+    /// [`THUMBNAIL_FILE`] into a texture the first time its row draws.
+    /// Failures just leave the placeholder — the preview is a cache, never
+    /// required state.
     pub(super) fn ensure_row_thumbnail(&mut self, ctx: &egui::Context, index: usize) {
         let entry = &mut self.entries[index];
         if entry.vm.is_some() || !entry.suspended || entry.thumbnail_load_attempted {

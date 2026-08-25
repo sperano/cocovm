@@ -24,16 +24,8 @@ use super::media_ref::{
 
 impl CocoApp {
     /// Load, resolve media, and restore a `.ccstate` file, replacing
-    /// [`CocoApp::machine`] wholesale and re-syncing every piece of
-    /// frontend state a snapshot can't carry on its own — see
-    /// [`Self::apply_restored_machine`]. Version/magic/media errors surface
-    /// verbatim (by design — they're already
-    /// user-showable). Deliberately does NOT touch the window title: the
-    /// caller's `egui::Context` may belong to a different viewport than the
-    /// machine's own window (the manager's resume path runs on the MANAGER
-    /// window's context), so a VM-window call site (the Machine menu's Load
-    /// State/quick-load) reissues the title itself via
-    /// [`Self::refresh_window_title`].
+    /// [`CocoApp::machine`] wholesale. Does not touch the window title —
+    /// callers use [`Self::refresh_window_title`] for that.
     pub(crate) fn load_state_from(&mut self, path: &Path) -> Result<(), String> {
         let bytes =
             std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
@@ -52,15 +44,8 @@ impl CocoApp {
         Ok(())
     }
 
-    /// Reissue the machine window's title for the current variant — the
-    /// restored machine may be a different variant than whatever ran before
-    /// a load (reissuing when the variant didn't change is cheap and
-    /// idempotent). Split out of [`Self::load_state_from`] because
-    /// `ctx.send_viewport_cmd` targets the context's *current* viewport:
-    /// the manager's resume path runs on the manager window's root context
-    /// and must never retitle it, while a VM window's own call site (the
-    /// Machine menu's Load State/quick-load) IS the machine's own window and
-    /// calls this right after a successful load.
+    /// Reissue the machine window's title for the current variant. Must be
+    /// called on the machine window's own context, never the manager's root context.
     pub(crate) fn refresh_window_title(&self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "cocovm — {}",
@@ -68,19 +53,9 @@ impl CocoApp {
         )));
     }
 
-    /// Resolve a decoded payload's [`MediaRefs`] into [`MediaSources`] for
-    /// [`snapshot::restore`], plus warnings for every hash mismatch found
-    /// along the way ("load with warning").
-    /// A referenced file that's simply missing/unreadable is left absent
-    /// from the returned [`MediaSources`] rather than erroring here —
-    /// [`snapshot::restore`] itself collects every still-missing reference
-    /// (matched against the deserialized cart tree, so it can name each
-    /// one's exact role) into one batched, already user-showable error; this
-    /// function only needs to say what's *wrong*, not what's *absent*. The
-    /// one exception is a mounted `.wav` tape that fails to decode
-    /// ([`Self::resolve_tape`]): that's neither "wrong" (a warning) nor
-    /// "absent" (silently becomes `MissingMedia` downstream, burying the
-    /// actual reason) — it's a hard error straight out of this function.
+    /// Resolve a decoded payload's [`MediaRefs`] into [`MediaSources`], plus
+    /// hash-mismatch warnings. Missing files are left absent rather than
+    /// errored, except a corrupt `.wav` tape ([`Self::resolve_tape`]).
     fn resolve_media_sources(
         &self,
         media: &MediaRefs,
@@ -89,14 +64,7 @@ impl CocoApp {
         let system_rom = resolve_system_rom(media, &mut warnings);
         let cart_roms = resolve_cart_roms(media, &mut warnings);
 
-        // Every loop below caps at this build's own `DRIVE_COUNT` even though
-        // `media.*` is a `Vec` that a hand-edited (or genuinely newer-schema)
-        // payload could make longer: `MediaSources`' arrays are fixed at
-        // that size ( phase-5 review — indexing
-        // past it would panic), and any entry beyond it is separately
-        // rejected with a proper [`snapshot::SnapshotError::InvalidPayload`]
-        // by [`snapshot::restore`] right after this function returns, so
-        // silently not resolving it here costs nothing.
+        // Caps at DRIVE_COUNT: media.* may be a longer Vec, but snapshot::restore rejects oversized payloads separately.
         let mut disks: [Option<Vec<u8>>; fdc::DRIVE_COUNT] = Default::default();
         for (i, mr) in media.disks.iter().enumerate().take(fdc::DRIVE_COUNT) {
             if let Some(mr) = mr {
@@ -139,16 +107,8 @@ impl CocoApp {
         ))
     }
 
-    /// [`MediaSources::tape`]: raw bytes, or — sniffed by the `RIFF` magic,
-    /// same as [`CocoApp::insert_tape`] — demodulated through
-    /// [`coco_core::cassette_wav::decode_wav`] for a tape that was mounted
-    /// from (and never re-saved as) a `.wav` recording. A decode failure is
-    /// a hard `Err` (not a `warnings` entry): leaving it as `None` here
-    /// would surface downstream as [`snapshot::SnapshotError::MissingMedia`]
-    /// from [`snapshot::restore`], which the caller (`Self::load_state_from`)
-    /// turns straight into its own error string — the specific "couldn't
-    /// decode this .wav" reason would never reach the user, only "tape:
-    /// (no reference recorded)"-style boilerplate.
+    /// [`MediaSources::tape`]: raw bytes, or WAV-decoded if the file sniffs
+    /// as `RIFF`. A decode failure is a hard error so the reason reaches the user.
     fn resolve_tape(
         &self,
         mr: &MediaRef,
@@ -171,15 +131,9 @@ impl CocoApp {
         }
     }
 
-    /// Swap in a freshly-restored machine and re-sync every piece of
-    /// frontend state a snapshot can't carry itself: host-only resources
-    /// dropped by (de)serialization ([`coco_core::rtc::DistoRTC`]'s time
-    /// source, the DriveWire clock, the RS-232 endpoint — always restored as
-    /// loopback), the printer paper window's handle, path mirrors rebuilt
-    /// from `media` and the restored cart tree, and emulation pacing.
-    /// Appends every [`RestoredMachine::notes`] entry to `notes` for the
-    /// caller's toast. `aspect_correct`/other UI prefs are NOT in the
-    /// snapshot and are left untouched, same as the running/paused state.
+    /// Swap in a freshly-restored machine and re-sync frontend state a
+    /// snapshot can't carry itself (host-only resources, printer window,
+    /// path mirrors, pacing). UI prefs like `aspect_correct` are left untouched.
     fn apply_restored_machine(
         &mut self,
         restored: RestoredMachine,
@@ -188,32 +142,17 @@ impl CocoApp {
     ) {
         self.machine = restored.machine;
 
-        // A key held during quick-save must not stay held forever after a
-        // later quick-load — mirrors `Self::set_mode`'s own call. The
-        // SERIALIZED matrix round-trips intact (that's correct: the snapshot
-        // itself faithfully records "this key was down"); it's only this
-        // frontend, applying a restore to a live session, that chooses to
-        // clear it, the same way a fresh keyboard-mode switch does.
+        // A key held at quick-save time must not stay stuck held after quick-load.
         self.machine.bus.keyboard.release_all();
 
         self.reinject_host_only_resources();
 
-        // The display device is a UI pref (not in the snapshot), but the
-        // GIME's monitor path came back from the snapshot's config — loading
-        // a state saved under an RGB monitor into a session watching a TV
-        // would otherwise leave the TV decoding the RGB unpack, the exact
-        // combination `display::Display` exists to rule out. Re-assert the
-        // pref's signal path, same as a display-menu click.
+        // Re-assert the display pref's monitor path — the snapshot's GIME config may not match it.
         if let Some(monitor) = self.display.to_monitor(self.machine.config.variant) {
             self.machine.bus.gime.monitor = monitor;
         }
 
-        // Now that the RTC's host time source is back (just above),
-        // `RestoreNote::RTCPlaceholderTime` no longer describes this
-        // session's state — it's only true for a caller that DOESN'T
-        // immediately re-sync the clock the way this one just did (a
-        // headless tool, a test) — so drop it before converting the rest of
-        // the notes to toast text.
+        // RTCPlaceholderTime no longer applies once the host time source is re-synced above.
         notes.extend(
             restored
                 .notes
@@ -222,10 +161,7 @@ impl CocoApp {
                 .map(|n| n.to_string()),
         );
 
-        // Printer: re-link the paper window if the restored sink came back
-        // as a live DMP-105; a file capture always restores as stopped
-        // (`restored.notes` already says so when it applies) — either way
-        // the frontend no longer owns a live capture file handle.
+        // Re-link the paper window only if the restored sink is a live DMP-105; a file capture restores stopped.
         match self.machine.bus.bitbanger.dmp105_handle() {
             Some(handle) => self.paper_window.resync(Some(handle)),
             None => self.paper_window.detach(),
@@ -236,14 +172,7 @@ impl CocoApp {
         self.rebuild_cart_mirrors(media);
         self.rebuild_media_path_mirrors(media);
 
-        // Pacing/audio: drop any time owed to the wall clock so resuming
-        // doesn't "catch up" across the load, like a pause
-        // (`Self::step_emulation`'s own doc). `Machine.audio_buffer` is
-        // `#[serde(skip)]`, rebuilt empty by `Machine::after_restore`
-        // (already run inside `snapshot::restore`), so there's no stale
-        // backlog on the core side to drop here — but the FRONTEND side
-        // still holds up to `RING_BUFFER_SECS` of the pre-load machine's
-        // sound plus its filter history, which `AudioOutput::reset` drops.
+        // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring buffer/filter history.
         self.audio.reset();
         self.last_update = None;
         self.field_debt = 0.0;
@@ -251,10 +180,8 @@ impl CocoApp {
     }
 
     /// Re-inject every host-only resource `#[serde(skip)]` dropped by the
-    /// round trip, wherever the owning device landed (port or MPI slot
-    /// alike — `Cart::as_*` searches both): [`coco_core::rtc::DistoRTC`]'s
-    /// time source, the DriveWire clock, and the Deluxe RS-232 endpoint
-    /// (always restored as loopback — see [`snapshot::RestoreNote::RS232EndpointLoopback`]).
+    /// round trip: RTC time source, DriveWire clock, RS-232 endpoint (always
+    /// restored as loopback).
     fn reinject_host_only_resources(&mut self) {
         if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
             rtc.set_time_source(host_time_source());
@@ -267,15 +194,9 @@ impl CocoApp {
         }
     }
 
-    /// `rom_source` must follow the restored snapshot's own ROM ref, not
-    /// stay pointed at whatever the pre-load session booted with — a later
-    /// save (after a cross-variant load) would otherwise record the WRONG
-    /// `rom_source` for the tree it's actually saving, producing a snapshot
-    /// that restores garbage yet still passes its own hash check. `None`
-    /// (no ref recorded at all) is the one case that keeps the current
-    /// value: a hand-built payload with no system-ROM reference is the only
-    /// way to reach it, and there's no better answer than "whatever the
-    /// resolver already supplied".
+    /// `rom_source` must follow the restored snapshot's own ROM ref, not the
+    /// pre-load session's — otherwise a later save would silently record the
+    /// wrong source and corrupt the snapshot.
     fn update_rom_source_from_media(&mut self, media: &MediaRefs) {
         match &media.system_rom {
             Some(mr) if is_rom_db_pseudo_path(&mr.path) => {
@@ -287,11 +208,8 @@ impl CocoApp {
     }
 
     /// Rebuild `disk_paths`/`vhd_paths`/`dw_paths`/`tape_path` from `media`.
-    /// `.get(i)`, not `media.disks[i]`: `media.*` is a `Vec` (a future
-    /// `DRIVE_COUNT` change mustn't brick old snapshots — see `MediaRefs`'s
-    /// doc comment), possibly shorter than this app's own fixed-size
-    /// path-mirror arrays, e.g. a snapshot that never mounted any disk at
-    /// all.
+    /// Uses `.get(i)`, not indexing — `media.*` may be shorter than these
+    /// fixed-size path-mirror arrays.
     fn rebuild_media_path_mirrors(&mut self, media: &MediaRefs) {
         for (i, path) in self.disk_paths.iter_mut().enumerate() {
             *path = media
@@ -317,10 +235,8 @@ impl CocoApp {
         self.tape_path = media.tape.as_ref().map(|r| r.path.clone());
     }
 
-    /// Rebuild `cart_path`/`mpi`/`rtc_direct`/`rs232`/`rs232_eprom_path`
-    /// from the just-restored cart tree ([`Cart::slots_mut`]) plus `media`
-    /// (for the paths — `slots_mut`'s `&mut Cart`s only say what *kind* of
-    /// cart is where, not the file it came from).
+    /// Rebuild `cart_path`/`mpi`/`rtc_direct`/`rs232`/`rs232_eprom_path` from
+    /// the restored cart tree plus `media` (for the paths `slots_mut` doesn't carry).
     fn rebuild_cart_mirrors(&mut self, media: &MediaRefs) {
         self.cart_path = None;
         self.rtc_direct = false;

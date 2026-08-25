@@ -237,12 +237,8 @@ impl GIME {
         Self::default()
     }
 
-    /// Translate a CPU logical address to a physical RAM offset.
-    ///
-    /// With the MMU enabled the active task's 8K block maps each logical slot;
-    /// with it disabled the whole 64K sits at the fixed `$70000` window (SEB
-    /// Unravelled II). The caller masks the result to installed RAM. ROM overlay
-    /// and the `$FE00–$FEFF` MC3 constant page are handled in `SystemBus`.
+    /// Translate a CPU logical address to a physical RAM offset: the active
+    /// task's 8K block per slot when the MMU is enabled, else the fixed `$70000` window.
     pub fn translate(&self, addr: u16) -> usize {
         if self.mmu_enabled {
             let slot = (addr as usize >> BLOCK_SHIFT) & (SLOTS_PER_TASK - 1);
@@ -265,10 +261,8 @@ impl GIME {
         self.task = usize::from(val & init1::TR != 0);
     }
 
-    /// Physical start address of the GIME-native video display: the vertical
-    /// offset registers ×8 (any 8-byte boundary in the 512K space), plus the
-    /// $FF9B 512K bank on >512K machines. GIME-native scanout bypasses the MMU
-    /// entirely — this is a physical address (SEB Unravelled II Fig 6).
+    /// Physical start address of GIME-native video: vertical offset regs ×8,
+    /// plus the $FF9B 512K bank — bypasses the MMU entirely.
     pub fn video_base(&self) -> usize {
         ((self.video_bank as usize & 0x0F) << 19) | ((self.vertical_offset as usize) << 3)
     }
@@ -290,12 +284,8 @@ impl GIME {
         !self.all_ram
     }
 
-    /// True when `addr` in the ROM window maps to the *external* (cartridge)
-    /// ROM, per INIT0 MC1:MC0 (SEB Unravelled II ROM-map table):
-    /// `00`/`01` = 16K internal + 16K external at `$C000`; `10` = 32K
-    /// internal; `11` = 32K external (the CPU vectors stay internal — the bus
-    /// handles those separately). The cold-start writes INIT0 with MC=`10`
-    /// before its `JMP $C000`, which is why a diskless boot runs internal ROM.
+    /// True when `addr` in the ROM window maps to the external (cartridge)
+    /// ROM, per INIT0 MC1:MC0: `00`/`01` = 16K+16K split at `$C000`, `10` = 32K internal, `11` = 32K external.
     pub fn rom_is_external(&self, addr: u16) -> bool {
         match self.init0 & (init0::MC1 | init0::MC0) {
             0b10 => false,
@@ -305,8 +295,7 @@ impl GIME {
     }
 
     /// Write IRQENR ($FF92): set the per-source IRQ enables. Writing 0 to an
-    /// enable bit also clears that source's latched status — a hardware anomaly
-    /// SEB Unravelled II documents and MAME models (`change_gime_irq(m_irq & data)`).
+    /// enable bit also clears that source's latched status.
     pub fn write_irq_enable(&mut self, val: u8) {
         self.irq_pending &= val;
         self.irq_enable = val & intr::SOURCE_MASK;
@@ -329,9 +318,8 @@ impl GIME {
         std::mem::take(&mut self.firq_pending)
     }
 
-    /// Signal an interrupt source edge (an [`intr`] bit). The source latches
-    /// into the IRQ/FIRQ status only where its enable bit is set — GIME
-    /// interrupts trigger "when the enable line is high" (SEB Unravelled II).
+    /// Signal an interrupt source edge (an [`intr`] bit); latches into IRQ/FIRQ
+    /// status only where the corresponding enable bit is set.
     pub fn raise(&mut self, source: u8) {
         self.irq_pending |= source & self.irq_enable;
         self.firq_pending |= source & self.firq_enable;
@@ -349,8 +337,7 @@ impl GIME {
     }
 
     /// Write the timer MSB ($FF94, low nibble = timer bits 8–11) and restart
-    /// the count. SEB documents the MSB write as starting the timer; on the
-    /// real chip either byte restarts it (MAME `reset_timer` on both).
+    /// the count (either byte restarts it on real hardware).
     pub fn write_timer_msb(&mut self, val: u8) {
         self.timer_reload = (self.timer_reload & 0x00FF) | (u16::from(val) << 8 & TIMER_VALUE_MASK);
         self.restart_timer();
@@ -362,9 +349,8 @@ impl GIME {
         self.restart_timer();
     }
 
-    /// Reload the live count from the programmed value. A zero value inhibits
-    /// the countdown; nonzero counts value + [`TIMER_RELOAD_OFFSET`] input
-    /// clocks per period (1986 GIME behaviour).
+    /// Reload the live count from the programmed value: zero inhibits the
+    /// countdown, nonzero counts value + [`TIMER_RELOAD_OFFSET`] clocks.
     fn restart_timer(&mut self) {
         self.timer_count = if self.timer_reload == 0 {
             0
@@ -380,9 +366,7 @@ impl GIME {
     }
 
     /// Advance the 12-bit timer by `ticks` input clocks. Each underflow raises
-    /// the TMR interrupt source, toggles the text blink phase, and reloads
-    /// (SEB Unravelled II; MAME `timer_elapsed`). Inhibited while the
-    /// programmed value is zero.
+    /// the TMR interrupt, toggles blink phase, and reloads; inhibited while zero.
     pub fn tick_timer(&mut self, ticks: u32) {
         if self.timer_reload == 0 {
             return;

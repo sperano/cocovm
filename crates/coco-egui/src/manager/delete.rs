@@ -12,12 +12,9 @@ use eframe::egui;
 use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
 
 impl ManagerApp {
-    /// The confirmation modal behind "Delete…" ([`ManagerApp::pending_delete`]),
-    /// drawn once per `update()` while it holds at least one slug. Esc,
-    /// Cancel, and a click outside all dismiss without deleting. Slugs no
-    /// longer present (the row vanished under the pending confirmation —
-    /// see `pending_delete`'s doc) are silently dropped from view; if that
-    /// empties the list there is nothing left to confirm.
+    /// The confirmation modal behind "Delete…", drawn once per `update()`
+    /// while [`ManagerApp::pending_delete`] holds at least one slug. Esc,
+    /// Cancel, and a click outside all dismiss without deleting.
     pub(super) fn draw_delete_confirmation(&mut self, ctx: &egui::Context) {
         if self.pending_delete.is_empty() {
             return;
@@ -47,14 +44,9 @@ impl ManagerApp {
         }
     }
 
-    /// The modal's contents: a heading (singular "Delete "Name"?" for one
-    /// machine, "Delete N machines?" plus a name list for more), the two
-    /// state warnings ([`draw_delete_warnings`]), any error from a previous
-    /// attempt, and the confirm/cancel row. The confirm button reads "Stop
-    /// and Delete" when at least one selected machine is running, matching
-    /// the single-row wording this replaces. Returns whether Cancel was
-    /// clicked, so the caller can fold that into its own dismiss check
-    /// alongside the modal's own Esc/click-outside handling.
+    /// The modal's contents: heading, [`draw_delete_warnings`], any error
+    /// from a previous attempt, and the confirm/cancel row. Returns whether
+    /// Cancel was clicked.
     fn draw_delete_confirmation_body(
         &mut self,
         ui: &mut egui::Ui,
@@ -95,19 +87,11 @@ impl ManagerApp {
         dismissed
     }
 
-    /// Confirmed delete: work through [`ManagerApp::pending_delete`] in
-    /// order, resolving each slug to its *current* index right before
-    /// deleting it — a bulk delete removes rows one at a time, and every
-    /// removal shifts everything after it. [`Self::delete_machine`] already
-    /// keeps [`ManagerApp::selection`] correct as each row goes (dropping
-    /// the deleted index, shifting survivors down), so there is nothing
-    /// left to reconcile once the loop finishes — a bulk delete of the
-    /// whole selection naturally ends with nothing selected, and deleting
-    /// one row out of a larger selection naturally leaves the rest
-    /// selected, indices shifted. On the first failure, the failed slug and
-    /// everything after it go back into `pending_delete` so the still-open
-    /// modal can retry (mirrors the single-delete contract: error shown,
-    /// entry kept).
+    /// Confirmed delete: works through [`ManagerApp::pending_delete`] in
+    /// order, resolving each slug to its current index right before
+    /// deleting it, since each removal shifts indices after it. On the
+    /// first failure, the failed slug and everything after it go back into
+    /// `pending_delete` so the still-open modal can retry.
     fn commit_pending_delete(&mut self) {
         let mut slugs = std::mem::take(&mut self.pending_delete);
         for i in 0..slugs.len() {
@@ -123,18 +107,16 @@ impl ManagerApp {
         self.delete_error = None;
     }
 
-    /// Delete `entries[index]`: stop its VM if one is running (same flush
-    /// contract as the Stop button), remove its `<slug>.toml`, drop the
-    /// row, and fix up the selection and any open edit state. Media/
-    /// artifact files are deliberately left on disk (the modal says so).
+    /// Delete `entries[index]`: stop its VM if running, remove its
+    /// `<slug>.toml`, drop the row, and fix up selection/edit state.
+    /// Media/artifact files are deliberately left on disk.
     fn delete_machine(&mut self, index: usize) -> Result<(), String> {
         let Some(dir) = self.machines_dir.clone() else {
             return Err(NO_CONFIG_DIR.to_string());
         };
         let slug = self.entries[index].slug.clone();
         let path = dir.join(format!("{slug}.toml"));
-        // A file already gone (deleted externally since startup) is fine —
-        // the goal state "no definition on disk" is reached either way.
+        // A file already gone is fine — the goal state is reached either way.
         match fs::remove_file(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -150,9 +132,8 @@ impl ManagerApp {
     }
 }
 
-/// The two state warnings a delete confirmation shows (running machines are
-/// shut down first, suspended ones lose their frozen state), worded in the
-/// plural whenever more than one machine is involved.
+/// The two state warnings a delete confirmation shows — running machines are
+/// shut down first, suspended ones lose their frozen state — worded plural when more than one machine is involved.
 fn draw_delete_warnings(ui: &mut egui::Ui, plural: bool, running: bool, suspended: bool) {
     if running {
         let text = if plural {

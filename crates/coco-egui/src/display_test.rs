@@ -38,16 +38,13 @@ fn dark(v: u8, pct: u8) -> u8 {
 #[test]
 fn luma_black_and_white_are_fixed_points() {
     assert_eq!(luma(0, 0, 0), 0);
-    // The weights sum to 1.0, so full white round-trips exactly through
-    // the linear-light decode/encode.
+    // Weights sum to 1.0, so full white round-trips exactly.
     assert_eq!(luma(255, 255, 255), 255);
 }
 
 #[test]
 fn luma_greys_are_fixed_points() {
-    // r = g = b already is its own luminance: the weighted sum reduces to
-    // the one channel value, and decode/encode cancel. The encode table's
-    // quantization may move a level by at most one.
+    // r=g=b is its own luminance; decode/encode cancel except for ±1 quantization.
     for v in [1u8, 17, 128, 200, 254] {
         assert!(
             (luma(v, v, v) as i32 - v as i32).abs() <= 1,
@@ -59,10 +56,7 @@ fn luma_greys_are_fixed_points() {
 
 #[test]
 fn luma_saturated_primaries_hit_their_rec601_weights() {
-    // (255·w^(1/γ)).round() for w = 0.299/0.587/0.114, γ = 2.2 — the
-    // linear-light weighting: green is by far the brightest, blue the
-    // darkest, the whole point of weighting instead of averaging. ±1 for
-    // the encode table's quantization.
+    // Expected: (255·w^(1/γ)).round(); green is far brighter than blue. ±1 quantization.
     for (channel, expected) in [((255, 0, 0), 147), ((0, 255, 0), 200), ((0, 0, 255), 95)] {
         let (r, g, b) = channel;
         assert!(
@@ -77,10 +71,7 @@ fn luma_saturated_primaries_hit_their_rec601_weights() {
 
 #[test]
 fn blur_smears_along_the_row_only() {
-    // A 3×2 frame: a white impulse in the top row, black bottom row. The
-    // 1-2-1 kernel spreads the impulse to its row neighbors (64/128/64
-    // with edge clamp) and must leak nothing into the row below —
-    // scanlines are separate signals.
+    // White impulse in top row; 1-2-1 kernel spreads it (64/128/64) but must not bleed into the row below.
     #[rustfmt::skip]
     let src: Vec<u8> = vec![
         0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,
@@ -127,8 +118,7 @@ fn expand_scanlines_interleaves_bright_and_dimmed_rows() {
 
 #[test]
 fn scanline_strength_endpoints() {
-    // 100% is black gaps; 0% is handled in `process` (the pass is skipped
-    // outright — covered by `process_skips_doubling_at_zero_scanlines`).
+    // 0% is a separate skip path in `process`, covered elsewhere.
     let src = uniform(4, 1, [200, 120, 40, 255]);
     let out = expand_scanlines(100, 4, &src);
     for px in out[4 * 4..].chunks_exact(4) {
@@ -209,9 +199,7 @@ fn process_skips_doubling_at_zero_scanlines() {
 
 #[test]
 fn process_bw_output_is_grey_everywhere() {
-    // Every chain stage preserves r = g = b once the luma collapse ran —
-    // blur and scanlines scale channels identically — so the final output
-    // must be pure grey with alpha intact.
+    // Blur and scanlines scale channels identically, so grey stays grey after luma collapse.
     let src = uniform(8, 4, [255, 0, 0, 255]);
     let frame = process(Display::TV(TV::BW), quiet(), 0, 8, &src);
     for px in frame.pixels.chunks_exact(4) {
@@ -226,8 +214,8 @@ fn process_bw_output_is_grey_everywhere() {
 // ---- Display resolution table ----
 
 /// The whole design table: which signal path each display resolves to, per
-/// variant. A monitor passes through even where no port exists — that's how
-/// `MachineConfig::validate` gets to reject it with the real reason.
+/// variant. A monitor passes through even with no port so `validate` can
+/// reject it.
 #[test]
 fn to_monitor_covers_the_design_table() {
     use MachineVariant::{Coco1, Coco2, Coco3};
@@ -274,8 +262,7 @@ fn choices_offer_monitors_only_where_a_port_exists() {
 
 #[test]
 fn from_config_round_trips_through_to_monitor_where_it_can() {
-    // A validated config's monitor implies the display exactly — except a
-    // CoCo 3 TV, which serializes as composite (`from_config`'s doc).
+    // Exact except a CoCo 3 TV, which serializes as composite.
     let mut config = MachineConfig::default();
     assert_eq!(
         Display::from_config(&config),

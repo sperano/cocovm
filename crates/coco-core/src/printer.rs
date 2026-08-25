@@ -98,9 +98,8 @@ impl Paper {
         }
     }
 
-    /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs —
-    /// enough for a frontend to render a visible scroll window without
-    /// walking the whole roll.
+    /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs — for
+    /// rendering a visible scroll window without walking the whole roll.
     pub fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
         self.rows
             .range(y0..=y1)
@@ -108,11 +107,8 @@ impl Paper {
             .collect()
     }
 
-    /// The row range touched since the last call (or since construction),
-    /// then reset — the simplest "what changed" signal a live-updating
-    /// frontend view needs: redraw at least that band, nothing below its
-    /// floor could have changed (the print head only ever advances `y`
-    /// forward within a print job — see `dmp105.rs`).
+    /// The row range touched since the last call (or since construction), then
+    /// reset — the minimal "what changed" signal for a live-updating frontend view.
     pub fn take_dirty(&mut self) -> Option<(u32, u32)> {
         let range = self.dirty_min.zip(self.dirty_max);
         self.dirty_min = None;
@@ -120,12 +116,8 @@ impl Paper {
         range
     }
 
-    /// Tear off: discard every dot printed so far. Does not rebase future
-    /// `y` coordinates to 0 — the print head's own position (owned by the
-    /// interpreter, not `Paper`) keeps advancing along the same continuous
-    /// axis it always has, matching the roll's "no page concept" design.
-    /// Rebasing a *view* to start fresh after tear-off is a T5 rendering
-    /// choice, not modeled here.
+    /// Tear off: discard every dot printed so far. Does not rebase future `y`
+    /// coordinates to 0 — the print head keeps advancing along the same axis.
     pub fn clear(&mut self) {
         self.rows.clear();
         self.dirty_min = None;

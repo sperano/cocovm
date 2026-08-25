@@ -17,8 +17,7 @@ pub(crate) const fn machine_label(variant: MachineVariant) -> &'static str {
     }
 }
 
-/// Per-variant default RAM size, used by the VM manager's "New…" dialog
-///.
+/// Per-variant default RAM size.
 pub(crate) fn default_ram(variant: MachineVariant) -> MemorySize {
     match variant {
         MachineVariant::Coco3 => MemorySize::K512,
@@ -26,11 +25,8 @@ pub(crate) fn default_ram(variant: MachineVariant) -> MemorySize {
     }
 }
 
-/// Per-variant default VDG chip when no explicit choice is made: the T1
-/// (CoCo 2B) on a CoCo 2, the plain MC6847 on a CoCo 1 (the only choice
-/// `MachineConfig::validate` accepts there), and `None` on a CoCo 3, which
-/// has no VDG at all. Shared by `new_vm.rs`'s `constrain` and
-/// `machine_def.rs`'s `to_machine_config`.
+/// Per-variant default VDG chip: T1 on CoCo 2, plain MC6847 on CoCo 1
+/// (the only choice `MachineConfig::validate` accepts there), `None` on CoCo 3.
 pub(crate) const fn default_vdg(variant: MachineVariant) -> Option<VDGVariant> {
     match variant {
         MachineVariant::Coco2 => Some(VDGVariant::MC6847T1),

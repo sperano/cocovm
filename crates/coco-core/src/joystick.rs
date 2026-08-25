@@ -67,8 +67,7 @@ impl Joysticks {
     }
 
     /// Mask of PIA0 PA row lines the held buttons pull low. Buttons bypass
-    /// the keyboard column strobe (and so also trip the GIME EI1 source —
-    /// SEB: they cannot be masked off).
+    /// the keyboard column strobe, so they cannot be masked off.
     pub fn button_rows(&self) -> u8 {
         let mut mask = 0;
         for (stick, rows) in BUTTON_ROW_BITS.iter().enumerate() {

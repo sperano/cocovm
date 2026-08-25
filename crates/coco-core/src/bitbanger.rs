@@ -81,28 +81,18 @@ const TOTAL_SAMPLES: u8 = DATA_BITS + 2;
 pub trait PrinterSink {
     fn write_byte(&mut self, b: u8);
 
-    /// Snapshot this sink's state for serialization (see the `sink_serde`
-    /// module below) — the default, kept by every sink with no state worth
-    /// carrying across a save-state (`NoopSink`, [`CaptureSink`]), is
-    /// [`sink_serde::SinkState::Noop`].
+    /// Snapshot this sink's state for serialization. Default: [`sink_serde::SinkState::Noop`].
     fn snapshot(&self) -> sink_serde::SinkState {
         sink_serde::SinkState::Noop
     }
 
-    /// Downcast hook: `Some` only for a live [`DMP105Handle`] sink, so the
-    /// frontend can re-grab the restored handle for the paper window after
-    /// `sink_serde::deserialize` rebuilds `sink` (see
-    /// [`BitBanger::dmp105_handle`]). Default: not a DMP-105 sink.
+    /// Downcast hook: `Some` only for a live [`DMP105Handle`] sink. Default: not a DMP-105 sink.
     fn as_dmp105(&self) -> Option<&DMP105Handle> {
         None
     }
 
-    /// True only for [`StoppedFileCaptureSink`] — the marker
-    /// `sink_serde::deserialize` installs in place of a live [`FileSink`]
-    /// after a snapshot restore. Lets the save-state restore flow
-    /// (`crate::snapshot::restore`) tell "print capture was active at save
-    /// time, now stopped" apart from "print capture was never active", even
-    /// though both restore to functionally the same no-op sink. Default: not that marker.
+    /// True only for [`StoppedFileCaptureSink`], the marker used to tell "print
+    /// capture was active at save time, now stopped" apart from "never active".
     fn was_file_capture_stopped_by_restore(&self) -> bool {
         false
     }
@@ -182,9 +172,7 @@ pub struct FileSink {
 
 impl FileSink {
     /// Open `path` for capture: create it if it doesn't exist, truncate it if
-    /// it does (a fresh capture session always starts from an empty file).
-    /// `translate_cr_to_lf` fixes the sink's line-ending mode for its whole
-    /// lifetime — it's a property of the capture session, not a live toggle.
+    /// it does. `translate_cr_to_lf` fixes the sink's line-ending mode for its whole lifetime.
     pub fn create(path: impl AsRef<Path>, translate_cr_to_lf: bool) -> io::Result<Self> {
         Ok(Self {
             file: BufWriter::new(File::create(path)?),
@@ -200,23 +188,15 @@ impl PrinterSink for FileSink {
         } else {
             b
         };
-        // Best-effort: a full disk or a revoked permission has no useful
-        // recovery path from inside the decoder's per-instruction tick, and
-        // the alternative (propagating an error out of
-        // `PrinterSink::write_byte`) would infect the hot CPU loop with I/O
-        // error handling for a side-channel that was never guaranteed to
-        // succeed on real hardware either (a jammed printer just eats bytes).
+        // Best-effort: I/O errors here have no useful recovery path and shouldn't infect the hot CPU loop.
         let _ = self.file.write_all(&[b]);
         if b == b'\r' || b == b'\n' {
             let _ = self.file.flush();
         }
     }
 
-    /// "on restore, capture is simply stopped" —
-    /// the open file handle is frontend-owned and doesn't survive a
-    /// snapshot, but `sink_serde::deserialize` still needs to know a file
-    /// capture *was* active so the paper/text distinction isn't lost on the
-    /// wire (even though both currently restore to a no-op sink).
+    /// The file handle is frontend-owned and doesn't survive a snapshot, but
+    /// restore still needs to know a file capture *was* active.
     fn snapshot(&self) -> sink_serde::SinkState {
         sink_serde::SinkState::FileCapture
     }
@@ -332,12 +312,7 @@ impl BitBanger {
     }
 
     /// Start "print to text file" capture at `path` (create/truncate — see
-    /// [`FileSink::create`]), so both a machine definition's
-    /// `[ports].serial = "file"` (`coco-egui`'s `launch::mount_serial`) and
-    /// the GUI (the Machine menu's "Start Print Capture…") can drive it
-    /// through the same call. `translate_cr_to_lf` picks the session's
-    /// line-ending mode (see [`FileSink`]). Leaves any in-flight frame untouched, like
-    /// [`Self::set_sink`].
+    /// [`FileSink::create`]). Leaves any in-flight frame untouched, like [`Self::set_sink`].
     pub fn start_file_capture(
         &mut self,
         path: impl AsRef<Path>,
@@ -353,40 +328,27 @@ impl BitBanger {
         self.sink = Box::new(NoopSink);
     }
 
-    /// Attach a [`DMP105`](crate::dmp105::DMP105) interpreter as the live
-    /// sink: same shape as
-    /// [`Self::start_file_capture`], but returns a cloned
-    /// [`DMP105Handle`] (the `CaptureSink` `Rc<RefCell<_>>` pattern) rather
-    /// than nothing, since — unlike text capture — the frontend needs to
-    /// read the accumulating paper back out while the bus owns the other
-    /// half as its sink.
+    /// Attach a [`DMP105`](crate::dmp105::DMP105) interpreter as the live sink,
+    /// returning a cloned [`DMP105Handle`] so the frontend can read the accumulating paper.
     pub fn start_dmp105(&mut self) -> DMP105Handle {
         let handle = DMP105Handle::new();
         self.sink = Box::new(handle.clone());
         handle
     }
 
-    /// The live sink's [`DMP105Handle`], if it is one — how the frontend
-    /// re-grabs the paper-window handle after a snapshot restore rebuilds
-    /// `sink` from `sink_serde::SinkState::DMP105` (a `DMP105Handle` is a
-    /// cheap `Rc` clone, so this is fine to call every frame).
+    /// The live sink's [`DMP105Handle`], if it is one (cheap `Rc` clone, fine to call every frame).
     pub fn dmp105_handle(&self) -> Option<DMP105Handle> {
         self.sink.as_dmp105().cloned()
     }
 
     /// True if this `BitBanger` just came back from a snapshot restore whose
-    /// sink was a live file capture at save time (`crate::snapshot::restore`'s
-    /// standing-notes step).
+    /// sink was a live file capture at save time.
     pub fn capture_was_stopped_on_restore(&self) -> bool {
         self.sink.was_file_capture_stopped_by_restore()
     }
 
-    /// Advance the decoder by `cycles` CPU cycles with PA1 held at
-    /// `pa1_mark` (true = mark/high, false = space/low) for that whole
-    /// span. Called once per instruction from `Machine::run_cycles`,
-    /// alongside `bus.cassette.tick` — cycle-timestamped, not wall-clock,
-    /// so `POKE 150,n` and the high-speed poke change the effective rate
-    /// for free (module doc comment).
+    /// Advance the decoder by `cycles` CPU cycles with PA1 held at `pa1_mark`
+    /// (true = mark/high, false = space/low) for that whole span.
     pub fn tick(&mut self, cycles: u32, pa1_mark: bool) {
         self.state = match self.state {
             RxState::Idle => {
@@ -411,10 +373,7 @@ impl BitBanger {
                 while sample < TOTAL_SAMPLES && elapsed >= self.sample_threshold(sample) {
                     if sample == START_SAMPLE {
                         if pa1_mark {
-                            // Line back at mark mid-start-cell: the falling
-                            // edge was a glitch, not a start bit. Abandon
-                            // the frame silently (not a framing error — no
-                            // frame ever began).
+                            // Glitch, not a start bit: abandon the frame silently, not a framing error.
                             false_start = true;
                             break;
                         }
@@ -424,11 +383,7 @@ impl BitBanger {
                         self.sink.write_byte(bits);
                         self.bytes_out += 1;
                     } else {
-                        // Stop bit read space: framing error. Discard the
-                        // byte and resync — go back to Idle and hunt for
-                        // the next mark->space edge, rather than assuming
-                        // the following bits are frame-aligned
-                        // (`bitbanger-spec.md` "Decoder spec").
+                        // Stop bit read space: framing error, discard the byte, and resync from Idle.
                         self.framing_errors += 1;
                     }
                     sample += 1;
@@ -447,10 +402,8 @@ impl BitBanger {
         self.last_mark = pa1_mark;
     }
 
-    /// CPU-cycle offset of sample `sample` (0-indexed) after the start-bit
-    /// edge: sample times are 0.5 (start validation), 1.5, …, 8.5 (data),
-    /// 9.5 (stop) bit-times (`bitbanger-spec.md` "Decoder spec"), so sample
-    /// `k` sits at `(0.5 + k)` bit-times = `bit_period * (2k + 1) / 2`.
+    /// CPU-cycle offset of sample `sample` (0-indexed) after the start-bit edge:
+    /// sample `k` sits at `(0.5 + k)` bit-times = `bit_period * (2k + 1) / 2`.
     fn sample_threshold(&self, sample: u8) -> u32 {
         let scaled = u64::from(self.bit_period) * (2 * u64::from(sample) + 1);
         (scaled / 2) as u32
@@ -502,8 +455,7 @@ pub mod sink_serde {
     ) -> Result<Box<dyn PrinterSink>, D::Error> {
         Ok(match SinkState::deserialize(deserializer)? {
             SinkState::Noop => Box::new(NoopSink),
-            // Distinct from `SinkState::Noop`, even though both currently
-            // behave identically: see `StoppedFileCaptureSink`'s doc comment.
+            // Distinct from `SinkState::Noop`, even though both currently behave identically.
             SinkState::FileCapture => Box::new(super::StoppedFileCaptureSink),
             SinkState::DMP105(state) => Box::new(DMP105Handle::from_state(state)),
         })

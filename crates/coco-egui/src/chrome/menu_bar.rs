@@ -24,9 +24,8 @@ impl CocoApp {
         });
     }
 
-    /// The Keyboard menu: positional/symbolic mode and the key map. It has
-    /// no menu-bar button — the status bar's keyboard entry pops it up
-    /// (`chrome::status_bar`'s `keyboard_status`).
+    /// The Keyboard menu. Has no menu-bar button; the status bar's keyboard
+    /// entry pops it up.
     pub(super) fn keyboard_menu_ui(&mut self, ui: &mut egui::Ui) {
         for mode in [KbMode::Positional, KbMode::Symbolic] {
             if ui
@@ -43,10 +42,8 @@ impl CocoApp {
         }
     }
 
-    /// The View menu: aspect correction and the optional windows. The
-    /// display choice lives in the status bar's display entry alone
-    /// ([`Self::display_menu_ui`]), not here; the debugger toggle is the
-    /// toolbar's Debug tile / ⌘D, not a menu item.
+    /// The View menu: aspect correction and optional windows. Display choice
+    /// lives in [`Self::display_menu_ui`], not here.
     fn view_menu_ui(&mut self, ui: &mut egui::Ui) {
         ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
         ui.separator();
@@ -54,8 +51,7 @@ impl CocoApp {
         if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
             self.toggle_paper_window();
         }
-        // Only meaningful with an Orchestra-90 cartridge actually inserted
-        // (direct port or in an MPI slot) — `as_orch90` searches both.
+        // Only meaningful with an Orchestra-90 cartridge inserted; `as_orch90` searches both slots.
         let orch90_present = self.machine.bus.cart.as_orch90().is_some();
         ui.add_enabled(
             orch90_present,
@@ -63,15 +59,8 @@ impl CocoApp {
         );
     }
 
-    /// The display choice and the TV chain's knobs — what the status bar's
-    /// display entry pops up (`chrome::status_bar`'s `display_status`).
-    /// That entry is the only way in: the menu bar's View menu no longer
-    /// carries the display choice.
-    ///
-    /// Swapping the display cable doesn't erase machine state, so this
-    /// takes effect live rather than requiring a power cycle. Monitor
-    /// choices exist only where a monitor port does (CoCo 3); a CoCo 1/2
-    /// offers just the two TVs (`Display::choices`).
+    /// Display choice and TV chain knobs, popped up from the status bar's
+    /// display entry. Applies live — swapping the cable doesn't erase machine state.
     pub(super) fn display_menu_ui(&mut self, ui: &mut egui::Ui) {
         let variant = self.machine.config.variant;
         for &display in Display::choices(variant) {
@@ -80,15 +69,12 @@ impl CocoApp {
                 .clicked()
             {
                 self.display = display;
-                // A CoCo 1/2 has no GIME palette to steer (`None`) — its
-                // renderer never consults `gime.monitor`.
+                // CoCo 1/2 has no GIME palette to steer; renderer never consults `gime.monitor`.
                 if let Some(monitor) = display.to_monitor(variant) {
                     self.machine.bus.gime.monitor = monitor;
                 }
             }
         }
-        // The TV chain's knobs, live like the display choice itself —
-        // drawn only while they'd have a visible effect.
         if matches!(self.display, Display::TV(_)) {
             ui.add(
                 egui::Slider::new(&mut self.tv.scanline_pct, 0..=crate::display::MAX_PCT)
@@ -103,10 +89,8 @@ impl CocoApp {
         }
     }
 
-    /// The cassette deck — insert, create, rewind, seek to a byte position,
-    /// and eject a tape, plus the .wav save toggle — what the status bar's
-    /// tape entry pops up (`chrome::status_bar`'s `tape_status`). That entry
-    /// is the only way in: the Machine menu no longer carries the deck.
+    /// The cassette deck menu: insert, create, rewind, seek, eject, and the
+    /// .wav save toggle. Popped up from the status bar's tape entry.
     pub(super) fn tape_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("Insert Tape…").clicked() {
             ui.close();
@@ -153,10 +137,8 @@ impl CocoApp {
         ui.checkbox(&mut self.save_tape_wav, "Also save tape audio (.wav)");
     }
 
-    /// The "Seek to byte" row of [`Self::tape_menu_ui`], split out to keep
-    /// that function under the project's line-count guideline: a text field
-    /// committed with Enter, moving the deck's head straight to a byte
-    /// position ([`coco_core::cassette::Cassette::seek`]).
+    /// The "Seek to byte" row of [`Self::tape_menu_ui`]: a text field
+    /// committed with Enter.
     fn tape_seek_ui(&mut self, ui: &mut egui::Ui, tape_mounted: bool) {
         ui.add_enabled_ui(tape_mounted, |ui| {
             ui.horizontal(|ui| {

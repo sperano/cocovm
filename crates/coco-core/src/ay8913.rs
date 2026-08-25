@@ -125,17 +125,12 @@ const STEP_RESISTORS_OHMS: [f64; 16] = [
 
 /// Derive the 16-entry volume DAC table, normalized to `[0.0, 1.0]`.
 ///
-/// Mirrors MAME's `build_single_table` (`ay8910.cpp`): each step conducts
-/// through its own resistor ([`STEP_RESISTORS_OHMS`]) in parallel with the
-/// load ([`R_LOAD_OHMS`]) and, for every level but 0, the pull-up
-/// ([`R_UP_OHMS`]) too; the pull-down ([`R_DOWN_OHMS`]) is always in the
-/// network. The output fraction at each step is `rw / rt`, the ratio of the
-/// "switched-on" conductance to the total conductance. `build_single_table`
-/// then rescales that with a legacy `-0.25 * 0.5` factor that exists only to
-/// match old non-normalized emulator output levels; we min-max normalize
-/// across the 16 steps instead, which — because `rw/rt` is monotonically
-/// increasing in the step index — lands volume 0 at exactly 0.0 and volume
-/// 15 at exactly 1.0.
+/// Mirrors MAME's `build_single_table` (`ay8910.cpp`): each step's output
+/// fraction `rw/rt` is the switched-on conductance ([`STEP_RESISTORS_OHMS`] +
+/// [`R_LOAD_OHMS`], plus [`R_UP_OHMS`] except at level 0) over the total
+/// conductance (always including [`R_DOWN_OHMS`]). We min-max normalize
+/// across the 16 steps instead of MAME's legacy `-0.25 * 0.5` rescale, which
+/// (since `rw/rt` is monotonic) lands volume 0 at exactly 0.0 and 15 at 1.0.
 fn build_volume_table() -> [f32; 16] {
     let mut raw = [0.0f64; 16];
     for (level, &r) in STEP_RESISTORS_OHMS.iter().enumerate() {
@@ -225,8 +220,7 @@ impl AY8913 {
             sample_sum: 0.0,
             sample_count: 0,
         };
-        // MAME's reset writes 0 to every register (0-13) through
-        // `ay8910_write_reg`, so R13=0's `set_shape` side effect applies too.
+        // MAME's reset writes 0 to every register, so R13=0's `set_shape` side effect applies too.
         ay.envelope.set_shape(0);
         ay
     }
@@ -246,21 +240,15 @@ impl AY8913 {
         self.sample_count = 0;
     }
 
-    /// Restore-time fixup after a snapshot round-trip
-    ///: rebuilds `dac`, the skipped
-    /// construction-time lookup table, via the same [`build_volume_table`]
-    /// helper [`AY8913::new`] uses. Idempotent — safe to call even though
-    /// nothing else needs fixing up.
+    /// Rebuilds the skipped `dac` lookup table after a snapshot restore, via
+    /// [`build_volume_table`]. Idempotent.
     pub fn after_restore(&mut self) {
         self.dac = build_volume_table();
     }
 
-    /// Write a register through the address latch (0-15; only the low 4 bits
-    /// are decoded, matching the real chip's 4-bit register address).
-    /// [`reg::TONE_A_COARSE`]/`B`/`C` and [`reg::NOISE_PERIOD`] are masked to
-    /// their actual silicon width at the point of storage (see
-    /// [`TONE_COARSE_MASK`]/[`NOISE_PERIOD_MASK`]); every other register
-    /// (including 14/15) stores the full byte.
+    /// Write a register through the 4-bit address latch (only bits 0-3 decoded).
+    /// Coarse tone/noise-period registers are masked to silicon width
+    /// ([`TONE_COARSE_MASK`]/[`NOISE_PERIOD_MASK`]); other registers store the full byte.
     pub fn write_reg(&mut self, r: u8, val: u8) {
         let idx = (r & 0x0F) as usize;
         let stored = match idx as u8 {
@@ -281,8 +269,7 @@ impl AY8913 {
     }
 
     /// Advance the generators by `master_clocks` AY master-clock cycles
-    /// (already 2× the CoCo E-clock — see `docs/ssc-spec.md`), accumulating
-    /// mixed output samples for the next [`AY8913::drain`].
+    /// (already 2× the CoCo E-clock — see `docs/ssc-spec.md`), accumulating samples for [`AY8913::drain`].
     pub fn step(&mut self, master_clocks: u32) {
         self.clock_accum += master_clocks;
         while self.clock_accum >= MASTER_CLOCK_DIVIDER {
@@ -291,10 +278,8 @@ impl AY8913 {
         }
     }
 
-    /// Average mixed output since the last call (box-filter downsample —
-    /// the caller point-samples audio at a much lower rate than the AY's
-    /// internal step clock, so averaging over the elapsed interval acts as
-    /// a crude anti-alias filter). Resets the accumulator.
+    /// Average mixed output since the last call and reset the accumulator —
+    /// a box-filter downsample since the caller samples far below the AY's internal step rate.
     pub fn drain(&mut self) -> f32 {
         let avg = if self.sample_count > 0 {
             self.sample_sum / self.sample_count as f32
@@ -341,25 +326,18 @@ impl AY8913 {
         }
     }
 
-    /// 17-bit LFSR shift (MAME `noise_rng_tick`, non-expanded-mode branch,
-    /// "verified on AY-3-8910 and YM2149 chips"): input is bit0 XOR bit3,
-    /// output is bit0.
+    /// 17-bit LFSR shift (MAME `noise_rng_tick`, "verified on AY-3-8910 and
+    /// YM2149 chips"): input is bit0 XOR bit3, output is bit0.
     fn shift_noise(&mut self) {
         let bit0 = self.rng & 1;
         let bit3 = (self.rng >> 3) & 1;
         self.rng = (self.rng >> 1) | ((bit0 ^ bit3) << 16);
     }
 
-    /// One internal step (master_clock/8): advance tone/noise/envelope,
-    /// gate and sum the three channels, and fold the result into the
-    /// running [`AY8913::drain`] average.
+    /// One internal step (master_clock/8): advance tone/noise/envelope, gate
+    /// and sum the three channels into the running [`AY8913::drain`] average.
     fn internal_step(&mut self) {
-        // Tone: classic (non-expanded) mode toggles the square wave every
-        // `period` internal steps — MAME's AY8930 duty-cycle down-counter
-        // reduces to a plain toggle outside expanded mode, since
-        // `duty_cycle`'s bit 0 flips on every single decrement. `period` is
-        // clamped to at least 1 (MAME `std::max<int>(1, tone->period)`):
-        // with period 0 the comparison below would never become false.
+        // Toggles every `period` steps, clamped to at least 1 to avoid an infinite loop at period 0 (MAME `std::max<int>(1, tone->period)`).
         for ch_idx in 0..3 {
             let period = self.tone_period(ch_idx).max(1);
             let tone = &mut self.tone[ch_idx];
@@ -370,9 +348,7 @@ impl AY8913 {
             }
         }
 
-        // Noise: a second prescaler halves the period register's rate, and
-        // the LFSR shifts once per two prescaler toggles (MAME
-        // `sound_stream_update`).
+        // A second prescaler halves the period rate; the LFSR shifts once per two prescaler toggles (MAME `sound_stream_update`).
         self.noise_count += 1;
         if self.noise_count >= self.noise_period() {
             self.noise_count = 0;
@@ -387,11 +363,7 @@ impl AY8913 {
         let env_period = self.env_period() * ENVELOPE_STEP_MULTIPLIER;
         self.envelope.step_once(env_period);
 
-        // Mix: (ToneOn | ToneDisable) & (NoiseOn | NoiseDisable) gates each
-        // channel (MAME comment: "if both tone and noise are disabled, the
-        // output is 1, not 0" — a constant channel, modulated only by
-        // volume). Sum the three gated DAC levels into one mono sample (see
-        // module doc's "Deviation from MAME").
+        // Gates each channel by (ToneOn|ToneDisable) & (NoiseOn|NoiseDisable) — MAME: both disabled means constant-1 output, not 0.
         let mut sum = 0.0f32;
         for ch in 0..3 {
             let enabled = (self.tone[ch].output || self.tone_disabled(ch))

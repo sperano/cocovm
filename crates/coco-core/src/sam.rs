@@ -111,11 +111,8 @@ impl SAM {
         Self::default()
     }
 
-    /// Apply a SAM control-strobe write ($FFC0–$FFDF): the even address in
-    /// each pair clears the bit, the odd one sets it, and the data written is
-    /// irrelevant. Bit order follows the plan's table: V0-V2 ($FFC0-$FFC5),
-    /// F0-F6 ($FFC6-$FFD3), P1 ($FFD4/5), R0 ($FFD6/7), R1 ($FFD8/9), M0
-    /// ($FFDA/B), M1 ($FFDC/D), TY ($FFDE/F).
+    /// Apply a SAM control-strobe write ($FFC0–$FFDF): the even address in each
+    /// pair clears the bit, the odd sets it; the data written is irrelevant.
     pub fn write_strobe(&mut self, addr: u16) {
         if !(STROBE_BASE..=STROBE_LAST).contains(&addr) {
             return;
@@ -138,8 +135,7 @@ impl SAM {
     /// Decode a CPU address to its target, per the plan's TY=0/TY=1 memory
     /// map table.
     pub fn map(&self, addr: u16) -> SAMTarget {
-        // The vector mirror and the $FF00+ fixed page win regardless of TY —
-        // "the mirror region stays ROM" even in all-RAM mode.
+        // The vector mirror and $FF00+ fixed page win regardless of TY.
         if addr >= VECTOR_MIRROR_BASE {
             return SAMTarget::RomBas(BAS_MIRROR_OFFSET + (addr - VECTOR_MIRROR_BASE) as usize);
         }
@@ -158,9 +154,7 @@ impl SAM {
         }
         match addr {
             0x0000..=0x7FFF => {
-                // P1 only matters when TY=0 (guaranteed by this branch) and
-                // 64K: it ORs $8000 into the RAM address for CPU accesses in
-                // this range.
+                // P1 only matters when TY=0 (this branch) and 64K: ORs $8000 into the RAM address.
                 let ram_addr = if self.p1 && self.is_64k() {
                     addr | 0x8000
                 } else {
@@ -185,21 +179,14 @@ impl SAM {
         self.v
     }
 
-    /// True when either CPU-rate strobe selects double speed.
-    ///
-    /// KNOWN GAP: real hardware's R0 is "address-dependent" (fast when
-    /// fetching ROM, slow for RAM) — MAME does not model that dependence
-    /// either (its own TODO) and just doubles the clock for either bit set.
-    /// Matching MAME for now; not attempting address-dependent timing without
-    /// a better source.
+    /// True when either CPU-rate strobe selects double speed. KNOWN GAP: real
+    /// hardware's R0 is address-dependent (ROM fast/RAM slow); unmodeled, matching MAME.
     pub fn cpu_fast(&self) -> bool {
         self.r0 || self.r1
     }
 
-    /// The plan's 64K/"not 64K" shorthand (`M1` set), used to gate TY's
-    /// all-RAM mode and P1 banking. KNOWN GAP: the full M0:M1 4K/16K/32K/64K
-    /// memory-size decode (and the RAM mirroring smaller sizes imply) isn't
-    /// modeled yet — deferred per the plan.
+    /// The 64K/"not 64K" shorthand (`M1` set), gating TY's all-RAM mode and P1
+    /// banking. KNOWN GAP: full M0:M1 4K/16K/32K/64K decode isn't modeled.
     fn is_64k(&self) -> bool {
         self.m1
     }

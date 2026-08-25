@@ -75,10 +75,8 @@ pub(crate) struct AudioEvent {
     pub inputs: AudioInputs,
 }
 
-/// Mix one grid slot: the latched inputs in effect at the slot's start, the
-/// line's cassette level, and this slot's generator contributions.
-/// `ay` is the mux-gated cartridge input's slot sample; `generators` the
-/// unconditional crystal-generator pair.
+/// Mix one grid slot from the latched inputs, the line's cassette level, and
+/// this slot's `ay` (mux-gated cartridge) and `generators` (crystal PSG) samples.
 pub(crate) fn mix(
     inputs: &AudioInputs,
     cassette_bit: bool,

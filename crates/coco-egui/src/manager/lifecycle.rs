@@ -16,30 +16,22 @@ use super::{
 };
 
 /// Display name (and slug source) of a freshly created machine
-/// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s
-/// model, the same default `ui_tests::harness::boot_harness` boots for tests.
+/// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s model.
 fn default_new_name() -> String {
     crate::machine_label(MachineConfig::default().variant).to_string()
 }
 
 impl ManagerApp {
-    /// "New…" (toolbar button and ⌘N): create a default machine *right
-    /// now* — saved to disk under a uniquified slug, inserted in the list,
-    /// and selected with the Name field focused — instead of opening a
-    /// dialog. There is no Cancel; an unwanted machine is deleted like any
-    /// other (context menu → Delete…). Does NOT boot anything.
+    /// "New…" (toolbar button and ⌘N): create a default machine right now —
+    /// saved to disk, inserted in the list, and selected with the Name field
+    /// focused, instead of opening a dialog. Does NOT boot anything.
     pub(super) fn create_machine_now(&mut self) {
         let Some(dir) = self.machines_dir.clone() else {
             self.save_error = Some(NO_CONFIG_DIR.to_string());
             return;
         };
         let name = default_new_name();
-        // Check both the in-memory list (loaded once at startup) and the
-        // directory itself: `entries` misses any `<slug>.toml` written by a
-        // second running instance or hand-placed since startup (an explicit
-        // design goal — `machine_def.rs` module doc). Without the on-disk
-        // check, `machine_def::save`'s unconditional rename would silently
-        // overwrite that file.
+        // Checks both the in-memory list and the directory itself, since `entries` misses a file written by another instance.
         let taken = |candidate: &str| {
             self.entries.iter().any(|e| e.slug == candidate)
                 || dir.join(format!("{candidate}.toml")).exists()
@@ -64,16 +56,9 @@ impl ManagerApp {
         }
     }
 
-    /// Play on a Powered Off machine: launch `entries[index]`'s *saved*
-    /// definition (`crate::launch_machine`) — not the in-progress edit
-    /// draft, which may hold changes the user hasn't saved yet (the small
-    /// note next to the button in [`super::detail`]'s `draw_detail_ok` is
-    /// the only warning about that). A powered-off entry always has
-    /// `vm: None`, so this only ever replaces `None` with `Some`; callers
-    /// route a Running or Suspended entry elsewhere ([`Self::resume_vm`]).
-    /// Counts as a fresh start ([`Self::record_start`]) — [`Self::resume_vm`]
-    /// launches through [`Self::launch_vm`] directly for its cold-relaunch
-    /// case, so *that* launch never counts.
+    /// Play on a Powered Off machine: launch `entries[index]`'s saved
+    /// definition, not the in-progress edit draft. Counts as a fresh start
+    /// ([`Self::record_start`]).
     pub(super) fn start_vm(&mut self, index: usize) {
         if self.launch_vm(index) {
             self.record_start(index);
@@ -81,10 +66,7 @@ impl ManagerApp {
     }
 
     /// Launch `entries[index]`'s saved definition into a fresh `CocoApp`,
-    /// with no stats bookkeeping — the mechanics [`Self::start_vm`] (a fresh
-    /// start, which counts) and [`Self::resume_vm`]'s cold-relaunch case (a
-    /// launch immediately overwritten by a restored snapshot, which must
-    /// not) both need underneath. Returns whether the launch succeeded.
+    /// with no stats bookkeeping. Returns whether the launch succeeded.
     fn launch_vm(&mut self, index: usize) -> bool {
         self.entries[index].launch_error = None;
         match crate::launch_machine(&self.entries[index].def, &self.entries[index].slug) {
@@ -100,27 +82,16 @@ impl ManagerApp {
     }
 
     /// Increment `starts` and persist `entries[index]`'s definition — called
-    /// by [`Self::start_vm`] after a successful fresh launch only. Resume's
-    /// cold-relaunch path calls [`Self::launch_vm`] directly and never
-    /// reaches this, so neither a Suspend → close window → Resume cycle nor
-    /// a Suspend → quit → relaunch → Resume one (`entry.suspended`
-    /// rehydrates from the on-disk `.ccstate` either way) counts as a start.
+    /// by [`Self::start_vm`] after a successful fresh launch only.
     fn record_start(&mut self, index: usize) {
         self.entries[index].def.stats.starts += 1;
         self.save_entry_def(index);
     }
 
     /// Persist `entries[index]`'s current definition to its `<slug>.toml`,
-    /// clearing [`ManagerApp::save_error`] on success or recording the
-    /// failure otherwise (the convention `manager::detail`'s `autosave` and
-    /// `commit_name` both follow) — the write path a stats-only change (no
-    /// form edit involved) uses, bypassing the detail pane's `autosave`
-    /// dirty-check. On success, also keeps a live edit session for this same
-    /// entry in step: if `self.edit` is seeded from `entries[index]`, its
-    /// auto-save baseline (`EditState::packed`) is resynced to the
-    /// just-saved definition, the same way `commit_name` keeps `packed.name`
-    /// current — otherwise the next keystroke's repack would see a stats-only
-    /// diff and redundantly re-save.
+    /// clearing or recording [`ManagerApp::save_error`]. On success, also
+    /// resyncs a live edit session's auto-save baseline for this entry, if
+    /// one is open, so the next keystroke's repack doesn't redundantly re-save.
     fn save_entry_def(&mut self, index: usize) {
         let Some(dir) = self.machines_dir.clone() else {
             self.save_error = Some(NO_CONFIG_DIR.to_string());
@@ -139,22 +110,9 @@ impl ManagerApp {
         }
     }
 
-    /// Write `entries[index]`'s live VM's [`CocoApp::total_runtime`] into its
-    /// persisted `[stats].runtime_secs`, when it actually changed. Idempotent:
-    /// a fold within the same second as the last one (nothing new accrued at
-    /// whole-second granularity) writes nothing, since `total_runtime` only
-    /// ever grows and truncating it to whole seconds loses no information —
-    /// the fractional remainder simply stays in `total_runtime` for the next
-    /// fold to pick up. A no-op for an entry with no live VM. Shared by
-    /// [`Self::suspend_vm`], [`Self::stop_vm`], and [`ManagerApp::on_exit`]
-    /// (`manager.rs`) — each calls this while the VM is still in place
-    /// (`entries[index].vm`), before whatever happens to it next (pause,
-    /// `take()`, flush).
-    ///
-    /// The def's runtime total only ever advances through this method while
-    /// a VM is alive (launch seeds `total_runtime` from the def — see
-    /// `launch::launch_machine` — and the field only grows from there), so
-    /// this assignment can't go backwards in practice.
+    /// Write `entries[index]`'s live VM's runtime into its persisted
+    /// `[stats].runtime_secs`, when it actually changed. A no-op for an
+    /// entry with no live VM.
     pub(super) fn fold_runtime_into_def(&mut self, index: usize) {
         let Some(vm) = self.entries[index].vm.as_ref() else {
             return;
@@ -166,16 +124,9 @@ impl ManagerApp {
         }
     }
 
-    /// Suspend (the ⏸ transport button, Running machines only): freeze the
-    /// machine to disk and pause it in place. Order matters — the
-    /// screenshot first (the row preview must show the exact frozen frame),
-    /// then the state file (`CocoApp::save_state_to`, which flushes dirty
-    /// media itself as part of its contract), then the pause. A failed save
-    /// aborts the whole suspend: the machine stays Running and the error
-    /// lands in the transport row's error label (`launch_error` — same
-    /// label Start uses). The VM window deliberately stays open; closing it
-    /// is the user's choice ([`super::vm_windows`] just drops the VM object
-    /// for a suspended entry, the state being safe on disk).
+    /// Suspend (Running machines only): freeze the machine to disk and
+    /// pause it in place. A failed save aborts the whole suspend — the
+    /// machine stays Running and the error surfaces in `launch_error`.
     pub(super) fn suspend_vm(&mut self, index: usize) {
         let Some(path) = self.suspend_state_path_for(index) else {
             self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
@@ -203,30 +154,12 @@ impl ManagerApp {
         self.fold_runtime_into_def(index);
     }
 
-    /// Play on a Suspended machine: bring it back to Running. Two shapes —
-    /// the VM object may still be alive (suspend never closes the window),
-    /// in which case resuming is just un-pausing; or the window was closed
-    /// (VM dropped), in which case a fresh launch restores the frozen state
-    /// over itself (`CocoApp::load_state_from` replaces the machine
-    /// wholesale, so what the launch booted is irrelevant — it only has to
-    /// succeed). That cold-relaunch case goes through [`Self::launch_vm`]
-    /// directly, never [`Self::start_vm`]: Resume must never count as a
-    /// fresh start (`machine_def::StatsDTO::starts`'s doc), whether the VM
-    /// object survived or had to be relaunched — and whether the app itself
-    /// stayed up (window closed) or was quit and relaunched (`entry.suspended`
-    /// rehydrates from the on-disk `.ccstate` either way).
-    ///
-    /// Either way the [`super::SUSPEND_STATE_FILE`] is *consumed*: deleted
-    /// strictly before the entry is declared Running. Startup classifies a
-    /// machine as Suspended solely by that file's existence
-    /// ([`ManagerApp::new`]), so marking Running while the file survives
-    /// would let the next quit — or a crash — resurrect the by-then-stale
-    /// checkpoint over the newer session. A resume that cannot delete the
-    /// file therefore fails: the entry stays Suspended (the cold-relaunch
-    /// shape drops its just-restored VM again; the warm shape keeps its VM
-    /// paused in place), the error shows in the transport row, and the file
-    /// — still the truth — stays restorable. A failed relaunch/restore
-    /// keeps the file and the Suspended state the same way.
+    /// Play on a Suspended machine: bring it back to Running, either by
+    /// un-pausing the still-alive VM or, if the window was closed,
+    /// relaunching and restoring the frozen state. Either way that relaunch
+    /// never counts as a fresh start, and the [`super::SUSPEND_STATE_FILE`]
+    /// is deleted only once Running is confirmed — a resume that can't
+    /// delete it fails and the entry stays Suspended.
     pub(super) fn resume_vm(&mut self, index: usize) {
         let Some(path) = self.suspend_state_path_for(index) else {
             self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
@@ -245,9 +178,7 @@ impl ManagerApp {
                 return;
             }
         }
-        // NotFound still counts as consumed: the paused VM (or the restore
-        // that just succeeded) holds the state, and there is no file left to
-        // misreport Suspended later.
+        // NotFound still counts as consumed — the VM already holds the state, so there's nothing left to misreport Suspended.
         if let Err(e) = fs::remove_file(&path)
             && e.kind() != std::io::ErrorKind::NotFound
         {
@@ -268,39 +199,10 @@ impl ManagerApp {
         entry.launch_error = None;
     }
 
-    /// Stop — the power switch (⏹ button, row context menu, and a *running*
-    /// VM window's close box via [`super::vm_windows`]'s
-    /// `close_vm_window`): fold the machine's runtime
-    /// ([`Self::fold_runtime_into_def`], while the VM is still in
-    /// `entries[index].vm` for it to find), flush dirty disks/tape back to
-    /// their files (`CocoApp::flush_media`, the same one
-    /// `eframe::App::on_exit` calls for the test-only window in `app.rs`) —
-    /// then drop the VM, returning the row to Powered Off, regardless of
-    /// whether the flush succeeded. Unlike
-    /// the two `on_exit`s, the *row* outlives its VM, so a flush failure
-    /// (dirty media dropped with the VM — real data loss) lands in
-    /// `launch_error`, the same transport-row label Start and Suspend use,
-    /// rather than only in the log. On a
-    /// Suspended machine (VM alive or not) this also discards the frozen
-    /// state file — powering off is explicitly "throw the saved state
-    /// away". The saved screenshot is deleted along with it (not just the
-    /// cached texture): a powered-off machine has no preview, and a stale
-    /// PNG left behind would resurface via `write_thumbnail_png`'s
-    /// keep-previous-on-black rule as a *previous power cycle's* screen the
-    /// next time Suspend fires during a blanked display. A discard that
-    /// *fails* leaves the entry Suspended, with the error in `launch_error`:
-    /// the file is what startup re-reads ([`ManagerApp::new`]), so clearing
-    /// the flag anyway would show Powered Off now only to resurrect
-    /// Suspended on the next launch — the same file-is-truth rule
-    /// [`Self::resume_vm`] enforces. The preview (PNG and cached texture)
-    /// is only wiped once the state file actually is: a row that stays
-    /// Suspended keeps its frozen-frame preview. A flush failure and a
-    /// discard failure on the same power-off are both surfaced,
-    /// newline-joined (`CocoApp::flush_media`'s own two-error convention) —
-    /// the discard message must never clobber a data-loss one — while a
-    /// fully successful stop clears `launch_error` like the other
-    /// transports, so [`Self::focus_first_failed_row`] after a bulk Stop
-    /// never trips on a stale message.
+    /// Stop — the power switch: fold runtime, flush dirty media, then drop
+    /// the VM regardless of the flush outcome. On a Suspended machine this
+    /// also discards the frozen state file and its preview; a failed
+    /// discard leaves the entry Suspended. Errors surface in `launch_error`.
     pub(super) fn stop_vm(&mut self, index: usize) {
         self.fold_runtime_into_def(index);
         let flush_error = self.entries[index]
@@ -332,9 +234,7 @@ impl ManagerApp {
                 }
             }
         } else {
-            // No artifact root means Suspend could never have written a
-            // state file (or thumbnail), so there is nothing on disk to
-            // stay in step with.
+            // No artifact root means Suspend never wrote a state file or thumbnail, so there's nothing on disk to reconcile.
             entry.suspended = false;
             entry.thumbnail = None;
             entry.thumbnail_load_attempted = false;
@@ -346,9 +246,7 @@ impl ManagerApp {
     }
 
     /// `entries[index]`'s [`SUSPEND_STATE_FILE`] path — `None` when no
-    /// artifact root exists (no home directory), which disables
-    /// Suspend/Resume outright. Returns an owned path so callers keep their
-    /// `&mut self` freedom.
+    /// artifact root exists, which disables Suspend/Resume outright.
     fn suspend_state_path_for(&self, index: usize) -> Option<PathBuf> {
         Some(suspend_state_path(
             self.artifacts_root.as_deref()?,
@@ -357,17 +255,9 @@ impl ManagerApp {
     }
 
     /// Rename `entries[index]`'s `<slug>.toml` and artifact directory to
-    /// match its (already saved) display name. The slug is the identity
-    /// (`machine_def.rs` "Identity = slug") and nothing else persists it —
-    /// relative `[media]` entries name files *inside* the artifact dir —
-    /// so a rename is exactly these two filesystem moves, uniquified like
-    /// create. Only safe with the machine Powered Off — a running VM writes
-    /// `thumbnail.png` into the artifact dir by path, and a *suspended*
-    /// machine's `suspended.ccstate` records the media's absolute
-    /// pre-rename paths (`save_state_to`'s `MediaRefs`), so moving the
-    /// directory under it would make the frozen state unrestorable; callers
-    /// guard on both. The list is re-sorted afterwards, with the selection,
-    /// the edit state, and every pending delete all following their entry.
+    /// match its saved display name. Only safe with the machine Powered
+    /// Off — a running or suspended machine's paths must not move out from
+    /// under it; callers guard on both.
     fn migrate_slug(&mut self, index: usize) {
         self.entries[index].rename_pending = false;
         let Some(dir) = self.machines_dir.clone() else {
@@ -396,9 +286,7 @@ impl ManagerApp {
             if old_dir.exists()
                 && let Err(e) = fs::rename(&old_dir, root.join(&new))
             {
-                // Roll the definition back under the old slug: a stale slug
-                // beats relative [media] entries resolving into a directory
-                // that no longer matches the definition's file name.
+                // Roll back: a stale slug beats [media] entries resolving against a mismatched directory.
                 let _ = fs::rename(&new_path, &old_path);
                 self.save_error = Some(format!("{}: {e}", old_dir.display()));
                 return;
@@ -423,17 +311,9 @@ impl ManagerApp {
         }
     }
 
-    /// Run once per `update()`, before any panel draws (so row indices stay
-    /// stable for the whole frame): migrate the slug of every renamed
-    /// machine that is Powered Off — not running AND not suspended, since a
-    /// suspended machine's frozen state pins the artifact dir's old path
-    /// (see [`Self::migrate_slug`]'s doc); its rename stays pending until
-    /// the next power-off. Several can be pending at once (rename a running
-    /// machine, select another, rename it too…), and each
-    /// [`Self::migrate_slug`] re-sorts the list — hence re-`position` from
-    /// scratch per iteration rather than iterating indices. Terminates
-    /// because `migrate_slug` clears `rename_pending` unconditionally,
-    /// success or failure.
+    /// Run once per `update()`, before any panel draws: migrate the slug of
+    /// every renamed machine that is Powered Off. Re-finds indices from
+    /// scratch each iteration since [`Self::migrate_slug`] re-sorts the list.
     pub(super) fn apply_pending_renames(&mut self) {
         while let Some(index) = self
             .entries

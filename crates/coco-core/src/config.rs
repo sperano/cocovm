@@ -73,50 +73,25 @@ impl VideoStandard {
         }
     }
 
-    /// Physical scanline (0-based) where the field-sync line falls: the point
-    /// where PIA0 CB1 latches per its selected edge, and — on the GIME — the
-    /// VBORD source is raised (Lomont: "VBORD generated on falling edge of
-    /// VSYNC").
-    ///
-    /// NTSC, [`MachineVariant::Coco3`]: MAME `gime.cpp`'s constructor derives
-    /// the falling edge as top border (25 lines) + active display (192
-    /// lines) + part of the bottom border (26 lines) + 1 = 244. This is
-    /// GIME-specific — the plain MC6847 (CoCo 1/2) falling edge is at line
-    /// 216 instead (`mc6847.cpp`/`gime.cpp` header comment;
-    ///).
+    /// Physical scanline (0-based) where the field-sync line falls: PIA0
+    /// CB1's latch point, and (on the GIME) where VBORD rises (MAME `gime.cpp`/`mc6847.cpp`).
     pub const fn fs_falling_line(self, variant: MachineVariant) -> u32 {
         match self {
             VideoStandard::NTSC => match variant {
                 MachineVariant::Coco3 => 244,
                 MachineVariant::Coco1 | MachineVariant::Coco2 => 216,
             },
-            // UNVERIFIED: MAME's PAL timing offsets this edge by
-            // `LINES_PADDING_TOP_PAL` (mc6847.cpp), which could not be pinned
-            // down cleanly from the source. Keep the pre-fix behaviour (the
-            // field-sync edges collapsed to the last scanline of the field)
-            // rather than guess a line number. CoCo 1/2 + PAL is rejected by
-            // [`MachineConfig::validate`] before this is ever consulted.
+            // UNVERIFIED: PAL offset unclear from MAME source; falls back to the last scanline (Coco1/2+PAL is rejected earlier by validate()).
             VideoStandard::PAL => VideoStandard::PAL.lines_per_field() - 1,
         }
     }
 
     /// Physical scanline (0-based) where the field-sync line rises again.
-    ///
-    /// NTSC: MAME `mc6847.cpp` `LINES_UNTIL_RETRACE_NTSC` (243) +
-    /// `LINES_VERTICAL_RETRACE` (6) - 1 = 248. Unlike
-    /// [`Self::fs_falling_line`], the existing derivation of this edge already
-    /// cites the plain MC6847's own timing file directly rather than a
-    /// GIME-specific border-sum approximation, so — absent a source that
-    /// shows the GIME diverging from the real chip on this edge the way it
-    /// does on the falling one — the same value is used for every variant.
-    /// The parameter exists for API symmetry with `fs_falling_line` and so a
-    /// real per-variant number can be dropped in later without a signature
-    /// change.
+    /// 248 (MAME `mc6847.cpp`) for every variant; `_variant` exists only for symmetry with [`Self::fs_falling_line`].
     pub const fn fs_rising_line(self, _variant: MachineVariant) -> u32 {
         match self {
             VideoStandard::NTSC => 248,
-            // UNVERIFIED, see fs_falling_line: both edges collapse to the
-            // same last scanline for PAL until the real offset is confirmed.
+            // UNVERIFIED, see fs_falling_line: PAL edges collapse to the same last scanline until the real offset is confirmed.
             VideoStandard::PAL => VideoStandard::PAL.lines_per_field() - 1,
         }
     }
@@ -187,18 +162,8 @@ pub struct MachineConfig {
 }
 
 impl MachineConfig {
-    /// Reject variant/video/memory combinations the emulator doesn't (or
-    /// can't, on real hardware) support:
-    ///
-    /// - RAM is limited to the configurations each machine actually shipped
-    ///   in: 4K/16K/32K/64K for the CoCo 1, 16K/64K for the CoCo 2 (base
-    ///   16K×1 DRAMs plus the factory 64K upgrade — CoCo 2 service manual
-    ///   26-3026/26-3027 §3.3; no 4K or 32K CoCo 2 ever shipped), and the
-    ///   128K/512K/2048K sizes the CoCo 3's GIME MMU addresses.
-    /// - CoCo 1/2 are NTSC-only for now: PAL VDG timing is out of scope.
-    /// - [`VDGVariant::MC6847T1`] is only valid on [`MachineVariant::Coco2`]:
-    ///   CoCo 1 never had a T1 board, and CoCo 3 has no real MC6847 at all
-    ///   (the GIME does its own text character generation).
+    /// Reject variant/video/memory/VDG/monitor combinations the emulator
+    /// doesn't support (or that real hardware never shipped) — see the error messages for specifics.
     pub fn validate(&self) -> Result<(), String> {
         match self.variant {
             MachineVariant::Coco1 | MachineVariant::Coco2 => {

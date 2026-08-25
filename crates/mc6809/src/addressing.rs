@@ -47,14 +47,8 @@ impl MC6809 {
         }
     }
 
-    /// Decode an indexed-addressing postbyte and return the effective address and
-    /// the *extra* cycles it costs (added to the instruction's indexed base cost).
-    /// A large fraction of instructions route through here (see `DESIGN.md` §5), so
-    /// it aims to be a faithful transcription of the datasheet's indexed-mode table.
-    ///
-    /// Postbyte layout when bit 7 is set: `1 rr i mmmm` — `rr` selects the register,
-    /// `i` is the indirect bit, `mmmm` the sub-mode. When bit 7 is clear the whole
-    /// low 5 bits are a signed offset (`0 rr nnnnn`), which has no indirect form.
+    /// Decodes an indexed-addressing postbyte into an effective address and the
+    /// extra cycles it costs beyond the instruction's indexed base cost.
     pub(crate) fn ea_indexed(&mut self, bus: &mut impl Bus) -> (u16, u32) {
         let pb = self.fetch_u8(bus);
 
@@ -160,12 +154,10 @@ impl MC6809 {
                 (self.pc.wrapping_add(ofs), 5)
             }
             0b1111 => {
-                // [n]  extended indirect (register field ignored). The base cost
-                // here plus the indirect fetch below sum to the datasheet's 5.
+                // [n]  extended indirect; base cost + indirect fetch below sum to the datasheet's 5.
                 (self.fetch_u16(bus), 2)
             }
-            // Reserved/illegal postbytes (0b0111, 0b1010, 0b1110): behaviour is
-            // undefined on hardware; fall back to a plain register read.
+            // Reserved/illegal postbytes: undefined on hardware; fall back to a plain register read.
             _ => (self.index_reg(sel), 0),
         }
     }

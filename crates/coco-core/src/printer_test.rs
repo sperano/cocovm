@@ -49,8 +49,7 @@ fn clear_empties_dots_but_does_not_touch_future_absolute_y() {
     paper.clear();
     assert_eq!(paper.extent(), PaperExtent::default());
     assert!(paper.dots_in_range(0, 1000).is_empty());
-    // A mark at a large absolute y after clear lands exactly there — no
-    // rebasing happens inside Paper.
+    // A mark at a large absolute y after clear lands exactly there.
     paper.mark(0, 9_000);
     assert_eq!(paper.extent().max_y, 9_000);
 }

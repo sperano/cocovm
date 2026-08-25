@@ -20,8 +20,7 @@ const ACTIVE: ActiveRect = ActiveRect {
 
 #[test]
 fn scales_offsets_and_size_into_the_display_rect() {
-    // Display at 2× the framebuffer in both axes, origin off (0,0) so a
-    // forgotten `left_top()` offset would show.
+    // Origin off (0,0) so a forgotten `left_top()` offset would show.
     let display = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(1280.0, 480.0));
     let r = scale_active_rect(ACTIVE, FB_W, FB_H, display);
     assert_eq!(r.left_top(), egui::pos2(100.0 + 128.0, 50.0 + 50.0));
@@ -30,8 +29,7 @@ fn scales_offsets_and_size_into_the_display_rect() {
 
 #[test]
 fn per_axis_scales_are_independent() {
-    // 1× horizontally but 2× vertically — the scanline-doubled / 4:3-fit
-    // shape. A mixed-up `sx`/`sy` or a "uniform scale" assumption fails here.
+    // 1× horizontally but 2× vertically — a mixed-up `sx`/`sy` fails here.
     let display = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(640.0, 480.0));
     let r = scale_active_rect(ACTIVE, FB_W, FB_H, display);
     assert_eq!(r.left_top(), egui::pos2(64.0, 50.0));

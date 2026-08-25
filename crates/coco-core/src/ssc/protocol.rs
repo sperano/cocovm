@@ -224,11 +224,7 @@ impl SoundSpeechCartridge {
             return;
         }
         if load.cursor >= load.cap {
-            // Capacity exhausted without ever seeing the terminator: the
-            // load ends WITHOUT storing this overflowing byte, and — since
-            // the manual says the protocol "reverts to normal input mode" —
-            // this same byte is immediately re-dispatched as if freshly
-            // received in Idle mode.
+            // Capacity exhausted without a terminator: byte is dropped and re-dispatched in Idle mode (manual: "reverts to normal input mode").
             self.mode = Mode::Idle;
             self.dispatch(byte);
             return;
@@ -258,14 +254,12 @@ impl SoundSpeechCartridge {
     }
 
     /// Top-level command dispatch (Idle mode only) — every command
-    /// byte/range from [`cmd`]. See the `ssc` module doc comment and
-    /// `docs/ssc-spec.md` for the full protocol writeup.
+    /// byte/range from [`cmd`]. See `docs/ssc-spec.md` for the full protocol writeup.
     fn dispatch_command(&mut self, byte: u8) {
         match byte {
             cmd::STOP_ALL_SOUND | cmd::STOP_ALL_SOUND_ALT => self.stop_all_sound(),
 
-            // Covers every LOAD command plus $AF (DIRECT_ACCESS_TOGGLE),
-            // which falls inside this same range.
+            // Covers every LOAD command plus $AF (DIRECT_ACCESS_TOGGLE), which falls in this range.
             cmd::LOAD_SPEECH_CONSECUTIVE_START..=cmd::LOAD_REGISTER_INDIVIDUAL_END => {
                 self.dispatch_load_command(byte)
             }
@@ -274,18 +268,13 @@ impl SoundSpeechCartridge {
                 self.dispatch_exec_command(byte)
             }
 
-            // `0x01-0x7F` (bit7 clear): plain ASCII text-to-speech data in
-            // the default input mode. Consumed and discarded — this also
-            // covers `0x0D` arriving here, which has no special effect
-            // beyond being discarded, since nothing accumulates or speaks
-            // it in this implementation.
+            // 0x01-0x7F (bit7 clear): plain ASCII text-to-speech data, consumed and discarded.
             _ => {}
         }
     }
 
-    /// The `$8x`/`$9x`/`$Ax`/`$Bx` half of [`SoundSpeechCartridge::dispatch_command`]: every
-    /// LOAD command (speech/sound/allophone/register, consecutive or
-    /// individual) and `$8F`/`$AF`.
+    /// The `$8x`/`$9x`/`$Ax`/`$Bx` half of [`SoundSpeechCartridge::dispatch_command`]:
+    /// every LOAD command and `$8F`/`$AF`.
     fn dispatch_load_command(&mut self, byte: u8) {
         match byte {
             cmd::LOAD_SPEECH_CONSECUTIVE_START..=cmd::LOAD_SPEECH_CONSECUTIVE_END => {
@@ -334,11 +323,9 @@ impl SoundSpeechCartridge {
         }
     }
 
-    /// The `$Cx`-`$Fx` half of [`SoundSpeechCartridge::dispatch_command`]: every EXECUTE
-    /// command (speech/sound/allophone/register, consecutive or
-    /// individual) plus `$C7` abort-all-speech. Only the sound-data and
-    /// register-string variants do anything — see the `ssc` module doc
-    /// comment for why the speech/allophone variants are no-ops.
+    /// The `$Cx`-`$Fx` half of [`SoundSpeechCartridge::dispatch_command`]: every
+    /// EXECUTE command plus `$C7` abort-all-speech. Only the sound-data and
+    /// register-string variants do anything.
     fn dispatch_exec_command(&mut self, byte: u8) {
         match byte {
             cmd::EXEC_SOUND_CONSECUTIVE_START..=cmd::EXEC_SOUND_CONSECUTIVE_END => {
@@ -368,8 +355,7 @@ impl SoundSpeechCartridge {
             | cmd::EXEC_SPEECH_INDIVIDUAL_START..=cmd::EXEC_SPEECH_INDIVIDUAL_END
             | cmd::EXEC_ALLOPHONE_CONSECUTIVE_START..=cmd::EXEC_ALLOPHONE_CONSECUTIVE_END
             | cmd::EXEC_ALLOPHONE_INDIVIDUAL_START..=cmd::EXEC_ALLOPHONE_INDIVIDUAL_END => {
-                // Speech/allophone execute commands: no-op, no SP0256
-                // emulated (see the `ssc` module doc comment).
+                // Speech/allophone execute commands: no-op, no SP0256 emulated.
             }
 
             _ => unreachable!("caller only dispatches the EXECUTE range here"),
@@ -398,17 +384,9 @@ impl SoundSpeechCartridge {
     }
 
     /// Executes a register-string stream: `(register, value)` pairs applied
-    /// straight to the AY, immediately, with no timing — unlike sound-data
-    /// groups this is not scheduled through the sound-data engine, since the
-    /// manual describes register strings as unbuffered "on the fly" pokes
-    /// (same mechanism as `$AF` direct-access, just sourced from RAM instead
-    /// of live host bytes). `$FF` at a pair-start position ends the stream,
-    /// mirroring the sound-data terminator rule; a dangling odd byte with no
-    /// paired value at the end of the window is dropped rather than
-    /// misapplied (the manual doesn't address this case for register
-    /// strings specifically — treated the same as sound-data's "incomplete
-    /// trailing group never executes" rule, as the smallest consistent
-    /// choice).
+    /// straight to the AY, immediately, with no timing (unbuffered, per the
+    /// manual). `$FF` at a pair-start ends the stream; a dangling odd byte
+    /// at the end is dropped.
     fn execute_register_string(&mut self, start: usize, cap: usize) {
         let mut cursor = start;
         while cursor < cap {

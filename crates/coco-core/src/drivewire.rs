@@ -230,10 +230,8 @@ impl DWImage {
         }
     }
 
-    /// Read exactly `buf.len()` bytes starting at `offset`. Returns an
-    /// error (mapped by the caller to [`error::READ`]) if `offset..offset +
-    /// buf.len()` runs past the image's current length, or on a genuine
-    /// host I/O error.
+    /// Read exactly `buf.len()` bytes at `offset`; errors (mapped by the
+    /// caller to [`error::READ`]) past the image's end or on I/O failure.
     pub(crate) fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
         let len = self.len()?;
         if offset.saturating_add(buf.len() as u64) > len {
@@ -255,10 +253,8 @@ impl DWImage {
         }
     }
 
-    /// Write `buf` at `offset`, growing the image if `offset + buf.len()`
-    /// exceeds the current length (for `Memory`, resizing zero-fills any
-    /// newly created gap before `offset`; for `File`, seeking past the
-    /// current end and writing extends it the same way a real file does).
+    /// Write `buf` at `offset`, growing the image (zero-filling any gap)
+    /// if `offset + buf.len()` exceeds the current length.
     pub(crate) fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
         match self {
             DWImage::Memory(bytes) => {
@@ -276,9 +272,8 @@ impl DWImage {
         }
     }
 
-    /// The image's raw bytes, for inspection — only meaningful for the
-    /// in-memory variant (tests construct one, mount it, then read this
-    /// back to check what a command wrote); `None` for a file-backed image.
+    /// The image's raw bytes; `Some` only for the in-memory variant, `None`
+    /// for a file-backed image.
     pub fn as_memory(&self) -> Option<&[u8]> {
         match self {
             DWImage::Memory(bytes) => Some(bytes),
@@ -323,18 +318,14 @@ fn default_clock() -> DWTime {
     }
 }
 
-/// `#[serde(default = "...")]` for [`DWServer::clock`]: matches
-/// [`DWServer::new`]'s own default (a closure has no serializable shape, so
-/// this is what a restored server falls back to until the frontend calls
-/// [`DWServer::set_clock`] again .
+/// `#[serde(default = "...")]` for [`DWServer::clock`]; a restored server
+/// falls back to this until the frontend calls [`DWServer::set_clock`].
 fn default_dw_clock() -> DWClock {
     Box::new(default_clock)
 }
 
-/// Plain 16-bit sum of a 256-byte sector's bytes. Despite [`error::CRC`]'s
-/// name, DriveWire's "checksum" is this trivial running sum, not a CRC: all
-/// bytes 0xFF sums to `256 * 255 = 65_280`, which fits in a `u16` with no
-/// wraparound possible, so this never needs `wrapping_add`.
+/// Plain 16-bit sum of a 256-byte sector's bytes — despite [`error::CRC`]'s name, not an actual
+/// CRC. Max possible sum is 65_280, so no `u16` wraparound is possible.
 fn checksum_of(sector: &[u8]) -> u16 {
     sector.iter().map(|&b| u16::from(b)).sum()
 }
@@ -344,8 +335,7 @@ fn checksum_of(sector: &[u8]) -> u16 {
 #[derive(Serialize, Deserialize)]
 pub struct DWServer {
     /// Skipped: each mounted image can hold an open host `File` handle —
-    /// remounted by path on restore via [`DWServer::reattach`]
-    ///.
+    /// remounted by path on restore via [`DWServer::reattach`].
     #[serde(skip)]
     drives: [Option<DWImage>; DRIVE_COUNT],
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
@@ -413,11 +403,8 @@ impl DWServer {
         self.dirty[drive] = false;
     }
 
-    /// Restore-path-only: re-inject a mounted image after a snapshot
-    /// restore, WITHOUT clearing `dirty[drive]` (unlike [`DWServer::mount`])
-    /// — the restored dirty flag is itself real machine state, not reset by
-    /// remounting the same image the snapshot already had open
-    ///.
+    /// Re-inject a mounted image after a snapshot restore, WITHOUT clearing `dirty[drive]`
+    /// (unlike [`DWServer::mount`]) — the dirty flag is real state, not reset by remounting.
     pub fn reattach(&mut self, drive: usize, image: DWImage) {
         self.drives[drive] = Some(image);
     }
@@ -432,9 +419,8 @@ impl DWServer {
         self.drives[drive].as_ref()
     }
 
-    /// Enable/disable HDB-DOS flat addressing (see
-    /// [`HDBDOS_SECTORS_PER_DISK`]). Off by default: plain DriveWire, where
-    /// the wire drive byte selects the mount slot directly.
+    /// Enable/disable HDB-DOS flat addressing (see [`HDBDOS_SECTORS_PER_DISK`]);
+    /// off by default, using the wire drive byte directly.
     pub fn set_hdbdos_mode(&mut self, enabled: bool) {
         self.hdbdos = enabled;
     }
@@ -475,9 +461,8 @@ impl DWServer {
         self.clock = clock;
     }
 
-    /// Becker-port status register read: [`STATUS_DATA_AVAILABLE`] set
-    /// whenever at least one reply byte is queued, `0` otherwise.
-    /// Non-destructive, unlike [`DWServer::data_read`].
+    /// Becker-port status register read: [`STATUS_DATA_AVAILABLE`] if a reply byte is queued,
+    /// `0` otherwise. Non-destructive, unlike [`DWServer::data_read`].
     pub fn status_read(&self) -> u8 {
         if self.reply.is_empty() {
             0

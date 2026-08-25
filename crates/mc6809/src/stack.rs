@@ -19,13 +19,10 @@ impl MC6809 {
         v
     }
 
-    /// PSHS/PSHU. `to_s` selects the hardware (S) stack; otherwise the user (U)
-    /// stack. Push order is PC, U/S, Y, X, DP, B, A, CC (highest address first),
-    /// so CC ends up on top. Bit 6 of the mask pushes the *other* stack pointer.
-    /// Returns the cycle count (base + 1 per byte).
+    /// PSHS/PSHU. `to_s` selects the S stack, else U. Push order is PC, U/S, Y,
+    /// X, DP, B, A, CC (highest address first); bit 6 pushes the *other* stack pointer.
     pub(crate) fn psh(&mut self, bus: &mut impl Bus, mask: u8, to_s: bool) -> u32 {
-        // Work on a local pointer; a 16-bit push stores low byte first (at the
-        // higher address) then high byte, leaving the value big-endian in memory.
+        // 16-bit push stores low byte first (higher address), leaving the value big-endian.
         let mut sp = if to_s { self.s } else { self.u };
         let other = if to_s { self.u } else { self.s };
         let mut push8 = |sp: &mut u16, v: u8, n: &mut u32| {
@@ -110,9 +107,7 @@ impl MC6809 {
             if from_s {
                 self.u = v;
             } else {
-                // PULU loading S is a program load of S and must arm NMI
-                // recognition (see `nmi_armed`); the plain pointer writebacks
-                // below are on the non-arming side of that boundary.
+                // PULU loading S is a program load and must arm NMI recognition (see `nmi_armed`).
                 self.load_s(v);
             }
         }

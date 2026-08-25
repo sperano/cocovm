@@ -37,9 +37,9 @@ mod mfm {
 }
 
 impl WD1773 {
-    /// Write the data register ($FF4B). Side effect: clears DRQ, and — mid a
-    /// Write Sector/Write Track transfer — supplies the next byte, advancing
-    /// (and possibly completing) the transfer.
+    /// Writes the data register ($FF4B). Side effect: clears DRQ, and — mid
+    /// a Write Sector/Write Track transfer — supplies the next byte,
+    /// possibly completing it.
     pub fn write_data(&mut self, val: u8, mut disk: Option<&mut JVCDisk>, side: u8) {
         self.data = val;
         self.drq = false;
@@ -60,8 +60,7 @@ impl WD1773 {
                 TransferKind::WriteTrack if t.format_enabled => {
                     feed_write_track_byte(&mut t, val, disk.as_deref_mut(), side);
                 }
-                // FM Write Track (format_enabled == false): discard, matching
-                // the pre-parser behavior — FM parsing is unimplemented.
+                // FM Write Track (format_enabled == false): discard — FM parsing is unimplemented.
                 _ => {}
             }
             t.index += 1;
@@ -88,35 +87,23 @@ impl WD1773 {
         }
     }
 
-    /// [`advance_transfer`](Self::advance_transfer)'s Read Sector/Read
-    /// Address half: deliver the next staged byte via DRQ, or — once `total`
-    /// bytes are delivered — finish the transfer after the CRC trailer delay.
+    /// Read Sector/Read Address half of [`advance_transfer`](Self::advance_transfer):
+    /// delivers the next staged byte via DRQ, or finishes the transfer after
+    /// the CRC trailer delay once `total` bytes are delivered.
     fn advance_read_transfer(&mut self, mut t: Transfer, disk: Option<&mut JVCDisk>, side: u8) {
         if t.index >= t.total {
-            // The CRC trailer elapsed after the final data byte; a
-            // still-unread final byte is a genuine overrun.
+            // CRC trailer elapsed after the final data byte; a still-unread byte is a genuine overrun.
             if self.drq {
                 self.status_lost_data = true;
             }
             self.finish_transfer(t, disk, side);
             return;
         }
-        // Spec: "if the previous byte was never taken, set LOST
-        // DATA but keep going (do not stall)." Exempt only the
-        // very first byte of a fresh command — see `first_byte`.
+        // Spec: if the previous byte was never taken, set LOST DATA but keep going — except the very first byte (see first_byte).
         if self.drq && !t.first_byte {
             self.status_lost_data = true;
         }
-        // The WD1773 has no side input: head (side) select is the
-        // external DSKREG bit, and the controller reads the data field
-        // off whatever side the head sits over *when the field streams*
-        // — after the ID-address-mark search ([`FIRST_BYTE_LATENCY_CYCLES`]),
-        // not when the command was written. OS-9's RBF driver relies on
-        // this: it issues the Read Sector command, *then* flips DSKREG to
-        // the next side, before the (halting) DATAREG read. So resolve a
-        // Read Sector's bytes from the live side at first delivery, not at
-        // dispatch. (Multiple-sector continuations already re-resolve in
-        // `finish_transfer`; this covers the first/only sector.)
+        // WD1773 has no side input — side resolves from live DSKREG when the data field streams (after ID search), not at dispatch, since OS-9's RBF driver flips DSKREG between issuing the command and the halting DATAREG read.
         if t.first_byte
             && t.kind == TransferKind::ReadSector
             && let Some(d) = disk.as_deref()
@@ -129,9 +116,7 @@ impl WD1773 {
         self.drq = true;
         t.index += 1;
         t.first_byte = false;
-        // After the final data byte, INTRQ waits out the CRC trailer
-        // (see [`CRC_TRAILER_CYCLES`]) so the host can collect the
-        // byte before completion clears halt-enable and fires NMI.
+        // After the final byte, INTRQ waits out the CRC trailer so the host can collect it before halt-enable clears and NMI fires.
         t.remaining = if t.index >= t.total {
             CRC_TRAILER_CYCLES
         } else {
@@ -140,9 +125,9 @@ impl WD1773 {
         self.op = Op::Transfer(t);
     }
 
-    /// [`advance_transfer`](Self::advance_transfer)'s Write Sector/Write
-    /// Track half: request the next byte and wait — [`WD1773::write_data`]
-    /// drives the transfer forward from here, so there's no natural timeout.
+    /// Write Sector/Write Track half of [`advance_transfer`](Self::advance_transfer):
+    /// requests the next byte and waits — [`WD1773::write_data`] drives the
+    /// transfer forward, so there's no natural timeout.
     fn advance_write_transfer(&mut self, mut t: Transfer) {
         self.drq = true;
         t.remaining = AWAITING_HOST_CYCLES;
@@ -150,8 +135,8 @@ impl WD1773 {
     }
 
     /// A sector/ID-field/format run finished. For a multiple-sector Type II
-    /// command, roll onto the next sector (RNF once one runs past the end of
-    /// the track); otherwise complete with INTRQ.
+    /// command, rolls onto the next sector (RNF once one runs past the
+    /// track); otherwise completes with INTRQ.
     fn finish_transfer(&mut self, t: Transfer, disk: Option<&mut JVCDisk>, side: u8) {
         if t.multiple {
             let next_sector = self.sector.wrapping_add(1);
@@ -172,12 +157,9 @@ impl WD1773 {
                     multiple: true,
                     offset,
                     buf,
-                    // Not exempted: this continues the same multiple-sector
-                    // transfer, so a still-unread last byte of the previous
-                    // sector is a genuine overrun (spec's LOST DATA case).
+                    // Not exempted: a still-unread byte from the previous sector is a genuine overrun here.
                     first_byte: false,
-                    // Only Read/Write Sector ever set `multiple`, so this
-                    // continuation never applies to Write Track.
+                    // Only Read/Write Sector ever set multiple; this continuation never applies to Write Track.
                     format_state: FormatState::Gap,
                     last_id_field: None,
                     format_enabled: true,
@@ -192,16 +174,12 @@ impl WD1773 {
     }
 }
 
-/// Feed one Write Track (format) byte through the mark-triggered parser,
-/// advancing `t.format_state`. Recognizes the MFM control bytes in `mod mfm`;
-/// everything else is either gap filler (`Gap`/`Sync` states) or literal
-/// ID/data payload (`IdField`/`DataField` states — captured verbatim, never
-/// interpreted as a mark, per spec). On a completed data field (the `$F7`
-/// that ends `DataFieldTerm`), writes the buffered payload into `disk` at
-/// `t.last_id_field`'s (track, sector, size_code) and `hw_side` — the
-/// hardware side select, not the stream's own (discarded) literal side byte,
-/// since the WD1773 never derives side from the ID field on Write Track
-/// (spec). Does nothing if `disk` is `None` or no ID field has completed yet.
+/// Feeds one Write Track byte through the mark-triggered parser, advancing
+/// `t.format_state`. On a completed data field (the terminating `$F7`),
+/// writes the buffered payload into `disk` at `t.last_id_field`'s (track,
+/// sector, size_code) and `hw_side` — the hardware side select, not the
+/// stream's own discarded side byte, since the WD1773 never derives side
+/// from the ID field on Write Track.
 fn feed_write_track_byte(t: &mut Transfer, val: u8, disk: Option<&mut JVCDisk>, hw_side: u8) {
     let state = std::mem::replace(&mut t.format_state, FormatState::Gap);
     t.format_state = match state {
@@ -230,9 +208,7 @@ fn step_gap(val: u8) -> FormatState {
 }
 
 /// `Sync` state: at least one sync byte seen; the next non-sync byte is the
-/// address mark. `IdField`, `DataField`/`DeletedDataField` are recognized;
-/// the index-AM preamble and any other unexpected byte are treated as
-/// filler.
+/// address mark. Unexpected bytes (including the index-AM preamble) are treated as filler.
 fn step_sync(val: u8, t: &Transfer, disk: Option<&JVCDisk>) -> FormatState {
     match val {
         mfm::SYNC => FormatState::Sync,
@@ -253,8 +229,7 @@ fn step_sync(val: u8, t: &Transfer, disk: Option<&JVCDisk>) -> FormatState {
 }
 
 /// `IdField` state: gathering the 4 literal ID bytes (track, side, sector,
-/// size code). `buf[1]` (side) is captured but deliberately discarded once
-/// the field completes — see [`feed_write_track_byte`]'s doc comment.
+/// size code). `buf[1]` (side) is captured but deliberately discarded once the field completes.
 fn step_id_field(mut buf: Vec<u8>, val: u8) -> FormatState {
     buf.push(val);
     if buf.len() == mfm::ID_FIELD_LEN {
@@ -299,10 +274,9 @@ fn step_data_field(mut buf: Vec<u8>, target_len: usize, val: u8) -> FormatState 
     }
 }
 
-/// `DataFieldTerm` state: the payload is fully gathered; consuming (ignored)
-/// bytes until the write-CRC terminator, which writes the buffered payload
-/// into `disk` at the most recently completed ID field's (track, sector,
-/// size_code) and `hw_side`.
+/// `DataFieldTerm` state: the payload is fully gathered; consuming bytes
+/// until the write-CRC terminator, which writes the payload into `disk` at
+/// the most recent ID field and `hw_side`.
 fn step_data_field_term(
     buf: Vec<u8>,
     val: u8,

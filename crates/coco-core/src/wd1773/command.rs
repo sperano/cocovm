@@ -49,9 +49,9 @@ mod type4 {
 }
 
 impl WD1773 {
-    /// Write the command register ($FF48). Force Interrupt (Type IV) runs even
-    /// while busy (it's how you cancel a stuck command); every other command
-    /// written while busy is ignored (spec).
+    /// Writes the command register ($FF48). Force Interrupt (Type IV) runs
+    /// even while busy (it's how you cancel a stuck command); every other
+    /// command written while busy is ignored.
     pub fn write_command(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
         let type_nibble = cmd >> 4;
         if type_nibble == cmd_type::FORCE_INTERRUPT {
@@ -131,10 +131,9 @@ impl WD1773 {
         };
     }
 
-    /// Step/Step-In/Step-Out (Type I, `0x2`-`0x7`): move one track in
-    /// `forced_direction` (Step-In/Step-Out) or the last remembered direction
-    /// (bare Step), updating the track register only if the command's T bit
-    /// ([`type1::UPDATE_TRACK_REG`]) is set.
+    /// Step/Step-In/Step-Out (Type I, `0x2`-`0x7`): moves one track in
+    /// `forced_direction` or the last remembered direction (bare Step),
+    /// updating the track register only if the T bit ([`type1::UPDATE_TRACK_REG`]) is set.
     fn start_step(
         &mut self,
         cmd: u8,
@@ -162,8 +161,7 @@ impl WD1773 {
 
     /// Read Sector (Type II, `0x8`/`0x9`).
     fn start_read_sector(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
-        // No data yet: DRQ low so a HALT-enabled driver stalls at its LDA
-        // DATAREG loop until the first byte lands (see FIRST_BYTE_LATENCY_CYCLES).
+        // No data yet: DRQ low so a HALT-enabled driver stalls at LDA DATAREG until the first byte lands.
         self.drq = false;
         let multiple = cmd & type1::UPDATE_TRACK_REG != 0; // bit4, same physical bit as T
         match disk {
@@ -193,8 +191,7 @@ impl WD1773 {
 
     /// Write Sector (Type II, `0xA`/`0xB`).
     fn start_write_sector(&mut self, cmd: u8, disk: Option<&mut JVCDisk>, side: u8) {
-        // No sector located yet: DRQ low until the ID field is found and the
-        // controller requests the first byte (see FIRST_BYTE_LATENCY_CYCLES).
+        // No sector located yet: DRQ low until the ID field is found and the first byte is requested.
         self.drq = false;
         let multiple = cmd & type1::UPDATE_TRACK_REG != 0;
         match disk {
@@ -227,13 +224,11 @@ impl WD1773 {
         }
     }
 
-    /// Read Address (Type III, `0xC`): deliver the 6 ID bytes (track, side,
-    /// first sector ID on the track, size code, CRC1, CRC2 — CRC bytes are 0,
-    /// unmodelled). The sector register is deliberately left alone (spec: "not
-    /// needed").
+    /// Read Address (Type III, `0xC`): delivers the 6 ID bytes (track, side,
+    /// first sector ID, size code, CRC1, CRC2 — CRC bytes are 0, unmodelled).
+    /// The sector register is deliberately left alone (spec: "not needed").
     fn start_read_address(&mut self, disk: Option<&mut JVCDisk>, side: u8) {
-        // No ID field under the head yet: DRQ low until the next address mark
-        // spins around (see FIRST_BYTE_LATENCY_CYCLES).
+        // No ID field under the head yet: DRQ low until the next address mark spins around.
         self.drq = false;
         match disk {
             Some(d) if (self.physical_track as usize) < d.track_count() => {
@@ -265,13 +260,9 @@ impl WD1773 {
 
     /// Write Track (Type III, `0xF`, format): consumes
     /// [`WRITE_TRACK_BYTE_COUNT`] DRQ-paced bytes, parsing them into sectors
-    /// laid onto the mounted image via
-    /// [`feed_write_track_byte`](super::transfer::feed_write_track_byte) when
-    /// the controller is in double density (FM streams are still just
-    /// discarded — see that constant's doc comment). Write-protect is checked
-    /// up front, mirroring [`WD1773::start_write_sector`]'s WP arm; there's no
-    /// "not found" case since a format command has no target sector to fail
-    /// to find (spec).
+    /// via [`feed_write_track_byte`](super::transfer::feed_write_track_byte)
+    /// in double density (FM streams are discarded). Write-protect is
+    /// checked up front; there's no "not found" case (no target sector to fail to find).
     fn start_write_track(&mut self, disk: Option<&mut JVCDisk>) {
         if let Some(d) = disk
             && d.write_protected()
@@ -304,10 +295,9 @@ impl WD1773 {
         };
     }
 
-    /// Force Interrupt (Type IV, `0xD`): cancel any command in progress. Low
-    /// nibble bit3 (I3) forces an immediate INTRQ; low nibble 0 just cancels.
-    /// Runs even while busy, and the status presented afterward is Type-I
-    /// style (spec).
+    /// Force Interrupt (Type IV, `0xD`): cancels any command in progress.
+    /// Bit3 (I3) forces an immediate INTRQ; runs even while busy, with
+    /// Type-I status presented afterward.
     fn force_interrupt(&mut self, cmd: u8) {
         self.busy = false;
         self.op = Op::Idle;

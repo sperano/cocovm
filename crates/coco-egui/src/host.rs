@@ -21,12 +21,9 @@ pub(crate) fn host_time_source() -> coco_core::rtc::TimeSource {
     Box::new(host_now)
 }
 
-/// The DriveWire server's injected wall clock (`drivewire::DwClock`,
-/// `coco_core::drivewire` — like [`host_time_source`], coco-core itself
-/// never reads `std::time`). Shared by [`CocoApp::enable_drivewire`] and
-/// `CocoApp::load_state_from`'s restore path (`save_state.rs`) — a restored
-/// `DwServer`'s clock is `#[serde(skip)]`, same reasoning as the Disto RTC's
-/// time source.
+/// The DriveWire server's injected wall clock — like [`host_time_source`],
+/// coco-core never reads `std::time` directly. A restored `DwServer`'s clock
+/// is `#[serde(skip)]` for the same reason.
 pub(crate) fn host_dw_clock() -> drivewire::DWClock {
     Box::new(|| {
         let now = chrono::Local::now();

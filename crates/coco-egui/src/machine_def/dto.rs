@@ -268,16 +268,10 @@ pub struct HardwareDTO {
 }
 
 impl HardwareDTO {
-    /// Build the `[hardware]` section from a config the "New…" flow or the
-    /// manager's detail-pane form produced (`new_vm::config_form_rows`
-    /// already ran [`MachineConfig::validate`]-compatible constraints on
-    /// it). `display` is taken separately — the form's own pick, not
-    /// derivable from the config (a CoCo 3 TV and a composite monitor both
-    /// resolve to `monitor: Composite`); the legacy `monitor` key is never
-    /// written. `vdg` is written exactly when the machine has the chip
-    /// (`Some` per the config) — a CoCo 3 file carries no `vdg` key. `rom`
-    /// is passed through as-is: the custom-ROM path isn't part of
-    /// [`MachineConfig`] and has no editor yet.
+    /// Build the `[hardware]` section from a config the "New…" flow or
+    /// detail-pane form produced. `display` is taken separately since it's
+    /// not derivable from the config (a CoCo 3 TV and composite monitor both
+    /// resolve to `Composite`).
     pub fn from_config(config: &MachineConfig, display: Display, rom: Option<String>) -> Self {
         Self {
             variant: config.variant.into(),
@@ -354,9 +348,8 @@ pub struct PortsDTO {
     pub serial: Option<SerialDTO>,
 }
 
-/// Default for `[ui].aspect_correct` — `bool::default()` is `false`, but the
-/// file-format default is `true` (aspect correction on), so this needs its
-/// own default function rather than relying on `Default::default()`.
+/// Default for `[ui].aspect_correct`: `true` (aspect correction on), unlike
+/// `bool::default()`'s `false`.
 fn default_aspect_correct() -> bool {
     true
 }

@@ -16,8 +16,7 @@ fn appparams_default_leaves_drivewire_off() {
     );
 }
 
-/// Scratch space under `target/` (git-ignored), mirroring
-/// `save_state_test.rs`'s helper of the same name.
+/// Scratch space under `target/` (git-ignored).
 fn scratch_dir(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp-test-app")
@@ -26,8 +25,7 @@ fn scratch_dir(name: &str) -> PathBuf {
     dir
 }
 
-/// Boot with the installed `coco3.rom` and the given DriveWire launch
-/// setting — the shared front half of the tests below.
+/// Boots using the installed `coco3.rom`.
 fn boot_with_drivewire(drivewire: Option<DriveWireLaunch>) -> CocoApp {
     let rom_path = installed_roms_dir().join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
@@ -44,10 +42,8 @@ fn boot_with_drivewire(drivewire: Option<DriveWireLaunch>) -> CocoApp {
     )
 }
 
-/// `Some(DriveWireLaunch)` reaching `CocoApp::new` must enable the Becker
-/// port with the requested HDB-DOS mode — both values, so a hardcoded
-/// `enable_drivewire(true)` couldn't pass — the same state
-/// `chrome/menu_bar/drivewire.rs` reads via `self.machine.bus.drivewire`.
+/// `Some(DriveWireLaunch)` must enable the Becker port with the requested
+/// HDB-DOS mode, for both values (so a hardcoded `enable_drivewire(true)` can't pass).
 #[test]
 fn drivewire_launch_enables_becker_with_hdbdos_mode() {
     for hdbdos_mode in [false, true] {
@@ -69,10 +65,8 @@ fn drivewire_launch_enables_becker_with_hdbdos_mode() {
     }
 }
 
-/// A `disk_paths` slot must reach `insert_dw_disk`: the image mounts (path
-/// tracked in `CocoApp::dw_paths`) with no error — the "DW disks can't
-/// exist without DriveWire" half of bundling disks into
-/// [`DriveWireLaunch`].
+/// A `disk_paths` slot must reach `insert_dw_disk`: the image mounts with no
+/// error and the path is tracked in `dw_paths`.
 #[test]
 fn drivewire_launch_mounts_disk_images() {
     let path = scratch_dir("dw-mount").join("dw0.dsk");

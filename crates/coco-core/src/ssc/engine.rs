@@ -48,9 +48,8 @@ pub mod group {
     /// Bits 4-0 of a noise group's second byte: 5-bit noise period.
     pub const NOISE_PERIOD_MASK: u8 = 0x1F;
 
-    /// Byte length of a group given its 3-bit opcode (already shifted/masked
-    /// via [`OPCODE_SHIFT`]/[`OPCODE_MASK`]): 3 for noise groups, 4 for
-    /// every other opcode (tone: `[amp, coarse, fine, duration]`; envelope:
+    /// Byte length of a group given its 3-bit opcode: 3 for noise groups, 4
+    /// for every other (tone: `[amp, coarse, fine, duration]`; envelope:
     /// `[shape, coarse, fine, duration]`).
     pub fn len(opcode: u8) -> usize {
         match opcode {
@@ -110,12 +109,9 @@ pub(super) struct Engine {
 }
 
 impl SoundSpeechCartridge {
-    /// `$00`/`$CF` "stop all sound": halts the engine (it stops advancing)
-    /// and writes 0 to all three AY channel volumes — a true off, unlike
-    /// natural end-of-stream (see [`SoundSpeechCartridge::advance_engine`]'s doc comment).
-    /// `$00` additionally stops speech on real hardware, a no-op here (no
-    /// SP0256). Both commands are otherwise identical in this
-    /// implementation.
+    /// `$00`/`$CF` "stop all sound": halts the engine and zeroes all three AY
+    /// channel volumes — a true off, unlike natural end-of-stream. Identical
+    /// in this implementation for both commands.
     pub(super) fn stop_all_sound(&mut self) {
         self.engine = Engine::default();
         self.ay_write(ay_reg::VOL_A, 0);
@@ -124,9 +120,7 @@ impl SoundSpeechCartridge {
     }
 
     /// Starts a sound-data EXECUTE stream: resets the engine to the given
-    /// window and synchronously parses/programs the first group (subsequent
-    /// groups advance from [`Cartridge::tick`](crate::cart::Cartridge::tick)
-    /// via [`SoundSpeechCartridge::tick_engine`]).
+    /// window and synchronously parses/programs the first group.
     pub(super) fn start_sound_execute(&mut self, start: usize, cap: usize) {
         self.engine = Engine {
             active: true,
@@ -139,16 +133,9 @@ impl SoundSpeechCartridge {
     }
 
     /// Parses and programs exactly one group at [`Engine::cursor`], then
-    /// schedules its duration. Called synchronously by
-    /// [`SoundSpeechCartridge::start_sound_execute`] and again by [`SoundSpeechCartridge::tick_engine`] each
-    /// time a group's duration elapses.
-    ///
-    /// End-of-stream (terminator found, or the next group doesn't fully fit
-    /// before [`Engine::cap`]) simply clears [`Engine::active`] — the engine
-    /// stops advancing. It does NOT silence the AY: whatever registers the
-    /// last successfully-processed group programmed remain exactly as set,
-    /// indefinitely, until something else overwrites them (a new execute
-    /// command, or an explicit stop via [`SoundSpeechCartridge::stop_all_sound`]).
+    /// schedules its duration. End-of-stream (terminator, or the next group
+    /// doesn't fit) clears [`Engine::active`] without silencing the AY —
+    /// the last group's registers stay set until overwritten.
     pub(super) fn advance_engine(&mut self) {
         if !self.engine.active {
             return;
@@ -186,8 +173,8 @@ impl SoundSpeechCartridge {
     }
 
     /// Programs a tone group (4 bytes: `[op|M|amp, coarse, fine, duration]`)
-    /// at `at`, chains an immediately-following M=1 envelope group if
-    /// present, and schedules the resulting event's duration.
+    /// at `at`, chains a following M=1 envelope group if present, and
+    /// schedules the duration.
     fn process_tone_group(&mut self, at: usize, opcode: u8) {
         let byte0 = self.ram[at];
         let m_flag = byte0 & group::M_FLAG != 0;
@@ -222,9 +209,8 @@ impl SoundSpeechCartridge {
     }
 
     /// Programs a noise group (3 bytes: `[op|M|amp, R|period, duration]`) at
-    /// `at`, applying the "R" reuse-previous-amplitude flag, chains an
-    /// immediately-following M=1 envelope group if present, and schedules
-    /// the resulting event's duration.
+    /// `at`, applying the "R" reuse-amplitude flag, chains a following M=1
+    /// envelope group if present, and schedules the duration.
     fn process_noise_group(&mut self, at: usize, opcode: u8) {
         let byte0 = self.ram[at];
         let m_flag = byte0 & group::M_FLAG != 0;
@@ -266,12 +252,9 @@ impl SoundSpeechCartridge {
         self.engine.duration_countdown = timing::duration_cycles(duration, self.timer_base);
     }
 
-    /// Defensive fallback for a standalone envelope group encountered at the
-    /// top of [`SoundSpeechCartridge::advance_engine`]'s dispatch — i.e. one NOT immediately
-    /// preceded by an M=1 tone/noise group, which is not a documented manual
-    /// behavior (envelope groups only ever appear chained after an M=1
-    /// group). Programmed as its own one-group event anyway, purely so a
-    /// malformed stream can't desync or infinite-loop the engine.
+    /// Defensive fallback for a standalone envelope group not preceded by an
+    /// M=1 tone/noise group (undocumented by the manual) — programmed as its
+    /// own event so a malformed stream can't desync or infinite-loop the engine.
     fn process_standalone_envelope_group(&mut self, at: usize) {
         let cap = self.engine.cap;
         let (duration, len) = self.peek_chained_envelope(at, cap).expect(
@@ -281,12 +264,9 @@ impl SoundSpeechCartridge {
         self.engine.duration_countdown = timing::duration_cycles(duration, self.timer_base);
     }
 
-    /// If a well-formed envelope group (4 bytes: `[shape, coarse, fine,
-    /// duration]`) starts at `after` and fits within `cap`, programs its AY
-    /// registers immediately and returns `(duration_byte, 4)`. Returns
-    /// `None` (without touching the AY) if there isn't room or the byte at
-    /// `after` isn't an envelope opcode. Shared by the tone/noise M=1
-    /// chaining path and [`SoundSpeechCartridge::process_standalone_envelope_group`].
+    /// If a well-formed envelope group (4 bytes) starts at `after` and fits
+    /// within `cap`, programs its AY registers and returns
+    /// `(duration_byte, 4)`; returns `None` without touching the AY otherwise.
     fn peek_chained_envelope(&mut self, after: usize, cap: usize) -> Option<(u8, usize)> {
         const ENVELOPE_GROUP_LEN: usize = 4;
         if after + ENVELOPE_GROUP_LEN > cap {
@@ -307,21 +287,15 @@ impl SoundSpeechCartridge {
         Some((duration, ENVELOPE_GROUP_LEN))
     }
 
-    /// Read-modify-write R7 so that channel `ch`'s tone/noise generators are
-    /// enabled/disabled as requested, without disturbing the other two
-    /// channels' mixer bits.
-    ///
-    /// Judgment call, not literally stated by the manual: the manual's own
-    /// "TUNE1"/"TUNE2" demo DATA streams (tone-A-only) never poke R7
-    /// directly, so without this auto-enable those examples would play
-    /// silently. Required for any sound-data stream that doesn't itself
-    /// include a register-string command to set up the mixer first.
+    /// Read-modify-write R7 so channel `ch`'s tone/noise generators are
+    /// enabled/disabled, without disturbing the other channels. Judgment
+    /// call (not manual-specified): auto-enables the mixer so streams that
+    /// never poke R7 via a register-string command still play audibly.
     fn set_mixer_channel(&mut self, ch: usize, tone_enabled: bool, noise_enabled: bool) {
         let mut mixer_val = self.ay_read(ay_reg::MIXER);
         let tone_bit = 1 << (mixer::TONE_DISABLE_SHIFT + ch as u8);
         let noise_bit = 1 << (mixer::NOISE_DISABLE_SHIFT + ch as u8);
-        // Mixer bits are active-low enable: clear the bit to enable that
-        // generator for the channel, set it to disable.
+        // Mixer bits are active-low: clear to enable, set to disable.
         mixer_val = if tone_enabled {
             mixer_val & !tone_bit
         } else {
@@ -335,13 +309,9 @@ impl SoundSpeechCartridge {
         self.ay_write(ay_reg::MIXER, mixer_val);
     }
 
-    /// Advances the sound-data engine by `cycles` E-clock cycles, called
-    /// from [`Cartridge::tick`](crate::cart::Cartridge::tick). If the
-    /// current group's duration has elapsed (`cycles >=
-    /// duration_countdown`), [`SoundSpeechCartridge::advance_engine`] runs immediately — no
-    /// remainder is carried into the next event's countdown, matching the
-    /// same "keep it simple" tradeoff as `BUSY_HOLD_CYCLES`'s handling
-    /// elsewhere in this module.
+    /// Advances the sound-data engine by `cycles` E-clock cycles. If the
+    /// current group's duration has elapsed, [`SoundSpeechCartridge::advance_engine`]
+    /// runs immediately — no remainder carries into the next event's countdown.
     pub(super) fn tick_engine(&mut self, cycles: u32) {
         if !self.engine.active {
             return;

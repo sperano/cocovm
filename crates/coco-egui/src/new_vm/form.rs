@@ -24,9 +24,7 @@ impl MachineForm {
         let config = coco_core::MachineConfig::default();
         Self {
             salt,
-            // The default config's implied display (an RGB monitor —
-            // `MachineConfig::default()` is a CoCo 3); seeded from the
-            // definition's real choice by `manager::detail_map::seed_form`.
+            // The default config's implied display (RGB monitor, since MachineConfig::default() is a CoCo 3).
             display: Display::from_config(&config),
             tv: crate::display::TVSettings::default(),
             config,
@@ -35,39 +33,23 @@ impl MachineForm {
             disks: std::array::from_fn(|_| MediaChoice::None),
             tape: MediaChoice::None,
             vhds: std::array::from_fn(|_| MediaChoice::None),
-            // The same starting values `CocoApp::new` boots with and
-            // `machine_def::UIDTO::default()` records.
+            // Matches `CocoApp::new`'s boot defaults.
             aspect_correct: true,
             serial: SerialChoice::None,
-            // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, matching
-            // `JoystickInputs::new`'s own defaults: both ports off until
-            // opted in.
+            // Indexed by `coco_core::joystick::{RIGHT, LEFT}`; both ports off until opted in.
             joy_sources: [JoySource::None, JoySource::None],
             kb_mode: crate::KbMode::Positional,
         }
     }
 
-    /// The Model row — the detail pane hosts it inside its "Machine"
-    /// titled group. Must be called inside an already-open two-column
-    /// [`egui::Grid`] with [`FORM_GRID_SPACING`], like every `*_rows`
-    /// method here.
+    /// The Model row — the detail pane hosts it inside its "Machine" titled group. Must be
+    /// called inside an already-open two-column [`egui::Grid`] with [`FORM_GRID_SPACING`].
     pub(crate) fn machine_rows(&mut self, ui: &mut egui::Ui) {
         config_form::machine_rows(ui, self.salt, &mut self.config);
     }
 
-    /// The VDG/Video rows, the Display row (monitor or TV — `display.rs`),
-    /// and the 4:3 aspect checkbox — the detail pane hosts these inside its
-    /// "Display" titled group, in that group's own grid. The checkbox needs
-    /// no field label (the group names the topic); the empty label cell
-    /// keeps it aligned with the combos. Aspect is a `[ui]` preference —
-    /// the launched window's *starting* state; F9 keeps working as a live
-    /// toggle.
-    ///
-    /// The Display pick owns `config.monitor`: the sync below re-constrains
-    /// it after a model change in [`Self::machine_rows`] (a monitor pick
-    /// snaps to the default TV where no monitor port exists — `constrain`'s
-    /// display-shaped sibling) and re-derives the config's signal path, so
-    /// the config always validates against the current variant.
+    /// The VDG/Video/Display rows and the 4:3 aspect checkbox, hosted in the detail pane's
+    /// "Display" titled group. Re-constrains the Display pick first, since it owns `config.monitor` and must stay valid for the current variant.
     pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {
         self.constrain_display();
         let variant = self.config.variant;
@@ -86,9 +68,7 @@ impl MachineForm {
         });
         ui.end_row();
 
-        // The TV chain's knobs, only enabled while they'd have an effect
-        // (a monitor never runs the chain). The value is kept either way —
-        // switching back to a TV restores the tuned strength.
+        // The TV chain's knobs stay enabled only for a TV pick; the value is kept either way, so switching back restores the tuned strength.
         let is_tv = matches!(self.display, Display::TV(_));
         ui.label(egui::RichText::new("Scanlines").size(font));
         ui.add_enabled(
@@ -109,10 +89,8 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// `constrain`'s display-shaped sibling: snap a monitor pick to the
-    /// default TV where the current model has no monitor port, then
-    /// re-derive `config.monitor` from the pick — the Display row is that
-    /// field's only writer.
+    /// `constrain`'s display-shaped sibling: snaps a monitor pick to the default TV where the
+    /// model has no monitor port, then re-derives `config.monitor` from the pick.
     pub(crate) fn constrain_display(&mut self) {
         let variant = self.config.variant;
         if !Display::choices(variant).contains(&self.display) {
@@ -121,14 +99,12 @@ impl MachineForm {
         self.config.monitor = self.display.to_monitor(variant);
     }
 
-    /// The media rows: Cassette, Cartridge (with its nested MPI-slot/Disk
-    /// sub-rows), and the VHD rows — the detail pane hosts these inside its
-    /// "Peripherals" titled group, in that group's own grid.
+    /// The media rows: Cassette, Cartridge (with its nested MPI-slot/Disk sub-rows), and the
+    /// VHD rows, hosted in the detail pane's "Peripherals" titled group.
     pub(crate) fn media_rows(&mut self, ui: &mut egui::Ui) {
         let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
-        // Form-only rows (not `config_form`): the cartridge and media
-        // aren't part of `MachineConfig` — see [`CartridgeChoice`].
+        // Form-only rows: the cartridge and media aren't part of `MachineConfig` — see [`CartridgeChoice`].
         ui.label(egui::RichText::new("Cassette").size(font));
         self.tape_combo(ui);
         ui.end_row();
@@ -143,10 +119,7 @@ impl MachineForm {
         self.cartridge_combo(ui);
         ui.end_row();
 
-        // The cartridge's own rows nest below it as an indented label+combo
-        // sub-form: the FD-502's Disk rows directly, the MPI's four Slot
-        // rows (with the Disk rows one level deeper, under whichever slot
-        // holds the FD-502).
+        // The cartridge's own rows nest below as an indented sub-form: FD-502's Disk rows directly, or the MPI's four Slot rows.
         match self.cartridge {
             CartridgeChoice::FD502 => {
                 sub_form_row(ui, |ui| self.disk_rows(ui, font));
@@ -160,8 +133,7 @@ impl MachineForm {
             | CartridgeChoice::RS232 => {}
         }
 
-        // The VHD hard disks, below the removable media. Always shown, no
-        // cartridge required — see [`MachineForm::vhds`]'s doc.
+        // The VHD hard disks, below removable media. Always shown, no cartridge required.
         for drive in 0..crate::UI_DRIVES {
             ui.label(egui::RichText::new(format!("VHD {drive}")).size(font));
             self.vhd_combo(ui, drive);
@@ -212,9 +184,8 @@ impl MachineForm {
             });
     }
 
-    /// The Cartridge-row combo. "ROM Pak…" opens a file dialog on the spot
-    /// (like the media combos' Select…); a cancelled dialog keeps the
-    /// previous choice.
+    /// The Cartridge-row combo. "ROM Pak…" opens a file dialog on the spot; a cancelled dialog
+    /// keeps the previous choice.
     fn cartridge_combo(&mut self, ui: &mut egui::Ui) {
         egui::ComboBox::from_id_salt((self.salt, "cartridge"))
             .selected_text(cartridge_label(&self.cartridge))
@@ -262,10 +233,8 @@ impl MachineForm {
             });
     }
 
-    /// One "Slot N:" label + combo (Empty / FD-502 / ROM Pak… / Disto RTC),
-    /// drawn while the MPI is selected. Claiming the FD-502 or the RTC
-    /// releases it from any other slot — one of each max (see
-    /// [`SlotChoice`]); ROM Paks may fill any number of slots.
+    /// One "Slot N:" label + combo (Empty / FD-502 / ROM Pak… / Disto RTC), drawn while the
+    /// MPI is selected. Claiming the FD-502 or RTC releases it from any other slot; ROM Paks may fill any number of slots.
     fn slot_combo(&mut self, ui: &mut egui::Ui, font: f32, slot: usize) {
         ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
         egui::ComboBox::from_id_salt((self.salt, "mpi_slot", slot))
@@ -313,10 +282,8 @@ impl MachineForm {
             });
     }
 
-    /// The Cassette-row combo: the same None / Blank / Select… protocol as
-    /// the disks' ([`Self::disk_combo`]) with tape semantics — Select…
-    /// accepts `.cas` and WAV, Blank is a fresh `.cas` (empty file)
-    /// auto-placed as `tape.cas` in the artifact directory at save time.
+    /// The Cassette-row combo: the same None / Blank / Select… protocol as the disks' with tape
+    /// semantics — Select… accepts `.cas` and WAV; Blank is a fresh empty `.cas`.
     fn tape_combo(&mut self, ui: &mut egui::Ui) {
         egui::ComboBox::from_id_salt((self.salt, "tape"))
             .selected_text(media_choice_text(&self.tape))
@@ -345,10 +312,8 @@ impl MachineForm {
             });
     }
 
-    /// One "VHD N"-row combo — the VHD hard-disk image for `drive`, with
-    /// the disks' None / Blank / Select… protocol ([`Self::disk_combo`]).
-    /// A blank is a 0-byte file: `VHDImage::File` extends on write, so no
-    /// preallocation is needed.
+    /// One "VHD N" combo — the VHD image for `drive`, with the disks' None / Blank / Select…
+    /// protocol. A blank is a 0-byte file: `VHDImage::File` extends on write.
     fn vhd_combo(&mut self, ui: &mut egui::Ui, drive: usize) {
         egui::ComboBox::from_id_salt((self.salt, "vhd", drive))
             .selected_text(media_choice_text(&self.vhds[drive]))
@@ -377,12 +342,8 @@ impl MachineForm {
             });
     }
 
-    /// One "Disk N:" label + combo, drawn while the FD-502 is selected
-    /// (indented rows under the Cartridge combo — one level deeper when
-    /// nested under an MPI slot). "Select…" opens a native file dialog on
-    /// the spot (a cancelled dialog keeps the previous choice); "Blank" is
-    /// auto-placed in the machine's artifact directory at save time and
-    /// needs no path here.
+    /// One "Disk N:" label + combo, drawn while the FD-502 is selected. "Select…" opens a file
+    /// dialog on the spot; "Blank" is auto-placed in the machine's artifact directory at save time.
     fn disk_combo(&mut self, ui: &mut egui::Ui, font: f32, drive: usize) {
         ui.label(egui::RichText::new(format!("Disk {drive}:")).size(font));
         egui::ComboBox::from_id_salt((self.salt, "disk", drive))
@@ -410,9 +371,8 @@ impl MachineForm {
             });
     }
 
-    /// The Ports row: the built-in Serial port's host sink — the detail
-    /// pane hosts this inside its own "Ports" titled group, below
-    /// Peripherals.
+    /// The Ports row: the built-in Serial port's host sink, hosted in the detail pane's own
+    /// "Ports" titled group, below Peripherals.
     pub(crate) fn ports_rows(&mut self, ui: &mut egui::Ui) {
         ui.label("Serial");
         egui::ComboBox::from_id_salt((self.salt, "serial"))
@@ -425,16 +385,8 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// The Joysticks fieldset's one row — the detail pane hosts it inside
-    /// its own "Joysticks" titled group, between Ports (also a physical
-    /// port) and Keyboard (which stays last). Left is shown before Right
-    /// even though the right port is index [`RIGHT`] — the CoCo's primary
-    /// stick, and `JoystickInputs::sources`' own index 0 — because Left/Right
-    /// reads naturally in that order to a user, the same left-to-right
-    /// layout as the two DIN sockets on the back of the machine. `[ui]`
-    /// preferences like aspect/keyboard mode: the launched window's
-    /// *starting* state; the status bar's joysticks entry keeps working as
-    /// a live toggle afterwards.
+    /// The Joysticks fieldset's one row, between Ports and Keyboard. Left is shown before Right
+    /// even though the right port is [`RIGHT`] (the CoCo's primary stick) — Left/Right reads naturally in that order to a user.
     pub(crate) fn joystick_row(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Left:");
@@ -456,11 +408,8 @@ impl MachineForm {
             });
     }
 
-    /// The Keyboard fieldset's one row — the detail pane hosts it inside
-    /// its own "Keyboard" titled group, last (`draw_form_sections`'s doc in
-    /// `manager::detail`). A `[ui]` preference like aspect/joysticks: the
-    /// launched window's *starting* state; F12 keeps working as a live
-    /// toggle afterwards.
+    /// The Keyboard fieldset's one row, hosted last in the detail pane's own "Keyboard" titled
+    /// group. A `[ui]` preference: the launched window's starting state; F12 keeps working as a live toggle afterwards.
     pub(crate) fn keyboard_row(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for mode in [crate::KbMode::Positional, crate::KbMode::Symbolic] {

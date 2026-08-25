@@ -44,10 +44,7 @@ const RESET_HOVER: &str = "Press the reset button on the selected running machin
 impl ManagerApp {
     /// The manager actions row. "Settings"/"Help" are still inert
     /// scaffolding; the four transport tiles dispatch through
-    /// [`ManagerApp::apply_bulk`] against every currently selected row
-    /// (zero, one, or many — the same [`super::bulk::BulkFlags`] gating the
-    /// bulk pane and bulk context menu use), so a single selected machine
-    /// behaves exactly as the old per-row buttons did.
+    /// [`ManagerApp::apply_bulk`] against every currently selected row.
     pub(super) fn draw_toolbar(&mut self, ui: &mut egui::Ui) {
         let indices: Vec<usize> = self.selection.iter().collect();
         let flags = self.bulk_flags(&indices);
@@ -62,8 +59,7 @@ impl ManagerApp {
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = BUTTON_GAP;
-            // The shortcut shows on hover (inline shortcut text is a
-            // menu-row convention, not a toolbar one).
+            // The shortcut shows on hover, not inline (that's a menu-row convention).
             if toolbar_button(ui, NEW_ICON, "New", true)
                 .on_hover_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT))
                 .clicked()

@@ -13,10 +13,8 @@ use crate::new_vm;
 use crate::widgets::SUSPEND_HOVER;
 
 impl ManagerApp {
-    /// Left panel: the machine list. `ui.set_min_width` (rather than only
-    /// `take_available_space` on the empty case) keeps the `SidePanel`'s
-    /// divider draggable in both states — an empty ui claims no space,
-    /// which disables the resize drag (`SidePanel::resizable` docs).
+    /// Left panel: the machine list. `ui.set_min_width` keeps the
+    /// `SidePanel`'s divider draggable even when the list is empty.
     pub(super) fn draw_machine_list(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(ui.available_width());
         if !self.entries.is_empty() {
@@ -31,12 +29,8 @@ impl ManagerApp {
     }
 
     /// The panel space left below the last row: clicking it clears the
-    /// selection, bringing the photo pane back (the manager's "click the
-    /// desktop to deselect" gesture). The edit state is dropped too, so the
-    /// next selection reseeds fresh — same as switching rows. Sensing only
-    /// clicks leaves the `SidePanel` divider's *drag* untouched even where
-    /// the two regions overlap (egui resolves click and drag hits per
-    /// sense — `manager_list_divider_is_draggable` guards this).
+    /// selection, bringing the photo pane back. The edit state is dropped
+    /// too, same as switching rows.
     fn deselect_on_empty_click(&mut self, ui: &mut egui::Ui) {
         let remaining = ui.available_size_before_wrap();
         if remaining.y <= 0.0 {
@@ -50,13 +44,10 @@ impl ManagerApp {
         }
     }
 
-    /// One machine-list row: placeholder thumbnail + name/subtitle/status
-    /// for an `Ok` entry, or the file stem + an error badge for an `Err`
-    /// one. Clicking anywhere in the row selects it (`ui.interact` over the
-    /// frame's rect — the row's own labels aren't themselves interactive).
+    /// One machine-list row: thumbnail + name/subtitle/status. Clicking
+    /// anywhere in the row selects it (`ui.interact` over the frame's rect).
     pub(super) fn draw_machine_row(&mut self, ui: &mut egui::Ui, i: usize) {
-        // A stopped machine's saved preview, if any, loads (once) before the
-        // row draws so this frame can already show it.
+        // A stopped machine's saved preview, if any, loads (once) before the row draws.
         self.ensure_row_thumbnail(&ui.ctx().clone(), i);
         let selected = self.selection.contains(i);
         let fill = if selected {
@@ -72,12 +63,7 @@ impl ManagerApp {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let content_height = row_content_height(ui);
-                    // Preview by state: a live VM's framebuffer texture
-                    // (Running, or Suspended with its window still open —
-                    // the texture just stops changing, freezing the frame);
-                    // else a window-closed Suspended machine's saved
-                    // thumbnail.png loaded above; else — Powered Off — the
-                    // bare black placeholder, like a screen with no power.
+                    // Preview priority: live VM framebuffer, else a window-closed Suspended machine's saved thumbnail, else the black placeholder.
                     let entry = &self.entries[i];
                     let texture = entry
                         .vm
@@ -113,10 +99,8 @@ impl ManagerApp {
     }
 
     /// A plain click selects `i` alone; Shift extends/replaces the
-    /// selection with the inclusive range from the current anchor (an
-    /// anchor-less Shift-click behaves as a plain click); Cmd/Ctrl flips
-    /// `i`'s own membership, leaving the rest as-is (`manager/selection.rs`'s
-    /// doc has the anchor's full rules).
+    /// selection from the current anchor; Cmd/Ctrl flips `i`'s own
+    /// membership, leaving the rest as-is.
     fn apply_row_click(&mut self, ui: &egui::Ui, i: usize) {
         let modifiers = ui.input(|input| input.modifiers);
         if modifiers.shift {
@@ -137,13 +121,8 @@ impl ManagerApp {
         self.on_selection_changed();
     }
 
-    /// After any selection-changing operation: clear the stale
-    /// [`super::ManagerApp::save_error`], and drop `edit` whenever the
-    /// result isn't exactly one row — edit state only ever describes a
-    /// single machine (`manager.rs`'s doc on the `edit` field). A plain
-    /// click always lands on exactly one row, so [`Self::apply_row_click`]'s
-    /// plain-click path never touches `edit` here, keeping it byte-for-byte
-    /// what it was before multi-select.
+    /// After any selection-changing operation: clear the stale save error,
+    /// and drop `edit` whenever the result isn't exactly one row.
     fn on_selection_changed(&mut self) {
         self.save_error = None;
         if self.selection.len() != 1 {
@@ -151,15 +130,10 @@ impl ManagerApp {
         }
     }
 
-    /// Per-row context menu: the single-row menu
-    /// ([`Self::draw_single_row_context_menu`]) for a plain click's-worth of
-    /// selection, or when the right-clicked row `i` sits outside the
-    /// current multi-selection; the bulk menu
-    /// ([`Self::draw_bulk_row_context_menu`]) when `i` is one of *several*
-    /// selected rows. Either way, right-click deliberately never moves the
-    /// selection cue itself — only the
-    /// single-row menu's "Show config" does, because showing the detail
-    /// pane *is* selecting.
+    /// Per-row context menu: the single-row menu for a plain selection, or
+    /// when `i` sits outside the current multi-selection; the bulk menu
+    /// when `i` is one of several selected rows. Right-click never itself
+    /// moves the selection cue.
     fn draw_row_context_menu(&mut self, response: egui::Response, i: usize) {
         if self.selection.len() > 1 && self.selection.contains(i) {
             self.draw_bulk_row_context_menu(response);
@@ -168,16 +142,12 @@ impl ManagerApp {
         }
     }
 
-    /// The single-machine context menu — see [`Self::draw_row_context_menu`]
-    /// for when this vs. the bulk menu shows. One exception to "right-click
-    /// never selects": [`Self::select_row_on_error`], a lifecycle action
-    /// that *failed*, because the error renders only in the detail pane and
-    /// a silent no-op would be the alternative.
+    /// The single-machine context menu. One exception to "right-click never
+    /// selects": [`Self::select_row_on_error`] selects the row when a
+    /// lifecycle action failed, since the error renders only in the detail pane.
     fn draw_single_row_context_menu(&mut self, response: egui::Response, i: usize) {
         response.context_menu(|ui| {
-            // Same enablement as the toolbar's transport tiles
-            // (`super::toolbar::draw_toolbar`), with Start/Resume as one
-            // item whose label follows the state, like the ▶ tile.
+            // Same enablement as the toolbar; Start/Resume is one item whose label follows state.
             let suspended = self.entries[i].suspended;
             let running = self.entries[i].is_running();
             let start_label = if suspended { "Resume" } else { "Start" };
@@ -234,13 +204,8 @@ impl ManagerApp {
     }
 
     /// The multi-selection context menu: the same four transport actions as
-    /// [`super::bulk::draw_bulk_detail`]'s pane ([`BulkAction`], via
-    /// [`super::ManagerApp::apply_bulk`]), applied to every selected row,
-    /// plus a bulk "Delete…" — no "Show config" (which of the several
-    /// selected machines would it show?). `indices`/`flags` are computed
-    /// once up front and the picked action is applied after the menu
-    /// closure returns, so right-click still never mutates the selection
-    /// itself.
+    /// the toolbar, applied to every selected row, plus a bulk "Delete…".
+    /// The picked action is applied only after the menu closure returns.
     fn draw_bulk_row_context_menu(&mut self, response: egui::Response) {
         let indices: Vec<usize> = self.selection.iter().collect();
         let flags = self.bulk_flags(&indices);
@@ -289,11 +254,8 @@ impl ManagerApp {
         }
     }
 
-    /// After a context-menu lifecycle action: if it recorded a
-    /// [`super::MachineEntry::launch_error`], select the row so the detail
-    /// pane (the error's only rendering surface) shows why nothing
-    /// happened — see [`Self::draw_row_context_menu`]'s doc for why this is
-    /// the one exception to "right-click never selects".
+    /// After a context-menu lifecycle action: if it recorded a launch
+    /// error, select the row so the detail pane shows why nothing happened.
     fn select_row_on_error(&mut self, i: usize) {
         if self.entries[i].launch_error.is_some() {
             self.selection.set_single(i);
@@ -302,19 +264,10 @@ impl ManagerApp {
     }
 }
 
-/// Height the row's own text column (name, subtitle, status — three
-/// `TextStyle::Body`-sized lines with `ui.vertical`'s default item spacing
-/// between them) will render at, used to size the thumbnail to reach the
-/// same bottom edge as the status line (user follow-up to step 6: "should
-/// use the height available... go to the same edge as Stopped"). Computed
-/// from text metrics up front rather than measured after layout, since the
-/// thumbnail is the *first* widget placed in the row's `horizontal` — by
-/// the time the text column's actual rendered height is known, the
-/// thumbnail's own space is already allocated. All three lines use the
-/// default `Body` text style at its default size (`.strong()`/`ui.weak()`
-/// only change weight/color, not size), so one line height covers all
-/// three, and `ui.vertical`'s gaps are exactly `ui.spacing().item_spacing.y`
-/// — reproducing both here needs no second/probing layout pass.
+/// Height the row's text column (name/subtitle/status) will render at, used
+/// to size the thumbnail to reach the same bottom edge. Computed from text
+/// metrics up front, since the thumbnail is placed before the text column's
+/// actual height is known.
 fn row_content_height(ui: &egui::Ui) -> f32 {
     let font_id = egui::TextStyle::Body.resolve(ui.style());
     let line_height = ui.fonts_mut(|f| f.row_height(&font_id));
@@ -322,19 +275,10 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
     line_height * 3.0 + spacing * 2.0
 }
 
-/// One list row's thumbnail: the resolved preview `texture` — a live VM's
-/// framebuffer, or a stopped machine's saved [`super::THUMBNAIL_FILE`]; the
-/// caller resolves that priority — sized to `height` tall (see
-/// [`row_content_height`]) at the fixed [`THUMBNAIL_ASPECT`], the same 4:3
-/// the emulator's own display corrects to (framebuffer pixels aren't
-/// square, so the texture's raw aspect would stretch the picture). It's one
-/// extra quad reusing an already-uploaded texture, not an extra upload
-///.
-/// A paused VM's texture simply stops changing, so the thumbnail freezes on
-/// its last frame with no special casing needed. With no texture — a
-/// stopped machine, or a VM whose first frame hasn't uploaded one yet —
-/// just the placeholder fill shows. Allocates its own space and returns the
-/// rect it claimed.
+/// One list row's thumbnail: the resolved preview `texture`, sized to
+/// `height` tall at the fixed [`THUMBNAIL_ASPECT`]. A paused VM's texture
+/// simply stops changing, freezing the thumbnail on its last frame; with no
+/// texture, just the placeholder shows.
 fn draw_row_thumbnail(
     ui: &mut egui::Ui,
     height: f32,

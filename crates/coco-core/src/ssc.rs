@@ -156,9 +156,8 @@ impl SoundSpeechCartridge {
         }
     }
 
-    /// Direct AY-3-8913 register write — bypasses the host-byte protocol
-    /// (used internally by the protocol interpreter itself, and exposed for
-    /// tests/debugging).
+    /// Direct AY-3-8913 register write, bypassing the host-byte protocol
+    /// (used internally by the protocol interpreter, and for tests/debugging).
     pub fn ay_write(&mut self, reg: u8, val: u8) {
         self.ay.write_reg(reg, val);
     }
@@ -178,22 +177,18 @@ impl SoundSpeechCartridge {
         let falling_edge = self.prev_reset_bit0 && !bit0;
         self.prev_reset_bit0 = bit0;
         if falling_edge {
-            // Real hardware's falling edge on the SP0256 RESET pin also
-            // resets the AY (MAME `coco_ssc_device`) and leaves the firmware
-            // ready for a new command.
+            // Falling edge also resets the AY and readies the firmware for a new command (MAME coco_ssc_device).
             self.ay.reset();
             self.busy = false;
             self.busy_countdown = 0;
             self.reset_protocol_state();
         }
-        // bit0=1 alone: real hardware asserts the SP0256's RESET pin, which
-        // we don't emulate (no SP0256) -- no-op.
+        // bit0=1 alone: asserts the SP0256 RESET pin, which isn't emulated — no-op.
     }
 
     /// Resets buffer RAM, dispatch mode, timer base, and the sound engine —
-    /// shared by [`SoundSpeechCartridge::write_reset`]'s falling-edge handler and the
-    /// [`Cartridge::reset`] trait method. Does NOT touch the AY, busy
-    /// handshake, or SAC state — callers already handle those themselves.
+    /// shared by [`SoundSpeechCartridge::write_reset`] and [`Cartridge::reset`].
+    /// Does NOT touch AY, busy handshake, or SAC state.
     fn reset_protocol_state(&mut self) {
         self.ram = [RAM_RESET_BYTE; ram::SIZE];
         self.mode = Mode::Idle;
@@ -201,16 +196,9 @@ impl SoundSpeechCartridge {
         self.engine = Engine::default();
     }
 
-    /// `$FF7E` write: the host-byte protocol entry point.
-    ///
-    /// Per the manual (page 10): "If you try to transfer data to the S/SC
-    /// while bit 7 is low, you lose all the data you send until the bit
-    /// resets." So while [`SoundSpeechCartridge::busy`] is already set, an incoming byte is
-    /// discarded entirely — not latched, not fed to the protocol state
-    /// machine, and it does not restart the busy hold window. Every byte
-    /// that IS accepted (command bytes, load-data bytes, direct-access
-    /// register/value bytes, the `$8F` postbyte alike) is processed through
-    /// [`SoundSpeechCartridge::dispatch`] synchronously, right here.
+    /// `$FF7E` write: entry point for the host-byte protocol. Per the manual
+    /// (p.10), a byte written while [`SoundSpeechCartridge::busy`] is set is
+    /// discarded — not latched, not processed, and doesn't restart the busy window.
     fn write_data(&mut self, val: u8) {
         if self.busy {
             return;
@@ -218,9 +206,7 @@ impl SoundSpeechCartridge {
         self.host_latch = val;
         self.busy = true;
         self.busy_countdown = BUSY_HOLD_CYCLES;
-        // Real hardware also asserts the TMS7000's INT3 here, waking the
-        // firmware to consume the byte — not modelled (no TMS7000 core); we
-        // interpret the byte synchronously instead.
+        // Real hardware asserts TMS7000 INT3 here; not modelled — we interpret the byte synchronously instead.
         self.dispatch(val);
     }
 
@@ -277,13 +263,9 @@ impl Cartridge for SoundSpeechCartridge {
         self.reset_protocol_state();
     }
 
-    /// Drains the AY's accumulated output and feeds the Sound Activity
-    /// Circuit — unconditionally, since `$FF7E` bit 5 must reflect the
-    /// cartridge's own output regardless of whether `SystemBus`'s sound mux
-    /// is currently selecting it (see the [`sac`] module doc comment).
-    /// [`SystemBus::sound_probe`](crate::bus::SystemBus::sound_probe)
-    /// calls this exactly once per sample and only mixes the returned value
-    /// in when the mux selects the cartridge input.
+    /// Drains the AY's output and feeds the Sound Activity Circuit
+    /// unconditionally — `$FF7E` bit 5 must reflect the cartridge's own
+    /// output regardless of whether the sound mux is selecting it.
     fn audio_sample(&mut self) -> f32 {
         let out = self.ay.drain();
         self.update_sac(out);
@@ -296,22 +278,14 @@ impl Cartridge for SoundSpeechCartridge {
         self.ay.after_restore();
     }
 
-    /// Restore-only: reject a mid buffer-RAM-load or mid sound-engine
+    /// Restore-only: rejects a mid buffer-RAM-load or mid sound-engine
     /// snapshot whose `cursor`/`cap` don't satisfy `cursor <= cap <=
-    /// ram::SIZE` — [`SoundSpeechCartridge::feed_load`](protocol) indexes
-    /// `self.ram[load.cursor]` once `load.cursor < load.cap`, and
-    /// [`SoundSpeechCartridge::advance_engine`](engine) (and its callees)
-    /// index `self.ram` off `engine.cursor`/`engine.cap` the same way, with
-    /// no bounds check of their own against `ram::SIZE`
-    ///. `cursor`/`cap` are ordinary
-    /// deserialized fields a hand-crafted payload can set past the end of
-    /// `ram`.
+    /// ram::SIZE` — both index `self.ram` with no bounds check of their own.
     fn validate_restored(&self) -> Result<(), String> {
         if let Mode::Loading(load) = &self.mode {
             check_ram_cursor_cap("Load", load.cursor, load.cap)?;
         }
-        // An inactive engine's `cursor`/`cap` are never read (`SoundSpeechCartridge::tick_engine`
-        // returns immediately when `!active`), so only check while active.
+        // An inactive engine's cursor/cap are never read, so only check while active.
         if self.engine.active {
             check_ram_cursor_cap("Engine", self.engine.cursor, self.engine.cap)?;
         }

@@ -76,9 +76,7 @@ impl DMP105 {
     }
 
     /// Graphics mode dispatch (`dmp105-protocol.md` §5): bit 7 set is always
-    /// data (the marker bit), never a control code; bit 7 clear is a control
-    /// code if recognized, otherwise ignored (never printed — Graphics mode
-    /// has no `X`-glyph fallback, per §3's "ignored in Graphics").
+    /// data; bit 7 clear is a recognized control code or else ignored (never printed — no `X`-glyph fallback in Graphics mode).
     fn dispatch_graphics(&mut self, b: u8) {
         if b & 0x80 != 0 {
             self.plot_graphics_byte(b);
@@ -92,9 +90,8 @@ impl DMP105 {
         }
     }
 
-    /// `CR` behavior is identical in both modes (`dmp105-protocol.md` §3:
-    /// "0D same"): return to column 0, and additionally feed a line at the
-    /// latched (text) LF pitch if NL mode is CR+LF.
+    /// `CR` is identical in both modes: return to column 0, and additionally
+    /// feed a line at the latched (text) LF pitch if NL mode is CR+LF.
     fn control_cr(&mut self) {
         self.x = 0;
         if self.nl_mode == NlMode::CrLf {
@@ -102,9 +99,8 @@ impl DMP105 {
         }
     }
 
-    /// The pitch that governs dot spacing for whatever is being addressed
-    /// right now: the live setting in CP mode, or the density latched at
-    /// Graphics-mode entry while inside a graphics run.
+    /// The pitch governing dot spacing right now: the live setting in CP
+    /// mode, or the density latched at Graphics-mode entry.
     fn active_pitch(&self) -> Pitch {
         match self.mode {
             Mode::CharacterPrint => self.pitch,
@@ -112,9 +108,8 @@ impl DMP105 {
         }
     }
 
-    /// Second byte of an escape sequence just arrived: figure out how many
-    /// operand bytes it takes (`dmp105-protocol.md` §4's table — 0, 1, or 2
-    /// more bytes) and either execute immediately or start collecting them.
+    /// Second byte of an escape sequence: figure out how many operand bytes
+    /// it takes and either execute immediately or start collecting them.
     fn begin_esc_operands(&mut self, selector: u8) {
         let need = match selector {
             esc::POSITION => 2,
@@ -132,10 +127,8 @@ impl DMP105 {
         }
     }
 
-    /// Execute a fully-assembled escape sequence. An unrecognized selector
-    /// (the manual states "No ... other sequences" exist) is silently
-    /// ignored: behavior for a truly out-of-spec byte here isn't documented,
-    /// and a no-op is the safe choice rather than inventing one.
+    /// Execute a fully-assembled escape sequence. An unrecognized selector is
+    /// silently ignored rather than inventing undocumented behavior.
     fn execute_esc(&mut self, selector: u8, ops: &[u8]) {
         match selector {
             esc::ELONGATE_START => self.elongation = true,
@@ -161,14 +154,9 @@ impl DMP105 {
                     Direction::Bidirectional
                 };
             }
-            // Immediate feed: applies in both modes (`dmp105-protocol.md`
-            // §4's "1B 5A n" row), unlike the latched-only 5B below.
+            // Immediate feed applies in both modes, unlike the latched-only 5B below.
             esc::FEED_IMMEDIATE => self.y = self.y.saturating_add(u32::from(ops[0])),
-            // Latched-only feed: CP mode only per the spec table. In Graphics
-            // mode the guard drops this to the catch-all below, so the byte is
-            // still consumed (escape parsing is mode-independent) but has no
-            // effect, matching how pitch selection is likewise inert during an
-            // active graphics run.
+            // Latched feed is CP-mode only; in Graphics mode it falls to the catch-all, consumed but inert.
             esc::FEED_LATCH if self.mode == Mode::CharacterPrint => {
                 self.lf_pitch_units = u32::from(ops[0]);
             }
@@ -176,19 +164,8 @@ impl DMP105 {
         }
     }
 
-    /// Execute `28 n c` / `1C n c`: repeat `c` `n` times
-    /// (`dmp105-protocol.md` §3). In Graphics mode, only honored if `c` has
-    /// its MSB set (i.e. is valid graphics data) — the spec table's explicit
-    /// restriction for that mode.
-    ///
-    /// The repeated byte is expanded through the per-mode dispatchers, NOT
-    /// through [`DMP105::feed`]: inside a repeat, `c` is the datum being
-    /// repeated, never a new ESC/repeat sequence introducer (the spec gives
-    /// no semantics for repeating an introducer, and `dispatch_cp` already
-    /// handles an out-of-band `1C`/`1B` as an undefined code printing `X`).
-    /// Recursing through `feed` here would let the stream `1C 1C 1C` rebuild
-    /// its own spawning state unboundedly — a stack-overflow crash on
-    /// three bytes of arbitrary printer traffic.
+    /// Execute `28 n c` / `1C n c`: repeat `c` `n` times (in Graphics mode,
+    /// only if `c`'s MSB is set). Dispatches `c` through the per-mode handlers directly, never through [`DMP105::feed`] — recursing there would let `1C 1C 1C` rebuild its own spawning state unboundedly.
     fn execute_repeat(&mut self, n: u8, c: u8) {
         if self.mode == Mode::Graphics && c & 0x80 == 0 {
             return;

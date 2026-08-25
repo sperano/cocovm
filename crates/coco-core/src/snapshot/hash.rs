@@ -23,8 +23,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Lowercase hex SHA-256 of the file at `path`, streamed in
-/// [`SHA256_READ_BUF_LEN`]-byte chunks rather than read whole into memory —
-/// VHD images can run to hundreds of MB.
+/// [`SHA256_READ_BUF_LEN`]-byte chunks — VHD images can run to hundreds of MB.
 pub fn sha256_file(path: &Path) -> std::io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
@@ -61,10 +60,9 @@ pub enum MediaCheck {
 }
 
 impl MediaRef {
-    /// Check this reference against the file it names on the current
-    /// filesystem. Any read failure (missing file, permission error, ...) is
-    /// reported as [`MediaCheck::Missing`] — from the caller's point of view
-    /// "can't verify this" and "it's not there" call for the same response.
+    /// Checks this reference against the file it names. Any read failure
+    /// (missing, permission error, ...) reports [`MediaCheck::Missing`] —
+    /// same response either way.
     pub fn verify(&self) -> MediaCheck {
         match sha256_file(&self.path) {
             Ok(actual) if actual == self.sha256 => MediaCheck::Ok,

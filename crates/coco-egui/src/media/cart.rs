@@ -5,11 +5,8 @@
 use crate::*;
 
 impl CocoApp {
-    /// Load a ROM pak from `path` and insert it, using the current
-    /// `autostart_cart` setting. Resets the machine on success (cartridge
-    /// insertion is a machine-off operation on real hardware); on failure —
-    /// including a dirty floppy the swap would destroy failing to write
-    /// back — leaves the running cartridge untouched, error in [`Self::cart_error`].
+    /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
+    /// (cartridge swaps are machine-off ops). Aborts on a failed dirty-floppy flush, leaving state untouched; error in [`Self::cart_error`].
     pub(crate) fn insert_cartridge(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -38,11 +35,8 @@ impl CocoApp {
         }
     }
 
-    /// Load a Games Master Cartridge image (banked ROM + SN76489A) from
-    /// `path` and insert it. Mirrors [`Self::insert_cartridge`]'s ROMPak
-    /// path exactly, including the `autostart_cart` choice (GMC games are
-    /// autostart game paks, CART* tied to Q, but the checkbox stays
-    /// authoritative) and its abort-on-failed-flush contract.
+    /// Loads a Games Master Cartridge image (banked ROM + SN76489A) from `path` and inserts
+    /// it. Honors `autostart_cart`, even though GMC's own CART* line ties to Q by default.
     pub(crate) fn insert_gmc(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -68,11 +62,8 @@ impl CocoApp {
         }
     }
 
-    /// Load an Orchestra-90/CC ROM from `path` and insert it. Mirrors
-    /// [`Self::insert_cartridge`]'s ROMPak path (including its abort-on-
-    /// failed-flush contract), but there is no `autostart_cart` choice to
-    /// honor — [`Orch90::cart_line_ties_q`] always autostarts, like the real
-    /// pak's CART*-tied-to-Q wiring.
+    /// Loads an Orchestra-90/CC ROM from `path` and inserts it. No `autostart_cart` choice
+    /// to honor — [`Orch90::cart_line_ties_q`] always autostarts, like the real pak's CART*-tied-to-Q wiring.
     ///
     /// [`Orch90::cart_line_ties_q`]: coco_core::cart::Cartridge::cart_line_ties_q
     pub(crate) fn insert_orch90(&mut self, path: PathBuf) {
@@ -100,10 +91,8 @@ impl CocoApp {
         }
     }
 
-    /// Eject the current cartridge and power-cycle the machine (cartridge
-    /// swaps are machine-off operations on real hardware). Aborts, leaving
-    /// the cartridge in place, if a dirty floppy it would destroy fails to
-    /// write back.
+    /// Ejects the current cartridge and power-cycles the machine. Aborts, leaving
+    /// the cartridge in place, if a dirty floppy it would destroy fails to write back.
     pub(crate) fn eject_cartridge(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -118,13 +107,8 @@ impl CocoApp {
         self.rtc_direct = false;
     }
 
-    /// Insert a Deluxe RS-232 Program Pak into the cartridge slot
-    /// (cold-restart gated, like plain cartridge insertion, and sharing its
-    /// abort-on-failed-flush contract). Starts on the inert loopback
-    /// endpoint; pick TCP/PTY from the pak's submenu. If a pak EPROM dump is
-    /// present at `roms/rs232.rom` it is installed in the CTS window; the
-    /// pak is fully usable ROM-less otherwise (OS-9 drivers and
-    /// `PEEK`/`POKE` code drive the ACIA registers directly).
+    /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint (pick
+    /// TCP/PTY from its submenu). Installs the EPROM dump at `roms/rs232.rom` if present; fully usable ROM-less otherwise.
     pub(crate) fn insert_rs232(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -146,10 +130,8 @@ impl CocoApp {
         self.rs232_eprom_path = eprom_path;
     }
 
-    /// Wire the inserted RS-232 pak to a freshly bound endpoint of `kind`
-    /// (the menu's Loopback/TCP/PTY selection). Binding failures (port in
-    /// use, pty exhaustion) land in [`Self::cart_error`] and leave the
-    /// current endpoint in place.
+    /// Wires the inserted RS-232 pak to a freshly bound endpoint of `kind`. Binding
+    /// failures land in [`Self::cart_error`], leaving the current endpoint in place.
     pub(crate) fn rs232_set_endpoint(&mut self, kind: RS232EndpointKind) {
         let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() else {
             return;
@@ -162,8 +144,7 @@ impl CocoApp {
             RS232EndpointKind::TCP => {
                 match coco_core::serial::TCPEndpoint::bind(&self.rs232_tcp_addr) {
                     Ok(ep) => {
-                        // Show the address actually bound, so ":0" (OS-assigned
-                        // port) displays usably.
+                        // Show the actually-bound address so ":0" (OS-assigned port) displays usably.
                         let addr = ep
                             .local_addr()
                             .map_or_else(|_| self.rs232_tcp_addr.clone(), |a| a.to_string());
@@ -190,11 +171,8 @@ impl CocoApp {
         }
     }
 
-    /// Plug the Sound/Speech Cartridge into the cartridge slot (cold-restart
-    /// gated, like every other direct-port cartridge swap). No file to load
-    /// and no autostart concept — unlike [`Self::insert_cartridge`]'s ROM
-    /// paks, loading this can't fail — but it shares that swap's
-    /// abort-on-failed-flush contract.
+    /// Plugs the Sound/Speech Cartridge into the cartridge slot. No file to load, so
+    /// unlike [`Self::insert_cartridge`] this can't fail — but shares its abort-on-failed-flush contract.
     pub(crate) fn insert_ssc(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -208,11 +186,8 @@ impl CocoApp {
         self.rs232_eprom_path = None;
     }
 
-    /// Insert a Multi-Pak Interface into the cartridge slot (cold-restart
-    /// gated, like plain cartridge insertion): swaps out whatever was
-    /// plugged directly into the port for an empty 4-slot MPI with its
-    /// front-panel switch on slot 4 ([`DEFAULT_MPI_SWITCH_SLOT`]). Shares
-    /// [`Self::eject_cartridge`]'s abort-on-failed-flush contract.
+    /// Inserts a Multi-Pak Interface, swapping out whatever was plugged directly into the
+    /// port for an empty 4-slot MPI with its switch on slot 4 ([`DEFAULT_MPI_SWITCH_SLOT`]).
     pub(crate) fn insert_multipak(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -231,10 +206,8 @@ impl CocoApp {
         self.rtc_direct = false;
     }
 
-    /// Remove the Multi-Pak Interface — and everything plugged into it —
-    /// restoring the plain empty cartridge slot. Aborts, leaving the MPI and
-    /// its slots in place, if a dirty floppy any of them holds fails to
-    /// write back.
+    /// Removes the Multi-Pak Interface and everything plugged into it, restoring the empty
+    /// slot. Aborts, leaving the MPI in place, if a dirty floppy any of its slots holds fails to flush.
     pub(crate) fn eject_multipak(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -246,17 +219,8 @@ impl CocoApp {
         self.disk_paths = [None, None];
     }
 
-    /// Flush before replacing whatever occupies MPI `slot`, but only when
-    /// `slot` currently holds the FD-502 — every other cartridge kind can be
-    /// swapped without touching a disk, so a failing *unrelated* drive must
-    /// not block it. Keys off [`Self::mpi`], the frontend's own slot mirror
-    /// (kept in sync with the machine's cart tree by `rebuild_cart_mirrors`
-    /// on state restore), not the machine's cart tree itself. Returns
-    /// whether it's safe to proceed: `false` (only reachable when `slot` is
-    /// the FD-502's) means a dirty floppy failed to write back, and the
-    /// caller must abort without mutating the slot, the MPI, or the
-    /// machine. On a successful flush of the FD-502's slot, clears
-    /// [`Self::disk_paths`] since the caller is about to eject it.
+    /// Flushes before replacing MPI `slot`'s contents, but only when it holds the FD-502 —
+    /// other cartridge kinds can't hold a dirty floppy. `false` means the caller must abort without mutating anything.
     #[must_use]
     fn mpi_flush_before_replacing_slot(&mut self, slot: usize) -> bool {
         let holds_fd502 = self
@@ -273,12 +237,8 @@ impl CocoApp {
         true
     }
 
-    /// Load a ROM pak into MPI `slot` (0-3), using the current
-    /// `autostart_cart` setting. Mirrors [`Self::insert_cartridge`] but
-    /// targets one slot of the already-inserted MPI instead of the whole
-    /// cartridge port, so a dirty floppy elsewhere in the MPI never blocks
-    /// this — only a dirty floppy in `slot` itself (i.e. `slot` holds the
-    /// FD-502) can abort it, per [`Self::mpi_flush_before_replacing_slot`].
+    /// Loads a ROM pak into MPI `slot` (0-3). Only a dirty floppy in `slot` itself (i.e.
+    /// `slot` holds the FD-502) can abort this — see [`Self::mpi_flush_before_replacing_slot`].
     pub(crate) fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -306,9 +266,8 @@ impl CocoApp {
         }
     }
 
-    /// Load a Games Master Cartridge image into MPI `slot`. Mirrors
-    /// [`Self::mpi_insert_rompak`] — see [`Self::insert_gmc`], including the
-    /// only-the-target-slot flush contract.
+    /// Loads a Games Master Cartridge image into MPI `slot`. Mirrors
+    /// [`Self::mpi_insert_rompak`]'s target-slot-only flush contract.
     pub(crate) fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -336,10 +295,8 @@ impl CocoApp {
         }
     }
 
-    /// Load an Orchestra-90/CC ROM into MPI `slot`. Mirrors
-    /// [`Self::mpi_insert_rompak`], minus the `autostart_cart` choice — see
-    /// [`Self::insert_orch90`], including the only-the-target-slot flush
-    /// contract.
+    /// Loads an Orchestra-90/CC ROM into MPI `slot`. Mirrors
+    /// [`Self::mpi_insert_rompak`]'s flush contract, minus the `autostart_cart` choice.
     pub(crate) fn mpi_insert_orch90(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -367,11 +324,8 @@ impl CocoApp {
         }
     }
 
-    /// Insert the FD-502 disk controller into MPI `slot`, unless one is
-    /// already installed in a different slot (the FD-502 latch only ever
-    /// models one controller). Mirrors [`Self::ensure_disk_controller`]'s
-    /// cold-start rationale, but targets one MPI slot instead of the whole
-    /// cartridge port.
+    /// Inserts the FD-502 disk controller into MPI `slot`, unless one is already installed
+    /// in a different slot — the FD-502 latch only ever models one controller.
     pub(crate) fn mpi_insert_fd502(&mut self, slot: usize) {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             self.cart_error = Some("An FD-502 is already installed in another slot.".to_string());
@@ -388,9 +342,7 @@ impl CocoApp {
                 return;
             }
         };
-        // No flush needed: the `as_disk_cart` check above already refused
-        // unless no disk cart exists anywhere, so there is no dirty floppy
-        // this insert could destroy.
+        // No flush needed: `as_disk_cart` already refused unless no disk cart exists anywhere.
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
             mp.insert(slot, DiskCart::new(rom.into_boxed_slice()));
         }
@@ -401,10 +353,8 @@ impl CocoApp {
         self.power_cycle();
     }
 
-    /// Insert the Sound/Speech Cartridge into MPI `slot`. Mirrors
-    /// [`Self::insert_ssc`] but targets one MPI slot (any number can each
-    /// hold one, unlike the FD-502's single-controller restriction) and
-    /// flushes only under [`Self::mpi_flush_before_replacing_slot`].
+    /// Inserts the Sound/Speech Cartridge into MPI `slot`. Unlike the FD-502, any number
+    /// of slots can each hold one.
     pub(crate) fn mpi_insert_ssc(&mut self, slot: usize) {
         if !self.mpi_flush_before_replacing_slot(slot) {
             return;
@@ -418,9 +368,8 @@ impl CocoApp {
         self.power_cycle();
     }
 
-    /// Eject whatever is plugged into MPI `slot`, restoring its empty slot.
-    /// Aborts, leaving the slot's contents in place, if `slot` holds the
-    /// FD-502 and a dirty floppy fails to write back.
+    /// Ejects whatever is plugged into MPI `slot`. Aborts, leaving contents in place, if
+    /// `slot` holds the FD-502 and a dirty floppy fails to write back.
     pub(crate) fn mpi_eject_slot(&mut self, slot: usize) {
         if !self.mpi_flush_before_replacing_slot(slot) {
             return;
@@ -434,9 +383,8 @@ impl CocoApp {
         self.power_cycle();
     }
 
-    /// Move the MPI's front-panel switch to `slot`. A running program's own
-    /// write to `$FF7F` overrides the switch until the next reset
-    /// ([`coco_core::cart::MultiPak::set_switch`]).
+    /// Moves the MPI's front-panel switch to `slot`. A running program's own write to
+    /// `$FF7F` overrides it until the next reset.
     pub(crate) fn mpi_set_switch(&mut self, slot: usize) {
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
             mp.set_switch(slot);
@@ -446,12 +394,8 @@ impl CocoApp {
         }
     }
 
-    /// Plug a Disto RTC directly into the cartridge port, running on the
-    /// host's local clock (cold-restart gated like any cartridge swap). The
-    /// RTC has no boot ROM, so this pairs with a VHD boot (NitrOS-9 `emudsk`)
-    /// rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
-    /// Still shares [`Self::eject_cartridge`]'s abort-on-failed-flush
-    /// contract, for the FD-502-direct-in-the-port case.
+    /// Plugs a Disto RTC directly into the cartridge port, running on the host's local
+    /// clock. Has no boot ROM, so pairs with a VHD boot rather than the FD-502 — for RTC + floppies, use a Multi-Pak slot.
     pub(crate) fn insert_rtc(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -472,11 +416,8 @@ impl CocoApp {
         self.rtc_direct = false;
     }
 
-    /// Insert a Disto RTC into MPI `slot` (0-3). Mirrors
-    /// [`Self::mpi_insert_fd502`]; only one RTC is allowed across the
-    /// machine, since two would shadow each other at `$FF50`. Flushes only
-    /// under [`Self::mpi_flush_before_replacing_slot`]'s target-slot
-    /// contract.
+    /// Inserts a Disto RTC into MPI `slot` (0-3). Only one is allowed across the machine —
+    /// two would shadow each other at `$FF50`.
     pub(crate) fn mpi_insert_rtc(&mut self, slot: usize) {
         if self.machine.bus.cart.as_disto_rtc().is_some() {
             self.cart_error = Some("A Disto RTC is already installed in another slot.".to_string());

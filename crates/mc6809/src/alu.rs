@@ -148,11 +148,9 @@ impl MC6809 {
         r
     }
 
-    /// Dispatch an 8-bit read-modify-write op by the opcode's low nibble and
-    /// return the new value (flags set as a side effect). NEG(0), COM(3), LSR(4),
-    /// ROR(6), ASR(7), ASL/LSL(8), ROL(9), DEC(A), INC(C), TST(D), CLR(F). TST
-    /// returns its input unchanged (flags only — caller must not write it back);
-    /// illegal nibbles (1,2,5,B,E) are no-ops.
+    /// Dispatches an 8-bit read-modify-write op by the opcode's low nibble and
+    /// returns the new value (flags set as a side effect). TST returns its input
+    /// unchanged (flags only); illegal nibbles are no-ops.
     pub(crate) fn rmw_apply(&mut self, op_nibble: u8, m: u8) -> u8 {
         match op_nibble {
             0x0 => self.sub8(0, m, 0), // NEG is 0 - m
@@ -193,12 +191,8 @@ impl MC6809 {
         2
     }
 
-    /// 8-bit add with carry-in: `a + m + carry_in`. Sets H, N, Z, V, C per the
-    /// 6809 datasheet. Used by ADD (carry_in=0) and ADC (carry_in=C).
-    ///
-    /// - C: carry out of bit 7.
-    /// - H: carry out of bit 3 (used by DAA).
-    /// - V: signed overflow — operands share a sign that differs from the result.
+    /// 8-bit add with carry-in: `a + m + carry_in` (ADD uses carry_in=0, ADC
+    /// uses carry_in=C). Sets H (bit-3 carry, for DAA), N, Z, V, C.
     pub(crate) fn add8(&mut self, a: u8, m: u8, carry_in: u8) -> u8 {
         let sum = a as u16 + m as u16 + carry_in as u16;
         let r = sum as u8;
@@ -222,13 +216,8 @@ impl MC6809 {
         r
     }
 
-    /// 8-bit subtract with borrow-in: `a - m - borrow_in`. Sets N, Z, V, C per the
-    /// 6809 datasheet; H is left undefined (unaffected here). Used by SUB
-    /// (borrow_in=0), SBC (borrow_in=C), and CMP (result discarded).
-    ///
-    /// - C: set on borrow (`a < m + borrow_in`).
-    /// - V: signed overflow — minuend and subtrahend differ in sign and the result
-    ///   sign differs from the minuend.
+    /// 8-bit subtract with borrow-in: `a - m - borrow_in` (SUB uses borrow_in=0,
+    /// SBC uses borrow_in=C, CMP discards the result). Sets N, Z, V, C on borrow.
     pub(crate) fn sub8(&mut self, a: u8, m: u8, borrow_in: u8) -> u8 {
         let diff = (a as u16)
             .wrapping_sub(m as u16)

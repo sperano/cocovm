@@ -21,32 +21,15 @@ pub struct ActiveRect {
 }
 
 impl Machine {
-    /// Current scanline within the field (`0..lines_per_field`): the canonical
-    /// raster row being painted (rows ≥ 240 are vertical blanking). Exposed
-    /// for scanline-timed tests and debug UI.
+    /// Current scanline within the field (`0..lines_per_field`); rows ≥ 240
+    /// are vertical blanking. Exposed for scanline-timed tests and debug UI.
     pub fn scanline(&self) -> u32 {
         self.line
     }
 
     /// The active (non-border) picture rectangle in framebuffer pixel
-    /// coordinates — the same geometry the renderers paint, exposed for the
-    /// frontend's pointer→joystick mapping (mouse axes should track the
-    /// pointer over the active picture, not the bordered field). Computed on
-    /// demand, no caching to go stale.
-    ///
-    /// CoCo 1/2: the fixed VDG geometry ([`video::BORDER`], [`video::ACTIVE_W`]/
-    /// [`video::ACTIVE_H`]).
-    ///
-    /// CoCo 3 (always the 640×240 canvas, `raster.rs`): legacy fields are
-    /// always non-wide (`paint_legacy_scanline` below); GIME-native fields
-    /// take `gime_video::active_span`'s wide/non-wide split — the very
-    /// decode `paint_side_borders` paints from. Whether the field IS legacy
-    /// comes from the latched `field_scan` when one exists: a mid-field
-    /// INIT0 COCO flip waits for the next field's latch (`render_scanline`),
-    /// so the latch — not the live bit — is what's on screen. Vertical
-    /// placement is `gime_video::active_rows`, shared with the painters'
-    /// row windowing; its LPF read (like the wide bit) is live, matching
-    /// the painters exactly.
+    /// coordinates, for the frontend's pointer→joystick mapping. Whether the
+    /// field is legacy comes from the latched `field_scan` when one exists, not the live INIT0 COCO bit.
     pub fn active_rect(&self) -> ActiveRect {
         if self.config.variant != MachineVariant::Coco3 {
             return ActiveRect {
@@ -76,16 +59,9 @@ impl Machine {
         }
     }
 
-    /// Paint the current scanline of the canonical raster (Option B,
-    ///), called from [`Machine::end_of_line`]
-    /// at every line so mid-frame register writes take effect on the next line.
-    ///
-    /// At line 0 the per-field register group is latched (MAME `new_frame`):
-    /// the INIT0 COCO switch, the video base, and the smooth-scroll seed —
-    /// one line-time later than MAME's field start, within the plan's
-    /// line-granular contract. Only GIME-native fields (CoCo 3, COCO=0) paint
-    /// here; legacy fields keep the whole-frame path in
-    /// [`Machine::render_field`], and CoCo 1/2 has no GIME to latch at all.
+    /// Paint the current scanline of the canonical raster, called every line
+    /// so mid-frame register writes take effect on the next line. Only
+    /// GIME-native fields paint here; legacy fields use [`Machine::render_field`] instead.
     pub(super) fn render_scanline(&mut self) {
         if self.config.variant != MachineVariant::Coco3 {
             return;
@@ -109,8 +85,7 @@ impl Machine {
             self.paint_legacy_scanline(row);
             return;
         }
-        // Blink phase is toggled by the GIME interval timer, which BASIC
-        // programs at hi-res text setup (SEB Unravelled II).
+        // Blink phase is toggled by the GIME interval timer.
         let blink_on = self.bus.gime.blink_state;
         let scan = self.field_scan.as_mut().expect("checked Some above");
         gime_video::paint_scanline(
@@ -123,23 +98,15 @@ impl Machine {
         );
     }
 
-    /// Paint one canvas row of a CoCo 3 legacy (VDG-compatible) field. Same
-    /// per-line contract as the GIME-native painter — mode bits ($FF22, SAM
-    /// V), palette/CSS, and the border are read live each line; the row
-    /// pointer and glyph-row counter carry across lines — with the legacy
-    /// data path: 16-bit logical fetches through the bus (honouring the MMU),
-    /// like the whole-field renderers did. The border follows MAME
-    /// `update_border`'s legacy rule ([`video::legacy_border_value`]), NOT
-    /// fixed black: green/white for graphics, green/orange for the
-    /// GM2-without-GM1 text variant.
+    /// Paint one canvas row of a CoCo 3 legacy (VDG-compatible) field, reading
+    /// mode bits, palette, and border live each line. The border is NOT fixed black — it follows [`video::legacy_border_value`].
     fn paint_legacy_scanline(&mut self, row: usize) {
         let ff22 = self.bus.pia1.b.output;
         let border = self.bus.gime.color(video::legacy_border_value(ff22));
         let row_px = &mut self.framebuffer[row * raster::CANVAS_W * BYTES_PER_PIXEL..]
             [..raster::CANVAS_W * BYTES_PER_PIXEL];
 
-        // Vertical placement from the live LPF bits — the GIME applies LPF
-        // even in legacy modes (MAME `update_geometry`).
+        // Vertical placement from the live LPF bits — GIME applies LPF even in legacy modes.
         let (top, body) = gime_video::active_rows(&self.bus.gime);
         if row < top || row >= top + body {
             for px in row_px.chunks_exact_mut(BYTES_PER_PIXEL) {
@@ -148,8 +115,7 @@ impl Machine {
             return;
         }
 
-        // Side borders around the 512 px active span (legacy is always
-        // non-wide: MAME `render_scanline`'s `wide = !legacy && ...`).
+        // Side borders around the 512 px active span (legacy is always non-wide).
         for px in
             row_px[..raster::NON_WIDE_BORDER_X * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
         {
@@ -174,8 +140,7 @@ impl Machine {
             (video::COLS, video::CELL_H)
         };
 
-        // Fetch the current data row through the bus (MMU-honouring logical
-        // reads, 16-bit wrap — the legacy renderers' existing data path).
+        // Fetch the current data row through the bus (MMU-honouring, 16-bit wrap).
         let (base, line_in_row) = {
             let scan = self.field_scan.as_ref().expect("legacy field latched");
             (scan.row_base as u16, scan.line_in_row)
@@ -227,12 +192,8 @@ impl Machine {
         }
     }
 
-    /// Render one video field into `framebuffer` at field end. Only the CoCo
-    /// 1/2 renders here — a whole-frame snapshot at the fixed VDG geometry
-    /// (those machines have their own raster; the 640×240 canvas is a CoCo 3
-    /// GIME artefact). Every CoCo 3 field — GIME-native or legacy — was
-    /// already painted line by line ([`Machine::render_scanline`]) and is
-    /// complete by the time the field wraps.
+    /// Render one video field into `framebuffer` at field end. Only CoCo 1/2
+    /// renders here as a whole-frame snapshot; CoCo 3 fields are already painted line by line by [`Machine::render_scanline`].
     pub(super) fn render_field(&mut self) {
         if self.config.variant == MachineVariant::Coco3 {
             return;
@@ -247,9 +208,7 @@ impl Machine {
     /// Render the legacy CoCo-compatible 32×16 text screen (`DESIGN.md` §6).
     fn render_coco_text(&mut self) {
         self.reset_legacy_fb();
-        // Snapshot the text screen through the bus (honours the MMU on CoCo 3;
-        // the SAM decode directly on CoCo 1/2) from the display-base register,
-        // then render.
+        // Snapshot the text screen through the bus from the display-base register.
         // TODO: per-scanline scanout straight from RAM (`DESIGN.md` §2b/§6).
         let base = self.legacy_display_base();
         let mut screen = [0u8; video::SCREEN_LEN];
@@ -259,24 +218,19 @@ impl Machine {
         let ff22 = self.bus.pia1.b.output;
         let css = ff22 & video::VDG_CSS != 0;
         let palette = self.legacy_palette(css);
-        // The legacy CoCo-compatible text border is fixed black on both
-        // variants (GIME `update_border` / MAME `mc6847.cpp` `border_value`).
+        // The legacy CoCo-compatible text border is fixed black on both variants.
         let border = match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.color(TEXT_BORDER_COLOR),
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
                 video::VDG_FIXED_PALETTE[video::TEXT_BORDER_INDEX]
             }
         };
-        // A CoCo 3 has no VDG chip at all: CoCo-compatible text mode is the
-        // GIME's own compat-text generator (`video::AlphaGenerator::GIME`),
-        // not `self.config.vdg` (which describes a real CoCo 1/2's chip and
-        // is `None` on CoCo 3, per `MachineConfig::validate`).
+        // CoCo 3 has no VDG chip: text mode uses the GIME's own compat-text generator, not `self.config.vdg`.
         let generator = match self.config.variant {
             MachineVariant::Coco3 => video::AlphaGenerator::GIME,
             MachineVariant::Coco1 | MachineVariant::Coco2 => match self.config.vdg {
                 Some(VDGVariant::MC6847T1) => video::AlphaGenerator::MC6847T1,
-                // `None` is rejected for CoCo 1/2 by `MachineConfig::validate`;
-                // fall back to the plain chip rather than panic.
+                // `None` is rejected for CoCo 1/2 elsewhere; fall back rather than panic.
                 Some(VDGVariant::MC6847) | None => video::AlphaGenerator::MC6847,
             },
         };
@@ -290,14 +244,8 @@ impl Machine {
         );
     }
 
-    /// Render a VDG bitmap graphics (PMODE) field (`DESIGN.md` §6).
-    ///
-    /// The mode/colour set come from PIA1 $FF22 and the display base from the
-    /// display-base register. Video RAM is read through the bus (honours the
-    /// MMU on CoCo 3) from that base — the same low-64K simplification as
-    /// `render_coco_text`. The vertical cadence (RAM rows fetched) comes from
-    /// the SAM V0-V2 bits: the GIME's own SAM-compat overlay on CoCo 3, the
-    /// primary `Sam` on CoCo 1/2.
+    /// Render a VDG bitmap graphics (PMODE) field. Mode/colour set come from
+    /// PIA1 $FF22; vertical cadence comes from the SAM V0-V2 bits.
     fn render_coco_graphics(&mut self) {
         self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;
@@ -322,10 +270,7 @@ impl Machine {
             *byte = self.bus.read(base.wrapping_add(i as u16));
         }
 
-        // The legacy graphics border is not black: MAME `mc6847.cpp`
-        // `border_value` returns green (CSS=0) or buff (CSS=1) for graphics
-        // modes. CoCo 3 keeps its pre-Phase-3 (black) behaviour unchanged —
-        // this fixed-VDG border only applies on the CoCo 1/2 path.
+        // The legacy graphics border is not black: green (CSS=0) or buff (CSS=1); CoCo 3 stays fixed black.
         let border = match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.color(TEXT_BORDER_COLOR),
             MachineVariant::Coco1 | MachineVariant::Coco2 => {

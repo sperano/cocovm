@@ -272,10 +272,9 @@ impl ACIA6551 {
         acia
     }
 
-    /// RESET* pin: status becomes TDRE-only (plus DCD/DSR bits reflecting
-    /// whatever the input levels currently are), command and control both
-    /// go to 0, every IRQ source is cleared, and both frame timers are
-    /// idled (MAME `mos6551_device::device_reset`).
+    /// RESET* pin: status becomes TDRE plus live DCD/DSR bits; command,
+    /// control, and IRQ sources clear; frame timers idle (MAME
+    /// `mos6551_device::device_reset`).
     pub fn hardware_reset(&mut self) {
         self.rdr = 0;
         self.tdr = 0;
@@ -296,8 +295,7 @@ impl ACIA6551 {
         if self.dsr_level {
             self.status |= status::DSR;
         }
-        // Re-baseline the change-detectors so the next tick doesn't treat
-        // the reset itself as a DCD/DSR edge.
+        // Re-baseline so the reset itself isn't seen as a DCD/DSR edge.
         self.dcd_checked = self.dcd_level;
         self.dsr_checked = self.dsr_level;
     }
@@ -349,10 +347,8 @@ impl ACIA6551 {
         self.rx_timer.is_none()
     }
 
-    /// Deliver one wire byte to the receiver. The caller must have checked
-    /// [`Self::rx_ready`] first; the byte lands in RDR after one frame's
-    /// worth of cycles (see [`Self::cycles_per_frame`]), modeling the wire
-    /// time of the serial frame.
+    /// Deliver one wire byte to the receiver; caller must check
+    /// [`Self::rx_ready`] first. Lands in RDR after one frame's cycles.
     pub fn receive_byte(&mut self, b: u8) {
         debug_assert!(
             self.rx_ready(),
@@ -362,10 +358,8 @@ impl ACIA6551 {
         self.rx_timer = Some(self.cycles_per_frame());
     }
 
-    /// Set the DCD (carrier detect) input level. The status bit tracks the
-    /// live level immediately and unconditionally; the IRQ-source arming on
-    /// a *change* is resolved on the next [`Self::tick`] (module doc,
-    /// "byte-level timing divergence").
+    /// Set the DCD (carrier detect) input level. Status bit tracks it live;
+    /// IRQ arming on a *change* resolves on the next [`Self::tick`].
     pub fn set_dcd(&mut self, level: bool) {
         self.dcd_level = level;
         if level {

@@ -34,8 +34,7 @@ pub mod dskreg {
 }
 
 /// Resolve DSKREG's drive-select bits to a drive index (MAME `dskreg_w`):
-/// bit2 wins if set, else bit1, else bit0, else bit6 (drive 3); `None` if none
-/// of those four bits are set (no drive selected).
+/// bit2 > bit1 > bit0 > bit6 (drive 3); `None` if none are set.
 fn selected_drive(reg: u8) -> Option<usize> {
     if reg & dskreg::DRIVE2 != 0 {
         Some(2)
@@ -50,9 +49,8 @@ fn selected_drive(reg: u8) -> Option<usize> {
     }
 }
 
-/// Resolve DSKREG's side (head) select: bit6 selects side 1, but only for
-/// drives 0-2 — for drive 3, bit6 is the drive-select bit itself, not a side
-/// select (spec).
+/// DSKREG's side (head) select: bit6 selects side 1, but only for drives 0-2
+/// — for drive 3, bit6 is the drive-select bit itself (spec).
 fn selected_side(reg: u8, drive: Option<usize>) -> u8 {
     if reg & dskreg::DRIVE3_OR_SIDE != 0 && drive != Some(3) {
         1
@@ -61,10 +59,8 @@ fn selected_side(reg: u8, drive: Option<usize>) -> u8 {
     }
 }
 
-/// Free function (not a `DiskCart` method) so callers can borrow `drives`
-/// mutably alongside a disjoint mutable borrow of `DiskCart::fdc` — going
-/// through a `&mut self` method here would make the borrow checker see the
-/// whole `DiskCart` as borrowed instead of just this one field.
+/// Free function, not a method, so callers can borrow `drives` mutably
+/// disjoint from `DiskCart::fdc` — a `&mut self` method would borrow all of `DiskCart`.
 fn selected_disk(
     drives: &mut [Option<JVCDisk>; DRIVE_COUNT],
     drive: Option<usize>,
@@ -108,16 +104,8 @@ impl std::fmt::Debug for DiskCart {
 }
 
 impl DiskCart {
-    /// Build a disk controller cartridge serving `rom` (Disk Extended Color
-    /// BASIC, `disk11.rom`) through the CTS window, mirror-filled the same way
-    /// a plain [`ROMPak`] is (reused directly: same MAME `coco_pak_device`
-    /// mirror-fill, same CTS-first/half-swap indexing). Never ties CART* to Q —
-    /// like other Disk BASIC paks, BASIC finds it via the cold-start `DK` probe,
-    /// not autostart.
-    ///
-    /// Reset state: DSKREG = 0, INTRQ clear, DRQ set (spec — a default-clear DRQ
-    /// would spuriously assert HALT* the moment boot code sets DSKREG's
-    /// halt-enable bit, before any command has run).
+    /// Build a disk controller cartridge serving `rom` through the CTS window; found via the cold-start `DK` probe, not autostart.
+    /// DRQ starts set — a clear DRQ would spuriously assert HALT* before any command runs.
     pub fn new(rom: Box<[u8]>) -> Self {
         const AUTOSTART: bool = false;
         let rom = ROMPak::from_bytes(&rom, AUTOSTART)
@@ -132,11 +120,7 @@ impl DiskCart {
         }
     }
 
-    /// Restore-path-only: re-inject the Disk Extended Color BASIC ROM image
-    /// after a snapshot restore — delegates to the inner
-    /// [`ROMPak::reattach_image`]. Unlike
-    /// [`DiskCart::new`], returns a `Result` instead of panicking: a restore
-    /// path must not crash the process on a bad ROM.
+    /// Re-inject the ROM image after a snapshot restore; unlike [`DiskCart::new`], must not panic on a bad ROM.
     pub fn reattach_rom(&mut self, rom: &[u8]) -> Result<(), ROMPakError> {
         self.rom.reattach_image(rom)
     }
@@ -158,20 +142,14 @@ impl DiskCart {
         self.drives[drive].as_ref()
     }
 
-    /// Mutable twin of [`DiskCart::disk`]: the snapshot restore flow uses
-    /// this to reach [`JVCDisk::reattach_data`] for whichever drives came
-    /// back from a snapshot with a disk mounted.
+    /// Mutable twin of [`DiskCart::disk`]; used by snapshot restore to reach
+    /// [`JVCDisk::reattach_data`] for drives that came back mounted.
     pub fn disk_mut(&mut self, drive: usize) -> Option<&mut JVCDisk> {
         self.drives[drive].as_mut()
     }
 
-    /// Restore-only: after every mounted drive's data has been reattached
-    /// (`crate::snapshot::restore_disks`), bound-check an in-flight Read/
-    /// Write Sector transfer against the drive it currently targets (per
-    /// `dskreg`'s drive-select bits) — see
-    /// [`WD1773::validate_transfer_bounds`]. Must run AFTER reattachment:
-    /// `JvcDisk::data` is `#[serde(skip)]`, empty until then, so any earlier
-    /// check would reject every in-flight transfer, not just corrupted ones.
+    /// Bound-checks an in-flight transfer against the selected drive.
+    /// Must run after reattachment — `data` is `#[serde(skip)]` and empty until then.
     pub(crate) fn validate_restored_transfer(&self) -> Result<(), String> {
         let disk = self.drive_index().and_then(|i| self.drives[i].as_ref());
         self.fdc.validate_transfer_bounds(disk)
@@ -195,15 +173,8 @@ impl DiskCart {
         self.dskreg & dskreg::MOTOR_ON != 0
     }
 
-    /// Recompute the control lines the DSKREG/WD1773 pair drives, per MAME
-    /// `coco_fdc.cpp update_lines`: called after every event that could change
-    /// INTRQ, DRQ, or DSKREG (register access or a `tick`).
-    ///
-    /// 1. A high INTRQ clears DSKREG's halt-enable bit (hardware does this).
-    /// 2. The NMI line is `intrq && DENSITY_AND_NMI_ENABLE`; an edge on *that*
-    ///    line (not on INTRQ itself) is what queues an NMI.
-    /// 3. HALT* is `!drq && HALT_ENABLE` — read live by [`Cartridge::halt_asserted`],
-    ///    not cached here.
+    /// Recompute DSKREG/WD1773 control lines: clears halt-enable on INTRQ high, and latches an
+    /// NMI on a rising edge of `intrq && DENSITY_AND_NMI_ENABLE`.
     fn update_lines(&mut self) {
         if self.fdc.intrq {
             self.dskreg &= !dskreg::HALT_ENABLE;
@@ -290,12 +261,8 @@ impl Cartridge for DiskCart {
         self.nmi_pending
     }
 
-    /// Structural half of the WD1773 transfer check — see
-    /// [`WD1773::validate_restored`]. The disk-bound half
-    /// ([`DiskCart::validate_restored_transfer`]) needs floppy reattachment
-    /// first, so it isn't reachable from this trait method (called before
-    /// any media is resolved) and runs separately, later in the restore
-    /// flow.
+    /// Structural half of the transfer check; the disk-bound half
+    /// ([`DiskCart::validate_restored_transfer`]) needs floppy reattachment first.
     fn validate_restored(&self) -> Result<(), String> {
         self.fdc
             .validate_restored()

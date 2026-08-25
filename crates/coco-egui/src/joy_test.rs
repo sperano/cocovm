@@ -44,15 +44,12 @@ fn pot_axes_from_pointer_maps_over_the_active_rect() {
 
 #[test]
 fn pot_axes_from_pointer_clamps_a_pointer_in_the_border() {
-    // Left of the active area (but still geometrically inside a larger
-    // display rect, i.e. in the border) pins the X axis at full-left rather
-    // than going negative.
+    // Left of the active area but inside the border pins X at full-left rather than going negative.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(0.0, 50.0), ACTIVE),
         Some((AXIS_MIN, 32))
     );
-    // Past the bottom-right corner pins both axes at full deflection rather
-    // than overshooting.
+    // Past the corner pins both axes at full deflection rather than overshooting.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(200.0, 200.0), ACTIVE),
         Some((AXIS_MAX, AXIS_MAX))
@@ -116,8 +113,7 @@ fn press_began_on_display_gates_on_position() {
         DISPLAY,
         bg
     ));
-    // Press on the chrome (above the display, e.g. the menu bar) — never
-    // fires, wherever the pointer is dragged afterwards.
+    // Press on the chrome (e.g. menu bar) never fires, wherever dragged afterwards.
     assert!(!press_began_on_display(
         egui::pos2(60.0, 5.0),
         None,
@@ -131,8 +127,7 @@ fn press_began_on_display_gates_on_position() {
         DISPLAY,
         bg
     ));
-    // `display_rect` starts as `Rect::NOTHING` until `draw_display` runs;
-    // a press must not fire against that placeholder.
+    // `display_rect` starts as `Rect::NOTHING` until `draw_display` runs; must not fire against it.
     assert!(!press_began_on_display(
         egui::pos2(0.0, 0.0),
         None,
@@ -145,16 +140,14 @@ fn press_began_on_display_gates_on_position() {
 fn press_began_on_display_respects_overlays() {
     let inside = egui::pos2(60.0, 50.0);
     let overlay = egui::LayerId::new(egui::Order::Middle, egui::Id::new("menu-popup"));
-    // Geometrically inside the display, but the press landed on a popup
-    // floating above it — must not double as a fire-button press.
+    // Inside the display geometrically, but under a floating popup — must not fire.
     assert!(!press_began_on_display(
         inside,
         Some(overlay),
         DISPLAY,
         egui::LayerId::background()
     ));
-    // Manager's embedded fallback: the display lives inside an
-    // `egui::Window`, so the layer at the origin is the display's own.
+    // Manager's embedded display lives inside its own `egui::Window` layer.
     assert!(press_began_on_display(
         inside,
         Some(overlay),
@@ -173,10 +166,9 @@ fn button_event(pos: egui::Pos2, button: egui::PointerButton, pressed: bool) -> 
     }
 }
 
-/// One `update_mouse_fire` frame: run an egui pass on `ctx` with `events`
-/// and update `inputs`' latches against [`DISPLAY`], with the given
-/// held-button state. A bare context has no areas, so `layer_id_at` is
-/// `None` everywhere and the gate reduces to its geometric half.
+/// One `update_mouse_fire` frame: run an egui pass with `events` and update
+/// `inputs`' latches. A bare context has no areas, so the gate reduces to
+/// its geometric half.
 fn mouse_fire_frame(
     ctx: &egui::Context,
     inputs: &mut JoystickInputs,
@@ -210,9 +202,7 @@ fn releasing_one_mouse_button_keeps_the_other_latched() {
     let ev = vec![button_event(inside, Primary, true)];
     mouse_fire_frame(&ctx, &mut inputs, ev, true, false);
     assert_eq!(inputs.mouse_fire, [true, false]);
-    // …press secondary too, then release it: primary must stay latched.
-    // (egui's shared `press_origin` is cleared by ANY release — the reason
-    // the latches are driven from per-button events instead.)
+    // Press secondary too, then release it: primary must stay latched (egui's shared press_origin isn't used).
     let ev = vec![button_event(inside, Secondary, true)];
     mouse_fire_frame(&ctx, &mut inputs, ev, true, true);
     assert_eq!(inputs.mouse_fire, [true, true]);
@@ -230,8 +220,7 @@ fn chrome_press_is_not_regated_by_a_later_display_press() {
     let ev = vec![button_event(egui::pos2(60.0, 5.0), Primary, true)];
     mouse_fire_frame(&ctx, &mut inputs, ev, true, false);
     assert_eq!(inputs.mouse_fire, [false, false]);
-    // …then secondary on the display while primary is still held: each
-    // button keeps the verdict of its own press.
+    // Then secondary on the display while primary is held: each button keeps its own verdict.
     let ev = vec![button_event(egui::pos2(60.0, 50.0), Secondary, true)];
     mouse_fire_frame(&ctx, &mut inputs, ev, true, true);
     assert_eq!(inputs.mouse_fire, [false, true]);

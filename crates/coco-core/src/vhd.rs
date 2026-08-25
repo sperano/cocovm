@@ -69,11 +69,9 @@ impl VHDImage {
         }
     }
 
-    /// Read up to `buf.len()` bytes starting at `offset`, returning the
-    /// number of bytes actually available (`0` if `offset` is at or past the
-    /// image's current length). Running off the end of the image partway
-    /// through is a normal short read, not an error — only a genuine I/O
-    /// error returns `Err`.
+    /// Reads up to `buf.len()` bytes starting at `offset`, returning the
+    /// actual count (0 past end-of-image). Running off the end mid-read is a
+    /// normal short read, not an error.
     pub(crate) fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<usize> {
         let len = self.len()?;
         if offset >= len {
@@ -107,10 +105,8 @@ impl VHDImage {
         Ok(())
     }
 
-    /// Write `buf` at `offset`, growing the image if needed to fit (for
-    /// `Memory`, resizing zero-fills any newly created gap before `offset`;
-    /// for `File`, seeking past the current end and writing extends it the
-    /// same way a real file does).
+    /// Writes `buf` at `offset`, growing the image if needed (zero-filling
+    /// any gap before `offset`, same as a real file extended past its end).
     pub(crate) fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
         match self {
             VHDImage::Memory(bytes) => {
@@ -137,8 +133,7 @@ impl VHDImage {
     }
 
     /// The image's raw bytes, for inspection — only meaningful for the
-    /// in-memory variant (tests construct one, mount it, then read this back
-    /// to check what a command wrote); `None` for a file-backed image.
+    /// in-memory variant (tests read this back to check what a command wrote).
     pub fn as_memory(&self) -> Option<&[u8]> {
         match self {
             VHDImage::Memory(bytes) => Some(bytes),
@@ -203,14 +198,9 @@ pub struct VHD {
 }
 
 impl VHD {
-    /// Both drives start unmounted (status [`status::NO_VHD`]).
-    ///
-    /// `select` defaults to drive 0. This is an inferred default, not a
-    /// verified hardware fact: no source available for this implementation
-    /// states the drive-select latch's power-on value. Drive 0 selected
-    /// matches a typical zeroed-register reset state and is the natural
-    /// default a DOS would assume, but should be treated as low-confidence
-    /// until confirmed against real hardware or MAME's device reset code.
+    /// Both drives start unmounted. `select` defaults to drive 0 — an
+    /// inferred default, not a verified hardware fact; treat as
+    /// low-confidence until confirmed against real hardware or MAME.
     pub fn new() -> Self {
         Self {
             drives: [VHDDrive::new(), VHDDrive::new()],
@@ -230,9 +220,8 @@ impl VHD {
         }
     }
 
-    /// Mount `image` in `drive`: status becomes [`status::POWER_ON`], and the
-    /// LRN/buffer-address registers reset to 0 (MAME `coco_vhd.cpp` image
-    /// load).
+    /// Mounts `image` in `drive`: status becomes [`status::POWER_ON`], and
+    /// the LRN/buffer-address registers reset to 0.
     pub fn insert(&mut self, drive: usize, image: VHDImage) {
         let d = &mut self.drives[drive];
         d.image = Some(image);
@@ -248,10 +237,9 @@ impl VHD {
         d.status = status::NO_VHD;
     }
 
-    /// Restore-path-only: re-inject a mounted image after a snapshot
-    /// restore, WITHOUT resetting `lrn`/`buffer_addr`/`status` the way
-    /// [`VHD::insert`] does — all three are themselves restored machine
-    /// state, exactly as deserialized.
+    /// Restore-path-only: re-injects a mounted image after a snapshot
+    /// restore, WITHOUT resetting `lrn`/`buffer_addr`/`status` — those are
+    /// restored machine state, exactly as deserialized.
     pub fn reattach_image(&mut self, drive: usize, image: VHDImage) {
         self.drives[drive].image = Some(image);
     }
@@ -266,18 +254,14 @@ impl VHD {
         self.drives[drive].image.as_ref()
     }
 
-    /// Count of READ/WRITE/FLUSH commands dispatched to `drive` so far (see
-    /// `access_counts`'s doc comment). Out-of-range `drive` reads as `0`
-    /// rather than panicking, so a caller iterating over its own drive count
-    /// (e.g. the status bar's UI-side drive list) can't be made to panic by
-    /// a mismatch against [`DRIVE_COUNT`].
+    /// Count of READ/WRITE/FLUSH commands dispatched to `drive` so far.
+    /// Out-of-range `drive` reads as `0` rather than panicking.
     pub fn access_count(&self, drive: usize) -> u64 {
         self.access_counts.get(drive).copied().unwrap_or(0)
     }
 
     /// `$FF80–$FF82`/`$FF84–$FF85` read: MAME implements no readback for
-    /// these registers. They read `0` while a drive is selected, open bus
-    /// while deselected.
+    /// these — `0` while a drive is selected, open bus while deselected.
     pub fn read_lrn_or_buffer(&self) -> u8 {
         if self.selected_drive().is_some() {
             0
