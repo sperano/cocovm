@@ -182,7 +182,7 @@ pub(crate) fn disk_basic_rom_path() -> PathBuf {
     installed_roms_dir().join("disk11.rom")
 }
 
-/// Where [`CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional
+/// Where [`crate::CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional
 /// EPROM dump from, if present.
 pub(crate) fn rs232_eprom_default_path() -> PathBuf {
     installed_roms_dir().join("rs232.rom")

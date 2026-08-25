@@ -1,5 +1,5 @@
 //! Status-bar device-activity icons: small silhouettes painted before each
-//! device's label ([`crate::chrome::status_bar`]), red while the device is
+//! device's label ([`crate::CocoApp::status_bar_ui`]), red while the device is
 //! active and gray while idle, plus the UI-side latching that turns a
 //! monotonic activity counter (bytes transferred, sectors read, …) into a
 //! visible pulse.
