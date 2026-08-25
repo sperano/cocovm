@@ -58,8 +58,7 @@ impl DebuggerPanel {
                     )
                     .changed()
                 {
-                    // A hand-set stack pointer counts as the program's stack
-                    // setup: route through load_s so NMI arming is preserved.
+                    // Route through load_s, not a direct write, so NMI arming is preserved.
                     machine.cpu.load_s(s_reg);
                 }
                 ui.end_row();

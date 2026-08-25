@@ -10,29 +10,11 @@ use super::payload::{
     MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SnapshotPayload,
 };
 
-/// Turn a decoded payload plus resolved media into a running [`Machine`],
-/// per the restore order documented on each private step below:
-///
-/// 1. validate `machine.config`/RAM length/cart-tree shape/device
-///    index-cursor-cap fields (a corrupted/hand-edited payload must error,
-///    not panic, later — see [`validate_payload_shape`]);
-/// 2. reattach the system ROM;
-/// 3. reattach every ROM-bearing cartridge's image;
-/// 4. reattach every mounted floppy;
-/// 5. bound-check any in-flight WD1773 sector transfer against the drive it
-///    targets, now that step 4 has reattached its data (see
-///    [`validate_restored_disk_transfers`] — this can't run any earlier);
-/// 6. reattach every mounted VHD/DriveWire image;
-/// 7. reattach the tape, if one was mounted;
-/// 8. [`Machine::after_restore`];
-/// 9. collect standing notes for state that came back in a placeholder form.
-///
-/// Missing-media failures from steps 2-4 and 6-7 are collected across all of
-/// them rather than stopping at the first one, so a caller can prompt for every
-/// missing file at once instead of one at a time; a *wrong-shape* media file
-/// (e.g. a floppy whose geometry no longer matches) still fails immediately
-/// with [`SnapshotError::MediaShape`], since retrying that one file wouldn't
-/// help either.
+/// Turns a decoded payload plus resolved media into a running [`Machine`],
+/// running the numbered steps below in order (see each step's own doc for
+/// why the order matters). Missing-media failures from steps 2-4/6-7 collect
+/// across all of them so a caller can prompt for every file at once; a
+/// wrong-shape file still fails immediately as [`SnapshotError::MediaShape`].
 pub fn restore(
     payload: SnapshotPayload,
     sources: MediaSources,
@@ -63,11 +45,8 @@ pub fn restore(
         });
     }
 
-    // Only reachable once every floppy the payload needed has been
-    // reattached (`restore_disks`, just above) — `JvcDisk::data` is
-    // `#[serde(skip)]`, empty until then, so any earlier check would flag
-    // every in-flight sector transfer as out of bounds, not just corrupted
-    // ones.
+    // Must run after restore_disks: JvcDisk::data is skipped until
+    // reattached, else this false-flags every transfer.
     validate_restored_disk_transfers(&mut machine)?;
 
     machine.after_restore();
@@ -75,16 +54,11 @@ pub fn restore(
     Ok(RestoredMachine { machine, notes })
 }
 
-/// Restore step 1: reject a payload whose declared config is internally
-/// invalid, or whose RAM doesn't match the size that config declares —
-/// either means the payload was hand-edited or corrupted, and every later
-/// step assumes both hold (e.g. physical-address masking against
-/// `bus.ram.len()`). Also rejects two shapes deserialization alone can't:
-/// a nested Multi-Pak (not valid hardware, and would bypass
-/// [`Cart::slots_mut`]'s ROM-reattachment walk entirely — see
-/// [`Cart::contains_nested_multipak`]) and any device-level index/cursor/cap
-/// field that would panic Rust's own bounds checks once the machine runs
-/// (see [`crate::SystemBus::validate_restored`]).
+/// Restore step 1: rejects a payload whose config is invalid, whose RAM
+/// doesn't match the size the config declares, or whose cart tree contains
+/// shapes deserialization alone can't catch (a nested Multi-Pak, or a
+/// device index/cursor/cap field that would otherwise panic once the
+/// machine runs — see [`crate::SystemBus::validate_restored`]).
 pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotError> {
     machine
         .config
@@ -110,10 +84,9 @@ pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotEr
     Ok(())
 }
 
-/// Restore step 5: bound-check an in-flight WD1773 sector transfer against
-/// the drive it currently targets, for the FD-502 reachable from the cart
-/// tree (direct port or nested one level in a Multi-Pak — same reach as
-/// [`Cart::as_disk_cart`]). See [`crate::fdc::DiskCart::validate_restored_transfer`].
+/// Restore step 5: bound-checks an in-flight WD1773 sector transfer against
+/// the drive it currently targets, for any FD-502 reachable from the cart
+/// tree (see [`crate::fdc::DiskCart::validate_restored_transfer`]).
 fn validate_restored_disk_transfers(machine: &mut Machine) -> Result<(), SnapshotError> {
     let Some(disk_cart) = machine.bus.cart.as_disk_cart() else {
         return Ok(());
@@ -137,21 +110,11 @@ fn restore_system_rom(
     }
 }
 
-/// Restore step 3: walk every cartridge slot ([`Cart::slots_mut`]) and
-/// reattach the ROM image for each variant that carries one.
-///
-/// The DeluxeRS232 is handled differently from the other five ROM-bearing
-/// types: `ROMPak`/`BankedROMPak`/`GamesMasterCartridge`/`DiskCart`/`Orch90`
-/// can only exist in the tree at all by having been built from a nonempty
-/// image (`from_bytes`/`new` reject an empty one), so their presence always
-/// means a `MediaRefs` entry was recorded and a source is required. A
-/// DeluxeRS232's EPROM is optional even at construction
-/// ("the pak works ROM-less"), and that
-/// optionality can't be recovered from the deserialized tree — `eprom` is
-/// itself `#[serde(skip)]` and always comes back `None` regardless of
-/// whether one was mounted. So a DeluxeRS232 only requires its source when
-/// `media.cart_roms` actually recorded one for its slot; if it didn't, this
-/// cart legitimately runs ROM-less and nothing is missing.
+/// Restore step 3: walks every cartridge slot ([`Cart::slots_mut`]) and
+/// reattaches the ROM image for each variant that carries one. DeluxeRS232's
+/// EPROM is optional (the pak works ROM-less) and only required when
+/// `media.cart_roms` recorded one for its slot; every other ROM-bearing
+/// type always requires a source.
 fn restore_cart_roms(
     machine: &mut Machine,
     media: &MediaRefs,
@@ -198,9 +161,7 @@ fn restore_cart_roms(
                 }
             }
             Cart::Empty(_) | Cart::SoundSpeechCartridge(_) | Cart::DistoRTC(_) => {} // no ROM
-            // Never produced by `slots_mut` (a `MultiPak`'s own slots are
-            // what it yields, not itself) and never produced by
-            // deserialization (`#[serde(skip)]`), respectively.
+            // Never produced by slots_mut (yields inner slots, not itself) or deserialization.
             Cart::MultiPak(_) | Cart::Custom(_) => {}
         }
     }
@@ -214,12 +175,9 @@ fn take_cart_rom(cart_roms: &mut Vec<(Option<u8>, Vec<u8>)>, slot: Option<u8>) -
     Some(cart_roms.remove(idx).1)
 }
 
-/// Reattach a mandatory ROM-bearing cart's image: pop its bytes out of
-/// `cart_roms` and hand them to `reattach`, recording a `missing` entry
-/// instead if there's no source for `slot`. A shape error from `reattach`
-/// itself (e.g. an oversized image) is returned immediately as
-/// [`SnapshotError::MediaShape`] — unlike a missing source, a bad source
-/// isn't something batching more `missing` entries would help with.
+/// Reattaches a mandatory ROM-bearing cart's image, or records a `missing`
+/// entry if `slot` has no source. A shape error from `reattach` (e.g. an
+/// oversized image) fails immediately as [`SnapshotError::MediaShape`].
 fn require_cart_rom<E: fmt::Display>(
     mpi_slot: Option<u8>,
     role: &str,
@@ -256,13 +214,9 @@ fn missing_cart_rom_desc(role: &str, mpi_slot: Option<u8>, media: &MediaRefs) ->
     )
 }
 
-/// Guard for [`MediaRefs::disks`]/[`vhds`](MediaRefs::vhds)/
-/// [`drivewire`](MediaRefs::drivewire): they're `Vec`, not a fixed
-/// `[Option<MediaRef>; DRIVE_COUNT]` array (see [`MediaRefs`]'s doc comment
-/// for why), so a hand-edited — or genuinely future-schema — payload can
-/// still carry more entries than this build's hardware has drives for.
-/// Anything beyond `capacity` is unreachable by any drive index this build
-/// will ever loop over, so it's flagged here rather than silently ignored.
+/// Guards against a hand-edited or future-schema payload carrying more
+/// [`MediaRefs`] entries than this build's hardware has drives for `role` —
+/// anything beyond `capacity` is unreachable by any drive index this build loops over.
 fn check_media_ref_capacity(
     refs: &[Option<MediaRef>],
     capacity: usize,
@@ -277,18 +231,10 @@ fn check_media_ref_capacity(
     Ok(())
 }
 
-/// Restore step 4: for every drive the FD-502 (wherever it's plugged in)
-/// came back with a `JvcDisk` in, reattach that drive's file bytes.
-///
-/// Unlike the VHD/DriveWire step below, a mounted floppy's *presence* is
-/// directly visible in the deserialized tree: `JvcDisk::data` is skipped,
-/// but the `Option<JvcDisk>` wrapping it is an ordinary field, so
-/// `DiskCart::disk_mut` already reports the right drives as occupied without
-/// consulting `media` at all — `media.disks` is only needed here for the
-/// path in a missing-media message. `media.disks` being a `Vec` (see
-/// [`MediaRefs`]'s doc comment): a short one leaves trailing drives'
-/// `media_ref` at `None` via [`<[_]>::get`] — same as "no reference recorded
-/// in snapshot" for a drive `MediaRefs` never had a field for at all.
+/// Restore step 4: reattaches file bytes for every drive the FD-502 came
+/// back with a `JvcDisk` in. Unlike the VHD/DriveWire step, drive occupancy
+/// is read from the deserialized tree itself — `media.disks` is only
+/// consulted here for the path in a missing-media message.
 fn restore_disks(
     machine: &mut Machine,
     media: &MediaRefs,
@@ -317,10 +263,8 @@ fn restore_disks(
     Ok(())
 }
 
-/// Restore step 5 (VHD half): unlike floppies, a `VHDDrive::image` is
-/// *entirely* `#[serde(skip)]`, so the deserialized tree always looks
-/// unmounted — whether a drive was mounted at save time can only be read
-/// from `media.vhds`, per the phase-2 spec.
+/// Restore step 6 (VHD half): unlike floppies, `VHDDrive::image` is entirely
+/// `#[serde(skip)]`, so mounted-ness can only be read from `media.vhds`.
 fn restore_vhds(
     machine: &mut Machine,
     media: &MediaRefs,
@@ -344,12 +288,10 @@ fn restore_vhds(
     Ok(())
 }
 
-/// Restore step 5 (DriveWire half): same "mounted-ness only lives in
-/// `media`" shape as [`restore_vhds`]. If `media` says a DriveWire drive was
-/// mounted but the restored tree has the Becker port disabled entirely
-/// (`bus.drivewire == None`), that's not a missing *file* — it's the payload
-/// contradicting itself — so this reports [`SnapshotError::InvalidPayload`]
-/// instead of adding to `missing`.
+/// Restore step 6 (DriveWire half): same mounted-ness-only-in-`media` shape
+/// as [`restore_vhds`]. If `media` says a drive was mounted but the Becker
+/// port is disabled, that's a self-contradictory payload —
+/// [`SnapshotError::InvalidPayload`], not a missing file.
 fn restore_drivewire(
     machine: &mut Machine,
     media: &MediaRefs,
@@ -382,7 +324,7 @@ fn restore_drivewire(
     Ok(())
 }
 
-/// Restore step 6: reattach the tape, if `media.tape` says one was mounted.
+/// Restore step 7: reattach the tape, if `media.tape` says one was mounted.
 fn restore_tape(
     machine: &mut Machine,
     media: &MediaRefs,
@@ -410,9 +352,8 @@ fn restore_tape(
     }
 }
 
-/// Restore step 8: state that a snapshot can't fully restore on its own and
-/// comes back in a documented placeholder form instead — only reported when
-/// the tree actually shows the condition applies, not unconditionally.
+/// Restore step 9: collects notes for state a snapshot can't fully restore —
+/// only reported when the tree actually shows the condition applies.
 fn standing_notes(machine: &mut Machine) -> Vec<RestoreNote> {
     let mut notes = Vec::new();
     if machine.bus.bitbanger.capture_was_stopped_on_restore() {
@@ -427,11 +368,8 @@ fn standing_notes(machine: &mut Machine) -> Vec<RestoreNote> {
     notes
 }
 
-/// Build one `missing` entry: `"{role} {location}: {path}"` if a
-/// [`MediaRef`] was recorded (even though its source wasn't provided), or a
-/// "(no reference recorded)" variant if the snapshot never had one at all —
-/// both are real states a hand-edited or partially-transferred snapshot
-/// directory can be in.
+/// Builds one `missing` entry: the recorded path if a [`MediaRef`] exists,
+/// or a "(no reference recorded)" variant if the snapshot never had one.
 fn missing_desc(role: &str, location: &str, media_ref: Option<&MediaRef>) -> String {
     let sep = if location.is_empty() { "" } else { " " };
     match media_ref {

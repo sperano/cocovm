@@ -154,15 +154,13 @@ impl Cart {
     pub fn reset(&mut self) {
         with_each_cart!(self, cart => cart.reset())
     }
-    /// See [`Cartridge::after_restore`]. Called by [`crate::SystemBus::after_restore`]
-    /// after a snapshot round-trip; safe to call before ROM/media
-    /// reattachment.
+    /// See [`Cartridge::after_restore`]. Called by
+    /// [`crate::SystemBus::after_restore`] after a snapshot round-trip.
     pub fn after_restore(&mut self) {
         with_each_cart!(self, cart => cart.after_restore())
     }
     /// See [`Cartridge::validate_restored`]. Called by
-    /// [`crate::snapshot::restore::validate_payload_shape`] against the whole cart
-    /// tree, before media reattachment.
+    /// [`crate::snapshot::restore::validate_payload_shape`] against the whole cart tree.
     pub fn validate_restored(&self) -> Result<(), String> {
         with_each_cart!(self, cart => cart.validate_restored())
     }
@@ -199,8 +197,7 @@ impl Cart {
         Cart::Custom(Box::new(cart))
     }
 
-    /// The [`MultiPak`], if that's what is inserted — how the frontend
-    /// reaches individual slots (insert/eject/switch). Not recursive: real
+    /// The [`MultiPak`], if that's what is inserted. Not recursive: real
     /// MPIs cannot nest.
     pub fn as_multipak(&mut self) -> Option<&mut MultiPak> {
         match self {
@@ -211,8 +208,7 @@ impl Cart {
 
     cart_accessor!(
         /// The FD-502 disk controller, if one is inserted — how the frontend
-        /// reaches drive slots (insert/eject a floppy while the machine
-        /// runs, as on real hardware).
+        /// reaches drive slots to insert/eject a floppy while running.
         as_disk_cart, find_disk_cart, DiskCart, crate::fdc::DiskCart
     );
 
@@ -235,11 +231,9 @@ impl Cart {
     );
 
     cart_accessor!(
-        /// The [`crate::ssc::SoundSpeechCartridge`] Sound/Speech Cartridge, if one is
-        /// inserted — tests and debug tooling reach direct AY-3-8913
-        /// register access ([`crate::ssc::SoundSpeechCartridge::ay_write`]/
-        /// [`crate::ssc::SoundSpeechCartridge::ay_read`]), bypassing the `$FF7D`/`$FF7E`
-        /// host-byte protocol (see `crate::ssc`'s module doc comment).
+        /// The [`crate::ssc::SoundSpeechCartridge`], if one is inserted — lets
+        /// tests and debug tooling reach direct AY-3-8913 register access,
+        /// bypassing the `$FF7D`/`$FF7E` host-byte protocol.
         as_ssc, find_ssc, SoundSpeechCartridge, crate::ssc::SoundSpeechCartridge
     );
 }
@@ -257,11 +251,8 @@ impl Default for Cart {
 impl Cart {
     /// `(mpi_slot, &mut Cart)` pairs reachable from this cart: itself with
     /// `mpi_slot: None` if this isn't a [`MultiPak`], or its four slots
-    /// (`mpi_slot: Some(0..4)`) if it is. MPI-in-MPI doesn't exist (a
-    /// [`MultiPak`] slot is never itself a `MultiPak` — enforced structurally
-    /// nowhere else, but true of every cart this crate can construct), so one
-    /// level is always enough; the snapshot restore flow uses this to find
-    /// every ROM-bearing cartridge regardless of where it's plugged in.
+    /// otherwise. One level is always enough since a [`MultiPak`] slot is
+    /// never itself a `MultiPak`.
     pub fn slots_mut(&mut self) -> Vec<(Option<u8>, &mut Cart)> {
         match self {
             Cart::MultiPak(mp) => mp
@@ -276,10 +267,8 @@ impl Cart {
 
     /// True if this cart (or, for a [`MultiPak`], any of its slots) is
     /// [`Cart::Custom`] — an out-of-crate test double with no serializable
-    /// shape. [`crate::snapshot::save`] checks this before attempting to
-    /// encode a machine, so a test double surfaces as a clean
-    /// `SnapshotError::CustomCartNotSnapshotable` instead of a raw serde
-    /// error.
+    /// shape. [`crate::snapshot::save`] checks this to surface a clean
+    /// `SnapshotError::CustomCartNotSnapshotable` instead of a raw serde error.
     pub fn contains_custom(&self) -> bool {
         match self {
             Cart::Custom(_) => true,
@@ -289,13 +278,10 @@ impl Cart {
     }
 
     /// True if this cart is a [`MultiPak`] with a `Cart::MultiPak` nested in
-    /// one of its own slots — not valid hardware (a real MPI's slots are
-    /// passive backplane connectors, not another MPI), and reachable only
-    /// from a hand-crafted payload.
-    /// [`crate::snapshot::restore::validate_payload_shape`] checks this BEFORE any
-    /// [`Cart::slots_mut`] walk: that method only descends one MPI level by
-    /// design, so a nested MPI would silently skip the inner slots' ROM
-    /// reattachment and panic on the first read of an empty pak image.
+    /// one of its own slots — not valid hardware, reachable only from a
+    /// hand-crafted payload. Checked by
+    /// [`crate::snapshot::restore::validate_payload_shape`] before any
+    /// [`Cart::slots_mut`] walk, since that method only descends one level.
     pub fn contains_nested_multipak(&self) -> bool {
         match self {
             Cart::MultiPak(mp) => mp.slots.iter().any(|s| matches!(s, Cart::MultiPak(_))),

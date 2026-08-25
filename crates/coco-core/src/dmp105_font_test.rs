@@ -42,8 +42,7 @@ fn european_range_is_placeholder_only() {
 #[test]
 fn block_e0_is_blank_and_range_matches_spec_count() {
     assert_eq!(block_glyph(0xE0), Some([0u8; 9]));
-    // 30 defined characters starting at $E0 -> last defined is $FD; $FE
-    // is left undefined (module doc comment's reconciliation note).
+    // Last defined is $FD; $FE is left undefined (see module doc comment).
     assert!(block_glyph(0xFD).is_some());
     assert_eq!(block_glyph(0xFE), None);
     assert_eq!(block_glyph(0x9F), None);

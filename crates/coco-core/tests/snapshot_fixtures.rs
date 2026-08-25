@@ -109,8 +109,8 @@ fn trace_line(m: &Machine) -> String {
 const TRACE_STEPS: u32 = 2_000;
 
 /// Driven by `Machine::step_instruction` (the full per-scanline pipeline),
-/// not the bare CPU-only `Machine::step`, so the fixture payload carries
-/// live mid-field state — `line`/`line_cycles_spent`, the latched
+/// not the bare CPU-only `Machine::step_cpu_raw`, so the fixture payload
+/// carries live mid-field state — `line`/`line_cycles_spent`, the latched
 /// `field_scan`, GIME timer/IRQ latches — and format rot in any of those
 /// fields is caught by this gate instead of hiding behind their defaults.
 fn continuation_trace(m: &mut Machine) -> Vec<String> {

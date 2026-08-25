@@ -35,9 +35,8 @@ fn tone_toggles_once_per_period_internal_steps() {
             prev = ay.tone[0].output;
         }
     }
-    // A toggle happens once every TONE_PERIOD internal steps (the
-    // internal-step clock is master/8, so this is
-    // f = clock/(16*TONE_PERIOD) in master-clock terms).
+    // A toggle happens once every TONE_PERIOD internal steps (f =
+    // clock/(16*TONE_PERIOD) in master-clock terms).
     let expected = INTERNAL_STEPS / u32::from(TONE_PERIOD);
     assert!(
         edges.abs_diff(expected) <= 1,
@@ -63,9 +62,8 @@ fn lfsr_matches_bit0_xor_bit3_recurrence_from_seed() {
 
 // ---- Envelope shapes --------------------------------------------------------
 
-/// Runs the envelope generator for `steps` internal steps with envelope
-/// period 1 (effective period [`ENVELOPE_STEP_MULTIPLIER`] after the
-/// classic-AY pacing multiplier).
+/// Runs the envelope generator for `steps` internal steps at envelope period 1
+/// (effective period [`ENVELOPE_STEP_MULTIPLIER`] after the classic-AY pacing multiplier).
 fn run_envelope(ay: &mut AY8913, shape_byte: u8, steps: u32) -> u8 {
     ay.write_reg(reg::ENV_FINE, 1);
     ay.write_reg(reg::ENV_COARSE, 0);
@@ -84,7 +82,6 @@ fn shape_0d_attacks_then_holds_at_max() {
     ay.write_reg(reg::ENV_COARSE, 0);
     ay.write_reg(reg::ENV_SHAPE, 0x0D);
     assert_eq!(ay.envelope.volume(), 0, "attack shape starts at the bottom");
-    // One full ramp: 16 levels * ENVELOPE_STEP_MULTIPLIER internal steps.
     let full_ramp = 16 * ENVELOPE_STEP_MULTIPLIER;
     let period = ay.env_period() * ENVELOPE_STEP_MULTIPLIER;
     for _ in 0..full_ramp + 4 {
@@ -153,17 +150,14 @@ fn mixer_disable_bits_gate_the_channel() {
     ay.write_reg(reg::TONE_A_FINE, 4);
     ay.write_reg(reg::TONE_A_COARSE, 0);
 
-    // Both tone and noise "disabled" (active-low bits set) forces the
-    // gate constantly true (MAME: "if both tone and noise are disabled,
-    // the output is 1, not 0") -- channel A plays its fixed level
-    // continuously.
+    // Both disabled (active-low bits set) forces the gate constant true
+    // (MAME: output is 1, not 0, when both are disabled).
     ay.write_reg(reg::MIXER, 0b0000_1001);
     ay.step(2_000 * MASTER_CLOCK_DIVIDER);
     let constant = ay.drain();
 
-    // Tone enabled, noise still forced off: the gate now follows the
-    // ~50%-duty square wave, so the averaged output must be markedly
-    // lower than the constant case.
+    // Tone enabled, noise still off: gate follows the ~50%-duty square
+    // wave, so the average output drops.
     ay.write_reg(reg::MIXER, 0b0000_1000);
     ay.step(2_000 * MASTER_CLOCK_DIVIDER);
     let toggling = ay.drain();

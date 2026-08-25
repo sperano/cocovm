@@ -50,10 +50,8 @@ const KNOWN_SECTIONS: &[(&str, &[&str])] = &[
     ("stats", STATS_KEYS),
 ];
 
-/// Log a `tracing::warn` naming `path` and the key for every TOML key not in
-/// the known schema, at the top level and one level into each known
-/// section. Unknown keys are forward-compat, not fatal — the file still
-/// loads .
+/// Log a `tracing::warn` for every TOML key not in the known schema (top
+/// level, one level into each known section). Unknown keys are forward-compat, not fatal.
 fn warn_unknown_keys(table: &toml::Table, path: &Path) {
     check_known_keys(table, TOP_LEVEL_KEYS, path, "");
     for &(section, known) in KNOWN_SECTIONS {
@@ -76,11 +74,9 @@ fn check_known_keys(table: &toml::Table, known: &[&str], path: &Path, prefix: &s
     }
 }
 
-/// The same unknown keys [`warn_unknown_keys`] warns about (top level, and
-/// one level into each of [`KNOWN_SECTIONS`]), collected into a table shaped
-/// like the source file rather than logged: `MachineDef::unknown`'s value,
-/// merged back in by [`merge_unknown`] at save time so a Save doesn't erase
-/// keys this build doesn't understand.
+/// The same unknown keys [`warn_unknown_keys`] warns about, collected into a
+/// table shaped like the source file — `MachineDef::unknown`'s value, merged
+/// back in by [`merge_unknown`] at save time.
 fn extract_unknown(table: &toml::Table) -> toml::Table {
     let mut unknown = toml::Table::new();
     for (key, value) in table {
@@ -104,13 +100,9 @@ fn extract_unknown(table: &toml::Table) -> toml::Table {
     unknown
 }
 
-/// Merge `unknown` (an [`extract_unknown`]-shaped table) into `table` (the
-/// freshly-serialized `MachineDef`), so the keys this build ignored survive
-/// a Save. `table` never already has these keys — they're unknown to
-/// `MachineDef`'s serde derive by construction — except for a known
-/// section's table itself, which the derive always writes (even empty), so
-/// section entries are merged key-by-key into the existing sub-table rather
-/// than overwriting it.
+/// Merge `unknown` (an [`extract_unknown`]-shaped table) into `table` so
+/// keys this build ignored survive a Save. Section entries merge key-by-key
+/// into the existing sub-table rather than overwriting it.
 fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     for (key, value) in unknown {
         let is_known_section = KNOWN_SECTIONS.iter().any(|&(section, _)| section == key);
@@ -156,14 +148,9 @@ fn load_one(path: &Path) -> Result<MachineDef, String> {
     Ok(def)
 }
 
-/// Load every `*.toml` file directly inside `dir` (hidden files — dotfiles —
-/// are skipped), keyed by slug (file stem), sorted by slug. A missing `dir`
-/// yields an empty list rather than an error (a fresh install has no
-/// machines yet), but ANY other problem — an unreadable directory, an
-/// unreadable file, bad TOML, an unsupported schema, a config that fails
-/// [`super::MachineDef::to_machine_config`]'s call to `MachineConfig::validate`
-/// — fails the whole load: a config problem is fatal at startup by design, never
-/// a silently degraded machine list.
+/// Load every `*.toml` file directly inside `dir` (dotfiles skipped), keyed
+/// by slug, sorted. A missing `dir` yields an empty list, but any other
+/// problem fails the whole load — a config problem is fatal at startup by design.
 pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -189,22 +176,17 @@ pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     Ok(results)
 }
 
-/// Serialize `def` and write it to `<dir>/<slug>.toml`, creating `dir` if
-/// needed. `def.unknown` (keys `load_one` couldn't place, see its doc) is
-/// merged back into the serialized table before writing, so a Save never
-/// erases what this build doesn't understand. Writes to a `.tmp` sibling
-/// first and renames over the final path, so a crash mid-write never leaves
-/// a truncated/partial definition file behind — readers only ever see the
-/// old file or the fully-written new one.
+/// Serialize `def` and write it to `<dir>/<slug>.toml`, merging `def.unknown`
+/// back in so a Save never erases what this build doesn't understand. Writes
+/// to a `.tmp` sibling and renames over the final path so a crash never
+/// leaves a partial file.
 pub fn save(dir: &Path, slug: &str, def: &MachineDef) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let toml::Value::Table(mut table) =
         toml::Value::try_from(def).map_err(|e| format!("serializing {slug}: {e}"))?
     else {
-        // A struct's top level always serializes to a TOML table
-        // (`toml::Value::try_from` on any `#[derive(Serialize)]` struct);
-        // this arm exists only so `save` stays a `Result`, not a panic, if
-        // that guarantee ever stops holding.
+        // A struct always serializes to a TOML table; this arm exists only so `save` stays a
+        // `Result`.
         return Err(format!(
             "serializing {slug}: expected a TOML table at the top level"
         ));

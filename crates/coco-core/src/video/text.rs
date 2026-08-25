@@ -27,13 +27,9 @@ const SG4_UPPER_RIGHT: u8 = 0x04;
 const SG4_LOWER_LEFT: u8 = 0x02;
 const SG4_LOWER_RIGHT: u8 = 0x01;
 
-/// Decode one VDG alphanumeric screen byte's low 6 bits to the ASCII
-/// character it displays (ignores the semigraphics/inverse attribute bits —
-/// callers doing a plain-text dump don't care which glyph variant drew it).
-/// The MC6847 alphanumeric code space is `$00-$1F` -> `@A-Z[\]^_` (`@` + code)
-/// and `$20-$3F` -> a second copy of the ASCII block starting at space
-/// (`' '` + (code - `$20`)) — the same mapping used throughout this crate's
-/// tests and probes for the CoCo-compatible text screen.
+/// Decodes a VDG alphanumeric screen byte's low 6 bits to the ASCII
+/// character it displays (ignoring semigraphics/inverse bits): `$00-$1F` →
+/// `@A-Z[\]^_`, `$20-$3F` → a second ASCII block starting at space.
 pub fn decode_alpha_char(code: u8) -> char {
     let code = code & GLYPH_CODE_MASK;
     if code < 0x20 {
@@ -61,30 +57,11 @@ pub enum AlphaGenerator {
     GIME,
 }
 
-/// Resolve one alphanumeric cell's glyph and (foreground, background) colours.
-///
-/// Implements MAME `mc6847.cpp`'s `character_map` ctor precisely (and, for
-/// [`AlphaGenerator::GIME`], `gime.cpp`'s equivalent, which shares the same
-/// true-lowercase logic per its `is_mc6847t1 = true` construction):
-/// - True lowercase only applies on the MC6847T1 or the GIME generator, when
-///   this character's own inverse bit is clear, PIA1 $FF22 GM0
-///   ([`VDG_GM0_INTEXT`]) is set, and the code is in `$00-$1F` — in which
-///   case the glyph comes from the selected font's lowercase section (index
-///   `0x40 + code`) and the fg/bg pair is *swapped* relative to the normal
-///   non-inverse mapping (equivalent to MAME's `raw_glyph ^ 0xFF` drawn
-///   non-inverted, in the inverse-toggle style this module already uses for
-///   [`INVERSE_BIT`]).
-/// - Codes `$20-$3F` are never affected by lowercase mode (MAME's ctor copies
-///   them unchanged into the lowercase table too).
-/// - Every other case (plain [`AlphaGenerator::MC6847`], a lowercase-capable
-///   generator with GM0 clear, a lowercase-capable generator with this
-///   character's own inverse bit set, or code >= `$20`) draws from the
-///   normal 64-entry range of the selected font, fg/bg swapped by the
-///   inverse bit alone.
-///
-/// PIA1 $FF22 GM1 (bit 5) drives a second, lowercase-independent colour
-/// inversion on the T1 (MAME's `is_inverse2`) that is out of scope here — see
-/// the note by [`VDG_GM0_INTEXT`].
+/// Resolves one alphanumeric cell's glyph and (fg, bg) colours, matching
+/// MAME `mc6847.cpp`'s `character_map` ctor. True lowercase (font's
+/// `0x40 + code` glyphs, fg/bg swapped) applies only on MC6847T1/GIME when
+/// non-inverse, GM0 is set, and code < `$20`; everything else draws the
+/// normal font range with fg/bg swapped by the inverse bit alone.
 fn resolve_alpha_cell(
     generator: AlphaGenerator,
     ff22: u8,
@@ -127,12 +104,9 @@ const BORDER6_GREEN: u8 = 0x12;
 const BORDER6_ORANGE: u8 = 0x26;
 const BORDER6_WHITE: u8 = 0x3F;
 
-/// The CoCo 3 legacy-mode border colour as a GIME 6-bit value, from the live
-/// $FF22 (MAME `gime.cpp` `update_border`): graphics borders are green
-/// (CSS=0) or white (CSS=1); the GM2-without-GM1 text variant borders green
-/// or orange; every other text/semigraphics mode borders black. (The CoCo
-/// 1/2 path resolves its border from the fixed VDG palette instead — see
-/// [`super::vdg_graphics_border_index`]/[`super::TEXT_BORDER_INDEX`].)
+/// The CoCo 3 legacy-mode border colour as a GIME 6-bit value: graphics
+/// modes border green (CSS=0)/white (CSS=1); the GM2-without-GM1 text
+/// variant borders green/orange; every other text/semigraphics mode borders black.
 pub fn legacy_border_value(ff22: u8) -> u8 {
     let css = ff22 & VDG_CSS != 0;
     if ff22 & VDG_AG != 0 {
@@ -144,12 +118,9 @@ pub fn legacy_border_value(ff22: u8) -> u8 {
     }
 }
 
-/// Paint one scan line of the legacy 32-column text screen into `out`
-/// (an active-area pixel span), duplicating each native pixel `xscale`
-/// times. `row_bytes` is the 32 screen bytes of the current character row;
-/// `glyph_row` the scan line within it (`0..CELL_H`). Cell resolution
-/// (alpha vs SG4, inverse, true lowercase) matches [`render_text`], which
-/// shares [`resolve_alpha_cell`].
+/// Paints one scan line of the legacy 32-column text screen into `out`,
+/// duplicating each pixel `xscale` times. `row_bytes` is the current
+/// character row's 32 screen bytes; `glyph_row` the scan line within it.
 pub fn paint_legacy_text_line(
     row_bytes: &[u8],
     palette: &[[u8; 4]; PALETTE_LEN],
@@ -195,18 +166,10 @@ pub fn paint_legacy_text_line(
     }
 }
 
-/// Render the text screen (`SCREEN_LEN` bytes) into `fb` (`FB_W*FB_H*4` bytes).
-///
-/// `palette` is the resolved 16-entry GIME palette (RGBA). Each byte is either an
-/// alphanumeric character (bit 7 = 0: low 6 bits pick the glyph, bit 6 = inverse,
-/// coloured from palette regs 12/13) or a semigraphics-4 block (bit 7 = 1). The
-/// stock BASIC screen stores alphanumerics inverse (bit 6 set), so the prompt is
-/// black-on-green; the blinking cursor is an SG4 cell that cycles colours.
-///
-/// `generator`/`ff22` select the font and (on lowercase-capable generators)
-/// true-lowercase decode — see [`resolve_alpha_cell`] and [`AlphaGenerator`].
-/// `ff22` should be PIA1 $FF22's current value; only [`VDG_GM0_INTEXT`] is
-/// consulted here.
+/// Renders the text screen (`SCREEN_LEN` bytes) into `fb`. Each byte is an
+/// alphanumeric character (bit 7 clear, coloured from palette regs 12/13) or
+/// a semigraphics-4 block (bit 7 set); `generator`/`ff22` select the font
+/// and true-lowercase decode (see [`resolve_alpha_cell`]).
 pub fn render_text(
     screen: &[u8],
     palette: &[[u8; 4]; PALETTE_LEN],

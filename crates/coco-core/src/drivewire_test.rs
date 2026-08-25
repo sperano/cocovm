@@ -14,9 +14,8 @@ fn lsn_bytes(lsn: u32) -> [u8; 3] {
     [(lsn >> 16) as u8, (lsn >> 8) as u8, lsn as u8]
 }
 
-/// Feed every byte of `bytes` into `server`, each at its own
-/// (small, strictly increasing) fake cycle count, then drain and return
-/// whatever reply bytes are queued afterward.
+/// Feed every byte of `bytes` into `server` at increasing fake cycle
+/// counts, then drain and return whatever reply bytes are queued.
 fn feed_and_drain(server: &mut DWServer, bytes: &[u8]) -> Vec<u8> {
     feed_at(server, bytes, 0);
     drain(server)
@@ -290,8 +289,7 @@ fn write_past_end_extends_image() {
 #[test]
 fn getstat_setstat_consume_exactly_two_bytes() {
     let mut server = DWServer::new();
-    // GETSTAT + drive + statcode, then a fresh DWINIT — no leftover
-    // reply from GETSTAT, and DWINIT parses cleanly right after.
+    // GETSTAT + drive + statcode, then a fresh DWINIT: no leftover reply.
     let reply = feed_and_drain(
         &mut server,
         &[opcode::GETSTAT, 0x00, 0x01, opcode::DWINIT, 0x00],
@@ -333,8 +331,7 @@ fn serinit_serterm_sergetstat_consume_bytes_with_no_reply() {
             0x03, // driver version, ignored
         ],
     );
-    // Only DWINIT produces a reply: proves the state machine is back
-    // in sync, not desynced by any of the preceding SER* opcodes.
+    // Only DWINIT replies: proves the state machine wasn't desynced by the SER* opcodes.
     assert_eq!(reply, vec![0x04]);
     assert_eq!(server.vserial_ops(), 3);
     assert_eq!(server.unknown_opcodes(), 0);
@@ -366,10 +363,7 @@ fn sersetstat_comst_consumes_payload_without_dispatching_it_as_opcodes() {
         0x00,     // channel
         SS_COMST, // statcode
     ];
-    // One of the 26 payload bytes deliberately equals a real opcode
-    // value (DWINIT) to prove it is consumed as raw payload, not
-    // dispatched — if it were misparsed as an opcode, a stray 0x04
-    // reply would appear before the real DWINIT below.
+    // Byte 10 equals a real opcode (DWINIT), to prove it's consumed as raw payload, not dispatched.
     let mut payload = vec![0u8; COMST_PAYLOAD_LEN];
     payload[10] = opcode::DWINIT;
     req.extend(payload);
@@ -431,8 +425,7 @@ fn stalled_transaction_times_out() {
     feed_at(&mut server, &[opcode::READ, 0x00], 0);
     assert!(drain(&mut server).is_empty());
 
-    // Next byte arrives well past the timeout: treated as a fresh
-    // opcode (DWINIT) instead of header byte 3.
+    // Next byte arrives past the timeout: parsed as a fresh opcode (DWINIT), not header byte 3.
     let timeout_cycle = 1 + TRANSACTION_TIMEOUT_CYCLES + 1;
     feed_at(&mut server, &[opcode::DWINIT], timeout_cycle);
     feed_at(&mut server, &[0x00], timeout_cycle + 1);

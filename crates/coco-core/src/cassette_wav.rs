@@ -42,18 +42,8 @@ const WAV_LEAD_OUT_SECS: f64 = 0.25;
 
 // ---- Export: decoded tape bytes -> WAV -------------------------------------
 
-/// Re-synthesize `tape` (a decoded .cas byte stream, LSB-first per
-/// [`crate::cassette::Cassette::input_bit`]) as audio: one full sine cycle
-/// per bit, at [`ONE_BIT_PERIOD`]/[`ZERO_BIT_PERIOD`] converted from CPU
-/// cycles to seconds via `cpu_hz` ([`crate::Machine::cpu_hz`]).
-///
-/// The sine starts rising from the midpoint (phase 0), matching the ROM's
-/// own DAC sine table directly — unlike
-/// [`crate::cassette::Cassette::input_bit`]'s squared PA0 output, this is
-/// *not* inverted. That inversion is specific to the SALT chip's analog
-/// record→play path reproducing a squared rendition of the tape signal on
-/// PA0; this function instead synthesizes what a real cassette deck's line
-/// input jack expects to receive: the direct sine the DAC wrote.
+/// Re-synthesize `tape` as audio: one sine cycle per bit, upright (not inverted
+/// like [`crate::cassette::Cassette::input_bit`]'s squared PA0 output).
 pub fn synthesize_wav(tape: &[u8], cpu_hz: f64) -> Vec<u8> {
     let mut samples = Vec::new();
     push_silence(&mut samples, WAV_LEAD_IN_SECS);
@@ -85,8 +75,7 @@ fn push_sine_cycle(samples: &mut Vec<u8>, period_cycles: u32, cpu_hz: f64) {
     for i in 0..cycle_samples {
         let phase = i as f64 / cycle_samples as f64;
         let value = f64::from(WAV_MIDPOINT) + WAV_AMPLITUDE * (std::f64::consts::TAU * phase).sin();
-        // Float-to-int casts saturate (Rust since 1.45), so this can't
-        // overflow even with float rounding at the extremes.
+        // Float-to-int casts saturate (Rust 1.45+), so this can't overflow.
         samples.push(value.round() as u8);
     }
 }
@@ -101,9 +90,8 @@ fn build_wav_bytes(samples: &[u8]) -> Vec<u8> {
     let byte_rate = WAV_SAMPLE_RATE_HZ * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
     let block_align = CHANNELS * BITS_PER_SAMPLE / 8;
     let data_len = samples.len() as u32;
-    // RIFF chunk size excludes the leading "RIFF"+size(4) fields themselves:
-    // 4 for "WAVE" + 8+FMT_CHUNK_LEN for the fmt chunk (header+body) +
-    // 8+data_len for the data chunk (header+samples) = 36 + data_len.
+    // RIFF size excludes "RIFF"+size(4) itself: 4 ("WAVE") + 8+16 (fmt
+    // chunk) + 8+data_len (data chunk) = 36 + data_len.
     let riff_len = 36 + data_len;
 
     let mut out = Vec::with_capacity(44 + samples.len());
@@ -213,9 +201,8 @@ struct WAVFmt {
     bits_per_sample: u16,
 }
 
-/// Walk a RIFF/WAVE file's chunks (not assuming `fmt ` immediately follows
-/// the header — `LIST`/`INFO` chunks commonly come first) and return the
-/// `fmt` info plus the `data` chunk's payload slice.
+/// Walk a RIFF/WAVE file's chunks (not assuming `fmt ` comes first — `LIST`/
+/// `INFO` chunks commonly precede it) and return the `fmt` info plus the `data` payload.
 fn parse_wav_chunks(bytes: &[u8]) -> Result<(WAVFmt, &[u8]), WAVError> {
     if bytes.len() < RIFF_HEADER_LEN {
         return Err(WAVError::Truncated);
@@ -242,10 +229,8 @@ fn parse_wav_chunks(bytes: &[u8]) -> Result<(WAVFmt, &[u8]), WAVError> {
     Ok((fmt, data))
 }
 
-/// Read one chunk header (id + little-endian size) and its body at `offset`,
-/// returning `(id, body, next_offset)` — `next_offset` already accounts for
-/// RIFF's even-size chunk padding (the pad byte isn't part of the declared
-/// size).
+/// Read one chunk header+body at `offset`, returning `(id, body, next_offset)`;
+/// `next_offset` accounts for RIFF's even-size chunk padding.
 fn read_chunk(bytes: &[u8], offset: usize) -> Result<([u8; 4], &[u8], usize), WAVError> {
     let chunk_id: [u8; 4] = bytes[offset..offset + 4].try_into().unwrap();
     let chunk_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
@@ -292,9 +277,8 @@ fn parse_fmt_chunk(body: &[u8]) -> Result<WAVFmt, WAVError> {
     })
 }
 
-/// Extract channel 0's samples as signed integers on a common scale,
-/// regardless of the WAV's bit depth (8-bit unsigned or 16-bit signed).
-/// Other channels are simply skipped (every Nth sample, N = channel count).
+/// Extract channel 0's samples as signed integers on a common scale, regardless
+/// of bit depth (8-bit unsigned or 16-bit signed); other channels are skipped.
 fn extract_mono_samples(data: &[u8], fmt: &WAVFmt) -> Vec<i32> {
     let channels = usize::from(fmt.channels);
     let mut out = Vec::new();
@@ -324,24 +308,8 @@ fn extract_mono_samples(data: &[u8], fmt: &WAVFmt) -> Vec<i32> {
 /// a hardware fact.
 const WAV_HYSTERESIS_FRACTION: f64 = 0.1;
 
-/// Detect zero-crossings of the signal's own midpoint (with hysteresis
-/// against noise) and emit a [`Transition`] only when the side changes — the
-/// same sparse-transition-list domain [`demodulate`] consumes. `mid` and
-/// `hysteresis` are computed from the capture's own min/max, not assumed
-/// from bit depth, since real recordings rarely hit full scale.
-///
-/// `invert` negates each sample around `mid` (`2*mid - sample`) before
-/// thresholding, per the spec's polarity-uncertainty workaround (mirroring
-/// the phase-uncertainty lesson `cassette.rs` already documents for
-/// playback — a recording can come in with either polarity and only trying
-/// to demodulate both tells you which). This must be a real negation of the
-/// compared value, not merely swapping which of [`Transition::level`]'s two
-/// constants means "high": at an exact tie (`sample == mid`, e.g. the lead-
-/// in/out silence sits exactly there) negation leaves the sample AT `mid`
-/// in both polarities, so it must stay off both thresholds either way — a
-/// post-hoc label swap instead flips that tied sample's apparent side,
-/// which [`demodulate`]'s first-sample handling is sensitive to (it treats
-/// a capture that opens on the high side specially).
+/// Detect midpoint zero-crossings (with hysteresis against noise) into a [`Transition`] list;
+/// `invert` negates each sample around `mid` for the playback polarity-uncertainty workaround.
 fn capture_transitions(
     samples: &[i32],
     mid: f64,
@@ -391,10 +359,8 @@ fn sample_to_cycle(sample_index: usize, cpu_hz: f64, wav_sample_rate_hz: u32) ->
     (sample_index as f64 * cpu_hz / f64::from(wav_sample_rate_hz)).round() as u64
 }
 
-/// Between two demodulated candidates from the two polarity guesses, prefer
-/// the one containing the block [`SYNC`] byte (a much stronger signal that
-/// the polarity/framing was right than raw length), falling back to the
-/// longer decode when either both or neither contain it.
+/// Prefer whichever polarity guess's decode contains the block [`SYNC`] byte
+/// (a stronger signal than raw length); fall back to the longer one otherwise.
 fn choose_best_decode(a: Vec<u8>, b: Vec<u8>) -> Vec<u8> {
     match (a.contains(&SYNC), b.contains(&SYNC)) {
         (true, false) => a,
@@ -409,17 +375,8 @@ fn choose_best_decode(a: Vec<u8>, b: Vec<u8>) -> Vec<u8> {
     }
 }
 
-/// Decode a WAV file back into a cassette tape's decoded byte stream.
-///
-/// Accepts 8-bit unsigned or 16-bit signed PCM, any channel count (channel 0
-/// only) and any sample rate (read from the `fmt` chunk). Since a recording
-/// can come in with either polarity (mirroring the phase-uncertainty
-/// [`crate::cassette`] already documents for playback), the whole
-/// crossing-detection + [`demodulate`] pipeline runs twice — once as read,
-/// once inverted — and [`choose_best_decode`] keeps the better result.
-///
-/// `cpu_hz` is the machine's CPU clock ([`crate::Machine::cpu_hz`]), used to
-/// convert WAV sample indices into the CPU-cycle domain `demodulate` expects.
+/// Decode a WAV file (8/16-bit PCM, any channel count/sample rate) into a tape byte stream,
+/// trying both signal polarities and keeping the better decode via [`choose_best_decode`].
 pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WAVError> {
     let (fmt, data) = parse_wav_chunks(bytes)?;
     let samples = extract_mono_samples(data, &fmt);

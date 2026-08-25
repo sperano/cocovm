@@ -2,24 +2,17 @@ use super::*;
 
 #[test]
 fn resampler_upsamples_2x_with_linear_interpolation() {
-    // step = 0.5 means the device rate is double the source rate: every
-    // input frame should produce two output frames, the second being
-    // the midpoint to the next input frame.
+    // step = 0.5: device rate is double the source rate, so each input frame yields two outputs.
     let mut r = Resampler::default();
     let mut out = Vec::new();
     r.process(&[[0.0; 2], [10.0, -10.0]], 0.5, &mut out);
-    // prev starts at 0.0 (no prior batch), so:
-    // pos=0.0 -> a=prev=0, b=input[0]=0, frac=0.0 -> 0
-    // pos=0.5 -> a=prev=0, b=input[0]=0, frac=0.5 -> 0
-    // pos=1.0 -> a=input[0]=0, b=input[1], frac=0.0 -> 0
-    // pos=1.5 -> a=input[0]=0, b=input[1], frac=0.5 -> midpoint
+    // prev starts at 0.0 (no prior batch): first two outputs are 0, then it blends toward input[1].
     assert_eq!(out, vec![[0.0; 2], [0.0; 2], [0.0; 2], [5.0, -5.0]]);
 }
 
 #[test]
 fn resampler_carries_fractional_position_and_prev_frame_across_calls() {
-    // Same math as above, but split across two process() calls to prove
-    // the carried `pos`/`prev` state reproduces one continuous stream.
+    // Same math as above, split across two calls to prove carried `pos`/`prev` state.
     let mut r = Resampler::default();
     let mut out = Vec::new();
     r.process(&[[0.0; 2]], 0.5, &mut out);
@@ -29,10 +22,8 @@ fn resampler_carries_fractional_position_and_prev_frame_across_calls() {
 
 #[test]
 fn resampler_downsamples_when_step_exceeds_one() {
-    // step = 2.0: device rate is half the source rate, so every other
-    // input frame is emitted. The very first output still interpolates
-    // against `prev`'s initial 0.0 (no prior batch), which is why it
-    // isn't simply input[0].
+    // step = 2.0: every other input frame is emitted; the first output still blends against
+    // prev=0.0.
     let mut r = Resampler::default();
     let mut out = Vec::new();
     r.process(&[[1.0; 2], [2.0; 2], [3.0; 2], [4.0; 2]], 2.0, &mut out);
@@ -65,16 +56,14 @@ fn dc_blocker_passes_already_centered_signal_without_blowing_up() {
         let x = if i % 2 == 0 { 1.0 } else { -1.0 };
         max_abs = f32::max(max_abs, dc.process(x).abs());
     }
-    // A signal already centered at 0 should stay bounded near its own
-    // amplitude, not grow — a highpass shouldn't amplify AC content.
+    // A signal already centered at 0 should stay bounded, not grow — a highpass shouldn't
+    // amplify AC.
     assert!(max_abs < 2.5, "expected bounded output, got {max_abs}");
 }
 
 #[test]
 fn lowpass_attenuates_nyquist_rate_alternation_but_passes_dc() {
-    // 62.9 kHz source decimated to 48 kHz: a +1/-1 alternation at the
-    // source rate (31.45 kHz — pure fold-back material) must be crushed,
-    // while a constant passes nearly unchanged.
+    // 62.9 kHz decimated to 48 kHz: a Nyquist-rate alternation (fold-back) must be crushed.
     let mut lp = LowPass::design(0.45 * 48_000.0, 62_866.0);
     let mut max_late = 0.0f32;
     for i in 0..4000 {
@@ -113,10 +102,8 @@ fn underrun_decay_reaches_floor_within_fade_window() {
 
 #[test]
 fn reset_empties_ring_and_returns_filters_to_default() {
-    // 62.9 kHz source into a 48 kHz device: decimating, so the low-pass is
-    // designed too. A sign-alternating signal (not a DC step, which the DC
-    // blocker would have decayed to ~0 by now) leaves every filter holding
-    // real, non-negligible history.
+    // Decimating input (designs the low-pass) with a sign-alternating signal leaves every
+    // filter holding real history.
     let mut out = AudioOutput::headless(48_000.0);
     let alternating = (0..4000).map(|i| if i % 2 == 0 { [1.0, -1.0] } else { [-1.0, 1.0] });
     out.push_samples(alternating, 62_866.0);

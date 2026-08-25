@@ -53,8 +53,7 @@ fn tone_flip_flop_toggles_every_period_ticks() {
     psg.write(0x80 | (PERIOD & 0x0F) as u8);
     psg.write((PERIOD >> 4) as u8);
 
-    // Tick one at a time (directly, so the count is exact); record the
-    // interval between output changes.
+    // Tick one at a time; record the interval between output changes.
     psg.tick();
     let mut last = psg.level();
     let mut transitions = Vec::new();
@@ -169,8 +168,7 @@ fn white_noise_diverges_from_periodic() {
 
 #[test]
 fn power_on_state_hums_at_max_volume() {
-    // MAME device_start: attenuation 0 (max) everywhere, tone periods
-    // $400 — the chip is audible before software touches it.
+    // MAME device_start: max volume everywhere, audible before software touches it.
     let mut psg = chip();
     let mut heard = false;
     for _ in 0..3000 {
@@ -189,8 +187,7 @@ fn mean_sampling_of_a_fast_tone_settles_near_half_volume() {
     psg.write(0x90); // tone 0 max volume
     psg.write(0x81); // period 1: toggles every tick
     psg.write(0x00);
-    // 1000 ticks per sample: the box filter averages the 125 kHz square
-    // wave to ~vol/2 instead of aliasing.
+    // 1000 ticks per sample: the box filter averages the 125 kHz square wave to ~vol/2.
     let level = psg.sample(1000.0 * ONE_TICK);
     let half = psg.vol_table[0] / 2.0;
     assert!((level - half).abs() < 0.01, "expected ~{half}, got {level}");

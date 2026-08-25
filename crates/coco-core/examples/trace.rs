@@ -48,7 +48,7 @@ fn main() {
         for _ in 0..max {
             let entry = TraceEntry::capture(&m.cpu);
             writeln!(w, "{}", entry.format()).unwrap();
-            m.step();
+            m.step_cpu_raw();
         }
         return;
     }

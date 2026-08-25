@@ -74,8 +74,7 @@ pub struct DeluxeRS232 {
 
 impl DeluxeRS232 {
     /// Build a pak with no EPROM and a [`Loopback`] endpoint — the inert
-    /// default until the frontend plugs in a real backend via
-    /// [`DeluxeRS232::set_endpoint`].
+    /// default until a real backend is plugged in via [`DeluxeRS232::set_endpoint`].
     pub fn new() -> Self {
         Self {
             acia: ACIA6551::new(),
@@ -87,9 +86,8 @@ impl DeluxeRS232 {
         }
     }
 
-    /// Install the 4K EPROM image. Short images are accepted and read
-    /// zero-filled at the tail (a real dump is exactly [`EPROM_LEN`] bytes;
-    /// anything longer is truncated — only 12 address bits are decoded).
+    /// Install the 4K EPROM image. Short images are zero-filled at the tail;
+    /// longer ones are truncated (only 12 address bits are decoded).
     pub fn set_eprom(&mut self, bytes: &[u8]) {
         let mut image = vec![0u8; EPROM_LEN].into_boxed_slice();
         let n = bytes.len().min(EPROM_LEN);
@@ -97,9 +95,8 @@ impl DeluxeRS232 {
         self.eprom = Some(image);
     }
 
-    /// Swap the host backend (TCP, PTY, loopback). The ACIA's in-flight
-    /// frame state is untouched — this is re-plugging the cable, not
-    /// resetting the chip.
+    /// Swap the host backend (TCP, PTY, loopback). The ACIA's in-flight frame
+    /// state is untouched — this re-plugs the cable, it doesn't reset the chip.
     pub fn set_endpoint(&mut self, endpoint: Box<dyn SerialEndpoint>) {
         self.endpoint = endpoint;
     }
@@ -159,26 +156,22 @@ impl Cartridge for DeluxeRS232 {
 
     fn tick(&mut self, cycles: u32) {
         self.acia.tick(cycles);
-        // TX side: frames complete rarely (at most once per serial frame),
-        // and checking is a cheap in-memory read, so no throttle here.
+        // TX side: cheap in-memory check, no throttle needed.
         while let Some(b) = self.acia.take_tx_byte() {
             self.endpoint.tx(b);
             self.tx_bytes += 1;
         }
-        // RX side + modem lines: endpoint polls can cost syscalls, so run
-        // them on the HOST_POLL_INTERVAL cadence.
+        // RX side + modem lines: polls can cost syscalls, throttled to HOST_POLL_INTERVAL.
         self.since_host_poll += cycles;
         if self.since_host_poll < HOST_POLL_INTERVAL {
             return;
         }
         self.since_host_poll = 0;
-        // The endpoint trait models one "is anything there" line; feed it
-        // to both DCD and DSR — the pak has no independent DSR source.
+        // The endpoint's single "carrier" signal feeds both DCD and DSR.
         let carrier = self.endpoint.dcd();
         self.acia.set_dcd(carrier);
         self.acia.set_dsr(carrier);
-        // Pull a host byte only when the receiver is between frames; the
-        // rest stays queued host-side (module doc comment).
+        // Pull a host byte only when the receiver is between frames.
         if self.acia.rx_ready()
             && let Some(b) = self.endpoint.poll_rx()
         {
@@ -187,9 +180,8 @@ impl Cartridge for DeluxeRS232 {
         }
     }
 
-    /// The expansion port's RESET* line reaches the ACIA's hardware-reset
-    /// pin. Host endpoint and EPROM are untouched — pressing reset doesn't
-    /// unplug the cable.
+    /// The expansion port's RESET* line reaches the ACIA's hardware-reset pin.
+    /// Host endpoint and EPROM are untouched — reset doesn't unplug the cable.
     fn reset(&mut self) {
         self.acia.hardware_reset();
     }

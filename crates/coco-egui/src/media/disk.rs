@@ -4,17 +4,10 @@
 use crate::*;
 
 impl CocoApp {
-    /// Make sure the inserted cartridge is the FD-502 disk controller,
-    /// creating one (with `roms/disk11.rom`) if something else — or nothing —
-    /// is in the slot. Creating it cold-resets the machine: BASIC only probes
-    /// for Disk BASIC at cold start. Swapping a floppy in an already-present
-    /// controller does NOT reset, like on real hardware.
-    ///
-    /// With a Multi-Pak Interface installed, the slot to plug the FD-502 into
-    /// is a real choice a top-level "just ensure a controller exists" call
-    /// can't make on the caller's behalf — so this refuses instead of
-    /// silently replacing the MPI, and directs the caller to
-    /// [`Self::mpi_insert_fd502`] via the MultiPak submenu.
+    /// Ensures the FD-502 controller is inserted, creating one (cold-resetting the machine —
+    /// BASIC only probes for Disk BASIC at cold start) if needed. Swapping
+    /// a floppy in an already-present controller does not reset. Refuses
+    /// if an MPI is installed; use [`Self::mpi_insert_fd502`] instead.
     pub(crate) fn ensure_disk_controller(&mut self) -> Result<(), String> {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             return Ok(());
@@ -30,14 +23,10 @@ impl CocoApp {
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
-        // No flush needed: past the early returns no disk cart can exist (a
-        // disk cart returns at the top; with an MPI installed we refuse
-        // above), so there is nothing to save back.
+        // No flush needed: past the early returns, no disk cart can exist here.
         self.machine
             .insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
-        // Power cycle, not warm reset: the DK probe that links Disk BASIC
-        // only runs on the ROM's cold-start path (a warm reset leaves the
-        // DOS ROM unlinked and the drives dead).
+        // Power cycle, not warm reset: the DK probe that links Disk BASIC only runs on cold-start.
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -47,9 +36,8 @@ impl CocoApp {
         Ok(())
     }
 
-    /// Menu-path entry for Insert Disk: acts immediately when the FD-502 is
-    /// already in the slot; otherwise parks the action behind the
-    /// power-cycle confirmation dialog (see [`Self::pending_disk_action`]).
+    /// Menu-path entry for Insert Disk: acts immediately if the FD-502 is already in the
+    /// slot, otherwise parks behind the power-cycle confirmation dialog.
     pub(crate) fn request_insert_disk(&mut self, drive: usize, path: PathBuf) {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             self.insert_disk(drive, path);
@@ -67,11 +55,9 @@ impl CocoApp {
         }
     }
 
-    /// Mount the floppy image at `path` in `drive`, inserting the FD-502
-    /// controller first if needed. Failures land in [`Self::cart_error`]; a
-    /// failed write-back of whatever was in `drive` first aborts the mount,
-    /// leaving the old disk mounted, dirty, and tracked at its path for a
-    /// later retry.
+    /// Mounts the floppy image at `path` in `drive`, inserting the FD-502 controller first
+    /// if needed. A failed write-back of the drive's old disk aborts the
+    /// mount, leaving it dirty and tracked for retry.
     pub(crate) fn insert_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
@@ -79,9 +65,6 @@ impl CocoApp {
                 .map_err(|e| format!("could not read {}: {e}", path.display()))?;
             let disk =
                 JVCDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-            // Whatever was in the drive first; a failed write-back aborts the
-            // whole mount so the old disk, its dirty flag, and its tracked
-            // path are all preserved for a later retry.
             self.write_back_disk(drive)?;
             let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
             cart.insert_disk(drive, disk);
@@ -93,19 +76,13 @@ impl CocoApp {
         }
     }
 
-    /// Create a brand-new, blank (0-track) floppy image at `path` and mount it
-    /// in `drive`, inserting the FD-502 controller first if needed. Refuses to
-    /// overwrite an existing file. Failures land in [`Self::cart_error`]; a
-    /// failed write-back of whatever was in `drive` first aborts before the
-    /// new file is even created, leaving the old disk mounted, dirty, and
-    /// tracked at its path for a later retry.
+    /// Creates a brand-new, blank (0-track) floppy image at `path` and mounts it in `drive`,
+    /// inserting the FD-502 controller first if needed. Refuses to
+    /// overwrite an existing file; a failed write-back of the drive's old
+    /// disk aborts before the file is created.
     pub(crate) fn new_blank_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             self.ensure_disk_controller()?;
-            // Whatever was in the drive first, flushed before the new file
-            // is even created: a failed write-back aborts the whole
-            // operation, leaving neither a stray empty image on disk nor the
-            // old disk disturbed.
             self.write_back_disk(drive)?;
             match std::fs::OpenOptions::new()
                 .write(true)
@@ -134,10 +111,9 @@ impl CocoApp {
         }
     }
 
-    /// Eject the floppy in `drive`, writing a modified image back to its file
-    /// first (like MAME/VCC, in-place). A failed write-back aborts the
-    /// eject — the disk stays mounted, dirty, and tracked at its path — and
-    /// lands in [`Self::cart_error`] so a later retry can succeed.
+    /// Ejects the floppy in `drive`, writing a modified image back to its file first
+    /// (in-place, like MAME/VCC). A failed write-back aborts the eject,
+    /// leaving the disk mounted and dirty for a later retry.
     pub(crate) fn eject_disk(&mut self, drive: usize) {
         if let Err(e) = self.write_back_disk(drive) {
             self.cart_error = Some(e);
@@ -149,14 +125,8 @@ impl CocoApp {
         self.disk_paths[drive] = None;
     }
 
-    /// If the floppy in `drive` was written to, save the image back to its
-    /// source file and mark it saved ([`JVCDisk::mark_saved`]). On
-    /// failure the in-memory disk is left mounted and still dirty, so a
-    /// later retry can succeed; callers decide how to surface the error
-    /// (most route it to [`Self::cart_error`] via
-    /// [`Self::flush_dirty_disks_or_report`] or inline, but
-    /// [`Self::flush_dirty_disks`] instead collects it to aggregate with
-    /// its sibling drives' errors).
+    /// Saves the floppy in `drive` back to its source file if it was written to, marking it
+    /// saved. On failure the disk stays mounted and dirty so a later retry can succeed.
     pub(crate) fn write_back_disk(&mut self, drive: usize) -> Result<(), String> {
         let Some(path) = self.disk_paths[drive].clone() else {
             return Ok(());
@@ -176,10 +146,8 @@ impl CocoApp {
         Ok(())
     }
 
-    /// Write every modified floppy back to its file (controller swap, exit).
-    /// Tries every drive even after one fails — each drive's data is
-    /// independent, so one bad write-back shouldn't leave a healthy drive's
-    /// changes unsaved too — and joins every error message with `\n`.
+    /// Writes every modified floppy back to its file. Tries every drive even after one
+    /// fails, since each drive's data is independent; joins every error message with `\n`.
     pub(crate) fn flush_dirty_disks(&mut self) -> Result<(), String> {
         let errors: Vec<String> = (0..UI_DRIVES)
             .filter_map(|drive| self.write_back_disk(drive).err())
@@ -191,14 +159,10 @@ impl CocoApp {
         }
     }
 
-    /// [`Self::flush_dirty_disks`], reporting a failure through
-    /// [`Self::cart_error`] instead of propagating it, and returning whether
-    /// it's safe to proceed: `true` iff every drive's flush succeeded, i.e.
-    /// no disk is left dirty-and-unsaved. Every cartridge/MPI-slot swap that
-    /// would destroy the disk cart (and, with it, whatever floppies are
-    /// mounted) must check this before mutating anything — `false` means
-    /// abort the swap so the caller can retry later, per
-    /// [`Self::write_back_disk`]'s "later retry can succeed" contract.
+    /// [`Self::flush_dirty_disks`], reporting failure via [`Self::cart_error`] instead of
+    /// propagating it. Returns whether it's safe to proceed — every
+    /// cartridge/MPI swap that could destroy a disk cart must check this
+    /// first.
     #[must_use]
     pub(crate) fn flush_dirty_disks_or_report(&mut self) -> bool {
         match self.flush_dirty_disks() {
@@ -210,11 +174,9 @@ impl CocoApp {
         }
     }
 
-    /// Mount the VHD image at `path` in `drive`. Unlike floppies, VHD is a
-    /// bus-level device (`$FF80-$FF86`, `SystemBus::vhd`) independent of the
-    /// cartridge slot: no controller to ensure, no machine reset, and no
-    /// write-back on eject/replace (VHD command execution writes straight
-    /// through to the backing file). Failures land in [`Self::cart_error`].
+    /// Mounts the VHD image at `path` in `drive`. Unlike floppies, VHD is a bus-level device
+    /// (`$FF80-$FF86`) independent of the cartridge slot — no controller,
+    /// no reset, no write-back on eject (writes go straight through).
     pub(crate) fn insert_vhd(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
             let file = std::fs::OpenOptions::new()

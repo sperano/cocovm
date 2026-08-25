@@ -58,23 +58,9 @@ pub(crate) struct TapeReel {
 }
 
 impl TapeReel {
-    /// Advance the reel by one frame and return the angle to draw it at —
-    /// called from `tape_status` with the app's stored reel and the
-    /// frame's `dt`.
-    ///
-    /// - If tape position moved since the last call (`pos != last_pos`),
-    ///   the reel turns by the moved distance (`REEL_ANGLE_PER_BYTE` per
-    ///   byte) — forward for playback or recording, backward for a rewind.
-    ///   `pos` and `last_pos` are byte offsets (never negative), so the
-    ///   signed distance moved is recovered by reinterpreting a wrapping
-    ///   subtraction as `isize` rather than by subtracting directly, which
-    ///   would panic/wrap on a rewind.
-    /// - Else, if the motor is running (position parked but the relay is
-    ///   closed — spin-up before the position moves, or `MOTOR ON` with the
-    ///   tape parked), the reel keeps turning at [`MOTOR_REEL_SPEED`].
-    /// - Else (motor off), the angle is unchanged: the reel parks.
-    ///
-    /// The angle is wrapped into `0..TAU` before being stored and returned.
+    /// Advance the reel by one frame and return the angle to draw it at:
+    /// turns by the moved distance if `pos` changed, else at
+    /// [`MOTOR_REEL_SPEED`] if the motor's running, else parks. Wrapped into `0..TAU`.
     pub(crate) fn advance(&mut self, pos: usize, motor: bool, dt: f32) -> f32 {
         let angle = if pos != self.last_pos {
             let delta = pos.wrapping_sub(self.last_pos) as isize;
@@ -116,9 +102,8 @@ pub(crate) struct ActivityLatch {
 }
 
 impl ActivityLatch {
-    /// Observe the current value of the counter this latch is tracking.
-    /// Returns whether the icon should currently draw active (see the
-    /// type's doc comment for the priming/hold/decrease rules).
+    /// Observe the current value of the counter this latch is tracking,
+    /// returning whether the icon should draw active (see the type doc for the rules).
     pub(crate) fn observe(&mut self, count: u64) -> bool {
         self.observe_at(count, std::time::Instant::now())
     }

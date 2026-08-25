@@ -141,23 +141,19 @@ pub(crate) const TYPE_HOLD_FIELDS: u8 = 2;
 pub(crate) const TYPE_GAP_FIELDS: u8 = 1;
 
 fn main() -> eframe::Result<()> {
-    // Before anything reads the environment: `RUST_LOG` below and clap's
-    // `env` fallbacks both see whatever the `.env` file sets.
+    // Before anything reads the environment: RUST_LOG and clap's env fallbacks need `.env`
+    // loaded first.
     load_dotenv();
 
-    // Before anything writes to stdout: on legacy Windows conhost the banner
-    // and the log subscriber both need the VT opt-in this performs.
+    // Before anything writes to stdout: legacy Windows conhost needs the VT opt-in this performs.
     let use_color = use_color();
 
-    // Parsed before the manager runs below: with no arguments `--log-level`
-    // takes its clap-declared default (`warn`). The subscriber is global and
-    // installed once, so it cannot be built before the flags it reads are
-    // known.
+    // Parsed first: the global log subscriber can't be built before the flags it reads are known.
     let cli = Cli::parse();
     setup_logging(use_color, cli.log_level.into());
 
-    // The app always opens the CocoVM manager window; a future CLI will be
-    // rebuilt on top of the manager's own machine definitions.
+    // The app always opens the CocoVM manager window; a future CLI will build on its machine
+    // definitions.
     manager::run()
 }
 

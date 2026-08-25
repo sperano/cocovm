@@ -13,9 +13,8 @@ use crate::{
     Coco12ROMResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, installed_roms_dir,
 };
 
-/// The recorded `mpi_slot: None` cart-ROM path, if any — shared by
-/// [`super::restore::CocoApp::rebuild_cart_mirrors`]'s direct-port `cart_path` and
-/// `rs232_eprom_path` cases.
+/// The recorded `mpi_slot: None` cart-ROM path, if any — used for the
+/// direct-port `cart_path`/`rs232_eprom_path` cases.
 pub(super) fn direct_port_rom_path(media: &MediaRefs) -> Option<PathBuf> {
     media
         .cart_roms
@@ -60,9 +59,7 @@ pub(super) fn hash_media_ref(path: &Path) -> Result<MediaRef, String> {
 }
 
 /// LOAD side: `mr`'s bytes if its file is present (pushing a `warnings`
-/// entry first when the hash no longer matches), or `None` if it's missing
-/// — see [`super::restore::CocoApp::resolve_media_sources`]'s doc for why a
-/// missing file isn't an error here.
+/// entry first on hash mismatch), or `None` if it's missing.
 pub(super) fn read_if_present(
     mr: &MediaRef,
     role: &str,
@@ -111,21 +108,16 @@ fn mismatch_warning(role: &str, mr: &MediaRef) -> String {
     )
 }
 
-/// True if `path` is one of [`crate::ROMSource::ComposedCoco12`]'s
-/// pseudo-paths ([`ROM_DB_PSEUDO_PATH_PREFIX`], built by
-/// [`crate::rom_db_pseudo_path`]) rather than a real filesystem path.
+/// True if `path` is a [`crate::ROMSource::ComposedCoco12`] pseudo-path
+/// ([`ROM_DB_PSEUDO_PATH_PREFIX`]) rather than a real filesystem path.
 pub(super) fn is_rom_db_pseudo_path(path: &Path) -> bool {
     path.to_str()
         .is_some_and(|s| s.starts_with(ROM_DB_PSEUDO_PATH_PREFIX))
 }
 
-/// [`coco_core::snapshot::MediaSources::system_rom`]: a real path reads and
-/// verifies like any other reference; a [`ROM_DB_PSEUDO_PATH_PREFIX`]
-/// pseudo-path recomposes the CoCo 1/2 flat image from
-/// [`installed_roms_dir`] and
-/// hash-compares (never "missing" purely because the pseudo-path itself
-/// isn't a real file — only when no local Color BASIC dump exists to
-/// compose from at all).
+/// [`coco_core::snapshot::MediaSources::system_rom`] resolver: a real path
+/// reads normally; a [`ROM_DB_PSEUDO_PATH_PREFIX`] pseudo-path recomposes
+/// from [`installed_roms_dir`] instead — "missing" only means no local BASIC dump exists.
 pub(super) fn resolve_system_rom(
     media: &MediaRefs,
     warnings: &mut Vec<String>,

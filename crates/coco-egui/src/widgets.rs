@@ -1,29 +1,17 @@
 use crate::*;
 
 /// A window title styled uniformly across the app: sized to the button font
-/// and strong (bold). Applied to every [`egui::Window`] title so they match.
-/// We can't just resize `TextStyle::Heading` globally (egui's window-title
-/// fallback) because content `ui.heading()` calls share that style.
+/// and strong. Can't resize `TextStyle::Heading` globally — content
+/// `ui.heading()` calls share that style.
 pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
     let size = ctx.style().text_styles[&egui::TextStyle::Button].size;
     egui::RichText::new(text).size(size).strong()
 }
 
 /// Fieldset-style titled group: a bordered box whose title interrupts the
-/// top border — the classic Qt `QGroupBox` / HTML `<fieldset>` look, which
-/// egui has no built-in equivalent for (`ui.group` puts the title *inside*
-/// the box). Drawn as five bare line segments — the top edge split around
-/// the title — rather than a background-colored rect painted over a full
-/// border, so it renders correctly over any window/panel fill. Square
-/// corners: erasing a rounded stroke under the title would need exactly
-/// the background-fill hack this avoids. The box spans the full available
-/// width (a fieldset that hugged its content would give every group a
-/// different width), and the title is a real `Label` so it lands in the
-/// AccessKit tree for screen readers and `ui_tests`.
-///
-/// Assumes a vertical host layout (the title-overhang spacer is vertical)
-/// and a title narrower than the box — a wider one would collapse the
-/// top-right border segment and clip mid-glyph.
+/// top border (Qt `QGroupBox`/HTML `<fieldset>`, which egui has no
+/// built-in equivalent for). Assumes a vertical host layout and a title
+/// narrower than the box — a wider one clips mid-glyph.
 pub(crate) fn titled_group<R>(
     ui: &mut egui::Ui,
     title: &str,
@@ -38,11 +26,10 @@ pub(crate) fn titled_group<R>(
 
     let font = egui::TextStyle::Body.resolve(ui.style());
     let color = ui.visuals().strong_text_color();
-    // Measured up front to size the gap; the visible title is the `put`
-    // Label below, in the same Body font and strong color.
+    // Measured up front to size the gap; the visible title is the Label drawn below, in the
+    // same Body font and strong color.
     let galley = ui.fonts_mut(|f| f.layout_no_wrap(title.to_owned(), font, color));
-    // Room above the box for the half of the title that overhangs the
-    // border line.
+    // Room above the box for the half of the title that overhangs the border line.
     ui.add_space(galley.size().y / 2.0);
     let inner = egui::Frame::NONE
         .inner_margin(egui::Margin::same(INNER_MARGIN))
@@ -64,12 +51,8 @@ pub(crate) fn titled_group<R>(
         egui::pos2(gap_start + TITLE_PAD, rect.top() - galley.size().y / 2.0),
         galley.size(),
     );
-    // A bare child Ui at the title's exact rect — NOT `ui.put`: `put`
-    // allocates its rect in the parent layout, and this rect sits *above*
-    // the just-closed frame, so the parent's cursor would snap back up and
-    // everything drawn after the group would overlap it. A child Ui still
-    // registers the Label in the AccessKit tree (screen readers,
-    // `ui_tests`) without touching the parent cursor.
+    // A bare child Ui at the title's rect, not `ui.put`: `put` would snap the parent's cursor
+    // back up and let later content overlap it.
     let mut title_ui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(title_rect)
@@ -151,8 +134,7 @@ pub(crate) const SUSPEND_HOVER: &str = "Suspend the machine — freeze it to dis
      quitting the manager.";
 
 /// A vertical rule with [`SEPARATOR_GAP`] on each side, grouping a toolbar
-/// into clusters (e.g. the manager toolbar's New/transport, Settings, and
-/// Help clusters).
+/// into clusters.
 pub(crate) fn toolbar_separator(ui: &mut egui::Ui) {
     ui.add_space(SEPARATOR_GAP);
     ui.separator();
@@ -160,16 +142,9 @@ pub(crate) fn toolbar_separator(ui: &mut egui::Ui) {
 }
 
 /// One toolbar tile: `icon` large on top, `label` small underneath, with a
-/// rounded highlight behind the whole tile on hover/press and no chrome at
-/// rest (flat-toolbar idiom). Hand-painted because `egui::Button` can't mix
-/// two font sizes in one label — which also means the disabled look doesn't
-/// come for free the way `ui.add_enabled(Button::new(..))` gets it, so this
-/// wraps its painting in [`egui::Ui::add_enabled_ui`]: that's what gives a
-/// disabled tile the correct `Response::enabled()` (so `on_hover_text`/
-/// `on_disabled_hover_text` pick the right one and a click can't sneak
-/// through — `Ui::interact`'s enabled flag is what the input layer actually
-/// gates on, not the `Sense` alone), while the noninteractive-visuals text
-/// color and skipped hover fill below supply the grayed-out paint.
+/// hover/press highlight. Hand-painted because `egui::Button` can't mix two
+/// font sizes; wrapped in [`egui::Ui::add_enabled_ui`] so disabled tiles
+/// still get a correct `Response::enabled()`.
 pub(crate) fn toolbar_button(
     ui: &mut egui::Ui,
     icon: &str,
@@ -177,9 +152,8 @@ pub(crate) fn toolbar_button(
     enabled: bool,
 ) -> egui::Response {
     ui.add_enabled_ui(enabled, |ui| {
-        // Not necessarily the same as the `enabled` parameter above:
-        // `Ui::is_enabled` also ANDs in the parent's enabledness, so this is
-        // load-bearing for a tile drawn inside an already-disabled parent.
+        // Not necessarily the same as `enabled`: `is_enabled` also ANDs in the parent's
+        // enabledness.
         let effective_enabled = ui.is_enabled();
         let (rect, response) = ui.allocate_exact_size(BUTTON_SIZE, egui::Sense::click());
         response.widget_info(|| {

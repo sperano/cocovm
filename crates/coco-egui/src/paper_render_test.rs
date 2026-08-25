@@ -42,16 +42,12 @@ fn output_dimensions_match_dpi_and_height() {
     );
 }
 
-/// Within the print-area x-range and a y-range confined to a single
-/// (non-green) band, a blank paper must render pure [`PAPER_COLOR`]
-/// everywhere — no perforation lines or sprocket holes fall inside the
-/// print-area x-range, and green-bar banding is off, so this isolates
-/// "never any ink" cleanly (no AA blending to account for).
+/// Within the print-area x-range and a y-range confined to a single (non-green) band, blank
+/// paper must render pure [`PAPER_COLOR`] everywhere — nothing else can paint ink there.
 #[test]
 fn blank_paper_in_print_area_is_pure_paper_color_no_ink() {
     let dpi = 100.0;
-    // Comfortably inside band 0 (non-green) at every page, well clear of
-    // any horizontal page-perforation line.
+    // Comfortably inside band 0 (non-green), well clear of any page-perforation line.
     let height_in = 0.2;
     let img = rasterize(&empty(), 0.0, height_in, dpi, true);
     let x0 = (PRINT_AREA_LEFT_IN * dpi).round() as u32;
@@ -67,10 +63,9 @@ fn blank_paper_in_print_area_is_pure_paper_color_no_ink() {
     }
 }
 
-/// A single marked dot produces an ink-colored pixel at the expected
-/// mapped position: pick coordinates that land exactly on a pixel
-/// center so the anti-aliased coverage is fully saturated (1.0) and the
-/// blended color is exactly reproducible from the compositing formula.
+/// A single marked dot produces an ink-colored pixel at the expected mapped position: pick
+/// coordinates landing exactly on a pixel center so the AA coverage is fully saturated (1.0)
+/// and reproducible.
 #[test]
 fn single_dot_marks_ink_at_the_mapped_pixel() {
     let dpi = RASTER_DPI;
@@ -84,8 +79,7 @@ fn single_dot_marks_ink_at_the_mapped_pixel() {
     let px = (x_in * dpi).floor() as u32;
     let py = (y_in * dpi).floor() as u32;
 
-    // Full coverage (dot radius > 0.5px) at the dot's own center pixel:
-    // composite(paper, ink, DOT_CORE_ALPHA) exactly.
+    // Full coverage at the dot's own center pixel: composite(paper, ink, DOT_CORE_ALPHA) exactly.
     let a = DOT_CORE_ALPHA;
     let expected: [u8; 3] = std::array::from_fn(|c| {
         (PAPER_COLOR[c] as f32 * (1.0 - a) + INK_COLOR[c] as f32 * a).round() as u8
@@ -99,9 +93,8 @@ fn twenty_two_sprocket_holes_per_page_same_phase_every_page() {
     // Algebraic claim from the module doc comment.
     assert_eq!(PAGE_HEIGHT_IN / SPROCKET_HOLE_PITCH_IN, 22.0);
 
-    // Hole k=22 (the 23rd hole, i.e. the first hole of page 2) must sit
-    // at exactly SPROCKET_HOLE_TOP_OFFSET_IN past page 2's own top,
-    // matching page 1's phase relative to its own top.
+    // Hole k=22 (page 2's first hole) must sit at exactly SPROCKET_HOLE_TOP_OFFSET_IN
+    // past page 2's own top.
     let page2_top = PAGE_HEIGHT_IN;
     let hole_23_y = SPROCKET_HOLE_TOP_OFFSET_IN + 22.0 * SPROCKET_HOLE_PITCH_IN;
     assert_eq!(hole_23_y - page2_top, SPROCKET_HOLE_TOP_OFFSET_IN);
@@ -140,23 +133,17 @@ fn green_bar_band_alternates_and_resets_at_each_page_top() {
         "band 2 must be non-green again"
     );
 
-    // Crossing into the next page resets the phase: the pixel just
-    // before PAGE_HEIGHT_IN may be green or not depending on how many
-    // bands fit, but the very first band *after* the page-top boundary
-    // must always be non-green again.
+    // Crossing into the next page resets the phase: the first band after the page-top boundary
+    // must always be non-green.
     assert!(
         !is_green_band(PAGE_HEIGHT_IN + 0.01),
         "band 0 of the next page must be non-green"
     );
 }
 
-/// Perforation dots/dashes are anti-aliased (the T5 spec's coverage
-/// formula), so a pixel at a rounded-to-integer column/row won't
-/// necessarily land exactly on a drawn circle/line's un-rounded
-/// sub-pixel center — checking "not pure paper color" (rather than an
-/// exact `PERF_COLOR` match) is what actually isolates "some perforation
-/// ink landed near the expected position" without being brittle to that
-/// rounding.
+/// Perforation dots/dashes are anti-aliased, so a pixel at a rounded integer column/row won't
+/// necessarily land on the exact sub-pixel center — checking "not pure paper color" isolates
+/// "some perforation ink landed here" without being brittle to rounding.
 #[test]
 fn vertical_perforation_lines_land_at_mapped_columns() {
     let dpi = 100.0;
@@ -180,11 +167,8 @@ fn vertical_perforation_lines_land_at_mapped_columns() {
 #[test]
 fn page_perforation_dash_appears_at_page_height_but_not_at_zero() {
     let dpi = 100.0;
-    // A body x-range clear of both vertical perforation lines (at
-    // STRIP_WIDTH_IN/PAPER_WIDTH_IN-STRIP_WIDTH_IN) and the sprocket
-    // holes (further out still), so the only thing that can paint
-    // non-paper color in this x-range is a horizontal page-perforation
-    // dash.
+    // A body x-range clear of the vertical perforation lines and sprocket holes, so only a
+    // page-perforation dash can paint here.
     let x0 = (1.0f32 * dpi).round() as u32;
     let x1 = (8.5f32 * dpi).round() as u32;
 
@@ -197,8 +181,7 @@ fn page_perforation_dash_appears_at_page_height_but_not_at_zero() {
         "expected a page-perforation dash at y = PAGE_HEIGHT_IN"
     );
 
-    // A render range that only covers y=0 (the roll's start, not a
-    // perforation) must show no dash there.
+    // A render range covering only y=0 (the roll's start, not a perforation) must show no dash.
     let img0 = rasterize(&empty(), 0.0, 0.05, dpi, false);
     let has_dash_at_zero = (x0..x1).any(|x| pixel(&img0, x, 0) != PAPER_COLOR);
     assert!(

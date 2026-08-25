@@ -46,11 +46,9 @@ impl Envelope {
     }
 
     /// R13 write: (re)starts the envelope at the top of a fresh ramp (MAME
-    /// `envelope_t::set_shape`). CONT=0 shapes (bit 3 clear) are folded to
-    /// their CONT=1 equivalent — hold forced on, alternate following
-    /// whatever attack came out to — exactly like real AY-3-8910 silicon,
-    /// which only implements 10 of the 16 possible shape codes distinctly
-    /// (the CONT=0 codes duplicate 4 of the CONT=1 ones).
+    /// `envelope_t::set_shape`). CONT=0 shapes fold to their CONT=1 equivalent
+    /// (hold forced on) since real AY-3-8910 silicon only implements 10 of
+    /// the 16 shape codes distinctly.
     pub(super) fn set_shape(&mut self, shape_byte: u8) {
         self.attack = if shape_byte & shape::ATTACK != 0 {
             ENV_STEP_MASK as u8
@@ -68,9 +66,8 @@ impl Envelope {
         self.holding = false;
     }
 
-    /// One internal step (master_clock/8) of envelope pacing, `period`
-    /// internal steps per level (already multiplied by
-    /// `ENVELOPE_STEP_MULTIPLIER` by the caller).
+    /// One internal step (master_clock/8) of envelope pacing; `period` internal
+    /// steps per level (already multiplied by `ENVELOPE_STEP_MULTIPLIER` by the caller).
     pub(super) fn step_once(&mut self, period: u32) {
         if self.holding {
             return;
@@ -91,10 +88,9 @@ impl Envelope {
             self.holding = true;
             self.step = 0;
         } else {
-            // MAME re-checks `alternate` against the (still negative) `step`
-            // masked against `ENV_STEP_MASK + 1` here — always true for the
-            // only reachable negative value (-1), so this always fires when
-            // `alternate` is set, once per full ramp.
+            // MAME re-checks `alternate` against masked `step`, always true
+            // for the only reachable negative value (-1) — fires once per
+            // ramp when set.
             if self.alternate && (self.step & (ENV_STEP_MASK + 1)) != 0 {
                 self.attack ^= ENV_STEP_MASK as u8;
             }

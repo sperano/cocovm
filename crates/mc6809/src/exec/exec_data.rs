@@ -309,8 +309,7 @@ impl MC6809 {
     /// the 8-bit ALU (ADD/ADC/SUB/SBC/CMP for A and B).
     pub(super) fn exec_indexed(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
         match opcode {
-            // LEA — load effective address into a register.
-            // LEAX/LEAY set Z from the result; LEAS/LEAU affect no flags.
+            // LEA: LEAX/LEAY set Z from the result; LEAS/LEAU affect no flags.
             0x30 => {
                 let (ea, ic) = self.ea_indexed(bus);
                 self.x = ea;

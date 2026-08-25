@@ -46,18 +46,12 @@ const LONG_BRANCH: [&str; 16] = [
 
 // ---- Base page ------------------------------------------------------------
 
-/// Opcode -> (mnemonic, mode) for the base (unprefixed) page. `$10`/`$11` are
-/// intercepted in [`super::decode_base`] before reaching here. Anything not
-/// matched falls to [`ILLEGAL`] — this covers both the documented single-byte
-/// illegal set (0x14, 0x15, 0x18, 0x1B, 0x38, 0x3E) and the "STx immediate"
-/// slots (0x87, 0x8F, 0xC7, 0xCD, 0xCF) where storing to an immediate operand
-/// is nonsensical (see the crate-level task report for the two of these five
-/// — 0x87, 0xCF — that a prior spec pass missed).
+/// Opcode -> (mnemonic, mode) for the base (unprefixed) page (`$10`/`$11` are
+/// intercepted earlier); anything unmatched falls to [`ILLEGAL`].
 pub(super) fn base_entry(op: u8) -> Entry {
     use Mode::*;
     match op {
-        // JMP is spliced into the RMW ranges and MUST be checked before the
-        // generic nibble dispatch (mirrors the ordering note in `step`).
+        // JMP is spliced into the RMW ranges; must be checked before the generic nibble dispatch.
         0x0E => e("JMP", Direct),
         0x6E => e("JMP", Indexed),
         0x7E => e("JMP", Extended),
@@ -328,9 +322,7 @@ fn base_entry_wide_and_subr(op: u8) -> Entry {
 }
 
 /// `$10`-prefixed page: long conditional branches, CMPD/CMPY/LDY/STY/LDS/STS,
-/// SWI2. Everything else is undecoded by the core (falls to its 2-cycle
-/// default after only the prefix + second byte are read) and disassembles as
-/// `"???"` at length 2.
+/// SWI2. Everything else is undecoded and disassembles as `"???"` at length 2.
 pub(super) fn page10_entry(op2: u8) -> Entry {
     use Mode::*;
     match op2 {

@@ -138,41 +138,24 @@ impl DebuggerPanel {
 
     // ---- Run-loop integration ----------------------------------------------
 
-    /// Run one video field through the debugger core, for `CocoApp::update`'s
-    /// running loop to call instead of `Machine::run_field` directly. Chains
-    /// `run_until` calls across `FieldComplete`/`Step` until the field
-    /// actually completes (matching `Machine::run_field`'s contract exactly
-    /// when no breakpoint/watchpoint is set — the common case) or a
-    /// breakpoint/watchpoint trips, in which case this returns `false` so the
-    /// caller can pause (`self.running = false`), same as the debugger
-    /// panel's own Pause control.
+    /// Run one video field through the debugger core, for `CocoApp::update`'s running
+    /// loop to call instead of `Machine::run_field` directly. Returns `false` if a
+    /// breakpoint/watchpoint tripped, so the caller can pause.
     pub fn run_field(&mut self, machine: &mut Machine) -> bool {
         for _ in 0..MAX_CHAINED_RUNS {
             match self.core.run_until(machine, RUN_BUDGET) {
-                // The field this call was asked to run is done — stop here,
-                // unlike `run_until_stop`, which wants to keep going past
-                // field boundaries. Conflating the two was a real bug caught
-                // by `run_field_with_no_breakpoints_matches_plain_run_field`:
-                // treating `FieldComplete` as "keep looping" silently ran
-                // extra fields per call.
+                // Stop here, unlike `run_until_stop`, which keeps going past field boundaries.
                 StopReason::FieldComplete => return true,
-                // Budget exhausted before either a field boundary or a stop
-                // condition — keep going within the same field.
                 StopReason::Step => continue,
                 StopReason::Breakpoint(_) | StopReason::Watchpoint { .. } => return false,
             }
         }
-        // A single field needing more than MAX_CHAINED_RUNS * RUN_BUDGET
-        // instructions isn't physically possible at real CoCo timings; report
-        // "continue" rather than spuriously acting like a breakpoint fired.
+        // Not physically possible at real CoCo timings; report "continue", not a false breakpoint.
         true
     }
 
-    /// Chain `run_until` calls the same way [`Self::run_field`] does, but
-    /// without a field-boundary exit condition — used by Step Over/Run-to-
-    /// Cursor, which want to run past any number of field boundaries until a
-    /// breakpoint (their own temporary one, or any other enabled one) or
-    /// watchpoint trips, or the safety cap gives up.
+    /// Like [`Self::run_field`] but with no field-boundary exit — runs past any number
+    /// of fields until a breakpoint/watchpoint trips or the safety cap gives up.
     fn run_until_stop(&mut self, machine: &mut Machine) {
         for _ in 0..MAX_CHAINED_RUNS {
             match self.core.run_until(machine, RUN_BUDGET) {
@@ -182,9 +165,8 @@ impl DebuggerPanel {
         }
     }
 
-    /// Run until `target` (a temporary breakpoint, unless one already exists
-    /// there — in which case the user's own breakpoint is left alone
-    /// afterwards) or any other stop condition trips first.
+    /// Run until `target` (a temporary breakpoint, unless the user already has one
+    /// there) or any other stop condition trips first.
     fn run_to(&mut self, machine: &mut Machine, target: u16) {
         let had_existing = self.core.breakpoint(target).is_some();
         if !had_existing {
@@ -198,11 +180,9 @@ impl DebuggerPanel {
 
     // ---- Stepping primitives (bypass the Debugger core — see each doc) ----
 
-    /// Step In: exactly one retired instruction, skipping over (not stopping
-    /// on) any burned HALT* cycles — a click should always advance real CPU
-    /// state, not just burn one HALT cycle. Does not consult breakpoints:
-    /// it's a single deterministic step already fully under the user's
-    /// control.
+    /// Step In: exactly one retired instruction, skipping burned HALT* cycles so a
+    /// click always advances real CPU state. Ignores breakpoints — it's already a
+    /// single deterministic step under the user's control.
     fn step_in(machine: &mut Machine) {
         for _ in 0..MAX_RAW_STEPS {
             if matches!(
@@ -214,9 +194,8 @@ impl DebuggerPanel {
         }
     }
 
-    /// Step Over: temp-breakpoints past a call instruction (JSR/BSR/LBSR) so
-    /// the callee runs to completion in one step; falls back to Step In for
-    /// every other opcode.
+    /// Step Over: temp-breakpoints past a call (JSR/BSR/LBSR) so the callee runs to
+    /// completion in one step; falls back to Step In for every other opcode.
     fn step_over(&mut self, machine: &mut Machine) {
         let pc = machine.cpu.pc;
         let insn = disassemble(&mut |a| machine.bus.peek(a), pc);
@@ -228,14 +207,8 @@ impl DebuggerPanel {
         self.run_to(machine, return_addr);
     }
 
-    /// Step Out: run until S rises past its value at the start of the call
-    /// — i.e. until the enclosing subroutine's
-    /// RTS has popped the return address. Checked after every real
-    /// instruction, so (unlike Step Over/Run-to-Cursor) this does not chain
-    /// through `Debugger::run_until` and consequently does not stop early for
-    /// a breakpoint/watchpoint hit inside the callee — a known limitation,
-    /// acceptable because the S-rise condition itself isn't something the
-    /// Debugger core's breakpoint/watchpoint machinery can express.
+    /// Step Out: run until S rises past its call-time value (the enclosing RTS popped
+    /// the return address). Doesn't stop early for a breakpoint/watchpoint in the callee.
     fn step_out(machine: &mut Machine) {
         let s0 = machine.cpu.s;
         for _ in 0..MAX_RAW_STEPS {
@@ -260,20 +233,14 @@ impl DebuggerPanel {
 
     // ---- Top-level UI -------------------------------------------------------
 
-    /// Draw every panel, if [`Self::open`]. Called unconditionally once per
-    /// `update()`, like the app's other optional windows.
-    ///
-    /// The panels live in their own native OS window (an egui *immediate
-    /// viewport*, same pattern as `paper_view::PaperWindow::ui`) so the
-    /// debugger never covers the emulated screen. On a backend without
-    /// native multi-window support egui reports `ViewportClass::Embedded`
-    /// and the panels fall back to floating over the main viewport.
+    /// Draw every panel, if [`Self::open`]. The panels live in their own native OS
+    /// window so the debugger never covers the emulated screen; falls back to floating
+    /// over the main viewport on backends without multi-window support.
     pub fn windows_ui(&mut self, ctx: &egui::Context, machine: &mut Machine, running: &mut bool) {
         if !self.open {
             return;
         }
-        // One stable ID so egui reuses the same native OS window across
-        // frames instead of spawning a new one.
+        // Stable ID so egui reuses the same native OS window instead of spawning a new one.
         let viewport_id = egui::ViewportId::from_hash_of("debugger");
         let builder = egui::ViewportBuilder::default()
             .with_title("Debugger")
@@ -281,21 +248,13 @@ impl DebuggerPanel {
             .with_min_inner_size([480.0, 320.0]);
         ctx.show_viewport_immediate(viewport_id, builder, |ctx, class| {
             if class != egui::ViewportClass::Embedded {
-                // Backdrop for the panel cluster to float over; without it
-                // the viewport is unpainted.
+                // Backdrop for the panel cluster to float over; without it the viewport is
+                // unpainted.
                 egui::CentralPanel::default().show(ctx, |_ui| {});
-                // The OS close button: accept the close by not showing the
-                // viewport next frame (mirrors the Debug tile / ⌘D toggle).
                 if ctx.input(|i| i.viewport().close_requested()) {
                     self.open = false;
                 }
-                // ⌘D typed while this native window holds OS keyboard focus
-                // lands in *this* viewport's `InputState`, invisible to the
-                // VM window's `consume_app_shortcuts` — so the close half of
-                // the toggle is consumed here too. Skipped on the embedded
-                // fallback, where there is only one shared `InputState` and
-                // `consume_app_shortcuts` has already consumed the chord
-                // earlier this frame.
+                // This viewport has its own InputState, invisible to consume_app_shortcuts.
                 if ctx.input_mut(|i| i.consume_shortcut(&DEBUGGER_SHORTCUT)) {
                     self.open = false;
                 }
@@ -304,17 +263,14 @@ impl DebuggerPanel {
         });
     }
 
-    /// The one debugger open/close toggle, shared by the VM toolbar's Debug
-    /// tile and [`DEBUGGER_SHORTCUT`] (`CocoApp::consume_app_shortcuts`) so
-    /// the two surfaces can't drift.
+    /// The one debugger open/close toggle, shared by the VM toolbar's Debug tile
+    /// and [`DEBUGGER_SHORTCUT`] so the two surfaces can't drift.
     pub fn toggle(&mut self) {
         self.open = !self.open;
     }
 
-    /// The six panel windows. Inside [`Self::windows_ui`]'s viewport closure
-    /// they render into the debugger's native window; on the embedded
-    /// fallback path they land in the main viewport, exactly as before the
-    /// debugger became a native window.
+    /// The six panel windows, rendered into the debugger's native window (or the
+    /// main viewport, on the embedded fallback path).
     fn panel_windows(&mut self, ctx: &egui::Context, machine: &mut Machine, running: &mut bool) {
         egui::Window::new(crate::window_title(ctx, "Debug: Controls"))
             .default_pos([20.0, 40.0])

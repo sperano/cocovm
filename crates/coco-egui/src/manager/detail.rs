@@ -13,8 +13,8 @@ use super::detail_map;
 use super::{DETAIL_SECTION_GAP, EditState, ManagerApp, NO_CONFIG_DIR, vm_status_label};
 
 /// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
-/// [`new_vm::FORM_LABEL_MIN_WIDTH`] — the shared floor is what keeps the
-/// sections' combo columns aligned with each other).
+/// [`new_vm::FORM_LABEL_MIN_WIDTH`]) — the shared floor keeps the sections'
+/// combo columns aligned with each other.
 fn form_grid(salt: (&str, &str)) -> egui::Grid {
     egui::Grid::new(salt)
         .num_columns(2)
@@ -22,19 +22,9 @@ fn form_grid(salt: (&str, &str)) -> egui::Grid {
         .min_col_width(new_vm::FORM_LABEL_MIN_WIDTH)
 }
 
-/// The machine form (`new_vm::MachineForm`), laid out in sections: the
-/// Machine (Model), RAM, Display (VDG/Video/Monitor/aspect), Peripherals
-/// (Cassette/Cartridge/VHD), Ports (Serial), Joysticks (per-port input
-/// source), and Keyboard fieldsets — each grid its own, since a
-/// `titled_group` can't sit inside a grid row. Joysticks sits after Ports
-/// (both are physical-port fieldsets) and before Keyboard (which stays
-/// last). The RAM, Joysticks, and Keyboard fieldsets are one row of
-/// controls with no field label (the group's title says it all); they edit
-/// the same draft as every grid row, so the caller's autosave picks them up
-/// like any other form edit. Joysticks and Keyboard are both `[ui]`
-/// preferences like aspect — the launched window's *starting* state; the
-/// status bar's joysticks entry and F12 keep working as live toggles
-/// afterwards.
+/// The machine form, laid out in sections: Machine, RAM, Display,
+/// Peripherals, Ports, Joysticks, and Keyboard — each its own grid, since a
+/// `titled_group` can't sit inside a grid row.
 fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Machine", |ui| {
         form_grid(("detail_form_machine", slug)).show(ui, |ui| {
@@ -88,12 +78,9 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
 /// site).
 const STATS_REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// The runtime total to display: a live VM's own `CocoApp::total_runtime`
-/// when one exists (so the number ticks while it's open), else the persisted
-/// `[stats].runtime_secs` — one source of truth while a VM is alive, the same
-/// formula the status bar uses (`chrome::status_bar`'s `runtime_status`).
-/// Pure so it's unit-testable without an egui context (`detail_test.rs`),
-/// like [`humanize_runtime`].
+/// The runtime total to display: a live VM's own `total_runtime` when one
+/// exists, else the persisted `[stats].runtime_secs` — the same formula the
+/// status bar uses.
 fn displayed_runtime_secs(entry: &super::MachineEntry) -> u64 {
     match entry.vm.as_ref() {
         Some(vm) => vm.total_runtime.as_secs(),
@@ -102,8 +89,7 @@ fn displayed_runtime_secs(entry: &super::MachineEntry) -> u64 {
 }
 
 /// "Started" row text — `"N times"`, correctly singular for one
-/// (`"1 time"`, not "1 times"). Pure, like [`humanize_runtime`], for the
-/// same reason.
+/// (`"1 time"`, not "1 times").
 fn started_label(starts: u32) -> String {
     if starts == 1 {
         "1 time".to_string()
@@ -112,12 +98,9 @@ fn started_label(starts: u32) -> String {
     }
 }
 
-/// Read-only "Statistics" block: created date (omitted if never recorded —
-/// only true for a definition hand-written before this field existed, since
-/// every definition the manager itself creates sets it), cumulative
+/// Read-only "Statistics" block: created date (if recorded), cumulative
 /// powered-on runtime ([`displayed_runtime_secs`]), and boot count. Never
-/// edited here — folding/incrementing happens in `manager::lifecycle`, this
-/// just reads.
+/// edited here — folding/incrementing happens in `manager::lifecycle`.
 fn draw_statistics(ui: &mut egui::Ui, slug: &str, entry: &super::MachineEntry) {
     titled_group(ui, "Statistics", |ui| {
         form_grid(("detail_form_stats", slug)).show(ui, |ui| {
@@ -135,11 +118,8 @@ fn draw_statistics(ui: &mut egui::Ui, slug: &str, entry: &super::MachineEntry) {
         });
     });
     if entry.is_running() {
-        // Native-viewport case: this pane's own window must ask for its
-        // next repaint itself to keep the Runtime row ticking once a
-        // second. The manager's Embedded fallback (no native viewports
-        // available) already repaints every frame via `step_emulation`
-        // (`app/frame.rs`), so this is redundant but harmless there.
+        // Native-viewport windows need this to keep Runtime ticking;
+        // redundant but harmless under the Embedded fallback.
         ui.ctx().request_repaint_after(STATS_REPAINT_INTERVAL);
     }
 }

@@ -25,12 +25,7 @@ impl DebuggerPanel {
                             let hi = machine.bus.peek(addr);
                             let lo = machine.bus.peek(addr.wrapping_add(1));
                             let word = (u16::from(hi) << 8) | u16::from(lo);
-                            // Candidate return-address annotation: disassemble
-                            // whatever is AT this 16-bit stack value, so a
-                            // genuine return address reads as recognizable code
-                            // next to it — not every
-                            // slot holds one (locals, saved registers), so this
-                            // is a best-effort hint, not a claim.
+                            // Best-effort hint, not a claim: not every slot holds a return address.
                             let insn = disassemble(&mut |a| machine.bus.peek(a), word);
                             ui.label(format!("${addr:04X}"));
                             ui.label(format!("${word:04X}"));

@@ -70,14 +70,7 @@ impl PIAPort {
     }
 
     /// Drive the Cx1 line to `level`, latching the Cx1 flag only on a real
-    /// transition whose direction matches CRA/CRB bit 1 ([`cr::C1_EDGE_HIGH`]):
-    /// bit1=1 selects low→high, bit1=0 selects high→low. A call that repeats
-    /// the current level (no edge) never sets the flag, and an edge in the
-    /// non-selected direction doesn't either — matching MAME `6821pia.cpp`
-    /// `c1_low_to_high`/`c1_high_to_low` (~line 1107): the flag sets iff
-    /// `(m_in_c1 != state) && ((state && rising_selected) || (!state &&
-    /// falling_selected))`. The CoCo wires horizontal sync to PIA0 CA1 and
-    /// field sync to PIA0 CB1.
+    /// transition whose direction matches CRA/CRB bit 1 ([`cr::C1_EDGE_HIGH`]).
     pub fn set_c1(&mut self, level: bool) {
         let transitioned = self.c1_level != level;
         self.c1_level = level;
@@ -96,10 +89,7 @@ impl PIAPort {
     }
 
     /// The Cx2 pin level when programmed as a set/reset output (control bits
-    /// 5:4 = 11, the only Cx2 output mode the CoCo uses — the ROM's standard
-    /// control values are $34/$3C). The CoCo hangs the joystick-mux selects on
-    /// PIA0 CA2/CB2 and the sound enable on PIA1 CB2. Handshake/pulse strobe
-    /// modes (bit 4 = 0) are not modelled; they'd need bus-cycle hooks.
+    /// 5:4 = 11, the only Cx2 output mode the CoCo uses). Handshake/pulse modes are not modelled.
     pub fn c2_output(&self) -> bool {
         self.control & cr::C2_SET != 0
     }
@@ -137,11 +127,8 @@ impl MC6821 {
         }
     }
 
-    /// Side-effect-free read for the debugger ([`crate::SystemBus::peek`]): the
-    /// value [`MC6821::read`] would return for `reg`, but WITHOUT clearing the
-    /// Cx1/Cx2 interrupt flags. `a_input`/`b_input` are the freshly sampled
-    /// input-pin states — the bus recomputes them the same way a real read
-    /// refreshes `PIAPort::input` first.
+    /// Side-effect-free read for the debugger ([`crate::SystemBus::peek`]): same
+    /// as [`MC6821::read`] but without clearing the Cx1/Cx2 interrupt flags.
     pub fn peek(&self, reg: u8, a_input: u8, b_input: u8) -> u8 {
         match reg & 0x03 {
             0 => Self::peek_side(&self.a, a_input),

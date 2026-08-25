@@ -76,7 +76,7 @@ fn field_sync_irq_breaks_the_idle_loop() {
     let mut pcs = std::collections::HashSet::new();
     for _ in 0..2000 {
         pcs.insert(m.cpu.pc);
-        m.step();
+        m.step_cpu_raw();
     }
     assert!(
         pcs.len() > 3,

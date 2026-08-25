@@ -12,17 +12,10 @@ const ROMS_KIND: &str = "roms";
 /// Directory name for disk/VHD images under a candidate root.
 const DISKS_KIND: &str = "disks";
 
-/// The app's XDG data dir (`~/.local/share/cocovm` on Linux/macOS), or
-/// `None` if no home directory can be determined.
-///
-/// The `AppStrategyArgs` literal below must be kept in sync **by hand**
-/// with the identical one in `crates/coco-egui/src/paths.rs`'s
-/// `strategy()` — there's no dependency edge from this crate to coco-egui
-/// to share it, so this is a manually-maintained duplication.
-///
-/// Exposed as `pub` so a cross-crate test in `crates/coco-egui/src/paths_test.rs`
-/// can assert the two literals stay in sync, turning the "by hand" note
-/// above into an enforced invariant instead of just a warning.
+/// The app's XDG data dir (`~/.local/share/cocovm` on Linux/macOS), or `None`
+/// if no home directory can be determined. The `AppStrategyArgs` below must
+/// stay hand-synced with the identical literal in `coco-egui/src/paths.rs`'s
+/// `strategy()`; `pub` so `coco-egui/src/paths_test.rs` can assert that.
 pub fn xdg_data_dir() -> Option<PathBuf> {
     etcetera::choose_app_strategy(AppStrategyArgs {
         top_level_domain: "quebec".to_string(),

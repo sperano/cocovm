@@ -65,13 +65,10 @@ pub struct VDGGraphicsMode {
 /// Mask for the 3-bit SAM V value (`V2:V1:V0`) passed to [`decode_vdg_graphics`].
 const SAM_VIDEO_MASK: u8 = 0x07;
 
-/// Decode the VDG graphics mode. The horizontal geometry (bytes per row, bits
-/// per pixel, logical width) comes from PIA1 $FF22 GM2–0; the five BASIC PMODEs
-/// are RG2/CG3/RG3/CG6/RG6. The vertical geometry (RAM rows fetched) instead
-/// comes from `sam_video`, the SAM V0–V2 bits (`V2:V1:V0`, 0–7) — see
-/// [`LEGACY_GFX_LINES_PER_ROW`]. Real BASIC always programs matching GM/V pairs,
-/// but the two are independent on hardware and this function does not reconcile
-/// a mismatched pairing: it just follows each source for its own axis.
+/// Decodes the VDG graphics mode: horizontal geometry (bytes/row, bpp,
+/// width) from PIA1 $FF22 GM2-0; vertical geometry (RAM rows, see
+/// [`LEGACY_GFX_LINES_PER_ROW`]) from SAM V0-V2, independently — a
+/// mismatched GM/V pairing is not reconciled, on hardware or here.
 pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VDGGraphicsMode {
     let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
     // (logical width, 4-colour?) for GM2..GM0 = 0..7.
@@ -105,10 +102,9 @@ pub fn vdg_palette_indices(bpp: usize, css: usize) -> &'static [usize] {
     }
 }
 
-/// Paint one scan line of a legacy VDG graphics (PMODE) row into `out` (an
-/// active-area pixel span). `row_data` is the current RAM row's bytes;
-/// each logical pixel is duplicated `xscale` times (`xscale` already folds
-/// the mode's own doubling into the canvas width).
+/// Paints one scan line of a legacy VDG graphics (PMODE) row into `out`.
+/// `row_data` is the current RAM row's bytes; each logical pixel is
+/// duplicated `xscale` times (already folding the mode's own doubling).
 pub fn paint_legacy_graphics_line(
     row_data: &[u8],
     mode: &VDGGraphicsMode,
@@ -131,9 +127,9 @@ pub fn paint_legacy_graphics_line(
     }
 }
 
-/// Render a VDG graphics field. `data` is the video RAM snapshot
-/// (`bytes_per_row * rows` bytes); `colors` is the resolved 2- or 4-entry LUT
-/// (pixel value → RGBA). Each logical pixel is scaled to fill the 256×192 active area.
+/// Renders a VDG graphics field. `data` is the video RAM snapshot
+/// (`bytes_per_row * rows` bytes); `colors` is the resolved 2- or 4-entry
+/// LUT, scaled to fill the 256×192 active area.
 pub fn render_graphics(
     data: &[u8],
     mode: &VDGGraphicsMode,

@@ -8,14 +8,9 @@ use tracing_subscriber::filter::LevelFilter;
 
 use crate::paths;
 
-/// Seed the environment from a `.env` file, before anything reads it.
-///
-/// Two lookups, because the two ways the app starts have different working
-/// directories: from a terminal, `dotenv` walks up from the CWD, which finds
-/// a checkout's own `.env`; from Finder or an `.app` bundle the CWD is `/`,
-/// so that walk finds nothing and the per-user config directory answers
-/// instead. Real environment variables always win — neither call overwrites
-/// a key that is already set — and a missing file is not an error.
+/// Seed the environment from a `.env` file, before anything reads it. Two
+/// lookups — CWD-relative and per-user config dir — cover both a terminal
+/// launch and an app-bundle launch (CWD `/`).
 pub(crate) fn load_dotenv() {
     let _ = dotenvy::dotenv();
     if let Some(dir) = paths::config_dir() {
@@ -23,24 +18,16 @@ pub(crate) fn load_dotenv() {
     }
 }
 
-/// Whether stdout can carry ANSI color: the console took the VT opt-in and
-/// stdout is a terminal.
-///
-/// Legacy Windows conhost only interprets escape codes after the app opts in
-/// — a no-op everywhere else — so this has to run before anything colors
-/// stdout. [`banner`] depends on the opt-in too, but not on this return
-/// value: `owo_colors`' `if_supports_color` detects the terminal itself.
+/// Whether stdout can carry ANSI color: the console took the VT opt-in
+/// (Windows conhost; a no-op elsewhere) and stdout is a terminal.
 pub(crate) fn use_color() -> bool {
     enable_ansi_support::enable_ansi_support().is_ok()
         && std::io::IsTerminal::is_terminal(&std::io::stdout())
 }
 
-/// Install the global log subscriber: leveled stdout logging at `level`,
-/// colored only when `use_color` says stdout can take it.
-///
-/// `level` is only the *default* directive — `RUST_LOG` still wins when set,
-/// because it can filter per module (`RUST_LOG=info,eframe=warn`,
-/// `RUST_LOG=coco_egui::audio=debug`), which `--log-level` cannot express.
+/// Install the global log subscriber at `level`, colored only when
+/// `use_color` allows it. `RUST_LOG` still wins when set — it filters per
+/// module, which `--log-level` cannot express.
 pub(crate) fn setup_logging(use_color: bool, level: LevelFilter) {
     tracing_subscriber::fmt()
         .with_ansi(use_color)
@@ -72,8 +59,7 @@ pub(crate) struct StartupInfo {
 impl StartupInfo {
     /// `"8 ROMs and 7 machine configurations found."`
     fn inventory(&self) -> String {
-        // Not `pluralize`: it upper-cases the suffix of an all-caps acronym
-        // ("ROMS"), and the initialism reads as "ROMs".
+        // Not `pluralize`: it upper-cases ROMS's suffix; the initialism reads as ROMs.
         let roms = format!("{} ROM{}", self.roms, if self.roms == 1 { "" } else { "s" });
         let machine_count = isize::try_from(self.machines).unwrap_or(isize::MAX);
         let machines = pluralize("machine configuration", machine_count, true);
@@ -87,18 +73,14 @@ fn dim(s: &str) -> String {
         .to_string()
 }
 
-/// Whether a directory entry names a ROM image.
-///
-/// Dotfiles are rejected: unpacking the asset tarball on macOS leaves an
-/// AppleDouble `._name.rom` beside every real ROM, which would double the
-/// count.
+/// Whether a directory entry names a ROM image. Dotfiles are rejected —
+/// macOS's AppleDouble `._name.rom` siblings would double the count.
 fn is_rom_file(name: &str) -> bool {
     !name.starts_with('.') && name.ends_with(".rom")
 }
 
-/// How many ROM images are installed in [`paths::roms_dir`].
-///
-/// A missing or unreadable directory simply counts as zero.
+/// How many ROM images are installed in [`paths::roms_dir`]. A missing or
+/// unreadable directory simply counts as zero.
 pub(crate) fn rom_count() -> usize {
     let Some(dir) = paths::roms_dir() else {
         return 0;
@@ -183,17 +165,10 @@ pub(crate) fn ensure_assets() {
     }
 }
 
-/// Describe which graphics backend eframe actually created, and on what GPU,
-/// as one banner-sized line.
-///
-/// eframe has no backend-name API: `CreationContext` carries one handle per
-/// compiled backend (`gl` for glow, `wgpu_render_state` behind the `wgpu`
-/// feature) and the *presence* of a handle is the portable signal — so this
-/// matches on the handles rather than assuming a backend. Each arm then
-/// uses that backend's own introspection: wgpu's `AdapterInfo` names the
-/// API and GPU directly; glow's cached [`eframe::glow::Version`] (a safe
-/// call) distinguishes OpenGL from OpenGL ES, with only the GPU-name
-/// string needing a raw `glGetString`.
+/// Describe which graphics backend eframe actually created, and on what
+/// GPU, as one banner-sized line. eframe has no backend-name API, so this
+/// matches on which `CreationContext` handle is present and uses that
+/// backend's own introspection.
 pub(crate) fn renderer_info(cc: &eframe::CreationContext<'_>) -> String {
     #[cfg(feature = "wgpu")]
     if let Some(render_state) = cc.wgpu_render_state.as_ref() {
@@ -210,9 +185,8 @@ pub(crate) fn renderer_info(cc: &eframe::CreationContext<'_>) -> String {
         } else {
             "OpenGL"
         };
-        // Safety: eframe made this context current on this thread for the
-        // duration of the creation closure, and VERSION/RENDERER are valid
-        // `glGetString` enums.
+        // Safety: eframe made this context current for the creation closure; VERSION/RENDERER
+        // are valid glGetString enums.
         let (version, renderer) = unsafe {
             (
                 gl.get_parameter_string(eframe::glow::VERSION),

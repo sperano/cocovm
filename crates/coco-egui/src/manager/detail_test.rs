@@ -23,12 +23,9 @@ fn displayed_runtime_secs_is_persisted_total_with_no_live_vm() {
     assert_eq!(displayed_runtime_secs(&entry), 100);
 }
 
-/// With a live VM, its own `total_runtime` is the one source of truth —
-/// note this def's persisted `runtime_secs` is left at 0 (the default),
-/// distinct from the VM's seeded-then-advanced total, and the display must
-/// track the latter. Boots a real machine via `crate::launch_machine`, same
-/// as `lifecycle_test.rs` — reads the real `roms/coco3.rom` (git-ignored,
-/// local-only).
+/// With a live VM, its own `total_runtime` is the source of truth — the
+/// persisted `runtime_secs` stays at 0 while the display tracks the VM's
+/// seeded-then-advanced total.
 #[test]
 fn displayed_runtime_secs_reads_the_live_vms_total_runtime() {
     let def = machine_def::MachineDef::from_config(

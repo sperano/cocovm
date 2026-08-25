@@ -45,7 +45,7 @@ fn main() {
                 if matches!(m.cpu.state, mc6809::State::Syncing) {
                     sync_steps += 1;
                 }
-                spent += m.step();
+                spent += m.step_cpu_raw();
                 if m.bus.gime.palette != before {
                     writes += 1;
                     if writes <= 40 || writes.is_multiple_of(500) {

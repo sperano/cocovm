@@ -52,10 +52,7 @@ impl Selection {
     }
 
     /// Shift-click: replace the selection with the inclusive range between
-    /// `anchor` and `i`, in either order. `anchor` becomes the new anchor
-    /// too (a no-op when it already was one, which is the only way callers
-    /// reach this — [`super::list`]'s click handler always passes the
-    /// *current* anchor through unchanged).
+    /// `anchor` and `i`, in either order. `anchor` becomes the new anchor too.
     pub(super) fn select_range(&mut self, anchor: usize, i: usize) {
         self.rows = (anchor.min(i)..=anchor.max(i)).collect();
         self.anchor = Some(anchor);
@@ -85,8 +82,7 @@ impl Selection {
     }
 
     /// The current anchor, for [`super::list`]'s Shift-click handler to
-    /// extend from (falling back to the clicked row itself when there is
-    /// none yet — an anchor-less Shift-click behaves as a plain click).
+    /// extend from. An anchor-less Shift-click behaves as a plain click.
     pub(super) fn anchor(&self) -> Option<usize> {
         self.anchor
     }
@@ -105,11 +101,8 @@ impl Selection {
     }
 
     /// Capture every selected row's slug (and the anchor's), so
-    /// [`Self::restore`] can re-find them once `entries` has been reordered
-    /// in place. Call *after* any in-place slug edit and *before* the
-    /// reorder itself (`lifecycle::migrate_slug`'s order), so a renamed,
-    /// selected row's own new slug is what gets captured — not the stale
-    /// one it's about to shed.
+    /// [`Self::restore`] can re-find them once `entries` has been reordered.
+    /// Call after any in-place slug edit but before the reorder itself.
     pub(super) fn snapshot(&self, entries: &[MachineEntry]) -> SelectionSnapshot {
         SelectionSnapshot {
             rows: self
@@ -126,11 +119,7 @@ impl Selection {
     }
 
     /// Restore a [`Self::snapshot`] against `entries`' current order. A
-    /// slug the snapshot recorded but that no longer exists is simply
-    /// dropped — a re-sort never removes rows, so this only matters if this
-    /// helper is ever reused somewhere rows can vanish too (hence
-    /// [`Self::drop_anchor_if_empty`] afterward, to keep the invariant even
-    /// in that case).
+    /// slug the snapshot recorded but that no longer exists is simply dropped.
     pub(super) fn restore(&mut self, entries: &[MachineEntry], snapshot: &SelectionSnapshot) {
         self.rows = snapshot
             .rows
@@ -144,13 +133,9 @@ impl Selection {
         self.drop_anchor_if_empty();
     }
 
-    /// Fix up indices after `entries.remove(index)`
-    /// (`lifecycle::delete_machine`): `index` itself drops out of the
-    /// selection, everything past it shifts down by one, and the anchor
-    /// follows the same rule — including dropping out entirely, which
-    /// [`Self::drop_anchor_if_empty`] then reconciles against `rows`
-    /// (an anchor that survived on some *other*, still-out-of-selection row
-    /// must not outlive the last actually-selected row being removed).
+    /// Fix up indices after `entries.remove(index)`: `index` itself drops
+    /// out of the selection, everything past it shifts down by one, and the
+    /// anchor follows the same rule.
     pub(super) fn remove_index(&mut self, index: usize) {
         self.rows = self
             .rows
@@ -161,17 +146,10 @@ impl Selection {
         self.drop_anchor_if_empty();
     }
 
-    /// Enforce "the anchor is `None` exactly when `rows` is empty"
-    /// (`Self::anchor`'s doc) after a mutation that can empty `rows`
-    /// without itself deciding the anchor's fate — unlike `toggle`, which
-    /// always sets the anchor to the row it just touched (in or out),
-    /// `remove_index` and `restore` independently filter/remap `rows` and
-    /// `anchor`, and an anchor can legally sit on a row that isn't selected
-    /// (`toggle` leaves it there after toggling a row *off*), so it can
-    /// survive a `rows`-emptying removal/remap with a stale `Some` behind
-    /// it. Left unfixed, a later Shift-click with nothing selected would
-    /// range-select from that ghost anchor instead of behaving like a
-    /// plain click.
+    /// Enforce "the anchor is `None` exactly when `rows` is empty" after a
+    /// mutation that can empty `rows` without itself deciding the anchor's
+    /// fate. Left unfixed, a later Shift-click with nothing selected would
+    /// range-select from a ghost anchor instead of behaving like a plain click.
     fn drop_anchor_if_empty(&mut self) {
         if self.rows.is_empty() {
             self.anchor = None;

@@ -171,9 +171,7 @@ impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
         let mut cpu = MC6809::new();
         let mut bus = crate::SystemBus::new(config.variant, config.memory, rom);
-        // `None` (CoCo 1/2 — no monitor port) leaves the GIME's default in
-        // place; the chip field is never consulted on those variants
-        // (`legacy_palette` resolves the fixed VDG table).
+        // `None` (CoCo 1/2) leaves the GIME default; unused on those variants.
         if let Some(monitor) = config.monitor {
             bus.gime.monitor = monitor;
         }
@@ -197,26 +195,9 @@ impl Machine {
         }
     }
 
-    /// Restore-time fixups for every `#[serde(skip)]` field, after a
-    /// snapshot round-trip: the convention is
-    /// that every skipped field is either rebuilt here or re-injected via an
-    /// explicit `reattach_*`/`set_*` call. Safe to call before any ROM/media
-    /// reattachment — this touches only derived scratch, never copyrighted
-    /// bytes or host resources.
-    ///
-    /// - `framebuffer`/`fb_width`/`fb_height`: reallocated to match the
-    ///   geometry the machine was saved in. A latched `field_scan` means a
-    ///   CoCo 3 field is in flight on the canonical raster, and the
-    ///   per-scanline painters index the canvas-sized buffer directly —
-    ///   [`Machine::render_scanline`] only re-establishes that size at
-    ///   line 0, so a mid-field restore must recreate it here or the next
-    ///   painted line indexes out of bounds. Rows painted before the save
-    ///   come back blank and repaint on the next field; execution is
-    ///   unaffected. Without a latched field the legacy geometry applies
-    ///   ([`Machine::reset_legacy_fb`]).
-    /// - `graphics_scratch`/`audio_buffer`: left as the `Default` empty
-    ///   `Vec`s from deserialization; both grow back to size on demand
-    ///   (`resize`/`push`), so there's nothing to rebuild.
+    /// Restore-time fixups for every `#[serde(skip)]` field after a snapshot
+    /// round-trip. A latched `field_scan` must reallocate the canvas-sized
+    /// framebuffer here, or the next painted line indexes out of bounds.
     pub fn after_restore(&mut self) {
         if self.field_scan.is_some() {
             self.framebuffer.resize(
@@ -231,69 +212,60 @@ impl Machine {
         self.bus.after_restore();
     }
 
-    /// The CPU clock (the `CPU_HZ` constant above) for callers converting
-    /// cycle counts to wall-clock time outside the run loop —
-    /// e.g. `cassette_wav`'s WAV encode/decode, which times tape bit
-    /// periods in CPU cycles the same way
-    /// [`Cassette::tick`](crate::cassette::Cassette::tick) does. Always the
-    /// normal-speed clock: the transient GIME double-speed POKE
-    /// (`self.bus.gime.cpu_fast`) doesn't apply to cassette I/O, which the
-    /// stock ROM never runs at double speed.
+    /// The CPU clock, for callers converting cycle counts to wall-clock time
+    /// outside the run loop. Always the normal-speed clock, regardless of
+    /// the transient GIME double-speed POKE.
     pub fn cpu_hz(&self) -> f64 {
         CPU_HZ
     }
 
-    /// Execute one CPU instruction; returns cycles consumed.
-    pub fn step(&mut self) -> u32 {
+    /// Execute one CPU instruction via the raw MC6809 core only. Returns
+    /// cycles consumed.
+    ///
+    /// Unlike [`Machine::step_instruction`], this bypasses every part of the
+    /// machine execution boundary: HALT* (the cartridge HALT line has no
+    /// effect), NMI/FIRQ/IRQ polling and servicing, cartridge/cassette/
+    /// bitbanger peripheral ticks, `bus.cycle_clock`, scanline/field timing
+    /// (hsync, the two field-sync edges, `render_scanline`/`render_field`),
+    /// GIME interval-timer ticks, and audio sampling. A loop of this is a
+    /// materially different (and, on the CoCo 3, non-interrupt-driven)
+    /// emulator from one built on `step_instruction`.
+    ///
+    /// Only reach for this where that divergence is exactly what's wanted:
+    /// deterministic pre-interrupt cold-start traces, and lockstep CPU-state
+    /// comparisons that intentionally hold peripheral timing out of scope.
+    /// Everything else — including anything that expects IRQ-driven
+    /// behavior, correct audio/video, or real peripheral pacing — must use
+    /// [`Machine::step_instruction`] or [`Machine::run_field`].
+    pub fn step_cpu_raw(&mut self) -> u32 {
         self.cpu.step(&mut self.bus)
     }
 
     /// The scanline within the current field (`0..lines_per_field`) execution
-    /// is currently parked at — the debugger's status bar and its "Step
-    /// Scanline" control are the only consumers;
-    /// everything inside the crate uses the private `line` field directly.
+    /// is currently parked at.
     pub fn current_scanline(&self) -> u32 {
         self.line
     }
 
-    /// Write one byte through the CPU's logical address space, with full
-    /// side effects (unlike [`crate::SystemBus::peek`], which is read-only by
-    /// design) — the debugger's memory/register editors use this while the
-    /// machine is paused, e.g. to poke a byte in the CoCo-logical memory
-    /// view. Real hardware has no side-effect-free write; a debugger editing
-    /// memory is expected to trip the same PIA/GIME register semantics a
-    /// running program's own store would.
+    /// Write one byte through the CPU's logical address space, with full side
+    /// effects (unlike [`crate::SystemBus::peek`], which is read-only).
     pub fn poke(&mut self, addr: u16, val: u8) {
         self.bus.write(addr, val);
     }
 
-    /// Re-run the CPU reset sequence (re-fetches the reset vector from ROM). Does
-    /// not clear RAM — a warm reset, like the CoCo's reset button.
-    ///
-    /// Also resets the cartridge: the expansion port's RESET* line is shared
-    /// with the CPU's, so a Multi-Pak Interface reloads its select register
-    /// from the front-panel switch (and lifts any software override) on
-    /// every reset, not just a cold power-on.
+    /// Re-run the CPU reset sequence (re-fetches the reset vector). Does not
+    /// clear RAM. Also resets the cartridge, since RESET* is shared with the
+    /// CPU's.
     pub fn reset(&mut self) {
         self.cpu.reset(&mut self.bus);
         self.bus.cart.reset();
     }
 
-    /// Power the machine off and on: clear RAM (so BASIC's warm-start magic
-    /// is gone and the ROM runs its full cold-start path — including the DK
-    /// probe that links Disk BASIC and the cartridge autostart check, both
-    /// skipped on a warm reset) and return the GIME and PIAs to power-on
-    /// state. The cartridge and cassette stay in their slots: this is what
-    /// really happens when a cartridge is swapped on real hardware, which is
-    /// only ever done machine-off.
-    ///
-    /// Survives: media, peripherals, input state, monitor cable, the
-    /// monotonic `SystemBus::cycle_clock`. Resets: RAM, GIME, SAM, PIAs, CPU,
-    /// field position, interrupt edge history, latched/queued/rendered audio.
+    /// Power the machine off and on: clears RAM and returns the GIME/PIAs to
+    /// power-on state, so the ROM runs its full cold-start path. Cartridge
+    /// and cassette stay in their slots.
     pub fn power_cycle(&mut self) {
-        // Monitor type isn't GIME hardware state — it's which cable is
-        // plugged into the back of the machine — so it survives a power
-        // cycle same as it would on a real machine.
+        // Monitor type is which cable is plugged in, not GIME state — survives power cycle.
         let monitor = self.bus.gime.monitor;
         self.bus.ram.fill(0);
         self.bus.gime = GIME::new();
@@ -303,8 +275,6 @@ impl Machine {
         self.bus.pia1 = pia::MC6821::new();
         self.prev_halted = false;
         // Restart the field scan from the top — power-on is a fresh field.
-        // (After any completed `run_field` these are already 0, so this only
-        // matters if the machine was power-cycled mid partial step.)
         self.line = 0;
         self.line_cycles_spent = 0;
         self.line_budget = 0;
@@ -323,11 +293,8 @@ impl Machine {
         self.audio_line_inputs = self.bus.audio_inputs;
     }
 
-    /// Plug a cartridge into the expansion port. Real cartridges are only
-    /// swapped machine-off, and the stock ROM's autostart/DK-probe logic only
-    /// runs at cold start, so this does not reset the machine itself — call
-    /// [`Machine::power_cycle`] afterwards (a warm [`Machine::reset`] skips
-    /// the cold-start cartridge probes).
+    /// Plug a cartridge into the expansion port. Does not reset the machine —
+    /// call [`Machine::power_cycle`] afterwards for the cold-start autostart/DK-probe logic to run.
     pub fn insert_cartridge(&mut self, cart: impl Into<cart::Cart>) {
         self.bus.cart = cart.into();
     }

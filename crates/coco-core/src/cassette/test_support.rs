@@ -29,9 +29,8 @@ pub fn tape_block(block_type: u8, payload: &[u8]) -> Vec<u8> {
     block
 }
 
-/// Feed a byte stream into the deck's record tap as full-swing DAC
-/// transitions at the ROM's measured tone timings — one full period per bit,
-/// LSB first — mirroring what the ROM's CSAVE bit-bang writes to the DAC.
+/// Feed a byte stream into the deck's record tap as full-swing DAC transitions
+/// at the ROM's measured tone timings (one period per bit, LSB first).
 pub fn record_bytes_fsk(deck: &mut Cassette, bytes: &[u8]) {
     for &byte in bytes {
         for bit in 0..8 {

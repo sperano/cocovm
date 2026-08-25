@@ -4,9 +4,7 @@ use super::*;
 use crate::machine_def;
 
 /// A minimal valid entry, just enough for [`Selection::snapshot`]/
-/// [`Selection::restore`] to have a slug to key on — the same shape
-/// `ui_tests::harness::sample_entry` builds, duplicated here so this
-/// module's tests don't reach into a UI-only sibling.
+/// [`Selection::restore`] to have a slug to key on.
 fn entry(slug: &str) -> MachineEntry {
     MachineEntry::new(
         slug.to_string(),
@@ -50,7 +48,7 @@ fn select_range_is_inclusive_in_either_direction_and_keeps_the_anchor() {
     assert_eq!(sel.anchor(), Some(1));
 
     // Same anchor, extended downward past it — a second Shift-click must
-    // measure from the same start, not the row picked last time.
+    // measure from the same start.
     sel.select_range(1, 0);
     assert_eq!(sel.iter().collect::<Vec<_>>(), vec![0, 1]);
     assert_eq!(
@@ -60,11 +58,9 @@ fn select_range_is_inclusive_in_either_direction_and_keeps_the_anchor() {
     );
 }
 
-/// A range whose anchor sits past every index the caller actually cares
-/// about (e.g. a stale anchor left over from a larger list) must still
-/// compute a plain inclusive span — `Selection` has no notion of "how many
-/// rows exist" to clamp against; that responsibility stays with callers
-/// (`remove_index` is what keeps a *live* anchor in bounds).
+/// A range whose anchor sits past every index the caller cares about must
+/// still compute a plain inclusive span — `Selection` has no notion of list
+/// bounds to clamp against.
 #[test]
 fn select_range_with_anchor_beyond_the_clicked_row() {
     let mut sel = Selection::default();
@@ -110,15 +106,8 @@ fn remove_index_shifts_an_anchor_past_the_removed_row() {
 }
 
 /// Regression: an anchor can legally sit on a row that isn't itself
-/// selected (`toggle`'s own doc — toggling a row *off* still moves the
-/// anchor there). If the last *actually selected* row is then removed,
-/// `rows` empties out but the anchor — sitting on a different, untouched
-/// index — would survive the shift-and-filter unless `remove_index`
-/// explicitly reconciles it against the now-empty `rows`. A live anchor
-/// with nothing selected would make the next Shift-click silently
-/// range-select from that ghost anchor instead of behaving like a plain
-/// click (`apply_row_click`'s doc: "an anchor-less Shift-click behaves as a
-/// plain click").
+/// selected. If the last actually-selected row is removed, `remove_index`
+/// must reconcile the anchor against the now-empty `rows`.
 #[test]
 fn remove_index_drops_a_stale_anchor_left_on_a_deselected_row() {
     let mut sel = Selection::default();
@@ -139,10 +128,8 @@ fn remove_index_drops_a_stale_anchor_left_on_a_deselected_row() {
 }
 
 /// [`restore`]'s own symmetry case: the restored selection can come back
-/// empty (every previously-selected slug vanished) while a stale anchor —
-/// parked on a since-deselected-but-still-present row — resolves to a real
-/// index. Same fix as `remove_index`'s, exercised through `restore`
-/// instead.
+/// empty while a stale anchor resolves to a real index. Same fix as
+/// `remove_index`'s.
 #[test]
 fn restore_drops_a_stale_anchor_when_the_restored_selection_is_empty() {
     let before = vec![entry("alpha"), entry("bravo")];

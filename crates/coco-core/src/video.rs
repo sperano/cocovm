@@ -99,8 +99,7 @@ const GRAPHICS_BORDER_CSS0_INDEX: usize = 0;
 const GRAPHICS_BORDER_CSS1_INDEX: usize = 4;
 
 /// The VDG graphics-mode border colour's palette index: green (CSS=0) or
-/// buff (CSS=1) — real hardware does *not* border graphics modes in black
-/// (MAME `mc6847.cpp` `border_value`).
+/// buff (CSS=1) — real hardware does *not* border graphics modes in black.
 pub fn vdg_graphics_border_index(css: bool) -> usize {
     if css {
         GRAPHICS_BORDER_CSS1_INDEX
@@ -121,14 +120,10 @@ pub enum ColorSource<'a> {
 }
 
 impl ColorSource<'_> {
-    /// Resolve to a 16-entry RGBA table in the shared index layout (see the
-    /// module doc above). `css` (PIA1 $FF22 bit 3) only affects `VdgFixed`:
-    /// it swaps the orange alphanumeric set into [`TEXT_BG_INDEX`]/
-    /// [`TEXT_FG_INDEX`] so callers that only ever read those two constants
-    /// (as [`render_text`] does) don't need to know about CSS themselves.
-    /// `GimePalette` ignores `css` — the GIME's own registers already hold
-    /// whatever the ROM programmed at 12/13 unconditionally, matching the
-    /// pre-Phase-3 behaviour exactly.
+    /// Resolves to a 16-entry RGBA table in the shared index layout. `css`
+    /// only affects `VdgFixed` (swaps the orange alphanumeric set into
+    /// [`TEXT_BG_INDEX`]/[`TEXT_FG_INDEX`]); `GimePalette` ignores it — the
+    /// GIME's own registers already hold whatever the ROM programmed.
     pub fn resolve(&self, css: bool) -> [[u8; 4]; PALETTE_LEN] {
         match *self {
             ColorSource::GIMEPalette(p) => *p,
@@ -144,9 +139,8 @@ impl ColorSource<'_> {
     }
 }
 
-/// Write one native pixel as `xscale` canvas pixels at `*x`, advancing it.
-/// Shared by [`text::paint_legacy_text_line`] and
-/// [`graphics::paint_legacy_graphics_line`].
+/// Writes one native pixel as `xscale` canvas pixels at `*x`, advancing it
+/// (shared by the legacy text/graphics line painters).
 fn paint_px(out: &mut [u8], x: &mut usize, xscale: usize, color: [u8; 4]) {
     for px in
         out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)

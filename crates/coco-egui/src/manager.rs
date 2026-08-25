@@ -148,12 +148,8 @@ pub struct MachineEntry {
 }
 
 impl MachineEntry {
-    /// `slug` + a freshly loaded/created `def`, with no VM running yet and
-    /// no stale launch error — the state every entry starts in, whether
-    /// loaded from disk ([`ManagerApp`]'s `run`) or just created (`Self`'s
-    /// callers wrote out the `vm`/`launch_error` fields by hand;
-    /// this constructor is what keeps that from drifting as more per-entry
-    /// runtime state gets added later).
+    /// `slug` + a freshly loaded/created `def`, with no VM running and no
+    /// stale launch error — the state every entry starts in.
     pub(crate) fn new(slug: String, def: machine_def::MachineDef) -> Self {
         Self {
             slug,
@@ -168,33 +164,25 @@ impl MachineEntry {
     }
 
     /// Whether this machine is currently Running — a live VM, not paused
-    /// for Suspend. The single most common predicate in the manager (every
-    /// transport surface gates on it); spelled out once here so the several
-    /// places that draw a Play/Suspend/Stop/Reset control can't drift on
-    /// what "running" means.
+    /// for Suspend.
     pub(crate) fn is_running(&self) -> bool {
         self.vm.is_some() && !self.suspended
     }
 
-    /// Whether this machine is anything other than Powered Off — Running,
-    /// or Suspended (VM object alive or already dropped, window-closed
-    /// style). Gates Stop, which has something to do in either case.
+    /// Whether this machine is anything other than Powered Off — Running or
+    /// Suspended.
     pub(crate) fn is_alive(&self) -> bool {
         self.vm.is_some() || self.suspended
     }
 
-    /// Whether Play has something to do: the machine isn't already Running
-    /// (it's either Powered Off, needing a Start, or Suspended, needing a
-    /// Resume).
+    /// Whether Play has something to do: the machine isn't already Running.
     pub(crate) fn is_startable(&self) -> bool {
         !self.is_running()
     }
 }
 
-/// The three-state status `entry` implies right now — see
-/// [`STATUS_RUNNING`]'s doc. A VM alive but not executing *without* the
-/// suspended flag (the debugger sitting at a breakpoint) still reads
-/// Running: debugger pause is a debugging condition, not a lifecycle state.
+/// The three-state status `entry` implies right now. A debugger-paused VM
+/// (no suspended flag) still reads Running — pause isn't a lifecycle state.
 fn vm_status_label(entry: &MachineEntry) -> &'static str {
     if entry.suspended {
         STATUS_SUSPENDED
@@ -230,11 +218,9 @@ fn suspend_state_path(artifacts_root: &Path, slug: &str) -> PathBuf {
     artifacts_root.join(slug).join(SUSPEND_STATE_FILE)
 }
 
-/// Write `rgba` (`w`×`h`) as `dir/thumbnail.png`. Same tmp-then-rename
-/// pattern as `machine_def::save`, so a crash mid-write can never leave a
-/// torn PNG behind. A uniformly *black* frame is skipped whenever a previous
-/// thumbnail exists: stopping during a blanked display (mode switch, blank
-/// screen) would otherwise replace a useful preview with a black rectangle.
+/// Write `rgba` (`w`×`h`) as `dir/thumbnail.png`, tmp-then-rename so a crash
+/// mid-write can't leave a torn file. A uniformly black frame is skipped
+/// when a previous thumbnail exists, so a blanked display doesn't clobber it.
 fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), String> {
     let final_path = dir.join(THUMBNAIL_FILE);
     let all_black = rgba
@@ -328,12 +314,10 @@ pub struct ManagerApp {
 }
 
 impl ManagerApp {
-    /// `photo`, `machines_dir`, `artifacts_root`, and `entries` are all
-    /// injected (rather than loaded here) so tests can construct the manager
-    /// without touching the user's real config/data directories. Each
-    /// entry's Suspended flag is seeded here from its
-    /// [`SUSPEND_STATE_FILE`]'s existence — the one startup moment the
-    /// filesystem is the only record of the state.
+    /// All state is injected rather than loaded here, so tests can construct
+    /// the manager without touching the user's real config/data directories.
+    /// Each entry's Suspended flag is seeded from its
+    /// [`SUSPEND_STATE_FILE`]'s existence.
     pub fn new(
         photo: Option<Photo>,
         machines_dir: Option<PathBuf>,
@@ -362,23 +346,12 @@ impl ManagerApp {
 }
 
 impl eframe::App for ManagerApp {
-    /// Flush every running VM's dirty disks/tape on quit — the manager
-    /// window is the root viewport, so closing it closes every VM at once
-    ///; this mirrors
-    /// `CocoApp::on_exit`'s own contract for each of them. A flush failure
-    /// is only `tracing::warn!`-logged: the whole app is going away, so
-    /// there's no dialog left to show it in. Also folds each live VM's
-    /// runtime into its persisted `[stats].runtime_secs` total
-    /// (`manager::lifecycle::fold_runtime_into_def`), the same as Stop. Once
+    /// Flushes every running VM's dirty disks/tape on quit and folds each
+    /// live VM's runtime into its persisted total, same as Stop. A flush
+    /// failure is only logged — there's no dialog left to show it in. Once
     /// every live VM has been flushed and dropped, completes slug migrations
     /// deferred by renames made while those VMs were running.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // Quit is the power switch for running VMs — no auto-suspend on quit;
-        // a suspended VM's state and preview are already on disk from suspend
-        // time, so neither needs anything written here. A live VM's runtime
-        // is folded into its persisted total the same way Stop does, so
-        // lifetime runtime doesn't undercount just because the user quit
-        // instead of powering off first.
         for index in 0..self.entries.len() {
             self.fold_runtime_into_def(index);
             if let Some(mut vm) = self.entries[index].vm.take()
@@ -399,34 +372,26 @@ impl eframe::App for ManagerApp {
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
         }
 
-        // Deferred slug migrations first, before any panel draws — row
-        // indices must stay stable for the whole frame.
+        // Migrate pending renames before any panel draws — row indices must
+        // stay stable for the frame.
         self.apply_pending_renames();
 
-        // ⌘N / Ctrl+N = the toolbar's "New…". Each running VM window is its
-        // own viewport with its own input stream, so this only fires with
-        // the manager window focused.
+        // ⌘N/Ctrl+N triggers New…; only fires with the manager window focused.
         if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
             self.create_machine_now();
         }
 
-        // ⌘A / Ctrl+A = select every row — but never while a widget (the
-        // Name field, a combo…) already owns the keyboard, so this doesn't
-        // hijack a text field's own native select-all.
+        // ⌘A/Ctrl+A selects every row, unless a widget already owns the keyboard.
         if !ctx.wants_keyboard_input()
             && ctx.input_mut(|i| i.consume_shortcut(&SELECT_ALL_SHORTCUT))
         {
             self.select_all_rows();
         }
 
-        // Toolbar: the manager actions (`toolbar.rs`).
         egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
             self.draw_toolbar(ui);
         });
 
-        // Machine list: one row per definition under `config_dir()/machines`.
-        // `resizable` gives the draggable divider between the list and the
-        // detail/photo pane.
         egui::SidePanel::left("manager_machine_list")
             .resizable(true)
             .default_width(LIST_DEFAULT_WIDTH)
@@ -435,9 +400,8 @@ impl eframe::App for ManagerApp {
                 self.draw_machine_list(ui);
             });
 
-        // Right pane: the selected machine's detail/edit form, the bulk
-        // pane with more than one selected, or — with nothing selected — a
-        // random photo asset, centered and scaled to fit.
+        // Detail form for a single selection, bulk pane for many, or a
+        // random photo when nothing's selected.
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.selection.is_empty() {
                 if let Some(texture) = &self.photo_texture {
@@ -480,9 +444,8 @@ pub fn run() -> eframe::Result<()> {
         ..Default::default()
     };
     let machines_dir = machine_def::machines_dir();
-    // A machine definition that can't be read or doesn't validate is fatal:
-    // exit with the reason rather than open a manager with a silently
-    // wrong machine list.
+    // A machine definition that fails to load/validate is fatal — exit
+    // rather than open with a silently wrong list.
     let entries: Vec<MachineEntry> = match machines_dir.as_deref() {
         Some(dir) => match machine_def::load_all(dir) {
             Ok(defs) => defs
@@ -506,9 +469,7 @@ pub fn run() -> eframe::Result<()> {
                 machines,
                 renderer: crate::renderer_info(cc),
             });
-            // Assets are fetched *after* the banner, so the box is the first
-            // thing printed: a fresh install reports 0 ROMs and downloads
-            // them below. The manager only needs ROMs when a VM is launched.
+            // Assets are fetched after the banner so the startup box prints first.
             crate::ensure_assets();
             Ok(Box::new(ManagerApp::new(
                 photo_view::random(),

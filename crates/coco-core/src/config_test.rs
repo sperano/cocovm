@@ -89,7 +89,7 @@ fn coco2_rejects_pal() {
 #[test]
 fn coco3_accepts_pal() {
     // PAL is only out of scope for the plain-SAM variants; the GIME path
-    // already models a (partially unverified) PAL timing branch.
+    // already models a (partially unverified) PAL branch.
     let cfg = MachineConfig {
         variant: MachineVariant::Coco3,
         video: VideoStandard::PAL,

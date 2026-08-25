@@ -77,14 +77,9 @@ const REEL_SPOKE_COUNT: u32 = 3;
 /// Spoke length, as a fraction of [`REEL_HUB_R`].
 const REEL_SPOKE_LEN_FRAC: f32 = 0.85;
 
-/// Status-bar cassette activity indicator (see [`TAPE_ICON_SIZE`]): red
-/// while the cassette relay is closed (CLOAD/CSAVE/`MOTOR ON`), gray
-/// otherwise. The shell has the two reel hubs punched out in the panel's
-/// background color, each with [`REEL_SPOKE_COUNT`] spokes drawn back in
-/// the shell color at `reel_angle` — both reels always at the same angle,
-/// since real cassette reels are pulled by the same capstan/pinch-roller
-/// and co-rotate (linked by the tape between them, not independent
-/// motors).
+/// Status-bar cassette activity indicator: red while the cassette relay is
+/// closed (CLOAD/CSAVE/`MOTOR ON`), gray otherwise. Both reels share
+/// `reel_angle` — real reels co-rotate, pulled by the same capstan.
 pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) -> egui::Response {
     let Icon {
         rect,
@@ -94,9 +89,7 @@ pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) ->
         response,
     } = begin_icon(ui, TAPE_ICON_SIZE, active);
     painter.rect_filled(rect, TAPE_ICON_CORNER, shell);
-    // The two reel hubs, side by side on the shell's mid-line (a real
-    // shell's head window along the bottom edge is unreadable at this size,
-    // so nothing else competes for the vertical space).
+    // Reel hubs sit on the mid-line — a real head window there would be unreadable at this size.
     let hub_y = rect.center().y;
     let hub_dx = TAPE_ICON_SIZE.x * 0.22;
     for hub_x in [rect.center().x - hub_dx, rect.center().x + hub_dx] {
@@ -107,9 +100,8 @@ pub(crate) fn cassette_icon(ui: &mut egui::Ui, active: bool, reel_angle: f32) ->
     response
 }
 
-/// The spokes punched back into a reel hub in `color` (the shell color),
-/// evenly spaced around `reel_angle` — see [`super::TapeReel::advance`] for
-/// how the angle advances frame to frame.
+/// The spokes punched back into a reel hub in `color`, evenly spaced
+/// around `reel_angle`.
 fn draw_reel_spokes(
     painter: &egui::Painter,
     hub: egui::Pos2,
@@ -131,12 +123,8 @@ const DRIVE_ICON_SIZE: egui::Vec2 = icon_size(14.0, 14.0);
 /// Corner rounding of the jacket square.
 const DRIVE_ICON_CORNER: f32 = 1.5 * ICON_SCALE;
 
-/// Status-bar floppy activity indicator (see [`DRIVE_ICON_SIZE`]): red
-/// while the drive is selected with its motor on ([`coco_core::fdc`]'s
-/// `drive_active`, like a real drive's front-panel light), gray otherwise.
-/// The jacket square has the hub hole, the oblong head-access slot, the
-/// index-hole dot, and the write-protect notch all punched out in the
-/// panel's background color — the 5¼" silhouette.
+/// Status-bar floppy activity indicator: red while the drive is selected
+/// with its motor on ([`coco_core::fdc`]'s `drive_active`), gray otherwise.
 pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     let Icon {
         rect,
@@ -156,12 +144,10 @@ pub(crate) fn floppy_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
         egui::vec2(slot_width, DRIVE_ICON_SIZE.x * 0.24),
     );
     painter.rect_filled(slot, slot_width / 2.0, punch);
-    // Index hole: a small dot out on the hub's radius, at the angle a real
-    // 5¼" jacket's index-sensor window sits at (drive-side, upper right).
+    // Index hole sits at the angle a real 5¼" jacket's index-sensor window does (upper right).
     let index = hub + egui::vec2(DRIVE_ICON_SIZE.x * 0.22, 0.0);
     painter.circle_filled(index, DRIVE_ICON_SIZE.x * 0.05, punch);
-    // Write-protect notch: a small rectangular nick in the jacket's right
-    // edge (covering it on a real 5¼" disk write-protects the drive).
+    // Write-protect notch: covering it on a real 5¼" disk write-protects the drive.
     let notch = egui::Rect::from_min_size(
         egui::pos2(
             rect.right() - DRIVE_ICON_SIZE.x * 0.12,
@@ -180,15 +166,8 @@ const VHD_ICON_SIZE: egui::Vec2 = icon_size(15.0, 11.0);
 const VHD_ICON_CORNER: f32 = 1.5 * ICON_SCALE;
 
 /// Status-bar VHD (virtual hard disk, `$FF80-$FF86` `emudsk`) activity
-/// indicator (see [`VHD_ICON_SIZE`]): red while a READ/WRITE/FLUSH command
-/// has recently dispatched to that drive
-/// ([`coco_core::vhd::VHD::access_count`]), gray otherwise. The housing
-/// rectangle has one large platter circle — offset toward the left edge,
-/// the way a real 3½" drive's platter sits off-center under its own
-/// top-view case — punched out in the panel background color, a
-/// shell-colored hub dot at the platter's center, and a thin shell-colored
-/// actuator-arm line reaching from the housing's bottom-right corner onto
-/// the platter, the way a hard drive's read/write head arm does.
+/// indicator: red while a READ/WRITE/FLUSH command has recently dispatched
+/// to that drive ([`coco_core::vhd::VHD::access_count`]), gray otherwise.
 pub(crate) fn vhd_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     let Icon {
         rect,
@@ -212,13 +191,9 @@ pub(crate) fn vhd_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 /// Status-bar DriveWire icon size: a serial-cable-and-plug silhouette.
 const DW_ICON_SIZE: egui::Vec2 = icon_size(15.0, 10.0);
 
-/// Status-bar DriveWire activity indicator (see [`DW_ICON_SIZE`]): red
-/// while a sector has recently been read from or written to that drive
-/// over the Becker port ([`coco_core::drivewire::DWServer::drive_ops`]),
-/// gray otherwise. A small plug body sits at the right with two punched
-/// pin slots, and a shell-colored cable line runs from the plug to the
-/// icon's left edge with one sag/kink partway along, evoking a serial
-/// cable running off to the host.
+/// Status-bar DriveWire activity indicator: red while a sector has
+/// recently been read from or written to that drive over the Becker port
+/// ([`coco_core::drivewire::DWServer::drive_ops`]), gray otherwise.
 pub(crate) fn drivewire_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     let Icon {
         rect,
@@ -273,14 +248,9 @@ const RS232_ICON_SIZE: egui::Vec2 = icon_size(14.0, 9.0);
 /// studs on each side — see [`rs232_icon`].
 const RS232_PIN_FIELD_W: f32 = RS232_ICON_SIZE.x * 0.72;
 
-/// Status-bar RS-232 (Deluxe RS-232 Program Pak) activity indicator (see
-/// [`RS232_ICON_SIZE`]): red while a byte has recently gone out to or come
-/// in from the host endpoint
-/// ([`coco_core::rs232::DeluxeRS232::tx_bytes`]/`rx_bytes`), gray
-/// otherwise. A trapezoid (top edge wider than the bottom, the classic
-/// D-sub shield shape) carries three punched pin dots in an upper row and
-/// two in a lower row, plus a small filled ear stud at each side (the
-/// connector's mounting-screw bosses).
+/// Status-bar RS-232 (Deluxe RS-232 Program Pak) activity indicator: red
+/// while a byte has recently gone out to or come in from the host endpoint
+/// ([`coco_core::rs232::DeluxeRS232::tx_bytes`]/`rx_bytes`), gray otherwise.
 pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     let Icon {
         rect,
@@ -290,8 +260,7 @@ pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
         response,
     } = begin_icon(ui, RS232_ICON_SIZE, active);
 
-    // D-sub shield: a trapezoid, top edge the full pin-field width, bottom
-    // edge narrower.
+    // D-sub shield: a trapezoid, top edge the full pin-field width, bottom edge narrower.
     let bottom_inset = RS232_PIN_FIELD_W * 0.15;
     let cx = rect.center().x;
     let half_top = RS232_PIN_FIELD_W / 2.0;
@@ -344,13 +313,8 @@ pub(crate) fn rs232_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 /// Status-bar joystick icon size: an analog-stick silhouette.
 const JOYSTICK_ICON_SIZE: egui::Vec2 = icon_size(11.0, 13.0);
 
-/// Status-bar joystick activity indicator (see [`JOYSTICK_ICON_SIZE`]): red
-/// while that port's source is actively being driven
-/// ([`crate::joy::JoystickInputs::in_use`]), gray otherwise. A rounded base
-/// rect, a stick line rising from the base's center, and a filled ball cap
-/// on top — base, stick, and ball are all the same silhouette color (a real
-/// stick reads as one continuous shape from above) — plus one small button
-/// dot punched into the base's left corner.
+/// Status-bar joystick activity indicator: red while that port's source is
+/// actively being driven ([`crate::joy::JoystickInputs::in_use`]), gray otherwise.
 pub(crate) fn joystick_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     let Icon {
         rect,
@@ -394,13 +358,8 @@ const PRINTER_BODY_H: f32 = 7.0 * ICON_SCALE;
 /// Size of the paper-sheet rect rising from the body's top.
 const PRINTER_PAPER_SIZE: egui::Vec2 = icon_size(8.0, 6.0);
 
-/// Status-bar printer activity indicator (see [`PRINTER_ICON_SIZE`]): red
-/// while a byte has recently been decoded to the live sink
-/// ([`coco_core::bitbanger::BitBanger::bytes_out`]), gray otherwise. The
-/// silhouette is the union of the body rect and the paper rect (so they
-/// read as one printer, not two overlapping shapes), with a 1px exit-slot
-/// line punched where the paper meets the body and two small control-light
-/// dots punched into the body's right side.
+/// Status-bar printer activity indicator: red while a byte has recently
+/// been decoded to the live sink ([`coco_core::bitbanger::BitBanger::bytes_out`]), gray otherwise.
 pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
     let Icon {
         rect,
@@ -445,10 +404,8 @@ pub(crate) fn printer_icon(ui: &mut egui::Ui, active: bool) -> egui::Response {
 /// Status-bar keyboard-mode icon size: a keyboard silhouette.
 const KEYBOARD_ICON_SIZE: egui::Vec2 = icon_size(15.0, 9.0);
 
-/// Status-bar keyboard-mode indicator (see [`KEYBOARD_ICON_SIZE`]). Always
-/// drawn in [`super::ICON_IDLE`] — "activity" doesn't mean anything for the
-/// keyboard mode readout, this is decoration matching the other status-bar
-/// entries, not a light. A rounded rect with two rows of punched key dots.
+/// Status-bar keyboard-mode indicator. Always drawn in [`super::ICON_IDLE`]
+/// — "activity" doesn't mean anything for keyboard mode; this is decoration, not a light.
 pub(crate) fn keyboard_icon(ui: &mut egui::Ui) -> egui::Response {
     let Icon {
         rect,
@@ -474,10 +431,8 @@ pub(crate) fn keyboard_icon(ui: &mut egui::Ui) -> egui::Response {
 /// so the entry keeps its footprint when the display choice changes.
 const DISPLAY_ICON_SIZE: egui::Vec2 = icon_size(14.0, 11.0);
 
-/// Status-bar display indicator, monitor form (see [`DISPLAY_ICON_SIZE`]).
-/// Always drawn in [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc
-/// comment on why this isn't a light. A bezel rect with the screen punched
-/// out of it, on a thin neck-and-base stand.
+/// Status-bar display indicator, monitor form. Always drawn in
+/// [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc for why this isn't a light.
 pub(crate) fn monitor_icon(ui: &mut egui::Ui) -> egui::Response {
     let Icon {
         rect,
@@ -515,12 +470,8 @@ pub(crate) fn monitor_icon(ui: &mut egui::Ui) -> egui::Response {
     response
 }
 
-/// Status-bar display indicator, TV form (see [`DISPLAY_ICON_SIZE`]).
-/// Always drawn in [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc
-/// comment on why this isn't a light. A CRT-set body with the screen
-/// punched out toward the left, a punched knob dot on the control-panel
-/// strip at the right, and two rabbit-ear antenna lines rising from the
-/// body's top.
+/// Status-bar display indicator, TV form. Always drawn in
+/// [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc for why this isn't a light.
 pub(crate) fn tv_icon(ui: &mut egui::Ui) -> egui::Response {
     let Icon {
         rect,
@@ -570,10 +521,8 @@ pub(crate) fn tv_icon(ui: &mut egui::Ui) -> egui::Response {
 /// Status-bar cartridge icon size: a ROM-pak silhouette.
 const CART_ICON_SIZE: egui::Vec2 = icon_size(13.0, 10.0);
 
-/// Status-bar cartridge indicator (see [`CART_ICON_SIZE`]). Always drawn in
-/// [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc comment on why this
-/// isn't a light. The ROM-pak body rect has a narrower label hump on top
-/// and two punched grip notches nicked into the bottom edge.
+/// Status-bar cartridge indicator. Always drawn in [`super::ICON_IDLE`] —
+/// see [`keyboard_icon`]'s doc for why this isn't a light.
 pub(crate) fn cart_icon(ui: &mut egui::Ui) -> egui::Response {
     let Icon {
         rect,
@@ -614,10 +563,8 @@ pub(crate) fn cart_icon(ui: &mut egui::Ui) -> egui::Response {
 /// Status-bar Multi-Pak Interface icon size: a card-cage silhouette.
 const MPI_ICON_SIZE: egui::Vec2 = icon_size(15.0, 11.0);
 
-/// Status-bar Multi-Pak Interface indicator (see [`MPI_ICON_SIZE`]). Always
-/// drawn in [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc comment on
-/// why this isn't a light. A box with four punched vertical slot lines, one
-/// per cartridge slot the real FD-502 Multi-Pak exposes.
+/// Status-bar Multi-Pak Interface indicator. Always drawn in
+/// [`super::ICON_IDLE`] — see [`keyboard_icon`]'s doc for why this isn't a light.
 pub(crate) fn mpi_icon(ui: &mut egui::Ui) -> egui::Response {
     let Icon {
         rect,

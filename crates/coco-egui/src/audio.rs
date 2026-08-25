@@ -196,10 +196,8 @@ impl AudioOutput {
         }
     }
 
-    /// A device-less pipeline that still runs the full producer path
-    /// (filters, resampler, ring buffer) at `device_rate`, so tests can
-    /// exercise everything short of cpal. Nothing ever drains the ring:
-    /// [`Self::push_samples`] simply keeps it bounded at `ring_cap`.
+    /// Runs the full producer path (filters, resampler, ring) at `device_rate`
+    /// without a real device, so tests can exercise it. Nothing drains the ring.
     #[cfg(test)]
     pub(crate) fn headless(device_rate: f64) -> Self {
         let ring_cap = ring_capacity(device_rate);
@@ -237,17 +235,9 @@ impl AudioOutput {
         self.device_rate > 0.0
     }
 
-    /// Forget everything about the audio stream so far — for a state
-    /// discontinuity (state restore, power cycle) after which the samples
-    /// still queued and the filters' memory describe a machine that no
-    /// longer exists. Drops the ring buffer's backlog (up to
-    /// `RING_BUFFER_SECS` of the OLD machine's sound, which would otherwise
-    /// play after the load) and returns every DC blocker, anti-alias
-    /// low-pass, and the resampler to their just-constructed state, so no
-    /// filter history — possibly from a different source rate (NTSC↔PAL) —
-    /// bleeds into the new stream. The low-pass is redesigned lazily by the
-    /// next `push_samples`, exactly as on first use. Volume/mute are user
-    /// prefs and survive.
+    /// Clears queued samples and filter state after a discontinuity (state
+    /// restore, power cycle), so audio/filter history from the old machine
+    /// doesn't bleed into the new stream. Volume/mute persist.
     pub fn reset(&mut self) {
         lock(&self.ring).clear();
         self.dc = [DCBlocker::default(); 2];
@@ -262,10 +252,9 @@ impl AudioOutput {
         lock(&self.ring).len()
     }
 
-    /// Open the default output device at its default config and start playing
-    /// a stream fed from `ring`. Every fallible step (no device, unsupported
-    /// config, stream build/play failure) is folded into a single `Err` so
-    /// `new()` has one place to log and degrade.
+    /// Opens the default output device and starts a stream fed from `ring`.
+    /// Every fallible step is folded into one `Err` so `new()` has a single
+    /// place to log and degrade.
     fn try_build_stream(
         ring: Arc<Mutex<VecDeque<[f32; 2]>>>,
     ) -> Result<(cpal::Stream, f64, usize), String> {
@@ -279,9 +268,7 @@ impl AudioOutput {
         let ring_cap = ring_capacity(device_rate);
         let stream_config: cpal::StreamConfig = supported.into();
 
-        // Decay applied to the held-over frame on every underrun frame, derived
-        // from the device's own rate so the fade always takes UNDERRUN_FADE_SECS
-        // regardless of what that rate is (44.1 kHz, 48 kHz, ...).
+        // Per-frame decay so the underrun fade takes UNDERRUN_FADE_SECS regardless of device rate.
         let fade_frames = (device_rate * UNDERRUN_FADE_SECS).max(1.0);
         let decay = UNDERRUN_FADE_FLOOR.powf(1.0 / fade_frames as f32);
         let mut held = [0.0f32; 2];
@@ -322,17 +309,13 @@ impl AudioOutput {
         Ok((stream, device_rate, ring_cap))
     }
 
-    /// Resample and enqueue one batch of stereo speaker frames (called once
-    /// per `update()` with `machine.take_audio()` /
-    /// `machine.audio_sample_rate()`). A no-op when no output device was
-    /// found.
+    /// Resamples and enqueues one batch of stereo speaker frames. A no-op
+    /// when no output device was found.
     pub fn push_samples(&mut self, samples: impl Iterator<Item = [f32; 2]>, source_rate: f64) {
         if !self.is_enabled() {
             return;
         }
-        // (Re)design the anti-alias filters when the source rate first
-        // appears or changes (NTSC↔PAL machine swap). Only needed when
-        // decimating; upsampling can't alias.
+        // Redesign anti-alias filters when the source rate changes; only needed when decimating.
         if source_rate != self.lowpass_rate {
             self.lowpass_rate = source_rate;
             self.lowpass = (source_rate > self.device_rate).then(|| {
@@ -341,9 +324,7 @@ impl AudioOutput {
             });
         }
 
-        // DC-block, low-pass, and apply gain/volume on every frame regardless
-        // of mute, so filter state and volume don't pop when unmuting
-        // mid-stream.
+        // Applied regardless of mute so filter state doesn't pop when unmuting mid-stream.
         let gain = MASTER_GAIN * self.volume;
         let processed: Vec<[f32; 2]> = samples
             .map(|[l, r]| {
@@ -373,9 +354,8 @@ impl AudioOutput {
         }
     }
 
-    /// "Sound" menu contents: a mute checkbox and volume slider, or a disabled
-    /// label when no output device is available (mirrors
-    /// `JoystickInputs::menu_ui`'s "Gamepad: unavailable" line).
+    /// Mute checkbox and volume slider, or a disabled label when no output
+    /// device is available.
     pub fn menu_ui(&mut self, ui: &mut egui::Ui) {
         if !self.is_enabled() {
             ui.add_enabled(false, egui::Label::new("No audio device"));
@@ -392,9 +372,8 @@ fn ring_capacity(device_rate: f64) -> usize {
     ((device_rate * RING_BUFFER_SECS) as usize).max(1)
 }
 
-/// Lock `ring`, recovering from mutex poisoning instead of propagating a panic
-/// from one thread (UI or audio callback) into the other — a lost frame or two
-/// of audio is far preferable to tearing down the whole app.
+/// Locks `ring`, recovering from poisoning instead of propagating a panic
+/// across threads — losing a frame beats tearing down the app.
 fn lock(ring: &Mutex<VecDeque<[f32; 2]>>) -> MutexGuard<'_, VecDeque<[f32; 2]>> {
     ring.lock().unwrap_or_else(PoisonError::into_inner)
 }
