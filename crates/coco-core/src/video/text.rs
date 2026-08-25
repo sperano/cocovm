@@ -1,4 +1,4 @@
-//! CoCo-compatible alphanumeric/semigraphics-4 text rendering: the
+//! CoCo-compatible alphanumeric/semigraphics text rendering: the
 //! MC6847/MC6847T1/GIME character-generator decode, the legacy border rule,
 //! and the whole-field/per-scanline text painters.
 
@@ -13,7 +13,7 @@ use super::{
 /// Number of glyphs in the font (VDG codes $00–$3F).
 const GLYPH_COUNT: usize = 64;
 /// MC6847 attribute bits within a screen byte.
-const SEMIGRAPHICS_BIT: u8 = 0x80; // bit 7 — 1 = semigraphics 4, 0 = alphanumeric
+const SEMIGRAPHICS_BIT: u8 = 0x80; // bit 7 — 1 = semigraphics, 0 = alphanumeric
 const INVERSE_BIT: u8 = 0x40; // bit 6 — inverse video (alphanumeric only)
 const GLYPH_CODE_MASK: u8 = 0x3F; // bits 5-0 — alphanumeric glyph code
 
@@ -21,11 +21,23 @@ const GLYPH_CODE_MASK: u8 = 0x3F; // bits 5-0 — alphanumeric glyph code
 // 2×2 block pattern; unlit blocks use palette reg 8 (black in CoCo-compat mode).
 const SG4_COLOR_SHIFT: u8 = 4;
 const SG4_COLOR_MASK: u8 = 0x07;
+const SG4_PATTERN_MASK: u8 = 0x0F;
 const SG4_OFF_INDEX: usize = 8;
-const SG4_UPPER_LEFT: u8 = 0x08;
-const SG4_UPPER_RIGHT: u8 = 0x04;
-const SG4_LOWER_LEFT: u8 = 0x02;
-const SG4_LOWER_RIGHT: u8 = 0x01;
+
+// Semigraphics 6: bits 7-6 select one of four colours, bits 5-0 are a 2×3
+// block pattern. On the CoCo, screen-byte bit 7 also drives the VDG's A/S
+// input, so only colour codes 2 and 3 can select semigraphics. The MC6847
+// selects SG6 when INT/EXT is high; MC6847T1 and GIME omit SG6 and decode
+// the same byte as SG4.
+const SG6_COLOR_SHIFT: u8 = 6;
+const SG6_COLOR_MASK: u8 = 0x03;
+const SG6_PATTERN_MASK: u8 = 0x3F;
+const SG6_COLOR_SET_SIZE: usize = 4;
+const SG6_ROW_HEIGHT: usize = CELL_H / 3;
+const SG4_ROW_HEIGHT: usize = CELL_H / 2;
+const LEFT_BLOCK_PIXELS: u8 = 0xF0;
+const RIGHT_BLOCK_PIXELS: u8 = 0x0F;
+const PIXEL_MSB: u8 = 0x80;
 
 /// Decodes a VDG alphanumeric screen byte's low 6 bits to the ASCII
 /// character it displays (ignoring semigraphics/inverse bits): `$00-$1F` →
@@ -55,6 +67,37 @@ pub enum AlphaGenerator {
     /// CoCo 3 CoCo-compatible text mode: the GIME's own generator, T1-style
     /// lowercase semantics, [`crate::font_gime::GIME_LOWRES_FONT`] glyphs.
     GIME,
+}
+
+fn semigraphics_line(
+    generator: AlphaGenerator,
+    ff22: u8,
+    code: u8,
+    glyph_row: usize,
+    palette: &[[u8; 4]; PALETTE_LEN],
+) -> ([u8; 4], [u8; 4], u8) {
+    let sg6 = generator == AlphaGenerator::MC6847 && ff22 & VDG_GM0_INTEXT != 0;
+    let (color_index, pattern, row_height) = if sg6 {
+        (
+            ((code >> SG6_COLOR_SHIFT) & SG6_COLOR_MASK) as usize
+                + usize::from(ff22 & VDG_CSS != 0) * SG6_COLOR_SET_SIZE,
+            code & SG6_PATTERN_MASK,
+            SG6_ROW_HEIGHT,
+        )
+    } else {
+        (
+            ((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize,
+            code & SG4_PATTERN_MASK,
+            SG4_ROW_HEIGHT,
+        )
+    };
+    let glyph_row = glyph_row % CELL_H;
+    let slice = (CELL_H - 1 - glyph_row) / row_height;
+    let right = pattern & (1 << (slice * 2)) != 0;
+    let left = pattern & (1 << (slice * 2 + 1)) != 0;
+    let pixels =
+        if left { LEFT_BLOCK_PIXELS } else { 0 } | if right { RIGHT_BLOCK_PIXELS } else { 0 };
+    (palette[color_index], palette[SG4_OFF_INDEX], pixels)
 }
 
 /// Resolves one alphanumeric cell's glyph and (fg, bg) colours, matching
@@ -136,19 +179,13 @@ pub fn paint_legacy_text_line(
     for col in 0..COLS {
         let code = row_bytes.get(col).copied().unwrap_or(0);
         if code & SEMIGRAPHICS_BIT != 0 {
-            // Semigraphics 4: upper blocks on rows 0..CELL_H/2, lower below.
-            let on = palette[((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize];
-            let off = palette[SG4_OFF_INDEX];
-            let bottom = glyph_row >= CELL_H / 2;
+            let (on, off, pixels) = semigraphics_line(generator, ff22, code, glyph_row, palette);
             for cx in 0..CELL_W {
-                let right = cx >= CELL_W / 2;
-                let block = match (bottom, right) {
-                    (false, false) => SG4_UPPER_LEFT,
-                    (false, true) => SG4_UPPER_RIGHT,
-                    (true, false) => SG4_LOWER_LEFT,
-                    (true, true) => SG4_LOWER_RIGHT,
+                let color = if pixels & (PIXEL_MSB >> cx) != 0 {
+                    on
+                } else {
+                    off
                 };
-                let color = if code & block != 0 { on } else { off };
                 paint_px(out, &mut x, xscale, color);
             }
         } else {
@@ -168,8 +205,8 @@ pub fn paint_legacy_text_line(
 
 /// Renders the text screen (`SCREEN_LEN` bytes) into `fb`. Each byte is an
 /// alphanumeric character (bit 7 clear, coloured from palette regs 12/13) or
-/// a semigraphics-4 block (bit 7 set); `generator`/`ff22` select the font
-/// and true-lowercase decode (see [`resolve_alpha_cell`]).
+/// a semigraphics block (bit 7 set); `generator`/`ff22` select SG4 versus
+/// SG6, the font, and true-lowercase decode (see [`resolve_alpha_cell`]).
 pub fn render_text(
     screen: &[u8],
     palette: &[[u8; 4]; PALETTE_LEN],
@@ -192,7 +229,7 @@ pub fn render_text(
         for col in 0..COLS {
             let code = screen.get(row * COLS + col).copied().unwrap_or(0);
             if code & SEMIGRAPHICS_BIT != 0 {
-                blit_semigraphics4(fb, row, col, code, palette);
+                blit_semigraphics(fb, row, col, code, palette, generator, ff22);
             } else {
                 let (cell_fg, cell_bg, glyph) = resolve_alpha_cell(generator, ff22, code, fg, bg);
                 blit_cell(fb, row, col, glyph, cell_fg, cell_bg);
@@ -201,29 +238,26 @@ pub fn render_text(
     }
 }
 
-/// Render one semigraphics-4 cell: a 2×2 grid of blocks in the selected colour.
-fn blit_semigraphics4(
+/// Render one semigraphics cell: SG4 is a 2×2 grid and SG6 a 2×3 grid.
+fn blit_semigraphics(
     fb: &mut [u8],
     row: usize,
     col: usize,
     code: u8,
     palette: &[[u8; 4]; PALETTE_LEN],
+    generator: AlphaGenerator,
+    ff22: u8,
 ) {
-    let on = palette[((code >> SG4_COLOR_SHIFT) & SG4_COLOR_MASK) as usize];
-    let off = palette[SG4_OFF_INDEX];
     let x0 = BORDER + col * CELL_W;
     let y0 = BORDER + row * CELL_H;
     for cy in 0..CELL_H {
-        let bottom = cy >= CELL_H / 2;
+        let (on, off, pixels) = semigraphics_line(generator, ff22, code, cy, palette);
         for cx in 0..CELL_W {
-            let right = cx >= CELL_W / 2;
-            let block = match (bottom, right) {
-                (false, false) => SG4_UPPER_LEFT,
-                (false, true) => SG4_UPPER_RIGHT,
-                (true, false) => SG4_LOWER_LEFT,
-                (true, true) => SG4_LOWER_RIGHT,
+            let color = if pixels & (PIXEL_MSB >> cx) != 0 {
+                on
+            } else {
+                off
             };
-            let color = if code & block != 0 { on } else { off };
             let idx = ((y0 + cy) * FB_W + (x0 + cx)) * BYTES_PER_PIXEL;
             fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
         }
