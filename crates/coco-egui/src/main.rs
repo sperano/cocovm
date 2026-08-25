@@ -13,6 +13,8 @@
 //! (Controls/Registers/Disassembly/Memory/Stack/Hardware panels —
 //! `debugger.rs`, §3).
 
+#![deny(rustdoc::broken_intra_doc_links)]
+
 mod about;
 mod app;
 mod audio;

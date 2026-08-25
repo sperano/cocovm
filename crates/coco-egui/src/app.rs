@@ -176,8 +176,7 @@ pub(crate) struct CocoApp {
     /// breakpoint included) never reaches this field at all. Seeded at
     /// launch from the persisted `[stats].runtime_secs`
     /// (`launch::launch_machine`), and persisted back by
-    /// [`crate::manager::lifecycle::fold_runtime_into_def`] on
-    /// Suspend/Stop/quit.
+    /// (`manager::lifecycle::fold_runtime_into_def`) on Suspend/Stop/quit.
     pub(crate) total_runtime: std::time::Duration,
 }
 

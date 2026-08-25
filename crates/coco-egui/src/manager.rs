@@ -85,7 +85,7 @@ const DETAIL_PANE_MARGIN: i8 = 10;
 
 /// The "select all rows" shortcut (⌘A/Ctrl+A) for the machine list —
 /// consumed only when no widget owns the keyboard
-/// ([`ManagerApp::update`]'s `ctx.wants_keyboard_input()` guard), so the
+/// ([`eframe::App::update`]'s `ctx.wants_keyboard_input()` guard), so the
 /// detail pane's own text fields (the Name field, a future search box)
 /// keep their native select-all instead of it being hijacked into a
 /// row-selection command.
@@ -142,7 +142,7 @@ pub struct MachineEntry {
     /// dir couldn't follow the new name yet (the running VM writes
     /// `thumbnail.png` into the artifact dir by path — renaming under it
     /// races). [`ManagerApp::apply_pending_renames`] migrates once the VM is
-    /// gone, including during [`ManagerApp::on_exit`] after its final media
+    /// gone, including during [`eframe::App::on_exit`] after its final media
     /// flush.
     rename_pending: bool,
 }
@@ -255,7 +255,7 @@ struct EditState {
     /// so half-typed names aren't saved keystroke by keystroke.
     name: String,
     form: new_vm::MachineForm,
-    /// The definition the form's picks last packed into ([`pack_def`]) —
+    /// The definition the form's picks last packed into ([`ManagerApp::pack_def`]) —
     /// the auto-save baseline. Seeded from the freshly seeded form (NOT
     /// from the entry's definition): packing normalizes (explicit `vdg`,
     /// re-seated MPI slots, dropped conflicting flags), and merely

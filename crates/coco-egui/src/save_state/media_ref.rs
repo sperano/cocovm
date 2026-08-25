@@ -1,7 +1,7 @@
 //! Standalone [`MediaRef`]/[`MediaRefs`] helpers shared by the SAVE side
 //! ([`super::save`]) and LOAD side ([`super::restore`]): hashing a file into
 //! a ref, reading/opening a ref's file back with mismatch-warning bookkeeping,
-//! and the two small lookups [`super::restore::CocoApp::rebuild_cart_mirrors`]
+//! and the two small lookups [`crate::CocoApp::rebuild_cart_mirrors`]
 //! needs to turn a restored cart tree back into path-bearing UI state.
 
 use std::path::{Path, PathBuf};

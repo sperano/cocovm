@@ -41,7 +41,7 @@ impl RS232Endpoint {
 /// 6551 after the ACIA part number.
 pub(crate) const RS232_TCP_DEFAULT_ADDR: &str = "127.0.0.1:6551";
 
-/// Menu selection handed to [`CocoApp::rs232_set_endpoint`] — the *request*
+/// Menu selection handed to [`crate::CocoApp::rs232_set_endpoint`] — the *request*
 /// (bind parameters live in the app state), as opposed to
 /// [`RS232Endpoint`], the record of what's actually bound.
 #[derive(Clone, Copy, PartialEq, Eq)]

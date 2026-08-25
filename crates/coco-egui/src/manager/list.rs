@@ -116,7 +116,7 @@ impl ManagerApp {
         self.on_selection_changed();
     }
 
-    /// ⌘A/Ctrl+A ([`super::ManagerApp::update`]'s shortcut handler): select
+    /// ⌘A/Ctrl+A ([`eframe::App::update`]'s shortcut handler): select
     /// every row.
     pub(super) fn select_all_rows(&mut self) {
         self.selection.select_all(self.entries.len());
