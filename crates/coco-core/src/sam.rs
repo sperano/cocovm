@@ -52,6 +52,114 @@ const BAS_MIRROR_OFFSET: usize = 0xBFE0 - BAS_ROM_BASE as usize;
 /// Each F-bit (display page) step is 512 bytes: `display_base = f * PAGE_UNIT`.
 pub const PAGE_UNIT: usize = 512;
 
+/// MC6883 display-counter X divisors, indexed by V2:V1:V0.
+const VIDEO_X_DIVISION: [u8; 8] = [1, 3, 1, 2, 1, 1, 1, 1];
+/// MC6883 display-counter Y divisors, indexed by V2:V1:V0.
+const VIDEO_Y_DIVISION: [u8; 8] = [12, 1, 3, 1, 2, 1, 1, 1];
+const VIDEO_MODE_MASK: u8 = 0x07;
+const VIDEO_MODE_LOW_BIT: u8 = 0x01;
+const VIDEO_MODE_DMA: u8 = 0x07;
+const COUNTER_DA0: u16 = 0x0001;
+const COUNTER_B3: u16 = 0x0008;
+const COUNTER_B4: u16 = 0x0010;
+const COUNTER_LOW_NIBBLE: u16 = 0x000F;
+const COUNTER_LOW_FIVE: u16 = 0x001F;
+const COUNTER_ROW_INCREMENT: u16 = 0x0020;
+
+/// One field's transient MC6883 video-address counter.
+///
+/// The MC6847 presents logical addresses, but the discrete SAM observes only
+/// DA0 transitions. Its V bits independently select the divider and HS carry
+/// rules that turn those transitions into physical RAM addresses. This state
+/// is render-local because CoCo 1/2 fields are currently rendered from a
+/// field-end snapshot; the CoCo 3 GIME path deliberately does not use it.
+#[derive(Debug, Clone, Copy)]
+pub struct SAMVideoAddressStream {
+    counter: u16,
+    x_phase: u8,
+    y_phase: u8,
+    video_mode: u8,
+}
+
+impl SAMVideoAddressStream {
+    /// Reset the stream as the MC6847's asserted field sync does.
+    pub fn new(display_base: u16, video_mode: u8) -> Self {
+        Self {
+            counter: display_base,
+            x_phase: 0,
+            y_phase: 0,
+            video_mode: video_mode & VIDEO_MODE_MASK,
+        }
+    }
+
+    /// Reload the F-derived base and clear both divider phases at field sync.
+    pub fn reset(&mut self, display_base: u16) {
+        self.counter = display_base;
+        self.x_phase = 0;
+        self.y_phase = 0;
+    }
+
+    /// Observe one MC6847 sample request and return the resulting SAM address.
+    /// Only the logical address's DA0 level is visible to the MC6883.
+    pub fn sample(&mut self, vdg_address: usize) -> u16 {
+        if (vdg_address as u16 & COUNTER_DA0) != (self.counter & COUNTER_DA0) {
+            self.increment_low_nibble();
+        }
+        self.counter
+    }
+
+    /// Apply the asserted edge of MC6847 horizontal sync.
+    pub fn horizontal_sync(&mut self) {
+        if self.video_mode == VIDEO_MODE_DMA {
+            return;
+        }
+        if self.video_mode & VIDEO_MODE_LOW_BIT != 0 {
+            self.clear_low_counter(COUNTER_LOW_NIBBLE, COUNTER_B3, true);
+        } else {
+            self.clear_low_counter(COUNTER_LOW_FIVE, COUNTER_B4, false);
+        }
+    }
+
+    fn increment_low_nibble(&mut self) {
+        let carry = self.counter & COUNTER_LOW_NIBBLE == COUNTER_LOW_NIBBLE;
+        let next = self.counter.wrapping_add(1) & COUNTER_LOW_NIBBLE;
+        self.counter = (self.counter & !COUNTER_LOW_NIBBLE) | next;
+        if carry {
+            self.carry_bit3();
+        }
+    }
+
+    fn clear_low_counter(&mut self, clear_mask: u16, carry_bit: u16, carry_bit3: bool) {
+        let carry = self.counter & carry_bit != 0;
+        self.counter &= !clear_mask;
+        if carry_bit3 && carry {
+            self.carry_bit3();
+        } else if carry {
+            self.carry_bit4();
+        }
+    }
+
+    fn carry_bit3(&mut self) {
+        self.x_phase += 1;
+        if self.x_phase < VIDEO_X_DIVISION[self.video_mode as usize] {
+            return;
+        }
+        self.x_phase = 0;
+        self.counter ^= COUNTER_B4;
+        if self.counter & COUNTER_B4 == 0 {
+            self.carry_bit4();
+        }
+    }
+
+    fn carry_bit4(&mut self) {
+        self.y_phase += 1;
+        if self.y_phase >= VIDEO_Y_DIVISION[self.video_mode as usize] {
+            self.y_phase = 0;
+            self.counter = self.counter.wrapping_add(COUNTER_ROW_INCREMENT);
+        }
+    }
+}
+
 /// Where a CPU address decodes to, per [`SAM::map`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SAMTarget {
@@ -77,12 +185,12 @@ pub enum SAMTarget {
 /// power up clear. Fields are `pub` (matching `gime::GIME`'s style) so tests
 /// can inspect latched state directly, same as `sam_video.rs` does for the
 /// GIME's compatibility overlay; [`SAM::map`]/[`SAM::display_base`]/
-/// [`SAM::v_bits`]/[`SAM::cpu_fast`] are the API real callers use.
+/// [`SAM::v_bits`]/[`SAM::video_address_mask`]/[`SAM::cpu_fast`] are the API
+/// real callers use.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct SAM {
-    /// VDG-counter mode bits V0-V2, packed as `V2:V1:V0` (0-7). Latched but
-    /// not consulted here — `video.rs`'s legacy-graphics vertical cadence
-    /// lookup uses it.
+    /// VDG-counter mode bits V0-V2, packed as `V2:V1:V0` (0-7). The field
+    /// renderer passes these divider/carry rules to [`SAMVideoAddressStream`].
     pub v: u8,
     /// Display-offset bits F0-F6 (0-127); `display_base = f * PAGE_UNIT`.
     pub f: u8,
@@ -94,10 +202,11 @@ pub struct SAM {
     pub r0: bool,
     /// CPU rate, unconditional-double-speed half.
     pub r1: bool,
-    /// Memory-size bit 0 (4K/16K/32K-64K, with `m1`).
+    /// Memory-size bit 0 (4K/16K/32K-64K, with `m1`); also selects the video
+    /// counter's physical-address mask through [`SAM::video_address_mask`].
     pub m0: bool,
-    /// Memory-size bit 1; used here only as the plan's 64K/"not 64K" proxy
-    /// (see [`SAM::is_64k`]) for TY's all-RAM precondition and P1 banking.
+    /// Memory-size bit 1; used as the 64K/"not 64K" proxy (see
+    /// [`SAM::is_64k`]) for TY/P1 and for the video counter's address mask.
     pub m1: bool,
     /// Map type: false = ROM map, true = all-RAM (system ROM disabled). Color
     /// BASIC Unravelled's appendix has $FFDE/$FFDF backwards; MAME, Bob
@@ -177,6 +286,15 @@ impl SAM {
     /// The V0-V2 VDG-counter mode bits, packed as `V2:V1:V0` (0-7).
     pub fn v_bits(&self) -> u8 {
         self.v
+    }
+
+    /// Mask applied to the MC6883 video counter before physical RAM access.
+    pub fn video_address_mask(&self) -> u16 {
+        match (self.m1, self.m0) {
+            (true, _) => u16::MAX,
+            (false, true) => 0x3FFF,
+            (false, false) => 0x0FFF,
+        }
     }
 
     /// True when either CPU-rate strobe selects double speed. KNOWN GAP: real

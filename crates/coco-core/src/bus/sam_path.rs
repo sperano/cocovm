@@ -22,6 +22,16 @@ impl SystemBus {
         (phys < self.ram.len()).then_some(phys)
     }
 
+    /// Read the physical RAM address produced by the discrete MC6883 video
+    /// counter. This bypasses the CPU ROM/I/O/P1 decode and applies the SAM's
+    /// memory-size mask, matching its separate display DMA path.
+    pub(crate) fn sam_video_read(&self, addr: u16) -> u8 {
+        let phys = usize::from(addr & self.sam.video_address_mask());
+        self.sam_ram_index(phys)
+            .map(|i| self.ram[i])
+            .unwrap_or(OPEN_BUS)
+    }
+
     pub(super) fn sam_read(&mut self, addr: u16) -> u8 {
         match self.sam.map(addr) {
             SAMTarget::Ram(phys) => self

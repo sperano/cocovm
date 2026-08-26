@@ -135,7 +135,7 @@ impl Machine {
         let css = ff22 & video::VDG_CSS != 0;
         let sam_video = self.bus.gime.sam_video;
         let (row_bytes, lines_per_row) = if ag {
-            let mode = video::decode_vdg_graphics(ff22, sam_video);
+            let mode = video::decode_vdg_graphics(ff22);
             let lpr = video::LEGACY_GFX_LINES_PER_ROW[(sam_video & 0x07) as usize];
             (mode.bytes_per_row, lpr)
         } else {
@@ -157,7 +157,7 @@ impl Machine {
             [(row * raster::CANVAS_W + raster::NON_WIDE_BORDER_X) * BYTES_PER_PIXEL..]
             [..raster::NON_WIDE_ACTIVE_W * BYTES_PER_PIXEL];
         if ag {
-            let mode = video::decode_vdg_graphics(ff22, sam_video);
+            let mode = video::decode_vdg_graphics(ff22);
             let indices = video::vdg_palette_indices(mode.bpp, usize::from(css));
             let mut colors = [[0u8; 4]; video::MAX_VDG_COLORS];
             for (slot, &reg) in colors.iter_mut().zip(indices) {
@@ -248,16 +248,11 @@ impl Machine {
         );
     }
 
-    /// Render a VDG bitmap graphics (PMODE) field. Mode/colour set come from
-    /// PIA1 $FF22; vertical cadence comes from the SAM V0-V2 bits.
+    /// Render a VDG bitmap graphics (PMODE) field through the discrete MC6883.
     fn render_coco_graphics(&mut self) {
         self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;
-        let sam_video = match self.config.variant {
-            MachineVariant::Coco3 => self.bus.gime.sam_video,
-            MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.v_bits(),
-        };
-        let mode = video::decode_vdg_graphics(ff22, sam_video);
+        let mode = video::decode_vdg_graphics(ff22);
         let css_bit = ff22 & video::VDG_CSS != 0;
         let css = usize::from(css_bit);
         let indices = video::vdg_palette_indices(mode.bpp, css);
@@ -267,12 +262,7 @@ impl Machine {
             *slot = palette[reg];
         }
 
-        let base = self.legacy_display_base();
-        self.graphics_scratch
-            .resize(mode.bytes_per_row * mode.rows, 0);
-        for (i, byte) in self.graphics_scratch.iter_mut().enumerate() {
-            *byte = self.bus.read(base.wrapping_add(i as u16));
-        }
+        self.sample_coco_graphics(&mode);
 
         // The legacy graphics border is not black: green (CSS=0) or buff
         // (CSS=1); CoCo 3 stays fixed black.
@@ -283,13 +273,34 @@ impl Machine {
             }
         };
         let colors = &colors[..indices.len()];
-        video::render_graphics(
+        video::render_sampled_graphics(
             &self.graphics_scratch,
             &mode,
             colors,
             border,
             &mut self.framebuffer,
         );
+    }
+
+    /// Resolve each MC6847 request to the physical RAM address emitted by the
+    /// discrete MC6883. CoCo 3 never reaches this field-end rendering path.
+    fn sample_coco_graphics(&mut self, mode: &video::VDGGraphicsMode) {
+        let video_mode = self.bus.sam.v_bits();
+        let mut stream =
+            crate::sam::SAMVideoAddressStream::new(self.bus.sam.display_base() as u16, video_mode);
+        self.graphics_scratch
+            .resize(video::ACTIVE_H * mode.bytes_per_row, 0);
+
+        let lines_per_row = video::ACTIVE_H / mode.rows;
+        for line in 0..video::ACTIVE_H {
+            let logical_base = line / lines_per_row * mode.bytes_per_row;
+            let data_base = line * mode.bytes_per_row;
+            for sample in 0..mode.bytes_per_row {
+                let address = stream.sample(logical_base + sample);
+                self.graphics_scratch[data_base + sample] = self.bus.sam_video_read(address);
+            }
+            stream.horizontal_sync();
+        }
     }
 
     /// Restore the fixed legacy-mode framebuffer geometry after a GIME-native

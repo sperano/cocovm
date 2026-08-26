@@ -1,16 +1,12 @@
 //! VDG resolution graphics (CoCo-compatible PMODE, `DESIGN.md` §6).
 //!
 //! All VDG graphics modes scan out into the same 256×192 active area as text, so
-//! lower-resolution modes are pixel-doubled to fill it. On real hardware the SAM's
-//! V0–V2 bits own pitch on *both* axes — bytes fetched per row and how many times
-//! each row is repeated to fill the 192-line active area (see
-//! [`LEGACY_GFX_LINES_PER_ROW`]) — while PIA1 $FF22 (A/G, GM2–0, CSS) only drives
-//! the VDG's own pixel decode (bits per pixel, colour set); the display base comes
-//! from the SAM page register, and colours from the GIME palette (SEB Fig 13). SAM
-//! can't see GM, so a mismatched V/GM pairing is physically possible. Our decode
-//! simplifies this by deriving bytes-per-row from GM, which matches hardware for
-//! every standard PMODE/V pairing but diverges on a mismatched one — see task 196
-//! for the fix.
+//! lower-resolution modes are pixel-doubled to fill it. PIA1 $FF22 GM selects the
+//! MC6847's 16/32 sample requests, 64/96/192-line cadence, and pixel decode. On a
+//! CoCo 1/2, the discrete MC6883 sees only those requests' DA0 transitions and
+//! applies its independently selected SAM V divider/carry rules. Software normally
+//! programs a stock GM/V pairing, but deliberate mismatches produce a non-linear
+//! address stream. The CoCo 3's GIME compatibility path uses its own row model.
 
 use super::{ACTIVE_H, ACTIVE_W, BORDER, BYTES_PER_PIXEL, FB_H, FB_W, paint_px};
 
@@ -44,19 +40,19 @@ const G4_PALETTE_INDICES: [[usize; 4]; 2] = [[0, 1, 2, 3], [4, 5, 6, 7]];
 /// 4-colour modes use all four; 2-colour modes use a `[..2]` prefix).
 pub const MAX_VDG_COLORS: usize = 4;
 
-/// Lines-per-row for CoCo-compatible legacy graphics, indexed by the SAM V bits
-/// packed `V2:V1:V0` (0–7). Hardware-verified (MAME
+/// Lines-per-row for CoCo 3 GIME-compatible legacy graphics, indexed by its SAM
+/// V compatibility bits packed `V2:V1:V0` (0–7). Hardware-verified (MAME
 /// `gime_legacy_lines_per_row_graphic`): RAM rows fetched = `ACTIVE_H /
 /// LEGACY_GFX_LINES_PER_ROW[v]` (64, 96, or 192), each repeated this many times
-/// vertically to fill the 192-line active area.
+/// vertically to fill the 192-line active area. The discrete CoCo 1/2 MC6883
+/// instead uses [`crate::sam::SAMVideoAddressStream`].
 pub const LEGACY_GFX_LINES_PER_ROW: [usize; 8] = [3, 3, 3, 2, 2, 1, 1, 1];
 
 /// A decoded VDG resolution-graphics mode.
 pub struct VDGGraphicsMode {
     /// Bytes fetched per displayed row.
     pub bytes_per_row: usize,
-    /// RAM rows fetched (before vertical repetition into [`ACTIVE_H`]); driven by
-    /// the SAM V bits, not the GM bits (see [`LEGACY_GFX_LINES_PER_ROW`]).
+    /// MC6847 logical rows (before vertical repetition into [`ACTIVE_H`]).
     pub rows: usize,
     /// Bits per pixel: 1 = 2 colours, 2 = 4 colours.
     pub bpp: usize,
@@ -64,33 +60,27 @@ pub struct VDGGraphicsMode {
     pub logical_w: usize,
 }
 
-/// Mask for the 3-bit SAM V value (`V2:V1:V0`) passed to [`decode_vdg_graphics`].
-const SAM_VIDEO_MASK: u8 = 0x07;
-
-/// Decodes the VDG graphics mode: bpp and logical width come from PIA1
-/// $FF22 GM2-0 (the real VDG pixel decode); bytes-per-row is also derived
-/// from GM2-0 here as a simplification (see the module doc) rather than
-/// hardware's SAM-driven pitch. Vertical geometry (RAM rows, see
-/// [`LEGACY_GFX_LINES_PER_ROW`]) comes from SAM V0-V2, independently — a
-/// mismatched GM/V pairing isn't reconciled, on hardware or here.
-pub fn decode_vdg_graphics(ff22: u8, sam_video: u8) -> VDGGraphicsMode {
+/// Decode the MC6847 graphics mode selected by PIA1 $FF22 GM2-0.
+///
+/// All four geometry/decode fields belong to the VDG. The discrete MC6883
+/// transforms its sample requests into physical addresses separately.
+pub fn decode_vdg_graphics(ff22: u8) -> VDGGraphicsMode {
     let gm = (ff22 & VDG_GM_MASK) >> VDG_GM_SHIFT;
-    // (logical width, 4-colour?) for GM2..GM0 = 0..7.
-    let (logical_w, four_colour) = match gm {
-        0 => (64, true),   // CG1
-        1 => (128, false), // RG1
-        2 => (128, true),  // CG2
-        3 => (128, false), // RG2  (PMODE 0)
-        4 => (128, true),  // CG3  (PMODE 1)
-        5 => (128, false), // RG3  (PMODE 2)
-        6 => (128, true),  // CG6  (PMODE 3)
-        _ => (256, false), // RG6  (PMODE 4)
+    // (logical width, logical rows, 4-colour?) for GM2..GM0 = 0..7.
+    let (logical_w, rows, four_colour) = match gm {
+        0 => (64, 64, true),    // CG1
+        1 => (128, 64, false),  // RG1
+        2 => (128, 64, true),   // CG2
+        3 => (128, 96, false),  // RG2  (PMODE 0)
+        4 => (128, 96, true),   // CG3  (PMODE 1)
+        5 => (128, 192, false), // RG3  (PMODE 2)
+        6 => (128, 192, true),  // CG6  (PMODE 3)
+        _ => (256, 192, false), // RG6  (PMODE 4)
     };
     let bpp = if four_colour { 2 } else { 1 };
-    let lines_per_row = LEGACY_GFX_LINES_PER_ROW[(sam_video & SAM_VIDEO_MASK) as usize];
     VDGGraphicsMode {
         bytes_per_row: logical_w * bpp / 8,
-        rows: ACTIVE_H / lines_per_row,
+        rows,
         bpp,
         logical_w,
     }
@@ -163,6 +153,36 @@ pub fn render_graphics(
                 blit_block(fb, lx * hscale, ly * vscale, hscale, vscale, color);
             }
         }
+    }
+}
+
+/// Render the 192 physical scanlines sampled through the discrete MC6883.
+/// `data` contains `bytes_per_row` MC6847 samples for every active scanline;
+/// repeated or discontinuous SAM addresses have already been resolved.
+pub fn render_sampled_graphics(
+    data: &[u8],
+    mode: &VDGGraphicsMode,
+    colors: &[[u8; 4]],
+    border: [u8; 4],
+    fb: &mut [u8],
+) {
+    debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
+    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
+        px.copy_from_slice(&border);
+    }
+
+    let xscale = ACTIVE_W / mode.logical_w;
+    for y in 0..ACTIVE_H {
+        let data_start = y * mode.bytes_per_row;
+        let output_start = ((BORDER + y) * FB_W + BORDER) * BYTES_PER_PIXEL;
+        paint_legacy_graphics_line(
+            data.get(data_start..data_start + mode.bytes_per_row)
+                .unwrap_or_default(),
+            mode,
+            colors,
+            xscale,
+            &mut fb[output_start..output_start + ACTIVE_W * BYTES_PER_PIXEL],
+        );
     }
 }
 
