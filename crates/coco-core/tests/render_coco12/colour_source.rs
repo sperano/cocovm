@@ -16,6 +16,8 @@ const FF22_AG: u8 = 0x80;
 const FF22_CSS: u8 = 0x08;
 /// PIA1 $FF22 GM2-0 = 111 (RG6 / PMODE 4).
 const FF22_GM_RG6: u8 = 7 << 4;
+const SAM_V1_SET: u16 = 0xFFC3;
+const SAM_V2_SET: u16 = 0xFFC5;
 
 #[test]
 fn text_uses_fixed_green_set_by_default() {
@@ -109,11 +111,9 @@ fn semigraphics4_uses_fixed_vdg_colors() {
 fn pmode4_style_graphics_uses_fixed_colors_and_green_border() {
     let mut m = boot_parked_machine();
     m.bus.pia1.b.output = FF22_AG | FF22_GM_RG6; // RG6 / PMODE 4, CSS=0
-    // SAM V0-V2 must pair with RG6 (V=111) for the vertical-cadence table
-    // (`video::LEGACY_GFX_LINES_PER_ROW`).
-    m.bus.write(0xFFC1, 0); // V0 set
-    m.bus.write(0xFFC3, 0); // V1 set
-    m.bus.write(0xFFC5, 0); // V2 set
+    // RG6's stock SAM pairing is V=110; V=111 is the MC6883 DMA mode.
+    m.bus.write(SAM_V1_SET, 0);
+    m.bus.write(SAM_V2_SET, 0);
     // First byte of the display: MSB (leftmost pixel) lit, the rest clear.
     m.bus.write(SCREEN_BASE, 0b1000_0000);
     m.run_field();

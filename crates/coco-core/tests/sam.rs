@@ -249,6 +249,23 @@ fn display_base_after_setting_f2() {
     assert_eq!(b.sam.display_base(), 0x0400);
 }
 
+#[test]
+fn video_address_mask_follows_the_memory_size_bits() {
+    let mut b = bus(MemorySize::K64);
+    assert_eq!(b.sam.video_address_mask(), 0x0FFF);
+
+    b.write(M0_SET, 0);
+    assert_eq!(b.sam.video_address_mask(), 0x3FFF);
+
+    b.write(M1_SET, 0);
+    assert_eq!(b.sam.video_address_mask(), u16::MAX);
+
+    b.write(M0_CLEAR, 0);
+    assert_eq!(b.sam.video_address_mask(), u16::MAX);
+    b.write(M1_CLEAR, 0);
+    assert_eq!(b.sam.video_address_mask(), 0x0FFF);
+}
+
 // ---- Open bus -------------------------------------------------------------------
 
 #[test]

@@ -13,6 +13,8 @@ mod common;
 mod coco3_compat_text;
 #[path = "render_coco12/colour_source.rs"]
 mod colour_source;
+#[path = "render_coco12/graphics_stream.rs"]
+mod graphics_stream;
 #[path = "render_coco12/mc6847_fonts.rs"]
 mod mc6847_fonts;
 #[path = "render_coco12/semigraphics.rs"]
