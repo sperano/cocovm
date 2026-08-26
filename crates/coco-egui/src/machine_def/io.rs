@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use super::{CURRENT_SCHEMA, MachineDef};
+use crate::MPI_SLOT_COUNT;
 
 const TOP_LEVEL_KEYS: &[&str] = &[
     "schema",
@@ -24,8 +25,12 @@ const TOP_LEVEL_KEYS: &[&str] = &[
 const HARDWARE_KEYS: &[&str] = &[
     "variant", "ram", "video", "monitor", "display", "vdg", "rom",
 ];
-const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
-const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc", "fd502", "rs232"];
+const MEDIA_KEYS: &[&str] = &["disk0", "disk1", "vhd0", "vhd1", "tape"];
+// `mpi`/`rtc`/`fd502`/`rs232` (schema-1's booleans) are deliberately absent: a
+// schema-1 file's leftover `[peripherals]` must report them as unknown, not
+// silently accept them (`PeripheralsDTO::cartridge`'s doc explains why the
+// missing-`cartridge` parse error is what actually rejects such a file).
+const PERIPHERALS_KEYS: &[&str] = &["cartridge"];
 const PORTS_KEYS: &[&str] = &["serial"];
 const UI_KEYS: &[&str] = &[
     "aspect_correct",
@@ -125,6 +130,31 @@ fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     }
 }
 
+/// A `[peripherals].cartridge`'s `slots` array of the wrong length is caught
+/// here, before the typed deserialize, so the error names the expected count
+/// (`MPI_SLOT_COUNT`) instead of serde's generic length complaint. A missing
+/// `slots` key needs no help here: it's a required field of
+/// [`super::CartridgeDTO::MPI`] itself, so serde's own "missing field
+/// `slots`" error already names the problem.
+fn check_mpi_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
+    let Some(toml::Value::Table(peripherals)) = table.get("peripherals") else {
+        return Ok(());
+    };
+    let Some(toml::Value::Table(cartridge)) = peripherals.get("cartridge") else {
+        return Ok(());
+    };
+    let is_mpi = cartridge.get("kind").and_then(toml::Value::as_str) == Some("mpi");
+    match cartridge.get("slots") {
+        Some(toml::Value::Array(slots)) if is_mpi && slots.len() != MPI_SLOT_COUNT => Err(format!(
+            "{}: [peripherals].cartridge.slots lists {} slots but a MultiPak Interface has \
+             exactly {MPI_SLOT_COUNT}",
+            path.display(),
+            slots.len()
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Load and validate one definition file (parse + schema check + hardware
 /// validation), warning about unknown keys along the way.
 fn load_one(path: &Path) -> Result<MachineDef, String> {
@@ -132,6 +162,7 @@ fn load_one(path: &Path) -> Result<MachineDef, String> {
     let table: toml::Table =
         toml::from_str(&contents).map_err(|e| format!("{}: {e}", path.display()))?;
     warn_unknown_keys(&table, path);
+    check_mpi_slots(&table, path)?;
     let mut def: MachineDef = table
         .clone()
         .try_into()

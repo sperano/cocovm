@@ -1,13 +1,13 @@
 //! `launch_machine` tests for the peripherals/ports this module mounts
 //! beyond the base `CocoApp::new` construction — the RS-232 Pak, the
-//! printer serial sink, and the MPI/RS-232 conflict `check_cartridge_port`
-//! rejects. Boots through `launch_machine`'s production ROM resolution, so
-//! it reads the installed `coco3.rom` (`installed_roms_dir`, populated by
+//! printer serial sink, and disk media with no reachable controller. Boots
+//! through `launch_machine`'s production ROM resolution, so it reads the
+//! installed `coco3.rom` (`installed_roms_dir`, populated by
 //! `ensure_assets` — `save_state_test.rs`'s doc comment).
 
 use coco_core::MachineConfig;
 
-use crate::machine_def::MachineDef;
+use crate::machine_def::{CartridgeDTO, MachineDef, SlotDTO};
 
 /// A minimal CoCo 3 definition ([`MachineConfig::default`]) with no media
 /// and no peripherals — callers flip on just the `[peripherals]`/`[ports]`
@@ -16,12 +16,12 @@ fn base_def() -> MachineDef {
     MachineDef::from_config("Launch Test".to_string(), None, &MachineConfig::default())
 }
 
-/// `[peripherals].rs232 = true` mounts the Deluxe RS-232 Pak straight into
-/// the cartridge port.
+/// `[peripherals].cartridge = { kind = "rs232" }` mounts the Deluxe RS-232
+/// Pak straight into the cartridge port.
 #[test]
 fn rs232_def_mounts_the_pak() {
     let mut def = base_def();
-    def.peripherals.rs232 = true;
+    def.peripherals.cartridge = CartridgeDTO::RS232;
 
     let mut app = super::launch_machine(&def, "launch-test-rs232")
         .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
@@ -67,19 +67,45 @@ fn joy_sources_def_reaches_the_app() {
     );
 }
 
-/// `mpi = true` + `rs232 = true` is rejected outright — the pak has no
-/// MultiPak-slot support yet, unlike FD-502/RTC.
+/// `disk0` with no reachable disk controller (no bare FD-502, no MPI slot
+/// holding one) is a fatal error naming the fix — nothing implies a
+/// controller anymore.
 #[test]
-fn mpi_and_rs232_together_errors() {
+fn disk_media_with_no_controller_errors() {
     let mut def = base_def();
-    def.peripherals.mpi = true;
-    def.peripherals.rs232 = true;
+    def.media.disk0 = Some("dev.dsk".to_string());
 
-    let err = super::launch_machine(&def, "launch-test-mpi-rs232")
+    let err = super::launch_machine(&def, "launch-test-disk-no-controller")
         .err()
-        .expect("mpi + rs232 must be rejected");
+        .expect("disk media with no controller must be rejected");
     assert!(
-        err.contains("MultiPak"),
-        "error should explain the MPI-slot gap: {err}"
+        err.contains("disk controller"),
+        "error should name the fix: {err}"
     );
+}
+
+/// The same disk media launches fine once an MPI slot holds the FD-502.
+#[test]
+fn disk_media_with_mpi_fd502_launches() {
+    use coco_core::fdc;
+
+    let dir = crate::machine_def::tests::TempDir::new("launch-disk-mpi-fd502");
+    let disk_path = dir.path().join("dev.dsk");
+    let sector_size = 128usize << fdc::DEFAULT_SECTOR_SIZE_CODE;
+    let one_track = fdc::DEFAULT_SECTORS_PER_TRACK * sector_size * fdc::DEFAULT_SIDES;
+    std::fs::write(&disk_path, vec![0u8; one_track]).expect("write disk fixture");
+
+    let mut def = base_def();
+    def.media.disk0 = Some(disk_path.display().to_string());
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::FD502,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+        ],
+    };
+
+    super::launch_machine(&def, "launch-test-disk-mpi-fd502")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
 }

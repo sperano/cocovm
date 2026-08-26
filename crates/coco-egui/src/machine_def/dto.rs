@@ -287,14 +287,11 @@ impl HardwareDTO {
 
 /// `[media]` section — every key optional, the section itself optional.
 /// Relative paths are meant to resolve against the machine's artifact
-/// directory (`data_dir()/machines/<slug>`), never embedded
-/// ;
-/// no caller resolves media paths yet (step 5,
-/// launch/media mounting — not implemented).
+/// directory (`data_dir()/machines/<slug>`), never embedded. The cartridge
+/// port's own ROM Pak/Games Master/Orchestra-90 image lives in
+/// `[peripherals].cartridge`, not here — a cartridge is hardware, not media.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MediaDTO {
-    #[serde(default)]
-    pub cart: Option<String>,
     #[serde(default)]
     pub disk0: Option<String>,
     #[serde(default)]
@@ -305,24 +302,6 @@ pub struct MediaDTO {
     pub vhd1: Option<String>,
     #[serde(default)]
     pub tape: Option<String>,
-}
-
-/// `[peripherals]` section — section itself optional.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct PeripheralsDTO {
-    #[serde(default)]
-    pub mpi: bool,
-    #[serde(default)]
-    pub rtc: bool,
-    /// FD-502 disk controller. Also implied at launch by `[media]`
-    /// disk0/disk1 being set, so older files without this key keep working.
-    #[serde(default)]
-    pub fd502: bool,
-    /// Deluxe RS-232 Pak in the cartridge port. Like `rtc`/`fd502`, the
-    /// schema keeps no slot layout: a slotted pak isn't representable yet —
-    /// launch rejects `mpi && rs232` outright (`launch::check_cartridge_port`).
-    #[serde(default)]
-    pub rs232: bool,
 }
 
 /// `[ports].serial`. What host sink the built-in bit-banger serial port
