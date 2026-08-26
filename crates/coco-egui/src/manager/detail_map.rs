@@ -29,36 +29,14 @@ fn blank_vhd_file(drive: usize) -> String {
 }
 
 /// Seed the detail pane's [`new_vm::MachineForm`] from a saved definition —
-/// the inverse of [`ManagerApp::pack_def`], reconstructing the cartridge
-/// picture the same way `crate::launch_machine` mounts it.
+/// the inverse of [`ManagerApp::pack_def`].
 pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     let mut form = new_vm::MachineForm::new("detail");
     form.config = def
         .to_machine_config()
         .expect("list entries are validated on load/save");
     let media = &def.media;
-    let fd502 = def.peripherals.fd502 || media.disk0.is_some() || media.disk1.is_some();
-    let cart = media.cart.as_deref().map(PathBuf::from);
-    if def.peripherals.mpi {
-        form.cartridge = new_vm::CartridgeChoice::MPI;
-        if let Some(path) = cart {
-            form.mpi_slots[0] = new_vm::SlotChoice::ROMPak(path);
-        }
-        if fd502 {
-            form.mpi_slots[crate::MPI_SLOT_COUNT - 1] = new_vm::SlotChoice::FD502;
-        }
-        if def.peripherals.rtc {
-            form.mpi_slots[crate::DEFAULT_RTC_SLOT] = new_vm::SlotChoice::RTC;
-        }
-    } else if let Some(path) = cart {
-        form.cartridge = new_vm::CartridgeChoice::ROMPak(path);
-    } else if def.peripherals.rtc {
-        form.cartridge = new_vm::CartridgeChoice::RTC;
-    } else if def.peripherals.rs232 {
-        form.cartridge = new_vm::CartridgeChoice::RS232;
-    } else if fd502 {
-        form.cartridge = new_vm::CartridgeChoice::FD502;
-    }
+    (form.cartridge, form.mpi_slots) = new_vm::seed_peripherals(&def.peripherals);
     let media_choice = |raw: &Option<String>| match raw {
         Some(s) => new_vm::MediaChoice::File(PathBuf::from(s)),
         None => new_vm::MediaChoice::None,
@@ -137,7 +115,7 @@ impl ManagerApp {
             form.display,
             base.hardware.rom.clone(),
         );
-        pack_cartridge(form, &mut def)?;
+        def.peripherals = new_vm::pack_peripherals(&form.cartridge, &form.mpi_slots);
         self.pack_media(slug, form, &mut def)?;
         pack_ui(form, &mut def);
         Ok(def)
@@ -172,38 +150,6 @@ impl ManagerApp {
         }
         Ok(())
     }
-}
-
-/// Pack the cartridge port's peripherals flags and `[media].cart` from the
-/// form's Cartridge/MPI-slot picks. The schema has no slot layout: an
-/// MPI-slotted FD-502/RTC is recorded as a plain flag, re-seated by `launch_machine`.
-fn pack_cartridge(
-    form: &new_vm::MachineForm,
-    def: &mut machine_def::MachineDef,
-) -> Result<(), String> {
-    def.peripherals.fd502 = form.drives_available();
-    def.peripherals.mpi = form.cartridge == new_vm::CartridgeChoice::MPI;
-    def.peripherals.rtc = form.cartridge == new_vm::CartridgeChoice::RTC
-        || form.mpi_slots.contains(&new_vm::SlotChoice::RTC);
-    def.peripherals.rs232 = form.cartridge == new_vm::CartridgeChoice::RS232;
-    // A ROM Pak (port or MPI-slotted) is recorded as [media].cart; the schema holds only one.
-    let mut slotted_paks = form.mpi_slots.iter().filter_map(|slot| match slot {
-        new_vm::SlotChoice::ROMPak(path) => Some(path),
-        _ => None,
-    });
-    def.media.cart = match &form.cartridge {
-        new_vm::CartridgeChoice::ROMPak(path) => Some(path.display().to_string()),
-        new_vm::CartridgeChoice::MPI => slotted_paks.next().map(|p| p.display().to_string()),
-        _ => None,
-    };
-    if slotted_paks.next().is_some() {
-        return Err(
-            "a machine definition records a single ROM Pak — leave at most one slot \
-             with a pak"
-                .to_string(),
-        );
-    }
-    Ok(())
 }
 
 /// Pack the form's remaining `[ports]`/`[ui]` picks: the Serial sink,

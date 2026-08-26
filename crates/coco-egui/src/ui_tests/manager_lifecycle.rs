@@ -438,6 +438,8 @@ fn launch_error_is_reported_not_fatal() {
         None,
         &MachineConfig::default(),
     );
+    // A reachable controller, so the missing file (not the controller check) is what fails.
+    def.peripherals.cartridge = machine_def::CartridgeDTO::FD502;
     def.media.disk0 = Some("/definitely/does/not/exist.dsk".to_string());
     let entries = vec![manager::MachineEntry::new("broken-media".to_string(), def)];
     let mut harness = manager_harness(None, entries);

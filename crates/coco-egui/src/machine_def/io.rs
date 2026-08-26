@@ -24,8 +24,12 @@ const TOP_LEVEL_KEYS: &[&str] = &[
 const HARDWARE_KEYS: &[&str] = &[
     "variant", "ram", "video", "monitor", "display", "vdg", "rom",
 ];
-const MEDIA_KEYS: &[&str] = &["cart", "disk0", "disk1", "vhd0", "vhd1", "tape"];
-const PERIPHERALS_KEYS: &[&str] = &["mpi", "rtc", "fd502", "rs232"];
+const MEDIA_KEYS: &[&str] = &["disk0", "disk1", "vhd0", "vhd1", "tape"];
+// `mpi`/`rtc`/`fd502`/`rs232` (schema-1's booleans) are deliberately absent: a
+// schema-1 file's leftover `[peripherals]` must report them as unknown, not
+// silently accept them (`PeripheralsDTO::cartridge`'s doc explains why the
+// missing-`cartridge` parse error is what actually rejects such a file).
+const PERIPHERALS_KEYS: &[&str] = &["cartridge", "slots"];
 const PORTS_KEYS: &[&str] = &["serial"];
 const UI_KEYS: &[&str] = &[
     "aspect_correct",
@@ -125,6 +129,30 @@ fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     }
 }
 
+/// `[peripherals].cartridge = { kind = "mpi" }` with no `slots` key would
+/// otherwise deserialize as an empty MultiPak (`slots`' `#[serde(default)]`)
+/// — indistinguishable from a genuinely-empty one, so this raw-table check
+/// (run before the typed deserialize) is what makes a missing loadout fatal
+/// instead of silently discarded (`PeripheralsDTO::slots`'s doc).
+fn check_mpi_has_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
+    let Some(toml::Value::Table(peripherals)) = table.get("peripherals") else {
+        return Ok(());
+    };
+    let is_mpi = matches!(
+        peripherals.get("cartridge"),
+        Some(toml::Value::Table(cartridge))
+            if cartridge.get("kind") == Some(&toml::Value::String("mpi".to_string()))
+    );
+    if is_mpi && !peripherals.contains_key("slots") {
+        return Err(format!(
+            "{}: [peripherals].cartridge is the MultiPak Interface but [peripherals].slots \
+             is missing — list its 4 slots explicitly (each `{{ kind = \"empty\" }}` if unused)",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 /// Load and validate one definition file (parse + schema check + hardware
 /// validation), warning about unknown keys along the way.
 fn load_one(path: &Path) -> Result<MachineDef, String> {
@@ -132,6 +160,7 @@ fn load_one(path: &Path) -> Result<MachineDef, String> {
     let table: toml::Table =
         toml::from_str(&contents).map_err(|e| format!("{}: {e}", path.display()))?;
     warn_unknown_keys(&table, path);
+    check_mpi_has_slots(&table, path)?;
     let mut def: MachineDef = table
         .clone()
         .try_into()

@@ -1,10 +1,8 @@
-//! Manager detail-pane peripheral/media auto-save tests: FD-502/MPI/RTC
-//! peripheral flags, ROM Pak `[media].cart`, and blank-media placement in
-//! the artifact directory.
+//! Manager detail-pane peripheral/media auto-save tests: the Cartridge-row
+//! and MPI-slot picks packed into `[peripherals].cartridge`/`.slots`, and
+//! blank-media placement in the artifact directory.
 
 use std::fs;
-
-use egui_kittest::kittest::Queryable;
 
 use crate::machine_def::tests::TempDir;
 use crate::*;
@@ -12,7 +10,7 @@ use crate::*;
 use super::harness::*;
 
 /// "New" creates the machine immediately; picking Cartridge = FD-502
-/// auto-saves `[peripherals].fd502` into the definition file.
+/// auto-saves `[peripherals].cartridge` into the definition file.
 #[test]
 fn manager_edit_with_fd502_records_the_peripheral() {
     let dir = TempDir::new("create-fd502");
@@ -23,17 +21,20 @@ fn manager_edit_with_fd502_records_the_peripheral() {
     select_combo_at(&mut harness, "None", 1, "FD-502");
 
     assert_eq!(harness.state().entries.len(), 1);
-    assert!(harness.state().entries[0].def.peripherals.fd502);
+    assert_eq!(
+        harness.state().entries[0].def.peripherals.cartridge,
+        machine_def::CartridgeDTO::FD502
+    );
     let file = dir.path().join("coco-3.toml");
     let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
     assert!(
-        contents.contains("fd502 = true"),
+        contents.contains("kind = \"fd502\""),
         "the TOML must record the peripheral:\n{contents}"
     );
 }
 
-/// Cartridge = MultiPak Interface in the pane records the mpi peripheral
-/// (no slotted FD-502 → no fd502 flag).
+/// Cartridge = MultiPak Interface in the pane records the MPI cartridge with
+/// no slots key (nothing picked in any slot).
 #[test]
 fn manager_edit_with_mpi_records_the_peripheral() {
     let dir = TempDir::new("create-mpi");
@@ -44,17 +45,20 @@ fn manager_edit_with_mpi_records_the_peripheral() {
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert!(def.peripherals.mpi);
-    assert!(!def.peripherals.fd502);
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(
-        contents.contains("mpi = true"),
+        contents.contains("kind = \"mpi\""),
         "TOML must record the MPI:\n{contents}"
+    );
+    assert!(
+        !contents.contains("slots"),
+        "an MPI with nothing in any slot must omit [peripherals].slots:\n{contents}"
     );
 }
 
-/// A Disto RTC — in the port or slotted — records `peripherals.rtc` (the
-/// schema keeps no slot layout; launch re-seats a slotted clock in its default slot).
+/// A Disto RTC — in the port or in an MPI slot — records `[peripherals].cartridge`/`.slots`
+/// accordingly.
 #[test]
 fn manager_edit_with_rtc_records_the_peripheral() {
     let dir = TempDir::new("create-rtc");
@@ -64,24 +68,25 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     select_combo_at(&mut harness, "None", 1, "Disto RTC");
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert!(def.peripherals.rtc && !def.peripherals.mpi);
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::RTC);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(
-        contents.contains("rtc = true"),
+        contents.contains("kind = \"rtc\""),
         "TOML must record the RTC:\n{contents}"
     );
 
-    // Slotted, on a second machine: rtc = true alongside mpi = true.
+    // Slotted, on a second machine: MPI cartridge with slot 1 holding the RTC.
     click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
     select_combo_at(&mut harness, "Empty", 0, "Disto RTC");
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
-    assert!(def.peripherals.rtc && def.peripherals.mpi);
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
+    assert_eq!(def.peripherals.slots[0], machine_def::SlotDTO::RTC);
 }
 
-/// A ROM Pak — in the port or in an MPI slot — records `[media].cart`.
-/// Seeded directly on the edit form: the combo's own item opens a native file dialog.
+/// A ROM Pak — in the port or in an MPI slot — records `[peripherals].cartridge`/`.slots` with
+/// its path. Seeded directly on the edit form: the combo's own item opens a native file dialog.
 #[test]
 fn manager_edit_with_rom_pak_records_the_cart() {
     let pak = PathBuf::from("/paks/game.ccc");
@@ -97,11 +102,15 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     harness.step();
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
-    assert!(!def.peripherals.mpi && !def.peripherals.fd502);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::ROMPak {
+            path: "/paks/game.ccc".to_string()
+        }
+    );
 
-    // Slotted, on a second machine: recorded the same way, alongside
-    // mpi = true.
+    // Slotted, on a second machine — and unlike the retired boolean schema, two slotted paks
+    // are both representable: each slot records its own path independently.
     click_containing(&mut harness, "New");
     {
         let form = harness
@@ -110,29 +119,27 @@ fn manager_edit_with_rom_pak_records_the_cart() {
             .expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
         form.mpi_slots[1] = new_vm::SlotChoice::ROMPak(pak.clone());
+        form.mpi_slots[3] = new_vm::SlotChoice::ROMPak(PathBuf::from("/paks/other.ccc"));
     }
     harness.step();
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
-    assert_eq!(def.media.cart.as_deref(), Some("/paks/game.ccc"));
-    assert!(def.peripherals.mpi);
-
-    // Two slotted paks can't be represented in the schema: refused with an inline error.
-    harness
-        .state_mut()
-        .edit_form_mut()
-        .expect("pane form seeded")
-        .mpi_slots[3] = new_vm::SlotChoice::ROMPak(pak);
-    harness.step();
-    harness.get_by_label_contains("a single ROM Pak");
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
     assert_eq!(
-        harness.state().entries[1].def.media.cart.as_deref(),
-        Some("/paks/game.ccc"),
-        "the definition must keep the single recorded pak"
+        def.peripherals.slots[1],
+        machine_def::SlotDTO::ROMPak {
+            path: "/paks/game.ccc".to_string()
+        }
+    );
+    assert_eq!(
+        def.peripherals.slots[3],
+        machine_def::SlotDTO::ROMPak {
+            path: "/paks/other.ccc".to_string()
+        }
     );
 }
 
-/// Cartridge = "RS-232 Pak" in the pane auto-saves `[peripherals].rs232` —
+/// Cartridge = "RS-232 Pak" in the pane auto-saves `[peripherals].cartridge` —
 /// same combo, same auto-save flow as the FD-502/MPI/RTC cases above.
 #[test]
 fn manager_edit_with_rs232_records_the_peripheral() {
@@ -144,12 +151,81 @@ fn manager_edit_with_rs232_records_the_peripheral() {
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert!(def.peripherals.rs232 && !def.peripherals.mpi);
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::RS232);
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(
-        contents.contains("rs232 = true"),
+        contents.contains("kind = \"rs232\""),
         "the TOML must record the peripheral:\n{contents}"
     );
+}
+
+/// The Games Master and Orchestra-90 cartridges — image-backed like the ROM Pak — record
+/// `[peripherals].cartridge` with their path, in the port or in an MPI slot.
+#[test]
+fn manager_edit_with_gmc_and_orch90_records_the_cart() {
+    let gmc = PathBuf::from("/paks/gmc.ccc");
+    let orch90 = PathBuf::from("/paks/orch90.ccc");
+    let dir = TempDir::new("create-gmc-orch90");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New");
+    harness
+        .state_mut()
+        .edit_form_mut()
+        .expect("pane form seeded")
+        .cartridge = new_vm::CartridgeChoice::GamesMaster(gmc.clone());
+    harness.step();
+    assert_eq!(
+        harness.state().entries[0].def.peripherals.cartridge,
+        machine_def::CartridgeDTO::GamesMaster {
+            path: "/paks/gmc.ccc".to_string()
+        }
+    );
+
+    click_containing(&mut harness, "New");
+    {
+        let form = harness
+            .state_mut()
+            .edit_form_mut()
+            .expect("pane form seeded");
+        form.cartridge = new_vm::CartridgeChoice::MPI;
+        form.mpi_slots[2] = new_vm::SlotChoice::Orch90(orch90.clone());
+    }
+    harness.step();
+    let def = &harness.state().entries[1].def;
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
+    assert_eq!(
+        def.peripherals.slots[2],
+        machine_def::SlotDTO::Orch90 {
+            path: "/paks/orch90.ccc".to_string()
+        }
+    );
+}
+
+/// The Sound/Speech Cartridge — no path — records `[peripherals].cartridge`/`.slots` via the
+/// same combo flow as the FD-502/RTC (no file dialog to dodge).
+#[test]
+fn manager_edit_with_ssc_records_the_peripheral() {
+    let dir = TempDir::new("create-ssc");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New");
+    select_combo_at(&mut harness, "None", 1, "Sound/Speech Cartridge");
+    assert_eq!(
+        harness.state().entries[0].def.peripherals.cartridge,
+        machine_def::CartridgeDTO::SSC
+    );
+
+    // Slotted, on a second machine — any number of slots may hold one, so two are recorded
+    // independently.
+    click_containing(&mut harness, "New");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    select_combo_at(&mut harness, "Empty", 0, "Sound/Speech Cartridge");
+    select_combo_at(&mut harness, "Empty", 0, "Sound/Speech Cartridge");
+    let def = &harness.state().entries[1].def;
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
+    assert_eq!(def.peripherals.slots[0], machine_def::SlotDTO::SSC);
+    assert_eq!(def.peripherals.slots[1], machine_def::SlotDTO::SSC);
 }
 
 /// Picking Serial = "Printer (DMP-105)" auto-saves `[ports].serial =
@@ -235,7 +311,7 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert!(def.peripherals.fd502);
+    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::FD502);
     assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
     assert_eq!(def.media.disk1.as_deref(), Some("disk1.dsk"));
     assert_eq!(def.media.tape.as_deref(), Some("tape.cas"));

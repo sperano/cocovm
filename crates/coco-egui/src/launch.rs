@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
 
+use crate::machine_def::{CartridgeDTO, SlotDTO};
 use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
-    AppParams, CocoApp, DEFAULT_RTC_SLOT, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES,
-    installed_roms_dir, machine_def,
+    AppParams, CocoApp, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, installed_roms_dir,
+    machine_def,
 };
 
 /// File name [`launch_machine`] captures `[ports].serial = "file"` to,
@@ -21,43 +22,54 @@ const PRINTOUT_FILE: &str = "printout.txt";
 /// Where a definition's `[media]` paths land once resolved against the
 /// machine's own directory (`machine_def::resolve_media_path`).
 struct Media {
-    cart: Option<PathBuf>,
     disks: [Option<PathBuf>; UI_DRIVES],
     vhds: [Option<PathBuf>; UI_DRIVES],
     tape: Option<PathBuf>,
 }
 
-/// What the definition's `[peripherals]` section asks for in the cartridge
-/// port, after folding in the media that implies a controller.
-struct Peripherals {
-    mpi: bool,
-    rtc: bool,
-    fd502: bool,
-    /// Deluxe RS-232 Pak. Bare-port only — no MPI-slot support yet
-    /// (`check_cartridge_port` rejects `mpi && rs232`).
-    rs232: bool,
+/// The definition's cartridge-port occupant, with any embedded path already
+/// resolved against the machine's artifact directory like `[media]`'s
+/// (`resolve_cartridge`).
+enum Cartridge {
+    None,
+    FD502,
+    ROMPak(PathBuf),
+    RTC,
+    /// Bare-port only — no `mpi_insert_rs232`, so this can't appear nested
+    /// in a [`Slot`].
+    RS232,
+    GamesMaster(PathBuf),
+    Orch90(PathBuf),
+    SSC,
+    MPI([Slot; MPI_SLOT_COUNT]),
+}
+
+/// One MultiPak slot's occupant — [`Cartridge`]'s sibling minus the
+/// bare-port-only kinds (nested MPI, RS-232).
+enum Slot {
+    Empty,
+    FD502,
+    ROMPak(PathBuf),
+    RTC,
+    GamesMaster(PathBuf),
+    Orch90(PathBuf),
+    SSC,
 }
 
 /// Build a running [`CocoApp`] from a saved machine definition: load the ROM,
-/// mount `[media]`/`[peripherals]`/`[ports]` enforcing the single-cartridge-
-/// port rule below. Any failure returns `Err` instead of a partial VM.
+/// mount `[media]`/`[peripherals]`/`[ports]`. Any failure returns `Err`
+/// instead of a partial VM.
 pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
     let config = def.to_machine_config()?;
     let explicit_rom = def.hardware.rom.as_ref().map(PathBuf::from);
     let (rom, rom_source) = load_rom(explicit_rom.as_deref(), config.variant)?;
 
     let media = resolve_media(def, slug);
-    let peripherals = Peripherals {
-        mpi: def.peripherals.mpi,
-        rtc: def.peripherals.rtc,
-        // Disk media implies the controller even when the flag itself is off.
-        fd502: def.peripherals.fd502 || media.disks.iter().any(|p| p.is_some()),
-        rs232: def.peripherals.rs232,
-    };
-    check_cartridge_port(&media, &peripherals)?;
+    let cartridge = resolve_cartridge(def, slug);
+    validate_disk_media(&media, &cartridge)?;
 
-    let mut app = new_app(config, rom, rom_source, &media, &peripherals);
-    mount_peripherals(&mut app, media, &peripherals);
+    let mut app = new_app(config, rom, rom_source, &media, &cartridge);
+    mount_peripherals(&mut app, media, cartridge);
     mount_serial(&mut app, def.ports.serial, slug);
 
     // Promote any `cart_error` the insert_*/mpi_insert_* helpers recorded into this launch
@@ -108,7 +120,6 @@ fn load_rom(
 fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
     let resolve = |p: Option<&str>| p.map(|p| machine_def::resolve_media_path(p, slug));
     Media {
-        cart: resolve(def.media.cart.as_deref()),
         disks: [
             resolve(def.media.disk0.as_deref()),
             resolve(def.media.disk1.as_deref()),
@@ -121,57 +132,91 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
     }
 }
 
-/// Enforced by hand: cart, disk0/disk1 (implying FD-502), rtc, and rs232 all
-/// want the single cartridge port unless an MPI is installed; rs232 has no
-/// MPI-slot support yet, so `mpi && rs232` is rejected too.
-fn check_cartridge_port(media: &Media, peripherals: &Peripherals) -> Result<(), String> {
-    if peripherals.mpi && peripherals.rs232 {
-        return Err(
-            "the Deluxe RS-232 Pak has no MultiPak slot support yet; disable the MultiPak \
-             Interface peripheral to use it"
-                .to_string(),
-        );
+/// Resolve `[peripherals].cartridge`/`.slots` into [`Cartridge`], resolving
+/// any embedded path like [`resolve_media`] does for `[media]`.
+fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
+    let path = |p: &str| machine_def::resolve_media_path(p, slug);
+    match &def.peripherals.cartridge {
+        CartridgeDTO::None => Cartridge::None,
+        CartridgeDTO::FD502 => Cartridge::FD502,
+        CartridgeDTO::ROMPak { path: p } => Cartridge::ROMPak(path(p)),
+        CartridgeDTO::RTC => Cartridge::RTC,
+        CartridgeDTO::RS232 => Cartridge::RS232,
+        CartridgeDTO::GamesMaster { path: p } => Cartridge::GamesMaster(path(p)),
+        CartridgeDTO::Orch90 { path: p } => Cartridge::Orch90(path(p)),
+        CartridgeDTO::SSC => Cartridge::SSC,
+        CartridgeDTO::MPI => Cartridge::MPI(std::array::from_fn(|i| {
+            resolve_slot(&def.peripherals.slots[i], slug)
+        })),
     }
-    let claims = [
-        media.cart.is_some(),
-        peripherals.fd502,
-        peripherals.rtc,
-        peripherals.rs232,
-    ]
-    .into_iter()
-    .filter(|&claims| claims)
-    .count();
-    if !peripherals.mpi && claims > 1 {
+}
+
+fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
+    let path = |p: &str| machine_def::resolve_media_path(p, slug);
+    match slot {
+        SlotDTO::Empty => Slot::Empty,
+        SlotDTO::FD502 => Slot::FD502,
+        SlotDTO::ROMPak { path: p } => Slot::ROMPak(path(p)),
+        SlotDTO::RTC => Slot::RTC,
+        SlotDTO::GamesMaster { path: p } => Slot::GamesMaster(path(p)),
+        SlotDTO::Orch90 { path: p } => Slot::Orch90(path(p)),
+        SlotDTO::SSC => Slot::SSC,
+    }
+}
+
+/// Whether a disk controller is reachable: the bare FD-502, or one in an MPI slot.
+fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
+    match cartridge {
+        Cartridge::FD502 => true,
+        Cartridge::MPI(slots) => slots.iter().any(|s| matches!(s, Slot::FD502)),
+        Cartridge::None
+        | Cartridge::ROMPak(_)
+        | Cartridge::RTC
+        | Cartridge::RS232
+        | Cartridge::GamesMaster(_)
+        | Cartridge::Orch90(_)
+        | Cartridge::SSC => false,
+    }
+}
+
+/// `disk0`/`disk1` need a disk controller to mean anything — unlike schema
+/// 1, nothing implies one anymore, so listing disk media with none reachable
+/// is a fatal error naming the fix, not a silent auto-insert.
+fn validate_disk_media(media: &Media, cartridge: &Cartridge) -> Result<(), String> {
+    if media.disks.iter().any(Option::is_some) && !cartridge_has_fd502(cartridge) {
         return Err(
-            "cart, disk0/disk1, rtc, and rs232 all need the cartridge port; enable the \
-             MultiPak Interface peripheral to combine them"
+            "disk0/disk1 need a disk controller: put the FD-502 in the cartridge port, or in \
+             an MPI slot"
                 .to_string(),
         );
     }
     Ok(())
 }
 
-/// With an MPI installed, cart and disks target its slots instead of the
-/// single-cartridge model, so the constructor gets neither —
-/// [`mount_peripherals`] wires them up afterward.
+/// With an MPI installed, or any cartridge kind beyond a bare ROM Pak, the
+/// port is populated afterward by [`mount_peripherals`] instead — the
+/// constructor only ever loads a ROM Pak directly (`CocoApp::insert_cartridge`).
 fn new_app(
     config: coco_core::MachineConfig,
     rom: Box<[u8]>,
     rom_source: ROMSource,
     media: &Media,
-    peripherals: &Peripherals,
+    cartridge: &Cartridge,
 ) -> CocoApp {
-    let (cart, disks) = if peripherals.mpi {
-        (None, [None, None])
-    } else {
-        (media.cart.clone(), media.disks.clone())
+    let cart_path = match cartridge {
+        Cartridge::ROMPak(path) => Some(path.clone()),
+        _ => None,
+    };
+    let disks = match cartridge {
+        Cartridge::MPI(_) => [None, None],
+        _ => media.disks.clone(),
     };
     CocoApp::new(
         config,
         rom,
         rom_source,
         AppParams {
-            cart_path: cart,
+            cart_path,
             disk_paths: disks,
             vhd_paths: media.vhds.clone(),
             // DriveWire and tape-wav stay at their defaults: no definition
@@ -181,36 +226,40 @@ fn new_app(
     )
 }
 
-fn mount_peripherals(app: &mut CocoApp, media: Media, peripherals: &Peripherals) {
-    if peripherals.mpi {
-        app.insert_multipak();
-        if let Some(path) = media.cart {
-            app.mpi_insert_rompak(0, path);
-        }
-        if peripherals.fd502 {
-            app.mpi_insert_fd502(MPI_SLOT_COUNT - 1);
-        }
-        if peripherals.rtc {
-            app.mpi_insert_rtc(DEFAULT_RTC_SLOT);
-        }
-        for (drive, path) in media.disks.into_iter().enumerate() {
-            if let Some(path) = path {
-                app.insert_disk(drive, path);
+fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
+    match cartridge {
+        Cartridge::None | Cartridge::ROMPak(_) => {}
+        Cartridge::FD502 => {
+            // Empty-drive FD-502: a no-op if `CocoApp::new` already inserted the controller for
+            // disk media passed through `AppParams`.
+            if let Err(e) = app.ensure_disk_controller() {
+                app.cart_error = Some(e);
             }
         }
-    } else if peripherals.rtc {
-        // cart/fd502/rs232 and rtc are mutually exclusive here — `check_cartridge_port`
-        // rejected other combos.
-        app.insert_rtc();
-    } else if peripherals.rs232 {
-        // Starts on the inert Loopback endpoint; TCP/PTY stay a runtime-menu-only setting.
-        app.insert_rs232();
-    } else if peripherals.fd502
-        && let Err(e) = app.ensure_disk_controller()
-    {
-        // Empty-drive FD-502 only; with disk media set, `CocoApp::new` already inserted the
-        // controller.
-        app.cart_error = Some(e);
+        Cartridge::RTC => app.insert_rtc(),
+        Cartridge::RS232 => app.insert_rs232(),
+        Cartridge::GamesMaster(path) => app.insert_gmc(path),
+        Cartridge::Orch90(path) => app.insert_orch90(path),
+        Cartridge::SSC => app.insert_ssc(),
+        Cartridge::MPI(slots) => {
+            app.insert_multipak();
+            for (slot, occupant) in slots.into_iter().enumerate() {
+                match occupant {
+                    Slot::Empty => {}
+                    Slot::FD502 => app.mpi_insert_fd502(slot),
+                    Slot::ROMPak(path) => app.mpi_insert_rompak(slot, path),
+                    Slot::RTC => app.mpi_insert_rtc(slot),
+                    Slot::GamesMaster(path) => app.mpi_insert_gmc(slot, path),
+                    Slot::Orch90(path) => app.mpi_insert_orch90(slot, path),
+                    Slot::SSC => app.mpi_insert_ssc(slot),
+                }
+            }
+            for (drive, path) in media.disks.into_iter().enumerate() {
+                if let Some(path) = path {
+                    app.insert_disk(drive, path);
+                }
+            }
+        }
     }
 
     if let Some(path) = media.tape {

@@ -3,6 +3,7 @@ use super::dto::{
     VideoStandardDTO,
 };
 use super::*;
+use super::{CartridgeDTO, SlotDTO};
 use crate::display::{TV, TVSettings};
 use coco_core::MonitorType;
 use std::fs;
@@ -53,7 +54,6 @@ fn full_def() -> MachineDef {
             rom: Some("/path/custom.rom".to_string()),
         },
         media: MediaDTO {
-            cart: Some("/paks/arkanoid.ccc".to_string()),
             disk0: Some("dev.dsk".to_string()),
             disk1: Some("/shared/utils.dsk".to_string()),
             vhd0: Some("/vhd/68SDC.VHD".to_string()),
@@ -61,10 +61,15 @@ fn full_def() -> MachineDef {
             tape: Some("session.cas".to_string()),
         },
         peripherals: PeripheralsDTO {
-            mpi: true,
-            rtc: true,
-            fd502: true,
-            rs232: false,
+            cartridge: CartridgeDTO::MPI,
+            slots: [
+                SlotDTO::ROMPak {
+                    path: "/paks/arkanoid.ccc".to_string(),
+                },
+                SlotDTO::Empty,
+                SlotDTO::RTC,
+                SlotDTO::FD502,
+            ],
         },
         ports: PortsDTO {
             serial: Some(SerialDTO::Printer),
@@ -102,16 +107,17 @@ fn round_trip_full_definition() {
     assert_eq!(&loaded[0].1, &def);
 }
 
-/// `[peripherals].rs232` and `[ports].serial` round-trip through save/load;
-/// this covers `rs232 = true` and the other `serial` variant, `"file"`.
+/// `[peripherals].cartridge = { kind = "rs232" }` and `[ports].serial`
+/// round-trip through save/load; this covers the `rs232` cartridge kind and
+/// the other `serial` variant, `"file"`.
 #[test]
 fn rs232_and_serial_file_round_trip() {
     let dir = TempDir::new("rs232-roundtrip");
     let mut def = full_def();
-    def.peripherals.mpi = false;
-    def.peripherals.rtc = false;
-    def.peripherals.fd502 = false;
-    def.peripherals.rs232 = true;
+    def.peripherals = PeripheralsDTO {
+        cartridge: CartridgeDTO::RS232,
+        slots: std::array::from_fn(|_| SlotDTO::Empty),
+    };
     def.ports.serial = Some(SerialDTO::File);
     save(dir.path(), "rs232", &def).expect("save should succeed");
 
@@ -121,8 +127,8 @@ fn rs232_and_serial_file_round_trip() {
 
     let contents = fs::read_to_string(dir.path().join("rs232.toml")).unwrap();
     assert!(
-        contents.contains("rs232 = true"),
-        "TOML must record rs232:\n{contents}"
+        contents.contains("kind = \"rs232\""),
+        "TOML must record the rs232 cartridge:\n{contents}"
     );
     assert!(
         contents.contains("serial = \"file\""),
@@ -192,9 +198,7 @@ monitor = "rgb"
     assert_eq!(def.hardware.vdg, None);
     assert_eq!(def.hardware.rom, None);
     assert_eq!(def.media, MediaDTO::default());
-    assert!(!def.peripherals.mpi);
-    assert!(!def.peripherals.rtc);
-    assert!(!def.peripherals.rs232);
+    assert_eq!(def.peripherals.cartridge, CartridgeDTO::None);
     assert_eq!(def.ports.serial, None);
     assert!(def.ui.aspect_correct);
     assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
@@ -357,6 +361,100 @@ monitor = "rgb"
     assert!(
         err.contains(&CURRENT_SCHEMA.to_string()),
         "error should name the supported schema: {err}"
+    );
+}
+
+/// A pre-enum `[peripherals]` (the four independent booleans) must fail to
+/// load: `cartridge` has no `#[serde(default)]`, so the missing key is a
+/// parse error rather than a silently-empty port that drops the file's
+/// `mpi = true`. There's no migration by design.
+#[test]
+fn legacy_boolean_peripherals_fails_to_load() {
+    let dir = TempDir::new("legacy-peripherals");
+    fs::write(
+        dir.path().join("legacy.toml"),
+        r#"
+schema = 1
+name = "Legacy Peripherals"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+
+[peripherals]
+mpi = true
+rtc = true
+fd502 = false
+rs232 = false
+"#,
+    )
+    .unwrap();
+    let err = load_all(dir.path()).expect_err("a pre-enum [peripherals] must fail the load");
+    assert!(
+        err.contains("cartridge"),
+        "error should name the missing field: {err}"
+    );
+}
+
+/// `[peripherals].cartridge = { kind = "mpi" }` with no `slots` key must
+/// fail to load — a missing loadout, not a silently-empty MultiPak.
+#[test]
+fn mpi_cartridge_with_no_slots_fails_to_load() {
+    let dir = TempDir::new("mpi-no-slots");
+    fs::write(
+        dir.path().join("mpi-bare.toml"),
+        r#"
+schema = 1
+name = "MPI, No Slots"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+
+[peripherals]
+cartridge = { kind = "mpi" }
+"#,
+    )
+    .unwrap();
+    let err = load_all(dir.path()).expect_err("an MPI with no slots key must fail the load");
+    assert!(
+        err.contains("slots"),
+        "error should name the missing key: {err}"
+    );
+}
+
+/// An MPI with `slots` explicitly all `empty` loads fine — the fatal case is
+/// a missing `slots` key, not an intentionally empty MultiPak.
+#[test]
+fn mpi_cartridge_with_explicit_empty_slots_loads() {
+    let dir = TempDir::new("mpi-empty-slots");
+    fs::write(
+        dir.path().join("mpi-empty.toml"),
+        r#"
+schema = 1
+name = "MPI, Empty Slots"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+
+[peripherals]
+cartridge = { kind = "mpi" }
+slots = [{ kind = "empty" }, { kind = "empty" }, { kind = "empty" }, { kind = "empty" }]
+"#,
+    )
+    .unwrap();
+    let loaded = load_all(dir.path()).expect("an explicitly-empty MPI loadout must load");
+    assert_eq!(loaded[0].1.peripherals.cartridge, CartridgeDTO::MPI);
+    assert_eq!(
+        loaded[0].1.peripherals.slots,
+        std::array::from_fn(|_| SlotDTO::Empty)
     );
 }
 

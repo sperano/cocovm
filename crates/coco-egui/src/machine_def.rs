@@ -30,11 +30,12 @@ use crate::paths;
 
 mod dto;
 mod io;
+mod peripherals_dto;
 
 pub use dto::{
-    HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PeripheralsDTO, PortsDTO, SerialDTO, StatsDTO,
-    UIDTO,
+    HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO, SerialDTO, StatsDTO, UIDTO,
 };
+pub use peripherals_dto::{CartridgeDTO, PeripheralsDTO, SlotDTO};
 // Only tests build definitions with an explicit display DTO so far —
 // production writers go through `HardwareDTO::from_config`.
 #[cfg(test)]

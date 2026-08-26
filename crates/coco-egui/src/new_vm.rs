@@ -15,8 +15,13 @@ use eframe::egui;
 use crate::display::Display;
 use crate::machine_def::SerialDTO;
 
+mod cartridge;
+mod cartridge_form;
 mod config_form;
 mod form;
+
+pub use cartridge::{CartridgeChoice, SlotChoice};
+pub(crate) use cartridge::{pack_peripherals, seed_peripherals};
 
 /// RAM sizes selectable per machine — the same sets
 /// [`MachineConfig::validate`] accepts (the configurations each machine
@@ -101,81 +106,6 @@ pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
         MemorySize::K512 => "512K",
         MemorySize::K2048 => "2048K",
     }
-}
-
-/// The form's Cartridge row. Not part of [`MachineConfig`] — the
-/// cartridge port is populated after machine construction (the same way
-/// `launch::mount_peripherals` and the Machine menu do it) — so it rides
-/// alongside the config in [`MachineForm`] and is packed into the definition's
-/// `[peripherals]`/`[media]` sections by the manager
-/// (`manager::detail::pack_def`).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum CartridgeChoice {
-    #[default]
-    None,
-    /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
-    FD502,
-    /// A program ROM Pak image plugged straight into the port; picked with
-    /// a file dialog on selection.
-    ROMPak(PathBuf),
-    /// Disto RTC plugged straight into the port. No boot ROM — pairs with
-    /// a VHD boot; for RTC + floppies use an MPI slot.
-    RTC,
-    /// Deluxe RS-232 Pak plugged straight into the port. Bare-port only —
-    /// unlike the RTC/FD-502 there's no `mpi_insert_rs232`, so this choice
-    /// isn't offered in the MPI's Slot combos.
-    RS232,
-    /// MultiPak Interface; the form then shows its four Slot rows, and
-    /// the Disk rows only once a slot holds the FD-502.
-    MPI,
-}
-
-/// One MultiPak slot's pick in the form's Slot rows (shown while the
-/// cartridge is the MPI). At most one slot holds the FD-502 (a second
-/// disk controller would fight the first for the SCS decode) and at most
-/// one the Disto RTC (two would shadow each other at `$FF50`). ROM Paks
-/// carry no such conflict: any number of slots may hold one.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SlotChoice {
-    #[default]
-    Empty,
-    FD502,
-    /// A program ROM Pak image in this slot (see [`CartridgeChoice::ROMPak`]).
-    ROMPak(PathBuf),
-    /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
-    RTC,
-}
-
-fn slot_label(slot: &SlotChoice) -> String {
-    match slot {
-        SlotChoice::Empty => "Empty".to_string(),
-        SlotChoice::FD502 => "FD-502".to_string(),
-        SlotChoice::ROMPak(path) => pak_file_name(path),
-        SlotChoice::RTC => "Disto RTC".to_string(),
-    }
-}
-
-fn cartridge_label(cartridge: &CartridgeChoice) -> String {
-    match cartridge {
-        CartridgeChoice::None => "None".to_string(),
-        CartridgeChoice::FD502 => "FD-502".to_string(),
-        CartridgeChoice::ROMPak(path) => pak_file_name(path),
-        CartridgeChoice::RTC => "Disto RTC".to_string(),
-        CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
-        CartridgeChoice::MPI => "MultiPak Interface".to_string(),
-    }
-}
-
-/// Combo text for a picked ROM Pak ([`media_choice_text`]'s pak sibling).
-fn pak_file_name(path: &std::path::Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "ROM Pak".to_string())
-}
-
-/// The same filter the Machine-menu "Insert Cartridge…" item uses.
-fn rom_pak_file_dialog() -> rfd::FileDialog {
-    rfd::FileDialog::new().add_filter("ROM Pak", &["rom", "ccc", "bin"])
 }
 
 /// One media pick — a drive's disk (shown when a disk controller is
