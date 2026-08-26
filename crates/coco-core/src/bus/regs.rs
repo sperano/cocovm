@@ -17,25 +17,32 @@ pub(super) const PIA1_REG_MASK: u16 = 0x03;
 /// called only from `pia1_pa_changed()`, never from `pia1_ca2_w()` (the
 /// motor-relay callback); see `SystemBus::write_pia1` in `io.rs`.
 pub(super) const PIA1_PORT_A_OFFSET: u16 = 0x00;
-pub(super) const CART_BASE: u16 = 0xFF40;
-// $FF40-$FF5F is the "standard" SCS* window; $FF60-$FF7E is unmapped on the
-// motherboard, so some carts (the RS-232 Pak, Orchestra-90, the Sound/Speech
-// Cartridge) decode registers of their own there too — the full address bus
-// reaches the expansion connector regardless (`docs/cartridges.md` "Carts can
-// decode addresses outside SCS"). Both ranges route to `cart.read`/`write`;
-// carts that don't claim an address in the extension range fall through to
-// their own open-bus default, same as any unclaimed SCS address.
-pub(super) const CART_LAST: u16 = 0xFF7E;
+/// Standard SCS* window: gated as one unit by INIT0 MC2 on the GIME path
+/// (`GIME::scs_enabled`, `SystemBus::io_read`/`io_write`) — MAME
+/// `coco3_m.cpp` `ff40_read`/`ff40_write`. Not gated on the plain-SAM path
+/// (`sam_path.rs`): a real CoCo 1/2 has no GIME to hold MC2.
+pub(super) const SCS_BASE: u16 = 0xFF40;
+pub(super) const SCS_LAST: u16 = 0xFF5F;
+/// $FF60-$FF7E is unmapped on the motherboard, so some carts (the RS-232
+/// Pak, Orchestra-90, the Sound/Speech Cartridge) decode registers of their
+/// own there too — the full address bus reaches the expansion connector
+/// regardless (`docs/cartridges.md` "Carts can decode addresses outside
+/// SCS"). Outside the SCS* decode, so INIT0 MC2 never gates it. Routes to
+/// `cart.read`/`write` same as [`SCS_BASE`]..=[`SCS_LAST`]; carts that don't
+/// claim an address here fall through to their own open-bus default.
+pub(super) const CART_EXT_BASE: u16 = 0xFF60;
+pub(super) const CART_EXT_LAST: u16 = 0xFF7E;
+/// What the GIME's SCS* logic drives when INIT0 MC2 gates the window
+/// closed: a hard 0, not open bus (MAME `coco3_m.cpp` `ff40_read`).
+pub(super) const SCS_GATE_CLOSED: u8 = 0x00;
 /// Becker-port status register: read-only, `DwServer::status_read()`.
-/// Writes are swallowed while the Becker port is enabled. Intercepts
-/// ahead of cartridge dispatch — see `SystemBus::becker_read`/`becker_write`.
+/// Writes are swallowed while the Becker port is enabled. Intercepts ahead
+/// of cartridge dispatch, behind INIT0 MC2's SCS gate on the GIME path —
+/// see `SystemBus::becker_read`/`becker_write`.
 pub(super) const BECKER_STATUS: u16 = 0xFF41;
 /// Becker-port data register: read pops a `DwServer` reply byte, write
 /// feeds a client byte into the DriveWire protocol state machine.
 pub(super) const BECKER_DATA: u16 = 0xFF42;
-// TODO: MAME gates the whole $FF40-$FF5F SCS window on GIME INIT0 MC2
-// ("standard SCS" width control); not modeled here — every cartridge always
-// sees the full window regardless of MC2.
 /// Multi-Pak Interface select register: decoded by the MPI itself (when one
 /// is inserted), never by the plugged-in cartridges' own `read`/`write` — see
 /// [`Cartridge::control_read`].

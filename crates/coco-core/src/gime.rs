@@ -55,7 +55,9 @@ pub mod init0 {
     pub const FEN: u8 = 0x10;
     /// 1 = $FE00–$FEFF held constant at $7FE00–$7FEFF regardless of the MMU.
     pub const MC3: u8 = 0x08;
-    /// Spare chip-select ($SCS) width control.
+    /// Spare chip-select (SCS*) enable: gates the whole `$FF40-$FF5F` window
+    /// as one unit (MAME `gime.h`/`coco3_m.cpp`; not a width control despite
+    /// SEB Unravelled II's claim — see [`crate::gime::GIME::scs_enabled`]).
     pub const MC2: u8 = 0x04;
     /// ROM map control, high bit.
     pub const MC1: u8 = 0x02;
@@ -294,6 +296,13 @@ impl GIME {
             0b11 => true,
             _ => addr >= EXTERNAL_ROM_BASE,
         }
+    }
+
+    /// True when INIT0 MC2 opens the SCS* window (`$FF40-$FF5F`) as a whole —
+    /// MAME gates the entire range on this one bit, not a width control
+    /// (`gime.h` `spare_chip_select_enabled`).
+    pub fn scs_enabled(&self) -> bool {
+        self.init0 & init0::MC2 != 0
     }
 
     /// Write IRQENR ($FF92): set the per-source IRQ enables. Writing 0 to an

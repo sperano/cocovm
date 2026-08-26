@@ -26,6 +26,12 @@ const LINE_DT: f64 = 1.0 / (262.0 * 60.0);
 
 /// A banked image with `banks` 16K pages, where every byte of page `n` is
 /// `marker(n)`.
+/// Unit-level bus pokes never boot a ROM, so state the SCS-window
+/// precondition (INIT0 MC2) explicitly instead of relying on the ROM's own gating.
+fn open_scs_gate(b: &mut SystemBus) {
+    b.gime.write_init0(coco_core::gime::init0::MC2);
+}
+
 fn banked_image(banks: usize) -> Vec<u8> {
     let mut image = vec![0u8; banks * BANKED_PAK_WINDOW_LEN];
     for (n, page) in image.chunks_mut(BANKED_PAK_WINDOW_LEN).enumerate() {
@@ -109,6 +115,7 @@ fn bus_with_gmc() -> SystemBus {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
+    open_scs_gate(&mut b);
     b.cart = GamesMasterCartridge::from_bytes(&banked_image(8), true)
         .unwrap()
         .into();
@@ -239,6 +246,7 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
+    open_scs_gate(&mut b);
     let mut mp = MultiPak::new(0);
     mp.insert(
         1,

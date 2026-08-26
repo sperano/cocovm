@@ -11,8 +11,8 @@ use crate::sam::SAMTarget;
 
 use super::SystemBus;
 use super::regs::{
-    CART_BASE, CART_LAST, IO_BASE, OPEN_BUS, PIA0_LAST, PIA1_BASE, PIA1_LAST, SAM_BAS_ROM_OFFSET,
-    SAM_CART_ROM_BASE,
+    CART_EXT_LAST, IO_BASE, OPEN_BUS, PIA0_LAST, PIA1_BASE, PIA1_LAST, SAM_BAS_ROM_OFFSET,
+    SAM_CART_ROM_BASE, SCS_BASE,
 };
 
 impl SystemBus {
@@ -86,7 +86,10 @@ impl SystemBus {
                 self.pia1.b.input = self.pia1_pb_pins();
                 self.pia1.read((addr & 0x03) as u8)
             }
-            CART_BASE..=CART_LAST => self.cart.read(addr),
+            // No GIME on a real CoCo 1/2, so no INIT0 MC2 to gate this —
+            // unlike the GIME path's io_read, SCS and its $FF60-$FF7E
+            // extension are one ungated range here.
+            SCS_BASE..=CART_EXT_LAST => self.cart.read(addr),
             _ => OPEN_BUS, // SAM control strobes ($FFC0-$FFDF): write-only.
         }
     }
@@ -102,7 +105,8 @@ impl SystemBus {
                 self.note_audio_write(); // CA2/CB2 are the sound mux selects
             }
             PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
-            CART_BASE..=CART_LAST => {
+            // Ungated, same as sam_io_read above — no GIME/MC2 on CoCo 1/2.
+            SCS_BASE..=CART_EXT_LAST => {
                 self.cart.write(addr, val);
                 self.note_audio_write(); // latched cart DACs
             }

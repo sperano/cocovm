@@ -143,6 +143,11 @@ fn machine_with_disk_in_read_transfer() -> Machine {
     );
     machine.insert_cartridge(cart);
 
+    // Unit-level bus pokes, no booting (module doc): state the SCS-window
+    // precondition (INIT0 MC2) explicitly so the writes below actually reach
+    // the controller instead of being dropped by the closed gate.
+    machine.bus.gime.write_init0(coco_core::gime::init0::MC2);
+
     const DSKREG: u16 = 0xFF40;
     const SECTOR_REG: u16 = 0xFF4A;
     const STATUS_COMMAND_REG: u16 = 0xFF48;
