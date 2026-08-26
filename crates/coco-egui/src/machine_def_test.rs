@@ -4,7 +4,6 @@ use super::dto::{
 };
 use super::*;
 use super::{CartridgeDTO, SlotDTO};
-use crate::MPI_SLOT_COUNT;
 use crate::display::{TV, TVSettings};
 use coco_core::MonitorType;
 use std::fs;
@@ -62,15 +61,16 @@ fn full_def() -> MachineDef {
             tape: Some("session.cas".to_string()),
         },
         peripherals: PeripheralsDTO {
-            cartridge: CartridgeDTO::MPI,
-            slots: [
-                SlotDTO::ROMPak {
-                    path: "/paks/arkanoid.ccc".to_string(),
-                },
-                SlotDTO::Empty,
-                SlotDTO::RTC,
-                SlotDTO::FD502,
-            ],
+            cartridge: CartridgeDTO::MPI {
+                slots: [
+                    SlotDTO::ROMPak {
+                        path: "/paks/arkanoid.ccc".to_string(),
+                    },
+                    SlotDTO::Empty,
+                    SlotDTO::RTC,
+                    SlotDTO::FD502,
+                ],
+            },
         },
         ports: PortsDTO {
             serial: Some(SerialDTO::Printer),
@@ -117,7 +117,6 @@ fn rs232_and_serial_file_round_trip() {
     let mut def = full_def();
     def.peripherals = PeripheralsDTO {
         cartridge: CartridgeDTO::RS232,
-        slots: std::array::from_fn(|_| SlotDTO::Empty),
     };
     def.ports.serial = Some(SerialDTO::File);
     save(dir.path(), "rs232", &def).expect("save should succeed");
@@ -362,135 +361,6 @@ monitor = "rgb"
     assert!(
         err.contains(&CURRENT_SCHEMA.to_string()),
         "error should name the supported schema: {err}"
-    );
-}
-
-/// A pre-enum `[peripherals]` (the four independent booleans) must fail to
-/// load: `cartridge` has no `#[serde(default)]`, so the missing key is a
-/// parse error rather than a silently-empty port that drops the file's
-/// `mpi = true`. There's no migration by design.
-#[test]
-fn legacy_boolean_peripherals_fails_to_load() {
-    let dir = TempDir::new("legacy-peripherals");
-    fs::write(
-        dir.path().join("legacy.toml"),
-        r#"
-schema = 1
-name = "Legacy Peripherals"
-
-[hardware]
-variant = "coco3"
-ram = "512k"
-video = "ntsc"
-monitor = "rgb"
-
-[peripherals]
-mpi = true
-rtc = true
-fd502 = false
-rs232 = false
-"#,
-    )
-    .unwrap();
-    let err = load_all(dir.path()).expect_err("a pre-enum [peripherals] must fail the load");
-    assert!(
-        err.contains("cartridge"),
-        "error should name the missing field: {err}"
-    );
-}
-
-/// `[peripherals].cartridge = { kind = "mpi" }` with no `slots` key must
-/// fail to load — a missing loadout, not a silently-empty MultiPak.
-#[test]
-fn mpi_cartridge_with_no_slots_fails_to_load() {
-    let dir = TempDir::new("mpi-no-slots");
-    fs::write(
-        dir.path().join("mpi-bare.toml"),
-        r#"
-schema = 1
-name = "MPI, No Slots"
-
-[hardware]
-variant = "coco3"
-ram = "512k"
-video = "ntsc"
-monitor = "rgb"
-
-[peripherals]
-cartridge = { kind = "mpi" }
-"#,
-    )
-    .unwrap();
-    let err = load_all(dir.path()).expect_err("an MPI with no slots key must fail the load");
-    assert!(
-        err.contains("slots"),
-        "error should name the missing key: {err}"
-    );
-}
-
-/// A `slots` array of the wrong length is rejected with a message naming
-/// the expected count, not serde's generic length error.
-#[test]
-fn mpi_cartridge_with_wrong_slot_count_fails_to_load() {
-    for count in [MPI_SLOT_COUNT - 1, MPI_SLOT_COUNT + 1] {
-        let dir = TempDir::new(&format!("mpi-{count}-slots"));
-        let slots = vec!["{ kind = \"empty\" }"; count].join(", ");
-        fs::write(
-            dir.path().join("mpi.toml"),
-            format!(
-                r#"
-schema = 1
-name = "MPI, Wrong Slot Count"
-
-[hardware]
-variant = "coco3"
-ram = "512k"
-video = "ntsc"
-monitor = "rgb"
-
-[peripherals]
-cartridge = {{ kind = "mpi" }}
-slots = [{slots}]
-"#
-            ),
-        )
-        .unwrap();
-        let err = load_all(dir.path()).expect_err("a wrong-length slots array must fail the load");
-        assert!(
-            err.contains(&format!("lists {count} slots")) && err.contains("exactly 4"),
-            "error should name the actual and expected counts: {err}"
-        );
-    }
-}
-
-/// An MPI with `slots` explicitly all `empty` loads fine — the fatal case is
-/// a missing `slots` key, not an intentionally empty MultiPak.
-#[test]
-fn mpi_cartridge_with_explicit_empty_slots_loads() {
-    let dir = TempDir::new("mpi-empty-slots");
-    fs::write(
-        dir.path().join("mpi-empty.toml"),
-        r#"
-schema = 1
-name = "MPI, Empty Slots"
-
-[hardware]
-variant = "coco3"
-ram = "512k"
-video = "ntsc"
-monitor = "rgb"
-
-[peripherals]
-cartridge = { kind = "mpi" }
-slots = [{ kind = "empty" }, { kind = "empty" }, { kind = "empty" }, { kind = "empty" }]
-"#,
-    )
-    .unwrap();
-    let loaded = load_all(dir.path()).expect("an explicitly-empty MPI loadout must load");
-    assert_eq!(loaded[0].1.peripherals.cartridge, CartridgeDTO::MPI);
-    assert_eq!(
-        loaded[0].1.peripherals.slots,
-        std::array::from_fn(|_| SlotDTO::Empty)
     );
 }
 

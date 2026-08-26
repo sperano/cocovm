@@ -16,8 +16,8 @@ fn base_def() -> MachineDef {
     MachineDef::from_config("Launch Test".to_string(), None, &MachineConfig::default())
 }
 
-/// `[peripherals].rs232 = true` mounts the Deluxe RS-232 Pak straight into
-/// the cartridge port.
+/// `[peripherals].cartridge = { kind = "rs232" }` mounts the Deluxe RS-232
+/// Pak straight into the cartridge port.
 #[test]
 fn rs232_def_mounts_the_pak() {
     let mut def = base_def();
@@ -97,13 +97,14 @@ fn disk_media_with_mpi_fd502_launches() {
 
     let mut def = base_def();
     def.media.disk0 = Some(disk_path.display().to_string());
-    def.peripherals.cartridge = CartridgeDTO::MPI;
-    def.peripherals.slots = [
-        SlotDTO::FD502,
-        SlotDTO::Empty,
-        SlotDTO::Empty,
-        SlotDTO::Empty,
-    ];
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::FD502,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+        ],
+    };
 
     super::launch_machine(&def, "launch-test-disk-mpi-fd502")
         .unwrap_or_else(|e| panic!("launch should succeed: {e}"));

@@ -5,9 +5,12 @@
 use serde::{Deserialize, Serialize};
 
 /// `[peripherals].cartridge` — what's plugged into the cartridge port. Maps
-/// to [`crate::new_vm::CartridgeChoice`]; the `From` impls live there, like
-/// [`super::SerialDTO`]'s pair in `new_vm.rs` (its doc explains why).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// to [`crate::new_vm::CartridgeChoice`]; the DTO→Choice `From` impl lives
+/// there, like [`super::SerialDTO`]'s pair in `new_vm.rs` (its doc explains
+/// why) — the reverse direction is folded into `new_vm::pack_peripherals`
+/// instead, since building [`CartridgeDTO::MPI`] needs the form's slot picks
+/// too.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind")]
 pub enum CartridgeDTO {
     #[default]
@@ -25,7 +28,7 @@ pub enum CartridgeDTO {
     #[serde(rename = "rtc")]
     RTC,
     /// Deluxe RS-232 Pak. Bare-port only: there's no `mpi_insert_rs232`, so
-    /// this kind never appears in [`PeripheralsDTO::slots`].
+    /// this kind never appears in a [`SlotDTO`].
     #[serde(rename = "rs232")]
     RS232,
     /// Games Master Cartridge (banked ROM + SN76489A).
@@ -36,16 +39,22 @@ pub enum CartridgeDTO {
     Orch90 { path: String },
     /// Sound/Speech Cartridge.
     #[serde(rename = "ssc")]
-    SSC,
-    /// MultiPak Interface; `[peripherals].slots` then holds its 4 slots.
+    SoundSpeech,
+    /// MultiPak Interface; `slots` lists its 4 occupants (`SlotDTO::Empty`
+    /// for an unused one), and is required — not `#[serde(default)]` — so a
+    /// file that names the MPI without a loadout fails to load with serde's
+    /// own "missing field `slots`" error instead of silently loading as an
+    /// empty MultiPak and dropping whatever the file meant.
     #[serde(rename = "mpi")]
-    MPI,
+    MPI {
+        slots: [SlotDTO; crate::MPI_SLOT_COUNT],
+    },
 }
 
-/// One MultiPak slot's occupant (`[peripherals].slots`) — [`CartridgeDTO`]'s
-/// sibling minus the bare-port-only kinds (nested MPI, RS-232). Maps to
-/// [`crate::new_vm::SlotChoice`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// One MultiPak slot's occupant ([`CartridgeDTO::MPI`]'s `slots`) —
+/// [`CartridgeDTO`]'s sibling minus the bare-port-only kinds (nested MPI,
+/// RS-232). Maps to [`crate::new_vm::SlotChoice`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind")]
 pub enum SlotDTO {
     #[default]
@@ -62,7 +71,7 @@ pub enum SlotDTO {
     #[serde(rename = "orch90")]
     Orch90 { path: String },
     #[serde(rename = "ssc")]
-    SSC,
+    SoundSpeech,
 }
 
 /// `[peripherals]` section — section itself optional (a definition with no
@@ -75,15 +84,8 @@ pub enum SlotDTO {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PeripheralsDTO {
     pub cartridge: CartridgeDTO,
-    /// The MPI's 4 slots; meaningless — and omitted on save — unless
-    /// `cartridge` is [`CartridgeDTO::MPI`]. An absent key defaults to all
-    /// [`SlotDTO::Empty`], but `io::load_one` separately rejects an absent
-    /// `slots` key while `cartridge` is [`CartridgeDTO::MPI`] — a missing
-    /// loadout, not an intentionally empty one.
-    #[serde(default, skip_serializing_if = "slots_all_empty")]
-    pub slots: [SlotDTO; crate::MPI_SLOT_COUNT],
 }
 
-fn slots_all_empty(slots: &[SlotDTO; crate::MPI_SLOT_COUNT]) -> bool {
-    slots.iter().all(|slot| matches!(slot, SlotDTO::Empty))
-}
+#[cfg(test)]
+#[path = "peripherals_dto_test.rs"]
+mod tests;

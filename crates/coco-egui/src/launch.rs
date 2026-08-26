@@ -40,7 +40,7 @@ enum Cartridge {
     RS232,
     GamesMaster(PathBuf),
     Orch90(PathBuf),
-    SSC,
+    SoundSpeech,
     MPI([Slot; MPI_SLOT_COUNT]),
 }
 
@@ -53,7 +53,7 @@ enum Slot {
     RTC,
     GamesMaster(PathBuf),
     Orch90(PathBuf),
-    SSC,
+    SoundSpeech,
 }
 
 /// Build a running [`CocoApp`] from a saved machine definition: load the ROM,
@@ -132,8 +132,8 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
     }
 }
 
-/// Resolve `[peripherals].cartridge`/`.slots` into [`Cartridge`], resolving
-/// any embedded path like [`resolve_media`] does for `[media]`.
+/// Resolve `[peripherals].cartridge` into [`Cartridge`], resolving any
+/// embedded path like [`resolve_media`] does for `[media]`.
 fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
     let path = |p: &str| machine_def::resolve_media_path(p, slug);
     match &def.peripherals.cartridge {
@@ -144,10 +144,10 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
         CartridgeDTO::RS232 => Cartridge::RS232,
         CartridgeDTO::GamesMaster { path: p } => Cartridge::GamesMaster(path(p)),
         CartridgeDTO::Orch90 { path: p } => Cartridge::Orch90(path(p)),
-        CartridgeDTO::SSC => Cartridge::SSC,
-        CartridgeDTO::MPI => Cartridge::MPI(std::array::from_fn(|i| {
-            resolve_slot(&def.peripherals.slots[i], slug)
-        })),
+        CartridgeDTO::SoundSpeech => Cartridge::SoundSpeech,
+        CartridgeDTO::MPI { slots } => {
+            Cartridge::MPI(std::array::from_fn(|i| resolve_slot(&slots[i], slug)))
+        }
     }
 }
 
@@ -160,7 +160,7 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
         SlotDTO::RTC => Slot::RTC,
         SlotDTO::GamesMaster { path: p } => Slot::GamesMaster(path(p)),
         SlotDTO::Orch90 { path: p } => Slot::Orch90(path(p)),
-        SlotDTO::SSC => Slot::SSC,
+        SlotDTO::SoundSpeech => Slot::SoundSpeech,
     }
 }
 
@@ -175,7 +175,7 @@ fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
         | Cartridge::RS232
         | Cartridge::GamesMaster(_)
         | Cartridge::Orch90(_)
-        | Cartridge::SSC => false,
+        | Cartridge::SoundSpeech => false,
     }
 }
 
@@ -240,7 +240,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
         Cartridge::RS232 => app.insert_rs232(),
         Cartridge::GamesMaster(path) => app.insert_gmc(path),
         Cartridge::Orch90(path) => app.insert_orch90(path),
-        Cartridge::SSC => app.insert_ssc(),
+        Cartridge::SoundSpeech => app.insert_ssc(),
         Cartridge::MPI(slots) => {
             app.insert_multipak();
             for (slot, occupant) in slots.into_iter().enumerate() {
@@ -251,7 +251,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                     Slot::RTC => app.mpi_insert_rtc(slot),
                     Slot::GamesMaster(path) => app.mpi_insert_gmc(slot, path),
                     Slot::Orch90(path) => app.mpi_insert_orch90(slot, path),
-                    Slot::SSC => app.mpi_insert_ssc(slot),
+                    Slot::SoundSpeech => app.mpi_insert_ssc(slot),
                 }
             }
             for (drive, path) in media.disks.into_iter().enumerate() {

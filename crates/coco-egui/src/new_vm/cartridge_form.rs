@@ -3,6 +3,8 @@
 //! project's ~500-line ceiling. Free functions over borrowed form fields,
 //! like `config_form`'s, rather than `MachineForm` methods.
 
+use std::path::PathBuf;
+
 use eframe::egui;
 
 use super::cartridge::{
@@ -26,7 +28,7 @@ pub(super) fn drives_available(
         | CartridgeChoice::RS232
         | CartridgeChoice::GamesMaster(_)
         | CartridgeChoice::Orch90(_)
-        | CartridgeChoice::SSC => false,
+        | CartridgeChoice::SoundSpeech => false,
     }
 }
 
@@ -57,7 +59,7 @@ pub(super) fn cartridge_row(
         | CartridgeChoice::RS232
         | CartridgeChoice::GamesMaster(_)
         | CartridgeChoice::Orch90(_)
-        | CartridgeChoice::SSC => {}
+        | CartridgeChoice::SoundSpeech => {}
     }
 }
 
@@ -102,6 +104,42 @@ fn disk_rows(
         });
 }
 
+/// One combo entry: a label, whether it's the current selection, and what
+/// picking it does — the shape shared by every Cartridge/Slot combo row, in
+/// place of a repeated `selectable_label(...).clicked()` chase per variant.
+fn combo_item(ui: &mut egui::Ui, label: &str, selected: bool, on_click: impl FnOnce()) {
+    if ui.selectable_label(selected, label).clicked() {
+        on_click();
+    }
+}
+
+/// [`combo_item`]'s image-backed sibling: opens `dialog` on click and, unless
+/// it's cancelled, calls `set` with the picked path — the ROM Pak/Games
+/// Master/Orchestra-90 combo entries' shared shape.
+fn image_combo_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    selected: bool,
+    dialog: impl FnOnce() -> rfd::FileDialog,
+    set: impl FnOnce(PathBuf),
+) {
+    combo_item(ui, label, selected, || {
+        if let Some(path) = dialog().pick_file() {
+            set(path);
+        }
+    });
+}
+
+/// Release `kind` from every slot — the FD-502/RTC's one-max rule
+/// ([`SlotChoice`]'s doc) before a slot claims it.
+fn release_slot(mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT], kind: SlotChoice) {
+    for other in mpi_slots.iter_mut() {
+        if *other == kind {
+            *other = SlotChoice::Empty;
+        }
+    }
+}
+
 /// The Cartridge-row combo. Every image-backed pick ("ROM Pak…", "Games
 /// Master…", "Orchestra-90…") opens a file dialog on the spot; a cancelled
 /// dialog keeps the previous choice.
@@ -109,69 +147,54 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
     egui::ComboBox::from_id_salt((salt, "cartridge"))
         .selected_text(cartridge_label(cartridge))
         .show_ui(ui, |ui| {
-            if ui
-                .selectable_label(*cartridge == CartridgeChoice::None, "None")
-                .clicked()
-            {
-                *cartridge = CartridgeChoice::None;
-            }
-            if ui
-                .selectable_label(*cartridge == CartridgeChoice::FD502, "FD-502")
-                .clicked()
-            {
-                *cartridge = CartridgeChoice::FD502;
-            }
-            if ui
-                .selectable_label(matches!(cartridge, CartridgeChoice::ROMPak(_)), "ROM Pak…")
-                .clicked()
-                && let Some(path) = rom_pak_file_dialog().pick_file()
-            {
-                *cartridge = CartridgeChoice::ROMPak(path);
-            }
-            if ui
-                .selectable_label(*cartridge == CartridgeChoice::RTC, "Disto RTC")
-                .clicked()
-            {
-                *cartridge = CartridgeChoice::RTC;
-            }
-            if ui
-                .selectable_label(*cartridge == CartridgeChoice::RS232, "RS-232 Pak")
-                .clicked()
-            {
-                *cartridge = CartridgeChoice::RS232;
-            }
-            if ui
-                .selectable_label(
-                    matches!(cartridge, CartridgeChoice::GamesMaster(_)),
-                    "Games Master…",
-                )
-                .clicked()
-                && let Some(path) = gmc_file_dialog().pick_file()
-            {
-                *cartridge = CartridgeChoice::GamesMaster(path);
-            }
-            if ui
-                .selectable_label(
-                    matches!(cartridge, CartridgeChoice::Orch90(_)),
-                    "Orchestra-90…",
-                )
-                .clicked()
-                && let Some(path) = orch90_file_dialog().pick_file()
-            {
-                *cartridge = CartridgeChoice::Orch90(path);
-            }
-            if ui
-                .selectable_label(*cartridge == CartridgeChoice::SSC, "Sound/Speech Cartridge")
-                .clicked()
-            {
-                *cartridge = CartridgeChoice::SSC;
-            }
-            if ui
-                .selectable_label(*cartridge == CartridgeChoice::MPI, "MultiPak Interface")
-                .clicked()
-            {
-                *cartridge = CartridgeChoice::MPI;
-            }
+            combo_item(ui, "None", *cartridge == CartridgeChoice::None, || {
+                *cartridge = CartridgeChoice::None
+            });
+            combo_item(ui, "FD-502", *cartridge == CartridgeChoice::FD502, || {
+                *cartridge = CartridgeChoice::FD502
+            });
+            image_combo_item(
+                ui,
+                "ROM Pak…",
+                matches!(cartridge, CartridgeChoice::ROMPak(_)),
+                rom_pak_file_dialog,
+                |path| *cartridge = CartridgeChoice::ROMPak(path),
+            );
+            combo_item(ui, "Disto RTC", *cartridge == CartridgeChoice::RTC, || {
+                *cartridge = CartridgeChoice::RTC
+            });
+            combo_item(
+                ui,
+                "RS-232 Pak",
+                *cartridge == CartridgeChoice::RS232,
+                || *cartridge = CartridgeChoice::RS232,
+            );
+            image_combo_item(
+                ui,
+                "Games Master…",
+                matches!(cartridge, CartridgeChoice::GamesMaster(_)),
+                gmc_file_dialog,
+                |path| *cartridge = CartridgeChoice::GamesMaster(path),
+            );
+            image_combo_item(
+                ui,
+                "Orchestra-90…",
+                matches!(cartridge, CartridgeChoice::Orch90(_)),
+                orch90_file_dialog,
+                |path| *cartridge = CartridgeChoice::Orch90(path),
+            );
+            combo_item(
+                ui,
+                "Sound/Speech Cartridge",
+                *cartridge == CartridgeChoice::SoundSpeech,
+                || *cartridge = CartridgeChoice::SoundSpeech,
+            );
+            combo_item(
+                ui,
+                "MultiPak Interface",
+                *cartridge == CartridgeChoice::MPI,
+                || *cartridge = CartridgeChoice::MPI,
+            );
         });
 }
 
@@ -190,68 +213,44 @@ fn slot_combo(
     egui::ComboBox::from_id_salt((salt, "mpi_slot", slot))
         .selected_text(slot_label(&mpi_slots[slot]))
         .show_ui(ui, |ui| {
-            if ui
-                .selectable_label(mpi_slots[slot] == SlotChoice::Empty, "Empty")
-                .clicked()
-            {
-                mpi_slots[slot] = SlotChoice::Empty;
-            }
-            if ui
-                .selectable_label(mpi_slots[slot] == SlotChoice::FD502, "FD-502")
-                .clicked()
-            {
-                for other in mpi_slots.iter_mut() {
-                    if *other == SlotChoice::FD502 {
-                        *other = SlotChoice::Empty;
-                    }
-                }
+            combo_item(ui, "Empty", mpi_slots[slot] == SlotChoice::Empty, || {
+                mpi_slots[slot] = SlotChoice::Empty
+            });
+            combo_item(ui, "FD-502", mpi_slots[slot] == SlotChoice::FD502, || {
+                release_slot(mpi_slots, SlotChoice::FD502);
                 mpi_slots[slot] = SlotChoice::FD502;
-            }
-            if ui
-                .selectable_label(matches!(mpi_slots[slot], SlotChoice::ROMPak(_)), "ROM Pak…")
-                .clicked()
-                && let Some(path) = rom_pak_file_dialog().pick_file()
-            {
-                mpi_slots[slot] = SlotChoice::ROMPak(path);
-            }
-            if ui
-                .selectable_label(mpi_slots[slot] == SlotChoice::RTC, "Disto RTC")
-                .clicked()
-            {
-                // One clock max: two would shadow each other at $FF50.
-                for other in mpi_slots.iter_mut() {
-                    if *other == SlotChoice::RTC {
-                        *other = SlotChoice::Empty;
-                    }
-                }
+            });
+            image_combo_item(
+                ui,
+                "ROM Pak…",
+                matches!(mpi_slots[slot], SlotChoice::ROMPak(_)),
+                rom_pak_file_dialog,
+                |path| mpi_slots[slot] = SlotChoice::ROMPak(path),
+            );
+            combo_item(ui, "Disto RTC", mpi_slots[slot] == SlotChoice::RTC, || {
+                release_slot(mpi_slots, SlotChoice::RTC);
                 mpi_slots[slot] = SlotChoice::RTC;
-            }
-            if ui
-                .selectable_label(
-                    matches!(mpi_slots[slot], SlotChoice::GamesMaster(_)),
-                    "Games Master…",
-                )
-                .clicked()
-                && let Some(path) = gmc_file_dialog().pick_file()
-            {
-                mpi_slots[slot] = SlotChoice::GamesMaster(path);
-            }
-            if ui
-                .selectable_label(
-                    matches!(mpi_slots[slot], SlotChoice::Orch90(_)),
-                    "Orchestra-90…",
-                )
-                .clicked()
-                && let Some(path) = orch90_file_dialog().pick_file()
-            {
-                mpi_slots[slot] = SlotChoice::Orch90(path);
-            }
-            if ui
-                .selectable_label(mpi_slots[slot] == SlotChoice::SSC, "Sound/Speech Cartridge")
-                .clicked()
-            {
-                mpi_slots[slot] = SlotChoice::SSC;
-            }
+            });
+            image_combo_item(
+                ui,
+                "Games Master…",
+                matches!(mpi_slots[slot], SlotChoice::GamesMaster(_)),
+                gmc_file_dialog,
+                |path| mpi_slots[slot] = SlotChoice::GamesMaster(path),
+            );
+            image_combo_item(
+                ui,
+                "Orchestra-90…",
+                matches!(mpi_slots[slot], SlotChoice::Orch90(_)),
+                orch90_file_dialog,
+                |path| mpi_slots[slot] = SlotChoice::Orch90(path),
+            );
+            combo_item(
+                ui,
+                "Sound/Speech Cartridge",
+                mpi_slots[slot] == SlotChoice::SoundSpeech,
+                || mpi_slots[slot] = SlotChoice::SoundSpeech,
+            );
         });
 }
 

@@ -34,7 +34,9 @@ fn manager_edit_with_fd502_records_the_peripheral() {
 }
 
 /// Cartridge = MultiPak Interface in the pane records the MPI cartridge with
-/// no slots key (nothing picked in any slot).
+/// all four slots explicit and empty: `slots` is a required field of
+/// `CartridgeDTO::MPI`, so an intentionally-empty loadout can't be omitted
+/// from the file the way schema-1's booleans could.
 #[test]
 fn manager_edit_with_mpi_records_the_peripheral() {
     let dir = TempDir::new("create-mpi");
@@ -45,15 +47,21 @@ fn manager_edit_with_mpi_records_the_peripheral() {
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: std::array::from_fn(|_| machine_def::SlotDTO::Empty)
+        }
+    );
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(
         contents.contains("kind = \"mpi\""),
         "TOML must record the MPI:\n{contents}"
     );
-    assert!(
-        !contents.contains("slots"),
-        "an MPI with nothing in any slot must omit [peripherals].slots:\n{contents}"
+    assert_eq!(
+        contents.matches("kind = \"empty\"").count(),
+        4,
+        "an MPI with nothing in any slot must record four explicit empty slots:\n{contents}"
     );
 }
 
@@ -81,8 +89,17 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     select_combo_at(&mut harness, "Empty", 0, "Disto RTC");
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
-    assert_eq!(def.peripherals.slots[0], machine_def::SlotDTO::RTC);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: [
+                machine_def::SlotDTO::RTC,
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::Empty,
+            ]
+        }
+    );
 }
 
 /// A ROM Pak — in the port or in an MPI slot — records `[peripherals].cartridge`/`.slots` with
@@ -124,17 +141,19 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     harness.step();
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
     assert_eq!(
-        def.peripherals.slots[1],
-        machine_def::SlotDTO::ROMPak {
-            path: "/paks/game.ccc".to_string()
-        }
-    );
-    assert_eq!(
-        def.peripherals.slots[3],
-        machine_def::SlotDTO::ROMPak {
-            path: "/paks/other.ccc".to_string()
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: [
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::ROMPak {
+                    path: "/paks/game.ccc".to_string()
+                },
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::ROMPak {
+                    path: "/paks/other.ccc".to_string()
+                },
+            ]
         }
     );
 }
@@ -193,11 +212,17 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
     }
     harness.step();
     let def = &harness.state().entries[1].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
     assert_eq!(
-        def.peripherals.slots[2],
-        machine_def::SlotDTO::Orch90 {
-            path: "/paks/orch90.ccc".to_string()
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: [
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::Orch90 {
+                    path: "/paks/orch90.ccc".to_string()
+                },
+                machine_def::SlotDTO::Empty,
+            ]
         }
     );
 }
@@ -213,7 +238,7 @@ fn manager_edit_with_ssc_records_the_peripheral() {
     select_combo_at(&mut harness, "None", 1, "Sound/Speech Cartridge");
     assert_eq!(
         harness.state().entries[0].def.peripherals.cartridge,
-        machine_def::CartridgeDTO::SSC
+        machine_def::CartridgeDTO::SoundSpeech
     );
 
     // Slotted, on a second machine — any number of slots may hold one, so two are recorded
@@ -223,9 +248,17 @@ fn manager_edit_with_ssc_records_the_peripheral() {
     select_combo_at(&mut harness, "Empty", 0, "Sound/Speech Cartridge");
     select_combo_at(&mut harness, "Empty", 0, "Sound/Speech Cartridge");
     let def = &harness.state().entries[1].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::MPI);
-    assert_eq!(def.peripherals.slots[0], machine_def::SlotDTO::SSC);
-    assert_eq!(def.peripherals.slots[1], machine_def::SlotDTO::SSC);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: [
+                machine_def::SlotDTO::SoundSpeech,
+                machine_def::SlotDTO::SoundSpeech,
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::Empty,
+            ]
+        }
+    );
 }
 
 /// Picking Serial = "Printer (DMP-105)" auto-saves `[ports].serial =

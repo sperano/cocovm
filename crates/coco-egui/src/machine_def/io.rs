@@ -30,7 +30,7 @@ const MEDIA_KEYS: &[&str] = &["disk0", "disk1", "vhd0", "vhd1", "tape"];
 // schema-1 file's leftover `[peripherals]` must report them as unknown, not
 // silently accept them (`PeripheralsDTO::cartridge`'s doc explains why the
 // missing-`cartridge` parse error is what actually rejects such a file).
-const PERIPHERALS_KEYS: &[&str] = &["cartridge", "slots"];
+const PERIPHERALS_KEYS: &[&str] = &["cartridge"];
 const PORTS_KEYS: &[&str] = &["serial"];
 const UI_KEYS: &[&str] = &[
     "aspect_correct",
@@ -130,32 +130,24 @@ fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     }
 }
 
-/// `[peripherals].cartridge = { kind = "mpi" }` with no `slots` key would
-/// otherwise deserialize as an empty MultiPak (`slots`' `#[serde(default)]`)
-/// — indistinguishable from a genuinely-empty one, so this raw-table check
-/// (run before the typed deserialize) is what makes a missing loadout fatal
-/// instead of silently discarded (`PeripheralsDTO::slots`'s doc). A `slots`
-/// array of the wrong length is caught here too, so the error names the
-/// expected count instead of serde's generic length complaint.
+/// A `[peripherals].cartridge`'s `slots` array of the wrong length is caught
+/// here, before the typed deserialize, so the error names the expected count
+/// (`MPI_SLOT_COUNT`) instead of serde's generic length complaint. A missing
+/// `slots` key needs no help here: it's a required field of
+/// [`super::CartridgeDTO::MPI`] itself, so serde's own "missing field
+/// `slots`" error already names the problem.
 fn check_mpi_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
     let Some(toml::Value::Table(peripherals)) = table.get("peripherals") else {
         return Ok(());
     };
-    let is_mpi = matches!(
-        peripherals.get("cartridge"),
-        Some(toml::Value::Table(cartridge))
-            if cartridge.get("kind") == Some(&toml::Value::String("mpi".to_string()))
-    );
-    match peripherals.get("slots") {
-        None if is_mpi => Err(format!(
-            "{}: [peripherals].cartridge is the MultiPak Interface but [peripherals].slots \
-             is missing — list its {MPI_SLOT_COUNT} slots explicitly (each \
-             `{{ kind = \"empty\" }}` if unused)",
-            path.display()
-        )),
-        Some(toml::Value::Array(slots)) if slots.len() != MPI_SLOT_COUNT => Err(format!(
-            "{}: [peripherals].slots lists {} slots but a MultiPak Interface has exactly \
-             {MPI_SLOT_COUNT}",
+    let Some(toml::Value::Table(cartridge)) = peripherals.get("cartridge") else {
+        return Ok(());
+    };
+    let is_mpi = cartridge.get("kind").and_then(toml::Value::as_str) == Some("mpi");
+    match cartridge.get("slots") {
+        Some(toml::Value::Array(slots)) if is_mpi && slots.len() != MPI_SLOT_COUNT => Err(format!(
+            "{}: [peripherals].cartridge.slots lists {} slots but a MultiPak Interface has \
+             exactly {MPI_SLOT_COUNT}",
             path.display(),
             slots.len()
         )),

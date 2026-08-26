@@ -40,7 +40,7 @@ pub enum CartridgeChoice {
     Orch90(PathBuf),
     /// Sound/Speech Cartridge plugged straight into the port. No file to
     /// pick.
-    SSC,
+    SoundSpeech,
     /// MultiPak Interface; the form then shows its four Slot rows, and
     /// the Disk rows only once a slot holds the FD-502.
     MPI,
@@ -66,8 +66,9 @@ pub enum SlotChoice {
     GamesMaster(PathBuf),
     /// Orchestra-90/CC in this slot (see [`CartridgeChoice::Orch90`]).
     Orch90(PathBuf),
-    /// Sound/Speech Cartridge in this slot (see [`CartridgeChoice::SSC`]).
-    SSC,
+    /// Sound/Speech Cartridge in this slot (see
+    /// [`CartridgeChoice::SoundSpeech`]).
+    SoundSpeech,
 }
 
 pub(super) fn slot_label(slot: &SlotChoice) -> String {
@@ -78,7 +79,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::RTC => "Disto RTC".to_string(),
         SlotChoice::GamesMaster(path) => cart_file_name(path, "Games Master"),
         SlotChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
-        SlotChoice::SSC => "Sound/Speech Cartridge".to_string(),
+        SlotChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
     }
 }
 
@@ -91,7 +92,7 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
         CartridgeChoice::GamesMaster(path) => cart_file_name(path, "Games Master"),
         CartridgeChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
-        CartridgeChoice::SSC => "Sound/Speech Cartridge".to_string(),
+        CartridgeChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),
     }
 }
@@ -124,28 +125,6 @@ pub(super) fn orch90_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Orchestra-90 ROM", ROM_EXTENSIONS)
 }
 
-impl From<&CartridgeChoice> for CartridgeDTO {
-    fn from(choice: &CartridgeChoice) -> Self {
-        match choice {
-            CartridgeChoice::None => CartridgeDTO::None,
-            CartridgeChoice::FD502 => CartridgeDTO::FD502,
-            CartridgeChoice::ROMPak(path) => CartridgeDTO::ROMPak {
-                path: path.display().to_string(),
-            },
-            CartridgeChoice::RTC => CartridgeDTO::RTC,
-            CartridgeChoice::RS232 => CartridgeDTO::RS232,
-            CartridgeChoice::GamesMaster(path) => CartridgeDTO::GamesMaster {
-                path: path.display().to_string(),
-            },
-            CartridgeChoice::Orch90(path) => CartridgeDTO::Orch90 {
-                path: path.display().to_string(),
-            },
-            CartridgeChoice::SSC => CartridgeDTO::SSC,
-            CartridgeChoice::MPI => CartridgeDTO::MPI,
-        }
-    }
-}
-
 impl From<&CartridgeDTO> for CartridgeChoice {
     fn from(dto: &CartridgeDTO) -> Self {
         match dto {
@@ -156,8 +135,8 @@ impl From<&CartridgeDTO> for CartridgeChoice {
             CartridgeDTO::RS232 => CartridgeChoice::RS232,
             CartridgeDTO::GamesMaster { path } => CartridgeChoice::GamesMaster(PathBuf::from(path)),
             CartridgeDTO::Orch90 { path } => CartridgeChoice::Orch90(PathBuf::from(path)),
-            CartridgeDTO::SSC => CartridgeChoice::SSC,
-            CartridgeDTO::MPI => CartridgeChoice::MPI,
+            CartridgeDTO::SoundSpeech => CartridgeChoice::SoundSpeech,
+            CartridgeDTO::MPI { .. } => CartridgeChoice::MPI,
         }
     }
 }
@@ -177,7 +156,7 @@ impl From<&SlotChoice> for SlotDTO {
             SlotChoice::Orch90(path) => SlotDTO::Orch90 {
                 path: path.display().to_string(),
             },
-            SlotChoice::SSC => SlotDTO::SSC,
+            SlotChoice::SoundSpeech => SlotDTO::SoundSpeech,
         }
     }
 }
@@ -191,38 +170,52 @@ impl From<&SlotDTO> for SlotChoice {
             SlotDTO::RTC => SlotChoice::RTC,
             SlotDTO::GamesMaster { path } => SlotChoice::GamesMaster(PathBuf::from(path)),
             SlotDTO::Orch90 { path } => SlotChoice::Orch90(PathBuf::from(path)),
-            SlotDTO::SSC => SlotChoice::SSC,
+            SlotDTO::SoundSpeech => SlotChoice::SoundSpeech,
         }
     }
 }
 
 /// Pack the form's Cartridge/Slot picks into `[peripherals]` — the inverse
-/// of [`seed_peripherals`]. `slots` is only produced while the port holds an
-/// MPI; otherwise every slot packs as [`SlotDTO::Empty`], which
-/// `PeripheralsDTO::slots`'s `skip_serializing_if` then omits from the file.
-///
-/// [`PeripheralsDTO::slots`]: machine_def::PeripheralsDTO::slots
+/// of [`seed_peripherals`]. `CartridgeDTO::MPI`'s `slots` needs the form's
+/// MPI-slot picks in addition to the cartridge choice, so this builds it
+/// directly rather than through a `From<&CartridgeChoice>` impl.
 pub(crate) fn pack_peripherals(
     cartridge: &CartridgeChoice,
     mpi_slots: &[SlotChoice; crate::MPI_SLOT_COUNT],
 ) -> machine_def::PeripheralsDTO {
-    let slots = if *cartridge == CartridgeChoice::MPI {
-        std::array::from_fn(|i| (&mpi_slots[i]).into())
-    } else {
-        std::array::from_fn(|_| SlotDTO::Empty)
+    let cartridge = match cartridge {
+        CartridgeChoice::None => CartridgeDTO::None,
+        CartridgeChoice::FD502 => CartridgeDTO::FD502,
+        CartridgeChoice::ROMPak(path) => CartridgeDTO::ROMPak {
+            path: path.display().to_string(),
+        },
+        CartridgeChoice::RTC => CartridgeDTO::RTC,
+        CartridgeChoice::RS232 => CartridgeDTO::RS232,
+        CartridgeChoice::GamesMaster(path) => CartridgeDTO::GamesMaster {
+            path: path.display().to_string(),
+        },
+        CartridgeChoice::Orch90(path) => CartridgeDTO::Orch90 {
+            path: path.display().to_string(),
+        },
+        CartridgeChoice::SoundSpeech => CartridgeDTO::SoundSpeech,
+        CartridgeChoice::MPI => CartridgeDTO::MPI {
+            slots: std::array::from_fn(|i| (&mpi_slots[i]).into()),
+        },
     };
-    machine_def::PeripheralsDTO {
-        cartridge: cartridge.into(),
-        slots,
-    }
+    machine_def::PeripheralsDTO { cartridge }
 }
 
 /// Seed the form's Cartridge/Slot picks from `[peripherals]` — the inverse
-/// of [`pack_peripherals`].
+/// of [`pack_peripherals`]. A non-MPI cartridge seeds every slot back to
+/// [`SlotChoice::Empty`], since only [`CartridgeDTO::MPI`] carries a loadout.
 pub(crate) fn seed_peripherals(
     peripherals: &machine_def::PeripheralsDTO,
 ) -> (CartridgeChoice, [SlotChoice; crate::MPI_SLOT_COUNT]) {
-    let cartridge = (&peripherals.cartridge).into();
-    let slots = std::array::from_fn(|i| (&peripherals.slots[i]).into());
-    (cartridge, slots)
+    match &peripherals.cartridge {
+        CartridgeDTO::MPI { slots } => (
+            CartridgeChoice::MPI,
+            std::array::from_fn(|i| (&slots[i]).into()),
+        ),
+        other => (other.into(), std::array::from_fn(|_| SlotChoice::default())),
+    }
 }
