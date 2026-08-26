@@ -19,6 +19,12 @@ const SWITCH_SLOT4: usize = 3;
 
 /// A bus with a small dummy ROM — these tests never boot code, only drive
 /// registers directly (same pattern as `tests/gime_irq.rs`).
+/// Unit-level bus pokes never boot a ROM, so state the SCS-window
+/// precondition (INIT0 MC2) explicitly instead of relying on the ROM's own gating.
+fn open_scs_gate(b: &mut SystemBus) {
+    b.gime.write_init0(coco_core::gime::init0::MC2);
+}
+
 fn bus() -> SystemBus {
     SystemBus::new(
         MachineVariant::Coco3,
@@ -199,6 +205,7 @@ fn machine_reset_restores_switch_control_and_reloads_value() {
 #[test]
 fn scs_routing_follows_bits_1_0_and_tracks_changes() {
     let mut b = bus();
+    open_scs_gate(&mut b);
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     mp.insert(0, Cart::custom(TestCart::new(0xA0)));
     mp.insert(1, Cart::custom(TestCart::new(0xB0)));
@@ -283,6 +290,7 @@ fn halt_and_nmi_are_wire_ored_across_all_slots_regardless_of_selection() {
 #[test]
 fn tick_advances_every_slot_regardless_of_selection() {
     let mut b = bus();
+    open_scs_gate(&mut b);
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     for i in 0..4u8 {
         mp.insert(i as usize, Cart::custom(TestCart::new(i)));

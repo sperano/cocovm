@@ -24,7 +24,12 @@ fn marked_rom() -> Box<[u8]> {
 }
 
 fn bus() -> SystemBus {
-    SystemBus::new(MachineVariant::Coco3, MemorySize::K512, marked_rom())
+    let mut b = SystemBus::new(MachineVariant::Coco3, MemorySize::K512, marked_rom());
+    // Unit-level bus pokes, no booting (module doc): state the SCS-window
+    // precondition (INIT0 MC2) explicitly, since $FF41/$FF42 now sit behind
+    // that gate on the GIME path.
+    b.gime.write_init0(coco_core::gime::init0::MC2);
+    b
 }
 
 const BECKER_STATUS: u16 = 0xFF41;
@@ -194,8 +199,8 @@ fn becker_takes_precedence_over_cartridge() {
     assert_eq!(b.read(BECKER_STATUS), 0x00);
     assert_eq!(b.read(BECKER_DATA), 0x00);
 
-    // $FF40/$FF43 (just outside the two Becker registers, still inside
-    // CART_BASE..=CART_LAST) still reach the cartridge.
+    // $FF40/$FF43 (just outside the two Becker registers, still inside the
+    // SCS window) still reach the cartridge.
     assert_eq!(b.read(0xFF40), MARKER_CART_READ);
     assert_eq!(b.read(0xFF43), MARKER_CART_READ);
 
@@ -211,6 +216,36 @@ fn becker_takes_precedence_over_cartridge() {
     assert_eq!(last_write.get(), 0x11);
     b.write(0xFF43, 0x22);
     assert_eq!(last_write.get(), 0x22);
+}
+
+// ---- 5b. INIT0 MC2 silences the Becker port too -----------------------------
+
+#[test]
+fn mc2_clear_silences_the_becker_port_on_the_gime_path() {
+    // The Becker intercept lives inside the SCS window on the GIME path (MAME
+    // installs its handlers over the cart range), so closing INIT0 MC2 must
+    // silence it exactly like the cartridge: a hard 0 read, dropped writes —
+    // not the enabled-but-idle 0x00 status from `bus()`'s normal precondition.
+    let mut b = SystemBus::new(MachineVariant::Coco3, MemorySize::K512, marked_rom());
+    b.enable_drivewire();
+    // INIT0 defaults to $00 on power-on: MC2 clear, gate closed.
+    assert_eq!(
+        b.read(BECKER_STATUS),
+        0x00,
+        "closed gate reads 0, indistinguishable here from idle status"
+    );
+    feed(&mut b, opcode::DWINIT);
+    feed(&mut b, 0x01);
+    assert_eq!(
+        b.read(BECKER_STATUS),
+        0x00,
+        "the DWINIT bytes above must never have reached DriveWire"
+    );
+    assert_eq!(
+        b.read(BECKER_DATA),
+        0x00,
+        "no reply queued: the write was dropped, not merely unread"
+    );
 }
 
 // ---- 6. CoCo 1/2 SAM path ----------------------------------------------------

@@ -207,6 +207,121 @@ fn all_ram_mode_exposes_ram_under_rom() {
     assert_eq!(b.read(0x8000), 0x5A); // now RAM, not ROM offset 0
 }
 
+// ---- INIT0 MC2 SCS* gate ($FF40-$FF5F) -----------------------------------------
+
+/// Records the last value written to the SCS window or `$FF7F`, answering
+/// `id` until then — same read-your-last-write shape as `tests/mpi.rs`'s
+/// `TestCart`, so a bus read proves whether a write reached the cartridge.
+struct RecordingCart {
+    id: u8,
+    last_write: Option<u8>,
+    last_control_write: Option<u8>,
+}
+impl RecordingCart {
+    fn new(id: u8) -> Self {
+        Self {
+            id,
+            last_write: None,
+            last_control_write: None,
+        }
+    }
+}
+impl coco_core::cart::Cartridge for RecordingCart {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.peek(addr)
+    }
+    fn peek(&self, _addr: u16) -> u8 {
+        self.last_write.unwrap_or(self.id)
+    }
+    fn write(&mut self, _addr: u16, val: u8) {
+        self.last_write = Some(val);
+    }
+    fn control_read(&mut self) -> u8 {
+        self.last_control_write.unwrap_or(self.id)
+    }
+    fn control_write(&mut self, val: u8) {
+        self.last_control_write = Some(val);
+    }
+}
+
+const SCS_BASE: u16 = 0xFF40;
+const SCS_LAST: u16 = 0xFF5F;
+const CART_EXT_BASE: u16 = 0xFF60;
+const CART_EXT_LAST: u16 = 0xFF7E;
+const MPI_CONTROL: u16 = 0xFF7F;
+
+#[test]
+fn scs_window_reads_zero_and_drops_writes_when_mc2_clear() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Cart::custom(RecordingCart::new(0xA5));
+    // INIT0 defaults to $00 on power-on: MC2 clear, gate closed.
+    for addr in SCS_BASE..=SCS_LAST {
+        assert_eq!(
+            b.read(addr),
+            0x00,
+            "closed gate must read a hard 0 at {addr:#06x}"
+        );
+    }
+    b.write(SCS_BASE, 0x11);
+    assert_eq!(
+        b.read(SCS_BASE),
+        0x00,
+        "a write while closed must never reach the cartridge"
+    );
+}
+
+#[test]
+fn scs_window_restores_normal_dispatch_when_mc2_set() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Cart::custom(RecordingCart::new(0xA5));
+    b.write(INIT0_REG, init0::MC2);
+    assert_eq!(
+        b.read(SCS_BASE),
+        0xA5,
+        "open gate must reach the cartridge's id"
+    );
+    b.write(SCS_BASE, 0x77);
+    assert_eq!(
+        b.read(SCS_BASE),
+        0x77,
+        "open gate must let the write reach the cartridge"
+    );
+}
+
+#[test]
+fn debugger_peek_follows_the_scs_gate() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Cart::custom(RecordingCart::new(0xA5));
+    // Closed (power-on default) and open must agree with a real read.
+    assert_eq!(b.peek(SCS_BASE), b.read(SCS_BASE));
+    assert_eq!(b.peek(SCS_BASE), 0x00);
+    b.write(INIT0_REG, init0::MC2);
+    assert_eq!(b.peek(SCS_BASE), b.read(SCS_BASE));
+    assert_eq!(b.peek(SCS_BASE), 0xA5);
+}
+
+#[test]
+fn cart_extension_window_ignores_mc2() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Cart::custom(RecordingCart::new(0xA5));
+    // MC2 stays clear (power-on default): $FF60-$FF7E is outside the SCS*
+    // decode, so it must still reach the cartridge either way.
+    assert_eq!(b.read(CART_EXT_BASE), 0xA5);
+    b.write(CART_EXT_BASE, 0x33);
+    assert_eq!(b.read(CART_EXT_LAST), 0x33, "any address across the range");
+}
+
+#[test]
+fn mpi_control_register_ignores_mc2() {
+    let mut b = bus(MemorySize::K512);
+    b.cart = Cart::custom(RecordingCart::new(0xA5));
+    // MC2 stays clear (power-on default): $FF7F is the MPI's own select
+    // register, not part of the SCS* decode, so it must still reach the cart.
+    assert_eq!(b.read(MPI_CONTROL), 0xA5);
+    b.write(MPI_CONTROL, 0x99);
+    assert_eq!(b.read(MPI_CONTROL), 0x99);
+}
+
 // ---- MMU translation ---------------------------------------------------------
 
 #[test]

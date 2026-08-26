@@ -1,25 +1,30 @@
-//! GIME I/O page decode (`$FF00-$FFBF`) for [`SystemBus`]'s CoCo 3 path:
-//! the Becker-port intercept ahead of cartridge dispatch, and the full
-//! register read/write match over PIA0/PIA1, the cartridge SCS window, VHD,
-//! and the GIME's own registers.
+//! GIME I/O page decode (`$FF00-$FFBF`) for [`SystemBus`]'s CoCo 3 path: the
+//! SCS* window (`$FF40-$FF5F`, gated by INIT0 MC2 — see
+//! [`crate::gime::GIME::scs_enabled`]) with its Becker-port intercept ahead
+//! of cartridge dispatch, the ungated `$FF60-$FF7E` cartridge extension, and
+//! the full register read/write match over PIA0/PIA1, VHD, and the GIME's
+//! own registers.
 
 use crate::gime;
 
 use super::regs::{
-    BECKER_DATA, BECKER_STATUS, BORDER_REG, CART_BASE, CART_LAST, FIRQENR_REG, GIME_LAST,
+    BECKER_DATA, BECKER_STATUS, BORDER_REG, CART_EXT_BASE, CART_EXT_LAST, FIRQENR_REG, GIME_LAST,
     GIME_RESERVED_BASE, GIME_RESERVED_LAST, HOFFSET_REG, INIT0_REG, INIT1_REG, IO_BASE, IRQENR_REG,
     MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE, PALETTE_LAST, PIA0_LAST,
-    PIA1_BASE, PIA1_LAST, PIA1_PORT_A_OFFSET, PIA1_REG_MASK, TIMER_LSB_REG, TIMER_MSB_REG,
-    VBANK_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO,
-    VHD_LRN_MID, VHD_SELECT, VMODE_REG, VOFFSET0_REG, VOFFSET1_REG, VRES_REG, VSCROLL_REG,
+    PIA1_BASE, PIA1_LAST, PIA1_PORT_A_OFFSET, PIA1_REG_MASK, SCS_BASE, SCS_GATE_CLOSED, SCS_LAST,
+    TIMER_LSB_REG, TIMER_MSB_REG, VBANK_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS,
+    VHD_LRN_HI, VHD_LRN_LO, VHD_LRN_MID, VHD_SELECT, VMODE_REG, VOFFSET0_REG, VOFFSET1_REG,
+    VRES_REG, VSCROLL_REG,
 };
 use super::{SystemBus, mmu_index};
 
 impl SystemBus {
     /// Becker-port read intercept ($FF41/$FF42): `Some` when the Becker port
     /// is enabled and `addr` is one of the two registers — takes precedence
-    /// over cartridge dispatch on every I/O decode path (MAME installs
-    /// Becker handlers over the cart range).
+    /// over cartridge dispatch within the SCS window (MAME installs Becker
+    /// handlers over the cart range). On the GIME path [`SystemBus::read_scs`]
+    /// only calls this once INIT0 MC2 has opened the gate; the plain-SAM
+    /// (CoCo 1/2) path calls it ungated.
     pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
         let dw = self.drivewire.as_mut()?;
         match addr {
@@ -30,7 +35,10 @@ impl SystemBus {
     }
 
     /// Becker-port write intercept: `true` when the Becker port is enabled
-    /// and `addr` was one of the two registers (handled, including $FF41 which is swallowed).
+    /// and `addr` was one of the two registers (handled, including $FF41
+    /// which is swallowed). On the GIME path [`SystemBus::write_scs`] only
+    /// calls this once INIT0 MC2 has opened the gate; the plain-SAM
+    /// (CoCo 1/2) path calls it ungated.
     pub(super) fn becker_write(&mut self, addr: u16, val: u8) -> bool {
         if self.drivewire.is_none() {
             return false;
@@ -46,12 +54,33 @@ impl SystemBus {
         }
     }
 
-    pub(super) fn io_read(&mut self, addr: u16) -> u8 {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's
-        // handler-installation order.
+    /// SCS* window read (`$FF40-$FF5F`): INIT0 MC2 gates the whole window
+    /// shut — a hard 0, not open bus (MAME `coco3_m.cpp` `ff40_read`) — and
+    /// the Becker port takes precedence over cartridge dispatch when open.
+    fn read_scs(&mut self, addr: u16) -> u8 {
+        if !self.gime.scs_enabled() {
+            return SCS_GATE_CLOSED;
+        }
         if let Some(v) = self.becker_read(addr) {
             return v;
         }
+        self.cart.read(addr)
+    }
+
+    /// SCS* window write: a closed gate drops the write before it reaches
+    /// the Becker port or the cartridge (MAME `coco3_m.cpp` `ff40_write`).
+    fn write_scs(&mut self, addr: u16, val: u8) {
+        if !self.gime.scs_enabled() {
+            return;
+        }
+        if self.becker_write(addr, val) {
+            return;
+        }
+        self.cart.write(addr, val);
+        self.note_audio_write(); // latched cart DACs (Orchestra-90)
+    }
+
+    pub(super) fn io_read(&mut self, addr: u16) -> u8 {
         match addr {
             IO_BASE..=PIA0_LAST => {
                 // Refresh port A's input pins (keyboard rows + joystick) before the PIA read.
@@ -63,7 +92,8 @@ impl SystemBus {
                 self.pia1.b.input = self.pia1_pb_pins();
                 self.pia1.read((addr & 0x03) as u8)
             }
-            CART_BASE..=CART_LAST => self.cart.read(addr),
+            SCS_BASE..=SCS_LAST => self.read_scs(addr),
+            CART_EXT_BASE..=CART_EXT_LAST => self.cart.read(addr),
             MPI_CONTROL_REG => self.cart.control_read(),
             VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
                 self.vhd.read_lrn_or_buffer()
@@ -85,18 +115,14 @@ impl SystemBus {
     }
 
     pub(super) fn io_write(&mut self, addr: u16, val: u8) {
-        // Becker-port precedence over cartridge dispatch — mirrors MAME's
-        // handler-installation order.
-        if self.becker_write(addr, val) {
-            return;
-        }
         match addr {
             IO_BASE..=PIA0_LAST => {
                 self.pia0.write((addr & 0x03) as u8, val);
                 self.note_audio_write(); // CA2/CB2 are the sound mux selects
             }
             PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
-            CART_BASE..=CART_LAST => {
+            SCS_BASE..=SCS_LAST => self.write_scs(addr, val),
+            CART_EXT_BASE..=CART_EXT_LAST => {
                 self.cart.write(addr, val);
                 self.note_audio_write(); // latched cart DACs (Orchestra-90)
             }

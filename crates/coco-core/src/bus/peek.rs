@@ -12,11 +12,11 @@ use crate::gime;
 use crate::sam::SAMTarget;
 
 use super::regs::{
-    CART_BASE, CART_LAST, FIRQENR_REG, GIME_LAST, HARDWIRED_ROM_BASE, INIT0_REG, INIT1_REG,
+    CART_EXT_BASE, CART_EXT_LAST, FIRQENR_REG, GIME_LAST, HARDWIRED_ROM_BASE, INIT0_REG, INIT1_REG,
     IO_BASE, IRQENR_REG, MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE, PALETTE_LAST,
     PIA0_LAST, PIA1_BASE, PIA1_LAST, ROM_WINDOW_BASE, SAM_BAS_ROM_OFFSET, SAM_CART_ROM_BASE,
-    TIMER_MSB_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO,
-    VHD_LRN_MID, VHD_SELECT,
+    SCS_BASE, SCS_GATE_CLOSED, SCS_LAST, TIMER_MSB_REG, VHD_BUFFER_HI, VHD_BUFFER_LO,
+    VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO, VHD_LRN_MID, VHD_SELECT,
 };
 use super::{SystemBus, mmu_index};
 
@@ -61,7 +61,15 @@ impl SystemBus {
                 self.pia1_pa_pins(),
                 self.pia1_pb_pins(),
             ),
-            CART_BASE..=CART_LAST => self.cart.peek(addr),
+            // Mirrors `io_read`'s INIT0 MC2 gate: closed reads a hard 0.
+            SCS_BASE..=SCS_LAST => {
+                if self.gime.scs_enabled() {
+                    self.cart.peek(addr)
+                } else {
+                    SCS_GATE_CLOSED
+                }
+            }
+            CART_EXT_BASE..=CART_EXT_LAST => self.cart.peek(addr),
             MPI_CONTROL_REG => self.cart.peek_control(),
             VHD_LRN_HI | VHD_LRN_MID | VHD_LRN_LO | VHD_BUFFER_HI | VHD_BUFFER_LO => {
                 self.vhd.read_lrn_or_buffer()
@@ -116,7 +124,8 @@ impl SystemBus {
                 self.pia1_pa_pins(),
                 self.pia1_pb_pins(),
             ),
-            CART_BASE..=CART_LAST => self.cart.peek(addr),
+            // Ungated, same as `sam_io_read` — no GIME/MC2 on CoCo 1/2.
+            SCS_BASE..=CART_EXT_LAST => self.cart.peek(addr),
             _ => OPEN_BUS,
         }
     }

@@ -244,6 +244,10 @@ fn reads_route_through_the_machine_bus_scs_window() {
     let mut m = Machine::new(MachineConfig::default(), load_rom(COCO3));
     m.insert_cartridge(fixed_rtc());
     m.power_cycle();
+    // power_cycle() resets GIME state but never runs any ROM code, so INIT0
+    // MC2 stays at its power-on 0: state the SCS-window precondition
+    // explicitly, same as a real boot's cold-start probe would.
+    m.bus.gime.write_init0(coco_core::gime::init0::MC2);
     m.bus.write(RTC_SELECT_DISTO4, REG_S1);
     assert_eq!(m.bus.read(RTC_DATA), 6, "S1 of :56 through the live bus");
 }
