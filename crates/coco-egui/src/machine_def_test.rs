@@ -4,6 +4,7 @@ use super::dto::{
 };
 use super::*;
 use super::{CartridgeDTO, SlotDTO};
+use crate::MPI_SLOT_COUNT;
 use crate::display::{TV, TVSettings};
 use coco_core::MonitorType;
 use std::fs;
@@ -425,6 +426,41 @@ cartridge = { kind = "mpi" }
         err.contains("slots"),
         "error should name the missing key: {err}"
     );
+}
+
+/// A `slots` array of the wrong length is rejected with a message naming
+/// the expected count, not serde's generic length error.
+#[test]
+fn mpi_cartridge_with_wrong_slot_count_fails_to_load() {
+    for count in [MPI_SLOT_COUNT - 1, MPI_SLOT_COUNT + 1] {
+        let dir = TempDir::new(&format!("mpi-{count}-slots"));
+        let slots = vec!["{ kind = \"empty\" }"; count].join(", ");
+        fs::write(
+            dir.path().join("mpi.toml"),
+            format!(
+                r#"
+schema = 1
+name = "MPI, Wrong Slot Count"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+
+[peripherals]
+cartridge = {{ kind = "mpi" }}
+slots = [{slots}]
+"#
+            ),
+        )
+        .unwrap();
+        let err = load_all(dir.path()).expect_err("a wrong-length slots array must fail the load");
+        assert!(
+            err.contains(&format!("lists {count} slots")) && err.contains("exactly 4"),
+            "error should name the actual and expected counts: {err}"
+        );
+    }
 }
 
 /// An MPI with `slots` explicitly all `empty` loads fine — the fatal case is
