@@ -3,70 +3,45 @@
 
 use crate::*;
 
+/// Explains how to get an FD-502 installed — shared by the disabled disk-menu items'
+/// tooltip and [`CocoApp::insert_disk`]/[`CocoApp::new_blank_disk`]'s no-controller error.
+pub(crate) const NO_FD502_HINT: &str = "No FD-502 disk controller is installed. Give this machine one in its peripherals \
+     (the cartridge port or an MPI slot) before launching it.";
+
 impl CocoApp {
-    /// Ensures the FD-502 controller is inserted, creating one (cold-resetting the machine —
-    /// BASIC only probes for Disk BASIC at cold start) if needed. Swapping
-    /// a floppy in an already-present controller does not reset. Refuses
-    /// if an MPI is installed; use [`Self::mpi_insert_fd502`] instead.
-    pub(crate) fn ensure_disk_controller(&mut self) -> Result<(), String> {
-        if self.machine.bus.cart.as_disk_cart().is_some() {
-            return Ok(());
-        }
-        if self.mpi.is_some() {
-            return Err(
-                "No FD-502 is installed in the MultiPak. Use Machine > MultiPak Interface > \
-                 a slot > Insert FD-502 first."
-                    .to_string(),
-            );
-        }
+    /// Installs the bare-port FD-502 controller for the launch path, when the machine
+    /// definition wants disk media but no MultiPak is installed — cold-resetting the
+    /// machine, since BASIC only probes for Disk BASIC at cold start. Call only with no
+    /// disk cart already present and no MPI installed; both are the launch caller's job.
+    pub(crate) fn insert_disk_controller(&mut self) -> Result<(), String> {
+        debug_assert!(
+            self.machine.bus.cart.as_disk_cart().is_none() && self.mpi.is_none(),
+            "insert_disk_controller would replace an existing disk cart or MPI"
+        );
         let path = disk_basic_rom_path();
         let rom = std::fs::read(&path)
             .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
-        // No flush needed: past the early returns, no disk cart can exist here.
         self.machine
             .insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
-        // Power cycle, not warm reset: the DK probe that links Disk BASIC only runs on cold-start.
         self.power_cycle();
-        self.cart_path = None;
-        self.disk_paths = [None, None];
-        self.rs232 = None;
-        self.rs232_eprom_path = None;
-        self.rtc_direct = false;
         Ok(())
     }
 
-    /// Menu-path entry for Insert Disk: acts immediately if the FD-502 is already in the
-    /// slot, otherwise parks behind the power-cycle confirmation dialog.
-    pub(crate) fn request_insert_disk(&mut self, drive: usize, path: PathBuf) {
-        if self.machine.bus.cart.as_disk_cart().is_some() {
-            self.insert_disk(drive, path);
-        } else {
-            self.pending_disk_action = Some(PendingDiskAction::Insert { drive, path });
-        }
-    }
-
-    /// Menu-path entry for New Blank Disk, gated like [`Self::request_insert_disk`].
-    pub(crate) fn request_new_blank_disk(&mut self, drive: usize, path: PathBuf) {
-        if self.machine.bus.cart.as_disk_cart().is_some() {
-            self.new_blank_disk(drive, path);
-        } else {
-            self.pending_disk_action = Some(PendingDiskAction::NewBlank { drive, path });
-        }
-    }
-
-    /// Mounts the floppy image at `path` in `drive`, inserting the FD-502 controller first
-    /// if needed. A failed write-back of the drive's old disk aborts the
-    /// mount, leaving it dirty and tracked for retry.
+    /// Mounts the floppy image at `path` in `drive`. Fails via [`Self::cart_error`] instead
+    /// of panicking if no FD-502 is installed — the menu disables this action until then, so
+    /// this is a defensive fallback. A failed write-back of the drive's old
+    /// disk aborts the mount, leaving it dirty and tracked for retry.
     pub(crate) fn insert_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
-            self.ensure_disk_controller()?;
             let bytes = std::fs::read(&path)
                 .map_err(|e| format!("could not read {}: {e}", path.display()))?;
             let disk =
                 JVCDisk::from_bytes(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
             self.write_back_disk(drive)?;
-            let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
+            let Some(cart) = self.machine.bus.cart.as_disk_cart() else {
+                return Err(NO_FD502_HINT.to_string());
+            };
             cart.insert_disk(drive, disk);
             self.disk_paths[drive] = Some(path);
             Ok(())
@@ -76,13 +51,16 @@ impl CocoApp {
         }
     }
 
-    /// Creates a brand-new, blank (0-track) floppy image at `path` and mounts it in `drive`,
-    /// inserting the FD-502 controller first if needed. Refuses to
-    /// overwrite an existing file; a failed write-back of the drive's old
-    /// disk aborts before the file is created.
+    /// Creates a brand-new, blank (0-track) floppy image at `path` and mounts it in `drive`.
+    /// Fails via [`Self::cart_error`] instead of panicking if no FD-502 is
+    /// installed, like [`Self::insert_disk`]. Refuses to overwrite an
+    /// existing file; a failed write-back of the drive's old disk aborts
+    /// before the file is created.
     pub(crate) fn new_blank_disk(&mut self, drive: usize, path: PathBuf) {
         let result = (|| -> Result<(), String> {
-            self.ensure_disk_controller()?;
+            if self.machine.bus.cart.as_disk_cart().is_none() {
+                return Err(NO_FD502_HINT.to_string());
+            }
             self.write_back_disk(drive)?;
             match std::fs::OpenOptions::new()
                 .write(true)
@@ -101,7 +79,7 @@ impl CocoApp {
             }
             let disk =
                 JVCDisk::from_bytes(Vec::new()).map_err(|e| format!("{}: {e}", path.display()))?;
-            let cart = self.machine.bus.cart.as_disk_cart().expect("just ensured");
+            let cart = self.machine.bus.cart.as_disk_cart().expect("checked above");
             cart.insert_disk(drive, disk);
             self.disk_paths[drive] = Some(path);
             Ok(())

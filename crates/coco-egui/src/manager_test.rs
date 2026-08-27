@@ -166,6 +166,8 @@ fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
         ROMSource::File(rom_path),
         AppParams::default(),
     );
+    vm.insert_disk_controller()
+        .unwrap_or_else(|e| panic!("test fixture FD-502 install: {e}"));
     vm.insert_disk(0, disk_path.to_path_buf());
     assert!(
         vm.cart_error.is_none(),

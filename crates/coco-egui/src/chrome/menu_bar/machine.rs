@@ -117,11 +117,17 @@ impl CocoApp {
         }
     }
 
-    /// The FD-502 floppy drives: insert, format blank, and eject.
+    /// The FD-502 floppy drives: insert, format blank, and eject. Insert/New Blank stay
+    /// disabled until an FD-502 is actually present — see [`NO_FD502_HINT`].
     fn machine_disk_items(&mut self, ui: &mut egui::Ui) {
+        let has_fd502 = self.machine.bus.cart.as_disk_cart().is_some();
         for drive in 0..UI_DRIVES {
             if ui
-                .button(format!("Insert Disk in Drive {drive}…"))
+                .add_enabled(
+                    has_fd502,
+                    egui::Button::new(format!("Insert Disk in Drive {drive}…")),
+                )
+                .on_disabled_hover_text(NO_FD502_HINT)
                 .clicked()
             {
                 ui.close();
@@ -129,11 +135,15 @@ impl CocoApp {
                     .add_filter("Disk image", &["dsk", "jvc", "os9"])
                     .pick_file()
                 {
-                    self.request_insert_disk(drive, path);
+                    self.insert_disk(drive, path);
                 }
             }
             if ui
-                .button(format!("New Blank Disk in Drive {drive}…"))
+                .add_enabled(
+                    has_fd502,
+                    egui::Button::new(format!("New Blank Disk in Drive {drive}…")),
+                )
+                .on_disabled_hover_text(NO_FD502_HINT)
                 .clicked()
             {
                 ui.close();
@@ -142,7 +152,7 @@ impl CocoApp {
                     .set_file_name("untitled.dsk")
                     .save_file()
                 {
-                    self.request_new_blank_disk(drive, path);
+                    self.new_blank_disk(drive, path);
                 }
             }
             let label = match &self.disk_paths[drive] {

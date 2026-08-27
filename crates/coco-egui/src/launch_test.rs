@@ -84,12 +84,11 @@ fn disk_media_with_no_controller_errors() {
     );
 }
 
-/// The same disk media launches fine once an MPI slot holds the FD-502.
-#[test]
-fn disk_media_with_mpi_fd502_launches() {
+/// Writes a one-track blank floppy image and returns a definition mounting it as
+/// `disk0` with `cartridge` as the port occupant.
+fn disk0_def(dir: &crate::machine_def::tests::TempDir, cartridge: CartridgeDTO) -> MachineDef {
     use coco_core::fdc;
 
-    let dir = crate::machine_def::tests::TempDir::new("launch-disk-mpi-fd502");
     let disk_path = dir.path().join("dev.dsk");
     let sector_size = 128usize << fdc::DEFAULT_SECTOR_SIZE_CODE;
     let one_track = fdc::DEFAULT_SECTORS_PER_TRACK * sector_size * fdc::DEFAULT_SIDES;
@@ -97,15 +96,57 @@ fn disk_media_with_mpi_fd502_launches() {
 
     let mut def = base_def();
     def.media.disk0 = Some(disk_path.display().to_string());
-    def.peripherals.cartridge = CartridgeDTO::MPI {
-        slots: [
-            SlotDTO::FD502,
-            SlotDTO::Empty,
-            SlotDTO::Empty,
-            SlotDTO::Empty,
-        ],
-    };
+    def.peripherals.cartridge = cartridge;
+    def
+}
 
-    super::launch_machine(&def, "launch-test-disk-mpi-fd502")
-        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+/// Launches `def` and asserts the floppy actually landed in drive 0 — the mount
+/// happens after the controller is installed, so a silently skipped mount would
+/// otherwise still return `Ok` with empty drives.
+fn assert_disk0_mounted(def: &MachineDef, slug: &str) {
+    let mut app =
+        super::launch_machine(def, slug).unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert_eq!(app.cart_error, None, "no mount error expected");
+    assert_eq!(
+        app.disk_paths[0].as_deref().and_then(|p| p.file_name()),
+        Some(std::ffi::OsStr::new("dev.dsk")),
+        "drive 0 should hold the definition's disk0"
+    );
+    let cart = app
+        .machine
+        .bus
+        .cart
+        .as_disk_cart()
+        .expect("an FD-502 should be reachable after launch");
+    assert!(
+        cart.is_mounted(0),
+        "the floppy should be in the controller's drive 0"
+    );
+}
+
+/// The same disk media launches fine once an MPI slot holds the FD-502.
+#[test]
+fn disk_media_with_mpi_fd502_launches() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-disk-mpi-fd502");
+    let def = disk0_def(
+        &dir,
+        CartridgeDTO::MPI {
+            slots: [
+                SlotDTO::FD502,
+                SlotDTO::Empty,
+                SlotDTO::Empty,
+                SlotDTO::Empty,
+            ],
+        },
+    );
+    assert_disk0_mounted(&def, "launch-test-disk-mpi-fd502");
+}
+
+/// A bare-port FD-502 mounts disk media too — the controller is inserted by
+/// `mount_peripherals` first, then the floppy.
+#[test]
+fn disk_media_with_bare_fd502_launches() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-disk-bare-fd502");
+    let def = disk0_def(&dir, CartridgeDTO::FD502);
+    assert_disk0_mounted(&def, "launch-test-disk-bare-fd502");
 }
