@@ -878,8 +878,9 @@ the program has established a stack pointer would push a twelve-byte register
 frame through whatever garbage `S` happens to contain, corrupting memory the
 program has not yet had a chance to claim.
 
-Chapter 4 builds `take_interrupt` and the `nmi_armed` check that guards it, so the
-consequences belong there rather than here. What belongs here is the
+Chapter 4 builds `take_interrupt`, its shared `enter_interrupt` transition, and
+the `nmi_armed` check that guards delivery, so the consequences belong there
+rather than here. What belongs here is the
 observation that this is what a hardware-derived invariant looks like when it
 lands in code: not a comment saying "be careful with S," but a specific field
 set by a specific enumerated list of instructions, with a datasheet citation
@@ -1178,8 +1179,8 @@ computed. Note that these four arms don't add a base cost of their own the way
 `PUSH_PULL_BASE_CYCLES`, because the cost depends on the mask and the mask is
 theirs to inspect.
 
-`take_interrupt` (next week's reading) reuses `psh` directly —
-`self.psh(bus, 0xFF, true)` for a full NMI/IRQ/SWI frame, `self.psh(bus,
+`enter_interrupt` (next week's reading) reuses `psh` directly —
+`self.psh(bus, FULL_FRAME_MASK, true)` for a full NMI/IRQ/SWI frame, `self.psh(bus,
 PC_CC_MASK, true)` for FIRQ's PC+CC-only frame, where `PC_CC_MASK =
 stack_mask::PC | stack_mask::CC` ([`lib.rs:111`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/lib.rs#L111)). Every interrupt frame is
 the exact same `psh` you just read, called with a different mask. That is the
@@ -1462,7 +1463,7 @@ fn exec_page10(&mut self, bus: &mut impl Bus) -> u32 {
         0x21..=0x2F => { /* long conditional branches: 16-bit offset */ }
         0x83 => { let m = self.fetch_u16(bus); self.sub16(self.d(), m); 5 } // CMPD immediate
         // ... CMPY, LDY, STY, LDS, STS ...
-        0x3F => { self.take_interrupt(bus, VECTOR_SWI2, false, false, true); 20 } // SWI2
+        0x3F => { self.enter_interrupt(bus, VECTOR_SWI2, false, false, true); 20 } // SWI2
         _ => 2, // TODO: other $10-page opcodes
     }
 }

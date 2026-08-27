@@ -68,6 +68,7 @@ impl Machine {
             self.prev_halted = true;
             (1, false)
         } else {
+            let cycles_before = self.cpu.cycles;
             // Coming straight out of HALT, run one instruction before acknowledging interrupts.
             if !self.prev_halted {
                 self.bus.poll_cart_interrupt();
@@ -77,7 +78,10 @@ impl Machine {
                 self.service_interrupts();
             }
             self.prev_halted = false;
-            (self.cpu.step(&mut self.bus), true)
+            self.cpu.step(&mut self.bus);
+            let elapsed = self.cpu.cycles - cycles_before;
+            let cycles = u32::try_from(elapsed).expect("one CPU unit must fit in u32 cycles");
+            (cycles, true)
         };
         self.bus.cart.tick(cycles);
         self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
@@ -151,3 +155,7 @@ impl Machine {
         (hz / self.config.video.field_rate_hz()) as u32
     }
 }
+
+#[cfg(test)]
+#[path = "run_test.rs"]
+mod tests;

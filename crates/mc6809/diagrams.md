@@ -117,7 +117,13 @@ flowchart TD
     TAKEN_I --> TAKE
     TAKEN_F --> TAKE
 
-    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> S{Waiting?}
+    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> COST{Waiting?}
+    COST -- Yes --> WAKE_COST[entry cost = 4]
+    COST -- No, entire --> FULL_COST[entry cost = 19]
+    COST -- No, partial --> FAST_COST[entry cost = 10]
+    WAKE_COST --> S{Waiting?}
+    FULL_COST --> S
+    FAST_COST --> S
     S -- No: not CWAI --> FRAME{entire?}
     FRAME -- Yes --> FULL[set E bit, psh full register mask to S]
     FRAME -- No --> FAST[clear E bit, psh PC+CC only to S]
@@ -126,6 +132,7 @@ flowchart TD
     S -- Yes: CWAI already stacked --> MASKS[set I/F masks as requested]
     MASKS --> VEC[pc = read_u16 at vector]
     VEC --> RUN[state = Running]
+    RUN --> CHARGE[add entry cost to cycles]
 ```
 
 ### 4. `psh()` / `pul()` — stack register-mask transfer
@@ -305,9 +312,9 @@ sequenceDiagram
     CPU->>Bus: write(S-10) = B
     CPU->>Bus: write(S-11) = A
     CPU->>Bus: write(S-12) = CC
-    Note over CPU: S -= 12, cc |= IRQ_MASK | FIRQ_MASK
+    Note over CPU: S -= 12, cc |= IRQ_MASK
     CPU->>Bus: read_u16(VECTOR_IRQ = $FFF8) → handler addr
-    CPU->>CPU: pc = handler, state = Running
+    CPU->>CPU: pc = handler, state = Running, cycles += 19
     CPU-->>Emu: true (serviced)
 ```
 
@@ -330,7 +337,7 @@ sequenceDiagram
     CPU->>Bus: write(S-3) = CC
     Note over CPU: S -= 3, cc |= IRQ_MASK | FIRQ_MASK
     CPU->>Bus: read_u16(VECTOR_FIRQ = $FFF6) → handler addr
-    CPU->>CPU: pc = handler, state = Running
+    CPU->>CPU: pc = handler, state = Running, cycles += 10
     CPU-->>Emu: true (serviced)
 ```
 
@@ -356,7 +363,7 @@ sequenceDiagram
     alt I mask clear (CWAI opened the IRQ door)
         Note over CPU: take_interrupt: state == Waiting → skip re-stacking
         CPU->>CPU: set I/F, pc = read_u16(VECTOR_IRQ)
-        CPU->>CPU: state = Running
+        CPU->>CPU: state = Running, cycles += 4
         CPU-->>Emu: true
     else I mask still set
         CPU-->>Emu: false (ignored)

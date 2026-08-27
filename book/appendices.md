@@ -646,35 +646,18 @@ per-opcode cycle-by-cycle bus-access *sequence*, and the scanline-driven
 main loop (`ch06`) would need sub-line granularity where it currently has
 none.
 
-### Interrupt-entry cycle cost — the known loose end
+### Interrupt-entry cycle cost — now accounted
 
-A specific, already-documented instance of the previous item, precise
-enough to state as its own fact rather than a hypothetical: `ch04`
-traces every write to `self.cycles` in the `mc6809` crate and finds exactly
-two, both inside [`exec.rs`](https://github.com/sperano/cocovm/blob/main/crates/mc6809/src/exec.rs)'s `step()` — the halt-state idle tick, and
-`step()`'s own post-dispatch bookkeeping. `take_interrupt` — the function
-`nmi()`, `irq()`, and `firq()` all funnel through — never touches
-`self.cycles` at all, even though it calls `self.psh(bus, 0xFF, true)` and
-discards that call's cycle-accurate return value. Concretely: **an
-externally-delivered interrupt currently costs zero cycles on this CPU's
-clock.** `SWI`/`SWI2`/`SWI3`/`RTI`/`CWAI`/`SYNC` are
-costed correctly because they're *opcodes*, dispatched through `step()`
-like any other instruction; a hardware IRQ/FIRQ/NMI line asserting between
-instructions is not an opcode and pays nothing. **Who'd notice:** the same
-audience as the item above — software timing interrupt latency itself
-(some copy protection did) — plus, immediately and in practice, anyone
-trace-diffing this emulator against real MAME (Appendix A Case 4, Appendix
-D): the two traces would diverge in cycle counts at the first interrupt
-boundary, even while agreeing on every register value up to and
-past that point, which is a specific, previously-flagged trap for exactly
-that workflow. **What it would force:** `take_interrupt` recording the
-frame-push cost `psh` already computes and currently discards, plus a
-decision about what "correct" costs to charge for `NMI`/`IRQ`/`FIRQ`
-delivery that isn't itself sourced from a document yet (`ch04` §4.4 works
-out plausible neighborhoods — full-frame interrupts near `SWI`'s 19,
-`FIRQ` under half of that, `CWAI` wakeup nearly free — but is explicit that
-none of it is a verified hardware number, only a bound derived from the
-existing push-cost formula).
+A specific, already-documented instance of the previous item is now
+implemented: accepted running `IRQ`/`NMI` entry costs 19 cycles, running
+`FIRQ` costs 10, and an accepted interrupt waking `CWAI` costs 4 because its
+full frame is already stacked. Masked or unarmed delivery costs zero. `SWI`,
+`SWI2`, and `SWI3` remain step-costed and are not double charged. The
+`coco-core` scheduler includes external entry by observing the CPU cycle delta
+around line delivery. **Who'd notice:** software timing interrupt latency
+itself (some copy protection did), and anyone trace-diffing this emulator
+against real MAME (Appendix A Case 4, Appendix D): the cycle boundary now
+remains aligned while register and frame behavior stay independently testable.
 
 ### Bit-level UART framing
 

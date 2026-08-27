@@ -157,9 +157,10 @@ pub struct StepEvent {
 /// The CPU action a [`Machine::step_instruction`] performed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepKind {
-    /// One instruction retired, consuming `cycles` bus cycles.
+    /// One instruction retired. `cycles` includes any interrupt entry that
+    /// immediately preceded the instruction.
     Instruction {
-        /// Bus cycles the instruction consumed.
+        /// Bus cycles the CPU unit consumed.
         cycles: u32,
     },
     /// One HALT* cycle was burned (the cartridge holds the bus low); the CPU

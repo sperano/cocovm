@@ -245,7 +245,7 @@ impl MC6809 {
             }
 
             0x3F => {
-                self.take_interrupt(bus, VECTOR_SWI2, false, false, true);
+                self.enter_interrupt(bus, VECTOR_SWI2, false, false, true);
                 20
             } // SWI2
 
@@ -303,7 +303,7 @@ impl MC6809 {
             }
 
             0x3F => {
-                self.take_interrupt(bus, VECTOR_SWI3, false, false, true);
+                self.enter_interrupt(bus, VECTOR_SWI3, false, false, true);
                 20
             } // SWI3
 
@@ -452,7 +452,7 @@ impl MC6809 {
     fn exec_interrupt_halt(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
         match opcode {
             0x3F => {
-                self.take_interrupt(bus, VECTOR_SWI, true, true, true);
+                self.enter_interrupt(bus, VECTOR_SWI, true, true, true);
                 19
             } // SWI
             0x3B => {
