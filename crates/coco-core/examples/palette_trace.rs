@@ -35,6 +35,7 @@ fn main() {
             let cycles_per_line = if m.bus.gime.cpu_fast { 114 } else { 57 };
             let mut spent = 0u32;
             while spent < cycles_per_line {
+                let cycles_before = m.cpu.cycles;
                 if m.bus.firq_asserted() {
                     m.cpu.firq(&mut m.bus);
                 }
@@ -45,7 +46,9 @@ fn main() {
                 if matches!(m.cpu.state, mc6809::State::Syncing) {
                     sync_steps += 1;
                 }
-                spent += m.step_cpu_raw();
+                m.step_cpu_raw();
+                let elapsed = m.cpu.cycles - cycles_before;
+                spent += u32::try_from(elapsed).expect("one CPU unit must fit in u32 cycles");
                 if m.bus.gime.palette != before {
                     writes += 1;
                     if writes <= 40 || writes.is_multiple_of(500) {

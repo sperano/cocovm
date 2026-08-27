@@ -2610,24 +2610,14 @@ every frontend this core might ever grow.
 (Chapters 2–4) instead of the multi-month effort a cycle-exact 6809 core
 would demand; good enough to boot real BASIC, run real games, and pass every
 functional test this course has built. *Cost, precisely stated, not
-hand-waved:* Chapter 4 found — by grepping for `self.cycles` and finding it
-touched in exactly two places in the entire `mc6809` crate, neither one
-inside `take_interrupt` — that **interrupt entry costs zero cycles** in this
-emulator's own accounting. `nmi()`/`irq()`/`firq()` push a full or partial
-stack frame (up to twelve bus writes) and never once increment `self.cycles`
-doing it; `psh`'s own byte-accurate return value is computed and then
-discarded every time `take_interrupt` calls it. As Chapter 4 put it: "an
-externally-delivered interrupt is, as far as this CPU crate's clock is
-concerned, free." That's not a bug hiding — it's a direct, named consequence
-of the instruction-granular choice [DESIGN.md](https://github.com/sperano/cocovm/blob/main/DESIGN.md) §5 states as policy from the
-start, and it's exactly where a trace-diff against real MAME (which *does*
-cost this) would start disagreeing on cycle counts while still agreeing on
-every register value. Nothing this course's own software needs has ever
-required that precision — CoCo software mostly cares which *scanline* a
-handler lands on, the granularity Chapter 6 already provides, not whether
-the handler's first instruction lands 10 or 19 cycles after the line was
-asserted — but "nothing needed it yet" is a fact about this course's test
-suite, not a proof the gap can never matter. The live-register rendering
+hand-waved:* external interrupt entry has explicit CPU accounting: a running
+`IRQ`/`NMI` costs 19 cycles, a running `FIRQ` costs 10, and an accepted
+interrupt waking `CWAI` costs 4 because its full frame is already stacked.
+Masked lines and an unarmed `NMI` cost zero. `SWI`/`SWI2`/`SWI3` retain their
+ordinary instruction costs and are not charged again as external entry. The
+machine scheduler includes the entry by using the CPU cycle-counter delta
+around line delivery. This preserves instruction-granular accounting while
+making interrupt latency visible to scanline timing. The live-register rendering
 Chapters 8–9 built (registers re-read every scanline rather than latched
 once per field) claws back *some* of the precision a coarser design would
 have lost outright — mid-frame palette and border changes land on the right

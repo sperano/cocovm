@@ -82,7 +82,7 @@ exception and read by the CPU on the way out, and no arithmetic instruction
 ever touches it.
 
 The two halves of that contract sit two match arms apart in
-`exec_interrupt_halt`. `take_interrupt` sets
+`exec_interrupt_halt`. `enter_interrupt` sets
 `E` before pushing, which is why the stacked copy of `CC` always carries the
 right answer, and `RTI` reads it back after pulling `CC` first — the one
 register both frames agree is on top:
@@ -91,7 +91,7 @@ register both frames agree is on top:
 // crates/mc6809/src/exec.rs:263-289
 fn exec_interrupt_halt(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
     match opcode {
-        0x3F => { self.take_interrupt(bus, VECTOR_SWI, true, true, true); 19 }  // SWI
+        0x3F => { self.enter_interrupt(bus, VECTOR_SWI, true, true, true); 19 }  // SWI
         0x3B => { // RTI — pull CC, then full frame if E set else PC only
             self.pul(bus, 0x01, true);
             if self.cc & cc::ENTIRE != 0 {
@@ -520,7 +520,8 @@ The nested `if State::Syncing` gives the masked path one side effect: it wakes
 a CPU halted by `SYNC` even though the interrupt is not serviced. Section 4.4
 returns to that behavior.
 
-`take_interrupt`'s last two boolean parameters, `set_i` and `set_f`, decide
+`take_interrupt` and `enter_interrupt` share two boolean parameters, `set_i`
+and `set_f`, that decide
 which masks get *set on entry* — what stops a second interrupt from preempting
 the handler before it can save context. Reading straight off each call site:
 
@@ -548,16 +549,18 @@ interrupts exactly as the caller had them.
 That table is a summary of six one-line facts. The next subsection reads them
 off the source.
 
-### `take_interrupt`, one call at a time
+### `enter_interrupt`, one call at a time
 
-One function implements all six combinations of frame size, masks, and vector:
+One state-transition helper implements all six combinations of frame size,
+masks, and vector. External lines reach it through the charging
+`take_interrupt` wrapper; software-interrupt opcodes call it directly because
+`step()` charges their instruction cost:
 
 ```rust
 // crates/mc6809/src/lib.rs:226-254
-/// Common interrupt sequence: stack the frame (unless `CWAI` already did),
-/// set the requested masks, and vector. `entire` selects the full frame (E=1)
-/// vs the FIRQ partial frame (E=0).
-fn take_interrupt(
+/// Common interrupt state transition. Software interrupts use this directly
+/// because step() charges their opcode costs.
+fn enter_interrupt(
     &mut self,
     bus: &mut impl Bus,
     vector: u16,
@@ -568,7 +571,7 @@ fn take_interrupt(
     if self.state != State::Waiting {
         if entire {
             self.cc |= cc::ENTIRE;
-            self.psh(bus, 0xFF, true);
+            self.psh(bus, FULL_FRAME_MASK, true);
         } else {
             self.cc &= !cc::ENTIRE;
             self.psh(bus, PC_CC_MASK, true);
@@ -585,18 +588,19 @@ fn take_interrupt(
 }
 ```
 
-The six call sites select different parameter combinations:
+The six state-transition call sites select different parameter combinations:
 
 ```rust
 self.take_interrupt(bus, VECTOR_NMI,  true,  true,  true);  // nmi()  — lib.rs:197
 self.take_interrupt(bus, VECTOR_IRQ,  true,  false, true);  // irq()  — lib.rs:209
 self.take_interrupt(bus, VECTOR_FIRQ, true,  true,  false); // firq() — lib.rs:222
-self.take_interrupt(bus, VECTOR_SWI,  true,  true,  true);  // SWI    — exec.rs:266
-self.take_interrupt(bus, VECTOR_SWI2, false, false, true);  // SWI2   — exec.rs:169
-self.take_interrupt(bus, VECTOR_SWI3, false, false, true);  // SWI3   — exec.rs:190
+self.enter_interrupt(bus, VECTOR_SWI,  true,  true,  true);  // SWI    — exec.rs:266
+self.enter_interrupt(bus, VECTOR_SWI2, false, false, true);  // SWI2   — exec.rs:169
+self.enter_interrupt(bus, VECTOR_SWI3, false, false, true);  // SWI3   — exec.rs:190
 ```
 
-Read the parameters left to right against the body. `vector` picks which two
+Read the parameters left to right against the shared helper body. `vector`
+picks which two
 bytes at the top of memory load into `PC`, using the map from the start of
 this section; the parameter's only use is the single `bus.read_u16(vector)`
 near the bottom.
@@ -632,7 +636,7 @@ separate wake-up mechanism.
 > parameter, or a small options struct, and Chapter 6 has a sidebar arguing for
 > exactly that in a different context.
 >
-> Why is it tolerable here? Because of a property this function has and most
+> Why is it tolerable here? Because of a property this helper pair has and most
 > functions do not: **the complete set of call sites fits on one screen and
 > will never grow.** There are six exceptions on a 6809 and there will be six
 > exceptions on a 6809 forever. The six calls sit in two files, they are
@@ -721,8 +725,8 @@ top-level match into `exec_interrupt_halt`, which §4.1 quoted in full.
 one level down, inside the prefix-page handlers built in Chapter 2:
 
 ```rust
-0x3F => { self.take_interrupt(bus, VECTOR_SWI2, false, false, true); 20 } // SWI2 — exec.rs:169, exec_page10
-0x3F => { self.take_interrupt(bus, VECTOR_SWI3, false, false, true); 20 } // SWI3 — exec.rs:190, exec_page11
+0x3F => { self.enter_interrupt(bus, VECTOR_SWI2, false, false, true); 20 } // SWI2 — exec.rs:169, exec_page10
+0x3F => { self.enter_interrupt(bus, VECTOR_SWI3, false, false, true); 20 } // SWI3 — exec.rs:190, exec_page11
 ```
 
 The same opcode byte, `$3F`, appears three times in the ISA and means three
@@ -1195,40 +1199,47 @@ function knew the formula would not reproduce 19 and 15, so they did not try
 to make it. When a data sheet and your model disagree, the data sheet is the
 territory.
 
-With that caveat on the table, the *shape* of the comparison still holds up,
-and it is worth stating in three parts.
+With that caveat on the table, the implemented entry costs are now explicit.
 
-`IRQ` and `NMI` sit in the same neighborhood as `SWI`'s 19. They make the
-same `psh(bus, 0xFF, true)` call and the same vector fetch, and they have no
-opcode byte to fetch — a hardware line does not get decoded — so if anything
-the real number is a shade under 19 rather than over.
+An accepted `IRQ` or `NMI` arriving while the CPU is running charges **19
+cycles**; an accepted running `FIRQ`, with its partial frame, charges **10**.
+These are entry costs, separate from the cost of the handler's first opcode.
 
-`FIRQ` is the same operation with a quarter of the bytes moved. Three bytes
-instead of twelve, on a chip where each byte is a bus cycle, plausibly lands
-under half of `IRQ`'s cost. The whole reason the 6809 has two hardware
-interrupt lines instead of one is this gap, and the gap is entirely a byte
-count.
+An accepted interrupt waking a `CWAI`'d CPU charges **4 cycles**. The frame was
+already stacked by `CWAI`, so wake-up has no second frame write and no full
+running-interrupt preamble: the modeled sequence is the four-cycle vector
+entry after the three-cycle preamble and frame work that a running interrupt
+would otherwise perform. The result is deliberately the same for `IRQ`, `NMI`,
+and `FIRQ` once `CWAI` has committed the full frame.
 
-A `CWAI`'d CPU waking up pays neither of those costs again, and the *shape* of
-what is left is more informative than its size. Look at what remains inside
-`take_interrupt` once the `if self.state != State::Waiting` guard is skipped:
-two `if`-gated `|=` operations on `CC` and a single `bus.read_u16(vector)`.
-That is a small, fixed amount of work, not scaled by frame size at all,
-because the frame-sized part already happened during `CWAI`'s own 22 cycles.
-Flat, tiny, and independent of which line eventually fires — that is the
-concrete version of the "twelve bus writes already spent" claim, and it is why
-`CWAI` is the right tool for code that already knows an interrupt is imminent.
+Masked interrupts, and an unarmed `NMI`, charge **zero cycles** because they
+do not enter a handler. `SYNC` may still wake for masked activity, but that is
+not interrupt service and does not acquire an entry charge. `SWI`, `SWI2`, and
+`SWI3` remain instruction-costed through `step()` (19, 20, and 20 cycles); the
+interrupt-entry accounting applies only to externally delivered service, so a
+software interrupt is not double charged.
 
-### Implementation limitation: external interrupt cycles
+The sources do not hand us one uncontested table. Motorola's programming
+manual specifies the full and partial frames and says a `CWAI` wake needs no
+further state save, but does not publish aggregate entry totals. Leventhal
+lists 21/12/9; MAME's cycle-exact micro-operations spell out 3 preamble cycles
++ 12 or 3 frame writes + 4 vector cycles, and jump directly to that four-cycle
+vector sequence after `CWAI`. This core uses MAME's 19/10/4 accounting because
+the bus sequence is explicit and trace comparison is one reason to count entry
+in the first place.
 
-The current core does not add cycles for externally delivered interrupts.
-Search `take_interrupt`,
-`nmi`, `irq`, and `firq` for any write to `self.cycles` and there is not one.
-The field is touched in exactly two places in the entire crate, both inside
-`exec.rs`'s `step()`:
+### External interrupt cycle accounting
+
+The core charges cycles for accepted externally delivered interrupts, while
+leaving rejected delivery free. Running `IRQ` and `NMI` each charge 19 cycles;
+running `FIRQ` charges 10. An accepted interrupt waking `CWAI` charges 4:
+the wake path skips both the normal three-cycle entry preamble and any frame
+writes, leaving only the four-cycle vector sequence. In contrast, ordinary
+entry is 3 preamble cycles + 12 or 3 frame writes + 4 vector cycles: 19 or 10.
+The opcode paths still update the counter inside `exec.rs`'s `step()`:
 
 ```rust
-// crates/mc6809/src/exec.rs:31-36, 119
+// crates/mc6809/src/exec.rs: step()
 if self.state != State::Running {
     self.cycles += 1;
     return 1;
@@ -1245,45 +1256,29 @@ onto the clock — because those six are *opcodes*, decoded and executed through
 
 `nmi()`, `irq()`, and `firq()` are not opcodes. They are public methods the
 machine calls directly from outside `step()`
-([`crates/coco-core/src/machine/run.rs:111,178,181`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs),
-Chapter 6), and `take_interrupt`'s body — the function all three share — never
-once mentions `self.cycles`. `psh`'s return value, the one thing in this whole
-area that does compute a byte-accurate cost, is discarded every time
-`take_interrupt` calls it: `self.psh(bus, 0xFF, true);` with no assignment, no
-`+=`, nothing. The CPU's cycle counter therefore omits the entry cost of an
-externally delivered interrupt.
+([`crates/coco-core/src/machine/run.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/run.rs),
+Chapter 6), and `take_interrupt`'s body — the function all three share —
+records the appropriate entry charge. Rejected delivery (a mask or unarmed
+`NMI`) returns without changing the counter.
 
-> **Rust corner: a return value nobody reads.** `psh` is declared
+> **Rust corner: entry accounting is separate from frame shape.** `psh` is declared
 > `fn psh(&mut self, bus: &mut impl Bus, mask: u8, to_s: bool) -> u32` and its
 > last line is `PUSH_PULL_BASE_CYCLES + bytes`. Two of its call sites —
 > `PSHS` and `PSHU` in `exec_control_transfer` — use that value as the
-> instruction's cycle count, returning it straight up the stack. The two
-> inside `take_interrupt` write `self.psh(bus, 0xFF, true);` and throw it
-> away.
+> instruction's cycle count, returning it straight up the stack. Interrupt
+> delivery has its own fixed entry charge (19, 10, or the 4-cycle `CWAI`
+> wake-up path), so it is not inferred from the frame helper's return value.
 >
-> Rust compiles that silently. Unused *variables* draw a warning, unused
-> *return values* generally do not, because discarding a result is often
-> exactly what a caller means. The opt-in is `#[must_use]`: annotate the
-> function and every call site that ignores its result gets a warning until
-> it says `let _ = ...` to make the discard explicit. `Result` carries the
-> attribute for this reason, which is why ignoring an error draws a warning
-> while ignoring an integer does not.
->
-> Would `#[must_use]` be right here? It would have turned this section's
-> finding into a compiler diagnostic on the day the code was written, which
-> is the strongest argument available for any lint. It would also produce two
-> `let _ =` lines whose meaning is "the interrupt path deliberately does not
-> cost this," which is real information — the discard is a decision, and
-> right now the only place that decision is recorded is in this book. The
-> general habit is worth adopting: when a function returns something a caller
-> could plausibly forget, make forgetting it a deliberate act.
+> Rust compiles a discarded integer silently. That is appropriate here only
+> because the discard is deliberate: `psh` models the explicit PSH opcode as
+> five base cycles plus bytes transferred, while interrupt entry uses verified
+> fixed totals that do not decompose by that formula. A `#[must_use]` attribute
+> would force `enter_interrupt` to spell the decision as `let _ = ...`, but it
+> would not make the helper's 17- or 8-cycle result the right entry cost.
 
-This is a specific timing limitation, not evidence that the interrupt state
-transitions are incorrect. A trace comparison against an implementation that
-charges interrupt entry may therefore disagree on cycles while the register
-state remains aligned. Whether to add that accounting is a fidelity decision
-that should be verified against the processor timing documentation and the
-machine scheduler.
+The accounting is deliberately separate from the interrupt state transitions:
+the registers and frame shape still describe which line was accepted, while
+the entry charge makes its latency visible to the machine scheduler.
 
 ### FIRQ inside an IRQ handler: nesting and the E flag
 

@@ -1,6 +1,6 @@
 //! Hardware (S) stack push/pull and the PSHS/PULS/PSHU/PULU register-mask
 //! transfer, shared by subroutine calls, the interrupt frame in
-//! [`crate::MC6809::take_interrupt`], and the explicit stack opcodes in
+//! [`crate::MC6809::enter_interrupt`], and the explicit stack opcodes in
 //! [`crate::exec`].
 
 use crate::{Bus, MC6809, PUSH_PULL_BASE_CYCLES, stack_mask};

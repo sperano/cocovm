@@ -113,6 +113,15 @@ const PUSH_PULL_BASE_CYCLES: u32 = 5;
 /// PSH/PUL register mask selecting only PC and CC — the FIRQ interrupt stack frame.
 const PC_CC_MASK: u8 = stack_mask::PC | stack_mask::CC;
 
+/// PSH register mask selecting the complete interrupt stack frame.
+const FULL_FRAME_MASK: u8 = u8::MAX;
+
+/// Running-state entry costs for externally delivered interrupts.
+const FULL_INTERRUPT_CYCLES: u32 = 19;
+const FAST_INTERRUPT_CYCLES: u32 = 10;
+/// A CWAI frame is already stacked, so only the common vector sequence remains.
+const CWAI_WAKE_CYCLES: u32 = 4;
+
 /// Hardware interrupt / exception vectors (top of the address space).
 pub const VECTOR_SWI3: u16 = 0xFFF2;
 pub const VECTOR_SWI2: u16 = 0xFFF4;
@@ -152,8 +161,9 @@ pub struct MC6809 {
     pub pc: u16,
     pub dp: u8,
     pub cc: u8,
-    /// Total cycles consumed by calls to [`Self::step`] since the most recent
-    /// reset. The reset sequence itself is not counted.
+    /// Total cycles consumed by calls to [`Self::step`] and accepted external
+    /// interrupts since the most recent reset. The reset sequence itself is
+    /// not counted.
     pub cycles: u64,
     /// Running vs halted (SYNC/CWAI).
     pub state: State,
@@ -235,10 +245,31 @@ impl MC6809 {
         true
     }
 
-    /// Common interrupt sequence: stacks the frame (unless `CWAI` already did),
-    /// sets the requested masks, and vectors. `entire` selects the full frame (E=1)
-    /// vs FIRQ's partial (E=0).
+    /// Deliver and charge an external interrupt. A running CPU pays the full
+    /// or fast entry cost; a `CWAI` wake pays only the vector sequence because
+    /// its full frame is already stacked.
     fn take_interrupt(
+        &mut self,
+        bus: &mut impl Bus,
+        vector: u16,
+        set_i: bool,
+        set_f: bool,
+        entire: bool,
+    ) {
+        let cycles = if self.state == State::Waiting {
+            CWAI_WAKE_CYCLES
+        } else if entire {
+            FULL_INTERRUPT_CYCLES
+        } else {
+            FAST_INTERRUPT_CYCLES
+        };
+        self.enter_interrupt(bus, vector, set_i, set_f, entire);
+        self.cycles += u64::from(cycles);
+    }
+
+    /// Common interrupt state transition. Software interrupts use this
+    /// directly because [`Self::step`] charges their opcode costs.
+    fn enter_interrupt(
         &mut self,
         bus: &mut impl Bus,
         vector: u16,
@@ -249,7 +280,7 @@ impl MC6809 {
         if self.state != State::Waiting {
             if entire {
                 self.cc |= cc::ENTIRE;
-                self.psh(bus, 0xFF, true);
+                self.psh(bus, FULL_FRAME_MASK, true);
             } else {
                 self.cc &= !cc::ENTIRE;
                 self.psh(bus, PC_CC_MASK, true);
