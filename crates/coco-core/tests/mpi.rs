@@ -7,6 +7,7 @@
 
 use coco_core::cart::{Cart, Cartridge, MultiPak, ROMPak};
 use coco_core::fdc::DiskCart;
+use coco_core::rs232::{ACIA_BASE, DeluxeRS232};
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 use test_assets::rom::{COCO3, DISK11};
@@ -98,6 +99,9 @@ impl Cartridge for TestCart {
     }
     fn take_nmi(&mut self) -> bool {
         std::mem::replace(&mut self.nmi_pending, false)
+    }
+    fn peek(&self, _addr: u16) -> u8 {
+        self.last_write.unwrap_or(self.id)
     }
 }
 
@@ -221,6 +225,59 @@ fn scs_routing_follows_bits_1_0_and_tracks_changes() {
         b.read(0xFF40),
         0xB0,
         "slot 1 has no write recorded yet, so its id answers"
+    );
+}
+
+// ============================================================================
+// $FF60-$FF7E extension window: broadcast to every slot, not SCS-routed.
+// ============================================================================
+
+/// A device decoding the `$FF60-$FF7E` extension window (e.g. the Deluxe
+/// RS-232 Pak's ACIA) must answer from any slot, not just the SCS-selected
+/// one — the MPI only switches SCS*/CTS*/CART*, not the shared address/data
+/// bus (`coco_multi.cpp:9-19`). `read` and `peek` must agree on this routing.
+#[test]
+fn extension_window_broadcasts_for_both_read_and_peek() {
+    let mut b = bus();
+    let mut mp = MultiPak::new(SWITCH_SLOT4);
+    mp.insert(0, Cart::custom(TestCart::new(0x42)));
+    b.cart = mp.into();
+    b.write(MPI_CONTROL, 0xFF); // SCS and CTS both point at slot 3 -- slot 0 is unselected
+
+    const EXT_ADDR: u16 = 0xFF68; // outside SCS ($FF40-$FF5F), inside the $FF60-$FF7E extension
+    assert_eq!(
+        b.read(EXT_ADDR),
+        0x42,
+        "read must broadcast to slot 0 even though slot 3 is SCS/CTS-selected"
+    );
+    let mp = b.cart.as_multipak().expect("a MultiPak is inserted");
+    assert_eq!(
+        mp.peek(EXT_ADDR),
+        0x42,
+        "peek must broadcast the same way as read, not just answer from the SCS slot"
+    );
+}
+
+/// The Deluxe RS-232 Pak decodes its ACIA (`$FF68-$FF6B`) off the full
+/// address bus itself (`coco_rs232.cpp:57-62`), so it must be reachable
+/// nested in any MPI slot regardless of the front-panel switch/`$FF7F`
+/// selection — here the switch sits on slot 4 (index 3) while the pak is
+/// in slot 0.
+#[test]
+fn rs232_in_a_slot_reaches_the_acia_regardless_of_switch_selection() {
+    let mut b = bus();
+    let mut mp = MultiPak::new(SWITCH_SLOT4);
+    mp.insert(0, DeluxeRS232::new());
+    b.cart = mp.into();
+
+    // Control register (offset 3): a plain get/set with no read side effect
+    // (`ACIA6551::read`/`write`, register 3), unlike the data/status registers.
+    let control_reg = ACIA_BASE + 3;
+    b.write(control_reg, 0x1F);
+    assert_eq!(
+        b.read(control_reg),
+        0x1F,
+        "the ACIA in slot 0 must answer even though the switch points at slot 4"
     );
 }
 

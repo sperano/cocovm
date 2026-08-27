@@ -30,11 +30,11 @@ pub enum CartridgeChoice {
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
     /// a VHD boot; for RTC + floppies use an MPI slot.
     RTC,
-    /// Deluxe RS-232 Pak plugged straight into the port. Bare-port only —
-    /// unlike the RTC/FD-502 there's no `mpi_insert_rs232`, so this choice
-    /// isn't offered in the MPI's Slot combos. The endpoint pick itself
-    /// lives in [`super::MachineForm::rs232_endpoint`], a sibling field —
-    /// the same relationship [`Self::MPI`] has with `mpi_slots`.
+    /// Deluxe RS-232 Pak plugged straight into the port. The endpoint pick
+    /// itself lives in [`super::MachineForm::rs232_endpoint`], a sibling
+    /// field — the same relationship [`Self::MPI`] has with `mpi_slots`.
+    /// Can also be picked per-slot ([`SlotChoice::RS232`]) while the MPI is
+    /// selected.
     RS232,
     /// Games Master Cartridge (banked ROM + SN76489A) plugged straight into
     /// the port; picked with a file dialog on selection. `autostart` like
@@ -72,6 +72,11 @@ pub enum SlotChoice {
     },
     /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
     RTC,
+    /// Deluxe RS-232 Pak in this slot (see [`CartridgeChoice::RS232`]); at
+    /// most one across the whole loadout — two would fight over the shared
+    /// ACIA at `$FF68`, reachable from any slot regardless of switch/`$FF7F`
+    /// selection (the pak decodes the full address bus itself).
+    RS232(RS232EndpointChoice),
     /// Games Master Cartridge in this slot (see [`CartridgeChoice::GamesMaster`]).
     GamesMaster {
         path: PathBuf,
@@ -107,6 +112,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::FD502 => "FD-502".to_string(),
         SlotChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
         SlotChoice::RTC => "Disto RTC".to_string(),
+        SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
         SlotChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
         SlotChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
         SlotChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
@@ -227,6 +233,9 @@ impl From<&SlotChoice> for SlotDTO {
                 autostart: *autostart,
             },
             SlotChoice::RTC => SlotDTO::RTC,
+            SlotChoice::RS232(endpoint) => SlotDTO::RS232 {
+                endpoint: endpoint.into(),
+            },
             SlotChoice::GamesMaster { path, autostart } => SlotDTO::GamesMaster {
                 path: path.display().to_string(),
                 autostart: *autostart,
@@ -249,6 +258,7 @@ impl From<&SlotDTO> for SlotChoice {
                 autostart: *autostart,
             },
             SlotDTO::RTC => SlotChoice::RTC,
+            SlotDTO::RS232 { endpoint } => SlotChoice::RS232(endpoint.into()),
             SlotDTO::GamesMaster { path, autostart } => SlotChoice::GamesMaster {
                 path: PathBuf::from(path),
                 autostart: *autostart,

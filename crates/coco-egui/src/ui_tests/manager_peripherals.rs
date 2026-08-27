@@ -198,6 +198,42 @@ fn manager_edit_with_rs232_records_the_peripheral() {
     );
 }
 
+/// The RS-232 Pak in an MPI slot (not just the bare port) records
+/// `[peripherals].cartridge.slots` accordingly — the slot combo's own "RS-232 Pak" entry.
+#[test]
+fn manager_edit_with_slotted_rs232_records_the_peripheral() {
+    let dir = TempDir::new("create-mpi-rs232-slot");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    // Slot 2 (index 1): the second "Empty" combo, 0-based over the y-sorted nodes; the
+    // Switch combo has no "Empty" text so it never shifts the count.
+    select_combo_at(&mut harness, "Empty", 1, "RS-232 Pak");
+
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: [
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::RS232 {
+                    endpoint: machine_def::RS232EndpointDTO::Loopback,
+                },
+                machine_def::SlotDTO::Empty,
+                machine_def::SlotDTO::Empty,
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+        }
+    );
+    let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
+    assert!(
+        contents.contains("kind = \"rs232\""),
+        "the TOML must record the slotted peripheral:\n{contents}"
+    );
+}
+
 /// The Games Master and Orchestra-90 cartridges — image-backed like the ROM Pak — record
 /// `[peripherals].cartridge` with their path, in the port or in an MPI slot.
 #[test]

@@ -6,6 +6,7 @@
 //! `ensure_assets` — `save_state_test.rs`'s doc comment).
 
 use coco_core::MachineConfig;
+use mc6809::Bus;
 
 use crate::RS232Endpoint;
 use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO, SlotDTO};
@@ -107,7 +108,46 @@ fn rs232_tcp_bind_failure_falls_back_to_loopback_with_a_toast() {
     drop(blocker);
 }
 
-/// `[ports].serial = "printer"` attaches a DMP-105 to the bit-banger with
+/// A bind failure is demoted to a toast, but an earlier slot's fatal
+/// `cart_error` (a missing Disk BASIC ROM, say) must survive the demotion.
+#[test]
+fn rs232_bind_failure_toast_does_not_swallow_a_prior_cart_error() {
+    let blocker = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a blocking listener");
+    let addr = blocker.local_addr().expect("local_addr").to_string();
+
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::RS232 {
+        endpoint: RS232EndpointDTO::Loopback,
+    };
+    let mut app = super::launch_machine(&def, "launch-test-rs232-prior-error")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+
+    const PRIOR: &str = "could not read Disk BASIC ROM";
+    app.cart_error = Some(PRIOR.to_string());
+    super::apply_rs232_endpoint(
+        &mut app,
+        RS232EndpointDTO::TCP {
+            listen: addr.clone(),
+        },
+    );
+
+    assert_eq!(
+        app.cart_error.as_deref(),
+        Some(PRIOR),
+        "the earlier fatal error must not be consumed by the endpoint toast"
+    );
+    let toast = app
+        .toast_message()
+        .expect("the bind failure still reports a toast");
+    assert!(
+        toast.contains(&addr),
+        "toast should name the address: {toast}"
+    );
+
+    drop(blocker);
+}
+
+/// `[ports].serial "printer"` attaches a DMP-105 to the bit-banger with
 /// the paper window closed; it shows accumulating output once opened.
 #[test]
 fn printer_def_attaches_the_paper_window_handle() {
@@ -279,6 +319,95 @@ fn rompak_autostart_false_does_not_tie_cart_line_to_q() {
         !app.machine.bus.cart.cart_line_ties_q(),
         "autostart = false must not tie CART* to Q"
     );
+}
+
+/// An MPI slot may hold the Deluxe RS-232 Pak: it decodes its ACIA at
+/// `$FF68-$FF6B` off the full address bus itself, so it's reachable
+/// regardless of the MPI's switch/`$FF7F` selection — here the pak is in
+/// slot 1 (index 0) while the switch (and an FD-502) sit on slot 4.
+#[test]
+fn mpi_slot_rs232_reaches_the_acia_regardless_of_switch() {
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::RS232 {
+                endpoint: RS232EndpointDTO::Loopback,
+            },
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::FD502,
+        ],
+        switch: 4,
+    };
+
+    let mut app = super::launch_machine(&def, "launch-test-mpi-rs232-slot")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::Loopback)),
+        "loopback is the pak's default endpoint"
+    );
+    assert!(
+        app.machine.bus.cart.as_deluxe_rs232().is_some(),
+        "the RS-232 pak nested in slot 1 must be reachable through the MultiPak"
+    );
+
+    // $FF68-$FF6B is outside the SCS* window and ungated (`bus/io.rs`'s `io_read`/`io_write`
+    // route $FF60-$FF7E straight to the cart, no INIT0 MC2 gate needed) -- the control
+    // register (offset 3) is a plain get/set with no read side effect.
+    const CONTROL_REG: u16 = coco_core::rs232::ACIA_BASE + 3;
+    app.machine.bus.write(CONTROL_REG, 0x1F);
+    let via_bus = app.machine.bus.read(CONTROL_REG);
+    let via_pak = app
+        .machine
+        .bus
+        .cart
+        .as_deluxe_rs232()
+        .expect("the pak is still reachable")
+        .acia()
+        .read(3);
+    assert_eq!(
+        via_bus, 0x1F,
+        "the bus read must reach the ACIA's control register"
+    );
+    assert_eq!(
+        via_bus, via_pak,
+        "the bus read must agree with the pak's own status-register read"
+    );
+}
+
+/// A TCP endpoint on an MPI-slotted RS-232 Pak binds the same way as a
+/// bare-port one (`rs232_tcp_endpoint_binds_the_configured_address` above).
+#[test]
+fn mpi_slot_rs232_tcp_endpoint_binds_the_configured_address() {
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::RS232 {
+                endpoint: RS232EndpointDTO::TCP {
+                    listen: "127.0.0.1:0".to_string(),
+                },
+            },
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+        ],
+        switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+    };
+
+    let app = super::launch_machine(&def, "launch-test-mpi-rs232-slot-tcp")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    match &app.rs232 {
+        Some(RS232Endpoint::TCP(addr)) => {
+            assert!(
+                addr.starts_with("127.0.0.1:"),
+                "the bound address should be on 127.0.0.1: {addr}"
+            );
+        }
+        other => panic!(
+            "expected a bound TCP endpoint, got {}",
+            other.as_ref().map_or("none".to_string(), |e| e.label())
+        ),
+    }
 }
 
 /// `[peripherals].cartridge` naming an MPI slot's ROM Pak with `autostart = false` carries the

@@ -139,10 +139,11 @@ const SCS_BASE: u16 = 0xFF40;
 const SCS_LAST: u16 = 0xFF5F;
 
 impl Cartridge for MultiPak {
-    /// Routes the whole I/O window ($FF40-$FF5F and $FF60-$FF7E) to the
-    /// SCS-selected slot. Approximation for the $FF60-$FF7E part: a real MPI
-    /// switches only SCS*, so a device decoding raw addresses there (e.g. an
-    /// Orchestra-90) responds from any slot — here it must be the SCS slot.
+    /// `$FF40-$FF5F` (SCS*) routes to the SCS-selected slot only; `$FF60-$FF7E`
+    /// is broadcast to every slot instead — a real MPI switches only
+    /// SCS*/CTS*/CART*, not the shared address/data bus (`coco_multi.cpp:9-19`),
+    /// so a device decoding raw addresses there (e.g. the Deluxe RS-232 Pak's
+    /// ACIA at `$FF68-$FF6B`, `coco_rs232.cpp:57-62`) answers from any slot.
     fn read(&mut self, addr: u16) -> u8 {
         if (SCS_BASE..=SCS_LAST).contains(&addr) {
             return self.slots[self.scs_slot()].read(addr);
@@ -178,8 +179,16 @@ impl Cartridge for MultiPak {
         self.slots[self.cts_slot()].rom_peek(addr)
     }
 
+    /// [`MultiPak::read`]'s side-effect-free twin: same SCS-slot/broadcast split.
     fn peek(&self, addr: u16) -> u8 {
-        self.slots[self.scs_slot()].peek(addr)
+        if (SCS_BASE..=SCS_LAST).contains(&addr) {
+            return self.slots[self.scs_slot()].peek(addr);
+        }
+        self.slots
+            .iter()
+            .map(|slot| slot.peek(addr))
+            .find(|&val| val != IO_OPEN_BUS)
+            .unwrap_or(IO_OPEN_BUS)
     }
 
     fn peek_control(&self) -> u8 {

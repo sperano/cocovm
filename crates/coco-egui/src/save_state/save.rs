@@ -100,7 +100,11 @@ impl CocoApp {
                         | MPISlot::GamesMasterCartridge(p)
                         | MPISlot::Orch90(p) => p.clone(),
                         MPISlot::FD502 => disk_basic_rom_path(),
-                        MPISlot::Empty | MPISlot::DistoRTC | MPISlot::SoundSpeechCartridge => {
+                        MPISlot::DeluxeRS232(Some(p)) => p.clone(),
+                        MPISlot::Empty
+                        | MPISlot::DistoRTC
+                        | MPISlot::DeluxeRS232(None)
+                        | MPISlot::SoundSpeechCartridge => {
                             return None;
                         }
                     };
