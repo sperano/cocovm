@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/mc6809", "crates/coco-core", "crates/coco-egui", "crates/test-assets"]
 
 [workspace.package]
-version = "0.6.2"
+version = "0.7.0"
 license = "GPL-3.0-or-later"
 
 [workspace.lints.clippy]

@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-08-26
+
+### Added
+- Display: choose what the machine is plugged into — an RGB or composite
+  monitor (CoCo 3) or a color or black-and-white TV (any machine), with
+  scanline and RF-noise controls — from a new display entry in the status
+  bar.
+- Display: adjustable TV overscan crop (0–10% per edge, 5% default), also
+  applied to manager thumbnails; monitors stay uncropped.
+- Cartridges: Game Master Cartridge (GMC), Orchestra-90 CC, and the
+  Speech/Sound Cartridge (SSC) can be configured in a machine's
+  peripherals, in the cartridge port or in a Multi-Pak slot.
+- Machine config: `[peripherals]` now describes the cartridge port as one
+  device (`none`, `fd502`, `rompak`, `rtc`, `rs232`, `gmc`, `orch90`,
+  `ssc`, or `mpi` with per-slot contents), so a Multi-Pak's slot layout
+  is saved with the machine.
+- Cassette: a status-bar tape deck entry with Insert / New / Rewind / Seek
+  / Eject; recording writes at the head position, the counter moves
+  during CSAVE, and recordings auto-save shortly after the motor stops.
+- Status bar: the keyboard entry shows the active input mode and opens the
+  Keyboard menu on click; a joystick entry shows each port's source and
+  opens the Joysticks menu.
+- Keyboard help (F10) draws the real CoCo 1/2 or CoCo 3 key layout instead
+  of a grid of squares.
+- VM manager: per-machine statistics — cumulative powered-on time and boot
+  count — in the detail pane.
+- VM window: a Debug toolbar tile and ⌘D (Ctrl+D) toggle the debugger,
+  replacing F11.
+- `--log-level`/`-L` flag, `COCOVM_LOG_LEVEL`, and `.env` file support;
+  the startup banner reports the installed ROMs, machines, and renderer.
+- CoCo 1/2 video: the SAM's display address stream follows the discrete
+  MC6883 counters, so mismatched SAM/VDG mode pairings render as on real
+  hardware; the original MC6847 draws semigraphics-6 while the MC6847T1
+  does not.
+- macOS release binaries are signed and notarized, shipped as a `.dmg`
+  and a `.tar.gz`.
+
+### Changed
+- The VM window's toolbar uses the same transport tiles as the manager.
+- Inserting or creating a disk no longer silently adds an FD-502 and
+  power-cycles the machine; those menu items stay disabled until a
+  controller is configured in the machine's peripherals.
+- The direct-boot command-line flags are gone; the app always opens the VM
+  manager, and every media/peripheral option lives in the VM window or
+  the machine editor.
+- Mouse-as-joystick maps over the active picture (not the borders) and
+  only fires for presses that start on the display, not on menus or
+  dialogs.
+- The CoCo 3's `$FF40–$FF5F` cartridge I/O window honours the GIME's
+  INIT0 MC2 bit, as on real hardware.
+
+### Fixed
+- Dirty floppies and tapes are never lost: a failed write-back aborts the
+  insert, eject, new-media, cartridge swap, save-state, or suspend that
+  triggered it and keeps the medium mounted for retry.
+- Resume no longer reports a machine as Running if its suspend checkpoint
+  could not be consumed.
+- Power cycle resets latched keyboard/CART* edges and audio state, and
+  loading a state or power-cycling clears the host audio pipeline instead
+  of playing a burst of the previous machine's sound.
+- Renaming a running machine and then quitting migrates its folder.
+- 6809: `EXG` between 8- and 16-bit registers follows the real chip's
+  widening rules and takes 8 cycles; `PULU` loading S arms NMI
+  recognition.
+- The cassette calibration probe no longer races on an idle tape.
+
 ## [0.6.2] - 2026-07-30
 
 ### Added
