@@ -22,19 +22,6 @@ use crate::*;
 
 use super::harness::*;
 
-#[test]
-fn machine_menu_reset_keeps_the_ui_alive() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Machine");
-    click_in_menu(&mut harness, "Reset");
-    assert!(harness.state().running, "Reset leaves the machine on");
-    assert_eq!(
-        harness.state().machine.config.variant,
-        MachineVariant::Coco3
-    );
-}
-
 /// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the VM-only
 /// Debug tile. Start stays permanently disabled (a chrome-bearing window only exists while
 /// Running).

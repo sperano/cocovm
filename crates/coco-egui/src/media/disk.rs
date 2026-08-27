@@ -170,13 +170,6 @@ impl CocoApp {
             self.cart_error = Some(e);
         }
     }
-
-    /// Eject the VHD image in `drive`. No write-back: VHD writes already hit
-    /// the backing file directly.
-    pub(crate) fn eject_vhd(&mut self, drive: usize) {
-        self.machine.bus.vhd.eject(drive);
-        self.vhd_paths[drive] = None;
-    }
 }
 
 #[cfg(test)]

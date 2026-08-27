@@ -1,25 +1,19 @@
-//! The Machine menu: reset, save state, disk/VHD/DriveWire drives, and
+//! The Machine menu: save state, disk/DriveWire drives, and
 //! print capture. Peripherals live in `[peripherals]`, not here.
 
 use crate::*;
 
 impl CocoApp {
-    /// The Machine menu: disk/VHD drives, DriveWire, and print capture.
+    /// The Machine menu: disk drives, DriveWire, and print capture. Reset
+    /// lives on the toolbar; VHDs are mounted only via the machine definition.
     /// Peripherals (cartridges, MultiPak, RS-232, RTC) are configured only
     /// through the machine definition's `[peripherals]` and mounted at
     /// launch — there is no runtime insert/eject here. The cassette deck
     /// lives in the status bar's tape entry, not here.
     pub(super) fn machine_menu_ui(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Reset").clicked() {
-            self.machine.reset();
-            ui.close();
-        }
-        ui.separator();
         self.draw_save_state_menu(ui);
         ui.separator();
         self.machine_disk_items(ui);
-        ui.separator();
-        self.machine_vhd_items(ui);
         ui.separator();
         ui.menu_button("DriveWire", |ui| self.drivewire_menu_ui(ui));
         ui.separator();
@@ -74,33 +68,6 @@ impl CocoApp {
             let mounted = self.disk_paths[drive].is_some();
             if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
                 self.eject_disk(drive);
-                ui.close();
-            }
-        }
-    }
-
-    /// The virtual hard disk drives: insert and eject.
-    fn machine_vhd_items(&mut self, ui: &mut egui::Ui) {
-        for drive in 0..UI_DRIVES {
-            if ui.button(format!("Insert VHD {drive}…")).clicked() {
-                ui.close();
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("VHD image", &["vhd"])
-                    .pick_file()
-                {
-                    self.insert_vhd(drive, path);
-                }
-            }
-            let label = match &self.vhd_paths[drive] {
-                Some(p) => format!(
-                    "Eject VHD {drive} ({})",
-                    p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
-                ),
-                None => format!("Eject VHD {drive}"),
-            };
-            let mounted = self.vhd_paths[drive].is_some();
-            if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
-                self.eject_vhd(drive);
                 ui.close();
             }
         }
