@@ -5,10 +5,9 @@
         "matcher": "Bash",
         "hooks": [
           {
-            "type": "agent",
+            "type": "command",
             "if": "Bash(gh pr create*)",
-            "prompt": "You are the final gate before PR creation in the cocovm Rust workspace. Pre-PR reviews (idiomatic-rust + pr-challenger) have normally already run on this branch, so your job is a fast last-line check, NOT a re-review. Determine the base branch (origin/main if it exists, else main), run git diff $BASE...HEAD --stat first, then read only the riskiest parts of the diff. Look specifically for: accidental stray or generated files committed into the diff; obviously broken logic or invariants in changed code; and brand-new behavior with no test at all. Do NOT flag book/ being out of date — the book is intentionally frozen and will be caught up separately. Verdict first; PASS is a first-class outcome — do not manufacture findings, do not review style (pre-PR reviews own that), do not re-verify what the compiler, clippy, and the test suite already guarantee, and never request tests that assert a removed feature stays absent. FAIL only for concrete must-fix problems, each as file:line plus one sentence on why it is wrong. Target well under five minutes.",
-            "model": "claude-sonnet-5",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pr-gate.sh",
             "timeout": 300,
             "statusMessage": "Gate review of the PR diff"
           }
