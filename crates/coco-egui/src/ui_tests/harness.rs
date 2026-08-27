@@ -118,7 +118,7 @@ pub(super) fn select_combo_at<S: 'static>(
 }
 
 /// Lowest-on-screen widget labelled `label` — the open-menu copy when the
-/// toolbar shows the same label too (e.g. "Reset").
+/// toolbar shows the same label too.
 pub(super) fn lowest_by_label<'t>(
     harness: &'t AppHarness,
     label: &'t str,
@@ -139,15 +139,6 @@ pub(super) fn topmost_by_label<'t>(
         .get_all_by_label(label)
         .min_by(|a, b| a.rect().min.y.total_cmp(&b.rect().min.y))
         .unwrap_or_else(|| panic!("no node labelled {label:?}"))
-}
-
-/// [`click`] via [`lowest_by_label`].
-pub(super) fn click_in_menu(harness: &mut AppHarness, label: &str) {
-    lowest_by_label(harness, label).hover();
-    harness.step();
-    lowest_by_label(harness, label).click();
-    harness.step();
-    harness.step();
 }
 
 /// A minimal valid entry: a CoCo 3 default config under `name`, built

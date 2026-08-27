@@ -72,9 +72,9 @@ pub(crate) struct CocoApp {
     /// modified image is written back to its file on eject/replace/exit).
     pub(crate) disk_paths: [Option<PathBuf>; UI_DRIVES],
     /// Source paths of the VHD (virtual hard disk) images mounted in the two
-    /// drives the UI exposes (status bar, eject menu items). Unlike
-    /// `disk_paths`, VHD writes hit the backing file directly — there is no
-    /// in-memory dirty state and so nothing to write back on eject/exit.
+    /// drives the UI exposes (status bar). Unlike `disk_paths`, VHD writes
+    /// hit the backing file directly — there is no in-memory dirty state
+    /// and so nothing to write back on exit.
     pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
     /// Source paths of the DriveWire disk images mounted in the four drives
     /// the UI exposes (status bar, eject menu items). Like `vhd_paths`, writes
