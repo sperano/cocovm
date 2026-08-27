@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use super::cartridge::{
-    CartridgeChoice, SlotChoice, cartridge_label, gmc_file_dialog, orch90_file_dialog,
-    rom_pak_file_dialog, slot_label,
+    CartridgeChoice, DEFAULT_AUTOSTART, RS232EndpointChoice, SlotChoice, cartridge_label,
+    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, slot_label,
 };
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
 
@@ -23,25 +23,38 @@ pub(super) fn drives_available(
         CartridgeChoice::FD502 => true,
         CartridgeChoice::MPI => mpi_slots.contains(&SlotChoice::FD502),
         CartridgeChoice::None
-        | CartridgeChoice::ROMPak(_)
+        | CartridgeChoice::ROMPak { .. }
         | CartridgeChoice::RTC
         | CartridgeChoice::RS232
-        | CartridgeChoice::GamesMaster(_)
+        | CartridgeChoice::GamesMaster { .. }
         | CartridgeChoice::Orch90(_)
         | CartridgeChoice::SoundSpeech => false,
     }
 }
 
+/// [`cartridge_row`]'s form-field borrows, bundled to keep the function's
+/// own argument count down — one mutable reference per row/sub-form it may
+/// need to draw or update.
+pub(super) struct CartridgeRowState<'a> {
+    pub(super) cartridge: &'a mut CartridgeChoice,
+    pub(super) mpi_slots: &'a mut [SlotChoice; crate::MPI_SLOT_COUNT],
+    pub(super) mpi_switch: &'a mut usize,
+    pub(super) rs232_endpoint: &'a mut RS232EndpointChoice,
+    pub(super) disks: &'a mut [MediaChoice; crate::UI_DRIVES],
+}
+
 /// The Cartridge row (label + combo) and its nested sub-form: FD-502's Disk
-/// rows directly, or the MPI's four Slot rows.
-pub(super) fn cartridge_row(
-    ui: &mut egui::Ui,
-    salt: &str,
-    font: f32,
-    cartridge: &mut CartridgeChoice,
-    mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT],
-    disks: &mut [MediaChoice; crate::UI_DRIVES],
-) {
+/// rows, the MPI's Switch/Slot rows, the RS-232 Pak's Endpoint row, or a ROM
+/// Pak/Games Master's Auto-start checkbox.
+pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: CartridgeRowState) {
+    let CartridgeRowState {
+        cartridge,
+        mpi_slots,
+        mpi_switch,
+        rs232_endpoint,
+        disks,
+    } = state;
+
     ui.label(egui::RichText::new("Cartridge").size(font));
     cartridge_combo(ui, salt, cartridge);
     ui.end_row();
@@ -51,39 +64,135 @@ pub(super) fn cartridge_row(
             sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks));
         }
         CartridgeChoice::MPI => {
-            sub_form_row(ui, |ui| slot_rows(ui, salt, font, mpi_slots, disks));
+            sub_form_row(ui, |ui| {
+                mpi_sub_form(ui, salt, font, mpi_switch, mpi_slots, disks)
+            });
+        }
+        CartridgeChoice::RS232 => {
+            sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, rs232_endpoint));
+        }
+        CartridgeChoice::ROMPak { autostart, .. }
+        | CartridgeChoice::GamesMaster { autostart, .. } => {
+            sub_form_row(ui, |ui| autostart_row(ui, autostart));
         }
         CartridgeChoice::None
-        | CartridgeChoice::ROMPak(_)
         | CartridgeChoice::RTC
-        | CartridgeChoice::RS232
-        | CartridgeChoice::GamesMaster(_)
         | CartridgeChoice::Orch90(_)
         | CartridgeChoice::SoundSpeech => {}
     }
 }
 
-/// The MPI's four Slot rows as their own label+combo grid; the Disk
-/// rows nest one level deeper under whichever slot holds the FD-502.
-fn slot_rows(
+/// The MPI's Switch row, then its four Slot rows; the Disk rows nest one
+/// level deeper under whichever slot holds the FD-502, and a ROM Pak/Games
+/// Master slot's Auto-start checkbox nests the same way.
+fn mpi_sub_form(
     ui: &mut egui::Ui,
     salt: &str,
     font: f32,
+    mpi_switch: &mut usize,
     mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT],
     disks: &mut [MediaChoice; crate::UI_DRIVES],
 ) {
-    egui::Grid::new((salt, "slots"))
+    egui::Grid::new((salt, "mpi"))
         .num_columns(2)
         .spacing(FORM_GRID_SPACING)
         .show(ui, |ui| {
+            switch_combo(ui, salt, font, mpi_switch);
+            ui.end_row();
             for slot in 0..crate::MPI_SLOT_COUNT {
                 slot_combo(ui, salt, font, mpi_slots, slot);
                 ui.end_row();
-                if mpi_slots[slot] == SlotChoice::FD502 {
-                    sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks));
+                match &mut mpi_slots[slot] {
+                    SlotChoice::FD502 => {
+                        sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks));
+                    }
+                    SlotChoice::ROMPak { autostart, .. }
+                    | SlotChoice::GamesMaster { autostart, .. } => {
+                        sub_form_row(ui, |ui| autostart_row(ui, autostart));
+                    }
+                    _ => {}
                 }
             }
         });
+}
+
+/// The MPI's front-panel Switch row: which slot the power-on SCS/CTS decode
+/// selects — a running program's own `$FF7F` write overrides it until the
+/// next reset ([`crate::CocoApp::mpi_set_switch`]'s doc).
+fn switch_combo(ui: &mut egui::Ui, salt: &str, font: f32, switch: &mut usize) {
+    ui.label(egui::RichText::new("Switch").size(font));
+    egui::ComboBox::from_id_salt((salt, "mpi_switch"))
+        .selected_text(format!("Slot {}", *switch + 1))
+        .show_ui(ui, |ui| {
+            for slot in 0..crate::MPI_SLOT_COUNT {
+                combo_item(ui, &format!("Slot {}", slot + 1), *switch == slot, || {
+                    *switch = slot;
+                });
+            }
+        });
+}
+
+/// The RS-232 Pak's Endpoint row, plus the TCP endpoint's Listen address row.
+fn rs232_sub_form(ui: &mut egui::Ui, salt: &str, font: f32, endpoint: &mut RS232EndpointChoice) {
+    egui::Grid::new((salt, "rs232"))
+        .num_columns(2)
+        .spacing(FORM_GRID_SPACING)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Endpoint").size(font));
+            rs232_endpoint_combo(ui, salt, endpoint);
+            ui.end_row();
+            if let RS232EndpointChoice::TCP { listen } = endpoint {
+                ui.label(egui::RichText::new("Listen address").size(font));
+                ui.text_edit_singleline(listen);
+                ui.end_row();
+            }
+        });
+}
+
+fn rs232_endpoint_label(endpoint: &RS232EndpointChoice) -> &'static str {
+    match endpoint {
+        RS232EndpointChoice::Loopback => "Loopback",
+        RS232EndpointChoice::TCP { .. } => "TCP",
+        #[cfg(unix)]
+        RS232EndpointChoice::PTY => "PTY",
+    }
+}
+
+fn rs232_endpoint_combo(ui: &mut egui::Ui, salt: &str, endpoint: &mut RS232EndpointChoice) {
+    egui::ComboBox::from_id_salt((salt, "rs232_endpoint"))
+        .selected_text(rs232_endpoint_label(endpoint))
+        .show_ui(ui, |ui| {
+            combo_item(
+                ui,
+                "Loopback",
+                matches!(endpoint, RS232EndpointChoice::Loopback),
+                || *endpoint = RS232EndpointChoice::Loopback,
+            );
+            combo_item(
+                ui,
+                "TCP",
+                matches!(endpoint, RS232EndpointChoice::TCP { .. }),
+                || {
+                    *endpoint = RS232EndpointChoice::TCP {
+                        listen: crate::RS232_TCP_DEFAULT_ADDR.to_string(),
+                    };
+                },
+            );
+            #[cfg(unix)]
+            combo_item(
+                ui,
+                "PTY",
+                matches!(endpoint, RS232EndpointChoice::PTY),
+                || *endpoint = RS232EndpointChoice::PTY,
+            );
+        });
+}
+
+/// A ROM Pak/Games Master's Auto-start checkbox — ties CART* to Q so the pak
+/// runs at power-up ([`crate::CocoApp::insert_cartridge`]'s doc). Checked by
+/// default; no nested Grid needed for a single checkbox.
+fn autostart_row(ui: &mut egui::Ui, autostart: &mut bool) {
+    ui.checkbox(autostart, "Auto-start");
 }
 
 /// The Disk rows as their own label+combo grid, one row per drive.
@@ -156,9 +265,14 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
             image_combo_item(
                 ui,
                 "ROM Pak…",
-                matches!(cartridge, CartridgeChoice::ROMPak(_)),
+                matches!(cartridge, CartridgeChoice::ROMPak { .. }),
                 rom_pak_file_dialog,
-                |path| *cartridge = CartridgeChoice::ROMPak(path),
+                |path| {
+                    *cartridge = CartridgeChoice::ROMPak {
+                        path,
+                        autostart: DEFAULT_AUTOSTART,
+                    }
+                },
             );
             combo_item(ui, "Disto RTC", *cartridge == CartridgeChoice::RTC, || {
                 *cartridge = CartridgeChoice::RTC
@@ -172,9 +286,14 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
             image_combo_item(
                 ui,
                 "Games Master…",
-                matches!(cartridge, CartridgeChoice::GamesMaster(_)),
+                matches!(cartridge, CartridgeChoice::GamesMaster { .. }),
                 gmc_file_dialog,
-                |path| *cartridge = CartridgeChoice::GamesMaster(path),
+                |path| {
+                    *cartridge = CartridgeChoice::GamesMaster {
+                        path,
+                        autostart: DEFAULT_AUTOSTART,
+                    }
+                },
             );
             image_combo_item(
                 ui,
@@ -223,9 +342,14 @@ fn slot_combo(
             image_combo_item(
                 ui,
                 "ROM Pak…",
-                matches!(mpi_slots[slot], SlotChoice::ROMPak(_)),
+                matches!(mpi_slots[slot], SlotChoice::ROMPak { .. }),
                 rom_pak_file_dialog,
-                |path| mpi_slots[slot] = SlotChoice::ROMPak(path),
+                |path| {
+                    mpi_slots[slot] = SlotChoice::ROMPak {
+                        path,
+                        autostart: DEFAULT_AUTOSTART,
+                    }
+                },
             );
             combo_item(ui, "Disto RTC", mpi_slots[slot] == SlotChoice::RTC, || {
                 release_slot(mpi_slots, SlotChoice::RTC);
@@ -234,9 +358,14 @@ fn slot_combo(
             image_combo_item(
                 ui,
                 "Games Master…",
-                matches!(mpi_slots[slot], SlotChoice::GamesMaster(_)),
+                matches!(mpi_slots[slot], SlotChoice::GamesMaster { .. }),
                 gmc_file_dialog,
-                |path| mpi_slots[slot] = SlotChoice::GamesMaster(path),
+                |path| {
+                    mpi_slots[slot] = SlotChoice::GamesMaster {
+                        path,
+                        autostart: DEFAULT_AUTOSTART,
+                    }
+                },
             );
             image_combo_item(
                 ui,

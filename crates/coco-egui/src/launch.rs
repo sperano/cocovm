@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
 
-use crate::machine_def::{CartridgeDTO, SlotDTO};
+use crate::machine_def::{CartridgeDTO, RS232EndpointDTO, SlotDTO};
 use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
-    AppParams, CocoApp, KbMode, MPI_SLOT_COUNT, ROMSource, UI_DRIVES, installed_roms_dir,
-    machine_def,
+    AppParams, CocoApp, KbMode, MPI_SLOT_COUNT, ROMSource, RS232EndpointKind, UI_DRIVES,
+    installed_roms_dir, machine_def,
 };
 
 /// File name [`launch_machine`] captures `[ports].serial = "file"` to,
@@ -33,15 +33,29 @@ struct Media {
 enum Cartridge {
     None,
     FD502,
-    ROMPak(PathBuf),
+    ROMPak {
+        path: PathBuf,
+        autostart: bool,
+    },
     RTC,
     /// Bare-port only — no `mpi_insert_rs232`, so this can't appear nested
     /// in a [`Slot`].
-    RS232,
-    GamesMaster(PathBuf),
+    RS232 {
+        endpoint: RS232EndpointDTO,
+    },
+    GamesMaster {
+        path: PathBuf,
+        autostart: bool,
+    },
     Orch90(PathBuf),
     SoundSpeech,
-    MPI([Slot; MPI_SLOT_COUNT]),
+    MPI {
+        slots: [Slot; MPI_SLOT_COUNT],
+        /// 1-based front-panel slot ([`CartridgeDTO::MPI`]'s `switch`);
+        /// converted to the app's 0-based convention in
+        /// [`mount_peripherals`].
+        switch: usize,
+    },
 }
 
 /// One MultiPak slot's occupant — [`Cartridge`]'s sibling minus the
@@ -49,9 +63,9 @@ enum Cartridge {
 enum Slot {
     Empty,
     FD502,
-    ROMPak(PathBuf),
+    ROMPak { path: PathBuf, autostart: bool },
     RTC,
-    GamesMaster(PathBuf),
+    GamesMaster { path: PathBuf, autostart: bool },
     Orch90(PathBuf),
     SoundSpeech,
 }
@@ -139,15 +153,24 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
     match &def.peripherals.cartridge {
         CartridgeDTO::None => Cartridge::None,
         CartridgeDTO::FD502 => Cartridge::FD502,
-        CartridgeDTO::ROMPak { path: p } => Cartridge::ROMPak(path(p)),
+        CartridgeDTO::ROMPak { path: p, autostart } => Cartridge::ROMPak {
+            path: path(p),
+            autostart: *autostart,
+        },
         CartridgeDTO::RTC => Cartridge::RTC,
-        CartridgeDTO::RS232 => Cartridge::RS232,
-        CartridgeDTO::GamesMaster { path: p } => Cartridge::GamesMaster(path(p)),
+        CartridgeDTO::RS232 { endpoint } => Cartridge::RS232 {
+            endpoint: endpoint.clone(),
+        },
+        CartridgeDTO::GamesMaster { path: p, autostart } => Cartridge::GamesMaster {
+            path: path(p),
+            autostart: *autostart,
+        },
         CartridgeDTO::Orch90 { path: p } => Cartridge::Orch90(path(p)),
         CartridgeDTO::SoundSpeech => Cartridge::SoundSpeech,
-        CartridgeDTO::MPI { slots } => {
-            Cartridge::MPI(std::array::from_fn(|i| resolve_slot(&slots[i], slug)))
-        }
+        CartridgeDTO::MPI { slots, switch } => Cartridge::MPI {
+            slots: std::array::from_fn(|i| resolve_slot(&slots[i], slug)),
+            switch: *switch,
+        },
     }
 }
 
@@ -156,9 +179,15 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
     match slot {
         SlotDTO::Empty => Slot::Empty,
         SlotDTO::FD502 => Slot::FD502,
-        SlotDTO::ROMPak { path: p } => Slot::ROMPak(path(p)),
+        SlotDTO::ROMPak { path: p, autostart } => Slot::ROMPak {
+            path: path(p),
+            autostart: *autostart,
+        },
         SlotDTO::RTC => Slot::RTC,
-        SlotDTO::GamesMaster { path: p } => Slot::GamesMaster(path(p)),
+        SlotDTO::GamesMaster { path: p, autostart } => Slot::GamesMaster {
+            path: path(p),
+            autostart: *autostart,
+        },
         SlotDTO::Orch90 { path: p } => Slot::Orch90(path(p)),
         SlotDTO::SoundSpeech => Slot::SoundSpeech,
     }
@@ -168,12 +197,12 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
 fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
     match cartridge {
         Cartridge::FD502 => true,
-        Cartridge::MPI(slots) => slots.iter().any(|s| matches!(s, Slot::FD502)),
+        Cartridge::MPI { slots, .. } => slots.iter().any(|s| matches!(s, Slot::FD502)),
         Cartridge::None
-        | Cartridge::ROMPak(_)
+        | Cartridge::ROMPak { .. }
         | Cartridge::RTC
-        | Cartridge::RS232
-        | Cartridge::GamesMaster(_)
+        | Cartridge::RS232 { .. }
+        | Cartridge::GamesMaster { .. }
         | Cartridge::Orch90(_)
         | Cartridge::SoundSpeech => false,
     }
@@ -203,9 +232,9 @@ fn new_app(
     media: &Media,
     cartridge: &Cartridge,
 ) -> CocoApp {
-    let cart_path = match cartridge {
-        Cartridge::ROMPak(path) => Some(path.clone()),
-        _ => None,
+    let (cart_path, cart_autostart) = match cartridge {
+        Cartridge::ROMPak { path, autostart } => (Some(path.clone()), *autostart),
+        _ => (None, false),
     };
     CocoApp::new(
         config,
@@ -213,6 +242,7 @@ fn new_app(
         rom_source,
         AppParams {
             cart_path,
+            cart_autostart,
             vhd_paths: media.vhds.clone(),
             // DriveWire and tape-wav stay at their defaults: no definition
             // field drives them yet (see the `AppParams` field docs).
@@ -226,30 +256,36 @@ fn new_app(
 /// guaranteed one is reachable, so only a failed insert leaves the drives empty.
 fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     match cartridge {
-        Cartridge::None | Cartridge::ROMPak(_) => {}
+        Cartridge::None | Cartridge::ROMPak { .. } => {}
         Cartridge::FD502 => {
             if let Err(e) = app.insert_disk_controller() {
                 app.cart_error = Some(e);
             }
         }
         Cartridge::RTC => app.insert_rtc(),
-        Cartridge::RS232 => app.insert_rs232(),
-        Cartridge::GamesMaster(path) => app.insert_gmc(path),
+        Cartridge::RS232 { endpoint } => mount_rs232(app, endpoint),
+        Cartridge::GamesMaster { path, autostart } => app.insert_gmc(path, autostart),
         Cartridge::Orch90(path) => app.insert_orch90(path),
         Cartridge::SoundSpeech => app.insert_ssc(),
-        Cartridge::MPI(slots) => {
+        Cartridge::MPI { slots, switch } => {
             app.insert_multipak();
             for (slot, occupant) in slots.into_iter().enumerate() {
                 match occupant {
                     Slot::Empty => {}
                     Slot::FD502 => app.mpi_insert_fd502(slot),
-                    Slot::ROMPak(path) => app.mpi_insert_rompak(slot, path),
+                    Slot::ROMPak { path, autostart } => {
+                        app.mpi_insert_rompak(slot, path, autostart)
+                    }
                     Slot::RTC => app.mpi_insert_rtc(slot),
-                    Slot::GamesMaster(path) => app.mpi_insert_gmc(slot, path),
+                    Slot::GamesMaster { path, autostart } => {
+                        app.mpi_insert_gmc(slot, path, autostart)
+                    }
                     Slot::Orch90(path) => app.mpi_insert_orch90(slot, path),
                     Slot::SoundSpeech => app.mpi_insert_ssc(slot),
                 }
             }
+            // `switch` is 1-based (matching the UI's "Slot 1"); `mpi_set_switch` is 0-based.
+            app.mpi_set_switch(switch - 1);
         }
     }
 
@@ -266,6 +302,30 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     if let Some(path) = media.tape {
         app.insert_tape(path);
     }
+}
+
+/// Insert the Deluxe RS-232 Pak and wire its serial line to `endpoint`; loopback is
+/// [`CocoApp::insert_rs232`]'s own default, so it needs no follow-up call.
+fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
+    app.insert_rs232();
+    match endpoint {
+        RS232EndpointDTO::Loopback => {}
+        RS232EndpointDTO::TCP { listen } => {
+            app.rs232_tcp_addr = listen;
+            app.rs232_set_endpoint(RS232EndpointKind::TCP);
+        }
+        RS232EndpointDTO::PTY => mount_rs232_pty(app),
+    }
+}
+
+#[cfg(unix)]
+fn mount_rs232_pty(app: &mut CocoApp) {
+    app.rs232_set_endpoint(RS232EndpointKind::PTY);
+}
+
+#[cfg(not(unix))]
+fn mount_rs232_pty(app: &mut CocoApp) {
+    app.cart_error = Some("PTY endpoints require a Unix host".to_string());
 }
 
 /// Wire `[ports].serial` — the built-in bit-banger serial port's host sink,

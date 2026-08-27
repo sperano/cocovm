@@ -4,7 +4,7 @@
 
 use std::fs;
 
-use super::{CartridgeDTO, SlotDTO};
+use super::{CartridgeDTO, RS232EndpointDTO, SlotDTO};
 use crate::MPI_SLOT_COUNT;
 use crate::machine_def::tests::TempDir;
 use crate::machine_def::{MachineDef, load_all, save};
@@ -134,7 +134,8 @@ cartridge = { kind = "mpi", slots = [{ kind = "empty" }, { kind = "empty" }, { k
     assert_eq!(
         loaded[0].1.peripherals.cartridge,
         CartridgeDTO::MPI {
-            slots: std::array::from_fn(|_| SlotDTO::Empty)
+            slots: std::array::from_fn(|_| SlotDTO::Empty),
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         }
     );
 }
@@ -153,10 +154,163 @@ fn all_empty_mpi_round_trips() {
     );
     def.peripherals.cartridge = CartridgeDTO::MPI {
         slots: std::array::from_fn(|_| SlotDTO::Empty),
+        switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
     };
     save(dir.path(), "mpi-empty", &def).expect("save should succeed");
 
     let loaded = load_all(dir.path()).expect("an all-empty MPI must load back");
     assert_eq!(loaded.len(), 1);
     assert_eq!(&loaded[0].1, &def);
+}
+
+/// `[peripherals].cartridge.switch` round-trips an explicit 1-based front-panel slot.
+#[test]
+fn mpi_explicit_switch_round_trips() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "mpi"
+switch = 2
+slots = [{ kind = "empty" }, { kind = "empty" }, { kind = "empty" }, { kind = "empty" }]
+"#,
+    )
+    .expect("a valid switch must parse");
+    assert_eq!(
+        dto,
+        CartridgeDTO::MPI {
+            slots: std::array::from_fn(|_| SlotDTO::Empty),
+            switch: 2,
+        }
+    );
+}
+
+/// Each of `RS232EndpointDTO`'s three `endpoint` shapes round-trips.
+#[test]
+fn rs232_endpoint_kinds_round_trip() {
+    let loopback: CartridgeDTO = toml::from_str(
+        r#"
+kind = "rs232"
+endpoint = { kind = "loopback" }
+"#,
+    )
+    .expect("loopback endpoint must parse");
+    assert_eq!(
+        loopback,
+        CartridgeDTO::RS232 {
+            endpoint: RS232EndpointDTO::Loopback
+        }
+    );
+
+    let tcp: CartridgeDTO = toml::from_str(
+        r#"
+kind = "rs232"
+endpoint = { kind = "tcp", listen = "127.0.0.1:6551" }
+"#,
+    )
+    .expect("tcp endpoint must parse");
+    assert_eq!(
+        tcp,
+        CartridgeDTO::RS232 {
+            endpoint: RS232EndpointDTO::TCP {
+                listen: "127.0.0.1:6551".to_string()
+            }
+        }
+    );
+
+    let pty: CartridgeDTO = toml::from_str(
+        r#"
+kind = "rs232"
+endpoint = { kind = "pty" }
+"#,
+    )
+    .expect("pty endpoint must parse");
+    assert_eq!(
+        pty,
+        CartridgeDTO::RS232 {
+            endpoint: RS232EndpointDTO::PTY
+        }
+    );
+}
+
+/// `[peripherals].cartridge.autostart = false` round-trips for a ROM Pak.
+#[test]
+fn rompak_autostart_false_round_trips() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "rompak"
+path = "/paks/game.ccc"
+autostart = false
+"#,
+    )
+    .expect("autostart = false must parse");
+    assert_eq!(
+        dto,
+        CartridgeDTO::ROMPak {
+            path: "/paks/game.ccc".to_string(),
+            autostart: false,
+        }
+    );
+}
+
+/// The legacy shapes from before `switch`/`endpoint` existed — `{ kind = "mpi", slots = [...] }`
+/// with no `switch` key, and `{ kind = "rs232" }` with no `endpoint` key — still deserialize,
+/// using the documented defaults (`peripherals_dto.rs`'s `default_mpi_switch`/`RS232EndpointDTO`'s
+/// `Default`).
+#[test]
+fn legacy_mpi_and_rs232_shapes_use_the_documented_defaults() {
+    let mpi: CartridgeDTO = toml::from_str(
+        r#"
+kind = "mpi"
+slots = [{ kind = "empty" }, { kind = "empty" }, { kind = "empty" }, { kind = "empty" }]
+"#,
+    )
+    .expect("a switch-less MPI must still parse");
+    assert_eq!(
+        mpi,
+        CartridgeDTO::MPI {
+            slots: std::array::from_fn(|_| SlotDTO::Empty),
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+        }
+    );
+
+    let rs232: CartridgeDTO =
+        toml::from_str(r#"kind = "rs232""#).expect("an endpoint-less rs232 must still parse");
+    assert_eq!(
+        rs232,
+        CartridgeDTO::RS232 {
+            endpoint: RS232EndpointDTO::default()
+        }
+    );
+}
+
+/// A `switch` outside 1..=4 is rejected with a message naming the valid range, not serde's
+/// generic error.
+#[test]
+fn mpi_switch_out_of_range_fails_to_load() {
+    for switch in [0, 5] {
+        let dir = TempDir::new(&format!("mpi-switch-{switch}"));
+        fs::write(
+            dir.path().join("mpi.toml"),
+            format!(
+                r#"
+schema = 1
+name = "MPI, Bad Switch"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+
+[peripherals]
+cartridge = {{ kind = "mpi", switch = {switch}, slots = [{{ kind = "empty" }}, {{ kind = "empty" }}, {{ kind = "empty" }}, {{ kind = "empty" }}] }}
+"#
+            ),
+        )
+        .unwrap();
+        let err = load_all(dir.path()).expect_err("an out-of-range switch must fail the load");
+        assert!(
+            err.contains("switch") && err.contains("1") && err.contains("4"),
+            "error should name the actual and valid range: {err}"
+        );
+    }
 }

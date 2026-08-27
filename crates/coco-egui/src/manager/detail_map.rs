@@ -36,7 +36,12 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
         .to_machine_config()
         .expect("list entries are validated on load/save");
     let media = &def.media;
-    (form.cartridge, form.mpi_slots) = new_vm::seed_peripherals(&def.peripherals);
+    (
+        form.cartridge,
+        form.mpi_slots,
+        form.mpi_switch,
+        form.rs232_endpoint,
+    ) = new_vm::seed_peripherals(&def.peripherals);
     let media_choice = |raw: &Option<String>| match raw {
         Some(s) => new_vm::MediaChoice::File(PathBuf::from(s)),
         None => new_vm::MediaChoice::None,
@@ -115,7 +120,12 @@ impl ManagerApp {
             form.display,
             base.hardware.rom.clone(),
         );
-        def.peripherals = new_vm::pack_peripherals(&form.cartridge, &form.mpi_slots);
+        def.peripherals = new_vm::pack_peripherals(
+            &form.cartridge,
+            &form.mpi_slots,
+            form.mpi_switch,
+            &form.rs232_endpoint,
+        );
         self.pack_media(slug, form, &mut def)?;
         pack_ui(form, &mut def);
         Ok(def)

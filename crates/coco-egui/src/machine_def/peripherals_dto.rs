@@ -4,6 +4,22 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Default for [`CartridgeDTO::ROMPak`]/[`GamesMaster`]'s `autostart` and
+/// [`SlotDTO`]'s equivalents: tie CART* to Q so the pak runs at power-up,
+/// like the runtime insert flow's old default checkbox state.
+///
+/// [`GamesMaster`]: CartridgeDTO::GamesMaster
+fn default_autostart() -> bool {
+    true
+}
+
+/// Default for [`CartridgeDTO::MPI`]'s `switch`: front-panel slot 4 (1-based),
+/// the conventional disk-controller default — see
+/// [`crate::DEFAULT_MPI_SWITCH_SLOT`]'s doc.
+fn default_mpi_switch() -> usize {
+    crate::DEFAULT_MPI_SWITCH_SLOT + 1
+}
+
 /// `[peripherals].cartridge` — what's plugged into the cartridge port. Maps
 /// to [`crate::new_vm::CartridgeChoice`]; the DTO→Choice `From` impl lives
 /// there, like [`super::SerialDTO`]'s pair in `new_vm.rs` (its doc explains
@@ -20,21 +36,36 @@ pub enum CartridgeDTO {
     #[serde(rename = "fd502")]
     FD502,
     /// A program ROM Pak image, `path` resolved like `[media]`'s paths
-    /// (`resolve_media_path`).
+    /// (`resolve_media_path`). `autostart` ties CART* to Q so the pak runs at
+    /// power-up.
     #[serde(rename = "rompak")]
-    ROMPak { path: String },
+    ROMPak {
+        path: String,
+        #[serde(default = "default_autostart")]
+        autostart: bool,
+    },
     /// Disto RTC. No boot ROM — pairs with a VHD boot; for RTC + floppies
     /// use an MPI slot.
     #[serde(rename = "rtc")]
     RTC,
     /// Deluxe RS-232 Pak. Bare-port only: there's no `mpi_insert_rs232`, so
-    /// this kind never appears in a [`SlotDTO`].
+    /// this kind never appears in a [`SlotDTO`]. `endpoint` picks the host
+    /// backend its serial line is wired to.
     #[serde(rename = "rs232")]
-    RS232,
-    /// Games Master Cartridge (banked ROM + SN76489A).
+    RS232 {
+        #[serde(default)]
+        endpoint: RS232EndpointDTO,
+    },
+    /// Games Master Cartridge (banked ROM + SN76489A). `autostart` like
+    /// [`Self::ROMPak`]'s.
     #[serde(rename = "gmc")]
-    GamesMaster { path: String },
-    /// Orchestra-90/CC.
+    GamesMaster {
+        path: String,
+        #[serde(default = "default_autostart")]
+        autostart: bool,
+    },
+    /// Orchestra-90/CC. Always autostarts — its own CART* line ties to Q, so
+    /// there's no `autostart` field to override it.
     #[serde(rename = "orch90")]
     Orch90 { path: String },
     /// Sound/Speech Cartridge.
@@ -44,10 +75,15 @@ pub enum CartridgeDTO {
     /// for an unused one), and is required — not `#[serde(default)]` — so a
     /// file that names the MPI without a loadout fails to load with serde's
     /// own "missing field `slots`" error instead of silently loading as an
-    /// empty MultiPak and dropping whatever the file meant.
+    /// empty MultiPak and dropping whatever the file meant. `switch` is the
+    /// 1-based front-panel slot number the power-on SCS/CTS decode selects
+    /// (matching the UI's "Slot 1"–"Slot 4"); out-of-range values are
+    /// rejected by `machine_def::io::check_mpi_slots`.
     #[serde(rename = "mpi")]
     MPI {
         slots: [SlotDTO; crate::MPI_SLOT_COUNT],
+        #[serde(default = "default_mpi_switch")]
+        switch: usize,
     },
 }
 
@@ -63,15 +99,50 @@ pub enum SlotDTO {
     #[serde(rename = "fd502")]
     FD502,
     #[serde(rename = "rompak")]
-    ROMPak { path: String },
+    ROMPak {
+        path: String,
+        #[serde(default = "default_autostart")]
+        autostart: bool,
+    },
     #[serde(rename = "rtc")]
     RTC,
     #[serde(rename = "gmc")]
-    GamesMaster { path: String },
+    GamesMaster {
+        path: String,
+        #[serde(default = "default_autostart")]
+        autostart: bool,
+    },
     #[serde(rename = "orch90")]
     Orch90 { path: String },
     #[serde(rename = "ssc")]
     SoundSpeech,
+}
+
+/// [`CartridgeDTO::RS232`]'s `endpoint` — which host backend the Deluxe
+/// RS-232 Pak's serial line is wired to. Maps to
+/// [`crate::new_vm::RS232EndpointChoice`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(tag = "kind")]
+pub enum RS232EndpointDTO {
+    /// TX loops straight back to RX — the pak's inert power-on default.
+    #[default]
+    #[serde(rename = "loopback")]
+    Loopback,
+    /// TCP listener at `listen`; a host terminal connects with `nc`/`telnet`.
+    #[serde(rename = "tcp")]
+    TCP {
+        #[serde(default = "default_rs232_tcp_listen")]
+        listen: String,
+    },
+    /// Unix pseudo-terminal. Rejected at launch on non-Unix targets, where
+    /// there is no PTY to open.
+    #[serde(rename = "pty")]
+    PTY,
+}
+
+/// Default for [`RS232EndpointDTO::TCP`]'s `listen`.
+fn default_rs232_tcp_listen() -> String {
+    crate::RS232_TCP_DEFAULT_ADDR.to_string()
 }
 
 /// `[peripherals]` section — section itself optional (a definition with no

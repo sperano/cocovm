@@ -15,7 +15,7 @@ pub(crate) enum RS232Endpoint {
 }
 
 impl RS232Endpoint {
-    /// Short status-bar/menu description of where the wire goes.
+    /// Short status-bar description of where the wire goes.
     pub(crate) fn label(&self) -> String {
         match self {
             RS232Endpoint::Loopback => "loopback".to_string(),
@@ -24,29 +24,18 @@ impl RS232Endpoint {
             RS232Endpoint::PTY(path) => format!("pty {path}"),
         }
     }
-
-    /// Which backend this is, dropping the address/path it carries — what the
-    /// menu's radio rows compare against.
-    pub(crate) fn kind(&self) -> RS232EndpointKind {
-        match self {
-            RS232Endpoint::Loopback => RS232EndpointKind::Loopback,
-            RS232Endpoint::TCP(_) => RS232EndpointKind::TCP,
-            #[cfg(unix)]
-            RS232Endpoint::PTY(_) => RS232EndpointKind::PTY,
-        }
-    }
 }
 
 /// Default listen address for the RS-232 pak's TCP endpoint: localhost, port
 /// 6551 after the ACIA part number.
 pub(crate) const RS232_TCP_DEFAULT_ADDR: &str = "127.0.0.1:6551";
 
-/// Menu selection handed to [`crate::CocoApp::rs232_set_endpoint`] — the *request*
-/// (bind parameters live in the app state), as opposed to
-/// [`RS232Endpoint`], the record of what's actually bound.
+/// Launch-time request handed to [`crate::CocoApp::rs232_set_endpoint`] — the
+/// *request* (bind parameters live in the app state), as opposed to
+/// [`RS232Endpoint`], the record of what's actually bound. Loopback needs no
+/// request of its own: it's [`crate::CocoApp::insert_rs232`]'s own default.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RS232EndpointKind {
-    Loopback,
     TCP,
     #[cfg(unix)]
     PTY,

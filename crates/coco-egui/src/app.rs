@@ -61,11 +61,6 @@ pub(crate) struct CocoApp {
     /// neither this nor bare panel landed on a popup/window floating over the
     /// display (see `joy::press_began_on_display`).
     pub(crate) display_layer: egui::LayerId,
-    /// Whether the next inserted cartridge should tie CART* to Q (auto-run at
-    /// power-up). Consulted at insert time, not retroactively — see
-    /// `ROMPak::from_bytes`. Off suits Disk-BASIC-style paks and carts that
-    /// must be started with `EXEC &HE010`.
-    pub(crate) autostart_cart: bool,
     /// Path of the currently inserted cartridge, if any (shown in the status
     /// bar; also gates the "Eject Cartridge" menu item).
     pub(crate) cart_path: Option<PathBuf>,
@@ -194,6 +189,12 @@ pub(crate) struct DriveWireLaunch {
 #[derive(Default)]
 pub(crate) struct AppParams {
     pub(crate) cart_path: Option<PathBuf>,
+    /// Whether `cart_path`'s pak should tie CART* to Q (auto-run at
+    /// power-up). Ignored when `cart_path` is `None`. Defaulting to `false`
+    /// here is harmless for that reason — every real ROM Pak launch sets it
+    /// explicitly from `[peripherals].cartridge.autostart`
+    /// (`launch::new_app`).
+    pub(crate) cart_autostart: bool,
     pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
     /// `Some` boots with the Becker port enabled ([`DriveWireLaunch`]).
     /// Not yet reachable from a machine definition — the schema
@@ -218,6 +219,7 @@ impl CocoApp {
     ) -> Self {
         let AppParams {
             cart_path,
+            cart_autostart,
             vhd_paths,
             drivewire,
             save_tape_wav,
@@ -244,7 +246,6 @@ impl CocoApp {
             display_rect: egui::Rect::NOTHING,
             display_layer: egui::LayerId::background(),
             audio: audio::AudioOutput::new(),
-            autostart_cart: true,
             cart_path: None,
             cart_error: None,
             disk_paths: [None, None],
@@ -268,7 +269,7 @@ impl CocoApp {
             pending_suspend: false,
         };
         if let Some(path) = cart_path {
-            app.insert_cartridge(path);
+            app.insert_cartridge(path, cart_autostart);
         }
         for (drive, path) in vhd_paths.into_iter().enumerate() {
             if let Some(path) = path {

@@ -20,7 +20,7 @@ mod cartridge_form;
 mod config_form;
 mod form;
 
-pub use cartridge::{CartridgeChoice, SlotChoice};
+pub use cartridge::{CartridgeChoice, RS232EndpointChoice, SlotChoice};
 pub(crate) use cartridge::{pack_peripherals, seed_peripherals};
 
 /// RAM sizes selectable per machine — the same sets
@@ -231,6 +231,13 @@ pub struct MachineForm {
     /// The MPI Slot picks (indented rows under the Cartridge combo);
     /// reset whenever the cartridge isn't the MPI.
     pub mpi_slots: [SlotChoice; crate::MPI_SLOT_COUNT],
+    /// The MPI's front-panel switch pick (0-based, like
+    /// [`crate::MPIState::switch`]), shown alongside the Slot rows while the
+    /// cartridge is the MPI.
+    pub mpi_switch: usize,
+    /// The RS-232 Pak's endpoint pick, shown while the cartridge is
+    /// [`CartridgeChoice::RS232`].
+    pub rs232_endpoint: RS232EndpointChoice,
     /// The per-drive disk picks, shown while a disk controller is
     /// reachable (bare FD-502, or FD-502 in an MPI slot); reset whenever no
     /// controller is reachable.

@@ -47,7 +47,7 @@ fn insert_cartridge_fails_and_preserves_dirty_disk_when_write_back_fails() {
 
     {
         let _ro = ReadOnly::new(&disk_path);
-        app.insert_cartridge(rom_path.clone());
+        app.insert_cartridge(rom_path.clone(), true);
         let err = app
             .cart_error
             .clone()
@@ -70,62 +70,13 @@ fn insert_cartridge_fails_and_preserves_dirty_disk_when_write_back_fails() {
 
     // `_ro` dropped above restores write access; retry must now succeed.
     app.cart_error = None;
-    app.insert_cartridge(rom_path.clone());
+    app.insert_cartridge(rom_path.clone(), true);
     assert!(
         app.cart_error.is_none(),
         "the retried insert must succeed: {:?}",
         app.cart_error
     );
     assert_eq!(app.cart_path, Some(rom_path));
-    assert_eq!(app.disk_paths, [None, None]);
-    let saved = std::fs::read(&disk_path).expect("read saved disk");
-    assert_eq!(
-        saved[0], DIRTY_BYTE,
-        "the write-back must have actually landed"
-    );
-}
-
-/// `eject_cartridge`'s counterpart to the `insert_cartridge` case above.
-#[test]
-fn eject_cartridge_fails_then_succeeds_after_write_access_is_restored() {
-    let dir = scratch_dir("eject-cartridge-write-back-failure");
-    let disk_path = dir.join("dirty.dsk");
-    ensure_writable(&disk_path);
-    write_one_track_disk(&disk_path);
-
-    let mut app = boot_app();
-    mount_and_dirty(&mut app, 0, &disk_path);
-
-    {
-        let _ro = ReadOnly::new(&disk_path);
-        app.eject_cartridge();
-        let err = app
-            .cart_error
-            .clone()
-            .expect("a read-only backing file must fail the eject");
-        assert!(
-            err.contains(&disk_path.display().to_string()),
-            "error should name the unwritable path: {err}"
-        );
-        assert!(
-            app.machine.bus.cart.as_disk_cart().is_some(),
-            "the FD-502 must stay in the port"
-        );
-        assert!(is_dirty(&mut app, 0), "the disk must stay dirty");
-        assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));
-    }
-
-    app.cart_error = None;
-    app.eject_cartridge();
-    assert!(
-        app.cart_error.is_none(),
-        "the retried eject must succeed: {:?}",
-        app.cart_error
-    );
-    assert!(
-        app.machine.bus.cart.as_disk_cart().is_none(),
-        "the port must be empty after a successful eject"
-    );
     assert_eq!(app.disk_paths, [None, None]);
     let saved = std::fs::read(&disk_path).expect("read saved disk");
     assert_eq!(
@@ -158,7 +109,7 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
     let _ro = ReadOnly::new(&disk_path);
 
     // Replacing the FD-502's own slot must abort.
-    app.mpi_insert_rompak(FD502_SLOT, rom_path.clone());
+    app.mpi_insert_rompak(FD502_SLOT, rom_path.clone(), true);
     let err = app
         .cart_error
         .clone()
@@ -176,7 +127,7 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
 
     // The same failing disk must not block an unrelated slot's insert.
     app.cart_error = None;
-    app.mpi_insert_rompak(OTHER_SLOT, rom_path);
+    app.mpi_insert_rompak(OTHER_SLOT, rom_path, true);
     assert!(
         app.cart_error.is_none(),
         "an unrelated slot's insert must not be blocked by a failing disk: {:?}",
@@ -222,7 +173,7 @@ fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
     );
     mount_and_dirty(&mut app, 0, &disk_path);
 
-    app.mpi_insert_rompak(FD502_SLOT, rom_path);
+    app.mpi_insert_rompak(FD502_SLOT, rom_path, true);
     assert!(
         app.cart_error.is_none(),
         "the insert must succeed: {:?}",
@@ -274,47 +225,6 @@ fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
     assert!(
         matches!(app.mpi.as_ref().unwrap().slots[FD502_SLOT], MPISlot::FD502),
         "the FD-502 must stay in its slot"
-    );
-    assert!(is_dirty(&mut app, 0), "the disk must stay dirty");
-    assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));
-}
-
-/// `mpi_eject_slot` of the FD-502's slot must abort on a failed write-back, preserving the
-/// slot, the disk cart, its dirty disk, and `disk_paths`.
-#[test]
-fn mpi_eject_slot_aborts_when_the_fd502_disk_write_back_fails() {
-    let dir = scratch_dir("mpi-eject-conditional-flush");
-    let disk_path = dir.join("dirty.dsk");
-    ensure_writable(&disk_path);
-    write_one_track_disk(&disk_path);
-
-    let mut app = boot_app();
-    app.insert_multipak();
-    app.mpi_insert_fd502(FD502_SLOT);
-    assert!(
-        app.cart_error.is_none(),
-        "mounting the FD-502: {:?}",
-        app.cart_error
-    );
-    mount_and_dirty(&mut app, 0, &disk_path);
-
-    let _ro = ReadOnly::new(&disk_path);
-    app.mpi_eject_slot(FD502_SLOT);
-    let err = app
-        .cart_error
-        .clone()
-        .expect("a read-only backing file must fail the eject");
-    assert!(
-        err.contains(&disk_path.display().to_string()),
-        "error should name the unwritable disk path: {err}"
-    );
-    assert!(
-        matches!(app.mpi.as_ref().unwrap().slots[FD502_SLOT], MPISlot::FD502),
-        "the FD-502 must stay in its slot"
-    );
-    assert!(
-        app.machine.bus.cart.as_disk_cart().is_some(),
-        "the disk cart must stay mounted"
     );
     assert!(is_dirty(&mut app, 0), "the disk must stay dirty");
     assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));

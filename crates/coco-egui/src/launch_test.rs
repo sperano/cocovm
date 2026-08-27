@@ -7,7 +7,8 @@
 
 use coco_core::MachineConfig;
 
-use crate::machine_def::{CartridgeDTO, MachineDef, SlotDTO};
+use crate::RS232Endpoint;
+use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO, SlotDTO};
 
 /// A minimal CoCo 3 definition ([`MachineConfig::default`]) with no media
 /// and no peripherals — callers flip on just the `[peripherals]`/`[ports]`
@@ -17,11 +18,15 @@ fn base_def() -> MachineDef {
 }
 
 /// `[peripherals].cartridge = { kind = "rs232" }` mounts the Deluxe RS-232
-/// Pak straight into the cartridge port.
+/// Pak straight into the cartridge port, on the loopback endpoint — both the
+/// explicit choice here and the DTO's own default with no `endpoint` key
+/// (`peripherals_dto_test.rs` covers the bare-key parse itself).
 #[test]
-fn rs232_def_mounts_the_pak() {
+fn rs232_def_mounts_the_pak_on_loopback() {
     let mut def = base_def();
-    def.peripherals.cartridge = CartridgeDTO::RS232;
+    def.peripherals.cartridge = CartridgeDTO::RS232 {
+        endpoint: RS232EndpointDTO::Loopback,
+    };
 
     let mut app = super::launch_machine(&def, "launch-test-rs232")
         .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
@@ -29,6 +34,39 @@ fn rs232_def_mounts_the_pak() {
         app.machine.bus.cart.as_deluxe_rs232().is_some(),
         "the cartridge port should hold the Deluxe RS-232 Pak"
     );
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::Loopback)),
+        "loopback is the pak's default endpoint"
+    );
+}
+
+/// `[peripherals].cartridge = { kind = "rs232", endpoint = { kind = "tcp", listen = ... } }`
+/// binds the pak's serial line to a TCP listener at the configured address.
+/// Binds to port 0 (OS-assigned) so the test can't collide with another
+/// listener, and drops `app` (closing the socket) before returning.
+#[test]
+fn rs232_tcp_endpoint_binds_the_configured_address() {
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::RS232 {
+        endpoint: RS232EndpointDTO::TCP {
+            listen: "127.0.0.1:0".to_string(),
+        },
+    };
+
+    let app = super::launch_machine(&def, "launch-test-rs232-tcp")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    match &app.rs232 {
+        Some(RS232Endpoint::TCP(addr)) => {
+            assert!(
+                addr.starts_with("127.0.0.1:"),
+                "the bound address should be on 127.0.0.1: {addr}"
+            );
+        }
+        other => panic!(
+            "expected a bound TCP endpoint, got {}",
+            other.as_ref().map_or("none".to_string(), |e| e.label())
+        ),
+    }
 }
 
 /// `[ports].serial = "printer"` attaches a DMP-105 to the bit-banger with
@@ -137,6 +175,7 @@ fn disk_media_with_mpi_fd502_launches() {
                 SlotDTO::Empty,
                 SlotDTO::Empty,
             ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         },
     );
     assert_disk0_mounted(&def, "launch-test-disk-mpi-fd502");
@@ -149,4 +188,87 @@ fn disk_media_with_bare_fd502_launches() {
     let dir = crate::machine_def::tests::TempDir::new("launch-disk-bare-fd502");
     let def = disk0_def(&dir, CartridgeDTO::FD502);
     assert_disk0_mounted(&def, "launch-test-disk-bare-fd502");
+}
+
+/// `[peripherals].cartridge.switch = 2` (1-based, the UI's "Slot 2") moves the
+/// MPI's front-panel switch to 0-based slot 1 — both the frontend's mirror
+/// ([`crate::MPIState::switch`]) and the core `MultiPak` itself.
+#[test]
+fn mpi_switch_config_sets_the_front_panel_switch() {
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: std::array::from_fn(|_| SlotDTO::Empty),
+        switch: 2,
+    };
+
+    let mut app = super::launch_machine(&def, "launch-test-mpi-switch")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert_eq!(
+        app.mpi.as_ref().map(|m| m.switch),
+        Some(1),
+        "the frontend's switch mirror is 0-based"
+    );
+    let mp = app
+        .machine
+        .bus
+        .cart
+        .as_multipak()
+        .expect("the MPI should be installed");
+    assert_eq!(
+        mp.switch_slot(),
+        1,
+        "the core MultiPak must read back the same slot"
+    );
+}
+
+/// `[peripherals].cartridge = { kind = "rompak", autostart = false }` leaves the mounted
+/// ROM Pak's CART* line untied from Q — it must not autostart.
+#[test]
+fn rompak_autostart_false_does_not_tie_cart_line_to_q() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-rompak-no-autostart");
+    let rom_path = dir.path().join("game.rom");
+    std::fs::write(&rom_path, vec![0x11u8; 0x4000]).expect("write ROM pak fixture");
+
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::ROMPak {
+        path: rom_path.display().to_string(),
+        autostart: false,
+    };
+
+    let app = super::launch_machine(&def, "launch-test-rompak-no-autostart")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert!(
+        !app.machine.bus.cart.cart_line_ties_q(),
+        "autostart = false must not tie CART* to Q"
+    );
+}
+
+/// `[peripherals].cartridge` naming an MPI slot's ROM Pak with `autostart = false` carries the
+/// same flag through `mpi_insert_rompak`.
+#[test]
+fn mpi_slot_rompak_autostart_false_does_not_tie_cart_line_to_q() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-mpi-rompak-no-autostart");
+    let rom_path = dir.path().join("game.rom");
+    std::fs::write(&rom_path, vec![0x11u8; 0x4000]).expect("write ROM pak fixture");
+
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::ROMPak {
+                path: rom_path.display().to_string(),
+                autostart: false,
+            },
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+        ],
+        switch: 1,
+    };
+
+    let app = super::launch_machine(&def, "launch-test-mpi-rompak-no-autostart")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert!(
+        !app.machine.bus.cart.cart_line_ties_q(),
+        "autostart = false must not tie CART* to Q"
+    );
 }

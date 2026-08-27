@@ -104,7 +104,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
         AppParams::default(),
     );
     app.insert_multipak();
-    app.mpi_insert_rompak(0, cart_path.clone());
+    app.mpi_insert_rompak(0, cart_path.clone(), true);
     app.mpi_insert_fd502(3);
     assert!(
         app.cart_error.is_none(),
