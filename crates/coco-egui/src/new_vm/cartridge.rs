@@ -159,6 +159,39 @@ pub(super) fn orch90_file_dialog() -> rfd::FileDialog {
 /// checked, matching `CartridgeDTO`'s own field default.
 pub(super) const DEFAULT_AUTOSTART: bool = true;
 
+/// A ROM Pak cartridge pick with [`DEFAULT_AUTOSTART`] — the Cartridge combo's
+/// "ROM Pak…" entry's on-pick constructor.
+pub(super) fn rompak(path: PathBuf) -> CartridgeChoice {
+    CartridgeChoice::ROMPak {
+        path,
+        autostart: DEFAULT_AUTOSTART,
+    }
+}
+
+/// [`rompak`]'s Games Master sibling.
+pub(super) fn games_master(path: PathBuf) -> CartridgeChoice {
+    CartridgeChoice::GamesMaster {
+        path,
+        autostart: DEFAULT_AUTOSTART,
+    }
+}
+
+/// [`rompak`]'s MPI-slot sibling, for the Slot combo's "ROM Pak…" entry.
+pub(super) fn slot_rompak(path: PathBuf) -> SlotChoice {
+    SlotChoice::ROMPak {
+        path,
+        autostart: DEFAULT_AUTOSTART,
+    }
+}
+
+/// [`games_master`]'s MPI-slot sibling.
+pub(super) fn slot_games_master(path: PathBuf) -> SlotChoice {
+    SlotChoice::GamesMaster {
+        path,
+        autostart: DEFAULT_AUTOSTART,
+    }
+}
+
 impl From<&CartridgeDTO> for CartridgeChoice {
     /// `CartridgeDTO::RS232`'s `endpoint` and `MPI`'s `switch` aren't
     /// representable here — [`seed_peripherals`] reads those directly off

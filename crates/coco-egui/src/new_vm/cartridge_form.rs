@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use super::cartridge::{
-    CartridgeChoice, DEFAULT_AUTOSTART, RS232EndpointChoice, SlotChoice, cartridge_label,
-    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, slot_label,
+    CartridgeChoice, RS232EndpointChoice, SlotChoice, cartridge_label, games_master,
+    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, rompak, slot_games_master,
+    slot_label, slot_rompak,
 };
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
 
@@ -267,12 +268,7 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 "ROM Pak…",
                 matches!(cartridge, CartridgeChoice::ROMPak { .. }),
                 rom_pak_file_dialog,
-                |path| {
-                    *cartridge = CartridgeChoice::ROMPak {
-                        path,
-                        autostart: DEFAULT_AUTOSTART,
-                    }
-                },
+                |path| *cartridge = rompak(path),
             );
             combo_item(ui, "Disto RTC", *cartridge == CartridgeChoice::RTC, || {
                 *cartridge = CartridgeChoice::RTC
@@ -288,12 +284,7 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 "Games Master…",
                 matches!(cartridge, CartridgeChoice::GamesMaster { .. }),
                 gmc_file_dialog,
-                |path| {
-                    *cartridge = CartridgeChoice::GamesMaster {
-                        path,
-                        autostart: DEFAULT_AUTOSTART,
-                    }
-                },
+                |path| *cartridge = games_master(path),
             );
             image_combo_item(
                 ui,
@@ -344,12 +335,7 @@ fn slot_combo(
                 "ROM Pak…",
                 matches!(mpi_slots[slot], SlotChoice::ROMPak { .. }),
                 rom_pak_file_dialog,
-                |path| {
-                    mpi_slots[slot] = SlotChoice::ROMPak {
-                        path,
-                        autostart: DEFAULT_AUTOSTART,
-                    }
-                },
+                |path| mpi_slots[slot] = slot_rompak(path),
             );
             combo_item(ui, "Disto RTC", mpi_slots[slot] == SlotChoice::RTC, || {
                 release_slot(mpi_slots, SlotChoice::RTC);
@@ -360,12 +346,7 @@ fn slot_combo(
                 "Games Master…",
                 matches!(mpi_slots[slot], SlotChoice::GamesMaster { .. }),
                 gmc_file_dialog,
-                |path| {
-                    mpi_slots[slot] = SlotChoice::GamesMaster {
-                        path,
-                        autostart: DEFAULT_AUTOSTART,
-                    }
-                },
+                |path| mpi_slots[slot] = slot_games_master(path),
             );
             image_combo_item(
                 ui,

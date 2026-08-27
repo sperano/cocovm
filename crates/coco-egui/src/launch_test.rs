@@ -69,6 +69,44 @@ fn rs232_tcp_endpoint_binds_the_configured_address() {
     }
 }
 
+/// A listen address already bound by something else must not fail the whole launch —
+/// every definition without an explicit `listen` shares the same default
+/// ([`crate::RS232_TCP_DEFAULT_ADDR`]), so a second RS-232 machine would otherwise never
+/// launch. The pak falls back to loopback (still usable) and the collision is reported
+/// through the non-fatal status-bar toast instead.
+#[test]
+fn rs232_tcp_bind_failure_falls_back_to_loopback_with_a_toast() {
+    let blocker = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a blocking listener");
+    let addr = blocker.local_addr().expect("local_addr").to_string();
+
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::RS232 {
+        endpoint: RS232EndpointDTO::TCP {
+            listen: addr.clone(),
+        },
+    };
+
+    let mut app = super::launch_machine(&def, "launch-test-rs232-tcp-collision")
+        .unwrap_or_else(|e| panic!("a bind failure must not fail the whole launch: {e}"));
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::Loopback)),
+        "a failed bind must fall back to loopback"
+    );
+    assert_eq!(
+        app.cart_error, None,
+        "a bind failure must not be promoted to a fatal launch error"
+    );
+    let toast = app
+        .toast_message()
+        .expect("the bind failure should be reported through the toast");
+    assert!(
+        toast.contains(&addr),
+        "the toast should name the address that failed to bind: {toast}"
+    );
+
+    drop(blocker);
+}
+
 /// `[ports].serial = "printer"` attaches a DMP-105 to the bit-banger with
 /// the paper window closed; it shows accumulating output once opened.
 #[test]

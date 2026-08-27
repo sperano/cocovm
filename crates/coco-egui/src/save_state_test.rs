@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use super::*;
+use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO};
 use crate::rom_load::COCO3_ROM_FILE;
-use crate::{AppParams, ROMSource, disk_basic_rom_path, installed_roms_dir};
+use crate::{AppParams, ROMSource, RS232Endpoint, disk_basic_rom_path, installed_roms_dir};
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
 use coco_core::snapshot;
 use coco_core::{MachineConfig, fdc};
@@ -363,5 +364,46 @@ fn save_state_to_fails_when_tape_write_back_fails() {
     assert!(
         app.machine.bus.cassette.dirty(),
         "the tape must stay dirty for a later retry"
+    );
+}
+
+/// Regression: a configured TCP RS-232 endpoint must survive a save/load round
+/// trip instead of silently falling back to loopback. The core's live endpoint
+/// is `#[serde(skip)]` (`coco_core::rs232::DeluxeRS232::endpoint`'s doc); what
+/// makes it survive is `CocoApp::rs232_configured`, recorded at launch
+/// (`launch::mount_rs232`) and rebound after restore
+/// (`CocoApp::reapply_configured_rs232`).
+#[test]
+fn rs232_tcp_endpoint_survives_a_save_load_round_trip() {
+    let mut def = MachineDef::from_config(
+        "RS-232 Round Trip".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    def.peripherals.cartridge = CartridgeDTO::RS232 {
+        // Port 0: an OS-assigned port, both here and on the post-restore rebind, so the
+        // test can't collide with another listener on either bind.
+        endpoint: RS232EndpointDTO::TCP {
+            listen: "127.0.0.1:0".to_string(),
+        },
+    };
+    let mut app = crate::launch::launch_machine(&def, "save-state-test-rs232-tcp")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::TCP(_))),
+        "the definition's TCP endpoint should be bound at launch"
+    );
+
+    let dir = scratch_dir("rs232-tcp-round-trip");
+    let ccstate_path = dir.join("state.ccstate");
+    app.save_state_to(&ccstate_path)
+        .unwrap_or_else(|e| panic!("save should succeed: {e}"));
+    app.load_state_from(&ccstate_path)
+        .unwrap_or_else(|e| panic!("load should succeed: {e}"));
+
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::TCP(_))),
+        "the TCP endpoint must survive Load State, not fall back to loopback: got {:?}",
+        app.rs232.as_ref().map(RS232Endpoint::label)
     );
 }

@@ -95,9 +95,10 @@ impl CocoApp {
         }
     }
 
-    /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint (pick
-    /// TCP/PTY from its submenu). Installs the EPROM dump at
-    /// `roms/rs232.rom` if present; fully usable ROM-less otherwise.
+    /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint
+    /// (`launch::mount_rs232` rebinds it to the definition's configured endpoint
+    /// afterward). Installs the EPROM dump at `roms/rs232.rom` if present; fully usable
+    /// ROM-less otherwise.
     pub(crate) fn insert_rs232(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;

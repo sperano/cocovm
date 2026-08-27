@@ -11,9 +11,9 @@ pub(crate) const MPI_SLOT_COUNT: usize = coco_core::cart::mpi::SLOT_COUNT;
 pub(crate) const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 
 /// What occupies one Multi-Pak Interface slot, tracked by the frontend so a
-/// cold restart (or just the status bar / menu labels) can describe it
-/// without having to match on the core's [`Cart`] enum. The FD-502 doesn't
-/// carry its own disk paths here — those stay in [`CocoApp::disk_paths`]
+/// cold restart (or just the status bar) can describe it without having to
+/// match on the core's [`Cart`] enum. The FD-502 doesn't carry its own disk
+/// paths here — those stay in [`CocoApp::disk_paths`]
 /// exactly as they do without an MPI, since [`Cart::as_disk_cart`]
 /// forwarding already makes the drive UI transparent to whether the
 /// controller lives at the top level or nested in a slot.

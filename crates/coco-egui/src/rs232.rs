@@ -1,6 +1,6 @@
 /// Which host backend the Deluxe RS-232 pak's serial line is plugged into
-/// (menu labels / status bar; the live endpoint object lives inside the
-/// core's [`coco_core::rs232::DeluxeRS232`]).
+/// (status bar; the live endpoint object lives inside the core's
+/// [`coco_core::rs232::DeluxeRS232`]).
 pub(crate) enum RS232Endpoint {
     /// TX loops straight back to RX — the pak's inert power-on default.
     Loopback,
@@ -9,7 +9,7 @@ pub(crate) enum RS232Endpoint {
     TCP(String),
     /// Unix pseudo-terminal; the string is the slave device path a host
     /// terminal program opens (e.g. `screen /dev/ttys009 9600`). No PTYs on
-    /// Windows, so the variant (and its menu row) only exists on Unix.
+    /// Windows, so the variant only exists on Unix.
     #[cfg(unix)]
     PTY(String),
 }

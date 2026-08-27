@@ -62,7 +62,7 @@ pub(crate) struct CocoApp {
     /// display (see `joy::press_began_on_display`).
     pub(crate) display_layer: egui::LayerId,
     /// Path of the currently inserted cartridge, if any (shown in the status
-    /// bar; also gates the "Eject Cartridge" menu item).
+    /// bar).
     pub(crate) cart_path: Option<PathBuf>,
     /// Message from the last failed cartridge load, shown in a dismissible
     /// window until acknowledged.
@@ -108,22 +108,32 @@ pub(crate) struct CocoApp {
     pub(crate) mpi: Option<MPIState>,
     /// State of the inserted Deluxe RS-232 Program Pak, if any: which host
     /// endpoint its serial line is wired to (the core's trait object can't
-    /// describe itself to menu labels, so the frontend tracks it — same
-    /// rationale as [`MPISlot`]). `None` means the slot holds something else.
+    /// describe itself to status-bar labels, so the frontend tracks it —
+    /// same rationale as [`MPISlot`]). `None` means the slot holds something
+    /// else.
     pub(crate) rs232: Option<RS232Endpoint>,
     /// Source path of the Deluxe RS-232 pak's optional EPROM dump, if one was
     /// found and installed at insert time ([`Self::insert_rs232`]) — the
     /// save-state counterpart of `cart_path` for this one cart, since the
     /// pak can legitimately run ROM-less.
     pub(crate) rs232_eprom_path: Option<PathBuf>,
-    /// Listen address for the RS-232 pak's TCP endpoint, edited in the menu
-    /// and applied when "TCP" is (re)selected — not live-rebound on each
-    /// keystroke.
+    /// Listen address for the RS-232 pak's TCP endpoint, taken from
+    /// `[peripherals].cartridge.endpoint.listen` at launch
+    /// (`launch::mount_rs232`) and reused verbatim when a Load State
+    /// reapplies `rs232_configured`.
     pub(crate) rs232_tcp_addr: String,
-    /// True while a Disto RTC is plugged directly into the cartridge port
-    /// (gates the "Eject Disto RTC" menu item, like `cart_path` does for ROM
-    /// paks). An RTC in a Multi-Pak slot is tracked by [`MPISlot::DistoRTC`]
-    /// instead.
+    /// Which non-default endpoint kind `[peripherals]` configured the RS-232
+    /// pak with at launch, if any — `None` for loopback (the pak's own
+    /// restored default, so nothing needs reapplying). Load State drops the
+    /// core's live endpoint (`#[serde(skip)]`,
+    /// [`coco_core::rs232::DeluxeRS232::endpoint`]'s doc) and restores
+    /// loopback; [`Self::rebuild_cart_mirrors`] rebinds this kind
+    /// afterward via [`Self::rs232_set_endpoint`] so a configured TCP/PTY
+    /// endpoint survives the round trip.
+    pub(crate) rs232_configured: Option<RS232EndpointKind>,
+    /// True while a Disto RTC is plugged directly into the cartridge port,
+    /// like `cart_path` tracks a ROM Pak. An RTC in a Multi-Pak slot is
+    /// tracked by [`MPISlot::DistoRTC`] instead.
     pub(crate) rtc_direct: bool,
     /// The virtual fanfold-paper window, showing
     /// the DMP-105's dot-matrix output on period-correct tractor-feed
@@ -260,6 +270,7 @@ impl CocoApp {
             rs232: None,
             rs232_eprom_path: None,
             rs232_tcp_addr: RS232_TCP_DEFAULT_ADDR.to_string(),
+            rs232_configured: None,
             rtc_direct: false,
             paper_window: paper_view::PaperWindow::new(),
             debugger: debugger::DebuggerPanel::new(),

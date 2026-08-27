@@ -305,14 +305,32 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
 }
 
 /// Insert the Deluxe RS-232 Pak and wire its serial line to `endpoint`; loopback is
-/// [`CocoApp::insert_rs232`]'s own default, so it needs no follow-up call.
+/// [`CocoApp::insert_rs232`]'s own default, so it needs no follow-up call. Records
+/// `app.rs232_configured` for a non-loopback pick so [`CocoApp::rebuild_cart_mirrors`]
+/// can rebind it after a Load State drops the core's live endpoint.
+///
+/// A TCP endpoint that fails to bind falls back to loopback (the pak is still usable
+/// on its inert default) and reports through the non-fatal status-bar toast instead of
+/// failing the whole launch — every machine definition otherwise defaults to the same
+/// listen address ([`crate::RS232_TCP_DEFAULT_ADDR`]), so a second RS-232 machine would always
+/// refuse to launch.
 fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
     app.insert_rs232();
     match endpoint {
         RS232EndpointDTO::Loopback => {}
         RS232EndpointDTO::TCP { listen } => {
             app.rs232_tcp_addr = listen;
+            app.rs232_configured = Some(RS232EndpointKind::TCP);
             app.rs232_set_endpoint(RS232EndpointKind::TCP);
+            if let Some(err) = app.cart_error.take() {
+                app.toast = Some((
+                    format!(
+                        "{err} -- edit this definition's Listen address field; \
+                         falling back to loopback"
+                    ),
+                    std::time::Instant::now(),
+                ));
+            }
         }
         RS232EndpointDTO::PTY => mount_rs232_pty(app),
     }
@@ -320,6 +338,7 @@ fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
 
 #[cfg(unix)]
 fn mount_rs232_pty(app: &mut CocoApp) {
+    app.rs232_configured = Some(RS232EndpointKind::PTY);
     app.rs232_set_endpoint(RS232EndpointKind::PTY);
 }
 

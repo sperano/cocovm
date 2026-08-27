@@ -50,9 +50,11 @@ pub struct DeluxeRS232 {
     acia: ACIA6551,
     /// Skipped: a host backend (TCP, PTY, …) is a host resource with no
     /// serializable shape. Deserializes to a fresh [`Loopback`] via
-    /// `default_endpoint` below; the frontend re-plugs a real backend after
-    /// restore through [`DeluxeRS232::set_endpoint`]
-    ///.
+    /// `default_endpoint` below. If the pre-restore endpoint was TCP/PTY,
+    /// the frontend rebinds one right after restore through
+    /// [`DeluxeRS232::set_endpoint`], using its own record of which kind was
+    /// configured — this struct has no way to remember that itself once the
+    /// endpoint is skipped.
     #[serde(skip, default = "default_endpoint")]
     endpoint: Box<dyn SerialEndpoint>,
     /// 4K EPROM image (the BASIC `DOS`/terminal ROM), if one was provided —
