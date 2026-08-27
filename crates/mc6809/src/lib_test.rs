@@ -12,6 +12,27 @@ fn reset_loads_pc_from_vector_and_masks_interrupts() {
 }
 
 #[test]
+fn reset_clears_cycles_accumulated_by_prior_instructions() {
+    const PROGRAM_START: u16 = 0x8000;
+    const NOP_OPCODE: u8 = 0x12;
+    const NOP_CYCLES: u64 = 2;
+    const EXECUTED_INSTRUCTIONS: u64 = 2;
+
+    let mut bus = FlatBus::new();
+    bus.load(VECTOR_RESET, &PROGRAM_START.to_be_bytes());
+    bus.load(PROGRAM_START, &[NOP_OPCODE, NOP_OPCODE]);
+    let mut cpu = MC6809::new();
+
+    cpu.reset(&mut bus);
+    cpu.step(&mut bus);
+    cpu.step(&mut bus);
+    assert_eq!(cpu.cycles, NOP_CYCLES * EXECUTED_INSTRUCTIONS);
+
+    cpu.reset(&mut bus);
+    assert_eq!(cpu.cycles, 0);
+}
+
+#[test]
 fn lda_immediate_sets_a_and_zero_flag() {
     let mut bus = FlatBus::new();
     bus.load(0x0000, &[0x86, 0x00]); // LDA #$00

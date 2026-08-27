@@ -152,7 +152,8 @@ pub struct MC6809 {
     pub pc: u16,
     pub dp: u8,
     pub cc: u8,
-    /// Total cycles executed since reset (for scheduling/debugging).
+    /// Total cycles consumed by calls to [`Self::step`] since the most recent
+    /// reset. The reset sequence itself is not counted.
     pub cycles: u64,
     /// Running vs halted (SYNC/CWAI).
     pub state: State,
@@ -181,11 +182,13 @@ impl MC6809 {
         self.b = value as u8;
     }
 
-    /// RESET: DP=0, IRQ+FIRQ masked, PC loaded from the reset vector.
+    /// RESET: DP=0, IRQ+FIRQ masked, PC loaded from the reset vector. Resets the
+    /// cycle counter to zero; the reset sequence itself is not counted.
     pub fn reset(&mut self, bus: &mut impl Bus) {
         self.dp = 0;
         self.cc |= cc::IRQ_MASK | cc::FIRQ_MASK;
         self.pc = bus.read_u16(VECTOR_RESET);
+        self.cycles = 0;
         self.state = State::Running;
         self.nmi_armed = false;
     }
