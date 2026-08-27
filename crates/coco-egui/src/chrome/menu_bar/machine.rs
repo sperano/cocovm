@@ -1,12 +1,14 @@
-//! The Machine menu: everything you can do to the machine itself, and
-//! everything you can plug into or mount in it.
+//! The Machine menu: reset, save state, disk/VHD/DriveWire drives, and
+//! print capture. Peripherals live in `[peripherals]`, not here.
 
 use crate::*;
 
 impl CocoApp {
-    /// The Machine menu: cartridges, MultiPak, disk/VHD drives, DriveWire,
-    /// and print capture. The cassette deck lives in the status bar's tape
-    /// entry, not here.
+    /// The Machine menu: disk/VHD drives, DriveWire, and print capture.
+    /// Peripherals (cartridges, MultiPak, RS-232, RTC) are configured only
+    /// through the machine definition's `[peripherals]` and mounted at
+    /// launch — there is no runtime insert/eject here. The cassette deck
+    /// lives in the status bar's tape entry, not here.
     pub(super) fn machine_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("Reset").clicked() {
             self.machine.reset();
@@ -15,14 +17,6 @@ impl CocoApp {
         ui.separator();
         self.draw_save_state_menu(ui);
         ui.separator();
-        self.machine_cartridge_items(ui);
-        ui.separator();
-        ui.menu_button("MultiPak Interface", |ui| self.mpi_menu_ui(ui));
-        ui.separator();
-        ui.menu_button("Deluxe RS-232 Pak", |ui| self.rs232_menu_ui(ui));
-        ui.separator();
-        self.machine_rtc_items(ui);
-        ui.separator();
         self.machine_disk_items(ui);
         ui.separator();
         self.machine_vhd_items(ui);
@@ -30,91 +24,6 @@ impl CocoApp {
         ui.menu_button("DriveWire", |ui| self.drivewire_menu_ui(ui));
         ui.separator();
         self.machine_print_items(ui);
-    }
-
-    /// Cartridges plugged straight into the port, which only makes
-    /// sense with no MultiPak installed — with one, they go in its slots.
-    fn machine_cartridge_items(&mut self, ui: &mut egui::Ui) {
-        let direct_port = self.mpi.is_none();
-        if ui
-            .add_enabled(direct_port, egui::Button::new("Insert Cartridge…"))
-            .clicked()
-        {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("ROM Pak", &["rom", "ccc", "bin"])
-                .pick_file()
-            {
-                self.insert_cartridge(path);
-            }
-        }
-        if ui
-            .add_enabled(direct_port, egui::Button::new("Insert Games Master…"))
-            .clicked()
-        {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Games Master ROM", &["rom", "ccc", "bin"])
-                .pick_file()
-            {
-                self.insert_gmc(path);
-            }
-        }
-        if ui
-            .add_enabled(direct_port, egui::Button::new("Insert Orchestra-90…"))
-            .clicked()
-        {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Orchestra-90 ROM", &["rom", "ccc", "bin"])
-                .pick_file()
-            {
-                self.insert_orch90(path);
-            }
-        }
-        let inserted = direct_port && self.cart_path.is_some();
-        if ui
-            .add_enabled(inserted, egui::Button::new("Eject Cartridge"))
-            .clicked()
-        {
-            self.eject_cartridge();
-            ui.close();
-        }
-        ui.checkbox(&mut self.autostart_cart, "Auto-start cartridge");
-        if ui
-            .add_enabled(
-                direct_port,
-                egui::Button::new("Insert Sound/Speech Cartridge"),
-            )
-            .clicked()
-        {
-            self.insert_ssc();
-            ui.close();
-        }
-    }
-
-    /// The Disto real-time clock. No manual sync item — the RTC runs on the
-    /// host clock, and a guest `setime` offset sticking until power-cycle is
-    /// real MSM6242 behavior.
-    fn machine_rtc_items(&mut self, ui: &mut egui::Ui) {
-        let direct_port = self.mpi.is_none();
-        if ui
-            .add_enabled(
-                direct_port && !self.rtc_direct,
-                egui::Button::new("Insert Disto RTC"),
-            )
-            .clicked()
-        {
-            self.insert_rtc();
-            ui.close();
-        }
-        if ui
-            .add_enabled(self.rtc_direct, egui::Button::new("Eject Disto RTC"))
-            .clicked()
-        {
-            self.eject_rtc();
-            ui.close();
-        }
     }
 
     /// The FD-502 floppy drives: insert, format blank, and eject. Insert/New Blank stay

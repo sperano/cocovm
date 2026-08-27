@@ -6,10 +6,11 @@ use crate::*;
 
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
-    /// (cartridge swaps are machine-off ops). Aborts on a failed
+    /// (cartridge swaps are machine-off ops). `autostart` ties CART* to Q so
+    /// the pak runs at power-up. Aborts on a failed
     /// dirty-floppy flush, leaving state untouched; error in
     /// [`Self::cart_error`].
-    pub(crate) fn insert_cartridge(&mut self, path: PathBuf) {
+    pub(crate) fn insert_cartridge(&mut self, path: PathBuf, autostart: bool) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -17,7 +18,7 @@ impl CocoApp {
                 return;
             }
         };
-        match ROMPak::from_bytes(&bytes, self.autostart_cart) {
+        match ROMPak::from_bytes(&bytes, autostart) {
             Ok(pak) => {
                 if !self.flush_dirty_disks_or_report() {
                     return;
@@ -38,8 +39,8 @@ impl CocoApp {
     }
 
     /// Loads a Games Master Cartridge image (banked ROM + SN76489A) from `path` and inserts
-    /// it. Honors `autostart_cart`, even though GMC's own CART* line ties to Q by default.
-    pub(crate) fn insert_gmc(&mut self, path: PathBuf) {
+    /// it. Honors `autostart`, even though GMC's own CART* line ties to Q by default.
+    pub(crate) fn insert_gmc(&mut self, path: PathBuf, autostart: bool) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -47,7 +48,7 @@ impl CocoApp {
                 return;
             }
         };
-        match GamesMasterCartridge::from_bytes(&bytes, self.autostart_cart) {
+        match GamesMasterCartridge::from_bytes(&bytes, autostart) {
             Ok(cart) => {
                 if !self.flush_dirty_disks_or_report() {
                     return;
@@ -64,7 +65,7 @@ impl CocoApp {
         }
     }
 
-    /// Loads an Orchestra-90/CC ROM from `path` and inserts it. No `autostart_cart` choice
+    /// Loads an Orchestra-90/CC ROM from `path` and inserts it. No `autostart` choice
     /// to honor — [`Orch90::cart_line_ties_q`] always autostarts, like the
     /// real pak's CART*-tied-to-Q wiring.
     ///
@@ -94,25 +95,10 @@ impl CocoApp {
         }
     }
 
-    /// Ejects the current cartridge and power-cycles the machine. Aborts, leaving
-    /// the cartridge in place, if a dirty floppy it would destroy fails to write back.
-    pub(crate) fn eject_cartridge(&mut self) {
-        if !self.flush_dirty_disks_or_report() {
-            return;
-        }
-        self.machine.eject_cartridge();
-        self.power_cycle();
-        self.cart_path = None;
-        self.disk_paths = [None, None];
-        self.mpi = None; // whatever was plugged into the port (MPI or not) is gone
-        self.rs232 = None;
-        self.rs232_eprom_path = None;
-        self.rtc_direct = false;
-    }
-
-    /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint (pick
-    /// TCP/PTY from its submenu). Installs the EPROM dump at
-    /// `roms/rs232.rom` if present; fully usable ROM-less otherwise.
+    /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint
+    /// (`launch::mount_rs232` rebinds it to the definition's configured endpoint
+    /// afterward). Installs the EPROM dump at `roms/rs232.rom` if present; fully usable
+    /// ROM-less otherwise.
     pub(crate) fn insert_rs232(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
@@ -141,10 +127,6 @@ impl CocoApp {
             return;
         };
         match kind {
-            RS232EndpointKind::Loopback => {
-                pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
-                self.rs232 = Some(RS232Endpoint::Loopback);
-            }
             RS232EndpointKind::TCP => {
                 match coco_core::serial::TCPEndpoint::bind(&self.rs232_tcp_addr) {
                     Ok(ep) => {
@@ -212,20 +194,6 @@ impl CocoApp {
         self.rtc_direct = false;
     }
 
-    /// Removes the Multi-Pak Interface and everything plugged into it, restoring the empty
-    /// slot. Aborts, leaving the MPI in place, if a dirty floppy any of
-    /// its slots holds fails to flush.
-    pub(crate) fn eject_multipak(&mut self) {
-        if !self.flush_dirty_disks_or_report() {
-            return;
-        }
-        self.machine.eject_cartridge();
-        self.power_cycle();
-        self.mpi = None;
-        self.cart_path = None;
-        self.disk_paths = [None, None];
-    }
-
     /// Flushes before replacing MPI `slot`'s contents, but only when it holds the FD-502 —
     /// other cartridge kinds can't hold a dirty floppy. `false` means the
     /// caller must abort without mutating anything.
@@ -245,9 +213,10 @@ impl CocoApp {
         true
     }
 
-    /// Loads a ROM pak into MPI `slot` (0-3). Only a dirty floppy in `slot` itself (i.e.
+    /// Loads a ROM pak into MPI `slot` (0-3). `autostart` ties CART* to Q so the
+    /// pak runs at power-up. Only a dirty floppy in `slot` itself (i.e.
     /// `slot` holds the FD-502) can abort this — see [`Self::mpi_flush_before_replacing_slot`].
-    pub(crate) fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf) {
+    pub(crate) fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf, autostart: bool) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -255,7 +224,7 @@ impl CocoApp {
                 return;
             }
         };
-        match ROMPak::from_bytes(&bytes, self.autostart_cart) {
+        match ROMPak::from_bytes(&bytes, autostart) {
             Ok(pak) => {
                 if !self.mpi_flush_before_replacing_slot(slot) {
                     return;
@@ -276,7 +245,7 @@ impl CocoApp {
 
     /// Loads a Games Master Cartridge image into MPI `slot`. Mirrors
     /// [`Self::mpi_insert_rompak`]'s target-slot-only flush contract.
-    pub(crate) fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf) {
+    pub(crate) fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf, autostart: bool) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -284,7 +253,7 @@ impl CocoApp {
                 return;
             }
         };
-        match GamesMasterCartridge::from_bytes(&bytes, self.autostart_cart) {
+        match GamesMasterCartridge::from_bytes(&bytes, autostart) {
             Ok(cart) => {
                 if !self.mpi_flush_before_replacing_slot(slot) {
                     return;
@@ -304,7 +273,7 @@ impl CocoApp {
     }
 
     /// Loads an Orchestra-90/CC ROM into MPI `slot`. Mirrors
-    /// [`Self::mpi_insert_rompak`]'s flush contract, minus the `autostart_cart` choice.
+    /// [`Self::mpi_insert_rompak`]'s flush contract, minus the `autostart` choice.
     pub(crate) fn mpi_insert_orch90(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -376,21 +345,6 @@ impl CocoApp {
         self.power_cycle();
     }
 
-    /// Ejects whatever is plugged into MPI `slot`. Aborts, leaving contents in place, if
-    /// `slot` holds the FD-502 and a dirty floppy fails to write back.
-    pub(crate) fn mpi_eject_slot(&mut self, slot: usize) {
-        if !self.mpi_flush_before_replacing_slot(slot) {
-            return;
-        }
-        if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.eject(slot);
-        }
-        if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MPISlot::Empty;
-        }
-        self.power_cycle();
-    }
-
     /// Moves the MPI's front-panel switch to `slot`. A running program's own write to
     /// `$FF7F` overrides it until the next reset.
     pub(crate) fn mpi_set_switch(&mut self, slot: usize) {
@@ -416,13 +370,6 @@ impl CocoApp {
         self.cart_path = None;
         self.disk_paths = [None, None];
         self.mpi = None;
-    }
-
-    /// Eject a directly-plugged Disto RTC, restoring the empty port.
-    pub(crate) fn eject_rtc(&mut self) {
-        self.machine.eject_cartridge();
-        self.power_cycle();
-        self.rtc_direct = false;
     }
 
     /// Inserts a Disto RTC into MPI `slot` (0-3). Only one is allowed across the machine —

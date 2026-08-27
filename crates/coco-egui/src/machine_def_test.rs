@@ -65,11 +65,13 @@ fn full_def() -> MachineDef {
                 slots: [
                     SlotDTO::ROMPak {
                         path: "/paks/arkanoid.ccc".to_string(),
+                        autostart: false,
                     },
                     SlotDTO::Empty,
                     SlotDTO::RTC,
                     SlotDTO::FD502,
                 ],
+                switch: 2,
             },
         },
         ports: PortsDTO {
@@ -116,7 +118,9 @@ fn rs232_and_serial_file_round_trip() {
     let dir = TempDir::new("rs232-roundtrip");
     let mut def = full_def();
     def.peripherals = PeripheralsDTO {
-        cartridge: CartridgeDTO::RS232,
+        cartridge: CartridgeDTO::RS232 {
+            endpoint: RS232EndpointDTO::Loopback,
+        },
     };
     def.ports.serial = Some(SerialDTO::File);
     save(dir.path(), "rs232", &def).expect("save should succeed");

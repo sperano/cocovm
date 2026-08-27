@@ -50,7 +50,8 @@ fn manager_edit_with_mpi_records_the_peripheral() {
     assert_eq!(
         def.peripherals.cartridge,
         machine_def::CartridgeDTO::MPI {
-            slots: std::array::from_fn(|_| machine_def::SlotDTO::Empty)
+            slots: std::array::from_fn(|_| machine_def::SlotDTO::Empty),
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         }
     );
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
@@ -97,7 +98,8 @@ fn manager_edit_with_rtc_records_the_peripheral() {
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::Empty,
-            ]
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         }
     );
 }
@@ -115,14 +117,18 @@ fn manager_edit_with_rom_pak_records_the_cart() {
         .state_mut()
         .edit_form_mut()
         .expect("pane form seeded")
-        .cartridge = new_vm::CartridgeChoice::ROMPak(pak.clone());
+        .cartridge = new_vm::CartridgeChoice::ROMPak {
+        path: pak.clone(),
+        autostart: true,
+    };
     harness.step();
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
     assert_eq!(
         def.peripherals.cartridge,
         machine_def::CartridgeDTO::ROMPak {
-            path: "/paks/game.ccc".to_string()
+            path: "/paks/game.ccc".to_string(),
+            autostart: true,
         }
     );
 
@@ -135,8 +141,14 @@ fn manager_edit_with_rom_pak_records_the_cart() {
             .edit_form_mut()
             .expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
-        form.mpi_slots[1] = new_vm::SlotChoice::ROMPak(pak.clone());
-        form.mpi_slots[3] = new_vm::SlotChoice::ROMPak(PathBuf::from("/paks/other.ccc"));
+        form.mpi_slots[1] = new_vm::SlotChoice::ROMPak {
+            path: pak.clone(),
+            autostart: true,
+        };
+        form.mpi_slots[3] = new_vm::SlotChoice::ROMPak {
+            path: PathBuf::from("/paks/other.ccc"),
+            autostart: true,
+        };
     }
     harness.step();
     assert_eq!(harness.state().entries.len(), 2);
@@ -147,13 +159,16 @@ fn manager_edit_with_rom_pak_records_the_cart() {
             slots: [
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::ROMPak {
-                    path: "/paks/game.ccc".to_string()
+                    path: "/paks/game.ccc".to_string(),
+                    autostart: true,
                 },
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::ROMPak {
-                    path: "/paks/other.ccc".to_string()
+                    path: "/paks/other.ccc".to_string(),
+                    autostart: true,
                 },
-            ]
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         }
     );
 }
@@ -170,7 +185,12 @@ fn manager_edit_with_rs232_records_the_peripheral() {
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::RS232);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::RS232 {
+            endpoint: machine_def::RS232EndpointDTO::Loopback,
+        }
+    );
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(
         contents.contains("kind = \"rs232\""),
@@ -192,12 +212,16 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
         .state_mut()
         .edit_form_mut()
         .expect("pane form seeded")
-        .cartridge = new_vm::CartridgeChoice::GamesMaster(gmc.clone());
+        .cartridge = new_vm::CartridgeChoice::GamesMaster {
+        path: gmc.clone(),
+        autostart: true,
+    };
     harness.step();
     assert_eq!(
         harness.state().entries[0].def.peripherals.cartridge,
         machine_def::CartridgeDTO::GamesMaster {
-            path: "/paks/gmc.ccc".to_string()
+            path: "/paks/gmc.ccc".to_string(),
+            autostart: true,
         }
     );
 
@@ -222,7 +246,8 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
                     path: "/paks/orch90.ccc".to_string()
                 },
                 machine_def::SlotDTO::Empty,
-            ]
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         }
     );
 }
@@ -256,7 +281,8 @@ fn manager_edit_with_ssc_records_the_peripheral() {
                 machine_def::SlotDTO::SoundSpeech,
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::Empty,
-            ]
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
         }
     );
 }
@@ -363,4 +389,62 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
             "fresh blank media is a 0-byte file"
         );
     }
+}
+
+/// The MPI's Switch combo (shown while Cartridge = MultiPak Interface) records
+/// `[peripherals].cartridge.switch` as the picked 1-based slot.
+#[test]
+fn manager_edit_with_mpi_switch_records_the_switch() {
+    let dir = TempDir::new("create-mpi-switch");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New");
+    select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
+    // The switch combo's own default text is "Slot 4" (`DEFAULT_MPI_SWITCH_SLOT`); picking
+    // "Slot 2" is the 1-based front-panel switch the DTO records as `switch = 2`.
+    select_combo_at(&mut harness, "Slot 4", 0, "Slot 2");
+
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::MPI {
+            slots: std::array::from_fn(|_| machine_def::SlotDTO::Empty),
+            switch: 2,
+        }
+    );
+    let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
+    assert!(
+        contents.contains("switch = 2"),
+        "TOML must record the switch pick:\n{contents}"
+    );
+}
+
+/// Cartridge = "RS-232 Pak" with its Endpoint combo switched to TCP records
+/// `[peripherals].cartridge.endpoint` with the default listen address the combo pick seeds.
+#[test]
+fn manager_edit_with_rs232_tcp_endpoint_records_the_endpoint() {
+    let dir = TempDir::new("create-rs232-tcp");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
+
+    click_containing(&mut harness, "New");
+    select_combo_at(&mut harness, "None", 1, "RS-232 Pak");
+    select_combo_at(&mut harness, "Loopback", 0, "TCP");
+
+    assert_eq!(harness.state().entries.len(), 1);
+    let def = &harness.state().entries[0].def;
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::RS232 {
+            endpoint: machine_def::RS232EndpointDTO::TCP {
+                listen: crate::RS232_TCP_DEFAULT_ADDR.to_string(),
+            }
+        }
+    );
+    let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
+    assert!(
+        contents.contains("kind = \"tcp\"")
+            && contents.contains(&format!("listen = \"{}\"", crate::RS232_TCP_DEFAULT_ADDR)),
+        "TOML must record the TCP endpoint and its listen address:\n{contents}"
+    );
 }

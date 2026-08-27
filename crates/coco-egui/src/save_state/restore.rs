@@ -172,6 +172,7 @@ impl CocoApp {
 
         self.update_rom_source_from_media(media);
         self.rebuild_cart_mirrors(media);
+        self.reapply_configured_rs232();
         self.rebuild_media_path_mirrors(media);
 
         // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring
@@ -183,8 +184,9 @@ impl CocoApp {
     }
 
     /// Re-inject every host-only resource `#[serde(skip)]` dropped by the
-    /// round trip: RTC time source, DriveWire clock, RS-232 endpoint (always
-    /// restored as loopback).
+    /// round trip: RTC time source, DriveWire clock, RS-232 endpoint (restored
+    /// as loopback here; [`Self::reapply_configured_rs232`] rebinds it to a
+    /// non-default kind afterward if one was configured).
     fn reinject_host_only_resources(&mut self) {
         if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
             rtc.set_time_source(host_time_source());
@@ -289,6 +291,20 @@ impl CocoApp {
                 self.rs232 = new_rs232;
                 self.rs232_eprom_path = new_rs232_eprom_path;
             }
+        }
+    }
+
+    /// Rebind the restored Deluxe RS-232 Pak (bare port only — it can't nest
+    /// in an MPI slot, see `launch::Cartridge::RS232`'s doc) to whatever
+    /// non-loopback endpoint kind `[peripherals]` configured at launch
+    /// (`rs232_configured`, set by `launch::mount_rs232`). The old machine's
+    /// endpoint (and any bound TCP listener) is already dropped by the time
+    /// this runs, so the address is free to rebind. A `None` leaves the
+    /// loopback [`Self::rebuild_cart_mirrors`]/[`Self::reinject_host_only_resources`]
+    /// already restored untouched.
+    fn reapply_configured_rs232(&mut self) {
+        if let Some(kind) = self.rs232_configured {
+            self.rs232_set_endpoint(kind);
         }
     }
 }

@@ -1,9 +1,11 @@
 //! VM window menu/toolbar/hotkey tests, driving a `CocoApp` opened directly
 //! (not through the manager): transport controls, the Machine/View/Help
 //! menus, the status bar's keyboard/display menus,
-//! media-action gating, the MultiPak install/slot/switch flow, save-state
-//! menu wiring, error/confirmation dialogs, the RS-232 pak, and cartridge
-//! insertion (GMC). The status bar's tape entry/menu — mounting, seeking,
+//! media-action gating, save-state menu wiring, error/confirmation dialogs,
+//! and cartridge insertion (GMC) — peripherals themselves are configured
+//! only through `[peripherals]` now, so their menus are gone; see
+//! `launch_test.rs`/`peripherals_dto_test.rs` for that coverage instead. The
+//! status bar's tape entry/menu — mounting, seeking,
 //! and the auto-save/keyboard-focus interactions — lives in the sibling
 //! [`super::vm_window_tape`], except the plain disabled-without-a-tape gating
 //! checked here alongside the rest of `media_actions_are_disabled_until_media_is_present`.
@@ -263,12 +265,13 @@ fn media_actions_are_disabled_until_media_is_present() {
     let mut harness = boot_harness();
 
     click(&mut harness, "Machine");
-    for label in ["Eject Cartridge", "Stop Print Capture"] {
-        assert!(
-            harness.get_by_label(label).accesskit_node().is_disabled(),
-            "{label} should be disabled with nothing inserted"
-        );
-    }
+    assert!(
+        harness
+            .get_by_label("Stop Print Capture")
+            .accesskit_node()
+            .is_disabled(),
+        "Stop Print Capture should be disabled with nothing captured"
+    );
     // Nothing mounted, so both drive eject entries are disabled too.
     for drive in 0..UI_DRIVES {
         assert!(
@@ -289,67 +292,6 @@ fn media_actions_are_disabled_until_media_is_present() {
             "{label} should be disabled with no tape mounted"
         );
     }
-}
-
-#[test]
-fn multipak_install_slot_and_switch_flow() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "MultiPak Interface");
-    click(&mut harness, "Insert MultiPak");
-    {
-        let app = harness.state();
-        let mpi = app.mpi.as_ref().expect("MPI should be installed");
-        assert_eq!(mpi.switch, DEFAULT_MPI_SWITCH_SLOT);
-        assert!(mpi.slots.iter().all(|s| matches!(s, MPISlot::Empty)));
-    }
-    harness.get_by_label("MPI [S1:- S2:- S3:- S4:-]"); // status bar
-
-    // Plug the FD-502 into slot 1 through the nested slot submenu.
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "MultiPak Interface");
-    click_containing(&mut harness, "Slot 1");
-    click(&mut harness, "Insert FD-502");
-    assert!(matches!(
-        harness.state().mpi.as_ref().unwrap().slots[0],
-        MPISlot::FD502
-    ));
-    assert!(
-        harness
-            .state_mut()
-            .machine
-            .bus
-            .cart
-            .as_disk_cart()
-            .is_some(),
-        "the FD-502 in an MPI slot must be reachable through the cart chain"
-    );
-
-    // Move the front-panel switch to slot 2; the parent menu's own entry is "Slot 2 ⏵", not
-    // "Slot 2".
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "MultiPak Interface");
-    click_containing(&mut harness, "Switch");
-    click(&mut harness, "Slot 2");
-    assert_eq!(harness.state().mpi.as_ref().unwrap().switch, 1);
-
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "MultiPak Interface");
-    click(&mut harness, "Remove MultiPak");
-    let app = harness.state();
-    assert!(app.mpi.is_none());
-    assert!(app.disk_paths.iter().all(Option::is_none));
-}
-
-#[test]
-fn machine_menu_checkbox_toggles_cartridge_autostart() {
-    let mut harness = boot_harness();
-    assert!(harness.state().autostart_cart);
-
-    click(&mut harness, "Machine");
-    click(&mut harness, "Auto-start cartridge");
-    assert!(!harness.state().autostart_cart);
 }
 
 /// The Machine menu's Save/Load State section shows both file-dialog items
@@ -448,7 +390,8 @@ fn cartridge_error_dialog_dismisses_with_ok() {
 }
 
 /// Insert Disk/New Blank Disk stay disabled — with a hover explanation — until an FD-502 is
-/// actually present, and enable once the MultiPak Interface flow installs one.
+/// actually present, and enable once one is installed (`insert_disk_controller`, driven
+/// directly here — there is no runtime menu to install one anymore).
 #[test]
 fn disk_menu_items_are_disabled_without_an_fd502() {
     let mut harness = boot_harness();
@@ -466,15 +409,14 @@ fn disk_menu_items_are_disabled_without_an_fd502() {
         }
     }
 
-    // Plug an FD-502 into an MPI slot, the only way to get one at runtime.
-    click_containing(&mut harness, "MultiPak Interface");
-    click(&mut harness, "Insert MultiPak");
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "MultiPak Interface");
-    click_containing(&mut harness, "Slot 1");
-    click(&mut harness, "Insert FD-502");
+    harness
+        .state_mut()
+        .insert_disk_controller()
+        .unwrap_or_else(|e| panic!("insert_disk_controller failed: {e}"));
+    harness.step();
 
-    click(&mut harness, "Machine");
+    // The Machine menu is still open from above — nothing closed it, since this test never
+    // clicks a menu item.
     for drive in 0..UI_DRIVES {
         for label in [
             format!("Insert Disk in Drive {drive}…"),
@@ -486,39 +428,6 @@ fn disk_menu_items_are_disabled_without_an_fd502() {
             );
         }
     }
-}
-
-/// Machine ▸ Deluxe RS-232 Pak ▸ Insert plugs the pak in on the loopback
-/// endpoint and the status bar reports it; Remove restores the empty slot.
-#[test]
-fn rs232_menu_inserts_and_removes_the_pak() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Machine");
-    // Not click_submenu: its substring match would also hit the Insert/Remove items once open.
-    click(&mut harness, "Deluxe RS-232 Pak ⏵");
-    click(&mut harness, "Insert Deluxe RS-232 Pak");
-    {
-        let app = harness.state_mut();
-        assert!(matches!(app.rs232, Some(RS232Endpoint::Loopback)));
-        assert!(
-            app.machine.bus.cart.as_deluxe_rs232().is_some(),
-            "the pak must be reachable behind the trait object"
-        );
-    }
-    harness.step();
-    assert!(
-        harness.query_by_label("RS-232 [loopback] ↑0 ↓0").is_some(),
-        "status bar should describe the pak and its endpoint"
-    );
-
-    click(&mut harness, "Machine");
-    // Not click_submenu: its substring match would also hit the Insert/Remove items once open.
-    click(&mut harness, "Deluxe RS-232 Pak ⏵");
-    click(&mut harness, "Remove Deluxe RS-232 Pak");
-    let app = harness.state_mut();
-    assert!(app.rs232.is_none());
-    assert!(app.machine.bus.cart.as_deluxe_rs232().is_none());
 }
 
 #[test]
@@ -546,7 +455,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
         )
     });
     // Drive the app-glue directly: the menu item's click handler opens a native file dialog.
-    harness.state_mut().insert_gmc(path.clone());
+    harness.state_mut().insert_gmc(path.clone(), true);
     harness.step();
 
     let app = harness.state_mut();

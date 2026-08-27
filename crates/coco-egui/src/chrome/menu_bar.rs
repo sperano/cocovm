@@ -8,8 +8,6 @@ use crate::*;
 
 mod drivewire;
 mod machine;
-mod mpi;
-mod rs232;
 
 impl CocoApp {
     /// The menu bar and all of its menus.

@@ -10,7 +10,7 @@ use eframe::egui;
 use crate::display::Display;
 use crate::joy::JoySource;
 
-use super::cartridge::{CartridgeChoice, SlotChoice};
+use super::cartridge::{CartridgeChoice, RS232EndpointChoice, SlotChoice};
 use super::{
     FORM_GRID_SPACING, MachineForm, MediaChoice, SerialChoice, media_choice_text, serial_label,
 };
@@ -30,6 +30,8 @@ impl MachineForm {
             config,
             cartridge: CartridgeChoice::None,
             mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
+            mpi_switch: crate::DEFAULT_MPI_SWITCH_SLOT,
+            rs232_endpoint: RS232EndpointChoice::default(),
             disks: std::array::from_fn(|_| MediaChoice::None),
             tape: MediaChoice::None,
             vhds: std::array::from_fn(|_| MediaChoice::None),
@@ -125,6 +127,10 @@ impl MachineForm {
 
         if self.cartridge != CartridgeChoice::MPI {
             self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
+            self.mpi_switch = crate::DEFAULT_MPI_SWITCH_SLOT;
+        }
+        if self.cartridge != CartridgeChoice::RS232 {
+            self.rs232_endpoint = RS232EndpointChoice::default();
         }
         if !self.drives_available() {
             self.disks = std::array::from_fn(|_| MediaChoice::None);
@@ -133,9 +139,13 @@ impl MachineForm {
             ui,
             self.salt,
             font,
-            &mut self.cartridge,
-            &mut self.mpi_slots,
-            &mut self.disks,
+            cartridge_form::CartridgeRowState {
+                cartridge: &mut self.cartridge,
+                mpi_slots: &mut self.mpi_slots,
+                mpi_switch: &mut self.mpi_switch,
+                rs232_endpoint: &mut self.rs232_endpoint,
+                disks: &mut self.disks,
+            },
         );
 
         // The VHD hard disks, below removable media. Always shown, no cartridge required.

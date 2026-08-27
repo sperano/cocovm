@@ -130,12 +130,16 @@ fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     }
 }
 
-/// A `[peripherals].cartridge`'s `slots` array of the wrong length is caught
-/// here, before the typed deserialize, so the error names the expected count
-/// (`MPI_SLOT_COUNT`) instead of serde's generic length complaint. A missing
-/// `slots` key needs no help here: it's a required field of
-/// [`super::CartridgeDTO::MPI`] itself, so serde's own "missing field
-/// `slots`" error already names the problem.
+/// The 1-based front-panel switch positions a [`super::CartridgeDTO::MPI`]'s
+/// `switch` accepts, matching the UI's "Slot 1"–"Slot 4".
+const MPI_SWITCH_RANGE: std::ops::RangeInclusive<i64> = 1..=(MPI_SLOT_COUNT as i64);
+
+/// A `[peripherals].cartridge`'s `slots` array of the wrong length, or a
+/// `switch` outside [`MPI_SWITCH_RANGE`], is caught here, before the typed
+/// deserialize, so the error names the expected count/range instead of
+/// serde's generic complaints. A missing `slots` key needs no help here: it's
+/// a required field of [`super::CartridgeDTO::MPI`] itself, so serde's own
+/// "missing field `slots`" error already names the problem.
 fn check_mpi_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
     let Some(toml::Value::Table(peripherals)) = table.get("peripherals") else {
         return Ok(());
@@ -144,15 +148,30 @@ fn check_mpi_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
         return Ok(());
     };
     let is_mpi = cartridge.get("kind").and_then(toml::Value::as_str) == Some("mpi");
-    match cartridge.get("slots") {
-        Some(toml::Value::Array(slots)) if is_mpi && slots.len() != MPI_SLOT_COUNT => Err(format!(
+    if let Some(toml::Value::Array(slots)) = cartridge.get("slots")
+        && is_mpi
+        && slots.len() != MPI_SLOT_COUNT
+    {
+        return Err(format!(
             "{}: [peripherals].cartridge.slots lists {} slots but a MultiPak Interface has \
              exactly {MPI_SLOT_COUNT}",
             path.display(),
             slots.len()
-        )),
-        _ => Ok(()),
+        ));
     }
+    if let Some(toml::Value::Integer(switch)) = cartridge.get("switch")
+        && is_mpi
+        && !MPI_SWITCH_RANGE.contains(switch)
+    {
+        return Err(format!(
+            "{}: [peripherals].cartridge.switch is {switch} but a MultiPak Interface's \
+             front-panel switch must be {} to {}",
+            path.display(),
+            MPI_SWITCH_RANGE.start(),
+            MPI_SWITCH_RANGE.end()
+        ));
+    }
+    Ok(())
 }
 
 /// Load and validate one definition file (parse + schema check + hardware

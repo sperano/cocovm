@@ -8,7 +8,8 @@
 //!   semantics, like MAME). The default.
 //! - Symbolic — the character you type is injected via the CoCo keys that produce it.
 //!
-//! The Machine menu can also insert/eject a cartridge ROM pak (`.rom`/`.ccc`/`.bin`).
+//! Cartridges and other peripherals are configured in the machine's
+//! `[peripherals]` definition and mounted at launch, not from a menu.
 //! The toolbar's Debug tile (or ⌘D / Ctrl+D) toggles the interactive debugger
 //! (Controls/Registers/Disassembly/Memory/Stack/Hardware panels —
 //! `debugger.rs`, §3).
