@@ -150,14 +150,16 @@ fn check_mpi_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
     let is_mpi = cartridge.get("kind").and_then(toml::Value::as_str) == Some("mpi");
     if let Some(toml::Value::Array(slots)) = cartridge.get("slots")
         && is_mpi
-        && slots.len() != MPI_SLOT_COUNT
     {
-        return Err(format!(
-            "{}: [peripherals].cartridge.slots lists {} slots but a MultiPak Interface has \
-             exactly {MPI_SLOT_COUNT}",
-            path.display(),
-            slots.len()
-        ));
+        if slots.len() != MPI_SLOT_COUNT {
+            return Err(format!(
+                "{}: [peripherals].cartridge.slots lists {} slots but a MultiPak Interface has \
+                 exactly {MPI_SLOT_COUNT}",
+                path.display(),
+                slots.len()
+            ));
+        }
+        check_single_rs232_slot(slots, path)?;
     }
     if let Some(toml::Value::Integer(switch)) = cartridge.get("switch")
         && is_mpi
@@ -169,6 +171,27 @@ fn check_mpi_slots(table: &toml::Table, path: &Path) -> Result<(), String> {
             path.display(),
             MPI_SWITCH_RANGE.start(),
             MPI_SWITCH_RANGE.end()
+        ));
+    }
+    Ok(())
+}
+
+/// At most one `slots` entry may be `{ kind = "rs232" }`: two Deluxe RS-232
+/// Paks would fight over the shared ACIA at `$FF68-$FF6B` (the pak decodes
+/// the full address bus itself, reachable from any slot regardless of
+/// switch/`$FF7F` selection — `coco_rs232.cpp:57-62`).
+fn check_single_rs232_slot(slots: &[toml::Value], path: &Path) -> Result<(), String> {
+    let rs232_count = slots
+        .iter()
+        .filter(|slot| {
+            matches!(slot, toml::Value::Table(t) if t.get("kind").and_then(toml::Value::as_str) == Some("rs232"))
+        })
+        .count();
+    if rs232_count > 1 {
+        return Err(format!(
+            "{}: [peripherals].cartridge.slots has {rs232_count} Deluxe RS-232 Paks, but only \
+             one fits per machine (all would share the ACIA at $FF68)",
+            path.display()
         ));
     }
     Ok(())

@@ -48,9 +48,10 @@ pub enum CartridgeDTO {
     /// use an MPI slot.
     #[serde(rename = "rtc")]
     RTC,
-    /// Deluxe RS-232 Pak. Bare-port only: there's no `mpi_insert_rs232`, so
-    /// this kind never appears in a [`SlotDTO`]. `endpoint` picks the host
-    /// backend its serial line is wired to.
+    /// Deluxe RS-232 Pak. `endpoint` picks the host backend its serial line
+    /// is wired to; can also appear nested in a [`SlotDTO`] (the pak decodes
+    /// its ACIA off the full address bus itself, so it's reachable from any
+    /// MPI slot — [`crate::MPISlot::DeluxeRS232`]'s doc).
     #[serde(rename = "rs232")]
     RS232 {
         #[serde(default)]
@@ -88,8 +89,8 @@ pub enum CartridgeDTO {
 }
 
 /// One MultiPak slot's occupant ([`CartridgeDTO::MPI`]'s `slots`) —
-/// [`CartridgeDTO`]'s sibling minus the bare-port-only kinds (nested MPI,
-/// RS-232). Maps to [`crate::new_vm::SlotChoice`].
+/// [`CartridgeDTO`]'s sibling minus nested MPI (real MPIs can't nest). Maps
+/// to [`crate::new_vm::SlotChoice`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind")]
 pub enum SlotDTO {
@@ -106,6 +107,14 @@ pub enum SlotDTO {
     },
     #[serde(rename = "rtc")]
     RTC,
+    /// Deluxe RS-232 Pak in this slot — at most one across the whole
+    /// machine, since two would fight over the ACIA at `$FF68`; a second one
+    /// is rejected at load time.
+    #[serde(rename = "rs232")]
+    RS232 {
+        #[serde(default)]
+        endpoint: RS232EndpointDTO,
+    },
     #[serde(rename = "gmc")]
     GamesMaster {
         path: String,

@@ -390,6 +390,39 @@ impl CocoApp {
         }
         self.power_cycle();
     }
+
+    /// Inserts a Deluxe RS-232 Pak into MPI `slot`, starting on the inert loopback
+    /// endpoint like [`Self::insert_rs232`] (`launch::mount_peripherals`'s MPI arm
+    /// rebinds it to the definition's configured endpoint afterward). Only one is
+    /// allowed across the machine — two would fight over the shared ACIA at
+    /// `$FF68-$FF6B`, reachable from any slot regardless of switch/`$FF7F` selection
+    /// (`coco_rs232.cpp`: the pak decodes the full address bus itself).
+    pub(crate) fn mpi_insert_rs232(&mut self, slot: usize) {
+        if self.machine.bus.cart.as_deluxe_rs232().is_some() {
+            self.cart_error =
+                Some("A Deluxe RS-232 Pak is already installed in another slot.".to_string());
+            return;
+        }
+        if !self.mpi_flush_before_replacing_slot(slot) {
+            return;
+        }
+        let mut pak = coco_core::rs232::DeluxeRS232::new();
+        let rom_path = rs232_eprom_default_path();
+        let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
+            pak.set_eprom(&bytes);
+            Some(rom_path)
+        } else {
+            None
+        };
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, pak);
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MPISlot::DeluxeRS232(eprom_path);
+        }
+        self.rs232 = Some(RS232Endpoint::Loopback);
+        self.power_cycle();
+    }
 }
 
 #[cfg(test)]

@@ -282,6 +282,96 @@ slots = [{ kind = "empty" }, { kind = "empty" }, { kind = "empty" }, { kind = "e
     );
 }
 
+/// An MPI slot's RS-232 Pak round-trips each endpoint kind, same as the bare-port
+/// `CartridgeDTO::RS232` (`rs232_endpoint_kinds_round_trip` above).
+#[test]
+fn slot_rs232_endpoint_kinds_round_trip() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "mpi"
+slots = [
+    { kind = "rs232", endpoint = { kind = "tcp", listen = "127.0.0.1:6551" } },
+    { kind = "empty" },
+    { kind = "empty" },
+    { kind = "empty" },
+]
+"#,
+    )
+    .expect("a slotted rs232 with a tcp endpoint must parse");
+    assert_eq!(
+        dto,
+        CartridgeDTO::MPI {
+            slots: [
+                SlotDTO::RS232 {
+                    endpoint: RS232EndpointDTO::TCP {
+                        listen: "127.0.0.1:6551".to_string()
+                    }
+                },
+                SlotDTO::Empty,
+                SlotDTO::Empty,
+                SlotDTO::Empty,
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+        }
+    );
+}
+
+/// A legacy `{ kind = "rs232" }` slot with no `endpoint` key loads as loopback,
+/// same as the bare-port shape (`legacy_mpi_and_rs232_shapes_use_the_documented_defaults`).
+#[test]
+fn slot_rs232_with_no_endpoint_loads_as_loopback() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "mpi"
+slots = [{ kind = "rs232" }, { kind = "empty" }, { kind = "empty" }, { kind = "empty" }]
+"#,
+    )
+    .expect("an endpoint-less slotted rs232 must still parse");
+    assert_eq!(
+        dto,
+        CartridgeDTO::MPI {
+            slots: [
+                SlotDTO::RS232 {
+                    endpoint: RS232EndpointDTO::default()
+                },
+                SlotDTO::Empty,
+                SlotDTO::Empty,
+                SlotDTO::Empty,
+            ],
+            switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+        }
+    );
+}
+
+/// Two RS-232 Paks in the same MPI's `slots` are rejected at load time — they'd fight
+/// over the shared ACIA at `$FF68`.
+#[test]
+fn mpi_cartridge_with_two_rs232_slots_fails_to_load() {
+    let dir = TempDir::new("mpi-two-rs232");
+    fs::write(
+        dir.path().join("mpi.toml"),
+        r#"
+schema = 1
+name = "MPI, Two RS-232"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+monitor = "rgb"
+
+[peripherals]
+cartridge = { kind = "mpi", slots = [{ kind = "rs232" }, { kind = "rs232" }, { kind = "empty" }, { kind = "empty" }] }
+"#,
+    )
+    .unwrap();
+    let err = load_all(dir.path()).expect_err("two RS-232 slots must fail the load");
+    assert!(
+        err.contains("RS-232") && err.contains("$FF68"),
+        "error should name the conflict: {err}"
+    );
+}
+
 /// A `switch` outside 1..=4 is rejected with a message naming the valid range, not serde's
 /// generic error.
 #[test]

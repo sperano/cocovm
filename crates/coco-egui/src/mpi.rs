@@ -25,6 +25,12 @@ pub(crate) enum MPISlot {
     ROMPak(PathBuf),
     FD502,
     DistoRTC,
+    /// Deluxe RS-232 Pak; `None` if it has no EPROM dump installed (it's
+    /// fully usable ROM-less — CTS reads answer open-bus). At most one
+    /// across the whole machine — two would fight over the shared ACIA at
+    /// `$FF68`, reachable from any slot regardless of switch/`$FF7F`
+    /// selection (the pak decodes the full address bus itself).
+    DeluxeRS232(Option<PathBuf>),
     GamesMasterCartridge(PathBuf),
     Orch90(PathBuf),
     SoundSpeechCartridge,

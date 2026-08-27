@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::*;
-use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO};
+use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO, SlotDTO};
 use crate::rom_load::COCO3_ROM_FILE;
 use crate::{AppParams, ROMSource, RS232Endpoint, disk_basic_rom_path, installed_roms_dir};
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
@@ -405,5 +405,53 @@ fn rs232_tcp_endpoint_survives_a_save_load_round_trip() {
         matches!(app.rs232, Some(RS232Endpoint::TCP(_))),
         "the TCP endpoint must survive Load State, not fall back to loopback: got {:?}",
         app.rs232.as_ref().map(RS232Endpoint::label)
+    );
+}
+
+/// [`rs232_tcp_endpoint_survives_a_save_load_round_trip`]'s MPI-slot sibling: the pak
+/// nested in a slot must survive the same round trip, both its endpoint and its
+/// reachability through the `MultiPak`.
+#[test]
+fn mpi_slot_rs232_tcp_endpoint_survives_a_save_load_round_trip() {
+    let mut def = MachineDef::from_config(
+        "RS-232 Slot Round Trip".to_string(),
+        None,
+        &MachineConfig::default(),
+    );
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::RS232 {
+                endpoint: RS232EndpointDTO::TCP {
+                    listen: "127.0.0.1:0".to_string(),
+                },
+            },
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+        ],
+        switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+    };
+    let mut app = crate::launch::launch_machine(&def, "save-state-test-mpi-rs232-tcp")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::TCP(_))),
+        "the definition's TCP endpoint should be bound at launch"
+    );
+
+    let dir = scratch_dir("mpi-rs232-tcp-round-trip");
+    let ccstate_path = dir.join("state.ccstate");
+    app.save_state_to(&ccstate_path)
+        .unwrap_or_else(|e| panic!("save should succeed: {e}"));
+    app.load_state_from(&ccstate_path)
+        .unwrap_or_else(|e| panic!("load should succeed: {e}"));
+
+    assert!(
+        matches!(app.rs232, Some(RS232Endpoint::TCP(_))),
+        "the TCP endpoint must survive Load State, not fall back to loopback: got {:?}",
+        app.rs232.as_ref().map(RS232Endpoint::label)
+    );
+    assert!(
+        app.machine.bus.cart.as_deluxe_rs232().is_some(),
+        "the pak nested in the slot must still be reachable through the MultiPak"
     );
 }

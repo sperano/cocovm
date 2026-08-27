@@ -263,6 +263,13 @@ impl CocoApp {
                         slots[i as usize] = mpi_slot_from_cart(cart, i, media);
                     }
                 }
+                if let Some(path) = slots.iter().find_map(|s| match s {
+                    MPISlot::DeluxeRS232(path) => Some(path),
+                    _ => None,
+                }) {
+                    self.rs232 = Some(RS232Endpoint::Loopback);
+                    self.rs232_eprom_path = path.clone();
+                }
                 self.mpi = Some(MPIState { switch, slots });
             }
             None => {
@@ -294,10 +301,11 @@ impl CocoApp {
         }
     }
 
-    /// Rebind the restored Deluxe RS-232 Pak (bare port only — it can't nest
-    /// in an MPI slot, see `launch::Cartridge::RS232`'s doc) to whatever
-    /// non-loopback endpoint kind `[peripherals]` configured at launch
-    /// (`rs232_configured`, set by `launch::mount_rs232`). The old machine's
+    /// Rebind the restored Deluxe RS-232 Pak — bare port or an MPI slot,
+    /// found either way through [`Cart::as_deluxe_rs232`]'s `MultiPak`
+    /// forwarding — to whatever non-loopback endpoint kind `[peripherals]`
+    /// configured at launch (`rs232_configured`, set by
+    /// `launch::apply_rs232_endpoint`). The old machine's
     /// endpoint (and any bound TCP listener) is already dropped by the time
     /// this runs, so the address is free to rebind. A `None` leaves the
     /// loopback [`Self::rebuild_cart_mirrors`]/[`Self::reinject_host_only_resources`]

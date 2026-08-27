@@ -107,6 +107,9 @@ fn mpi_sub_form(
                     SlotChoice::FD502 => {
                         sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks));
                     }
+                    SlotChoice::RS232(endpoint) => {
+                        sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, endpoint));
+                    }
                     SlotChoice::ROMPak { autostart, .. }
                     | SlotChoice::GamesMaster { autostart, .. } => {
                         sub_form_row(ui, |ui| autostart_row(ui, autostart));
@@ -243,11 +246,23 @@ fn image_combo_item(
 /// Release `kind` from every slot — the FD-502/RTC's one-max rule
 /// ([`SlotChoice`]'s doc) before a slot claims it.
 fn release_slot(mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT], kind: SlotChoice) {
+    release_slot_matching(mpi_slots, |other| *other == kind);
+}
+
+/// [`release_slot`]'s predicate-based sibling, for a kind whose payload
+/// varies (the RS-232 Pak's endpoint); returns the released choice so a
+/// pak moved between slots keeps its settings.
+fn release_slot_matching(
+    mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT],
+    predicate: impl Fn(&SlotChoice) -> bool,
+) -> Option<SlotChoice> {
+    let mut released = None;
     for other in mpi_slots.iter_mut() {
-        if *other == kind {
-            *other = SlotChoice::Empty;
+        if predicate(other) {
+            released = Some(std::mem::replace(other, SlotChoice::Empty));
         }
     }
+    released
 }
 
 /// The Cartridge-row combo. Every image-backed pick ("ROM Pak…", "Games
@@ -341,6 +356,20 @@ fn slot_combo(
                 release_slot(mpi_slots, SlotChoice::RTC);
                 mpi_slots[slot] = SlotChoice::RTC;
             });
+            combo_item(
+                ui,
+                "RS-232 Pak",
+                matches!(mpi_slots[slot], SlotChoice::RS232(_)),
+                || {
+                    let endpoint = match release_slot_matching(mpi_slots, |s| {
+                        matches!(s, SlotChoice::RS232(_))
+                    }) {
+                        Some(SlotChoice::RS232(endpoint)) => endpoint,
+                        _ => RS232EndpointChoice::default(),
+                    };
+                    mpi_slots[slot] = SlotChoice::RS232(endpoint);
+                },
+            );
             image_combo_item(
                 ui,
                 "Games Master…",

@@ -38,8 +38,6 @@ enum Cartridge {
         autostart: bool,
     },
     RTC,
-    /// Bare-port only — no `mpi_insert_rs232`, so this can't appear nested
-    /// in a [`Slot`].
     RS232 {
         endpoint: RS232EndpointDTO,
     },
@@ -58,13 +56,14 @@ enum Cartridge {
     },
 }
 
-/// One MultiPak slot's occupant — [`Cartridge`]'s sibling minus the
-/// bare-port-only kinds (nested MPI, RS-232).
+/// One MultiPak slot's occupant — [`Cartridge`]'s sibling minus nested MPI
+/// (real MPIs can't nest).
 enum Slot {
     Empty,
     FD502,
     ROMPak { path: PathBuf, autostart: bool },
     RTC,
+    RS232 { endpoint: RS232EndpointDTO },
     GamesMaster { path: PathBuf, autostart: bool },
     Orch90(PathBuf),
     SoundSpeech,
@@ -184,6 +183,9 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
             autostart: *autostart,
         },
         SlotDTO::RTC => Slot::RTC,
+        SlotDTO::RS232 { endpoint } => Slot::RS232 {
+            endpoint: endpoint.clone(),
+        },
         SlotDTO::GamesMaster { path: p, autostart } => Slot::GamesMaster {
             path: path(p),
             autostart: *autostart,
@@ -277,6 +279,10 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                         app.mpi_insert_rompak(slot, path, autostart)
                     }
                     Slot::RTC => app.mpi_insert_rtc(slot),
+                    Slot::RS232 { endpoint } => {
+                        app.mpi_insert_rs232(slot);
+                        apply_rs232_endpoint(app, endpoint);
+                    }
                     Slot::GamesMaster { path, autostart } => {
                         app.mpi_insert_gmc(slot, path, autostart)
                     }
@@ -304,21 +310,33 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     }
 }
 
-/// Insert the Deluxe RS-232 Pak and wire its serial line to `endpoint`; loopback is
-/// [`CocoApp::insert_rs232`]'s own default, so it needs no follow-up call. Records
-/// `app.rs232_configured` for a non-loopback pick so [`CocoApp::rebuild_cart_mirrors`]
-/// can rebind it after a Load State drops the core's live endpoint.
+/// Insert the Deluxe RS-232 Pak into the bare cartridge port and wire its serial
+/// line to `endpoint` — see [`apply_rs232_endpoint`]'s doc for the endpoint half,
+/// shared with the MPI-slot case ([`mount_peripherals`]'s `Slot::RS232` arm).
+fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
+    app.insert_rs232();
+    apply_rs232_endpoint(app, endpoint);
+}
+
+/// Wire `endpoint` onto whichever Deluxe RS-232 Pak was just inserted — bare port
+/// ([`mount_rs232`]) or an MPI slot ([`mount_peripherals`]'s `Slot::RS232` arm);
+/// loopback is [`CocoApp::insert_rs232`]/[`CocoApp::mpi_insert_rs232`]'s own
+/// default, so it needs no follow-up call. Records `app.rs232_configured` for a
+/// non-loopback pick so [`CocoApp::rebuild_cart_mirrors`] can rebind it after a
+/// Load State drops the core's live endpoint.
 ///
 /// A TCP endpoint that fails to bind falls back to loopback (the pak is still usable
 /// on its inert default) and reports through the non-fatal status-bar toast instead of
 /// failing the whole launch — every machine definition otherwise defaults to the same
 /// listen address ([`crate::RS232_TCP_DEFAULT_ADDR`]), so a second RS-232 machine would always
 /// refuse to launch.
-fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
-    app.insert_rs232();
+fn apply_rs232_endpoint(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
     match endpoint {
         RS232EndpointDTO::Loopback => {}
         RS232EndpointDTO::TCP { listen } => {
+            // Only a bind failure from this call is demoted to a toast; an earlier
+            // slot's fatal cart_error (e.g. a missing Disk BASIC ROM) must survive.
+            let prior = app.cart_error.take();
             app.rs232_tcp_addr = listen;
             app.rs232_configured = Some(RS232EndpointKind::TCP);
             app.rs232_set_endpoint(RS232EndpointKind::TCP);
@@ -331,6 +349,7 @@ fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
                     std::time::Instant::now(),
                 ));
             }
+            app.cart_error = prior;
         }
         RS232EndpointDTO::PTY => mount_rs232_pty(app),
     }
