@@ -9,6 +9,10 @@ MAX_DIFF_BYTES=200000
 MODEL="${PR_GATE_MODEL:-claude-sonnet-5}"
 
 input=$(cat)
+# The settings `if` matcher errs on the side of matching for commands it
+# can't parse (heredocs, brace groups); only gate a real `gh pr create`.
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+case "$cmd" in *"gh pr create"*) ;; *) exit 0 ;; esac
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
 [ -n "$cwd" ] && cd "$cwd"
 
