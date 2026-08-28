@@ -4,6 +4,8 @@
 # in-flight plan docs — working notes, never committed
 /docs/plan-*.md
 /docs/*-plan.md
+/docs/txt/*
+docs/orig-scans/*
 /roms/*
 # stray MAME run log
 /error.log
@@ -26,3 +28,5 @@
 # built book editions (tools/build-book.sh)
 /build
 dist/
+.worktrees/
+*.dsk

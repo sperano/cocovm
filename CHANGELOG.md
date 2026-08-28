@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-08-26
+
+### Added
+- Machine config: the Multi-Pak's front-panel switch position (`switch`,
+  1–4) and the Deluxe RS-232 Pak's host wiring (`endpoint`: loopback, TCP
+  listen address, or PTY) are saved in `[peripherals]`; ROM Paks and the
+  Game Master Cartridge take an `autostart` flag for paks that must be
+  started by hand. Existing machine files load unchanged.
+- Deluxe RS-232 Pak: can be installed in a Multi-Pak slot, not only the
+  bare cartridge port; it answers from any slot regardless of the switch
+  position, as on real hardware.
+- VM manager: the New/Edit form exposes the switch, RS-232 endpoint, and
+  auto-start settings.
+
+### Changed
+- VM window: peripherals are configured only from the machine definition.
+  The Machine menu's insert/eject/remove actions for cartridges, the
+  Multi-Pak, the RS-232 Pak, the Disto RTC, and VHD images are gone, as is
+  the Reset item (Reset stays on the toolbar). The menu now holds Save/Load
+  State, floppy drives, DriveWire, and print capture.
+
+### Fixed
+- Load State keeps the RS-232 Pak's configured TCP/PTY wiring instead of
+  silently dropping back to loopback.
+- Debugger: peeking cartridge registers in `$FF60–$FF7E` through a Multi-Pak
+  reaches the same slot a real read does.
+- CPU: the cycle counter restarts from zero on reset.
+
 ## [0.7.0] - 2026-08-26
 
 ### Added
