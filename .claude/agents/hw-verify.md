@@ -20,12 +20,13 @@ Sources, in order of authority:
    manual, memory maps). Grep `docs/txt/*.txt` first (pre-extracted; cite as
    `docs/txt/<file>:<line>`). If `docs/txt/` is missing, run
    `scripts/extract-docs.sh`. Fall back to `pdftotext -layout <pdf> <out.txt>`
-   or reading the PDF directly only for tables/figures that came out garbled —
-   known bad: `CoCoAssemblyLang_Color.pdf`, `Color Computer 3 Exended Basic
-   (Tandy).pdf`, `Color Computer 3 Service Manual (Tandy).pdf`, and the
-   Motorola MC6809 programming manual extract to near-empty (scanned, no text
-   layer); `Lomont_CoCoHardware.pdf` extracts with columns interleaved
-   line-by-line. SEB Unravelled II also contains the full BASIC ROM
+   or reading the PDF directly only for tables/figures that came out garbled.
+   Four scans (`CoCoAssemblyLang_Color`, `Color Computer 3 Exended Basic`,
+   `Color Computer 3 Service Manual`, the Motorola MC6809 programming manual)
+   carry an `ocrmypdf` text layer, so expect OCR typos there; the Motorola
+   manual is also truncated after Appendix A (no cycle tables). Untouched
+   originals live in `docs/orig-scans/`. `Lomont_CoCoHardware.pdf` extracts with
+   columns interleaved line-by-line. SEB Unravelled II also contains the full BASIC ROM
    disassembly — use it to answer "what does the ROM do at/with X".
 2. **MAME source** in the local shallow clone at `/Users/eric/code/mame` —
    grep/read it directly, no WebFetch needed (`src/mame/trs/gime.cpp`,
