@@ -309,14 +309,44 @@ fn sync_halts_and_idles_until_interrupt() {
     assert_eq!(idle, 1);
     assert_eq!(s.cpu.pc, pc_after_sync); // no fetch
 
-    // A masked IRQ still wakes SYNC (without servicing).
+    // A masked IRQ still wakes SYNC (without servicing), costing the 1-cycle escape.
     s.cpu.cc = cc::IRQ_MASK;
+    let before = s.cpu.cycles;
     let serviced = s.cpu.irq(&mut s.bus);
     assert!(!serviced);
     assert_eq!(s.cpu.state, State::Running);
+    assert_eq!(s.cpu.cycles, before + 1);
     // Next step runs the instruction after SYNC.
     s.step();
     assert_eq!(s.cpu.pc, pc_after_sync + 1);
+}
+
+#[test]
+fn unmasked_irq_while_syncing_pays_escape_plus_full_entry() {
+    let mut s = Sys::code(0x1000, &[0x13]); // SYNC
+    s.bus.load(0xFFF8, &[0x80, 0x00]); // IRQ vector -> $8000
+    s.cpu.s = 0x2000;
+    s.cpu.cc = 0x00;
+    s.step();
+    assert_eq!(s.cpu.state, State::Syncing);
+    let before = s.cpu.cycles;
+    assert!(s.cpu.irq(&mut s.bus));
+    assert_eq!(s.cpu.pc, 0x8000);
+    assert_eq!(s.cpu.cycles, before + 1 + 19); // SYNC escape + full IRQ entry
+}
+
+#[test]
+fn unmasked_firq_while_syncing_pays_escape_plus_fast_entry() {
+    let mut s = Sys::code(0x1000, &[0x13]); // SYNC
+    s.bus.load(0xFFF6, &[0x70, 0x00]); // FIRQ vector -> $7000
+    s.cpu.s = 0x2000;
+    s.cpu.cc = 0x00;
+    s.step();
+    let before = s.cpu.cycles;
+    assert!(s.cpu.firq(&mut s.bus));
+    assert_eq!(s.cpu.pc, 0x7000);
+    assert_eq!(s.cpu.s, 0x2000 - 3); // partial frame still stacked from SYNC
+    assert_eq!(s.cpu.cycles, before + 1 + 10); // SYNC escape + fast FIRQ entry
 }
 
 #[test]
@@ -326,7 +356,7 @@ fn cwai_stacks_frame_then_interrupt_skips_restacking() {
     s.cpu.s = 0x2000;
     s.cpu.cc = 0xFF; // everything set
     let cycles = s.step();
-    assert_eq!(cycles, 22);
+    assert_eq!(cycles, 16); // pre-halt portion; the 4-cycle wake completes the documented 20
     assert_eq!(s.cpu.state, State::Waiting);
     assert_eq!(s.cpu.cc & cc::IRQ_MASK, 0); // ANDed with $EF cleared I
     let s_after_cwai = s.cpu.s;

@@ -103,13 +103,13 @@ flowchart TD
 
     IRQ[irq] --> IMASK{I mask set?}
     IMASK -- Yes --> WK_S{Syncing?}
-    WK_S -- Yes --> WAKE_S[wake to Running, return false]
+    WK_S -- Yes --> WAKE_S[wake to Running, +1 cycle, return false]
     WK_S -- No --> RET_F[return false]
     IMASK -- No --> TAKEN_I[take_interrupt: IRQ vector, set I, clear F, entire=true, return true]
 
     FIRQ[firq] --> FMASK{F mask set?}
     FMASK -- Yes --> WK_F{Syncing?}
-    WK_F -- Yes --> WAKE_F[wake to Running, return false]
+    WK_F -- Yes --> WAKE_F[wake to Running, +1 cycle, return false]
     WK_F -- No --> RET_FF[return false]
     FMASK -- No --> TAKEN_F[take_interrupt: FIRQ vector, set I+F, entire=false, return true]
 
@@ -117,13 +117,13 @@ flowchart TD
     TAKEN_I --> TAKE
     TAKEN_F --> TAKE
 
-    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> COST{Waiting?}
-    COST -- Yes --> WAKE_COST[entry cost = 4]
-    COST -- No, entire --> FULL_COST[entry cost = 19]
-    COST -- No, partial --> FAST_COST[entry cost = 10]
+    TAKE[take_interrupt: bus, vector, set_i, set_f, entire] --> COST{state?}
+    COST -- Waiting --> WAKE_COST[entry cost = 4]
+    COST -- Running --> RUN_COST[entry cost = 19 full / 10 partial]
+    COST -- Syncing --> SYNC_COST[entry cost = 1 escape + 19 full / 10 partial]
     WAKE_COST --> S{Waiting?}
-    FULL_COST --> S
-    FAST_COST --> S
+    RUN_COST --> S
+    SYNC_COST --> S
     S -- No: not CWAI --> FRAME{entire?}
     FRAME -- Yes --> FULL[set E bit, psh full register mask to S]
     FRAME -- No --> FAST[clear E bit, psh PC+CC only to S]

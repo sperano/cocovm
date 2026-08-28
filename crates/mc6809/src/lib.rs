@@ -119,8 +119,13 @@ const FULL_FRAME_MASK: u8 = u8::MAX;
 /// Running-state entry costs for externally delivered interrupts.
 const FULL_INTERRUPT_CYCLES: u32 = 19;
 const FAST_INTERRUPT_CYCLES: u32 = 10;
+/// CWAI up to the halt: opcode, mask byte, two dead cycles, 12-byte frame push
+/// (MAME base6x09.lst CWAI). With the 4-cycle wake below this totals the documented 20.
+pub(crate) const CWAI_STACK_CYCLES: u32 = 16;
 /// A CWAI frame is already stacked, so only the common vector sequence remains.
 const CWAI_WAKE_CYCLES: u32 = 4;
+/// Leaving a SYNC halt costs one cycle before anything else (MAME base6x09.lst SYNC).
+const SYNC_ESCAPE_CYCLES: u32 = 1;
 
 /// Hardware interrupt / exception vectors (top of the address space).
 pub const VECTOR_SWI3: u16 = 0xFFF2;
@@ -223,9 +228,7 @@ impl MC6809 {
     /// masked line still wakes a `SYNC`. Returns `true` if serviced.
     pub fn irq(&mut self, bus: &mut impl Bus) -> bool {
         if self.cc & cc::IRQ_MASK != 0 {
-            if self.state == State::Syncing {
-                self.state = State::Running;
-            }
+            self.wake_sync();
             return false;
         }
         self.take_interrupt(bus, VECTOR_IRQ, true, false, true);
@@ -236,18 +239,23 @@ impl MC6809 {
     /// Uses the fast partial frame (CC+PC only) and sets both I and F.
     pub fn firq(&mut self, bus: &mut impl Bus) -> bool {
         if self.cc & cc::FIRQ_MASK != 0 {
-            if self.state == State::Syncing {
-                self.state = State::Running;
-            }
+            self.wake_sync();
             return false;
         }
         self.take_interrupt(bus, VECTOR_FIRQ, true, true, false);
         true
     }
 
-    /// Deliver and charge an external interrupt. A running CPU pays the full
-    /// or fast entry cost; a `CWAI` wake pays only the vector sequence because
-    /// its full frame is already stacked.
+    /// A masked line still ends a SYNC halt, charging only the escape cycle.
+    fn wake_sync(&mut self) {
+        if self.state == State::Syncing {
+            self.state = State::Running;
+            self.cycles += u64::from(SYNC_ESCAPE_CYCLES);
+        }
+    }
+
+    /// Delivers and charges an external interrupt: full/fast entry cost when
+    /// running (plus one SYNC escape cycle), or just the vector sequence for CWAI.
     fn take_interrupt(
         &mut self,
         bus: &mut impl Bus,
@@ -256,15 +264,21 @@ impl MC6809 {
         set_f: bool,
         entire: bool,
     ) {
-        let cycles = if self.state == State::Waiting {
-            CWAI_WAKE_CYCLES
-        } else if entire {
-            FULL_INTERRUPT_CYCLES
-        } else {
-            FAST_INTERRUPT_CYCLES
+        let cycles = match self.state {
+            State::Waiting => CWAI_WAKE_CYCLES,
+            State::Syncing => SYNC_ESCAPE_CYCLES + Self::entry_cycles(entire),
+            State::Running => Self::entry_cycles(entire),
         };
         self.enter_interrupt(bus, vector, set_i, set_f, entire);
         self.cycles += u64::from(cycles);
+    }
+
+    fn entry_cycles(entire: bool) -> u32 {
+        if entire {
+            FULL_INTERRUPT_CYCLES
+        } else {
+            FAST_INTERRUPT_CYCLES
+        }
     }
 
     /// Common interrupt state transition. Software interrupts use this
