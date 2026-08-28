@@ -5,7 +5,7 @@
 //! row or operation family) so no single function has to hold the whole ISA
 //! in view at once.
 
-use crate::{Bus, MC6809, State, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3, cc};
+use crate::{Bus, CWAI_STACK_CYCLES, MC6809, State, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3, cc};
 
 mod exec_data;
 
@@ -473,7 +473,7 @@ impl MC6809 {
                 self.cc |= cc::ENTIRE;
                 self.psh(bus, 0xFF, true);
                 self.state = State::Waiting;
-                22
+                CWAI_STACK_CYCLES
             }
             0x13 => {
                 self.state = State::Syncing;
