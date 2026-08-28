@@ -17,10 +17,16 @@ Sources, in order of authority:
 
 1. **Local PDFs in `./docs/`** (CoCo 3 Service Manual, Super Extended BASIC
    Unravelled II, 6809/6309 instruction sets, Motorola MC6809 programming
-   manual, memory maps). Extract with `pdftotext -layout <pdf> <out.txt>`
-   into the session scratchpad, then grep/read. SEB Unravelled II also
-   contains the full BASIC ROM disassembly — use it to answer "what does the
-   ROM do at/with X".
+   manual, memory maps). Grep `docs/txt/*.txt` first (pre-extracted; cite as
+   `docs/txt/<file>:<line>`). If `docs/txt/` is missing, run
+   `scripts/extract-docs.sh`. Fall back to `pdftotext -layout <pdf> <out.txt>`
+   or reading the PDF directly only for tables/figures that came out garbled —
+   known bad: `CoCoAssemblyLang_Color.pdf`, `Color Computer 3 Exended Basic
+   (Tandy).pdf`, `Color Computer 3 Service Manual (Tandy).pdf`, and the
+   Motorola MC6809 programming manual extract to near-empty (scanned, no text
+   layer); `Lomont_CoCoHardware.pdf` extracts with columns interleaved
+   line-by-line. SEB Unravelled II also contains the full BASIC ROM
+   disassembly — use it to answer "what does the ROM do at/with X".
 2. **MAME source** in the local shallow clone at `/Users/eric/code/mame` —
    grep/read it directly, no WebFetch needed (`src/mame/trs/gime.cpp`,
    `coco3.cpp`, `src/devices/cpu/m6809/`, `src/devices/video/mc6847.cpp`,

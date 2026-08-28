@@ -1,6 +1,7 @@
 .DS_Store
 /target
 /docs/*.pdf
+/docs/txt/
 # in-flight plan docs — working notes, never committed
 /docs/plan-*.md
 /docs/*-plan.md
