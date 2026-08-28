@@ -3,7 +3,7 @@ name: hw-verify
 description: >
   Verifies CoCo 3 / MC6809 / GIME hardware claims against the authoritative
   local PDFs in ./docs, the SEB Unravelled II ROM disassembly, the real ROM
-  bytes in ./roms, and the local MAME clone at ~/code/mame. Use BEFORE implementing anything
+  bytes in ~/.local/share/cocovm/roms, and the local MAME clone at ~/code/mame. Use BEFORE implementing anything
   that hinges on register semantics, bit layouts, timing, or ROM behavior.
   Read-only; returns cited findings, never edits code.
 tools: Bash, Read, WebFetch, Grep, Glob
@@ -15,12 +15,22 @@ claim is either confirmed with a citation, or reported as unverifiable.
 
 Sources, in order of authority:
 
-1. **Local PDFs in `./docs/`** (CoCo 3 Service Manual, Super Extended BASIC
-   Unravelled II, 6809/6309 instruction sets, Motorola MC6809 programming
-   manual, memory maps). Extract with `pdftotext -layout <pdf> <out.txt>`
-   into the session scratchpad, then grep/read. SEB Unravelled II also
-   contains the full BASIC ROM disassembly — use it to answer "what does the
-   ROM do at/with X".
+1. **Local PDFs** in `/Users/eric/code/cocovm/docs/` (CoCo 3 Service Manual,
+   Super Extended BASIC Unravelled II, 6809/6309 instruction sets, Motorola
+   MC6809 programming manual, memory maps). The PDFs are git-ignored and live
+   only in the main checkout, never in worktrees — always use that absolute
+   path. Grep `/Users/eric/code/cocovm/docs/txt/*.txt` first (pre-extracted;
+   cite as `docs/txt/<file>:<line>`). If `docs/txt/` is missing, run
+   `scripts/extract-docs.sh` from the main checkout. Fall back to
+   `pdftotext -layout <pdf> <out.txt>` or reading the PDF directly only for
+   tables/figures that came out garbled. Four scans (`CoCoAssemblyLang_Color`,
+   `Color Computer 3 Exended Basic`, `Color Computer 3 Service Manual`, the
+   Motorola MC6809 programming manual) carry an `ocrmypdf` text layer, so
+   expect OCR typos there; the Motorola manual is also truncated after
+   Appendix A (no cycle tables). Untouched originals live in
+   `docs/orig-scans/`. `Lomont_CoCoHardware.pdf` extracts with columns
+   interleaved line-by-line. SEB Unravelled II also contains the full BASIC
+   ROM disassembly — use it to answer "what does the ROM do at/with X".
 2. **MAME source** in the local shallow clone at `/Users/eric/code/mame` —
    grep/read it directly, no WebFetch needed (`src/mame/trs/gime.cpp`,
    `coco3.cpp`, `src/devices/cpu/m6809/`, `src/devices/video/mc6847.cpp`,
@@ -28,7 +38,7 @@ Sources, in order of authority:
    hardware-measured behavior; where it contradicts SEB's prose, say so
    explicitly — this project has repeatedly found SEB wrong (LPR table, the
    70 ns timer claim) and prefers measured values.
-3. **Real ROM bytes** in `./roms/coco3.rom` (xxd/hexdump) to confirm what the
+3. **Real ROM bytes** in `~/.local/share/cocovm/roms/coco3.rom` (xxd/hexdump) to confirm what the
    shipping ROM actually does.
 
 Report format: one finding per claim — VERIFIED (with source + page/line/
