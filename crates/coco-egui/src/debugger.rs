@@ -1,6 +1,6 @@
 //! Interactive debugger UI: Controls, Registers,
 //! Disassembly, Memory, Stack, and Hardware-state panels, toggled with the
-//! VM toolbar's Debug tile or [`DEBUGGER_SHORTCUT`] (⌘D / Ctrl+D, consumed
+//! VM toolbar's Debug tile or `DEBUGGER_SHORTCUT` (⌘D / Ctrl+D, consumed
 //! in `CocoApp::consume_app_shortcuts`).
 //!
 //! Shown as its own native OS window (an egui *immediate viewport*, like the
@@ -42,6 +42,7 @@ mod stack;
 /// (F9/F10/F12, `app/input.rs`), `new_vm::NEW_MACHINE_SHORTCUT` = ⌘N, the
 /// manager-only select-all ⌘A (`manager.rs`), and the ⌘`<n>`/⌘⇧`<n>` state
 /// slots (`save_state.rs`).
+#[cfg(feature = "debug-ui")]
 pub(crate) const DEBUGGER_SHORTCUT: egui::KeyboardShortcut =
     egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::D);
 
@@ -80,7 +81,7 @@ enum MemoryView {
 /// Panel toggle plus every panel's own navigation/edit state, and the
 /// [`Debugger`] core it drives. One instance lives in `CocoApp`.
 pub struct DebuggerPanel {
-    /// Master toggle (the VM toolbar's Debug tile / [`DEBUGGER_SHORTCUT`]) —
+    /// Master toggle (the VM toolbar's Debug tile / `DEBUGGER_SHORTCUT`) —
     /// when false, `windows_ui` draws nothing.
     pub open: bool,
     core: Debugger,
@@ -254,9 +255,12 @@ impl DebuggerPanel {
                 if ctx.input(|i| i.viewport().close_requested()) {
                     self.open = false;
                 }
-                // This viewport has its own InputState, invisible to consume_app_shortcuts.
-                if ctx.input_mut(|i| i.consume_shortcut(&DEBUGGER_SHORTCUT)) {
-                    self.open = false;
+                #[cfg(feature = "debug-ui")]
+                {
+                    // This viewport has its own InputState, invisible to consume_app_shortcuts.
+                    if ctx.input_mut(|i| i.consume_shortcut(&DEBUGGER_SHORTCUT)) {
+                        self.open = false;
+                    }
                 }
             }
             self.panel_windows(ctx, machine, running);
@@ -265,6 +269,7 @@ impl DebuggerPanel {
 
     /// The one debugger open/close toggle, shared by the VM toolbar's Debug tile
     /// and [`DEBUGGER_SHORTCUT`] so the two surfaces can't drift.
+    #[cfg(feature = "debug-ui")]
     pub fn toggle(&mut self) {
         self.open = !self.open;
     }

@@ -112,10 +112,13 @@ fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
         hints.push_str("   ·   F1/F2 may need Fn on a laptop");
     }
     ui.small(hints);
+    #[cfg(feature = "debug-ui")]
     ui.small(format!(
         "F12: positional / symbolic   ·   F10: show/hide this help   ·   {}: debugger",
         ctx.format_shortcut(&crate::debugger::DEBUGGER_SHORTCUT)
     ));
+    #[cfg(not(feature = "debug-ui"))]
+    ui.small("F12: positional / symbolic   ·   F10: show/hide this help");
     ui.small(crate::save_state::slot_shortcuts_hint(ctx));
 }
 

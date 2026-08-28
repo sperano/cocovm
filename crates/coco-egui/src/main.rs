@@ -10,9 +10,9 @@
 //!
 //! Cartridges and other peripherals are configured in the machine's
 //! `[peripherals]` definition and mounted at launch, not from a menu.
-//! The toolbar's Debug tile (or ⌘D / Ctrl+D) toggles the interactive debugger
-//! (Controls/Registers/Disassembly/Memory/Stack/Hardware panels —
-//! `debugger.rs`, §3).
+//! With the `debug-ui` feature enabled, the toolbar's Debug tile (or ⌘D / Ctrl+D)
+//! toggles the interactive debugger (Controls/Registers/Disassembly/Memory/Stack/Hardware
+//! panels — `debugger.rs`, §3).
 
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -92,10 +92,12 @@ pub(crate) use status_icons::{
     keyboard_icon, monitor_icon, mpi_icon, printer_icon, rs232_icon, tv_icon, vhd_icon,
 };
 pub(crate) use typeahead::{KbMode, TypeAhead};
+#[cfg(feature = "debug-ui")]
+pub(crate) use widgets::toolbar_separator;
 pub(crate) use widgets::{
     BUTTON_GAP, BUTTON_SIZE, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH,
     STOP_LABEL, SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, UI_DRIVES, titled_group,
-    toolbar_button, toolbar_separator, window_title,
+    toolbar_button, window_title,
 };
 
 /// Integer scale factor for the (small) CoCo framebuffer.

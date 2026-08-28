@@ -65,10 +65,13 @@ impl CocoApp {
                 self.quick_load(slot, ctx);
             }
         }
-        // ⌘D toggles the debugger; consumed here so it stays live even while a text widget has
-        // focus.
-        if ctx.input_mut(|i| i.consume_shortcut(&debugger::DEBUGGER_SHORTCUT)) {
-            self.debugger.toggle();
+        #[cfg(feature = "debug-ui")]
+        {
+            // ⌘D toggles the debugger; consumed here so it stays live even while a text widget
+            // has focus.
+            if ctx.input_mut(|i| i.consume_shortcut(&debugger::DEBUGGER_SHORTCUT)) {
+                self.debugger.toggle();
+            }
         }
     }
 

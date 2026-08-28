@@ -22,14 +22,14 @@ use crate::*;
 
 use super::harness::*;
 
-/// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the VM-only
+/// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the feature-gated
 /// Debug tile. Start stays permanently disabled (a chrome-bearing window only exists while
 /// Running).
 #[test]
 fn toolbar_shows_start_disabled_and_others_live() {
     let mut harness = boot_harness();
 
-    // One pass over all five tiles: each label looked up and its enabled state checked once.
+    // One pass over the standard tiles: each label looked up and its enabled state checked once.
     let expectations = [
         (
             "Start",
@@ -40,7 +40,6 @@ fn toolbar_shows_start_disabled_and_others_live() {
         ("Suspend", None),
         ("Stop", None),
         ("Reset", None),
-        ("Debug", None),
     ];
     for (label, disabled_reason) in expectations {
         let is_disabled = harness.get_by_label(label).accesskit_node().is_disabled();
@@ -49,6 +48,17 @@ fn toolbar_shows_start_disabled_and_others_live() {
             None => assert!(!is_disabled, "{label} must stay enabled in the VM window"),
         }
     }
+
+    #[cfg(feature = "debug-ui")]
+    assert!(
+        !harness.get_by_label("Debug").accesskit_node().is_disabled(),
+        "the Debug tile must stay enabled in the VM window"
+    );
+    #[cfg(not(feature = "debug-ui"))]
+    assert!(
+        harness.query_by_label("Debug").is_none(),
+        "the Debug tile must be absent without the debug-ui feature"
+    );
 
     click(&mut harness, "Reset");
     assert!(
@@ -60,6 +70,7 @@ fn toolbar_shows_start_disabled_and_others_live() {
 /// The Debug tile and shortcut both flip `DebuggerPanel::open`. Only ⌘D
 /// closes it here — the embedded debugger windows land over the toolbar and swallow its clicks.
 #[test]
+#[cfg(feature = "debug-ui")]
 fn debug_tile_and_shortcut_toggle_the_debugger() {
     let mut harness = boot_harness();
     assert!(!harness.state().debugger.open);
@@ -82,6 +93,20 @@ fn debug_tile_and_shortcut_toggle_the_debugger() {
     assert!(
         harness.state().debugger.open,
         "the debugger shortcut must open it again"
+    );
+}
+
+#[test]
+#[cfg(not(feature = "debug-ui"))]
+fn debugger_shortcut_is_disabled_without_debug_ui() {
+    let mut harness = boot_harness();
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+    harness.step();
+
+    assert!(
+        !harness.state().debugger.open,
+        "the debugger shortcut must be disabled without the debug-ui feature"
     );
 }
 

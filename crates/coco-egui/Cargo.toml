@@ -63,6 +63,7 @@ ureq = "3.3.0"
 pluralizer = "0.5.0"
 
 [features]
+debug-ui = []
 # Off by default (the app ships on eframe's glow/OpenGL backend). Enabling
 # this compiles eframe's wgpu backend in; `renderer_info` already has
 # the matching arm reporting the wgpu adapter (backend/GPU name).

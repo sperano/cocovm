@@ -11,11 +11,14 @@ const RESET_HOVER: &str = "Press the reset button";
 /// Debug tile glyph — U+1F41E lady beetle, verified present in egui's
 /// bundled NotoEmoji-Regular (monochrome, so it tints with the widget text
 /// color like the manager toolbar's own emoji icons).
+#[cfg(feature = "debug-ui")]
 const DEBUG_GLYPH: &str = "🐞";
 /// Caption under [`DEBUG_GLYPH`].
+#[cfg(feature = "debug-ui")]
 const DEBUG_LABEL: &str = "Debug";
 /// Hover text for the Debug tile; [`CocoApp::toolbar_ui`] appends the
 /// platform-formatted [`debugger::DEBUGGER_SHORTCUT`].
+#[cfg(feature = "debug-ui")]
 const DEBUG_HOVER: &str = "Open or close the debugger";
 
 impl CocoApp {
@@ -60,18 +63,21 @@ impl CocoApp {
                         self.machine.reset();
                     }
 
-                    toolbar_separator(ui);
-
-                    // Same toggle as ⌘D; hover text formats the shortcut per-platform.
-                    let debug_hover = format!(
-                        "{DEBUG_HOVER} ({})",
-                        ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)
-                    );
-                    if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, true)
-                        .on_hover_text(debug_hover)
-                        .clicked()
+                    #[cfg(feature = "debug-ui")]
                     {
-                        self.debugger.toggle();
+                        toolbar_separator(ui);
+
+                        // Same toggle as ⌘D; hover text formats the shortcut per-platform.
+                        let debug_hover = format!(
+                            "{DEBUG_HOVER} ({})",
+                            ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)
+                        );
+                        if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, true)
+                            .on_hover_text(debug_hover)
+                            .clicked()
+                        {
+                            self.debugger.toggle();
+                        }
                     }
                 });
             });

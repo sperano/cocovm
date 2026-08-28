@@ -433,9 +433,9 @@ impl eframe::App for ManagerApp {
 /// Open the manager as the application's main window (blocks until close,
 /// like `eframe::run_native` everywhere else).
 pub fn run() -> eframe::Result<()> {
-    let icon =
-        eframe::icon_data::from_png_bytes(include_bytes!("../assets/coco3-console-8bit.png"))
-            .expect("embedded icon PNG is valid");
+    const ICON_BYTE_COUNT: usize = 8_628;
+    let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
+    let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(WINDOW_SIZE)

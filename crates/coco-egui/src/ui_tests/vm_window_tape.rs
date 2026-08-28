@@ -195,16 +195,20 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.key_press(egui::Key::F9);
     harness.step();
 
-    // ⌘D is likewise not gated: consume_app_shortcuts runs before this frame's widgets.
-    assert!(!harness.state().debugger.open);
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
-    harness.step();
-    assert!(
-        harness.state().debugger.open,
-        "the debugger shortcut must stay live while a text widget is focused"
-    );
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
-    harness.step();
+    #[cfg(feature = "debug-ui")]
+    {
+        // ⌘D is likewise not gated by focus: consume_app_shortcuts runs before this frame's
+        // widgets.
+        assert!(!harness.state().debugger.open);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+        harness.step();
+        assert!(
+            harness.state().debugger.open,
+            "the debugger shortcut must stay live while a text widget is focused"
+        );
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+        harness.step();
+    }
 }
 
 /// The keys-mode joystick polls raw arrow/Z/X state outside `handle_input`,
