@@ -42,9 +42,9 @@ const FAST_TIMER_TICKS_PER_CPU_CYCLE: u32 = 4;
 /// resets rather than growing (headless runs never drain it).
 const AUDIO_BUFFER_CAP: usize = 8 * 262 * crate::audio::OVERSAMPLE as usize;
 
-/// Which video path the GIME is currently driving; `render_field` dispatches on it.
+/// The video path that the GIME drives. `render_field` dispatches on this value.
 ///
-/// Only [`VideoMode::CocoText`] is implemented today. The other variants are the
+/// Only [`VideoMode::CocoText`] is implemented. The other variants are the
 /// branch points for the graphics renderers to come (PMODE and HSCREEN). Each
 /// renderer fills its own-size buffer and the frontend scales to fit — see the
 /// `video-output-architecture` note (Option A). Option B (one canonical raster) is
@@ -74,8 +74,8 @@ pub struct Machine {
     pub config: MachineConfig,
     /// RGBA framebuffer for the active video field (`DESIGN.md` §6). Its size is
     /// mode-dependent: each renderer fills a native-size buffer and the frontend
-    /// scales to fit (`video-output-architecture` Option A). Skipped: cheap to
-    /// rebuild (it's just the render target), rebuilt to the legacy geometry by
+    /// scales to fit (`video-output-architecture` Option A). Skipped because the
+    /// render target can be rebuilt, then restored to legacy geometry by
     /// [`Machine::after_restore`].
     #[serde(skip)]
     pub framebuffer: Vec<u8>,

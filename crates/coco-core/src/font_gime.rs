@@ -150,7 +150,7 @@ pub const GIME_FONT: [[u8; GLYPH_ROWS]; 128] = [
 /// real CoCo 3 has no VDG chip; this is a distinct 96-glyph×12-row table
 /// (entries 0-63 uppercase/symbols, 64-95 true-lowercase — same layout as
 /// `crate::font6847::MC6847T1_FONT`), NOT derivable from the T1 table by
-/// bit-shifting (verified: e.g. entry 0 '@' row 6 is genuinely different,
+/// bit-shifting. For example, entry 0 (`@`) row 6 is genuinely different,
 /// not a shifted copy). MAME's `gime_device` ctor passes this table to
 /// `mc6847_friend_device` with `is_mc6847t1 = true`, so GIME compat text has
 /// the same true-lowercase semantics as the MC6847T1 (PIA1 $FF22 GM0 bit +

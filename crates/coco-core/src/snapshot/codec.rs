@@ -15,14 +15,14 @@ use super::error::SnapshotError;
 use super::payload::{MediaRefs, SnapshotPayload, SnapshotPayloadRef};
 use super::{CONTAINER_MAGIC, CONTAINER_VERSION, HEADER_LEN, SCHEMA_VERSION};
 
-/// Cap on the inflated (decompressed CBOR) payload size [`gunzip`] will ever
+/// Cap on the inflated (decompressed CBOR) payload size that [`gunzip`] can
 /// allocate, regardless of what a `.ccstate` file's gzip trailer claims —
 /// gzip's own length field is attacker-controlled and not to be trusted
 /// (a "decompression bomb": a tiny crafted file that inflates to gigabytes).
 /// 64 MiB comfortably covers today's real ceiling — 2 MB max RAM
 /// plus every other device's
 /// state, cassette capture buffers, and DMP-105 paper-feed scratch — with
-/// generous headroom for growth; nothing legitimate should ever come close.
+/// generous headroom for growth. Legitimate snapshots stay below this limit.
 const MAX_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
 
 // ---- Save ---------------------------------------------------------------

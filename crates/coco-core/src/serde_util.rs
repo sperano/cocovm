@@ -1,5 +1,5 @@
 //! Small serde helpers for shapes serde's own derive/std impls don't cover
-//! directly — currently just fixed-size byte arrays wider than serde's
+//! directly—currently, fixed-size byte arrays wider than serde's
 //! built-in array impl ceiling (`[T; 1..=32]`; see `ssc.rs`'s
 //! `ram: [u8; 512]`).
 

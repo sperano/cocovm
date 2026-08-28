@@ -1,4 +1,4 @@
-//! Host-side serial wire backends for the Deluxe RS-232 Program Pak
+//! Host-side serial wire backends for the Deluxe RS-232 Program Pak's
 //! "Host serial backend": the
 //! [`SerialEndpoint`] seam the 6551 ACIA transmits into and receives from,
 //! with TCP / Unix PTY / loopback implementations. Kept in `coco-core`
@@ -27,8 +27,8 @@ pub trait SerialEndpoint {
     /// Next byte from the host side, if one is available. Non-blocking:
     /// `None` means "nothing waiting right now", never an error.
     fn poll_rx(&mut self) -> Option<u8>;
-    /// Transmit one byte to the host side. Non-blocking / best-effort — a
-    /// serial line with nothing attached just eats the byte, like real
+    /// Transmit one byte to the host side. This operation is non-blocking and
+    /// best-effort. A serial line with nothing attached discards the byte, like
     /// hardware with an unplugged cable.
     fn tx(&mut self, b: u8);
     /// Data Carrier Detect: is something connected on the host side?
@@ -91,8 +91,8 @@ pub struct TCPEndpoint {
 }
 
 impl TCPEndpoint {
-    /// Bind and start listening at `addr` (e.g. `"127.0.0.1:6551"`, or
-    /// `"127.0.0.1:0"` for an OS-assigned port — see [`Self::local_addr`]).
+    /// Bind and start listening at `addr`, such as `"127.0.0.1:6551"` or
+    /// `"127.0.0.1:0"` for an OS-assigned port. See [`Self::local_addr`].
     pub fn bind(addr: impl ToSocketAddrs) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         listener.set_nonblocking(true)?;
@@ -270,7 +270,7 @@ impl PTYEndpoint {
         }
     }
 
-    /// The slave device path (e.g. `/dev/ttys003`) the frontend should tell
+    /// The slave device path, such as `/dev/ttys003`, that the frontend should tell
     /// the user to connect a terminal emulator to.
     pub fn path(&self) -> &str {
         &self.slave_path

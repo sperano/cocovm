@@ -1,9 +1,8 @@
 //! 6551 ACIA (MOS 6551 / Rockwell R6551 / WDC W65C51 — not a Motorola
 //! MC-prefixed part), the UART at the heart of the Tandy Deluxe RS-232
-//! Program Pak. Register/bit semantics are MAME-authoritative
-//! (`src/devices/machine/mos6551.cpp`, master).
-//! task 2 — every fact below was checked against that source, not derived
-//! from a datasheet.
+//! Program Pak. MAME's `src/devices/machine/mos6551.cpp` on the `master`
+//! branch defines the register and bit semantics. Task 2 checked every fact
+//! below against that source rather than deriving it from a datasheet.
 //!
 //! # Byte-level timing divergence
 //!
@@ -26,11 +25,11 @@
 //!   mark while overrun is set.
 //! - The 1.5-stop-bit case for 5-bit words is collapsed to 2 stop bits (see
 //!   [`ACIA6551::stop_bits`]).
-//! - DCD/DSR level-change IRQ arming is checked once per [`ACIA6551::tick`]
+//! - The model checks DCD/DSR level-change IRQ arming once per [`ACIA6551::tick`]
 //!   call rather than on a live edge — MAME itself ties this to the receive
-//!   clock and carries `TODO` comments admitting the exact timing is
-//!   unresolved, so tying it to our own tick boundary is no worse and is
-//!   simpler to reason about. See [`ACIA6551::tick_modem_lines`].
+//!   clock and carries `TODO` comments that acknowledge unresolved timing.
+//!   The model ties the check to its own tick boundary. See
+//!   [`ACIA6551::tick_modem_lines`].
 //!
 //! # Wire interface
 //!
@@ -197,11 +196,11 @@ pub struct ACIA6551 {
     command: u8,
     /// Control register (offset 3).
     control: u8,
-    /// Status register (offset 1) as it currently stands, including the
+    /// Status register (offset 1) as it stands, including the
     /// live IRQ bit — kept in sync by [`Self::update_irq_output`] whenever
     /// `irq_sources` changes.
     status: u8,
-    /// Bitmask of currently-armed IRQ sources (see [`irq_source`]).
+    /// Bitmask of armed IRQ sources (see [`irq_source`]).
     irq_sources: u8,
 
     /// Live DCD input level (true = carrier present).

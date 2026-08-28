@@ -55,7 +55,7 @@ pub enum MediaCheck {
     /// offer "load with warning".
     Mismatch { actual: String },
     /// The file doesn't exist, or couldn't be read for any other reason —
-    /// the frontend should treat this as an error (prompt to re-locate it).
+    /// the frontend must treat this as an error and prompt the user to locate it again.
     Missing,
 }
 

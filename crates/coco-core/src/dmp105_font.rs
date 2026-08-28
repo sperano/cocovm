@@ -1132,7 +1132,7 @@ const ASCII_LAST: u8 = 0x7E;
 
 /// First/last codes of the European set (`dmp105-protocol.md` §6). See the
 /// module doc comment: TODO, no per-code mapping available, so this whole
-/// range currently falls back to [`undefined_glyph`].
+/// range falls back to [`undefined_glyph`].
 const EUROPEAN_FIRST: u8 = 0xA0;
 const EUROPEAN_LAST: u8 = 0xBF;
 

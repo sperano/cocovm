@@ -104,7 +104,7 @@ pub struct MediaSources {
 }
 
 /// The result of a successful [`super::restore`]: the live machine plus any
-/// non-fatal notes the frontend should surface (e.g. as a toast). Hash
+/// non-fatal notes that the frontend can surface, such as a toast. Hash
 /// verification is caller-side (see [`MediaRef::verify`]) — a mismatch
 /// warning is built there, not here.
 pub struct RestoredMachine {

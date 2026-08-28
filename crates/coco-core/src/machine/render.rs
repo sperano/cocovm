@@ -304,7 +304,7 @@ impl Machine {
     }
 
     /// Restore the fixed legacy-mode framebuffer geometry after a GIME-native
-    /// mode may have resized it (e.g. WIDTH 32 back from WIDTH 80).
+    /// mode may have resized it, such as when `WIDTH 32` follows `WIDTH 80`.
     pub(super) fn reset_legacy_fb(&mut self) {
         self.framebuffer
             .resize((FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL, 0);

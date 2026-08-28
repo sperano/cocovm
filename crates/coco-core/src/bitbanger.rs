@@ -23,7 +23,7 @@
 //!
 //! BUSY (PIA1 PB0) is the mirror image of the cassette's PA0 input tap: an
 //! externally-driven line the emulator feeds back into the PIA so a
-//! (currently unimplemented) DMP-105 buffer model can pace BASIC's
+//! (not yet implemented) DMP-105 buffer model can pace BASIC's
 //! poll-before/after-every-byte driver, matching `bitbanger-spec.md`
 //! "Drive PB0 (BUSY) back into PIA1 as an input".
 
@@ -48,7 +48,8 @@ pub const TX_PIN: u8 = 0x02;
 /// `$A2C3`/`$A2F3` polls this bit before and after every byte).
 pub const BUSY_PIN: u8 = 0x01;
 
-/// Default bit period in CPU cycles: `cycles_per_bit = 78 + 16*N` with the
+/// Default bit period in CPU cycles. The ROM uses `cycles_per_bit = 78 + 16*N`
+/// with
 /// ROM's live `LPTBTD` default N = 88 (`$0058` at ROM init table `$A10D`,
 /// file offset `0x210D`), giving 600 baud at the normal 0.894886 MHz CoCo 3
 /// clock (`bitbanger-spec.md` "Baud timing"). A settable field on
@@ -75,9 +76,9 @@ const START_SAMPLE: u8 = 0;
 const TOTAL_SAMPLES: u8 = DATA_BITS + 2;
 
 /// A destination for decoded printer bytes. Deliberately minimal: this is
-/// the seam for later tasks (text-capture-to-file, a DMP-105 command
-/// interpreter — `bitbanger-spec.md` "Byte sink is pluggable") and shouldn't
-/// grow beyond what the decoder itself needs.
+/// the seam for later tasks such as text capture and a DMP-105 command
+/// interpreter (`bitbanger-spec.md`, "Byte sink is pluggable"). Keep the trait
+/// focused on what the decoder needs.
 pub trait PrinterSink {
     fn write_byte(&mut self, b: u8);
 
@@ -108,8 +109,8 @@ impl PrinterSink for NoopSink {
 
 /// Marker sink `sink_serde::deserialize` installs when the snapshot recorded
 /// [`sink_serde::SinkState::FileCapture`]: behaves exactly like [`NoopSink`]
-/// (a restored file handle is frontend-owned and can't be reopened without
-/// frontend involvement — "on restore, capture is simply stopped"), but is a
+/// (the frontend owns the restored file handle and cannot reopen it without
+/// frontend involvement—"on restore, capture is simply stopped"), but it is a
 /// distinct type so
 /// [`PrinterSink::was_file_capture_stopped_by_restore`] can report that
 /// capture *was* running, for the snapshot restore flow's standing notes.
