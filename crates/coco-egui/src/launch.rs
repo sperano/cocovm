@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
+use coco_core::rtc::DistoRTCModel;
 
 use crate::machine_def::{CartridgeDTO, RS232EndpointDTO, SlotDTO};
 use crate::rom_load::{load_default_rom, load_explicit_rom};
@@ -37,7 +38,7 @@ enum Cartridge {
         path: PathBuf,
         autostart: bool,
     },
-    RTC,
+    RTC(DistoRTCModel),
     RS232 {
         endpoint: RS232EndpointDTO,
     },
@@ -62,7 +63,7 @@ enum Slot {
     Empty,
     FD502,
     ROMPak { path: PathBuf, autostart: bool },
-    RTC,
+    RTC(DistoRTCModel),
     RS232 { endpoint: RS232EndpointDTO },
     GamesMaster { path: PathBuf, autostart: bool },
     Orch90(PathBuf),
@@ -156,7 +157,7 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
             path: path(p),
             autostart: *autostart,
         },
-        CartridgeDTO::RTC => Cartridge::RTC,
+        CartridgeDTO::RTC { model } => Cartridge::RTC((*model).into()),
         CartridgeDTO::RS232 { endpoint } => Cartridge::RS232 {
             endpoint: endpoint.clone(),
         },
@@ -182,7 +183,7 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
             path: path(p),
             autostart: *autostart,
         },
-        SlotDTO::RTC => Slot::RTC,
+        SlotDTO::RTC { model } => Slot::RTC((*model).into()),
         SlotDTO::RS232 { endpoint } => Slot::RS232 {
             endpoint: endpoint.clone(),
         },
@@ -202,7 +203,7 @@ fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
         Cartridge::MPI { slots, .. } => slots.iter().any(|s| matches!(s, Slot::FD502)),
         Cartridge::None
         | Cartridge::ROMPak { .. }
-        | Cartridge::RTC
+        | Cartridge::RTC(_)
         | Cartridge::RS232 { .. }
         | Cartridge::GamesMaster { .. }
         | Cartridge::Orch90(_)
@@ -264,7 +265,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                 app.cart_error = Some(e);
             }
         }
-        Cartridge::RTC => app.insert_rtc(),
+        Cartridge::RTC(model) => app.insert_rtc(model),
         Cartridge::RS232 { endpoint } => mount_rs232(app, endpoint),
         Cartridge::GamesMaster { path, autostart } => app.insert_gmc(path, autostart),
         Cartridge::Orch90(path) => app.insert_orch90(path),
@@ -278,7 +279,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                     Slot::ROMPak { path, autostart } => {
                         app.mpi_insert_rompak(slot, path, autostart)
                     }
-                    Slot::RTC => app.mpi_insert_rtc(slot),
+                    Slot::RTC(model) => app.mpi_insert_rtc(slot, model),
                     Slot::RS232 { endpoint } => {
                         app.mpi_insert_rs232(slot);
                         apply_rs232_endpoint(app, endpoint);

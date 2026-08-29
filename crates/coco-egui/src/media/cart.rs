@@ -357,13 +357,14 @@ impl CocoApp {
 
     /// Plugs a Disto RTC directly into the cartridge port, running on the host's local
     /// clock. Has no boot ROM, so pairs with a VHD boot rather than the
-    /// FD-502 — for RTC + floppies, use a Multi-Pak slot.
-    pub(crate) fn insert_rtc(&mut self) {
+    /// FD-502 — for RTC + floppies, use a Multi-Pak slot. `model` picks which
+    /// Disto chip fit (4-N-1/2-N-1) is installed.
+    pub(crate) fn insert_rtc(&mut self, model: DistoRTCModel) {
         if !self.flush_dirty_disks_or_report() {
             return;
         }
         self.machine
-            .insert_cartridge(DistoRTC::new(host_time_source()));
+            .insert_cartridge(DistoRTC::with_model(model, host_time_source()));
         self.power_cycle();
         self.rtc_direct = true;
         self.cart_path = None;
@@ -371,9 +372,9 @@ impl CocoApp {
         self.mpi = None;
     }
 
-    /// Inserts a Disto RTC into MPI `slot` (0-3). Only one is allowed across the machine —
-    /// two would shadow each other at `$FF50`.
-    pub(crate) fn mpi_insert_rtc(&mut self, slot: usize) {
+    /// Inserts a Disto RTC into MPI `slot` (0-3), with the given chip fit. Only one is
+    /// allowed across the machine — two would shadow each other at `$FF50`.
+    pub(crate) fn mpi_insert_rtc(&mut self, slot: usize, model: DistoRTCModel) {
         if self.machine.bus.cart.as_disto_rtc().is_some() {
             self.cart_error = Some("A Disto RTC is already installed in another slot.".to_string());
             return;
@@ -382,10 +383,10 @@ impl CocoApp {
             return;
         }
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, DistoRTC::new(host_time_source()));
+            mp.insert(slot, DistoRTC::with_model(model, host_time_source()));
         }
         if let Some(mpi) = &mut self.mpi {
-            mpi.slots[slot] = MPISlot::DistoRTC;
+            mpi.slots[slot] = MPISlot::DistoRTC(model);
         }
         self.power_cycle();
     }

@@ -294,7 +294,7 @@ fn slot_label(slot: &MPISlot) -> String {
         MPISlot::Empty => "-".to_string(),
         MPISlot::ROMPak(p) => file_name(p).to_string(),
         MPISlot::FD502 => "FD-502".to_string(),
-        MPISlot::DistoRTC => "RTC".to_string(),
+        MPISlot::DistoRTC(model) => format!("RTC {}", model.label()),
         MPISlot::DeluxeRS232(_) => "RS-232".to_string(),
         MPISlot::GamesMasterCartridge(p) => format!("GMC:{}", file_name(p)),
         MPISlot::Orch90(p) => format!("Orchestra-90:{}", file_name(p)),
