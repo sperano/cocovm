@@ -332,5 +332,12 @@ fn ascii_char(byte: u8) -> char {
 }
 
 #[cfg(test)]
+impl DebuggerPanel {
+    pub(crate) fn add_breakpoint(&mut self, pc: u16) {
+        self.core.add_breakpoint(pc);
+    }
+}
+
+#[cfg(test)]
 #[path = "debugger_test.rs"]
 mod tests;
