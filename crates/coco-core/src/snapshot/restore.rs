@@ -20,6 +20,7 @@ pub fn restore(
     sources: MediaSources,
 ) -> Result<RestoredMachine, SnapshotError> {
     let SnapshotPayload { media, mut machine } = payload;
+    rederive_bus_identity(&mut machine);
     validate_payload_shape(&machine)?;
 
     let MediaSources {
@@ -52,6 +53,15 @@ pub fn restore(
     machine.after_restore();
     let notes = standing_notes(&mut machine);
     Ok(RestoredMachine { machine, notes })
+}
+
+/// Restore step 0: fills the `#[serde(skip)]` identity fields `SystemBus`
+/// copies from `MachineConfig` at construction, so a payload can't carry a
+/// bus that disagrees with its config. Runs before step 1 so no later step
+/// sees the serde placeholder; [`Machine::after_restore`] repeats it for
+/// callers that deserialize a `Machine` without going through [`restore`].
+fn rederive_bus_identity(machine: &mut Machine) {
+    machine.bus.variant = machine.config.variant;
 }
 
 /// Restore step 1: rejects a payload whose config is invalid, whose RAM

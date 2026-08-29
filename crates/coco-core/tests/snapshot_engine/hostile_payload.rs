@@ -15,7 +15,7 @@ use coco_core::cart::MultiPak;
 use coco_core::fdc::{DiskCart, JVCDisk, dskreg};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SnapshotError};
 use coco_core::ssc::{SoundSpeechCartridge, cmd as ssc_cmd, reg as ssc_reg};
-use coco_core::{Machine, MachineConfig};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -48,7 +48,15 @@ fn cbor_body_of(container: &[u8]) -> Vec<u8> {
 /// `new_value` and re-encodes the payload.
 fn mutate_cbor(cbor: &[u8], path: &[&str], new_value: Value) -> Vec<u8> {
     let mut root: Value = ciborium::from_reader(cbor).expect("decode cbor");
-    let mut cursor = &mut root;
+    *navigate(&mut root, path) = new_value;
+    let mut out = Vec::new();
+    ciborium::into_writer(&root, &mut out).expect("encode cbor");
+    out
+}
+
+/// Walks `path` as a chain of CBOR map keys from `root`, returning the leaf.
+fn navigate<'a>(root: &'a mut Value, path: &[&str]) -> &'a mut Value {
+    let mut cursor = root;
     for key in path {
         let map = cursor
             .as_map_mut()
@@ -59,10 +67,7 @@ fn mutate_cbor(cbor: &[u8], path: &[&str], new_value: Value) -> Vec<u8> {
             .unwrap_or_else(|| panic!("missing CBOR map key {key:?} (path {path:?})"))
             .1;
     }
-    *cursor = new_value;
-    let mut out = Vec::new();
-    ciborium::into_writer(&root, &mut out).expect("encode cbor");
-    out
+    cursor
 }
 
 /// Gzips `cbor` and prepends a container header at `schema` — the
@@ -276,5 +281,65 @@ fn oversized_gzip_payload_is_rejected_without_allocating_it() {
             assert!(msg.contains("MAX_PAYLOAD_BYTES"), "message: {msg:?}");
         }
         other => panic!("expected InvalidPayload, got {other:?}"),
+    }
+}
+
+/// Like [`mutate_cbor`] but inserts `key` into the map at `path`, replacing
+/// it if present — for keys today's `save` no longer writes (a legacy field
+/// a pre-change snapshot still carries).
+fn insert_cbor_key(cbor: &[u8], path: &[&str], key: &str, new_value: Value) -> Vec<u8> {
+    let mut root: Value = ciborium::from_reader(cbor).expect("decode cbor");
+    let map = navigate(&mut root, path)
+        .as_map_mut()
+        .expect("leaf is a map");
+    map.retain(|(k, _)| k.as_text() != Some(key));
+    map.push((Value::Text(key.to_string()), new_value));
+    let mut out = Vec::new();
+    ciborium::into_writer(&root, &mut out).expect("encode cbor");
+    out
+}
+
+/// A CoCo 1 config that passes `MachineConfig::validate` (64K, NTSC, no
+/// monitor, plain MC6847) — the default config is a CoCo 3.
+fn coco1_config() -> MachineConfig {
+    MachineConfig {
+        variant: MachineVariant::Coco1,
+        memory: MemorySize::K64,
+        monitor: None,
+        vdg: Some(VDGVariant::MC6847),
+        ..MachineConfig::default()
+    }
+}
+
+#[test]
+fn bus_variant_is_rederived_from_config_even_when_a_legacy_key_disagrees() {
+    // `SystemBus::variant` used to be serialized alongside `config.variant`;
+    // an old or hand-edited `.ccstate` can carry a `bus.variant` that
+    // contradicts the config. The config is the only source of truth: the
+    // restored bus decodes for the machine the config names, in both
+    // directions.
+    for (config, stale) in [
+        (MachineConfig::default(), "Coco1"),
+        (coco1_config(), "Coco3"),
+    ] {
+        let machine = Machine::new(config, Box::new([]));
+        let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+        let cbor = cbor_body_of(&bytes);
+        let tampered = insert_cbor_key(
+            &cbor,
+            &["machine", "bus"],
+            "variant",
+            Value::Text(stale.to_string()),
+        );
+        let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+        let payload = snapshot::load(&bytes).expect("load");
+        let sources = MediaSources {
+            system_rom: Some(Box::new([])),
+            ..MediaSources::default()
+        };
+        let restored = snapshot::restore(payload, sources).expect("restore");
+        assert_eq!(restored.machine.bus.variant, config.variant);
+        assert_eq!(restored.machine.config.variant, config.variant);
     }
 }

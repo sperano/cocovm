@@ -200,6 +200,7 @@ impl Machine {
     /// round-trip. A latched `field_scan` must reallocate the canvas-sized
     /// framebuffer here, or the next painted line indexes out of bounds.
     pub fn after_restore(&mut self) {
+        self.bus.variant = self.config.variant;
         if self.field_scan.is_some() {
             self.framebuffer.resize(
                 crate::raster::CANVAS_W * crate::raster::CANVAS_H * BYTES_PER_PIXEL,
