@@ -1,8 +1,7 @@
 //! Phase-2 tests for the save-state snapshot *engine*
 //! (`crates/coco-core/src/snapshot.rs`): the `.ccstate` container format,
-//! media-reference handling, and the restore flow — everything phase 1's
-//! `snapshot_roundtrip.rs` deliberately left for "a later phase" once the
-//! CBOR payload got wrapped in the real container.
+//! media-reference handling, and the restore flow. These tests cover the
+//! container and restore behavior that `snapshot_roundtrip.rs` leaves out.
 
 #[path = "snapshot_engine/common.rs"]
 mod common;

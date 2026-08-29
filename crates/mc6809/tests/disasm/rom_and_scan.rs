@@ -7,7 +7,7 @@ use test_assets::rom::COCO3;
 /// Hand-decoded from `roms/coco3.rom` starting at the RESET entry point.
 /// Reset vector at file offset 0x7FFE-0x7FFF ($FFFE-$FFFF) reads `8C 1B` ->
 /// entry point $8C1B. File offset for $8C1B = 0x8C1B - 0x8000 = 0x0C1B.
-/// Bytes at that offset (verified via `xxd -s 0xc1b -l 48 roms/coco3.rom`):
+/// Bytes at that offset (verified with `xxd -s 0xc1b -l 48 roms/coco3.rom`):
 ///
 /// ```text
 /// 1a50 860a b7ff 907f ffde 7ec0 007f feed

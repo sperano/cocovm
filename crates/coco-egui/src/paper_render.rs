@@ -1,13 +1,13 @@
-//! Pure, egui-free rasterizer for the virtual fanfold "paper" window
-//!. Turns a [`DotSource`] (the
-//! DMP-105's abstract dot-matrix impressions, `coco_core::printer`/`dmp105`)
-//! into an RGBA8 raster of period-correct tractor-feed stationery: tractor
+//! Pure, egui-free rasterizer for the virtual fanfold "paper" window.
+//! Turns a [`DotSource`] (the DMP-105's abstract dot-matrix impressions from
+//! `coco_core::printer`/`dmp105`) into an RGBA8 raster of period-correct
+//! tractor-feed stationery: tractor
 //! strips with sprocket holes on both edges, a dotted perforation line
 //! separating each strip from the printable body, horizontal page
 //! perforations every 11", optional green-bar banding, and anti-aliased ink
 //! dots.
 //!
-//! Every geometry/palette constant below is a **fixed decision** from the T5
+//! Every geometry/palette constant following this paragraph is a **fixed decision** from the T5
 //! visual spec, not a hardware fact — this is a rendering choice for a
 //! fictional (if period-plausible) sheet of stock, not something to
 //! re-derive or adjust. The two constants marked "rendering-scale choice"
@@ -53,8 +53,8 @@ pub const SPROCKET_HOLE_TOP_OFFSET_IN: f32 = 0.25;
 pub const PAGE_PERF_DASH_ON_IN: f32 = 0.08;
 /// Gap length between dashes in a horizontal page-perforation line.
 pub const PAGE_PERF_DASH_OFF_IN: f32 = 0.05;
-/// X position the paper model's `x = 0` (dot-matrix head's left margin) maps
-/// to, i.e. where the printable body begins.
+/// X position where the paper model's `x = 0` (the dot-matrix head's left
+/// margin) maps—the point where the printable body begins.
 pub const PRINT_AREA_LEFT_IN: f32 = 0.75;
 /// Width of the printable body (independent of the wider strip-to-strip
 /// span used for green-bar banding).
@@ -65,7 +65,8 @@ pub const PRINT_AREA_WIDTH_IN: f32 = 8.0;
 pub const DOT_DIAMETER_IN: f32 = (1.0 / 72.0) * 1.15;
 /// Alpha of one ink dot's opaque "core" — dots are composited with
 /// repeated source-over blending (never deduplicated), so overlapping
-/// strikes darken naturally. ~224/255 as a `u8`, i.e. `(0.88 * 255.0).round()`.
+/// strikes darken naturally. Approximately 224/255 as a `u8`, from
+/// `(0.88 * 255.0).round()`.
 pub const DOT_CORE_ALPHA: f32 = 0.88;
 /// Height of one green-bar band (3 lines at 6 LPI = 3 * 1/6"); the first
 /// band at each page top is non-green (see [`is_green_band`]).
@@ -74,7 +75,7 @@ pub const GREEN_BAR_BAND_HEIGHT_IN: f32 = 0.5;
 pub const RASTER_DPI: f32 = 144.0;
 
 /// Rim thickness of a sprocket hole's inner deboss ring, in **pixel** space
-/// (not inch space, unlike every geometry constant above) — a rendering-
+/// (not inch space, unlike every geometry constant earlier) — a rendering-
 /// scale choice for how a "1-px-ish" subtle rim reads at typical DPI,
 /// distinct from the physical inch-space geometry the T5 spec fixed.
 pub const SPROCKET_RIM_PX: f32 = 1.5;
@@ -89,10 +90,10 @@ pub const PAGE_PERF_LINE_THICKNESS_PX: f32 = 1.5;
 // sprocket-hole centers land on the **same absolute-y phase every page**:
 // `SPROCKET_HOLE_TOP_OFFSET_IN + k * SPROCKET_HOLE_PITCH_IN` for `k = 0..22`
 // measured from each page's own top lands on exactly the same residues,
-// continuously, as measuring `k` from the whole roll's y = 0 — i.e. hole
+// continuously, as measuring `k` from the whole roll's y = 0. Hole
 // centers occur at every absolute y with
 // `y mod SPROCKET_HOLE_PITCH_IN == SPROCKET_HOLE_TOP_OFFSET_IN`, with no
-// per-page phase reset needed (unlike the green-bar bands, below, which DO
+// per-page phase reset needed (unlike the green-bar bands that follow, which DO
 // reset). See `twenty_two_sprocket_holes_per_page_same_phase_every_page`
 // for the algebraic check.
 
@@ -296,8 +297,8 @@ pub fn rasterize<D: DotSource>(
     dpi: f32,
     green_bar: bool,
 ) -> RasterImage {
-    // Sanity check: printable body must fit within the tractor-strip-to-tractor-strip span
-    // (guards against a future constant edit breaking this).
+    // Verify that the printable body fits within the tractor-strip-to-tractor-strip
+    // span, guarding against an incompatible future constant edit.
     #[allow(clippy::assertions_on_constants)]
     {
         debug_assert!(PRINT_AREA_LEFT_IN + PRINT_AREA_WIDTH_IN <= PAPER_WIDTH_IN - STRIP_WIDTH_IN);
@@ -307,7 +308,7 @@ pub fn rasterize<D: DotSource>(
     let height_px = (height_in * dpi).round() as u32;
     let mut image = RasterImage::blank(width_px, height_px, PAPER_COLOR);
 
-    // 1. Paper base color: already the blank fill above.
+    // 1. Paper base color: already the blank fill earlier.
 
     // 2. Green-bar bands, clipped to the tractor-strip-to-tractor-strip body.
     if green_bar {
@@ -432,7 +433,7 @@ fn paint_sprocket_holes(image: &mut RasterImage, top_in: f32, height_in: f32, dp
     }
 }
 
-/// Step 6: ink dots (topmost): alpha-composited via repeated source-over blending, never
+/// Step 6: ink dots (topmost): alpha-composited using repeated source-over blending, never
 /// deduplicated, so overlapping strikes darken naturally.
 fn paint_ink_dots<D: DotSource>(
     image: &mut RasterImage,

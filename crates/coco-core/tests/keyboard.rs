@@ -91,11 +91,11 @@ fn screen_row(m: &mut Machine, row: u16) -> String {
 fn typing_at_prompt_echoes_to_screen() {
     let mut m = boot_to_prompt();
 
-    // Type 'A' (row 0, col 1). BASIC echoes it just after the "OK" line.
+    // Type 'A' (row 0, col 1). BASIC echoes it immediately after the "OK" line.
     tap(&mut m, (0, 1));
 
     // The echoed 'A' should now appear somewhere on the screen that was blank
-    // before typing (rows below the banner).
+    // before typing (rows following the banner).
     let found = (4..16).any(|r| screen_row(&mut m, r).contains('A'));
     assert!(found, "typed 'A' did not echo to the screen");
 }

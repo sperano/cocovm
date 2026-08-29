@@ -96,7 +96,7 @@ impl CocoApp {
     }
 
     /// The cassette deck menu: insert, create, rewind, seek, eject, and the
-    /// .wav save toggle. Popped up from the status bar's tape entry.
+    /// `.wav` save toggle. It pops up from the status bar's tape entry.
     pub(super) fn tape_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("Insert Tape…").clicked() {
             ui.close();

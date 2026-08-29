@@ -1,6 +1,6 @@
 //! Motorola VDG character generators — the internal font ROMs of the two
 //! chips CoCo 1/2 shipped: the original MC6847 ([`MC6847_FONT`]) and the
-//! later MC6847T1 ([`MC6847T1_FONT`]), selectable per-machine via
+//! later MC6847T1 ([`MC6847T1_FONT`]), selectable per-machine using
 //! [`crate::config::VDGVariant`]. Both draw an 8×12 cell, 12 bytes per
 //! character (one per raster row), glyph occupying the low 6 bits (leftmost
 //! pixel = bit mask 0x80 >> col).
@@ -14,7 +14,7 @@
 //!
 //! [`MC6847T1_FONT`] additionally has 32 more entries (index 64-95) for the
 //! T1's true-lowercase mode: '^', then 'a'-'z', then `{ | } ~ _`. Real CoCo
-//! screen codes only ever select these via [`crate::video`]'s special-case
+//! screen codes only ever select these using [`crate::video`]'s special-case
 //! true-lowercase path (codes $00-$1F when PIA1 $FF22 GM0 is set and the T1
 //! chip is installed) — codes $20-$3F never reach index 64+ on either chip.
 //! The plain MC6847 has no equivalent: codes $00-$1F always draw the
@@ -234,7 +234,7 @@ pub const MC6847_FONT: [[u8; 12]; 64] = [
 /// (VDG internal-code order, $00 = '@'), drawn 2 rows higher in the cell
 /// (rows 1-8 vs the plain chip's rows 3-10) to leave rows 8-11 free for the
 /// lowercase descenders below. Index 64-95 are the T1-only true-lowercase
-/// glyphs, reached only via [`crate::video`]'s special-case lowercase path
+/// glyphs, reached only using [`crate::video`]'s special-case lowercase path
 /// (screen codes $00-$1F when the T1's GM0 is set): '^', then 'a'-'z', then
 /// `{ | } ~ _` — MAME `vdg_t1_fontdata8x12`.
 pub const MC6847T1_FONT: [[u8; 12]; 96] = [

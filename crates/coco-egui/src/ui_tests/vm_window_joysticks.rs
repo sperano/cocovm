@@ -55,7 +55,7 @@ fn joysticks_menu_assigns_a_source_to_the_right_stick() {
 }
 
 /// The entry's label tracks both ports at once ("R: Keys · L: Mouse"),
-/// reopened via "Joysticks menu" once its own label is no longer a menu item.
+/// reopened through "Joysticks menu" once its own label is no longer a menu item.
 #[test]
 fn joystick_entry_label_tracks_both_ports() {
     let mut harness = boot_harness();

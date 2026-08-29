@@ -1,10 +1,10 @@
-//! End-to-end regression for the bit-banger printer port under NitrOS-9
-//!: boot the real EOU 1.0.1 Level 2 disk images
+//! End-to-end regression for the bit-banger printer port under NitrOS-9:
+//! boot the real EOU 1.0.1 Level 2 disk images
 //! to a shell (same asset pattern as `tests/vhd_boot.rs`), run `echo hello
 //! >/p`, and assert the bytes reaching a [`CaptureSink`] match exactly what
 //! the shell's `/p` redirection sent — proving the bit-banger decoder works
 //! against a second, independently-written driver (NitrOS-9's own bit-bang
-//! code), not just Color BASIC's. Skips gracefully if `roms/`/`disks/`
+//! code), not only Color BASIC's. Skips gracefully if `roms/`/`disks/`
 //! assets aren't present, matching `tests/vhd_boot.rs`.
 //!
 //! ## Bit rate: NitrOS-9 is not Color BASIC's 600-baud constant
@@ -126,7 +126,7 @@ fn wait_for_new_shell_prompt(m: &mut Machine, baseline: usize, max_fields: usize
 
 /// Boots NitrOS-9 EOU (real ROM/disk/VHD assets) all the way to the shell
 /// prompt, on a scratch copy of the VHD so the checked-in image stays
-/// pristine run to run. Returns the machine and the scratch VHD path (for
+/// pristine across runs. Returns the machine and the scratch VHD path (for
 /// the caller to remove when done), or `None` (test should skip) if any
 /// asset is missing.
 fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
@@ -150,7 +150,7 @@ fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
         return None;
     }
     // Scratch copy, as `tests/vhd_boot.rs`: EOU's startup writes to its
-    // system disk and the pristine image must stay reproducible run to run.
+    // system disk and the pristine image must stay reproducible across runs.
     let vhd_copy = std::env::temp_dir().join("cocovm-test-68SDC-bitbanger-os9.VHD");
     std::fs::copy(&vhd_src, &vhd_copy).expect("copy VHD to scratch");
     let vhd_file = std::fs::File::options()

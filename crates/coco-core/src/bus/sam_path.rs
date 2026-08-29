@@ -105,7 +105,7 @@ impl SystemBus {
                 self.note_audio_write(); // CA2/CB2 are the sound mux selects
             }
             PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
-            // Ungated, same as sam_io_read above — no GIME/MC2 on CoCo 1/2.
+            // Ungated, same as the earlier sam_io_read — no GIME/MC2 on CoCo 1/2.
             SCS_BASE..=CART_EXT_LAST => {
                 self.cart.write(addr, val);
                 self.note_audio_write(); // latched cart DACs

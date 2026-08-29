@@ -2,8 +2,8 @@
 //! every decoded byte flows through, dispatching per-mode
 //! ([`Mode::CharacterPrint`](super::Mode)/[`Mode::Graphics`](super::Mode))
 //! and assembling multi-byte escape/repeat sequences
-//! (`dmp105-protocol.md` §3/§4). Glyph/dot rendering lives back in the
-//! `dmp105` module itself.
+//! (`dmp105-protocol.md` §3/§4). Glyph and dot rendering lives in the parent
+//! `dmp105` module.
 
 use crate::dmp105_font;
 
@@ -155,7 +155,7 @@ impl DMP105 {
                     Direction::Bidirectional
                 };
             }
-            // Immediate feed applies in both modes, unlike the latched-only 5B below.
+            // Immediate feed applies in both modes, unlike the latched-only 5B case that follows.
             esc::FEED_IMMEDIATE => self.y = self.y.saturating_add(u32::from(ops[0])),
             // Latched feed is CP-mode only; in Graphics mode it falls to the
             // catch-all, consumed but inert.

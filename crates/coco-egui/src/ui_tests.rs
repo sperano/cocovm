@@ -1,8 +1,8 @@
 //! Headless end-to-end drive of the full app through `egui_kittest`: real
 //! `eframe::App::update` frames, with clicks and key presses dispatched
 //! through the AccessKit tree — the closest a test gets to a user at the real
-//! window. Like `coco-core`'s boot tests, these need the git-ignored local
-//! `./roms`.
+//! window. Like `coco-core`'s boot tests, these need the git-ignored ROM assets
+//! installed on the test machine.
 //!
 //! Interaction conventions discovered the hard way:
 //! - Clicks hover on one frame and press/release on the next: egui routes a

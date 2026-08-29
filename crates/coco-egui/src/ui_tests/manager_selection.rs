@@ -60,7 +60,7 @@ fn shift_click_selects_a_range() {
     harness.get_by_label("3 machines selected");
 }
 
-/// A plain click after a multi-selection collapses it back to just the
+/// A plain click after a multi-selection collapses it back to the
 /// clicked row and brings the single-machine edit form back.
 #[test]
 fn plain_click_collapses_back_to_single_selection() {
@@ -125,8 +125,8 @@ fn right_click_outside_selection_shows_the_single_menu_and_does_not_select() {
     assert!(harness.state().selection.contains(0) && harness.state().selection.contains(1));
 }
 
-/// Clicking the empty space below the rows clears a multi-selection just
-/// like it clears a single one.
+/// Clicking the empty space below the rows clears a multi-selection the same
+/// way it clears a single one.
 #[test]
 fn empty_space_click_clears_a_multi_selection() {
     let entries = vec![
@@ -152,7 +152,7 @@ fn empty_space_click_clears_a_multi_selection() {
 }
 
 /// Cmd/Ctrl-A selects every row, but not when a text field owns the
-/// keyboard (e.g. mid-rename) — it defers to the field's own select-all.
+/// keyboard (for example, mid-rename) — it defers to the field's own select-all.
 #[test]
 fn cmd_a_selects_every_row_unless_a_text_field_is_focused() {
     let entries = vec![

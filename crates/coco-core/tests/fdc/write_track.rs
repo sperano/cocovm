@@ -10,7 +10,7 @@ use super::common::{DRQ_INTERVAL, ONE_TRACK_BYTES};
 /// sync-lead-in, 3x$F5, $FE (ID AM), 4 literal ID bytes, $F7, gap2, 12x$00
 /// sync-lead-in, 3x$F5, $FB (data AM), sector-size data bytes, $F7, gap3; a
 /// final 200x$4E gap4 closes the track (not reproduced verbatim by the test
-/// below — see [`write_track_parses_a_synthetic_dskini_stream_into_the_image`]).
+/// that follows — see [`write_track_parses_a_synthetic_dskini_stream_into_the_image`]).
 const DSKINI_GAP1: usize = 32;
 const DSKINI_SYNC_LEAD_IN: usize = 8;
 const DSKINI_SYNC_COUNT: usize = 3;
@@ -54,7 +54,7 @@ fn push_formatted_sector(
 /// content, the image grows to include the newly-formatted track, and the ID
 /// field's literal side byte (deliberately garbage here) is ignored in favor
 /// of the hardware side parameter — this is what makes in-emulator DSKINI
-/// possible (previously the byte stream was just discarded).
+/// possible. Previously, the byte stream was discarded.
 #[test]
 fn write_track_parses_a_synthetic_dskini_stream_into_the_image() {
     const TRACK: u8 = 5;
@@ -63,7 +63,7 @@ fn write_track_parses_a_synthetic_dskini_stream_into_the_image() {
     const SIZE_CODE: u8 = 1; // 256B, matches the blank image's default geometry
 
     let mut wd = WD1773::new();
-    wd.set_double_density(true); // exercise the MFM parser explicitly, not just the default
+    wd.set_double_density(true); // exercise the MFM parser explicitly, rather than the default
     let mut disk = JVCDisk::from_bytes(Vec::new()).unwrap();
     assert_eq!(disk.track_count(), 0, "starting from a blank image");
 
@@ -114,7 +114,7 @@ fn write_track_parses_a_synthetic_dskini_stream_into_the_image() {
 /// Write Track's write-protect check mirrors Write Sector's: fires
 /// immediately (no DRQ pacing, no transfer started) and leaves the image
 /// completely untouched — there's no target sector to fail to find, so
-/// (unlike Write Sector's `None` arm) an *unmounted* drive would just proceed
+/// (unlike Write Sector's `None` arm) an *unmounted* drive would proceed
 /// with the transfer; only write-protect short-circuits.
 #[test]
 fn write_track_to_a_write_protected_image_sets_status_and_does_not_transfer() {

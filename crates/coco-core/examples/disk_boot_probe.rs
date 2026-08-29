@@ -8,14 +8,14 @@
 //! rest of its command line, so `LOAD"X":LIST` never LISTs). Defaults to `DIR`.
 //! `--fields N` overrides how many fields are run after each typed command
 //! before the next one (and before the final dump) — bump it for boots that
-//! take longer to settle than stock Disk BASIC, e.g. an OS-9 disk still
+//! take longer to settle than stock Disk BASIC, such as an OS-9 disk still
 //! loading modules long after the command line is typed. Defaults to the
 //! same field count this probe has always used per command.
 //!
 //! The screen dump works in either video mode the GIME can be driving when the
 //! dump is taken (`Machine::text_screen_lines`): the legacy CoCo-compatible
-//! VDG text screen, or — e.g. once OS-9 switches over — the GIME-native
-//! hi-res text screen. A one-line mode summary follows the dump so a blank or
+//! VDG text screen, or the GIME-native hi-res text screen once OS-9 switches
+//! over. A one-line mode summary follows the dump so a blank or
 //! garbled screen can be told apart from "this is actually a graphics-mode
 //! screen with no text buffer".
 

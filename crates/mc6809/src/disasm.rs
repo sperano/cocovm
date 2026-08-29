@@ -19,7 +19,7 @@
 //! Illegal opcodes (including ones the real core silently falls through to a
 //! 2-cycle default for) disassemble as mnemonic `"???"` with a length that
 //! still matches exactly what [`MC6809::step`](crate::MC6809::step) would
-//! have consumed for the same bytes — so a scrolling disassembly view never
+//! have consumed for the same bytes. A scrolling disassembly view therefore never
 //! desyncs from the byte stream, even across undecoded opcodes.
 
 use crate::{regsel, stack_mask};
@@ -78,7 +78,7 @@ impl<F: FnMut(u16) -> u8> Reader<'_, F> {
 }
 
 /// Addressing mode as it matters for *disassembly rendering* (operand syntax
-/// and byte count) — not a 1:1 mirror of the core's internal EA helpers, but
+/// and byte count). This isn't a one-to-one mirror of the core's internal EA helpers, but
 /// close enough to reuse its byte-counting logic directly.
 #[derive(Clone, Copy)]
 enum Mode {

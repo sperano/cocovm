@@ -22,7 +22,7 @@ pub struct SnapshotPayload {
 
 /// Borrowing twin of [`SnapshotPayload`] with identical field names/layout,
 /// so [`super::save`] can CBOR-encode by reference instead of cloning the whole
-/// machine tree just to hand it to `ciborium::into_writer`.
+/// machine tree to pass it to `ciborium::into_writer`.
 #[derive(Serialize)]
 pub(super) struct SnapshotPayloadRef<'a> {
     pub(super) media: &'a MediaRefs,
@@ -58,7 +58,7 @@ pub struct SlotROMRef {
 /// N::DRIVE_COUNT]`: a fixed-size array bakes today's `DRIVE_COUNT` into the
 /// serialized shape, so a future change to it would fail to deserialize (or
 /// silently truncate) every snapshot written before the change — the
-/// evolution contract above forbids that. [`super::restore`] matches these up
+/// evolution contract earlier forbids that. [`super::restore`] matches these up
 /// against the machine's actual drive count itself (zip-style: a short `Vec`
 /// leaves trailing drives as "never mounted"; a `Vec` longer than the current
 /// build's `DRIVE_COUNT` is [`super::SnapshotError::InvalidPayload`], naming the
@@ -104,7 +104,7 @@ pub struct MediaSources {
 }
 
 /// The result of a successful [`super::restore`]: the live machine plus any
-/// non-fatal notes that the frontend can surface, such as a toast. Hash
+/// non-fatal notes that the frontend should surface, such as a toast. Hash
 /// verification is caller-side (see [`MediaRef::verify`]) — a mismatch
 /// warning is built there, not here.
 pub struct RestoredMachine {
@@ -112,16 +112,15 @@ pub struct RestoredMachine {
     pub notes: Vec<RestoreNote>,
 }
 
-/// A non-fatal condition [`super::restore`] leaves for the caller to surface: state
-/// that came back in a documented placeholder form rather than fully
-/// restored. Typed rather than raw strings so a
-/// caller can react to a specific condition programmatically — e.g. the egui
-/// frontend re-injects the Disto RTC's host time source right after
-/// `restore` returns and then drops [`RestoreNote::RTCPlaceholderTime`]
-/// before showing the rest as a toast, since that note is only true for a
-/// caller that DOESN'T immediately do that (a headless tool, a test) — a
-/// caller matching on message text couldn't single that one note out safely
-/// across future wording changes.
+/// A non-fatal condition [`super::restore`] leaves for the caller to surface:
+/// state that came back in a documented placeholder form rather than fully
+/// restored. Typed rather than raw strings so a caller can react to a
+/// specific condition programmatically. For example, after `restore` returns,
+/// the egui frontend re-injects the Disto RTC's host time source and can omit
+/// [`RestoreNote::RTCPlaceholderTime`] before showing the remaining notes as a
+/// toast. The note remains relevant to callers that do not immediately
+/// resynchronize it, such as a headless tool or test; matching on message text
+/// could not identify it safely across future wording changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestoreNote {
     /// Print capture was active when this snapshot was saved; capture is

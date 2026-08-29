@@ -1,6 +1,6 @@
 //! Host byte protocol (SOUND half): command dispatch, buffer RAM load/execute,
 //! direct access, and the sound-data engine. Speech/allophone/SP0256 stays a
-//! parse-and-discard no-op -- covered here only to the extent of proving it
+//! parse-and-discard no-op — covered here only to the extent of proving it
 //! doesn't desync the state machine for later commands.
 
 use coco_core::SystemBus;
@@ -24,7 +24,7 @@ fn direct_access_end_to_end_pokes_ay_and_drives_audio() {
     send(&mut b, cmd::DIRECT_ACCESS_TOGGLE);
 
     // A period long enough that box-filtered samples swing between near-
-    // silent and near-full-scale -- same rationale as `TEST_TONE_PERIOD`.
+    // silent and near-full-scale — the same rationale as `TEST_TONE_PERIOD`.
     const TONE_A_PERIOD: u16 = 1000;
     /// Mixer value enabling only channel A's tone generator: bit0 (tone A
     /// disable) clear, every other disable bit set.
@@ -215,7 +215,7 @@ fn tone_plus_envelope_pair_uses_the_envelope_groups_own_duration() {
     send(&mut b, terminator::SOUND);
 
     // Dispatch the EXEC command directly (no trailing busy-clear tick) so
-    // the subsequent cycle counts below are exact against `duration_cycles`.
+    // the subsequent cycle counts are exact against `duration_cycles`.
     b.write(FF7E, cmd::EXEC_SOUND_INDIVIDUAL_START); // buffer 0
 
     {
@@ -238,7 +238,7 @@ fn tone_plus_envelope_pair_uses_the_envelope_groups_own_duration() {
     }
 
     // Enough cycles for the TONE group's own duration, but nowhere near the
-    // ENVELOPE group's -- if the engine wrongly used the tone's duration,
+    // ENVELOPE group's duration. If the engine wrongly used the tone's duration,
     // the marker would already have fired here.
     b.cart
         .tick(timing::duration_cycles(TONE_DURATION, timing::DEFAULT_TIMER_BASE) + 1);
@@ -317,7 +317,7 @@ fn busy_lost_second_byte_is_discarded_before_hold_window_elapses() {
     let mut b = coco3_bus_with_ssc();
     b.write(FF7E, cmd::DIRECT_ACCESS_TOGGLE); // latches $AF, busy set
     // Before busy clears (no tick in between), a second, different byte
-    // must be dropped entirely -- not latched, not dispatched.
+    // must be dropped entirely — not latched or dispatched.
     b.write(FF7E, 0x42);
 
     let ssc = b.cart.as_ssc().unwrap();
@@ -381,7 +381,7 @@ fn sound_data_execute_never_runs_an_incomplete_trailing_group() {
 
     // Buffer 1 (individual: offsets 64..128, EXEC cap 128). Pad with 14
     // tone groups (4 bytes each) + 2 noise groups (3 bytes each) = 62
-    // bytes, then a dangling 2-byte opcode+amp fragment -- landing exactly
+    // bytes, then a dangling 2-byte opcode+amp fragment — landing exactly
     // 2 bytes before the EXEC cap, where a tone group (needing 4 bytes)
     // cannot fully fit.
     send(&mut b, cmd::LOAD_SOUND_INDIVIDUAL_START + 1); // buffer 1
@@ -408,8 +408,8 @@ fn sound_data_execute_never_runs_an_incomplete_trailing_group() {
     );
 
     // Dangling group: a tone-B opcode+amplitude byte, plus one filler byte
-    // -- 2 of the 4 bytes a tone group needs. A distinctive amplitude makes
-    // a wrongly-executed partial group detectable via VOL_B.
+    // two of the four bytes a tone group needs. A distinctive amplitude makes
+    // a wrongly-executed partial group detectable in VOL_B.
     send(&mut b, (group::TONE_B << group::OPCODE_SHIFT) | 0x0F);
     send(&mut b, 0x00); // would-be "coarse" byte if the group were complete
 
@@ -418,7 +418,7 @@ fn sound_data_execute_never_runs_an_incomplete_trailing_group() {
     // which is reprocessed as that command.
     send(&mut b, cmd::EXEC_SOUND_INDIVIDUAL_START + 1); // buffer 1
 
-    // Drain every padding group one at a time, plus a generous margin --
+    // Drain every padding group one at a time, plus a generous margin —
     // ticks after the engine goes inactive are no-ops.
     for _ in 0..(PAD_TONE_GROUPS + PAD_NOISE_GROUPS + 4) {
         b.cart.tick(1);

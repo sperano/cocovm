@@ -158,7 +158,8 @@ fn constant_page_fe00_is_ram_when_mc3_set() {
     b.write(0xFEFF, 0xA5);
     assert_eq!(b.read(0xFE00), 0x5A);
     assert_eq!(b.read(0xFEFF), 0xA5);
-    // The byte just below still reads ROM (writes fall through to shadow RAM).
+    // The immediately preceding byte still reads ROM (writes fall through to
+    // shadow RAM).
     // MC=10 (32K internal) so $FDFF is internal ROM, not the external window.
     b.write(0xFF90, init0::MC3 | init0::MC1);
     b.write(0xFDFF, 0x11);
@@ -171,7 +172,7 @@ fn vector_page_follows_rom_map_when_mc3_clear() {
     // window (MAME gime.cpp update_memory bank 8 — `force_ram` only when MC3
     // is set). In 16K+16K mode the page is the tail of the external bank —
     // the ONLY way a pak's last $200 bytes are addressable (CTS stops at
-    // $FDFF); Sokoban keeps its palette tables there and copies them out via
+    // $FDFF); Sokoban keeps its palette tables there and copies them out through
     // $FE88 reads. In 32K-internal mode it reads coco3.rom offset $7Exx.
     let mut b = bus(MemorySize::K512);
     b.cart = Cart::custom(MarkerCart);

@@ -1,5 +1,5 @@
-//! Frontend save-state UX: the
-//! Machine-menu Save/Load State + Quick Save/Load slots, their keyboard
+//! Frontend save-state UX: Machine-menu Save/Load State + Quick Save/Load
+//! slots, their keyboard
 //! chords, and the status-bar toast — all built on top of the engine in
 //! [`coco_core::snapshot`], which this module is the only caller of.
 //!
@@ -49,7 +49,7 @@ pub(crate) fn load_slot_shortcut(slot: usize) -> egui::KeyboardShortcut {
 }
 
 /// One line for the keyboard-help window naming every quick-slot chord,
-/// formatted per-platform via [`egui::Context::format_shortcut`].
+/// formatted per-platform using [`egui::Context::format_shortcut`].
 pub(crate) fn slot_shortcuts_hint(ctx: &egui::Context) -> String {
     let loads: Vec<String> = (0..QUICK_SLOTS)
         .map(|s| ctx.format_shortcut(&load_slot_shortcut(s)))

@@ -3,7 +3,7 @@
 //! by NitrOS-9's `emudsk` driver in place of a real WD1773/floppy stack.
 //! Register layout, command/status codes, and sector geometry are cited from
 //! MAME `coco_vhd.cpp` (device registers and command dispatch) and
-//! `coco.cpp`/`coco3.cpp` (I/O page placement) in the doc comments below, per
+//! `coco.cpp`/`coco3.cpp` (I/O page placement) in the following doc comments, per
 //! the verified spec this module was built from; the driver-side contract
 //! (24-bit LRN, 256-byte sectors) is corroborated by NitrOS-9 `emudsk.asm`.
 //!
@@ -52,9 +52,9 @@ pub mod status {
     pub const POWER_ON: u8 = 0xFF;
 }
 
-/// A VHD backing image: either an in-memory buffer (tests — small, cheap to
-/// construct and assert against) or a real file, accessed by seeking rather
-/// than loaded whole (real VHD images run from hundreds of MB to several GB).
+/// A VHD backing image: either an in-memory buffer (small and suitable for
+/// tests) or a real file, accessed by seeking rather than loaded whole (real
+/// VHD images run from hundreds of MB to several GB).
 pub enum VHDImage {
     Memory(Vec<u8>),
     File(File),
@@ -92,8 +92,8 @@ impl VHDImage {
         Ok(want)
     }
 
-    /// Zero-extend the image to at least `len` bytes if it is currently
-    /// shorter than that; a no-op otherwise.
+    /// Zero-extend the image to at least `len` bytes when it is shorter than
+    /// that; a no-op otherwise.
     pub(crate) fn extend_to(&mut self, len: u64) -> io::Result<()> {
         if self.len()? >= len {
             return Ok(());
@@ -153,7 +153,7 @@ pub(crate) struct VHDDrive {
     /// 16-bit CPU logical address the next transfer reads from/writes to.
     pub(crate) buffer_addr: u16,
     pub(crate) status: u8,
-    /// Skipped: an open host `File` handle. Remounted by path on restore via
+    /// Skipped: an open host `File` handle. Remounted by path on restore through
     /// [`VHD::reattach_image`].
     #[serde(skip)]
     pub(crate) image: Option<VHDImage>,

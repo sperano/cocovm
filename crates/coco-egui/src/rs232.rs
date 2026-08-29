@@ -8,7 +8,7 @@ pub(crate) enum RS232Endpoint {
     /// `nc`/`telnet`.
     TCP(String),
     /// Unix pseudo-terminal; the string is the slave device path a host
-    /// terminal program opens (e.g. `screen /dev/ttys009 9600`). No PTYs on
+    /// terminal program opens (for example, `screen /dev/ttys009 9600`). No PTYs on
     /// Windows, so the variant only exists on Unix.
     #[cfg(unix)]
     PTY(String),

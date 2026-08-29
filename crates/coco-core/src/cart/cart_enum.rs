@@ -57,7 +57,7 @@ pub enum Cart {
 }
 
 /// Dispatch `$body` over the payload of every [`Cart`] variant — the match
-/// each delegation method below expands to. Every arm resolves the
+/// each delegation method that follows expands to. Every arm resolves the
 /// [`Cartridge`] method on the concrete type (static dispatch); only the
 /// `Custom` arm stays a virtual call through the box.
 macro_rules! with_each_cart {
@@ -166,7 +166,7 @@ impl Cart {
     }
 }
 
-/// Generates one device accessor below: the `$variant` payload if that's
+/// Generates one device accessor that follows: the `$variant` payload if that's
 /// what this cart is, else searching a [`MultiPak`]'s slots through its
 /// paired `MultiPak::$finder`. The `let` rebind deref-coerces boxed payloads
 /// ([`Cart::DiskCart`], [`Cart::SoundSpeechCartridge`]) and reborrows plain ones alike.

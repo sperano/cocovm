@@ -2,12 +2,12 @@
 //! only) or a TV, color or black & white — and the frontend post-pass that
 //! look implies.
 //!
-//! A real CoCo 3 drives its RGB, composite, and RF outputs simultaneously;
-//! the TV hangs off the RF modulator, which is fed the composite signal, so
-//! a TV — color or B&W — always sees the composite palette, never the RGB
+//! A real CoCo 3 drives its RGB, composite, and RF outputs simultaneously.
+//! The TV hangs off the RF modulator, which is fed the composite signal.
+//! A TV—color or B&W—always sees the composite palette, never the RGB
 //! unpack. A CoCo 1/2 has no monitor port at all: RF to a TV is its only
 //! output. Making the display device a sum type over both facts means the
-//! one illegal combination (RGB signal into a B&W TV) simply cannot be
+//! one illegal combination (RGB signal into a B&W TV) cannot be
 //! expressed — no invariant to enforce anywhere.
 //!
 //! A composite monitor and a TV share a signal path but not a look:
@@ -43,7 +43,7 @@ pub(crate) enum Display {
     TV(TV),
 }
 
-/// Every choice, in the display menu's / detail form's display order.
+/// Every choice, in the order shown by the display menu and detail form.
 const ALL: [Display; 4] = [
     Display::Monitor(MonitorType::RGB),
     Display::Monitor(MonitorType::Composite),
@@ -55,7 +55,7 @@ const ALL: [Display; 4] = [
 const TV_ONLY: [Display; 2] = [Display::TV(TV::Color), Display::TV(TV::BW)];
 
 impl Display {
-    /// The choices `variant` can actually drive: all four on a CoCo 3, just
+    /// The choices `variant` can actually drive: all four on a CoCo 3, only
     /// the two TVs on a CoCo 1/2.
     pub(crate) const fn choices(variant: MachineVariant) -> &'static [Display] {
         match variant {
@@ -106,7 +106,7 @@ impl Display {
         }
     }
 
-    /// Status-bar label: just the signal/set — the icon beside it already
+    /// Status-bar label: the signal/set — the icon beside it already
     /// distinguishes monitor vs. TV.
     pub(crate) const fn short_label(self) -> &'static str {
         match self {
@@ -118,15 +118,15 @@ impl Display {
     }
 }
 
-/// Rec.601 weights, the standard-definition coefficients NTSC weighs the
-/// three channels with — far from a flat average: green carries most of
-/// the perceived brightness, blue almost none.
+/// Rec.601 weights: the standard-definition coefficients NTSC uses to weigh
+/// the three channels. They are far from a flat average: green carries most
+/// of the perceived brightness, and blue carries little.
 const LUMA_R: f32 = 0.299;
 const LUMA_G: f32 = 0.587;
 const LUMA_B: f32 = 0.114;
 
 /// Display transfer-function exponent for the linear-light round trip
-/// below (the conventional CRT approximation).
+/// that follows (the conventional CRT approximation).
 const GAMMA: f32 = 2.2;
 
 /// Resolution of [`LumaTables::encode`]. High enough that its linear-light
@@ -184,7 +184,7 @@ pub(crate) fn texture_options(display: Display) -> egui::TextureOptions {
 const PX: usize = 4;
 
 /// Upper bound of the scanline and RF-noise percentage knobs — slider ranges
-/// and the clamp loaded values pass through ([`TVSettings::clamped`]).
+/// and the clamp for loaded values use this limit ([`TVSettings::clamped`]).
 pub(crate) const MAX_PCT: u8 = 100;
 
 /// Upper bound of the TV overscan crop on each texture edge. Keeping this
@@ -205,7 +205,8 @@ const DEFAULT_NOISE_PCT: u8 = 5;
 const DEFAULT_OVERSCAN_PCT: u8 = 5;
 
 /// User-adjustable knobs of the TV chain — a UI preference riding along
-/// with [`Display`] (display-menu sliders live, `[ui]` keys persisted).
+/// with [`Display`] (the display-menu sliders use it, and `[ui]` keys persist
+/// it).
 /// Integer percentages, not floats: sliders and TOML both stay clean
 /// (`tv_scanline = 35`, no float dust).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,8 +268,8 @@ fn scanline_scale(scanline_pct: u8) -> u16 {
     (level.powf(1.0 / GAMMA) * 256.0).round() as u16
 }
 
-/// [`blur_rows`]' symmetric FIR taps (normalized by [`BLUR_SUM`]): the
-/// mild composite/RF softness of a ~4 MHz NTSC luma channel at these dot
+/// Symmetric FIR taps for [`blur_rows`] (normalized by [`BLUR_SUM`]): the mild
+/// composite/RF softness of a ~4 MHz NTSC luma channel at these dot
 /// rates, not a heavy defocus.
 const BLUR_TAPS: [u16; 3] = [1, 2, 1];
 /// Derived, so re-tuning the taps can't silently break normalization.
@@ -344,7 +345,7 @@ fn collapse_to_luma(src: &[u8]) -> Vec<u8> {
 const NOISE_FULL: i32 = 128;
 
 /// RF noise: the same luminance jitter on all three channels (antenna
-/// noise rides luma, not chroma), via a plain xorshift32 PRNG seeded per
+/// noise rides luma, not chroma), using a plain xorshift32 PRNG seeded per
 /// frame so it shimmers rather than sitting still.
 fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
     let amp = i32::from(noise_pct.min(MAX_PCT)) * NOISE_FULL / i32::from(MAX_PCT);

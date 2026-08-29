@@ -57,10 +57,10 @@ pub(crate) fn load_default_rom(
     }
 }
 
-/// Plain-SAM ROM composition (CoCo 1/2 only): the flat image `bus.rs`'s
-/// primary-SAM path expects is Extended Color BASIC at offset 0 (8K), Color
-/// BASIC at offset [`COCO12_BAS_OFFSET`] (8K) —
-/// files"; `bus.rs::SAM_BAS_ROM_OFFSET`.
+/// Plain-SAM ROM composition (CoCo 1/2 only): the flat image that `bus.rs`'s
+/// primary-SAM path expects has Extended Color BASIC at offset 0 (8K) and
+/// Color BASIC at offset [`COCO12_BAS_OFFSET`] (8K). See
+/// `bus.rs::SAM_BAS_ROM_OFFSET`.
 pub(crate) const COCO12_BAS_OFFSET: usize = 8 * 1024;
 
 /// Color BASIC dumps accepted for the CoCo 1/2 machine kinds (any one is
@@ -69,13 +69,12 @@ pub(crate) const COCO12_BAS_OFFSET: usize = 8 * 1024;
 /// Color BASIC, shipped with the MC6847T1 boards) boots fine too but is the
 /// far rarer dump, so it stays a last resort rather than the preferred one —
 /// even though the CoCo 2 now defaults to `VdgVariant::Mc6847T1`, 1.2 runs
-/// identically on a T1 machine (lowercase just goes unused).
+/// identically on a T1 machine (lowercase is unused).
 pub(crate) const COCO_BASIC_CANDIDATES: &[&str] =
     &["bas12.rom", "bas11.rom", "bas10.rom", "bas13.rom"];
 
-/// Newest-preferred Extended Color BASIC dumps; optional
-/// ("ROM files": a Color-BASIC-only machine still
-/// boots).
+/// Newest-preferred Extended Color BASIC dumps; optional. A Color-BASIC-only
+/// machine still boots (see `"ROM files"`).
 pub(crate) const EXTENDED_BASIC_CANDIDATES: &[&str] = &["extbas11.rom", "extbas10.rom"];
 
 /// Fill byte for the Extended Color BASIC half of the flat image when no
@@ -210,9 +209,9 @@ pub(crate) enum ROMSource {
 
 /// Prefix marking a [`coco_core::snapshot::MediaRef::path`] as one of
 /// [`ROMSource::ComposedCoco12`]'s pseudo-paths rather than a real
-/// filesystem path — [`coco_core::snapshot::MediaRef`]'s own doc: "never
-/// resolves or interprets it, only carries it", so this module is the only
-/// reader.
+/// filesystem path — [`coco_core::snapshot::MediaRef`]'s own doc says it
+/// "never resolves or interprets it, only carries it"; this module is the
+/// only reader.
 pub(crate) const ROM_DB_PSEUDO_PATH_PREFIX: &str = "rom-db:";
 
 /// Build [`ROMSource::ComposedCoco12`]'s pseudo-path for `variant` (CoCo 3

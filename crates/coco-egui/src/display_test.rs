@@ -20,7 +20,7 @@ fn uniform(w: usize, h: usize, rgba: [u8; 4]) -> Vec<u8> {
 }
 
 /// Default settings minus the RF noise — the deterministic baseline the
-/// structural tests run at (noise gets its own direct tests below).
+/// structural tests run at (noise gets its own following direct tests).
 fn quiet() -> TVSettings {
     TVSettings {
         noise_pct: 0,

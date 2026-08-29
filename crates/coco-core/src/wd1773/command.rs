@@ -33,8 +33,8 @@ mod cmd_type {
 
 /// Type I (Restore/Seek/Step*) command low-nibble bits.
 mod type1 {
-    /// Verify: after the seek/step, confirm the target track has a readable ID
-    /// (i.e. is within the mounted image's track count); else set RNF.
+    /// Verify: after the seek or step, confirm the target track has a readable
+    /// ID, that is, it is within the mounted image's track count. Otherwise set RNF.
     pub const VERIFY: u8 = 0x04;
     /// Step/Step-In/Step-Out only: update the track register to the new
     /// position. Restore and Seek always update it regardless of this bit
@@ -262,7 +262,7 @@ impl WD1773 {
 
     /// Write Track (Type III, `0xF`, format): consumes
     /// [`WRITE_TRACK_BYTE_COUNT`] DRQ-paced bytes, parsing them into sectors
-    /// via [`feed_write_track_byte`](super::transfer::feed_write_track_byte)
+    /// through [`feed_write_track_byte`](super::transfer::feed_write_track_byte)
     /// in double density (FM streams are discarded). Write-protect is
     /// checked up front; there's no "not found" case (no target sector to fail to find).
     fn start_write_track(&mut self, disk: Option<&mut JVCDisk>) {

@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
 use super::{Cart, Cartridge, IO_OPEN_BUS};
 
 /// Tandy Multi-Pak Interface (MPI, 26-3024): a 4-slot passive expansion
-/// adapter for the cartridge port. Facts below are verified against MAME
+/// adapter for the cartridge port. The following facts are verified against MAME
 /// `src/devices/bus/coco/coco_multi.cpp` (`coco_multipak_device`) and the
 /// Lomont CoCo Hardware reference.
 ///
 /// All expansion-port lines are shared across the 4 slots except SCS*, CTS*,
 /// and CART* (MAME's `coco_multi.cpp` header comment): those three follow the
-/// select register below, while `halt_asserted`/`take_nmi`/`tick` reach every
-/// slot regardless of selection (a device doesn't stop just because it isn't
+/// select register that follows, while `halt_asserted`/`take_nmi`/`tick` reach every
+/// slot regardless of selection (a device doesn't stop because it isn't
 /// currently addressed).
 ///
 /// Two MAME facts are deliberately NOT modeled here, per spec: the CoCo 3
@@ -134,7 +134,7 @@ impl MultiPak {
 /// $FF7E` extension some carts decode (`docs/cartridges.md` "Carts can
 /// decode addresses outside SCS") is NOT switched by the MPI — the address
 /// and data buses are common to every slot, only SCS*/CTS*/CART* are
-/// per-slot — so it's handled separately below.
+/// per-slot — so it's handled separately in the following code.
 const SCS_BASE: u16 = 0xFF40;
 const SCS_LAST: u16 = 0xFF5F;
 
@@ -142,7 +142,7 @@ impl Cartridge for MultiPak {
     /// `$FF40-$FF5F` (SCS*) routes to the SCS-selected slot only; `$FF60-$FF7E`
     /// is broadcast to every slot instead — a real MPI switches only
     /// SCS*/CTS*/CART*, not the shared address/data bus (`coco_multi.cpp:9-19`),
-    /// so a device decoding raw addresses there (e.g. the Deluxe RS-232 Pak's
+    /// so a device decoding raw addresses there (such as the Deluxe RS-232 Pak's
     /// ACIA at `$FF68-$FF6B`, `coco_rs232.cpp:57-62`) answers from any slot.
     fn read(&mut self, addr: u16) -> u8 {
         if (SCS_BASE..=SCS_LAST).contains(&addr) {
@@ -207,7 +207,7 @@ impl Cartridge for MultiPak {
     }
 
     /// Every slot's clock runs regardless of selection (MAME ticks all 4
-    /// devices every call), so this advances all 4 rather than just the
+    /// devices every call), so this advances all 4 rather than the
     /// selected one(s).
     fn tick(&mut self, cycles: u32) {
         for slot in &mut self.slots {
@@ -226,7 +226,7 @@ impl Cartridge for MultiPak {
         })
     }
 
-    /// Wire-OR of all 4 slots: any device — e.g. an FD-502 in a
+    /// Wire-OR of all 4 slots: any device, such as an FD-502 in a
     /// non-selected slot — can hold HALT* regardless of SCS/CTS selection.
     fn halt_asserted(&self) -> bool {
         self.slots.iter().any(|slot| slot.halt_asserted())
@@ -272,7 +272,7 @@ impl Cartridge for MultiPak {
     }
 
     /// All 4 slots' audio outputs are wire-summed through the MPI's shared
-    /// analog bus, same as a real passive backplane — every slot, not just
+    /// analog bus, same as a real passive backplane — every slot, not
     /// the SCS/CTS-selected one(s).
     fn audio_sample(&mut self) -> f32 {
         self.slots.iter_mut().map(|slot| slot.audio_sample()).sum()
@@ -281,7 +281,7 @@ impl Cartridge for MultiPak {
     /// Reloads `select` from the front-panel switch and lifts any software
     /// override (MAME `device_reset`), then forwards the reset to every
     /// slot's own cartridge — real hardware's RESET* line reaches the whole
-    /// expansion bus, not just the MPI itself.
+    /// expansion bus, not the MPI itself.
     fn reset(&mut self) {
         self.select = mpi::SWITCH_VALUES[self.switch_slot];
         self.switch_blocked = false;

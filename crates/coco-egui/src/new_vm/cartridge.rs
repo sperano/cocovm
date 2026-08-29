@@ -134,7 +134,7 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
 }
 
 /// Combo text for a picked cartridge image: its file name, or `fallback` if
-/// the path is unnamed (e.g. `/`).
+/// the path is unnamed (for example, `/`).
 fn cart_file_name(path: &std::path::Path, fallback: &str) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())

@@ -4,7 +4,7 @@
 //! draws CoCo-compatible text with its own font ROM
 //! (`crate::font_gime::GIME_LOWRES_FONT`, `video::AlphaGenerator::Gime`), not
 //! either MC6847 font — even though `MachineConfig::vdg` is forced to
-//! `Mc6847` for a CoCo 3 by `MachineConfig::validate` (it just doesn't apply).
+//! `Mc6847` for a CoCo 3 by `MachineConfig::validate` (it does not apply).
 //! Expected glyph bit patterns are copied from `src/font_gime.rs`'s
 //! `GIME_LOWRES_FONT`: 'O' at index 15, true-lowercase 'a' at index 64+1=65.
 
@@ -32,7 +32,7 @@ const GIME_WHITE_RGBA: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
 /// `GIME::rgb_color(0)` — the untouched-palette-register default.
 const GIME_BLACK_RGBA: [u8; 4] = [0x00, 0x00, 0x00, 0xFF];
 
-/// Text/graphics base for the CoCo 3 tests below: SAM F0+F1 set moves the
+/// Text/graphics base for the following CoCo 3 tests: SAM F0+F1 set moves the
 /// display base to $0600 (page 3), keeping it clear of the parked `BRA *` at
 /// $0000 — same trick as `tests/render.rs`'s
 /// `text_renderer_follows_sam_page_register`.

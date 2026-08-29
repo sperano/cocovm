@@ -61,10 +61,10 @@ fn rgb_monitor_ignores_bpi_and_moch() {
 
 #[test]
 fn eou_greyscale_regression() {
-    // NitrOS-9 EOU's gshell greyscale desktop programs palette regs 0/0x10/
-    // 0x20/0x30. On a composite monitor these must decode to achromatic,
-    // strictly increasing brightness (not black/green/red/yellow as an
-    // RGB-only decode would render them).
+    // NitrOS-9 EOU's gshell greyscale desktop programs palette registers 0,
+    // 0x10, 0x20, and 0x30. On a composite monitor these must decode to
+    // achromatic, strictly increasing brightness, not the black, green, red,
+    // and yellow that an RGB-only decode would render.
     let g = GIME {
         monitor: MonitorType::Composite,
         ..GIME::new()

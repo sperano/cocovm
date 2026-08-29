@@ -11,7 +11,7 @@ use super::payload::{
 };
 
 /// Turns a decoded payload plus resolved media into a running [`Machine`],
-/// running the numbered steps below in order (see each step's own doc for
+/// running the numbered steps that follow in order (see each step's own doc for
 /// why the order matters). Missing-media failures from steps 2-4/6-7 collect
 /// across all of them so a caller can prompt for every file at once; a
 /// wrong-shape file still fails immediately as [`SnapshotError::MediaShape`].
@@ -176,8 +176,8 @@ fn take_cart_rom(cart_roms: &mut Vec<(Option<u8>, Vec<u8>)>, slot: Option<u8>) -
 }
 
 /// Reattaches a mandatory ROM-bearing cart's image, or records a `missing`
-/// entry if `slot` has no source. A shape error from `reattach` (e.g. an
-/// oversized image) fails immediately as [`SnapshotError::MediaShape`].
+/// entry if `slot` has no source. A shape error from `reattach`, such as an
+/// oversized image, fails immediately as [`SnapshotError::MediaShape`].
 fn require_cart_rom<E: fmt::Display>(
     mpi_slot: Option<u8>,
     role: &str,

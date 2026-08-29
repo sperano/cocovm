@@ -12,7 +12,7 @@ use crate::RS232Endpoint;
 use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO, SlotDTO};
 
 /// A minimal CoCo 3 definition ([`MachineConfig::default`]) with no media
-/// and no peripherals — callers flip on just the `[peripherals]`/`[ports]`
+/// and no peripherals — callers flip on only the `[peripherals]`/`[ports]`
 /// fields the test cares about.
 fn base_def() -> MachineDef {
     MachineDef::from_config("Launch Test".to_string(), None, &MachineConfig::default())
@@ -376,7 +376,7 @@ fn mpi_slot_rs232_reaches_the_acia_regardless_of_switch() {
 }
 
 /// A TCP endpoint on an MPI-slotted RS-232 Pak binds the same way as a
-/// bare-port one (`rs232_tcp_endpoint_binds_the_configured_address` above).
+/// bare-port one (`rs232_tcp_endpoint_binds_the_configured_address` earlier).
 #[test]
 fn mpi_slot_rs232_tcp_endpoint_binds_the_configured_address() {
     let mut def = base_def();

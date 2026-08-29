@@ -1,6 +1,6 @@
 //! `Machine::power_cycle` must reset derived state — interrupt edge history,
-//! latched/queued/rendered audio — not just the GIME/SAM/PIAs. Runs a
-//! zero-filled ROM (reset vector → $0000, harmless `NEG <$00`).
+//! latched, queued, and rendered audio — not only the GIME, SAM, and PIAs.
+//! Runs a zero-filled ROM (reset vector → $0000, harmless `NEG <$00`).
 
 use coco_core::audio::OVERSAMPLE;
 use coco_core::cart::{Cart, Cartridge, IO_OPEN_BUS};

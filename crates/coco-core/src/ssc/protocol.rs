@@ -58,7 +58,7 @@ pub mod cmd {
     pub const LOAD_REGISTER_CONSECUTIVE_START: u8 = 0xA8;
     pub const LOAD_REGISTER_CONSECUTIVE_END: u8 = 0xAE;
     /// Enter/exit direct access mode (register/value byte pairs poked
-    /// straight into the AY). See [`super::protocol::DirectMode`].
+    /// straight into the AY). See the `DirectMode` state that follows.
     pub const DIRECT_ACCESS_TOGGLE: u8 = 0xAF;
 
     /// Load allophone address stream into buffer `N` only (individual),
@@ -134,17 +134,17 @@ pub mod terminator {
 /// **RAM prefills to [`super::RAM_RESET_BYTE`] (`0xFF`), not zero.** This is
 /// a judgment call, not stated by the manual — but it is the only value
 /// consistent with how EXECUTE re-scans a buffer: EXECUTE has no separate
-/// "how many bytes did the LOAD actually store" bookkeeping, it just
-/// re-scans from the buffer's start looking for its own terminator/stopping
-/// condition. Since [`terminator::SOUND`] (`0xFF`) is also the
+/// "how many bytes did the LOAD actually store" bookkeeping. It scans from
+/// the buffer's start looking for its own terminator or stopping condition.
+/// Since [`terminator::SOUND`] (`0xFF`) is also the
 /// never-written-since-reset RAM value, scanning naturally stops exactly
 /// where the load stopped. If RAM were zero-filled instead, an unwritten
 /// byte one past a short sound-data load would misparse as a spurious
 /// `0x00`-opcode (tone A) group and corrupt playback. See
 /// `docs/ssc-spec.md` for the full rationale and a known unhandled edge
-/// case (a shorter reload over a buffer region previously filled by a
-/// longer one can leave stale non-terminator bytes just past the new
-/// cursor — not worth engineering around).
+/// case: a shorter reload over a region previously filled by a longer one can
+/// leave stale non-terminator bytes after the new cursor. This implementation
+/// does not clear those bytes.
 pub mod ram {
     pub const BUFFER_COUNT: usize = 8;
     pub const BUFFER_SIZE: usize = 64;

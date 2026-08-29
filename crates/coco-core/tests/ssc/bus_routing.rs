@@ -1,4 +1,4 @@
-//! Bus routing.
+//! Sound/Speech Cartridge bus-routing coverage.
 
 use coco_core::cart::{EmptySlot, MultiPak};
 use coco_core::ssc::SoundSpeechCartridge;

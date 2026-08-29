@@ -2,7 +2,7 @@
 //! offset, 3 cycles), long `LBcc` (16-bit offset, 5 cycles / 6 if taken), and
 //! the unconditional/never forms (BRA/BRN/LBRA/LBRN).
 //!
-//! Branch offsets are relative to the address *after* the operand — i.e. the
+//! Branch offsets are relative to the address *after* the operand—that is, the
 //! next instruction. Condition logic verified against the Atkinson reference:
 //! BHI = !C·!Z, BLS = C+Z, BGE = (N==V), BLT = (N!=V), BGT = !Z·(N==V),
 //! BLE = Z+(N!=V).
@@ -104,11 +104,11 @@ fn bvs_bvc_on_overflow() {
 
 #[test]
 fn bhi_bls_unsigned() {
-    // BHI (0x22): taken iff C=0 and Z=0.
+    // BHI (0x22): taken if and only if C=0 and Z=0.
     assert!(took(0x22, none));
     assert!(!took(0x22, set(cc::CARRY)));
     assert!(!took(0x22, set(cc::ZERO)));
-    // BLS (0x23): taken iff C=1 or Z=1.
+    // BLS (0x23): taken if and only if C=1 or Z=1.
     assert!(!took(0x23, none));
     assert!(took(0x23, set(cc::CARRY)));
     assert!(took(0x23, set(cc::ZERO)));
@@ -116,23 +116,23 @@ fn bhi_bls_unsigned() {
 
 #[test]
 fn bge_blt_signed() {
-    // BGE (0x2C): taken iff N==V.
+    // BGE (0x2C): taken if and only if N==V.
     assert!(took(0x2C, none)); // N=0,V=0
     assert!(took(0x2C, |s| s.cpu.cc |= cc::NEGATIVE | cc::OVERFLOW)); // N=1,V=1
     assert!(!took(0x2C, set(cc::NEGATIVE))); // N=1,V=0
     assert!(!took(0x2C, set(cc::OVERFLOW))); // N=0,V=1
-    // BLT (0x2D): taken iff N!=V.
+    // BLT (0x2D): taken if and only if N!=V.
     assert!(took(0x2D, set(cc::NEGATIVE)));
     assert!(!took(0x2D, none));
 }
 
 #[test]
 fn bgt_ble_signed() {
-    // BGT (0x2E): taken iff Z=0 and N==V.
+    // BGT (0x2E): taken if and only if Z=0 and N==V.
     assert!(took(0x2E, none)); // Z=0, N==V
     assert!(!took(0x2E, set(cc::ZERO))); // Z=1 blocks it
     assert!(!took(0x2E, set(cc::NEGATIVE))); // N!=V blocks it
-    // BLE (0x2F): taken iff Z=1 or N!=V.
+    // BLE (0x2F): taken if and only if Z=1 or N!=V.
     assert!(!took(0x2F, none));
     assert!(took(0x2F, set(cc::ZERO)));
     assert!(took(0x2F, set(cc::NEGATIVE)));

@@ -5,7 +5,7 @@ use super::Reader;
 use crate::postbyte;
 
 /// Decodes one indexed-addressing postbyte into its operand string, mirroring
-/// `MC6809::ea_indexed`. Numeric offsets render in signed decimal (e.g. `5,Y`,
+/// `MC6809::ea_indexed`. Numeric offsets render in signed decimal (for example, `5,Y`,
 /// `-1,X`); extended indirect `[$XXXX]` stays hex.
 pub(super) fn decode_indexed<F: FnMut(u16) -> u8>(r: &mut Reader<F>) -> String {
     let pb = r.u8();
@@ -70,7 +70,8 @@ fn decode_indexed_body<F: FnMut(u16) -> u8>(r: &mut Reader<F>, sel: u8, mode: u8
             let addr = r.u16();
             format!("${addr:04X}")
         }
-        // Reserved/illegal postbytes: core falls back to a plain register read; marked `???`.
+        // For reserved or illegal postbytes, the core falls back to a plain
+        // register read marked `???`.
         _ => format!(",{reg}???"),
     }
 }

@@ -174,7 +174,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
 }
 
 /// Cartridge = "RS-232 Pak" in the pane auto-saves `[peripherals].cartridge` —
-/// same combo, same auto-save flow as the FD-502/MPI/RTC cases above.
+/// same combo, same auto-save flow as the earlier FD-502/MPI/RTC cases.
 #[test]
 fn manager_edit_with_rs232_records_the_peripheral() {
     let dir = TempDir::new("create-rs232");
@@ -198,7 +198,7 @@ fn manager_edit_with_rs232_records_the_peripheral() {
     );
 }
 
-/// The RS-232 Pak in an MPI slot (not just the bare port) records
+/// The RS-232 Pak in an MPI slot (not the bare port) records
 /// `[peripherals].cartridge.slots` accordingly — the slot combo's own "RS-232 Pak" entry.
 #[test]
 fn manager_edit_with_slotted_rs232_records_the_peripheral() {
@@ -288,8 +288,9 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
     );
 }
 
-/// The Sound/Speech Cartridge — no path — records `[peripherals].cartridge`/`.slots` via the
-/// same combo flow as the FD-502/RTC (no file dialog to dodge).
+/// The Sound/Speech Cartridge — no path — records
+/// `[peripherals].cartridge`/`.slots` through the same combo flow as the
+/// FD-502/RTC (no file dialog to dodge).
 #[test]
 fn manager_edit_with_ssc_records_the_peripheral() {
     let dir = TempDir::new("create-ssc");

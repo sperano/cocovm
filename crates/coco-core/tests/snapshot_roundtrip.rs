@@ -1,8 +1,8 @@
 //! Phase-1 smoke tests for the serde derive pass over `Machine` and its
 //! whole device tree.
-//! Not the real save-state format yet — that's a later phase, once the CBOR
-//! snapshot is wrapped in the container format the persistence plan
-//! describes. This just proves the derive pass itself is trace-faithful: a
+//! This is not the real save-state format. The CBOR snapshot still needs the
+//! container format described by the persistence plan. These tests prove that
+//! the derive pass is trace-faithful: a
 //! machine mid-BASIC-idle-loop round-trips through CBOR and keeps executing
 //! identically to an un-serialized twin.
 
@@ -25,7 +25,7 @@ fn boot_machine() -> Machine {
 /// CPU-visible state a lockstep comparison after each step must agree on:
 /// every register, the total cycle count, and the run/halt state
 /// ([`mc6809::State`]). Deliberately excludes anything that isn't part of
-/// the architectural CPU state (e.g. the NMI-armed flag) — this is a
+/// the architectural CPU state, such as the NMI-armed flag. This is a
 /// trace-identity check on execution, not a full-struct `PartialEq`.
 #[derive(Debug, PartialEq)]
 struct CpuSnapshot {

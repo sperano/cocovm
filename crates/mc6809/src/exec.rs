@@ -1,9 +1,8 @@
 //! The opcode dispatcher: [`MC6809::step`] and the per-family execution groups
 //! it delegates to. The top-level match in `step` is the authoritative opcode
-//! map (mirrored byte-for-byte by [`crate::disasm`]); each family function
-//! below owns one contiguous doc-comment section of that map (addressing-mode
-//! row or operation family) so no single function has to hold the whole ISA
-//! in view at once.
+//! map, which [`crate::disasm`] mirrors byte-for-byte. Each family function owns
+//! one contiguous section of that map (an addressing-mode row or
+//! operation family), so no single function has to hold the whole ISA in view.
 
 use crate::{Bus, CWAI_STACK_CYCLES, MC6809, State, VECTOR_SWI, VECTOR_SWI2, VECTOR_SWI3, cc};
 
@@ -11,7 +10,7 @@ mod exec_data;
 
 impl MC6809 {
     /// Executes one instruction; returns the cycles it consumed. External
-    /// interrupts are delivered via [`Self::irq`]/[`Self::firq`]/[`Self::nmi`].
+    /// interrupts are delivered using [`Self::irq`]/[`Self::firq`]/[`Self::nmi`].
     pub fn step(&mut self, bus: &mut impl Bus) -> u32 {
         if self.state != State::Running {
             // Halted by SYNC/CWAI: burn an idle cycle until an interrupt resumes execution.
@@ -40,7 +39,7 @@ impl MC6809 {
             0x10 => self.exec_page10(bus),
             0x11 => self.exec_page11(bus),
 
-            // ---- Subroutines/jumps/stack: JMP arms must precede the RMW ranges below
+            // ---- Subroutines/jumps/stack: JMP arms must precede the following RMW ranges
             // or they'd be swallowed ----
             0x0E | 0x6E | 0x7E | 0x9D | 0xAD | 0xBD | 0x8D | 0x17 | 0x39 | 0x1F | 0x1E | 0x34
             | 0x36 | 0x35 | 0x37 => self.exec_control_transfer(bus, opcode),

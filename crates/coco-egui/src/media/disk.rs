@@ -3,8 +3,9 @@
 
 use crate::*;
 
-/// Explains how to get an FD-502 installed — shared by the disabled disk-menu items'
-/// tooltip and [`CocoApp::insert_disk`]/[`CocoApp::new_blank_disk`]'s no-controller error.
+/// Explains how to get an FD-502 installed — shared by the disabled disk-menu
+/// items' tooltips and the no-controller error from
+/// [`CocoApp::insert_disk`]/[`CocoApp::new_blank_disk`].
 pub(crate) const NO_FD502_HINT: &str = "No FD-502 disk controller is installed. Give this machine one in its peripherals \
      (the cartridge port or an MPI slot) before launching it.";
 
@@ -28,7 +29,7 @@ impl CocoApp {
         Ok(())
     }
 
-    /// Mounts the floppy image at `path` in `drive`. Fails via [`Self::cart_error`] instead
+    /// Mounts the floppy image at `path` in `drive`. Fails through [`Self::cart_error`] instead
     /// of panicking if no FD-502 is installed — the menu disables this action until then, so
     /// this is a defensive fallback. A failed write-back of the drive's old
     /// disk aborts the mount, leaving it dirty and tracked for retry.
@@ -52,7 +53,7 @@ impl CocoApp {
     }
 
     /// Creates a brand-new, blank (0-track) floppy image at `path` and mounts it in `drive`.
-    /// Fails via [`Self::cart_error`] instead of panicking if no FD-502 is
+    /// Fails through [`Self::cart_error`] instead of panicking if no FD-502 is
     /// installed, like [`Self::insert_disk`]. Refuses to overwrite an
     /// existing file; a failed write-back of the drive's old disk aborts
     /// before the file is created.
@@ -137,7 +138,7 @@ impl CocoApp {
         }
     }
 
-    /// [`Self::flush_dirty_disks`], reporting failure via [`Self::cart_error`] instead of
+    /// [`Self::flush_dirty_disks`], reporting failure through [`Self::cart_error`] instead of
     /// propagating it. Returns whether it's safe to proceed — every
     /// cartridge/MPI swap that could destroy a disk cart must check this
     /// first.

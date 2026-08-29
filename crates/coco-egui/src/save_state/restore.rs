@@ -1,5 +1,5 @@
 //! LOAD side: [`CocoApp::load_state_from`], resolving a decoded payload's
-//! media references into sources [`snapshot::restore`] can consume, and
+//! media references into sources that [`snapshot::restore`] can consume, and
 //! re-syncing every piece of frontend state a snapshot can't carry on its
 //! own once the restored machine is swapped in.
 
@@ -132,7 +132,7 @@ impl CocoApp {
         }
     }
 
-    /// Swap in a freshly-restored machine and re-sync frontend state a
+    /// Swap in a freshly-restored machine and re-sync frontend state that a
     /// snapshot can't carry itself (host-only resources, printer window,
     /// path mirrors, pacing). UI prefs like `aspect_correct` are left untouched.
     fn apply_restored_machine(
@@ -148,12 +148,13 @@ impl CocoApp {
 
         self.reinject_host_only_resources();
 
-        // Re-assert the display pref's monitor path — the snapshot's GIME config may not match it.
+        // Re-assert the display preference's monitor path; the snapshot's GIME
+        // config may not match it.
         if let Some(monitor) = self.display.to_monitor(self.machine.config.variant) {
             self.machine.bus.gime.monitor = monitor;
         }
 
-        // RTCPlaceholderTime no longer applies once the host time source is re-synced above.
+        // RTCPlaceholderTime no longer applies once the host time source is re-synced earlier.
         notes.extend(
             restored
                 .notes
@@ -162,8 +163,8 @@ impl CocoApp {
                 .map(|n| n.to_string()),
         );
 
-        // Re-link the paper window only if the restored sink is a live DMP-105; a file capture
-        // restores stopped.
+        // Re-link the paper window only if the restored sink is a live DMP-105;
+        // a file capture restores it stopped.
         match self.machine.bus.bitbanger.dmp105_handle() {
             Some(handle) => self.paper_window.resync(Some(handle)),
             None => self.paper_window.detach(),

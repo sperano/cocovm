@@ -1,13 +1,15 @@
-//! Test-driven coverage for the indexed-addressing postbyte decoder — the mode
-//! that ~a large fraction of 6809 instructions route through (see `DESIGN.md` §5).
+//! Test-driven coverage for the indexed-addressing postbyte decoder—the mode
+//! that many 6809 instructions use (see `DESIGN.md` §5).
 //!
 //! Each test drives a real instruction (usually `LDA`/`STA`/`LEA`) whose only
 //! variable is the postbyte, and asserts the effective address that was reached
-//! (via the loaded/stored value), any register side effects (auto inc/dec), and
+//! (through the loaded or stored value), any register side effects
+//! (auto-increment or auto-decrement), and
 //! the total cycle count (instruction base + postbyte extra).
 //!
-//! Postbyte reference (bit 7 set): `1 rr i mmmm`. Register field rr: 00=X, 01=Y,
-//! 10=U, 11=S. Non-indexed base costs used here: LDA/STA/LEA = 4, LDD = 5.
+//! Postbyte reference (bit 7 set): `1 rr i mmmm`. Register field `rr`: `00=X`,
+//! `01=Y`, `10=U`, `11=S`. Non-indexed base costs used here: LDA/STA/LEA = 4,
+//! LDD = 5.
 
 mod common;
 
@@ -18,8 +20,8 @@ const LDA_INDEXED: u8 = 0xA6;
 const STA_INDEXED: u8 = 0xA7;
 const LDD_INDEXED: u8 = 0xEC;
 
-/// Load a program at $0000, point a chosen index register somewhere useful, and
-/// return the system ready to `step()`.
+/// Loads a program at $0000, points a chosen index register somewhere useful,
+/// and returns the system ready to `step()`.
 fn prog(bytes: &[u8]) -> Sys {
     Sys::code(0x0000, bytes)
 }
@@ -271,7 +273,7 @@ fn register_field_selects_u_with_autoinc() {
     assert_eq!(s.cpu.u, 0x4001);
 }
 
-// ---- store and 16-bit via the same decoder ------------------------------
+// ---- Store and 16-bit operations through the same decoder ---------------
 
 #[test]
 fn store_indexed() {

@@ -27,7 +27,7 @@ fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
 fn tear_off_resets_paper_extent_and_view_state() {
     let mut window = PaperWindow::new();
     let mut handle = DMP105Handle::new();
-    // Print enough real ink (not just line feeds, which mark no dots) to have state to reset
+    // Print enough real ink (not line feeds, which mark no dots) to have state to reset
     // away from.
     for _ in 0..80 {
         for &b in b"HELLO WORLD\r" {

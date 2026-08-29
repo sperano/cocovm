@@ -181,7 +181,7 @@ fn non_autostart_pak_boots_to_normal_basic_and_never_runs_cart_code() {
 #[test]
 fn disk_basic_pak_integrates_at_cold_start() {
     // Non-autostart: Disk BASIC ROM Paks don't tie CART* to Q (fact 6). BASIC's
-    // cold start finds it instead via the "DK" signature probe at $C000/$C001
+    // cold start finds it instead through the "DK" signature probe at $C000/$C001
     // (`docs/cartridges.md`).
     const FIELDS: usize = 400;
     let mut m = boot_machine();

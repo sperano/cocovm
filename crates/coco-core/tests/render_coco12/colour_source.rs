@@ -1,8 +1,8 @@
-//! Deterministic coverage for the CoCo 1/2 fixed-VDG colour source
-//!: the legacy text/SG4/graphics renderers
-//! must resolve to the exact MAME `mc6847.cpp` `s_palette` RGB values, not
-//! the GIME palette registers (which don't exist on these machines). Style
-//! mirrors `tests/render.rs`/`tests/render_graphics.rs`, but driven through
+//! Deterministic coverage for the CoCo 1/2 fixed-VDG colour source: the
+//! legacy text, SG4, and graphics renderers must resolve to the exact MAME
+//! `mc6847.cpp` `s_palette` RGB values, not
+//! the GIME palette registers, which don't exist on these machines. The tests
+//! follow `tests/render.rs` and `tests/render_graphics.rs`, but run through
 //! `Machine` (like `render.rs`'s `text_renderer_follows_sam_page_register`)
 //! since the colour-source dispatch lives in `lib.rs`, not `video.rs` itself.
 

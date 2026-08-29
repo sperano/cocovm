@@ -9,8 +9,8 @@
 //! CPU's delay loops. The pak autostarts by tying CART* to Q, exactly the
 //! [`ROMPak`] autostart mechanism.
 //!
-//! Tier 1 (this module): latch decode + mono mix via
-//! [`crate::cart::Cartridge::sound_level`]. Stereo output at full sample
+//! Tier 1 (this module): latch decode + mono mix using
+//! [`crate::cart::Cartridge::sound_levels`]. Stereo output at full sample
 //! rate is the audio-pipeline plan.
 
 use serde::{Deserialize, Serialize};

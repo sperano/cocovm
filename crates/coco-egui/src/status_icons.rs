@@ -84,11 +84,11 @@ impl TapeReel {
 ///
 /// The very first [`Self::observe`] call only *primes* the latch — it never
 /// reports active, no matter what value it sees. Without this, restoring a
-/// save state whose counter already sat at some large value (e.g.
+/// save state whose counter already sat at some large value (for example,
 /// `tx_bytes == 40000`) would light every activity icon for one frame on
 /// load, even though nothing actually happened. Every observation after the
 /// first lights the latch on ANY change, including a decrease: a counter
-/// that rewinds (e.g. after loading an older save state) still means
+/// that rewinds (for example, after loading an older save state) still means
 /// something changed, so it blips once, the same as a forward change would.
 ///
 /// Holds are judged lazily, at draw time, against the wall clock — nothing
@@ -132,7 +132,7 @@ impl ActivityLatch {
 /// [`ActivityLatch`]). Lives on [`crate::CocoApp`] as `activity`; purely UI
 /// state, so `CocoApp` not being serialized means there's nothing to worry
 /// about saving/restoring here — a fresh app (or one built from a restored
-/// snapshot) just starts every latch primed on its first draw.
+/// snapshot) starts every latch primed on its first draw.
 #[derive(Default)]
 pub(crate) struct StatusActivity {
     pub(crate) vhd: [ActivityLatch; vhd::DRIVE_COUNT],

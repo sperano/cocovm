@@ -21,7 +21,7 @@ fn bus() -> SystemBus {
     )
 }
 
-// ---- Edge gating (bus-level, via hsync's CA1) ----------------------------------
+// ---- Edge gating (bus-level, through hsync's CA1) ------------------------------
 
 #[test]
 fn falling_edge_selected_port_flags_only_on_high_to_low() {

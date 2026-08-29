@@ -158,7 +158,7 @@ fn eject_tape_fails_then_succeeds_after_write_access_is_restored() {
 
 /// `eject_tape` must not abort when only the optional `.wav` sibling fails to write — by
 /// then the canonical `.cas` has landed and the tape is clean. The eject
-/// proceeds; the `.wav` failure surfaces via [`CocoApp::cart_error`].
+/// proceeds; the `.wav` failure surfaces through [`CocoApp::cart_error`].
 #[test]
 fn eject_tape_proceeds_when_only_the_wav_sibling_write_fails() {
     let dir = scratch_dir("wav-sibling-write-back-failure");

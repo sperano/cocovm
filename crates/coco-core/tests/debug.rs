@@ -111,8 +111,8 @@ fn breakpoint_stops_before_execution() {
     assert_ne!(m.cpu.pc, target);
 }
 
-/// `run_until` resumes cleanly off a breakpoint it is currently parked on
-/// (doesn't immediately re-trigger the same address).
+/// `run_until` resumes cleanly after stopping at a breakpoint
+/// (it does not immediately re-trigger the same address).
 #[test]
 fn run_until_resumes_off_parked_breakpoint() {
     let mut m = boot_machine();

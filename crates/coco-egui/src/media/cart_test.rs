@@ -4,13 +4,13 @@ use crate::save_state::tests::{
     write_one_track_disk,
 };
 
-/// Size of the throwaway ROM pak fixture below — [`ROMPak::from_bytes`] just
+/// Size of the throwaway ROM pak fixture following this comment — [`ROMPak::from_bytes`] only
 /// needs a well-formed load, not real game content (mirrors
 /// `save_state_test.rs`'s `build_media_refs_hashes_match_the_mounted_files`
 /// fixture).
 const ROM_PAK_SIZE: usize = 0x4000;
 
-/// MPI slot the FD-502 occupies in the tests below (mirrors
+/// MPI slot the FD-502 occupies in the following tests (mirrors
 /// `save_state_test.rs`'s `build_media_refs_hashes_match_the_mounted_files`,
 /// which plugs a ROM pak into slot 0 and the FD-502 into slot 3).
 const FD502_SLOT: usize = 3;
@@ -68,7 +68,7 @@ fn insert_cartridge_fails_and_preserves_dirty_disk_when_write_back_fails() {
         );
     }
 
-    // `_ro` dropped above restores write access; retry must now succeed.
+    // Dropping `_ro` earlier restores write access; retry must now succeed.
     app.cart_error = None;
     app.insert_cartridge(rom_path.clone(), true);
     assert!(
@@ -153,7 +153,7 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
 
 /// `mpi_insert_rompak` into the FD-502's own slot on a *writable* dirty disk must succeed,
 /// flushing before the swap and clearing `disk_paths` — the success path
-/// the abort tests above never exercise.
+/// the preceding abort tests never exercise.
 #[test]
 fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
     let dir = scratch_dir("mpi-rompak-success-flush");

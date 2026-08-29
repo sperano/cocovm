@@ -2,7 +2,7 @@
 //! default, register decode while enabled, full protocol round-trips over
 //! the bus, precedence over cartridge dispatch, and the CoCo 1/2 plain-SAM
 //! decode path. Style model: `tests/bus_map.rs` — a synthetic ROM, no
-//! `Machine`/booting, registers driven directly via `mc6809::Bus`.
+//! `Machine`/booting, registers driven directly through `mc6809::Bus`.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -199,7 +199,7 @@ fn becker_takes_precedence_over_cartridge() {
     assert_eq!(b.read(BECKER_STATUS), 0x00);
     assert_eq!(b.read(BECKER_DATA), 0x00);
 
-    // $FF40/$FF43 (just outside the two Becker registers, still inside the
+    // $FF40/$FF43 (immediately outside the two Becker registers, still inside the
     // SCS window) still reach the cartridge.
     assert_eq!(b.read(0xFF40), MARKER_CART_READ);
     assert_eq!(b.read(0xFF43), MARKER_CART_READ);
@@ -211,7 +211,7 @@ fn becker_takes_precedence_over_cartridge() {
     b.write(BECKER_STATUS, 0x55);
     assert_eq!(last_write.get(), 0, "cart must not see the $FF41 write");
 
-    // Writes just outside the Becker registers do reach the cart.
+    // Writes immediately outside the Becker registers reach the cartridge.
     b.write(0xFF40, 0x11);
     assert_eq!(last_write.get(), 0x11);
     b.write(0xFF43, 0x22);
@@ -254,7 +254,7 @@ fn mc2_clear_silences_the_becker_port_on_the_gime_path() {
 fn sam_path_becker_intercept_matches_gime_path() {
     // A small synthetic ROM: `SAM::map` routes all of $FF00-$FF9F
     // unconditionally to `SAMTarget::Io` regardless of ROM contents/size, so
-    // the ROM box just needs to exist.
+    // The ROM box only needs to exist.
     let rom: Box<[u8]> = vec![0u8; 1].into_boxed_slice();
     let mut b = SystemBus::new(MachineVariant::Coco1, MemorySize::K32, rom);
 

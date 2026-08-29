@@ -113,8 +113,7 @@ pub fn vdg_graphics_border_index(css: bool) -> usize {
 /// colour table from: the GIME palette registers (`GimePalette` — the
 /// existing CoCo 3 behaviour, unchanged by this enum: the ROM initializes
 /// those registers to the VDG defaults) or the hardwired VDG RGB table
-/// (`VdgFixed` — CoCo 1/2, which has no palette registers to program). See
-///
+/// (`VdgFixed` — CoCo 1/2, which has no palette registers to program).
 pub enum ColorSource<'a> {
     GIMEPalette(&'a [[u8; 4]; PALETTE_LEN]),
     VDGFixed,

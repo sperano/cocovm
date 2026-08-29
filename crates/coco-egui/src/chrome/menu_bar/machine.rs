@@ -5,7 +5,7 @@ use crate::*;
 
 impl CocoApp {
     /// The Machine menu: disk drives, DriveWire, and print capture. Reset
-    /// lives on the toolbar; VHDs are mounted only via the machine definition.
+    /// lives on the toolbar; VHDs are mounted only through the machine definition.
     /// Peripherals (cartridges, MultiPak, RS-232, RTC) are configured only
     /// through the machine definition's `[peripherals]` and mounted at
     /// launch — there is no runtime insert/eject here. The cassette deck

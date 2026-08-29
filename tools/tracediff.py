@@ -134,8 +134,8 @@ def main():
 
     cmp_fields = ["PC"] if args.pc_only else FIELDS
 
-    # walk while PC agrees (PC divergence = hard desync, e.g. interrupt); collect
-    # register-level divergence sites along the way.
+    # Walk while PC agrees. PC divergence indicates a hard desynchronization,
+    # such as an interrupt. Collect register-level divergence sites along the way.
     sites = OrderedDict()  # producing-PC -> (first_idx, set(fields), example)
     first_full = None
     i = 0
@@ -149,8 +149,8 @@ def main():
         if d:
             if first_full is None:
                 first_full = i
-            # producing instruction is the previous row's PC (this row's state
-            # is the result of executing prev instruction)
+            # The producing instruction is the previous row's PC. This row's
+            # state is the result of running the previous instruction.
             prod = a[ai0 + i - 1]["PC"] if i > 0 else ra["PC"]
             key = prod
             if key not in sites:

@@ -3,7 +3,7 @@
 //! `peek` mirrors `Bus::read`'s address decode exactly but takes `&self` and
 //! never mutates: no PIA Cx1/Cx2 flag clears, no GIME IRQ/FIRQ status ack, no
 //! cartridge register side effects, and no watchpoint hook. Devices whose real
-//! read mutates return a last-latched value (GIME status registers, via their
+//! read mutates return a last-latched value (GIME status registers, using their
 //! public `*_pending` fields) or open bus (most cartridge I/O). The debugger UI
 //! uses this for its disassembly, memory, and stack views.
 

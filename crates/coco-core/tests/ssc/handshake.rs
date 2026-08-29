@@ -85,7 +85,7 @@ fn ff7d_bit0_set_alone_does_not_reset_the_ay() {
     let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     ssc.ay_write(ay_reg::TONE_A_FINE, 0x7A);
 
-    b.write(FF7D, 0x01); // assert only -- no preceding 1 that could make this a falling edge
+    b.write(FF7D, 0x01); // assert only — no preceding 1 can make this a falling edge
 
     let ssc = b.cart.as_ssc().expect("a SoundSpeechCartridge is inserted");
     assert_eq!(

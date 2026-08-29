@@ -1,8 +1,8 @@
 //! Standalone [`MediaRef`]/[`MediaRefs`] helpers shared by the SAVE side
 //! ([`super::save`]) and LOAD side ([`super::restore`]): hashing a file into
 //! a ref, reading/opening a ref's file back with mismatch-warning bookkeeping,
-//! and the two small lookups [`crate::CocoApp::rebuild_cart_mirrors`]
-//! needs to turn a restored cart tree back into path-bearing UI state.
+//! plus the two small lookups used by [`crate::CocoApp::rebuild_cart_mirrors`]
+//! to turn a restored cart tree back into path-bearing UI state.
 
 use std::path::{Path, PathBuf};
 
@@ -23,8 +23,8 @@ pub(super) fn direct_port_rom_path(media: &MediaRefs) -> Option<PathBuf> {
         .map(|r| r.rom.path.clone())
 }
 
-/// The [`MPISlot`] `cart` (at slot `i`) should display as, using `media` for
-/// the display path of every ROM-bearing variant.
+/// The [`MPISlot`] `cart` at slot `i` gets a display path from `media` for every
+/// ROM-bearing variant.
 pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISlot {
     let rom_path = || {
         media

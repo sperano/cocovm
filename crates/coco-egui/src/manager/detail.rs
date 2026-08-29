@@ -165,7 +165,7 @@ impl ManagerApp {
 
         self.draw_name_field(ui, index, &mut edit);
         ui.add_space(DETAIL_SECTION_GAP);
-        // The transport buttons moved to the toolbar — this pane keeps just
+        // The transport buttons moved to the toolbar — this pane keeps only
         // the status, plus the last launch failure.
         ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         if let Some(err) = &self.entries[index].launch_error {
@@ -239,7 +239,7 @@ impl ManagerApp {
     /// The Name field committed ([`Self::draw_name_field`] — focus left it):
     /// an empty draft reverts to the saved name; a change saves immediately
     /// under the *current* slug, then the file/artifact names follow the
-    /// new name via `migrate_slug` — deferred to
+    /// new name using `migrate_slug` — deferred to
     /// [`ManagerApp::apply_pending_renames`] (next frame, or after Stop for
     /// a running machine).
     fn commit_name(&mut self, index: usize, edit: &mut EditState) {

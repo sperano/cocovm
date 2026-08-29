@@ -39,7 +39,7 @@ etcetera = "0.11.0"
 serde = { version = "1", features = ["derive"] }
 # Both MIT OR Apache-2.0 (GPL-3.0-or-later-compatible); see
 # `paper_export.rs`'s module doc comment for the PNG/PDF dependency
-# rationale (T6). `flate2` is already resolved transitively via `image`'s
+# rationale (T6). `flate2` is already resolved transitively through `image`'s
 # `png` feature (`image` -> `png` -> `flate2`), so promoting it to a direct
 # dependency here adds no new crate to the workspace's dependency graph.
 flate2 = "1.1.9"
@@ -48,7 +48,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 owo-colors = {version="4.3.0",  features = ["supports-colors"]}
 rfd = "0.17.2"
 # MIT OR Apache-2.0. Extracts the downloaded assets tarball
-# (`unpack_assets` in main.rs); gzip half comes from `flate2` above.
+# (`unpack_assets` in main.rs); the gzip half comes from the earlier `flate2` entry.
 tar = "0.4.46"
 # Both MIT. Leveled, per-module-filterable logging (RUST_LOG) with colored
 # level tags; subscriber initialized once in main.rs.

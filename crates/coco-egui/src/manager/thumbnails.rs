@@ -42,7 +42,7 @@ impl ManagerApp {
 
     /// Lazily load a suspended, window-closed entry's saved
     /// [`THUMBNAIL_FILE`] into a texture the first time its row draws.
-    /// Failures just leave the placeholder — the preview is a cache, never
+    /// Failures leave the placeholder — the preview is a cache, never
     /// required state.
     pub(super) fn ensure_row_thumbnail(&mut self, ctx: &egui::Context, index: usize) {
         let entry = &mut self.entries[index];

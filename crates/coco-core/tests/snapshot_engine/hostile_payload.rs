@@ -1,12 +1,11 @@
 //! 7. Phase-5 review: hostile-payload validation
 //!
-//! `Cassette::bit`/`SSC::Load::cap`/`WD1773::Transfer::index`/`WD1773::Transfer::
-//! offset+total` have no `pub` setter that can reach an out-of-range value —
-//! by design, the normal protocol dispatch that reaches these fields never
-//! produces one. So unlike #6's `ram`-length tamper (`bus.ram` is `pub`),
-//! these tests hand-mutate the actual CBOR bytes of a valid save, the same
-//! way a hex editor on a real `.ccstate` file would, via [`mutate_cbor`]/
-//! [`rewrap_container`] below.
+//! `Cassette::bit`, `SSC::Load::cap`, `WD1773::Transfer::index`, and
+//! `WD1773::Transfer::offset` plus `total` have no public setter that can
+//! create an out-of-range value. Normal protocol dispatch also keeps them in
+//! range. Unlike the RAM-length tamper test, these tests mutate the CBOR bytes
+//! of a valid save, as a hex editor could, using [`mutate_cbor`] and
+//! [`rewrap_container`] that follows.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -25,8 +24,8 @@ use mc6809::Bus;
 use super::common::expect_err;
 
 /// Header length ([`snapshot::CONTAINER_MAGIC`] + version byte + `u32`
-/// schema) — mirrors `future_schema_is_reported_as_schema_too_new`'s own
-/// `schema_offset` computation above; `snapshot::HEADER_LEN` itself isn't
+/// schema) — mirrors the `schema_offset` calculation in
+/// `future_schema_is_reported_as_schema_too_new`; `snapshot::HEADER_LEN` itself isn't
 /// public.
 fn header_len() -> usize {
     snapshot::CONTAINER_MAGIC.len() + 1 + 4
@@ -42,11 +41,11 @@ fn cbor_body_of(container: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Decode `cbor`, walk `path` as a chain of map keys (every
+/// Decodes `cbor` and walks `path` as a chain of map keys. Every
 /// `#[derive(Serialize)]` struct/enum in this crate's tree serializes as a
 /// CBOR map keyed by field/variant name — the module doc's "CBOR carries
-/// field names" claim, load-bearing here), overwrite the leaf with
-/// `new_value`, and re-encode.
+/// field names" claim, which this test relies on). It overwrites the leaf with
+/// `new_value` and re-encodes the payload.
 fn mutate_cbor(cbor: &[u8], path: &[&str], new_value: Value) -> Vec<u8> {
     let mut root: Value = ciborium::from_reader(cbor).expect("decode cbor");
     let mut cursor = &mut root;
@@ -66,7 +65,7 @@ fn mutate_cbor(cbor: &[u8], path: &[&str], new_value: Value) -> Vec<u8> {
     out
 }
 
-/// Gzip `cbor` and prepend a real container header at `schema` — the
+/// Gzips `cbor` and prepends a container header at `schema` — the
 /// re-assembly half of the hand-mutate round trip, mirroring
 /// [`snapshot::save`]'s own tail (that function isn't reusable directly:
 /// it takes a `&Machine`, not raw CBOR bytes).
@@ -82,8 +81,8 @@ fn rewrap_container(cbor: &[u8], schema: u32) -> Vec<u8> {
     out
 }
 
-/// A minimal machine (empty system ROM — nothing here executes any CPU
-/// instructions) with an [`SoundSpeechCartridge`] plugged directly into the cartridge port.
+/// A minimal machine with an empty system ROM and an
+/// [`SoundSpeechCartridge`] plugged directly into the cartridge port.
 fn machine_with_ssc() -> Machine {
     let mut machine = Machine::new(MachineConfig::default(), Box::new([]));
     machine.insert_cartridge(SoundSpeechCartridge::new());
@@ -144,7 +143,7 @@ fn machine_with_disk_in_read_transfer() -> Machine {
     machine.insert_cartridge(cart);
 
     // Unit-level bus pokes, no booting (module doc): state the SCS-window
-    // precondition (INIT0 MC2) explicitly so the writes below actually reach
+    // precondition (INIT0 MC2) explicitly so the following writes actually reach
     // the controller instead of being dropped by the closed gate.
     machine.bus.gime.write_init0(coco_core::gime::init0::MC2);
 

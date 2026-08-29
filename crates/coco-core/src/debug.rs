@@ -1,13 +1,13 @@
 //! Debug core: the [`Debugger`] the frontend owns and drives, plus the
-//! side-effect-free primitives the machine exposes for it (
-//! §2). The [`Debugger`] holds PC breakpoints and memory watchpoints, runs the
-//! machine one instruction at a time via [`Machine::step_instruction`] until a
+//! side-effect-free primitives the machine exposes for it (DESIGN.md §2). The
+//! [`Debugger`] holds PC breakpoints and memory watchpoints, runs the
+//! machine one instruction at a time using [`Machine::step_instruction`] until a
 //! stop condition trips ([`Debugger::run_until`]), and keeps an instruction
 //! trace ring for "how did I get here" / MAME trace-diffing.
 //!
-//! The design deliberately leaves room for the deferred features
-//!: conditional breakpoints hang
-//! off [`Breakpoint`], watch expressions off [`Watchpoint`].
+//! The design deliberately leaves room for deferred features: conditional
+//! breakpoints can extend [`Breakpoint`], and watch expressions can extend
+//! [`Watchpoint`].
 
 use std::collections::{HashMap, VecDeque};
 
@@ -93,8 +93,8 @@ pub enum StopReason {
     },
     /// A video field completed (the machine reached a field boundary).
     FieldComplete,
-    /// The instruction budget was exhausted without any of the above — the
-    /// run made progress but hit no stop condition.
+    /// The instruction budget was exhausted without any of the earlier
+    /// conditions — the run made progress but hit no stop condition.
     Step,
 }
 
@@ -185,7 +185,7 @@ pub struct Debugger {
     trace_cap: usize,
     /// When true, record every retired instruction into the trace ring during
     /// [`Debugger::run_until`]. Off by default — the ring costs a snapshot per
-    /// instruction, which a plain "run" doesn't want.
+    /// instruction, which a plain "run" does not need.
     pub trace_enabled: bool,
 }
 
@@ -252,7 +252,7 @@ impl Debugger {
     // ---- Watchpoints -------------------------------------------------------
 
     /// Add or replace a memory watchpoint on `addr`, selecting trapped
-    /// directions via `read`/`write`. Enabled on creation; an existing
+    /// directions using `read`/`write`. Enabled on creation; an existing
     /// watchpoint's hit count is preserved.
     pub fn add_watchpoint(&mut self, addr: u16, read: bool, write: bool) {
         let wp = self.watchpoints.entry(addr).or_insert(Watchpoint {

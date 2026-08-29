@@ -86,7 +86,7 @@ plutil -lint "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/cocovm"
 
 # Finder icon: .icns generated from the same 1024px art the running app
-# embeds for its Dock icon, so the two always match.
+# embeds for its Dock icon, so the two remain consistent.
 ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
 ICONSET="$WORK/cocovm.iconset"
 mkdir "$ICONSET"
@@ -109,7 +109,7 @@ xcrun notarytool submit "$WORK/notarize.zip" \
   | tee "$WORK/notary.json"
 echo
 if [ "$(jq -r .status "$WORK/notary.json")" != "Accepted" ]; then
-  # Older notarytool exits 0 on an Invalid verdict; show the rejection log.
+  # Older notarytool exits 0 on an Invalid verdict. Show the rejection log.
   xcrun notarytool log "$(jq -r .id "$WORK/notary.json")" \
     --keychain-profile "$PROFILE" || true
   exit 1

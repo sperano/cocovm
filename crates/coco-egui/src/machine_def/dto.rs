@@ -188,7 +188,7 @@ impl From<DisplayDTO> for Display {
 
 /// `[hardware].vdg`. Maps to [`coco_core::VDGVariant`]. Optional in the file
 /// — when absent, [`super::MachineDef::to_machine_config`] defaults it per variant
-/// the same way `new_vm.rs`'s `constrain_draft` does: the T1 (CoCo 2B) on a
+/// the same way `new_vm.rs`'s `constrain` does: the T1 (CoCo 2B) on a
 /// CoCo 2, the plain MC6847 elsewhere (the only choice
 /// `MachineConfig::validate` accepts there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -247,7 +247,7 @@ pub struct HardwareDTO {
     pub variant: MachineVariantDTO,
     pub ram: RAMDTO,
     pub video: VideoStandardDTO,
-    /// Legacy display key, read but never written since `display` (below)
+    /// Legacy display key, read but never written since `display` (following)
     /// superseded it: `display` wins when both are present; alone, it maps
     /// to the monitor half of [`crate::display::Display`]
     /// ([`super::MachineDef::display`]). An explicit key on a CoCo 1/2
@@ -395,11 +395,11 @@ impl Default for UIDTO {
 }
 
 /// `[stats]` section — read-only usage statistics the manager maintains
-/// itself (never edited via the form): cumulative powered-on time and the
+/// itself (never edited through the form): cumulative powered-on time and the
 /// count of times this machine has been launched from Powered Off (Resume
 /// doesn't count — see `manager::lifecycle::resume_vm`'s doc). Section
 /// always present, like `[ui]`/`[peripherals]`; absent in a legacy file it
-/// simply defaults to zero.
+/// defaults to zero.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StatsDTO {
     /// Cumulative powered-on runtime, in whole seconds — folded in from a

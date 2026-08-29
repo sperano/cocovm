@@ -131,7 +131,7 @@ impl ManagerApp {
         Ok(def)
     }
 
-    /// Resolve the disk/tape/VHD picks via [`Self::record_media_choice`]
+    /// Resolve the disk/tape/VHD picks through [`Self::record_media_choice`]
     /// into `def.media` — the write moment for a Blank pick's backing file,
     /// since every change is a save.
     fn pack_media(

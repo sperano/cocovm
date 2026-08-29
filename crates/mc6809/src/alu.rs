@@ -88,7 +88,8 @@ impl MC6809 {
         0
     }
 
-    /// INC: N,Z from result; V set iff signed overflow ($7F→$80); C unaffected.
+    /// INC: N,Z from result; V set if and only if signed overflow occurs ($7F→$80);
+    /// C unaffected.
     fn inc8(&mut self, m: u8) -> u8 {
         let r = m.wrapping_add(1);
         self.set_overflow(m == 0x7F);
@@ -96,7 +97,8 @@ impl MC6809 {
         r
     }
 
-    /// DEC: N,Z from result; V set iff signed overflow ($80→$7F); C unaffected.
+    /// DEC: N,Z from result; V set if and only if signed overflow occurs ($80→$7F);
+    /// C unaffected.
     fn dec8(&mut self, m: u8) -> u8 {
         let r = m.wrapping_sub(1);
         self.set_overflow(m == 0x80);

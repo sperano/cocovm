@@ -29,8 +29,8 @@ impl Machine {
 
     /// The active (non-border) picture rectangle in framebuffer pixel
     /// coordinates, for the frontend's pointer→joystick mapping. Whether the
-    /// field is legacy comes from the latched `field_scan` when one exists,
-    /// not the live INIT0 COCO bit.
+    /// field is legacy comes from the latched `field_scan` when available,
+    /// rather than the live INIT0 COCO bit.
     pub fn active_rect(&self) -> ActiveRect {
         if self.config.variant != MachineVariant::Coco3 {
             return ActiveRect {

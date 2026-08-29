@@ -3,8 +3,8 @@
 //! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
 //! Suspend – Stop – Reset – separator – Settings – separator – Help.
 //! The four transport tiles act on the current selection through the same
-//! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch the bulk
-//! context menu uses — one code path, three surfaces.
+//! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch used by the
+//! bulk context menu — one code path, three surfaces.
 
 use eframe::egui;
 

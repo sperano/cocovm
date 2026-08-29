@@ -1,4 +1,4 @@
-//! Simple "About" overlay window.
+//! "About" overlay window.
 
 use eframe::egui;
 

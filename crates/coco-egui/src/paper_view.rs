@@ -12,8 +12,8 @@
 //! Sink ownership: [`PaperWindow`] never attaches its own [`DMP105Handle`] —
 //! that handshake (which touches [`crate::CocoApp::print_capture_path`] and
 //! `bus.bitbanger`, both owned by `CocoApp`) lives in
-//! [`crate::CocoApp::toggle_paper_window`]. This window just holds whatever
-//! handle it's given (via [`PaperWindow::handle`]) and keeps using it across
+//! [`crate::CocoApp::toggle_paper_window`]. This window holds whatever
+//! handle it's given (through [`PaperWindow::handle`]) and keeps using it across
 //! close/reopen — only [`PaperWindow::detach`] (called when print-file-
 //! capture yanks the sink away) drops it.
 
@@ -34,7 +34,7 @@ const KEEP_MARGIN_PAGES: f32 = 1.0;
 #[derive(Default)]
 pub struct PaperWindow {
     /// Whether the window is currently shown. Toggled by the View-menu
-    /// checkbox (via [`crate::CocoApp::toggle_paper_window`]) or the
+    /// checkbox (through [`crate::CocoApp::toggle_paper_window`]) or the
     /// window's own close button — neither touches `handle`.
     pub open: bool,
     /// The live DMP-105 handle this window reads from, if the bit-banger's
@@ -43,7 +43,7 @@ pub struct PaperWindow {
     pub handle: Option<DMP105Handle>,
     /// Green-bar banding toggle, exposed in the window's header row.
     green_bar: bool,
-    /// Whether `green_bar` changed since the cache below was last built —
+    /// Whether `green_bar` changed since the cache was last built —
     /// used to invalidate every cached page in one shot (banding is a
     /// whole-page rendering choice, not a per-region dirty range).
     cached_green_bar: bool,

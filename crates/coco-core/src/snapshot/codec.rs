@@ -132,7 +132,7 @@ pub fn load(bytes: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
         });
     }
     let cbor = gunzip(header.body)?;
-    // Only Equal/Less remain here; Greater already returned above.
+    // Only Equal/Less remain here; Greater already returned earlier.
     if header.schema == SCHEMA_VERSION {
         return decode_payload(&cbor);
     }

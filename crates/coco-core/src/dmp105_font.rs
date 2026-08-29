@@ -4,11 +4,10 @@
 //! ç µ § ß ƒ)").
 //!
 //! **ARTISTIC APPROXIMATION — not hardware-verified.** The manual gives cell
-//! *geometry* (9x7 + descender row) but, obviously, not the ROM's actual
-//! per-dot bitmaps; those are unobtainable from the source material this
-//! project has. Every glyph bit pattern below is hand-authored to be a
-//! plausible, legible dot-matrix rendering of the character at this cell
-//! size — it is not a transcription of real DMP-105 ROM data and must never
+//! *geometry* (9x7 plus a descender row), but the available source material
+//! does not provide the ROM's actual per-dot bitmaps. Every glyph bit pattern
+//! that follows is hand-authored as a plausible, legible dot-matrix rendering at this
+//! cell size. It is not a transcription of real DMP-105 ROM data and must not
 //! be cited as a hardware fact.
 //!
 //! # Representation
@@ -22,7 +21,7 @@
 //!
 //! # Character sets
 //!
-//! - `$20-$7E`: the full 94-char printable ASCII set (`ASCII_FONT`), 1:1 per
+//! - `$20-$7E`: the full 95-character printable ASCII set (`ASCII_FONT`), 1:1 per
 //!   `dmp105-protocol.md` §6.
 //! - `$A0-$BF`: 32 European symbols. **TODO — not implemented per-code.**
 //!   The spec document lists only example characters (à ç £ µ § ® © ¼ ¾ ½ ¶ ¥

@@ -77,8 +77,8 @@ jobs:
           KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
           KEYCHAIN_PWD=$(openssl rand -base64 24)
           security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          # Generous auto-lock: the DMG is signed after notarization, which
-          # can occasionally take over an hour in Apple's queue.
+          # Keep the keychain unlocked because the DMG is signed after
+          # notarization, which can take over an hour in Apple's queue.
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
           echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
@@ -153,8 +153,8 @@ jobs:
           codesign --force --options runtime --timestamp \
             --sign "$SIGN_IDENTITY" "$APP"
 
-          # Notarize the bundle; the ticket covers the binary's code hash,
-          # so the identical binary in the tarball below passes Gatekeeper's
+          # Notarize the bundle. The ticket covers the binary's code hash, so
+          # the identical binary in the following tarball passes Gatekeeper's
           # online check too (bare executables cannot be stapled).
           ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
@@ -163,8 +163,8 @@ jobs:
             --wait --timeout 2h --output-format json \
             | tee "$RUNNER_TEMP/notary.json"
           if [ "$(jq -r .status "$RUNNER_TEMP/notary.json")" != "Accepted" ]; then
-            # Older notarytool exits 0 on an Invalid verdict; surface the
-            # rejection log instead of dying later at stapling.
+            # Older notarytool exits 0 on an Invalid verdict. Surface the
+            # rejection log instead of failing later during stapling.
             xcrun notarytool log "$(jq -r .id "$RUNNER_TEMP/notary.json")" \
               --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
               --password "$APPLE_APP_PASSWORD" || true

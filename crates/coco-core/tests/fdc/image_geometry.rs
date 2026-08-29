@@ -205,7 +205,7 @@ fn os9_lsn0_sniff_adopts_two_sides_and_halves_track_count() {
 #[test]
 fn os9_lsn0_with_mismatched_tot_keeps_naive_defaults() {
     // LSN0 claims 2 sides (DD.FMT bit 0 set) but DD.TOT is corrupted so it no
-    // longer matches file_len -- the sniff must reject it outright and the
+    // longer matches file_len — the sniff must reject it outright and the
     // naive JVC-default geometry (18 spt, 1 side) must be kept exactly.
     const TRACKS: usize = 10;
     let mut bytes = os9_synthetic_disk(TRACKS, 1);
@@ -231,7 +231,7 @@ fn headerless_disk_with_no_os9_signature_is_unaffected_by_the_sniff() {
 
 /// The real NitrOS-9 Level 2 CoCo3 40-track disk image, if present in the
 /// cocovm XDG data directory. Skips gracefully when absent, following
-/// `load_rom`'s pattern below.
+/// following the `load_rom` pattern.
 #[test]
 fn real_nitros9_40_track_disk_parses_as_40_tracks_2_sides() {
     let path = test_assets::disk(NOS9_L2_COCO3_40_TRACK);

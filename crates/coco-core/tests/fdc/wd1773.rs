@@ -145,7 +145,7 @@ fn read_sector_first_byte_waits_out_the_driver_setup_delay() {
 /// `LDA DATAREG` loop collects the first byte. Sampling the side at command
 /// dispatch instead reads the wrong physical side — off by one full track's
 /// worth of sectors — silently corrupting every module whose body straddles a
-/// side boundary (e.g. `rb1773`), which wedges the boot at "NITROS9 BOOT".
+/// side boundary, such as `rb1773`, which wedges the boot at "NITROS9 BOOT".
 #[test]
 fn read_sector_samples_side_when_the_data_field_streams_not_at_dispatch() {
     // Two-sided default-geometry image; mark (track 0, sector 1) distinctly on

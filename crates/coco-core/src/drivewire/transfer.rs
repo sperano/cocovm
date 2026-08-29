@@ -7,8 +7,9 @@ use super::protocol::State;
 use super::{DWServer, HEADER_LEN, SECTOR_SIZE, checksum_of, error};
 
 impl DWServer {
-    /// Decode a READ/READEX/WRITE header: byte 0 is the drive, bytes 1..4 the 24-bit
-    /// big-endian LSN. In HDB-DOS mode both are derived from the LSN alone.
+    /// Decode a READ/READEX/WRITE header: byte 0 is the drive, and bytes 1..4
+    /// contain the 24-bit big-endian LSN. In HDB-DOS mode both are derived
+    /// from the LSN alone.
     fn decode_header(&self, header: &[u8]) -> (usize, u64) {
         let wire_drive = header[0] as usize;
         let lsn = (u64::from(header[1]) << 16) | (u64::from(header[2]) << 8) | u64::from(header[3]);
@@ -21,8 +22,9 @@ impl DWServer {
         }
     }
 
-    /// Read the 256-byte sector at `lsn` from `drive`'s mounted image. [`error::NOT_READY`] if
-    /// unmounted/out of range, [`error::READ`] past the image's end or on I/O failure.
+    /// Read the 256-byte sector at `lsn` from `drive`'s mounted image.
+    /// Returns [`error::NOT_READY`] if unmounted or out of range, and
+    /// [`error::READ`] past the image's end or on I/O failure.
     fn read_sector(&mut self, drive: usize, lsn: u64) -> Result<[u8; SECTOR_SIZE], u8> {
         let image = self
             .drives
@@ -39,8 +41,9 @@ impl DWServer {
         Ok(sector)
     }
 
-    /// Write `sector` to `drive` at `lsn`. [`error::NOT_READY`] if unmounted/out of range,
-    /// [`error::WRITE`] on I/O failure, else [`error::OK`] (marks dirty).
+    /// Write `sector` to `drive` at `lsn`. Returns [`error::NOT_READY`] if
+    /// unmounted or out of range, [`error::WRITE`] on I/O failure, or
+    /// [`error::OK`] after marking the image dirty.
     fn write_sector(&mut self, drive: usize, lsn: u64, sector: &[u8]) -> u8 {
         let Some(image) = self.drives.get_mut(drive).and_then(|d| d.as_mut()) else {
             return error::NOT_READY;

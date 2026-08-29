@@ -49,7 +49,7 @@ pub struct SystemBus {
     #[serde(with = "serde_bytes")]
     pub ram: Box<[u8]>,
     /// Skipped: COPYRIGHTED ROM bytes never travel through a snapshot;
-    /// re-injected on restore via [`SystemBus::reattach_rom`].
+    /// re-injected on restore through [`SystemBus::reattach_rom`].
     /// Deserializes to an empty `Box<[u8]>`
     /// (every read against it falls through to `OPEN_BUS` until reattached).
     #[serde(skip)]
@@ -79,7 +79,7 @@ pub struct SystemBus {
     kbd_line_low: bool,
     /// Monotonic CPU-cycle counter, incremented once per CPU unit in
     /// `Machine::step_cpu_unit` by that unit's cycle cost; used
-    /// only to timestamp Becker-port DriveWire writes for `DwServer`'s
+    /// only to timestamp Becker-port DriveWire writes for `DWServer`'s
     /// transaction timeout — NOT a general-purpose scheduling clock, and NOT
     /// reset by [`SystemBus::new`]/power-on since it only needs to be
     /// monotonic, not meaningful in absolute terms.
@@ -100,10 +100,10 @@ pub struct SystemBus {
     /// Debugger memory watchpoints, installed by
     /// [`crate::debug::Debugger::run_until`] only while a debugged run is in
     /// flight and cleared again afterwards. `None` on the normal run path, so
-    /// `read`/`write` pay a single null-check and the hot path is never
-    /// regressed. Skipped: debugger-only,
-    /// `None` outside a debugged run, and `Default` (`None`) is exactly
-    /// right on restore — a snapshot never resumes mid-`run_until`.
+    /// `read`/`write` pay a single null-check without regressing the hot path.
+    /// Skipped because this is debugger-only state; `None` outside a debugged
+    /// run, and `Default` (`None`) is exactly right on restore because a
+    /// snapshot never resumes mid-`run_until`.
     #[serde(skip)]
     watch: Option<crate::debug::WatchTable>,
     /// First watchpoint access seen since the last [`SystemBus::clear_watch_hit`];
@@ -142,7 +142,8 @@ impl SystemBus {
     }
 
     /// Restore-time fixups for `#[serde(skip)]` fields, after a snapshot
-    /// round-trip. Delegates into the cartridge tree, whose own skipped fields need rebuilding too.
+    /// round-trip. Delegates into the cartridge tree, whose skipped fields
+    /// also need rebuilding.
     pub fn after_restore(&mut self) {
         self.cart.after_restore();
     }
@@ -160,7 +161,7 @@ impl SystemBus {
     }
 
     /// Enable the Becker port, if not already enabled. Idempotent — does
-    /// nothing if a `DwServer` is already installed.
+    /// nothing if a `DWServer` is already installed.
     pub fn enable_drivewire(&mut self) {
         if self.drivewire.is_none() {
             self.drivewire = Some(DWServer::new());
@@ -248,11 +249,13 @@ fn mmu_index(addr: u16) -> (usize, usize) {
 
 impl Bus for SystemBus {
     fn read(&mut self, addr: u16) -> u8 {
-        // Single null-check when no watchpoints are installed, so the hot path is unchanged.
+        // A single null check keeps the hot path unchanged when no watchpoints
+        // are installed.
         if self.watch.is_some() {
             self.note_watch(addr, crate::debug::WatchKind::Read);
         }
-        // Two independent concrete decode paths, branched once up front, not a trait object.
+        // Branch once between the two concrete decode paths instead of using a
+        // trait object.
         if self.variant != MachineVariant::Coco3 {
             return self.sam_read(addr);
         }

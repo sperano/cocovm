@@ -37,7 +37,7 @@ pub fn two_sided_marker_disk(side0: u8, side1: u8) -> JVCDisk {
 /// first byte lands), so one sector read's first byte is ready.
 pub const ONE_DRQ_INTERVAL: u32 = 1200;
 
-/// Read sector 1 of track 0 through the currently-selected drive/side and
+/// Read sector 1 of track 0 through the selected drive/side and
 /// return the byte delivered. Force-Interrupts first so a previous call's
 /// still-in-flight command (this only ticks long enough for the first byte,
 /// not a whole 256-byte sector) doesn't cause the new command to be silently
@@ -129,8 +129,8 @@ pub const SECTOR_SIZE: usize = 256;
 pub const DIR_ENTRY_SIZE: usize = 32;
 
 /// Synthesize a headerless 35-track/18-spt/1-side/256B RS-DOS disk with one
-/// file, "HELLO.BAS", occupying granule 0 (track 0, both granules — i.e. the
-/// first 2 tracks worth of granules; RS-DOS granules are half-tracks, 2 per
+/// file, "HELLO.BAS", occupying granule 0 (track 0, both granules — that is, the
+/// first two tracks worth of granules; RS-DOS granules are half-tracks, two per
 /// track, 9 sectors each on a 18-spt disk).
 pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JVCDisk {
     const TRACKS: usize = 35;
@@ -175,7 +175,7 @@ pub fn synthesized_rsdos_disk(filename8: &str, ext3: &str) -> JVCDisk {
 }
 
 /// Like [`load_rom`] but returns `None` instead of panicking when the
-/// (git-ignored) ROM image isn't present, so the LOADM regression below skips
+/// ignored ROM image isn't present, so the following LOADM regression skips
 /// gracefully in an asset-less checkout.
 pub fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
     let path = test_assets::rom(name);
@@ -236,7 +236,7 @@ pub fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JVCDisk 
     JVCDisk::from_bytes(bytes).unwrap()
 }
 
-/// Like [`try_load_rom`], but for a disk image under the git-ignored `disks/`.
+/// Like [`try_load_rom`], but for a disk image under the ignored `disks/`.
 pub fn try_load_disk(name: &str) -> Option<Vec<u8>> {
     let path = test_assets::disk(name);
     std::fs::read(&path).ok()

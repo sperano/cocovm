@@ -58,10 +58,10 @@ pub fn px(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
     fb[i..i + 4].try_into().unwrap()
 }
 
-// --- MC6847 vs MC6847T1 font/lowercase (`crates/coco-core/src/font6847.rs`) ---
+// --- MC6847 versus MC6847T1 font and lowercase tests (`crates/coco-core/src/font6847.rs`) ---
 //
-// Expected glyph bit patterns below are copied from (and cross-checked
-// against the unit tests alongside) `src/font6847.rs`'s `MC6847_FONT`/
+// The expected glyph bit patterns that follow are copied from and cross-checked
+// against the unit tests alongside `src/font6847.rs`'s `MC6847_FONT` and
 // `MC6847T1_FONT` tables: 'O' (code $0F) at plain-font index 15 / T1-font
 // index 15, and lowercase 'a' at T1-font index 64+1=65 (`font6847.rs`'s
 // module doc: index 64-95 = lowercase, entry 65 = 'a', screen code $01).
@@ -82,7 +82,7 @@ pub const T1_O_GLYPH: [u8; CELL_H] = [
 
 /// Sample the 8×12 cell at (row, col) into a bit grid: `true` where the
 /// pixel equals `on_color`, `false` where it equals `off_color` (panics on
-/// any other colour — every glyph pixel must be one or the other).
+/// any other color — every glyph pixel must be one or the other).
 pub fn sample_cell(
     fb: &[u8],
     row: usize,

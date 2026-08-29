@@ -2,8 +2,7 @@
 //! RoboCop/Predator banked-pak circuit), the `$FF41` SN76489A port routed
 //! through the bus, the unconditional speaker mix, and MPI behaviour —
 //! registers follow the SCS-selected slot while audio plays from any slot
-//! (; MAME `coco_gmc.cpp`,
-//! `coco_pak.cpp`).
+//! (MAME `coco_gmc.cpp` and `coco_pak.cpp`).
 
 use coco_core::cart::{
     BANKED_PAK_MAX_LEN, BANKED_PAK_WINDOW_LEN, BankedPakError, BankedROMPak, Cartridge,
@@ -127,7 +126,7 @@ fn ff40_switches_the_gmc_rom_bank_through_the_bus() {
     let mut b = bus_with_gmc();
     b.write(BANK_REG, 4);
     // The external window needs INIT0's ROM-map bits pointing at the cart;
-    // read via the cart directly to keep the test on the latch itself.
+    // read through the cart directly to keep the test on the latch itself.
     assert_eq!(b.cart.rom_read(0xC000), marker(4));
 }
 
@@ -175,7 +174,7 @@ fn machine_mixes_gmc_audio_into_the_field_samples() {
 /// 6809 code a GMC game would run, assembled by hand (opcodes: `ORCC` #imm
 /// `1A`, `LDA` #imm `86`, `STA` ext `B7`, `BRA` `20`): mask interrupts, then
 /// program tone 0 to period $01E at max volume, mute the other three
-/// channels, and loop. Runs at `$C000` via the autostart FIRQ path.
+/// channels, and loop. Runs at `$C000` through the autostart FIRQ path.
 #[rustfmt::skip]
 const PSG_PLAYER: [u8; 34] = [
     0x1A, 0x50,             // ORCC #$50      (mask IRQ/FIRQ)
@@ -268,7 +267,7 @@ fn mpi_routes_psg_writes_to_the_selected_slot_only_but_audio_from_any() {
     }
     assert!(heard, "unselected slot's PSG must still be audible");
 
-    // Select slot 1 via $FF7F (SCS bits 1-0), mute again: now it lands.
+    // Select slot 1 through $FF7F (SCS bits 1-0), mute again: now it lands.
     b.write(MPI_SELECT, 0xCD);
     for cmd in PSG_MUTE_ALL {
         b.write(PSG_REG, cmd);

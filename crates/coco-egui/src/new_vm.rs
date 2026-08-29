@@ -4,8 +4,8 @@
 //! never touches a machine or a file itself. Its one host is the manager's
 //! detail pane (`manager::draw_detail_ok`), which draws the form over a
 //! saved machine definition and auto-saves each change. Machine creation
-//! belongs to the manager. The `constrain` rules
-//! below therefore live in exactly one place.
+//! belongs to the manager. The `constrain` rules that follow therefore live in
+//! exactly one place.
 
 use std::path::PathBuf;
 

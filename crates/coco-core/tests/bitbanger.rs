@@ -1,6 +1,6 @@
 //! Bus-level check for the printer BUSY line (PIA1 PB0, `$FF22`) polarity:
 //! 0 = ready, 1 = busy (`docs/bitbanger-spec.md` "Register map"). BASIC's
-//! driver spins while carry is set after `LDB $FF22 / LSRB`, i.e. while bit 0
+//! driver spins while carry is set after `LDB $FF22 / LSRB`, that is, while bit 0
 //! is 1, so the not-busy default must present bit 0 clear or every `PRINT`
 //! statement would hang waiting for a BUSY that never clears.
 //!

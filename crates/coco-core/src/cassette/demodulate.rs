@@ -17,8 +17,9 @@ const BIT_PERIOD_THRESHOLD: u64 = (ZERO_BIT_PERIOD as u64 + ONE_BIT_PERIOD as u6
 /// re-hunts for a leader when it sees one.
 const PERIOD_BREAK: u64 = 2 * ZERO_BIT_PERIOD as u64;
 
-/// Demodulate a DAC transition capture into the decoded byte stream: crossings mark tone phase
-/// and bit length, then byte alignment is recovered by hunting for [`LEADER`]/[`SYNC`].
+/// Demodulate a DAC transition capture into the decoded byte stream. Crossings
+/// mark tone phase and bit length, then byte alignment is recovered by hunting
+/// for [`LEADER`]/[`SYNC`].
 pub fn demodulate(capture: &[Transition]) -> Vec<u8> {
     bits_to_bytes(capture_to_bits(capture))
 }
@@ -79,8 +80,9 @@ enum BlockState {
 /// Block bytes besides the payload: type, length, checksum, trailer $55.
 const BLOCK_OVERHEAD: usize = 4;
 
-/// Recover byte alignment from a demodulated bit stream: hunt bit-by-bit for [`LEADER`] runs
-/// then [`SYNC`], then read one block byte-aligned before returning to hunting.
+/// Recover byte alignment from a demodulated bit stream. Hunt bit by bit for
+/// [`LEADER`] runs and [`SYNC`], then read one block byte-aligned before
+/// returning to the hunt.
 fn bits_to_bytes(bits: Vec<Option<bool>>) -> Vec<u8> {
     let mut out = Vec::new();
     let mut state = BlockState::Hunt;

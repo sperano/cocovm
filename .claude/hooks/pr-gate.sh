@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse gate for `gh pr create`: runs with the user's shell permissions,
-# so it can read the diff itself, then asks a headless Claude for a fast
-# last-line verdict. Fails closed only on concrete findings or on being
+# so it can read the diff itself, then runs a headless Claude review for a
+# final verdict. Fails closed only on concrete findings or on being
 # unable to run the check at all.
 set -euo pipefail
 

@@ -14,7 +14,7 @@ use coco_core::{MachineConfig, fdc};
 const LEADER: u8 = 0x55;
 
 /// Add back the owner-write bit on `path` if missing — so a test killed
-/// mid-assertion doesn't wedge the next run. Flips the bit via
+/// mid-assertion doesn't wedge the next run. Flips the bit using
 /// `PermissionsExt` rather than `set_readonly(false)`, which clears every
 /// write-protect bit (clippy `permissions_set_readonly_false`).
 #[cfg(unix)]
@@ -168,7 +168,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
 }
 
 /// A bare booted machine — no cart, no media mounted yet — for the
-/// flush-failure tests below, each of which mounts one piece of media.
+/// flush-failure tests that follow, each of which mounts one piece of media.
 pub(crate) fn boot_app() -> CocoApp {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
@@ -304,7 +304,7 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
         );
     }
 
-    // `_ro` dropped above restores write access; retry must now succeed.
+    // Dropping `_ro` earlier restores write access; retry must now succeed.
     app.save_state_to(&ccstate_path)
         .expect("retry after the file is writable again must succeed");
     assert!(ccstate_path.exists());
@@ -319,7 +319,7 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
     );
 }
 
-/// Tape counterpart of the disk write-back-failure test above: a landed
+/// Tape counterpart of the earlier disk write-back-failure test: a landed
 /// recording that can't be written back to its `.cas` file fails the whole save.
 #[test]
 fn save_state_to_fails_when_tape_write_back_fails() {

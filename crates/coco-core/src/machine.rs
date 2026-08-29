@@ -45,8 +45,8 @@ const AUDIO_BUFFER_CAP: usize = 8 * 262 * crate::audio::OVERSAMPLE as usize;
 /// The video path that the GIME drives. `render_field` dispatches on this value.
 ///
 /// Only [`VideoMode::CocoText`] is implemented. The other variants are the
-/// branch points for the graphics renderers to come (PMODE and HSCREEN). Each
-/// renderer fills its own-size buffer and the frontend scales to fit — see the
+/// branch points for planned PMODE and HSCREEN graphics renderers. Each
+/// renderer fills its native-size buffer and the frontend scales to fit. See the
 /// `video-output-architecture` note (Option A). Option B (one canonical raster) is
 /// the planned follow-up for per-scanline mode changes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -91,7 +91,7 @@ pub struct Machine {
     /// Stereo speaker samples on the oversampled grid
     /// ([`crate::audio::OVERSAMPLE`] per scanline, ~62.9 kHz on NTSC), `[left,
     /// right]`. [`Machine::flush_line_audio`] appends; the frontend drains
-    /// via [`Machine::take_audio`] and resamples to the host rate.
+    /// using [`Machine::take_audio`] and resamples to the host rate.
     /// Self-capping so headless use (tests, no audio sink) doesn't grow it
     /// unboundedly. Skipped: derived scratch, regrows on demand from the
     /// `Default` empty `Vec`.
@@ -119,8 +119,8 @@ pub struct Machine {
     /// CPU cycles executed in the current scanline so far. Was `spent` inside
     /// the old `run_cycles`. Reset to 0 at each scanline boundary; the
     /// invariant after any completed `step_instruction` is
-    /// `line_cycles_spent < line_budget` (mid-line) or `== 0` (just crossed
-    /// into a new line/field).
+    /// `line_cycles_spent < line_budget` (mid-line) or `== 0` (entered a new
+    /// line/field).
     line_cycles_spent: u32,
     /// This scanline's cycle budget, sampled once at the line's start (when
     /// `line_cycles_spent == 0`) exactly like the old `run_field` sampled
@@ -220,7 +220,7 @@ impl Machine {
         CPU_HZ
     }
 
-    /// Execute one CPU instruction via the raw MC6809 core only. Returns
+    /// Execute one CPU instruction using the raw MC6809 core only. Returns
     /// cycles consumed.
     ///
     /// Unlike [`Machine::step_instruction`], this bypasses every part of the
@@ -242,8 +242,8 @@ impl Machine {
         self.cpu.step(&mut self.bus)
     }
 
-    /// The scanline within the current field (`0..lines_per_field`) execution
-    /// is currently parked at.
+    /// The scanline where execution is currently parked within the field
+    /// (`0..lines_per_field`).
     pub fn current_scanline(&self) -> u32 {
         self.line
     }
@@ -279,7 +279,7 @@ impl Machine {
         self.line = 0;
         self.line_cycles_spent = 0;
         self.line_budget = 0;
-        // `reset()` first: the re-latch below reads the reset cartridge.
+        // `reset()` first: the following re-latch reads the reset cartridge.
         self.reset();
         self.bus.reset_edge_history();
         self.reset_audio_grid();

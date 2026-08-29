@@ -15,7 +15,7 @@ const ROM_PAK_BASE: u16 = 0x8000;
 /// Pak images are dumped CTS-window-first: file offset 0 is the byte at
 /// `$C000`, and (for 32K carts) offset `$4000` is the byte at `$8000` once
 /// INIT0 MC1:MC0 = `11` maps the second half in. The GIME routes cart banks
-/// as `((bank & 3) ^ 2) * 0x2000` (MAME `gime.cpp` `update_memory`), i.e. the
+/// as `((bank & 3) ^ 2) * 0x2000` (MAME `gime.cpp` `update_memory`), that is, the
 /// two 16K halves are swapped relative to a flat `addr - $8000` view, so we
 /// XOR the half-select bit when indexing. Invisible for ≤16K paks (the
 /// mirror-fill makes both halves identical); load-bearing for 32K carts like
@@ -59,7 +59,7 @@ impl std::error::Error for ROMPakError {}
 #[derive(Serialize, Deserialize)]
 pub struct ROMPak {
     /// Skipped: COPYRIGHTED pak bytes (always a 32K mirror-fill) never
-    /// travel through a snapshot; re-injected on restore via
+    /// travel through a snapshot; re-injected on restore through
     /// [`ROMPak::reattach_image`]. Deserializes
     /// to an empty `Box<[u8]>` until reattached.
     #[serde(skip)]
@@ -101,9 +101,8 @@ impl ROMPak {
     /// Restore-path-only: re-inject this pak's image after a snapshot
     /// restore, leaving `autostart` untouched (unlike
     /// [`ROMPak::from_bytes`], which always takes a fresh value for it) — the
-    /// deserialized `autostart` is itself the restored machine state
-    ///. Same validation and mirror-fill as
-    /// [`ROMPak::from_bytes`].
+    /// deserialized `autostart` is itself the restored machine state. Uses
+    /// the same validation and mirror-fill as [`ROMPak::from_bytes`].
     pub fn reattach_image(&mut self, bytes: &[u8]) -> Result<(), ROMPakError> {
         if bytes.is_empty() {
             return Err(ROMPakError::Empty);
@@ -210,13 +209,13 @@ impl std::error::Error for BankedPakError {}
 #[derive(Serialize, Deserialize)]
 pub struct BankedROMPak {
     /// Skipped: COPYRIGHTED pak bytes (always a 128K mirror-fill) never
-    /// travel through a snapshot; re-injected on restore via
+    /// travel through a snapshot; re-injected on restore through
     /// [`BankedROMPak::reattach_image`].
     /// Deserializes to an empty `Box<[u8]>` until reattached.
     #[serde(skip)]
     image: Box<[u8]>,
     /// The raw `$FF40` latch byte (`m_pos`) — masking happens at read time,
-    /// via the modulo above.
+    /// using the earlier modulo.
     bank: u8,
     /// Whether this pak ties the CART* line to Q (see
     /// [`Cartridge::cart_line_ties_q`]).

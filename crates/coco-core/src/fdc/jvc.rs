@@ -147,7 +147,7 @@ pub struct JVCDisk {
     /// Skipped: a mounted disk image's contents are media, referenced by
     /// path+hash in the snapshot container (a later phase) rather than
     /// embedded — floppy images can be copyrighted commercial software.
-    /// Re-injected via [`JVCDisk::reattach_data`].
+    /// Re-injected through [`JVCDisk::reattach_data`].
     /// Deserializes to an empty `Vec` until reattached.
     #[serde(skip)]
     data: Vec<u8>,
@@ -276,7 +276,7 @@ impl JVCDisk {
         self.dirty = false;
     }
 
-    /// The full image bytes (header included), e.g. for writing a modified
+    /// The full image bytes, including the header, for writing a modified
     /// disk back to its file.
     pub fn bytes(&self) -> &[u8] {
         &self.data

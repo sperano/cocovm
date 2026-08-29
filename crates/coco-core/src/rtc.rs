@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::cart::{Cartridge, IO_OPEN_BUS};
 
 /// A calendar timestamp fed to the RTC by the host frontend. Fields are plain
-/// binary (not BCD); `year` is the full year (e.g. 2026) — the chip exposes
+/// binary (not BCD); `year` is the full year, such as 2026. The chip exposes
 /// only `year % 100`, but keeping the century lets register writes preserve
 /// it. The weekday register is derived from the date, never stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,9 +170,9 @@ const CF_POWER_ON: u8 = cf::H24;
 const NOON: u8 = 12;
 
 /// Placeholder time the restored default `now` closure yields until the
-/// frontend re-injects a real host time source via
-/// [`DistoRTC::set_time_source`] — an
-/// obviously-fake epoch, not a guess at the real time.
+/// frontend re-injects a real host time source through
+/// [`DistoRTC::set_time_source`] — a sentinel epoch, not a guess at the real
+/// time.
 const RESTORED_PLACEHOLDER_TIME: RTCTime = RTCTime {
     year: 1970,
     month: 1,
@@ -196,8 +196,8 @@ fn default_time_source() -> TimeSource {
 ///
 /// The clock itself is `injected now() + offset_secs`: never ticked, so it
 /// can't drift from the host clock and doesn't care about emulation pauses,
-/// double-speed POKEs, or headless runs. Setting any time register just moves
-/// the offset.
+/// double-speed POKEs, or headless runs. Setting any time register moves the
+/// offset.
 #[derive(Serialize, Deserialize)]
 pub struct MSM6242 {
     /// Never travels through a snapshot (a closure has no serializable

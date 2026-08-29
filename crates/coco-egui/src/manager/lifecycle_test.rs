@@ -2,7 +2,7 @@
 //! `start_vm` recording a boot count and seeding a fresh VM's live runtime
 //! total from the persisted one, and `suspend_vm`/`stop_vm` folding that
 //! live total back into the persisted total. Boots a real machine
-//! via `crate::launch_machine`, which reads the real `coco3.rom` from the
+//! through `crate::launch_machine`, which reads the real `coco3.rom` from the
 //! cocovm XDG data directory the same way `launch_test.rs` does.
 
 use std::fs;
@@ -177,7 +177,7 @@ fn fold_runtime_into_def_is_idempotent() {
     );
 
     // Append a sentinel the serializer would never produce, so a spurious
-    // re-save by the no-op fold below is caught.
+    // re-save by the no-op fold that follows is caught.
     let toml_path = machines_dir.path().join("lifecycle-fold-idempotent.toml");
     let mut sentinel_contents = fs::read_to_string(&toml_path).expect("file should exist");
     sentinel_contents.push_str("\n# sentinel: an idempotent fold must not rewrite this file\n");

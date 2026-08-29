@@ -130,8 +130,9 @@ fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     }
 }
 
-/// The 1-based front-panel switch positions a [`super::CartridgeDTO::MPI`]'s
-/// `switch` accepts, matching the UI's "Slot 1"–"Slot 4".
+/// The 1-based front-panel switch positions that a
+/// [`super::CartridgeDTO::MPI`]'s `switch` accepts, matching the UI's
+/// "Slot 1"–"Slot 4".
 const MPI_SWITCH_RANGE: std::ops::RangeInclusive<i64> = 1..=(MPI_SLOT_COUNT as i64);
 
 /// A `[peripherals].cartridge`'s `slots` array of the wrong length, or a

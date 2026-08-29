@@ -1,9 +1,9 @@
 //! Integration coverage for the GIME-native video dispatch: booting the real ROM
-//! to the (VDG-compatible) BASIC prompt, then programming the GIME registers the
-//! way WIDTH 80 / HSCREEN do must switch the machine to per-scanline painting
-//! of the canonical 640×240 raster (Option B), and back cleanly to the VDG
-//! whole-field geometry. Register values are the ROM's own video-register
-//! images (SEB Unravelled II, tables at LE03C/LE071).
+//! to the (VDG-compatible) BASIC prompt, then programming the GIME registers
+//! as WIDTH 80 and HSCREEN do. These writes must switch the machine to
+//! per-scanline painting of the canonical 640×240 raster (Option B), and back
+//! cleanly to the VDG whole-field geometry. Register values are the ROM's own
+//! video-register images (SEB Unravelled II, tables at LE03C/LE071).
 
 use coco_core::raster::{CANVAS_H, CANVAS_W};
 use coco_core::{Machine, MachineConfig};

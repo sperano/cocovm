@@ -167,7 +167,7 @@ pub struct MachineConfig {
 
 impl MachineConfig {
     /// Reject variant/video/memory/VDG/monitor combinations the emulator
-    /// doesn't support, or that real hardware never shipped (e.g. no 4K or
+    /// doesn't support, or that real hardware never shipped, such as a 4K or
     /// 32K CoCo 2 — CoCo 2 service manual 26-3026/26-3027 §3.3); see the
     /// error messages for specifics.
     pub fn validate(&self) -> Result<(), String> {

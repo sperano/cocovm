@@ -1,12 +1,12 @@
-//! Headless sign-off example for the virtual fanfold-paper renderer
-//!: feeds a canned byte stream
-//! through a real [`DMP105Handle`], rasterizes the whole printed roll (plus
+//! Headless sign-off example for the virtual fanfold-paper renderer. It feeds
+//! a canned byte stream through a real [`DMP105Handle`], rasterizes the whole
+//! printed roll (plus
 //! one trailing blank page, same "+2 pages" rule the live window uses), and
 //! writes two PNGs so a human can eyeball the result without launching the
 //! GUI.
 //!
-//! No `eframe`/`egui` dependency — just `coco_core` plus the egui-free
-//! `paper_render` rasterizer (included directly via `#[path]`, since
+//! No `eframe`/`egui` dependency — only `coco_core` plus the egui-free
+//! `paper_render` rasterizer (included directly using `#[path]`, since
 //! `coco-egui` is a binary-only crate with no library target for an example
 //! to depend on).
 //!
@@ -22,11 +22,11 @@ use paper_render::{PAGE_HEIGHT_IN, RASTER_DPI};
 
 /// Bare `\r`s fed after the styled lines, to land solidly on page 2. 66
 /// lines/page at 6 LPI is the real "lines per page" convention
-/// (`PAGE_HEIGHT_IN * Y_UNITS_PER_INCH / 12 == 66` exactly, checked below);
+/// (`PAGE_HEIGHT_IN * Y_UNITS_PER_INCH / 12 == 66` exactly, checked later);
 /// this is comfortably past that boundary.
 const BLANK_LINES_TO_PAGE_2: usize = 75;
 
-/// Display convenience for `full.png` — not a T5 spec value, just a
+/// Display convenience for `full.png` — not a T5 spec value, but a
 /// sensible width for a human skimming the whole roll in an image viewer.
 const FULL_PREVIEW_WIDTH_PX: u32 = 900;
 

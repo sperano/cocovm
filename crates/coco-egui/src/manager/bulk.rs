@@ -1,9 +1,8 @@
 //! The bulk detail pane: shown in [`super::ManagerApp`]'s central panel in
 //! place of a single machine's edit form whenever more than one row is
-//! selected (`manager.rs`'s `update`) — just a summary line and a pointer to
-//! the toolbar. There is no bulk
-//! edit form: `EditState` only ever describes one machine
-//! (`manager.rs`'s doc on the `edit` field), so a multi-selection can only
+//! selected (`manager.rs`'s `update`) — only a summary line and a pointer to
+//! the toolbar. There is no bulk edit form: `EditState` describes one machine
+//! only (`manager.rs`'s doc on the `edit` field), so a multi-selection can only
 //! run transport actions, not edit definitions.
 //!
 //! [`BulkAction`] and [`ManagerApp::apply_bulk`] are the single dispatch
@@ -129,7 +128,7 @@ impl ManagerApp {
     }
 
     /// If any acted-on row recorded a [`super::MachineEntry::launch_error`],
-    /// collapse the selection to just that row so the detail pane shows why.
+    /// collapse the selection to that row so the detail pane shows why.
     /// Surfaces only the first failure — the documented tradeoff for a batch
     /// action with no dialog of its own.
     pub(super) fn focus_first_failed_row(&mut self, acted: &[usize]) {

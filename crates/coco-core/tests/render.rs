@@ -1,6 +1,6 @@
 //! Deterministic coverage for the VDG text renderer (`video::render_text`):
 //! geometry, alphanumeric glyphs, inverse video, and semigraphics-4 blocks.
-//! Colours are supplied via a resolved palette, so tests use sentinel colours.
+//! Colours are supplied through a resolved palette, so tests use sentinel colours.
 
 use coco_core::gime::init0;
 use coco_core::video::{

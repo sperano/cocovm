@@ -66,7 +66,8 @@ fn coco3_matches_the_service_manual_key_count() {
 
 #[test]
 fn coco12_matches_the_service_manual_key_count() {
-    // "Keyboard: 53-key microprocessor scanned matrix" — Color Computer 2 NTSC Service Manual §2.3.
+    // "Keyboard: 53-key microprocessor scanned matrix" — Color Computer 2
+    // NTSC Service Manual §2.3.
     assert_eq!(row_counts(COCO12_ROWS), vec![13, 14, 13, 12, 1]);
     assert_eq!(caps(COCO12_ROWS).len(), 53);
 }

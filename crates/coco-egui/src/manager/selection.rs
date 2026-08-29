@@ -27,7 +27,7 @@ pub(crate) struct Selection {
     /// new anchor either way); never moved by a Shift-click itself, so
     /// repeated Shift-clicks keep extending/shrinking from the same start —
     /// the Finder/Explorer convention. Always `None` exactly when `rows` is
-    /// empty; every mutator maintains that pairing, via
+    /// empty; every mutator maintains that pairing, using
     /// [`Self::drop_anchor_if_empty`] for the two (`remove_index`,
     /// `restore`) that only filter/remap existing indices rather than
     /// setting the anchor directly.
@@ -119,7 +119,7 @@ impl Selection {
     }
 
     /// Restore a [`Self::snapshot`] against `entries`' current order. A
-    /// slug the snapshot recorded but that no longer exists is simply dropped.
+    /// slug the snapshot recorded but that no longer exists is dropped.
     pub(super) fn restore(&mut self, entries: &[MachineEntry], snapshot: &SelectionSnapshot) {
         self.rows = snapshot
             .rows

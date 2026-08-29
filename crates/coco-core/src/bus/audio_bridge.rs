@@ -7,7 +7,7 @@ use super::SystemBus;
 impl SystemBus {
     /// Snapshot the latched audio-affecting inputs: the 6-bit DAC, single-bit
     /// beeper, SNDEN + mux selects, cassette relay, and the cartridge's
-    /// latched stereo outputs (Tandy Service Manual mux table via MAME
+    /// latched stereo outputs (Tandy Service Manual mux table from MAME
     /// `coco.cpp` `update_sound`; SEB Unravelled II $FF22/$FF23). Generator-type
     /// sources (mux-10 AY, crystal PSGs) are sampled at flush time instead.
     fn snapshot_audio_inputs(&self) -> crate::audio::AudioInputs {
@@ -42,7 +42,7 @@ impl SystemBus {
         self.audio_inputs = self.snapshot_audio_inputs();
     }
 
-    /// Record a cycle-timestamped audio event if the write that just landed
+    /// Record a cycle-timestamped audio event if the completed write
     /// changed any latched audio input.
     pub(super) fn note_audio_write(&mut self) {
         let inputs = self.snapshot_audio_inputs();

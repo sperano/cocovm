@@ -1,5 +1,5 @@
 //! Tandy Multi-Pak Interface (MPI) coverage: the `$FF7F` select register
-//! (readback masking, full-byte-replace semantics), front-panel-switch vs.
+//! (readback masking, full-byte-replace semantics), front-panel switch versus
 //! software-write control, SCS/CTS/CART* per-slot routing, the HALT*/NMI
 //! wire-OR across all 4 slots regardless of selection, and an end-to-end
 //! boot integration with the FD-502 nested in slot 4. Facts per MAME
@@ -51,10 +51,9 @@ fn dummy_machine() -> Machine {
 /// probe instead of the normal read-your-last-write behaviour.
 const PROBE_TICKS: u16 = 0xFF44;
 
-/// Records the last value written to it (so a bus read can prove which slot
-/// answered without needing to downcast out of the `MultiPak`'s trait-object
-/// slots), and can be told to assert HALT*/a pending NMI/CART*-tie-to-Q, or
-/// count ticks.
+/// Records the last value written to it, so a bus read can identify the slot
+/// without downcasting the `MultiPak`'s trait-object slots. The test can also
+/// configure it to assert HALT*, queue an NMI, tie CART* to Q, or count ticks.
 struct TestCart {
     id: u8,
     last_write: Option<u8>,
@@ -143,7 +142,7 @@ fn write_replaces_the_whole_byte_not_a_nibble_merge() {
 }
 
 // ============================================================================
-// Switch vs. software-write control.
+// Switch versus software-write control.
 // ============================================================================
 
 #[test]
@@ -161,7 +160,7 @@ fn software_write_blocks_the_switch_until_the_next_reset() {
     mp.control_write(0x00); // software selects slot index 0 everywhere
     assert_eq!(mp.control_read(), 0xCC);
 
-    mp.set_switch(1); // physical switch moved to slot 2 -- must be ignored now
+    mp.set_switch(1); // physical switch moved to slot 2 — must be ignored now
     assert_eq!(
         mp.control_read(),
         0xCC,
@@ -186,7 +185,7 @@ fn machine_reset_restores_switch_control_and_reloads_value() {
     let mut m = dummy_machine();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     mp.control_write(0x10); // software takes over
-    mp.set_switch(1); // physical slot 2 -- blocked, must not apply yet
+    mp.set_switch(1); // physical slot 2 — blocked, must not apply yet
     m.insert_cartridge(mp);
 
     assert_eq!(
@@ -232,17 +231,18 @@ fn scs_routing_follows_bits_1_0_and_tracks_changes() {
 // $FF60-$FF7E extension window: broadcast to every slot, not SCS-routed.
 // ============================================================================
 
-/// A device decoding the `$FF60-$FF7E` extension window (e.g. the Deluxe
-/// RS-232 Pak's ACIA) must answer from any slot, not just the SCS-selected
-/// one — the MPI only switches SCS*/CTS*/CART*, not the shared address/data
-/// bus (`coco_multi.cpp:9-19`). `read` and `peek` must agree on this routing.
+/// A device decoding the `$FF60-$FF7E` extension window, such as the Deluxe
+/// RS-232 Pak's ACIA must answer from any slot, rather than only the
+/// SCS-selected one — the MPI switches only SCS*/CTS*/CART*, not the shared
+/// address/data bus (`coco_multi.cpp:9-19`). `read` and `peek` must agree on
+/// this routing.
 #[test]
 fn extension_window_broadcasts_for_both_read_and_peek() {
     let mut b = bus();
     let mut mp = MultiPak::new(SWITCH_SLOT4);
     mp.insert(0, Cart::custom(TestCart::new(0x42)));
     b.cart = mp.into();
-    b.write(MPI_CONTROL, 0xFF); // SCS and CTS both point at slot 3 -- slot 0 is unselected
+    b.write(MPI_CONTROL, 0xFF); // SCS and CTS point at slot 3 — slot 0 is unselected
 
     const EXT_ADDR: u16 = 0xFF68; // outside SCS ($FF40-$FF5F), inside the $FF60-$FF7E extension
     assert_eq!(
@@ -333,7 +333,7 @@ fn halt_and_nmi_are_wire_ored_across_all_slots_regardless_of_selection() {
     mp.insert(2, Cart::custom(nmi_cart));
     b.cart = mp.into();
 
-    b.write(MPI_CONTROL, 0x00); // selects slot 0 for both SCS and CTS -- neither slot 1 nor 2
+    b.write(MPI_CONTROL, 0x00); // selects slot 0 for SCS and CTS — neither slot 1 nor 2
     assert!(
         b.halt_asserted(),
         "HALT* must be wire-ORed even though slot 1 (which asserts it) isn't selected"
@@ -372,7 +372,7 @@ fn tick_advances_every_slot_regardless_of_selection() {
 // ============================================================================
 
 /// Like `tests/fdc.rs`'s `try_load_rom`: returns `None` instead of panicking
-/// when the (git-ignored) ROM image isn't present, so this test skips
+/// when the ignored ROM image isn't present, so this test skips
 /// gracefully in an asset-less checkout.
 fn try_load_rom(name: &str) -> Option<Box<[u8]>> {
     let path = test_assets::rom(name);

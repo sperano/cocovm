@@ -1,14 +1,15 @@
 //! Coverage for `Machine::active_rect` — the active (non-border) picture
-//! rectangle the frontend maps pointer position over for mouse-as-joystick.
+//! rectangle over which the frontend maps pointer positions for mouse-as-joystick.
 //! Mirrors the geometry the renderers themselves paint:
 //! `video::BORDER`/`ACTIVE_W`/`ACTIVE_H` on CoCo 1/2, and on CoCo 3
 //! `gime_video::active_span`'s wide/non-wide split plus `active_rows`'s
-//! LPF placement — the same helpers the painters draw from (same facts
-//! `render_gime.rs` and `render.rs` exercise for the renderers proper).
+//! LPF placement — the same helpers that the renderers use. The corresponding
+//! renderer tests are in `render_gime.rs` and `render.rs`.
 //!
-//! No CPU execution is needed — `active_rect` only reads live `MachineConfig`/
-//! `GIME` state — so these `Machine`s run a zeroed synthetic ROM, same trick
-//! `render.rs`'s `text_renderer_follows_sam_page_register` uses.
+//! CPU execution is not needed because `active_rect` only reads live
+//! `MachineConfig` and `GIME` state. These `Machine`s therefore run a zeroed
+//! synthetic ROM, as `render.rs`'s `text_renderer_follows_sam_page_register`
+//! test does.
 
 use coco_core::gime::init0;
 use coco_core::{
@@ -73,12 +74,10 @@ fn coco2_uses_the_fixed_vdg_active_rect() {
 #[test]
 fn coco3_legacy_field_is_non_wide_even_with_the_wide_bit_set() {
     let mut m = coco3_machine();
-    // INIT0 COCO=1: legacy VDG-compatible field. The wide HRES bit is set
-    // ON PURPOSE — legacy must ignore it (legacy is always non-wide,
-    // `paint_legacy_scanline`), so this asserts the legacy override, not
-    // just a zero HRES falling through the non-wide branch. LPF still
-    // applies live even in legacy modes (the GIME applies LPF regardless —
-    // `render.rs`'s `paint_legacy_scanline` doc comment).
+    // INIT0 COCO=1 selects a legacy VDG-compatible field. The wide HRES bit is
+    // set deliberately, so this verifies that legacy mode ignores it instead
+    // of taking the non-wide branch only because HRES is zero. LPF still
+    // applies in legacy modes, as described by `paint_legacy_scanline`.
     m.bus.gime.write_init0(init0::COCO);
     m.bus.gime.vres = VRES_WIDE | LPF_192;
     assert_eq!(m.active_rect(), NON_WIDE_LPF_192_RECT);

@@ -1,6 +1,6 @@
 //! MC6883 SAM primary memory map (CoCo 1/2, no GIME): control-strobe latching,
-//! the TY=0/TY=1 memory map, the $FFE0-$FFFF vector mirror, and P1 banking
-//!. Style mirrors the GIME's own
+//! the TY=0/TY=1 memory map, the $FFE0-$FFFF vector mirror, and P1 banking.
+//! The style mirrors the GIME's own
 //! `tests/sam_video.rs` (build a `SystemBus` directly, poke strobe addresses).
 
 use coco_core::cart::Cart;
@@ -282,7 +282,7 @@ fn ff60_to_ff7e_reaches_the_cart_slot_on_coco1_2() {
     // Motherboard-unmapped, but some carts decode registers here (the
     // Sound/Speech Cartridge's $FF7D/$FF7E, the RS-232 Pak's $FF68-$FF6B —
     // `docs/cartridges.md`). With nothing inserted this still reads open bus
-    // ($FF via `EmptySlot`/`IO_OPEN_BUS`), same value as before this range
+    // ($FF from `EmptySlot`/`IO_OPEN_BUS`), same value as before this range
     // was cart-routed, so the only way to tell the difference is a cart that
     // actually answers.
     let mut b = bus(MemorySize::K64);
@@ -295,7 +295,7 @@ fn ff60_to_ff7e_reaches_the_cart_slot_on_coco1_2() {
     }
 
     // A cart that actually answers proves the extension range truly reaches
-    // `cart.read`, not just falling through to a different open-bus path.
+    // `cart.read`, rather than falling through to a different open-bus path.
     struct MarkerCart;
     impl coco_core::cart::Cartridge for MarkerCart {
         fn read(&mut self, addr: u16) -> u8 {
