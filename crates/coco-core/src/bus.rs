@@ -42,7 +42,10 @@ use regs::{
 pub struct SystemBus {
     /// Which machine this bus decodes addresses for. `Bus::read`/`Bus::write`
     /// branch on this once, up front, into two independent concrete decode
-    /// paths (GIME vs plain SAM) rather than a trait object.
+    /// paths (GIME vs plain SAM) rather than a trait object. Skipped: a copy
+    /// of `MachineConfig::variant`, re-derived by `snapshot::restore` so a
+    /// payload can't carry two disagreeing variants.
+    #[serde(skip, default = "variant_placeholder")]
     pub variant: MachineVariant,
     /// CBOR-native bytes (`#[serde(with = "serde_bytes")]`) — the single
     /// biggest snapshot payload, up to 2 MB.
@@ -111,6 +114,12 @@ pub struct SystemBus {
     /// is installed. Skipped for the same reason as `watch`.
     #[serde(skip)]
     watch_hit: Option<crate::debug::WatchHit>,
+}
+
+/// Serde default for the skipped [`SystemBus::variant`]; `snapshot::restore`
+/// overwrites it from `MachineConfig::variant` before the bus is used.
+fn variant_placeholder() -> MachineVariant {
+    MachineVariant::Coco3
 }
 
 impl SystemBus {

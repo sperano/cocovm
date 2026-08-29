@@ -17,7 +17,9 @@
 //! [`SnapshotPayload`] (enforced in review, not by the compiler):
 //!
 //! 1. never remove or rename a serialized field without `#[serde(alias =
-//!    "old_name")]` or a migration;
+//!    "old_name")]` or a migration — except a redundant copy of another
+//!    field that restore re-derives (`SystemBus::variant`), which may become
+//!    `#[serde(skip)]` since old payloads' stray key is ignored on load;
 //! 2. every added field carries `#[serde(default = "...")]` whose default
 //!    reproduces the *old* behaviour (a snapshot from before the field
 //!    existed must load as if the field had always held that value);
@@ -29,9 +31,8 @@
 //! golden-fixture gate: every time [`SCHEMA_VERSION`] bumps, or a release is
 //! cut, a real snapshot fixture (small RAM, mid-BASIC-program) is committed
 //! under `crates/coco-core/tests/fixtures/snapshots/`, and a test loads every
-//! committed fixture and runs the trace-continuation check from it. That test
-//! (and its first fixture) is phase 3's job — this module only builds the
-//! engine the gate exercises.
+//! committed fixture and runs the trace-continuation check from it
+//! (`tests/snapshot_fixtures.rs`).
 //!
 //! ## Container format
 //!
