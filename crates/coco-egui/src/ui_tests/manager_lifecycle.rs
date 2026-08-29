@@ -189,6 +189,47 @@ fn vm_window_pending_suspend_flag_suspends_through_the_manager() {
     );
 }
 
+/// The suspended window's Start tile sets `pending_resume`; the manager
+/// consumes it like `pending_suspend` and the machine runs again.
+#[test]
+fn vm_window_pending_resume_flag_resumes_through_the_manager() {
+    let artifacts = TempDir::new("resume-pending-flag");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness =
+        manager_harness_with_artifacts(None, Some(artifacts.path().to_path_buf()), entries);
+    let state_file = artifacts
+        .path()
+        .join("dev-coco-3")
+        .join("suspended.ccstate");
+
+    click(&mut harness, "Dev CoCo 3");
+    click(&mut harness, "Start");
+    click(&mut harness, "Suspend");
+    assert!(harness.state().entries[0].suspended);
+    assert!(state_file.is_file());
+
+    harness.state_mut().entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .pending_resume = true;
+    harness.step();
+
+    let entry = &harness.state().entries[0];
+    assert!(
+        !entry.suspended,
+        "the pending_resume flag must resume the entry"
+    );
+    assert!(
+        entry.vm.as_ref().is_some_and(|vm| vm.is_running()),
+        "resume must un-pause the still-open VM"
+    );
+    assert!(
+        !state_file.exists(),
+        "resume must consume the frozen state file"
+    );
+}
+
 /// Suspend → close window → resume: state restores byte-for-byte from
 /// `suspended.ccstate`. The marker sits in RAM the booted MMU never maps.
 #[test]

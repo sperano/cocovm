@@ -31,9 +31,9 @@ impl ManagerApp {
     /// window across frames. Called once per `ManagerApp::update`, after
     /// the manager's own panels.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
-        // Indices suspended this frame, for `focus_first_failed_row` later
-        // to focus the first failure.
-        let mut suspends: Vec<usize> = Vec::new();
+        // Indices suspended or resumed this frame, for `focus_first_failed_row`
+        // later to focus the first failure.
+        let mut acted: Vec<usize> = Vec::new();
         // One app-wide decision: every VM viewport repaints the manager anyway.
         let repaint_delay = ctx.input(|i| {
             crate::app::background_repaint_delay(i.raw.viewports.values().map(|v| v.focused))
@@ -53,6 +53,7 @@ impl ManagerApp {
             // Taken out of the entry so the closure can mutate it without conflicting with `self`.
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
             let suspended = self.entries[i].suspended;
+            vm.suspended = suspended;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {
@@ -80,18 +81,10 @@ impl ManagerApp {
                     if !open {
                         close_requested = true;
                     }
-                } else if suspended {
-                    // A suspended window is a viewing port onto the frozen
-                    // frame, never a control surface — full chrome could
-                    // diverge it from the on-disk state.
-                    vm.upload_framebuffer_texture(child_ctx);
-                    egui::CentralPanel::default()
-                        .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
-                        .show(child_ctx, |ui| vm.draw_display(ui));
-                    if child_ctx.input(|i| i.viewport().close_requested()) {
-                        close_requested = true;
-                    }
                 } else {
+                    // A suspended window (`vm.suspended`, set above) shows the
+                    // frozen frame under read-only chrome: nothing in it may
+                    // diverge the machine from the on-disk state.
                     vm.window_ui(child_ctx, repaint_delay);
                     if child_ctx.input(|i| i.viewport().close_requested()) {
                         close_requested = true;
@@ -99,24 +92,28 @@ impl ManagerApp {
                 }
             });
 
-            // Reads `pending_suspend` here rather than threading it out of
-            // the branch that can set it, so this `take` is correct
+            // Reads the requests here rather than threading them out of the
+            // branch that can set them, so these `take`s are correct
             // regardless of which branch ran.
             let suspend_requested = std::mem::take(&mut vm.pending_suspend);
+            let resume_requested = std::mem::take(&mut vm.pending_resume);
             self.entries[i].vm = Some(vm);
             if close_requested {
                 // Close wins over suspend — closing already tears the VM
                 // down, discarding whatever suspend would have frozen
                 // anyway.
                 self.close_vm_window(i);
-            } else if suspend_requested {
+            } else if suspend_requested && !suspended {
                 self.suspend_vm(i);
-                suspends.push(i);
+                acted.push(i);
+            } else if resume_requested && suspended {
+                self.resume_vm(i);
+                acted.push(i);
             }
         }
         // Focuses the first failed row across the batch; on success the
         // window flips to display-only on its own next frame.
-        self.focus_first_failed_row(&suspends);
+        self.focus_first_failed_row(&acted);
     }
 
     /// The VM window's close box: the power switch for a Running machine

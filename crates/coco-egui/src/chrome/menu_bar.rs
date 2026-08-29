@@ -13,6 +13,9 @@ impl CocoApp {
     /// The menu bar and all of its menus.
     pub(crate) fn menu_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            if self.suspended {
+                ui.disable();
+            }
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| self.machine_menu_ui(ui));
                 ui.menu_button("View", |ui| self.view_menu_ui(ui));
