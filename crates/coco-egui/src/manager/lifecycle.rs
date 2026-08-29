@@ -5,8 +5,9 @@
 
 use std::fs;
 use std::path::PathBuf;
-
 use coco_core::MachineConfig;
+use owo_colors::colors::xterm;
+use owo_colors::{OwoColorize, Stream};
 
 use crate::machine_def;
 
@@ -61,9 +62,14 @@ impl ManagerApp {
     /// definition, not the in-progress edit draft. Counts as a fresh start
     /// ([`Self::record_start`]).
     pub(super) fn start_vm(&mut self, index: usize) {
+        self.print_action("Launching", index);
         if self.launch_vm(index) {
             self.record_start(index);
         }
+    }
+
+    fn print_action(&self, action: &str, index: usize) {
+        println!(" {} {}", action, self.entries[index].slug.if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BrightElectricViolet>()));
     }
 
     /// Launch `entries[index]`'s saved definition into a fresh `CocoApp`,
@@ -129,6 +135,7 @@ impl ManagerApp {
     /// pause it in place. A failed save aborts the whole suspend — the
     /// machine stays Running and the error surfaces in `launch_error`.
     pub(super) fn suspend_vm(&mut self, index: usize) {
+        self.print_action("Suspending", index);
         let Some(path) = self.suspend_state_path_for(index) else {
             self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
             return;
@@ -162,6 +169,7 @@ impl ManagerApp {
     /// is deleted only once Running is confirmed — a resume that can't
     /// delete it fails and the entry stays Suspended.
     pub(super) fn resume_vm(&mut self, index: usize) {
+        self.print_action("Resuming", index);
         let Some(path) = self.suspend_state_path_for(index) else {
             self.entries[index].launch_error = Some(NO_DATA_DIR.to_string());
             return;
@@ -206,6 +214,7 @@ impl ManagerApp {
     /// also discards the frozen state file and its preview; a failed
     /// discard leaves the entry Suspended. Errors surface in `launch_error`.
     pub(super) fn stop_vm(&mut self, index: usize) {
+        self.print_action("Stopping", index);
         self.fold_runtime_into_def(index);
         let flush_error = self.entries[index]
             .vm

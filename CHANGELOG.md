@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-08-28
+
+### Changed
+- Debugger: its toolbar button and keyboard shortcut exist only in builds
+  made with `--features debug-ui`; regular builds no longer show it.
+- Running from source: debug builds optimize dependencies and the emulation
+  core, so a running VM no longer saturates a CPU core.
+
+### Fixed
+- CPU: hardware interrupt entry is cycle-accurate — IRQ and NMI cost 19
+  cycles, FIRQ 10; CWAI totals 20 cycles (was 26); leaving SYNC charges its
+  1-cycle escape. Verified against the MAME microcode.
+- Save states: a corrupt or hand-edited `.ccstate` whose scanline scheduler
+  counters are out of range, or whose bus variant disagrees with the machine
+  config, is rejected as invalid instead of resuming into an impossible
+  state or crashing.
+
 ## [0.7.1] - 2026-08-26
 
 ### Added
