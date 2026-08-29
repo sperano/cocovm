@@ -106,6 +106,16 @@ impl MC6809 {
         r
     }
 
+    /// XDEC: undocumented DEC variant. C is set when the original operand is
+    /// nonzero and cleared otherwise; N, Z, and V match DEC.
+    ///
+    /// Behavior documented by the 6809 Decoder project:
+    /// <https://github.com/hoglet67/6809Decoder/wiki/Undocumented-6809-Behaviours>
+    fn xdec8(&mut self, m: u8) -> u8 {
+        self.set_carry(m != 0);
+        self.dec8(m)
+    }
+
     /// LSR: 0→b7, b0→C. N always 0; Z from result; V unaffected.
     fn lsr8(&mut self, m: u8) -> u8 {
         let r = m >> 1;
@@ -152,24 +162,40 @@ impl MC6809 {
 
     /// Dispatches an 8-bit read-modify-write op by the opcode's low nibble and
     /// returns the new value (flags set as a side effect). TST returns its input
-    /// unchanged (flags only); illegal nibbles are no-ops.
+    /// unchanged (flags only). The undocumented aliases follow the measured
+    /// MC6809 behavior documented by the 6809 Decoder project.
     pub(crate) fn rmw_apply(&mut self, op_nibble: u8, m: u8) -> u8 {
         match op_nibble {
             0x0 => self.sub8(0, m, 0), // NEG is 0 - m
+            0x1 => self.sub8(0, m, 0), // undocumented NEG alias
+            0x2 => {
+                if self.cc & cc::CARRY != 0 {
+                    self.com8(m)
+                } else {
+                    self.sub8(0, m, 0)
+                }
+            } // undocumented XNC: NEG if C clear, COM if C set
             0x3 => self.com8(m),
             0x4 => self.lsr8(m),
+            0x5 => self.lsr8(m), // undocumented LSR alias
             0x6 => self.ror8(m),
             0x7 => self.asr8(m),
             0x8 => self.asl8(m),
             0x9 => self.rol8(m),
             0xA => self.dec8(m),
+            0xB => self.xdec8(m), // undocumented XDEC
             0xC => self.inc8(m),
             0xD => {
                 self.set_nz8(m); // TST: flags only
                 m
             }
+            0xE => {
+                self.set_overflow(false);
+                self.set_nz8_only(0);
+                0
+            } // undocumented XCLR; memory forms are JMP and never arrive here
             0xF => self.clr8(),
-            _ => m, // illegal nibble
+            _ => m, // reserved nibble
         }
     }
 

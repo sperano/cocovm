@@ -838,8 +838,10 @@ impl MC6809 {
         }
     }
 
-    /// NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR — inherent (A/B) / direct /
-    /// indexed / extended. Low nibble selects the op (see `rmw_apply`).
+    /// NEG/COM/LSR/ROR/ASR/ASL/ROL/DEC/INC/TST/CLR and MC6809 undocumented
+    /// aliases — inherent (A/B) / direct / indexed / extended. Low nibble
+    /// selects the op (see `rmw_apply`). Memory nibble `0xE` is intercepted as
+    /// JMP by the top-level dispatcher.
     pub(super) fn exec_rmw(&mut self, bus: &mut impl Bus, opcode: u8) -> u32 {
         match opcode {
             // Inherent — operate on accumulator A / B
