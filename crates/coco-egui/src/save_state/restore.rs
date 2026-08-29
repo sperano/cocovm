@@ -178,7 +178,7 @@ impl CocoApp {
 
         // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring
         // buffer/filter history.
-        self.audio.reset();
+        self.reset_audio();
         self.last_update = None;
         self.field_debt = 0.0;
         self.type_ahead.clear();
