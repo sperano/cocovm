@@ -1,11 +1,12 @@
 //! 7. Phase-5 review: hostile-payload validation
 //!
-//! `Cassette::bit`, `SSC::Load::cap`, `WD1773::Transfer::index`, and
-//! `WD1773::Transfer::offset` plus `total` have no public setter that can
-//! create an out-of-range value. Normal protocol dispatch also keeps them in
-//! range. Unlike the RAM-length tamper test, these tests mutate the CBOR bytes
-//! of a valid save, as a hex editor could, using [`mutate_cbor`] and
-//! [`rewrap_container`] that follows.
+//! `Cassette::bit`, `SSC::Load::cap`, `WD1773::Transfer::index`,
+//! `WD1773::Transfer::offset` plus `total`, and `Machine`'s scanline
+//! scheduler fields (`line`, `line_cycles_spent`, `line_budget`) have no
+//! public setter that can create an out-of-range value. Normal protocol
+//! dispatch also keeps them in range. Unlike the RAM-length tamper test,
+//! these tests mutate the CBOR bytes of a valid save, as a hex editor could,
+//! using [`mutate_cbor`] and [`rewrap_container`] that follows.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use mc6809::Bus;
 
-use super::common::expect_err;
+use super::common::{boot_machine, expect_err, load_rom, system_rom_only_media};
 
 /// Header length ([`snapshot::CONTAINER_MAGIC`] + version byte + `u32`
 /// schema) — mirrors the `schema_offset` calculation in
@@ -248,6 +249,136 @@ fn nested_multipak_is_invalid_payload_not_a_panic() {
         }
         other => panic!("expected InvalidPayload, got {other:?}"),
     }
+}
+
+/// Pins a rejection to the scheduler check that produced it, not just the variant.
+fn assert_invalid_payload_mentions(err: SnapshotError, needle: &str) {
+    match err {
+        SnapshotError::InvalidPayload(msg) => {
+            assert!(msg.contains(needle), "message: {msg:?}");
+        }
+        other => panic!("expected InvalidPayload, got {other:?}"),
+    }
+}
+
+#[test]
+fn scanline_past_lines_per_field_is_invalid_payload_not_a_panic() {
+    let machine = Machine::new(MachineConfig::default(), Box::new([]));
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // Default config is Coco3/NTSC: 262 lines per field, so line 262 itself
+    // is already outside the `0..lines_per_field` range `end_of_line` keeps
+    // `Machine::line` in.
+    let tampered = mutate_cbor(&cbor, &["machine", "line"], Value::Integer(262.into()));
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert_invalid_payload_mentions(err, "scanline");
+}
+
+#[test]
+fn line_budget_past_max_speed_ceiling_is_invalid_payload_not_a_panic() {
+    let machine = Machine::new(MachineConfig::default(), Box::new([]));
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // No variant/standard/speed-poke combination's cycles_per_field()/lines
+    // reaches anywhere near this — see `Machine::max_line_budget`.
+    let tampered = mutate_cbor(
+        &cbor,
+        &["machine", "line_budget"],
+        Value::Integer(1_000_000.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert_invalid_payload_mentions(err, "line budget");
+}
+
+#[test]
+fn line_cycles_spent_near_u32_max_is_invalid_payload_not_a_panic() {
+    let machine = Machine::new(MachineConfig::default(), Box::new([]));
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // A plausible budget, so the spent/budget check (not the ceiling) rejects
+    // the value that would overflow `step_instruction`'s accumulation.
+    let cbor = mutate_cbor(
+        &cbor,
+        &["machine", "line_budget"],
+        Value::Integer(50.into()),
+    );
+    let tampered = mutate_cbor(
+        &cbor,
+        &["machine", "line_cycles_spent"],
+        Value::Integer(u32::MAX.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert_invalid_payload_mentions(err, "line_cycles_spent");
+}
+
+#[test]
+fn line_cycles_spent_not_less_than_budget_is_invalid_payload_not_a_panic() {
+    let machine = Machine::new(MachineConfig::default(), Box::new([]));
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // Both nonzero and equal: violates the documented `line_cycles_spent <
+    // line_budget` invariant without tripping either check above on its own.
+    let cbor = mutate_cbor(
+        &cbor,
+        &["machine", "line_budget"],
+        Value::Integer(100.into()),
+    );
+    let tampered = mutate_cbor(
+        &cbor,
+        &["machine", "line_cycles_spent"],
+        Value::Integer(100.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert_invalid_payload_mentions(err, "line_cycles_spent");
+}
+
+/// Not hostile: a mid-line snapshot whose `line_budget` sits in the
+/// double-speed range even though this machine never poked double speed —
+/// legitimate when the poke happened earlier in the same scanline the
+/// snapshot was taken on (`Machine`'s `line_budget` doc comment). Must still
+/// restore, proving the scheduler checks don't false-positive on it.
+#[test]
+fn mid_line_scheduler_state_survives_restore() {
+    let machine = boot_machine();
+
+    let media = system_rom_only_media();
+    let bytes = snapshot::save(&machine, &media).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    let cbor = mutate_cbor(&cbor, &["machine", "line"], Value::Integer(10.into()));
+    let cbor = mutate_cbor(
+        &cbor,
+        &["machine", "line_budget"],
+        Value::Integer(100.into()),
+    );
+    let tampered = mutate_cbor(
+        &cbor,
+        &["machine", "line_cycles_spent"],
+        Value::Integer(50.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let sources = MediaSources {
+        system_rom: Some(load_rom()),
+        ..MediaSources::default()
+    };
+    snapshot::restore(payload, sources).expect("restore");
 }
 
 /// Cap on the zero-fill this test inflates through a REAL gzip stream (not a

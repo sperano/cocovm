@@ -55,10 +55,12 @@ pub fn restore(
 }
 
 /// Restore step 1: rejects a payload whose config is invalid, whose RAM
-/// doesn't match the size the config declares, or whose cart tree contains
+/// doesn't match the size the config declares, whose cart tree contains
 /// shapes deserialization alone can't catch (a nested Multi-Pak, or a
 /// device index/cursor/cap field that would otherwise panic once the
-/// machine runs — see [`crate::SystemBus::validate_restored`]).
+/// machine runs — see [`crate::SystemBus::validate_restored`]), or whose
+/// scanline scheduler state is out of range (see
+/// [`Machine::validate_restored_scheduler`]).
 pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotError> {
     machine
         .config
@@ -80,6 +82,9 @@ pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotEr
     machine
         .bus
         .validate_restored()
+        .map_err(SnapshotError::InvalidPayload)?;
+    machine
+        .validate_restored_scheduler()
         .map_err(SnapshotError::InvalidPayload)?;
     Ok(())
 }

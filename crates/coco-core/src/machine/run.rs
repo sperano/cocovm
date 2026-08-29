@@ -4,7 +4,7 @@
 
 use crate::config::MachineVariant;
 
-use super::{CPU_HZ, FAST_TIMER_TICKS_PER_CPU_CYCLE, Machine, StepEvent, StepKind};
+use super::{CPU_HZ, FAST_CPU_HZ, FAST_TIMER_TICKS_PER_CPU_CYCLE, Machine, StepEvent, StepKind};
 
 impl Machine {
     /// Run one video field's worth of emulation (`DESIGN.md` §4). Scanline-driven:
@@ -28,7 +28,8 @@ impl Machine {
             // real timing always takes this branch.
             if self.line_cycles_spent < self.line_budget {
                 let (cycles, was_instruction) = self.step_cpu_unit();
-                self.line_cycles_spent += cycles;
+                // Saturating only as a backstop; `validate_restored_scheduler` is the guard.
+                self.line_cycles_spent = self.line_cycles_spent.saturating_add(cycles);
                 let kind = if was_instruction {
                     StepKind::Instruction { cycles }
                 } else {
@@ -151,7 +152,12 @@ impl Machine {
             MachineVariant::Coco3 => self.bus.gime.cpu_fast,
             MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.cpu_fast(),
         };
-        let hz = if cpu_fast { CPU_HZ * 2.0 } else { CPU_HZ };
+        self.cycles_per_field_at(cpu_fast)
+    }
+
+    /// Field cycle count at the given CPU speed; shared with restore validation.
+    pub(super) fn cycles_per_field_at(&self, cpu_fast: bool) -> u32 {
+        let hz = if cpu_fast { FAST_CPU_HZ } else { CPU_HZ };
         (hz / self.config.video.field_rate_hz()) as u32
     }
 }
