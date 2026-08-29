@@ -29,6 +29,8 @@ const TEXT_BORDER_COLOR: u8 = 0x00;
 /// modules can derive cycle counts from the real clock instead of
 /// duplicating the value — `cassette.rs`'s `RECORD_IDLE_FINALIZE_CYCLES`.
 pub(crate) const CPU_HZ: f64 = 894_886.0;
+/// CPU clock under the double-speed poke (GIME R1 / SAM R1).
+pub(crate) const FAST_CPU_HZ: f64 = CPU_HZ * 2.0;
 
 /// GIME timer input clocks per normal-speed CPU cycle with INIT1 TINS=1. The
 /// fast timer clock is 3.579545 MHz (279.365 ns — verified against MAME
@@ -247,6 +249,38 @@ impl Machine {
     /// (`0..lines_per_field`).
     pub fn current_scanline(&self) -> u32 {
         self.line
+    }
+
+    /// Largest `line_budget` a line could have sampled: the double-speed
+    /// `cycles_per_field()` per line, whichever speed a snapshot was taken at.
+    fn max_line_budget(&self) -> u32 {
+        self.cycles_per_field_at(true) / self.config.video.lines_per_field()
+    }
+
+    /// Snapshot restore: checks `line`, `line_cycles_spent` and `line_budget`
+    /// against the invariants documented on those fields.
+    pub(crate) fn validate_restored_scheduler(&self) -> Result<(), String> {
+        let lines = self.config.video.lines_per_field();
+        if self.line >= lines {
+            return Err(format!(
+                "snapshot scanline {} is out of range for {lines} lines per field",
+                self.line
+            ));
+        }
+        let max_budget = self.max_line_budget();
+        if self.line_budget > max_budget {
+            return Err(format!(
+                "snapshot line budget {} exceeds the maximum plausible {max_budget} cycles/line",
+                self.line_budget
+            ));
+        }
+        if self.line_cycles_spent != 0 && self.line_cycles_spent >= self.line_budget {
+            return Err(format!(
+                "snapshot line_cycles_spent {} is not less than line_budget {}",
+                self.line_cycles_spent, self.line_budget
+            ));
+        }
+        Ok(())
     }
 
     /// Write one byte through the CPU's logical address space, with full side
