@@ -29,27 +29,40 @@ fn extended_clr_from_rmw_group() {
 
 #[test]
 fn inherent_rmw_on_accumulators() {
-    // 0x43 = COMA (0x40-0x4F, nibble 3 = COM); 0x5B = illegal nibble (0xB) on B.
+    // 0x43 = COMA (0x40-0x4F, nibble 3 = COM); 0x5B = XDECB (undocumented).
     let insn = disasm_at(0x1000, &[0x43]);
     assert_eq!(insn.mnemonic, "COMA");
     assert_eq!(insn.operand, "");
     assert_eq!(insn.len, 1);
 
     let insn = disasm_at(0x1000, &[0x5B]);
-    assert_eq!(insn.mnemonic, "???");
-    assert_eq!(insn.operand, "$5B");
+    assert_eq!(insn.mnemonic, "XDECB");
+    assert_eq!(insn.operand, "");
     assert_eq!(insn.len, 1);
 }
 
 #[test]
-fn direct_rmw_illegal_nibble_still_consumes_direct_byte() {
-    // 0x01: direct-mode RMW, nibble 1 is illegal — but `step()` calls
-    // `ea_direct` unconditionally before checking the nibble, so the direct
-    // byte IS consumed (len stays 2, matching the addressing mode).
+fn direct_rmw_undocumented_alias_consumes_direct_byte() {
+    // 0x01 is the undocumented direct-mode NEG alias.
     let insn = disasm_at(0x1000, &[0x01, 0x42]);
-    assert_eq!(insn.mnemonic, "???");
+    assert_eq!(insn.mnemonic, "NEG");
     assert_eq!(insn.operand, "$42");
     assert_eq!(insn.len, 2);
+}
+
+#[test]
+fn undocumented_rmw_aliases_have_named_disassembly() {
+    for (opcode, mnemonic) in [(0x02, "XNC"), (0x05, "LSR"), (0x0B, "XDEC")] {
+        let insn = disasm_at(0x1000, &[opcode, 0x42]);
+        assert_eq!(insn.mnemonic, mnemonic, "opcode ${opcode:02X}");
+        assert_eq!(insn.operand, "$42", "opcode ${opcode:02X}");
+        assert_eq!(insn.len, 2, "opcode ${opcode:02X}");
+    }
+
+    let insn = disasm_at(0x1000, &[0x4E]);
+    assert_eq!(insn.mnemonic, "XCLRA");
+    assert_eq!(insn.operand, "");
+    assert_eq!(insn.len, 1);
 }
 
 #[test]
