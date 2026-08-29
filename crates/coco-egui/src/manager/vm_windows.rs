@@ -12,8 +12,8 @@ use super::ManagerApp;
 /// draws) is often close to or larger than the *entire* embedded canvas, so
 /// even anchored to a corner it can span most of the screen and silently
 /// eat clicks meant for the manager's own panels underneath (topmost window
-/// wins pointer routing at a given position). A small preview loses nothing
-/// real: this fallback only ever shows the bare display, never chrome.
+/// wins pointer routing at a given position). A small preview loses no
+/// functionality: this fallback only ever shows the bare display, never chrome.
 const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
 /// Window size of a launched VM's own native OS window, sized for the
@@ -31,7 +31,7 @@ impl ManagerApp {
     /// window across frames. Called once per `ManagerApp::update`, after
     /// the manager's own panels.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
-        // Indices suspended this frame, for `focus_first_failed_row` below
+        // Indices suspended this frame, for `focus_first_failed_row` later
         // to focus the first failure.
         let mut suspends: Vec<usize> = Vec::new();
         for i in 0..self.entries.len() {
@@ -52,7 +52,7 @@ impl ManagerApp {
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {
-                    // Embedded fallback: draws just the VM's display in a
+                    // Embedded fallback: draws only the VM's display in a
                     // plain `egui::Window`, never the full chrome, to avoid
                     // interleaving two panel sets into one window.
                     if suspended {

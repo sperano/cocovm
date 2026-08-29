@@ -1,7 +1,6 @@
-//! Shared dot-matrix "paper" model for the DMP printer family
-//! ( "Family context": DMP-105 today, DMP-130/Epson
-//! dialects later share this raster, not the per-model control-code
-//! interpreters).
+//! Shared dot-matrix "paper" model for the DMP printer family.
+//! The DMP-105 uses this raster today. Future DMP-130/Epson dialects can share
+//! it without sharing the per-model control-code interpreters.
 //!
 //! The paper is a continuous roll: no page/form-feed concept exists in any
 //! documented DMP-105 behavior (`dmp105-protocol.md` §3, "FF (0x0C): VERIFIED
@@ -34,7 +33,7 @@ pub const Y_UNITS_PER_INCH: u32 = 72;
 /// Horizontal fixed-point resolution: 1/3600". Derived, not a hardware fact:
 /// `dmp105-protocol.md` Appendix G (p.59) gives 960/1152/1600 dots over an
 /// (arithmetically derived, see `dmp105.rs`'s `Pitch`) constant 8" print
-/// width, i.e. 120/144/200 dots per inch for Normal/Compressed/Condensed
+/// width, that is, 120/144/200 dots per inch for Normal/Compressed/Condensed
 /// pitch. 3600 is the LCM of 120, 144, and 200, so each pitch's per-dot
 /// spacing (3600/120=30, 3600/144=25, 3600/200=18) is an exact integer
 /// number of these units — one common fixed-point grid all three pitches
@@ -42,15 +41,15 @@ pub const Y_UNITS_PER_INCH: u32 = 72;
 pub const X_UNITS_PER_INCH: u32 = 3600;
 
 /// Snapshot of how much paper has been printed on: the furthest dot row
-/// reached and how much ink has been laid down, cheap enough to poll every
-/// frame from a live-updating frontend view.
+/// reached and how much ink has been laid down. The frontend can poll it every
+/// frame for a live-updating view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PaperExtent {
     /// Highest `y` (1/72" units) any dot has been marked at; 0 if the paper
     /// is blank.
     pub max_y: u32,
     /// Total dots marked so far (not deduplicated — a dot re-struck at the
-    /// same position, e.g. via the repeat code, counts twice, matching real
+    /// same position, such as through the repeat code, counts twice, matching real
     /// ink laid down twice).
     pub dot_count: usize,
 }
@@ -60,8 +59,8 @@ pub struct PaperExtent {
 /// pixels — rendering style (dot bleed, tractor-feed strips, page
 /// perforations) is entirely a frontend concern (T5).
 ///
-/// Storage is "Vec-of-bands": one row (`y`) maps to the sorted-or-not list of
-/// `x` columns marked on it, via a `BTreeMap` so a frontend asking for a
+/// Storage is "Vec-of-bands": one row (`y`) maps to its list of marked `x`
+/// columns. A `BTreeMap` lets a frontend asking for a
 /// visible window (`dots_in_range`) gets an efficient range scan rather than
 /// a linear filter over the whole roll.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -1,11 +1,11 @@
 //! DriveWire 4 — an in-process implementation of the *server* side of the
-//! DriveWire protocol: a byte-stream RPC that lets NitrOS-9 (or DECB, via
+//! DriveWire protocol: a byte-stream RPC that lets NitrOS-9 (or DECB through
 //! HDB-DOS) address disk images living on the host instead of real
-//! hardware, one 256-byte sector at a time. This module is the protocol
-//! engine only — framing, opcodes, checksums, and the [`DWImage`] backing
-//! store; the Becker-port register wiring ($FF41/$FF42) that feeds bytes
-//! into [`DWServer::data_write`] and reads them back out of
-//! [`DWServer::data_read`] from the CPU bus is a separate, later task.
+//! hardware, one 256-byte sector at a time. This module contains only the
+//! protocol engine: framing, opcodes, checksums, and the [`DWImage`] backing
+//! store. The Becker-port register wiring ($FF41/$FF42) that feeds bytes into
+//! [`DWServer::data_write`] and reads them from [`DWServer::data_read`] on the
+//! CPU bus is a separate, later task.
 //!
 //! Opcode set, packet layout, checksum algorithm, and error codes are cited
 //! from the DriveWire 4 Java server (`DWProtocolHandler.java`) and
@@ -180,7 +180,7 @@ pub const HDBDOS_SECTORS_PER_DISK: u64 = 630;
 /// CoCo 3 maximum CPU clock (double-speed GIME POKE), in Hz. Duplicated
 /// from the private `CPU_HZ`/speed-doubling logic in `lib.rs` (this module
 /// must stay bus/host-free, so it can't import that) purely to document the
-/// derivation of [`TRANSACTION_TIMEOUT_CYCLES`] below.
+/// derivation of [`TRANSACTION_TIMEOUT_CYCLES`] that follows.
 const MAX_CPU_HZ: f64 = 1_789_772.5;
 
 /// DriveWire transaction timeout, in seconds: 250 ms of CPU time with no
@@ -206,15 +206,15 @@ const TIME_REPLY_YEAR_BASE: u16 = 1900;
 /// constant only names the bit value this in-process server reports.
 const STATUS_DATA_AVAILABLE: u8 = 0x02;
 
-/// A DriveWire backing image: either an in-memory buffer (tests — small,
-/// cheap to construct and assert against) or a real file, accessed by
+/// A DriveWire backing image: either an in-memory buffer (small and suitable
+/// for tests) or a real file, accessed by
 /// seeking rather than loaded whole. Mirrors [`crate::vhd::VHDImage`] with
 /// one deliberate difference: a read whose sector lies fully or partly
 /// beyond the image's current length is an *error* here (DriveWire has no
 /// "sparse image" semantics — a read past the end means the client asked
 /// for an LSN the image doesn't have), whereas a write at or beyond the end
-/// silently extends the image (so a fresh, empty image file can become a
-/// valid disk just by formatting it — DECB `FORMAT`/NitrOS-9 `format` write
+/// silently extends the image, so a fresh, empty image file can become a
+/// valid disk by formatting it. DECB `FORMAT`/NitrOS-9 `format` write
 /// every sector of a new volume in ascending LSN order).
 pub enum DWImage {
     Memory(Vec<u8>),
@@ -324,8 +324,9 @@ fn default_dw_clock() -> DWClock {
     Box::new(default_clock)
 }
 
-/// Plain 16-bit sum of a 256-byte sector's bytes — despite [`error::CRC`]'s name, not an actual
-/// CRC. Max possible sum is 65_280, so no `u16` wraparound is possible.
+/// Plain 16-bit sum of a 256-byte sector's bytes. Despite [`error::CRC`]'s
+/// name, this is not an actual CRC. The maximum sum is 65_280, so a `u16`
+/// wraparound is not possible.
 fn checksum_of(sector: &[u8]) -> u16 {
     sector.iter().map(|&b| u16::from(b)).sum()
 }
@@ -335,7 +336,7 @@ fn checksum_of(sector: &[u8]) -> u16 {
 #[derive(Serialize, Deserialize)]
 pub struct DWServer {
     /// Skipped: each mounted image can hold an open host `File` handle —
-    /// remounted by path on restore via [`DWServer::reattach`].
+    /// remounted by path on restore through [`DWServer::reattach`].
     #[serde(skip)]
     drives: [Option<DWImage>; DRIVE_COUNT],
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
@@ -356,7 +357,7 @@ pub struct DWServer {
     /// `OP_SER*`/[`opcode::FASTWRITE_BASE`] family), incremented once per
     /// top-level operation dispatched — not per byte consumed.
     vserial_ops: u64,
-    /// Cycle stamp of the last byte fed via [`DWServer::data_write`], for
+    /// Cycle stamp of the last byte fed through [`DWServer::data_write`], for
     /// the transaction timeout. `None` before the first byte ever arrives.
     last_byte_cycle: Option<u64>,
     /// Per-drive count of successful sector reads plus writes since
@@ -403,7 +404,7 @@ impl DWServer {
         self.dirty[drive] = false;
     }
 
-    /// Re-inject a mounted image after a snapshot restore, WITHOUT clearing `dirty[drive]`
+    /// Re-inject a mounted image after a snapshot restore without clearing `dirty[drive]`
     /// (unlike [`DWServer::mount`]) — the dirty flag is real state, not reset by remounting.
     pub fn reattach(&mut self, drive: usize, image: DWImage) {
         self.drives[drive] = Some(image);
@@ -461,8 +462,9 @@ impl DWServer {
         self.clock = clock;
     }
 
-    /// Becker-port status register read: [`STATUS_DATA_AVAILABLE`] if a reply byte is queued,
-    /// `0` otherwise. Non-destructive, unlike [`DWServer::data_read`].
+    /// Becker-port status register read: [`STATUS_DATA_AVAILABLE`] if a reply
+    /// byte is queued, or `0` otherwise. Non-destructive, unlike
+    /// [`DWServer::data_read`].
     pub fn status_read(&self) -> u8 {
         if self.reply.is_empty() {
             0

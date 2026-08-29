@@ -18,7 +18,7 @@ pub(crate) struct CocoApp {
     pub(crate) show_about: bool,
     /// "View > Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
     /// Stays whatever the user last set even if the cartridge is later
-    /// ejected — the window simply doesn't draw without a live `Orch90`
+    /// ejected — the window doesn't draw without a live `Orch90`
     /// (see the call site in `update`).
     pub(crate) show_orch90: bool,
     pub(crate) aspect_correct: bool,
@@ -29,8 +29,8 @@ pub(crate) struct CocoApp {
     /// display entry afterwards.
     pub(crate) display: Display,
     /// The TV chain's knobs (scanline strength, …) — same lifecycle as
-    /// `display`: `[ui]` keys for the starting values, the display menu's
-    /// sliders live. Only consulted while `display` is a TV.
+    /// `display`: `[ui]` keys provide the starting values, and the display
+    /// menu's sliders update them. Only consulted while `display` is a TV.
     pub(crate) tv: display::TVSettings,
     /// Frame counter feeding the TV chain's noise seed
     /// (`display::process`), bumped every texture upload so the snow
@@ -128,7 +128,7 @@ pub(crate) struct CocoApp {
     /// core's live endpoint (`#[serde(skip)]`,
     /// [`coco_core::rs232::DeluxeRS232::endpoint`]'s doc) and restores
     /// loopback; [`Self::rebuild_cart_mirrors`] rebinds this kind
-    /// afterward via [`Self::rs232_set_endpoint`] so a configured TCP/PTY
+    /// afterward through [`Self::rs232_set_endpoint`] so a configured TCP/PTY
     /// endpoint survives the round trip.
     pub(crate) rs232_configured: Option<RS232EndpointKind>,
     /// True while a Disto RTC is plugged directly into the cartridge port,
@@ -150,8 +150,8 @@ pub(crate) struct CocoApp {
     pub(crate) rom_source: ROMSource,
     /// Status-bar toast: a message plus when it was shown
     /// ([`Self::set_toast`], `save_state.rs`), displayed for
-    /// [`save_state::TOAST_SECS`] seconds — save/load-state results today,
-    /// extensible to any other fire-and-forget confirmation later.
+    /// [`save_state::TOAST_SECS`] seconds. Save/load-state results use it now,
+    /// and other fire-and-forget confirmations can use it later.
     pub(crate) toast: Option<(String, std::time::Instant)>,
     /// Status-bar device-activity icons: per-device pulse-stretched latches
     /// over the core's monotonic activity counters, plus the cassette reel
@@ -160,7 +160,7 @@ pub(crate) struct CocoApp {
     pub(crate) activity: StatusActivity,
     /// Set by the VM window's Suspend tile (`chrome::toolbar`); consumed by
     /// [`crate::manager::ManagerApp::draw_running_vms`] after the viewport
-    /// closure returns. Just a *request* — `CocoApp` cannot suspend itself
+    /// closure returns. This field is only a *request* — `CocoApp` cannot suspend itself
     /// (it doesn't even know its own slug); the actual freeze (screenshot →
     /// `.ccstate` → pause) is manager-owned
     /// (`manager::lifecycle::suspend_vm`).
@@ -175,8 +175,9 @@ pub(crate) struct CocoApp {
     /// `running` branch of `step_emulation`, so a paused interval (debugger
     /// breakpoint included) never reaches this field at all. Seeded at
     /// launch from the persisted `[stats].runtime_secs`
-    /// (`launch::launch_machine`), and persisted back by
-    /// (`manager::lifecycle::fold_runtime_into_def`) on Suspend/Stop/quit.
+    /// (`launch::launch_machine`), and persisted by
+    /// [`manager::lifecycle::fold_runtime_into_def`] on Suspend, Stop, and
+    /// quit.
     pub(crate) total_runtime: std::time::Duration,
 }
 
@@ -324,7 +325,7 @@ impl CocoApp {
     }
 
     /// The framebuffer texture [`Self::step_emulation`] uploads every frame;
-    /// `None` only before the VM's first frame. Exposed so the manager can
+    /// `None` only before the VM's first frame. The manager uses it to
     /// reuse the same handle to draw a list-row thumbnail.
     pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {
         self.texture.as_ref()

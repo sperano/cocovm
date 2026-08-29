@@ -11,8 +11,8 @@ use super::SystemBus;
 impl SystemBus {
     /// `$FF83` write: execute a VHD command on the selected drive
     /// (`vhd::command`) synchronously and latch the resulting status. A no-op
-    /// if no drive is selected or if reentered from within the transfer loop
-    /// below (so the outer call's result isn't clobbered); an unmounted drive
+    /// if no drive is selected or if reentered from within the following transfer
+    /// loop (so the outer call's result isn't clobbered); an unmounted drive
     /// always reports `NO_VHD` regardless of the command byte.
     pub(super) fn vhd_execute_command(&mut self, cmd: u8) {
         let Some(drive) = self.vhd.selected_drive() else {
@@ -26,7 +26,7 @@ impl SystemBus {
         if self.vhd.drives[drive].image.is_none() {
             self.vhd.drives[drive].status = vhd::status::NO_VHD;
         } else {
-            // Every real dispatch counts as one access, for the status bar's activity light.
+            // Count each real dispatch for the status bar's activity light.
             if matches!(
                 cmd,
                 vhd::command::READ | vhd::command::WRITE | vhd::command::FLUSH
@@ -63,8 +63,8 @@ impl SystemBus {
         }
     }
 
-    /// WRITE: zero-extend the image to `drive`'s LRN offset, THEN fetch the
-    /// sector from `drive`'s buffer address, THEN write it into the image.
+    /// WRITE: zero-extend the image to `drive`'s LRN offset, then fetch the
+    /// sector from `drive`'s buffer address, then write it into the image.
     /// This order matters: MAME zero-extends before touching the CPU bus,
     /// which is observable if the buffer address overlaps the VHD's own I/O
     /// registers.
@@ -90,7 +90,7 @@ impl SystemBus {
     }
 
     /// FLUSH: flush the backing file to disk. Mapping a flush I/O error to
-    /// `IO_ERROR` is this implementation's own extension, not a verified MAME fact.
+    /// `IO_ERROR` is this implementation's extension, not a verified MAME fact.
     fn vhd_flush(&mut self, drive: usize) {
         let flush_result = self.vhd_image_mut(drive).flush();
         self.vhd.drives[drive].status = if flush_result.is_ok() {
@@ -100,8 +100,8 @@ impl SystemBus {
         };
     }
 
-    /// The image mounted in `drive`. Panics if called on an unmounted drive —
-    /// every call site is guarded by `vhd_execute_command`'s mounted check first.
+    /// Returns the image mounted in `drive`. Panics if the drive is unmounted.
+    /// Every call site is guarded by `vhd_execute_command`'s mounted check.
     fn vhd_image_mut(&mut self, drive: usize) -> &mut vhd::VHDImage {
         self.vhd.drives[drive]
             .image

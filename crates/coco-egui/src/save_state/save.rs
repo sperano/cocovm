@@ -14,7 +14,7 @@ use super::media_ref::hash_media_ref;
 
 impl CocoApp {
     /// Flush dirty media, build [`MediaRefs`], and write the encoded
-    /// `.ccstate` via tmp-then-rename so a crash mid-write can't leave a
+    /// `.ccstate` using tmp-then-rename so a crash mid-write can't leave a
     /// truncated file. A flush failure aborts before anything is written.
     pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
         self.flush_media()?;

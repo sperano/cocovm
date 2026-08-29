@@ -56,7 +56,6 @@ const ROW_FETCH_WRAP: usize = 0x100;
 /// Wide modes fill the full 640 canvas px with no border; non-wide modes
 /// fill the centre 512. (MAME's `update_geometry` tests bit 3 instead, but
 /// only for field-sync timing — the emitted pixel widths follow bit 2.)
-///
 const WIDE_HRES_MASK: usize = 0x01;
 
 /// A decoded GIME hi-res text mode.
@@ -165,7 +164,7 @@ fn resolve_colors(g: &GIME) -> ([[u8; 4]; PALETTE_LEN], [u8; 4]) {
 }
 
 /// The scan line within a character row that the underline attribute lights,
-/// per LPR — only defined for 8/9/10-line rows (SockMaster via MAME).
+/// per LPR — only defined for 8/9/10-line rows (SockMaster, as in MAME).
 fn underline_line(lines_per_row: usize) -> Option<usize> {
     match lines_per_row {
         8 => Some(7),

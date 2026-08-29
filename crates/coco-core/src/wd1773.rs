@@ -62,7 +62,7 @@ const FIRST_SECTOR_SEARCH_BYTES: u32 = 30;
 const FIRST_BYTE_LATENCY_CYCLES: u32 = FIRST_SECTOR_SEARCH_BYTES * DRQ_INTERVAL_CYCLES;
 
 /// Sentinel `remaining` value for a write-direction transfer waiting on the host
-/// to supply the next byte via [`WD1773::write_data`] — no natural timeout fires
+/// to supply the next byte through [`WD1773::write_data`] — no natural timeout fires
 /// this event; only an explicit `write_data` call rearms it. Chosen so the
 /// `tick` loop's `cycles.min(remaining)` never reaches zero on its own.
 const AWAITING_HOST_CYCLES: u32 = u32::MAX;
@@ -70,7 +70,7 @@ const AWAITING_HOST_CYCLES: u32 = u32::MAX;
 /// Fixed settle delay before a Type I command (or a Type II/III not-found
 /// detection) completes and raises INTRQ. Not a hardware timing figure — real
 /// seeks take milliseconds and depend on the step-rate field we don't model;
-/// this just keeps BUSY observably nonzero for a short, deterministic span
+/// this keeps BUSY observably nonzero for a short, deterministic span
 /// (spec: "short deterministic delay paced by tick(), functional not
 /// cycle-exact").
 const COMMAND_SETTLE_CYCLES: u32 = 64;
@@ -95,7 +95,7 @@ const READ_ADDRESS_LEN: usize = 6;
 /// `mod mfm`, [`FormatState`], `feed_write_track_byte`) to lay sectors into the
 /// mounted image; FM format streams are still only consumed and discarded
 /// (FM parsing is unimplemented — density comes from `WD1773`'s
-/// `density_double` field, set via [`WD1773::set_double_density`]).
+/// `density_double` field, set using [`WD1773::set_double_density`]).
 const WRITE_TRACK_BYTE_COUNT: usize = 6400;
 
 /// Which family of Type I step commands last ran, so a bare "Step" (no
@@ -232,7 +232,7 @@ pub struct WD1773 {
     status_write_protect: bool,
     op: Op,
     /// Density the controller currently operates at, from DSKREG bit5
-    /// (`dskreg::DENSITY_AND_NMI_ENABLE`, set out-of-band via
+    /// (`dskreg::DENSITY_AND_NMI_ENABLE`, set out-of-band using
     /// [`WD1773::set_double_density`] — see `crate::fdc`). Gates whether
     /// Write Track parses the MFM format stream (`true`) or discards it (FM,
     /// `false`, unimplemented). Defaults `true` so direct-construction unit

@@ -16,9 +16,9 @@ const ROM_SIZE: usize = 32 * 1024;
 /// boot code's `LDS` (which also arms NMI recognition) and a few loop
 /// iterations, mimicking real code that is mid-run when the FDC halts it.
 const HALT_FROM_CYCLES: u32 = 100;
-/// ...and releases here: past the end of `run_field` #1 (~14.7k cycles) so
-/// the whole remainder of field 1 is spent halted, and the release + NMI edge
-/// land early in field 2.
+/// The cartridge releases HALT* past the end of `run_field` #1 (~14.7k
+/// cycles), so the rest of field 1 is halted and the release plus NMI edge
+/// occur early in field 2.
 const HALT_UNTIL_CYCLES: u32 = 15_000;
 /// Iterations the counting loop could at most complete before the halt: the
 /// loop body is 10 cycles, so ~100 pre-halt cycles allow ~10. A free-running

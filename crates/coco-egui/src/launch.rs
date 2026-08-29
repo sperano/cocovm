@@ -69,8 +69,8 @@ enum Slot {
     SoundSpeech,
 }
 
-/// Build a running [`CocoApp`] from a saved machine definition: load the ROM,
-/// mount `[media]`/`[peripherals]`/`[ports]`. Any failure returns `Err`
+/// Builds a running [`CocoApp`] from a saved machine definition, loads the ROM,
+/// and mounts `[media]`, `[peripherals]`, and `[ports]`. Any failure returns `Err`
 /// instead of a partial VM.
 pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
     let config = def.to_machine_config()?;
@@ -318,7 +318,7 @@ fn mount_rs232(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
     apply_rs232_endpoint(app, endpoint);
 }
 
-/// Wire `endpoint` onto whichever Deluxe RS-232 Pak was just inserted — bare port
+/// Wire `endpoint` onto whichever Deluxe RS-232 Pak was inserted — bare port
 /// ([`mount_rs232`]) or an MPI slot ([`mount_peripherals`]'s `Slot::RS232` arm);
 /// loopback is [`CocoApp::insert_rs232`]/[`CocoApp::mpi_insert_rs232`]'s own
 /// default, so it needs no follow-up call. Records `app.rs232_configured` for a
@@ -335,7 +335,7 @@ fn apply_rs232_endpoint(app: &mut CocoApp, endpoint: RS232EndpointDTO) {
         RS232EndpointDTO::Loopback => {}
         RS232EndpointDTO::TCP { listen } => {
             // Only a bind failure from this call is demoted to a toast; an earlier
-            // slot's fatal cart_error (e.g. a missing Disk BASIC ROM) must survive.
+            // slot's fatal cart_error (for example, a missing Disk BASIC ROM) must survive.
             let prior = app.cart_error.take();
             app.rs232_tcp_addr = listen;
             app.rs232_configured = Some(RS232EndpointKind::TCP);

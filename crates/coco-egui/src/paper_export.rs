@@ -9,7 +9,7 @@
 //! already a dev-dependency for `examples/paper_preview.rs`, now promoted to
 //! a regular one, `default-features = false, features = ["png"]`, to keep
 //! the build light). For PDF, rather than pulling in `printpdf` (a full
-//! PDF-object-model library with its own `lopdf`/`time`/etc. dependency
+//! PDF-object-model library with its own `lopdf`/`time` and related dependency
 //! tree) this hand-rolls a minimal single-purpose PDF: one page per fanfold
 //! page, each a `FlateDecode`-compressed `DeviceRGB` image XObject painted
 //! over the whole media box — a well-understood, small format that doesn't
@@ -38,9 +38,9 @@ pub fn save_png(img: &RasterImage, path: &Path) -> Result<(), String> {
         .map_err(|e| format!("could not save {}: {e}", path.display()))
 }
 
-/// Crops a rasterized page down to just the tractor-strip-to-tractor-strip printable body,
-/// both strips removed: exactly 8.5in, matching US Letter width — the "trimmed" PDF variant's
-/// whole reason for existing.
+/// Crops a rasterized page to the printable body between the tractor strips.
+/// Both strips are removed, leaving exactly 8.5 in, matching US Letter width —
+/// the "trimmed" PDF variant's whole reason for existing.
 pub fn crop_to_trimmed_width(img: &RasterImage, dpi: f32) -> RasterImage {
     let x0 = (STRIP_WIDTH_IN * dpi).round() as u32;
     let x1 = ((PAPER_WIDTH_IN - STRIP_WIDTH_IN) * dpi).round() as u32;

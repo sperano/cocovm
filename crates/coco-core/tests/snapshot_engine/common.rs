@@ -18,11 +18,10 @@ pub fn boot_machine() -> Machine {
     Machine::new(MachineConfig::default(), load_rom())
 }
 
-/// `Result::unwrap_err` requires `T: Debug`, which `SnapshotPayload`/
-/// `RestoredMachine` deliberately don't implement (they carry a whole
-/// `Machine`, RAM included — a `Debug` dump of that isn't useful and isn't
-/// worth deriving just for tests). This is the same "match instead of
-/// unwrap_err" workaround, named for clarity at each call site.
+/// `Result::unwrap_err` requires `T: Debug`, which `SnapshotPayload` and
+/// `RestoredMachine` deliberately do not implement. They carry a whole
+/// `Machine`, including RAM, so a `Debug` dump is not useful. Match the result
+/// instead, and name this helper for clarity at each call site.
 pub fn expect_err<T>(result: Result<T, SnapshotError>) -> SnapshotError {
     match result {
         Ok(_) => panic!("expected an error, got Ok"),
@@ -30,7 +29,7 @@ pub fn expect_err<T>(result: Result<T, SnapshotError>) -> SnapshotError {
     }
 }
 
-/// A `MediaRefs` recording just the real system ROM, for tests that need a
+/// A `MediaRefs` recording only the real system ROM, for tests that need a
 /// save/restore round trip but no other media.
 pub fn system_rom_only_media() -> MediaRefs {
     MediaRefs {

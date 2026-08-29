@@ -2,7 +2,7 @@
 //! side effects, the DRQ-interval advance loop, and the Write Track (format)
 //! MFM stream parser. See [`WD1773::write_data`] and
 //! [`WD1773::tick`](super::WD1773::tick), which drives [`advance_transfer`]
-//! via [`WD1773::advance_transfer`].
+//! through [`WD1773::advance_transfer`].
 
 use crate::fdc::JVCDisk;
 
@@ -89,7 +89,7 @@ impl WD1773 {
     }
 
     /// Read Sector/Read Address half of [`advance_transfer`](Self::advance_transfer):
-    /// delivers the next staged byte via DRQ, or finishes the transfer after
+    /// delivers the next staged byte through DRQ, or finishes the transfer after
     /// the CRC trailer delay once `total` bytes are delivered.
     fn advance_read_transfer(&mut self, mut t: Transfer, disk: Option<&mut JVCDisk>, side: u8) {
         if t.index >= t.total {

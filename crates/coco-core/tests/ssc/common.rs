@@ -31,7 +31,7 @@ const PIA1_CRB: u16 = 0xFF23;
 /// Control value: data register selected, C2 set/reset output low/high.
 const CR_C2_LOW: u8 = 0x34;
 const CR_C2_HIGH: u8 = 0x3C;
-/// Control value selecting the DDR (bit 2 clear) -- unused here since this
+/// Control value selecting the DDR (bit 2 clear) — unused here because this
 /// suite only drives Cx2 (SNDEN/SEL1/SEL2), never the DAC's data pins.
 const CR_DDR: u8 = 0x30;
 

@@ -5,7 +5,7 @@
 //! finite, and an enum is what lets `SystemBus`/`Machine` derive serde for
 //! save-states (`DESIGN.md` §9). The [`Cartridge`] trait remains as the
 //! shared device interface each variant implements (and as the escape hatch
-//! for out-of-crate test doubles via [`Cart::custom`]).
+//! for out-of-crate test doubles through [`Cart::custom`]).
 
 mod cart_enum;
 mod empty;
@@ -75,10 +75,10 @@ pub trait Cartridge {
     }
     /// Advance the cartridge's internal clocks by `cycles` CPU cycles. Called
     /// after every instruction, and once per burned cycle while the CPU is
-    /// halted so a device (e.g. the FDC) can still pace its own work.
+    /// halted so a device such as the FDC can still pace its own work.
     fn tick(&mut self, _cycles: u32) {}
-    /// Sample the cartridge's crystal-clocked sound generators (e.g. the
-    /// GMC's SN76489A) over the next `dt` seconds of wall time, returning the
+    /// Sample the cartridge's crystal-clocked sound generators, such as the
+    /// GMC's SN76489A, over the next `dt` seconds of wall time, returning the
     /// (left, right) level pair, 0.0-1.0 per channel. Wall time rather than
     /// CPU cycles, since a cycle timebase would let the GIME double-speed
     /// poke retune the crystal. Mixed unconditionally: these carts drive
@@ -97,7 +97,7 @@ pub trait Cartridge {
         false
     }
     /// The cartridge's LATCHED (left, right) output levels, 0.0-1.0 per
-    /// channel (e.g. the Orchestra-90's DAC pair). Unlike
+    /// channel, such as the Orchestra-90's DAC pair. Unlike
     /// [`Cartridge::generator_sample`], these only change on a bus write, so
     /// the bus snapshots them into an [`crate::audio::AudioEvent`] instead of polling.
     fn sound_levels(&self) -> (f32, f32) {
@@ -122,9 +122,8 @@ pub trait Cartridge {
     /// line). Default: nothing reset-sensitive to do.
     fn reset(&mut self) {}
     /// The cartridge's own analog audio output for this sample tick, in the
-    /// same amplitude convention as
-    /// [`SystemBus::sound_sample`](crate::bus::SystemBus::sound_sample).
-    /// Default: silent. Called once per `sound_sample` regardless of whether
+    /// same amplitude convention as [`Cartridge::sound_levels`]. Default:
+    /// silent. Called once per `audio_sample` regardless of whether
     /// the sound mux currently selects the cartridge input, since some
     /// devices (the SSC's Sound Activity Circuit) must observe their own
     /// output continuously; `&mut self` because that observation is stateful

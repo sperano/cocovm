@@ -1,8 +1,8 @@
-//! Host-side serial wire backends for the Deluxe RS-232 Program Pak
-//! "Host serial backend": the
-//! [`SerialEndpoint`] seam the 6551 ACIA transmits into and receives from,
-//! with TCP / Unix PTY / loopback implementations. Kept in `coco-core`
-//! (std-only, no host-audio-style deps); the egui frontend chooses which
+//! Host-side serial wire backends for the Deluxe RS-232 Program Pak:
+//! "Host serial backend" implementations use the [`SerialEndpoint`] seam
+//! that the 6551 ACIA transmits into and receives from, with TCP / Unix PTY /
+//! loopback implementations. They stay in `coco-core` (std-only, with no
+//! host-audio-style dependencies); the egui frontend chooses which
 //! endpoint to plug in.
 //!
 //! Same shape as [`crate::bitbanger::PrinterSink`]: a minimal trait the CPU
@@ -27,8 +27,8 @@ pub trait SerialEndpoint {
     /// Next byte from the host side, if one is available. Non-blocking:
     /// `None` means "nothing waiting right now", never an error.
     fn poll_rx(&mut self) -> Option<u8>;
-    /// Transmit one byte to the host side. Non-blocking / best-effort — a
-    /// serial line with nothing attached just eats the byte, like real
+    /// Transmit one byte to the host side. This operation is non-blocking and
+    /// best-effort. A serial line with nothing attached discards the byte, like
     /// hardware with an unplugged cable.
     fn tx(&mut self, b: u8);
     /// Data Carrier Detect: is something connected on the host side?
@@ -91,8 +91,8 @@ pub struct TCPEndpoint {
 }
 
 impl TCPEndpoint {
-    /// Bind and start listening at `addr` (e.g. `"127.0.0.1:6551"`, or
-    /// `"127.0.0.1:0"` for an OS-assigned port — see [`Self::local_addr`]).
+    /// Bind and start listening at `addr`, such as `"127.0.0.1:6551"` or
+    /// `"127.0.0.1:0"` for an OS-assigned port. See [`Self::local_addr`].
     pub fn bind(addr: impl ToSocketAddrs) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         listener.set_nonblocking(true)?;
@@ -172,7 +172,7 @@ impl SerialEndpoint for TCPEndpoint {
     }
 }
 
-/// Unix pseudo-terminal endpoint: allocates a PTY pair via `libc`, exposes
+/// Unix pseudo-terminal endpoint: allocates a PTY pair using `libc`, exposes
 /// the slave device path so the frontend can tell the user "connect your
 /// terminal to `/dev/ttysNNN`", and reads/writes the master side
 /// non-blocking. Only the master side is touched here — the slave's line
@@ -187,7 +187,7 @@ pub struct PTYEndpoint {
 
 #[cfg(unix)]
 impl PTYEndpoint {
-    /// Allocate a new PTY pair via `posix_openpt`/`grantpt`/`unlockpt`, then
+    /// Allocate a new PTY pair using `posix_openpt`/`grantpt`/`unlockpt`, then
     /// resolve the slave's device path. The master fd is set non-blocking before returning.
     pub fn new() -> io::Result<Self> {
         // SAFETY: each libc call's return is checked before the next; fd is
@@ -225,11 +225,11 @@ impl PTYEndpoint {
         }
     }
 
-    /// Resolve the slave device path via `ptsname_r` (thread-safe, Linux/glibc).
-    /// Not available on macOS — see the `not(target_os = "linux")` variant below.
+    /// Resolve the slave device path using `ptsname_r` (thread-safe, Linux/glibc).
+    /// Not available on macOS — see the `not(target_os = "linux")` variant that follows.
     #[cfg(target_os = "linux")]
     unsafe fn slave_name(master_fd: libc::c_int) -> io::Result<String> {
-        // SAFETY: `master_fd` is a valid, just-opened PTY master fd; `buf` outlives the call.
+        // SAFETY: `master_fd` is a valid, newly opened PTY master fd; `buf` outlives the call.
         unsafe {
             // `c_char` signedness is ABI-specific, so the buffer must use the alias.
             let mut buf = [0 as libc::c_char; 128];
@@ -243,7 +243,7 @@ impl PTYEndpoint {
 
     #[cfg(not(target_os = "linux"))]
     unsafe fn slave_name(master_fd: libc::c_int) -> io::Result<String> {
-        // SAFETY: `master_fd` is a valid, just-opened PTY master fd.
+        // SAFETY: `master_fd` is a valid, newly opened PTY master fd.
         unsafe {
             let ptr = libc::ptsname(master_fd);
             if ptr.is_null() {
@@ -254,7 +254,7 @@ impl PTYEndpoint {
         }
     }
 
-    /// Set `O_NONBLOCK` on `fd` via `fcntl`, preserving any other flags
+    /// Set `O_NONBLOCK` on `fd` using `fcntl`, preserving any other flags
     /// already set.
     unsafe fn set_nonblocking(fd: libc::c_int) -> io::Result<()> {
         // SAFETY: caller guarantees `fd` is a valid, open fd.
@@ -270,7 +270,7 @@ impl PTYEndpoint {
         }
     }
 
-    /// The slave device path (e.g. `/dev/ttys003`) the frontend should tell
+    /// The slave device path, such as `/dev/ttys003`, that the frontend should tell
     /// the user to connect a terminal emulator to.
     pub fn path(&self) -> &str {
         &self.slave_path
@@ -295,7 +295,7 @@ impl SerialEndpoint for PTYEndpoint {
 
     fn tx(&mut self, b: u8) {
         let byte = [b];
-        // SAFETY: `byte` outlives the call; a full pty buffer or no reader just drops the byte.
+        // SAFETY: `byte` outlives the call; a full pty buffer or no reader drops the byte.
         unsafe {
             libc::write(self.master_fd, byte.as_ptr().cast::<libc::c_void>(), 1);
         }

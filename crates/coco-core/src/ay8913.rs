@@ -5,10 +5,10 @@
 //! them are stored and otherwise inert).
 //!
 //! No bus/CPU dependencies: a standalone register-level model driven by
-//! [`AY8913::write_reg`]/[`AY8913::read_reg`] and stepped by master clocks via
+//! [`AY8913::write_reg`]/[`AY8913::read_reg`] and stepped by master clocks using
 //! [`AY8913::step`]. Mirrors MAME `src/devices/sound/ay8910.cpp`
 //! (`ay8910_device`) in its classic, non-expanded (AY8930), non-YM2149 mode —
-//! every fact below is cited against that file.
+//! every fact that follows is cited against that file.
 //!
 //! **Deviation from MAME**: real AY output mixing combines the three
 //! channels through a shared resistor network (MAME's `mix_3D`, indexed by
@@ -184,7 +184,7 @@ pub struct AY8913 {
     /// ([`MASTER_CLOCK_DIVIDER`]), carried across [`AY8913::step`] calls so a
     /// `cycles` argument that isn't a multiple of 8 doesn't lose clocks.
     clock_accum: u32,
-    /// Precomputed once per instance (cheap: 16 entries) — see
+    /// Precomputed once per instance (only 16 entries) — see
     /// [`build_volume_table`]. Skipped: pure construction-time scratch,
     /// left at its `Default` (all-zero — silent, not correct) until
     /// [`AY8913::after_restore`] rebuilds it.
@@ -192,8 +192,7 @@ pub struct AY8913 {
     dac: [f32; 16],
     /// Box-filter accumulator for [`AY8913::drain`]: running sum of the
     /// per-internal-step mixed output since the last drain. Skipped:
-    /// per-drain accumulator, correctly resets to zero
-    ///.
+    /// per-drain accumulator, correctly resets to zero.
     #[serde(skip)]
     sample_sum: f32,
     #[serde(skip)]
@@ -240,7 +239,7 @@ impl AY8913 {
         self.sample_count = 0;
     }
 
-    /// Rebuilds the skipped `dac` lookup table after a snapshot restore, via
+    /// Rebuilds the skipped `dac` lookup table after a snapshot restore, using
     /// [`build_volume_table`]. Idempotent.
     pub fn after_restore(&mut self) {
         self.dac = build_volume_table();

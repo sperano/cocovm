@@ -14,7 +14,7 @@ use super::jvc::JVCDisk;
 /// it — MAME `coco_fdc.cpp` `dskreg_w`).
 pub mod dskreg {
     /// Halt-enable: while set, the HALT* control line asserts whenever DRQ is
-    /// low (see `DiskCart`'s `Cartridge::halt_asserted` implementation below).
+    /// low (see `DiskCart`'s `Cartridge::halt_asserted` implementation that follows).
     pub const HALT_ENABLE: u8 = 0x80;
     /// Drive-select 3 when no lower drive-select bit is set, else the side
     /// (head) select for drives 0-2.
@@ -105,7 +105,7 @@ impl std::fmt::Debug for DiskCart {
 
 impl DiskCart {
     /// Build a disk controller cartridge serving `rom` through the CTS
-    /// window; found via the cold-start `DK` probe, not autostart.
+    /// window; found using the cold-start `DK` probe, not autostart.
     /// DRQ starts set — a clear DRQ would spuriously assert HALT* before any
     /// command runs.
     pub fn new(rom: Box<[u8]>) -> Self {

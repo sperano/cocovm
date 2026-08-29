@@ -8,7 +8,7 @@
 //! Register pokes mirror `tests/fdc.rs`'s direct-DSKREG style; disk/MPI
 //! construction mirrors `tests/mpi.rs`. Unlike those files, transfers here
 //! are driven through a full [`Machine`] (not a bare `DiskCart`/`SystemBus`),
-//! via [`Machine::step_instruction`] — the only stepping primitive that
+//! through [`Machine::step_instruction`] — the only stepping primitive that
 //! ticks the cartridge (`Machine::step_cpu_raw` used elsewhere in the
 //! snapshot test suite is CPU-only and never advances FDC timing at all).
 
@@ -70,7 +70,7 @@ fn boot_machine() -> Machine {
 }
 
 /// One headerless track (18 sectors x 256B), every sector filled with the
-/// `i as u8` index pattern -- same trick as `tests/fdc.rs`'s
+/// `i as u8` index pattern — the same trick as `tests/fdc.rs`'s
 /// `index_pattern_disk`, so a successful Read Sector's bytes double as proof
 /// the transfer wasn't corrupted.
 const ONE_TRACK_BYTES: usize = 18 * 256;
@@ -86,8 +86,8 @@ const DATA_REG: u16 = 0xFF4B;
 
 /// Fields run before touching the FDC directly, so the machine carries real,
 /// varied CPU/GIME state by the time it's snapshotted (same rationale as
-/// `snapshot_roundtrip.rs`'s `WARMUP_STEPS`) -- deliberately short: idle
-/// BASIC never touches the disk registers, so this is just for variety, not
+/// `snapshot_roundtrip.rs`'s `WARMUP_STEPS`) — deliberately short: idle
+/// BASIC never touches the disk registers, so this adds variety rather than
 /// to reach a particular banner.
 const WARMUP_FIELDS: usize = 60;
 
@@ -98,8 +98,8 @@ const SECTOR_BYTES: usize = 256;
 /// is spent one cycle per `step_instruction` call while HALT* is asserted).
 const MAX_TRANSFER_STEPS: usize = 20_000;
 
-/// Dispatch a Read Sector (track 0, sector 1, drive 0) on the currently
-/// selected FD-502 through `m`'s full bus -- DSKREG halt-enable set, so this
+/// Dispatch a Read Sector (track 0, sector 1, drive 0) on the
+/// selected FD-502 through `m`'s full bus — DSKREG halt-enable set, so this
 /// leaves HALT* asserted the instant the command is written (DRQ clears,
 /// halt-enable is set, per `tests/fdc.rs`'s `halt_line_is_not_drq_and_halt_enable`).
 fn dispatch_read_sector(m: &mut Machine) {
@@ -121,7 +121,7 @@ fn dispatch_read_sector(m: &mut Machine) {
 /// register for DRQ and draining a byte the instant it's ready, until a full
 /// sector (`SECTOR_BYTES`) has been collected. Because the poll happens right
 /// after every single step, it always catches DRQ before the CPU gets a
-/// chance to run past it -- so this reaches sector completion in lockstep
+/// chance to run past it — so this reaches sector completion in lockstep
 /// with the FDC's own byte pacing, deterministically, without depending on
 /// what code (if any) the CPU is otherwise executing. Returns the drained
 /// bytes and a full per-step CPU trace, for the lockstep comparison between
@@ -149,9 +149,9 @@ fn expected_sector_bytes() -> Vec<u8> {
     (0..SECTOR_BYTES as u32).map(|i| i as u8).collect()
 }
 
-/// A [`MediaRef`] naming `path` and hashing `bytes` -- collapses the
+/// A [`MediaRef`] naming `path` and hashing `bytes` — collapses the
 /// two-field struct literal that would otherwise repeat at every media
-/// reference below.
+/// reference that follows.
 fn media_ref(path: &str, bytes: &[u8]) -> MediaRef {
     MediaRef {
         path: PathBuf::from(path),
@@ -160,7 +160,7 @@ fn media_ref(path: &str, bytes: &[u8]) -> MediaRef {
 }
 
 /// `save` -> `load` -> `restore` through the engine, panicking (with the
-/// engine's own message) on any step's failure -- both tests below only care
+/// engine's own message) on any step's failure — both following tests only care
 /// about the happy path, `snapshot_engine.rs` and `snapshot_media.rs` cover
 /// the error paths.
 fn save_and_restore(original: &Machine, media: MediaRefs, sources: MediaSources) -> Machine {
@@ -172,7 +172,7 @@ fn save_and_restore(original: &Machine, media: MediaRefs, sources: MediaSources)
 }
 
 /// Drain the sector on both machines post-restore and assert the whole
-/// transfer -- CPU trace, delivered bytes, and RAM -- came back identical,
+/// transfer — CPU trace, delivered bytes, and RAM — came back identical,
 /// and that the delivered bytes are themselves uncorrupted.
 fn assert_transfer_completes_identically(original: &mut Machine, restored: &mut Machine) {
     let (original_bytes, original_trace) = drain_sector(original);
@@ -253,7 +253,7 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
 
 /// Physical slot the FD-502 sits in (and the front-panel switch points at,
 /// so `Machine::reset` routes both SCS and CTS to it with no extra `$FF7F`
-/// write needed) -- mirrors `tests/mpi.rs`'s `SWITCH_SLOT4`.
+/// write needed) — mirrors `tests/mpi.rs`'s `SWITCH_SLOT4`.
 const FDC_SLOT: usize = 3;
 /// Physical slot the plain ROM pak sits in.
 const ROMPAK_SLOT: usize = 0;

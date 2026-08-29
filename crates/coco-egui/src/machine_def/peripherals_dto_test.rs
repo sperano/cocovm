@@ -46,7 +46,7 @@ rs232 = false
 /// `[peripherals].cartridge = { kind = "mpi" }` with no `slots` key must
 /// fail to load — `slots` is a required field of `CartridgeDTO::MPI`, so
 /// serde's own missing-field error catches it directly (no raw-table check
-/// needed for this case, unlike the wrong-length one below).
+/// needed for this case, unlike the wrong-length one in the following test).
 #[test]
 fn mpi_cartridge_with_no_slots_fails_to_load() {
     let dir = TempDir::new("mpi-no-slots");
@@ -283,7 +283,7 @@ slots = [{ kind = "empty" }, { kind = "empty" }, { kind = "empty" }, { kind = "e
 }
 
 /// An MPI slot's RS-232 Pak round-trips each endpoint kind, same as the bare-port
-/// `CartridgeDTO::RS232` (`rs232_endpoint_kinds_round_trip` above).
+/// `CartridgeDTO::RS232` (`rs232_endpoint_kinds_round_trip` earlier).
 #[test]
 fn slot_rs232_endpoint_kinds_round_trip() {
     let dto: CartridgeDTO = toml::from_str(

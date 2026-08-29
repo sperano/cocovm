@@ -9,15 +9,15 @@
 //! main viewport.
 //!
 //! [`DebuggerPanel`] owns the `coco_core::debug::Debugger` (breakpoints,
-//! watchpoints, trace ring) and is the single entry point `CocoApp::update`
-//! drives the per-field run loop through ([`DebuggerPanel::run_field`]) so a
-//! tripped breakpoint or watchpoint pauses the emulator through the same
-//! `running` flag the debugger's own Run/Pause control drives, rather than
-//! needing a second "why did we stop"
+//! watchpoints, trace ring) and provides the single entry point that
+//! [`CocoApp::update`] uses to drive the per-field run loop
+//! ([`DebuggerPanel::run_field`]). A tripped breakpoint or watchpoint pauses
+//! the emulator through the same `running` flag that the debugger's own
+//! Run/Pause control drives, so it does not need a second "why did we stop"
 //! flag. Every read view (disassembly, memory, stack) goes through
-//! [`coco_core::SystemBus::peek`] — never `read` — so simply having the
-//! debugger open can never perturb PIA/GIME/cart state (
-//! §2, "side-effect-free reads").
+//! [`coco_core::SystemBus::peek`] — never `read` — so having the
+//! debugger open can never perturb PIA/GIME/cart state (see
+//! `docs/plan-debugger.md` §2, "side-effect-free reads").
 //!
 //! Widgets are editable only while paused (`ui.add_enabled(!running, ..)`);
 //! while running the panels still redraw every frame from live `peek`s, same
@@ -49,7 +49,7 @@ pub(crate) const DEBUGGER_SHORTCUT: egui::KeyboardShortcut =
 /// Instructions handed to one [`Debugger::run_until`] call before this module
 /// re-checks its own bookkeeping. Comfortably above one field's instruction
 /// count (a few thousand at most, even at double CPU speed), so a plain run
-/// with nothing tripped always returns via `StopReason::FieldComplete` well
+/// with nothing tripped always returns through `StopReason::FieldComplete` well
 /// inside this budget — [`StopReason::Step`] (budget exhausted) is the rare,
 /// handled fallback, not the common case.
 const RUN_BUDGET: u64 = 200_000;

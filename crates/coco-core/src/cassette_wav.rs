@@ -6,7 +6,7 @@
 //!
 //! This module owns the *audio* domain only. The bit-timing facts it needs
 //! (tone periods, LSB-first bit order, the sync byte) are measured and
-//! documented in `cassette.rs` and reused here via `pub(crate)` items rather
+//! documented in `cassette.rs` and reused here through `pub(crate)` items rather
 //! than duplicated: [`ZERO_BIT_PERIOD`], [`ONE_BIT_PERIOD`], [`SYNC`].
 
 use crate::cassette::{ONE_BIT_PERIOD, SYNC, Transition, ZERO_BIT_PERIOD, demodulate};
@@ -132,7 +132,7 @@ pub enum WAVError {
     MissingFmtChunk,
     /// `fmt ` chunk shorter than the minimal 16-byte PCM format body.
     FmtChunkTooShort,
-    /// The `fmt ` chunk's format tag wasn't 1 (PCM) — e.g. 3 (IEEE float) or
+    /// The `fmt ` chunk's format tag wasn't 1 (PCM), such as 3 (IEEE float) or
     /// 6/7 (A-law/mu-law).
     UnsupportedFormatTag(u16),
     /// The `fmt ` chunk declared a bit depth other than 8 or 16.
@@ -375,8 +375,9 @@ fn choose_best_decode(a: Vec<u8>, b: Vec<u8>) -> Vec<u8> {
     }
 }
 
-/// Decode a WAV file (8/16-bit PCM, any channel count/sample rate) into a tape byte stream,
-/// trying both signal polarities and keeping the better decode via [`choose_best_decode`].
+/// Decode a WAV file (8/16-bit PCM, any channel count or sample rate) into a
+/// tape byte stream. Try both signal polarities and keep the better decode
+/// through [`choose_best_decode`].
 pub fn decode_wav(bytes: &[u8], cpu_hz: f64) -> Result<Vec<u8>, WAVError> {
     let (fmt, data) = parse_wav_chunks(bytes)?;
     let samples = extract_mono_samples(data, &fmt);

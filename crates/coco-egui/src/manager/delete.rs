@@ -1,6 +1,6 @@
 //! The delete confirmation flow behind the list's "Delete…" (single- or
-//! multi-row): the modal itself
-//! ([`ManagerApp::draw_delete_confirmation`]) and the confirmed deletion it
+//! multi-row): the modal itself ([`ManagerApp::draw_delete_confirmation`]) and
+//! the confirmed deletion it
 //! commits ([`ManagerApp::commit_pending_delete`]) — split out of
 //! `lifecycle.rs` to keep that module to the single-machine start/stop/
 //! rename lifecycle.

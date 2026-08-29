@@ -40,19 +40,19 @@ fn boot_machine() -> Machine {
     Machine::new(MachineConfig::default(), load_rom(COCO3))
 }
 
-/// Select `drive` (0 or 1) via `$FF86`.
+/// Select `drive` (0 or 1) through `$FF86`.
 fn select(m: &mut Machine, drive: u8) {
     m.bus.write(SELECT, drive);
 }
 
-/// Set the 24-bit LRN via `$FF80-$FF82` (big-endian).
+/// Set the 24-bit LRN through `$FF80-$FF82` (big-endian).
 fn set_lrn(m: &mut Machine, lrn: u32) {
     m.bus.write(LRN_HI, ((lrn >> 16) & 0xFF) as u8);
     m.bus.write(LRN_MID, ((lrn >> 8) & 0xFF) as u8);
     m.bus.write(LRN_LO, (lrn & 0xFF) as u8);
 }
 
-/// Set the 16-bit CPU buffer address via `$FF84-$FF85` (big-endian).
+/// Set the 16-bit CPU buffer address through `$FF84-$FF85` (big-endian).
 fn set_buffer(m: &mut Machine, addr: u16) {
     m.bus.write(BUFFER_HI, (addr >> 8) as u8);
     m.bus.write(BUFFER_LO, (addr & 0xFF) as u8);
@@ -308,7 +308,7 @@ fn per_drive_state_is_independent() {
     set_lrn(&mut m, 2); // drive 0's LRN
 
     select(&mut m, 1);
-    set_lrn(&mut m, 1); // drive 1's LRN -- must not disturb drive 0's
+    set_lrn(&mut m, 1); // drive 1's LRN — must not disturb drive 0's
 
     select(&mut m, 0); // back to drive 0
     let buffer = 0x2000;
@@ -340,7 +340,7 @@ fn deselected_state_reads_open_bus_and_drops_writes() {
         );
     }
 
-    // Attempts while deselected are silently dropped -- neither of these may
+    // Attempts while deselected are silently dropped — neither of these may
     // take effect.
     set_lrn(&mut m, 99); // would clobber the LRN if not dropped
     m.bus.write(COMMAND_STATUS, command::READ); // would run a command if not dropped
@@ -418,10 +418,10 @@ fn reentrant_command_write_is_dropped_and_outer_result_stands() {
     select(&mut m, 0);
     set_lrn(&mut m, 0);
     // Buffer address lands the transfer's very first byte write on $FF83
-    // itself -- the loop's own Bus::write recurses into the command-register
+    // itself — the loop's own Bus::write recurses into the command-register
     // decoder mid-command. Later loop iterations also land on $FF84-$FF86
     // (live register writes, not guarded) and beyond, including $FF86 the
-    // drive-select latch -- deselecting the drive as an incidental side
+    // drive-select latch — deselecting the drive as an incidental side
     // effect of which pattern byte lands there. That's expected (per spec);
     // reselect afterward to check the outer command's real result.
     set_buffer(&mut m, COMMAND_STATUS);

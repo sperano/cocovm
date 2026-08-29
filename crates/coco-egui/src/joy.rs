@@ -1,6 +1,6 @@
 //! Joystick input sources: drive the CoCo's two analog ports
-//! (`coco_core::joystick`) from the mouse, a gamepad (via `gilrs`), or the
-//! keyboard, per-port selectable from the joysticks menu the status bar's
+//! (`coco_core::joystick`) from the mouse, a gamepad (using `gilrs`), or the
+//! keyboard, selectable per port from the joysticks menu that the status bar's
 //! joysticks entry pops up ([`JoystickInputs::menu_ui`]).
 
 use coco_core::Machine;
@@ -182,7 +182,7 @@ impl JoystickInputs {
 
     /// Update the [`Self::mouse_fire`] latches from this frame's
     /// pointer-button events, keeping a button held only if its own press
-    /// began on the CoCo display. Latched per-button rather than via egui's
+    /// began on the CoCo display. Latched per-button rather than through egui's
     /// shared `PointerState::press_origin`, which any release clears for both.
     fn update_mouse_fire(
         &mut self,
@@ -347,7 +347,7 @@ impl JoystickInputs {
 }
 
 /// Full deflection while exactly one of a key pair is held, else centered —
-/// covers "neither held" and "both held" (e.g. opposing arrows) the same way.
+/// covers "neither held" and "both held" (for example, opposing arrows) the same way.
 fn axis_from_keys(negative: bool, positive: bool) -> u8 {
     match (negative, positive) {
         (true, false) => AXIS_MIN,
@@ -387,7 +387,7 @@ fn keys_in_use(keys: KeyState) -> bool {
     keys.left || keys.right || keys.up || keys.down || keys.button0 || keys.button1
 }
 
-/// Map a 0.0..=1.0 fraction (e.g. pointer position within the display rect) to
+/// Map a 0.0..=1.0 fraction (for example, a pointer position within the display rect) to
 /// a 0..=63 pot value.
 fn pot_from_unit(frac: f32) -> u8 {
     (frac.clamp(0.0, 1.0) * AXIS_MAX as f32).round() as u8

@@ -261,7 +261,7 @@ fn nmi_is_ignored_until_the_first_program_load_of_s() {
 #[test]
 fn nmi_armed_when_pulu_loads_s() {
     // PULU with the S bit in the postbyte is a program load of S and must arm
-    // NMI recognition just like LDS (see `nmi_armed` docs).
+    // NMI recognition as LDS does (see `nmi_armed` docs).
     let mut s = Sys::code(0x1000, &[0xCE, 0x30, 0x00, 0x37, 0x40, 0x12]); // LDU #$3000 ; PULU S ; NOP
     s.bus.load(0x3000, &[0x20, 0x00]); // U stack holds the S value to pull
     s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
@@ -280,7 +280,7 @@ fn nmi_armed_when_pulu_loads_s() {
 
 #[test]
 fn nmi_not_armed_by_pshs_pointer_movement() {
-    // Stack traffic *via* S is not a program load of S: PSHS moves the pointer
+    // Stack traffic through S is not a program load of S: PSHS moves the pointer
     // but must leave NMI recognition unarmed (see `nmi_armed` docs).
     let mut s = Sys::code(0x1000, &[0x34, 0x06, 0x12]); // PSHS A,B ; NOP
     s.bus.load(0xFFFC, &[0x60, 0x00]); // NMI vector -> $6000
@@ -304,7 +304,7 @@ fn sync_halts_and_idles_until_interrupt() {
     assert_eq!(s.cpu.state, State::Syncing);
     let pc_after_sync = s.cpu.pc;
 
-    // While syncing, step() just idles.
+    // While syncing, step() idles.
     let idle = s.step();
     assert_eq!(idle, 1);
     assert_eq!(s.cpu.pc, pc_after_sync); // no fetch

@@ -1,5 +1,5 @@
 //! End-to-end regression: NitrOS-9 EOU (Ease of Use, 6809 Level 2) boots from
-//! the emudsk VHD interface all the way to a usable shell. The git-ignored
+//! the emudsk VHD interface all the way to a usable shell. The ignored
 //! assets are the EOU 1.0.1 emulator pair: `disks/68EMU.dsk` (boot floppy
 //! whose OS9Boot carries the EmuDsk driver and `/h0` descriptors) and
 //! `disks/68SDC.VHD` (the 128MB system image the startup script runs from).
@@ -62,7 +62,7 @@ fn nitros9_eou_boots_from_vhd_with_fd502_in_multipak_slot4() {
 /// Loads the real ROM/disk/VHD assets, wires up a machine with the FD-502
 /// either bare or nested in MultiPak slot 4 per `through_mpi`, and boots it
 /// against a scratch copy of the VHD (EOU's startup writes to its system
-/// disk, and the pristine image must stay reproducible run to run — one
+/// disk, and the pristine image must stay reproducible across runs — one
 /// scratch file per variant, since both boot tests run concurrently in this
 /// binary). Returns the reset machine and the scratch VHD path (for the
 /// caller to remove when done), or `None` (test should skip) if any asset is

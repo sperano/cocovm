@@ -1,8 +1,8 @@
 //! Tandy Sound/Speech Cartridge (SSC): the `$FF7D`/`$FF7E` handshake, bus
 //! routing (standard SCS-slot behaviour plus the Multi-Pak's `$FF60-$FF7E`
 //! broadcast — see `crate::cart::MultiPak`'s doc comment), and the
-//! AY-3-8913's audio/Sound Activity Circuit integration. Facts per
-//! `docs/ssc-spec.md` / MAME `coco_ssc.cpp`. AY-3-8913 core coverage lives in
+//! AY-3-8913's audio/Sound Activity Circuit integration. Semantics follow
+//! `docs/ssc-spec.md` and MAME `coco_ssc.cpp`. AY-3-8913 core coverage lives in
 //! `crates/coco-core/src/ay8913.rs`'s own inline tests.
 
 #[path = "ssc/common.rs"]

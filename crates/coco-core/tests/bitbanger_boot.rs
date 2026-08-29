@@ -1,10 +1,10 @@
-//! End-to-end regression for the bit-banger printer port (
-//! T2): boot the real Super Extended Color BASIC ROM, type a short program,
+//! End-to-end regression for the bit-banger printer port (T2): boot the real
+//! Super Extended Color BASIC ROM, type a short program,
 //! `LLIST` it, and assert the decoded bytes reaching an in-memory
 //! [`CaptureSink`] match the listing BASIC actually sent — proving the whole
 //! path (PIA1 DDR/CRA setup, the ROM's bit-bang transmit loop, the BUSY
 //! handshake, and `BitBanger`'s RX decoder) works against unmodified ROM
-//! code, not just synthetic edge timings. Skips gracefully if `roms/` isn't
+//! code, not only synthetic edge timings. Skips gracefully if `roms/` isn't
 //! present, matching `tests/boot.rs`/`tests/fdc.rs`.
 
 use coco_core::bitbanger::CaptureSink;
@@ -136,9 +136,9 @@ fn llist_captures_program_text_and_returns_to_ok_prompt() {
     type_str(&mut m, "LLIST");
     tap_char(&mut m, '\r');
 
-    // Wait for a new OK prompt: the machine must not hang mid-transmit (e.g.
-    // spinning forever on a wrongly-polarized BUSY bit) and must actually
-    // finish LLIST and fall back to the command loop.
+    // Wait for a new OK prompt: the machine must not hang during transmission,
+    // such as by spinning forever on a wrongly polarized BUSY bit. It must
+    // finish LLIST and return to the command loop.
     let screen = wait_for_new_ok_prompt(&mut m, baseline_ok, MAX_LLIST_FIELDS);
     assert!(
         !capture.bytes().is_empty(),

@@ -19,11 +19,11 @@
 //! data/stop bit is sampled at its cell midpoint (`bitbanger-spec.md`
 //! "Decoder spec"). Cycle-based timing (never wall time) is what makes the
 //! CoCo 3 high-speed poke and BASIC's `POKE 150,n` baud changes fall out for
-//! free: both just change how many CPU cycles a bit cell spans.
+//! free: both change how many CPU cycles a bit cell spans.
 //!
 //! BUSY (PIA1 PB0) is the mirror image of the cassette's PA0 input tap: an
 //! externally-driven line the emulator feeds back into the PIA so a
-//! (currently unimplemented) DMP-105 buffer model can pace BASIC's
+//! (not yet implemented) DMP-105 buffer model can pace BASIC's
 //! poll-before/after-every-byte driver, matching `bitbanger-spec.md`
 //! "Drive PB0 (BUSY) back into PIA1 as an input".
 
@@ -48,7 +48,8 @@ pub const TX_PIN: u8 = 0x02;
 /// `$A2C3`/`$A2F3` polls this bit before and after every byte).
 pub const BUSY_PIN: u8 = 0x01;
 
-/// Default bit period in CPU cycles: `cycles_per_bit = 78 + 16*N` with the
+/// Default bit period in CPU cycles. The ROM uses `cycles_per_bit = 78 + 16*N`
+/// with
 /// ROM's live `LPTBTD` default N = 88 (`$0058` at ROM init table `$A10D`,
 /// file offset `0x210D`), giving 600 baud at the normal 0.894886 MHz CoCo 3
 /// clock (`bitbanger-spec.md` "Baud timing"). A settable field on
@@ -75,9 +76,9 @@ const START_SAMPLE: u8 = 0;
 const TOTAL_SAMPLES: u8 = DATA_BITS + 2;
 
 /// A destination for decoded printer bytes. Deliberately minimal: this is
-/// the seam for later tasks (text-capture-to-file, a DMP-105 command
-/// interpreter — `bitbanger-spec.md` "Byte sink is pluggable") and shouldn't
-/// grow beyond what the decoder itself needs.
+/// the seam for later tasks such as text capture and a DMP-105 command
+/// interpreter (`bitbanger-spec.md`, "Byte sink is pluggable"). Keep the trait
+/// focused on what the decoder needs.
 pub trait PrinterSink {
     fn write_byte(&mut self, b: u8);
 
@@ -98,7 +99,7 @@ pub trait PrinterSink {
     }
 }
 
-/// Sink used until something more interesting is plugged in via
+/// Sink used until something more interesting is plugged in through
 /// [`BitBanger::set_sink`]: discards every byte.
 struct NoopSink;
 
@@ -108,8 +109,8 @@ impl PrinterSink for NoopSink {
 
 /// Marker sink `sink_serde::deserialize` installs when the snapshot recorded
 /// [`sink_serde::SinkState::FileCapture`]: behaves exactly like [`NoopSink`]
-/// (a restored file handle is frontend-owned and can't be reopened without
-/// frontend involvement — "on restore, capture is simply stopped"), but is a
+/// (the frontend owns the restored file handle and cannot reopen it without
+/// frontend involvement—"on restore, capture is simply stopped"), but it is a
 /// distinct type so
 /// [`PrinterSink::was_file_capture_stopped_by_restore`] can report that
 /// capture *was* running, for the snapshot restore flow's standing notes.
@@ -127,9 +128,9 @@ impl PrinterSink for StoppedFileCaptureSink {
 /// The buffer is an `Rc<RefCell<_>>` rather than a bare `Vec<u8>` because
 /// [`BitBanger`] owns its sink as `Box<dyn PrinterSink>` — once moved into
 /// [`BitBanger::set_sink`] a plain `Vec` would be unreachable from the
-/// caller. Clone the sink (cheap: it's a refcounted handle to the same
-/// buffer) before moving one half in, and read `bytes()` on the other half
-/// afterward.
+/// caller. Clone the sink before moving one handle into the bit-banger, then
+/// read `bytes()` through the other handle. Both handles refer to the same
+/// reference-counted buffer.
 #[derive(Clone, Default)]
 pub struct CaptureSink(Rc<RefCell<Vec<u8>>>);
 
@@ -150,8 +151,8 @@ impl PrinterSink for CaptureSink {
     }
 }
 
-/// "Print to text file" sink: appends every
-/// decoded byte to a file. By default bytes are written unmodified —
+/// "Print to text file" sink: appends every decoded byte to a file. By
+/// default, bytes are written unmodified —
 /// BASIC's line ending is a bare CR (`$0D`, `bitbanger-spec.md` "Framing")
 /// and a faithful capture keeps it, so a captured `LLIST` reads back
 /// exactly as the ROM sent it. Optionally (`translate_cr_to_lf`, the GUI's
@@ -160,8 +161,8 @@ impl PrinterSink for CaptureSink {
 /// byte-for-byte swap is the whole job (a hypothetical CRLF in the stream
 /// would come out LFLF — acceptable for a convenience mode).
 ///
-/// Buffered via [`BufWriter`] so the decoder isn't paying one `write`
-/// syscall per character, flushed to the OS whenever a (possibly
+/// Buffered through [`BufWriter`] so the decoder avoids one `write` syscall
+/// per character. Flushes go to the OS whenever a (possibly
 /// translated) line ending is seen — the natural granularity for "printer
 /// output" (one line at a time), so a tail-follower on the capture file
 /// sees whole lines as they print.
@@ -241,7 +242,7 @@ pub struct BitBanger {
     /// Count of bytes delivered to `sink` since construction — our own
     /// addition, for the status bar's printer activity light
     /// (`status_icons.rs`'s `ActivityLatch`). Bumped alongside every
-    /// `sink.write_byte` call, i.e. only for a fully-framed byte; a framing
+    /// `sink.write_byte` call, that is, only for a fully-framed byte; a framing
     /// error (discarded, never reaches the sink) doesn't bump it.
     /// `#[serde(default)]` so an older save state without this field
     /// restores to zero rather than failing to load.
@@ -278,7 +279,7 @@ impl BitBanger {
         self.bit_period
     }
 
-    /// Set the bit period in CPU cycles — e.g. to model `POKE 150,n`
+    /// Set the bit period in CPU cycles, for example to model `POKE 150,n`
     /// (`cycles_per_bit = 78 + 16*n`) or a non-default `LPTBTD`.
     pub fn set_bit_period(&mut self, cycles: u32) {
         self.bit_period = cycles;
@@ -301,7 +302,7 @@ impl BitBanger {
         self.busy
     }
 
-    /// Assert or clear BUSY, e.g. from a printer-buffer model.
+    /// Assert or clear BUSY, for example from a printer-buffer model.
     pub fn set_busy(&mut self, busy: bool) {
         self.busy = busy;
     }
@@ -337,12 +338,13 @@ impl BitBanger {
         handle
     }
 
-    /// The live sink's [`DMP105Handle`], if it is one (cheap `Rc` clone, fine to call every frame).
+    /// The live sink's [`DMP105Handle`], if it is one. Cloning the reference
+    /// is inexpensive, so callers can use this every frame.
     pub fn dmp105_handle(&self) -> Option<DMP105Handle> {
         self.sink.as_dmp105().cloned()
     }
 
-    /// True if this `BitBanger` just came back from a snapshot restore whose
+    /// True if this `BitBanger` returned from a snapshot restore whose
     /// sink was a live file capture at save time.
     pub fn capture_was_stopped_on_restore(&self) -> bool {
         self.sink.was_file_capture_stopped_by_restore()
@@ -417,7 +419,7 @@ impl BitBanger {
 /// itself isn't `Serialize`/`Deserialize` (and shouldn't be — a serialized
 /// `Box<dyn PrinterSink>` would either need typetag machinery for a
 /// two-implementation seam or leak host file handles into the snapshot), so
-/// this maps it to and from the small [`SinkState`] enum instead.
+/// this maps it to and from the small `SinkState` enum instead.
 // `pub`, not `pub(crate)`: `PrinterSink` itself is public API (implemented
 // by `coco-egui`), and its `snapshot` method's return type must be at least
 // as visible as the trait or rustc's `private_interfaces` lint fires.

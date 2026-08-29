@@ -18,7 +18,7 @@ const LEADER: u8 = 0x55;
 const CPU_HZ: f64 = 894_886.0;
 
 /// Byte offset of PCM sample data in a WAV file built with the standard
-/// 44-byte RIFF/WAVE/`fmt `/`data` header layout (no extra chunks).
+/// 44-byte RIFF/WAVE header with `fmt ` and `data` chunks (no extra chunks).
 const WAV_HEADER_LEN: usize = 44;
 
 fn sample_tape() -> Vec<u8> {
@@ -53,7 +53,7 @@ fn wav_round_trip_survives_inverted_polarity() {
     );
 }
 
-/// Minimal 16-bit mono PCM WAV builder for the 16-bit round-trip test below.
+/// Minimal 16-bit mono PCM WAV builder for the following 16-bit round-trip test.
 /// `cassette_wav`'s own header writer is private (it only ever emits 8-bit
 /// audio) — this is a test-local helper exercising only the public
 /// `decode_wav` surface with a hand-built 16-bit file.
@@ -120,7 +120,7 @@ fn wav_decode_rejects_truncated_header() {
 
 #[test]
 fn wav_decode_rejects_non_pcm_format_tag() {
-    /// WAVE_FORMAT_IEEE_FLOAT: a real, common non-PCM tag this must reject.
+    /// A common non-PCM tag that the decoder must reject.
     const IEEE_FLOAT_FORMAT_TAG: u16 = 3;
     let mut wav = cassette_wav::synthesize_wav(&sample_tape(), CPU_HZ);
     // The format tag is the 'fmt ' chunk body's first field, right after the

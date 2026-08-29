@@ -285,8 +285,8 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
 
 /// One list row's thumbnail: the resolved preview `texture`, sized to
 /// `height` tall at the fixed [`THUMBNAIL_ASPECT`]. A paused VM's texture
-/// simply stops changing, freezing the thumbnail on its last frame; with no
-/// texture, just the placeholder shows.
+/// stops changing, freezing the thumbnail on its last frame; with no texture,
+/// the placeholder shows.
 fn draw_row_thumbnail(
     ui: &mut egui::Ui,
     height: f32,

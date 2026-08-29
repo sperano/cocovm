@@ -2,14 +2,13 @@
 //! by [`crate::bitbanger::BitBanger`]), abstract dot-raster paper out
 //! (`crate::printer::Paper`). Every hardware fact cited here is sourced from
 //! `docs/dmp105-protocol.md`; only entries that document marks VERIFIED are
-//! implemented — see that document's own INFERRED/UNVERIFIABLE flags for
-//! what's deliberately left out (e.g. exact BUSY assertion granularity, the
-//! European character set's per-code glyph mapping).
+//! implemented. See that document's own INFERRED/UNVERIFIABLE flags for what
+//! remains out of scope, such as exact BUSY assertion granularity and the
+//! European character set's per-code glyph mapping.
 //!
-//!
-//! DMP-family-shared paper model; this module holds everything specific to
-//! the DMP-105's own control-code dialect, so a DMP-130/Epson dialect (V3)
-//! can share the paper without inheriting 105-only parsing.
+//! This module provides the DMP-family paper model and the DMP-105-specific
+//! control-code dialect. A DMP-130/Epson dialect (V3) can share the paper
+//! without inheriting DMP-105-only parsing.
 //!
 //! # Position accounting
 //!
@@ -18,22 +17,21 @@
 //! integers, never floats (see `printer.rs`'s doc comment for why those
 //! particular denominators were chosen).
 //!
-//! One documented fact this module does **not** attempt to reproduce as a
-//! literal equality: `dmp105-protocol.md` §5 states "11 full-pitch LFs = 18
-//! graphics LFs exactly; 11 half LFs = 9 graphics LFs" as a manual-verified
-//! "rounding trap". Using the spec's own independently-verified numbers (a
-//! text LF pitch of 1/6" = 12 y-units, and the fixed graphics LF of 7/72" = 7
-//! y-units), `11 * 12 = 132` while `18 * 7 = 126` — not equal, and no integer
-//! y-unit choice makes `11 * k = 126` work either (126 isn't divisible by
-//! 11). Reconciling the manual's stated identity would require a physical
-//! stepper-motor step-resolution fact that isn't in the spec document (the
-//! most likely explanation: the identity is an artifact of discrete motor
-//! step rounding across repeated feeds, not a statement about nominal inch
-//! math) — that fact was not provided, so it is not fabricated here. The y-
-//! unit arithmetic itself (7/72" graphics LF, 1/6"/1/8"/1/12" text LF
-//! pitches) is implemented exactly per the individually-verified numbers;
-//! see the `graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_
-//! given_facts` test for the documented discrepancy.
+//! The protocol spec (`dmp105-protocol.md` §5) states "11 full-pitch LFs = 18
+//! graphics LFs exactly; 11 half LFs = 9 graphics LFs" and labels this a
+//! manual-verified "rounding trap". This module does not reproduce that
+//! statement as a literal equality. The
+//! independently verified values are a text LF pitch of 1/6" = 12 y-units
+//! and a graphics LF of 7/72" = 7 y-units. Therefore, `11 * 12 = 132` while
+//! `18 * 7 = 126`, and no integer y-unit choice makes `11 * k = 126` work
+//! because 126 is not divisible by 11. Reconciling the manual's identity
+//! requires a physical stepper-motor step-resolution fact that the spec does
+//! not provide. The likely explanation is discrete motor-step rounding across
+//! repeated feeds rather than nominal inch math, but this module does not
+//! invent that missing fact. It implements the y-unit arithmetic exactly per
+//! the individually verified values. See the test
+//! `graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts`
+//! for the documented discrepancy.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -89,7 +87,7 @@ mod control {
     pub const ESC: u8 = 0x1B;
 }
 
-/// Escape-sequence selector bytes, i.e. the byte immediately after `ESC`
+/// Escape-sequence selector bytes, that is, the byte immediately after `ESC`
 /// (`dmp105-protocol.md` §4).
 mod esc {
     pub const ELONGATE_START: u8 = 0x0E;
@@ -128,7 +126,7 @@ enum NlMode {
 
 /// Carriage direction selected by `1B 55 00/01`
 /// (`dmp105-protocol.md` §1/§4 T16). Stored only: no physical print head
-/// exists to model direction against, so it never affects output — matching
+/// exists to model direction against, so it never affects output. This matches
 /// the plan's "unidirectional/bidirectional affects nothing in emulation"
 /// direction for this task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,8 +224,9 @@ pub struct DMP105 {
 }
 
 impl Default for DMP105 {
-    /// Power-on defaults (`dmp105-protocol.md` §7): Normal 10 CPI, LF pitch 1/6", NL mode CR+LF.
-    /// Head position (0, 0) is this implementation's choice — the manual gives no numeric value.
+    /// Power-on defaults (`dmp105-protocol.md` §7): Normal 10 CPI, LF pitch
+    /// 1/6", and NL mode CR+LF. Head position (0, 0) is this implementation's
+    /// choice because the manual gives no numeric value.
     fn default() -> Self {
         Self {
             mode: Mode::CharacterPrint,
@@ -394,8 +393,9 @@ impl PrinterSink for DMP105Handle {
         self.0.borrow_mut().feed(b);
     }
 
-    /// The whole interpreter/paper state, cloned out of the shared
-    /// `Rc<RefCell<_>>` — a deep-but-cheap snapshot since `DMP105` is plain `Clone` data.
+    /// The whole interpreter and paper state, cloned from the shared
+    /// `Rc<RefCell<_>>`. The state is plain `Clone` data, so this copy has low
+    /// overhead.
     fn snapshot(&self) -> SinkState {
         SinkState::DMP105(self.0.borrow().clone())
     }

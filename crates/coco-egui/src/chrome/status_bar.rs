@@ -81,7 +81,8 @@ impl CocoApp {
     }
 
     /// The joysticks entry, built like [`Self::keyboard_status`]: icon lights while either
-    /// port is active; label lists assigned sources (e.g. "R: Keys · L: Mouse") or "No joysticks".
+    /// port is active; label lists assigned sources (for example, "R: Keys ·
+    /// L: Mouse") or "No joysticks".
     fn joystick_status(&mut self, ui: &mut egui::Ui) {
         ui.separator();
         let either_active = self.joysticks.in_use[RIGHT] || self.joysticks.in_use[LEFT];

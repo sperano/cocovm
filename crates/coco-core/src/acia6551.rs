@@ -1,9 +1,8 @@
 //! 6551 ACIA (MOS 6551 / Rockwell R6551 / WDC W65C51 — not a Motorola
 //! MC-prefixed part), the UART at the heart of the Tandy Deluxe RS-232
-//! Program Pak. Register/bit semantics are MAME-authoritative
-//! (`src/devices/machine/mos6551.cpp`, master).
-//! task 2 — every fact below was checked against that source, not derived
-//! from a datasheet.
+//! Program Pak. MAME's `src/devices/machine/mos6551.cpp` on the `master`
+//! branch defines the register and bit semantics. Task 2 checked every fact
+//! that follows against that source rather than deriving it from a datasheet.
 //!
 //! # Byte-level timing divergence
 //!
@@ -12,9 +11,9 @@
 //! errors and expose bit-accurate RS-232 waveforms. This model is
 //! deliberately **byte-level**: [`ACIA6551::tick`] runs a whole-frame timer
 //! for the receiver and transmitter, sized from the same baud-rate math MAME
-//! uses (see [`BAUD_DIVIDER`]), and delivers/consumes a complete byte when
+//! uses (see `BAUD_DIVIDER`), and delivers/consumes a complete byte when
 //! that timer expires. Consequences of the divergence, called out again at
-//! each relevant spot below:
+//! each relevant spot that follows:
 //! - Parity and framing errors are never generated *internally* (there is no
 //!   bit shifter to mis-sample); the status bits exist for completeness and
 //!   are cleared exactly where MAME clears them, but this model never sets
@@ -25,20 +24,20 @@
 //!   completes. It also skips MAME's nuance of forcing the echoed output to
 //!   mark while overrun is set.
 //! - The 1.5-stop-bit case for 5-bit words is collapsed to 2 stop bits (see
-//!   [`ACIA6551::stop_bits`]).
-//! - DCD/DSR level-change IRQ arming is checked once per [`ACIA6551::tick`]
+//!   `ACIA6551::stop_bits`).
+//! - The model checks DCD/DSR level-change IRQ arming once per [`ACIA6551::tick`]
 //!   call rather than on a live edge — MAME itself ties this to the receive
-//!   clock and carries `TODO` comments admitting the exact timing is
-//!   unresolved, so tying it to our own tick boundary is no worse and is
-//!   simpler to reason about. See [`ACIA6551::tick_modem_lines`].
+//!   clock and carries `TODO` comments that acknowledge unresolved timing.
+//!   The model ties the check to its own tick boundary. See
+//!   `ACIA6551::tick_modem_lines`.
 //!
 //! # Wire interface
 //!
 //! This module is a pure chip model with a byte-level wire interface: no
 //! knowledge of hosts, sockets, or files. [`ACIA6551::take_tx_byte`] /
 //! [`ACIA6551::receive_byte`] / [`ACIA6551::rx_ready`] / [`ACIA6551::set_dcd`]
-//! / [`ACIA6551::set_dsr`] are the seam a future cartridge-glue layer drives
-//! from a real host endpoint.
+//! / [`ACIA6551::set_dsr`] are the seam for a future cartridge-glue layer to
+//! drive from a real host endpoint.
 
 use std::collections::VecDeque;
 
@@ -109,7 +108,7 @@ pub mod status {
 /// Command register bits (offset 2, read/write).
 pub mod command {
     /// Bit 0: DTR enable. Gates rx-IRQ, tx-IRQ, and DCD/DSR IRQ arming, and
-    /// idles the transmitter — a written TDR just sits, TDRE stays clear,
+    /// idles the transmitter — a written TDR remains pending, TDRE stays clear,
     /// nothing transmits (MAME `mos6551.cpp` `write_command`/`update_irq`).
     pub const DTR: u8 = 0x01;
     /// Bit 1: receiver IRQ **disable** — 0 = rx-IRQ enabled, 1 = disabled
@@ -128,7 +127,7 @@ pub mod command {
     /// Even values (0/2/4/6) mean parity disabled; odd values mean enabled:
     /// 1 = odd, 3 = even, 5 = mark, 7 = space. At byte level only "enabled
     /// or not" matters (it adds one bit to the frame; see
-    /// [`ACIA6551::frame_bits`]) — this model does not distinguish which
+    /// `ACIA6551::frame_bits`) — this model does not distinguish which
     /// parity mode, since it never generates or checks parity bits.
     pub const PARITY_MASK: u8 = 0xE0;
     /// Shift to bring [`PARITY_MASK`] down to a 0..=7 value.
@@ -153,12 +152,12 @@ pub mod tx_control {
 
 /// Control register bits (offset 3, read/write). None of the bits here
 /// generate errors at the byte level (see module doc); they only feed
-/// [`ACIA6551::cycles_per_frame`].
+/// `ACIA6551::cycles_per_frame`.
 pub mod control {
-    /// Bits 3:0: baud-rate index — see [`BAUD_DIVIDER`].
+    /// Bits 3:0: baud-rate index — see `BAUD_DIVIDER`.
     pub const BAUD_MASK: u8 = 0x0F;
     /// Bit 4: receiver clock source. Stored for completeness; this model
-    /// has no external-clock behavior to switch (see [`BAUD_DIVIDER`]'s
+    /// has no external-clock behavior to switch (see `BAUD_DIVIDER`'s
     /// index-0 note).
     pub const RX_CLOCK_SOURCE: u8 = 0x10;
     /// Bits 6:5: word length field — mask before shifting by
@@ -167,7 +166,7 @@ pub mod control {
     /// Shift to bring [`WORD_LENGTH_MASK`] down to a 0..=3 value.
     pub const WORD_LENGTH_SHIFT: u8 = 5;
     /// Bit 7: 2 stop bits instead of 1 (also covers the 5-bit-word 1.5-stop
-    /// case, collapsed to 2 — see [`ACIA6551::stop_bits`]).
+    /// case, collapsed to 2 — see `ACIA6551::stop_bits`).
     pub const STOP_BITS_2: u8 = 0x80;
 }
 
@@ -197,11 +196,11 @@ pub struct ACIA6551 {
     command: u8,
     /// Control register (offset 3).
     control: u8,
-    /// Status register (offset 1) as it currently stands, including the
+    /// Status register (offset 1) as it stands, including the
     /// live IRQ bit — kept in sync by [`Self::update_irq_output`] whenever
     /// `irq_sources` changes.
     status: u8,
-    /// Bitmask of currently-armed IRQ sources (see [`irq_source`]).
+    /// Bitmask of armed IRQ sources (see [`irq_source`]).
     irq_sources: u8,
 
     /// Live DCD input level (true = carrier present).
@@ -328,7 +327,7 @@ impl ACIA6551 {
     }
 
     /// Advance both frame timers and the DCD/DSR change-detector by `cycles`
-    /// CPU cycles (crate clock, [`CPU_HZ`]).
+    /// CPU cycles (crate clock, `CPU_HZ`).
     pub fn tick(&mut self, cycles: u32) {
         self.tick_modem_lines();
         self.tick_rx(cycles);
@@ -342,7 +341,7 @@ impl ACIA6551 {
     }
 
     /// True when the receiver has no frame in progress and can accept a new
-    /// byte via [`Self::receive_byte`].
+    /// byte using [`Self::receive_byte`].
     pub fn rx_ready(&self) -> bool {
         self.rx_timer.is_none()
     }

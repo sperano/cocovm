@@ -1,8 +1,9 @@
 //! Save-state engine coverage for the floppy-specific missing-media and
 //! wrong-shape restore paths that `tests/snapshot_engine.rs`'s phase-2 suite
 //! doesn't reach (its `MissingMedia`/`MediaShape` tests only exercise
-//! cart-ROM images, never a mounted `JvcDisk`) -- phase 3 spec item 4.
-//! Quick/engine-level: no CPU stepping, just `save`/`load`/`restore`.
+//! cart-ROM images, never a mounted `JvcDisk`) — phase 3 spec item 4.
+//! These are engine-level tests: they call `save`, `load`, and `restore` without
+//! stepping the CPU.
 
 use std::path::PathBuf;
 
@@ -38,10 +39,9 @@ fn boot_machine() -> Machine {
 /// One headerless track (18 sectors x 256B).
 const ONE_TRACK_BYTES: usize = 18 * 256;
 
-/// `Result::unwrap_err` requires `T: Debug`, which `RestoredMachine` doesn't
-/// implement (see `snapshot_engine.rs`'s `expect_err` for the rationale);
-/// same workaround, duplicated per that file's precedent for these test
-/// binaries.
+/// `Result::unwrap_err` requires `T: Debug`, which `RestoredMachine` does not
+/// implement. Match the result instead, as `snapshot_engine.rs` does, because
+/// the restored machine is not useful in a debug dump.
 fn expect_err<T>(result: Result<T, SnapshotError>) -> SnapshotError {
     match result {
         Ok(_) => panic!("expected an error, got Ok"),
@@ -130,7 +130,7 @@ fn reattached_disk_with_different_geometry_is_a_media_shape_error() {
     let payload = snapshot::load(&bytes).expect("load");
 
     // A valid headerless image, but with a different track count than the
-    // snapshot recorded -- the file was reformatted/truncated/grown since.
+    // snapshot recorded — the file was reformatted, truncated, or grown since.
     let reshaped_bytes = vec![0u8; 10 * ONE_TRACK_BYTES];
     let sources = MediaSources {
         system_rom: Some(load_rom()),

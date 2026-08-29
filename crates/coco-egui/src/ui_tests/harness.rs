@@ -1,8 +1,8 @@
 //! Shared `egui_kittest` test infrastructure for every topic module under
 //! `ui_tests`: harness construction (a bare `CocoApp` window and the manager
-//! window), the click/
-//! hover/combo-select interaction helpers (see the parent module doc for
-//! the interaction conventions they encode), and small fixture builders
+//! window), the click, hover, and combo-select interaction helpers (see the
+//! parent module doc for the interaction conventions they encode), and small
+//! fixture builders
 //! (`sample_entry`, `sample_coco2_entry`).
 
 use egui_kittest::kittest::Queryable;
@@ -59,7 +59,7 @@ pub(super) fn right_click<S: 'static>(
     harness.step();
 }
 
-/// [`click`] with `modifiers` held for the press/release (e.g. Cmd/Ctrl- or
+/// [`click`] with `modifiers` held for the press/release (for example, Cmd/Ctrl- or
 /// Shift-click); modifiers reset afterward so they don't leak into the next click.
 pub(super) fn click_modifiers<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
@@ -129,7 +129,7 @@ pub(super) fn lowest_by_label<'t>(
         .unwrap_or_else(|| panic!("no node labelled {label:?}"))
 }
 
-/// Topmost widget labelled `label` — e.g. the right stick's copy of a source
+/// Topmost widget labelled `label` — for example, the right stick's copy of a source
 /// label the Joysticks menu lists once per stick.
 pub(super) fn topmost_by_label<'t>(
     harness: &'t AppHarness,

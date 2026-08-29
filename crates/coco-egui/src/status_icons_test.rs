@@ -30,7 +30,7 @@ fn hold_expires_after_activity_hold() {
     let base = Instant::now();
     latch.observe_at(10, base);
     latch.observe_at(11, at(base, 1));
-    // Just before the hold elapses: still lit.
+    // Immediately before the hold elapses: still lit.
     assert!(latch.observe_at(11, at(base, 1) + ACTIVITY_HOLD - Duration::from_millis(1)));
     // At/after the hold: idle again.
     assert!(!latch.observe_at(11, at(base, 1) + ACTIVITY_HOLD));
@@ -84,7 +84,7 @@ fn reel_advances_forward_with_playback_position() {
 #[test]
 fn reel_forward_accumulation_past_tau_wraps_via_rem_euclid() {
     // 45 bytes at REEL_ANGLE_PER_BYTE is more than one full turn — the forward-wrap counterpart
-    // to the rewind case below.
+    // to the following rewind case.
     let mut reel = TapeReel::default();
     let raw = 45.0 * REEL_ANGLE_PER_BYTE;
     assert!(

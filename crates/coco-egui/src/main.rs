@@ -6,7 +6,7 @@
 //!
 //! - Positional — physical key → CoCo matrix position (CoCo applies its own shift
 //!   semantics, like MAME). The default.
-//! - Symbolic — the character you type is injected via the CoCo keys that produce it.
+//! - Symbolic — the character you type is injected through the CoCo keys that produce it.
 //!
 //! Cartridges and other peripherals are configured in the machine's
 //! `[peripherals]` definition and mounted at launch, not from a menu.
@@ -115,7 +115,7 @@ pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 /// Height reserved for the top menu bar row when sizing the window.
 pub(crate) const MENU_BAR_H: f32 = 22.0;
 /// Horizontal inner margin `chrome::toolbar`'s `TopBottomPanel::top
-/// ("toolbar")` gives its content, via an explicit `.frame(...)` rather than
+/// ("toolbar")` gives its content, using an explicit `.frame(...)` rather than
 /// egui's `TopBottomPanel` default — matches `egui::Frame::side_top_panel`'s
 /// own default (`Margin::symmetric(8, 2)`, the `8` here) so the toolbar
 /// panel doesn't look different from the app's other panels, but as our own
@@ -127,7 +127,7 @@ pub(crate) const TOOLBAR_PANEL_MARGIN_X: i8 = 8;
 /// [`TOOLBAR_PANEL_MARGIN_X`] — also matches `Frame::side_top_panel`'s
 /// default (the `2` in `Margin::symmetric(8, 2)`). The panel's separator
 /// line is drawn on the boundary itself and adds no extra height, so this is
-/// exactly the frame's overhead. `i8`, cast to `f32` below for the window-
+/// exactly the frame's overhead. `i8`, cast to `f32` later for the window-
 /// sizing formula.
 pub(crate) const TOOLBAR_PANEL_MARGIN_Y: i8 = 2;
 /// Height reserved for the toolbar row when sizing the window: the toolbar

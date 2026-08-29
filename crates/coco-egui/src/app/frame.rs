@@ -65,8 +65,8 @@ impl CocoApp {
         self.upload_framebuffer_texture(ctx);
     }
 
-    /// Upload the framebuffer as `self.texture`. The only part of
-    /// [`Self::step_emulation`] a suspended VM's window still runs, so its
+    /// Upload the framebuffer as `self.texture`. This is the only part of
+    /// [`Self::step_emulation`] that a suspended VM's window still runs, so its
     /// picture stays on screen without input handling.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
         // TV chain (B&W collapse, bandwidth limit, scanlines) — a display preference, not state.
@@ -112,7 +112,8 @@ impl CocoApp {
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
         let uv = crate::display::texture_uv(self.display, self.tv);
         ui.put(rect, egui::Image::new(sized).uv(uv));
-        // Remembered for `drive_joysticks` next frame (pointer → joystick axes, mouse fire gating).
+        // Remembered for `drive_joysticks` next frame (pointer → joystick axes,
+        // mouse fire gating).
         self.display_rect = rect;
         self.display_layer = ui.layer_id();
     }

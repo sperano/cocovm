@@ -1,7 +1,7 @@
-//! Coarse perf guard for the audio pipeline (
-//! risk list): a busy field loop must stay far faster than real time even
-//! in debug builds — event recording on the io_write path and the 4-slot
-//! grid flush are supposed to be branch-cheap.
+//! Coarse performance guard for the audio pipeline (see the risk list): a
+//! busy field loop must stay far faster than real time even in debug builds.
+//! Event recording on the `io_write` path and the four-slot grid flush must
+//! remain inexpensive branches.
 
 use std::time::Instant;
 

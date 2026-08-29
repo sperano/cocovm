@@ -72,7 +72,7 @@ impl SystemBus {
     /// scanline while one's inserted).
     pub fn hsync(&mut self) {
         // No GIME on the plain-SAM path: PIA0/PIA1 Cx1 pulses still fire,
-        // but the GIME sources below don't raise.
+        // but the following GIME sources don't raise.
         let is_gime = self.variant == MachineVariant::Coco3;
         self.pia0.a.set_c1(false);
         if is_gime {

@@ -96,10 +96,10 @@ pub struct Transition {
     pub cycle: u64,
 }
 
-/// A virtual tape deck: at most one tape mounted, either being played (the
-/// byte stream is fed to PA0 bit by bit while the motor runs) or recorded
-/// over — like a real deck, recording splices the demodulated capture into
-/// the tape at the head position rather than replacing the whole tape (see
+/// A virtual tape deck with at most one mounted tape. The deck can play the
+/// byte stream through PA0 while the motor runs, or record over the tape.
+/// Recording splices the demodulated capture into the tape at the head
+/// position instead of replacing the whole tape (see
 /// [`Cassette::finalize_recording`]).
 #[derive(Default, Serialize, Deserialize)]
 pub struct Cassette {
@@ -128,7 +128,7 @@ pub struct Cassette {
     #[serde(default)]
     record_bits: u64,
     /// Whether the last captured level sat above [`DAC_LIVE_MIDPOINT`], for
-    /// the counter's crossing detection (`#[serde(default)]` as above).
+    /// the counter's crossing detection (`#[serde(default)]` as described earlier).
     #[serde(default)]
     record_high: bool,
     /// The splice point: `pos` at the moment the in-flight capture's first
@@ -148,7 +148,7 @@ pub struct Cassette {
     /// The mounted tape's decoded byte stream (.cas content). Skipped: a
     /// mounted tape's bytes are media (commercial tapes are copyrighted),
     /// referenced by path+hash rather than embedded in a snapshot; restored
-    /// via [`Cassette::reattach_tape`].
+    /// through [`Cassette::reattach_tape`].
     #[serde(skip)]
     tape: Vec<u8>,
     /// Playback position: next byte, next bit (0–7, LSB first), and CPU
@@ -177,7 +177,7 @@ pub struct Cassette {
     /// Set when [`Cassette::finalize_recording`] actually spliced new content
     /// into the tape (never on a discarded sync-less capture) — the
     /// frontend's cue to save the tape back to disk without waiting for an
-    /// eject/quit boundary; consumed via [`Cassette::take_recording_landed`].
+    /// eject/quit boundary; consumed through [`Cassette::take_recording_landed`].
     /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]): a
     /// pre-field snapshot restores with the flag clear, exactly the old (no
     /// auto-save) behaviour.
@@ -253,15 +253,16 @@ impl Cassette {
         self.dirty = false;
     }
 
-    /// Consume the "a recording just landed" event (true once per landed
+    /// Consume the "a recording landed" event (true once per landed
     /// finalize, see [`Cassette::finalize_recording`]) so a failed disk
     /// write doesn't retry every frame.
     pub fn take_recording_landed(&mut self) -> bool {
         std::mem::take(&mut self.recording_landed)
     }
 
-    /// Tape position for UI: (position, length) in bytes. During playback it's the read head;
-    /// while recording, the live estimate from [`Cassette::record_anchor`] plus counted bits.
+    /// Tape position for UI: `(position, length)` in bytes. During playback,
+    /// `position` is the read head. During recording, it is a live estimate
+    /// from [`Cassette::record_anchor`] plus counted bits.
     pub fn position(&self) -> (usize, usize) {
         if !self.mounted || self.capture.is_empty() {
             return (self.pos, self.tape.len());
@@ -277,7 +278,8 @@ impl Cassette {
         &self.capture
     }
 
-    /// True while mounted, not at the end, i.e. moving whenever the motor is.
+    /// True when a tape is mounted and the head is not at its end. The head
+    /// moves whenever the motor runs.
     pub fn playing(&self) -> bool {
         self.mounted && self.pos < self.tape.len()
     }
@@ -339,8 +341,9 @@ impl Cassette {
         }
     }
 
-    /// The squared tape signal as PA0 sees it: idle high, else a square wave with each
-    /// bit cell opening LOW (SALT's inverted rendering, verified via `CASON` lock behavior).
+    /// The squared tape signal as PA0 sees it: idle high, or a square wave
+    /// whose bit cells begin LOW (SALT's inverted rendering, verified through
+    /// `CASON` lock behavior).
     pub fn input_bit(&self) -> bool {
         if !self.motor_was_on || self.spinup_left > 0 || !self.playing() {
             return true;
@@ -395,7 +398,7 @@ impl Cassette {
     /// tape at [`Cassette::record_anchor`]; a sync-less capture is discarded, tape untouched.
     pub fn finalize_recording(&mut self) {
         let decoded = demodulate(&self.capture);
-        // Captured before the reset below zeroes the field.
+        // Captured before the following reset zeroes the field.
         let anchor = self.record_anchor;
         self.capture.clear();
         self.last_level = None;

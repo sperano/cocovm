@@ -1,7 +1,7 @@
 //! Motorola 6809E CPU core — bus-generic, dependency-light.
 //!
 //! There is no per-instruction JSON conformance suite for the 6809 (unlike the
-//! 6502/68000). Validate via flexemu's `cputest.txt` self-checking program and by
+//! 6502/68000). Validate with flexemu's `cputest.txt` self-checking program and by
 //! trace-diffing against XRoar/MAME. See `DESIGN.md` §5.
 //!
 //! The complete documented 6809 user-mode ISA is implemented — every
@@ -209,7 +209,8 @@ impl MC6809 {
     }
 
     /// Loads the stack pointer as a program action, arming NMI recognition
-    /// ([`Self::nmi_armed`]); external writers should use this instead of writing `s` directly.
+    /// ([`Self::nmi_armed`]). External writers should use this method instead of
+    /// writing `s` directly.
     pub fn load_s(&mut self, v: u16) {
         self.s = v;
         self.nmi_armed = true;

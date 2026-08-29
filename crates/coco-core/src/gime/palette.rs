@@ -51,7 +51,7 @@ fn unpack_rgb(v: u32) -> [u8; 4] {
 
 impl GIME {
     /// Convert a 6-bit GIME palette value to RGBA. Format is `RGBrgb` (two
-    /// bits/channel); each channel scales `0..3` to `0..0xFF` via `×0x55`.
+    /// bits/channel); each channel scales `0..3` to `0..0xFF` using `×0x55`.
     pub fn rgb_color(value: u8) -> [u8; 4] {
         let chan = |hi_bit: u8, lo_bit: u8| {
             let v = ((value >> hi_bit) & 1) << 1 | ((value >> lo_bit) & 1);

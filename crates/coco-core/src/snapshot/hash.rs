@@ -12,7 +12,7 @@ use super::payload::MediaRef;
 
 /// Read buffer size for [`sha256_file`]'s streamed hash — large media files
 /// (VHDs can run to hundreds of MB) must never be read whole into memory
-/// just to hash them.
+/// for hashing.
 const SHA256_READ_BUF_LEN: usize = 8 * 1024;
 
 /// Lowercase hex SHA-256 of `bytes`.
@@ -54,8 +54,9 @@ pub enum MediaCheck {
     /// The file exists but hashes to something else — the frontend should
     /// offer "load with warning".
     Mismatch { actual: String },
-    /// The file doesn't exist, or couldn't be read for any other reason —
-    /// the frontend should treat this as an error (prompt to re-locate it).
+    /// The file doesn't exist, or couldn't be read for any other reason. The
+    /// frontend should treat this as an error and prompt the user to locate it
+    /// again.
     Missing,
 }
 

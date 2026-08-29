@@ -9,7 +9,7 @@
 //! positional format like bincode/postcard: CBOR carries field names with
 //! the data, so serde's evolution tools (`#[serde(default)]`/`alias`) work
 //! across versions instead of every struct needing hand-rolled versioning.
-//! RAM and other big buffers stay compact via `serde_bytes`/
+//! RAM and other big buffers stay compact using `serde_bytes`/
 //! [`crate::serde_util::byte_array`] rather than base64-in-JSON. The whole
 //! payload is gzipped with `flate2`.
 //!
@@ -42,7 +42,7 @@
 //! [`CONTAINER_VERSION`] is the container/header layout itself (this module's
 //! own framing); [`SCHEMA_VERSION`] is the *machine-tree* schema and is
 //! bumped only on a semantic break serde's evolution tools can't express —
-//! everything the four rules above can absorb should NOT bump it. Recommended
+//! everything the four rules earlier can absorb should NOT bump it. Recommended
 //! file extension: `.ccstate` (a frontend concern; this module works on plain
 //! bytes and never touches a file itself).
 //!
@@ -59,7 +59,7 @@
 //! the recorded hash actually describes what's on disk — this module has no
 //! flush hook of its own.
 //!
-//! The "no media bytes embedded" rule above is about WHOLE media images —
+//! The "no media bytes embedded" rule earlier is about WHOLE media images —
 //! disk/VHD/DriveWire/tape files, ROM images. It does NOT extend to a
 //! device's own in-flight I/O buffers: a snapshot taken mid-sector-transfer
 //! carries that sector's bytes in the WD1773's `Transfer.buf` (see

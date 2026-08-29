@@ -17,7 +17,7 @@ const INIT1_TINS: u8 = 0x20;
 /// Loaded into the 12-bit timer reload (`TIMER_MSB_REG`/`TIMER_LSB_REG`):
 /// large enough that the first (50-step) `step_instruction` loop doesn't
 /// underflow it, so the timer-decreased assertion right after is unambiguous.
-/// The longer field-completion loop below does underflow (and reload) it
+/// The longer field-completion loop that follows does underflow (and reload) it
 /// several times, which is fine — nothing asserts on the timer value there.
 const TIMER_RELOAD: u16 = 0x0FFF;
 

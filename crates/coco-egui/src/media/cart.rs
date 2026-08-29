@@ -7,9 +7,8 @@ use crate::*;
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
     /// (cartridge swaps are machine-off ops). `autostart` ties CART* to Q so
-    /// the pak runs at power-up. Aborts on a failed
-    /// dirty-floppy flush, leaving state untouched; error in
-    /// [`Self::cart_error`].
+    /// the pak runs at power-up. Aborts on a failed dirty-floppy flush, leaves
+    /// state untouched, and reports the error in [`Self::cart_error`].
     pub(crate) fn insert_cartridge(&mut self, path: PathBuf, autostart: bool) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -214,7 +213,7 @@ impl CocoApp {
     }
 
     /// Loads a ROM pak into MPI `slot` (0-3). `autostart` ties CART* to Q so the
-    /// pak runs at power-up. Only a dirty floppy in `slot` itself (i.e.
+    /// pak runs at power-up. Only a dirty floppy in `slot` itself (that is,
     /// `slot` holds the FD-502) can abort this — see [`Self::mpi_flush_before_replacing_slot`].
     pub(crate) fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf, autostart: bool) {
         let bytes = match std::fs::read(&path) {

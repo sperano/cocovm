@@ -105,7 +105,7 @@ fn logical_row_repetition_follows_the_vdg_mode() {
             assert_eq!(row_pixels(&fb, first_line), row_pixels(&fb, repeated_line));
         }
     }
-    // Sanity: distinct fetched rows actually produced distinct pixels (rules out
-    // a stub that just leaves everything at its default colour).
+    // Distinct fetched rows must produce distinct pixels. This rules out a
+    // stub that leaves everything at its default color.
     assert_ne!(row_pixels(&fb, 0), row_pixels(&fb, 3));
 }

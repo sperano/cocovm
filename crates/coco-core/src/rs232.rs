@@ -1,8 +1,8 @@
 //! Tandy Deluxe RS-232 Program Pak (26-2226): a 6551 ACIA at `$FF68-$FF6B`
 //! plus a 4K EPROM in the CTS window, glued to a host [`SerialEndpoint`].
-//! Facts from MAME-authoritative
-//! (`src/devices/bus/coco/coco_rs232.cpp`): the ACIA decodes the full
-//! address bus itself (the pak sits outside the SCS* window, reached via
+//! MAME's `src/devices/bus/coco/coco_rs232.cpp` provides the verified facts:
+//! the ACIA decodes the full
+//! address bus itself (the pak sits outside the SCS* window, reached through
 //! the bus's `$FF60-$FF7E` spare-window routing), its `_IRQ` output drives
 //! the CART* pin as a *level* ([`Cartridge::cart_interrupt`] — no Q-tie
 //! autostart, unlike game paks), and the EPROM decodes 12 address bits
@@ -13,8 +13,8 @@
 //! ([`ACIA6551`]) and the host backend ([`SerialEndpoint`]) meet: completed
 //! TX frames are forwarded to the endpoint, and the endpoint is polled for
 //! RX bytes only when the receiver is between frames — a byte the ACIA
-//! isn't ready for stays queued host-side (kernel socket/pty buffer),
-//! which is this model's stand-in for the sender's own pacing.
+//! cannot accept remains queued on the host side (kernel socket/pty buffer),
+//! which serves as this model's stand-in for the sender's own pacing.
 
 use serde::{Deserialize, Serialize};
 
@@ -49,8 +49,8 @@ fn default_endpoint() -> Box<dyn SerialEndpoint> {
 pub struct DeluxeRS232 {
     acia: ACIA6551,
     /// Skipped: a host backend (TCP, PTY, …) is a host resource with no
-    /// serializable shape. Deserializes to a fresh [`Loopback`] via
-    /// `default_endpoint` below. If the pre-restore endpoint was TCP/PTY,
+    /// serializable shape. Deserializes to a fresh [`Loopback`] through
+    /// `default_endpoint` that follows. If the pre-restore endpoint was TCP/PTY,
     /// the frontend rebinds one right after restore through
     /// [`DeluxeRS232::set_endpoint`], using its own record of which kind was
     /// configured — this struct has no way to remember that itself once the
@@ -62,7 +62,7 @@ pub struct DeluxeRS232 {
     /// hand-written BASIC `PEEK`/`POKE` code, so the pak works ROM-less
     /// (CTS reads answer open-bus). Skipped: COPYRIGHTED ROM bytes never
     /// travel through a snapshot; `None` is the correct restored default
-    /// until the frontend re-injects it via the existing
+    /// until the frontend re-injects it through the existing
     /// [`DeluxeRS232::set_eprom`].
     #[serde(skip)]
     eprom: Option<Box<[u8]>>,
@@ -76,7 +76,7 @@ pub struct DeluxeRS232 {
 
 impl DeluxeRS232 {
     /// Build a pak with no EPROM and a [`Loopback`] endpoint — the inert
-    /// default until a real backend is plugged in via [`DeluxeRS232::set_endpoint`].
+    /// default until a real backend is plugged in through [`DeluxeRS232::set_endpoint`].
     pub fn new() -> Self {
         Self {
             acia: ACIA6551::new(),

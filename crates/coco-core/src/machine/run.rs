@@ -24,7 +24,7 @@ impl Machine {
             if self.line_cycles_spent == 0 {
                 self.line_budget = self.cycles_per_field() / lines;
             }
-            // The `else` below only guards a degenerate zero-budget line;
+            // The `else` branch only guards a degenerate zero-budget line;
             // real timing always takes this branch.
             if self.line_cycles_spent < self.line_budget {
                 let (cycles, was_instruction) = self.step_cpu_unit();
@@ -47,7 +47,7 @@ impl Machine {
                     field_complete,
                 };
             }
-            // Degenerate zero-budget line (never reached for real timing): just run the trailer.
+            // Degenerate zero-budget line (never reached for real timing): run the trailer.
             let field_complete = self.end_of_line();
             self.line_cycles_spent = 0;
             if field_complete {

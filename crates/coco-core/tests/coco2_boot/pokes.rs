@@ -16,9 +16,9 @@ use super::common::{
 /// exercised here end-to-end through real ROM code).
 ///
 /// `PMODE`/`SCREEN` must run from a *running program*, not typed directly at
-/// the `OK` prompt: verified empirically against the real ROMs (traced via a
-/// temporary `sam_write`/`sam_io_write` probe during development, since
-/// nothing in) — Color BASIC's idle loop
+/// the `OK` prompt: verified empirically against the real ROMs (traced using a
+/// temporary `sam_write`/`sam_io_write` probe during development. Color BASIC's
+/// idle loop
 /// (waiting for a keystroke at the prompt) re-asserts the SAM V0-V2/F0-F6
 /// strobes and PIA1 $FF22 back to its text-mode defaults every field, so a
 /// direct-mode `SCREEN 1,1` (or a raw `POKE 65314,...`) is visibly clobbered
@@ -68,7 +68,7 @@ fn coco2_pmode_switches_to_graphics_with_fixed_vdg_colors() {
     // RG6/PMODE4's 2-colour table: palette regs 8/9 (CSS=0) or 10/11 (CSS=1)
     // — see `video.rs::vdg_palette_indices`/`render_coco12.rs`. Whatever
     // PCLS filled the page with, every interior pixel must resolve to one of
-    // those two fixed colours, not e.g. a GIME-palette leftover.
+    // those two fixed colours, not a GIME-palette leftover.
     let (off_index, on_index) = if css { (10, 11) } else { (8, 9) };
     let off = coco_core::video::VDG_FIXED_PALETTE[off_index];
     let on = coco_core::video::VDG_FIXED_PALETTE[on_index];

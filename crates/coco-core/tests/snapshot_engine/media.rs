@@ -1,11 +1,8 @@
 //! 3. Missing system ROM source
 //! 4. `MediaRef::verify`
-//! 5. No-ROM-bytes gate (structural), plus cart-ROM reattachment (not one of
-//!    the spec's numbered tests, but the only thing exercising
-//!    `restore_cart_roms`/`require_cart_rom` end to end — every other test
-//!    in this suite either has no cartridge inserted or never calls
-//!    `restore`, so without this the whole cart-ROM reattachment path would
-//!    be untested code).
+//! 5. No-ROM-bytes gate (structural), plus cart-ROM reattachment. The
+//!    reattachment test exercises `restore_cart_roms` and `require_cart_rom`.
+//!    Other tests either have no cartridge or never call `restore`.
 //! 6. RAM-length tamper
 
 use std::path::PathBuf;
@@ -37,9 +34,8 @@ fn missing_system_rom_source_is_missing_media() {
     }
 }
 
-/// A scratch file path under the OS temp dir, unique to this test process —
-/// cleaned up by the caller (`RAII` would be nicer, but a bare helper keeps
-/// this file's dependency list unchanged).
+/// Returns a scratch file path under the OS temp directory, unique to this
+/// test process. The caller removes the file after the test.
 fn scratch_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "coco_snapshot_engine_test_{}_{name}",
@@ -96,8 +92,8 @@ fn restored_payload_carries_no_rom_bytes_before_reattachment() {
 #[test]
 fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
     let mut machine = boot_machine();
-    // A uniform fill so any byte read back proves the *mirrored* image
-    // (not just offset 0) survived reattachment, without needing to work
+    // A uniform fill lets any byte read back prove that the *mirrored* image
+    // (rather than only offset 0) survived reattachment, without needing to work
     // out `ROMPak`'s half-swap indexing by hand.
     let pak_image = vec![0x42u8; 1024];
     machine.insert_cartridge(ROMPak::from_bytes(&pak_image, false).expect("build pak"));

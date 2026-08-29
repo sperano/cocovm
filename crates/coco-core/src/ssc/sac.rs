@@ -2,7 +2,7 @@
 //! (pre-mux) audio output, purely so `$FF7E` bit 5 can report whether the
 //! PSG is making sound. Runs on every `audio_sample` call regardless of
 //! whether the CoCo's sound mux is actually listening to the cartridge
-//! (MAME `coco_ssc.cpp` `sac_update`; time constants below are tuned for
+//! (MAME `coco_ssc.cpp` `sac_update`; the following time constants are tuned for
 //! MAME's own ~44.1 kHz-ish audio-stream sampling rate — the audio grid's
 //! ~62.9 kHz call rate is close enough that the same constants serve, and
 //! much closer than the old once-per-scanline 15.7 kHz rate was).

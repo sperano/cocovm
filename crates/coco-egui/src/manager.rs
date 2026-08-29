@@ -4,18 +4,15 @@
 //! a detail/edit pane on the right for the selected machine — or, with no machine
 //! selected, a random photo asset filling the pane.
 //!
-//! Launching a machine  is wired up:
-//! the detail pane's Start button calls `crate::launch_machine` and, once a
+//! The detail pane's Start button calls `crate::launch_machine`. Once a
 //! `MachineEntry` holds a running `CocoApp`, `ManagerApp::update` opens it in
-//! its own native OS window every frame — an *immediate viewport*, the same
-//! pattern `paper_view::PaperWindow` uses for the printer-paper window (see
-//! that module's doc comment). All VM state stays on the main thread; each
-//! viewport's own child `egui::Context` delivers that window's keyboard/
-//! mouse input, so focus routing comes for free from egui
-//! ( "DECIDED: in-process, one native
-//! window per running VM"). The app always opens this manager window; a
-//! future CLI will be rebuilt on top of the manager's own machine
-//! definitions.
+//! its own native OS window every frame—an *immediate viewport*, like the
+//! printer-paper window in `paper_view::PaperWindow`. All VM state stays on
+//! the main thread. Each viewport's child `egui::Context` delivers keyboard
+//! and mouse input for that window, so egui handles focus routing
+//! ("DECIDED: in-process, one native window per running VM"). The app always
+//! opens this manager window. A future CLI will build on the manager's own
+//! machine definitions.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -69,8 +66,8 @@ const ROW_CORNER_RADIUS: f32 = 4.0;
 
 /// List-row / detail-pane status labels for the three machine states
 /// (Powered Off / Running / Suspended). Not stored in the definition file
-/// ("Decisions" — "Runtime status … is never
-/// persisted"): a function of [`MachineEntry::vm`] and
+/// ("Decisions" — "Runtime status … is never persisted") — a function of
+/// [`MachineEntry::vm`] and
 /// [`MachineEntry::suspended`] at draw time (Suspended's persistence is the
 /// [`SUSPEND_STATE_FILE`] itself), see [`vm_status_label`].
 const STATUS_RUNNING: &str = "Running";
@@ -119,7 +116,7 @@ pub struct MachineEntry {
     /// Whether this machine is Suspended — frozen to its artifact dir's
     /// [`SUSPEND_STATE_FILE`]. The file is the persistent truth
     /// ([`ManagerApp::new`] seeds this flag from its existence); the flag is
-    /// just the per-frame mirror so drawing never stats the filesystem.
+    /// the per-frame mirror so drawing never stats the filesystem.
     /// While suspended the VM object may still be alive (paused, window
     /// open) or already dropped (window closed) — both draw as Suspended.
     pub(crate) suspended: bool,
@@ -131,7 +128,7 @@ pub struct MachineEntry {
     /// Saved-preview texture for a *suspended* machine whose VM window is
     /// closed (its artifact dir's [`THUMBNAIL_FILE`], written at suspend
     /// time), loaded lazily on first row draw. Pure cache — never required
-    /// state; a missing/undecodable file just leaves the placeholder.
+    /// state; a missing/undecodable file leaves the placeholder.
     /// `pub(crate)` for `ui_tests.rs` assertions.
     pub(crate) thumbnail: Option<egui::TextureHandle>,
     /// Whether a [`Self::thumbnail`] load was already attempted, so a
@@ -200,7 +197,7 @@ fn vm_status_label(entry: &MachineEntry) -> &'static str {
 const THUMBNAIL_FILE: &str = "thumbnail.png";
 
 /// File name of a suspended machine's frozen state (the save-states
-/// `.ccstate` format — `coco_core::snapshot` via `CocoApp::save_state_to`),
+/// `.ccstate` format — `coco_core::snapshot` through `CocoApp::save_state_to`),
 /// inside its artifact directory. Its existence IS the persistent Suspended
 /// state: written by Suspend, consumed by Resume (deleted strictly before
 /// the machine is declared Running — resuming discards the frozen copy,

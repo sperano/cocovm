@@ -9,8 +9,8 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
 }
 
 /// Fieldset-style titled group: a bordered box whose title interrupts the
-/// top border (Qt `QGroupBox`/HTML `<fieldset>`, which egui has no
-/// built-in equivalent for). Assumes a vertical host layout and a title
+/// top border (Qt `QGroupBox`/HTML `<fieldset>`, for which egui has no
+/// built-in equivalent). Assumes a vertical host layout and a title
 /// narrower than the box — a wider one clips mid-glyph.
 pub(crate) fn titled_group<R>(
     ui: &mut egui::Ui,
@@ -118,9 +118,9 @@ pub(crate) const RESET_GLYPH: &str = "↻";
 /// Caption text of the four transport tiles — shared by the manager
 /// toolbar's tiles (`manager::toolbar::draw_toolbar`) and the VM window
 /// toolbar's tiles (`chrome::toolbar::toolbar_ui`) so the two can't drift on
-/// the one piece of tile identity the glyph consts above didn't already
+/// the one piece of tile identity the earlier glyph consts didn't already
 /// cover. `ui_tests` still assert the raw string literals independently, to
-/// pin the user-visible text rather than just this constant's own value.
+/// pin the user-visible text rather than this constant's own value.
 pub(crate) const START_LABEL: &str = "Start";
 pub(crate) const SUSPEND_LABEL: &str = "Suspend";
 pub(crate) const STOP_LABEL: &str = "Stop";

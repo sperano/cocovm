@@ -3,8 +3,9 @@
 
 use std::fmt;
 
-/// Everything that can go wrong across [`super::save`]/[`super::load`]/[`super::restore`], with a
-/// [`Display`](fmt::Display) message precise enough to show a user directly.
+/// Everything that can go wrong across [`super::save`]/[`super::load`]/
+/// [`super::restore`], with a [`Display`](fmt::Display) message precise
+/// enough to show a user directly.
 #[derive(Debug)]
 pub enum SnapshotError {
     /// The bytes don't start with [`super::CONTAINER_MAGIC`], or are too short to
@@ -22,20 +23,20 @@ pub enum SnapshotError {
     Encode(String),
     /// Gzip or CBOR decoding failed.
     Decode(String),
-    /// The machine being saved has a [`crate::cart::Cart::Custom`] test double inserted,
-    /// which has no serializable shape.
+    /// The machine being saved has a [`crate::cart::Cart::Custom`] test double
+    /// inserted, which has no serializable shape.
     CustomCartNotSnapshotable,
     /// One or more media sources needed by [`super::restore`] weren't provided;
     /// `descriptions` names every one collected, so a caller can prompt for
     /// all of them at once.
     MissingMedia { descriptions: Vec<String> },
-    /// A provided media source doesn't fit the shape the snapshot recorded
-    /// (wrong floppy geometry, oversized ROM image, ...) — retrying with the
+    /// A provided media source doesn't fit the shape the snapshot recorded,
+    /// such as wrong floppy geometry or an oversized ROM image. Retrying with the
     /// *same* file wouldn't help, unlike [`SnapshotError::MissingMedia`].
     MediaShape { role: String, detail: String },
-    /// The decoded payload is internally invalid (bad config, RAM length
-    /// mismatch, self-contradictory media state, ...) — never reached from
-    /// bytes this module itself produced, only from corrupted or
+    /// The decoded payload is internally invalid, such as bad configuration,
+    /// a RAM-length mismatch, or self-contradictory media state. This is never
+    /// reached from bytes this module itself produced, only from corrupted or
     /// hand-edited ones.
     InvalidPayload(String),
 }

@@ -1,5 +1,5 @@
-//! End-to-end smoke test for the DMP-105 interpreter (
-//! T4): boot the real Super Extended Color BASIC ROM, `LLIST` a one-liner
+//! End-to-end smoke test for the DMP-105 interpreter (T4): boot the real Super
+//! Extended Color BASIC ROM, `LLIST` a one-liner
 //! through the bit-banger port with a [`DMP105Handle`] attached as the sink,
 //! and assert the paper picked up plausible content — proving the whole
 //! chain (PIA1 bit-bang TX -> `BitBanger` decode -> `DMP105` interpretation
@@ -113,11 +113,11 @@ fn llist_through_dmp105_produces_plausible_paper_content() {
         "LLIST produced no dots on the DMP-105's paper at all; screen:\n{screen}"
     );
 
-    // "10 PRINT "HELLO"" is 16 non-blank-heavy characters; a plausible dot
+    // `10 PRINT "HELLO"` is 16 mostly nonblank characters; a plausible dot
     // count for one line at this font's density is comfortably in the
     // hundreds. `max_y` only reflects rows an actual glyph dot landed on
-    // (control codes like the trailing CR move the head without marking
-    // anything), so it should stay within the single 9x7 glyph cell's body
+    // (control codes such as the trailing CR move the head without marking
+    // anything), so it stays within the single 9x7 glyph cell's body
     // rows here — a single-line listing never gets far enough to trigger a
     // second line feed.
     assert!(
@@ -131,9 +131,9 @@ fn llist_through_dmp105_produces_plausible_paper_content() {
         extent.max_y
     );
 
-    // Sanity: a fresh DMP105Handle used directly as a PrinterSink (not just
-    // through BitBanger) must also accept bytes without panicking, covering
-    // the trait object path the real bus uses.
+    // A fresh DMP105Handle used directly as a PrinterSink must also accept
+    // bytes without panicking. This covers the trait-object path the real bus
+    // uses.
     let direct = DMP105Handle::new();
     let mut sink: Box<dyn PrinterSink> = Box::new(direct.clone());
     for &b in b"SANITY\r" {

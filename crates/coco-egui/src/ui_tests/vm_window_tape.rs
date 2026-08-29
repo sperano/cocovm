@@ -15,7 +15,7 @@ use crate::*;
 use super::harness::*;
 
 /// Leader byte (Service Manual §5.10, `cassette-verified-facts`) — a plain
-/// unstructured tape used by the seek/typing tests below, which don't care
+/// unstructured tape used by the seek/typing tests that follow, which don't care
 /// about block framing.
 const LEADER: u8 = 0x55;
 
@@ -148,8 +148,8 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.state_mut().insert_tape(path);
     harness.step();
 
-    // Sanity: with nothing focused, a held key lands on the matrix — otherwise these asserts
-    // are vacuous.
+    // Precondition: with nothing focused, a held key lands on the matrix.
+    // Otherwise, these assertions are vacuous.
     harness.key_down(egui::Key::A);
     harness.step();
     assert_ne!(
@@ -233,7 +233,7 @@ fn typing_in_the_seek_field_does_not_move_a_keys_joystick() {
         )
     };
 
-    // Sanity: with nothing focused, a held arrow deflects the stick.
+    // Precondition: with nothing focused, a held arrow deflects the stick.
     harness.key_down(egui::Key::ArrowLeft);
     harness.step();
     assert!(

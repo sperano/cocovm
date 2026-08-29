@@ -1,5 +1,5 @@
-//! Deluxe RS-232 Program Pak integration coverage
-//! "Testing / acceptance"): the `$FF60-$FF7E` spare-window bus routing, the
+//! Deluxe RS-232 Program Pak integration coverage ("Testing / acceptance"):
+//! the `$FF60-$FF7E` spare-window bus routing, the
 //! loopback round-trip ("byte written to `$FF68` reappears at `$FF68` with
 //! RDRF set"), the ACIA-IRQ → CART* → PIA1 CB1 → FIRQ chain, the no-regression
 //! open-bus checks for other cartridges, the 4K CTS EPROM window, and the
@@ -178,8 +178,8 @@ fn rx_irq_fires_firq_via_pia1_cb1() {
 
 /// Same chain driven through the real `Machine::run_cycles` loop (a synthetic
 /// all-zero ROM — the CPU executes harmless `NEG <$00` in page-0 RAM), proving
-/// the per-instruction `poll_cart_interrupt` wiring in `lib.rs`, not just the
-/// bus seam the `run` helper above emulates.
+/// the per-instruction `poll_cart_interrupt` wiring in `lib.rs`, in addition to
+/// the bus seam the earlier `run` helper emulates.
 #[test]
 fn machine_loop_polls_cart_interrupt() {
     let mut machine = Machine::new(
@@ -234,7 +234,7 @@ fn tcp_endpoint_round_trip_through_the_bus() {
     tick_until_status(&mut bus, status::DCD, "pak never accepted the client");
 
     // CPU -> host: the byte is guaranteed a connected stream now, so once
-    // the TX frame completes it is in the socket and the timed read below
+    // the TX frame completes it is in the socket and the timed read that follows
     // observes it.
     bus.write(ACIA_DATA, b'H');
     run(&mut bus, ROUND_TRIP_BUDGET);

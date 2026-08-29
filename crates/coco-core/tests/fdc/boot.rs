@@ -1,5 +1,5 @@
 //! Integration: boot Disk Extended Color BASIC and read a synthesized RS-DOS
-//! directory via DIR.
+//! directory with DIR.
 
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::{Machine, MachineConfig};
@@ -152,7 +152,7 @@ fn loadm_preserves_every_sector_byte_across_the_halt_nmi_handshake() {
 #[test]
 fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
     /// DSKINI formats all 35 tracks (18 sectors each); this needs far more
-    /// DRQ-paced field budget than the ~400-field boot/DIR tests above.
+    /// DRQ-paced field budget than the ~400-field boot/DIR tests earlier in this file.
     const FORMAT_FIELDS: usize = 4000;
     const BOOT_FIELDS: usize = 400;
     const DIR_FIELDS: usize = 400;
@@ -224,7 +224,7 @@ fn dskini_formats_a_blank_disk_and_dir_reports_no_io_error() {
 }
 
 /// End-to-end regression that NitrOS-9 Level 2 boots all the way to its shell
-/// prompt on the real 40-track two-sided image, booted via Disk BASIC's `DOS`
+/// prompt on the real 40-track two-sided image, booted with Disk BASIC's `DOS`
 /// command. Two FD-502 bugs each stalled this boot:
 ///
 /// - Read Sector first-byte latency: `boot_1773` arms its HALT/NMI collection

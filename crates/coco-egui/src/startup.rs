@@ -80,7 +80,7 @@ fn is_rom_file(name: &str) -> bool {
 }
 
 /// How many ROM images are installed in [`paths::roms_dir`]. A missing or
-/// unreadable directory simply counts as zero.
+/// unreadable directory counts as zero.
 pub(crate) fn rom_count() -> usize {
     let Some(dir) = paths::roms_dir() else {
         return 0;

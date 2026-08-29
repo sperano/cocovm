@@ -38,7 +38,7 @@ impl TypeAhead {
         self.phase = TypePhase::Idle;
     }
 
-    /// True while taps are still queued or a tap is mid hold/gap — i.e. a paste or
+    /// True while taps are still queued or a tap is mid hold/gap—that is, a paste or
     /// type-ahead burst is still draining and owns the keyboard matrix.
     pub(crate) fn is_active(&self) -> bool {
         !self.queue.is_empty() || !matches!(self.phase, TypePhase::Idle)

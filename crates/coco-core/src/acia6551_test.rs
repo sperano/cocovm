@@ -12,7 +12,7 @@ fn tdr_write_clears_tdre_then_consume_at_start_resets_it() {
     let mut acia = ACIA6551::new();
     acia.write(2, command::DTR); // DTR enabled, tx-IRQ off (RTS_OFF)
     acia.write(0, 0x55);
-    // TDRE clears then immediately re-sets via write_tdr's consume-at-start check.
+    // TDRE clears then immediately re-sets using write_tdr's consume-at-start check.
     assert_eq!(acia.read(1) & status::TDRE, status::TDRE);
 }
 

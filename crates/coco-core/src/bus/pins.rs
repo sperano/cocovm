@@ -9,7 +9,8 @@ use super::SystemBus;
 impl SystemBus {
     /// PIA0 port-A input pins: keyboard rows for the current column strobe,
     /// fire buttons pulling their rows low, and the joystick comparator on
-    /// PA7 (high while the 6-bit DAC is at or below the pot the mux selects — `DESIGN.md` §7).
+    /// PA7, high while the 6-bit DAC is at or below the pot selected by the
+    /// mux (`DESIGN.md` §7).
     pub(super) fn pia0_pa_pins(&self) -> u8 {
         const COMPARATOR_BIT: u8 = 0x80;
         let mut pa = self.keyboard.sense(self.pia0.b.output);
@@ -26,7 +27,8 @@ impl SystemBus {
     }
 
     /// PIA1 port-A input pins: only bit 0 (cassette data in, `$FF20`) is
-    /// driven by anything emulated; the rest float high like every other unused CoCo input pin.
+    /// driven by anything emulated. The rest float high like every other
+    /// unused CoCo input pin.
     pub(super) fn pia1_pa_pins(&self) -> u8 {
         const CASSETTE_IN: u8 = 0x01;
         if self.cassette.input_bit() {
@@ -40,7 +42,8 @@ impl SystemBus {
     /// rest float high like every other unused CoCo input pin.
     ///
     /// Bit 0: printer BUSY in (`$FF22`). Polarity is 0 = ready, 1 = busy —
-    /// BASIC's driver spins while it reads busy, so the not-busy default must present bit 0 clear.
+    /// BASIC's driver spins while it reads busy, so the not-busy default must
+    /// present bit 0 clear.
     ///
     /// Bit 2: RAMSZ, the memory-size sense switch, on CoCo 1/2 only (CoCo 3
     /// has no such switch and floats high). Per MAME `coco.cpp` `pia1_pb_r`:
@@ -70,8 +73,9 @@ impl SystemBus {
 
     /// PA1 ($FF20) as the bit-banger's TX line sees it: mark (idle-high)
     /// unless PIA1 DDRA bit 1 is set to make PA1 an output and its output
-    /// register bit is clear (space). Unconfigured PA1 is treated as idle
-    /// mark, matching a floating output pin (the ROM sets DDRA = $FE at `$A048` before use).
+    /// register bit is clear (space). Unconfigured PA1 is treated as idle mark,
+    /// matching a floating output pin (the ROM sets DDRA = $FE at `$A048`
+    /// before use).
     pub(crate) fn pia1_tx_mark(&self) -> bool {
         if self.pia1.a.ddr & bitbanger::TX_PIN == 0 {
             true

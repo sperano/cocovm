@@ -3,8 +3,8 @@ use coco_core::MachineConfig;
 use super::*;
 use crate::machine_def;
 
-/// A minimal valid entry, just enough for [`Selection::snapshot`]/
-/// [`Selection::restore`] to have a slug to key on.
+/// A minimal valid entry with a slug for [`Selection::snapshot`] /
+/// [`Selection::restore`] to key on.
 fn entry(slug: &str) -> MachineEntry {
     MachineEntry::new(
         slug.to_string(),

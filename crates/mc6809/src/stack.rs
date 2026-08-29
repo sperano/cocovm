@@ -19,7 +19,7 @@ impl MC6809 {
         v
     }
 
-    /// PSHS/PSHU. `to_s` selects the S stack, else U; bit 6 in `mask` pushes
+    /// PSHS/PSHU. `to_s` selects the S stack, otherwise U. Bit 6 in `mask` pushes
     /// the *other* stack pointer. Push order is PC, U/S, Y, X, DP, B, A, CC
     /// (highest address first). Returns the cycle count (base + 1 per byte).
     pub(crate) fn psh(&mut self, bus: &mut impl Bus, mask: u8, to_s: bool) -> u32 {
@@ -108,7 +108,8 @@ impl MC6809 {
             if from_s {
                 self.u = v;
             } else {
-                // PULU loading S is a program load and must arm NMI recognition (see `nmi_armed`).
+                // PULU loading S is a program load and must arm NMI recognition
+                // (see `nmi_armed`).
                 self.load_s(v);
             }
         }

@@ -1,10 +1,9 @@
 //! Phase 6 acceptance test 5: a CoCo 1 running real
 //! Color BASIC 1.2 alone (no Extended Color BASIC) boots to the plain
 //! "COLOR BASIC 1.2" sign-on banner — not "EXTENDED COLOR BASIC" — and
-//! evaluates `PRINT 2+2`. This exercises the open-bus extbas window
-//! ("ROM files": "Extended Color BASIC missing → still
-//! boot (Color BASIC only, open-bus filler $FF for the extbas half"), which
-//! `coco2_boot.rs`'s extbas+bas machine never touches.
+//! evaluates `PRINT 2+2`. This exercises the open-bus Extended BASIC window
+//! used when the Extended BASIC ROM is absent. The CoCo 2 tests use both ROMs
+//! and do not cover this path.
 //!
 //! Skipped (not failed) if `roms/bas12.rom` isn't present locally, matching
 //! `tests/coco2_boot.rs`.
@@ -18,8 +17,7 @@ use test_assets::rom::BAS12;
 /// (`bus.rs::SAM_BAS_ROM_OFFSET`) — here the low 8K is left at
 /// [`OPEN_BUS_FILLER`] instead of real Extended BASIC ROM contents.
 const BAS_OFFSET: usize = 8 * 1024;
-/// Open-bus fill byte for the (absent) extbas half, per
-///
+/// Open-bus fill byte for the absent Extended BASIC half.
 const OPEN_BUS_FILLER: u8 = 0xFF;
 
 fn try_load(name: &str) -> Option<Vec<u8>> {
@@ -88,9 +86,9 @@ fn coco1_boots_color_basic_only_and_evaluates_print() {
         return;
     };
 
-    // Sanity check the open-bus extbas window before booting: every byte
+    // Check the open-bus extbas window before booting: every byte
     // through the $8000-$9FFF flat-image half must read the conventional
-    // open-bus filler, per
+    // open-bus filler, as expected for the absent Extended BASIC ROM.
     for addr in 0x8000..0x9FFFu16 {
         assert_eq!(
             m.bus.read(addr),

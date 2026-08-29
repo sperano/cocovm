@@ -8,7 +8,7 @@ use tracing_subscriber::filter::LevelFilter;
 #[command(name = "coco", version, about = "A Tandy Color Computer emulator")]
 pub(crate) struct Cli {
     /// Lowest log level to print. `RUST_LOG` overrides this when set — it
-    /// also filters per module, which a bare level cannot express (e.g.
+    /// also filters per module, which a bare level cannot express (for example,
     /// `RUST_LOG=info,eframe=warn`).
     #[arg(
         short = 'L',

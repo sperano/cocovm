@@ -25,7 +25,7 @@ const ATTENUATION_STEP: f64 = 1.258925412;
 const CHANNEL_FULL_SCALE: f64 = 0.25;
 
 /// Attenuation codes run 0 (loudest) to [`ATTENUATION_MUTE`] (silent —
-/// `m_vol_table[15] = 0`, not just very quiet).
+/// `m_vol_table[15] = 0`, rather than a low nonzero level).
 const ATTENUATION_MUTE: usize = 15;
 
 /// Command-byte bit 7: set = LATCH/DATA byte (bits 6-4 pick the register,
@@ -74,8 +74,7 @@ fn build_vol_table() -> [f32; 16] {
 #[derive(Serialize, Deserialize)]
 pub struct SN76489A {
     /// Internal tick rate: crystal / 16. Stored (not skipped) so a restored
-    /// chip doesn't need the original crystal handed back in at rebuild time
-    ///.
+    /// chip doesn't need the original crystal handed back in at rebuild time.
     tick_hz: f64,
     /// Raw register file — tone periods keep all 10 bits, attenuation and
     /// noise-control registers only ever hold their low 4 bits.
@@ -99,7 +98,7 @@ pub struct SN76489A {
     tick_frac: f64,
     /// Amplitude lookup for attenuation codes 0-15. Skipped: pure
     /// construction-time scratch, rebuilt by [`SN76489A::after_restore`]
-    /// via [`build_vol_table`].
+    /// using [`build_vol_table`].
     #[serde(skip)]
     vol_table: [f32; 16],
 }
@@ -140,7 +139,7 @@ impl SN76489A {
     }
 
     /// Rebuilds `vol_table` (skipped in serialization) after a snapshot
-    /// restore, via the same [`build_vol_table`] helper `new` uses.
+    /// restore, using the same [`build_vol_table`] helper `new` uses.
     pub fn after_restore(&mut self) {
         self.vol_table = build_vol_table();
     }

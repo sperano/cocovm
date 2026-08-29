@@ -12,7 +12,7 @@
 //! Two kinds of source feed the grid:
 //! - **Latched** inputs ([`AudioInputs`]): the PIA DAC, single-bit beeper,
 //!   SNDEN/mux selects, and latched cartridge outputs (the Orchestra-90's
-//!   stereo DACs via [`crate::cart::Cartridge::sound_levels`]). Event-recorded
+//!   stereo DACs through [`crate::cart::Cartridge::sound_levels`]). Event-recorded
 //!   with cycle timestamps.
 //! - **Generators**, sampled once per grid slot at flush: the mux-gated
 //!   cartridge input ([`crate::cart::Cartridge::audio_sample`] — the SSC's

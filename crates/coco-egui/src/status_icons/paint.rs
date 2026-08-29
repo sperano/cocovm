@@ -12,7 +12,7 @@
 //! at `0.22 * size`, a notch at `0.72 * size`, …) are left as inline
 //! numeric fractions of that icon's own size rather than promoted to
 //! consts: they have no meaning outside the shape they scale and naming
-//! them would just multiply the const count without adding information a
+//! them would multiply the const count without adding information a
 //! reader doesn't already get from seeing the fraction next to the size it
 //! multiplies.
 
@@ -25,7 +25,7 @@ use super::{ICON_ACTIVE, ICON_IDLE};
 /// background used to "punch" detail out of the shell, and hands back the
 /// `egui::Painter` to draw with, plus the allocation's `Response` — every
 /// painter returns this so its call site in `crate::chrome::status_bar` can
-/// attach a hover tooltip — the four-line preamble every painter below
+/// attach a hover tooltip — the four-line preamble every painter following
 /// would otherwise repeat.
 struct Icon<'a> {
     rect: egui::Rect,
@@ -36,7 +36,7 @@ struct Icon<'a> {
 }
 
 /// How much every icon is enlarged over the base proportions each size
-/// const below is written in. One knob for the whole set: the icons sit in
+/// const following is written in. One knob for the whole set: the icons sit in
 /// the status bar next to its text, so they read as one row and have to grow
 /// together — and every icon's internal geometry is a fraction of its own
 /// size const, so scaling the const scales the shape with it.
@@ -481,7 +481,7 @@ pub(crate) fn tv_icon(ui: &mut egui::Ui) -> egui::Response {
         response,
     } = begin_icon(ui, DISPLAY_ICON_SIZE, false);
 
-    // Body: below the antenna's headroom.
+    // Body: following the antenna's headroom.
     let body = egui::Rect::from_min_size(
         egui::pos2(rect.left(), rect.top() + DISPLAY_ICON_SIZE.y * 0.28),
         egui::vec2(DISPLAY_ICON_SIZE.x, DISPLAY_ICON_SIZE.y * 0.72),

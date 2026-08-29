@@ -12,7 +12,7 @@ fn resampler_upsamples_2x_with_linear_interpolation() {
 
 #[test]
 fn resampler_carries_fractional_position_and_prev_frame_across_calls() {
-    // Same math as above, split across two calls to prove carried `pos`/`prev` state.
+    // Same math as earlier, split across two calls to prove carried `pos`/`prev` state.
     let mut r = Resampler::default();
     let mut out = Vec::new();
     r.process(&[[0.0; 2]], 0.5, &mut out);

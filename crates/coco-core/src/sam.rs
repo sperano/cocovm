@@ -1,13 +1,13 @@
 //! `SAM` — the MC6883 Synchronous Address Multiplexer's primary memory map, for
-//! the plain CoCo 1/2 machine (no GIME). See
+//! the plain CoCo 1/2 machine (no GIME).
 //!
 //! This is a standalone model, deliberately **not** shared with the GIME's own
 //! SAM-compatibility overlay (`gime.rs::write_sam`/`SAM_BASE`..): the GIME keeps
 //! modelling its own CoCo-3-compatible strobes independently, and this file
 //! duplicates the handful of constants that describe (verified against MAME
-//! `6883sam.cpp`, the CoCo 2 NTSC Service Manual SAM register map pp. 8-10, and
-//! Bob Russell's memory map — see). The small duplication
-//! is intentional: it keeps the CoCo 3 path completely untouched.
+//! `6883sam.cpp`, the CoCo 2 NTSC Service Manual SAM register map, pages 8–10,
+//! and Bob Russell's memory map. This small duplication is intentional: it
+//! keeps the CoCo 3 path completely untouched.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +19,7 @@ pub const STROBE_BASE: u16 = 0xFFC0;
 pub const STROBE_LAST: u16 = 0xFFDF;
 
 /// $FF00–$FF7E: PIA0, PIA1, cart SCS* ($FF40–$FF5F), and the cart SCS*
-/// extension some cartridges decode ($FF60–$FF7E, e.g. the Sound/Speech
+/// extension some cartridges decode ($FF60–$FF7E, such as the Sound/Speech
 /// Cartridge's $FF7D/$FF7E — `docs/cartridges.md` "Carts can decode
 /// addresses outside SCS") — decoded by the bus, not `SAM` itself (`SAM::map`
 /// only reports that this range is I/O).

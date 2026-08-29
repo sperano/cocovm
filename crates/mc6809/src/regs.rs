@@ -1,5 +1,5 @@
 //! Register transfer (TFR/EXG) support: mapping the postbyte's register-selector
-//! nibbles ([`crate::regsel`]) to actual register reads/writes and honouring the
+//! nibbles ([`crate::regsel`]) to actual register reads/writes and honoring the
 //! documented cross-size transfer rules.
 
 use crate::{MC6809, regsel};
@@ -62,7 +62,8 @@ impl MC6809 {
     }
 
     /// The 16-bit values EXG reads from `r0` (first-named) and `r1` before
-    /// either is written; an 8-bit operand's widening depends on whether r0 is 8-bit.
+    /// either is written. An 8-bit operand's widening depends on whether `r0`
+    /// is 8-bit.
     pub(crate) fn exg_values(&self, r0: u8, r1: u8) -> (u16, u16) {
         let first_is_8bit = !Self::reg_is16(r0);
         (

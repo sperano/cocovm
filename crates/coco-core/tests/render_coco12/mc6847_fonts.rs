@@ -1,4 +1,4 @@
-//! MC6847 vs MC6847T1 font/lowercase (`crates/coco-core/src/font6847.rs`).
+//! MC6847 versus MC6847T1 font and lowercase tests (`crates/coco-core/src/font6847.rs`).
 
 use coco_core::video::{CELL_H, VDG_FIXED_PALETTE, VDG_GM0_INTEXT};
 use mc6809::Bus;
@@ -104,7 +104,7 @@ fn t1_without_gm0_code_01_is_not_lowercase() {
 fn inverse_uppercase_a_is_unaffected_by_t1_lowercase_mode() {
     // Byte $41 = code 1 ('A'), INV set. Plain MC6847 (no T1 knob at all) and
     // T1-with-GM0-clear each draw their own font's ordinary uppercase 'A'
-    // with the ordinary INV colour swap — today's existing inverse-uppercase
+    // with the ordinary INV colour swap — the existing inverse-uppercase
     // behaviour, unaffected by the new lowercase code path. (The two chips'
     // glyphs occupy different rows within the cell — see `PLAIN_A_GLYPH` /
     // `T1_A_GLYPH` — so this does *not* assert the two renders are pixel-

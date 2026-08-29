@@ -1,6 +1,6 @@
-//! Dev-only helper for locating test assets shared by the workspace's
+//! Development-only helper for locating test assets shared by the workspace's
 //! `tests/` and `#[cfg(test)]` suites. Every asset resolves under the same
-//! XDG data directory used by the application; repository-local asset
+//! XDG data directory used by the application. Repository-local asset
 //! directories are deliberately ignored.
 
 use std::path::PathBuf;
@@ -12,10 +12,11 @@ const ROMS_KIND: &str = "roms";
 /// Directory name for disk/VHD images under a candidate root.
 const DISKS_KIND: &str = "disks";
 
-/// The app's XDG data dir (`~/.local/share/cocovm` on Linux/macOS), or `None`
-/// if no home directory can be determined. The `AppStrategyArgs` below must
-/// stay hand-synced with the identical literal in `coco-egui/src/paths.rs`'s
-/// `strategy()`; `pub` so `coco-egui/src/paths_test.rs` can assert that.
+/// The app's XDG data directory (`~/.local/share/cocovm` on Linux/macOS), or
+/// `None` if no home directory can be determined. The following `AppStrategyArgs`
+/// must remain synchronized with the identical literal in
+/// `coco-egui/src/paths.rs`'s `strategy()`. This function is public so
+/// `coco-egui/src/paths_test.rs` can assert that.
 pub fn xdg_data_dir() -> Option<PathBuf> {
     etcetera::choose_app_strategy(AppStrategyArgs {
         top_level_domain: "quebec".to_string(),
@@ -36,29 +37,29 @@ fn resolve_path(kind: &str, name: &str) -> PathBuf {
     resolve_dir(kind).join(name)
 }
 
-/// Resolve the path to ROM file `name` (see [`rom`] for well-known names):
+/// Returns the path to ROM file `name` (see [`rom`] for well-known names):
 /// `<xdg_data_dir>/roms/<name>`.
 pub fn rom(name: &str) -> PathBuf {
     resolve_path(ROMS_KIND, name)
 }
 
-/// Resolve the path to disk/VHD image `name` under `<xdg_data_dir>/disks`.
+/// Returns the path to disk/VHD image `name` under `<xdg_data_dir>/disks`.
 pub fn disk(name: &str) -> PathBuf {
     resolve_path(DISKS_KIND, name)
 }
 
-/// Resolve the ROM asset directory under the XDG data directory.
+/// Returns the ROM asset directory under the XDG data directory.
 pub fn roms_dir() -> PathBuf {
     resolve_dir(ROMS_KIND)
 }
 
-/// Resolve the disk/VHD asset directory under the XDG data directory.
+/// Returns the disk/VHD asset directory under the XDG data directory.
 pub fn disks_dir() -> PathBuf {
     resolve_dir(DISKS_KIND)
 }
 
-/// Well-known ROM file names repeated verbatim across many call sites, so
-/// they don't appear as bare string literals over and over.
+/// Defines well-known ROM file names used across many call sites, avoiding
+/// repeated bare string literals.
 pub mod rom {
     /// Super Extended Color BASIC — the CoCo 3 system ROM most integration
     /// tests boot.
@@ -75,13 +76,13 @@ pub mod rom {
     pub const EXTBAS11: &str = "extbas11.rom";
 }
 
-/// Well-known disk/VHD image names repeated verbatim across many call
-/// sites, so they don't appear as bare string literals over and over.
+/// Defines well-known disk/VHD image names used across many call sites,
+/// avoiding repeated bare string literals.
 pub mod disk {
     /// EOU 1.0.1 boot floppy (OS9Boot carries the EmuDsk driver and `/h0`
     /// descriptors) — `tests/vhd_boot.rs`, `tests/bitbanger_os9.rs`.
     pub const EOU_BOOT: &str = "68EMU.dsk";
-    /// EOU 1.0.1's 128MB `emudsk` system VHD image — `tests/vhd_boot.rs`,
+    /// EOU 1.0.1's 128 MB `emudsk` system VHD image — `tests/vhd_boot.rs`,
     /// `tests/bitbanger_os9.rs`.
     pub const EOU_SYSTEM_VHD: &str = "68SDC.VHD";
     /// Flat 35-track/18-sector DECB image carrying an auto-running Tetris

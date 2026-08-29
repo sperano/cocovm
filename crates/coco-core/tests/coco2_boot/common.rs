@@ -13,9 +13,9 @@ pub fn try_load(name: &str) -> Option<Vec<u8>> {
 }
 
 /// Compose the flat 16K ROM image the plain-SAM bus path expects: extbas at
-/// offset 0, bas at offset `BAS_OFFSET` ("ROM files";
-/// `bus.rs::SAM_BAS_ROM_OFFSET`). Returns `None` (test should skip) if either
-/// file is missing.
+/// offset 0, and Color BASIC at offset `BAS_OFFSET` (`bus.rs::
+/// SAM_BAS_ROM_OFFSET`). Returns `None` if either file is missing, allowing the
+/// test to skip.
 fn load_coco2_rom() -> Option<Box<[u8]>> {
     let extbas = try_load(EXTBAS11)?;
     let bas = try_load(BAS12)?;
@@ -86,7 +86,7 @@ pub fn type_line(m: &mut Machine, s: &str) {
 /// Run fields until the sign-on banner/`OK` prompt appears (real Color
 /// BASIC's cold-start does a RAM-size probe, byte-by-byte across up to 64K,
 /// before it can paint anything, hence the generous budget), then let the
-/// housekeeping loop settle for a few more fields. Shared by every test below
+/// housekeeping loop settle for a few more fields. Shared by every following test
 /// that needs a machine sitting at the `OK` prompt, ready for direct-mode
 /// input.
 pub fn boot_to_prompt(m: &mut Machine) {
@@ -109,7 +109,7 @@ pub fn boot_to_prompt(m: &mut Machine) {
     }
 }
 
-/// Field budget given to each direct-mode BASIC statement below to
+/// Field budget given to each direct-mode BASIC statement that follows to
 /// tokenize/execute before the next one is typed (mirrors the settle time
 /// `boot_to_prompt` already gives the cold-start banner).
 pub const SETTLE_FIELDS: usize = 30;

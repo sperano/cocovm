@@ -10,21 +10,21 @@
 //! A machine booted from the real Super Extended Color BASIC ROM copies that
 //! 32K image into RAM during its cold-start (`snapshot_roundtrip.rs`'s doc
 //! comment documents exactly this), so its snapshot's `bus.ram` would carry
-//! copyrighted bytes -- unsafe to commit. [`synthetic_rom`] is a small
+//! copyrighted bytes — unsafe to commit. [`synthetic_rom`] is a small
 //! hand-assembled 6809 program with no such content, so the `.ccstate`
 //! fixture it boots is safe to commit alongside it.
 //!
 //! ## Fixture trio
 //!
 //! Each fixture is three files sharing a stem under
-//! `tests/fixtures/snapshots/`:
-//! - `<stem>.ccstate` -- the snapshot itself;
-//! - `<stem>.rom` -- the synthetic system ROM it was booted from;
-//! - `<stem>.trace` -- the expected continuation: one line per step for
+//! Each fixture is stored under `tests/fixtures/snapshots/`:
+//! - `<stem>.ccstate` — the snapshot itself.
+//! - `<stem>.rom` — the synthetic system ROM it was booted from.
+//! - `<stem>.trace` — the expected continuation: one line per step for
 //!   [`TRACE_STEPS`] steps after the snapshot point, in the format
 //!   `pc,cc,a,b,x,y,u,s,dp,cycles` (register fields uppercase hex, no
 //!   `0x`/`$` prefix, zero-padded to their natural width; `cycles` decimal),
-//!   comma-separated, one line per step, `\n`-terminated -- see
+//!   comma-separated, one line per step, `\n`-terminated — see
 //!   [`trace_line`].
 
 use std::path::{Path, PathBuf};
@@ -41,9 +41,9 @@ fn fixtures_dir() -> PathBuf {
 const ROM_SIZE: usize = 32 * 1024;
 /// RAM address the ROM's loop increments every iteration.
 const COUNTER_ADDR: u16 = 0x0400;
-/// GIME palette register 0 (`$FFB0-$FFBF`, `gime::PALETTE_LEN` entries) --
+/// GIME palette register 0 (`$FFB0-$FFBF`, `gime::PALETTE_LEN` entries) —
 /// the loop mirrors its counter's low 6 bits here every iteration, so the
-/// fixture also round-trips nontrivial GIME state, not just CPU/RAM.
+/// fixture also round-trips nontrivial GIME state, rather than only CPU/RAM.
 const PALETTE_REG0: u16 = 0xFFB0;
 
 /// Hand-assembled 6809 program, 32K, mapped to `$8000-$FFFF`:
@@ -60,9 +60,9 @@ const PALETTE_REG0: u16 = 0xFFB0;
 /// $FFFE  80 00         (RESET vector -> $8000)
 /// ```
 /// Sets a stack pointer and a nonzero direct page (so both round-trip
-/// meaningfully, not just their power-on-zero default), then loops forever:
+/// meaningfully, rather than only their power-on-zero default), then loops forever:
 /// increments a RAM counter and mirrors its low 6 bits into GIME palette
-/// register 0. No interrupts used -- no NMI/IRQ/FIRQ vectors are set. Fully
+/// register 0. No interrupts used — no NMI/IRQ/FIRQ vectors are set. Fully
 /// deterministic and infinite, so any warmup/trace step count is safe.
 fn synthetic_rom() -> Box<[u8]> {
     let mut rom = vec![0u8; ROM_SIZE];
@@ -95,7 +95,7 @@ fn synthetic_machine(rom: Box<[u8]>) -> Machine {
 
 // ---- Trace format -------------------------------------------------------
 
-/// One `pc,cc,a,b,x,y,u,s,dp,cycles` line for `m`'s current CPU state -- see
+/// One `pc,cc,a,b,x,y,u,s,dp,cycles` line for `m`'s current CPU state — see
 /// this file's module doc for the exact field order/format.
 fn trace_line(m: &Machine) -> String {
     let cpu = &m.cpu;
@@ -124,7 +124,7 @@ fn continuation_trace(m: &mut Machine) -> Vec<String> {
 
 // ---- Generator (run once by hand; produces the committed fixture files) --
 
-/// Steps run before the snapshot point. Arbitrary but deterministic -- the
+/// Steps run before the snapshot point. The count is arbitrary but deterministic — the
 /// synthetic ROM's loop never terminates or diverges, so any value works;
 /// this is well past several palette-register cycles.
 const WARMUP_STEPS: u32 = 5_000;
@@ -160,10 +160,10 @@ fn generate_golden_fixture() {
 
 // ---- Gate: every committed fixture must still load and continue ---------
 
-/// A committed fixture's gzipped-CBOR payload must stay small: 128K of
+/// A committed fixture's gzipped-CBOR payload must stay small. 128K of
 /// mostly-repetitive RAM gzips to a few KB. A fixture anywhere near this cap
-/// means something started embedding real media (disk/VHD/tape bytes) into
-/// a snapshot fixture -- exactly what [`MediaRefs`] (path+hash, not content)
+/// means that something started embedding real media (disk, VHD, or tape bytes) into
+/// a snapshot fixture — exactly what [`MediaRefs`] (path+hash, not content)
 /// exists to avoid.
 const FIXTURE_MAX_BYTES: u64 = 200 * 1024;
 
@@ -187,8 +187,8 @@ fn all_committed_fixtures_still_load() {
 }
 
 /// Load, restore, and trace-continue one fixture, comparing against its
-/// committed `.trace` -- future fixtures (`<stem>.ccstate` + `<stem>.rom` +
-/// `<stem>.trace`) join this gate automatically via [`all_committed_fixtures_still_load`]'s
+/// committed `.trace` — future fixtures (`<stem>.ccstate` + `<stem>.rom` +
+/// `<stem>.trace`) join this gate automatically through [`all_committed_fixtures_still_load`]'s
 /// directory scan.
 fn check_fixture(ccstate_path: &Path) {
     let stem = ccstate_path

@@ -35,7 +35,7 @@
 //! wires only ENTER, CLEAR, BREAK and SHIFT, leaving the columns the CoCo 3
 //! fills with ALT/CTRL/F1/F2 unconnected — but says nothing about placement.
 //!
-//! Widths and gaps below are in *key units* — one unit is the pitch of a
+//! Widths and gaps that follow are in *key units* — one unit is the pitch of a
 //! letter cap, gap included — so a row's total is the exact sum of its
 //! slots. The drawing code keeps that true by laying rows out with no
 //! inter-item spacing of its own (`super::draw_row`); without that, rows with

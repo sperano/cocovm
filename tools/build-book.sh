@@ -20,9 +20,9 @@ for f in book/ch*.md book/appendices.md; do
   ORDERED+=("$WORK/$(basename "$f")")
 done
 
-# The syllabus links chapters by filename; in the merged book those must
-# become internal anchors. Ask pandoc itself for each chapter's H1 anchor id
-# so the rewrite can never drift from pandoc's identifier algorithm.
+# The syllabus links chapters by filename. In the merged book, those links must
+# become internal anchors. Use pandoc to compute each chapter's H1 anchor ID so
+# the rewrite remains consistent with pandoc's identifier algorithm.
 for f in book/ch*.md book/appendices.md; do
   base=$(basename "$f")
   h1=$(grep -m1 '^# ' "$f")
@@ -33,7 +33,7 @@ for f in book/ch*.md book/appendices.md; do
 done
 
 # The subtitle is the real emulator version, read from the workspace
-# Cargo.toml so it can never drift from what the code says it is.
+# Cargo.toml so it remains consistent with the code.
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 
 META=(

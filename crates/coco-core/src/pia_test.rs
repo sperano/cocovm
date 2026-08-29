@@ -6,7 +6,7 @@ fn c2_output_follows_set_reset_level() {
     // The ROM's standard idle control value: C2 set/reset output, level 0.
     pia.write(1, 0x34);
     assert!(!pia.a.c2_output());
-    // Level bit raised (e.g. selecting the other joystick mux input).
+    // Level bit raised, such as when selecting the other joystick mux input.
     pia.write(1, 0x3C);
     assert!(pia.a.c2_output());
 }

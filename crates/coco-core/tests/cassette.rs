@@ -86,7 +86,7 @@ fn motor_off_freezes_the_tape_and_records_nothing() {
 /// While a recording is in flight, `position()` reports the live estimate
 /// of bytes recorded so far (one tone cycle per bit, counted off the DAC
 /// midpoint crossings) instead of the parked playback position — the status
-/// bar's counter moves during CSAVE, not just CLOAD.
+/// bar's counter moves during CSAVE, not only CLOAD.
 #[test]
 fn position_tracks_a_recording_in_flight() {
     let mut deck = Cassette::new();
@@ -110,8 +110,8 @@ fn position_tracks_a_recording_in_flight() {
     assert_eq!(deck.position(), (0, 0));
 }
 
-/// A real deck records starting at the head's current position, splicing
-/// the new recording into the tape rather than replacing the whole reel.
+/// A real deck starts recording at the head's current position and splices
+/// the new recording into the tape instead of replacing the whole reel.
 /// CSAVE "T1" -> rewind -> CLOAD (head parks after T1) -> CSAVE "T2" must
 /// leave both files on the tape, back to back — not wipe T1.
 #[test]
@@ -173,9 +173,9 @@ fn recording_splices_at_the_head_position() {
 }
 
 /// A recording left in flight when the motor stops must land on the tape
-/// by itself once the motor has been idle long enough — no rewind/eject
-/// required — but a pause no longer than CSAVE's own namefile->data gap
-/// (~0.5 s) must NOT trip it early.
+/// after the motor has been idle long enough. No rewind or eject is required.
+/// A pause no longer than CSAVE's own namefile-to-data gap (~0.5 s) must not
+/// trigger finalization.
 #[test]
 fn recording_finalizes_itself_after_motor_idle() {
     let mut deck = Cassette::new();
@@ -190,7 +190,7 @@ fn recording_finalizes_itself_after_motor_idle() {
         "the capture must be pending after recording"
     );
 
-    // Half the threshold (~1 s): below it, so a CSAVE-style intra-operation
+    // Half the threshold (~1 s): under it, so a CSAVE-style intra-operation
     // gap must survive untouched.
     const HALF_THRESHOLD: u32 = (RECORD_IDLE_FINALIZE_CYCLES / 2) as u32;
     deck.tick(HALF_THRESHOLD, false);
@@ -367,9 +367,9 @@ fn type_line(m: &mut Machine, s: &str) {
     }
 }
 
-/// Run until the cassette motor, having been on, stays off for a stretch
-/// longer than any intra-operation pause (CSAVE's namefile→data gap is
-/// ~0.5 s), or until `max_fields` elapse.
+/// Runs until the cassette motor stays off longer than any intra-operation
+/// pause (CSAVE's namefile-to-data gap is ~0.5 s), or until `max_fields`
+/// elapse.
 fn run_until_motor_idle(m: &mut Machine, max_fields: usize) {
     /// 1.5 s of motor-off at 60 fields/s — longer than any mid-tape gap.
     const IDLE_FIELDS: usize = 90;
@@ -454,8 +454,8 @@ fn csave_rewind_cload_round_trips_a_basic_program() {
         screen_dump(&mut m)
     );
 
-    // The counter tracked the recording live: with CSAVE done but the
-    // recording not yet finalized, the reported position is the record
+    // The counter tracks the recording live: with CSAVE done but the
+    // recording not yet finalized, the reported position is the recording
     // estimate, not the parked playback position.
     let (recorded, live_len) = m.bus.cassette.position();
     assert!(recorded > 0, "the counter must have moved during CSAVE");
@@ -599,7 +599,7 @@ fn csave_cload_csave_builds_a_two_file_tape() {
 
     // Both files must CLOAD back, in order — the second CLOAD only works if
     // the head parked after A's data rather than the tape being wiped down
-    // to just B.
+    // leaving only B.
     type_line(&mut m, "NEW");
     type_line(&mut m, "CLOAD");
     run_until_motor_idle(&mut m, TAPE_OP_FIELDS);

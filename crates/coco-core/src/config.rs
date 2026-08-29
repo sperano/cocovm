@@ -9,7 +9,7 @@ use crate::gime::MonitorType;
 /// timing-identical (same SAM, same plain MC6847, same PIA wiring — MAME uses
 /// one `coco` driver for both); the variant only changes default RAM size
 /// and ROM set. The CoCo 2B's MC6847T1 (lowercase, SG6 removal) is a
-/// deliberately deferred follow-up, not modeled here yet.
+/// deliberately deferred follow-up and is not modeled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MachineVariant {
     /// SAM (MC6883) + plain MC6847 VDG, no GIME.
@@ -21,9 +21,8 @@ pub enum MachineVariant {
 }
 
 impl MachineVariant {
-    /// Every variant, oldest first — the order the UI offers them in. Kept
-    /// here beside the enum so a machine added later cannot be missed by a
-    /// caller that spelled the list out itself.
+    /// Every variant, oldest first, in the order that the UI offers them.
+    /// Keep this list beside the enum so callers do not omit later variants.
     pub const ALL: [MachineVariant; 3] = [
         MachineVariant::Coco1,
         MachineVariant::Coco2,
@@ -57,7 +56,7 @@ pub enum VideoStandard {
 }
 
 impl VideoStandard {
-    /// Scanlines per field. Provisional (standard video values; see `DESIGN.md` §4).
+    /// Number of scanlines per field. These standard video values are provisional.
     pub const fn lines_per_field(self) -> u32 {
         match self {
             VideoStandard::NTSC => 262,
@@ -168,7 +167,7 @@ pub struct MachineConfig {
 
 impl MachineConfig {
     /// Reject variant/video/memory/VDG/monitor combinations the emulator
-    /// doesn't support, or that real hardware never shipped (e.g. no 4K or
+    /// doesn't support, or that real hardware never shipped, such as a 4K or
     /// 32K CoCo 2 — CoCo 2 service manual 26-3026/26-3027 §3.3); see the
     /// error messages for specifics.
     pub fn validate(&self) -> Result<(), String> {

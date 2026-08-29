@@ -11,15 +11,16 @@
 //! data into an 8×64-byte buffer RAM and execute it. Sound-data streams,
 //! register-string streams, and direct AY register access (`$AF`) are fully
 //! functional and drive the [`AY8913`] PSG. Speech, allophone, and SP0256
-//! command bytes are parsed just enough to keep the state machine in sync
+//! command bytes are parsed minimally to keep the state machine in sync
 //! (their LOAD variants still fill the buffer RAM per the flat-RAM model
-//! below) but their EXECUTE variants are no-ops — no SP0256 is emulated, so
+//! that follows) but their EXECUTE variants are no-ops — no SP0256 is emulated, so
 //! there is nothing to make them audible.
 //!
-//! See [`dispatch_command`](SoundSpeechCartridge::dispatch_command) for the top-level command
-//! dispatch (in the [`protocol`] submodule) and `docs/ssc-spec.md` for the
-//! full protocol writeup, including every judgment call this implementation
-//! had to make where the manual doesn't fully specify behavior. The
+//! See [`dispatch_command`](SoundSpeechCartridge::dispatch_command) for the
+//! top-level command dispatch in the [`protocol`] submodule. See
+//! `docs/ssc-spec.md` for the full protocol writeup, including each judgment
+//! call this implementation makes where the manual does not fully specify
+//! behavior. The
 //! sound-data playback engine lives in the [`engine`] submodule, and the
 //! Sound Activity Circuit envelope follower lives in the [`sac`] submodule.
 
@@ -71,7 +72,7 @@ mod status {
 
 /// Synthetic hold time for `busy` after a `$FF7E` write, in E-clock cycles.
 ///
-/// On real hardware the TMS7040 firmware clears busy (via a port-bit toggle)
+/// On real hardware the TMS7040 firmware clears busy (through a port-bit toggle)
 /// once it has consumed the host byte — there's no fixed duration, it's
 /// "whenever the firmware gets around to it". Without that firmware we hold
 /// busy for a fixed, made-up window instead, long enough that software

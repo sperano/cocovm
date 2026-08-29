@@ -10,9 +10,8 @@ use super::{Cartridge, IO_OPEN_BUS};
 ///
 /// ⚠ This address collides with the DriveWire Becker port's data register.
 /// MAME resolves it by intercepting Becker *ahead* of the cartridge decode,
-/// shadowing the GMC's PSG; when the Becker port lands here
-///, the bus must keep that precedence and
-/// the UI must refuse to enable both at once.
+/// shadowing the GMC's PSG. When the Becker port lands here, the bus must keep
+/// that precedence, and the UI must refuse to enable both at once.
 const GMC_PSG_REG: u16 = 0xFF41;
 
 /// The PSG's crystal on the GMC: 4 MHz (MAME `coco_gmc.cpp`

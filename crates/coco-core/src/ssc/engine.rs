@@ -79,17 +79,17 @@ pub mod timing {
 }
 
 /// Sequential sound-data playback engine: a single active cursor through one
-/// linear byte stream (buffer RAM), one group "playing" (gating the next
-/// group's processing) for its scheduled duration at a time. A new
-/// execute-sound-data command replaces whatever stream was previously
-/// running — there is no queueing or concurrent-channel scheduling here
-/// (real hardware achieves simultaneous multi-channel playback via the
-/// separate, un-timed register-string LOAD/EXECUTE mechanism instead).
+/// linear byte stream in buffer RAM. The engine processes one group at a time
+/// for its scheduled duration. A new execute-sound-data command replaces the
+/// stream that was previously running. The engine has no queueing or
+/// concurrent-channel scheduling. Real hardware achieves simultaneous
+/// multi-channel playback through the separate, untimed register-string
+/// LOAD/EXECUTE mechanism.
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
 pub(super) struct Engine {
     /// Whether the engine is currently advancing through a stream. Cleared
     /// at end-of-stream (terminator, incomplete trailing group, or capacity
-    /// exhaustion) or by an explicit stop command — the engine simply stops
+    /// exhaustion) or by an explicit stop command — the engine stops
     /// advancing; it does NOT silence the AY on its own (see
     /// [`SoundSpeechCartridge::advance_engine`]).
     pub(super) active: bool,
@@ -290,7 +290,7 @@ impl SoundSpeechCartridge {
     /// Read-modify-write R7 so channel `ch`'s tone/noise generators are
     /// enabled/disabled, without disturbing the other channels. Judgment
     /// call (not manual-specified): auto-enables the mixer so streams that
-    /// never poke R7 via a register-string command still play audibly.
+    /// never poke R7 through a register-string command still play audibly.
     fn set_mixer_channel(&mut self, ch: usize, tone_enabled: bool, noise_enabled: bool) {
         let mut mixer_val = self.ay_read(ay_reg::MIXER);
         let tone_bit = 1 << (mixer::TONE_DISABLE_SHIFT + ch as u8);

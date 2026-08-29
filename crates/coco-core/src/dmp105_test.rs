@@ -100,7 +100,8 @@ fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
         .collect();
     assert_eq!(h_col1, vec![0, 1, 2, 3, 4, 5, 6], "H's left stroke column");
 
-    // Five glyph cells wide (H,E,L,L,O); spot check ink within O's cell and none just past it.
+    // Five glyph cells wide (H, E, L, L, O); check ink within O's cell and
+    // none immediately past it.
     let fifth_cell_dots = dmp.paper.dots_in_range(0, DESCENDER_ROW);
     assert!(
         fifth_cell_dots

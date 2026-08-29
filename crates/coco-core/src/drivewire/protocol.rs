@@ -20,7 +20,7 @@ use super::{
 /// for). This is also why [`opcode::RESET1`](opcode)/`RESET2`/`RESET3` need
 /// no special handling beyond being normal opcodes: by the time an opcode
 /// byte is parsed, whatever transaction there was has already ended
-/// (successfully, on error, or via timeout).
+/// (successfully, on error, or after a timeout).
 #[derive(Serialize, Deserialize)]
 pub(super) enum State {
     Idle,
@@ -87,8 +87,9 @@ pub(super) enum State {
 }
 
 impl DWServer {
-    /// Becker-port data register write: feed one byte into the protocol state machine.
-    /// `cycle` detects a stalled transaction via `wrapping_sub` against the previous byte's cycle.
+    /// Write one byte to the Becker-port data register and feed it into the
+    /// protocol state machine. `cycle` detects a stalled transaction by
+    /// comparing it with the previous byte's cycle using `wrapping_sub`.
     pub fn data_write(&mut self, byte: u8, cycle: u64) {
         if let Some(prev) = self.last_byte_cycle {
             let idle = matches!(self.state, State::Idle);

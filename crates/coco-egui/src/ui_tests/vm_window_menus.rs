@@ -427,7 +427,7 @@ fn disk_menu_items_are_disabled_without_an_fd502() {
         .unwrap_or_else(|e| panic!("insert_disk_controller failed: {e}"));
     harness.step();
 
-    // The Machine menu is still open from above — nothing closed it, since this test never
+    // The Machine menu is still open from earlier — nothing closed it, since this test never
     // clicks a menu item.
     for drive in 0..UI_DRIVES {
         for label in [

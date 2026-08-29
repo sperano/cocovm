@@ -135,8 +135,8 @@ fn resolve_alpha_cell(
     }
 }
 
-/// PIA1 $FF22 bit 6 (GM2) and bit 5 (GM1), used by the CoCo 3 legacy border
-/// rule below.
+/// PIA1 $FF22 bit 6 (GM2) and bit 5 (GM1), used by the following CoCo 3 legacy
+/// border rule.
 const VDG_GM2: u8 = 0x40;
 const VDG_GM1: u8 = 0x20;
 

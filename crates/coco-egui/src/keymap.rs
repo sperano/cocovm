@@ -105,8 +105,7 @@ pub(crate) fn is_joystick_key(key: egui::Key) -> bool {
 // `MachineVariant`/`MemorySize`/`VideoStandard` are all foreign types (defined
 // in `coco-core`), so none of them can derive `clap::ValueEnum` here (orphan
 // rule) without pulling a `clap` dependency into the core crate. Each gets a
-// plain string `value_parser` function instead — same shape, no mirror enum
-//.
+// plain string `value_parser` function instead — same shape, no mirror enum.
 
 #[cfg(test)]
 #[path = "keymap_test.rs"]

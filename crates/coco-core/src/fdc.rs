@@ -5,7 +5,7 @@
 //!
 //! Hardware facts (DSKREG bit layout, drive/side resolution, the HALT*/NMI
 //! control-line recomputation, JVC geometry) are cited from MAME source
-//! (`coco_fdc.cpp`, `wd_fdc.cpp`/`.h`, `jvc_dsk.cpp`) in the doc comments below,
+//! (`coco_fdc.cpp`, `wd_fdc.cpp`/`.h`, `jvc_dsk.cpp`) in the following doc comments,
 //! per the verified spec this module was built from.
 
 mod disk_cart;

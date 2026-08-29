@@ -1,6 +1,5 @@
 //! The audio grid bridge: renders each scanline's latched-input events into
-//! the oversampled stereo sample grid the frontend drains
-//!.
+//! the oversampled stereo sample grid the frontend drains.
 
 use crate::audio;
 
@@ -8,7 +7,7 @@ use super::Machine;
 
 impl Machine {
     /// Drain the speaker samples accumulated since the last call (one per
-    /// scanline, i.e. lines-per-field × field-rate ≈ 15.7 kHz).
+    /// scanline, that is, lines-per-field × field-rate ≈ 15.7 kHz).
     pub fn take_audio(&mut self) -> std::vec::Drain<'_, [f32; 2]> {
         self.audio_buffer.drain(..)
     }
@@ -24,7 +23,7 @@ impl Machine {
         self.config.video.lines_per_field() as f64 * self.config.video.field_rate_hz()
     }
 
-    /// Render the scanline that just executed to [`audio::OVERSAMPLE`] stereo
+    /// Render the most recently executed scanline to [`audio::OVERSAMPLE`] stereo
     /// grid samples, replaying latched bus events per slot (grid quantization).
     pub(super) fn flush_line_audio(&mut self) {
         let line_start = self.audio_line_start;
