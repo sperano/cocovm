@@ -7,21 +7,25 @@ use super::{Entry, ILLEGAL, Mode, e};
 
 // ---- Read-modify-write nibble tables ------------------------------------
 // Low nibble of opcodes 0x00-0x0F/0x40-0x4F/0x50-0x5F/0x60-0x6F/0x70-0x7F
-// selects the op (mirrors `MC6809::rmw_apply`). Nibbles 1,2,5,B,E are
-// illegal on real hardware. ASL/LSL are the same opcode; the PDF's primary
-// entry (and the one used throughout this crate/tests) is ASL — see the
+// selects the op (mirrors `MC6809::rmw_apply`). Nibbles 1,2,5,B are
+// undocumented MC6809 aliases; nibble E is XCLR for accumulator forms and
+// JMP for memory forms. The aliases follow the measured behavior documented
+// by the 6809 Decoder project:
+// https://github.com/hoglet67/6809Decoder/wiki/Undocumented-6809-Behaviours
+// ASL/LSL are the same opcode; the PDF's primary entry (and the one used
+// throughout this crate/tests) is ASL — see the
 // "ASL vs LSL" note in the crate-level task report.
 const RMW_MEM: [&str; 16] = [
-    "NEG", "???", "???", "COM", "LSR", "???", "ROR", "ASR", "ASL", "ROL", "DEC", "???", "INC",
+    "NEG", "NEG", "XNC", "COM", "LSR", "LSR", "ROR", "ASR", "ASL", "ROL", "DEC", "XDEC", "INC",
     "TST", "???", "CLR",
 ];
 const RMW_A: [&str; 16] = [
-    "NEGA", "???", "???", "COMA", "LSRA", "???", "RORA", "ASRA", "ASLA", "ROLA", "DECA", "???",
-    "INCA", "TSTA", "???", "CLRA",
+    "NEGA", "NEGA", "XNCA", "COMA", "LSRA", "LSRA", "RORA", "ASRA", "ASLA", "ROLA", "DECA",
+    "XDECA", "INCA", "TSTA", "XCLRA", "CLRA",
 ];
 const RMW_B: [&str; 16] = [
-    "NEGB", "???", "???", "COMB", "LSRB", "???", "RORB", "ASRB", "ASLB", "ROLB", "DECB", "???",
-    "INCB", "TSTB", "???", "CLRB",
+    "NEGB", "NEGB", "XNCB", "COMB", "LSRB", "LSRB", "RORB", "ASRB", "ASLB", "ROLB", "DECB",
+    "XDECB", "INCB", "TSTB", "XCLRB", "CLRB",
 ];
 
 fn rmw_entry(nibble: u8, table: &[&'static str; 16], mode: Mode) -> Entry {

@@ -6,7 +6,9 @@
 use crate::*;
 
 mod frame;
+pub(crate) use frame::background_repaint_delay;
 mod input;
+pub(crate) use input::has_keyboard_focus;
 
 pub(crate) struct CocoApp {
     pub(crate) machine: Machine,
@@ -46,6 +48,9 @@ pub(crate) struct CocoApp {
     /// emulation speed from the host refresh rate (120 Hz displays no longer
     /// run the CoCo at double speed).
     pub(crate) field_debt: f64,
+    /// Fields run ahead of the wall clock on entering the background throttle,
+    /// so the audio ring holds a cushion across each gap; owed back on return.
+    pub(crate) audio_cushion_fields: usize,
     /// Per-port joystick source selection (mouse/gamepad/keys) and gamepad state.
     pub(crate) joysticks: JoystickInputs,
     /// cpal output stream, resampler, and volume/mute state (`audio.rs`).
@@ -252,6 +257,7 @@ impl CocoApp {
             tv_frame: 0,
             last_update: None,
             field_debt: 0.0,
+            audio_cushion_fields: 0,
             total_runtime: std::time::Duration::ZERO,
             joysticks: JoystickInputs::new(),
             display_rect: egui::Rect::NOTHING,
@@ -347,7 +353,8 @@ impl eframe::App for CocoApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.window_ui(ctx);
+        let focused = ctx.input(|i| i.viewport().focused);
+        self.window_ui(ctx, background_repaint_delay([focused]));
     }
 }
 

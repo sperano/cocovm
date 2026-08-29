@@ -73,6 +73,35 @@ fn axis_from_keys_centers_on_conflict_or_no_input() {
     assert_eq!(axis_from_keys(false, true), AXIS_MAX);
 }
 
+fn key_state_frame(ctx: &egui::Context, raw: egui::RawInput) -> KeyState {
+    let mut state = KeyState::default();
+    let _ = ctx.run(raw, |ctx| state = JoystickInputs::key_state(ctx));
+    state
+}
+
+#[test]
+fn key_state_centers_while_viewport_is_unfocused() {
+    let ctx = egui::Context::default();
+    let pressed = egui::RawInput {
+        events: vec![egui::Event::Key {
+            key: egui::Key::ArrowLeft,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::default(),
+        }],
+        ..Default::default()
+    };
+    assert!(key_state_frame(&ctx, pressed).left);
+
+    // Keep egui's held-key state but remove focus, modeling a swallowed release event.
+    let unfocused = egui::RawInput {
+        focused: false,
+        ..Default::default()
+    };
+    assert!(!keys_in_use(key_state_frame(&ctx, unfocused)));
+}
+
 #[test]
 fn joy_source_default_is_none() {
     assert_eq!(JoySource::default(), JoySource::None);

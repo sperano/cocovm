@@ -8,6 +8,8 @@
 
 use std::path::PathBuf;
 
+use coco_core::rtc::DistoRTCModel;
+
 use crate::machine_def::{self, CartridgeDTO, RS232EndpointDTO, SlotDTO};
 
 /// The form's Cartridge row. Not part of [`MachineConfig`] — the
@@ -28,8 +30,9 @@ pub enum CartridgeChoice {
     /// runs at power-up.
     ROMPak { path: PathBuf, autostart: bool },
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
-    /// a VHD boot; for RTC + floppies use an MPI slot.
-    RTC,
+    /// a VHD boot; for RTC + floppies use an MPI slot. The payload picks
+    /// which Disto chip fit is installed.
+    RTC(DistoRTCModel),
     /// Deluxe RS-232 Pak plugged straight into the port. The endpoint pick
     /// itself lives in [`super::MachineForm::rs232_endpoint`], a sibling
     /// field — the same relationship [`Self::MPI`] has with `mpi_slots`.
@@ -71,7 +74,7 @@ pub enum SlotChoice {
         autostart: bool,
     },
     /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
-    RTC,
+    RTC(DistoRTCModel),
     /// Deluxe RS-232 Pak in this slot (see [`CartridgeChoice::RS232`]); at
     /// most one across the whole loadout — two would fight over the shared
     /// ACIA at `$FF68`, reachable from any slot regardless of switch/`$FF7F`
@@ -111,7 +114,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::Empty => "Empty".to_string(),
         SlotChoice::FD502 => "FD-502".to_string(),
         SlotChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
-        SlotChoice::RTC => "Disto RTC".to_string(),
+        SlotChoice::RTC(model) => rtc_label(*model),
         SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
         SlotChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
         SlotChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
@@ -124,7 +127,7 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::None => "None".to_string(),
         CartridgeChoice::FD502 => "FD-502".to_string(),
         CartridgeChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
-        CartridgeChoice::RTC => "Disto RTC".to_string(),
+        CartridgeChoice::RTC(model) => rtc_label(*model),
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
         CartridgeChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
         CartridgeChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
@@ -139,6 +142,11 @@ fn cart_file_name(path: &std::path::Path, fallback: &str) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+/// Combo text for a Disto RTC pick: "Disto RTC (4-N-1)"/"Disto RTC (2-N-1)".
+pub(super) fn rtc_label(model: DistoRTCModel) -> String {
+    format!("Disto RTC ({})", model.label())
 }
 
 /// The extensions every cartridge-image file dialog (ROM Pak, Games Master,
@@ -210,7 +218,7 @@ impl From<&CartridgeDTO> for CartridgeChoice {
                 path: PathBuf::from(path),
                 autostart: *autostart,
             },
-            CartridgeDTO::RTC => CartridgeChoice::RTC,
+            CartridgeDTO::RTC { model } => CartridgeChoice::RTC((*model).into()),
             CartridgeDTO::RS232 { .. } => CartridgeChoice::RS232,
             CartridgeDTO::GamesMaster { path, autostart } => CartridgeChoice::GamesMaster {
                 path: PathBuf::from(path),
@@ -232,7 +240,9 @@ impl From<&SlotChoice> for SlotDTO {
                 path: path.display().to_string(),
                 autostart: *autostart,
             },
-            SlotChoice::RTC => SlotDTO::RTC,
+            SlotChoice::RTC(model) => SlotDTO::RTC {
+                model: (*model).into(),
+            },
             SlotChoice::RS232(endpoint) => SlotDTO::RS232 {
                 endpoint: endpoint.into(),
             },
@@ -257,7 +267,7 @@ impl From<&SlotDTO> for SlotChoice {
                 path: PathBuf::from(path),
                 autostart: *autostart,
             },
-            SlotDTO::RTC => SlotChoice::RTC,
+            SlotDTO::RTC { model } => SlotChoice::RTC((*model).into()),
             SlotDTO::RS232 { endpoint } => SlotChoice::RS232(endpoint.into()),
             SlotDTO::GamesMaster { path, autostart } => SlotChoice::GamesMaster {
                 path: PathBuf::from(path),
@@ -326,7 +336,9 @@ pub(crate) fn pack_peripherals(
             path: path.display().to_string(),
             autostart: *autostart,
         },
-        CartridgeChoice::RTC => CartridgeDTO::RTC,
+        CartridgeChoice::RTC(model) => CartridgeDTO::RTC {
+            model: (*model).into(),
+        },
         CartridgeChoice::RS232 => CartridgeDTO::RS232 {
             endpoint: rs232_endpoint.into(),
         },

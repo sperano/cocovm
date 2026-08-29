@@ -225,9 +225,9 @@ impl JoystickInputs {
     }
 
     fn key_state(ctx: &egui::Context) -> KeyState {
-        // wants_keyboard_input() means some widget holds focus; keeps typed arrows/Z/X from
-        // also nudging the stick.
-        if ctx.wants_keyboard_input() {
+        // A focused widget owns typed arrows/Z/X. An unfocused viewport cannot reliably
+        // deliver releases, so it must not retain or apply key-driven joystick state.
+        if ctx.wants_keyboard_input() || !crate::app::has_keyboard_focus(ctx) {
             return KeyState::default();
         }
         ctx.input(|i| KeyState {

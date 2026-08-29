@@ -5,11 +5,12 @@
 
 use std::path::PathBuf;
 
+use coco_core::rtc::DistoRTCModel;
 use eframe::egui;
 
 use super::cartridge::{
     CartridgeChoice, RS232EndpointChoice, SlotChoice, cartridge_label, games_master,
-    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, rompak, slot_games_master,
+    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, rompak, rtc_label, slot_games_master,
     slot_label, slot_rompak,
 };
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
@@ -25,7 +26,7 @@ pub(super) fn drives_available(
         CartridgeChoice::MPI => mpi_slots.contains(&SlotChoice::FD502),
         CartridgeChoice::None
         | CartridgeChoice::ROMPak { .. }
-        | CartridgeChoice::RTC
+        | CartridgeChoice::RTC(_)
         | CartridgeChoice::RS232
         | CartridgeChoice::GamesMaster { .. }
         | CartridgeChoice::Orch90(_)
@@ -77,7 +78,7 @@ pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: Car
             sub_form_row(ui, |ui| autostart_row(ui, autostart));
         }
         CartridgeChoice::None
-        | CartridgeChoice::RTC
+        | CartridgeChoice::RTC(_)
         | CartridgeChoice::Orch90(_)
         | CartridgeChoice::SoundSpeech => {}
     }
@@ -243,7 +244,7 @@ fn image_combo_item(
     });
 }
 
-/// Release `kind` from every slot — the FD-502/RTC's one-max rule
+/// Release `kind` from every slot — the FD-502's one-max rule
 /// ([`SlotChoice`]'s doc) before a slot claims it.
 fn release_slot(mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT], kind: SlotChoice) {
     release_slot_matching(mpi_slots, |other| *other == kind);
@@ -263,6 +264,41 @@ fn release_slot_matching(
         }
     }
     released
+}
+
+/// Every Disto RTC chip fit, in the order its combo entries appear.
+const RTC_MODELS: [DistoRTCModel; 2] = [DistoRTCModel::FourInOne, DistoRTCModel::TwoInOne];
+
+/// The Cartridge combo's two Disto RTC entries ("Disto RTC (4-N-1)"/"(2-N-1)").
+fn cartridge_rtc_combo_items(ui: &mut egui::Ui, cartridge: &mut CartridgeChoice) {
+    for model in RTC_MODELS {
+        combo_item(
+            ui,
+            &rtc_label(model),
+            *cartridge == CartridgeChoice::RTC(model),
+            || *cartridge = CartridgeChoice::RTC(model),
+        );
+    }
+}
+
+/// The Slot combo's two Disto RTC entries; claiming either releases any RTC of either
+/// model already assigned to another slot (one clock max — [`SlotChoice`]'s doc).
+fn slot_rtc_combo_items(
+    ui: &mut egui::Ui,
+    mpi_slots: &mut [SlotChoice; crate::MPI_SLOT_COUNT],
+    slot: usize,
+) {
+    for model in RTC_MODELS {
+        combo_item(
+            ui,
+            &rtc_label(model),
+            mpi_slots[slot] == SlotChoice::RTC(model),
+            || {
+                release_slot_matching(mpi_slots, |s| matches!(s, SlotChoice::RTC(_)));
+                mpi_slots[slot] = SlotChoice::RTC(model);
+            },
+        );
+    }
 }
 
 /// The Cartridge-row combo. Every image-backed pick ("ROM Pak…", "Games
@@ -285,9 +321,7 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 rom_pak_file_dialog,
                 |path| *cartridge = rompak(path),
             );
-            combo_item(ui, "Disto RTC", *cartridge == CartridgeChoice::RTC, || {
-                *cartridge = CartridgeChoice::RTC
-            });
+            cartridge_rtc_combo_items(ui, cartridge);
             combo_item(
                 ui,
                 "RS-232 Pak",
@@ -352,10 +386,7 @@ fn slot_combo(
                 rom_pak_file_dialog,
                 |path| mpi_slots[slot] = slot_rompak(path),
             );
-            combo_item(ui, "Disto RTC", mpi_slots[slot] == SlotChoice::RTC, || {
-                release_slot(mpi_slots, SlotChoice::RTC);
-                mpi_slots[slot] = SlotChoice::RTC;
-            });
+            slot_rtc_combo_items(ui, mpi_slots, slot);
             combo_item(
                 ui,
                 "RS-232 Pak",

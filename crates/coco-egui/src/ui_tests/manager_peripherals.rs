@@ -74,10 +74,15 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    select_combo_at(&mut harness, "None", 1, "Disto RTC");
+    select_combo_at(&mut harness, "None", 1, "Disto RTC (4-N-1)");
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::RTC);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::RTC {
+            model: machine_def::RTCModelDTO::FourInOne,
+        }
+    );
     let contents = fs::read_to_string(dir.path().join("coco-3.toml")).unwrap();
     assert!(
         contents.contains("kind = \"rtc\""),
@@ -87,14 +92,16 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     // Slotted, on a second machine: MPI cartridge with slot 1 holding the RTC.
     click_containing(&mut harness, "New");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
-    select_combo_at(&mut harness, "Empty", 0, "Disto RTC");
+    select_combo_at(&mut harness, "Empty", 0, "Disto RTC (4-N-1)");
     assert_eq!(harness.state().entries.len(), 2);
     let def = &harness.state().entries[1].def;
     assert_eq!(
         def.peripherals.cartridge,
         machine_def::CartridgeDTO::MPI {
             slots: [
-                machine_def::SlotDTO::RTC,
+                machine_def::SlotDTO::RTC {
+                    model: machine_def::RTCModelDTO::FourInOne,
+                },
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::Empty,

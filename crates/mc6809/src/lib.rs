@@ -8,8 +8,9 @@
 //! documented instruction including the `$10`/`$11` prefix pages, all
 //! addressing modes, and the interrupt set (`SWI`/`SWI2`/`SWI3`, `RTI`,
 //! `CWAI`, `SYNC`, plus external NMI/IRQ/FIRQ delivery) — with
-//! per-instruction cycle counts ([`MC6809::step`]). Undecoded illegal
-//! opcodes execute as 2-cycle NOPs.
+//! per-instruction cycle counts ([`MC6809::step`]). Undecoded illegal opcodes
+//! execute as 2-cycle NOPs; the MC6809's incompletely decoded RMW aliases are
+//! modeled according to measured hardware behavior.
 
 #![forbid(unsafe_code)]
 

@@ -1,13 +1,75 @@
 //! The per-frame loop: crediting wall-clock time to emulated fields,
 //! running them, and getting the resulting framebuffer onto the screen.
 
+use std::time::Duration;
+
 use crate::*;
+
+/// `Some(BACKGROUND_REPAINT_INTERVAL)` when every viewport reports unfocused;
+/// `None` (full rate) if any is focused, unknown (`None`), or there are none.
+pub(crate) fn background_repaint_delay(
+    focus: impl IntoIterator<Item = Option<bool>>,
+) -> Option<Duration> {
+    let mut focus = focus.into_iter().peekable();
+    focus.peek()?;
+    let any_focused = focus.any(|f| f.unwrap_or(true));
+    (!any_focused).then_some(BACKGROUND_REPAINT_INTERVAL)
+}
 
 impl CocoApp {
     /// Power-cycle the core and drop the host-side audio it already emitted.
     pub(crate) fn power_cycle(&mut self) {
         self.machine.power_cycle();
+        self.reset_audio();
+    }
+
+    /// Drop queued host audio and the cushion accounting that went with it.
+    pub(crate) fn reset_audio(&mut self) {
         self.audio.reset();
+        self.audio_cushion_fields = 0;
+    }
+
+    /// Entering the throttle runs one interval of fields ahead so the ring never
+    /// drains between wake-ups; leaving it owes those fields back, so emulation
+    /// idles while the cushion plays out and realigns with the wall clock.
+    fn adjust_audio_cushion(&mut self, repaint_delay: Option<Duration>) {
+        match repaint_delay {
+            Some(delay) if self.audio_cushion_fields == 0 => {
+                let fields = (delay.as_secs_f64() * self.machine.config.video.field_rate_hz())
+                    .ceil() as usize;
+                self.run_fields(fields);
+                self.audio_cushion_fields = fields;
+            }
+            None if self.audio_cushion_fields > 0 => {
+                self.field_debt -= self.audio_cushion_fields as f64;
+                self.audio_cushion_fields = 0;
+            }
+            _ => {}
+        }
+    }
+
+    /// The cushion adjustment, then the fields the wall clock owes — unless a
+    /// breakpoint inside the cushion run already paused the machine.
+    fn run_emulation_fields(&mut self, repaint_delay: Option<Duration>) {
+        self.adjust_audio_cushion(repaint_delay);
+        if self.running {
+            let due = self.fields_due();
+            self.run_fields(due);
+        }
+    }
+
+    /// Run `n` fields through the debugger, stopping (and clearing `running`)
+    /// on a breakpoint/watchpoint.
+    fn run_fields(&mut self, n: usize) {
+        for _ in 0..n {
+            if self.type_ahead.is_active() {
+                self.type_ahead.advance(&mut self.machine.bus.keyboard);
+            }
+            if !self.debugger.run_field(&mut self.machine) {
+                self.running = false;
+                break;
+            }
+        }
     }
 
     /// Emulated fields owed for this update, from wall-clock time at the machine's
@@ -30,21 +92,13 @@ impl CocoApp {
 
     /// Advance emulation for one host frame: input, joysticks, the field loop,
     /// audio, and the framebuffer upload. Runs before any chrome is drawn.
-    pub(crate) fn step_emulation(&mut self, ctx: &egui::Context) {
+    /// `repaint_delay` is the caller's [`background_repaint_delay`] decision.
+    pub(crate) fn step_emulation(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
         if self.running {
-            // Routed through the debugger so an enabled breakpoint/watchpoint pauses cleanly.
-            for _ in 0..self.fields_due() {
-                if self.type_ahead.is_active() {
-                    self.type_ahead.advance(&mut self.machine.bus.keyboard);
-                }
-                if !self.debugger.run_field(&mut self.machine) {
-                    self.running = false;
-                    break;
-                }
-            }
+            self.run_emulation_fields(repaint_delay);
             // Only the save half runs here — re-finalizing would fold a same-field
             // capture into the already-landed recording, discarding its leader.
             if self.machine.bus.cassette.take_recording_landed()
@@ -55,11 +109,15 @@ impl CocoApp {
             let sample_rate = self.machine.audio_sample_rate();
             self.audio
                 .push_samples(self.machine.take_audio(), sample_rate);
-            ctx.request_repaint();
+            match repaint_delay {
+                Some(delay) => ctx.request_repaint_after(delay),
+                None => ctx.request_repaint(),
+            }
         } else {
             self.last_update = None;
             // Drop fields owed while paused, so resuming doesn't instantly catch up.
             self.field_debt = 0.0;
+            self.audio_cushion_fields = 0;
         }
 
         self.upload_framebuffer_texture(ctx);
@@ -121,11 +179,15 @@ impl CocoApp {
     /// The full app window for one frame: emulation step, every menu/toolbar/
     /// dialog, then the display. `pub(crate)` so the manager can call it
     /// directly on a VM it owns.
-    pub(crate) fn window_ui(&mut self, ctx: &egui::Context) {
-        self.step_emulation(ctx);
+    pub(crate) fn window_ui(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
+        self.step_emulation(ctx, repaint_delay);
         self.draw_chrome(ctx);
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
             .show(ctx, |ui| self.draw_display(ui));
     }
 }
+
+#[cfg(test)]
+#[path = "frame_test.rs"]
+mod tests;

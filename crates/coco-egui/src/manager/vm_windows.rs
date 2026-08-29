@@ -34,6 +34,10 @@ impl ManagerApp {
         // Indices suspended this frame, for `focus_first_failed_row` later
         // to focus the first failure.
         let mut suspends: Vec<usize> = Vec::new();
+        // One app-wide decision: every VM viewport repaints the manager anyway.
+        let repaint_delay = ctx.input(|i| {
+            crate::app::background_repaint_delay(i.raw.viewports.values().map(|v| v.focused))
+        });
         for i in 0..self.entries.len() {
             if self.entries[i].vm.is_none() {
                 continue;
@@ -58,7 +62,7 @@ impl ManagerApp {
                     if suspended {
                         vm.upload_framebuffer_texture(child_ctx);
                     } else {
-                        vm.step_emulation(child_ctx);
+                        vm.step_emulation(child_ctx, repaint_delay);
                     }
                     let mut open = true;
                     // Capped at EMBEDDED_FALLBACK_SIZE, not the native
@@ -88,7 +92,7 @@ impl ManagerApp {
                         close_requested = true;
                     }
                 } else {
-                    vm.window_ui(child_ctx);
+                    vm.window_ui(child_ctx, repaint_delay);
                     if child_ctx.input(|i| i.viewport().close_requested()) {
                         close_requested = true;
                     }
