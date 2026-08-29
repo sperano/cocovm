@@ -23,8 +23,8 @@ use crate::*;
 use super::harness::*;
 
 /// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the feature-gated
-/// Debug tile. Start stays permanently disabled (a chrome-bearing window only exists while
-/// Running).
+/// Debug tile. While Running, Start is the one disabled tile (it only resumes a
+/// suspended machine).
 #[test]
 fn toolbar_shows_start_disabled_and_others_live() {
     let mut harness = boot_harness();
@@ -33,9 +33,7 @@ fn toolbar_shows_start_disabled_and_others_live() {
     let expectations = [
         (
             "Start",
-            Some(
-                "Start is always disabled in the VM window: a chrome-bearing window only exists while Running",
-            ),
+            Some("Start is disabled while Running: it only resumes a suspended machine"),
         ),
         ("Suspend", None),
         ("Stop", None),
@@ -64,6 +62,60 @@ fn toolbar_shows_start_disabled_and_others_live() {
     assert!(
         harness.state().running,
         "the toolbar's Reset tile must leave the machine on"
+    );
+}
+
+/// A suspended window keeps its chrome, read-only: Start becomes the Resume
+/// control and requests it, Suspend/Reset are off, the status bar says so.
+#[test]
+fn suspended_window_keeps_chrome_with_start_as_resume() {
+    let mut harness = boot_harness();
+    harness.state_mut().suspended = true;
+    harness.step();
+
+    assert!(label_exists(&harness, "Suspended"));
+    assert!(
+        harness
+            .get_by_label("Machine")
+            .accesskit_node()
+            .is_disabled(),
+        "the menu bar must be inert while suspended"
+    );
+    for (label, enabled) in [
+        ("Start", true),
+        ("Suspend", false),
+        ("Stop", true),
+        ("Reset", false),
+    ] {
+        let is_disabled = harness.get_by_label(label).accesskit_node().is_disabled();
+        assert_eq!(
+            !is_disabled, enabled,
+            "{label} enabled state while suspended"
+        );
+    }
+    #[cfg(feature = "debug-ui")]
+    assert!(harness.get_by_label("Debug").accesskit_node().is_disabled());
+
+    click(&mut harness, "Start");
+    assert!(
+        harness.state().pending_resume,
+        "Start on a suspended window must request a resume"
+    );
+}
+
+/// `ui.disable()` can't reach a menu that is already open, so the first
+/// suspended frame closes whatever popup the running window left up.
+#[test]
+fn suspending_closes_an_open_menu() {
+    let mut harness = boot_harness();
+    click(&mut harness, "Machine");
+    assert!(egui::Popup::is_any_open(&harness.ctx));
+
+    harness.state_mut().suspended = true;
+    harness.step();
+    assert!(
+        !egui::Popup::is_any_open(&harness.ctx),
+        "a menu left open must not survive into the suspended window"
     );
 }
 

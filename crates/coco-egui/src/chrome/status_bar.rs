@@ -2,14 +2,25 @@ use coco_core::joystick::{LEFT, RIGHT};
 
 use crate::*;
 
+/// Status-bar marker text of a suspended machine.
+const SUSPENDED_STATUS: &str = "Suspended";
+/// Hover text of that marker: what the window can still do.
+const SUSPENDED_STATUS_HOVER: &str =
+    "Frozen to disk — press Start to resume, or close the window to keep it suspended";
+
 impl CocoApp {
     /// The status bar: live readouts, plus the four entries that double as control menus.
     /// Height is pinned to [`STATUS_BAR_H`] to match what the window-sizing math reserves for it.
+    /// While suspended the readouts draw disabled (no popups) under a "Suspended" marker.
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar")
             .exact_height(STATUS_BAR_H)
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
+                    if self.suspended {
+                        self.suspended_status(ui);
+                        ui.disable();
+                    }
                     self.keyboard_status(ui);
                     self.display_status(ui);
                     self.tape_status(ui);
@@ -29,6 +40,13 @@ impl CocoApp {
                     self.runtime_status(ui);
                 });
             });
+    }
+
+    /// Leading "Suspended" marker of a frozen machine's status bar.
+    fn suspended_status(&self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new(SUSPENDED_STATUS).strong())
+            .on_hover_text(SUSPENDED_STATUS_HOVER);
+        ui.separator();
     }
 
     /// The keyboard entry: icon + mode label are one click target that opens the

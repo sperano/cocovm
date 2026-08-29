@@ -180,8 +180,32 @@ impl CocoApp {
     /// dialog, then the display. `pub(crate)` so the manager can call it
     /// directly on a VM it owns.
     pub(crate) fn window_ui(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
-        self.step_emulation(ctx, repaint_delay);
+        if self.suspended {
+            self.suspended_window_ui(ctx);
+        } else {
+            self.drew_suspended = false;
+            self.step_emulation(ctx, repaint_delay);
+            self.draw_chrome(ctx);
+            self.display_panel(ctx);
+        }
+    }
+
+    /// [`Self::window_ui`] while suspended: the frozen frame under the same
+    /// chrome, drawn read-only (`self.suspended`), with no input handling or
+    /// emulation step. On the first suspended frame any popup left open from
+    /// the running window is closed — only then, since immediate viewports
+    /// share popup memory with the manager window.
+    fn suspended_window_ui(&mut self, ctx: &egui::Context) {
+        if !self.drew_suspended {
+            egui::Popup::close_all(ctx);
+            self.drew_suspended = true;
+        }
+        self.upload_framebuffer_texture(ctx);
         self.draw_chrome(ctx);
+        self.display_panel(ctx);
+    }
+
+    fn display_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
             .show(ctx, |ui| self.draw_display(ui));

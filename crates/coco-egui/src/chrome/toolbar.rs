@@ -1,12 +1,21 @@
 use crate::*;
 
-/// Disabled-hover text for the Start tile — see [`CocoApp::toolbar_ui`]'s
-/// doc for why Start is unconditionally disabled here.
+/// Hover text for the Start tile, only enabled while suspended.
+const RESUME_HOVER: &str = "Resume this machine";
+/// Disabled-hover text for the Start tile while the machine runs.
 const START_DISABLED_HOVER: &str = "This machine is already running";
-/// Hover text for the Stop tile.
+/// Disabled-hover text for the Suspend tile while suspended.
+const SUSPEND_DISABLED_HOVER: &str = "This machine is already suspended";
+/// Hover text for the Stop tile while running.
 const STOP_HOVER: &str = "Shut down this machine — same as closing the window";
+/// Hover text for the Stop tile while suspended: closing only drops the
+/// window, the frozen state stays (the manager's Stop is what discards it).
+const STOP_SUSPENDED_HOVER: &str = "Close this window — the machine stays suspended";
 /// Hover text for the Reset tile.
 const RESET_HOVER: &str = "Press the reset button";
+/// Disabled-hover text for the Reset tile while suspended — resetting the
+/// live object would desync it from the frozen `.ccstate`.
+const RESET_DISABLED_HOVER: &str = "Resume the machine before resetting it";
 
 /// Debug tile glyph — U+1F41E lady beetle, verified present in egui's
 /// bundled NotoEmoji-Regular (monochrome, so it tints with the widget text
@@ -24,7 +33,10 @@ const DEBUG_HOVER: &str = "Open or close the debugger";
 impl CocoApp {
     /// The VM window's toolbar: the transport tiles (Start/Suspend/Stop/Reset) plus a
     /// VM-only Debug tile. Keyboard/aspect controls live in menus, so aren't duplicated here.
+    /// Start is only live while suspended (it resumes); Suspend, Reset and Debug only while
+    /// running; Stop always.
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
+        let controllable = !self.suspended;
         // Explicit margin, not the default: keeps this in sync with `crate::TOOLBAR_H`'s
         // window-sizing math.
         let frame = egui::Frame::side_top_panel(&ctx.style()).inner_margin(
@@ -36,12 +48,17 @@ impl CocoApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = BUTTON_GAP;
 
-                    // Start is always disabled here: this window only exists while already Running.
-                    let _ = toolbar_button(ui, PLAY_GLYPH, START_LABEL, false)
-                        .on_disabled_hover_text(START_DISABLED_HOVER);
+                    if toolbar_button(ui, PLAY_GLYPH, START_LABEL, self.suspended)
+                        .on_hover_text(RESUME_HOVER)
+                        .on_disabled_hover_text(START_DISABLED_HOVER)
+                        .clicked()
+                    {
+                        self.pending_resume = true;
+                    }
 
-                    if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, true)
+                    if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, controllable)
                         .on_hover_text(SUSPEND_HOVER)
+                        .on_disabled_hover_text(SUSPEND_DISABLED_HOVER)
                         .clicked()
                     {
                         self.pending_suspend = true;
@@ -49,15 +66,21 @@ impl CocoApp {
 
                     // Same path as the window's close box: routes through `stop_vm`, flushing
                     // dirty media.
+                    let stop_hover = if controllable {
+                        STOP_HOVER
+                    } else {
+                        STOP_SUSPENDED_HOVER
+                    };
                     if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, true)
-                        .on_hover_text(STOP_HOVER)
+                        .on_hover_text(stop_hover)
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
 
-                    if toolbar_button(ui, RESET_GLYPH, RESET_LABEL, true)
+                    if toolbar_button(ui, RESET_GLYPH, RESET_LABEL, controllable)
                         .on_hover_text(RESET_HOVER)
+                        .on_disabled_hover_text(RESET_DISABLED_HOVER)
                         .clicked()
                     {
                         self.machine.reset();
@@ -72,7 +95,7 @@ impl CocoApp {
                             "{DEBUG_HOVER} ({})",
                             ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)
                         );
-                        if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, true)
+                        if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, controllable)
                             .on_hover_text(debug_hover)
                             .clicked()
                         {

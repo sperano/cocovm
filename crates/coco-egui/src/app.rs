@@ -170,6 +170,20 @@ pub(crate) struct CocoApp {
     /// `.ccstate` → pause) is manager-owned
     /// (`manager::lifecycle::suspend_vm`).
     pub(crate) pending_suspend: bool,
+    /// [`Self::pending_suspend`]'s twin for the Start tile of a suspended
+    /// window: a request the manager turns into
+    /// `manager::lifecycle::resume_vm`.
+    pub(crate) pending_resume: bool,
+    /// Mirror of the manager's Suspended flag for this VM, set every frame
+    /// before the window draws (`manager::vm_windows`). While set the chrome
+    /// is a read-only view: nothing may change the machine, which would
+    /// silently diverge it from its frozen `.ccstate`.
+    pub(crate) suspended: bool,
+    /// Whether the last frame drew this window suspended — detects the
+    /// Running -> Suspended edge so `window_ui` can close any menu
+    /// or status popup still open from before (`ui.disable()` doesn't reach
+    /// an already-open popup).
+    pub(crate) drew_suspended: bool,
     /// Cumulative powered-on time across all of this machine's sessions,
     /// including the one running right now. Accumulated in
     /// [`Self::fields_due`] (`app/frame.rs`) from the same `MAX_FRAME_DT`-
@@ -285,6 +299,9 @@ impl CocoApp {
             toast: None,
             activity: StatusActivity::default(),
             pending_suspend: false,
+            pending_resume: false,
+            suspended: false,
+            drew_suspended: false,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path, cart_autostart);
