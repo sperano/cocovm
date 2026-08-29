@@ -3,13 +3,30 @@
 
 use crate::*;
 
+/// Whether the native viewport can deliver complete keyboard press/release pairs.
+/// Check both the retained focus flag and this frame's event so synthetic and
+/// backend-provided focus transitions follow the same path.
+pub(crate) fn has_keyboard_focus(ctx: &egui::Context) -> bool {
+    ctx.input(|input| {
+        input.focused
+            && !input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::WindowFocused(false)))
+    })
+}
+
 impl CocoApp {
     pub(crate) fn set_mode(&mut self, mode: KbMode) {
         if mode != self.kb_mode {
             self.kb_mode = mode;
-            self.machine.bus.keyboard.release_all();
-            self.type_ahead.clear();
+            self.release_keyboard_state();
         }
+    }
+
+    fn release_keyboard_state(&mut self) {
+        self.machine.bus.keyboard.release_all();
+        self.type_ahead.clear();
     }
 
     /// Queue a string as symbolic key taps (used by clipboard paste and, in symbolic
@@ -23,6 +40,14 @@ impl CocoApp {
     }
 
     pub(crate) fn handle_input(&mut self, ctx: &egui::Context) {
+        // A lost-focus frame can omit releases and retain stale modifiers. Keep this gate
+        // active until focus returns so neither positional input nor typeahead can reassert
+        // the matrix while the viewport is unfocused.
+        if !has_keyboard_focus(ctx) {
+            self.release_keyboard_state();
+            return;
+        }
+
         self.consume_app_shortcuts(ctx);
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
@@ -32,7 +57,7 @@ impl CocoApp {
         // A focused text widget (or Tab-focused button) must own the keyboard; releasing
         // the matrix also unsticks any key that was held when it grabbed focus.
         if ctx.wants_keyboard_input() {
-            self.machine.bus.keyboard.release_all();
+            self.release_keyboard_state();
             return;
         }
 

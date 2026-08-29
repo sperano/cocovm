@@ -8,6 +8,7 @@ use crate::*;
 mod frame;
 pub(crate) use frame::background_repaint_delay;
 mod input;
+pub(crate) use input::has_keyboard_focus;
 
 pub(crate) struct CocoApp {
     pub(crate) machine: Machine,

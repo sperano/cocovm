@@ -4,6 +4,9 @@
 use coco_core::ActiveRect;
 use eframe::egui;
 
+use crate::rom_load::load_default_rom;
+use crate::{AppParams, CocoApp, MachineConfig};
+
 use super::scale_active_rect;
 
 /// The CoCo 3 canvas dims (`raster::CANVAS_W`/`CANVAS_H`) the fixtures scale
@@ -70,4 +73,74 @@ fn crop_maps_only_the_visible_source_span_onto_the_display() {
     assert!((r.top() - EXPECTED_TOP).abs() < EPSILON);
     assert!((r.width() - EXPECTED_WIDTH).abs() < EPSILON);
     assert!((r.height() - EXPECTED_HEIGHT).abs() < EPSILON);
+}
+
+fn test_app() -> CocoApp {
+    let roms_dir = test_assets::roms_dir();
+    let (rom, source) = load_default_rom(coco_core::MachineVariant::Coco3, &roms_dir)
+        .expect("coco3.rom is required in the cocovm XDG data directory");
+    CocoApp::new(MachineConfig::default(), rom, source, AppParams::default())
+}
+
+fn run_input_frame(ctx: &egui::Context, app: &mut CocoApp, raw: egui::RawInput) {
+    let _ = ctx.run(raw, |ctx| app.handle_input(ctx));
+}
+
+fn key_event(key: egui::Key, pressed: bool) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::default(),
+    }
+}
+
+/// A lost-focus frame must release a positional key without receiving key-up,
+/// cancel typeahead, and keep a stale modifier released until focus returns.
+#[test]
+fn focus_loss_releases_keyboard_state_without_key_up() {
+    const ALL_COLUMNS_STROBED: u8 = 0x00;
+    const NO_KEYS_DOWN: u8 = 0xFF;
+
+    let ctx = egui::Context::default();
+    let mut app = test_app();
+    let pressed = egui::RawInput {
+        events: vec![key_event(egui::Key::A, true)],
+        ..Default::default()
+    };
+    run_input_frame(&ctx, &mut app, pressed);
+    assert_ne!(
+        app.machine.bus.keyboard.sense(ALL_COLUMNS_STROBED),
+        NO_KEYS_DOWN
+    );
+
+    app.enqueue_text("B");
+    let stale_modifiers = egui::Modifiers {
+        shift: true,
+        ..Default::default()
+    };
+    let lost_focus = egui::RawInput {
+        focused: false,
+        modifiers: stale_modifiers,
+        events: vec![egui::Event::WindowFocused(false)],
+        ..Default::default()
+    };
+    run_input_frame(&ctx, &mut app, lost_focus);
+    assert_eq!(
+        app.machine.bus.keyboard.sense(ALL_COLUMNS_STROBED),
+        NO_KEYS_DOWN
+    );
+    assert!(!app.type_ahead.is_active());
+
+    let still_unfocused = egui::RawInput {
+        focused: false,
+        modifiers: stale_modifiers,
+        ..Default::default()
+    };
+    run_input_frame(&ctx, &mut app, still_unfocused);
+    assert_eq!(
+        app.machine.bus.keyboard.sense(ALL_COLUMNS_STROBED),
+        NO_KEYS_DOWN
+    );
 }
