@@ -38,7 +38,11 @@ pub use peripherals_dto::{CartridgeDTO, PeripheralsDTO, RS232EndpointDTO, SlotDT
 // production writers go through `HardwareDTO::from_config`.
 #[cfg(test)]
 pub use dto::DisplayDTO;
+// Only tests name the RTC model DTO directly — production code reaches it through
+// `CartridgeDTO::RTC`/`SlotDTO::RTC`'s `model` field.
 pub use io::{load_all, save};
+#[cfg(test)]
+pub use peripherals_dto::RTCModelDTO;
 
 /// Schema version this build writes, and the newest it accepts on load.
 /// Bump only on a breaking change to the TOML shape.
