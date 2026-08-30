@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-08-30
+
+### Added
+- MCP endpoint: the app serves an MCP server over HTTP at
+  `http://127.0.0.1:6809/mcp` so an AI agent can drive a running VM —
+  list/start VMs, read the screen as text or a PNG screenshot, type text,
+  press key chords, move the joystick, insert/eject disks, reset, pause,
+  wait, peek and poke memory. Register with
+  `claude mcp add --transport http cocovm http://127.0.0.1:6809/mcp`.
+  `--control-port` / `COCOVM_CONTROL_PORT` change the port; `0` disables it.
+- Disto RTC: the 2-N-1 model (OKI MSM5832) alongside the 4-N-1, so NitrOS-9's
+  `clock2_disto2` driver reads the correct date. Machine files take
+  `model = "4n1" | "2n1"` on the `rtc` peripheral; the New dialog offers both.
+- CPU: the MC6809's undocumented read-modify-write opcode aliases (including
+  the XCLR accumulator behavior) execute and disassemble as on real silicon.
+
+### Changed
+- Suspended VMs keep their menu bar, toolbar and status bar (read-only, with
+  a "Suspended" marker); Start resumes the machine, Stop closes the window.
+- While no cocovm window is focused, redraws drop to ~10 Hz; emulation and
+  audio continue in real time, and a short audio cushion prevents warble.
+
+### Fixed
+- Keys, modifiers and key-driven joystick input are released when a VM
+  window loses focus, so nothing stays stuck down after switching apps.
+- Sound: the speaker mux holds its level while sound is disabled and
+  crossfades source changes, removing the hum in Sokoban and similar games.
+
 ## [0.7.2] - 2026-08-28
 
 ### Changed
