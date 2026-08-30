@@ -21,6 +21,7 @@ mod app;
 mod audio;
 mod chrome;
 mod cli;
+mod control;
 mod debugger;
 mod defaults;
 mod display;

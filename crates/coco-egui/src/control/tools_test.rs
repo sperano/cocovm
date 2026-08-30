@@ -1,10 +1,4 @@
-use std::io;
-
 use super::*;
-use crate::backend::MockBackend;
-use crate::jsonrpc::INVALID_PARAMS;
-
-const PORT: u16 = 6809;
 
 fn call_params(name: &str, arguments: Value) -> Value {
     json!({"name": name, "arguments": arguments})
@@ -13,39 +7,30 @@ fn call_params(name: &str, arguments: Value) -> Value {
 #[test]
 fn missing_required_arg_is_invalid_params() {
     let mut mock = MockBackend::new(vec![]);
-    let err = call(&mut mock, PORT, call_params("start_vm", json!({}))).unwrap_err();
+    let err = call(&mut mock, call_params("start_vm", json!({}))).unwrap_err();
     assert_eq!(err.code, INVALID_PARAMS);
 }
 
 #[test]
 fn unknown_tool_is_invalid_params() {
     let mut mock = MockBackend::new(vec![]);
-    let err = call(&mut mock, PORT, call_params("no_such_tool", json!({}))).unwrap_err();
+    let err = call(&mut mock, call_params("no_such_tool", json!({}))).unwrap_err();
     assert_eq!(err.code, INVALID_PARAMS);
 }
 
 #[test]
 fn omitted_arguments_defaults_to_empty_object() {
     let mut mock = MockBackend::new(vec![Ok(Reply::Vms(vec![]))]);
-    let result = call(&mut mock, PORT, json!({"name": "list_vms"})).unwrap();
+    let result = call(&mut mock, json!({"name": "list_vms"})).unwrap();
     assert_eq!(result["isError"], json!(false));
 }
 
 #[test]
-fn backend_remote_error_is_is_error_true() {
-    let mut mock = MockBackend::new(vec![Err(ControlError::Remote("no such VM: coco3".into()))]);
-    let result = call(&mut mock, PORT, call_params("list_vms", json!({}))).unwrap();
+fn backend_error_is_is_error_true() {
+    let mut mock = MockBackend::new(vec![Err("no such VM: coco3".into())]);
+    let result = call(&mut mock, call_params("list_vms", json!({}))).unwrap();
     assert_eq!(result["isError"], json!(true));
     assert_eq!(result["content"][0]["text"], json!("no such VM: coco3"));
-}
-
-#[test]
-fn backend_io_error_explains_the_app_is_not_running() {
-    let mut mock = MockBackend::new(vec![Err(ControlError::Io(io::Error::other("refused")))]);
-    let result = call(&mut mock, PORT, call_params("list_vms", json!({}))).unwrap();
-    assert_eq!(result["isError"], json!(true));
-    let text = result["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("127.0.0.1:6809"));
 }
 
 #[test]
@@ -55,7 +40,7 @@ fn screenshot_returns_an_image_block() {
         width: 640,
         height: 240,
     })]);
-    let result = call(&mut mock, PORT, call_params("screenshot", json!({}))).unwrap();
+    let result = call(&mut mock, call_params("screenshot", json!({}))).unwrap();
     assert_eq!(result["isError"], json!(false));
     let content = result["content"].as_array().unwrap();
     assert_eq!(content[0]["type"], json!("image"));
@@ -71,7 +56,6 @@ fn peek_formats_a_hex_dump_sixteen_bytes_per_line() {
     let mut mock = MockBackend::new(vec![Ok(Reply::Bytes(bytes))]);
     let result = call(
         &mut mock,
-        PORT,
         call_params("peek", json!({"addr": 0x1000, "len": 20})),
     )
     .unwrap();
@@ -131,8 +115,8 @@ fn every_listed_tool_round_trips_through_the_mock() {
 
     for (name, args, reply) in cases {
         let mut mock = MockBackend::new(vec![Ok(reply)]);
-        let result = call(&mut mock, PORT, call_params(name, args))
-            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let result =
+            call(&mut mock, call_params(name, args)).unwrap_or_else(|e| panic!("{name}: {e:?}"));
         assert_eq!(
             result["isError"],
             json!(false),

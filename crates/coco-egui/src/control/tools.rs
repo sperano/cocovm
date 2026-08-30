@@ -1,16 +1,22 @@
-//! Maps `tools/list` and `tools/call` onto the control protocol.
+//! Maps `tools/list` and `tools/call` onto the [`protocol`] request/reply
+//! types.
 
-use coco_control::{Action, ControlError, Reply, Request, Stick, VmInfo};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use crate::backend::{Backend, unreachable_message};
-use crate::jsonrpc::{INVALID_PARAMS, RpcError};
-use crate::tool_defs;
+use super::jsonrpc::{INVALID_PARAMS, RpcError};
+use super::protocol::{Action, Reply, Request, Stick, VmInfo};
+use super::tool_defs;
 
 /// Bytes shown per line of a [`peek`] hex dump.
 const HEX_DUMP_WIDTH: usize = 16;
+
+/// Sends one request and waits for its reply. Exists so `tools::call` can be
+/// tested against a mock instead of the real frame-loop queue.
+pub trait Backend {
+    fn call(&mut self, req: &Request) -> Result<Reply, String>;
+}
 
 pub fn list() -> Value {
     json!({"tools": tool_defs::definitions()})
@@ -25,7 +31,7 @@ struct CallParams {
 
 /// Dispatch one `tools/call`. `Err` only for malformed params (unknown tool,
 /// wrong argument shape); a tool or backend failure is `Ok` with `isError`.
-pub fn call(backend: &mut dyn Backend, port: u16, params: Value) -> Result<Value, RpcError> {
+pub fn call(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError> {
     let call_params: CallParams = serde_json::from_value(params)
         .map_err(|e| RpcError::new(INVALID_PARAMS, format!("invalid tools/call params: {e}")))?;
     let args = match call_params.arguments {
@@ -33,20 +39,20 @@ pub fn call(backend: &mut dyn Backend, port: u16, params: Value) -> Result<Value
         other => other,
     };
     match call_params.name.as_str() {
-        "list_vms" => dispatch_list_vms(backend, port, args),
-        "start_vm" => dispatch_start_vm(backend, port, args),
-        "screen_text" => dispatch_screen_text(backend, port, args),
-        "screenshot" => dispatch_screenshot(backend, port, args),
-        "type_text" => dispatch_type_text(backend, port, args),
-        "press_keys" => dispatch_press_keys(backend, port, args),
-        "joystick" => dispatch_joystick(backend, port, args),
-        "insert_disk" => dispatch_insert_disk(backend, port, args),
-        "eject_disk" => dispatch_eject_disk(backend, port, args),
-        "reset" => dispatch_reset(backend, port, args),
-        "set_running" => dispatch_set_running(backend, port, args),
-        "wait" => dispatch_wait(backend, port, args),
-        "peek" => dispatch_peek(backend, port, args),
-        "poke" => dispatch_poke(backend, port, args),
+        "list_vms" => dispatch_list_vms(backend, args),
+        "start_vm" => dispatch_start_vm(backend, args),
+        "screen_text" => dispatch_screen_text(backend, args),
+        "screenshot" => dispatch_screenshot(backend, args),
+        "type_text" => dispatch_type_text(backend, args),
+        "press_keys" => dispatch_press_keys(backend, args),
+        "joystick" => dispatch_joystick(backend, args),
+        "insert_disk" => dispatch_insert_disk(backend, args),
+        "eject_disk" => dispatch_eject_disk(backend, args),
+        "reset" => dispatch_reset(backend, args),
+        "set_running" => dispatch_set_running(backend, args),
+        "wait" => dispatch_wait(backend, args),
+        "peek" => dispatch_peek(backend, args),
+        "poke" => dispatch_poke(backend, args),
         other => Err(RpcError::new(
             INVALID_PARAMS,
             format!("unknown tool: {other}"),
@@ -64,14 +70,13 @@ fn parse_args<T: DeserializeOwned>(args: Value) -> Result<T, RpcError> {
 /// `isError` text block, and an unexpected `Reply` variant does too.
 fn finish(
     backend: &mut dyn Backend,
-    port: u16,
     req: Request,
     on_ok: impl FnOnce(Reply) -> Option<Value>,
 ) -> Value {
     match backend.call(&req) {
         Ok(reply) => on_ok(reply)
             .unwrap_or_else(|| error_result("cocovm returned an unexpected reply".into())),
-        Err(e) => error_result(error_text(e, port)),
+        Err(msg) => error_result(msg),
     }
 }
 
@@ -85,14 +90,6 @@ fn error_result(text: String) -> Value {
 
 fn done(reply: Reply, message: &str) -> Option<Value> {
     matches!(reply, Reply::Done).then(|| text_result(message.to_string()))
-}
-
-fn error_text(err: ControlError, port: u16) -> String {
-    match err {
-        ControlError::Io(_) | ControlError::Disconnected => unreachable_message(port),
-        ControlError::Remote(msg) => msg,
-        ControlError::Timeout => err.to_string(),
-    }
 }
 
 fn format_vms(vms: &[VmInfo]) -> String {
@@ -129,13 +126,13 @@ struct VmOnly {
     vm: Option<String>,
 }
 
-fn dispatch_list_vms(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_list_vms(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let _: VmOnly = parse_args(args)?;
     let req = Request {
         vm: None,
         action: Action::ListVms,
     };
-    Ok(finish(backend, port, req, |reply| match reply {
+    Ok(finish(backend, req, |reply| match reply {
         Reply::Vms(vms) => Some(text_result(format_vms(&vms))),
         _ => None,
     }))
@@ -146,42 +143,34 @@ struct StartVmArgs {
     vm: String,
 }
 
-fn dispatch_start_vm(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_start_vm(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let StartVmArgs { vm } = parse_args(args)?;
     let req = Request {
         vm: Some(vm),
         action: Action::StartVm,
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Started.")))
+    Ok(finish(backend, req, |reply| done(reply, "Started.")))
 }
 
-fn dispatch_screen_text(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let VmOnly { vm } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::ScreenText,
     };
-    Ok(finish(backend, port, req, |reply| match reply {
+    Ok(finish(backend, req, |reply| match reply {
         Reply::Screen { lines, mode } => Some(text_result(format_screen(&lines, &mode))),
         _ => None,
     }))
 }
 
-fn dispatch_screenshot(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_screenshot(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let VmOnly { vm } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::Screenshot,
     };
-    Ok(finish(backend, port, req, |reply| match reply {
+    Ok(finish(backend, req, |reply| match reply {
         Reply::Screenshot {
             png_base64,
             width,
@@ -204,17 +193,13 @@ struct TypeTextArgs {
     text: String,
 }
 
-fn dispatch_type_text(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_type_text(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let TypeTextArgs { vm, text } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::TypeText { text },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Typed.")))
+    Ok(finish(backend, req, |reply| done(reply, "Typed.")))
 }
 
 #[derive(Deserialize)]
@@ -226,11 +211,7 @@ struct PressKeysArgs {
     hold_fields: Option<u32>,
 }
 
-fn dispatch_press_keys(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_press_keys(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let PressKeysArgs {
         vm,
         keys,
@@ -240,7 +221,7 @@ fn dispatch_press_keys(
         vm,
         action: Action::PressKeys { keys, hold_fields },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Pressed.")))
+    Ok(finish(backend, req, |reply| done(reply, "Pressed.")))
 }
 
 #[derive(Deserialize)]
@@ -260,7 +241,7 @@ struct JoystickArgs {
     release: bool,
 }
 
-fn dispatch_joystick(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_joystick(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let JoystickArgs {
         vm,
         stick,
@@ -281,7 +262,7 @@ fn dispatch_joystick(backend: &mut dyn Backend, port: u16, args: Value) -> Resul
             release,
         },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Set.")))
+    Ok(finish(backend, req, |reply| done(reply, "Set.")))
 }
 
 #[derive(Deserialize)]
@@ -292,17 +273,13 @@ struct InsertDiskArgs {
     path: String,
 }
 
-fn dispatch_insert_disk(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_insert_disk(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let InsertDiskArgs { vm, drive, path } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::InsertDisk { drive, path },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Inserted.")))
+    Ok(finish(backend, req, |reply| done(reply, "Inserted.")))
 }
 
 #[derive(Deserialize)]
@@ -312,17 +289,13 @@ struct EjectDiskArgs {
     drive: usize,
 }
 
-fn dispatch_eject_disk(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_eject_disk(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let EjectDiskArgs { vm, drive } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::EjectDisk { drive },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Ejected.")))
+    Ok(finish(backend, req, |reply| done(reply, "Ejected.")))
 }
 
 #[derive(Deserialize)]
@@ -333,13 +306,13 @@ struct ResetArgs {
     hard: bool,
 }
 
-fn dispatch_reset(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_reset(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let ResetArgs { vm, hard } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::Reset { hard },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, "Reset.")))
+    Ok(finish(backend, req, |reply| done(reply, "Reset.")))
 }
 
 #[derive(Deserialize)]
@@ -349,18 +322,14 @@ struct SetRunningArgs {
     running: bool,
 }
 
-fn dispatch_set_running(
-    backend: &mut dyn Backend,
-    port: u16,
-    args: Value,
-) -> Result<Value, RpcError> {
+fn dispatch_set_running(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let SetRunningArgs { vm, running } = parse_args(args)?;
     let message = if running { "Resumed." } else { "Paused." };
     let req = Request {
         vm,
         action: Action::SetRunning { running },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, message)))
+    Ok(finish(backend, req, |reply| done(reply, message)))
 }
 
 #[derive(Deserialize)]
@@ -370,18 +339,15 @@ struct WaitArgs {
     fields: u32,
 }
 
-fn dispatch_wait(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_wait(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let WaitArgs { vm, fields } = parse_args(args)?;
     // The app clamps the same way; report what actually elapsed.
-    let message = format!(
-        "Waited {} fields.",
-        fields.min(coco_control::MAX_WAIT_FIELDS)
-    );
+    let message = format!("Waited {} fields.", fields.min(super::MAX_WAIT_FIELDS));
     let req = Request {
         vm,
         action: Action::Wait { fields },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, &message)))
+    Ok(finish(backend, req, |reply| done(reply, &message)))
 }
 
 #[derive(Deserialize)]
@@ -392,13 +358,13 @@ struct PeekArgs {
     len: u16,
 }
 
-fn dispatch_peek(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_peek(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let PeekArgs { vm, addr, len } = parse_args(args)?;
     let req = Request {
         vm,
         action: Action::Peek { addr, len },
     };
-    Ok(finish(backend, port, req, move |reply| match reply {
+    Ok(finish(backend, req, move |reply| match reply {
         Reply::Bytes(bytes) => Some(text_result(hex_dump(addr, &bytes))),
         _ => None,
     }))
@@ -412,14 +378,40 @@ struct PokeArgs {
     bytes: Vec<u8>,
 }
 
-fn dispatch_poke(backend: &mut dyn Backend, port: u16, args: Value) -> Result<Value, RpcError> {
+fn dispatch_poke(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let PokeArgs { vm, addr, bytes } = parse_args(args)?;
     let message = format!("Wrote {} byte(s) at ${addr:04X}.", bytes.len());
     let req = Request {
         vm,
         action: Action::Poke { addr, bytes },
     };
-    Ok(finish(backend, port, req, |reply| done(reply, &message)))
+    Ok(finish(backend, req, |reply| done(reply, &message)))
+}
+
+#[cfg(test)]
+pub(crate) struct MockBackend {
+    pub(crate) responses: std::collections::VecDeque<Result<Reply, String>>,
+    pub(crate) calls: Vec<Request>,
+}
+
+#[cfg(test)]
+impl MockBackend {
+    pub(crate) fn new(responses: Vec<Result<Reply, String>>) -> Self {
+        Self {
+            responses: responses.into(),
+            calls: Vec::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Backend for MockBackend {
+    fn call(&mut self, req: &Request) -> Result<Reply, String> {
+        self.calls.push(req.clone());
+        self.responses
+            .pop_front()
+            .unwrap_or(Err("mock exhausted".into()))
+    }
 }
 
 #[cfg(test)]

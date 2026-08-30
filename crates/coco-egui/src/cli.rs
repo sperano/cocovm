@@ -19,9 +19,10 @@ pub(crate) struct Cli {
     )]
     pub(crate) log_level: LogLevel,
 
-    /// Loopback port the control listener accepts driver connections on
-    /// (`coco_control::server`). `0` disables the listener entirely.
-    #[arg(long, env = coco_control::PORT_ENV, default_value_t = coco_control::DEFAULT_PORT)]
+    /// Loopback port the built-in MCP server listens on, at
+    /// `http://127.0.0.1:<port>/mcp` (`crate::control`). `0` disables it
+    /// entirely.
+    #[arg(long, env = crate::control::PORT_ENV, default_value_t = crate::control::DEFAULT_PORT)]
     pub(crate) control_port: u16,
 }
 

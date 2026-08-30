@@ -57,3 +57,16 @@ fn press_keys_description_mentions_named_keys() {
     assert!(description.contains("ENTER"));
     assert!(description.contains("SHIFT"));
 }
+
+#[test]
+fn insert_disk_and_eject_disk_cap_drive_at_ui_drives_minus_one() {
+    let defs = definitions();
+    for name in ["insert_disk", "eject_disk"] {
+        let def = defs.iter().find(|d| d["name"] == name).unwrap();
+        assert_eq!(
+            def["inputSchema"]["properties"]["drive"]["maximum"],
+            json!(crate::UI_DRIVES - 1),
+            "{name} drive maximum must match the manager's exposed drive count"
+        );
+    }
+}

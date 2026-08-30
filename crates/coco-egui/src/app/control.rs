@@ -1,5 +1,5 @@
 //! Per-VM handlers for the control protocol's mutating/read actions
-//! (`coco_control::Action`). Dispatch, VM resolution, and pending-request
+//! (`crate::control::Action`). Dispatch, VM resolution, and pending-request
 //! bookkeeping live in `manager::control` — this module only knows how to
 //! apply one action to the `CocoApp` it's given.
 
@@ -40,8 +40,8 @@ impl Default for RemoteStick {
 impl CocoApp {
     /// `screen_text`: the text screen decoded as lines, plus the video-mode
     /// summary.
-    pub(crate) fn screen_text(&mut self) -> coco_control::Reply {
-        coco_control::Reply::Screen {
+    pub(crate) fn screen_text(&mut self) -> crate::control::Reply {
+        crate::control::Reply::Screen {
             lines: self.machine.text_screen_lines(),
             mode: self.machine.video_mode_summary(),
         }
@@ -49,7 +49,7 @@ impl CocoApp {
 
     /// `screenshot`: the raw machine framebuffer (not the TV-processed
     /// display texture), PNG-encoded and base64'd.
-    pub(crate) fn screenshot(&self) -> Result<coco_control::Reply, String> {
+    pub(crate) fn screenshot(&self) -> Result<crate::control::Reply, String> {
         let width = self.machine.fb_width;
         let height = self.machine.fb_height;
         let mut png_bytes = Vec::new();
@@ -62,7 +62,7 @@ impl CocoApp {
             image::ImageFormat::Png,
         )
         .map_err(|e| format!("could not encode screenshot: {e}"))?;
-        Ok(coco_control::Reply::Screenshot {
+        Ok(crate::control::Reply::Screenshot {
             png_base64: BASE64.encode(png_bytes),
             width,
             height,
@@ -80,10 +80,10 @@ impl CocoApp {
             return Err("a type_text burst is still draining".to_string());
         }
         let char_count = text.chars().count();
-        if char_count > coco_control::MAX_TYPE_TEXT_CHARS {
+        if char_count > crate::control::MAX_TYPE_TEXT_CHARS {
             return Err(format!(
                 "text is {char_count} characters; at most {} per call",
-                coco_control::MAX_TYPE_TEXT_CHARS
+                crate::control::MAX_TYPE_TEXT_CHARS
             ));
         }
         let taps = text.chars().filter_map(kbd::char_key);
@@ -96,7 +96,7 @@ impl CocoApp {
     }
 
     /// `press_keys`: hold every named key down together for `hold_fields`
-    /// fields (clamped to [`coco_control::MAX_HOLD_FIELDS`]), then release.
+    /// fields (clamped to [`crate::control::MAX_HOLD_FIELDS`]), then release.
     /// Returns the fields until release.
     pub(crate) fn start_remote_hold(
         &mut self,
@@ -112,10 +112,10 @@ impl CocoApp {
         let mut positions = Vec::with_capacity(keys.len());
         let mut needs_shift = false;
         for name in keys {
-            let Some((pos, shift)) = coco_control::key_names::key_pos(name) else {
+            let Some((pos, shift)) = crate::control::key_names::key_pos(name) else {
                 return Err(format!(
                     "unknown key {name:?}; accepted: {}",
-                    coco_control::key_names::describe()
+                    crate::control::key_names::describe()
                 ));
             };
             needs_shift |= shift;
@@ -125,8 +125,8 @@ impl CocoApp {
             positions.push(kbd::SHIFT);
         }
         let fields_left = hold_fields
-            .unwrap_or(coco_control::DEFAULT_HOLD_FIELDS)
-            .min(coco_control::MAX_HOLD_FIELDS);
+            .unwrap_or(crate::control::DEFAULT_HOLD_FIELDS)
+            .min(crate::control::MAX_HOLD_FIELDS);
         for &pos in &positions {
             self.machine.bus.keyboard.set(pos, true);
         }
@@ -140,7 +140,7 @@ impl CocoApp {
     /// `joystick`: set or release `stick`'s remote override.
     pub(crate) fn apply_remote_joystick(
         &mut self,
-        stick: coco_control::Stick,
+        stick: crate::control::Stick,
         x: Option<u8>,
         y: Option<u8>,
         button1: Option<bool>,
@@ -179,22 +179,22 @@ impl CocoApp {
     }
 
     /// `peek`: read `len` bytes from `addr` without bus side effects,
-    /// clamped to [`coco_control::MAX_PEEK_LEN`].
+    /// clamped to [`crate::control::MAX_PEEK_LEN`].
     pub(crate) fn peek_bytes(&self, addr: u16, len: u16) -> Vec<u8> {
-        let clamped = len.min(coco_control::MAX_PEEK_LEN);
+        let clamped = len.min(crate::control::MAX_PEEK_LEN);
         (0..clamped)
             .map(|i| self.machine.bus.peek(addr.wrapping_add(i)))
             .collect()
     }
 
     /// `poke`: write `bytes` starting at `addr`, with full bus side effects;
-    /// at most [`coco_control::MAX_POKE_LEN`] bytes.
+    /// at most [`crate::control::MAX_POKE_LEN`] bytes.
     pub(crate) fn poke_bytes(&mut self, addr: u16, bytes: &[u8]) -> Result<(), String> {
-        if bytes.len() > coco_control::MAX_POKE_LEN {
+        if bytes.len() > crate::control::MAX_POKE_LEN {
             return Err(format!(
                 "{} bytes; at most {} per poke",
                 bytes.len(),
-                coco_control::MAX_POKE_LEN
+                crate::control::MAX_POKE_LEN
             ));
         }
         for (i, &b) in bytes.iter().enumerate() {

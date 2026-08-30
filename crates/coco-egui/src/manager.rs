@@ -309,10 +309,10 @@ pub struct ManagerApp {
     /// Message from the last failed delete, shown inside the confirmation
     /// modal (which stays open for another try or a Cancel).
     delete_error: Option<String>,
-    /// The control-protocol listener (`coco_control::server`), servicing an
-    /// external driver such as `cocovm-mcp`. `None` when disabled
-    /// (`--control-port 0`) or its bind failed at startup.
-    control: Option<coco_control::ControlServer>,
+    /// The app's built-in MCP server (`crate::control`), servicing an AI
+    /// driving a VM over HTTP. `None` when disabled (`--control-port 0`) or
+    /// its bind failed at startup.
+    control: Option<crate::control::ControlServer>,
     /// Control requests deferred until the VM they target finishes some work
     /// (`manager::control`), resolved once per frame after VMs have stepped.
     pending: Vec<control::PendingControl>,
@@ -330,7 +330,7 @@ impl ManagerApp {
         machines_dir: Option<PathBuf>,
         artifacts_root: Option<PathBuf>,
         mut entries: Vec<MachineEntry>,
-        control: Option<coco_control::ControlServer>,
+        control: Option<crate::control::ControlServer>,
     ) -> Self {
         if let Some(root) = &artifacts_root {
             for entry in &mut entries {

@@ -1,20 +1,20 @@
 //! Name, description, and JSON Schema `inputSchema` for every tool
-//! `tools/list` reports. [`crate::tools`] dispatches calls to these by name.
+//! `tools/list` reports. [`crate::control::tools`] dispatches calls to these
+//! by name.
 
-use coco_control::key_names;
-use coco_control::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_WAIT_FIELDS};
+use coco_core::joystick::{AXIS_CENTER, AXIS_MAX};
 use serde_json::{Value, json};
 
-/// Joystick pot range is a 6-bit DAC (see `coco_core::joystick::AXIS_MAX`,
-/// not a dependency of this crate, so mirrored here).
-const JOYSTICK_AXIS_MAX: u8 = 63;
-/// Idle/center pot value (see `coco_core::joystick::AXIS_CENTER`).
-const JOYSTICK_AXIS_CENTER: u8 = 32;
-/// The CoCo 3 floppy controller addresses four drives, 0-based.
-const MAX_DRIVE: u8 = 3;
+use super::key_names;
+use super::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS};
 
-fn tool(name: &str, description: String, schema: Value) -> Value {
-    json!({"name": name, "description": description, "inputSchema": schema})
+/// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
+/// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
+/// the FDC's larger addressable maximum).
+const MAX_DRIVE: u8 = (crate::UI_DRIVES - 1) as u8;
+
+fn tool(name: &str, description: impl Into<String>, schema: Value) -> Value {
+    json!({"name": name, "description": description.into(), "inputSchema": schema})
 }
 
 fn object_schema(properties: Value, required: &[&str]) -> Value {
@@ -35,7 +35,7 @@ fn vm_property() -> Value {
 fn list_vms() -> Value {
     tool(
         "list_vms",
-        "List every VM the manager knows, with its lifecycle status.".into(),
+        "List every VM the manager knows, with its lifecycle status.",
         object_schema(json!({}), &[]),
     )
 }
@@ -43,7 +43,7 @@ fn list_vms() -> Value {
 fn start_vm() -> Value {
     tool(
         "start_vm",
-        "Start (or resume) a VM by its manager slug; a no-op if it's already running.".into(),
+        "Start (or resume) a VM by its manager slug; a no-op if it's already running.",
         object_schema(json!({"vm": vm_property()}), &["vm"]),
     )
 }
@@ -51,7 +51,7 @@ fn start_vm() -> Value {
 fn screen_text() -> Value {
     tool(
         "screen_text",
-        "Read the VM's text screen as lines, plus the current video mode.".into(),
+        "Read the VM's text screen as lines, plus the current video mode.",
         object_schema(json!({"vm": vm_property()}), &[]),
     )
 }
@@ -60,8 +60,7 @@ fn screenshot() -> Value {
     tool(
         "screenshot",
         "Capture the VM's framebuffer as a PNG. GIME graphics modes are 640x240 with \
-         non-square pixels."
-            .into(),
+         non-square pixels.",
         object_schema(json!({"vm": vm_property()}), &[]),
     )
 }
@@ -71,13 +70,12 @@ fn type_text() -> Value {
         "type_text",
         format!(
             "Type text into the VM through the keyboard type-ahead; \"\\n\" or \"\\r\" presses \
-             ENTER. Blocks until fully typed; at most {} characters per call.",
-            coco_control::MAX_TYPE_TEXT_CHARS
+             ENTER. Blocks until fully typed; at most {MAX_TYPE_TEXT_CHARS} characters per call."
         ),
         object_schema(
             json!({
                 "vm": vm_property(),
-                "text": {"type": "string", "maxLength": coco_control::MAX_TYPE_TEXT_CHARS}
+                "text": {"type": "string", "maxLength": MAX_TYPE_TEXT_CHARS}
             }),
             &["text"],
         ),
@@ -112,16 +110,15 @@ fn joystick() -> Value {
     tool(
         "joystick",
         format!(
-            "Set a joystick's axes and/or buttons. Axes range 0..={JOYSTICK_AXIS_MAX}, \
-             {JOYSTICK_AXIS_CENTER} is center. `release` hands the port back to the host's own \
-             input source."
+            "Set a joystick's axes and/or buttons. Axes range 0..={AXIS_MAX}, {AXIS_CENTER} is \
+             center. `release` hands the port back to the host's own input source."
         ),
         object_schema(
             json!({
                 "vm": vm_property(),
                 "stick": {"type": "string", "enum": ["left", "right"]},
-                "x": {"type": "integer", "minimum": 0, "maximum": JOYSTICK_AXIS_MAX},
-                "y": {"type": "integer", "minimum": 0, "maximum": JOYSTICK_AXIS_MAX},
+                "x": {"type": "integer", "minimum": 0, "maximum": AXIS_MAX},
+                "y": {"type": "integer", "minimum": 0, "maximum": AXIS_MAX},
                 "button1": {"type": "boolean"},
                 "button2": {"type": "boolean"},
                 "release": {"type": "boolean"}
@@ -134,7 +131,7 @@ fn joystick() -> Value {
 fn insert_disk() -> Value {
     tool(
         "insert_disk",
-        "Mount a disk image file in a floppy drive.".into(),
+        "Mount a disk image file in a floppy drive.",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -152,7 +149,7 @@ fn insert_disk() -> Value {
 fn eject_disk() -> Value {
     tool(
         "eject_disk",
-        "Remove whatever disk image is mounted in a floppy drive.".into(),
+        "Remove whatever disk image is mounted in a floppy drive.",
         object_schema(
             json!({"vm": vm_property(), "drive": {"type": "integer", "minimum": 0, "maximum": MAX_DRIVE}}),
             &["drive"],
@@ -163,7 +160,7 @@ fn eject_disk() -> Value {
 fn reset() -> Value {
     tool(
         "reset",
-        "Reset the VM; `hard` power-cycles it (clears RAM).".into(),
+        "Reset the VM; `hard` power-cycles it (clears RAM).",
         object_schema(
             json!({"vm": vm_property(), "hard": {"type": "boolean"}}),
             &[],
@@ -174,7 +171,7 @@ fn reset() -> Value {
 fn set_running() -> Value {
     tool(
         "set_running",
-        "Pause or resume emulation.".into(),
+        "Pause or resume emulation.",
         object_schema(
             json!({"vm": vm_property(), "running": {"type": "boolean"}}),
             &["running"],
@@ -185,7 +182,7 @@ fn set_running() -> Value {
 fn wait() -> Value {
     tool(
         "wait",
-        "Let video fields elapse before replying (60 fields is about 1 second).".into(),
+        "Let video fields elapse before replying (60 fields is about 1 second).",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -199,7 +196,7 @@ fn wait() -> Value {
 fn peek() -> Value {
     tool(
         "peek",
-        "Read bytes from VM memory without side effects.".into(),
+        "Read bytes from VM memory without side effects.",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -214,14 +211,14 @@ fn peek() -> Value {
 fn poke() -> Value {
     tool(
         "poke",
-        "Write bytes to VM memory, with normal bus side effects.".into(),
+        "Write bytes to VM memory, with normal bus side effects.",
         object_schema(
             json!({
                 "vm": vm_property(),
                 "addr": {"type": "integer", "minimum": 0, "maximum": u16::MAX},
                 "bytes": {
                     "type": "array",
-                    "maxItems": coco_control::MAX_POKE_LEN,
+                    "maxItems": MAX_POKE_LEN,
                     "items": {"type": "integer", "minimum": 0, "maximum": u8::MAX}
                 }
             }),

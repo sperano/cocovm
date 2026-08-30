@@ -1,16 +1,14 @@
 //! `dispatch_control` coverage. Most of its logic (VM resolution, disk/reset/
 //! joystick effects) is exercised through the private per-action helpers
-//! directly — no networking needed. One end-to-end test drives the whole
-//! stack through a real loopback connection, proving the wiring in
-//! `ManagerApp::drain_control`/`bind_control` actually works.
+//! directly — no networking needed. `list_vms_dispatches_through_dispatch_control`
+//! drives `dispatch_control` itself through a hand-built `Incoming`
+//! (`crate::control::Incoming::new`), proving that wiring works; the real
+//! HTTP transport in front of it is covered end to end in
+//! `crate::control::control_test`.
 
-use std::sync::Arc;
 use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
 
-use coco_control::{Action, ControlClient, ControlError, ControlServer, Reply, Request};
-use eframe::egui;
+use crate::control::{Action, Incoming, Reply, ReplyHandle, Request, Response};
 
 use super::*;
 use crate::machine_def;
@@ -43,47 +41,24 @@ fn manager(entries: Vec<MachineEntry>) -> ManagerApp {
     ManagerApp::new(None, None, None, entries, None)
 }
 
-/// Send `request` on a background thread and poll `drain_control`/
-/// `resolve_control_pending` until its reply lands.
-fn call(manager: &mut ManagerApp, port: u16, request: Request) -> Result<Reply, ControlError> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut client = ControlClient::connect(port).expect("connect to the control listener");
-        let _ = tx.send(client.call(&request));
-    });
-    let ctx = egui::Context::default();
-    for _ in 0..2_000 {
-        manager.drain_control();
-        manager.resolve_control_pending(&ctx);
-        if let Ok(result) = rx.try_recv() {
-            return result;
-        }
-        thread::sleep(Duration::from_millis(2));
-    }
-    panic!("no reply within the poll budget");
-}
-
-/// End-to-end: bind a real listener, connect a real client, and prove
-/// `list_vms` round-trips through `bind_control`/`drain_control`.
+/// Prove `list_vms` round-trips through `dispatch_control` itself, using a
+/// hand-built `Incoming` in place of a real HTTP connection.
 #[test]
-fn list_vms_round_trips_over_a_real_loopback_connection() {
-    let server = ControlServer::bind(0, Arc::new(|| {})).expect("bind ephemeral port");
-    let port = server.port();
+fn list_vms_dispatches_through_dispatch_control() {
     let mut manager = manager(vec![off_entry("solo")]);
-    manager.control = Some(server);
-
-    let reply = call(
-        &mut manager,
-        port,
+    let (tx, rx) = mpsc::channel();
+    let incoming = Incoming::new(
         Request {
             vm: None,
             action: Action::ListVms,
         },
-    )
-    .expect("list_vms succeeds");
+        ReplyHandle::new(tx),
+    );
 
-    let Reply::Vms(infos) = reply else {
-        panic!("expected Reply::Vms");
+    manager.dispatch_control(incoming);
+
+    let Response::Ok(Reply::Vms(infos)) = rx.recv().expect("reply sent") else {
+        panic!("expected Ok(Reply::Vms)");
     };
     assert_eq!(infos.len(), 1);
     assert_eq!(infos[0].slug, "solo");

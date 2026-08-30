@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use coco_control::{Reply, Response};
+use crate::control::{Reply, Response};
 use eframe::egui;
 
 use super::{ManagerApp, PendingCondition, PendingControl};

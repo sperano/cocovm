@@ -182,7 +182,7 @@ fn remote_joystick_override_wins_over_the_host_source() {
     let mut app = test_app();
     let right = coco_core::joystick::RIGHT;
     app.apply_remote_joystick(
-        coco_control::Stick::Right,
+        crate::control::Stick::Right,
         Some(63),
         Some(0),
         Some(true),

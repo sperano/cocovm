@@ -1,11 +1,10 @@
-//! Applying one [`coco_control::Action`] to the manager: immediate actions
+//! Applying one [`crate::control::Action`] to the manager: immediate actions
 //! reply inline, others start work on the target `CocoApp` and defer their
 //! reply via [`super::PendingControl`].
 
 use std::path::PathBuf;
 
-use coco_control::{Action, Incoming, Reply, ReplyHandle, Response};
-
+use crate::control::{Action, Incoming, Reply, ReplyHandle, Response};
 use crate::{CocoApp, UI_DRIVES};
 
 use super::{ManagerApp, PendingCondition, PendingControl};
@@ -44,7 +43,7 @@ impl ManagerApp {
     /// Route one request to its handler. Every arm either replies through
     /// `incoming` before returning, or moves it into `self.pending`.
     pub(super) fn dispatch_control(&mut self, incoming: Incoming) {
-        let (coco_control::protocol::Request { vm, action }, reply) = incoming.into_parts();
+        let (crate::control::protocol::Request { vm, action }, reply) = incoming.into_parts();
         match action {
             Action::ListVms => reply.reply(Response::Ok(Reply::Vms(self.vm_infos()))),
             Action::StartVm => reply.reply(response(self.start_vm_action(&vm))),
@@ -184,9 +183,9 @@ impl ManagerApp {
     }
 
     /// `wait`: defer until `CocoApp::fields_run` reaches its current value
-    /// plus `fields` (clamped to [`coco_control::MAX_WAIT_FIELDS`]).
+    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]).
     fn start_wait(&mut self, reply: ReplyHandle, vm: Option<String>, fields: u32) {
-        let clamped = u64::from(fields.min(coco_control::MAX_WAIT_FIELDS));
+        let clamped = u64::from(fields.min(crate::control::MAX_WAIT_FIELDS));
         self.start_deferred(reply, vm, |app| {
             Ok((
                 PendingCondition::WaitUntilField(app.fields_run + clamped),

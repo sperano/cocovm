@@ -1,22 +1,20 @@
-//! Wire types. Every request names an [`Action`] and optionally the VM
-//! (by manager slug) it targets; a missing `vm` means "the only running
-//! VM", which is an error when there are several.
+//! Internal request/reply types passed between the MCP layer
+//! (`control::tools`) and the manager (`manager::control`). No longer a wire
+//! format — everything crosses in-process on an `mpsc` channel — so only
+//! [`Stick`] keeps a `Deserialize` impl, for parsing a tool call's arguments.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-/// One request line from a driver.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One request from a tool call. `vm` names the target by manager slug;
+/// `None` selects "the only running VM", an error when there are several.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
-    /// Manager slug of the target VM; `None` selects the sole running VM.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vm: Option<String>,
-    #[serde(flatten)]
     pub action: Action,
 }
 
-/// What a request asks the app to do. Serialized with a `cmd` tag.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "cmd", rename_all = "snake_case")]
+/// What a request asks the app to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Every machine the manager knows, with its lifecycle state.
     ListVms,
@@ -33,22 +31,16 @@ pub enum Action {
     /// Hold every named key together for `hold_fields` fields, then release.
     PressKeys {
         keys: Vec<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         hold_fields: Option<u32>,
     },
     /// Set joystick axes/buttons; `None` leaves that input as it was.
     /// `release` hands the port back to the host's own input source.
     Joystick {
         stick: Stick,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         x: Option<u8>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         y: Option<u8>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         button1: Option<bool>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         button2: Option<bool>,
-        #[serde(default)]
         release: bool,
     },
     /// Mount the disk image at `path` in floppy `drive` (0-based).
@@ -61,7 +53,6 @@ pub enum Action {
     },
     /// Reset the machine; `hard` power-cycles (clears RAM).
     Reset {
-        #[serde(default)]
         hard: bool,
     },
     /// Pause (`false`) or resume (`true`) emulation.
@@ -85,7 +76,7 @@ pub enum Action {
 }
 
 /// Which joystick port a [`Action::Joystick`] request drives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stick {
     Left,
@@ -102,17 +93,15 @@ impl Stick {
     }
 }
 
-/// One reply line from the app.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// One reply from the app.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Response {
     Ok(Reply),
     Err(String),
 }
 
 /// The successful payload of a request.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     /// The action completed with nothing to report.
     Done,
@@ -130,7 +119,7 @@ pub enum Reply {
 }
 
 /// One manager entry as [`Action::ListVms`] reports it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VmInfo {
     pub slug: String,
     pub name: String,
@@ -138,8 +127,7 @@ pub struct VmInfo {
 }
 
 /// A manager entry's lifecycle state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VmStatus {
     Running,
     Suspended,

@@ -781,15 +781,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "coco-control"
-version = "0.7.2"
-dependencies = [
- "coco-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "coco-core"
 version = "0.7.2"
 dependencies = [
@@ -810,7 +801,6 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
- "coco-control",
  "coco-core",
  "cocovm-test-assets",
  "cpal",
@@ -827,21 +817,12 @@ dependencies = [
  "pluralizer",
  "rfd",
  "serde",
+ "serde_json",
  "tar",
  "toml",
  "tracing",
  "tracing-subscriber",
  "ureq",
-]
-
-[[package]]
-name = "coco-mcp"
-version = "0.7.2"
-dependencies = [
- "clap",
- "coco-control",
- "serde",
- "serde_json",
 ]
 
 [[package]]

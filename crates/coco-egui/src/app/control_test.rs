@@ -1,6 +1,6 @@
+use crate::control::Reply;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use coco_control::Reply;
 
 use crate::{AppParams, CocoApp, MachineConfig, ROMSource};
 
@@ -69,7 +69,7 @@ fn start_remote_typing_queues_mapped_characters_and_reports_fields() {
 #[test]
 fn start_remote_typing_rejects_overlong_text_and_a_draining_burst() {
     let mut app = boot();
-    let too_long = "A".repeat(coco_control::MAX_TYPE_TEXT_CHARS + 1);
+    let too_long = "A".repeat(crate::control::MAX_TYPE_TEXT_CHARS + 1);
     let err = app
         .start_remote_typing(&too_long)
         .expect_err("overlong text must be rejected");
@@ -117,11 +117,11 @@ fn start_remote_hold_clamps_to_max_hold_fields() {
     let mut app = boot();
     app.start_remote_hold(
         &["A".to_string()],
-        Some(coco_control::MAX_HOLD_FIELDS + 500),
+        Some(crate::control::MAX_HOLD_FIELDS + 500),
     )
     .expect("hold succeeds");
     let hold = app.remote_held.as_ref().expect("hold recorded");
-    assert_eq!(hold.fields_left, coco_control::MAX_HOLD_FIELDS);
+    assert_eq!(hold.fields_left, crate::control::MAX_HOLD_FIELDS);
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn start_remote_hold_presses_every_resolved_key_immediately() {
 fn apply_remote_joystick_sets_then_release_clears() {
     let mut app = boot();
     app.apply_remote_joystick(
-        coco_control::Stick::Left,
+        crate::control::Stick::Left,
         Some(10),
         Some(20),
         None,
@@ -153,7 +153,7 @@ fn apply_remote_joystick_sets_then_release_clears() {
     let state = app.remote_joy[left].as_ref().expect("override recorded");
     assert_eq!((state.x, state.y), (10, 20));
 
-    app.apply_remote_joystick(coco_control::Stick::Left, None, None, None, None, true);
+    app.apply_remote_joystick(crate::control::Stick::Left, None, None, None, None, true);
     assert!(app.remote_joy[left].is_none());
 }
 
@@ -161,9 +161,16 @@ fn apply_remote_joystick_sets_then_release_clears() {
 fn apply_remote_joystick_merges_into_an_existing_override() {
     let mut app = boot();
     let right = coco_core::joystick::RIGHT;
-    app.apply_remote_joystick(coco_control::Stick::Right, Some(5), None, None, None, false);
     app.apply_remote_joystick(
-        coco_control::Stick::Right,
+        crate::control::Stick::Right,
+        Some(5),
+        None,
+        None,
+        None,
+        false,
+    );
+    app.apply_remote_joystick(
+        crate::control::Stick::Right,
         None,
         Some(7),
         Some(true),
@@ -180,7 +187,7 @@ fn apply_remote_joystick_clamps_axes_to_axis_max() {
     let mut app = boot();
     let left = coco_core::joystick::LEFT;
     app.apply_remote_joystick(
-        coco_control::Stick::Left,
+        crate::control::Stick::Left,
         Some(255),
         Some(255),
         None,
@@ -202,7 +209,7 @@ fn peek_bytes_reads_what_poke_bytes_wrote() {
 #[test]
 fn poke_bytes_rejects_more_than_max_poke_len() {
     let mut app = boot();
-    let too_many = vec![0; coco_control::MAX_POKE_LEN + 1];
+    let too_many = vec![0; crate::control::MAX_POKE_LEN + 1];
     let err = app
         .poke_bytes(0x0400, &too_many)
         .expect_err("oversized poke must be rejected");
@@ -212,8 +219,8 @@ fn poke_bytes_rejects_more_than_max_poke_len() {
 #[test]
 fn peek_bytes_clamps_to_max_peek_len() {
     let app = boot();
-    let bytes = app.peek_bytes(0x0000, coco_control::MAX_PEEK_LEN + 1000);
-    assert_eq!(bytes.len(), coco_control::MAX_PEEK_LEN as usize);
+    let bytes = app.peek_bytes(0x0000, crate::control::MAX_PEEK_LEN + 1000);
+    assert_eq!(bytes.len(), crate::control::MAX_PEEK_LEN as usize);
 }
 
 #[test]

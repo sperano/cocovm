@@ -1,13 +1,11 @@
 use super::*;
-use crate::backend::MockBackend;
-use crate::jsonrpc::{self, METHOD_NOT_FOUND};
-use crate::tool_defs;
-use coco_control::Reply;
+use crate::control::jsonrpc::{self, METHOD_NOT_FOUND};
+use crate::control::protocol::Reply;
+use crate::control::tool_defs;
+use crate::control::tools::MockBackend;
 
-const PORT: u16 = 6809;
-
-fn mcp_with(responses: Vec<Result<Reply, coco_control::ControlError>>) -> Mcp {
-    Mcp::new(Box::new(MockBackend::new(responses)), PORT)
+fn mcp_with(responses: Vec<Result<Reply, String>>) -> Mcp {
+    Mcp::new(Box::new(MockBackend::new(responses)))
 }
 
 #[test]
@@ -20,7 +18,7 @@ fn initialize_echoes_a_supported_protocol_version() {
         )
         .unwrap();
     assert_eq!(result["protocolVersion"], json!("2024-11-05"));
-    assert_eq!(result["serverInfo"]["name"], json!("cocovm-mcp"));
+    assert_eq!(result["serverInfo"]["name"], json!("cocovm"));
     assert!(
         result["instructions"]
             .as_str()
@@ -65,30 +63,30 @@ fn unrecognized_method_is_method_not_found() {
 }
 
 #[test]
-fn full_session_over_the_jsonrpc_loop() {
+fn full_session_over_the_jsonrpc_dispatcher() {
     let mut mcp = mcp_with(vec![Ok(Reply::Vms(vec![]))]);
-    let input = concat!(
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n",
-        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
-        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n",
-        "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"list_vms\",\"arguments\":{}}}\n",
-    );
-    let mut output = Vec::new();
-    jsonrpc::run(input.as_bytes(), &mut output, &mut mcp).unwrap();
-    let lines: Vec<Value> = String::from_utf8(output)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
+    let messages = vec![
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}),
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+        json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_vms", "arguments": {}}}),
+    ];
+    let responses: Vec<Value> = messages
+        .into_iter()
+        .filter_map(|m| jsonrpc::dispatch(&mut mcp, m))
         .collect();
-    // Three replies: the notification produced none.
-    assert_eq!(lines.len(), 3);
-    assert_eq!(lines[0]["id"], json!(1));
-    assert_eq!(lines[0]["result"]["protocolVersion"], json!("2025-06-18"));
-    assert_eq!(lines[1]["id"], json!(2));
+    // Four messages in, three replies out: the notification produced none.
+    assert_eq!(responses.len(), 3);
+    assert_eq!(responses[0]["id"], json!(1));
     assert_eq!(
-        lines[1]["result"]["tools"].as_array().unwrap().len(),
+        responses[0]["result"]["protocolVersion"],
+        json!("2025-06-18")
+    );
+    assert_eq!(responses[1]["id"], json!(2));
+    assert_eq!(
+        responses[1]["result"]["tools"].as_array().unwrap().len(),
         tool_defs::definitions().len()
     );
-    assert_eq!(lines[2]["id"], json!(3));
-    assert_eq!(lines[2]["result"]["isError"], json!(false));
+    assert_eq!(responses[2]["id"], json!(3));
+    assert_eq!(responses[2]["result"]["isError"], json!(false));
 }

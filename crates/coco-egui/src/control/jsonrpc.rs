@@ -1,15 +1,13 @@
-//! Minimal JSON-RPC 2.0 transport: newline-delimited requests in, replies
-//! out. Knows only the protocol-level methods (`ping`, the lifecycle
-//! notifications MCP clients send); everything else is handed to a
-//! [`Handler`].
-
-use std::io::{self, BufRead, Write};
+//! Minimal JSON-RPC 2.0 message handling. Knows only the protocol-level
+//! methods (`ping`, the lifecycle notifications MCP clients send);
+//! everything else is handed to a [`Handler`]. No I/O — `control::http`
+//! carries the bytes, this module only turns one parsed message into
+//! another.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Standard JSON-RPC 2.0 error codes (spec §5.1).
-pub const PARSE_ERROR: i32 = -32700;
 pub const INVALID_REQUEST: i32 = -32600;
 pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;
@@ -64,61 +62,29 @@ struct RpcResponse {
     error: Option<RpcErrorBody>,
 }
 
-/// Read newline-delimited JSON-RPC requests from `reader`, dispatch each to
-/// `handler`, and write the replies to `writer`. Runs until `reader` hits
-/// EOF. Requests with no `id` are notifications: they're still dispatched
-/// (for any side effect) but never get a response line.
-pub fn run<R: BufRead, W: Write>(
-    mut reader: R,
-    mut writer: W,
-    handler: &mut impl Handler,
-) -> io::Result<()> {
-    let mut line = String::new();
-    loop {
-        line.clear();
-        if reader.read_line(&mut line)? == 0 {
-            return Ok(());
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        dispatch_line(trimmed, handler, &mut writer)?;
-    }
-}
-
-fn dispatch_line(
-    line: &str,
-    handler: &mut impl Handler,
-    writer: &mut impl Write,
-) -> io::Result<()> {
-    let value: Value = match serde_json::from_str(line) {
-        Ok(v) => v,
-        Err(_) => {
-            return write_response(
-                writer,
-                Value::Null,
-                Err(RpcError::new(PARSE_ERROR, "parse error")),
-            );
-        }
-    };
-    let request: RpcRequest = match serde_json::from_value(value.clone()) {
+/// Dispatch one already-parsed JSON-RPC message to `handler`. `None` for a
+/// notification (no `id`) — the caller must not write a response body for
+/// those. A message that doesn't even look like a JSON-RPC request (no
+/// `method`) still gets an `INVALID_REQUEST` response, with `id` preserved
+/// when present.
+pub fn dispatch(handler: &mut impl Handler, message: Value) -> Option<Value> {
+    // Only the id is needed on the error path; don't clone the whole body.
+    let id_on_error = message.get("id").cloned().unwrap_or(Value::Null);
+    let request: RpcRequest = match serde_json::from_value(message) {
         Ok(r) => r,
         Err(_) => {
-            let id = value.get("id").cloned().unwrap_or(Value::Null);
-            return write_response(
-                writer,
-                id,
+            return Some(response_value(
+                id_on_error,
                 Err(RpcError::new(INVALID_REQUEST, "invalid request")),
-            );
+            ));
         }
     };
     let is_notification = request.id.is_none();
     let result = route(&request.method, request.params, handler);
     if is_notification {
-        return Ok(());
+        return None;
     }
-    write_response(writer, request.id.unwrap_or(Value::Null), result)
+    Some(response_value(request.id.unwrap_or(Value::Null), result))
 }
 
 /// Methods answered by the transport itself, ahead of the application
@@ -132,21 +98,17 @@ fn route(method: &str, params: Value, handler: &mut impl Handler) -> Result<Valu
     }
 }
 
-fn write_response(
-    writer: &mut impl Write,
-    id: Value,
-    result: Result<Value, RpcError>,
-) -> io::Result<()> {
+fn response_value(id: Value, result: Result<Value, RpcError>) -> Value {
     let response = match result {
         Ok(value) => RpcResponse {
             jsonrpc: JSONRPC_VERSION,
-            id: id.clone(),
+            id,
             result: Some(value),
             error: None,
         },
         Err(e) => RpcResponse {
             jsonrpc: JSONRPC_VERSION,
-            id: id.clone(),
+            id,
             result: None,
             error: Some(RpcErrorBody {
                 code: e.code,
@@ -155,23 +117,15 @@ fn write_response(
         },
     };
     // A result that fails to serialize (shouldn't happen, but a tool result
-    // is arbitrary JSON built at runtime) shouldn't kill the whole
-    // connection — fall back to a plain internal-error response instead.
-    let mut bytes = serde_json::to_vec(&response).unwrap_or_else(|_| {
-        let fallback = RpcResponse {
-            jsonrpc: JSONRPC_VERSION,
-            id,
-            result: None,
-            error: Some(RpcErrorBody {
-                code: INTERNAL_ERROR,
-                message: "internal error".into(),
-            }),
-        };
-        serde_json::to_vec(&fallback).expect("id and a plain error body always serialize")
-    });
-    bytes.push(b'\n');
-    writer.write_all(&bytes)?;
-    writer.flush()
+    // is arbitrary JSON built at runtime) shouldn't take the connection
+    // down — fall back to a plain internal-error response instead.
+    serde_json::to_value(&response).unwrap_or_else(|_| {
+        json!({
+            "jsonrpc": JSONRPC_VERSION,
+            "id": Value::Null,
+            "error": {"code": INTERNAL_ERROR, "message": "internal error"},
+        })
+    })
 }
 
 #[cfg(test)]

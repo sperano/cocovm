@@ -1,10 +1,10 @@
-//! The control-protocol listener (`coco_control::server`): binding, draining
-//! queued requests into per-VM actions (`control::dispatch`), and resolving
-//! deferred ("pending") requests once the VM has finished the work
+//! The built-in MCP server's request queue (`crate::control`): binding,
+//! draining queued requests into per-VM actions (`control::dispatch`), and
+//! resolving deferred ("pending") requests once the VM has finished the work
 //! (`control::pending`).
 //!
 //! A request names its target VM by manager slug, or omits it to mean "the
-//! only running VM" (`coco_control::protocol`'s own doc comment) —
+//! only running VM" (`crate::control::protocol`'s own doc comment) —
 //! [`ManagerApp::resolve_vm`] is the one place that convention is applied.
 
 use std::time::{Duration, Instant};
@@ -24,7 +24,7 @@ const CONTROL_DEFER_MARGIN: Duration = Duration::from_secs(10);
 /// Targets the VM by slug, not entry index — an index can shift under a
 /// pending request (a rename, another entry inserted/removed), a slug can't.
 pub(super) struct PendingControl {
-    reply: coco_control::ReplyHandle,
+    reply: crate::control::ReplyHandle,
     slug: String,
     condition: PendingCondition,
     deadline: Instant,
@@ -34,7 +34,7 @@ impl PendingControl {
     /// `expected_fields` at `field_rate_hz` sets the deadline, plus
     /// [`CONTROL_DEFER_MARGIN`].
     fn new(
-        reply: coco_control::ReplyHandle,
+        reply: crate::control::ReplyHandle,
         slug: String,
         condition: PendingCondition,
         expected_fields: u64,
@@ -74,26 +74,29 @@ impl PendingCondition {
 
 /// The wire protocol's status for `entry`, distinct from
 /// [`super::vm_status_label`]'s human-readable UI labels.
-fn control_status(entry: &MachineEntry) -> coco_control::VmStatus {
+fn control_status(entry: &MachineEntry) -> crate::control::VmStatus {
     if entry.suspended {
-        coco_control::VmStatus::Suspended
+        crate::control::VmStatus::Suspended
     } else if entry.vm.is_some() {
-        coco_control::VmStatus::Running
+        crate::control::VmStatus::Running
     } else {
-        coco_control::VmStatus::PoweredOff
+        crate::control::VmStatus::PoweredOff
     }
 }
 
 /// Bind the control listener on `port`, waking `ctx` whenever a request
 /// lands. `port == 0` disables the listener outright; a bind failure is
 /// logged and also disables it — neither is fatal to the app.
-pub(super) fn bind_control(port: u16, ctx: &egui::Context) -> Option<coco_control::ControlServer> {
+pub(super) fn bind_control(
+    port: u16,
+    ctx: &egui::Context,
+) -> Option<crate::control::ControlServer> {
     if port == 0 {
         return None;
     }
     let ctx = ctx.clone();
-    let wake: coco_control::server::Wake = std::sync::Arc::new(move || ctx.request_repaint());
-    match coco_control::ControlServer::bind(port, wake) {
+    let wake: crate::control::Wake = std::sync::Arc::new(move || ctx.request_repaint());
+    match crate::control::ControlServer::bind(port, wake) {
         Ok(server) => {
             tracing::info!("control: listening on 127.0.0.1:{}", server.port());
             Some(server)
@@ -116,10 +119,10 @@ impl ManagerApp {
     }
 
     /// Every machine the manager knows, with its wire-protocol status.
-    fn vm_infos(&self) -> Vec<coco_control::VmInfo> {
+    fn vm_infos(&self) -> Vec<crate::control::VmInfo> {
         self.entries
             .iter()
-            .map(|e| coco_control::VmInfo {
+            .map(|e| crate::control::VmInfo {
                 slug: e.slug.clone(),
                 name: e.def.name.clone(),
                 status: control_status(e),
@@ -128,7 +131,7 @@ impl ManagerApp {
     }
 
     /// Resolve a request's `vm` slug to an entry index. `None` selects the
-    /// sole Running entry (`coco_control::protocol`'s convention), erroring
+    /// sole Running entry (`crate::control::protocol`'s convention), erroring
     /// out by name when there are zero or several. `require_running`
     /// additionally rejects a *named* entry that isn't Running — every
     /// mutating action but `start_vm` sets this (`start_vm` must be able to

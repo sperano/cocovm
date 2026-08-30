@@ -134,9 +134,9 @@ fn vm_infos_reports_each_entrys_wire_status() {
     ]);
     let infos = app.vm_infos();
     let status = |slug: &str| infos.iter().find(|i| i.slug == slug).map(|i| i.status);
-    assert_eq!(status("off"), Some(coco_control::VmStatus::PoweredOff));
-    assert_eq!(status("frozen"), Some(coco_control::VmStatus::Suspended));
-    assert_eq!(status("live"), Some(coco_control::VmStatus::Running));
+    assert_eq!(status("off"), Some(crate::control::VmStatus::PoweredOff));
+    assert_eq!(status("frozen"), Some(crate::control::VmStatus::Suspended));
+    assert_eq!(status("live"), Some(crate::control::VmStatus::Running));
 }
 
 #[test]
