@@ -25,6 +25,7 @@ use crate::{CocoApp, machine_def, new_vm};
 use selection::Selection;
 
 mod bulk;
+mod control;
 mod delete;
 mod detail;
 mod detail_map;
@@ -308,18 +309,28 @@ pub struct ManagerApp {
     /// Message from the last failed delete, shown inside the confirmation
     /// modal (which stays open for another try or a Cancel).
     delete_error: Option<String>,
+    /// The control-protocol listener (`coco_control::server`), servicing an
+    /// external driver such as `cocovm-mcp`. `None` when disabled
+    /// (`--control-port 0`) or its bind failed at startup.
+    control: Option<coco_control::ControlServer>,
+    /// Control requests deferred until the VM they target finishes some work
+    /// (`manager::control`), resolved once per frame after VMs have stepped.
+    pending: Vec<control::PendingControl>,
 }
 
 impl ManagerApp {
     /// All state is injected rather than loaded here, so tests can construct
     /// the manager without touching the user's real config/data directories.
     /// Each entry's Suspended flag is seeded from its
-    /// [`SUSPEND_STATE_FILE`]'s existence.
+    /// [`SUSPEND_STATE_FILE`]'s existence. `control` is already bound (or
+    /// `None`) — binding needs a `CreationContext`'s `egui::Context` for its
+    /// wake closure, which only [`run`] has, so it happens there.
     pub fn new(
         photo: Option<Photo>,
         machines_dir: Option<PathBuf>,
         artifacts_root: Option<PathBuf>,
         mut entries: Vec<MachineEntry>,
+        control: Option<coco_control::ControlServer>,
     ) -> Self {
         if let Some(root) = &artifacts_root {
             for entry in &mut entries {
@@ -338,6 +349,8 @@ impl ManagerApp {
             save_error: None,
             pending_delete: Vec::new(),
             delete_error: None,
+            control,
+            pending: Vec::new(),
         }
     }
 }
@@ -423,13 +436,16 @@ impl eframe::App for ManagerApp {
         });
 
         self.draw_delete_confirmation(ctx);
+        self.drain_control();
         self.draw_running_vms(ctx);
+        self.resolve_control_pending(ctx);
     }
 }
 
 /// Open the manager as the application's main window (blocks until close,
-/// like `eframe::run_native` everywhere else).
-pub fn run() -> eframe::Result<()> {
+/// like `eframe::run_native` everywhere else). `control_port` binds the
+/// control-protocol listener (`0` disables it — see `cli.rs`).
+pub fn run(control_port: u16) -> eframe::Result<()> {
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
@@ -468,11 +484,13 @@ pub fn run() -> eframe::Result<()> {
             });
             // Assets are fetched after the banner so the startup box prints first.
             crate::ensure_assets();
+            let control = control::bind_control(control_port, &cc.egui_ctx);
             Ok(Box::new(ManagerApp::new(
                 photo_view::random(),
                 machines_dir,
                 machine_def::artifacts_root(),
                 entries,
+                control,
             )))
         }),
     )

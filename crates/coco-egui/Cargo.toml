@@ -20,8 +20,13 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # `env` lets an `#[arg(env = …)]` fall back to an environment variable, which
 # `load_dotenv` (startup.rs) seeds from the `.env` file.
 clap = { version = "4.6.1", features = ["derive", "env"] }
+# MIT OR Apache-2.0. Wire types and the loopback listener the app services
+# for an external driver (see `manager/control.rs`).
+coco-control = { path = "../coco-control" }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
+# MIT OR Apache-2.0. Encodes `screenshot` replies as base64 PNG data.
+base64 = "0.22"
 # MIT. Seeds the environment from a `.env` file at startup, so `RUST_LOG` and
 # friends can be set per-checkout instead of per-shell (`load_dotenv` in
 # startup.rs).

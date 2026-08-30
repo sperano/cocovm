@@ -781,6 +781,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "coco-control"
+version = "0.7.2"
+dependencies = [
+ "coco-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "coco-core"
 version = "0.7.2"
 dependencies = [
@@ -798,8 +807,10 @@ dependencies = [
 name = "coco-egui"
 version = "0.7.2"
 dependencies = [
+ "base64",
  "chrono",
  "clap",
+ "coco-control",
  "coco-core",
  "cocovm-test-assets",
  "cpal",
@@ -821,6 +832,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+]
+
+[[package]]
+name = "coco-mcp"
+version = "0.7.2"
+dependencies = [
+ "clap",
+ "coco-control",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3347,6 +3368,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json"
+version = "1.0.151"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+dependencies = [
+ "itoa",
+ "memchr",
+ "serde",
+ "serde_core",
+ "zmij",
+]
+
+[[package]]
 name = "serde_repr"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5117,6 +5151,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zune-core"

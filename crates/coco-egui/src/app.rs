@@ -5,6 +5,8 @@
 
 use crate::*;
 
+mod control;
+pub(crate) use control::{RemoteHold, RemoteStick};
 mod frame;
 pub(crate) use frame::background_repaint_delay;
 mod input;
@@ -198,6 +200,28 @@ pub(crate) struct CocoApp {
     /// [`manager::lifecycle::fold_runtime_into_def`] on Suspend, Stop, and
     /// quit.
     pub(crate) total_runtime: std::time::Duration,
+    /// Text queued by a control-protocol `type_text` request — a second,
+    /// independent [`TypeAhead`] instance so remote typing never fights the
+    /// host's own `type_ahead` for the same queue (`app/frame.rs::run_fields`
+    /// advances both). Driven regardless of host keyboard focus — see
+    /// `app/input.rs`'s `release_keyboard_state` doc.
+    pub(crate) remote_type_ahead: TypeAhead,
+    /// A control-protocol `press_keys` hold in progress: the positions held
+    /// down and the fields remaining before [`Self::run_fields`]
+    /// (`app/frame.rs`) releases them. `None` when no hold is active — only
+    /// one may be in flight at a time.
+    pub(crate) remote_held: Option<RemoteHold>,
+    /// Per-port joystick override from a control-protocol `joystick`
+    /// request, indexed like [`JoystickInputs::sources`]
+    /// (`coco_core::joystick::{LEFT, RIGHT}`). Applied in
+    /// [`Self::drive_joysticks`] (`app/input.rs`) after the host's own
+    /// [`JoystickInputs::apply`], so it wins over an unassigned port's
+    /// recenter. `None` hands the port back to the host source.
+    pub(crate) remote_joy: [Option<RemoteStick>; 2],
+    /// Fields actually completed by [`Self::run_fields`] (`app/frame.rs`),
+    /// monotonic for this VM's lifetime — the control protocol's `wait`
+    /// request polls this to know when its target field count has elapsed.
+    pub(crate) fields_run: u64,
 }
 
 /// DriveWire launch settings — the payload of [`AppParams::drivewire`],
@@ -302,6 +326,10 @@ impl CocoApp {
             pending_resume: false,
             suspended: false,
             drew_suspended: false,
+            remote_type_ahead: TypeAhead::default(),
+            remote_held: None,
+            remote_joy: [None, None],
+            fields_run: 0,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path, cart_autostart);

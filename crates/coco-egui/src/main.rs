@@ -164,7 +164,7 @@ fn main() -> eframe::Result<()> {
 
     // The app always opens the CocoVM manager window; a future CLI will build on its machine
     // definitions.
-    manager::run()
+    manager::run(cli.control_port)
 }
 
 #[cfg(test)]

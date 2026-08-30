@@ -7,6 +7,10 @@ Virtual ][-level polish.
 - `crates/coco-core` — the headless machine (GIME, SAM, PIAs, disk, tape, sound…)
 - `crates/coco-egui` — the frontend: a VirtualBox-style VM manager with
   per-machine suspend/resume
+- `crates/coco-control` — the loopback control protocol a running VM answers
+  (keyboard, joystick, screen, disks…)
+- `crates/coco-mcp` — `cocovm-mcp`, an MCP server that lets an AI drive a
+  running VM through that protocol (see its README)
 - `book/` — a 16-chapter course that builds the emulator from scratch
 
 Run `cargo run` to open the VM manager. ROM images are not included in the

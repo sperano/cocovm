@@ -1,0 +1,15 @@
+[package]
+name = "coco-control"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+description = "Loopback control protocol for driving a running cocovm VM (used by cocovm-mcp)"
+
+[lints]
+workspace = true
+
+[dependencies]
+coco-core = { path = "../coco-core" }
+serde = { version = "1", features = ["derive"] }
+# MIT OR Apache-2.0. Newline-delimited JSON wire format (`framing.rs`).
+serde_json = "1"
