@@ -22,6 +22,8 @@ use crate::*;
 
 use super::harness::*;
 
+const HEADLESS_SAMPLE_RATE_HZ: f64 = 48_000.0;
+
 /// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the feature-gated
 /// Debug tile. While Running, Start is the one disabled tile (it only resumes a
 /// suspended machine).
@@ -421,10 +423,9 @@ fn load_state_drops_queued_audio_from_before_the_load() {
         .unwrap_or_else(|e| panic!("save_state_to failed: {e}"));
 
     // Stand in for the real device (absent on CI) with a headless pipeline.
-    harness.state_mut().audio = audio::AudioOutput::headless(48_000.0);
-    for _ in 0..8 {
-        harness.step();
-    }
+    harness.state_mut().audio = audio::AudioOutput::headless(HEADLESS_SAMPLE_RATE_HZ);
+    harness.state_mut().machine.run_field();
+    harness.step();
     assert!(
         harness.state().audio.queued_frames() > 0,
         "running frames must queue audio in the headless pipeline"
