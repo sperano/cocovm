@@ -106,6 +106,9 @@ pub struct Machine {
     /// The latched audio-input state at that same line start (events since
     /// then live in `SystemBus::audio_events`).
     audio_line_inputs: crate::audio::AudioInputs,
+    /// MC14529 speaker-mux hold and crossfade state.
+    #[serde(default)]
+    audio_mux: crate::audio::AudioMux,
     /// True when the previous [`Machine::step_cpu_unit`] call burned a HALT*
     /// cycle instead of stepping. The MC6809 recognizes interrupts only at
     /// instruction-end boundaries, so the first instruction after HALT*
@@ -190,6 +193,7 @@ impl Machine {
             audio_buffer: Vec::new(),
             audio_line_start: 0,
             audio_line_inputs: crate::audio::AudioInputs::default(),
+            audio_mux: crate::audio::AudioMux::new(),
             prev_halted: false,
             line: 0,
             line_cycles_spent: 0,
@@ -327,6 +331,7 @@ impl Machine {
         self.audio_buffer.clear();
         self.audio_line_start = self.bus.cycle_clock;
         self.audio_line_inputs = self.bus.audio_inputs;
+        self.audio_mux = crate::audio::AudioMux::new();
     }
 
     /// Plug a cartridge into the expansion port. Does not reset the machine —

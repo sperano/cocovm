@@ -11,6 +11,7 @@ use coco_core::{Machine, MachineConfig, StepKind};
 use mc6809::Bus;
 
 const PIA1_DA: u16 = 0xFF20;
+const PIA0_CRA: u16 = 0xFF01;
 const PIA1_CRA: u16 = 0xFF21;
 const PIA1_DDRB: u16 = 0xFF22;
 const PIA1_CRB: u16 = 0xFF23;
@@ -20,6 +21,8 @@ const CR_C2_LOW: u8 = 0x34;
 const CR_C2_HIGH: u8 = 0x3C;
 /// Control value selecting the DDR (bit 2 clear).
 const CR_DDR: u8 = 0x30;
+const CROSSFADE_SETTLE_LINES: usize = 10;
+const MAX_CROSSFADE_STEP: f32 = 0.1;
 
 /// A parked CoCo 3 with the DAC speaker path enabled: PA2-7 outputs,
 /// SNDEN high, mux SEL=00.
@@ -137,4 +140,65 @@ fn beeper_toggle_is_centred_on_both_channels() {
     let on = grid.last().unwrap();
     assert!(on[0] > 0.0, "beeper reaches the grid");
     assert_eq!(on[0], on[1], "internal sources are centred");
+}
+
+#[test]
+fn inhibited_mux_holds_level_through_joystick_selection() {
+    let mut m = dac_machine();
+    m.bus.write(PIA1_DA, 0x3C);
+    m.run_field();
+    m.take_audio().count();
+    let baseline = finish_line(&mut m)[0];
+
+    m.bus.write(PIA1_CRB, CR_C2_LOW);
+    m.bus.write(PIA0_CRA, CR_C2_HIGH);
+    let inhibited = finish_line(&mut m);
+    assert!(
+        inhibited.iter().all(|sample| *sample == baseline),
+        "SNDEN inhibit must hold the mux level: {inhibited:?}"
+    );
+
+    m.bus.write(PIA0_CRA, CR_C2_LOW);
+    m.bus.write(PIA1_CRB, CR_C2_HIGH);
+    let restored = finish_line(&mut m);
+    assert!(
+        restored.iter().all(|sample| *sample == baseline),
+        "restoring the same source must not create a pulse: {restored:?}"
+    );
+}
+
+#[test]
+fn changed_dac_crossfades_when_mux_is_reenabled() {
+    let mut m = dac_machine();
+    m.bus.write(PIA1_DA, 0xFC);
+    m.run_field();
+    m.take_audio().count();
+    let baseline = finish_line(&mut m)[0][0];
+
+    m.bus.write(PIA1_CRB, CR_C2_LOW);
+    m.bus.write(PIA1_DA, 0x00);
+    finish_line(&mut m);
+    m.bus.write(PIA1_CRB, CR_C2_HIGH);
+
+    let mut transition = Vec::new();
+    for _ in 0..CROSSFADE_SETTLE_LINES {
+        transition.extend(finish_line(&mut m).into_iter().map(|sample| sample[0]));
+    }
+    assert_eq!(
+        transition[0], baseline,
+        "crossfade must start at the held level"
+    );
+    assert_eq!(
+        *transition.last().unwrap(),
+        0.0,
+        "crossfade must settle at the new DAC level"
+    );
+    let largest_step = transition
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0, f32::max);
+    assert!(
+        largest_step < MAX_CROSSFADE_STEP,
+        "mux transition stepped by {largest_step}: {transition:?}"
+    );
 }
