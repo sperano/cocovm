@@ -6,8 +6,9 @@
 //! boundary. This pipeline instead records a [`AudioEvent`] snapshot at the
 //! CPU-cycle timestamp of every audio-affecting write, then renders each
 //! scanline to a fixed [`OVERSAMPLE`]-slot stereo grid at the line's end:
-//! between events the hardware holds its level (latches), so grid rendering
-//! is exact reconstruction up to grid resolution, not interpolation.
+//! between events the input latches hold their level. The MC14529 output then
+//! holds while inhibited and crossfades between selected sources, matching
+//! MAME's CoCo sound path and suppressing joystick-poll switching artifacts.
 //!
 //! Two kinds of source feed the grid:
 //! - **Latched** inputs ([`AudioInputs`]): the PIA DAC, single-bit beeper,
@@ -42,10 +43,79 @@ const CASSETTE_GAIN: f32 = 0.35;
 /// (the AY-3-8913's output is already normalized 0.0–1.0 by `Ay8913`).
 const CARTRIDGE_GAIN: f32 = 0.75;
 const DAC_MAX: f32 = 63.0;
+/// MAME's CoCo MC14529 model uses this ramp to suppress source-switch clicks.
+const MUX_CROSSFADE_SECONDS: f64 = 0.000_5;
 /// SEL2:SEL1 = 01: the mux's cassette input.
 const SEL_CASSETTE: u8 = 0b01;
 /// SEL2:SEL1 = 10: the mux's cartridge input.
 const SEL_CARTRIDGE: u8 = 0b10;
+
+#[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+enum MuxSource {
+    #[default]
+    Inhibited,
+    Dac,
+    Cassette,
+    Cartridge,
+    Grounded,
+}
+
+/// Stateful MC14529 speaker-output model. Inhibit holds the last level, and
+/// source changes use MAME's CoCo crossfade to suppress switching artifacts.
+/// The default adopts its first source immediately so snapshots that predate
+/// this state keep their original first-sample behavior.
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+pub(crate) struct AudioMux {
+    output: f32,
+    target: MuxSource,
+    fade_from: f32,
+    fade_sample: u32,
+    initialized: bool,
+}
+
+impl AudioMux {
+    pub fn new() -> Self {
+        Self {
+            initialized: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn sample(
+        &mut self,
+        inputs: &AudioInputs,
+        cassette_bit: bool,
+        cartridge: f32,
+        sample_rate: f64,
+    ) -> f32 {
+        let target = mux_source(inputs);
+        let target_level = mux_level(target, inputs, cassette_bit, cartridge);
+        if !self.initialized {
+            self.output = target_level;
+            self.target = target;
+            self.initialized = true;
+            return self.output;
+        }
+        if target != self.target {
+            self.target = target;
+            self.fade_from = self.output;
+            self.fade_sample = 0;
+        }
+        if target == MuxSource::Inhibited {
+            return self.output;
+        }
+
+        let fade_samples = (MUX_CROSSFADE_SECONDS * sample_rate).max(1.0) as u32;
+        if self.fade_sample < fade_samples {
+            let fraction = self.fade_sample as f32 / fade_samples as f32;
+            self.output = self.fade_from + (target_level - self.fade_from) * fraction;
+            self.fade_sample += 1;
+        } else {
+            self.output = target_level;
+        }
+        self.output
+    }
+}
 
 /// The latched audio-affecting inputs, snapshotted on every write that
 /// changes one of them (see `SystemBus::note_audio_write`).
@@ -75,36 +145,23 @@ pub(crate) struct AudioEvent {
     pub inputs: AudioInputs,
 }
 
-/// Mix one grid slot from the latched inputs, the line's cassette level, and
-/// this slot's `ay` (mux-gated cartridge) and `generators` (crystal PSG) samples.
+/// Mix an instantaneous speaker probe without the machine's stateful mux
+/// transition, plus this slot's crystal-clocked generator samples.
 pub(crate) fn mix(
     inputs: &AudioInputs,
     cassette_bit: bool,
     ay: f32,
     generators: (f32, f32),
 ) -> [f32; 2] {
-    let mut l = 0.0f32;
-    let mut r = 0.0f32;
-    if inputs.snden {
-        match inputs.sel {
-            0 => {
-                let v = DAC_GAIN * f32::from(inputs.dac) / DAC_MAX;
-                l += v;
-                r += v;
-            }
-            SEL_CASSETTE => {
-                if inputs.cassette_relay && cassette_bit {
-                    l += CASSETTE_GAIN;
-                    r += CASSETTE_GAIN;
-                }
-            }
-            SEL_CARTRIDGE => {
-                l += CARTRIDGE_GAIN * ay;
-                r += CARTRIDGE_GAIN * ay;
-            }
-            _ => {} // 11: grounded
-        }
-    }
+    let source = mux_source(inputs);
+    let mux = mux_level(source, inputs, cassette_bit, ay);
+    mix_direct(mux, inputs, generators)
+}
+
+/// Add the always-connected sources to a stateful mux output.
+pub(crate) fn mix_direct(mux: f32, inputs: &AudioInputs, generators: (f32, f32)) -> [f32; 2] {
+    let mut l = mux;
+    let mut r = mux;
     if inputs.single_bit {
         l += SINGLE_BIT_GAIN;
         r += SINGLE_BIT_GAIN;
@@ -115,3 +172,28 @@ pub(crate) fn mix(
     r += CART_GAIN * generators.1;
     [l, r]
 }
+
+fn mux_source(inputs: &AudioInputs) -> MuxSource {
+    if !inputs.snden {
+        return MuxSource::Inhibited;
+    }
+    match inputs.sel {
+        0 => MuxSource::Dac,
+        SEL_CASSETTE => MuxSource::Cassette,
+        SEL_CARTRIDGE => MuxSource::Cartridge,
+        _ => MuxSource::Grounded,
+    }
+}
+
+fn mux_level(source: MuxSource, inputs: &AudioInputs, cassette_bit: bool, cartridge: f32) -> f32 {
+    match source {
+        MuxSource::Dac => DAC_GAIN * f32::from(inputs.dac) / DAC_MAX,
+        MuxSource::Cassette if inputs.cassette_relay && cassette_bit => CASSETTE_GAIN,
+        MuxSource::Cartridge => CARTRIDGE_GAIN * cartridge,
+        MuxSource::Inhibited | MuxSource::Cassette | MuxSource::Grounded => 0.0,
+    }
+}
+
+#[cfg(test)]
+#[path = "audio_test.rs"]
+mod tests;

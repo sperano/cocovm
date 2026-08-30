@@ -25,8 +25,9 @@ impl SystemBus {
         }
     }
 
-    /// Mix one stereo sample from the CURRENT latched inputs plus one
-    /// `dt`-second generator step — the instantaneous speaker level, for tests and level meters.
+    /// Mix the current source levels without the machine's stateful mux hold
+    /// and crossfade. This is a static routing probe for tests, not a sample
+    /// from [`Machine`](crate::Machine)'s rendered speaker stream.
     pub fn sound_probe(&mut self, dt: f64) -> [f32; 2] {
         let inputs = self.snapshot_audio_inputs();
         let cassette_bit = self.cassette.playing() && self.cassette.input_bit();
