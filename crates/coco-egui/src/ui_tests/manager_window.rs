@@ -60,7 +60,7 @@ fn cmd_n_creates_a_machine_immediately() {
 #[test]
 fn manager_window_shows_its_toolbar() {
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
-        manager::ManagerApp::new(None, None, None, Vec::new())
+        manager::ManagerApp::new(None, None, None, Vec::new(), None)
     });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
@@ -91,7 +91,7 @@ fn manager_window_shows_its_toolbar() {
 #[test]
 fn manager_list_divider_is_draggable() {
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
-        manager::ManagerApp::new(None, None, None, Vec::new())
+        manager::ManagerApp::new(None, None, None, Vec::new(), None)
     });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
@@ -134,7 +134,7 @@ fn manager_window_renders_an_injected_photo() {
         pixels: egui::ColorImage::from_rgba_unmultiplied([8, 6], &[0x20; 8 * 6 * 4]),
     };
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
-        manager::ManagerApp::new(Some(photo), None, None, Vec::new())
+        manager::ManagerApp::new(Some(photo), None, None, Vec::new(), None)
     });
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();

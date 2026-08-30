@@ -3,11 +3,11 @@
 //! their VM is running, as opposed to editing one's definition in place
 //! (`manager::detail`).
 
-use std::fs;
-use std::path::PathBuf;
 use coco_core::MachineConfig;
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
+use std::fs;
+use std::path::PathBuf;
 
 use crate::machine_def;
 

@@ -15,6 +15,10 @@ impl KbMode {
     }
 }
 
+/// Fields one queued tap occupies in [`TypeAhead::advance`]: the hold and gap
+/// counts plus the three phase-transition fields (pop, hold→gap, gap→idle).
+pub(crate) const FIELDS_PER_TAP: u64 = TYPE_HOLD_FIELDS as u64 + TYPE_GAP_FIELDS as u64 + 3;
+
 /// Symbolic-mode type-ahead: replays queued (key, shift) taps with hold/gap timing
 /// so the ROM's 60 Hz keyboard scan registers each one.
 #[derive(Default)]
@@ -62,9 +66,21 @@ impl TypeAhead {
                 kb.set(kbd::SHIFT, false);
                 self.phase = TypePhase::Gap(TYPE_GAP_FIELDS);
             }
-            TypePhase::Hold(n) => self.phase = TypePhase::Hold(n - 1),
+            TypePhase::Hold(n) => {
+                // Re-asserted every field: a focus-loss `release_all` between
+                // fields must not cut the hold short.
+                kb.set(self.current.0, true);
+                if self.current.1 {
+                    kb.set(kbd::SHIFT, true);
+                }
+                self.phase = TypePhase::Hold(n - 1);
+            }
             TypePhase::Gap(0) => self.phase = TypePhase::Idle,
             TypePhase::Gap(n) => self.phase = TypePhase::Gap(n - 1),
         }
     }
 }
+
+#[cfg(test)]
+#[path = "typeahead_test.rs"]
+mod tests;

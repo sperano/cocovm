@@ -187,7 +187,7 @@ pub(super) fn manager_harness_with_artifacts(
     entries: Vec<manager::MachineEntry>,
 ) -> ManagerHarness {
     let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
-        manager::ManagerApp::new(None, machines_dir, artifacts_root, entries)
+        manager::ManagerApp::new(None, machines_dir, artifacts_root, entries, None)
     });
     // Tall enough for the whole detail pane to land in the AccessKit tree (egui only reports
     // on-screen widgets).

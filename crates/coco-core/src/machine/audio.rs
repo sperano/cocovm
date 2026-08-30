@@ -31,7 +31,8 @@ impl Machine {
         self.audio_line_start = line_end;
         // Keep the real span so event timestamps land in the right slot on odd lines.
         let span = line_end.saturating_sub(line_start).max(1);
-        let slot_dt = 1.0 / self.audio_sample_rate();
+        let sample_rate = self.audio_sample_rate();
+        let slot_dt = 1.0 / sample_rate;
         let cassette_bit = self.bus.cassette.playing() && self.bus.cassette.input_bit();
 
         let events = std::mem::take(&mut self.bus.audio_events);
@@ -45,8 +46,11 @@ impl Machine {
             }
             let ay = self.bus.cart.audio_sample();
             let generators = self.bus.cart.generator_sample(slot_dt);
+            let mux = self
+                .audio_mux
+                .sample(&inputs, cassette_bit, ay, sample_rate);
             self.audio_buffer
-                .push(audio::mix(&inputs, cassette_bit, ay, generators));
+                .push(audio::mix_direct(mux, &inputs, generators));
         }
         // Final-slot-tail events carry over as next line's start state.
         self.audio_line_inputs = self.bus.audio_inputs;

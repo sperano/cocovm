@@ -77,6 +77,7 @@ fn on_exit_folds_live_runtime_into_the_persisted_total() {
         Some(machines_dir.path().to_path_buf()),
         Some(artifacts_root.path().to_path_buf()),
         vec![MachineEntry::new("on-exit-test".to_string(), def)],
+        None,
     );
 
     manager.start_vm(0);
@@ -119,6 +120,7 @@ fn on_exit_migrates_a_rename_deferred_while_running() {
         Some(machines_dir.path().to_path_buf()),
         Some(artifacts_root.path().to_path_buf()),
         vec![MachineEntry::new(OLD_SLUG.to_string(), def)],
+        None,
     );
 
     manager.start_vm(0);
@@ -209,6 +211,7 @@ fn suspend_fails_and_leaves_the_machine_running_when_disk_write_back_fails() {
         None,
         Some(artifacts.path().to_path_buf()),
         vec![entry],
+        None,
     );
 
     let state_file = suspend_state_path(artifacts.path(), "dirty-disk");

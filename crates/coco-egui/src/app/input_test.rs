@@ -144,3 +144,67 @@ fn focus_loss_releases_keyboard_state_without_key_up() {
         NO_KEYS_DOWN
     );
 }
+
+/// A remote `type_text` session survives a focus-loss frame — unlike the
+/// host's own `type_ahead`, which `release_keyboard_state` clears — since
+/// it's driven from `run_fields`, not from focus-gated input handling.
+#[test]
+fn remote_type_ahead_survives_a_focus_loss_frame() {
+    let ctx = egui::Context::default();
+    let mut app = test_app();
+    app.start_remote_typing("B").expect("running VM accepts");
+    assert!(app.remote_type_ahead.is_active());
+
+    let lost_focus = egui::RawInput {
+        focused: false,
+        events: vec![egui::Event::WindowFocused(false)],
+        ..Default::default()
+    };
+    run_input_frame(&ctx, &mut app, lost_focus);
+
+    assert!(
+        app.remote_type_ahead.is_active(),
+        "remote typing must not be cleared by a host focus-loss frame"
+    );
+    assert!(
+        !app.type_ahead.is_active(),
+        "the host's own type_ahead is unaffected here (nothing was queued into it)"
+    );
+}
+
+/// A `joystick` override wins over the host source, even a port set to
+/// `JoySource::None` which recenters every frame. `Joysticks` has no axis/
+/// button getters, so the override is checked through `compare` (the
+/// comparator the hardware itself reads) and `button_rows`.
+#[test]
+fn remote_joystick_override_wins_over_the_host_source() {
+    let ctx = egui::Context::default();
+    let mut app = test_app();
+    let right = coco_core::joystick::RIGHT;
+    app.apply_remote_joystick(
+        crate::control::Stick::Right,
+        Some(63),
+        Some(0),
+        Some(true),
+        None,
+        false,
+    );
+
+    let _ = ctx.run(egui::RawInput::default(), |ctx| app.drive_joysticks(ctx));
+
+    let joy = &app.machine.bus.joysticks;
+    assert!(
+        joy.compare(right, coco_core::joystick::AXIS_X, 63),
+        "x must be at AXIS_MAX (63), not JoySource::None's recentered 32"
+    );
+    assert!(
+        !joy.compare(right, coco_core::joystick::AXIS_Y, 1),
+        "y must be at 0, not JoySource::None's recentered 32"
+    );
+    const RIGHT_BUTTON1_BIT: u8 = 0x01;
+    assert_ne!(
+        joy.button_rows() & RIGHT_BUTTON1_BIT,
+        0,
+        "button1 must be held"
+    );
+}
