@@ -36,6 +36,7 @@ fn test_manager(
         Some(machines_dir.to_path_buf()),
         Some(artifacts_root.to_path_buf()),
         vec![MachineEntry::new(slug.to_string(), def)],
+        None,
     )
 }
 
@@ -386,6 +387,7 @@ fn failed_checkpoint_cleanup_fails_the_resume_and_survives_restart() {
         Some(machines_dir.path().to_path_buf()),
         Some(artifacts_root.path().to_path_buf()),
         vec![MachineEntry::new(loaded_slug, loaded_def)],
+        None,
     );
     assert!(
         restarted.entries[0].suspended,

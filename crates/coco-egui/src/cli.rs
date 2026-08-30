@@ -2,8 +2,8 @@ use clap::{Parser, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
 /// The app's whole CLI surface: the manager window is always what runs (see
-/// `main.rs`), so the only flag left is the one that has to be known before
-/// the log subscriber is installed.
+/// `main.rs`). Besides the log level, the only other flag is the control
+/// listener's port.
 #[derive(Parser)]
 #[command(name = "coco", version, about = "A Tandy Color Computer emulator")]
 pub(crate) struct Cli {
@@ -18,6 +18,12 @@ pub(crate) struct Cli {
         default_value_t = LogLevel::Warn
     )]
     pub(crate) log_level: LogLevel,
+
+    /// Loopback port the built-in MCP server listens on, at
+    /// `http://127.0.0.1:<port>/mcp` (`crate::control`). `0` disables it
+    /// entirely.
+    #[arg(long, env = crate::control::PORT_ENV, default_value_t = crate::control::DEFAULT_PORT)]
+    pub(crate) control_port: u16,
 }
 
 /// `--log-level`, the CLI's spelling of a [`LevelFilter`].

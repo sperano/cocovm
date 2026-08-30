@@ -24,6 +24,11 @@ impl CocoApp {
         }
     }
 
+    /// Releases the host-driven half of the matrix on focus loss/text-widget
+    /// takeover. Deliberately leaves `remote_type_ahead`/`remote_held`
+    /// alone — a control-protocol driver's session is unaffected by host
+    /// focus, since it is driven from `run_fields` (`app/frame.rs`), not
+    /// from here.
     fn release_keyboard_state(&mut self) {
         self.machine.bus.keyboard.release_all();
         self.type_ahead.clear();
@@ -67,8 +72,13 @@ impl CocoApp {
         }
 
         // While a paste/type-ahead burst drains, it owns the matrix so replayed taps
-        // aren't clobbered by the per-frame positional writes.
-        if self.type_ahead.is_active() {
+        // aren't clobbered by the per-frame positional writes. A remote `type_text`/
+        // `press_keys` session must win the same way, so a focused VM window's
+        // positional pass doesn't clobber a key it's mid-hold on.
+        if self.type_ahead.is_active()
+            || self.remote_type_ahead.is_active()
+            || self.remote_held.is_some()
+        {
             return;
         }
         if self.kb_mode == KbMode::Positional {
@@ -193,7 +203,9 @@ impl CocoApp {
         }
     }
 
-    /// Poll and apply all joystick input sources (mouse/gamepad/keys) for both ports.
+    /// Poll and apply all joystick input sources (mouse/gamepad/keys) for both ports,
+    /// then let a control-protocol `joystick` override win over whatever the host
+    /// source just wrote (including an unassigned port's own recenter).
     /// Called before running any emulated fields, so a field sees this frame's state.
     pub(crate) fn drive_joysticks(&mut self, ctx: &egui::Context) {
         let active_rect = self.active_screen_rect();
@@ -204,6 +216,28 @@ impl CocoApp {
             self.display_layer,
             &mut self.machine,
         );
+        for port in [coco_core::joystick::LEFT, coco_core::joystick::RIGHT] {
+            let Some(remote) = &self.remote_joy[port] else {
+                continue;
+            };
+            self.machine
+                .bus
+                .joysticks
+                .set_axis(port, coco_core::joystick::AXIS_X, remote.x);
+            self.machine
+                .bus
+                .joysticks
+                .set_axis(port, coco_core::joystick::AXIS_Y, remote.y);
+            self.machine
+                .bus
+                .joysticks
+                .set_button(port, 0, remote.buttons[0]);
+            self.machine
+                .bus
+                .joysticks
+                .set_button(port, 1, remote.buttons[1]);
+            self.joysticks.in_use[port] = true;
+        }
     }
 
     /// The active (non-border) picture's on-screen rect, scaled from

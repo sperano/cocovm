@@ -65,10 +65,40 @@ impl CocoApp {
             if self.type_ahead.is_active() {
                 self.type_ahead.advance(&mut self.machine.bus.keyboard);
             }
-            if !self.debugger.run_field(&mut self.machine) {
+            if self.remote_type_ahead.is_active() {
+                self.remote_type_ahead
+                    .advance(&mut self.machine.bus.keyboard);
+            }
+            self.advance_remote_hold();
+            if self.debugger.run_field(&mut self.machine) {
+                self.fields_run += 1;
+            } else {
                 self.running = false;
                 break;
             }
+        }
+    }
+
+    /// Decrement an in-progress `press_keys` hold, releasing every held
+    /// position and clearing [`Self::remote_held`] once it reaches 0. Runs
+    /// before the breakpoint check so a hold due to release this field isn't
+    /// skipped by a breakpoint hit on the same field.
+    fn advance_remote_hold(&mut self) {
+        let Some(hold) = self.remote_held.as_mut() else {
+            return;
+        };
+        if hold.fields_left == 0 {
+            for &pos in &hold.keys {
+                self.machine.bus.keyboard.set(pos, false);
+            }
+            self.remote_held = None;
+        } else {
+            // Re-asserted every field so a focus-loss `release_all` can't cut
+            // the hold short.
+            for &pos in &hold.keys {
+                self.machine.bus.keyboard.set(pos, true);
+            }
+            hold.fields_left -= 1;
         }
     }
 
