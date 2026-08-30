@@ -69,7 +69,8 @@ impl ManagerApp {
     }
 
     fn print_action(&self, action: &str, index: usize) {
-        println!(" {} {}", action, self.entries[index].slug.if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BrightElectricViolet>()));
+        let slug = &self.entries[index].slug;
+        println!(" {} {}", action, slug.if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BrightElectricViolet>()));
     }
 
     /// Launch `entries[index]`'s saved definition into a fresh `CocoApp`,
