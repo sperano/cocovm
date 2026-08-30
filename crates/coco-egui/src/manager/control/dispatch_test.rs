@@ -135,3 +135,32 @@ fn insert_disk_action_reports_a_missing_fd502() {
         .expect_err("insert without a controller must fail");
     assert!(!err.is_empty());
 }
+
+#[test]
+fn insert_disk_action_reports_a_new_failure_despite_a_stale_cart_error() {
+    const STALE: &str = "stale error from an earlier UI action";
+    let mut app = manager(vec![running_entry("live")]);
+    app.entries[0].vm.as_mut().unwrap().cart_error = Some(STALE.to_string());
+    let err = app
+        .insert_disk_action(
+            &Some("live".to_string()),
+            0,
+            "/no/such/disk.dsk".to_string(),
+        )
+        .expect_err("a fresh failure must surface even with a stale error present");
+    assert_ne!(err, STALE);
+}
+
+#[test]
+fn eject_disk_action_keeps_a_stale_cart_error_when_it_succeeds() {
+    const STALE: &str = "stale error from an earlier UI action";
+    let mut app = manager(vec![running_entry("live")]);
+    app.entries[0].vm.as_mut().unwrap().cart_error = Some(STALE.to_string());
+    // Ejecting an empty drive with no controller is a no-op, not an error.
+    app.eject_disk_action(&Some("live".to_string()), 0)
+        .expect("ejecting an empty drive succeeds");
+    assert_eq!(
+        app.entries[0].vm.as_ref().unwrap().cart_error.as_deref(),
+        Some(STALE)
+    );
+}

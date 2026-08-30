@@ -10,6 +10,28 @@ use crate::{CocoApp, UI_DRIVES};
 
 use super::{ManagerApp, PendingCondition, PendingControl};
 
+fn check_drive(drive: usize) -> Result<(), String> {
+    if drive >= UI_DRIVES {
+        return Err(format!("drive must be 0..{UI_DRIVES}"));
+    }
+    Ok(())
+}
+
+/// Run a media action that reports failure through `CocoApp::cart_error`
+/// and turn only the error *this* call raised into `Err`; a stale error
+/// from an earlier UI action is set aside first, then put back.
+fn with_cart_error(app: &mut CocoApp, action: impl FnOnce(&mut CocoApp)) -> Result<Reply, String> {
+    let prior = app.cart_error.take();
+    action(app);
+    match app.cart_error.take() {
+        Some(e) => Err(e),
+        None => {
+            app.cart_error = prior;
+            Ok(Reply::Done)
+        }
+    }
+}
+
 /// `Ok`/`Err` into a [`Response`].
 fn response(result: Result<Reply, String>) -> Response {
     match result {
@@ -140,8 +162,7 @@ impl ManagerApp {
 
     /// `insert_disk`: [`UI_DRIVES`], not `coco_core::fdc::DRIVE_COUNT` — the
     /// UI's own smaller exposed drive count, which is what `CocoApp::disk_paths`
-    /// is actually sized to (see its field doc). Reports only an error
-    /// `insert_disk` itself just raised, not a pre-existing one.
+    /// is actually sized to (see its field doc).
     fn insert_disk_action(
         &mut self,
         vm: &Option<String>,
@@ -149,31 +170,17 @@ impl ManagerApp {
         path: String,
     ) -> Result<Reply, String> {
         let idx = self.resolve_vm(vm, true)?;
-        if drive >= UI_DRIVES {
-            return Err(format!("drive must be 0..{UI_DRIVES}"));
-        }
+        check_drive(drive)?;
         let app = self.vm_mut(idx);
-        let had_error = app.cart_error.is_some();
-        app.insert_disk(drive, PathBuf::from(path));
-        if !had_error && let Some(e) = app.cart_error.take() {
-            return Err(e);
-        }
-        Ok(Reply::Done)
+        with_cart_error(app, |app| app.insert_disk(drive, PathBuf::from(path)))
     }
 
     /// `eject_disk`: [`Self::insert_disk_action`]'s twin.
     fn eject_disk_action(&mut self, vm: &Option<String>, drive: usize) -> Result<Reply, String> {
         let idx = self.resolve_vm(vm, true)?;
-        if drive >= UI_DRIVES {
-            return Err(format!("drive must be 0..{UI_DRIVES}"));
-        }
+        check_drive(drive)?;
         let app = self.vm_mut(idx);
-        let had_error = app.cart_error.is_some();
-        app.eject_disk(drive);
-        if !had_error && let Some(e) = app.cart_error.take() {
-            return Err(e);
-        }
-        Ok(Reply::Done)
+        with_cart_error(app, |app| app.eject_disk(drive))
     }
 
     /// `wait`: defer until `CocoApp::fields_run` reaches its current value
