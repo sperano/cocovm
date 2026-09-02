@@ -40,7 +40,8 @@ impl SP0256 {
     }
 
     /// Run instructions until an operand block gives the filter a repeat
-    /// count, or the sequencer halts (MAME `micro`).
+    /// count, or the sequencer halts. Kept as one function, over the usual
+    /// length ceiling, so it audits line by line against MAME's `micro`.
     pub(super) fn micro(&mut self) {
         let mut budget = STEP_BUDGET;
         while self.filt.rpt <= 0 {

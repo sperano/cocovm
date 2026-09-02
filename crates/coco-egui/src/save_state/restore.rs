@@ -212,7 +212,9 @@ impl CocoApp {
             let Cart::SoundSpeechCartridge(ssc) = cart else {
                 continue;
             };
-            let rom = rom.get_or_insert_with(|| std::fs::read(&path).ok());
+            let rom = rom
+                .get_or_insert_with(|| std::fs::read(&path).ok())
+                .as_deref();
             let Some(bytes) = rom else {
                 continue;
             };

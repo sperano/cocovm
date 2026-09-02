@@ -200,11 +200,6 @@ impl SoundSpeechCartridge {
         self.sp0256.is_some()
     }
 
-    /// The speech chip, for tests/debugging.
-    pub fn sp0256(&self) -> Option<&SP0256> {
-        self.sp0256.as_ref()
-    }
-
     /// Direct AY-3-8913 register write, bypassing the host-byte protocol
     /// (used internally by the protocol interpreter, and for tests/debugging).
     pub fn ay_write(&mut self, reg: u8, val: u8) {
