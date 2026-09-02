@@ -39,11 +39,16 @@ drives for music/sound effects.
   RAM per the flat-RAM model below — but their EXECUTE variants are no-ops:
   there is no text-to-allophone converter to run them through. See
   "Deferred" at the end.
-- **Needs a ROM**: the SP0256-AL2's 2 KB allophone mask ROM
-  (`roms/sp0256-al2.rom`, MAME's `sp0256-al2.bin`). Without it
-  `SoundSpeechCartridge::new` builds the cartridge chip-less: the sound half
-  works unchanged, speech is silent, and status bit 6 reads permanently
-  idle.
+- **Needs a ROM**: the SP0256-AL2's 2 KB allophone mask ROM, installed by
+  hand as `~/.local/share/cocovm/roms/sp0256-al2.rom` (MAME's
+  `sp0256-al2.bin` from its `coco_ssc` set, SHA-1
+  `e60fcb5fa16ff3f3b69d36c7a6e955744d3feafc`, renamed). The first-run asset
+  bundle does not carry it yet, and `ensure_assets` never tops up a
+  populated ROM directory, so an existing install has to drop the file in
+  itself. Without it `SoundSpeechCartridge::new` builds the cartridge
+  chip-less: the sound half works unchanged, speech is silent, status bit 6
+  reads permanently idle, and the frontend logs one `info` line at
+  insertion saying so.
 
 **Why the TMS7040 itself isn't emulated, but its protocol now is**: on real
 hardware, a byte written to `$FF7E` isn't itself a documented opcode from the

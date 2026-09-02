@@ -100,6 +100,9 @@ pub struct SoundSpeechCartridge {
     ay: AY8913,
     /// The speech chip, present only when its AL2 ROM was supplied. Its ROM
     /// is not snapshotted; see [`SoundSpeechCartridge::attach_speech_rom`].
+    /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]):
+    /// a pre-field snapshot restores chip-less, exactly the old behaviour.
+    #[serde(default)]
     sp0256: Option<SP0256>,
     /// Bit 0 of the last byte written to `$FF7D`, for falling-edge detection
     /// on the next write. Power-on-reset starts clear so the very first
@@ -138,7 +141,9 @@ pub struct SoundSpeechCartridge {
     timer_base: u8,
     /// The sequential sound-data playback engine — see [`Engine`].
     engine: Engine,
-    /// The allophone-stream cursor — see [`Speech`].
+    /// The allophone-stream cursor — see [`Speech`]. `#[serde(default)]`
+    /// as for `sp0256`: a pre-field snapshot restores with no stream active.
+    #[serde(default)]
     speech: Speech,
 }
 

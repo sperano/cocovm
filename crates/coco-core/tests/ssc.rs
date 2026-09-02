@@ -17,5 +17,7 @@ mod bus_routing;
 mod handshake;
 #[path = "ssc/host_protocol.rs"]
 mod host_protocol;
+#[path = "ssc/snapshot_compat.rs"]
+mod snapshot_compat;
 #[path = "ssc/speech.rs"]
 mod speech;

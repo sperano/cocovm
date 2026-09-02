@@ -142,6 +142,9 @@ impl SP0256 {
             let sign_bit = 1u8 << (field.len - 1);
             let mut value = raw as i8;
             if field.delta && raw & sign_bit != 0 {
+                // MAME's `value |= -1 << len`; an 8-bit delta would need no
+                // extension at all, and `wrapping_shl` would wrongly wrap it.
+                debug_assert!(field.len < 8, "delta fields are at most 5 bits wide");
                 value |= (-1i8).wrapping_shl(len);
             }
             if field.shift != 0 {
