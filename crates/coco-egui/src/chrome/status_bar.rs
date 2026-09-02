@@ -268,21 +268,31 @@ impl CocoApp {
             .show(|ui| self.tape_menu_ui(ui));
     }
 
-    /// Shown when a printer sink is attached: text-file capture or the paper window's
-    /// live DMP-105. A capture path wins the label if both are somehow active at once.
+    /// Always shown: the icon flashes on serial-port (bit-banger) output even with no
+    /// sink attached. Click the icon for a menu to toggle the DMP-105 paper window or
+    /// open a captured print file. The label names the attached sink.
     fn printer_status(&mut self, ui: &mut egui::Ui) {
-        let bitbanger = &self.machine.bus.bitbanger;
-        let capture_path = self.print_capture_path.as_deref();
-        if capture_path.is_none() && self.paper_window.handle.is_none() {
-            return;
-        }
-        let active = self.activity.printer.observe(bitbanger.bytes_out());
+        let bytes_out = self.machine.bus.bitbanger.bytes_out();
+        let active = self.activity.printer.observe(bytes_out);
         ui.separator();
-        printer_icon(ui, active).on_hover_text("Printer — byte received");
-        ui.label(format!(
-            "Printer: {}",
-            capture_path.map_or("DMP-105", file_name)
-        ));
+        let icon = printer_icon(ui, active).interact(egui::Sense::click());
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Printer menu")
+        });
+        let capture_path = self.print_capture_path.as_deref();
+        let sink_label = capture_path
+            .map(file_name)
+            .or_else(|| self.paper_window.handle.is_some().then_some("DMP-105"));
+        let label_text = match sink_label {
+            Some(name) => format!("Printer: {name}"),
+            None => "Printer".to_string(),
+        };
+        let entry = (icon | ui.add(egui::Button::new(label_text).frame(false)))
+            .on_hover_text("Printer — byte sent on the serial port — click for menu");
+        egui::Popup::menu(&entry)
+            .id(ui.id().with("printer_menu"))
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.printer_menu_ui(ui));
     }
 
     /// The bar's last entry (except while a toast is showing): cumulative powered-on time.

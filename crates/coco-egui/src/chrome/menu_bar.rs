@@ -166,6 +166,45 @@ impl CocoApp {
         });
     }
 
+    /// Printer menu: toggle DMP-105 paper window or open a captured print file.
+    pub(super) fn printer_menu_ui(&mut self, ui: &mut egui::Ui) {
+        if ui.button("View Papers").clicked() {
+            self.toggle_paper_window();
+            ui.close();
+        }
+        if ui
+            .add_enabled(
+                self.print_capture_path.is_some(),
+                egui::Button::new("Open Print Capture"),
+            )
+            .clicked()
+        {
+            if let Some(path) = &self.print_capture_path {
+                let result = {
+                    #[cfg(target_os = "macos")]
+                    {
+                        std::process::Command::new("open").arg(path).spawn()
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        std::process::Command::new("xdg-open").arg(path).spawn()
+                    }
+                    #[cfg(target_os = "windows")]
+                    {
+                        std::process::Command::new("cmd")
+                            .args(["/C", "start", ""])
+                            .arg(path)
+                            .spawn()
+                    }
+                };
+                if let Err(e) = result {
+                    self.cart_error = Some(format!("Failed to open: {}", e));
+                }
+            }
+            ui.close();
+        }
+    }
+
     /// The Help menu.
     fn help_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("About").clicked() {
