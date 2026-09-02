@@ -198,6 +198,28 @@ impl CocoApp {
         if let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() {
             pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
         }
+        self.reattach_speech_roms();
+    }
+
+    /// Re-supply every Sound/Speech Cartridge's SP0256-AL2 ROM (not carried
+    /// by snapshots) from the installed ROM directory. A cartridge whose
+    /// chip was absent at save time gains one if the ROM is installed now;
+    /// a missing ROM leaves speech silent, as at insertion.
+    fn reattach_speech_roms(&mut self) {
+        let path = crate::rom_load::sp0256_rom_path();
+        let mut rom = None;
+        for (_, cart) in self.machine.bus.cart.slots_mut() {
+            let Cart::SoundSpeechCartridge(ssc) = cart else {
+                continue;
+            };
+            let rom = rom.get_or_insert_with(|| std::fs::read(&path).ok());
+            let Some(bytes) = rom else {
+                continue;
+            };
+            if let Err(e) = ssc.attach_speech_rom(bytes) {
+                tracing::warn!("{}: {e}; SSC speech disabled", path.display());
+            }
+        }
     }
 
     /// `rom_source` must follow the restored snapshot's own ROM ref, not the

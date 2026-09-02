@@ -2,7 +2,8 @@
 
 Sources: MAME master (`src/devices/bus/coco/coco_ssc.cpp` — `coco_ssc_device`;
 `src/devices/sound/ay8910.cpp`/`.h` — `ay8910_device`, classic AY-3-8910
-mode), Super Extended BASIC Unravelled II (SEBU) Appendix A (register
+mode; `src/devices/sound/sp0256.cpp` — `sp0256_device`, Joe Zbiciak's
+core), Super Extended BASIC Unravelled II (SEBU) Appendix A (register
 addresses), `docs/cartridges.md` ("Carts can decode addresses outside SCS"),
 and the **Tandy Speech/Sound Cartridge Owner's Manual (26-3144)** Appendix A
 (the host-byte command protocol itself — see "Host byte protocol" below).
@@ -20,22 +21,29 @@ synthesizer the firmware drives, and an AY-3-8913 PSG the firmware also
 drives for music/sound effects.
 
 - **Implemented**: the `$FF7D`/`$FF7E` handshake register semantics (busy
-  flag, status byte, SP0256-reset-triggered AY reset, busy-lost byte
-  discarding), a full AY-3-8913 core, and — new in this revision — the SOUND
-  half of the 26-3144 host-byte protocol: buffer-RAM LOAD/EXECUTE for sound
-  data and register strings, `$AF` direct AY register access, and the
-  sequential sound-data playback engine that drives the AY from a
-  timer-scheduled event stream. Also implemented: bus routing (including
-  through the Multi-Pak Interface) and audio mixing into
+  flag, status byte, SP0256 reset, SP0256-reset-edge-triggered AY reset,
+  busy-lost byte discarding), a full AY-3-8913 core, an SP0256-AL2 core
+  (`crates/coco-core/src/sp0256.rs`, see "SP0256-AL2 speech" below), and
+  the 26-3144 host-byte protocol minus text-to-speech: buffer-RAM
+  LOAD/EXECUTE for sound data, register strings and allophone streams,
+  `$AF` direct AY register access, the sequential sound-data playback
+  engine that drives the AY from a timer-scheduled event stream, and the
+  allophone feeder that drives the SP0256. Also implemented: bus routing
+  (including through the Multi-Pak Interface) and audio mixing into
   `SystemBus::sound_sample`.
 - **NOT implemented**: the TMS7040 CPU core itself (this crate interprets the
   protocol directly rather than emulating the microcontroller that runs it)
-  and the SP0256-AL2 speech synthesizer. Speech and allophone command bytes
-  are parsed just enough to keep the protocol state machine in sync — their
-  LOAD variants still fill buffer RAM per the flat-RAM model below — but
-  their EXECUTE variants (and `$00`'s speech-stop side effect) are no-ops:
-  there is no SP0256 to make them audible. This is pending SP0256 emulation,
-  not expected to land soon.
+  and, with it, the firmware's ROM-based English text-to-speech rules.
+  Speech-string (ASCII) command bytes are parsed just enough to keep the
+  protocol state machine in sync — their LOAD variants still fill buffer
+  RAM per the flat-RAM model below — but their EXECUTE variants are no-ops:
+  there is no text-to-allophone converter to run them through. See
+  "Deferred" at the end.
+- **Needs a ROM**: the SP0256-AL2's 2 KB allophone mask ROM
+  (`roms/sp0256-al2.rom`, MAME's `sp0256-al2.bin`). Without it
+  `SoundSpeechCartridge::new` builds the cartridge chip-less: the sound half
+  works unchanged, speech is silent, and status bit 6 reads permanently
+  idle.
 
 **Why the TMS7040 itself isn't emulated, but its protocol now is**: on real
 hardware, a byte written to `$FF7E` isn't itself a documented opcode from the
@@ -59,8 +67,11 @@ motherboard-unmapped, not the disk controller's SCS window — see
 
 - **Read**: always `0xFF`, unconditionally.
 - **Write**: only bit 0 is decoded.
-  - `1`: real hardware asserts the SP0256's RESET pin. No SP0256 is
-    emulated, so this is a no-op here.
+  - `1`: asserts the SP0256's RESET pin — every write with the bit set
+    resets the chip (MAME `coco_ssc_device::ff7d_write`), halting whatever
+    it was saying at once and raising SBY. The allophone-stream cursor is
+    firmware state and is *not* touched: on the next tick it hands the chip
+    the rest of the stream.
   - A **falling edge** (previous write had bit 0 = 1, this write has bit 0 =
     0) resets the AY-3-8913 (all registers and internal generator state) and
     forces `busy` to `false` — this is MAME `coco_ssc_device`'s modelled
@@ -96,12 +107,13 @@ motherboard-unmapped, not the disk controller's SCS window — see
     after a `$FF7E` write, cleared by [the synthetic busy-hold
     mechanism](#busy-clearing-a-synthetic-hold) below (or by the `$FF7D`
     falling-edge reset, or by `Ssc::reset`).
-  - **bit 6**: SP0256 SBY ("standby" = idle/ready). **Always set** — no
-    SP0256 is emulated, so it's always reported ready. See
-    [below](#no-sp0256-bit-6-always-set). The execute-speech commands
-    (`$C0`-`$C6`, `$D0`-`$D7`) are no-ops by design (see "Host byte
-    protocol") and never clear this bit, since there is no speech synthesis
-    running to report busy.
+  - **bit 6**: SP0256 SBY ("standby" = idle/ready), read straight off the
+    chip (MAME `m_spo->sby_r()`): it drops the moment an allophone is
+    latched and rises when the sequencer halts with nothing queued. Without
+    a speech ROM it is **always set** — see
+    [below](#bit-6-without-a-speech-rom). The execute-speech-string
+    commands (`$C0`-`$C6`, `$D0`-`$D7`) are no-ops (see "Host byte
+    protocol") and never clear it.
   - **bit 5**: Sound Activity Circuit output, **1 = quiet, 0 = sound
     playing** — see [SAC bit 5 is inverted](#sac-bit-5-is-inverted) below.
     Unchanged by this revision: it already tracks the AY's real output
@@ -131,13 +143,14 @@ processing the host byte, on its own schedule. Since no firmware runs here,
 there's nothing to "finish processing" on — see the next section for the
 synthetic stand-in.
 
-### No SP0256 → bit 6 always set
+### Bit 6 without a speech ROM
 
-Bit 6 (SBY) reporting "idle/ready" makes sense as a real status bit — real
-software would poll it before triggering more speech. Since no SP0256 exists
-in this implementation, there's no possibility of it ever being *not* ready,
-so the bit is hardwired set. This is a deliberate simplification, not a
-hardware fact — flagged here so it isn't mistaken for one.
+Bit 6 (SBY) is a real status bit — software polls it before triggering more
+speech — and with the AL2 ROM installed it is driven by the SP0256 core.
+When the ROM is absent the cartridge has no chip to report, so the bit is
+hardwired set and the allophone EXECUTE commands do nothing. That fallback
+is a convenience for ROM-less installs, not a hardware fact — flagged here so
+it isn't mistaken for one.
 
 ## Synthetic choices (not hardware facts)
 
@@ -214,7 +227,7 @@ SEB Unravelled II notes the SSC doesn't work in double-speed (POKE 65497)
 mode on real hardware — a bus-timing artifact of the real board, not a
 register semantic. MAME ignores it; so does this implementation.
 
-## Host byte protocol (SOUND half) — `crates/coco-core/src/ssc.rs`
+## Host byte protocol — `crates/coco-core/src/ssc.rs`
 
 Source: Tandy Speech/Sound Cartridge Owner's Manual (26-3144), Appendix A.
 Every command byte/range below was verified exhaustively against the
@@ -228,26 +241,26 @@ accumulates or speaks it).
 
 | Byte(s) | Meaning | Notes |
 |---|---|---|
-| `$00` | Stop all sound (+ speech on real hw) | does NOT clear buffer RAM; identical here to `$CF` |
+| `$00` | Stop all sound and speech | does NOT clear buffer RAM; `$CF` plus `$C7` |
 | `$80-$87` | LOAD speech string, buffers `N..=7` | terminator `$0D`; buffer-fill only, no-op content |
 | `$88-$8E` | LOAD sound data, buffers `N..=7` | terminator `$FF` |
 | `$8F` | LOAD timer base (1 postbyte, 0-255) | NOT a buffer write — see timer-base timing below |
 | `$90-$97` | LOAD speech string, buffer `N` only | terminator `$0D` |
 | `$98-$9F` | LOAD sound data, buffer `N` only | terminator `$FF` |
-| `$A0-$A7` | LOAD allophone stream, buffers `N..=7` | terminator `$FF`; buffer-fill only, no-op content |
+| `$A0-$A7` | LOAD allophone stream, buffers `N..=7` | terminator `$FF` |
 | `$A8-$AE` | LOAD register string, buffers `N..=7` | terminator `$FF` |
 | `$AF` | Toggle `$AF` direct-access mode | see below |
-| `$B0-$B7` | LOAD allophone stream, buffer `N` only | terminator `$FF`; buffer-fill only, no-op content |
+| `$B0-$B7` | LOAD allophone stream, buffer `N` only | terminator `$FF` |
 | `$B8-$BF` | LOAD register string, buffer `N` only | terminator `$FF` |
-| `$C0-$C6` | EXECUTE speech, buffers `N..=7` | **no-op**, no SP0256 |
-| `$C7` | Abort all speech | **no-op**, no SP0256 |
+| `$C0-$C6` | EXECUTE speech string, buffers `N..=7` | **no-op**: text-to-speech lives in the unemulated firmware |
+| `$C7` | Abort all speech | stops feeding the SP0256; the latched allophone plays out |
 | `$C8-$CE` | EXECUTE sound data, buffers `N..=7` | runs the sound engine |
-| `$CF` | Stop all sound | identical here to `$00` |
-| `$D0-$D7` | EXECUTE speech, buffer `N` only | **no-op**, no SP0256 |
+| `$CF` | Stop all sound | sound only; speech continues |
+| `$D0-$D7` | EXECUTE speech string, buffer `N` only | **no-op**, as `$C0-$C6` |
 | `$D8-$DF` | EXECUTE sound data, buffer `N` only | runs the sound engine |
-| `$E0-$E7` | EXECUTE allophone stream, buffers `N..=7` | **no-op**, no SP0256 |
+| `$E0-$E7` | EXECUTE allophone stream, buffers `N..=7` | feeds the SP0256 (see "SP0256-AL2 speech") |
 | `$E8-$EF` | EXECUTE register string, buffers `N..=7` | writes `(reg,val)` pairs straight to the AY |
-| `$F0-$F7` | EXECUTE allophone stream, buffer `N` only | **no-op**, no SP0256 |
+| `$F0-$F7` | EXECUTE allophone stream, buffer `N` only | feeds the SP0256 |
 | `$F8-$FF` | EXECUTE register string, buffer `N` only | writes `(reg,val)` pairs straight to the AY |
 
 `N` for every range above is `byte - <range start>`. Note the asymmetric
@@ -421,6 +434,81 @@ meet or exceed the current group's remaining duration, `advance_engine` runs
 immediately; no remainder is carried into the next event's countdown (same
 simplicity tradeoff as `BUSY_HOLD_CYCLES` elsewhere in this file).
 
+## SP0256-AL2 speech (`crates/coco-core/src/sp0256.rs`, `ssc/speech.rs`)
+
+The SP0256-AL2 is GI's "Narrator" speech processor with the 2 KB
+allophone mask ROM: a microsequencer walks bit-packed instructions in that
+ROM (LSB-first, at a bit-granular PC) to load a 12-pole LPC lattice filter —
+six cascaded second-order stages excited by a periodic impulse train
+(voiced) or a 15-bit LFSR (noise) — and re-runs after each frame's repeat
+count expires. `crates/coco-core/src/sp0256.rs` (+ `sp0256/micro.rs`,
+`lpc.rs`, `datafmt.rs`) is a port of MAME `sp0256.cpp`: same opcode
+semantics, operand-block layout tables, quantization table, wrapping
+16-bit filter arithmetic, `HIGH_QUALITY` limiter, and `PER_PAUSE`/`PER_NOISE`
+equivalents. The SPB640 speech FIFO is omitted — nothing on the SSC drives
+it. A stray `STEP_BUDGET` caps instructions per sequencer run so a garbage
+ROM that jumps to itself can't hang the emulator (not a hardware fact; the
+real AL2 ROM never comes near it).
+
+- **ROM**: 2 KB at chip address `$1000` (MAME `ROM_LOAD(..., 0x1000, ...)`),
+  the first 128 bytes being a 64-entry jump table. ALD value `n` lands the
+  sequencer at byte `$1000 + 2n` (MAME `m_ald = data << 4` in bit
+  addresses). Reads outside the image return 0 = RTS/HLT.
+- **Clocking**: its own 3.12 MHz crystal (MAME `XTAL(3'120'000)`), one
+  output sample per 312 clocks = 10 kHz. `SP0256::step(e_cycles)` accrues
+  samples at the fixed ratio 10 000 / 894 886 per E-cycle, so status lines
+  advance deterministically even with no audio device draining output (and
+  speech would run 2× fast in double-speed mode — the real cartridge doesn't
+  work there at all, per SEBU).
+- **Output**: `SP0256::output` linearly interpolates between the last two
+  10 kHz samples by the fraction of a sample period elapsed — a cheap stand-in
+  for the board's RC low-pass on the chip's digital output. Mixed into the
+  cartridge's mux-10 line in `Ssc::audio_sample` at `SPEECH_GAIN = 1.75 /
+  2.0` relative to the PSG (MAME `SP0256_GAIN`/`AY8913_GAIN`), **after** the
+  Sound Activity Circuit tap: MAME routes only the AY through the SAC, so
+  speech never clears status bit 5.
+- **Handshake lines**: `ald_write` is dropped while LRQ is low (MAME
+  `ald_w`); LRQ rises again as soon as the sequencer picks the command up,
+  so one allophone can be queued behind the one playing. SBY drops on
+  `ald_write` and rises when the sequencer halts with nothing latched — at
+  the next period boundary, up to 64 samples (~7 ms) after the last
+  instruction, same as MAME.
+- **Trailing pause**: the sequencer keeps re-exciting the last frame's
+  parameters after it halts; only a PAUSE (`PA1`-`PA5`) zeroes them. That is
+  the manual's own instruction ("You must end allophone data with a pause
+  ... to ensure that you silence the speech processor") and MAME's
+  behaviour, so it is kept.
+- **Timing vs Appendix C**: measured ALD-to-SBY durations (the golden table in
+  `sp0256_test.rs`) run 25-40 % shorter than the manual's nominal per-allophone
+  durations (which are themselves garbled in places: `/OY/` "42 ms", `/AY/`
+  "26 ms"). MAME's coco3 + S/SC speaking the manual's page-13 "Color
+  Computer" stream spans ~320 ms and ~990 ms for the two words with a
+  ~680 ms pause between — this port: ~300, ~905 and ~640 ms — so the core
+  matches its source; the datasheet figures are simply not what the core
+  produces.
+
+### Allophone feeder (`ssc/speech.rs`)
+
+`$E0-$E7`/`$F0-$F7` set an independent cursor (`Speech`) over the usual
+consecutive/individual window. On every cart tick (and once synchronously at
+EXECUTE time) `feed_speech` hands the chip bytes while LRQ is high: `$FF`
+at the cursor or reaching the cap ends the stream. This mirrors the
+firmware servicing the chip's load-request interrupt (MAME wires DRQ to
+`TMS7000_INT1_LINE`). Speech and the sound-data engine run concurrently.
+
+Judgment calls (not literally stated by the manual):
+
+- **Bytes ≥ 64 are skipped**: the board only strobes ALD for port-D values
+  below 64 (MAME `ssc_port_c_w`: `m_tms7000_portd < 64`); what the firmware
+  itself does with such a byte is undocumented, so the feeder drops it and
+  moves on rather than stalling.
+- **`$C7`/`$00` stop feeding, nothing more**: the SP0256's RESET pin is
+  wired to `$FF7D` bit 0, not to the TMS7040, so the firmware has no way to
+  cut an allophone short — the one latched (and the one already queued)
+  play out. `$CF` is sound-only, per its manual entry.
+- **`$FF7D` bit 0 resets only the chip**: the cursor survives and resumes
+  on the next tick (see `$FF7D` above).
+
 ## AY-3-8913 core (`crates/coco-core/src/ay8913.rs`)
 
 The AY-3-8913 is an AY-3-8910 PSG with the two I/O ports (registers 14/15)
@@ -498,7 +586,8 @@ invocation, regardless of mux selection** — not just when the mux happens to
 be pointed at the cartridge input. `Ssc::audio_sample` drains the AY (see
 "Output/downsampling" above) and feeds the Sound Activity Circuit
 unconditionally, since `$FF7E` bit 5 must reflect the cartridge's own output
-even while the CoCo's speaker is listening to the DAC or cassette instead.
+even while the CoCo's speaker is listening to the DAC or cassette instead,
+then adds the SP0256's interpolated output (see "SP0256-AL2 speech").
 
 ### Sound Activity Circuit (SAC)
 
@@ -566,13 +655,18 @@ slot still receives its `$FF7D`/`$FF7E` traffic — verified by
   TMS7040 core would only be needed to run the *actual* firmware image
   bit-for-bit (e.g. to reproduce undocumented edge cases or bugs), not to get
   correct SOUND-side behavior.
-- **SP0256-AL2 speech synthesizer**: LPC-based phoneme synthesis chip: needs
-  its own DSP core, the Tandy/GI phoneme ROM/table, and its own audio output
-  mixed in alongside the AY. Speech/allophone command bytes are parsed (their
-  LOAD variants fill buffer RAM, per the flat-RAM model) but their EXECUTE
-  variants are no-ops pending this.
+- **Text-to-speech** (`$80-$87`/`$90-$97` LOAD + `$C0-$C6`/`$D0-$D7` EXECUTE,
+  and the default-mode ASCII-until-`$0D` path): the manual is explicit that
+  the English letter-to-allophone rules are "ROM-based phonetic rules" in
+  the TMS7040's 4 KB firmware (`pic-7040-510.bin` in MAME's `coco_ssc`
+  set). Reproducing them faithfully means either running that firmware on
+  a TMS7000 core — which would also replace the invented
+  `BUSY_HOLD_CYCLES`/`timing` constants above with the real thing — or
+  reverse-engineering the rule tables out of its disassembly. Either is a
+  separate piece of work; a generic English-to-allophone ruleset would not
+  match the cartridge's pronunciations. These commands are
+  recognized-and-ignored, not silently misrouted: `status::SPEECH_READY`
+  stays as the chip reports it, and the LOAD variants still fill buffer RAM.
 
-None of these are stubbed with placeholder behavior: `status::SPEECH_READY`
-reports the SP0256 as permanently idle, and speech/allophone EXECUTE commands
-are recognized-and-ignored, not silently misrouted. Both are documented seams
-(see "What's modelled" and "No SP0256" above) rather than silent gaps.
+The remaining seam is documented (see "What's modelled") rather than a silent
+gap.

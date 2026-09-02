@@ -4,6 +4,24 @@
 
 use crate::*;
 
+/// A Sound/Speech Cartridge with its SP0256-AL2 fitted when
+/// [`rom_load::sp0256_rom_path`] is installed; otherwise the sound half
+/// alone, with speech silent.
+pub(crate) fn sound_speech_cartridge() -> SoundSpeechCartridge {
+    let path = rom_load::sp0256_rom_path();
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            tracing::info!("{} not installed; SSC speech disabled", path.display());
+            return SoundSpeechCartridge::new();
+        }
+    };
+    SoundSpeechCartridge::with_speech_rom(&bytes).unwrap_or_else(|e| {
+        tracing::warn!("{}: {e}; SSC speech disabled", path.display());
+        SoundSpeechCartridge::new()
+    })
+}
+
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
     /// (cartridge swaps are machine-off ops). `autostart` ties CART* to Q so
@@ -157,14 +175,14 @@ impl CocoApp {
         }
     }
 
-    /// Plugs the Sound/Speech Cartridge into the cartridge slot. No file to load, so
+    /// Plugs the Sound/Speech Cartridge into the cartridge slot. No file to pick, so
     /// unlike [`Self::insert_cartridge`] this can't fail — but shares its
     /// abort-on-failed-flush contract.
     pub(crate) fn insert_ssc(&mut self) {
         if !self.flush_dirty_disks_or_report() {
             return;
         }
-        self.machine.insert_cartridge(SoundSpeechCartridge::new());
+        self.machine.insert_cartridge(sound_speech_cartridge());
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -336,7 +354,7 @@ impl CocoApp {
             return;
         }
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, SoundSpeechCartridge::new());
+            mp.insert(slot, sound_speech_cartridge());
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::SoundSpeechCartridge;

@@ -40,11 +40,31 @@ const CR_DDR: u8 = 0x30;
 /// `tests/sound.rs`'s `bus()` helper.
 pub fn bus_with_ssc_selected() -> SystemBus {
     let mut b = coco3_bus_with_ssc();
+    select_cartridge_mux(&mut b);
+    b
+}
+
+/// Like [`bus_with_ssc_selected`], but the cartridge has its SP0256-AL2
+/// fitted from `roms/sp0256-al2.rom`; `None` when that ROM isn't installed.
+pub fn try_bus_with_speech_selected() -> Option<SystemBus> {
+    let rom = std::fs::read(test_assets::rom(test_assets::rom::SP0256_AL2)).ok()?;
+    let mut b = SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    );
+    b.cart = SoundSpeechCartridge::with_speech_rom(&rom)
+        .expect("installed AL2 ROM is 2 KB")
+        .into();
+    select_cartridge_mux(&mut b);
+    Some(b)
+}
+
+fn select_cartridge_mux(b: &mut SystemBus) {
     b.write(PIA1_CRB, CR_DDR);
     b.write(PIA1_CRB, CR_C2_HIGH); // SNDEN high
     b.write(PIA0_CRA, CR_C2_LOW); // SEL1 = 0
     b.write(PIA0_CRB, CR_C2_HIGH); // SEL2 = 1 -> mux 10: cartridge
-    b
 }
 
 /// Advance the cart's clock and pump `count` `sound_probe` calls, returning

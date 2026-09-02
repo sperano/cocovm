@@ -187,6 +187,13 @@ pub(crate) fn rs232_eprom_default_path() -> PathBuf {
     installed_roms_dir().join("rs232.rom")
 }
 
+/// Where the Sound/Speech Cartridge reads its SP0256-AL2 allophone ROM
+/// from, if present (MAME's `sp0256-al2.bin`, renamed). Without it the
+/// cartridge's speech half stays silent.
+pub(crate) fn sp0256_rom_path() -> PathBuf {
+    installed_roms_dir().join("sp0256-al2.rom")
+}
+
 /// Where the currently-loaded system ROM image came from — tracked so
 /// `CocoApp::save_state_to`/`CocoApp::load_state_from` (`save_state.rs`) can
 /// record and re-resolve it without a second copy of the boot-time ROM logic

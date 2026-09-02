@@ -74,6 +74,10 @@ pub mod rom {
     /// Extended Color BASIC 1.1, the CoCo 2's extbas half
     /// (`tests/coco2_boot/common.rs`).
     pub const EXTBAS11: &str = "extbas11.rom";
+    /// GI SP0256-AL2 allophone mask ROM, the Sound/Speech Cartridge's speech
+    /// chip (`coco-core/src/sp0256_test.rs`, `tests/ssc/speech.rs`). MAME's
+    /// `sp0256-al2.bin` from the `coco_ssc` set, renamed.
+    pub const SP0256_AL2: &str = "sp0256-al2.rom";
 }
 
 /// Defines well-known disk/VHD image names used across many call sites,
