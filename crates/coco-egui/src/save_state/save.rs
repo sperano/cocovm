@@ -100,11 +100,9 @@ impl CocoApp {
                         | MPISlot::GamesMasterCartridge(p)
                         | MPISlot::Orch90(p) => p.clone(),
                         MPISlot::FD502 => disk_basic_rom_path(),
+                        MPISlot::SoundSpeechCartridge => crate::rom_load::sp0256_rom_path(),
                         MPISlot::DeluxeRS232(Some(p)) => p.clone(),
-                        MPISlot::Empty
-                        | MPISlot::DistoRTC(_)
-                        | MPISlot::DeluxeRS232(None)
-                        | MPISlot::SoundSpeechCartridge => {
+                        MPISlot::Empty | MPISlot::DistoRTC(_) | MPISlot::DeluxeRS232(None) => {
                             return None;
                         }
                     };
@@ -127,6 +125,11 @@ impl CocoApp {
                 out.push(SlotROMRef {
                     mpi_slot: None,
                     rom: hash_media_ref(&disk_basic_rom_path())?,
+                });
+            } else if self.machine.bus.cart.as_ssc().is_some() {
+                out.push(SlotROMRef {
+                    mpi_slot: None,
+                    rom: hash_media_ref(&crate::rom_load::sp0256_rom_path())?,
                 });
             }
             if let Some(path) = &self.rs232_eprom_path {

@@ -35,6 +35,7 @@ pub mod serde_util;
 pub mod serial;
 pub mod sn76489;
 pub mod snapshot;
+pub mod sp0256;
 pub mod ssc;
 pub mod vhd;
 pub mod video;

@@ -175,7 +175,15 @@ fn restore_cart_roms(
                     rs232.set_eprom(&bytes);
                 }
             }
-            Cart::Empty(_) | Cart::SoundSpeechCartridge(_) | Cart::DistoRTC(_) => {} // no ROM
+            Cart::SoundSpeechCartridge(ssc) => require_cart_rom(
+                mpi_slot,
+                "SoundSpeechCartridge",
+                media,
+                &mut cart_roms,
+                missing,
+                |b| ssc.reattach_speech_rom(b),
+            )?,
+            Cart::Empty(_) | Cart::DistoRTC(_) => {} // no ROM
             // Never produced by slots_mut (yields inner slots, not itself) or deserialization.
             Cart::MultiPak(_) | Cart::Custom(_) => {}
         }

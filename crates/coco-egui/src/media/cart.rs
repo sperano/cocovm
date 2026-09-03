@@ -4,6 +4,16 @@
 
 use crate::*;
 
+/// A Sound/Speech Cartridge built around the SP0256-AL2 ROM at
+/// [`rom_load::sp0256_rom_path`]; the error names the file when it is
+/// missing or the wrong size.
+pub(crate) fn sound_speech_cartridge() -> Result<SoundSpeechCartridge, String> {
+    let path = rom_load::sp0256_rom_path();
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("could not read SP0256-AL2 ROM {}: {e}", path.display()))?;
+    SoundSpeechCartridge::new(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
     /// (cartridge swaps are machine-off ops). `autostart` ties CART* to Q so
@@ -157,14 +167,22 @@ impl CocoApp {
         }
     }
 
-    /// Plugs the Sound/Speech Cartridge into the cartridge slot. No file to load, so
-    /// unlike [`Self::insert_cartridge`] this can't fail — but shares its
-    /// abort-on-failed-flush contract.
+    /// Plugs the Sound/Speech Cartridge into the cartridge slot. No file to
+    /// pick, but its SP0256-AL2 ROM must be installed; a missing one lands in
+    /// [`Self::cart_error`] like any other unreadable cartridge ROM. Shares
+    /// [`Self::insert_cartridge`]'s abort-on-failed-flush contract.
     pub(crate) fn insert_ssc(&mut self) {
+        let ssc = match sound_speech_cartridge() {
+            Ok(ssc) => ssc,
+            Err(e) => {
+                self.cart_error = Some(e);
+                return;
+            }
+        };
         if !self.flush_dirty_disks_or_report() {
             return;
         }
-        self.machine.insert_cartridge(SoundSpeechCartridge::new());
+        self.machine.insert_cartridge(ssc);
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
@@ -332,11 +350,18 @@ impl CocoApp {
     /// Inserts the Sound/Speech Cartridge into MPI `slot`. Unlike the FD-502, any number
     /// of slots can each hold one.
     pub(crate) fn mpi_insert_ssc(&mut self, slot: usize) {
+        let ssc = match sound_speech_cartridge() {
+            Ok(ssc) => ssc,
+            Err(e) => {
+                self.cart_error = Some(e);
+                return;
+            }
+        };
         if !self.mpi_flush_before_replacing_slot(slot) {
             return;
         }
         if let Some(mp) = self.machine.bus.cart.as_multipak() {
-            mp.insert(slot, SoundSpeechCartridge::new());
+            mp.insert(slot, ssc);
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::SoundSpeechCartridge;

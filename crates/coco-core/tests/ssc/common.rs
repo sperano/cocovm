@@ -1,6 +1,17 @@
+use coco_core::sp0256::ROM_SIZE;
 use coco_core::ssc::{SoundSpeechCartridge, reg as ssc_reg};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
+
+/// A zero-filled allophone ROM: every fetch is RTS/HLT, so the chip halts
+/// silently on any load. Lets the sound-half suites run without the real
+/// `sp0256-al2.rom`; only `speech.rs` needs the genuine image.
+pub const BLANK_SPEECH_ROM: [u8; ROM_SIZE] = [0; ROM_SIZE];
+
+/// A cartridge fitted with [`BLANK_SPEECH_ROM`].
+pub fn ssc_without_speech() -> SoundSpeechCartridge {
+    SoundSpeechCartridge::new(&BLANK_SPEECH_ROM).expect("blank ROM has the right size")
+}
 
 /// Generator step for `sound_probe` (the AY drain is call-count based, so
 /// this only feeds the (absent) crystal generators).
@@ -17,7 +28,7 @@ pub const CLEAR_BUSY: u32 = 1_000;
 
 pub fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
     let mut b = SystemBus::new(variant, memory, vec![0u8; 32 * 1024].into_boxed_slice());
-    b.cart = SoundSpeechCartridge::new().into();
+    b.cart = ssc_without_speech().into();
     b
 }
 
@@ -40,11 +51,31 @@ const CR_DDR: u8 = 0x30;
 /// `tests/sound.rs`'s `bus()` helper.
 pub fn bus_with_ssc_selected() -> SystemBus {
     let mut b = coco3_bus_with_ssc();
+    select_cartridge_mux(&mut b);
+    b
+}
+
+/// Like [`bus_with_ssc_selected`], but the cartridge has its SP0256-AL2
+/// fitted from `roms/sp0256-al2.rom`; `None` when that ROM isn't installed.
+pub fn try_bus_with_speech_selected() -> Option<SystemBus> {
+    let rom = std::fs::read(test_assets::rom(test_assets::rom::SP0256_AL2)).ok()?;
+    let mut b = SystemBus::new(
+        MachineVariant::Coco3,
+        MemorySize::K512,
+        vec![0u8; 32 * 1024].into_boxed_slice(),
+    );
+    b.cart = SoundSpeechCartridge::new(&rom)
+        .expect("installed AL2 ROM is 2 KB")
+        .into();
+    select_cartridge_mux(&mut b);
+    Some(b)
+}
+
+fn select_cartridge_mux(b: &mut SystemBus) {
     b.write(PIA1_CRB, CR_DDR);
     b.write(PIA1_CRB, CR_C2_HIGH); // SNDEN high
     b.write(PIA0_CRA, CR_C2_LOW); // SEL1 = 0
     b.write(PIA0_CRB, CR_C2_HIGH); // SEL2 = 1 -> mux 10: cartridge
-    b
 }
 
 /// Advance the cart's clock and pump `count` `sound_probe` calls, returning

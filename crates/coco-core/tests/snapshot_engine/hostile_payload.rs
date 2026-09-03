@@ -91,7 +91,8 @@ fn rewrap_container(cbor: &[u8], schema: u32) -> Vec<u8> {
 /// [`SoundSpeechCartridge`] plugged directly into the cartridge port.
 fn machine_with_ssc() -> Machine {
     let mut machine = Machine::new(MachineConfig::default(), Box::new([]));
-    machine.insert_cartridge(SoundSpeechCartridge::new());
+    let blank_speech_rom = [0; coco_core::sp0256::ROM_SIZE];
+    machine.insert_cartridge(SoundSpeechCartridge::new(&blank_speech_rom).expect("2 KB"));
     machine
 }
 

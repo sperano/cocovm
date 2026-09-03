@@ -21,9 +21,8 @@ use super::SoundSpeechCartridge;
 /// Manual, 26-3144, Appendix A). Every "load N..=7" / "load individual N"
 /// pair encodes the target buffer as `byte - START`.
 pub mod cmd {
-    /// Stop all sound (and, on real hardware, speech) immediately. Does NOT
-    /// clear buffer RAM. Identical in this implementation to
-    /// [`STOP_ALL_SOUND_ALT`].
+    /// Stop all sound and speech immediately. Does NOT clear buffer RAM.
+    /// [`STOP_ALL_SOUND_ALT`] is the sound-only half.
     pub const STOP_ALL_SOUND: u8 = 0x00;
 
     /// Load speech string into buffers `N..=7` (consecutive), terminator
@@ -71,22 +70,23 @@ pub mod cmd {
     pub const LOAD_REGISTER_INDIVIDUAL_START: u8 = 0xB8;
     pub const LOAD_REGISTER_INDIVIDUAL_END: u8 = 0xBF;
 
-    /// Execute speech string from buffers `N..=7` (consecutive) — no-op, no
-    /// SP0256 emulated. `N = byte - EXEC_SPEECH_CONSECUTIVE_START`.
+    /// Execute speech string from buffers `N..=7` (consecutive) — no-op: the
+    /// text-to-speech rules live in the unemulated TMS7040 firmware.
+    /// `N = byte - EXEC_SPEECH_CONSECUTIVE_START`.
     pub const EXEC_SPEECH_CONSECUTIVE_START: u8 = 0xC0;
     pub const EXEC_SPEECH_CONSECUTIVE_END: u8 = 0xC6;
-    /// Abort all speech — no-op, no SP0256 emulated.
+    /// Abort all speech: stops feeding the SP0256 (the allophone it has
+    /// already latched plays out).
     pub const ABORT_ALL_SPEECH: u8 = 0xC7;
     /// Execute sound data from buffers `N..=7` (consecutive): runs the sound
     /// engine. `N = byte - EXEC_SOUND_CONSECUTIVE_START`.
     pub const EXEC_SOUND_CONSECUTIVE_START: u8 = 0xC8;
     pub const EXEC_SOUND_CONSECUTIVE_END: u8 = 0xCE;
-    /// Stop all sound. Identical in this implementation to
-    /// [`STOP_ALL_SOUND`].
+    /// Stop all sound (speech continues).
     pub const STOP_ALL_SOUND_ALT: u8 = 0xCF;
 
-    /// Execute speech string from buffer `N` only (individual) — no-op, no
-    /// SP0256 emulated. `N = byte - EXEC_SPEECH_INDIVIDUAL_START`.
+    /// Execute speech string from buffer `N` only (individual) — no-op, see
+    /// [`EXEC_SPEECH_CONSECUTIVE_START`]. `N = byte - EXEC_SPEECH_INDIVIDUAL_START`.
     pub const EXEC_SPEECH_INDIVIDUAL_START: u8 = 0xD0;
     pub const EXEC_SPEECH_INDIVIDUAL_END: u8 = 0xD7;
     /// Execute sound data from buffer `N` only (individual): runs the sound
@@ -94,8 +94,8 @@ pub mod cmd {
     pub const EXEC_SOUND_INDIVIDUAL_START: u8 = 0xD8;
     pub const EXEC_SOUND_INDIVIDUAL_END: u8 = 0xDF;
 
-    /// Execute allophone address stream from buffers `N..=7` (consecutive)
-    /// — no-op, no SP0256 emulated. `N = byte - EXEC_ALLOPHONE_CONSECUTIVE_START`.
+    /// Execute allophone address stream from buffers `N..=7` (consecutive):
+    /// feeds the SP0256. `N = byte - EXEC_ALLOPHONE_CONSECUTIVE_START`.
     pub const EXEC_ALLOPHONE_CONSECUTIVE_START: u8 = 0xE0;
     pub const EXEC_ALLOPHONE_CONSECUTIVE_END: u8 = 0xE7;
     /// Execute register string from buffers `N..=7` (consecutive): writes
@@ -104,8 +104,8 @@ pub mod cmd {
     pub const EXEC_REGISTER_CONSECUTIVE_START: u8 = 0xE8;
     pub const EXEC_REGISTER_CONSECUTIVE_END: u8 = 0xEF;
 
-    /// Execute allophone address stream from buffer `N` only (individual) —
-    /// no-op, no SP0256 emulated. `N = byte - EXEC_ALLOPHONE_INDIVIDUAL_START`.
+    /// Execute allophone address stream from buffer `N` only (individual):
+    /// feeds the SP0256. `N = byte - EXEC_ALLOPHONE_INDIVIDUAL_START`.
     pub const EXEC_ALLOPHONE_INDIVIDUAL_START: u8 = 0xF0;
     pub const EXEC_ALLOPHONE_INDIVIDUAL_END: u8 = 0xF7;
     /// Execute register string from buffer `N` only (individual): writes
@@ -260,7 +260,11 @@ impl SoundSpeechCartridge {
     /// byte/range from [`cmd`]. See `docs/ssc-spec.md` for the full protocol writeup.
     fn dispatch_command(&mut self, byte: u8) {
         match byte {
-            cmd::STOP_ALL_SOUND | cmd::STOP_ALL_SOUND_ALT => self.stop_all_sound(),
+            cmd::STOP_ALL_SOUND => {
+                self.stop_all_sound();
+                self.stop_all_speech();
+            }
+            cmd::STOP_ALL_SOUND_ALT => self.stop_all_sound(),
 
             // Covers every LOAD command plus $AF (DIRECT_ACCESS_TOGGLE), which falls in this range.
             cmd::LOAD_SPEECH_CONSECUTIVE_START..=cmd::LOAD_REGISTER_INDIVIDUAL_END => {
@@ -327,10 +331,22 @@ impl SoundSpeechCartridge {
     }
 
     /// The `$Cx`-`$Fx` half of [`SoundSpeechCartridge::dispatch_command`]: every
-    /// EXECUTE command plus `$C7` abort-all-speech. Only the sound-data and
-    /// register-string variants do anything.
+    /// EXECUTE command plus `$C7` abort-all-speech. Speech-string (text)
+    /// EXECUTEs are the one no-op — see [`cmd::EXEC_SPEECH_CONSECUTIVE_START`].
     fn dispatch_exec_command(&mut self, byte: u8) {
         match byte {
+            cmd::EXEC_ALLOPHONE_CONSECUTIVE_START..=cmd::EXEC_ALLOPHONE_CONSECUTIVE_END => {
+                let n = byte - cmd::EXEC_ALLOPHONE_CONSECUTIVE_START;
+                let start = n as usize * ram::BUFFER_SIZE;
+                self.start_allophone_execute(start, ram::SIZE);
+            }
+            cmd::EXEC_ALLOPHONE_INDIVIDUAL_START..=cmd::EXEC_ALLOPHONE_INDIVIDUAL_END => {
+                let n = byte - cmd::EXEC_ALLOPHONE_INDIVIDUAL_START;
+                let start = n as usize * ram::BUFFER_SIZE;
+                self.start_allophone_execute(start, start + ram::BUFFER_SIZE);
+            }
+            cmd::ABORT_ALL_SPEECH => self.stop_all_speech(),
+
             cmd::EXEC_SOUND_CONSECUTIVE_START..=cmd::EXEC_SOUND_CONSECUTIVE_END => {
                 let n = byte - cmd::EXEC_SOUND_CONSECUTIVE_START;
                 let start = n as usize * ram::BUFFER_SIZE;
@@ -354,11 +370,8 @@ impl SoundSpeechCartridge {
             }
 
             cmd::EXEC_SPEECH_CONSECUTIVE_START..=cmd::EXEC_SPEECH_CONSECUTIVE_END
-            | cmd::ABORT_ALL_SPEECH
-            | cmd::EXEC_SPEECH_INDIVIDUAL_START..=cmd::EXEC_SPEECH_INDIVIDUAL_END
-            | cmd::EXEC_ALLOPHONE_CONSECUTIVE_START..=cmd::EXEC_ALLOPHONE_CONSECUTIVE_END
-            | cmd::EXEC_ALLOPHONE_INDIVIDUAL_START..=cmd::EXEC_ALLOPHONE_INDIVIDUAL_END => {
-                // Speech/allophone execute commands: no-op, no SP0256 emulated.
+            | cmd::EXEC_SPEECH_INDIVIDUAL_START..=cmd::EXEC_SPEECH_INDIVIDUAL_END => {
+                // Text-to-speech lives in the unemulated TMS7040 firmware: no-op.
             }
 
             _ => unreachable!("caller only dispatches the EXECUTE range here"),
