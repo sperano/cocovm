@@ -121,11 +121,36 @@ pub(crate) fn banner(info: &StartupInfo) {
     println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 
-pub(crate) const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v2.tgz";
+pub(crate) const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
+
+/// ROM images the bundle at [`ASSETS_URL`] carries. Any one missing from
+/// the installed ROM directory triggers a (re)download, so an install that
+/// predates a bundle addition catches up instead of staying at whatever it
+/// first unpacked.
+pub(crate) const BUNDLED_ROMS: [&str; 10] = [
+    "bas10.rom",
+    "bas11.rom",
+    "bas12.rom",
+    "bas13.rom",
+    "extbas10.rom",
+    "extbas11.rom",
+    "coco3.rom",
+    "disk11.rom",
+    "sp0256-al2.rom",
+    "ssc-tms7040.rom",
+];
 
 /// Whether `dir` exists and contains at least one entry.
 pub(crate) fn dir_has_files(dir: &Path) -> bool {
     fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some())
+}
+
+/// The [`BUNDLED_ROMS`] not present as files under `roms_dir`.
+pub(crate) fn missing_bundled_roms(roms_dir: &Path) -> Vec<&'static str> {
+    BUNDLED_ROMS
+        .into_iter()
+        .filter(|name| !roms_dir.join(name).is_file())
+        .collect()
 }
 
 /// Unpack a gzipped tar stream into `dest`. Split from the download so the
@@ -149,16 +174,25 @@ pub(crate) fn ensure_assets() {
         eprintln!("no home directory found; cannot locate the asset directories");
         std::process::exit(1);
     };
-    let missing: Vec<String> = [paths::roms_dir(), paths::images_dir()]
-        .into_iter()
-        .flatten()
+    let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())
+        .into_iter()
         .collect();
+    if let Some(roms_dir) = paths::roms_dir() {
+        missing.extend(
+            missing_bundled_roms(&roms_dir)
+                .into_iter()
+                .map(|name| roms_dir.join(name).display().to_string()),
+        );
+    }
     if missing.is_empty() {
         return;
     }
-    println!("Downloading {ASSETS_URL}…");
+    println!(
+        "Downloading {ASSETS_URL} (missing: {})…",
+        missing.join(", ")
+    );
     match download_and_unpack_assets(&data_dir) {
         Ok(()) => println!("assets installed in {}", data_dir.display()),
         Err(e) => eprintln!("asset download failed: {e}"),

@@ -1,11 +1,10 @@
 //! Sound/Speech Cartridge bus-routing coverage.
 
 use coco_core::cart::{EmptySlot, MultiPak};
-use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
-use super::common::{FF7D, FF7E, bus_with_ssc};
+use super::common::{FF7D, FF7E, bus_with_ssc, ssc_without_speech};
 
 #[test]
 fn empty_slot_still_reads_open_bus_across_ff60_to_ff7e() {
@@ -45,7 +44,7 @@ fn ssc_in_a_non_scs_selected_mpi_slot_still_receives_ff7d_ff7e() {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     let mut mp = MultiPak::new(3); // switch on slot 4 (index 3)
-    mp.insert(1, SoundSpeechCartridge::new()); // SSC lives in slot 2 (index 1)
+    mp.insert(1, ssc_without_speech()); // SSC lives in slot 2 (index 1)
     b.cart = mp.into();
 
     // Re-point the SCS/CTS select at slot 0, definitely not the SSC's slot 1.

@@ -29,11 +29,8 @@ pub(super) struct Speech {
 
 impl SoundSpeechCartridge {
     /// Starts an allophone-stream EXECUTE over `start..cap` and hands the
-    /// chip its first allophone right away. A no-op without an SP0256.
+    /// chip its first allophone right away.
     pub(super) fn start_allophone_execute(&mut self, start: usize, cap: usize) {
-        if self.sp0256.is_none() {
-            return;
-        }
         self.speech = Speech {
             active: true,
             cursor: start,
@@ -51,10 +48,7 @@ impl SoundSpeechCartridge {
     /// Hand the SP0256 allophones for as long as it accepts them. Ends the
     /// stream at the `$FF` terminator or the window's cap.
     pub(super) fn feed_speech(&mut self) {
-        let Some(chip) = self.sp0256.as_mut() else {
-            return;
-        };
-        while self.speech.active && chip.lrq() {
+        while self.speech.active && self.sp0256.lrq() {
             if self.speech.cursor >= self.speech.cap {
                 self.speech.active = false;
                 break;
@@ -66,7 +60,7 @@ impl SoundSpeechCartridge {
             }
             self.speech.cursor += 1;
             if byte < ALLOPHONE_COUNT {
-                chip.ald_write(byte);
+                self.sp0256.ald_write(byte);
             }
         }
     }

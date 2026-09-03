@@ -68,7 +68,8 @@ pub struct MediaRefs {
     #[serde(default)]
     pub system_rom: Option<MediaRef>,
     /// ROM-bearing carts, keyed by where they sit. Covers ROMPak/
-    /// BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images and the
+    /// BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images, the
+    /// SoundSpeechCartridge's SP0256-AL2 allophone ROM, and the
     /// DeluxeRS232 EPROM — one entry per ROM-bearing cart that actually has
     /// an image (the DeluxeRS232 is the one cart in this list that can
     /// legitimately run without one; see [`super::restore`]'s cart-ROM

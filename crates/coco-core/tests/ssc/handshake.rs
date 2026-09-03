@@ -49,7 +49,7 @@ fn ff7e_status_base_bits_and_speech_ready_are_always_set() {
     assert_eq!(
         status & 0x40,
         0x40,
-        "bit 6 (SP0256 SBY) always set: no speech ROM fitted"
+        "bit 6 (SP0256 SBY) set: the chip idles in reset until an allophone is loaded"
     );
 }
 

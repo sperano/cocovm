@@ -39,16 +39,16 @@ drives for music/sound effects.
   RAM per the flat-RAM model below — but their EXECUTE variants are no-ops:
   there is no text-to-allophone converter to run them through. See
   "Deferred" at the end.
-- **Needs a ROM**: the SP0256-AL2's 2 KB allophone mask ROM, installed by
-  hand as `~/.local/share/cocovm/roms/sp0256-al2.rom` (MAME's
-  `sp0256-al2.bin` from its `coco_ssc` set, SHA-1
-  `e60fcb5fa16ff3f3b69d36c7a6e955744d3feafc`, renamed). The first-run asset
-  bundle does not carry it yet, and `ensure_assets` never tops up a
-  populated ROM directory, so an existing install has to drop the file in
-  itself. Without it `SoundSpeechCartridge::new` builds the cartridge
-  chip-less: the sound half works unchanged, speech is silent, status bit 6
-  reads permanently idle, and the frontend logs one `info` line at
-  insertion saying so.
+- **Needs a ROM**: the SP0256-AL2's 2 KB allophone mask ROM,
+  `~/.local/share/cocovm/roms/sp0256-al2.rom` (MAME's `sp0256-al2.bin` from
+  its `coco_ssc` set, SHA-1 `e60fcb5fa16ff3f3b69d36c7a6e955744d3feafc`,
+  renamed). The asset bundle carries it from v3 on, and `ensure_assets`
+  re-downloads the bundle whenever any bundled ROM is missing, so older
+  installs catch up at launch. The cartridge is built around the image
+  (`SoundSpeechCartridge::new(rom)`): inserting one without the file is
+  refused with a cartridge error naming it, and snapshots record it under
+  `media.cart_roms` like every other cart ROM. There is no ROM-less mode —
+  on the real board the chip is soldered in.
 
 **Why the TMS7040 itself isn't emulated, but its protocol now is**: on real
 hardware, a byte written to `$FF7E` isn't itself a documented opcode from the
@@ -114,20 +114,18 @@ motherboard-unmapped, not the disk controller's SCS window — see
     falling-edge reset, or by `Ssc::reset`).
   - **bit 6**: SP0256 SBY ("standby" = idle/ready), read straight off the
     chip (MAME `m_spo->sby_r()`): it drops the moment an allophone is
-    latched and rises when the sequencer halts with nothing queued. Without
-    a speech ROM it is **always set** — see
-    [below](#bit-6-without-a-speech-rom). The execute-speech-string
-    commands (`$C0`-`$C6`, `$D0`-`$D7`) are no-ops (see "Host byte
-    protocol") and never clear it.
+    latched and rises when the sequencer halts with nothing queued. The
+    execute-speech-string commands (`$C0`-`$C6`, `$D0`-`$D7`) are no-ops
+    (see "Host byte protocol") and never clear it.
   - **bit 5**: Sound Activity Circuit output, **1 = quiet, 0 = sound
     playing** — see [SAC bit 5 is inverted](#sac-bit-5-is-inverted) below.
     Unchanged by this revision: it already tracks the AY's real output
     correctly, including output now driven by the sound-data engine.
 
-## Three corrections to a naive reading
+## Two corrections to a naive reading
 
 A naive reading of "SSC has a busy flag and a sound-activity flag" gets each
-of these wrong; all three are cited directly against MAME's
+of these wrong; both are cited directly against MAME's
 `coco_ssc_device`:
 
 ### SAC bit 5 is inverted
@@ -147,15 +145,6 @@ internal to the firmware, not exposed on the bus) once it has finished
 processing the host byte, on its own schedule. Since no firmware runs here,
 there's nothing to "finish processing" on — see the next section for the
 synthetic stand-in.
-
-### Bit 6 without a speech ROM
-
-Bit 6 (SBY) is a real status bit — software polls it before triggering more
-speech — and with the AL2 ROM installed it is driven by the SP0256 core.
-When the ROM is absent the cartridge has no chip to report, so the bit is
-hardwired set and the allophone EXECUTE commands do nothing. That fallback
-is a convenience for ROM-less installs, not a hardware fact — flagged here so
-it isn't mistaken for one.
 
 ## Synthetic choices (not hardware facts)
 

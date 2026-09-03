@@ -1,6 +1,17 @@
+use coco_core::sp0256::ROM_SIZE;
 use coco_core::ssc::{SoundSpeechCartridge, reg as ssc_reg};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
+
+/// A zero-filled allophone ROM: every fetch is RTS/HLT, so the chip halts
+/// silently on any load. Lets the sound-half suites run without the real
+/// `sp0256-al2.rom`; only `speech.rs` needs the genuine image.
+pub const BLANK_SPEECH_ROM: [u8; ROM_SIZE] = [0; ROM_SIZE];
+
+/// A cartridge fitted with [`BLANK_SPEECH_ROM`].
+pub fn ssc_without_speech() -> SoundSpeechCartridge {
+    SoundSpeechCartridge::new(&BLANK_SPEECH_ROM).expect("blank ROM has the right size")
+}
 
 /// Generator step for `sound_probe` (the AY drain is call-count based, so
 /// this only feeds the (absent) crystal generators).
@@ -17,7 +28,7 @@ pub const CLEAR_BUSY: u32 = 1_000;
 
 pub fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
     let mut b = SystemBus::new(variant, memory, vec![0u8; 32 * 1024].into_boxed_slice());
-    b.cart = SoundSpeechCartridge::new().into();
+    b.cart = ssc_without_speech().into();
     b
 }
 
@@ -53,7 +64,7 @@ pub fn try_bus_with_speech_selected() -> Option<SystemBus> {
         MemorySize::K512,
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
-    b.cart = SoundSpeechCartridge::with_speech_rom(&rom)
+    b.cart = SoundSpeechCartridge::new(&rom)
         .expect("installed AL2 ROM is 2 KB")
         .into();
     select_cartridge_mux(&mut b);

@@ -65,8 +65,9 @@ impl fmt::Display for ROMSizeError {
 impl std::error::Error for ROMSizeError {}
 
 /// Sequencer + filter state. The ROM is `#[serde(skip)]`: snapshots carry
-/// the chip's state, and the frontend reattaches the image on restore
-/// ([`SP0256::reattach_rom`]).
+/// the chip's state, and restore reattaches the image
+/// ([`SP0256::reattach_rom`]). `Default` is the reset state with no ROM —
+/// only for snapshot evolution (a payload from before the chip existed).
 #[derive(Serialize, Deserialize)]
 pub struct SP0256 {
     #[serde(skip)]
@@ -95,10 +96,9 @@ pub struct SP0256 {
     cur_sample: i16,
 }
 
-impl SP0256 {
-    /// Build a chip around a 2 KB AL2 ROM image, in reset.
-    pub fn new(rom: &[u8]) -> Result<Self, ROMSizeError> {
-        let mut chip = Self {
+impl Default for SP0256 {
+    fn default() -> Self {
+        Self {
             rom: Box::default(),
             sby: true,
             lrq: true,
@@ -113,7 +113,14 @@ impl SP0256 {
             cycle_acc: 0,
             prev_sample: 0,
             cur_sample: 0,
-        };
+        }
+    }
+}
+
+impl SP0256 {
+    /// Build a chip around a 2 KB AL2 ROM image, in reset.
+    pub fn new(rom: &[u8]) -> Result<Self, ROMSizeError> {
+        let mut chip = Self::default();
         chip.reattach_rom(rom)?;
         Ok(chip)
     }

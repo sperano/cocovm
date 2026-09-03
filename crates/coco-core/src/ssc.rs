@@ -10,11 +10,12 @@
 //! Cartridge Owner's Manual (26-3144) Appendix A: command bytes that load
 //! data into an 8×64-byte buffer RAM and execute it. Sound-data streams,
 //! register-string streams, and direct AY register access (`$AF`) drive the
-//! [`AY8913`] PSG; allophone streams drive the [`SP0256`] when its ROM is
-//! installed ([`SoundSpeechCartridge::with_speech_rom`]). Speech-string
-//! (ASCII text) commands are parsed to keep the state machine in sync but
-//! their EXECUTE variants are no-ops: without the firmware there is no
-//! text-to-allophone conversion to run.
+//! [`AY8913`] PSG; allophone streams drive the [`SP0256`], whose 2 KB
+//! allophone ROM the cartridge is built around
+//! ([`SoundSpeechCartridge::new`]). Speech-string (ASCII text) commands are
+//! parsed to keep the state machine in sync but their EXECUTE variants are
+//! no-ops: without the firmware there is no text-to-allophone conversion
+//! to run.
 //!
 //! See [`dispatch_command`](SoundSpeechCartridge::dispatch_command) for the
 //! top-level command dispatch in the [`protocol`] submodule. See
@@ -65,7 +66,7 @@ mod status {
     /// still "being processed".
     pub const NOT_BUSY: u8 = 0x80;
     /// Bit 6: SP0256 SBY ("standby" = idle/ready), straight from the chip
-    /// (MAME `m_spo->sby_r()`). Always set when no speech ROM is installed.
+    /// (MAME `m_spo->sby_r()`).
     pub const SPEECH_READY: u8 = 0x40;
     /// Bit 5: Sound Activity Circuit output, *inverted* — 1 = quiet, 0 =
     /// sound is playing (MAME returns `!sound_active`).
@@ -93,17 +94,18 @@ const AY_CLOCK_MULTIPLIER: u32 = 2;
 const SPEECH_GAIN: f32 = 1.75 / 2.0;
 
 /// The Sound/Speech Cartridge: `$FF7D`/`$FF7E` handshake, host-byte protocol
-/// interpreter (see the module doc comment), and an AY-3-8913 plus optional
+/// interpreter (see the module doc comment), and an AY-3-8913 plus an
 /// SP0256-AL2 mixed into the machine's audio output.
 #[derive(Serialize, Deserialize)]
 pub struct SoundSpeechCartridge {
     ay: AY8913,
-    /// The speech chip, present only when its AL2 ROM was supplied. Its ROM
-    /// is not snapshotted; see [`SoundSpeechCartridge::attach_speech_rom`].
-    /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]):
-    /// a pre-field snapshot restores chip-less, exactly the old behaviour.
+    /// The speech chip. Its ROM is not snapshotted; restore re-supplies it
+    /// through [`SoundSpeechCartridge::reattach_speech_rom`] like any other
+    /// cart ROM. `#[serde(default)]` (snapshot evolution rule 2,
+    /// [`crate::snapshot`]): a pre-field snapshot restores with the chip in
+    /// reset, which then gets its ROM the same way.
     #[serde(default)]
-    sp0256: Option<SP0256>,
+    sp0256: SP0256,
     /// Bit 0 of the last byte written to `$FF7D`, for falling-edge detection
     /// on the next write. Power-on-reset starts clear so the very first
     /// `$FF7D` write (even if it's bit0=0) is never itself treated as a
@@ -147,19 +149,13 @@ pub struct SoundSpeechCartridge {
     speech: Speech,
 }
 
-impl Default for SoundSpeechCartridge {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SoundSpeechCartridge {
-    /// A cartridge with no speech ROM: the AY half works, speech stays silent
-    /// and [`status::SPEECH_READY`] always reads set.
-    pub fn new() -> Self {
-        Self {
+    /// A cartridge with its SP0256-AL2 fitted, given the chip's 2 KB
+    /// allophone ROM (`sp0256-al2.rom`).
+    pub fn new(sp0256_rom: &[u8]) -> Result<Self, ROMSizeError> {
+        Ok(Self {
             ay: AY8913::new(),
-            sp0256: None,
+            sp0256: SP0256::new(sp0256_rom)?,
             prev_reset_bit0: false,
             host_latch: 0,
             busy: false,
@@ -173,31 +169,13 @@ impl SoundSpeechCartridge {
             timer_base: timing::DEFAULT_TIMER_BASE,
             engine: Engine::default(),
             speech: Speech::default(),
-        }
+        })
     }
 
-    /// A cartridge with an SP0256-AL2 fitted, given its 2 KB allophone ROM.
-    pub fn with_speech_rom(rom: &[u8]) -> Result<Self, ROMSizeError> {
-        let mut ssc = Self::new();
-        ssc.attach_speech_rom(rom)?;
-        Ok(ssc)
-    }
-
-    /// Fit (or, after a snapshot restore, re-supply the ROM of) the SP0256.
-    /// A restored chip keeps its sequencer state; a fresh one starts in reset.
-    pub fn attach_speech_rom(&mut self, rom: &[u8]) -> Result<(), ROMSizeError> {
-        match &mut self.sp0256 {
-            Some(chip) => chip.reattach_rom(rom),
-            None => {
-                self.sp0256 = Some(SP0256::new(rom)?);
-                Ok(())
-            }
-        }
-    }
-
-    /// Whether an SP0256 is fitted (with or without its ROM reattached).
-    pub fn has_speech_chip(&self) -> bool {
-        self.sp0256.is_some()
+    /// Restore-path-only: re-supply the SP0256's ROM after a snapshot
+    /// restore; the chip keeps its sequencer state.
+    pub fn reattach_speech_rom(&mut self, rom: &[u8]) -> Result<(), ROMSizeError> {
+        self.sp0256.reattach_rom(rom)
     }
 
     /// Direct AY-3-8913 register write, bypassing the host-byte protocol
@@ -223,9 +201,7 @@ impl SoundSpeechCartridge {
         if bit0 {
             // Bit 0 is the SP0256's RESET pin (MAME: every write with it set
             // resets the chip, not just edges).
-            if let Some(chip) = &mut self.sp0256 {
-                chip.reset();
-            }
+            self.sp0256.reset();
         }
         if falling_edge {
             // Falling edge also resets the AY and readies the firmware for a
@@ -269,7 +245,7 @@ impl SoundSpeechCartridge {
         if !self.busy {
             s |= status::NOT_BUSY;
         }
-        if self.sp0256.as_ref().is_none_or(SP0256::sby) {
+        if self.sp0256.sby() {
             s |= status::SPEECH_READY;
         }
         if !self.sac_sound_active {
@@ -306,16 +282,12 @@ impl Cartridge for SoundSpeechCartridge {
         self.tick_engine(cycles);
         self.ay.step(cycles * AY_CLOCK_MULTIPLIER);
         self.feed_speech();
-        if let Some(chip) = &mut self.sp0256 {
-            chip.step(cycles);
-        }
+        self.sp0256.step(cycles);
     }
 
     fn reset(&mut self) {
         self.ay.reset();
-        if let Some(chip) = &mut self.sp0256 {
-            chip.reset();
-        }
+        self.sp0256.reset();
         self.prev_reset_bit0 = false;
         self.host_latch = 0;
         self.busy = false;
@@ -334,8 +306,7 @@ impl Cartridge for SoundSpeechCartridge {
     fn audio_sample(&mut self) -> f32 {
         let psg = self.ay.drain();
         self.update_sac(psg);
-        let speech = self.sp0256.as_ref().map_or(0.0, SP0256::output);
-        psg + SPEECH_GAIN * speech
+        psg + SPEECH_GAIN * self.sp0256.output()
     }
 
     /// Rebuilds `ay.dac` — pure construction-time scratch, skipped from the
