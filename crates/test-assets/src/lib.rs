@@ -78,6 +78,10 @@ pub mod rom {
     /// chip (`coco-core/src/sp0256_test.rs`, `tests/ssc/speech.rs`). MAME's
     /// `sp0256-al2.bin` from the `coco_ssc` set, renamed.
     pub const SP0256_AL2: &str = "sp0256-al2.rom";
+    /// The Sound/Speech Cartridge's TMS7040 firmware (`crates/tms7000`'s
+    /// firmware tests and trace example). MAME's `pic-7040-510.bin` from
+    /// the `coco_ssc` set, renamed.
+    pub const SSC_TMS7040: &str = "ssc-tms7040.rom";
 }
 
 /// Defines well-known disk/VHD image names used across many call sites,

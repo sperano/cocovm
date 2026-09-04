@@ -3744,6 +3744,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tms7000"
+version = "0.7.3"
+dependencies = [
+ "cocovm-test-assets",
+ "serde",
+]
+
+[[package]]
 name = "toml"
 version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
