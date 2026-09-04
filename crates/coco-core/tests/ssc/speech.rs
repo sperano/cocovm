@@ -8,7 +8,7 @@ use mc6809::Bus;
 
 use super::common::{
     AUDIBLE_PEAK, E_CLOCK_HZ, FF7D, FF7E, PUMP_CYCLES, QUIET, SPEECH_MAX_PUMPS, hear, pump, send,
-    skip, speaking, try_bus_with_ssc_selected,
+    skip, speaking, try_bus_with_ssc_selected, wait_for_speech,
 };
 
 /// `$FF7D` bit 0: the SP0256 RESET pin.
@@ -53,9 +53,7 @@ fn speech_bypasses_the_sound_activity_circuit() {
     };
     load_buffer0(&mut b, &COLOR_COMPUTER);
     send(&mut b, cmd::EXEC_ALLOPHONE_INDIVIDUAL_START);
-    while !speaking(&mut b) {
-        pump(&mut b, 1);
-    }
+    wait_for_speech(&mut b);
     let mut quiet_throughout = true;
     while speaking(&mut b) {
         pump(&mut b, 1);
@@ -77,9 +75,7 @@ fn abort_all_speech_cuts_the_stream_short() {
     let (full, _) = hear(&mut b);
 
     send(&mut b, cmd::EXEC_ALLOPHONE_INDIVIDUAL_START);
-    while !speaking(&mut b) {
-        pump(&mut b, 1);
-    }
+    wait_for_speech(&mut b);
     pump(&mut b, 100);
     send(&mut b, cmd::ABORT_ALL_SPEECH);
     let mut aborted = 0;
@@ -104,9 +100,7 @@ fn stop_all_sound_00_also_stops_speech() {
     let (full, _) = hear(&mut b);
 
     send(&mut b, cmd::EXEC_ALLOPHONE_INDIVIDUAL_START);
-    while !speaking(&mut b) {
-        pump(&mut b, 1);
-    }
+    wait_for_speech(&mut b);
     pump(&mut b, 100);
     send(&mut b, cmd::STOP_ALL_SOUND);
     let mut stopped = 0;
@@ -128,9 +122,7 @@ fn ff7d_bit0_resets_the_chip_mid_allophone() {
     };
     load_buffer0(&mut b, &COLOR_COMPUTER);
     send(&mut b, cmd::EXEC_ALLOPHONE_INDIVIDUAL_START);
-    while !speaking(&mut b) {
-        pump(&mut b, 1);
-    }
+    wait_for_speech(&mut b);
     pump(&mut b, 200);
     assert!(speaking(&mut b));
 

@@ -172,16 +172,22 @@ pub(super) fn resolve_cart_roms(
             continue;
         }
         let path = crate::rom_load::ssc_firmware_rom_path();
-        if let Ok(bytes) = std::fs::read(&path) {
-            warnings.push(format!(
-                "save state predates the SSC firmware reference; using {}",
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                warnings.push(format!(
+                    "save state predates the SSC firmware reference; using {}",
+                    path.display()
+                ));
+                out.push(CartROMSource {
+                    mpi_slot: slot,
+                    role: CartROMRole::SSCFirmware,
+                    bytes,
+                });
+            }
+            Err(e) => warnings.push(format!(
+                "save state predates the SSC firmware reference and {} cannot be read: {e}",
                 path.display()
-            ));
-            out.push(CartROMSource {
-                mpi_slot: slot,
-                role: CartROMRole::SSCFirmware,
-                bytes,
-            });
+            )),
         }
     }
     out

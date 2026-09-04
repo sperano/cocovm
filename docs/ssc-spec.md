@@ -1,4 +1,4 @@
-# Tandy Sound/Speech Cartridge (SSC, 26-3143) Spec
+# Tandy Sound/Speech Cartridge (SSC, 26-3144) Spec
 
 Sources: MAME master (`src/devices/bus/coco/coco_ssc.cpp` — `coco_ssc_device`
 and its port glue; `src/devices/cpu/tms7000/` — `tms7000_device`;
@@ -177,7 +177,8 @@ The core is a port of MAME's `tms7000` (register file, peripheral file with
 IOCNT0 / timer 1 / ports A-D, INT1/INT2/INT3 with MAME's level-tracked
 flags, MAME's cycle costs and reset quirks). Verified instruction for
 instruction and cycle for cycle against MAME's `pic7040` debugger trace over
-32,308 instructions from reset (`scripts/ssc-trace-diff.py`); the only
+its whole 580,000-instruction capture, from reset through the host's first
+byte and its INT3 handling (`scripts/ssc-trace-diff.py`); the only
 differences are one-instruction shifts at timer interrupts, where MAME's
 fractional timeslicing moves its timer phase by up to a cycle.
 

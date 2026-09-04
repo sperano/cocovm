@@ -1,14 +1,21 @@
 //! Snapshot evolution rule 2 (`crate::snapshot`): a cartridge payload saved
-//! before the firmware fields existed must still deserialize, and a payload
-//! saved mid-speech resumes once both ROMs are reattached.
+//! before the firmware fields existed must still deserialize, a payload
+//! saved mid-speech resumes once both ROMs are reattached, and the engine
+//! keys the two images by [`CartROMRole`].
 
+use std::path::PathBuf;
+
+use coco_core::snapshot::{
+    self, CartROMRole, CartROMSource, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError,
+};
 use coco_core::ssc::{SoundSpeechCartridge, cmd, terminator};
-use coco_core::{MachineVariant, MemorySize};
+use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize};
 use mc6809::Bus;
+use test_assets::rom::COCO3;
 
 use super::common::{
-    BLANK_FIRMWARE, BLANK_SPEECH_ROM, FF7E, SPEECH_READY, blank_ssc, bus_with, pump, send, skip,
-    try_coco3_bus_with_ssc,
+    BLANK_FIRMWARE, BLANK_SPEECH_ROM, FF7E, SPEECH_MAX_PUMPS, SPEECH_READY, blank_ssc, bus_with,
+    pump, send, skip, try_coco3_bus_with_ssc, wait_for_speech,
 };
 
 /// Serialized field names added by the firmware work.
@@ -54,9 +61,7 @@ fn a_mid_speech_snapshot_resumes_after_both_roms_are_reattached() {
     }
     send(&mut b, terminator::SOUND);
     send(&mut b, cmd::EXEC_ALLOPHONE_INDIVIDUAL_START);
-    while b.read(FF7E) & SPEECH_READY != 0 {
-        pump(&mut b, 1);
-    }
+    wait_for_speech(&mut b);
     pump(&mut b, 500);
     assert_eq!(b.read(FF7E) & SPEECH_READY, 0, "mid-speech");
 
@@ -75,7 +80,84 @@ fn a_mid_speech_snapshot_resumes_after_both_roms_are_reattached() {
     while b2.read(FF7E) & SPEECH_READY == 0 {
         pump(&mut b2, 1);
         pumps += 1;
-        assert!(pumps < 40_000, "speech never finished after the round trip");
+        assert!(
+            pumps < SPEECH_MAX_PUMPS,
+            "speech never finished after the round trip"
+        );
     }
     assert!(pumps > 0);
+}
+
+/// A machine with a blank-ROM cartridge in the port, saved with both images
+/// recorded, plus the sources restore needs. The images differ in size, so a
+/// restore that mixed the roles up would fail as [`SnapshotError::MediaShape`].
+fn saved_with_both_images() -> (snapshot::SnapshotPayload, Box<[u8]>) {
+    let rom_path = test_assets::rom(COCO3);
+    let rom: Box<[u8]> = std::fs::read(&rom_path)
+        .expect("coco3.rom")
+        .into_boxed_slice();
+    let mut machine = Machine::new(MachineConfig::default(), rom.clone());
+    machine.insert_cartridge(blank_ssc());
+    let slot_ref = |role, name: &str, bytes: &[u8]| SlotROMRef {
+        mpi_slot: None,
+        role,
+        rom: MediaRef {
+            path: PathBuf::from(name),
+            sha256: snapshot::sha256_hex(bytes),
+        },
+    };
+    let media = MediaRefs {
+        system_rom: Some(MediaRef {
+            path: rom_path,
+            sha256: snapshot::sha256_hex(&rom),
+        }),
+        cart_roms: vec![
+            slot_ref(CartROMRole::Primary, "sp0256-al2.rom", &BLANK_SPEECH_ROM),
+            slot_ref(CartROMRole::SSCFirmware, "ssc-tms7040.rom", &BLANK_FIRMWARE),
+        ],
+        ..MediaRefs::default()
+    };
+    let bytes = snapshot::save(&machine, &media).expect("save");
+    (snapshot::load(&bytes).expect("load"), rom)
+}
+
+#[test]
+fn restore_reattaches_each_ssc_image_by_role() {
+    let (payload, rom) = saved_with_both_images();
+    let sources = MediaSources {
+        system_rom: Some(rom),
+        cart_roms: vec![
+            CartROMSource::primary(None, BLANK_SPEECH_ROM.to_vec()),
+            CartROMSource {
+                mpi_slot: None,
+                role: CartROMRole::SSCFirmware,
+                bytes: BLANK_FIRMWARE.to_vec(),
+            },
+        ],
+        ..MediaSources::default()
+    };
+    let Ok(mut restored) = snapshot::restore(payload, sources) else {
+        panic!("both images reattach");
+    };
+    assert!(restored.machine.bus.cart.as_ssc().is_some());
+}
+
+#[test]
+fn restore_without_the_firmware_source_names_it_as_missing() {
+    let (payload, rom) = saved_with_both_images();
+    let sources = MediaSources {
+        system_rom: Some(rom),
+        cart_roms: vec![CartROMSource::primary(None, BLANK_SPEECH_ROM.to_vec())],
+        ..MediaSources::default()
+    };
+    match snapshot::restore(payload, sources) {
+        Err(SnapshotError::MissingMedia { descriptions }) => assert!(
+            descriptions
+                .iter()
+                .any(|d| d.contains("TMS7040 firmware") && d.contains("ssc-tms7040.rom")),
+            "{descriptions:?}"
+        ),
+        Err(other) => panic!("expected MissingMedia, got {other:?}"),
+        Ok(_) => panic!("restore must not succeed without the firmware"),
+    }
 }

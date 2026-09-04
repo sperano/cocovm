@@ -174,16 +174,21 @@ pub fn speaking(b: &mut SystemBus) -> bool {
     b.read(FF7E) & SPEECH_READY == 0
 }
 
-/// Wait for speech to start (the firmware needs a moment to hand the chip
-/// its first allophone), then pump until it stops; returns the pumps spent
-/// speaking and the peak level heard meanwhile.
-pub fn hear(b: &mut SystemBus) -> (u32, f32) {
+/// Pump until speech starts (the firmware needs a moment to hand the chip
+/// its first allophone).
+pub fn wait_for_speech(b: &mut SystemBus) {
     let mut waited = 0;
     while !speaking(b) {
         pump(b, 1);
         waited += 1;
         assert!(waited < SPEECH_MAX_PUMPS, "speech never started");
     }
+}
+
+/// Wait for speech to start, then pump until it stops; returns the pumps
+/// spent speaking and the peak level heard meanwhile.
+pub fn hear(b: &mut SystemBus) -> (u32, f32) {
+    wait_for_speech(b);
     let mut pumps = 0;
     let mut peak = 0.0f32;
     while speaking(b) {
