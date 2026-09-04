@@ -7,7 +7,7 @@ use coco_core::{MachineVariant, MemorySize};
 use mc6809::Bus;
 
 use super::common::{
-    BLANK_FIRMWARE, BLANK_SPEECH_ROM, FF7E, SPEECH_READY, blank_ssc, bus_with, pump, send,
+    BLANK_FIRMWARE, BLANK_SPEECH_ROM, FF7E, SPEECH_READY, blank_ssc, bus_with, pump, send, skip,
     try_coco3_bus_with_ssc,
 };
 
@@ -44,10 +44,7 @@ fn a_pre_firmware_snapshot_deserializes_with_a_reset_pending() {
 #[test]
 fn a_mid_speech_snapshot_resumes_after_both_roms_are_reattached() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!(
-            "skipping a_mid_speech_snapshot_resumes_after_both_roms_are_reattached: SSC ROMs not present"
-        );
-        return;
+        return skip("a_mid_speech_snapshot_resumes_after_both_roms_are_reattached");
     };
     const OY: u8 = 5;
     const PA5: u8 = 4;

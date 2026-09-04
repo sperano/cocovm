@@ -17,6 +17,15 @@ pub const SPEECH_READY: u8 = 0x40;
 /// `$FF7E` bit 5: Sound Activity Circuit, set while the PSG is quiet.
 pub const QUIET: u8 = 0x20;
 
+/// E-clock rate the cartridge's cycle counts are converted to seconds with.
+pub const E_CLOCK_HZ: f64 = 894_886.0;
+/// E-cycles per [`pump`] call.
+pub const PUMP_CYCLES: u32 = 100;
+/// Bound on the [`pump`] calls a speech stream may take to start or finish:
+/// well past the ~2.4 s of the manual's longest example.
+pub const SPEECH_MAX_PUMPS: u32 = 60_000;
+/// Peak level speech must clear at the mux output.
+pub const AUDIBLE_PEAK: f32 = 0.05;
 /// E-cycles per tick while polling the status byte.
 pub const POLL_STEP: u32 = 8;
 /// Cycles the firmware's power-on initialisation is given before a test
@@ -40,6 +49,11 @@ pub const CYCLES_PER_QUEUED_BYTE: u32 = 3_000;
 /// exercised without the real ROMs.
 pub const BLANK_FIRMWARE: [u8; tms7000::ROM_SIZE] = [0; tms7000::ROM_SIZE];
 pub const BLANK_SPEECH_ROM: [u8; coco_core::sp0256::ROM_SIZE] = [0; coco_core::sp0256::ROM_SIZE];
+
+/// Announce a ROM-dependent test that can't run on this machine.
+pub fn skip(name: &str) {
+    eprintln!("skipping {name}: SSC ROMs not present");
+}
 
 pub fn blank_ssc() -> SoundSpeechCartridge {
     SoundSpeechCartridge::new(&BLANK_FIRMWARE, &BLANK_SPEECH_ROM).expect("blank ROMs fit")
@@ -149,8 +163,33 @@ pub fn settle_bytes(b: &mut SystemBus, bytes: u32) {
 pub fn pump(b: &mut SystemBus, count: u32) -> f32 {
     let mut last = 0.0;
     for _ in 0..count {
-        b.cart.tick(100);
+        b.cart.tick(PUMP_CYCLES);
         last = b.sound_probe(PROBE_DT)[0];
     }
     last
+}
+
+/// `$FF7E` bit 6 low: the SP0256 is talking.
+pub fn speaking(b: &mut SystemBus) -> bool {
+    b.read(FF7E) & SPEECH_READY == 0
+}
+
+/// Wait for speech to start (the firmware needs a moment to hand the chip
+/// its first allophone), then pump until it stops; returns the pumps spent
+/// speaking and the peak level heard meanwhile.
+pub fn hear(b: &mut SystemBus) -> (u32, f32) {
+    let mut waited = 0;
+    while !speaking(b) {
+        pump(b, 1);
+        waited += 1;
+        assert!(waited < SPEECH_MAX_PUMPS, "speech never started");
+    }
+    let mut pumps = 0;
+    let mut peak = 0.0f32;
+    while speaking(b) {
+        peak = peak.max(pump(b, 1).abs());
+        pumps += 1;
+        assert!(pumps < SPEECH_MAX_PUMPS, "speech never finished");
+    }
+    (pumps, peak)
 }

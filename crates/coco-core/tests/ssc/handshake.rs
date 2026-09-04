@@ -5,8 +5,8 @@ use coco_core::ay8913::reg as ay_reg;
 use mc6809::Bus;
 
 use super::common::{
-    FF7D, FF7E, NOT_BUSY, SPEECH_READY, coco3_bus_with_ssc, send, settle, try_coco3_bus_with_ssc,
-    wait_not_busy,
+    FF7D, FF7E, NOT_BUSY, SPEECH_READY, coco3_bus_with_ssc, send, settle, skip,
+    try_coco3_bus_with_ssc, wait_not_busy,
 };
 
 #[test]
@@ -39,10 +39,7 @@ fn ff7e_status_base_bits_and_speech_ready_are_set_at_power_on() {
 #[test]
 fn ff7e_write_sets_busy_until_the_firmware_takes_the_byte() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!(
-            "skipping ff7e_write_sets_busy_until_the_firmware_takes_the_byte: SSC ROMs not present"
-        );
-        return;
+        return skip("ff7e_write_sets_busy_until_the_firmware_takes_the_byte");
     };
     b.write(FF7E, b'B');
     assert_eq!(b.read(FF7E) & NOT_BUSY, 0, "busy right after the write");
@@ -65,10 +62,7 @@ fn ff7e_latch_holds_the_newest_byte() {
 #[test]
 fn ff7d_falling_edge_clears_busy_resets_the_ay_and_reboots_the_firmware() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!(
-            "skipping ff7d_falling_edge_clears_busy_resets_the_ay_and_reboots_the_firmware: SSC ROMs not present"
-        );
-        return;
+        return skip("ff7d_falling_edge_clears_busy_resets_the_ay_and_reboots_the_firmware");
     };
     let ssc = b.cart.as_ssc().unwrap();
     ssc.ay_write(ay_reg::TONE_A_FINE, 0x55);

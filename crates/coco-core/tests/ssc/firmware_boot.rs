@@ -3,7 +3,7 @@
 
 use tms7000::Port;
 
-use super::common::{FF7E, NOT_BUSY, try_coco3_bus_with_ssc};
+use super::common::{FF7E, NOT_BUSY, skip, try_coco3_bus_with_ssc};
 use mc6809::Bus;
 
 /// INT3 enable in IOCNT0: the firmware waits for host bytes.
@@ -12,8 +12,7 @@ const INT3_ENABLE: u8 = 0x10;
 #[test]
 fn firmware_boots_to_its_idle_loop() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!("skipping firmware_boots_to_its_idle_loop: SSC ROMs not present");
-        return;
+        return skip("firmware_boots_to_its_idle_loop");
     };
     assert_eq!(b.read(FF7E) & NOT_BUSY, NOT_BUSY);
     let ssc = b.cart.as_ssc().unwrap();

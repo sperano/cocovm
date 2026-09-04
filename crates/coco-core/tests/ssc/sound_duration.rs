@@ -5,7 +5,7 @@ use coco_core::SystemBus;
 use coco_core::ay8913::reg as ay_reg;
 use coco_core::ssc::{cmd, group, terminator};
 
-use super::common::{POLL_STEP, send, try_coco3_bus_with_ssc};
+use super::common::{E_CLOCK_HZ, POLL_STEP, send, skip, try_coco3_bus_with_ssc};
 
 /// Bound on one event's length while polling.
 const MAX_EVENT_CYCLES: u32 = 40_000_000;
@@ -47,8 +47,7 @@ fn measure_loud_event(b: &mut SystemBus) -> u32 {
 #[test]
 fn event_duration_scales_with_the_duration_byte() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!("skipping event_duration_scales_with_the_duration_byte: SSC ROMs not present");
-        return;
+        return skip("event_duration_scales_with_the_duration_byte");
     };
     load_loud_then_silent(&mut b, 10);
     let short = measure_loud_event(&mut b);
@@ -64,8 +63,7 @@ fn event_duration_scales_with_the_duration_byte() {
 #[test]
 fn timer_base_scales_event_duration() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!("skipping timer_base_scales_event_duration: SSC ROMs not present");
-        return;
+        return skip("timer_base_scales_event_duration");
     };
     let mut measured = Vec::new();
     for base in [8u8, 16, 32] {
@@ -93,11 +91,9 @@ fn timer_base_scales_event_duration() {
 #[test]
 fn duration_100_at_the_power_on_base_matches_mame() {
     let Some(mut b) = try_coco3_bus_with_ssc() else {
-        eprintln!("skipping duration_100_at_the_power_on_base_matches_mame: SSC ROMs not present");
-        return;
+        return skip("duration_100_at_the_power_on_base_matches_mame");
     };
     const MAME_SECONDS: f64 = 7.36;
-    const E_CLOCK_HZ: f64 = 894_886.0;
     load_loud_then_silent(&mut b, 100);
     let seconds = f64::from(measure_loud_event(&mut b)) / E_CLOCK_HZ;
     assert!(

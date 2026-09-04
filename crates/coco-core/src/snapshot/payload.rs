@@ -107,9 +107,8 @@ pub struct MediaRefs {
     /// ROMPak/BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images, the
     /// SoundSpeechCartridge's SP0256-AL2 ROM and TMS7040 firmware (two
     /// entries for one slot), and the DeluxeRS232 EPROM — one entry per
-    /// image that actually has
-    /// an image (the DeluxeRS232 is the one cart in this list that can
-    /// legitimately run without one; see [`super::restore`]'s cart-ROM
+    /// image that exists (the DeluxeRS232 is the one cart in this list that
+    /// can legitimately run without one; see [`super::restore`]'s cart-ROM
     /// step).
     #[serde(default)]
     pub cart_roms: Vec<SlotROMRef>,

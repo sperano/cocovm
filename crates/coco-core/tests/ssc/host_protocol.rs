@@ -9,13 +9,9 @@ use coco_core::ssc::{cmd, group, terminator};
 use mc6809::Bus;
 
 use super::common::{
-    FF7E, QUIET, pump, send, settle, settle_bytes, try_bus_with_ssc_selected,
+    FF7E, QUIET, pump, send, settle, settle_bytes, skip, try_bus_with_ssc_selected,
     try_coco3_bus_with_ssc,
 };
-
-fn skip(name: &str) {
-    eprintln!("skipping {name}: SSC ROMs not present");
-}
 
 fn ay(b: &mut SystemBus, reg: u8) -> u8 {
     b.cart.as_ssc().unwrap().ay_read(reg)
