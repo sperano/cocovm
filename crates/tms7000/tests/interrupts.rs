@@ -59,10 +59,10 @@ fn reset_sequence_matches_mame_order_and_state() {
 fn reset_keeps_pending_flags_but_drops_enables() {
     let mut s = Sys::code(&[0x00]);
     s.cpu.set_int3(true);
-    let mut rom_cpu = s.cpu.clone();
-    rom_cpu.reset(&mut s.board);
-    assert_eq!(rom_cpu.io_control() & INT3_FLAG, INT3_FLAG);
-    assert_eq!(rom_cpu.io_control() & INT3_ENABLE, 0);
+    s.cpu.assert_reset();
+    assert_eq!(s.step().kind, StepKind::Reset);
+    assert_eq!(s.cpu.io_control() & INT3_FLAG, INT3_FLAG);
+    assert_eq!(s.cpu.io_control() & INT3_ENABLE, 0);
 }
 
 #[test]
@@ -70,9 +70,16 @@ fn reset_from_idle_steps_past_the_idle() {
     let mut s = Sys::code(&[0x01, 0x00]);
     s.insn();
     assert!(s.cpu.is_idle());
-    s.cpu.reset(&mut s.board);
+    s.cpu.assert_reset();
+    let before = s.cpu.cycles;
+    assert_eq!(s.step().kind, StepKind::Reset);
     assert!(!s.cpu.is_idle());
-    assert_eq!(s.cpu.peek(0xFFFE), 0xF0);
+    assert_eq!(
+        s.cpu.cycles - before,
+        17,
+        "a host reset costs its 17 cycles"
+    );
+    assert_eq!(s.cpu.pc, CODE);
 }
 
 #[test]

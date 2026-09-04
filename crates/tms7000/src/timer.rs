@@ -81,7 +81,9 @@ impl Timer1 {
         CYCLES_PER_TICK * (u32::from(self.control & PRESCALER_MASK) + 1)
     }
 
-    /// Advance by `cycles`; true if the decrementer underflowed (INT2).
+    /// Advance by `cycles`; true if the decrementer underflowed (INT2). Two
+    /// underflows within one step collapse into one flag, as they would into
+    /// IOCNT0's single flag bit.
     pub(crate) fn tick(&mut self, cycles: u32) -> bool {
         if std::mem::take(&mut self.armed_this_step) || !self.running() {
             return false;

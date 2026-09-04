@@ -60,12 +60,13 @@ impl TMS7040 {
         Step { cycles, kind }
     }
 
-    /// The RESET pin (MAME `device_reset`): the port writes happen through
-    /// the peripheral file with the DDRs already cleared, so the board sees
-    /// port B all-ones and ports C/D all-zeros; then IOCNT0's enables clear
-    /// (flags kept), SP is `$FF`, and TRAP 0 fetches the vector — pushing
-    /// the old PC into R0/R1. 17 cycles.
-    pub fn reset(&mut self, bus: &mut impl Bus) {
+    /// The RESET sequence (MAME `device_reset`), run by [`Self::step`] when
+    /// a reset is pending so its 17 cycles are accounted: the port writes
+    /// happen through the peripheral file with the DDRs already cleared, so
+    /// the board sees port B all-ones and ports C/D all-zeros; then IOCNT0's
+    /// enables clear (flags kept), SP is `$FF`, and TRAP 0 fetches the
+    /// vector — pushing the old PC into R0/R1.
+    pub(crate) fn reset(&mut self, bus: &mut impl Bus) {
         self.pending_reset = false;
         if self.idle {
             self.pc = self.pc.wrapping_add(1);
@@ -162,7 +163,7 @@ impl TMS7040 {
             Decoded::Trap(op) => self.trap(bus, op << 1),
             Decoded::Illegal => {
                 self.burn(cost::ILLEGAL);
-                self.illegal_count += 1;
+                self.illegal_count = self.illegal_count.saturating_add(1);
             }
             other => self.exec_extended(bus, other),
         }

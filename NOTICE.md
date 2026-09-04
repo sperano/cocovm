@@ -9,6 +9,10 @@ Licensing is per crate:
   **MIT OR Apache-2.0** at your option (`crates/mc6809/LICENSE-MIT`,
   `crates/mc6809/LICENSE-APACHE`), so other projects can adopt it without
   copyleft obligations.
+- **`crates/tms7000`** (reusable TMS7040 microcontroller core) — likewise
+  **MIT OR Apache-2.0** (`crates/tms7000/LICENSE-MIT`,
+  `crates/tms7000/LICENSE-APACHE`). It is a port of MAME's BSD-3-Clause
+  `tms7000` core; see the attribution below.
 - **`crates/coco-core`, `crates/coco-egui`** (the emulator itself) —
   **GPL-3.0-or-later** (see `LICENSE`): you can redistribute and/or modify
   them under the GNU GPL as published by the Free Software Foundation,
@@ -17,7 +21,7 @@ Licensing is per crate:
 This program is distributed WITHOUT ANY WARRANTY; see the licenses for
 details. Note the GPL crates depend on the permissive `mc6809` crate (fine:
 permissive code may be combined into a GPL work), never the reverse — keep
-`mc6809` free of GPL-licensed code.
+`mc6809` and `tms7000` free of GPL-licensed code.
 
 ## Bundled third-party material
 
@@ -39,6 +43,12 @@ notice requirement.
 - **VDG fixed palette (`crates/coco-core/src/video.rs`,
   `VDG_FIXED_PALETTE`)** — `mc6847_base_device::s_palette` from
   `src/devices/video/mc6847.cpp`.
+- **TMS7040 CPU core (`crates/tms7000/`)** — a port of
+  `src/devices/cpu/tms7000/tms7000.cpp`, `tms7000op.cpp` and
+  `7000dasm.cpp` (opcode map, cycle costs, BCD correction constants,
+  peripheral-file and interrupt semantics, disassembler spellings), which
+  are BSD-3-Clause, copyright **hap** and **Tim Lindner** (MAME project).
+  The BSD-3-Clause text below applies to them with that copyright line.
 
 > Copyright (c) Nathan Woods (MAME project).
 >

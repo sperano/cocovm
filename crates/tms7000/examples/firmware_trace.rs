@@ -102,7 +102,7 @@ fn main() {
             pending.next();
         }
         if reset_at.is_some_and(|cycle| cpu.cycles >= cycle) {
-            cpu.reset(&mut board);
+            cpu.assert_reset();
             reset_at = None;
         }
         let pc = cpu.pc;

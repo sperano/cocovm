@@ -212,6 +212,12 @@ impl TMS7040 {
         self.pending_reset
     }
 
+    /// Pull the RESET pin: the reset sequence runs on the next
+    /// [`Self::step`] (as `Step { cycles: 17, kind: StepKind::Reset }`).
+    pub fn assert_reset(&mut self) {
+        self.pending_reset = true;
+    }
+
     /// Accumulator A (register file 0).
     pub fn a(&self) -> u8 {
         self.rf[0]

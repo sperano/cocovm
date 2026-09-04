@@ -78,6 +78,12 @@ impl TMS7040 {
 
     /// Take the highest-priority enabled, flagged interrupt (INT1 > INT2 >
     /// INT3) if the global enable is set. Returns the line taken.
+    ///
+    /// Called before every instruction, where MAME checks once per timeslice
+    /// plus on line changes, IOCNT0 writes, EINT, RETI and POP ST. Those
+    /// in-instruction checks dispatch after the operands are fetched and the
+    /// cycles charged, so the pushed PC and the cycle total come out the
+    /// same as dispatching before the next instruction.
     pub(crate) fn check_interrupts(&mut self, bus: &mut impl Bus) -> Option<u8> {
         if self.st & st::I == 0 {
             return None;
