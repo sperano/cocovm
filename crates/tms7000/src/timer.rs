@@ -2,7 +2,9 @@
 //! oscillator (MAME `timer_run`/`timer_reload`/`timer_tick_low`). MAME
 //! schedules one event per decrement; this counts CPU cycles instead, which
 //! observes the same boundaries since MAME's timer is only ever sampled
-//! between instructions.
+//! between instructions. (MAME's own phase wanders by up to a cycle when
+//! other devices' timers chop its timeslices at fractional cycles; this
+//! model stays on the instruction grid.)
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

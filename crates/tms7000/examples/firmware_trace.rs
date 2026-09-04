@@ -9,8 +9,9 @@
 //!
 //! `--at` latches `BYTE` into port A and raises INT3 once the chip's cycle
 //! counter passes `CYCLE` (the firmware's port A read drops it again);
-//! `--reset-at` pulses the RESET pin. INT1 (the speech chip's load request)
-//! is held high, as on an idle SP0256.
+//! `--reset-at` pulses the RESET pin; `--cycles` appends the cycle counter
+//! before each instruction. INT1 (the speech chip's load request) is held
+//! high, as on an idle SP0256.
 
 use std::io::{BufWriter, Write};
 
@@ -40,6 +41,7 @@ struct Args {
     max: u64,
     host_bytes: Vec<(u64, u8)>,
     reset_at: Option<u64>,
+    cycles: bool,
 }
 
 fn parse_args() -> Args {
@@ -47,9 +49,14 @@ fn parse_args() -> Args {
         max: 200_000,
         host_bytes: Vec::new(),
         reset_at: None,
+        cycles: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
+        if flag == "--cycles" {
+            args.cycles = true;
+            continue;
+        }
         let value = it.next().unwrap_or_else(|| panic!("{flag} needs a value"));
         match flag.as_str() {
             "--max" => args.max = value.parse().expect("--max N"),
@@ -99,18 +106,22 @@ fn main() {
             reset_at = None;
         }
         let pc = cpu.pc;
-        let (a, b, st, sp) = (cpu.a(), cpu.b(), cpu.st, cpu.sp);
+        let (a, b, st, sp, cycles) = (cpu.a(), cpu.b(), cpu.st, cpu.sp, cpu.cycles);
         let step = cpu.step(&mut board);
         cpu.set_int3(board.int3);
         if step.kind != StepKind::Instruction {
             continue;
         }
         let insn = disasm::disassemble(&mut |addr| cpu.peek(addr), pc);
-        writeln!(
+        write!(
             w,
             "A={a:02X} B={b:02X} ST={st:02X} SP={sp:02X} {pc:04X}: {insn}"
         )
         .unwrap();
+        if args.cycles {
+            write!(w, " ;cycles={cycles}").unwrap();
+        }
+        writeln!(w).unwrap();
         lines += 1;
     }
     if cpu.illegal_count > 0 {
