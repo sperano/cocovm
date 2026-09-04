@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 mc6809 = { path = "../mc6809", features = ["serde"] }
+tms7000 = { path = "../tms7000", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 # Snapshot engine (`docs/plan-machine-persistence.md` "Snapshot compatibility

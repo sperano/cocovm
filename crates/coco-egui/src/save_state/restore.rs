@@ -29,9 +29,18 @@ impl CocoApp {
     pub(crate) fn load_state_from(&mut self, path: &Path) -> Result<(), String> {
         let bytes =
             std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        let payload = snapshot::load(&bytes).map_err(|e| e.to_string())?;
+        let mut payload = snapshot::load(&bytes).map_err(|e| e.to_string())?;
         let media = payload.media.clone();
-        let (sources, mut notes) = self.resolve_media_sources(&payload.media)?;
+        let ssc_slots: Vec<Option<u8>> = payload
+            .machine
+            .bus
+            .cart
+            .slots_mut()
+            .into_iter()
+            .filter(|(_, cart)| matches!(cart, Cart::SoundSpeechCartridge(_)))
+            .map(|(slot, _)| slot)
+            .collect();
+        let (sources, mut notes) = self.resolve_media_sources(&payload.media, &ssc_slots)?;
         let restored = snapshot::restore(payload, sources).map_err(|e| e.to_string())?;
         self.apply_restored_machine(restored, &media, &mut notes);
 
@@ -59,10 +68,11 @@ impl CocoApp {
     fn resolve_media_sources(
         &self,
         media: &MediaRefs,
+        ssc_slots: &[Option<u8>],
     ) -> Result<(MediaSources, Vec<String>), String> {
         let mut warnings = Vec::new();
         let system_rom = resolve_system_rom(media, &mut warnings);
-        let cart_roms = resolve_cart_roms(media, &mut warnings);
+        let cart_roms = resolve_cart_roms(media, ssc_slots, &mut warnings);
 
         // Caps at DRIVE_COUNT: media.* may be a longer Vec, but snapshot::restore rejects
         // oversized payloads separately.

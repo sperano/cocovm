@@ -187,11 +187,21 @@ pub(crate) fn rs232_eprom_default_path() -> PathBuf {
     installed_roms_dir().join("rs232.rom")
 }
 
-/// Where the Sound/Speech Cartridge reads its SP0256-AL2 allophone ROM
-/// from, if present (MAME's `sp0256-al2.bin`, renamed). Without it the
-/// cartridge's speech half stays silent.
+/// The Sound/Speech Cartridge's SP0256-AL2 allophone ROM (MAME's
+/// `sp0256-al2.bin`, renamed).
+pub(crate) const SP0256_ROM: &str = "sp0256-al2.rom";
+/// The Sound/Speech Cartridge's TMS7040 firmware (MAME's `pic-7040-510.bin`,
+/// renamed).
+pub(crate) const SSC_FIRMWARE_ROM: &str = "ssc-tms7040.rom";
+
+/// Where the Sound/Speech Cartridge reads its SP0256-AL2 allophone ROM from.
 pub(crate) fn sp0256_rom_path() -> PathBuf {
-    installed_roms_dir().join("sp0256-al2.rom")
+    installed_roms_dir().join(SP0256_ROM)
+}
+
+/// Where the Sound/Speech Cartridge reads its TMS7040 firmware from.
+pub(crate) fn ssc_firmware_rom_path() -> PathBuf {
+    installed_roms_dir().join(SSC_FIRMWARE_ROM)
 }
 
 /// Where the currently-loaded system ROM image came from — tracked so

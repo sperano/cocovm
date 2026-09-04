@@ -9,7 +9,8 @@ use std::path::PathBuf;
 
 use coco_core::cart::{Cart, Cartridge, ROMPak};
 use coco_core::snapshot::{
-    self, MediaCheck, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError, SnapshotPayload,
+    self, CartROMRole, CartROMSource, MediaCheck, MediaRef, MediaRefs, MediaSources, SlotROMRef,
+    SnapshotError, SnapshotPayload,
 };
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize};
 
@@ -105,6 +106,7 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
         }),
         cart_roms: vec![SlotROMRef {
             mpi_slot: None,
+            role: CartROMRole::Primary,
             rom: MediaRef {
                 path: PathBuf::from("pak.rom"),
                 sha256: snapshot::sha256_hex(&pak_image),
@@ -116,7 +118,7 @@ fn direct_port_cart_rom_is_reattached_through_a_full_restore() {
     let payload = snapshot::load(&bytes).expect("load");
     let sources = MediaSources {
         system_rom: Some(load_rom()),
-        cart_roms: vec![(None, pak_image)],
+        cart_roms: vec![CartROMSource::primary(None, pak_image)],
         ..MediaSources::default()
     };
     let restored = snapshot::restore(payload, sources).expect("restore");
@@ -140,6 +142,7 @@ fn missing_cart_rom_source_is_missing_media() {
         }),
         cart_roms: vec![SlotROMRef {
             mpi_slot: None,
+            role: CartROMRole::Primary,
             rom: MediaRef {
                 path: PathBuf::from("pak.rom"),
                 sha256: snapshot::sha256_hex(&pak_image),

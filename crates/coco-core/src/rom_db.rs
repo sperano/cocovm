@@ -71,6 +71,18 @@ pub const KNOWN_ROMS: &[KnownROM] = &[
         desc: "Extended Color BASIC 1.1 (CoCo 1/2)",
     },
     KnownROM {
+        file: "sp0256-al2.rom",
+        size: 0x800,
+        crc32: 0xb504ac15,
+        desc: "SP0256-AL2 allophone ROM (Sound/Speech Cartridge)",
+    },
+    KnownROM {
+        file: "ssc-tms7040.rom",
+        size: 0x1000,
+        crc32: 0xa8e2eb98,
+        desc: "Sound/Speech Cartridge TMS7040 firmware (PIC-7040-510)",
+    },
+    KnownROM {
         file: "disk10.rom",
         size: 0x2000,
         crc32: 0xb4f9968e,

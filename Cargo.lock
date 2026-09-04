@@ -792,6 +792,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "sha2",
+ "tms7000",
 ]
 
 [[package]]
@@ -819,6 +820,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tar",
+ "tms7000",
  "toml",
  "tracing",
  "tracing-subscriber",

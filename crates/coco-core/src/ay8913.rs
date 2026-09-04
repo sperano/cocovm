@@ -180,6 +180,10 @@ pub struct AY8913 {
     /// 17-bit LFSR state (only the low 17 bits are meaningful).
     rng: u32,
     envelope: Envelope,
+    /// Bus-side register address latch (BDIR=1, BC1=1 selects; only bits
+    /// 0-3 exist). `#[serde(default)]` for snapshots that predate it.
+    #[serde(default)]
+    address_latch: u8,
     /// Fractional master-clock remainder toward the next internal step
     /// ([`MASTER_CLOCK_DIVIDER`]), carried across [`AY8913::step`] calls so a
     /// `cycles` argument that isn't a multiple of 8 doesn't lose clocks.
@@ -214,6 +218,7 @@ impl AY8913 {
             noise_prescale: false,
             rng: NOISE_SEED,
             envelope: Envelope::default(),
+            address_latch: 0,
             clock_accum: 0,
             dac: build_volume_table(),
             sample_sum: 0.0,
@@ -234,9 +239,26 @@ impl AY8913 {
         self.rng = NOISE_SEED;
         self.envelope = Envelope::default();
         self.envelope.set_shape(0);
+        self.address_latch = 0;
         self.clock_accum = 0;
         self.sample_sum = 0.0;
         self.sample_count = 0;
+    }
+
+    /// Bus address cycle (BDIR=1, BC1=1): select the register the next data
+    /// cycle touches (MAME `ay8910_device::address_w`).
+    pub fn write_address(&mut self, addr: u8) {
+        self.address_latch = addr & 0x0F;
+    }
+
+    /// Bus data-write cycle (BDIR=1, BC1=0) into the latched register.
+    pub fn write_data(&mut self, val: u8) {
+        self.write_reg(self.address_latch, val);
+    }
+
+    /// Bus data-read cycle (BDIR=0, BC1=1) of the latched register.
+    pub fn read_data(&self) -> u8 {
+        self.read_reg(self.address_latch)
     }
 
     /// Rebuilds the skipped `dac` lookup table after a snapshot restore, using

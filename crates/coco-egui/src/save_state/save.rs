@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use coco_core::drivewire;
 use coco_core::fdc;
-use coco_core::snapshot::{self, MediaRef, MediaRefs, SlotROMRef};
+use coco_core::snapshot::{self, CartROMRole, MediaRef, MediaRefs, SlotROMRef};
 use coco_core::vhd;
 
 use crate::{CocoApp, MPISlot, ROMSource, disk_basic_rom_path, rom_db_pseudo_path};
@@ -82,63 +82,65 @@ impl CocoApp {
         }
     }
 
-    /// [`MediaRefs::cart_roms`]: one entry per ROM-bearing cart the app
-    /// tracks a path for — direct port/MPI slots, the FD-502's Disk BASIC
-    /// ROM, and the RS-232 pak's optional EPROM.
+    /// [`MediaRefs::cart_roms`]: one entry per ROM image the app tracks a
+    /// path for — direct port/MPI slots, the FD-502's Disk BASIC ROM, the
+    /// SSC's two ROMs, and the RS-232 pak's optional EPROM.
     fn collect_cart_roms(&mut self) -> Result<Vec<SlotROMRef>, String> {
-        let mut out = Vec::new();
+        let mut paths: Vec<(Option<u8>, CartROMRole, PathBuf)> = Vec::new();
         if let Some(mpi) = &self.mpi {
-            // Snapshot paths first to end the immutable borrow of self.mpi before hashing needs
-            // self again.
-            let paths: Vec<(Option<u8>, PathBuf)> = mpi
-                .slots
-                .iter()
-                .enumerate()
-                .filter_map(|(i, slot)| {
-                    let path = match slot {
-                        MPISlot::ROMPak(p)
-                        | MPISlot::GamesMasterCartridge(p)
-                        | MPISlot::Orch90(p) => p.clone(),
-                        MPISlot::FD502 => disk_basic_rom_path(),
-                        MPISlot::SoundSpeechCartridge => crate::rom_load::sp0256_rom_path(),
-                        MPISlot::DeluxeRS232(Some(p)) => p.clone(),
-                        MPISlot::Empty | MPISlot::DistoRTC(_) | MPISlot::DeluxeRS232(None) => {
-                            return None;
-                        }
-                    };
-                    Some((Some(i as u8), path))
-                })
-                .collect();
-            for (mpi_slot, path) in paths {
-                out.push(SlotROMRef {
-                    mpi_slot,
-                    rom: hash_media_ref(&path)?,
-                });
+            for (i, slot) in mpi.slots.iter().enumerate() {
+                let mpi_slot = Some(i as u8);
+                match slot {
+                    MPISlot::ROMPak(p) | MPISlot::GamesMasterCartridge(p) | MPISlot::Orch90(p) => {
+                        paths.push((mpi_slot, CartROMRole::Primary, p.clone()));
+                    }
+                    MPISlot::FD502 => {
+                        paths.push((mpi_slot, CartROMRole::Primary, disk_basic_rom_path()));
+                    }
+                    MPISlot::SoundSpeechCartridge => paths.extend(ssc_rom_paths(mpi_slot)),
+                    MPISlot::DeluxeRS232(Some(p)) => {
+                        paths.push((mpi_slot, CartROMRole::Primary, p.clone()));
+                    }
+                    MPISlot::Empty | MPISlot::DistoRTC(_) | MPISlot::DeluxeRS232(None) => {}
+                }
             }
         } else {
             if let Some(path) = &self.cart_path {
-                out.push(SlotROMRef {
-                    mpi_slot: None,
-                    rom: hash_media_ref(path)?,
-                });
+                paths.push((None, CartROMRole::Primary, path.clone()));
             } else if self.machine.bus.cart.as_disk_cart().is_some() {
-                out.push(SlotROMRef {
-                    mpi_slot: None,
-                    rom: hash_media_ref(&disk_basic_rom_path())?,
-                });
+                paths.push((None, CartROMRole::Primary, disk_basic_rom_path()));
             } else if self.machine.bus.cart.as_ssc().is_some() {
-                out.push(SlotROMRef {
-                    mpi_slot: None,
-                    rom: hash_media_ref(&crate::rom_load::sp0256_rom_path())?,
-                });
+                paths.extend(ssc_rom_paths(None));
             }
             if let Some(path) = &self.rs232_eprom_path {
-                out.push(SlotROMRef {
-                    mpi_slot: None,
-                    rom: hash_media_ref(path)?,
-                });
+                paths.push((None, CartROMRole::Primary, path.clone()));
             }
         }
-        Ok(out)
+        paths
+            .into_iter()
+            .map(|(mpi_slot, role, path)| {
+                Ok(SlotROMRef {
+                    mpi_slot,
+                    role,
+                    rom: hash_media_ref(&path)?,
+                })
+            })
+            .collect()
     }
+}
+
+/// The Sound/Speech Cartridge's two images at `mpi_slot`.
+fn ssc_rom_paths(mpi_slot: Option<u8>) -> [(Option<u8>, CartROMRole, PathBuf); 2] {
+    [
+        (
+            mpi_slot,
+            CartROMRole::Primary,
+            crate::rom_load::sp0256_rom_path(),
+        ),
+        (
+            mpi_slot,
+            CartROMRole::SSCFirmware,
+            crate::rom_load::ssc_firmware_rom_path(),
+        ),
+    ]
 }

@@ -7,7 +7,9 @@
 //!
 //! The design deliberately leaves room for deferred features: conditional
 //! breakpoints can extend [`Breakpoint`], and watch expressions can extend
-//! [`Watchpoint`].
+//! [`Watchpoint`]. Everything here is 6809-only; the Sound/Speech
+//! Cartridge's TMS7040 is inspected through
+//! `SoundSpeechCartridge::firmware` and its own trace hook instead.
 
 use std::collections::{HashMap, VecDeque};
 

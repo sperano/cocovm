@@ -13,11 +13,17 @@ mod common;
 mod audio_sac;
 #[path = "ssc/bus_routing.rs"]
 mod bus_routing;
+#[path = "ssc/firmware_boot.rs"]
+mod firmware_boot;
 #[path = "ssc/handshake.rs"]
 mod handshake;
 #[path = "ssc/host_protocol.rs"]
 mod host_protocol;
 #[path = "ssc/snapshot_compat.rs"]
 mod snapshot_compat;
+#[path = "ssc/sound_duration.rs"]
+mod sound_duration;
 #[path = "ssc/speech.rs"]
 mod speech;
+#[path = "ssc/text_to_speech.rs"]
+mod text_to_speech;
