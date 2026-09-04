@@ -44,7 +44,7 @@ fn port_read_mixes_input_pins_and_output_latch_by_ddr() {
     code.extend(movp_imm(0xAA, DPORT));
     code.extend(movp_to_a(DPORT));
     let mut s = Sys::code(&code);
-    s.board.inputs[Port::D.index_for_test()] = 0x0F;
+    s.board.inputs[Port::D.index()] = 0x0F;
     s.insn();
     s.insn();
     assert_eq!(s.insn(), 9, "MOVP Pn,A");
@@ -57,7 +57,7 @@ fn port_b_is_output_only_and_reads_back_its_latch() {
     code.extend(movp_imm(0x5A, BPORT));
     code.extend(movp_to_a(BPORT));
     let mut s = Sys::code(&code);
-    s.board.inputs[1] = 0x00;
+    s.board.inputs[Port::B.index()] = 0x00;
     s.insn();
     assert_eq!(s.board.writes, vec![(Port::B, 0x5A)]);
     s.insn();
@@ -71,7 +71,7 @@ fn port_a_has_no_output_latch_or_ddr() {
     code.extend(movp_imm(0xFF, APORT));
     code.extend(movp_to_a(APORT));
     let mut s = Sys::code(&code);
-    s.board.inputs[0] = 0x3C;
+    s.board.inputs[Port::A.index()] = 0x3C;
     s.insn();
     s.insn();
     assert!(s.board.writes.is_empty());
@@ -152,19 +152,4 @@ fn unmapped_peripheral_registers_read_zero() {
     s.set_a(0x99);
     s.insn();
     assert_eq!(s.a(), 0);
-}
-
-trait PortIndex {
-    fn index_for_test(self) -> usize;
-}
-
-impl PortIndex for Port {
-    fn index_for_test(self) -> usize {
-        match self {
-            Port::A => 0,
-            Port::B => 1,
-            Port::C => 2,
-            Port::D => 3,
-        }
-    }
 }

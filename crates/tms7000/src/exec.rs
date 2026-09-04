@@ -159,7 +159,7 @@ impl TMS7040 {
                 self.st = self.pull8(bus) & ST_RESTORE_MASK;
             }
             Decoded::Jmp(cond) => self.jmp(bus, self.cond(cond)),
-            Decoded::Trap(op) => self.trap(bus, op.wrapping_shl(1)),
+            Decoded::Trap(op) => self.trap(bus, op << 1),
             Decoded::Illegal => {
                 self.burn(cost::ILLEGAL);
                 self.illegal_count += 1;

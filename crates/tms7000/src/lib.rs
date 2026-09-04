@@ -6,7 +6,7 @@
 //!
 //! Single-chip use only: everything outside the register file, the
 //! peripheral file, and the ROM goes to [`Bus::read_ext`] /
-//! [`Bus::write_ext`], which default to open bus. The four I/O ports reach
+//! [`Bus::write_ext`], which default to reading 0. The four I/O ports reach
 //! the board through [`Bus::read_port`] / [`Bus::write_port`].
 //!
 //! Clocking: one CPU cycle is two oscillator clocks (MAME `m_divider = 2`).
@@ -67,7 +67,8 @@ pub enum Port {
 impl Port {
     pub(crate) const ALL: [Port; 4] = [Port::A, Port::B, Port::C, Port::D];
 
-    pub(crate) fn index(self) -> usize {
+    /// Position in per-port arrays (A = 0 .. D = 3).
+    pub fn index(self) -> usize {
         match self {
             Port::A => 0,
             Port::B => 1,
@@ -78,7 +79,8 @@ impl Port {
 }
 
 /// What the chip is soldered to: its port pins and, in expansion modes
-/// (unused on single-chip parts), external memory.
+/// (unused on single-chip parts), external memory, which reads 0 unless
+/// overridden.
 pub trait Bus {
     /// Input pin levels of `port` (MAME `m_port_in_cb`, default `0xFF`).
     fn read_port(&mut self, port: Port) -> u8;
