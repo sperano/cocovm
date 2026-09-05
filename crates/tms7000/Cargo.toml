@@ -1,0 +1,18 @@
+[package]
+name = "tms7000"
+version.workspace = true
+edition = "2024"
+# Reusable CPU core: permissively dual-licensed, unlike the GPL-3 emulator crates.
+license = "MIT OR Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]
+
+[dev-dependencies]
+test-assets = { package = "cocovm-test-assets", path = "../test-assets" }

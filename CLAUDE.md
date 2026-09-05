@@ -13,8 +13,9 @@ manager). `book/` is a 16-chapter course built from this codebase.
   (also git-ignored); regenerate with `scripts/extract-docs.sh`.
 - `~/.local/share/cocovm/roms/` — real ROM images: `coco3.rom` (32K Super
   Extended Color BASIC, maps to `$8000–$FFFF`), `disk11.rom` (8K Disk BASIC),
-  the CoCo 1/2 BASIC sets, and `sp0256-al2.rom` (the Sound/Speech
-  Cartridge's 2K allophone ROM; speech tests skip without it). Used to boot real code and trace-diff against
+  the CoCo 1/2 BASIC sets, `sp0256-al2.rom` (the Sound/Speech Cartridge's
+  2K allophone ROM) and `ssc-tms7040.rom` (its 4K TMS7040 firmware); the
+  SSC tests skip without them. Used to boot real code and trace-diff against
   XRoar/MAME. Installed by the app's first-run asset download
   (`ensure_assets`, `crates/coco-egui/src/startup.rs`); tests resolve them
   via `crates/test-assets`. There is no repo-root `roms/` directory — don't

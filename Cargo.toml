@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/mc6809",
+    "crates/tms7000",
     "crates/coco-core",
     "crates/coco-egui",
     "crates/test-assets",
@@ -25,4 +26,7 @@ opt-level = 2
 opt-level = 2
 
 [profile.dev.package.mc6809]
+opt-level = 2
+
+[profile.dev.package.tms7000]
 opt-level = 2
