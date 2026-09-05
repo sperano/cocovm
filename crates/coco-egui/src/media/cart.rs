@@ -4,14 +4,39 @@
 
 use crate::*;
 
-/// A Sound/Speech Cartridge built around the SP0256-AL2 ROM at
-/// [`rom_load::sp0256_rom_path`]; the error names the file when it is
+/// A Sound/Speech Cartridge built around its TMS7040 firmware
+/// ([`rom_load::ssc_firmware_rom_path`]) and SP0256-AL2 ROM
+/// ([`rom_load::sp0256_rom_path`]); the error names the file that is
 /// missing or the wrong size.
 pub(crate) fn sound_speech_cartridge() -> Result<SoundSpeechCartridge, String> {
-    let path = rom_load::sp0256_rom_path();
-    let bytes = std::fs::read(&path)
-        .map_err(|e| format!("could not read SP0256-AL2 ROM {}: {e}", path.display()))?;
-    SoundSpeechCartridge::new(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+    sound_speech_cartridge_in(&installed_roms_dir())
+}
+
+/// [`sound_speech_cartridge`] reading both images from `roms_dir`.
+fn sound_speech_cartridge_in(roms_dir: &Path) -> Result<SoundSpeechCartridge, String> {
+    let firmware_path = roms_dir.join(rom_load::SSC_FIRMWARE_ROM);
+    let speech_path = roms_dir.join(rom_load::SP0256_ROM);
+    let firmware = std::fs::read(&firmware_path).map_err(|e| {
+        format!(
+            "could not read TMS7040 firmware {}: {e}",
+            firmware_path.display()
+        )
+    })?;
+    let speech = std::fs::read(&speech_path).map_err(|e| {
+        format!(
+            "could not read SP0256-AL2 ROM {}: {e}",
+            speech_path.display()
+        )
+    })?;
+    SoundSpeechCartridge::new(&firmware, &speech).map_err(|e| {
+        format!(
+            "{}: {e}",
+            match e {
+                coco_core::ssc::SSCROMError::Firmware(_) => firmware_path.display(),
+                coco_core::ssc::SSCROMError::Speech(_) => speech_path.display(),
+            }
+        )
+    })
 }
 
 impl CocoApp {

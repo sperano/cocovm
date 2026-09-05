@@ -7,7 +7,8 @@ use crate::{Machine, drivewire, fdc, vhd};
 
 use super::error::SnapshotError;
 use super::payload::{
-    MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine, SnapshotPayload,
+    CartROMRole, CartROMSource, MediaRef, MediaRefs, MediaSources, RestoreNote, RestoredMachine,
+    SnapshotPayload,
 };
 
 /// Turns a decoded payload plus resolved media into a running [`Machine`],
@@ -133,18 +134,20 @@ fn restore_system_rom(
 fn restore_cart_roms(
     machine: &mut Machine,
     media: &MediaRefs,
-    mut cart_roms: Vec<(Option<u8>, Vec<u8>)>,
+    mut cart_roms: Vec<CartROMSource>,
     missing: &mut Vec<String>,
 ) -> Result<(), SnapshotError> {
+    use CartROMRole::{Primary, SSCFirmware};
     for (mpi_slot, cart) in machine.bus.cart.slots_mut() {
+        let at = |role| (mpi_slot, role);
         match cart {
             Cart::ROMPak(pak) => {
-                require_cart_rom(mpi_slot, "ROMPak", media, &mut cart_roms, missing, |b| {
+                require_cart_rom(at(Primary), "ROMPak", media, &mut cart_roms, missing, |b| {
                     pak.reattach_image(b)
                 })?
             }
             Cart::BankedROMPak(pak) => require_cart_rom(
-                mpi_slot,
+                at(Primary),
                 "BankedROMPak",
                 media,
                 &mut cart_roms,
@@ -152,37 +155,50 @@ fn restore_cart_roms(
                 |b| pak.reattach_image(b),
             )?,
             Cart::GamesMasterCartridge(gmc) => require_cart_rom(
-                mpi_slot,
+                at(Primary),
                 "GamesMasterCartridge",
                 media,
                 &mut cart_roms,
                 missing,
                 |b| gmc.reattach_rom(b),
             )?,
-            Cart::DiskCart(disk) => {
-                require_cart_rom(mpi_slot, "DiskCart", media, &mut cart_roms, missing, |b| {
-                    disk.reattach_rom(b)
-                })?
-            }
+            Cart::DiskCart(disk) => require_cart_rom(
+                at(Primary),
+                "DiskCart",
+                media,
+                &mut cart_roms,
+                missing,
+                |b| disk.reattach_rom(b),
+            )?,
             Cart::Orch90(orch) => {
-                require_cart_rom(mpi_slot, "Orch90", media, &mut cart_roms, missing, |b| {
+                require_cart_rom(at(Primary), "Orch90", media, &mut cart_roms, missing, |b| {
                     orch.reattach_rom(b)
                 })?
             }
             Cart::DeluxeRS232(rs232) => {
                 // Optional: see this function's doc comment.
-                if let Some(bytes) = take_cart_rom(&mut cart_roms, mpi_slot) {
+                if let Some(bytes) = take_cart_rom(&mut cart_roms, at(Primary)) {
                     rs232.set_eprom(&bytes);
                 }
             }
-            Cart::SoundSpeechCartridge(ssc) => require_cart_rom(
-                mpi_slot,
-                "SoundSpeechCartridge",
-                media,
-                &mut cart_roms,
-                missing,
-                |b| ssc.reattach_speech_rom(b),
-            )?,
+            Cart::SoundSpeechCartridge(ssc) => {
+                require_cart_rom(
+                    at(Primary),
+                    "SoundSpeechCartridge SP0256-AL2",
+                    media,
+                    &mut cart_roms,
+                    missing,
+                    |b| ssc.reattach_speech_rom(b),
+                )?;
+                require_cart_rom(
+                    at(SSCFirmware),
+                    "SoundSpeechCartridge TMS7040 firmware",
+                    media,
+                    &mut cart_roms,
+                    missing,
+                    |b| ssc.reattach_firmware_rom(b),
+                )?
+            }
             Cart::Empty(_) | Cart::DistoRTC(_) => {} // no ROM
             // Never produced by slots_mut (yields inner slots, not itself) or deserialization.
             Cart::MultiPak(_) | Cart::Custom(_) => {}
@@ -191,31 +207,33 @@ fn restore_cart_roms(
     Ok(())
 }
 
-/// Take and remove the ROM bytes recorded for `slot` from `cart_roms`, if
-/// any.
-fn take_cart_rom(cart_roms: &mut Vec<(Option<u8>, Vec<u8>)>, slot: Option<u8>) -> Option<Vec<u8>> {
-    let idx = cart_roms.iter().position(|(s, _)| *s == slot)?;
-    Some(cart_roms.remove(idx).1)
+/// `(slot, which image)` addressing one cart ROM.
+type ROMKey = (Option<u8>, CartROMRole);
+
+/// Take and remove the ROM bytes recorded for `key` from `cart_roms`, if any.
+fn take_cart_rom(cart_roms: &mut Vec<CartROMSource>, key: ROMKey) -> Option<Vec<u8>> {
+    let idx = cart_roms.iter().position(|r| (r.mpi_slot, r.role) == key)?;
+    Some(cart_roms.remove(idx).bytes)
 }
 
-/// Reattaches a mandatory ROM-bearing cart's image, or records a `missing`
-/// entry if `slot` has no source. A shape error from `reattach`, such as an
-/// oversized image, fails immediately as [`SnapshotError::MediaShape`].
+/// Reattaches a mandatory cart ROM image, or records a `missing` entry if
+/// `key` has no source. A shape error from `reattach`, such as an oversized
+/// image, fails immediately as [`SnapshotError::MediaShape`].
 fn require_cart_rom<E: fmt::Display>(
-    mpi_slot: Option<u8>,
-    role: &str,
+    key: ROMKey,
+    label: &str,
     media: &MediaRefs,
-    cart_roms: &mut Vec<(Option<u8>, Vec<u8>)>,
+    cart_roms: &mut Vec<CartROMSource>,
     missing: &mut Vec<String>,
     reattach: impl FnOnce(&[u8]) -> Result<(), E>,
 ) -> Result<(), SnapshotError> {
-    match take_cart_rom(cart_roms, mpi_slot) {
+    match take_cart_rom(cart_roms, key) {
         Some(bytes) => reattach(&bytes).map_err(|e| SnapshotError::MediaShape {
-            role: format!("{role} ROM ({})", slot_label(mpi_slot)),
+            role: format!("{label} ROM ({})", slot_label(key.0)),
             detail: e.to_string(),
         }),
         None => {
-            missing.push(missing_cart_rom_desc(role, mpi_slot, media));
+            missing.push(missing_cart_rom_desc(label, key, media));
             Ok(())
         }
     }
@@ -228,11 +246,11 @@ fn slot_label(mpi_slot: Option<u8>) -> String {
     }
 }
 
-fn missing_cart_rom_desc(role: &str, mpi_slot: Option<u8>, media: &MediaRefs) -> String {
-    let found = media.cart_roms.iter().find(|r| r.mpi_slot == mpi_slot);
+fn missing_cart_rom_desc(label: &str, key: ROMKey, media: &MediaRefs) -> String {
+    let found = media.cart_roms.iter().find(|r| (r.mpi_slot, r.role) == key);
     missing_desc(
-        &format!("{role} ROM"),
-        &format!("in {}", slot_label(mpi_slot)),
+        &format!("{label} ROM"),
+        &format!("in {}", slot_label(key.0)),
         found.map(|r| &r.rom),
     )
 }

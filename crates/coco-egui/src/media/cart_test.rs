@@ -229,3 +229,38 @@ fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
     assert!(is_dirty(&mut app, 0), "the disk must stay dirty");
     assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));
 }
+
+/// Both SSC images at the given sizes; zero-filled pairs of the right size load fine.
+fn write_ssc_roms(dir: &Path, firmware_len: usize, speech_len: usize) {
+    std::fs::write(dir.join(rom_load::SSC_FIRMWARE_ROM), vec![0; firmware_len]).unwrap();
+    std::fs::write(dir.join(rom_load::SP0256_ROM), vec![0; speech_len]).unwrap();
+}
+
+#[test]
+fn sound_speech_cartridge_loads_when_both_roms_are_present() {
+    let dir = scratch_dir("ssc-both");
+    write_ssc_roms(&dir, tms7000::ROM_SIZE, coco_core::sp0256::ROM_SIZE);
+    assert!(sound_speech_cartridge_in(&dir).is_ok());
+}
+
+#[test]
+fn sound_speech_cartridge_names_the_missing_firmware() {
+    let dir = scratch_dir("ssc-no-firmware");
+    let _ = std::fs::remove_file(dir.join(rom_load::SSC_FIRMWARE_ROM));
+    std::fs::write(
+        dir.join(rom_load::SP0256_ROM),
+        vec![0; coco_core::sp0256::ROM_SIZE],
+    )
+    .unwrap();
+    let err = sound_speech_cartridge_in(&dir).err().expect("refused");
+    assert!(err.contains(rom_load::SSC_FIRMWARE_ROM), "{err}");
+}
+
+#[test]
+fn sound_speech_cartridge_names_a_wrong_sized_speech_rom() {
+    let dir = scratch_dir("ssc-short-speech");
+    write_ssc_roms(&dir, tms7000::ROM_SIZE, coco_core::sp0256::ROM_SIZE - 1);
+    let err = sound_speech_cartridge_in(&dir).err().expect("refused");
+    assert!(err.contains(rom_load::SP0256_ROM), "{err}");
+    assert!(err.contains("2048 bytes"), "{err}");
+}

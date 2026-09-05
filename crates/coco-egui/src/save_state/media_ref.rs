@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use coco_core::cart::Cart;
-use coco_core::snapshot::{self, MediaCheck, MediaRef, MediaRefs};
+use coco_core::snapshot::{self, CartROMRole, CartROMSource, MediaCheck, MediaRef, MediaRefs};
 
 use crate::{
     Coco12ROMResult, MPISlot, ROM_DB_PSEUDO_PATH_PREFIX, compose_coco12_rom, installed_roms_dir,
@@ -143,16 +143,52 @@ pub(super) fn resolve_system_rom(
     read_if_present(mr, "system ROM", warnings).map(Vec::into_boxed_slice)
 }
 
+/// [`coco_core::snapshot::MediaSources::cart_roms`] resolver. `ssc_slots`
+/// names every slot holding a Sound/Speech Cartridge: a snapshot from
+/// before the firmware was emulated recorded only its SP0256 ROM, so the
+/// installed firmware image stands in, with a warning.
 pub(super) fn resolve_cart_roms(
     media: &MediaRefs,
+    ssc_slots: &[Option<u8>],
     warnings: &mut Vec<String>,
-) -> Vec<(Option<u8>, Vec<u8>)> {
-    media
+) -> Vec<CartROMSource> {
+    let mut out: Vec<CartROMSource> = media
         .cart_roms
         .iter()
         .filter_map(|slot_ref| {
-            read_if_present(&slot_ref.rom, "cartridge ROM", warnings)
-                .map(|bytes| (slot_ref.mpi_slot, bytes))
+            read_if_present(&slot_ref.rom, "cartridge ROM", warnings).map(|bytes| CartROMSource {
+                mpi_slot: slot_ref.mpi_slot,
+                role: slot_ref.role,
+                bytes,
+            })
         })
-        .collect()
+        .collect();
+    for &slot in ssc_slots {
+        let recorded = media
+            .cart_roms
+            .iter()
+            .any(|r| r.mpi_slot == slot && r.role == CartROMRole::SSCFirmware);
+        if recorded {
+            continue;
+        }
+        let path = crate::rom_load::ssc_firmware_rom_path();
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                warnings.push(format!(
+                    "save state predates the SSC firmware reference; using {}",
+                    path.display()
+                ));
+                out.push(CartROMSource {
+                    mpi_slot: slot,
+                    role: CartROMRole::SSCFirmware,
+                    bytes,
+                });
+            }
+            Err(e) => warnings.push(format!(
+                "save state predates the SSC firmware reference and {} cannot be read: {e}",
+                path.display()
+            )),
+        }
+    }
+    out
 }

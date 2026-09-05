@@ -77,3 +77,4 @@ wgpu = ["eframe/wgpu"]
 [dev-dependencies]
 egui_kittest = { version = "0.33", features = ["eframe"] }
 test-assets = { package = "cocovm-test-assets", path = "../test-assets" }
+tms7000 = { path = "../tms7000" }

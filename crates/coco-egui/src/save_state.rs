@@ -16,6 +16,8 @@ use eframe::egui;
 use crate::{CocoApp, paths};
 
 mod media_ref;
+#[cfg(test)]
+mod media_ref_test;
 mod restore;
 mod save;
 

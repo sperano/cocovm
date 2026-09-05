@@ -16,7 +16,9 @@ use std::path::PathBuf;
 
 use coco_core::cart::{Cartridge, MultiPak, ROMPak};
 use coco_core::fdc::{DiskCart, JVCDisk, dskreg};
-use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotROMRef};
+use coco_core::snapshot::{
+    self, CartROMRole, CartROMSource, MediaRef, MediaRefs, MediaSources, SlotROMRef,
+};
 use coco_core::wd1773::status;
 use coco_core::{Machine, MachineConfig};
 use mc6809::{Bus, MC6809, State};
@@ -227,6 +229,7 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
         system_rom: Some(media_ref(COCO3, &load_rom(COCO3))),
         cart_roms: vec![SlotROMRef {
             mpi_slot: None,
+            role: CartROMRole::Primary,
             rom: media_ref(DISK11, &disk_rom),
         }],
         disks: vec![Some(media_ref("test.jvc", &disk_bytes)), None, None, None],
@@ -234,7 +237,7 @@ fn mid_fdc_transfer_snapshot_restores_without_corrupting_the_transfer() {
     };
     let sources = MediaSources {
         system_rom: Some(load_rom(COCO3)),
-        cart_roms: vec![(None, disk_rom.to_vec())],
+        cart_roms: vec![CartROMSource::primary(None, disk_rom.to_vec())],
         disks: [Some(disk_bytes.clone()), None, None, None],
         ..MediaSources::default()
     };
@@ -299,10 +302,12 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
         cart_roms: vec![
             SlotROMRef {
                 mpi_slot: Some(ROMPAK_SLOT as u8),
+                role: CartROMRole::Primary,
                 rom: media_ref("pak.rom", &pak_image),
             },
             SlotROMRef {
                 mpi_slot: Some(FDC_SLOT as u8),
+                role: CartROMRole::Primary,
                 rom: media_ref(DISK11, &disk_rom),
             },
         ],
@@ -312,8 +317,8 @@ fn mpi_with_fd502_snapshot_restores_without_corrupting_the_transfer() {
     let sources = MediaSources {
         system_rom: Some(load_rom(COCO3)),
         cart_roms: vec![
-            (Some(ROMPAK_SLOT as u8), pak_image.clone()),
-            (Some(FDC_SLOT as u8), disk_rom.to_vec()),
+            CartROMSource::primary(Some(ROMPAK_SLOT as u8), pak_image.clone()),
+            CartROMSource::primary(Some(FDC_SLOT as u8), disk_rom.to_vec()),
         ],
         disks: [Some(disk_bytes.clone()), None, None, None],
         ..MediaSources::default()

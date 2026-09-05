@@ -1,17 +1,7 @@
-use coco_core::sp0256::ROM_SIZE;
 use coco_core::ssc::{SoundSpeechCartridge, reg as ssc_reg};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
-
-/// A zero-filled allophone ROM: every fetch is RTS/HLT, so the chip halts
-/// silently on any load. Lets the sound-half suites run without the real
-/// `sp0256-al2.rom`; only `speech.rs` needs the genuine image.
-pub const BLANK_SPEECH_ROM: [u8; ROM_SIZE] = [0; ROM_SIZE];
-
-/// A cartridge fitted with [`BLANK_SPEECH_ROM`].
-pub fn ssc_without_speech() -> SoundSpeechCartridge {
-    SoundSpeechCartridge::new(&BLANK_SPEECH_ROM).expect("blank ROM has the right size")
-}
+use test_assets::rom::{SP0256_AL2, SSC_TMS7040};
 
 /// Generator step for `sound_probe` (the AY drain is call-count based, so
 /// this only feeds the (absent) crystal generators).
@@ -20,20 +10,86 @@ pub const PROBE_DT: f64 = 1.0 / 62_866.0;
 pub const FF7D: u16 = ssc_reg::RESET;
 pub const FF7E: u16 = ssc_reg::DATA;
 
-/// Synthetic hold time for `busy` after a `$FF7E` write (see
-/// `crates/coco-core/src/ssc.rs`'s `BUSY_HOLD_CYCLES` doc comment) — not
-/// exported, so tests need their own large-enough tick count to clear busy
-/// between protocol bytes. Comfortably larger than the real constant (100).
-pub const CLEAR_BUSY: u32 = 1_000;
+/// `$FF7E` bit 7: set while the firmware is ready for a byte.
+pub const NOT_BUSY: u8 = 0x80;
+/// `$FF7E` bit 6: SP0256 SBY, set while idle.
+pub const SPEECH_READY: u8 = 0x40;
+/// `$FF7E` bit 5: Sound Activity Circuit, set while the PSG is quiet.
+pub const QUIET: u8 = 0x20;
 
-pub fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
+/// E-clock rate the cartridge's cycle counts are converted to seconds with.
+pub const E_CLOCK_HZ: f64 = 894_886.0;
+/// E-cycles per [`pump`] call.
+pub const PUMP_CYCLES: u32 = 100;
+/// Bound on the [`pump`] calls a speech stream may take to start or finish:
+/// well past the ~2.4 s of the manual's longest example.
+pub const SPEECH_MAX_PUMPS: u32 = 60_000;
+/// Peak level speech must clear at the mux output.
+pub const AUDIBLE_PEAK: f32 = 0.05;
+/// E-cycles per tick while polling the status byte.
+pub const POLL_STEP: u32 = 8;
+/// Cycles the firmware's power-on initialisation is given before a test
+/// starts talking to it.
+pub const BOOT_CYCLES: u32 = 100_000;
+/// Bound on how long the firmware may hold BUSY* for one byte; its longest
+/// command paths finish well inside this.
+pub const BUSY_TIMEOUT_CYCLES: u32 = 400_000;
+/// The firmware releases BUSY* before it acts on a command (the manual:
+/// "the speech and sound status bits are not valid immediately following
+/// a speech or sound execution command"), queueing bytes it hasn't
+/// processed; a burst of ten takes it ~25,000 cycles to drain. This is how
+/// long tests give it before looking at the chips.
+pub const SETTLE_CYCLES: u32 = 60_000;
+/// Cycles the firmware spends per queued byte, for bursts longer than the
+/// ten [`SETTLE_CYCLES`] budgets for.
+pub const CYCLES_PER_QUEUED_BYTE: u32 = 3_000;
+
+/// Zero-filled images: the firmware executes NOPs forever and the speech
+/// chip halts on any load, so the bus, handshake, and PSG plumbing can be
+/// exercised without the real ROMs.
+pub const BLANK_FIRMWARE: [u8; tms7000::ROM_SIZE] = [0; tms7000::ROM_SIZE];
+pub const BLANK_SPEECH_ROM: [u8; coco_core::sp0256::ROM_SIZE] = [0; coco_core::sp0256::ROM_SIZE];
+
+/// Announce a ROM-dependent test that can't run on this machine.
+pub fn skip(name: &str) {
+    eprintln!("skipping {name}: SSC ROMs not present");
+}
+
+pub fn blank_ssc() -> SoundSpeechCartridge {
+    SoundSpeechCartridge::new(&BLANK_FIRMWARE, &BLANK_SPEECH_ROM).expect("blank ROMs fit")
+}
+
+/// The real cartridge, or `None` when either ROM isn't installed.
+pub fn try_real_ssc() -> Option<SoundSpeechCartridge> {
+    let firmware = std::fs::read(test_assets::rom(SSC_TMS7040)).ok()?;
+    let speech = std::fs::read(test_assets::rom(SP0256_AL2)).ok()?;
+    Some(SoundSpeechCartridge::new(&firmware, &speech).expect("installed ROMs are the right size"))
+}
+
+pub fn bus_with(
+    cart: SoundSpeechCartridge,
+    variant: MachineVariant,
+    memory: MemorySize,
+) -> SystemBus {
     let mut b = SystemBus::new(variant, memory, vec![0u8; 32 * 1024].into_boxed_slice());
-    b.cart = ssc_without_speech().into();
+    b.cart = cart.into();
     b
 }
 
+pub fn bus_with_ssc(variant: MachineVariant, memory: MemorySize) -> SystemBus {
+    bus_with(blank_ssc(), variant, memory)
+}
+
+/// A CoCo 3 with a blank-ROM cartridge.
 pub fn coco3_bus_with_ssc() -> SystemBus {
     bus_with_ssc(MachineVariant::Coco3, MemorySize::K512)
+}
+
+/// A CoCo 3 with the real cartridge, booted; `None` without the ROMs.
+pub fn try_coco3_bus_with_ssc() -> Option<SystemBus> {
+    let mut b = bus_with(try_real_ssc()?, MachineVariant::Coco3, MemorySize::K512);
+    boot(&mut b);
+    Some(b)
 }
 
 const PIA0_CRA: u16 = 0xFF01;
@@ -46,36 +102,60 @@ const CR_C2_HIGH: u8 = 0x3C;
 /// suite only drives Cx2 (SNDEN/SEL1/SEL2), never the DAC's data pins.
 const CR_DDR: u8 = 0x30;
 
-/// A bus with a `SoundSpeechCartridge` inserted and the sound mux routed to the cartridge
-/// input (SEL2:SEL1 = 10, SNDEN high) — same PIA-poking pattern as
-/// `tests/sound.rs`'s `bus()` helper.
+/// Route the sound mux to the cartridge input (SEL2:SEL1 = 10, SNDEN high)
+/// — same PIA-poking pattern as `tests/sound.rs`'s `bus()` helper.
+pub fn select_cartridge_mux(b: &mut SystemBus) {
+    b.write(PIA1_CRB, CR_DDR);
+    b.write(PIA1_CRB, CR_C2_HIGH); // SNDEN high
+    b.write(PIA0_CRA, CR_C2_LOW); // SEL1 = 0
+    b.write(PIA0_CRB, CR_C2_HIGH); // SEL2 = 1 -> mux 10: cartridge
+}
+
+/// A blank-ROM cartridge with the mux listening to it.
 pub fn bus_with_ssc_selected() -> SystemBus {
     let mut b = coco3_bus_with_ssc();
     select_cartridge_mux(&mut b);
     b
 }
 
-/// Like [`bus_with_ssc_selected`], but the cartridge has its SP0256-AL2
-/// fitted from `roms/sp0256-al2.rom`; `None` when that ROM isn't installed.
-pub fn try_bus_with_speech_selected() -> Option<SystemBus> {
-    let rom = std::fs::read(test_assets::rom(test_assets::rom::SP0256_AL2)).ok()?;
-    let mut b = SystemBus::new(
-        MachineVariant::Coco3,
-        MemorySize::K512,
-        vec![0u8; 32 * 1024].into_boxed_slice(),
-    );
-    b.cart = SoundSpeechCartridge::new(&rom)
-        .expect("installed AL2 ROM is 2 KB")
-        .into();
+/// The real cartridge, booted, with the mux listening to it; `None`
+/// without the ROMs.
+pub fn try_bus_with_ssc_selected() -> Option<SystemBus> {
+    let mut b = try_coco3_bus_with_ssc()?;
     select_cartridge_mux(&mut b);
     Some(b)
 }
 
-fn select_cartridge_mux(b: &mut SystemBus) {
-    b.write(PIA1_CRB, CR_DDR);
-    b.write(PIA1_CRB, CR_C2_HIGH); // SNDEN high
-    b.write(PIA0_CRA, CR_C2_LOW); // SEL1 = 0
-    b.write(PIA0_CRB, CR_C2_HIGH); // SEL2 = 1 -> mux 10: cartridge
+/// Let the firmware finish its power-on initialisation.
+pub fn boot(b: &mut SystemBus) {
+    b.cart.tick(BOOT_CYCLES);
+}
+
+/// Tick until `$FF7E` bit 7 sets; returns the cycles that took.
+pub fn wait_not_busy(b: &mut SystemBus) -> u32 {
+    let mut waited = 0;
+    while b.read(FF7E) & NOT_BUSY == 0 {
+        b.cart.tick(POLL_STEP);
+        waited += POLL_STEP;
+        assert!(waited < BUSY_TIMEOUT_CYCLES, "firmware never cleared BUSY*");
+    }
+    waited
+}
+
+/// Hand the firmware one byte and wait for it to accept it.
+pub fn send(b: &mut SystemBus, byte: u8) {
+    b.write(FF7E, byte);
+    wait_not_busy(b);
+}
+
+/// Give the firmware time to act on what it accepted.
+pub fn settle(b: &mut SystemBus) {
+    b.cart.tick(SETTLE_CYCLES);
+}
+
+/// [`settle`] scaled for a burst of `bytes` queued bytes.
+pub fn settle_bytes(b: &mut SystemBus, bytes: u32) {
+    b.cart.tick(SETTLE_CYCLES + bytes * CYCLES_PER_QUEUED_BYTE);
 }
 
 /// Advance the cart's clock and pump `count` `sound_probe` calls, returning
@@ -83,8 +163,38 @@ fn select_cartridge_mux(b: &mut SystemBus) {
 pub fn pump(b: &mut SystemBus, count: u32) -> f32 {
     let mut last = 0.0;
     for _ in 0..count {
-        b.cart.tick(100);
+        b.cart.tick(PUMP_CYCLES);
         last = b.sound_probe(PROBE_DT)[0];
     }
     last
+}
+
+/// `$FF7E` bit 6 low: the SP0256 is talking.
+pub fn speaking(b: &mut SystemBus) -> bool {
+    b.read(FF7E) & SPEECH_READY == 0
+}
+
+/// Pump until speech starts (the firmware needs a moment to hand the chip
+/// its first allophone).
+pub fn wait_for_speech(b: &mut SystemBus) {
+    let mut waited = 0;
+    while !speaking(b) {
+        pump(b, 1);
+        waited += 1;
+        assert!(waited < SPEECH_MAX_PUMPS, "speech never started");
+    }
+}
+
+/// Wait for speech to start, then pump until it stops; returns the pumps
+/// spent speaking and the peak level heard meanwhile.
+pub fn hear(b: &mut SystemBus) -> (u32, f32) {
+    wait_for_speech(b);
+    let mut pumps = 0;
+    let mut peak = 0.0f32;
+    while speaking(b) {
+        peak = peak.max(pump(b, 1).abs());
+        pumps += 1;
+        assert!(pumps < SPEECH_MAX_PUMPS, "speech never finished");
+    }
+    (pumps, peak)
 }

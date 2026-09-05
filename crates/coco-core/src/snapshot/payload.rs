@@ -41,13 +41,49 @@ pub struct MediaRef {
     pub sha256: String,
 }
 
-/// A ROM-bearing cartridge's image reference, located by where it plugs in.
+/// Which of a cartridge's ROM images a [`SlotROMRef`] names. Every cart has
+/// a primary image; the Sound/Speech Cartridge also carries its TMS7040
+/// firmware.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CartROMRole {
+    /// The cart's main image (a pak's ROM, Disk BASIC, the SSC's SP0256-AL2 ROM).
+    #[default]
+    Primary,
+    /// The Sound/Speech Cartridge's TMS7040 firmware.
+    SSCFirmware,
+}
+
+/// A ROM-bearing cartridge's image reference, located by where it plugs in
+/// and which of the cart's images it is.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlotROMRef {
     /// `None` = the machine's own cartridge port; `Some(i)` = Multi-Pak slot
     /// `i` (0-3).
     pub mpi_slot: Option<u8>,
+    /// `#[serde(default)]` (evolution rule 2): snapshots from before the
+    /// field carry only primary images.
+    #[serde(default)]
+    pub role: CartROMRole,
     pub rom: MediaRef,
+}
+
+/// Resolved bytes for one [`SlotROMRef`] (never serialized).
+#[derive(Debug, Clone)]
+pub struct CartROMSource {
+    pub mpi_slot: Option<u8>,
+    pub role: CartROMRole,
+    pub bytes: Vec<u8>,
+}
+
+impl CartROMSource {
+    /// A cart's primary image at `mpi_slot`.
+    pub fn primary(mpi_slot: Option<u8>, bytes: Vec<u8>) -> Self {
+        Self {
+            mpi_slot,
+            role: CartROMRole::Primary,
+            bytes,
+        }
+    }
 }
 
 /// Every media reference a snapshot might carry. Every field is
@@ -67,12 +103,12 @@ pub struct SlotROMRef {
 pub struct MediaRefs {
     #[serde(default)]
     pub system_rom: Option<MediaRef>,
-    /// ROM-bearing carts, keyed by where they sit. Covers ROMPak/
-    /// BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images, the
-    /// SoundSpeechCartridge's SP0256-AL2 allophone ROM, and the
-    /// DeluxeRS232 EPROM — one entry per ROM-bearing cart that actually has
-    /// an image (the DeluxeRS232 is the one cart in this list that can
-    /// legitimately run without one; see [`super::restore`]'s cart-ROM
+    /// ROM-bearing carts, keyed by where they sit and which image. Covers
+    /// ROMPak/BankedROMPak/GamesMasterCartridge/DiskCart/Orch90 images, the
+    /// SoundSpeechCartridge's SP0256-AL2 ROM and TMS7040 firmware (two
+    /// entries for one slot), and the DeluxeRS232 EPROM — one entry per
+    /// image that exists (the DeluxeRS232 is the one cart in this list that
+    /// can legitimately run without one; see [`super::restore`]'s cart-ROM
     /// step).
     #[serde(default)]
     pub cart_roms: Vec<SlotROMRef>,
@@ -95,9 +131,9 @@ pub struct MediaRefs {
 #[derive(Default)]
 pub struct MediaSources {
     pub system_rom: Option<Box<[u8]>>,
-    /// `(mpi_slot, bytes)` pairs, matched against the deserialized cart
-    /// tree's own `(mpi_slot, ..)` positions — see [`SlotROMRef`].
-    pub cart_roms: Vec<(Option<u8>, Vec<u8>)>,
+    /// Matched against the deserialized cart tree's own `(mpi_slot, ..)`
+    /// positions and each cart's ROM roles — see [`SlotROMRef`].
+    pub cart_roms: Vec<CartROMSource>,
     pub disks: [Option<Vec<u8>>; fdc::DRIVE_COUNT],
     pub vhds: [Option<VHDImage>; vhd::DRIVE_COUNT],
     pub drivewire: [Option<DWImage>; drivewire::DRIVE_COUNT],

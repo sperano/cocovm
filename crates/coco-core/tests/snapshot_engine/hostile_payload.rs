@@ -1,6 +1,6 @@
 //! 7. Phase-5 review: hostile-payload validation
 //!
-//! `Cassette::bit`, `SSC::Load::cap`, `WD1773::Transfer::index`,
+//! `Cassette::bit`, `SSC::tms_budget`, `WD1773::Transfer::index`,
 //! `WD1773::Transfer::offset` plus `total`, and `Machine`'s scanline
 //! scheduler fields (`line`, `line_cycles_spent`, `line_budget`) have no
 //! public setter that can create an out-of-range value. Normal protocol
@@ -15,7 +15,7 @@ use ciborium::Value;
 use coco_core::cart::MultiPak;
 use coco_core::fdc::{DiskCart, JVCDisk, dskreg};
 use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SnapshotError};
-use coco_core::ssc::{SoundSpeechCartridge, cmd as ssc_cmd, reg as ssc_reg};
+use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant};
 use flate2::Compression;
 use flate2::read::GzDecoder;
@@ -91,27 +91,23 @@ fn rewrap_container(cbor: &[u8], schema: u32) -> Vec<u8> {
 /// [`SoundSpeechCartridge`] plugged directly into the cartridge port.
 fn machine_with_ssc() -> Machine {
     let mut machine = Machine::new(MachineConfig::default(), Box::new([]));
+    let blank_firmware = [0; tms7000::ROM_SIZE];
     let blank_speech_rom = [0; coco_core::sp0256::ROM_SIZE];
-    machine.insert_cartridge(SoundSpeechCartridge::new(&blank_speech_rom).expect("2 KB"));
+    machine.insert_cartridge(
+        SoundSpeechCartridge::new(&blank_firmware, &blank_speech_rom).expect("blank ROMs"),
+    );
     machine
 }
 
 #[test]
-fn ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic() {
-    let mut machine = machine_with_ssc();
-    // `$98` = LOAD_SOUND_INDIVIDUAL_START buffer 0: a legitimate `$FF7E`
-    // write that leaves the SSC mid `Mode::Loading(Load { cursor: 0, cap:
-    // 64, .. })` — see `SoundSpeechCartridge::start_load_individual`.
-    machine
-        .bus
-        .cart
-        .write(ssc_reg::DATA, ssc_cmd::LOAD_SOUND_INDIVIDUAL_START);
+fn ssc_tms_budget_outside_one_step_is_invalid_payload_not_a_panic() {
+    let machine = machine_with_ssc();
 
     let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
     let cbor = cbor_body_of(&bytes);
-    // Past `ram::SIZE` (512): `SoundSpeechCartridge::feed_load` would index `self.ram[cursor]`
-    // for any `cursor` up to (but not including) `cap` with no bounds check
-    // against `ram::SIZE` of its own.
+    // A positive budget would have `Cartridge::tick` run the firmware for
+    // as many instructions as the number says before the host gets a turn;
+    // `SoundSpeechCartridge::validate_restored` bounds it to one step's debt.
     let tampered = mutate_cbor(
         &cbor,
         &[
@@ -119,9 +115,7 @@ fn ssc_load_cap_past_ram_size_is_invalid_payload_not_a_panic() {
             "bus",
             "cart",
             "SoundSpeechCartridge",
-            "mode",
-            "Loading",
-            "cap",
+            "tms_budget",
         ],
         Value::Integer(999_999.into()),
     );

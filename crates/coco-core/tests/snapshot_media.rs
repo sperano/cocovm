@@ -8,7 +8,9 @@
 use std::path::PathBuf;
 
 use coco_core::fdc::{DiskCart, JVCDisk};
-use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError};
+use coco_core::snapshot::{
+    self, CartROMRole, CartROMSource, MediaRef, MediaRefs, MediaSources, SlotROMRef, SnapshotError,
+};
 use coco_core::{Machine, MachineConfig};
 use test_assets::rom::{COCO3, DISK11};
 
@@ -59,6 +61,7 @@ fn media_with_disk_rom(disk_bytes: &[u8], disk_path: &str) -> MediaRefs {
         }),
         cart_roms: vec![SlotROMRef {
             mpi_slot: None,
+            role: CartROMRole::Primary,
             rom: MediaRef {
                 path: disk_rom_path(),
                 sha256: snapshot::sha256_hex(&load_disk_rom()),
@@ -96,7 +99,7 @@ fn missing_disk_source_is_missing_media_naming_the_disk_and_its_path() {
     // Every source resolved except the disk itself.
     let sources = MediaSources {
         system_rom: Some(load_rom()),
-        cart_roms: vec![(None, load_disk_rom().to_vec())],
+        cart_roms: vec![CartROMSource::primary(None, load_disk_rom().to_vec())],
         ..MediaSources::default()
     };
     let err = expect_err(snapshot::restore(payload, sources));
@@ -134,7 +137,7 @@ fn reattached_disk_with_different_geometry_is_a_media_shape_error() {
     let reshaped_bytes = vec![0u8; 10 * ONE_TRACK_BYTES];
     let sources = MediaSources {
         system_rom: Some(load_rom()),
-        cart_roms: vec![(None, load_disk_rom().to_vec())],
+        cart_roms: vec![CartROMSource::primary(None, load_disk_rom().to_vec())],
         disks: [Some(reshaped_bytes), None, None, None],
         ..MediaSources::default()
     };

@@ -1,48 +1,33 @@
 //! Tandy Sound/Speech Cartridge (SSC, 26-3144): the `$FF7D`/`$FF7E` bus
-//! handshake shell, an AY-3-8913 PSG and an SP0256-AL2 speech chip mixed
-//! into the machine's audio output, and a host-byte protocol interpreter
-//! standing in for the cartridge's TMS7040 firmware.
+//! handshake, the cartridge's TMS7040 microcontroller running its real
+//! firmware, the 2 KB static RAM, an AY-3-8913 PSG and an SP0256-AL2 speech
+//! chip mixed into the machine's audio output, and the Sound Activity
+//! Circuit (MAME `coco_ssc.cpp`).
 //!
-//! **Not modelled** (see `docs/ssc-spec.md` "Deferred"): the TMS7040 CPU
-//! that actually runs the cartridge's firmware, and with it the firmware's
-//! ROM-based text-to-speech rules. What *is* modelled is the byte-stream
-//! protocol that firmware speaks over `$FF7E`, per the Tandy Speech/Sound
-//! Cartridge Owner's Manual (26-3144) Appendix A: command bytes that load
-//! data into an 8×64-byte buffer RAM and execute it. Sound-data streams,
-//! register-string streams, and direct AY register access (`$AF`) drive the
-//! [`AY8913`] PSG; allophone streams drive the [`SP0256`], whose 2 KB
-//! allophone ROM the cartridge is built around
-//! ([`SoundSpeechCartridge::new`]). Speech-string (ASCII text) commands are
-//! parsed to keep the state machine in sync but their EXECUTE variants are
-//! no-ops: without the firmware there is no text-to-allophone conversion
-//! to run.
-//!
-//! See [`dispatch_command`](SoundSpeechCartridge::dispatch_command) for the
-//! top-level command dispatch in the [`protocol`] submodule. See
-//! `docs/ssc-spec.md` for the full protocol writeup, including each judgment
-//! call this implementation makes where the manual does not fully specify
-//! behavior. The sound-data playback engine lives in the [`engine`]
-//! submodule, allophone playback in [`speech`], and the Sound Activity
-//! Circuit envelope follower in [`sac`].
+//! Everything the host sees is the firmware's doing: it interprets the
+//! byte-stream protocol of the 26-3144 manual's Appendix A — command bytes
+//! that load an 8×64-byte buffer area and execute it as sound data,
+//! register strings, allophone streams or English text — over the four
+//! ports the [`board`] module wires to the chips. The protocol's constants
+//! live in [`commands`] for tests and tools; see `docs/ssc-spec.md`.
+
+use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
+use tms7000::{StepKind, TMS7040};
 
 use crate::ay8913::AY8913;
 use crate::cart::{Cartridge, IO_OPEN_BUS};
-use crate::sp0256::{ROMSizeError, SP0256};
+use crate::sp0256::SP0256;
 
-mod engine;
-mod protocol;
+mod board;
+mod commands;
 mod sac;
-mod speech;
 
-pub use engine::{group, timing};
-pub use protocol::{cmd, ram, terminator};
-pub use speech::ALLOPHONE_COUNT;
+pub use board::ALLOPHONE_COUNT;
+pub use commands::{cmd, group, ram, terminator};
 
-use engine::Engine;
-use protocol::{Mode, RAM_RESET_BYTE};
-use speech::Speech;
+use board::{Board, BoardView};
 
 /// Register addresses (MAME `coco_ssc.cpp`; SEB Unravelled II Appendix A;
 /// `docs/cartridges.md` "Carts can decode addresses outside SCS").
@@ -53,8 +38,8 @@ pub mod reg {
     pub const DATA: u16 = 0xFF7E;
 }
 
-/// `$FF7D` write: only bit 0 is decoded (real hardware wires it to the
-/// SP0256's RESET pin).
+/// `$FF7D` write: only bit 0 is decoded (the SP0256's RESET pin; its
+/// falling edge also resets the TMS7040 and the AY).
 const RESET_BIT: u8 = 0x01;
 
 /// `$FF7E` status byte bit layout (MAME `coco_ssc_device::ff7e_r`).
@@ -62,30 +47,19 @@ mod status {
     /// Bits 4-0 read back set unconditionally — undocumented/unused status
     /// lines that MAME's real-hardware trace shows pulled high.
     pub const BASE: u8 = 0x1F;
-    /// Bit 7: busy/ready. Set (1) when NOT busy; clear while a host byte is
-    /// still "being processed".
+    /// Bit 7: busy/ready. Set (1) when NOT busy; clear from a `$FF7E` write
+    /// until the firmware raises port C bit 7.
     pub const NOT_BUSY: u8 = 0x80;
-    /// Bit 6: SP0256 SBY ("standby" = idle/ready), straight from the chip
-    /// (MAME `m_spo->sby_r()`).
+    /// Bit 6: SP0256 SBY ("standby" = idle/ready), straight from the chip.
     pub const SPEECH_READY: u8 = 0x40;
     /// Bit 5: Sound Activity Circuit output, *inverted* — 1 = quiet, 0 =
     /// sound is playing (MAME returns `!sound_active`).
     pub const QUIET: u8 = 0x20;
 }
 
-/// Synthetic hold time for `busy` after a `$FF7E` write, in E-clock cycles.
-///
-/// On real hardware the TMS7040 firmware clears busy (through a port-bit toggle)
-/// once it has consumed the host byte — there's no fixed duration, it's
-/// "whenever the firmware gets around to it". Without that firmware we hold
-/// busy for a fixed, made-up window instead, long enough that software
-/// polling the status byte observes a genuine busy period but short enough
-/// not to stall a driver that spins on it. Not a hardware fact.
-const BUSY_HOLD_CYCLES: u32 = 100;
-
 /// AY-3-8913 master clock = 2× the CoCo E-clock (MAME `coco_ssc.cpp`: the
-/// PSG and the TMS7040 CPU share one crystal, both clocked at twice the
-/// bus's E-clock rate).
+/// PSG and the TMS7040 share one crystal at `DERIVED_CLOCK(2, 1)`). The
+/// TMS7040 divides that by two internally, so it runs one cycle per E-cycle.
 const AY_CLOCK_MULTIPLIER: u32 = 2;
 
 /// Speech level relative to the PSG on the cartridge's output: MAME routes
@@ -93,35 +67,66 @@ const AY_CLOCK_MULTIPLIER: u32 = 2;
 /// `SP0256_GAIN`/`AY8913_GAIN`).
 const SPEECH_GAIN: f32 = 1.75 / 2.0;
 
-/// The Sound/Speech Cartridge: `$FF7D`/`$FF7E` handshake, host-byte protocol
-/// interpreter (see the module doc comment), and an AY-3-8913 plus an
-/// SP0256-AL2 mixed into the machine's audio output.
+/// Widest cycle debt one TMS7040 step can leave (its longest instruction
+/// is 49 cycles); a restored budget outside `[-MAX_STEP_DEBT, 0]` is corrupt.
+const MAX_STEP_DEBT: i32 = 64;
+
+/// A ROM image handed to [`SoundSpeechCartridge::new`] had the wrong size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SSCROMError {
+    Firmware(tms7000::ROMSizeError),
+    Speech(crate::sp0256::ROMSizeError),
+}
+
+impl std::fmt::Display for SSCROMError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SSCROMError::Firmware(e) => write!(f, "TMS7040 firmware: {e}"),
+            SSCROMError::Speech(e) => write!(f, "SP0256-AL2 ROM: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for SSCROMError {}
+
+/// One firmware instruction about to execute, for trace tooling
+/// ([`SoundSpeechCartridge::enable_firmware_trace`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FirmwareTraceEntry {
+    pub pc: u16,
+    pub a: u8,
+    pub b: u8,
+    pub st: u8,
+    pub sp: u8,
+    /// The TMS7040's cycle counter before the instruction.
+    pub cycles: u64,
+}
+
+/// The Sound/Speech Cartridge. Built around its two ROMs: the TMS7040
+/// firmware and the SP0256-AL2 allophone ROM; neither is snapshotted, restore
+/// re-supplies them through [`Self::reattach_firmware_rom`] and
+/// [`Self::reattach_speech_rom`] like any other cart ROM.
 #[derive(Serialize, Deserialize)]
 pub struct SoundSpeechCartridge {
     ay: AY8913,
-    /// The speech chip. Its ROM is not snapshotted; restore re-supplies it
-    /// through [`SoundSpeechCartridge::reattach_speech_rom`] like any other
-    /// cart ROM. `#[serde(default)]` (snapshot evolution rule 2,
-    /// [`crate::snapshot`]): a pre-field snapshot restores with the chip in
-    /// reset, which then gets its ROM the same way.
+    /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]):
+    /// a pre-field snapshot restores the chip in reset.
     #[serde(default)]
     sp0256: SP0256,
-    /// Bit 0 of the last byte written to `$FF7D`, for falling-edge detection
-    /// on the next write. Power-on-reset starts clear so the very first
-    /// `$FF7D` write (even if it's bit0=0) is never itself treated as a
-    /// falling edge — only a later 1-then-0 pair is (MAME
-    /// `coco_ssc_device::device_reset` primes `m_reset_line` the same way).
+    /// The microcontroller; a pre-field snapshot restores it with its reset
+    /// pending, so the firmware boots on the first tick after reattachment.
+    #[serde(default)]
+    tms: TMS7040,
+    #[serde(default)]
+    board: Board,
+    /// E-cycles owed to the TMS7040: [`Cartridge::tick`] runs instructions
+    /// while positive and carries the overshoot (always `<= 0` between ticks).
+    #[serde(default)]
+    tms_budget: i32,
+    /// Bit 0 of the last `$FF7D` write, for falling-edge detection. Primed
+    /// high at power-on (MAME `m_reset_line = 1`), so the first write with
+    /// bit 0 clear *is* an edge.
     prev_reset_bit0: bool,
-    /// Last byte latched from a `$FF7E` write (the "Port A latch" the real
-    /// TMS7040 firmware reads and interprets as a command/data byte).
-    /// Stored for tests/debug; the actual interpretation happens in
-    /// [`SoundSpeechCartridge::dispatch`], invoked synchronously from
-    /// [`SoundSpeechCartridge::write_data`].
-    host_latch: u8,
-    busy: bool,
-    /// E-clock cycles remaining before [`SoundSpeechCartridge::busy`] synthetically clears —
-    /// see [`BUSY_HOLD_CYCLES`].
-    busy_countdown: u32,
     // Sound Activity Circuit state (see the [`sac`] module doc comment).
     sac_hpf_prev_in: f32,
     sac_hpf_prev_out: f32,
@@ -129,57 +134,46 @@ pub struct SoundSpeechCartridge {
     /// True while the SAC considers the cartridge's own output "playing"
     /// (drives `$FF7E` bit 5, inverted).
     sac_sound_active: bool,
-
-    // ---- Host byte protocol state (see the module doc comment) ----------
-    /// Flat 8×64-byte buffer RAM — see the [`ram`] module doc comment.
-    /// `ram::SIZE` (512) exceeds serde's built-in array impl ceiling (32),
-    /// hence the small helper module.
-    #[serde(with = "crate::serde_util::byte_array")]
-    ram: [u8; ram::SIZE],
-    /// Top-level protocol dispatch state — see [`Mode`].
-    mode: Mode,
-    /// `$8F`'s postbyte: scales every subsequent sound-data event's
-    /// duration — see [`timing`].
-    timer_base: u8,
-    /// The sequential sound-data playback engine — see [`Engine`].
-    engine: Engine,
-    /// The allophone-stream cursor — see [`Speech`]. `#[serde(default)]`
-    /// as for `sp0256`: a pre-field snapshot restores with no stream active.
-    #[serde(default)]
-    speech: Speech,
+    /// Firmware instruction trace ring, when enabled (host-only tooling).
+    #[serde(skip)]
+    trace: Option<VecDeque<FirmwareTraceEntry>>,
+    #[serde(skip)]
+    trace_capacity: usize,
 }
 
 impl SoundSpeechCartridge {
-    /// A cartridge with its SP0256-AL2 fitted, given the chip's 2 KB
-    /// allophone ROM (`sp0256-al2.rom`).
-    pub fn new(sp0256_rom: &[u8]) -> Result<Self, ROMSizeError> {
+    /// A cartridge around its 4 KB TMS7040 firmware and 2 KB SP0256-AL2 ROM,
+    /// with the firmware's reset pending for the first tick.
+    pub fn new(firmware: &[u8], sp0256_rom: &[u8]) -> Result<Self, SSCROMError> {
         Ok(Self {
             ay: AY8913::new(),
-            sp0256: SP0256::new(sp0256_rom)?,
-            prev_reset_bit0: false,
-            host_latch: 0,
-            busy: false,
-            busy_countdown: 0,
+            sp0256: SP0256::new(sp0256_rom).map_err(SSCROMError::Speech)?,
+            tms: TMS7040::new(firmware).map_err(SSCROMError::Firmware)?,
+            board: Board::default(),
+            tms_budget: 0,
+            prev_reset_bit0: true,
             sac_hpf_prev_in: 0.0,
             sac_hpf_prev_out: 0.0,
             sac_envelope: 0.0,
             sac_sound_active: false,
-            ram: [RAM_RESET_BYTE; ram::SIZE],
-            mode: Mode::Idle,
-            timer_base: timing::DEFAULT_TIMER_BASE,
-            engine: Engine::default(),
-            speech: Speech::default(),
+            trace: None,
+            trace_capacity: 0,
         })
+    }
+
+    /// Restore-path-only: re-supply the TMS7040's firmware after a snapshot
+    /// restore; the chip keeps its state.
+    pub fn reattach_firmware_rom(&mut self, rom: &[u8]) -> Result<(), tms7000::ROMSizeError> {
+        self.tms.reattach_rom(rom)
     }
 
     /// Restore-path-only: re-supply the SP0256's ROM after a snapshot
     /// restore; the chip keeps its sequencer state.
-    pub fn reattach_speech_rom(&mut self, rom: &[u8]) -> Result<(), ROMSizeError> {
+    pub fn reattach_speech_rom(&mut self, rom: &[u8]) -> Result<(), crate::sp0256::ROMSizeError> {
         self.sp0256.reattach_rom(rom)
     }
 
-    /// Direct AY-3-8913 register write, bypassing the host-byte protocol
-    /// (used internally by the protocol interpreter, and for tests/debugging).
+    /// Direct AY-3-8913 register write, bypassing the firmware (tests/debugging).
     pub fn ay_write(&mut self, reg: u8, val: u8) {
         self.ay.write_reg(reg, val);
     }
@@ -189,60 +183,120 @@ impl SoundSpeechCartridge {
         self.ay.read_reg(reg)
     }
 
-    /// The last byte latched from a `$FF7E` write, for tests/debug.
+    /// The last byte a `$FF7E` write latched into port A, for tests/debug.
     pub fn host_latch(&self) -> u8 {
-        self.host_latch
+        self.board.port_a
     }
 
+    /// The host-visible BUSY* flag.
+    pub fn busy(&self) -> bool {
+        self.board.busy
+    }
+
+    /// The microcontroller, for tests and debugging.
+    pub fn firmware(&self) -> &TMS7040 {
+        &self.tms
+    }
+
+    /// The board's 2 KB static RAM, for tests and debugging.
+    pub fn ram(&self) -> &[u8] {
+        &self.board.ram
+    }
+
+    /// Keep the last `capacity` firmware instructions for [`Self::drain_firmware_trace`].
+    pub fn enable_firmware_trace(&mut self, capacity: usize) {
+        self.trace = Some(VecDeque::with_capacity(capacity));
+        self.trace_capacity = capacity;
+    }
+
+    /// Take the firmware instructions recorded since the last drain.
+    pub fn drain_firmware_trace(&mut self) -> Vec<FirmwareTraceEntry> {
+        self.trace
+            .as_mut()
+            .map(|t| t.drain(..).collect())
+            .unwrap_or_default()
+    }
+
+    fn trace_entry(&self) -> Option<FirmwareTraceEntry> {
+        self.trace.as_ref()?;
+        Some(FirmwareTraceEntry {
+            pc: self.tms.pc,
+            a: self.tms.a(),
+            b: self.tms.b(),
+            st: self.tms.st,
+            sp: self.tms.sp,
+            cycles: self.tms.cycles,
+        })
+    }
+
+    fn record_trace(&mut self, entry: Option<FirmwareTraceEntry>) {
+        if let (Some(entry), Some(trace)) = (entry, self.trace.as_mut()) {
+            if trace.len() >= self.trace_capacity {
+                trace.pop_front();
+            }
+            trace.push_back(entry);
+        }
+    }
+
+    /// Run the firmware for the E-cycles owed so far, one instruction (or
+    /// interrupt entry, or reset) at a time, carrying any overshoot.
+    fn run_firmware(&mut self) {
+        while self.tms_budget > 0 {
+            let entry = self.trace_entry();
+            let step = {
+                let mut view = BoardView {
+                    board: &mut self.board,
+                    ay: &mut self.ay,
+                    sp0256: &mut self.sp0256,
+                };
+                self.tms.step(&mut view)
+            };
+            self.tms_budget -= step.cycles as i32;
+            if step.kind == StepKind::Instruction {
+                self.record_trace(entry);
+            }
+            self.sync_interrupt_lines();
+        }
+    }
+
+    /// INT3 follows the host-byte latch (dropped by the firmware's port A
+    /// read); INT1 is the SP0256's load request, which MAME wires as DRQ
+    /// and which equals LRQ.
+    fn sync_interrupt_lines(&mut self) {
+        self.tms.set_int3(self.board.int3);
+        self.tms.set_int1(self.sp0256.lrq());
+    }
+
+    /// `$FF7D` write: bit 0 is the SP0256's RESET pin (every write with it
+    /// set resets the chip); its falling edge also resets the TMS7040 and
+    /// the AY and clears BUSY* (MAME `ff7d_write`).
     fn write_reset(&mut self, val: u8) {
         let bit0 = val & RESET_BIT != 0;
         let falling_edge = self.prev_reset_bit0 && !bit0;
         self.prev_reset_bit0 = bit0;
         if bit0 {
-            // Bit 0 is the SP0256's RESET pin (MAME: every write with it set
-            // resets the chip, not just edges).
             self.sp0256.reset();
         }
         if falling_edge {
-            // Falling edge also resets the AY and readies the firmware for a
-            // new command (MAME coco_ssc_device).
+            self.tms.assert_reset();
             self.ay.reset();
-            self.busy = false;
-            self.busy_countdown = 0;
-            self.reset_protocol_state();
+            self.board.busy = false;
         }
     }
 
-    /// Resets buffer RAM, dispatch mode, timer base, and both playback
-    /// engines — shared by [`SoundSpeechCartridge::write_reset`] and
-    /// [`Cartridge::reset`]. Does NOT touch AY, SP0256, busy handshake, or
-    /// SAC state.
-    fn reset_protocol_state(&mut self) {
-        self.ram = [RAM_RESET_BYTE; ram::SIZE];
-        self.mode = Mode::Idle;
-        self.timer_base = timing::DEFAULT_TIMER_BASE;
-        self.engine = Engine::default();
-        self.speech = Speech::default();
-    }
-
-    /// `$FF7E` write: entry point for the host-byte protocol. Per the manual
-    /// (p.10), a byte written while [`SoundSpeechCartridge::busy`] is set is
-    /// discarded — not latched, not processed, and doesn't restart the busy window.
+    /// `$FF7E` write: latch the byte into port A, raise BUSY* and INT3. A
+    /// byte the firmware hasn't read yet is simply overwritten — the manual's
+    /// "you lose data" while busy (MAME `ff7d_write` case 1).
     fn write_data(&mut self, val: u8) {
-        if self.busy {
-            return;
-        }
-        self.host_latch = val;
-        self.busy = true;
-        self.busy_countdown = BUSY_HOLD_CYCLES;
-        // Real hardware asserts TMS7000 INT3 here; not modelled — we
-        // interpret the byte synchronously instead.
-        self.dispatch(val);
+        self.board.port_a = val;
+        self.board.busy = true;
+        self.board.int3 = true;
+        self.tms.set_int3(true);
     }
 
     fn read_data(&self) -> u8 {
         let mut s = status::BASE;
-        if !self.busy {
+        if !self.board.busy {
             s |= status::NOT_BUSY;
         }
         if self.sp0256.sby() {
@@ -272,31 +326,31 @@ impl Cartridge for SoundSpeechCartridge {
         }
     }
 
+    /// The firmware runs first so the strobes it issues within these cycles
+    /// land before the chips step over them; then the PSG and speech chip
+    /// advance, and INT1 picks up a load request the SP0256 raised meanwhile.
     fn tick(&mut self, cycles: u32) {
-        if self.busy {
-            self.busy_countdown = self.busy_countdown.saturating_sub(cycles);
-            if self.busy_countdown == 0 {
-                self.busy = false;
-            }
-        }
-        self.tick_engine(cycles);
+        self.tms_budget += cycles as i32;
+        self.run_firmware();
         self.ay.step(cycles * AY_CLOCK_MULTIPLIER);
-        self.feed_speech();
         self.sp0256.step(cycles);
+        self.tms.set_int1(self.sp0256.lrq());
     }
 
+    /// Machine reset: every chip resets; the static RAM keeps its contents.
     fn reset(&mut self) {
         self.ay.reset();
         self.sp0256.reset();
-        self.prev_reset_bit0 = false;
-        self.host_latch = 0;
-        self.busy = false;
-        self.busy_countdown = 0;
+        self.tms.assert_reset();
+        self.board.busy = false;
+        self.board.int3 = false;
+        self.tms.set_int3(false);
+        self.tms_budget = 0;
+        self.prev_reset_bit0 = true;
         self.sac_hpf_prev_in = 0.0;
         self.sac_hpf_prev_out = 0.0;
         self.sac_envelope = 0.0;
         self.sac_sound_active = false;
-        self.reset_protocol_state();
     }
 
     /// Drains the AY's output and feeds the Sound Activity Circuit
@@ -315,38 +369,15 @@ impl Cartridge for SoundSpeechCartridge {
         self.ay.after_restore();
     }
 
-    /// Restore-only: rejects a mid buffer-RAM-load, mid sound-engine, or mid
-    /// allophone-stream snapshot whose `cursor`/`cap` don't satisfy `cursor
-    /// <= cap <= ram::SIZE` — all three index `self.ram` with no bounds
-    /// check of their own.
+    /// Restore-only: a hand-edited cycle budget outside what one step can
+    /// leave would spin the firmware loop or stall it.
     fn validate_restored(&self) -> Result<(), String> {
-        if let Mode::Loading(load) = &self.mode {
-            check_ram_cursor_cap("Load", load.cursor, load.cap)?;
-        }
-        // An inactive cursor's cursor/cap are never read, so only check while active.
-        if self.engine.active {
-            check_ram_cursor_cap("Engine", self.engine.cursor, self.engine.cap)?;
-        }
-        if self.speech.active {
-            check_ram_cursor_cap("Speech", self.speech.cursor, self.speech.cap)?;
+        if self.tms_budget > 0 || self.tms_budget < -MAX_STEP_DEBT {
+            return Err(format!(
+                "SSC: tms_budget ({}) outside [-{MAX_STEP_DEBT}, 0]",
+                self.tms_budget
+            ));
         }
         Ok(())
     }
-}
-
-/// Shared bound check for [`SoundSpeechCartridge::validate_restored`]'s cursor/cap pairs
-/// ([`Load`]/[`Engine`]/[`Speech`]): `cursor <= cap <= ram::SIZE`.
-fn check_ram_cursor_cap(name: &str, cursor: usize, cap: usize) -> Result<(), String> {
-    if cap > ram::SIZE {
-        return Err(format!(
-            "SSC: {name}.cap ({cap}) exceeds ram::SIZE ({})",
-            ram::SIZE
-        ));
-    }
-    if cursor > cap {
-        return Err(format!(
-            "SSC: {name}.cursor ({cursor}) exceeds {name}.cap ({cap})"
-        ));
-    }
-    Ok(())
 }
