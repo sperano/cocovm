@@ -17,6 +17,6 @@ manager). `book/` is a 16-chapter course built from this codebase.
   2K allophone ROM) and `ssc-tms7040.rom` (its 4K TMS7040 firmware); the
   SSC tests skip without them. Used to boot real code and trace-diff against
   XRoar/MAME. Installed by the app's first-run asset download
-  (`ensure_assets`, `crates/coco-egui/src/startup.rs`); tests resolve them
+  (`manager/assets.rs` dialog over `startup::missing_assets`); tests resolve them
   via `crates/test-assets`. There is no repo-root `roms/` directory — don't
   create one.

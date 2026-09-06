@@ -23,7 +23,7 @@ fn off_entry(slug: &str) -> MachineEntry {
 fn running_entry(slug: &str) -> MachineEntry {
     let rom_path = crate::installed_roms_dir().join(crate::rom_load::COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("installed coco3.rom is required (ensure_assets)")
+        .expect("installed coco3.rom is required (first-run asset download)")
         .into_boxed_slice();
     let vm = CocoApp::new(
         MachineConfig::default(),

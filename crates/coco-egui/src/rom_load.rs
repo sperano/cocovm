@@ -168,11 +168,12 @@ pub(crate) fn report_rom_validation(path: &Path, bytes: &[u8]) {
     }
 }
 
-/// The per-user installed ROM directory, populated by
-/// [`crate::startup::ensure_assets`]. Panics only if no home directory can be
-/// determined; `ensure_assets` already exits the process before that can happen.
+/// The per-user installed ROM directory, populated by the first-run asset
+/// download (`manager/assets.rs`). Panics only if no home directory can be
+/// determined; [`crate::startup::require_data_dir`] already exits the
+/// process at startup before that can happen.
 pub(crate) fn installed_roms_dir() -> PathBuf {
-    crate::paths::roms_dir().expect("no home directory (checked at startup by ensure_assets)")
+    crate::paths::roms_dir().expect("no home directory (checked at startup by require_data_dir)")
 }
 
 /// Where the FD-502 disk controller and save-state hashing read the Disk

@@ -14,7 +14,7 @@ fn app_with_ssc_in_slot(slot: usize) -> Option<CocoApp> {
     }
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("installed coco3.rom is required (ensure_assets)")
+        .expect("installed coco3.rom is required (first-run asset download)")
         .into_boxed_slice();
     let mut app = CocoApp::new(
         MachineConfig::default(),

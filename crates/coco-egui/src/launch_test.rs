@@ -2,8 +2,8 @@
 //! beyond the base `CocoApp::new` construction — the RS-232 Pak, the
 //! printer serial sink, and disk media with no reachable controller. Boots
 //! through `launch_machine`'s production ROM resolution, so it reads the
-//! installed `coco3.rom` (`installed_roms_dir`, populated by
-//! `ensure_assets` — `save_state_test.rs`'s doc comment).
+//! installed `coco3.rom` (`installed_roms_dir`, populated by the first-run
+//! asset download — `save_state_test.rs`'s doc comment).
 
 use coco_core::MachineConfig;
 use mc6809::Bus;

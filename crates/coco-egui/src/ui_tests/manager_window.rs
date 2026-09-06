@@ -86,6 +86,37 @@ fn manager_window_shows_its_toolbar() {
     );
 }
 
+/// The first-run asset dialog: a seeded `asset_dialog` opens the modal with
+/// its prompt, and Cancel dismisses it without touching the target directory.
+#[test]
+fn asset_dialog_cancel_dismisses_without_downloading() {
+    let dir = TempDir::new("asset-dialog");
+    let data_dir = dir.path().to_path_buf();
+    let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
+        let mut app = manager::ManagerApp::new(None, None, None, Vec::new(), None);
+        app.asset_dialog = Some(manager::assets::AssetDialog::new(
+            vec!["coco3.rom".to_string()],
+            data_dir,
+        ));
+        app
+    });
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+
+    harness.get_by_label(
+        "CocoVM needs to download some copyrighted assets (ROMs, images) to function properly.",
+    );
+    click(&mut harness, "Cancel");
+    assert!(
+        harness.state().asset_dialog.is_none(),
+        "Cancel must close the asset dialog"
+    );
+    assert!(
+        fs::read_dir(dir.path()).unwrap().next().is_none(),
+        "Cancel must not download anything"
+    );
+}
+
 /// The divider between the machine list and the photo pane must be
 /// draggable — a `SidePanel` whose ui claims no space silently loses its resize drag.
 #[test]

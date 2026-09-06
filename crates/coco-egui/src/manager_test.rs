@@ -160,7 +160,7 @@ fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("installed coco3.rom is required (ensure_assets)")
+        .expect("installed coco3.rom is required (first-run asset download)")
         .into_boxed_slice();
     let mut vm = CocoApp::new(
         MachineConfig::default(),

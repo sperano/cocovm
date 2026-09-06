@@ -24,6 +24,7 @@ use crate::{CocoApp, machine_def, new_vm};
 
 use selection::Selection;
 
+pub(crate) mod assets;
 mod bulk;
 mod control;
 mod delete;
@@ -316,6 +317,9 @@ pub struct ManagerApp {
     /// Control requests deferred until the VM they target finishes some work
     /// (`manager::control`), resolved once per frame after VMs have stepped.
     pending: Vec<control::PendingControl>,
+    /// The first-run asset download dialog (`manager/assets.rs`), open while
+    /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
+    pub(crate) asset_dialog: Option<assets::AssetDialog>,
 }
 
 impl ManagerApp {
@@ -351,6 +355,7 @@ impl ManagerApp {
             delete_error: None,
             control,
             pending: Vec::new(),
+            asset_dialog: None,
         }
     }
 }
@@ -436,6 +441,7 @@ impl eframe::App for ManagerApp {
         });
 
         self.draw_delete_confirmation(ctx);
+        self.draw_asset_dialog(ctx);
         self.drain_control();
         self.draw_running_vms(ctx);
         self.resolve_control_pending(ctx);
@@ -482,16 +488,22 @@ pub fn run(control_port: u16) -> eframe::Result<()> {
                 machines,
                 renderer: crate::renderer_info(cc),
             });
-            // Assets are fetched after the banner so the startup box prints first.
-            crate::ensure_assets();
+            let data_dir = crate::require_data_dir();
+            let missing = crate::missing_assets();
             let control = control::bind_control(control_port, &cc.egui_ctx);
-            Ok(Box::new(ManagerApp::new(
+            let mut app = ManagerApp::new(
                 photo_view::random(),
                 machines_dir,
                 machine_def::artifacts_root(),
                 entries,
                 control,
-            )))
+            );
+            // Missing assets open the download dialog instead of fetching
+            // silently — the user confirms before anything is downloaded.
+            if !missing.is_empty() {
+                app.asset_dialog = Some(assets::AssetDialog::new(missing, data_dir));
+            }
+            Ok(Box::new(app))
         }),
     )
 }

@@ -85,8 +85,8 @@ pub(crate) use rom_load::{
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
 pub(crate) use runtime_fmt::humanize_runtime;
 pub(crate) use startup::{
-    StartupInfo, banner, ensure_assets, load_dotenv, renderer_info, rom_count, setup_logging,
-    use_color,
+    StartupInfo, banner, load_dotenv, missing_assets, renderer_info, require_data_dir, rom_count,
+    setup_logging, use_color,
 };
 pub(crate) use status_icons::{
     StatusActivity, cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon,

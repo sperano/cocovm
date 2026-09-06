@@ -169,11 +169,22 @@ pub(crate) fn download_and_unpack_assets(dest: &Path) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-pub(crate) fn ensure_assets() {
+/// The per-user data directory, or a fatal exit when no home directory
+/// exists — everything downstream (`rom_load::installed_roms_dir`) relies
+/// on this check having passed at startup.
+pub(crate) fn require_data_dir() -> std::path::PathBuf {
     let Some(data_dir) = paths::data_dir() else {
         eprintln!("no home directory found; cannot locate the asset directories");
         std::process::exit(1);
     };
+    data_dir
+}
+
+/// The asset files the bundle at [`ASSETS_URL`] should provide but which
+/// are absent on disk, as display paths: an empty images directory counts
+/// as one entry, plus each missing [`BUNDLED_ROMS`] image. Empty means no
+/// download is needed.
+pub(crate) fn missing_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())
@@ -186,17 +197,7 @@ pub(crate) fn ensure_assets() {
                 .map(|name| roms_dir.join(name).display().to_string()),
         );
     }
-    if missing.is_empty() {
-        return;
-    }
-    println!(
-        "Downloading {ASSETS_URL} (missing: {})…",
-        missing.join(", ")
-    );
-    match download_and_unpack_assets(&data_dir) {
-        Ok(()) => println!("assets installed in {}", data_dir.display()),
-        Err(e) => eprintln!("asset download failed: {e}"),
-    }
+    missing
 }
 
 /// Describe which graphics backend eframe actually created, and on what
