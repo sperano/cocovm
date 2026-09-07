@@ -497,4 +497,5 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
         "selection follows the renamed row"
     );
     assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
+    harness.get_by_label("Slug ID: alpha-two");
 }
