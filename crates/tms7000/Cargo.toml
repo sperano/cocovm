@@ -2,8 +2,18 @@
 name = "tms7000"
 version.workspace = true
 edition = "2024"
-# Reusable CPU core: permissively dual-licensed, unlike the GPL-3 emulator crates.
-license = "MIT OR Apache-2.0"
+description = "TMS7000/TMS7040 microcontroller core and disassembler"
+repository = "https://github.com/sperano/cocovm"
+keywords = ["tms7000", "emulator", "cpu", "disassembler"]
+categories = ["emulators", "hardware-support"]
+# The crate's own code is dual-licensed like the other reusable cores, but it
+# ports MAME's BSD-3-Clause tms7000 CPU core and disassembler (see NOTICE).
+license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
+# firmware_boot.rs and firmware_trace.rs depend on the workspace-only
+# cocovm-test-assets crate, which the package can't carry (it's a path
+# dependency outside this crate). See tests/packaged_contents.rs (excluded
+# below) for the regression check that they stay out of the package.
+exclude = ["tests/firmware_boot.rs", "examples/firmware_trace.rs", "tests/packaged_contents.rs"]
 
 [lints]
 workspace = true

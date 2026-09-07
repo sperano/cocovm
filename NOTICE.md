@@ -9,10 +9,12 @@ Licensing is per crate:
   **MIT OR Apache-2.0** at your option (`crates/mc6809/LICENSE-MIT`,
   `crates/mc6809/LICENSE-APACHE`), so other projects can adopt it without
   copyleft obligations.
-- **`crates/tms7000`** (reusable TMS7040 microcontroller core) — likewise
-  **MIT OR Apache-2.0** (`crates/tms7000/LICENSE-MIT`,
-  `crates/tms7000/LICENSE-APACHE`). It is a port of MAME's BSD-3-Clause
-  `tms7000` core; see the attribution below.
+- **`crates/tms7000`** (reusable TMS7040 microcontroller core) — the
+  crate's own code is dual-licensed **MIT OR Apache-2.0**
+  (`crates/tms7000/LICENSE-MIT`, `crates/tms7000/LICENSE-APACHE`), but it
+  ports MAME's BSD-3-Clause `tms7000` CPU core and disassembler, so the
+  crate as a whole is **(MIT OR Apache-2.0) AND BSD-3-Clause**
+  (`crates/tms7000/NOTICE`); see the attribution below.
 - **`crates/coco-core`, `crates/coco-egui`** (the emulator itself) —
   **GPL-3.0-or-later** (see `LICENSE`): you can redistribute and/or modify
   them under the GNU GPL as published by the Free Software Foundation,
@@ -25,32 +27,44 @@ permissive code may be combined into a GPL work), never the reverse — keep
 
 ## Bundled third-party material
 
-The character-generator font tables and composite palette tables were copied
-from **MAME**. The source files are per-file licensed **BSD-3-Clause**,
-copyright **Nathan Woods** (verified against the file headers 2026-07-01 — an
-earlier version of this notice recorded them as GPL-2.0-or-later, which was
-wrong). BSD-3-Clause is GPL-compatible; the attribution below satisfies its
-notice requirement.
+Several tables and CPU cores were copied or ported from **MAME**. The source
+files are per-file licensed **BSD-3-Clause**, with the copyright holder noted
+per entry below (verified against the file headers 2026-07-01 — an earlier
+version of this notice recorded the font/palette entries as
+GPL-2.0-or-later, which was wrong, and later misattributed the TMS7000
+entries to Nathan Woods). BSD-3-Clause is GPL-compatible; the attribution
+below satisfies its notice requirement.
 
 - **MC6847 fonts (`crates/coco-core/src/font6847.rs`)** — `vdg_fontdata8x12`
-  and `vdg_t1_fontdata8x12` from `src/devices/video/mc6847.cpp`.
+  and `vdg_t1_fontdata8x12` from `src/devices/video/mc6847.cpp`, copyright
+  **Nathan Woods** (MAME project).
 - **GIME fonts (`crates/coco-core/src/font_gime.rs`)** —
   `gime_device::hires_font` and `gime_device::lowres_font` from
-  `src/mame/trs/gime.cpp`.
+  `src/mame/trs/gime.cpp`, copyright **Nathan Woods** (MAME project).
 - **Composite-monitor palette tables (`crates/coco-core/src/gime/palette.rs`,
   `COMPOSITE_PALETTE` / `COMPOSITE_PALETTE_180`)** —
-  `gime_device::get_composite_color` from `src/mame/trs/gime.cpp`.
+  `gime_device::get_composite_color` from `src/mame/trs/gime.cpp`, copyright
+  **Nathan Woods** (MAME project).
 - **VDG fixed palette (`crates/coco-core/src/video.rs`,
   `VDG_FIXED_PALETTE`)** — `mc6847_base_device::s_palette` from
-  `src/devices/video/mc6847.cpp`.
-- **TMS7040 CPU core (`crates/tms7000/`)** — a port of
-  `src/devices/cpu/tms7000/tms7000.cpp`, `tms7000op.cpp` and
-  `7000dasm.cpp` (opcode map, cycle costs, BCD correction constants,
-  peripheral-file and interrupt semantics, disassembler spellings), which
-  are BSD-3-Clause, copyright **hap** and **Tim Lindner** (MAME project).
-  The BSD-3-Clause text below applies to them with that copyright line.
+  `src/devices/video/mc6847.cpp`, copyright **Nathan Woods** (MAME project).
+- **TMS7000/TMS7040 CPU core (`crates/tms7000/src/exec.rs`,
+  `exec/modes.rs`, `exec/extended.rs`, `exec/ops.rs`, `decode.rs`,
+  `peripheral.rs`, `timer.rs`, `memory.rs`, `lib.rs`)** — a port of
+  `src/devices/cpu/tms7000/tms7000.cpp` and `tms7000op.cpp` (opcode map,
+  cycle costs, BCD correction constants, peripheral-file and interrupt
+  semantics), which are BSD-3-Clause, copyright **hap** and
+  **Tim Lindner** (MAME project).
+- **TMS7000 disassembler (`crates/tms7000/src/disasm.rs`,
+  `disasm/tables.rs`)** — a port of
+  `src/devices/cpu/tms7000/7000dasm.cpp` (disassembler spellings), which
+  is BSD-3-Clause, copyright **Tim Lindner** (MAME project).
 
-> Copyright (c) Nathan Woods (MAME project).
+The full BSD-3-Clause text and copyright lines for the TMS7000 entries are
+also reproduced in `crates/tms7000/NOTICE`, which ships with the crate.
+
+> Copyright (c) Nathan Woods.
+> Copyright (c) hap, Tim Lindner.
 >
 > Redistribution and use in source and binary forms, with or without
 > modification, are permitted provided that the following conditions are met:
