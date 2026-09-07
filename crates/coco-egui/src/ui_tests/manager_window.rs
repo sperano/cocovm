@@ -218,6 +218,18 @@ fn manager_list_shows_entries_and_selecting_shows_detail() {
     );
 }
 
+/// The detail pane exposes the selected machine's stable slug ID, which
+/// control tools use to target a VM independently of its editable name.
+#[test]
+fn manager_detail_shows_slug_id() {
+    let entries = vec![sample_entry("alpha-coco", "Alpha CoCo 3")];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Alpha CoCo 3");
+
+    harness.get_by_label("ID: alpha-coco");
+}
+
 /// Clicking the empty space below the last list row clears the selection.
 /// The empty area is no accessible node, so this drives the pointer directly.
 #[test]

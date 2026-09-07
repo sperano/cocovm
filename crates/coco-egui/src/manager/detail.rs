@@ -164,6 +164,7 @@ impl ManagerApp {
         let mut edit = self.edit.take().expect("just ensured above");
 
         self.draw_name_field(ui, index, &mut edit);
+        ui.weak(format!("ID: {slug}"));
         ui.add_space(DETAIL_SECTION_GAP);
         // The transport buttons moved to the toolbar — this pane keeps only
         // the status, plus the last launch failure.
