@@ -157,6 +157,11 @@ pub struct TMS7040 {
     /// false reproduces a pre-latch snapshot's level-only behavior.
     #[cfg_attr(feature = "serde", serde(default))]
     pulse_latch: [bool; 2],
+    /// Last level told to [`Self::set_ec1`]. `#[serde(default)]`: an old
+    /// snapshot predates Event-Counter mode, and false (no pending edge)
+    /// reproduces its behavior.
+    #[cfg_attr(feature = "serde", serde(default))]
+    ec1_line: bool,
     /// Parked on an IDLE instruction until an interrupt.
     idle: bool,
     /// The reset sequence runs on the next [`Self::step`].
@@ -185,6 +190,7 @@ impl Default for TMS7040 {
             timer1: Timer1::default(),
             int_line: [false; 2],
             pulse_latch: [false; 2],
+            ec1_line: false,
             idle: false,
             pending_reset: true,
             cycles: 0,

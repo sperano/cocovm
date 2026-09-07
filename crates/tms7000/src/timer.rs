@@ -1,28 +1,31 @@
-//! Timer 1: an 8-bit decrementer behind a 5-bit prescaler, clocked from the
-//! oscillator (MAME `timer_run`/`timer_reload`/`timer_tick_low`). MAME
-//! schedules one event per decrement; this counts CPU cycles instead, which
-//! observes the same boundaries since MAME's timer is only ever sampled
-//! between instructions. (MAME's own phase wanders by up to a cycle when
-//! other devices' timers chop its timeslices at fractional cycles; this
-//! model stays on the instruction grid.)
+//! Timer 1: an 8-bit decrementer behind a 5-bit prescaler, clocked from
+//! either the internal oscillator or an external pin (T1CTL bit 6,
+//! SPND001B 3-42 "Clock Source Control"). Internal-clock timing counts CPU
+//! cycles rather than MAME's per-event scheduling, which observes the same
+//! boundaries since MAME only ever samples the timer between instructions.
+//! (MAME's own phase wanders by up to a cycle when other devices' timers
+//! chop its timeslices at fractional cycles; this model stays on the
+//! instruction grid.) MAME does not implement Event-Counter mode at all
+//! (`tms7000.cpp`'s own TODO admits it); this follows the manual instead.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-/// Oscillator clocks per decrement at prescaler 0 (MAME: `fOSC/16`).
+/// Oscillator clocks per internal-source prescaler pulse at prescaler 0
+/// (MAME: `fOSC/16`).
 const OSC_CLOCKS_PER_TICK: u32 = 16;
 /// Oscillator clocks per CPU cycle (MAME `m_divider = 2`).
 const OSC_CLOCKS_PER_CYCLE: u32 = 2;
-/// CPU cycles per decrement at prescaler 0.
+/// Phase-units per raw prescaler input pulse: that many CPU cycles for the
+/// internal oscillator source, or one unit per external EC1 edge (SPND001B
+/// 3-42: "each positive transition ... decrements the count chain").
 const CYCLES_PER_TICK: u32 = OSC_CLOCKS_PER_TICK / OSC_CLOCKS_PER_CYCLE;
 
 /// T1CTL bits: d0-d4 prescaler reload, d5 (masked off on timer 1), d6
-/// clock source (0 = internal), d7 start.
+/// clock source (0 = internal oscillator, 1 = external EC1 pin), d7 start.
 const PRESCALER_MASK: u8 = 0x1F;
 const CASCADE_OR_HALT_BIT: u8 = 0x20;
-const RUN_MODE_MASK: u8 = 0xE0;
-/// Started, internal source, not cascaded: the only mode MAME runs.
-const RUN_MODE_INTERNAL: u8 = 0x80;
+const SOURCE_BIT: u8 = 0x40;
 const START_BIT: u8 = 0x80;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -72,8 +75,20 @@ impl Timer1 {
         }
     }
 
-    fn running(&self) -> bool {
-        self.control & RUN_MODE_MASK == RUN_MODE_INTERNAL
+    fn started(&self) -> bool {
+        self.control & START_BIT != 0
+    }
+
+    fn external_source(&self) -> bool {
+        self.control & SOURCE_BIT != 0
+    }
+
+    fn running_internal(&self) -> bool {
+        self.started() && !self.external_source()
+    }
+
+    fn running_external(&self) -> bool {
+        self.started() && self.external_source()
     }
 
     /// CPU cycles between decrements at the current prescaler.
@@ -93,15 +108,13 @@ impl Timer1 {
         Ok(())
     }
 
-    /// Advance by `cycles`; true if the decrementer underflowed (INT2). Two
-    /// underflows within one step collapse into one flag, as they would into
-    /// IOCNT0's single flag bit.
-    pub(crate) fn tick(&mut self, cycles: u32) -> bool {
-        if std::mem::take(&mut self.armed_this_step) || !self.running() {
-            return false;
-        }
+    /// Advance the prescaler/decrementer chain by `phase_units` (shared by
+    /// the internal and external clock sources, SPND001B 3-44/3-45's
+    /// four-step description applies identically to both). Returns whether
+    /// the decrementer underflowed.
+    fn advance(&mut self, phase_units: u32) -> bool {
         let period = self.period_cycles();
-        self.phase += cycles;
+        self.phase += phase_units;
         let mut underflowed = false;
         while self.phase >= period {
             self.phase -= period;
@@ -114,6 +127,29 @@ impl Timer1 {
             }
         }
         underflowed
+    }
+
+    /// Advance by `cycles` on the internal oscillator source; true if the
+    /// decrementer underflowed (INT2). Two underflows within one step
+    /// collapse into one flag, as they would into IOCNT0's single flag bit.
+    /// A no-op while the external source is selected (SPND001B 3-42): its
+    /// counting is driven by [`Self::ec1_edge`] instead.
+    pub(crate) fn tick(&mut self, cycles: u32) -> bool {
+        if std::mem::take(&mut self.armed_this_step) || !self.running_internal() {
+            return false;
+        }
+        self.advance(cycles)
+    }
+
+    /// One positive transition on Timer 1's external event-counter pin
+    /// (Port A7/EC1); a no-op unless the timer is started with the
+    /// external source selected (SPND001B 3-42/3-43). True if the
+    /// decrementer underflowed (INT2).
+    pub(crate) fn ec1_edge(&mut self) -> bool {
+        if !self.running_external() {
+            return false;
+        }
+        self.advance(CYCLES_PER_TICK)
     }
 }
 

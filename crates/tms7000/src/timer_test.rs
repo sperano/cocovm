@@ -11,7 +11,7 @@ fn default_validates() {
 #[test]
 fn phase_below_period_validates() {
     let t = Timer1 {
-        control: RUN_MODE_INTERNAL, // prescaler 0: period = CYCLES_PER_TICK
+        control: START_BIT, // prescaler 0: period = CYCLES_PER_TICK
         phase: CYCLES_PER_TICK - 1,
         ..Timer1::default()
     };
@@ -24,14 +24,14 @@ fn phase_below_period_validates() {
 #[test]
 fn phase_at_or_past_period_is_rejected() {
     let at_period = Timer1 {
-        control: RUN_MODE_INTERNAL,
+        control: START_BIT,
         phase: CYCLES_PER_TICK,
         ..Timer1::default()
     };
     assert!(at_period.validate().is_err());
 
     let huge = Timer1 {
-        control: RUN_MODE_INTERNAL,
+        control: START_BIT,
         phase: u32::MAX,
         ..Timer1::default()
     };
@@ -42,7 +42,7 @@ fn phase_at_or_past_period_is_rejected() {
 #[test]
 fn phase_bound_scales_with_prescaler() {
     let max_prescaler = Timer1 {
-        control: RUN_MODE_INTERNAL | PRESCALER_MASK,
+        control: START_BIT | PRESCALER_MASK,
         phase: CYCLES_PER_TICK, // below period at prescaler 0, but not at max
         ..Timer1::default()
     };
@@ -54,7 +54,7 @@ fn phase_bound_scales_with_prescaler() {
 #[test]
 fn cascade_bit_set_is_rejected() {
     let t = Timer1 {
-        control: RUN_MODE_INTERNAL | CASCADE_OR_HALT_BIT,
+        control: START_BIT | CASCADE_OR_HALT_BIT,
         ..Timer1::default()
     };
     assert!(t.validate().is_err());

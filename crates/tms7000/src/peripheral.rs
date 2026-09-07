@@ -97,6 +97,19 @@ impl TMS7040 {
         })
     }
 
+    /// Drive Timer 1's external event-counter pin (Port A7/EC1 on real
+    /// hardware); only a positive (false-to-true) transition counts, and
+    /// only while the timer is started with the external source selected
+    /// (SPND001B 3-42/3-43) — ignored otherwise, same as a live pin the
+    /// timer isn't listening to.
+    pub fn set_ec1(&mut self, level: bool) {
+        let rising = level && !self.ec1_line;
+        self.ec1_line = level;
+        if rising && self.timer1.ec1_edge() {
+            self.flag_timer_interrupt();
+        }
+    }
+
     /// Timer 1 underflow: raise the INT2 flag.
     pub(crate) fn flag_timer_interrupt(&mut self) {
         self.io_control |= iocnt0::INT2_FLAG;

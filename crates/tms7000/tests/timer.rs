@@ -1,10 +1,12 @@
-//! Timer 1: `(T1DATA + 1) * 8 * (prescaler + 1)` CPU cycles per INT2, restart
-//! on a control write, stop bit, capture latch on INT3, live decrementer read.
+//! Timer 1: `(T1DATA + 1) * 8 * (prescaler + 1)` CPU cycles per INT2 on the
+//! internal clock, one prescaler count per EC1 edge on the external clock
+//! (Event-Counter mode), restart on a control write, stop bit, capture
+//! latch on INT3, live decrementer read.
 
 mod common;
 
 use common::Sys;
-use tms7000::{StepKind, VECTOR_INT2, st};
+use tms7000::{PERIPHERAL_FILE_BASE, StepKind, VECTOR_INT2, st};
 
 const T1DATA: u8 = 0x02;
 const T1CTL: u8 = 0x03;
@@ -12,11 +14,19 @@ const IOCNT0: u8 = 0x00;
 const INT2_FLAG: u8 = 0x08;
 const INT2_ENABLE: u8 = 0x04;
 const START_INTERNAL: u8 = 0x80;
+/// T1CTL bit 6: Event-Counter mode, clocked from the external EC1 pin
+/// instead of the internal oscillator (SPND001B 3-42).
+const SOURCE_EXTERNAL: u8 = 0x40;
 
 fn program(data: u8, control: u8) -> Vec<u8> {
     let mut code = vec![0xA2, data, T1DATA, 0xA2, control, T1CTL];
     code.extend(std::iter::repeat_n(0x00, 64)); // NOPs to run against
     code
+}
+
+/// The live decrementer (T1DATA read), without spending an instruction.
+fn decrementer(s: &Sys) -> u8 {
+    s.cpu.peek(PERIPHERAL_FILE_BASE + u16::from(T1DATA))
 }
 
 /// Cycles from the end of the T1CTL write until the INT2 flag first shows.
@@ -59,15 +69,114 @@ fn stopped_timer_never_flags() {
 }
 
 #[test]
-fn external_source_is_not_counted() {
-    let mut s = Sys::code(&program(0, START_INTERNAL | 0x40));
+fn stopped_timer_ignores_ec1() {
+    let mut s = Sys::code(&program(0, SOURCE_EXTERNAL)); // external source, start bit clear
     s.cpu.st = 0;
     s.insn();
     s.insn();
-    for _ in 0..100 {
-        s.insn();
+    for _ in 0..10 {
+        s.cpu.set_ec1(true);
+        s.cpu.set_ec1(false);
     }
     assert_eq!(s.cpu.io_control() & INT2_FLAG, 0);
+}
+
+#[test]
+fn internal_source_ignores_ec1() {
+    // data 0: any real pulse would underflow immediately, so a flag here
+    // would mean EC1 leaked into the internal-clock count path.
+    let mut s = Sys::code(&program(0, START_INTERNAL));
+    s.cpu.st = 0;
+    s.insn();
+    s.insn();
+    for _ in 0..1000 {
+        s.cpu.set_ec1(true);
+        s.cpu.set_ec1(false);
+    }
+    assert_eq!(
+        s.cpu.io_control() & INT2_FLAG,
+        0,
+        "EC1 has no effect while the internal clock is selected"
+    );
+}
+
+#[test]
+fn external_source_counts_only_positive_transitions() {
+    let mut s = Sys::code(&program(5, START_INTERNAL | SOURCE_EXTERNAL));
+    s.cpu.st = 0;
+    s.insn();
+    s.insn();
+    assert_eq!(decrementer(&s), 5);
+    s.cpu.set_ec1(false); // already false: no edge
+    assert_eq!(decrementer(&s), 5);
+    s.cpu.set_ec1(true); // rising edge: one count
+    assert_eq!(decrementer(&s), 4);
+    s.cpu.set_ec1(true); // still true: no edge
+    assert_eq!(decrementer(&s), 4);
+    s.cpu.set_ec1(false); // falling: no edge
+    assert_eq!(decrementer(&s), 4);
+}
+
+#[test]
+fn external_source_prescaler_division_applied() {
+    // Prescaler reload 3: the manual's "prescale value of >7 produces
+    // fOSC/128" scales the same way for EC1 edges — 4 edges per decrement.
+    let mut s = Sys::code(&program(5, START_INTERNAL | SOURCE_EXTERNAL | 0x03));
+    s.cpu.st = 0;
+    s.insn();
+    s.insn();
+    for _ in 0..3 {
+        s.cpu.set_ec1(true);
+        s.cpu.set_ec1(false);
+    }
+    assert_eq!(decrementer(&s), 5, "3 of 4 edges: no decrement yet");
+    s.cpu.set_ec1(true);
+    s.cpu.set_ec1(false);
+    assert_eq!(decrementer(&s), 4, "4th edge completes the prescaler count");
+}
+
+#[test]
+fn external_source_reloads_after_underflow() {
+    let mut s = Sys::code(&program(2, START_INTERNAL | SOURCE_EXTERNAL));
+    s.cpu.st = 0;
+    s.insn();
+    s.insn();
+    assert_eq!(decrementer(&s), 2);
+    s.cpu.set_ec1(true);
+    s.cpu.set_ec1(false);
+    assert_eq!(decrementer(&s), 1);
+    s.cpu.set_ec1(true);
+    s.cpu.set_ec1(false);
+    assert_eq!(decrementer(&s), 0);
+    assert_eq!(
+        s.cpu.io_control() & INT2_FLAG,
+        0,
+        "0 is the last count, not an underflow"
+    );
+    s.cpu.set_ec1(true);
+    s.cpu.set_ec1(false);
+    assert_eq!(decrementer(&s), 2, "reloaded from T1DATA on underflow");
+    assert_eq!(s.cpu.io_control() & INT2_FLAG, INT2_FLAG);
+}
+
+#[test]
+fn external_source_int2_dispatches_through_its_vector_when_enabled() {
+    let mut rom = Sys::rom(&{
+        let mut code = vec![0xA2, INT2_ENABLE, IOCNT0];
+        code.extend(program(0, START_INTERNAL | SOURCE_EXTERNAL));
+        code
+    });
+    rom[0xFFA] = 0xF8;
+    rom[0xFFB] = 0x00;
+    let mut s = Sys::from_rom(&rom);
+    s.cpu.st = st::I;
+    s.cpu.sp = 0x40;
+    s.insn(); // enable INT2
+    s.insn(); // T1DATA write
+    s.insn(); // T1CTL write: started, external source, data 0
+    s.cpu.set_ec1(true); // one edge underflows immediately
+    assert_eq!(s.step().kind, StepKind::Interrupt(2));
+    assert_eq!(s.cpu.pc, 0xF800);
 }
 
 #[test]
