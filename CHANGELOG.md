@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] - 2026-09-06
+
+### Added
+- Sound/Speech Cartridge: speech synthesis. The cartridge now carries its
+  GI SP0256-AL2 speech chip and runs the real TMS7040 firmware on a new
+  cycle-exact TMS7040 core, so allophone streams and full text-to-speech
+  work as on the board — text mode, allophone loads, and the manual's
+  demo programs all speak. Verified instruction-for-instruction against
+  MAME over the firmware's boot and host-command paths.
+- Printer: the status-bar icon is always visible, flashes red on
+  serial-port output, and gains a context menu with "View Papers" and
+  "Open Print Capture".
+- First-run download dialog: when ROMs or images are missing at startup,
+  the app opens a small window asking before it downloads anything —
+  Download fetches the bundle in the background with a spinner and then
+  opens the manager; Cancel quits. Failed downloads show in the dialog
+  for a retry.
+- The asset bundle URL is configurable via `--assets-url` or the
+  `COCOVM_ASSETS_URL` environment variable.
+
+### Changed
+- Sound/Speech Cartridge host-port behavior now matches the real board:
+  a byte written while busy overwrites the latch instead of being dropped,
+  the reset line acts on its falling edge, and busy releases when the
+  firmware says so rather than on approximated timing. Software that
+  polls right after a command sees the documented delays.
+- Snapshots record both Sound/Speech Cartridge ROM images (firmware and
+  speech ROM) and restore reattaches them; snapshots from earlier versions
+  still load. The asset download moves to the v3 bundle, which adds
+  `sp0256-al2.rom` and `ssc-tms7040.rom`.
+- Downloaded assets now install under `~/.local/share/cocovm/assets/`
+  (`assets/roms`, `assets/images`) instead of the data directory root.
+  There is no automatic migration — on the next start the download dialog
+  offers a fresh download, and the old `roms/` and `images/` directories
+  can be deleted.
+
 ## [0.7.3] - 2026-08-30
 
 ### Added

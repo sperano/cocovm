@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "coco-core"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "ciborium",
  "cocovm-test-assets",
@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "coco-egui"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "base64",
  "chrono",
@@ -829,7 +829,7 @@ dependencies = [
 
 [[package]]
 name = "cocovm-test-assets"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "etcetera",
 ]
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "mc6809"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "cocovm-test-assets",
  "serde",
@@ -3747,7 +3747,7 @@ dependencies = [
 
 [[package]]
 name = "tms7000"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "cocovm-test-assets",
  "serde",
