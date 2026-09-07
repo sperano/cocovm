@@ -77,7 +77,10 @@ pub(super) const FORMATS: [&[Token]; 46] = [
 ];
 
 /// `(opcode, mnemonic, format index)` in MAME `opcs[]` order; the first
-/// entry for an opcode wins (`$B0` is `CLRC`, not `TSTA`).
+/// entry for an opcode wins (`$B0` is `CLRC`, not `TSTA`). `$B1` is not in
+/// MAME's table (its disassembler doesn't name the opcode), added here as
+/// `MOV B,A` to match `execute_one`'s undocumented handling and this crate's
+/// own `decode.rs`.
 #[rustfmt::skip]
 pub(super) const OPCODES: &[(u8, &str, usize)] = &[
     (0x69, "ADC", 0), (0x19, "ADC", 1), (0x39, "ADC", 2), (0x49, "ADC", 3),
@@ -116,7 +119,7 @@ pub(super) const OPCODES: &[(u8, &str, usize)] = &[
     (0xE1, "JN", 28), (0xE6, "JNZ", 28), (0xE4, "JP", 28), (0xE5, "JPZ", 28),
     (0x8A, "LDA", 10), (0x9A, "LDA", 45), (0xAA, "LDA", 12),
     (0x0D, "LDSP", 23),
-    (0xC0, "MOV", 29), (0x62, "MOV", 30), (0xD0, "MOV", 31), (0xD1, "MOV", 32),
+    (0xC0, "MOV", 29), (0x62, "MOV", 30), (0xB1, "MOV", 30), (0xD0, "MOV", 31), (0xD1, "MOV", 32),
     (0x12, "MOV", 33), (0x32, "MOV", 34), (0x42, "MOV", 35), (0x22, "MOV", 36),
     (0x52, "MOV", 37), (0x72, "MOV", 38),
     (0x88, "MOVD", 39), (0x98, "MOVD", 35), (0xA8, "MOVD", 40),

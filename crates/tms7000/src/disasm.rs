@@ -1,8 +1,9 @@
 //! TMS7000 disassembler, a pure function over a byte reader (like
 //! `mc6809::disasm::disassemble`) with MAME `7000dasm.cpp`'s spellings:
 //! `MOVP %>00,P0`, `LDA @>F123`, `BR *R5`, `STA @>F000(B)`, `JMP >F012`.
-//! Undecoded bytes print as `Illegal Opcode`, length 1 — including `$B1`,
-//! which the core executes as MOV B,A but MAME's table does not name.
+//! Undecoded bytes print as `Illegal Opcode`, length 1. `$B1` (undocumented
+//! MOV B,A, matching `execute_one`) is named here even though MAME's own
+//! disassembler table leaves it out.
 
 mod tables;
 
