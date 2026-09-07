@@ -2,8 +2,8 @@ use clap::{Parser, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
 /// The app's whole CLI surface: the manager window is always what runs (see
-/// `main.rs`). Besides the log level, the only other flag is the control
-/// listener's port.
+/// `main.rs`). Besides the log level, the other flags are the control
+/// listener's port and the asset bundle's URL.
 #[derive(Parser)]
 #[command(name = "coco", version, about = "A Tandy Color Computer emulator")]
 pub(crate) struct Cli {
@@ -24,6 +24,11 @@ pub(crate) struct Cli {
     /// entirely.
     #[arg(long, env = crate::control::PORT_ENV, default_value_t = crate::control::DEFAULT_PORT)]
     pub(crate) control_port: u16,
+
+    /// URL of the first-run asset bundle (a gzipped tar of the ROM and
+    /// image directories — `manager/assets.rs`).
+    #[arg(long, env = "COCOVM_ASSETS_URL", default_value = crate::startup::DEFAULT_ASSETS_URL)]
+    pub(crate) assets_url: String,
 }
 
 /// `--log-level`, the CLI's spelling of a [`LevelFilter`].

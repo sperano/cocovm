@@ -121,9 +121,10 @@ pub(crate) fn banner(info: &StartupInfo) {
     println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 
-pub(crate) const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
+/// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden.
+pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
 
-/// ROM images the bundle at [`ASSETS_URL`] carries. Any one missing from
+/// ROM images the bundle at [`DEFAULT_ASSETS_URL`] carries. Any one missing from
 /// the installed ROM directory triggers a (re)download, so an install that
 /// predates a bundle addition catches up instead of staying at whatever it
 /// first unpacked.
@@ -160,20 +161,34 @@ pub(crate) fn unpack_assets(reader: impl std::io::Read, dest: &Path) -> std::io:
     tar::Archive::new(gz).unpack(dest)
 }
 
-/// Download [`ASSETS_URL`] and unpack it into `dest`, streaming — the
+/// Download the bundle at `url` and unpack it into `dest`, streaming — the
 /// tarball is never held in memory or written to disk whole.
-pub(crate) fn download_and_unpack_assets(dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn download_and_unpack_assets(
+    url: &str,
+    dest: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(dest)?;
-    let response = ureq::get(ASSETS_URL).call()?;
+    let response = ureq::get(url).call()?;
     unpack_assets(response.into_body().into_reader(), dest)?;
     Ok(())
 }
 
-pub(crate) fn ensure_assets() {
+/// The per-user data directory, or a fatal exit when no home directory
+/// exists — everything downstream (`rom_load::installed_roms_dir`) relies
+/// on this check having passed at startup.
+pub(crate) fn require_data_dir() -> std::path::PathBuf {
     let Some(data_dir) = paths::data_dir() else {
         eprintln!("no home directory found; cannot locate the asset directories");
         std::process::exit(1);
     };
+    data_dir
+}
+
+/// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
+/// are absent on disk, as display paths: an empty images directory counts
+/// as one entry, plus each missing [`BUNDLED_ROMS`] image. Empty means no
+/// download is needed.
+pub(crate) fn missing_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())
@@ -186,17 +201,7 @@ pub(crate) fn ensure_assets() {
                 .map(|name| roms_dir.join(name).display().to_string()),
         );
     }
-    if missing.is_empty() {
-        return;
-    }
-    println!(
-        "Downloading {ASSETS_URL} (missing: {})…",
-        missing.join(", ")
-    );
-    match download_and_unpack_assets(&data_dir) {
-        Ok(()) => println!("assets installed in {}", data_dir.display()),
-        Err(e) => eprintln!("asset download failed: {e}"),
-    }
+    missing
 }
 
 /// Describe which graphics backend eframe actually created, and on what

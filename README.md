@@ -12,7 +12,7 @@ Virtual ][-level polish.
 
 Run `cargo run` to open the VM manager. ROM images are not included in the
 repository; the manager downloads them on first launch into its data
-directory (`~/.local/share/cocovm/roms/` on Linux/macOS).
+directory (`~/.local/share/cocovm/assets/roms/` on Linux/macOS).
 
 ## Driving a VM from an AI (MCP)
 

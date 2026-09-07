@@ -32,16 +32,27 @@ pub fn data_dir() -> Option<PathBuf> {
     strategy().ok().map(|s| s.data_dir())
 }
 
+/// Name of [`assets_dir`] under [`data_dir`].
+pub(crate) const ASSETS_DIR_NAME: &str = "assets";
+
+/// Directory for downloaded bundle assets
+/// (`~/.local/share/cocovm/assets` on Linux/macOS): copyrighted,
+/// re-downloadable content, wholly owned by the first-run download —
+/// distinct from its user-data siblings like `machines/`.
+pub fn assets_dir() -> Option<PathBuf> {
+    data_dir().map(|d| d.join(ASSETS_DIR_NAME))
+}
+
 /// Directory for ROM assets
-/// (`~/.local/share/cocovm/roms` on Linux/macOS).
+/// (`~/.local/share/cocovm/assets/roms` on Linux/macOS).
 pub fn roms_dir() -> Option<PathBuf> {
-    data_dir().map(|d| d.join("roms"))
+    assets_dir().map(|d| d.join("roms"))
 }
 
 /// Directory for image assets
-/// (`~/.local/share/cocovm/images` on Linux/macOS).
+/// (`~/.local/share/cocovm/assets/images` on Linux/macOS).
 pub fn images_dir() -> Option<PathBuf> {
-    data_dir().map(|d| d.join("images"))
+    assets_dir().map(|d| d.join("images"))
 }
 
 #[cfg(test)]

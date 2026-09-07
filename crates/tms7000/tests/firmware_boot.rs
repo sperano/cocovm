@@ -1,6 +1,6 @@
 //! The Sound/Speech Cartridge firmware booting on the core: reaches its idle
 //! loop without an illegal opcode, sets up its ports and interrupts.
-//! Skips when `~/.local/share/cocovm/roms/ssc-tms7040.rom` is not installed.
+//! Skips when `~/.local/share/cocovm/assets/roms/ssc-tms7040.rom` is not installed.
 
 use tms7000::{FlatBoard, Port, ROM_SIZE, StepKind, TMS7040};
 

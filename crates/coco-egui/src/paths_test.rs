@@ -14,3 +14,10 @@ fn dirs_end_with_app_name() {
 fn data_dir_matches_test_assets_xdg_data_dir() {
     assert_eq!(data_dir(), test_assets::xdg_data_dir());
 }
+
+/// Guards against `test-assets`' hand-duplicated `assets/roms` layout
+/// drifting from this module's `roms_dir`.
+#[test]
+fn roms_dir_matches_test_assets_roms_dir() {
+    assert_eq!(roms_dir(), Some(test_assets::roms_dir()));
+}

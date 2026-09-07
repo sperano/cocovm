@@ -29,7 +29,7 @@ fn scratch_dir(name: &str) -> PathBuf {
 fn boot_with_drivewire(drivewire: Option<DriveWireLaunch>) -> CocoApp {
     let rom_path = installed_roms_dir().join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("installed coco3.rom is required (ensure_assets)")
+        .expect("installed coco3.rom is required (first-run asset download)")
         .into_boxed_slice();
     CocoApp::new(
         MachineConfig::default(),

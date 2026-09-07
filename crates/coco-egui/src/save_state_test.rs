@@ -85,11 +85,11 @@ fn build_media_refs_hashes_match_the_mounted_files() {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("installed coco3.rom is required (ensure_assets)")
+        .expect("installed coco3.rom is required (first-run asset download)")
         .into_boxed_slice();
     assert!(
         disk_basic_rom_path().is_file(),
-        "installed disk11.rom is required (ensure_assets)"
+        "installed disk11.rom is required (first-run asset download)"
     );
 
     let dir = scratch_dir("media-refs");
@@ -173,7 +173,7 @@ pub(crate) fn boot_app() -> CocoApp {
     let roms_dir = installed_roms_dir();
     let rom_path = roms_dir.join(COCO3_ROM_FILE);
     let rom = std::fs::read(&rom_path)
-        .expect("installed coco3.rom is required (ensure_assets)")
+        .expect("installed coco3.rom is required (first-run asset download)")
         .into_boxed_slice();
     CocoApp::new(
         MachineConfig::default(),

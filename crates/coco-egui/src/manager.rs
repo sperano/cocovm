@@ -24,6 +24,7 @@ use crate::{CocoApp, machine_def, new_vm};
 
 use selection::Selection;
 
+pub(crate) mod assets;
 mod bulk;
 mod control;
 mod delete;
@@ -316,6 +317,9 @@ pub struct ManagerApp {
     /// Control requests deferred until the VM they target finishes some work
     /// (`manager::control`), resolved once per frame after VMs have stepped.
     pending: Vec<control::PendingControl>,
+    /// The first-run asset download dialog (`manager/assets.rs`), open while
+    /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
+    pub(crate) asset_dialog: Option<assets::AssetDialog>,
 }
 
 impl ManagerApp {
@@ -351,6 +355,7 @@ impl ManagerApp {
             delete_error: None,
             control,
             pending: Vec::new(),
+            asset_dialog: None,
         }
     }
 }
@@ -377,6 +382,14 @@ impl eframe::App for ManagerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Dialog-first phase: while the asset dialog is up, it is the
+        // window's only content — the manager UI appears after a successful
+        // download (Cancel quits the app, `manager/assets.rs`).
+        if self.asset_dialog.is_some() {
+            self.draw_asset_dialog(ctx);
+            return;
+        }
+
         if let Some(photo) = self.photo.take() {
             self.photo_texture =
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
@@ -444,16 +457,30 @@ impl eframe::App for ManagerApp {
 
 /// Open the manager as the application's main window (blocks until close,
 /// like `eframe::run_native` everywhere else). `control_port` binds the
-/// control-protocol listener (`0` disables it — see `cli.rs`).
-pub fn run(control_port: u16) -> eframe::Result<()> {
+/// control-protocol listener (`0` disables it); `assets_url` is where the
+/// first-run download dialog fetches the bundle from (both `cli.rs`).
+pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
+    let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
+    // Missing assets: the window opens dialog-sized and shows only the
+    // download prompt; it grows to WINDOW_SIZE once the download succeeds
+    // (`manager/assets.rs`), and Cancel quits.
+    let missing = crate::missing_assets();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(if missing.is_empty() {
+            WINDOW_SIZE
+        } else {
+            assets::DIALOG_WINDOW_SIZE
+        })
+        .with_icon(icon)
+        .with_title("CocoVM");
+    if !missing.is_empty() {
+        viewport = viewport.with_resizable(false);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size(WINDOW_SIZE)
-            .with_icon(icon)
-            .with_title("CocoVM"),
+        viewport,
         ..Default::default()
     };
     let machines_dir = machine_def::machines_dir();
@@ -482,16 +509,18 @@ pub fn run(control_port: u16) -> eframe::Result<()> {
                 machines,
                 renderer: crate::renderer_info(cc),
             });
-            // Assets are fetched after the banner so the startup box prints first.
-            crate::ensure_assets();
             let control = control::bind_control(control_port, &cc.egui_ctx);
-            Ok(Box::new(ManagerApp::new(
+            let mut app = ManagerApp::new(
                 photo_view::random(),
                 machines_dir,
                 machine_def::artifacts_root(),
                 entries,
                 control,
-            )))
+            );
+            if !missing.is_empty() {
+                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
+            }
+            Ok(Box::new(app))
         }),
     )
 }
