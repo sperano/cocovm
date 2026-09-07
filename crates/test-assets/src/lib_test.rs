@@ -2,12 +2,15 @@
 use super::*;
 
 #[test]
-fn roms_dir_is_under_xdg_data_dir() {
-    assert_eq!(roms_dir(), xdg_data_dir().unwrap().join(ROMS_KIND));
+fn roms_dir_is_under_the_xdg_assets_dir() {
+    assert_eq!(
+        roms_dir(),
+        xdg_data_dir().unwrap().join(ASSETS_KIND).join(ROMS_KIND)
+    );
 }
 
 #[test]
-fn disks_dir_is_under_xdg_data_dir() {
+fn disks_dir_is_under_the_xdg_data_dir() {
     assert_eq!(disks_dir(), xdg_data_dir().unwrap().join(DISKS_KIND));
 }
 

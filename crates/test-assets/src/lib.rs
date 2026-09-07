@@ -7,9 +7,14 @@ use std::path::PathBuf;
 
 use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
 
-/// Directory name for ROM images under a candidate root.
+/// Directory name for the bundle-asset root under the XDG data directory —
+/// mirrors `coco-egui/src/paths.rs`'s `ASSETS_DIR_NAME`.
+const ASSETS_KIND: &str = "assets";
+/// Directory name for ROM images under the asset root.
 const ROMS_KIND: &str = "roms";
-/// Directory name for disk/VHD images under a candidate root.
+/// Directory name for disk/VHD images, directly under the data root — not
+/// under `assets/`: unlike the ROM bundle, not everything there is
+/// downloadable bundle content.
 const DISKS_KIND: &str = "disks";
 
 /// The app's XDG data directory (`~/.local/share/cocovm` on Linux/macOS), or
@@ -27,35 +32,29 @@ pub fn xdg_data_dir() -> Option<PathBuf> {
     .map(|s| s.data_dir())
 }
 
-fn resolve_dir(kind: &str) -> PathBuf {
-    xdg_data_dir()
-        .expect("cannot determine the cocovm XDG data directory")
-        .join(kind)
-}
-
-fn resolve_path(kind: &str, name: &str) -> PathBuf {
-    resolve_dir(kind).join(name)
+fn resolve_data_dir() -> PathBuf {
+    xdg_data_dir().expect("cannot determine the cocovm XDG data directory")
 }
 
 /// Returns the path to ROM file `name` (see [`rom`] for well-known names):
-/// `<xdg_data_dir>/roms/<name>`.
+/// `<xdg_data_dir>/assets/roms/<name>`.
 pub fn rom(name: &str) -> PathBuf {
-    resolve_path(ROMS_KIND, name)
+    roms_dir().join(name)
 }
 
 /// Returns the path to disk/VHD image `name` under `<xdg_data_dir>/disks`.
 pub fn disk(name: &str) -> PathBuf {
-    resolve_path(DISKS_KIND, name)
+    disks_dir().join(name)
 }
 
-/// Returns the ROM asset directory under the XDG data directory.
+/// Returns the ROM asset directory, `<xdg_data_dir>/assets/roms`.
 pub fn roms_dir() -> PathBuf {
-    resolve_dir(ROMS_KIND)
+    resolve_data_dir().join(ASSETS_KIND).join(ROMS_KIND)
 }
 
-/// Returns the disk/VHD asset directory under the XDG data directory.
+/// Returns the disk/VHD asset directory, `<xdg_data_dir>/disks`.
 pub fn disks_dir() -> PathBuf {
-    resolve_dir(DISKS_KIND)
+    resolve_data_dir().join(DISKS_KIND)
 }
 
 /// Defines well-known ROM file names used across many call sites, avoiding

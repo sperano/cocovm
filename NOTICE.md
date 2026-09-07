@@ -86,7 +86,7 @@ notice requirement.
 
 ## Local assets (not distributed with the repository)
 
-- `~/.local/share/cocovm/roms/` — copyrighted Tandy/Microsoft ROM images
+- `~/.local/share/cocovm/assets/roms/` — copyrighted Tandy/Microsoft ROM images
   (`coco3.rom`, `disk11.rom`, …), installed outside the repo by the app's
   first-run asset download.
 - `docs/*.pdf` — copyrighted reference PDFs, excluded via `.gitignore`

@@ -32,7 +32,7 @@ describes. All of it is emulated:
 - **`$FF7D`/`$FF7E`**, bus routing (including through the Multi-Pak), the
   Sound Activity Circuit, and audio mixing into `SystemBus::sound_sample`.
 
-**Needs two ROMs**, installed as `~/.local/share/cocovm/roms/ssc-tms7040.rom`
+**Needs two ROMs**, installed as `~/.local/share/cocovm/assets/roms/ssc-tms7040.rom`
 (MAME's `pic-7040-510.bin`, CRC32 `a8e2eb98`) and `sp0256-al2.rom` (MAME's
 `sp0256-al2.bin`, CRC32 `b504ac15`). The asset bundle carries both from v3
 on and the first-run download dialog offers to re-fetch it whenever a bundled ROM is missing.

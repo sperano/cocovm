@@ -11,7 +11,7 @@ manager). `book/` is a 16-chapter course built from this codebase.
   `pdftotext -layout <pdf>` instead of guessing or web search. The PDFs are
   git-ignored; don't commit them. Pre-extracted text lives in `docs/txt/`
   (also git-ignored); regenerate with `scripts/extract-docs.sh`.
-- `~/.local/share/cocovm/roms/` — real ROM images: `coco3.rom` (32K Super
+- `~/.local/share/cocovm/assets/roms/` — real ROM images: `coco3.rom` (32K Super
   Extended Color BASIC, maps to `$8000–$FFFF`), `disk11.rom` (8K Disk BASIC),
   the CoCo 1/2 BASIC sets, `sp0256-al2.rom` (the Sound/Speech Cartridge's
   2K allophone ROM) and `ssc-tms7040.rom` (its 4K TMS7040 firmware); the

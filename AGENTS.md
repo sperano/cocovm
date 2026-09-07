@@ -18,7 +18,7 @@ manager). `book/` is a 16-chapter course built from this codebase.
   memory maps). Verify hardware claims against these with
   `pdftotext -layout <pdf>` instead of guessing or web search. The PDFs are
   git-ignored; don't commit them.
-- `~/.local/share/cocovm/roms/` — real ROM images: `coco3.rom` (32K Super
+- `~/.local/share/cocovm/assets/roms/` — real ROM images: `coco3.rom` (32K Super
   Extended Color BASIC, maps to `$8000–$FFFF`), `disk11.rom` (8K Disk BASIC),
   and the CoCo 1/2 BASIC sets. Used to boot real code and trace-diff against
   XRoar/MAME. Installed by the app's first-run asset download

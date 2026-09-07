@@ -35,8 +35,8 @@ pub(crate) struct AssetDialog {
     missing: Vec<String>,
     /// Where the bundle is fetched from (`--assets-url`, `cli.rs`).
     assets_url: String,
-    /// Where the bundle unpacks (`paths::data_dir`).
-    data_dir: PathBuf,
+    /// Where the bundle unpacks (`paths::assets_dir`).
+    install_dir: PathBuf,
     /// Completion channel of the running download thread; `Some` while it runs.
     job: Option<mpsc::Receiver<Result<(), String>>>,
     /// Failure from the last attempt, shown above the buttons for a retry.
@@ -44,11 +44,11 @@ pub(crate) struct AssetDialog {
 }
 
 impl AssetDialog {
-    pub(crate) fn new(missing: Vec<String>, assets_url: String, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(missing: Vec<String>, assets_url: String, install_dir: PathBuf) -> Self {
         Self {
             missing,
             assets_url,
-            data_dir,
+            install_dir,
             job: None,
             error: None,
         }
@@ -88,7 +88,7 @@ impl AssetDialog {
     fn start_download(&mut self, ctx: &egui::Context) {
         let (tx, rx) = mpsc::channel();
         let url = self.assets_url.clone();
-        let dest = self.data_dir.clone();
+        let dest = self.install_dir.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let result =
@@ -103,7 +103,10 @@ impl AssetDialog {
     /// Draw the dialog as the window's only content for one frame.
     fn draw(&mut self, ctx: &egui::Context) -> Verdict {
         if self.poll() {
-            println!(" Assets installed in {}", self.data_dir.display());
+            println!(" Assets installed in {}", self.install_dir.display());
+            let roms = crate::rom_count();
+            // Not `pluralize` — same reason as `StartupInfo::inventory`.
+            println!(" {roms} ROM{} installed", if roms == 1 { "" } else { "s" });
             return Verdict::Installed;
         }
         let mut verdict = Verdict::Pending;

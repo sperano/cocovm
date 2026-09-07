@@ -463,7 +463,7 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
-    let data_dir = crate::require_data_dir();
+    let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
     // Missing assets: the window opens dialog-sized and shows only the
     // download prompt; it grows to WINDOW_SIZE once the download succeeds
     // (`manager/assets.rs`), and Cancel quits.
@@ -518,7 +518,7 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
                 control,
             );
             if !missing.is_empty() {
-                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, data_dir));
+                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
             }
             Ok(Box::new(app))
         }),
