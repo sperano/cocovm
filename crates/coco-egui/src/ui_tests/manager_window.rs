@@ -228,6 +228,11 @@ fn manager_detail_shows_slug_id() {
     click(&mut harness, "Alpha CoCo 3");
 
     harness.get_by_label("Slug ID: alpha-coco");
+    assert_eq!(
+        painted_text_color(&harness, "Slug ID: alpha-coco"),
+        Some(harness.ctx.style().visuals.strong_text_color()),
+        "the slug ID must use the theme's high-contrast text color"
+    );
 }
 
 /// Clicking the empty space below the last list row clears the selection.

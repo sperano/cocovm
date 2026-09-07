@@ -164,7 +164,7 @@ impl ManagerApp {
         let mut edit = self.edit.take().expect("just ensured above");
 
         self.draw_name_field(ui, index, &mut edit);
-        ui.label(format!("Slug ID: {slug}"));
+        ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
         ui.add_space(DETAIL_SECTION_GAP);
         // The transport buttons moved to the toolbar — this pane keeps only
         // the status, plus the last launch failure.

@@ -16,6 +16,33 @@ use crate::*;
 pub(super) type AppHarness = egui_kittest::Harness<'static, CocoApp>;
 pub(super) type ManagerHarness = egui_kittest::Harness<'static, manager::ManagerApp>;
 
+/// Resolve the effective color of the shape that paints `text` in the
+/// manager's latest frame.
+pub(super) fn painted_text_color(harness: &ManagerHarness, text: &str) -> Option<egui::Color32> {
+    harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|shape| shape_text_color(&shape.shape, text))
+}
+
+fn shape_text_color(shape: &egui::Shape, text: &str) -> Option<egui::Color32> {
+    match shape {
+        egui::Shape::Vec(shapes) => shapes
+            .iter()
+            .find_map(|shape| shape_text_color(shape, text)),
+        egui::Shape::Text(shape) if shape.galley.job.text == text => {
+            let color = shape.galley.job.sections.first()?.format.color;
+            Some(if color == egui::Color32::PLACEHOLDER {
+                shape.override_text_color.unwrap_or(shape.fallback_color)
+            } else {
+                shape.override_text_color.unwrap_or(color)
+            })
+        }
+        _ => None,
+    }
+}
+
 /// Boot a default (CoCo 3) machine into a kittest harness — a bare
 /// `CocoApp::new` call, unlike a manager-launched VM (`launch::launch_machine`).
 pub(super) fn boot_harness() -> AppHarness {
