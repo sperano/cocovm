@@ -382,6 +382,14 @@ impl eframe::App for ManagerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Dialog-first phase: while the asset dialog is up, it is the
+        // window's only content — the manager UI appears after a successful
+        // download (Cancel quits the app, `manager/assets.rs`).
+        if self.asset_dialog.is_some() {
+            self.draw_asset_dialog(ctx);
+            return;
+        }
+
         if let Some(photo) = self.photo.take() {
             self.photo_texture =
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
@@ -441,7 +449,6 @@ impl eframe::App for ManagerApp {
         });
 
         self.draw_delete_confirmation(ctx);
-        self.draw_asset_dialog(ctx);
         self.drain_control();
         self.draw_running_vms(ctx);
         self.resolve_control_pending(ctx);
@@ -456,11 +463,24 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
+    let data_dir = crate::require_data_dir();
+    // Missing assets: the window opens dialog-sized and shows only the
+    // download prompt; it grows to WINDOW_SIZE once the download succeeds
+    // (`manager/assets.rs`), and Cancel quits.
+    let missing = crate::missing_assets();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(if missing.is_empty() {
+            WINDOW_SIZE
+        } else {
+            assets::DIALOG_WINDOW_SIZE
+        })
+        .with_icon(icon)
+        .with_title("CocoVM");
+    if !missing.is_empty() {
+        viewport = viewport.with_resizable(false);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size(WINDOW_SIZE)
-            .with_icon(icon)
-            .with_title("CocoVM"),
+        viewport,
         ..Default::default()
     };
     let machines_dir = machine_def::machines_dir();
@@ -489,8 +509,6 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
                 machines,
                 renderer: crate::renderer_info(cc),
             });
-            let data_dir = crate::require_data_dir();
-            let missing = crate::missing_assets();
             let control = control::bind_control(control_port, &cc.egui_ctx);
             let mut app = ManagerApp::new(
                 photo_view::random(),
@@ -499,8 +517,6 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
                 entries,
                 control,
             );
-            // Missing assets open the download dialog instead of fetching
-            // silently — the user confirms before anything is downloaded.
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, data_dir));
             }

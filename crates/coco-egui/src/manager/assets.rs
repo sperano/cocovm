@@ -1,29 +1,35 @@
 //! The first-run asset download dialog: when startup finds bundle assets
-//! missing (`startup::missing_assets`), the manager opens a modal asking
-//! before fetching anything, instead of downloading silently. Download runs
-//! on a background thread so the window stays live; Cancel leaves the app
-//! usable without the assets (machines that need a ROM refuse to start).
+//! missing (`startup::missing_assets`), the window opens dialog-sized and
+//! shows only this prompt — the manager UI appears (and the window grows to
+//! its real size) only after a successful download. Download runs on a
+//! background thread so the window stays live; Cancel quits the app.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
 
 use eframe::egui;
 
-use super::{DETAIL_SECTION_GAP, ManagerApp};
+use super::{DETAIL_SECTION_GAP, ManagerApp, WINDOW_SIZE};
 use crate::photo_view;
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
     "CocoVM needs to download some copyrighted assets (ROMs, images) to function properly.";
 
-/// What [`AssetDialog::draw`] tells the manager to do with the dialog.
+/// Window size while the dialog is the only content.
+pub(super) const DIALOG_WINDOW_SIZE: [f32; 2] = [500.0, 190.0];
+
+/// What one dialog frame resolved to.
 pub(super) enum Verdict {
-    KeepOpen,
-    Close,
+    Pending,
+    /// Download finished and every missing file is now present.
+    Installed,
+    /// The user declined — the app quits.
+    Cancelled,
 }
 
-/// State of the open dialog, held in [`ManagerApp::asset_dialog`] while the
-/// user hasn't decided (or a download is in flight).
+/// State of the dialog phase, held in [`ManagerApp::asset_dialog`] until
+/// the download succeeds (Cancel never clears it — the app closes instead).
 pub(crate) struct AssetDialog {
     /// Display paths of the absent files, from `startup::missing_assets`.
     missing: Vec<String>,
@@ -94,24 +100,20 @@ impl AssetDialog {
         self.error = None;
     }
 
-    /// Draw the modal for one frame. While a download runs, Esc/click-outside
-    /// are ignored — there is no way to abort the transfer midway.
+    /// Draw the dialog as the window's only content for one frame.
     fn draw(&mut self, ctx: &egui::Context) -> Verdict {
         if self.poll() {
             println!(" Assets installed in {}", self.data_dir.display());
-            return Verdict::Close;
+            return Verdict::Installed;
         }
-        let mut verdict = Verdict::KeepOpen;
-        let modal = egui::Modal::new(egui::Id::new("asset_download")).show(ctx, |ui| {
+        let mut verdict = Verdict::Pending;
+        egui::CentralPanel::default().show(ctx, |ui| {
             verdict = self.draw_body(ui);
         });
-        if self.job.is_none() && modal.should_close() {
-            verdict = Verdict::Close;
-        }
         verdict
     }
 
-    /// The modal's contents: heading, prompt, missing count, any error from
+    /// The dialog's contents: heading, prompt, missing count, any error from
     /// the last attempt, then either a progress row or the button row.
     fn draw_body(&mut self, ui: &mut egui::Ui) -> Verdict {
         ui.heading("Download assets");
@@ -134,15 +136,15 @@ impl AssetDialog {
                 ui.spinner();
                 ui.label(format!("Downloading {}…", self.assets_url));
             });
-            return Verdict::KeepOpen;
+            return Verdict::Pending;
         }
-        let mut verdict = Verdict::KeepOpen;
+        let mut verdict = Verdict::Pending;
         ui.horizontal(|ui| {
             if ui.button("Download").clicked() {
                 self.start_download(ui.ctx());
             }
             if ui.button("Cancel").clicked() {
-                verdict = Verdict::Close;
+                verdict = Verdict::Cancelled;
             }
         });
         verdict
@@ -150,19 +152,25 @@ impl AssetDialog {
 }
 
 impl ManagerApp {
-    /// Drive the asset dialog for one frame, dropping it once dismissed or
-    /// done. After a successful download the central pane's photo is
-    /// reseeded — on a true first run it was drawn from an empty images
-    /// directory.
+    /// Drive the dialog phase for one frame. Success grows the window to
+    /// the manager's size and reseeds the central pane's photo (on a true
+    /// first run it was drawn from an empty images directory); Cancel
+    /// closes the window, quitting the app.
     pub(super) fn draw_asset_dialog(&mut self, ctx: &egui::Context) {
         let Some(dialog) = self.asset_dialog.as_mut() else {
             return;
         };
-        if let Verdict::Close = dialog.draw(ctx) {
-            self.asset_dialog = None;
-            if self.photo.is_none() && self.photo_texture.is_none() {
-                self.photo = photo_view::random();
+        match dialog.draw(ctx) {
+            Verdict::Pending => {}
+            Verdict::Installed => {
+                self.asset_dialog = None;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(WINDOW_SIZE.into()));
+                if self.photo.is_none() && self.photo_texture.is_none() {
+                    self.photo = photo_view::random();
+                }
             }
+            Verdict::Cancelled => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         }
     }
 }

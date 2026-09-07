@@ -86,10 +86,11 @@ fn manager_window_shows_its_toolbar() {
     );
 }
 
-/// The first-run asset dialog: a seeded `asset_dialog` opens the modal with
-/// its prompt, and Cancel dismisses it without touching the target directory.
+/// The dialog-first phase: a seeded `asset_dialog` is the window's only
+/// content (no manager toolbar), and Cancel requests app close without
+/// touching the target directory.
 #[test]
-fn asset_dialog_cancel_dismisses_without_downloading() {
+fn asset_dialog_cancel_quits_without_downloading() {
     let dir = TempDir::new("asset-dialog");
     let data_dir = dir.path().to_path_buf();
     let mut harness = egui_kittest::Harness::new_eframe(move |_cc| {
@@ -101,17 +102,34 @@ fn asset_dialog_cancel_dismisses_without_downloading() {
         ));
         app
     });
-    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.set_size(egui::vec2(500.0, 190.0));
     harness.step();
 
     harness.get_by_label(
         "CocoVM needs to download some copyrighted assets (ROMs, images) to function properly.",
     );
-    click(&mut harness, "Cancel");
     assert!(
-        harness.state().asset_dialog.is_none(),
-        "Cancel must close the asset dialog"
+        harness.query_by_label("New").is_none(),
+        "the manager toolbar must not draw during the dialog phase"
     );
+
+    // Manual hover/click/step instead of the `click` helper: the Close
+    // command is emitted only on the click's own frame, and `output()`
+    // holds just the last frame.
+    harness.get_by_label("Cancel").hover();
+    harness.step();
+    harness.get_by_label("Cancel").click();
+    harness.step();
+    let closed = harness
+        .output()
+        .viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .is_some_and(|out| {
+            out.commands
+                .iter()
+                .any(|cmd| matches!(cmd, egui::ViewportCommand::Close))
+        });
+    assert!(closed, "Cancel must request app close");
     assert!(
         fs::read_dir(dir.path()).unwrap().next().is_none(),
         "Cancel must not download anything"
