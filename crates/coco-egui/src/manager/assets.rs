@@ -27,6 +27,8 @@ pub(super) enum Verdict {
 pub(crate) struct AssetDialog {
     /// Display paths of the absent files, from `startup::missing_assets`.
     missing: Vec<String>,
+    /// Where the bundle is fetched from (`--assets-url`, `cli.rs`).
+    assets_url: String,
     /// Where the bundle unpacks (`paths::data_dir`).
     data_dir: PathBuf,
     /// Completion channel of the running download thread; `Some` while it runs.
@@ -36,9 +38,10 @@ pub(crate) struct AssetDialog {
 }
 
 impl AssetDialog {
-    pub(crate) fn new(missing: Vec<String>, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(missing: Vec<String>, assets_url: String, data_dir: PathBuf) -> Self {
         Self {
             missing,
+            assets_url,
             data_dir,
             job: None,
             error: None,
@@ -78,11 +81,12 @@ impl AssetDialog {
     /// the repaint wakes the UI so [`Self::poll`] sees it promptly.
     fn start_download(&mut self, ctx: &egui::Context) {
         let (tx, rx) = mpsc::channel();
+        let url = self.assets_url.clone();
         let dest = self.data_dir.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let result =
-                crate::startup::download_and_unpack_assets(&dest).map_err(|e| e.to_string());
+                crate::startup::download_and_unpack_assets(&url, &dest).map_err(|e| e.to_string());
             let _ = tx.send(result);
             ctx.request_repaint();
         });
@@ -94,7 +98,7 @@ impl AssetDialog {
     /// are ignored — there is no way to abort the transfer midway.
     fn draw(&mut self, ctx: &egui::Context) -> Verdict {
         if self.poll() {
-            println!("assets installed in {}", self.data_dir.display());
+            println!(" Assets installed in {}", self.data_dir.display());
             return Verdict::Close;
         }
         let mut verdict = Verdict::KeepOpen;
@@ -128,7 +132,7 @@ impl AssetDialog {
         if self.job.is_some() {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(format!("Downloading {}…", crate::startup::ASSETS_URL));
+                ui.label(format!("Downloading {}…", self.assets_url));
             });
             return Verdict::KeepOpen;
         }

@@ -450,8 +450,9 @@ impl eframe::App for ManagerApp {
 
 /// Open the manager as the application's main window (blocks until close,
 /// like `eframe::run_native` everywhere else). `control_port` binds the
-/// control-protocol listener (`0` disables it — see `cli.rs`).
-pub fn run(control_port: u16) -> eframe::Result<()> {
+/// control-protocol listener (`0` disables it); `assets_url` is where the
+/// first-run download dialog fetches the bundle from (both `cli.rs`).
+pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
@@ -501,7 +502,7 @@ pub fn run(control_port: u16) -> eframe::Result<()> {
             // Missing assets open the download dialog instead of fetching
             // silently — the user confirms before anything is downloaded.
             if !missing.is_empty() {
-                app.asset_dialog = Some(assets::AssetDialog::new(missing, data_dir));
+                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, data_dir));
             }
             Ok(Box::new(app))
         }),

@@ -121,9 +121,10 @@ pub(crate) fn banner(info: &StartupInfo) {
     println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 
-pub(crate) const ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
+/// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden.
+pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
 
-/// ROM images the bundle at [`ASSETS_URL`] carries. Any one missing from
+/// ROM images the bundle at [`DEFAULT_ASSETS_URL`] carries. Any one missing from
 /// the installed ROM directory triggers a (re)download, so an install that
 /// predates a bundle addition catches up instead of staying at whatever it
 /// first unpacked.
@@ -160,11 +161,14 @@ pub(crate) fn unpack_assets(reader: impl std::io::Read, dest: &Path) -> std::io:
     tar::Archive::new(gz).unpack(dest)
 }
 
-/// Download [`ASSETS_URL`] and unpack it into `dest`, streaming — the
+/// Download the bundle at `url` and unpack it into `dest`, streaming — the
 /// tarball is never held in memory or written to disk whole.
-pub(crate) fn download_and_unpack_assets(dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn download_and_unpack_assets(
+    url: &str,
+    dest: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(dest)?;
-    let response = ureq::get(ASSETS_URL).call()?;
+    let response = ureq::get(url).call()?;
     unpack_assets(response.into_body().into_reader(), dest)?;
     Ok(())
 }
@@ -180,7 +184,7 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
     data_dir
 }
 
-/// The asset files the bundle at [`ASSETS_URL`] should provide but which
+/// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
 /// are absent on disk, as display paths: an empty images directory counts
 /// as one entry, plus each missing [`BUNDLED_ROMS`] image. Empty means no
 /// download is needed.
