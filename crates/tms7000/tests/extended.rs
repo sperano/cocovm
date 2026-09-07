@@ -29,12 +29,15 @@ fn lda_forms() {
 
 #[test]
 fn lda_from_external_memory_and_rom() {
-    let mut s = Sys::code(&[0x8A, 0x20, 0x00]); // LDA @>2000: external
+    // $0200-$EFFF only reaches Bus in Full-Expansion mode (IOCNT0 bits
+    // 7:6 = `10`); elsewhere it's Not Available.
+    let mut s = Sys::code(&[0xA2, 0x80, 0x00, 0x8A, 0x20, 0x00]); // IOCNT0 = Full-Expansion, then LDA @>2000
     s.board.ext[0x2000] = 0x99;
-    s.insn();
+    s.insn(); // MOVP selects Full-Expansion
+    s.insn(); // LDA @>2000: external
     assert_eq!(s.a(), 0x99);
 
-    let mut s = Sys::code(&[0x8A, 0xF0, 0x00]); // LDA @>F000: the opcode itself
+    let mut s = Sys::code(&[0x8A, 0xF0, 0x00]); // LDA @>F000: the opcode itself, ROM in every mode
     s.insn();
     assert_eq!(s.a(), 0x8A);
 }
@@ -47,9 +50,11 @@ fn sta_forms() {
     assert_eq!(s.cpu.rf(0x20), 0);
     assert_eq!(s.flags(), (false, false, true));
 
-    let mut s = Sys::code(&[0xAB, 0x20, 0x00]); // STA @>2000(B)
+    // $0200-$EFFF only reaches Bus in Full-Expansion mode.
+    let mut s = Sys::code(&[0xA2, 0x80, 0x00, 0xAB, 0x20, 0x00]); // IOCNT0 = Full-Expansion, then STA @>2000(B)
     s.set_a(0x7E);
     s.set_b(0x10);
+    s.insn(); // MOVP selects Full-Expansion
     assert_eq!(s.insn(), 13);
     assert_eq!(s.board.ext[0x2010], 0x7E);
 

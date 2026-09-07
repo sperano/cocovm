@@ -142,14 +142,23 @@ fn andp_orp_xorp_and_btjop_reach_the_peripheral_file() {
 }
 
 #[test]
-fn unmapped_peripheral_registers_read_zero() {
+fn unmapped_peripheral_file_register_reads_zero() {
+    // $0107: a hole within the on-chip peripheral file itself, not a
+    // memory-mode boundary — always reads 0, in every mode.
     let mut s = Sys::code(&movp_to_a(0x07));
     s.set_a(0x99);
     s.insn();
     assert_eq!(s.a(), 0);
+}
 
-    let mut s = Sys::code(&movp_to_a(0x0C)); // past the 70x0's file
+/// `$010C` is past the on-chip peripheral file; in Single-Chip mode (the
+/// reset default) it's Not Available rather than Peripheral Expansion, so
+/// it reads open bus instead of reaching a register or `Bus::read_ext`
+/// (SPND001C Table 3-6).
+#[test]
+fn peripheral_expansion_window_is_not_available_in_single_chip_mode() {
+    let mut s = Sys::code(&movp_to_a(0x0C));
     s.set_a(0x99);
     s.insn();
-    assert_eq!(s.a(), 0);
+    assert_eq!(s.a(), 0xFF);
 }

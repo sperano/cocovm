@@ -290,14 +290,9 @@ impl TMS7040 {
 
     /// Side-effect-free read for debuggers: register file, ROM, and the
     /// peripheral file's latched values; ports return their output latch.
+    /// Honors the current memory mode the same way [`Self::step`] would.
     pub fn peek(&self, addr: u16) -> u8 {
-        match addr {
-            0x0000..=0x007F => self.rf[usize::from(addr)],
-            0x0080..=0x00FF => 0,
-            0x0100..=0x010B => self.pf_peek((addr - PERIPHERAL_FILE_BASE) as u8),
-            ROM_BASE..=0xFFFF => self.rom_byte(addr),
-            _ => 0,
-        }
+        self.peek_mem(addr)
     }
 }
 

@@ -72,5 +72,9 @@ fn peek_covers_register_file_rom_and_peripheral_latches() {
     assert_eq!(cpu.peek(0x0080), 0, "unmapped register file");
     assert_eq!(cpu.peek(ROM_BASE + 0x10), 0xAB);
     assert_eq!(cpu.peek(0x0109), 0, "DDR C");
-    assert_eq!(cpu.peek(0x2000), 0, "external space is not peeked");
+    assert_eq!(
+        cpu.peek(0x2000),
+        0xFF,
+        "memory expansion is Not Available in Single-Chip mode (the default)"
+    );
 }

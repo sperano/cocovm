@@ -21,7 +21,7 @@ pub(crate) mod pf {
 
 /// IOCNT0 layout: enable bits at d0/d2/d4, flag bits at d1/d3/d5 for
 /// INT1/INT2/INT3. Writing a 1 to a flag bit clears it; enables and the
-/// (unimplemented) memory-mode bits d6-d7 are written through.
+/// memory-mode bits d6-d7 (`memory::MemoryMode`) are written through.
 mod iocnt0 {
     pub const FLAGS: u8 = 0x2A;
     pub const WRITE_THROUGH: u8 = 0xD5;
