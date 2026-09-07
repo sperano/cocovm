@@ -153,6 +153,15 @@ pub struct TMS7040 {
     timer1: Timer1,
     /// Last level told to [`Self::set_int1`] / [`Self::set_int3`].
     int_line: [bool; 2],
+    /// The INTn Pulse flip-flop (SPND001B 3-31/3-33). `#[serde(default)]`:
+    /// false reproduces a pre-latch snapshot's level-only behavior.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pulse_latch: [bool; 2],
+    /// Last level told to [`Self::set_ec1`]. `#[serde(default)]`: an old
+    /// snapshot predates Event-Counter mode, and false (no pending edge)
+    /// reproduces its behavior.
+    #[cfg_attr(feature = "serde", serde(default))]
+    ec1_line: bool,
     /// Parked on an IDLE instruction until an interrupt.
     idle: bool,
     /// The reset sequence runs on the next [`Self::step`].
@@ -180,6 +189,8 @@ impl Default for TMS7040 {
             port_ddr: [0, 0xFF, 0, 0],
             timer1: Timer1::default(),
             int_line: [false; 2],
+            pulse_latch: [false; 2],
+            ec1_line: false,
             idle: false,
             pending_reset: true,
             cycles: 0,
@@ -210,6 +221,23 @@ impl TMS7040 {
     /// Whether the reset sequence will run on the next [`Self::step`].
     pub fn pending_reset(&self) -> bool {
         self.pending_reset
+    }
+
+    /// Restore-time payload-shape validation: invariants `Deserialize` can't
+    /// check itself, catching a hand-crafted or corrupt snapshot before its
+    /// fields drive `step` into a panic or a runaway loop.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        self.timer1.validate()?;
+        if self.port_ddr[Port::A.index()] != 0 {
+            return Err("port A has no DDR and is hardwired all-input (0)");
+        }
+        if self.port_ddr[Port::B.index()] != 0xFF {
+            return Err("port B's DDR is hardwired all-output (0xFF)");
+        }
+        if !self.ext_flags_are_consistent() {
+            return Err("IOCNT0's INT1/INT3 flag bits disagree with the pulse-latch/level state");
+        }
+        Ok(())
     }
 
     /// Pull the RESET pin: the reset sequence runs on the next
@@ -262,14 +290,9 @@ impl TMS7040 {
 
     /// Side-effect-free read for debuggers: register file, ROM, and the
     /// peripheral file's latched values; ports return their output latch.
+    /// Honors the current memory mode the same way [`Self::step`] would.
     pub fn peek(&self, addr: u16) -> u8 {
-        match addr {
-            0x0000..=0x007F => self.rf[usize::from(addr)],
-            0x0080..=0x00FF => 0,
-            0x0100..=0x010B => self.pf_peek((addr - PERIPHERAL_FILE_BASE) as u8),
-            ROM_BASE..=0xFFFF => self.rom_byte(addr),
-            _ => 0,
-        }
+        self.peek_mem(addr)
     }
 }
 

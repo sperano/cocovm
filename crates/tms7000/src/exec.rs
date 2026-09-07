@@ -53,7 +53,9 @@ impl TMS7040 {
 
     fn finish(&mut self, kind: StepKind) -> Step {
         let cycles = self.burned;
-        self.cycles += u64::from(cycles);
+        // Diagnostic-only running total; saturate instead of overflow-panicking
+        // if a deserialized snapshot carried a cycles value near u64::MAX.
+        self.cycles = self.cycles.saturating_add(u64::from(cycles));
         if self.timer1.tick(cycles) {
             self.flag_timer_interrupt();
         }
@@ -61,17 +63,20 @@ impl TMS7040 {
     }
 
     /// The RESET sequence (MAME `device_reset`), run by [`Self::step`] when
-    /// a reset is pending so its 17 cycles are accounted: the port writes
-    /// happen through the peripheral file with the DDRs already cleared, so
-    /// the board sees port B all-ones and ports C/D all-zeros; then IOCNT0's
-    /// enables clear (flags kept), SP is `$FF`, and TRAP 0 fetches the
-    /// vector — pushing the old PC into R0/R1.
+    /// a reset is pending so its 17 cycles are accounted: IOCNT0 clears
+    /// first (SPND001B 3.6.1) so the port writes that follow always land
+    /// on-chip regardless of the memory mode reset found the chip in, not
+    /// as external bus cycles; the board sees port B all-ones and ports
+    /// C/D all-zeros; SP is `$FF`, and TRAP 0 fetches the vector — pushing
+    /// the old PC into R0/R1.
     pub(crate) fn reset(&mut self, bus: &mut impl Bus) {
         self.pending_reset = false;
         if self.idle {
             self.pc = self.pc.wrapping_add(1);
             self.idle = false;
         }
+        self.st = 0;
+        self.write_p(bus, pf::IOCNT0, 0x00);
         self.write_p(bus, pf::APORT, 0xFF);
         self.write_p(bus, pf::BPORT, 0xFF);
         self.write_p(bus, pf::ADDR, 0x00);
@@ -81,8 +86,6 @@ impl TMS7040 {
         self.write_p(bus, pf::CPORT, 0xFF);
         self.write_p(bus, pf::DPORT, 0xFF);
 
-        self.st = 0;
-        self.write_p(bus, pf::IOCNT0, 0x00);
         self.sp = 0xFF;
         self.execute(bus, 0xFF);
         self.burn(cost::RESET_EXTRA);

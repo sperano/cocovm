@@ -1,6 +1,7 @@
 //! 7. Phase-5 review: hostile-payload validation
 //!
-//! `Cassette::bit`, `SSC::tms_budget`, `WD1773::Transfer::index`,
+//! `Cassette::bit`, `SSC::tms_budget`, `SSC::tms`'s nested `TMS7040`
+//! (`timer1.phase`, `cycles`), `WD1773::Transfer::index`,
 //! `WD1773::Transfer::offset` plus `total`, and `Machine`'s scanline
 //! scheduler fields (`line`, `line_cycles_spent`, `line_budget`) have no
 //! public setter that can create an out-of-range value. Normal protocol
@@ -118,6 +119,78 @@ fn ssc_tms_budget_outside_one_step_is_invalid_payload_not_a_panic() {
             "tms_budget",
         ],
         Value::Integer(999_999.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert!(matches!(err, SnapshotError::InvalidPayload(_)), "{err:?}");
+}
+
+#[test]
+fn ssc_tms_timer1_phase_past_period_is_invalid_payload_not_a_panic() {
+    let machine = machine_with_ssc();
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // `Timer1::tick`'s `while phase >= period` loop assumes `phase` starts
+    // below the period; a huge `phase` would spin it `phase / period` times
+    // instead of the 0 a live chip ever needs. `cycles` near `u64::MAX` is
+    // tampered alongside it (its own hazard is an overflow panic in
+    // `TMS7040::step`, made saturating) to confirm the timer check rejects
+    // the whole payload before either ever reaches `step`.
+    let cbor = mutate_cbor(
+        &cbor,
+        &[
+            "machine",
+            "bus",
+            "cart",
+            "SoundSpeechCartridge",
+            "tms",
+            "timer1",
+            "phase",
+        ],
+        Value::Integer(u32::MAX.into()),
+    );
+    let tampered = mutate_cbor(
+        &cbor,
+        &[
+            "machine",
+            "bus",
+            "cart",
+            "SoundSpeechCartridge",
+            "tms",
+            "cycles",
+        ],
+        Value::Integer(u64::MAX.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert!(matches!(err, SnapshotError::InvalidPayload(_)), "{err:?}");
+}
+
+#[test]
+fn ssc_tms_io_control_flag_without_a_source_is_invalid_payload_not_a_panic() {
+    let machine = machine_with_ssc();
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // io_control's INT1 flag bit (0x02) set with neither pulse_latch nor
+    // int_line true: no live path can produce this, and check_interrupts
+    // would dispatch a spurious INT1 on the next step if it were allowed.
+    let tampered = mutate_cbor(
+        &cbor,
+        &[
+            "machine",
+            "bus",
+            "cart",
+            "SoundSpeechCartridge",
+            "tms",
+            "io_control",
+        ],
+        Value::Integer(0x02.into()),
     );
     let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
 

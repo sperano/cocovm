@@ -75,10 +75,43 @@ fn spellings_match_mame() {
 }
 
 #[test]
-fn illegal_bytes_including_b1() {
-    for op in [0x02u8, 0x0C, 0x81, 0xAF, 0xB1] {
+fn illegal_bytes() {
+    for op in [0x02u8, 0x0C, 0x81, 0xAF] {
         let insn = disassemble(&mut |_| op, 0xF000);
         assert_eq!(insn.mnemonic, ILLEGAL, "{op:#04x}");
         assert_eq!(insn.len, 1);
+    }
+}
+
+/// `$B1` is undocumented but real: `execute_one` runs it as MOV B,A, so the
+/// disassembler must name it rather than report it illegal.
+#[test]
+fn b1_disassembles_as_mov_b_a() {
+    assert_eq!(dis(&[0xB1], 0xF000), "MOV B,A");
+}
+
+/// Every one of the 256 opcodes must agree between the two independent
+/// decode tables: whether execution flags it illegal (`illegal_count`
+/// increments) and whether the disassembler names it. A legality change on
+/// either side that isn't mirrored on the other fails this test.
+#[test]
+fn execution_and_disassembly_legality_agree() {
+    for op in 0..=255u8 {
+        let code = [op, 0x00, 0x00, 0x00, 0x00];
+        let mut s = Sys::code(&code);
+        s.set_a(1);
+        s.set_b(1);
+        let before = s.cpu.illegal_count;
+        s.insn();
+        let executed_illegal = s.cpu.illegal_count != before;
+
+        let mut read = |addr: u16| code[usize::from(addr - CODE)];
+        let insn = disassemble(&mut read, CODE);
+        let disassembled_illegal = insn.mnemonic == ILLEGAL;
+
+        assert_eq!(
+            executed_illegal, disassembled_illegal,
+            "{op:#04x}: execute illegal={executed_illegal}, disasm illegal={disassembled_illegal} ({insn})"
+        );
     }
 }

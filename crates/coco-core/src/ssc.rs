@@ -370,7 +370,8 @@ impl Cartridge for SoundSpeechCartridge {
     }
 
     /// Restore-only: a hand-edited cycle budget outside what one step can
-    /// leave would spin the firmware loop or stall it.
+    /// leave would spin the firmware loop or stall it; a hand-edited TMS7040
+    /// (its timer1 in particular) can panic or spin the same way.
     fn validate_restored(&self) -> Result<(), String> {
         if self.tms_budget > 0 || self.tms_budget < -MAX_STEP_DEBT {
             return Err(format!(
@@ -378,6 +379,9 @@ impl Cartridge for SoundSpeechCartridge {
                 self.tms_budget
             ));
         }
+        self.tms
+            .validate()
+            .map_err(|e| format!("SSC: TMS7040 {e}"))?;
         Ok(())
     }
 }
