@@ -227,7 +227,7 @@ fn manager_detail_shows_slug_id() {
 
     click(&mut harness, "Alpha CoCo 3");
 
-    harness.get_by_label("ID: alpha-coco");
+    harness.get_by_label("Slug ID: alpha-coco");
 }
 
 /// Clicking the empty space below the last list row clears the selection.
