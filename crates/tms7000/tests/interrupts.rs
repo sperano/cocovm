@@ -65,6 +65,20 @@ fn reset_keeps_pending_flags_but_drops_enables() {
     assert_eq!(s.cpu.io_control() & INT3_ENABLE, 0);
 }
 
+/// Reset does not change the INTn flag bits (SPND001B 3.6.1): a pulse
+/// already latched and gone still shows in IOCNT0 after reset, not just a
+/// still-high level.
+#[test]
+fn reset_preserves_a_latched_pulse() {
+    let mut s = Sys::code(&[0x00]);
+    s.cpu.set_int1(true);
+    s.cpu.set_int1(false);
+    assert_eq!(s.cpu.io_control() & INT1_FLAG, INT1_FLAG);
+    s.cpu.assert_reset();
+    assert_eq!(s.step().kind, StepKind::Reset);
+    assert_eq!(s.cpu.io_control() & INT1_FLAG, INT1_FLAG);
+}
+
 #[test]
 fn reset_from_idle_steps_past_the_idle() {
     let mut s = Sys::code(&[0x01, 0x00]);
@@ -184,12 +198,68 @@ fn interrupt_from_idle_costs_17_and_resumes_after_it() {
     );
 }
 
+/// SPND001B 3-31/3-33: an inactive-to-active transition sets the line's
+/// Pulse flip-flop, which stays set after the line goes inactive again —
+/// unlike a plain level mirror, a pulse gone before the CPU ever looks is
+/// still pending once the interrupt is enabled.
 #[test]
-fn a_dropped_line_clears_an_unacked_flag() {
-    let mut s = Sys::code(&[0x00]);
-    s.cpu.st = 0;
+fn pulse_retention_vectors_once_enabled() {
+    let rom = rom_with_handlers(&[0xA2, INT1_ENABLE, IOCNT0, 0x05]);
+    let mut s = Sys::from_rom(&rom);
+    s.cpu.sp = 0x40;
     s.cpu.set_int1(true);
-    assert_eq!(s.cpu.io_control() & INT1_FLAG, INT1_FLAG);
+    s.cpu.set_int1(false); // pulse over before INT1 is even enabled
+    s.insn(); // MOVP enables INT1
+    s.insn(); // EINT
+    assert_eq!(s.step().kind, StepKind::Interrupt(1));
+    assert_eq!(s.cpu.pc, 0xF800);
+}
+
+/// SPND001B 3-31: writing a 1 to the INTn clear bit clears the Pulse
+/// flip-flop; with the line already back down, nothing keeps the flag set.
+#[test]
+fn write_1_to_clear_removes_a_deasserted_pulse() {
+    let mut s = Sys::code(&[0xA2, INT1_FLAG, IOCNT0]);
+    s.cpu.set_int1(true);
     s.cpu.set_int1(false);
+    assert_eq!(s.cpu.io_control() & INT1_FLAG, INT1_FLAG);
+    s.insn(); // MOVP writes a 1 to the INT1 clear bit
     assert_eq!(s.cpu.io_control() & INT1_FLAG, 0);
+}
+
+/// SPND001B 3-31: "This allows external interrupt pins to be polled as
+/// inputs" — even with the interrupt never enabled, a pulse the pin has
+/// already dropped stays visible in IOCNT0 for software to test.
+#[test]
+fn polling_a_short_pulse_via_iocnt0_read() {
+    let mut s = Sys::code(&[0x00]);
+    s.cpu.set_int1(true);
+    s.cpu.set_int1(false);
+    assert_eq!(s.cpu.io_control() & INT1_FLAG, INT1_FLAG);
+}
+
+/// SPND001B 3-33: CPU acknowledgment clears only the Pulse flip-flop; the
+/// flag bit is the OR of that latch and the live level, so it springs back
+/// at once if the pin is still asserted, and only actually clears once the
+/// pin drops too.
+#[test]
+fn ack_clears_the_latch_while_a_still_high_level_re_flags() {
+    let rom = rom_with_handlers(&[0xA2, INT1_ENABLE, IOCNT0, 0x05]);
+    let mut s = Sys::from_rom(&rom);
+    s.cpu.sp = 0x40;
+    s.cpu.set_int1(true);
+    s.insn(); // MOVP enables INT1
+    s.insn(); // EINT
+    assert_eq!(s.step().kind, StepKind::Interrupt(1));
+    assert_eq!(
+        s.cpu.io_control() & INT1_FLAG,
+        INT1_FLAG,
+        "latch cleared by ack, but the still-high line re-flags it"
+    );
+    s.cpu.set_int1(false);
+    assert_eq!(
+        s.cpu.io_control() & INT1_FLAG,
+        0,
+        "latch already clear, and now the line is too"
+    );
 }

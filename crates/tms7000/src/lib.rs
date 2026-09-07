@@ -153,6 +153,10 @@ pub struct TMS7040 {
     timer1: Timer1,
     /// Last level told to [`Self::set_int1`] / [`Self::set_int3`].
     int_line: [bool; 2],
+    /// The INTn Pulse flip-flop (SPND001B 3-31/3-33). `#[serde(default)]`:
+    /// false reproduces a pre-latch snapshot's level-only behavior.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pulse_latch: [bool; 2],
     /// Parked on an IDLE instruction until an interrupt.
     idle: bool,
     /// The reset sequence runs on the next [`Self::step`].
@@ -180,6 +184,7 @@ impl Default for TMS7040 {
             port_ddr: [0, 0xFF, 0, 0],
             timer1: Timer1::default(),
             int_line: [false; 2],
+            pulse_latch: [false; 2],
             idle: false,
             pending_reset: true,
             cycles: 0,
@@ -222,6 +227,9 @@ impl TMS7040 {
         }
         if self.port_ddr[Port::B.index()] != 0xFF {
             return Err("port B's DDR is hardwired all-output (0xFF)");
+        }
+        if !self.ext_flags_are_consistent() {
+            return Err("IOCNT0's INT1/INT3 flag bits disagree with the pulse-latch/level state");
         }
         Ok(())
     }

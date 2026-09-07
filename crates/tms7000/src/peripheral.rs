@@ -1,6 +1,7 @@
-//! Peripheral file (`$0100-$010B`), the external interrupt lines, and
-//! interrupt dispatch (MAME `tms7000_pf_r/w`, `execute_set_input`,
-//! `flag_ext_interrupt`, `check_interrupts`, `do_interrupt`).
+//! Peripheral file (`$0100-$010B`), the external interrupt lines (latched
+//! through a Pulse flip-flop per SPND001B 3-31/3-33, not just mirrored),
+//! and interrupt dispatch (MAME `tms7000_pf_r/w`, `execute_set_input`,
+//! `check_interrupts`, `do_interrupt`).
 
 use crate::{Bus, Port, TMS7040, VECTOR_INT1, st};
 
@@ -24,51 +25,76 @@ pub(crate) mod pf {
 mod iocnt0 {
     pub const FLAGS: u8 = 0x2A;
     pub const WRITE_THROUGH: u8 = 0xD5;
+    pub const INT1_FLAG: u8 = 0x02;
     pub const INT2_FLAG: u8 = 0x08;
+    pub const INT3_FLAG: u8 = 0x20;
 }
 
 /// External line indices into [`TMS7040::int_line`] (MAME
 /// `TMS7000_INT1_LINE` = 0, `TMS7000_INT3_LINE` = 1).
 const INT1_LINE: usize = 0;
 const INT3_LINE: usize = 1;
+/// IOCNT0 flag bits for [`INT1_LINE`]/[`INT3_LINE`], indexed the same way.
+const EXT_FLAGS: [u8; 2] = [iocnt0::INT1_FLAG, iocnt0::INT3_FLAG];
 
 /// Cycles to enter an interrupt handler, and from IDLE (MAME `do_interrupt`).
 const INTERRUPT_CYCLES: u32 = 19;
 const INTERRUPT_FROM_IDLE_CYCLES: u32 = 17;
 
 impl TMS7040 {
-    /// Drive the INT1 pin (on the SSC: the SP0256's load request).
+    /// Drive the INT1 pin (on the SSC: the SP0256's load request). `level`
+    /// is the asserted (logical) state, not the physical active-low pin
+    /// voltage.
     pub fn set_int1(&mut self, level: bool) {
         self.set_ext_line(INT1_LINE, level);
     }
 
-    /// Drive the INT3 pin (on the SSC: a host byte was latched).
+    /// Drive the INT3 pin (on the SSC: a host byte was latched). `level`
+    /// is the asserted (logical) state, not the physical active-low pin
+    /// voltage.
     pub fn set_int3(&mut self, level: bool) {
         self.set_ext_line(INT3_LINE, level);
     }
 
-    /// MAME `execute_set_input`: level tracked into the IOCNT0 flag; a
-    /// rising INT3 also captures the timer. Dispatch waits for the next
-    /// [`Self::step`].
+    /// SPND001B 3-31 (Figure 3-15): an inactive-to-active transition sets
+    /// the line's Pulse flip-flop, which stays set after the line goes
+    /// inactive; a rising INT3 also captures the timer regardless of its
+    /// enable bit. Dispatch waits for the next [`Self::step`].
     fn set_ext_line(&mut self, line: usize, level: bool) {
         if self.int_line[line] == level {
             return;
         }
         self.int_line[line] = level;
-        self.flag_ext_interrupt(line);
+        if level {
+            self.pulse_latch[line] = true;
+        }
+        self.refresh_ext_flag(line);
         if level && line == INT3_LINE {
             self.timer1.capture();
         }
     }
 
-    /// Mirror an external line's level into its IOCNT0 flag bit.
-    fn flag_ext_interrupt(&mut self, line: usize) {
-        let flag = 0x02 << (4 * line);
-        if self.int_line[line] {
+    /// Recompute an external line's IOCNT0 flag bit as the OR of its Pulse
+    /// flip-flop and its live level (SPND001B 3-31, Figure 3-15).
+    fn refresh_ext_flag(&mut self, line: usize) {
+        let flag = EXT_FLAGS[line];
+        if self.pulse_latch[line] || self.int_line[line] {
             self.io_control |= flag;
         } else {
             self.io_control &= !flag;
         }
+    }
+
+    /// The invariant every live path above maintains: each external line's
+    /// IOCNT0 flag bit equals the OR of its Pulse flip-flop and its live
+    /// level. Checked by [`crate::TMS7040::validate`] — a crafted flag with
+    /// both sources false would dispatch a spurious interrupt on the next
+    /// [`Self::check_interrupts`].
+    pub(crate) fn ext_flags_are_consistent(&self) -> bool {
+        [INT1_LINE, INT3_LINE].into_iter().all(|line| {
+            let expected = self.pulse_latch[line] || self.int_line[line];
+            (self.io_control & EXT_FLAGS[line] != 0) == expected
+        })
     }
 
     /// Timer 1 underflow: raise the INT2 flag.
@@ -93,11 +119,19 @@ impl TMS7040 {
             if (self.io_control >> shift) & 3 != 3 {
                 continue;
             }
-            // Ack — then re-flag at once if the external line is still high.
+            // Ack clears the Pulse flip-flop (SPND001B 3-33); re-flag at
+            // once if the external line is still high (INT2 has no line or
+            // latch of its own to restore).
             self.io_control &= !(0x02 << shift);
             match irq {
-                0 => self.flag_ext_interrupt(INT1_LINE),
-                2 => self.flag_ext_interrupt(INT3_LINE),
+                0 => {
+                    self.pulse_latch[INT1_LINE] = false;
+                    self.refresh_ext_flag(INT1_LINE);
+                }
+                2 => {
+                    self.pulse_latch[INT3_LINE] = false;
+                    self.refresh_ext_flag(INT3_LINE);
+                }
                 _ => {}
             }
             self.do_interrupt(bus, irq);
@@ -142,12 +176,15 @@ impl TMS7040 {
             pf::IOCNT0 => {
                 self.io_control =
                     (self.io_control & (!val & iocnt0::FLAGS)) | (val & iocnt0::WRITE_THROUGH);
-                // A cleared flag springs back if its line is still high.
-                if val & 0x02 != 0 {
-                    self.flag_ext_interrupt(INT1_LINE);
+                // A write-1-to-clear only clears the Pulse flip-flop; a
+                // cleared flag springs back if its line is still high.
+                if val & iocnt0::INT1_FLAG != 0 {
+                    self.pulse_latch[INT1_LINE] = false;
+                    self.refresh_ext_flag(INT1_LINE);
                 }
-                if val & 0x20 != 0 {
-                    self.flag_ext_interrupt(INT3_LINE);
+                if val & iocnt0::INT3_FLAG != 0 {
+                    self.pulse_latch[INT3_LINE] = false;
+                    self.refresh_ext_flag(INT3_LINE);
                 }
             }
             pf::T1DATA => self.timer1.write_data(val),

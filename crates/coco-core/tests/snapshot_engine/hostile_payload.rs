@@ -171,6 +171,34 @@ fn ssc_tms_timer1_phase_past_period_is_invalid_payload_not_a_panic() {
     assert!(matches!(err, SnapshotError::InvalidPayload(_)), "{err:?}");
 }
 
+#[test]
+fn ssc_tms_io_control_flag_without_a_source_is_invalid_payload_not_a_panic() {
+    let machine = machine_with_ssc();
+
+    let bytes = snapshot::save(&machine, &MediaRefs::default()).expect("save");
+    let cbor = cbor_body_of(&bytes);
+    // io_control's INT1 flag bit (0x02) set with neither pulse_latch nor
+    // int_line true: no live path can produce this, and check_interrupts
+    // would dispatch a spurious INT1 on the next step if it were allowed.
+    let tampered = mutate_cbor(
+        &cbor,
+        &[
+            "machine",
+            "bus",
+            "cart",
+            "SoundSpeechCartridge",
+            "tms",
+            "io_control",
+        ],
+        Value::Integer(0x02.into()),
+    );
+    let bytes = rewrap_container(&tampered, snapshot::SCHEMA_VERSION);
+
+    let payload = snapshot::load(&bytes).expect("load (schema/magic still valid)");
+    let err = expect_err(snapshot::restore(payload, MediaSources::default()));
+    assert!(matches!(err, SnapshotError::InvalidPayload(_)), "{err:?}");
+}
+
 /// A minimal machine with an FD-502 holding a single blank (synthetic, not
 /// `roms/disk11.rom`) headerless disk in drive 0 — no CPU stepping needed,
 /// register writes reach the controller directly through the fixed I/O
