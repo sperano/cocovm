@@ -53,7 +53,9 @@ impl TMS7040 {
 
     fn finish(&mut self, kind: StepKind) -> Step {
         let cycles = self.burned;
-        self.cycles += u64::from(cycles);
+        // Diagnostic-only running total; saturate instead of overflow-panicking
+        // if a deserialized snapshot carried a cycles value near u64::MAX.
+        self.cycles = self.cycles.saturating_add(u64::from(cycles));
         if self.timer1.tick(cycles) {
             self.flag_timer_interrupt();
         }

@@ -40,6 +40,29 @@ fn first_step_runs_the_reset_sequence() {
 }
 
 #[test]
+fn validate_accepts_the_default_chip() {
+    assert!(TMS7040::default().validate().is_ok());
+}
+
+/// Port A has no DDR register (writes to it are ignored) and is hardwired
+/// all-input; a deserialized chip with any other value is unreachable.
+#[test]
+fn validate_rejects_port_a_ddr_off_its_hardwired_value() {
+    let mut cpu = TMS7040::default();
+    cpu.port_ddr[Port::A.index()] = 1;
+    assert!(cpu.validate().is_err());
+}
+
+/// Port B's DDR is hardwired all-output (MAME `device_start`); there is no
+/// BDDR register to write it to any other value.
+#[test]
+fn validate_rejects_port_b_ddr_off_its_hardwired_value() {
+    let mut cpu = TMS7040::default();
+    cpu.port_ddr[Port::B.index()] = 0;
+    assert!(cpu.validate().is_err());
+}
+
+#[test]
 fn peek_covers_register_file_rom_and_peripheral_latches() {
     let mut rom = zero_rom();
     rom[0x10] = 0xAB;

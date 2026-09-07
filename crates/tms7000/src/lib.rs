@@ -212,6 +212,20 @@ impl TMS7040 {
         self.pending_reset
     }
 
+    /// Restore-time payload-shape validation: invariants `Deserialize` can't
+    /// check itself, catching a hand-crafted or corrupt snapshot before its
+    /// fields drive `step` into a panic or a runaway loop.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        self.timer1.validate()?;
+        if self.port_ddr[Port::A.index()] != 0 {
+            return Err("port A has no DDR and is hardwired all-input (0)");
+        }
+        if self.port_ddr[Port::B.index()] != 0xFF {
+            return Err("port B's DDR is hardwired all-output (0xFF)");
+        }
+        Ok(())
+    }
+
     /// Pull the RESET pin: the reset sequence runs on the next
     /// [`Self::step`] (as `Step { cycles: 17, kind: StepKind::Reset }`).
     pub fn assert_reset(&mut self) {

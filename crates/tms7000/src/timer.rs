@@ -81,6 +81,18 @@ impl Timer1 {
         CYCLES_PER_TICK * (u32::from(self.control & PRESCALER_MASK) + 1)
     }
 
+    /// Invariants `tick` needs but `Deserialize` can't check: the
+    /// cascade/halt bit stays clear, and `phase` stays below the period.
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if self.control & CASCADE_OR_HALT_BIT != 0 {
+            return Err("timer1 control has the hardwired cascade/halt bit set");
+        }
+        if self.phase >= self.period_cycles() {
+            return Err("timer1 phase is not less than its period");
+        }
+        Ok(())
+    }
+
     /// Advance by `cycles`; true if the decrementer underflowed (INT2). Two
     /// underflows within one step collapse into one flag, as they would into
     /// IOCNT0's single flag bit.
@@ -104,3 +116,7 @@ impl Timer1 {
         underflowed
     }
 }
+
+#[cfg(test)]
+#[path = "timer_test.rs"]
+mod tests;
