@@ -139,6 +139,119 @@ fn log_level_strings_match_the_cli_flags_spelling() {
     }
 }
 
+/// Uncommented copy of [`default_config_template`]'s parameter lines, so it
+/// can be parsed back as a [`FileConfig`]. Only lines that are unambiguously
+/// a commented parameter assignment (`# name = ...` with a lowercase/
+/// underscore `name` up to the first `" = "`) get uncommented; prose header
+/// lines and description lines like `# error | warn | ...` are left alone —
+/// as long as no such prose line happens to contain `" = "` after a
+/// lowercase/underscore run, which would make it spuriously uncommented.
+/// That failure mode isn't silent: `FileConfig`'s `deny_unknown_fields`
+/// rejects any resulting key that isn't one of the four real parameters.
+fn uncomment_template_parameters(template: &str) -> String {
+    template
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            let Some(rest) = trimmed.strip_prefix("# ") else {
+                return line.to_string();
+            };
+            let Some(eq_pos) = rest.find(" = ") else {
+                return line.to_string();
+            };
+            let candidate = &rest[..eq_pos];
+            let is_identifier = !candidate.is_empty()
+                && candidate
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_');
+            if is_identifier {
+                rest.to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn default_template_uncommented_resolves_to_true_defaults() {
+    if !no_relevant_env_vars_set() {
+        return;
+    }
+    let uncommented = uncomment_template_parameters(&default_config_template());
+    let file: FileConfig =
+        toml::from_str(&uncommented).unwrap_or_else(|e| panic!("{uncommented}: {e}"));
+
+    // Destructured without `..`: a field added to `FileConfig` later must be
+    // named here too, or this line fails to compile — the drift guard below
+    // only pins the values of parameters the template already covers, so
+    // this is what pins *coverage* (every field gets a commented line).
+    let FileConfig {
+        log_level,
+        control_port,
+        assets_url,
+        toolbar_icons_only,
+    } = &file;
+    assert!(
+        log_level.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        control_port.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        assets_url.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        toolbar_icons_only.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+
+    let config = resolve(bare_cli(), file);
+    let expected = resolve(bare_cli(), FileConfig::default());
+    assert_eq!(config, expected);
+}
+
+#[test]
+fn seed_default_file_creates_file_with_the_template_content() {
+    let dir = TempDir::new("config-seed-new");
+    let path = dir.path().join("config.toml");
+    seed_default_file(&path);
+    let contents = std::fs::read_to_string(&path).expect("file must be created");
+    assert_eq!(contents, default_config_template());
+}
+
+#[test]
+fn seed_default_file_is_a_no_op_when_the_file_already_exists() {
+    let dir = TempDir::new("config-seed-existing");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "log_level = \"debug\"\n").unwrap();
+    seed_default_file(&path);
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(contents, "log_level = \"debug\"\n");
+}
+
+#[test]
+fn seed_default_file_creates_missing_parent_directories() {
+    let dir = TempDir::new("config-seed-nested");
+    let path = dir.path().join("nested").join("config.toml");
+    assert!(!path.parent().unwrap().is_dir());
+    seed_default_file(&path);
+    let contents = std::fs::read_to_string(&path).expect("file must be created");
+    assert_eq!(contents, default_config_template());
+}
+
+#[test]
+fn freshly_seeded_file_loads_as_the_empty_file_config() {
+    let dir = TempDir::new("config-seed-loads");
+    let path = dir.path().join("config.toml");
+    seed_default_file(&path);
+    assert_eq!(load(Some(path)), Ok(FileConfig::default()));
+}
+
 #[test]
 fn a_valid_full_config_file_loads() {
     let dir = TempDir::new("config-full");

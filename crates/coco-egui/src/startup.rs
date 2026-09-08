@@ -121,7 +121,9 @@ pub(crate) fn banner(info: &StartupInfo) {
     println!("{}{fill}{}", dim("╰"), dim("╯"));
 }
 
-/// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden.
+/// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden. Must
+/// never contain `"` or `\` — `config::default_config_template` interpolates
+/// it unescaped into a quoted TOML string.
 pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
 
 /// ROM images the bundle at [`DEFAULT_ASSETS_URL`] carries. Any one missing from
