@@ -791,6 +791,7 @@ dependencies = [
  "mc6809",
  "serde",
  "serde_bytes",
+ "serde_json",
  "sha2",
  "tms7000",
 ]

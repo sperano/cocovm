@@ -62,6 +62,7 @@ impl CocoApp {
     /// on a breakpoint/watchpoint.
     fn run_fields(&mut self, n: usize) {
         for _ in 0..n {
+            let _perf = crate::perf::span(crate::perf::Stage::FieldExecution);
             if self.type_ahead.is_active() {
                 self.type_ahead.advance(&mut self.machine.bus.keyboard);
             }
@@ -157,6 +158,7 @@ impl CocoApp {
     /// [`Self::step_emulation`] that a suspended VM's window still runs, so its
     /// picture stays on screen without input handling.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
+        let conversion = crate::perf::span(crate::perf::Stage::DisplayConversion);
         // TV chain (B&W collapse, bandwidth limit, scanlines) — a display preference, not state.
         self.tv_frame = self.tv_frame.wrapping_add(1);
         let frame = crate::display::process(
@@ -168,12 +170,16 @@ impl CocoApp {
         );
         let image =
             egui::ColorImage::from_rgba_unmultiplied([frame.width, frame.height], &frame.pixels);
+        drop(conversion);
+        let _enqueue = crate::perf::span(crate::perf::Stage::TextureEnqueue);
         // NEAREST for monitors, LINEAR for TVs; passed every `set` so switching re-filters
         // immediately.
         let options = crate::display::texture_options(self.display);
-        let texture = self
-            .texture
-            .get_or_insert_with(|| ctx.load_texture("coco-fb", image.clone(), options));
+        let texture = self.texture.get_or_insert_with(|| {
+            crate::perf::texture_enqueue(frame.pixels.len());
+            ctx.load_texture("coco-fb", image.clone(), options)
+        });
+        crate::perf::texture_enqueue(frame.pixels.len());
         texture.set(image, options);
     }
 
@@ -210,6 +216,7 @@ impl CocoApp {
     /// dialog, then the display. `pub(crate)` so the manager can call it
     /// directly on a VM it owns.
     pub(crate) fn window_ui(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
+        let _perf = crate::perf::span(crate::perf::Stage::VmUiUpdate);
         if self.suspended {
             self.suspended_window_ui(ctx);
         } else {

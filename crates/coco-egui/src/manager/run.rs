@@ -65,6 +65,9 @@ pub fn run(config: crate::config::Config) -> eframe::Result<()> {
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
             }
+            #[cfg(feature = "perf")]
+            app.initialize_perf_scenario(&creation.egui_ctx)
+                .map_err(std::io::Error::other)?;
             Ok(Box::new(app))
         }),
     )
