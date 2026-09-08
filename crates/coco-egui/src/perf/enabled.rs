@@ -25,6 +25,7 @@ const STAGE_NAMES: [&str; STAGE_COUNT] = [
     "snapshot_restore",
 ];
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_STANDALONE_REPORTS: usize = 3600;
 pub(super) static ENABLED: AtomicBool = AtomicBool::new(false);
 static STAGES: [Histogram; STAGE_NAMES.len()] = [const { Histogram::new() }; STAGE_NAMES.len()];
 static START: OnceLock<Mutex<Instant>> = OnceLock::new();
@@ -187,7 +188,7 @@ pub(crate) fn initialize() {
         reset();
         std::thread::spawn(move || {
             use std::io::Write;
-            loop {
+            for _ in 0..MAX_STANDALONE_REPORTS {
                 std::thread::sleep(REPORT_INTERVAL);
                 if serde_json::to_writer(&mut output, &snapshot()).is_err()
                     || output.write_all(b"\n").is_err()
@@ -196,6 +197,7 @@ pub(crate) fn initialize() {
                     break;
                 }
             }
+            ENABLED.store(false, Relaxed);
         });
     });
 }

@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WARMUP = 3.0
 DEFAULT_DURATION = 10.0
 DEFAULT_REPEATS = 3
+MAX_WINDOW_SECONDS = 3600.0
 EXIT_GRACE = 30.0
 TERMINATE_GRACE = 2.0
 PROFILE_SECONDS = 2
@@ -29,6 +30,10 @@ NATIVE_SCENARIOS = ("manager-idle", "basic-idle", "graphics", "paused", "suspend
                     "background", "multi-vm", "tv", "dac", "cartridge", "saved-previews",
                     "printer", "snapshot", "lifecycle", "control-load")
 CORE_SCENARIOS = ("basic-idle", "graphics", "dac", "cartridge")
+
+
+def valid_window_seconds(value):
+    return math.isfinite(value) and 0 < value <= MAX_WINDOW_SECONDS
 
 
 def arguments():
@@ -48,8 +53,10 @@ def arguments():
     parser.add_argument("--keep-foreground", action="store_true",
                         help="macOS native: maintain owned process focus; adds automation overhead")
     args = parser.parse_args()
-    if not all(math.isfinite(value) and value > 0 for value in (args.warmup, args.duration, args.repeats)):
-        parser.error("warmup, duration, and repeats must be positive and finite")
+    if not all(valid_window_seconds(value) for value in (args.warmup, args.duration)):
+        parser.error(f"warmup and duration must be finite, positive, and at most {MAX_WINDOW_SECONDS:g} seconds")
+    if args.repeats <= 0:
+        parser.error("repeats must be positive")
     allowed = NATIVE_SCENARIOS if args.kind == "native" else CORE_SCENARIOS
     if args.scenario and any(scenario not in allowed for scenario in args.scenario):
         parser.error(f"scenario must be one of {allowed}")

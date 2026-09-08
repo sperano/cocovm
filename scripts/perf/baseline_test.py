@@ -1,4 +1,5 @@
 import os
+import io
 import json
 from pathlib import Path
 import signal
@@ -15,6 +16,24 @@ SHORT_TERMINATE_GRACE = 0.05
 
 
 class BaselineTests(unittest.TestCase):
+    def test_window_limit_includes_boundary_and_rejects_nonfinite_values(self):
+        self.assertTrue(baseline.valid_window_seconds(baseline.MAX_WINDOW_SECONDS))
+        for value in (0, -1, float("nan"), float("inf"), baseline.MAX_WINDOW_SECONDS + 1):
+            with self.subTest(value=value):
+                self.assertFalse(baseline.valid_window_seconds(value))
+
+    def test_excessive_windows_are_rejected_before_output_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            for flag in ("--warmup", "--duration"):
+                argv = ["baseline.py", "core", "--output", str(output), flag,
+                        str(baseline.MAX_WINDOW_SECONDS + 1)]
+                with self.subTest(flag=flag), patch("sys.argv", argv), patch("sys.stderr", io.StringIO()):
+                    with self.assertRaises(SystemExit) as raised:
+                        baseline.arguments()
+                    self.assertEqual(raised.exception.code, 2)
+                    self.assertFalse(output.exists())
+
     def test_control_load_must_complete_at_least_one_request(self):
         with tempfile.TemporaryDirectory() as directory:
             run_dir = Path(directory)

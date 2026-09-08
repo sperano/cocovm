@@ -5,6 +5,9 @@ resource management, or synchronous host operations. The harness separates nativ
 app measurements from unpaced headless core throughput. Performance comparisons
 have no absolute CI timing assertions.
 
+The [September 8, 2026 baseline](results/2026-09-08/RESULTS.md) publishes 92 runs,
+profiler summaries, measurement limits, and targets for subsequent optimizations.
+
 ## Build and run
 
 Install the application assets first. The core example resolves `coco3.rom` through
@@ -22,6 +25,9 @@ python3 scripts/perf/report.py /tmp/cocovm-native-baseline
 
 The default is three fresh-process runs per scenario, with 3 s warmup and a 10 s
 measurement window. `--warmup`, `--duration`, and `--repeats` override these values.
+Warmup and measurement windows must each be finite, positive, and at most 3600 s.
+The runner validates these limits before creating its output directory, bounding
+the resource observations retained for each run.
 The core loop completes its last field before stopping. Native windows complete
 an update before stopping. The reports record actual elapsed time.
 
@@ -158,9 +164,11 @@ The `perf` feature is disabled in normal builds. Without it, measurement hooks
 compile to empty functions. With it, counters remain disabled until a scenario
 starts or `COCOVM_PERF_OUTPUT` is set. A standalone instrumented app can emit
 cumulative JSONL once per second by setting that variable without a scenario.
-Histograms and counters have fixed memory use. The reporter does not retain prior
-snapshots. Output file size grows with recording duration, so stop the capture
-when the intended workload ends.
+Histograms and counters have fixed memory use. The standalone reporter does not
+retain prior snapshots and appends at most 3600 reports per process, one per second.
+It disables recording after reaching that limit or encountering an output error.
+Existing output files can contain reports from earlier processes. Timed scenario
+runs use their configured measurement windows and write one final report instead.
 
 For an optimization comparison, build the same fixtures and instrumentation on
 both revisions, alternate run order, and retain all repetitions. Compare medians
