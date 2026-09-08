@@ -16,6 +16,10 @@ pub const DEFAULT_TEST_ASSETS_URL: &str =
 /// empty string to disable fetching altogether (offline CI).
 pub const TEST_ASSETS_URL_ENV: &str = "COCOVM_TEST_ASSETS_URL";
 
+/// Advisory lock file beside the tests directory, serializing concurrent
+/// test processes (nextest runs one per test) so only the first downloads.
+const LOCK_FILE: &str = ".tests.lock";
+
 /// Fetch the bundle if `path` is absent — at most once per process, so a
 /// failure costs one attempt, not one per test. Never panics: on failure it
 /// warns on stderr and leaves the callers to skip as they always have.
@@ -25,18 +29,31 @@ pub(crate) fn ensure_present(path: &Path) {
     }
     static FETCHED: OnceLock<()> = OnceLock::new();
     FETCHED.get_or_init(|| {
-        if let Err(e) = fetch_bundle() {
+        if let Err(e) = fetch_bundle_locked(path) {
             eprintln!("test-assets: could not fetch the test bundle ({e}); disk tests will skip");
         }
     });
 }
 
-fn fetch_bundle() -> Result<(), Box<dyn std::error::Error>> {
+/// Take the process-wide lock, then re-check: a process that waited on the
+/// lock usually finds the file installed by the one that held it.
+fn fetch_bundle_locked(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let url = std::env::var(TEST_ASSETS_URL_ENV).unwrap_or_else(|_| DEFAULT_TEST_ASSETS_URL.into());
     if url.is_empty() {
         return Ok(());
     }
     let dest = tests_dir();
+    let parent = dest.parent().ok_or("tests dir has no parent")?;
+    fs::create_dir_all(parent)?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(parent.join(LOCK_FILE))?;
+    lock.lock()?;
+    if path.exists() {
+        return Ok(());
+    }
     eprintln!("test-assets: downloading {url} into {}", dest.display());
     let response = ureq::get(&url).call()?;
     install_bundle(response.into_body().into_reader(), &dest)?;
