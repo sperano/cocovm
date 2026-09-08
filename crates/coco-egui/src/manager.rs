@@ -320,6 +320,12 @@ pub struct ManagerApp {
     /// The first-run asset download dialog (`manager/assets.rs`), open while
     /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
     pub(crate) asset_dialog: Option<assets::AssetDialog>,
+    /// Global toolbar caption toggle (`config.rs`'s `toolbar_icons_only`),
+    /// set by [`run`] after construction, same as `asset_dialog`. Read by
+    /// [`Self::draw_toolbar`] and copied onto every freshly launched
+    /// `CocoApp` (`manager::lifecycle::launch_vm`) so its own VM-window
+    /// toolbar matches. `pub(crate)`: `ui_tests.rs` sets it, like `entries`.
+    pub(crate) toolbar_icons_only: bool,
 }
 
 impl ManagerApp {
@@ -356,6 +362,7 @@ impl ManagerApp {
             control,
             pending: Vec::new(),
             asset_dialog: None,
+            toolbar_icons_only: false,
         }
     }
 }
@@ -456,10 +463,21 @@ impl eframe::App for ManagerApp {
 }
 
 /// Open the manager as the application's main window (blocks until close,
-/// like `eframe::run_native` everywhere else). `control_port` binds the
-/// control-protocol listener (`0` disables it); `assets_url` is where the
-/// first-run download dialog fetches the bundle from (both `cli.rs`).
-pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
+/// like `eframe::run_native` everywhere else). Takes the whole resolved
+/// [`crate::config::Config`] (`main.rs`), not its individual fields, so a
+/// future global setting doesn't need a new parameter here: `control_port`
+/// binds the control-protocol listener (`0` disables it), `assets_url` is
+/// where the first-run download dialog fetches the bundle from, and
+/// `toolbar_icons_only` draws every toolbar tile icon-only. `log_level`
+/// isn't used here — `main.rs` already consumed it for `setup_logging`
+/// before the global log subscriber existed to hand off to.
+pub fn run(config: crate::config::Config) -> eframe::Result<()> {
+    let crate::config::Config {
+        control_port,
+        assets_url,
+        toolbar_icons_only,
+        ..
+    } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
@@ -517,6 +535,7 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
                 entries,
                 control,
             );
+            app.toolbar_icons_only = toolbar_icons_only;
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
             }

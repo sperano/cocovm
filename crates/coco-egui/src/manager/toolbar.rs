@@ -57,38 +57,45 @@ impl ManagerApp {
             }
         };
 
+        let icons_only = self.toolbar_icons_only;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = BUTTON_GAP;
             // The shortcut shows on hover, not inline (that's a menu-row convention).
-            if toolbar_button(ui, NEW_ICON, "New", true)
+            if toolbar_button(ui, NEW_ICON, "New", true, icons_only)
                 .on_hover_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT))
                 .clicked()
             {
                 self.create_machine_now();
             }
 
-            if toolbar_button(ui, PLAY_GLYPH, START_LABEL, flags.any_startable)
+            if toolbar_button(ui, PLAY_GLYPH, START_LABEL, flags.any_startable, icons_only)
                 .on_hover_text(START_HOVER)
                 .on_disabled_hover_text(disabled_hover(START_DISABLED_HOVER))
                 .clicked()
             {
                 self.apply_bulk(BulkAction::Play, &indices);
             }
-            if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, flags.any_running)
-                .on_hover_text(SUSPEND_HOVER)
-                .on_disabled_hover_text(disabled_hover(NONE_RUNNING_HOVER))
-                .clicked()
+            if toolbar_button(
+                ui,
+                SUSPEND_GLYPH,
+                SUSPEND_LABEL,
+                flags.any_running,
+                icons_only,
+            )
+            .on_hover_text(SUSPEND_HOVER)
+            .on_disabled_hover_text(disabled_hover(NONE_RUNNING_HOVER))
+            .clicked()
             {
                 self.apply_bulk(BulkAction::Suspend, &indices);
             }
-            if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, flags.any_alive)
+            if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, flags.any_alive, icons_only)
                 .on_hover_text(STOP_HOVER)
                 .on_disabled_hover_text(disabled_hover(STOP_DISABLED_HOVER))
                 .clicked()
             {
                 self.apply_bulk(BulkAction::Stop, &indices);
             }
-            if toolbar_button(ui, RESET_GLYPH, RESET_LABEL, flags.any_running)
+            if toolbar_button(ui, RESET_GLYPH, RESET_LABEL, flags.any_running, icons_only)
                 .on_hover_text(RESET_HOVER)
                 .on_disabled_hover_text(disabled_hover(NONE_RUNNING_HOVER))
                 .clicked()
@@ -97,9 +104,9 @@ impl ManagerApp {
             }
 
             toolbar_separator(ui);
-            let _ = toolbar_button(ui, SETTINGS_ICON, "Settings", true);
+            let _ = toolbar_button(ui, SETTINGS_ICON, "Settings", true, icons_only);
             toolbar_separator(ui);
-            let _ = toolbar_button(ui, HELP_ICON, "Help", true);
+            let _ = toolbar_button(ui, HELP_ICON, "Help", true, icons_only);
         });
     }
 }
