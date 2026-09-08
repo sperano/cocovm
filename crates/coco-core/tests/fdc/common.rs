@@ -236,7 +236,7 @@ pub fn synthesized_ml_disk(name8: &str, load_addr: u16, data: &[u8]) -> JVCDisk 
     JVCDisk::from_bytes(bytes).unwrap()
 }
 
-/// Like [`try_load_rom`], but for a disk image under the ignored `disks/`.
+/// Like [`try_load_rom`], but for a disk image under the installed `assets/tests/`.
 pub fn try_load_disk(name: &str) -> Option<Vec<u8>> {
     let path = test_assets::disk(name);
     std::fs::read(&path).ok()

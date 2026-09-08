@@ -4,7 +4,7 @@
 //! >/p`, and assert the bytes reaching a [`CaptureSink`] match exactly what
 //! the shell's `/p` redirection sent — proving the bit-banger decoder works
 //! against a second, independently-written driver (NitrOS-9's own bit-bang
-//! code), not only Color BASIC's. Skips gracefully if `roms/`/`disks/`
+//! code), not only Color BASIC's. Skips gracefully if `roms/`/`tests/`
 //! assets aren't present, matching `tests/vhd_boot.rs`.
 //!
 //! ## Bit rate: NitrOS-9 is not Color BASIC's 600-baud constant
@@ -141,12 +141,12 @@ fn boot_eou_shell() -> Option<(Machine, PathBuf)> {
         std::fs::read(test_assets::rom(DISK11)),
         std::fs::read(test_assets::disk(EOU_BOOT)),
     ) else {
-        eprintln!("skipping NitrOS-9 /p boot test: roms/ or disks/ assets not present");
+        eprintln!("skipping NitrOS-9 /p boot test: roms/ or tests/ assets not present");
         return None;
     };
     let vhd_src = test_assets::disk(EOU_SYSTEM_VHD);
     if !vhd_src.exists() {
-        eprintln!("skipping NitrOS-9 /p boot test: disks/68SDC.VHD not present");
+        eprintln!("skipping NitrOS-9 /p boot test: tests/68SDC.VHD not present");
         return None;
     }
     // Scratch copy, as `tests/vhd_boot.rs`: EOU's startup writes to its

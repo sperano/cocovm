@@ -1,8 +1,8 @@
 //! End-to-end regression: NitrOS-9 EOU (Ease of Use, 6809 Level 2) boots from
-//! the emudsk VHD interface all the way to a usable shell. The ignored
-//! assets are the EOU 1.0.1 emulator pair: `disks/68EMU.dsk` (boot floppy
+//! the emudsk VHD interface all the way to a usable shell. The installed
+//! assets are the EOU 1.0.1 emulator pair: `tests/68EMU.dsk` (boot floppy
 //! whose OS9Boot carries the EmuDsk driver and `/h0` descriptors) and
-//! `disks/68SDC.VHD` (the 128MB system image the startup script runs from).
+//! `tests/68SDC.VHD` (the 128MB system image the startup script runs from).
 //! Skips when any asset is absent.
 
 use std::path::PathBuf;
@@ -76,12 +76,12 @@ fn setup_machine(through_mpi: bool) -> Option<(Machine, PathBuf)> {
         std::fs::read(test_assets::rom(DISK11)),
         std::fs::read(test_assets::disk(EOU_BOOT)),
     ) else {
-        eprintln!("skipping EOU VHD boot test: roms/ or disks/ assets not present");
+        eprintln!("skipping EOU VHD boot test: roms/ or tests/ assets not present");
         return None;
     };
     let vhd_src = test_assets::disk(EOU_SYSTEM_VHD);
     if !vhd_src.exists() {
-        eprintln!("skipping EOU VHD boot test: disks/68SDC.VHD not present");
+        eprintln!("skipping EOU VHD boot test: tests/68SDC.VHD not present");
         return None;
     }
     let scratch_name = if through_mpi {

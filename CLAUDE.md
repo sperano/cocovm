@@ -13,10 +13,15 @@ manager). `book/` is a 16-chapter course built from this codebase.
   (also git-ignored); regenerate with `scripts/extract-docs.sh`.
 - `~/.local/share/cocovm/assets/roms/` — real ROM images: `coco3.rom` (32K Super
   Extended Color BASIC, maps to `$8000–$FFFF`), `disk11.rom` (8K Disk BASIC),
-  the CoCo 1/2 BASIC sets, `sp0256-al2.rom` (the Sound/Speech Cartridge's
+  `hdbdw3bc3.rom` (HDB-DOS 1.4 Becker), the CoCo 1/2 BASIC sets, `sp0256-al2.rom` (the Sound/Speech Cartridge's
   2K allophone ROM) and `ssc-tms7040.rom` (its 4K TMS7040 firmware); the
   SSC tests skip without them. Used to boot real code and trace-diff against
   XRoar/MAME. Installed by the app's first-run asset download
   (`manager/assets.rs` dialog over `startup::missing_assets`); tests resolve them
   via `crates/test-assets`. There is no repo-root `roms/` directory — don't
   create one.
+- `~/.local/share/cocovm/assets/tests/` — the disk/VHD images the integration
+  tests boot (EOU 1.0.1 `68EMU.dsk`/`68SDC.VHD`, NitrOS-9, DriveWire `.dsk`s).
+  Not part of the app's bundle: `crates/test-assets` downloads the separate
+  test bundle on first use (`COCOVM_TEST_ASSETS_URL` overrides the URL; empty
+  disables the fetch and the tests skip).

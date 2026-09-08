@@ -25,5 +25,10 @@ manager). `book/` is a 16-chapter course built from this codebase.
   (`manager/assets.rs` dialog over `startup::missing_assets`); tests resolve them
   via `crates/test-assets`. There is no repo-root `roms/` directory — don't
   create one.
+- `~/.local/share/cocovm/assets/tests/` — the disk/VHD images the integration
+  tests boot (EOU 1.0.1 `68EMU.dsk`/`68SDC.VHD`, NitrOS-9, DriveWire `.dsk`s).
+  Not part of the app's bundle: `crates/test-assets` downloads the separate
+  test bundle on first use (`COCOVM_TEST_ASSETS_URL` overrides the URL; empty
+  disables the fetch and the tests skip).
 - `~/code/mame/` — local MAME source checkout. Use it to verify device and
   machine behavior instead of fetching MAME source from the web.
