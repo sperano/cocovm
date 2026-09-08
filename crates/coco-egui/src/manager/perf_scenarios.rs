@@ -32,6 +32,7 @@ impl ManagerApp {
             return Ok(());
         };
         fixtures::prepare(self, &config)?;
+        crate::perf::reset();
         if config.name != "background" {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
