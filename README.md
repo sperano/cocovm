@@ -22,7 +22,9 @@ environment variable, or `config.toml` in cocovm's config directory
 (`~/.config/cocovm/config.toml` on Linux/macOS, `%APPDATA%\spe\cocovm\config.toml`
 on Windows), in that order of precedence (a flag beats an env var, which
 beats the config file, which beats the built-in default). All keys are
-optional; an unset key falls through to the next layer.
+optional; an unset key falls through to the next layer. The file is
+auto-created — fully commented out, showing the built-in defaults — the
+first time cocovm starts if it doesn't exist yet.
 
 ```toml
 # ~/.config/cocovm/config.toml (Linux/macOS)

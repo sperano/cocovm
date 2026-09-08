@@ -167,6 +167,9 @@ fn main() -> eframe::Result<()> {
     // A malformed config.toml is fatal at startup, same severity as a bad machine definition
     // (`machine_def::load_all`).
     let config_path = paths::config_dir().map(|dir| dir.join(CONFIG_FILE_NAME));
+    if let Some(path) = config_path.as_deref() {
+        config::seed_default_file(path);
+    }
     let file_config = config::load(config_path).unwrap_or_else(|e| {
         eprintln!("coco: cannot load config file: {e}");
         std::process::exit(1);
