@@ -95,11 +95,10 @@ fn on_exit_folds_live_runtime_into_the_persisted_total() {
     assert_eq!(loaded[0].1.stats.runtime_secs, 77);
 }
 
-/// A name committed while its VM is running leaves slug migration pending.
-/// Quit must flush and drop the VM before moving both slug-keyed filesystem
-/// objects, or the rename is lost when the in-memory flag disappears.
+/// Quit applies a Name-field commit queued during its final frame before it
+/// drops the running VM.
 #[test]
-fn on_exit_migrates_a_rename_deferred_while_running() {
+fn on_exit_applies_a_queued_running_rename() {
     const OLD_SLUG: &str = "before-rename";
     const NEW_SLUG: &str = "after-rename";
     const ARTIFACT_FILE: &str = "disk.img";
@@ -125,10 +124,7 @@ fn on_exit_migrates_a_rename_deferred_while_running() {
 
     manager.start_vm(0);
     assert!(manager.entries[0].vm.is_some(), "VM should launch");
-    manager.entries[0].def.name = "After Rename".to_string();
-    machine_def::save(machines_dir.path(), OLD_SLUG, &manager.entries[0].def)
-        .expect("commit renamed definition under old slug");
-    manager.entries[0].rename_pending = true;
+    manager.queue_rename(OLD_SLUG.to_string(), "After Rename".to_string());
 
     manager.on_exit(None);
 

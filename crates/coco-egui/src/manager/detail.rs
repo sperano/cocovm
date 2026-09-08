@@ -164,6 +164,7 @@ impl ManagerApp {
         let mut edit = self.edit.take().expect("just ensured above");
 
         self.draw_name_field(ui, index, &mut edit);
+        ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
         ui.add_space(DETAIL_SECTION_GAP);
         // The transport buttons moved to the toolbar — this pane keeps only
         // the status, plus the last launch failure.
@@ -236,34 +237,27 @@ impl ManagerApp {
         }
     }
 
-    /// The Name field committed ([`Self::draw_name_field`] — focus left it):
-    /// an empty draft reverts to the saved name; a change saves immediately
-    /// under the *current* slug, then the file/artifact names follow the
-    /// new name using `migrate_slug` — deferred to
-    /// [`ManagerApp::apply_pending_renames`] (next frame, or after Stop for
-    /// a running machine).
+    /// Commit a Name-field draft. A slug-preserving edit saves only the
+    /// definition; a slug-changing edit queues one pre-draw transaction.
     fn commit_name(&mut self, index: usize, edit: &mut EditState) {
         let trimmed = edit.name.trim().to_string();
         if trimmed.is_empty() || trimmed == self.entries[index].def.name {
             edit.name = self.entries[index].def.name.clone();
             return;
         }
-        self.entries[index].def.name = trimmed.clone();
-        edit.name = trimmed;
-        // Keep the auto-save baseline in step: the name isn't one of the
-        // form's fields, and a stale `packed.name` would make the next
-        // repack look changed and re-save redundantly.
-        edit.packed.name = self.entries[index].def.name.clone();
-        let result = match self.machines_dir.clone() {
-            Some(dir) => machine_def::save(&dir, &edit.slug, &self.entries[index].def),
-            None => Err(NO_CONFIG_DIR.to_string()),
-        };
-        match result {
+        edit.name = trimmed.clone();
+        if self.resolved_rename_slug(&self.entries[index].slug, &trimmed)
+            != self.entries[index].slug
+        {
+            self.queue_rename(edit.slug.clone(), trimmed);
+            return;
+        }
+        match self.save_name_only(index, trimmed) {
             Ok(()) => {
+                edit.packed.name = self.entries[index].def.name.clone();
                 self.save_error = None;
-                self.entries[index].rename_pending = true;
             }
-            Err(e) => self.save_error = Some(e),
+            Err(error) => self.save_error = Some(error),
         }
     }
 }
