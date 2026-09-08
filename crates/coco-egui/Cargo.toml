@@ -62,6 +62,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # MIT OR Apache-2.0. Human-editable machine-definition file format
 # (`machine_def.rs`), read/written under `config_dir()/machines/<slug>.toml`.
 toml = "0.9"
+# MIT OR Apache-2.0. Comment-preserving TOML editing for the Settings dialog's
+# write-back into `config.toml` (`config.rs::save_file`).
+toml_edit = "0.25"
 # MIT OR Apache-2.0. Blocking HTTP client for the first-run assets download
 # (`download_and_unpack_assets` in main.rs).
 ureq = "3.3.0"
