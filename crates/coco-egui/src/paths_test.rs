@@ -21,10 +21,3 @@ fn data_dir_matches_test_assets_xdg_data_dir() {
 fn roms_dir_matches_test_assets_roms_dir() {
     assert_eq!(roms_dir(), Some(test_assets::roms_dir()));
 }
-
-/// Guards against `test-assets`' hand-duplicated `assets/tests` layout
-/// drifting from this module's `tests_dir`.
-#[test]
-fn tests_dir_matches_test_assets_tests_dir() {
-    assert_eq!(tests_dir(), Some(test_assets::tests_dir()));
-}

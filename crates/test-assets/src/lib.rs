@@ -1,9 +1,14 @@
 //! Development-only helper for locating test assets shared by the workspace's
 //! `tests/` and `#[cfg(test)]` suites. Every asset resolves under the same
-//! XDG data directory used by the application. Repository-local asset
-//! directories are deliberately ignored.
+//! XDG data directory used by the application. ROMs come from the app's
+//! own first-run download; the disk/VHD test images come from a separate
+//! bundle this crate fetches on first use (see [`fetch`]).
+
+mod fetch;
 
 use std::path::PathBuf;
+
+pub use fetch::{DEFAULT_TEST_ASSETS_URL, TEST_ASSETS_URL_ENV};
 
 use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
 
@@ -12,8 +17,8 @@ use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
 const ASSETS_KIND: &str = "assets";
 /// Directory name for ROM images under the asset root.
 const ROMS_KIND: &str = "roms";
-/// Directory name for the disk/VHD test images under the asset root —
-/// mirrors `coco-egui/src/paths.rs`'s `tests_dir`.
+/// Directory name for the disk/VHD test images under the asset root; also
+/// the top-level directory inside the test bundle tarball.
 const TESTS_KIND: &str = "tests";
 
 /// The app's XDG data directory (`~/.local/share/cocovm` on Linux/macOS), or
@@ -42,9 +47,13 @@ pub fn rom(name: &str) -> PathBuf {
 }
 
 /// Returns the path to disk/VHD image `name` (see [`mod@disk`] for well-known
-/// names): `<xdg_data_dir>/assets/tests/<name>`.
+/// names): `<xdg_data_dir>/assets/tests/<name>`. When the file is absent the
+/// test bundle is fetched first (once per process); if that fails the path
+/// is returned anyway and callers skip as usual.
 pub fn disk(name: &str) -> PathBuf {
-    tests_dir().join(name)
+    let path = tests_dir().join(name);
+    fetch::ensure_present(&path);
+    path
 }
 
 /// Returns the ROM asset directory, `<xdg_data_dir>/assets/roms`.

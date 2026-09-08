@@ -35,12 +35,12 @@ fn unpack_assets_extracts_gzipped_tar_into_dest() {
 }
 
 #[test]
-fn missing_bundled_names_only_the_absent_files() {
+fn missing_bundled_roms_names_only_the_absent_files() {
     let dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-test-assets/missing");
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(
-        missing_bundled(&dir, &BUNDLED_ROMS),
+        missing_bundled_roms(&dir),
         BUNDLED_ROMS.to_vec(),
         "no dir: all missing"
     );
@@ -49,28 +49,10 @@ fn missing_bundled_names_only_the_absent_files() {
     for name in BUNDLED_ROMS {
         std::fs::write(dir.join(name), b"\xAA").unwrap();
     }
-    assert!(missing_bundled(&dir, &BUNDLED_ROMS).is_empty());
+    assert!(missing_bundled_roms(&dir).is_empty());
 
     std::fs::remove_file(dir.join("sp0256-al2.rom")).unwrap();
-    assert_eq!(missing_bundled(&dir, &BUNDLED_ROMS), vec!["sp0256-al2.rom"]);
-}
-
-/// Guards the hand-duplicated manifest against `test_assets::disk`'s names.
-#[test]
-fn bundled_test_images_match_test_assets_disk_names() {
-    use test_assets::disk;
-    let mut expected = [
-        disk::EOU_BOOT,
-        disk::EOU_SYSTEM_VHD,
-        disk::SPETRIS,
-        disk::BLANK02,
-        disk::NOS9_L2_COCO3_40_TRACK,
-        disk::NOS9_L2_COCO3_BECKER,
-    ];
-    let mut actual = BUNDLED_TEST_IMAGES;
-    expected.sort_unstable();
-    actual.sort_unstable();
-    assert_eq!(actual, expected);
+    assert_eq!(missing_bundled_roms(&dir), vec!["sp0256-al2.rom"]);
 }
 
 #[test]

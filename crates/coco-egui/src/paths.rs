@@ -55,12 +55,6 @@ pub fn images_dir() -> Option<PathBuf> {
     assets_dir().map(|d| d.join("images"))
 }
 
-/// Directory for the disk/VHD images the workspace's tests boot
-/// (`~/.local/share/cocovm/assets/tests` on Linux/macOS).
-pub fn tests_dir() -> Option<PathBuf> {
-    assets_dir().map(|d| d.join("tests"))
-}
-
 #[cfg(test)]
 #[path = "paths_test.rs"]
 mod tests;

@@ -57,9 +57,8 @@ impl AssetDialog {
     /// Fold a finished download thread's result back in. Returns whether
     /// the download completed successfully (the dialog's work is done). An
     /// unpack that still leaves files missing — a stale bundle behind a new
-    /// [`crate::startup::BUNDLED_ROMS`] or
-    /// [`crate::startup::BUNDLED_TEST_IMAGES`] entry — reads as a failure,
-    /// not a silent close followed by a re-prompt on every start.
+    /// [`crate::startup::BUNDLED_ROMS`] entry — reads as a failure, not a
+    /// silent close followed by a re-prompt on every start.
     fn poll(&mut self) -> bool {
         let Some(rx) = &self.job else {
             return false;
