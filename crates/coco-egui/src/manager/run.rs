@@ -1,0 +1,82 @@
+//! Native manager startup and rename recovery.
+
+use eframe::egui;
+
+use crate::{machine_def, photo_view};
+
+use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
+
+/// Open the manager as the application's main window. `control_port` binds
+/// the control-protocol listener; `0` disables it.
+pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
+    const ICON_BYTE_COUNT: usize = 8_628;
+    let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../../assets/coco3-console-8bit.png");
+    let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
+    let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
+    let missing = crate::missing_assets();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(if missing.is_empty() {
+            WINDOW_SIZE
+        } else {
+            assets::DIALOG_WINDOW_SIZE
+        })
+        .with_icon(icon)
+        .with_title("CocoVM");
+    if !missing.is_empty() {
+        viewport = viewport.with_resizable(false);
+    }
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
+    let machines_dir = machine_def::machines_dir();
+    let artifacts_root = machine_def::artifacts_root();
+    if let Some(dir) = machines_dir.as_deref()
+        && let Err(error) = rename::recover_pending_rename(dir, artifacts_root.as_deref())
+    {
+        eprintln!("coco: cannot recover machine rename: {error}");
+        std::process::exit(1);
+    }
+    let entries = load_entries(machines_dir.as_deref());
+    let machine_count = entries.len();
+    eframe::run_native(
+        "cocovm",
+        options,
+        Box::new(move |creation| {
+            crate::banner(&crate::StartupInfo {
+                roms: crate::rom_count(),
+                machines: machine_count,
+                renderer: crate::renderer_info(creation),
+            });
+            let control = control::bind_control(control_port, &creation.egui_ctx);
+            let mut app = ManagerApp::new(
+                photo_view::random(),
+                machines_dir,
+                artifacts_root,
+                entries,
+                control,
+            );
+            if !missing.is_empty() {
+                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
+            }
+            Ok(Box::new(app))
+        }),
+    )
+}
+
+fn load_entries(dir: Option<&std::path::Path>) -> Vec<MachineEntry> {
+    let definitions = match dir {
+        Some(dir) => machine_def::load_all(dir),
+        None => return Vec::new(),
+    };
+    match definitions {
+        Ok(definitions) => definitions
+            .into_iter()
+            .map(|(slug, def)| MachineEntry::new(slug, def))
+            .collect(),
+        Err(error) => {
+            eprintln!("coco: cannot load machine definitions: {error}");
+            std::process::exit(1);
+        }
+    }
+}

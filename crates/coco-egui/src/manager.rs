@@ -16,10 +16,11 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use eframe::egui;
 
-use crate::photo_view::{self, Photo};
+use crate::photo_view::Photo;
 use crate::{CocoApp, machine_def, new_vm};
 
 use selection::Selection;
@@ -32,10 +33,14 @@ mod detail;
 mod detail_map;
 mod lifecycle;
 mod list;
+mod rename;
+mod run;
 mod selection;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
+
+pub use run::run;
 
 /// Manager window size at first open.
 const WINDOW_SIZE: [f32; 2] = [1080.0, 720.0];
@@ -137,14 +142,13 @@ pub struct MachineEntry {
     /// machine with no thumbnail file doesn't retry the filesystem every
     /// frame. Cleared (with `thumbnail`) whenever a fresh PNG is written.
     thumbnail_load_attempted: bool,
-    /// The machine was renamed while running, so its `<slug>.toml`/artifact
-    /// dir couldn't follow the new name yet (the running VM writes
-    /// `thumbnail.png` into the artifact dir by path — renaming under it
-    /// races). [`ManagerApp::apply_pending_renames`] migrates once the VM is
-    /// gone, including during [`eframe::App::on_exit`] after its final media
-    /// flush.
-    rename_pending: bool,
+    /// Runtime-only identity for egui's immediate viewport. It stays stable
+    /// when the persisted machine slug changes.
+    window_session: u64,
 }
+
+const FIRST_WINDOW_SESSION: u64 = 1;
+static NEXT_WINDOW_SESSION: AtomicU64 = AtomicU64::new(FIRST_WINDOW_SESSION);
 
 impl MachineEntry {
     /// `slug` + a freshly loaded/created `def`, with no VM running and no
@@ -158,7 +162,7 @@ impl MachineEntry {
             launch_error: None,
             thumbnail: None,
             thumbnail_load_attempted: false,
-            rename_pending: false,
+            window_session: NEXT_WINDOW_SESSION.fetch_add(1, Ordering::Relaxed),
         }
     }
 
@@ -317,6 +321,9 @@ pub struct ManagerApp {
     /// Control requests deferred until the VM they target finishes some work
     /// (`manager::control`), resolved once per frame after VMs have stepped.
     pending: Vec<control::PendingControl>,
+    /// A committed Name-field edit waiting for the next frame's pre-draw
+    /// rename transaction.
+    pending_rename: Option<rename::PendingRename>,
     /// The first-run asset download dialog (`manager/assets.rs`), open while
     /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
     pub(crate) asset_dialog: Option<assets::AssetDialog>,
@@ -355,6 +362,7 @@ impl ManagerApp {
             delete_error: None,
             control,
             pending: Vec::new(),
+            pending_rename: None,
             asset_dialog: None,
         }
     }
@@ -363,10 +371,9 @@ impl ManagerApp {
 impl eframe::App for ManagerApp {
     /// Flushes every running VM's dirty disks/tape on quit and folds each
     /// live VM's runtime into its persisted total, same as Stop. A flush
-    /// failure is only logged — there's no dialog left to show it in. Once
-    /// every live VM has been flushed and dropped, completes slug migrations
-    /// deferred by renames made while those VMs were running.
+    /// failure is only logged — there's no dialog left to show it in.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.apply_pending_rename();
         for index in 0..self.entries.len() {
             self.fold_runtime_into_def(index);
             if let Some(mut vm) = self.entries[index].vm.take()
@@ -378,7 +385,6 @@ impl eframe::App for ManagerApp {
                 );
             }
         }
-        self.apply_pending_renames();
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -395,9 +401,9 @@ impl eframe::App for ManagerApp {
                 Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
         }
 
-        // Migrate pending renames before any panel draws — row indices must
+        // Apply a committed rename before any panel draws — row indices must
         // stay stable for the frame.
-        self.apply_pending_renames();
+        self.apply_pending_rename();
 
         // ⌘N/Ctrl+N triggers New…; only fires with the manager window focused.
         if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
@@ -453,76 +459,6 @@ impl eframe::App for ManagerApp {
         self.draw_running_vms(ctx);
         self.resolve_control_pending(ctx);
     }
-}
-
-/// Open the manager as the application's main window (blocks until close,
-/// like `eframe::run_native` everywhere else). `control_port` binds the
-/// control-protocol listener (`0` disables it); `assets_url` is where the
-/// first-run download dialog fetches the bundle from (both `cli.rs`).
-pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
-    const ICON_BYTE_COUNT: usize = 8_628;
-    let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../assets/coco3-console-8bit.png");
-    let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
-    let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
-    // Missing assets: the window opens dialog-sized and shows only the
-    // download prompt; it grows to WINDOW_SIZE once the download succeeds
-    // (`manager/assets.rs`), and Cancel quits.
-    let missing = crate::missing_assets();
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size(if missing.is_empty() {
-            WINDOW_SIZE
-        } else {
-            assets::DIALOG_WINDOW_SIZE
-        })
-        .with_icon(icon)
-        .with_title("CocoVM");
-    if !missing.is_empty() {
-        viewport = viewport.with_resizable(false);
-    }
-    let options = eframe::NativeOptions {
-        viewport,
-        ..Default::default()
-    };
-    let machines_dir = machine_def::machines_dir();
-    // A machine definition that fails to load/validate is fatal — exit
-    // rather than open with a silently wrong list.
-    let entries: Vec<MachineEntry> = match machines_dir.as_deref() {
-        Some(dir) => match machine_def::load_all(dir) {
-            Ok(defs) => defs
-                .into_iter()
-                .map(|(slug, def)| MachineEntry::new(slug, def))
-                .collect(),
-            Err(e) => {
-                eprintln!("coco: cannot load machine definitions: {e}");
-                std::process::exit(1);
-            }
-        },
-        None => Vec::new(),
-    };
-    let machines = entries.len();
-    eframe::run_native(
-        "cocovm",
-        options,
-        Box::new(move |cc| {
-            crate::banner(&crate::StartupInfo {
-                roms: crate::rom_count(),
-                machines,
-                renderer: crate::renderer_info(cc),
-            });
-            let control = control::bind_control(control_port, &cc.egui_ctx);
-            let mut app = ManagerApp::new(
-                photo_view::random(),
-                machines_dir,
-                machine_def::artifacts_root(),
-                entries,
-                control,
-            );
-            if !missing.is_empty() {
-                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
-            }
-            Ok(Box::new(app))
-        }),
-    )
 }
 
 #[cfg(test)]

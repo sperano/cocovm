@@ -31,6 +31,12 @@ pub(super) struct PendingControl {
 }
 
 impl PendingControl {
+    pub(super) fn retarget(&mut self, old_slug: &str, new_slug: &str) {
+        if self.slug == old_slug {
+            self.slug = new_slug.to_string();
+        }
+    }
+
     /// `expected_fields` at `field_rate_hz` sets the deadline, plus
     /// [`CONTROL_DEFER_MARGIN`].
     fn new(

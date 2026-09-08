@@ -463,6 +463,8 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
         vec![entry],
     );
     click(&mut harness, "Alpha");
+    click(&mut harness, "Start");
+    assert!(harness.state().entries[0].is_running());
 
     // The pane's only text input; by-value lookup would be ambiguous with the list row's own label.
     let name_field = || harness.get_by_role(egui::accesskit::Role::TextInput);
@@ -480,6 +482,10 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
 
     assert_eq!(harness.state().entries[0].slug, "alpha-two");
     assert_eq!(harness.state().entries[0].def.name, "Alpha Two");
+    assert!(
+        harness.state().entries[0].is_running(),
+        "renaming must not stop a running VM"
+    );
     assert!(machines.path().join("alpha-two.toml").is_file());
     assert!(!machines.path().join("alpha.toml").exists());
     assert!(
@@ -498,4 +504,29 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
     );
     assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
     harness.get_by_label("Slug ID: alpha-two");
+}
+
+#[test]
+fn unchanged_name_enter_does_not_rewrite_or_rename() {
+    let machines = TempDir::new("unchanged-name-machines");
+    let entry = sample_entry("alpha", "Alpha");
+    machine_def::save(machines.path(), "alpha", &entry.def).expect("seed definition");
+    let config_path = machines.path().join("alpha.toml");
+    let mut original = fs::read_to_string(&config_path).expect("read definition");
+    original.push_str("\n# unchanged-name UI sentinel\n");
+    fs::write(&config_path, &original).expect("write sentinel");
+    let mut harness = manager_harness(Some(machines.path().to_path_buf()), vec![entry]);
+    click(&mut harness, "Alpha");
+
+    harness
+        .get_by_role(egui::accesskit::Role::TextInput)
+        .focus();
+    harness.step();
+    harness.key_press(egui::Key::Enter);
+    harness.step();
+    harness.step();
+
+    assert_eq!(harness.state().entries[0].slug, "alpha");
+    assert_eq!(fs::read_to_string(config_path).unwrap(), original);
+    harness.get_by_label("Slug ID: alpha");
 }
