@@ -42,7 +42,7 @@
 //! different cap counts would drift apart and the arrow diamond would not
 //! line up.
 
-use coco_core::MachineVariant;
+use coco_core::{MachineVariant, keyboard};
 
 /// Which way an arrow cap points.
 ///
@@ -80,6 +80,42 @@ pub(super) struct Cap {
 }
 
 impl Cap {
+    /// The matrix position of the physical key, independent of its painted case.
+    pub(super) fn pos(&self) -> keyboard::Pos {
+        match self.main {
+            Legend::Arrow(Dir::Up) => keyboard::UP,
+            Legend::Arrow(Dir::Down) => keyboard::DOWN,
+            Legend::Arrow(Dir::Left) => keyboard::LEFT,
+            Legend::Arrow(Dir::Right) => keyboard::RIGHT,
+            Legend::Text("SHIFT") => keyboard::SHIFT,
+            Legend::Text("CTRL") => keyboard::CTRL,
+            Legend::Text("ALT") => keyboard::ALT,
+            Legend::Text("ENTER") => keyboard::ENTER,
+            Legend::Text("CLEAR") => keyboard::CLEAR,
+            Legend::Text("BREAK") => keyboard::BREAK,
+            Legend::Text("SPACE") => keyboard::SPACE,
+            Legend::Text("F1") => keyboard::F1,
+            Legend::Text("F2") => keyboard::F2,
+            Legend::Text(text) => {
+                let character = text.chars().next().expect("keycap has a legend");
+                keyboard::char_key(character)
+                    .expect("keycap has a matrix position")
+                    .0
+            }
+        }
+    }
+
+    /// Accessible names also identify the arrows that have no text legend.
+    pub(super) fn label(&self) -> &'static str {
+        match self.main {
+            Legend::Text(text) => text,
+            Legend::Arrow(Dir::Up) => "Up arrow",
+            Legend::Arrow(Dir::Down) => "Down arrow",
+            Legend::Arrow(Dir::Left) => "Left arrow",
+            Legend::Arrow(Dir::Right) => "Right arrow",
+        }
+    }
+
     /// Whether symbolic mode still reaches this key by *position* rather than
     /// by character — exactly the keys [`crate::keymap::control_key_pos`]
     /// routes, the only ones whose host key still means anything there.

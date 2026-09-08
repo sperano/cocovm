@@ -5,6 +5,7 @@ manager). `book/` is a 16-chapter course built from this codebase.
 
 ## Vikunja task workflow
 
+- Add the `in progress` label when starting work on a task.
 - Always create a dedicated git worktree and branch before editing for a
   Vikunja task. Never implement a Vikunja task directly in the primary
   worktree or on `main`.

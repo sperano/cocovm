@@ -89,7 +89,7 @@ impl CocoApp {
         let taps = text.chars().filter_map(kbd::char_key);
         let mut queued = 0;
         for entry in taps {
-            self.remote_type_ahead.queue.push_back(entry);
+            self.remote_type_ahead.queue.push_back(entry.into());
             queued += 1;
         }
         Ok(queued * FIELDS_PER_TAP)
