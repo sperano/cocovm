@@ -45,10 +45,11 @@ impl CocoApp {
         egui::TopBottomPanel::top("toolbar")
             .frame(frame)
             .show(ctx, |ui| {
+                let icons_only = self.toolbar_icons_only;
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = BUTTON_GAP;
 
-                    if toolbar_button(ui, PLAY_GLYPH, START_LABEL, self.suspended)
+                    if toolbar_button(ui, PLAY_GLYPH, START_LABEL, self.suspended, icons_only)
                         .on_hover_text(RESUME_HOVER)
                         .on_disabled_hover_text(START_DISABLED_HOVER)
                         .clicked()
@@ -56,7 +57,7 @@ impl CocoApp {
                         self.pending_resume = true;
                     }
 
-                    if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, controllable)
+                    if toolbar_button(ui, SUSPEND_GLYPH, SUSPEND_LABEL, controllable, icons_only)
                         .on_hover_text(SUSPEND_HOVER)
                         .on_disabled_hover_text(SUSPEND_DISABLED_HOVER)
                         .clicked()
@@ -71,14 +72,14 @@ impl CocoApp {
                     } else {
                         STOP_SUSPENDED_HOVER
                     };
-                    if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, true)
+                    if toolbar_button(ui, STOP_GLYPH, STOP_LABEL, true, icons_only)
                         .on_hover_text(stop_hover)
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
 
-                    if toolbar_button(ui, RESET_GLYPH, RESET_LABEL, controllable)
+                    if toolbar_button(ui, RESET_GLYPH, RESET_LABEL, controllable, icons_only)
                         .on_hover_text(RESET_HOVER)
                         .on_disabled_hover_text(RESET_DISABLED_HOVER)
                         .clicked()
@@ -95,7 +96,7 @@ impl CocoApp {
                             "{DEBUG_HOVER} ({})",
                             ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)
                         );
-                        if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, controllable)
+                        if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, controllable, icons_only)
                             .on_hover_text(debug_hover)
                             .clicked()
                         {

@@ -327,6 +327,8 @@ pub struct ManagerApp {
     /// The first-run asset download dialog (`manager/assets.rs`), open while
     /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
     pub(crate) asset_dialog: Option<assets::AssetDialog>,
+    /// Global toolbar caption toggle, copied to each launched VM.
+    pub(crate) toolbar_icons_only: bool,
 }
 
 impl ManagerApp {
@@ -364,6 +366,7 @@ impl ManagerApp {
             pending: Vec::new(),
             pending_rename: None,
             asset_dialog: None,
+            toolbar_icons_only: false,
         }
     }
 }

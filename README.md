@@ -14,6 +14,32 @@ Run `cargo run` to open the VM manager. ROM images are not included in the
 repository; the manager downloads them on first launch into its data
 directory (`~/.local/share/cocovm/assets/roms/` on Linux/macOS).
 
+## Configuration
+
+Global settings — the log level, the MCP control port, the asset bundle URL,
+and the toolbar's caption toggle — can each come from a CLI flag, an
+environment variable, or `config.toml` in cocovm's config directory
+(`~/.config/cocovm/config.toml` on Linux/macOS, `%APPDATA%\spe\cocovm\config.toml`
+on Windows), in that order of precedence (a flag beats an env var, which
+beats the config file, which beats the built-in default). All keys are
+optional; an unset key falls through to the next layer.
+
+```toml
+# ~/.config/cocovm/config.toml (Linux/macOS)
+
+# error | warn | info | debug | trace (default: warn)
+log_level = "warn"
+
+# MCP control-server port; 0 disables it (default: 6809)
+control_port = 6809
+
+# first-run asset bundle URL (default: the bundled release URL)
+assets_url = "https://assets.spe.quebec/cocovm-assets-v3.tgz"
+
+# draw every toolbar as icon-only, caption moved into hover text (default: false)
+toolbar_icons_only = false
+```
+
 ## Driving a VM from an AI (MCP)
 
 `cocovm` serves an [MCP](https://modelcontextprotocol.io) server directly —

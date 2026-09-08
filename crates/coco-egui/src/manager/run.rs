@@ -6,9 +6,14 @@ use crate::{machine_def, photo_view};
 
 use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
 
-/// Open the manager as the application's main window. `control_port` binds
-/// the control-protocol listener; `0` disables it.
-pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
+/// Open the manager as the application's main window.
+pub fn run(config: crate::config::Config) -> eframe::Result<()> {
+    let crate::config::Config {
+        control_port,
+        assets_url,
+        toolbar_icons_only,
+        ..
+    } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
     let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../../assets/coco3-console-8bit.png");
     let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
@@ -56,6 +61,7 @@ pub fn run(control_port: u16, assets_url: String) -> eframe::Result<()> {
                 entries,
                 control,
             );
+            app.toolbar_icons_only = toolbar_icons_only;
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
             }

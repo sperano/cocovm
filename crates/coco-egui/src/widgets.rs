@@ -82,6 +82,12 @@ pub(crate) const UI_DRIVES: usize = 2;
 /// toolbar convention the tile widget reproduces.
 pub(crate) const BUTTON_SIZE: egui::Vec2 = egui::vec2(64.0, 52.0);
 
+/// Tile footprint used when the caption is hidden (`toolbar_button`'s
+/// `icons_only`) — square-ish rather than [`BUTTON_SIZE`]'s caption-width
+/// footprint. Same height as `BUTTON_SIZE` so the toolbar's reserved height
+/// (`crate::TOOLBAR_H`) doesn't need to vary with a runtime toggle.
+pub(crate) const ICON_ONLY_BUTTON_SIZE: egui::Vec2 = egui::vec2(BUTTON_SIZE.y, BUTTON_SIZE.y);
+
 /// Icon glyph size. Deliberately much larger than the caption — the icon is
 /// the button's identity, the caption is the reminder.
 const ICON_FONT_SIZE: f32 = 20.0;
@@ -145,17 +151,30 @@ pub(crate) fn toolbar_separator(ui: &mut egui::Ui) {
 /// hover/press highlight. Hand-painted because `egui::Button` can't mix two
 /// font sizes; wrapped in [`egui::Ui::add_enabled_ui`] so disabled tiles
 /// still get a correct `Response::enabled()`.
+///
+/// `icons_only` (the `toolbar_icons_only` global setting, `config.rs`) draws
+/// the icon alone, centered in a square [`ICON_ONLY_BUTTON_SIZE`] tile, and
+/// moves `label` into hover text instead of painting it. The accessible name
+/// is always `label` regardless — `widget_info` below doesn't branch on
+/// `icons_only` — so `kittest`'s `get_by_label` keeps resolving tiles the
+/// same way in both modes.
 pub(crate) fn toolbar_button(
     ui: &mut egui::Ui,
     icon: &str,
     label: &str,
     enabled: bool,
+    icons_only: bool,
 ) -> egui::Response {
     ui.add_enabled_ui(enabled, |ui| {
         // Not necessarily the same as `enabled`: `is_enabled` also ANDs in the parent's
         // enabledness.
         let effective_enabled = ui.is_enabled();
-        let (rect, response) = ui.allocate_exact_size(BUTTON_SIZE, egui::Sense::click());
+        let size = if icons_only {
+            ICON_ONLY_BUTTON_SIZE
+        } else {
+            BUTTON_SIZE
+        };
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, effective_enabled, label)
         });
@@ -169,21 +188,41 @@ pub(crate) fn toolbar_button(
         if effective_enabled && (response.hovered() || response.is_pointer_button_down_on()) {
             painter.rect_filled(rect, BUTTON_CORNER_RADIUS, visuals.weak_bg_fill);
         }
-        painter.text(
-            egui::pos2(rect.center().x, rect.top() + ICON_TOP_PAD),
-            egui::Align2::CENTER_TOP,
-            icon,
-            egui::FontId::proportional(ICON_FONT_SIZE),
-            visuals.text_color(),
-        );
-        painter.text(
-            egui::pos2(rect.center().x, rect.bottom() - LABEL_BOTTOM_PAD),
-            egui::Align2::CENTER_BOTTOM,
-            label,
-            egui::FontId::proportional(LABEL_FONT_SIZE),
-            visuals.text_color(),
-        );
-        response
+        if icons_only {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                icon,
+                egui::FontId::proportional(ICON_FONT_SIZE),
+                visuals.text_color(),
+            );
+        } else {
+            painter.text(
+                egui::pos2(rect.center().x, rect.top() + ICON_TOP_PAD),
+                egui::Align2::CENTER_TOP,
+                icon,
+                egui::FontId::proportional(ICON_FONT_SIZE),
+                visuals.text_color(),
+            );
+            painter.text(
+                egui::pos2(rect.center().x, rect.bottom() - LABEL_BOTTOM_PAD),
+                egui::Align2::CENTER_BOTTOM,
+                label,
+                egui::FontId::proportional(LABEL_FONT_SIZE),
+                visuals.text_color(),
+            );
+        }
+        if icons_only {
+            // Both tooltips, not just the enabled one: `on_hover_text` only fires when
+            // enabled, so a disabled tile (the manager's four transport tiles at first
+            // launch, before anything is selected) would otherwise show only the caller's
+            // disabled-reason text and never say which tile it is. Same per-widget
+            // `tooltip_count` stacking mechanism as `on_hover_text`/`on_disabled_hover_text`
+            // chained at the call site, so the label lands first in either stack.
+            response.on_hover_text(label).on_disabled_hover_text(label)
+        } else {
+            response
+        }
     })
     .inner
 }

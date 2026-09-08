@@ -86,6 +86,31 @@ fn manager_window_shows_its_toolbar() {
     );
 }
 
+/// `toolbar_icons_only` (`config.rs`) hides every tile's caption, but the
+/// tile widget always sets its accessible name to the label
+/// (`widgets::toolbar_button`'s doc), so every tile must still resolve by
+/// its usual label. `kittest`'s accessibility tree doesn't expose the
+/// painted glyph/caption text separately from that accessible name, so this
+/// can't also assert the caption is invisible on screen — only that the
+/// flag reaches `ManagerApp` and that accessibility is unaffected by it.
+#[test]
+fn toolbar_icons_only_keeps_every_tile_reachable_by_label() {
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        let mut app = manager::ManagerApp::new(None, None, None, Vec::new(), None);
+        app.toolbar_icons_only = true;
+        app
+    });
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+
+    assert!(harness.state().toolbar_icons_only);
+    for label in [
+        "New", "Start", "Suspend", "Stop", "Reset", "Settings", "Help",
+    ] {
+        harness.get_by_label(label);
+    }
+}
+
 /// The dialog-first phase: a seeded `asset_dialog` is the window's only
 /// content (no manager toolbar), and Cancel requests app close without
 /// touching the target directory.
