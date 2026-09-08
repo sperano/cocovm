@@ -21,6 +21,7 @@ mod app;
 mod audio;
 mod chrome;
 mod cli;
+mod config;
 mod control;
 mod debugger;
 mod defaults;
@@ -161,12 +162,24 @@ fn main() -> eframe::Result<()> {
 
     // Parsed first: the global log subscriber can't be built before the flags it reads are known.
     let cli = Cli::parse();
-    setup_logging(use_color, cli.log_level.into());
+
+    // A malformed config.toml is fatal at startup, same severity as a bad machine definition
+    // (`machine_def::load_all`).
+    let config_path = paths::config_dir().map(|dir| dir.join(CONFIG_FILE_NAME));
+    let file_config = config::load(config_path).unwrap_or_else(|e| {
+        eprintln!("coco: cannot load config file: {e}");
+        std::process::exit(1);
+    });
+    let config = config::resolve(cli, file_config);
+    setup_logging(use_color, config.log_level.into());
 
     // The app always opens the CocoVM manager window; a future CLI will build on its machine
     // definitions.
-    manager::run(cli.control_port, cli.assets_url)
+    manager::run(config)
 }
+
+/// Global config file's name under [`paths::config_dir`].
+const CONFIG_FILE_NAME: &str = "config.toml";
 
 #[cfg(test)]
 mod ui_tests;
