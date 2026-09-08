@@ -51,9 +51,15 @@ pub fn rom(name: &str) -> PathBuf {
 /// test bundle is fetched first (once per process); if that fails the path
 /// is returned anyway and callers skip as usual.
 pub fn disk(name: &str) -> PathBuf {
-    let path = tests_dir().join(name);
+    let path = disk_path(name);
     fetch::ensure_present(&path);
     path
+}
+
+/// [`disk`]'s path without the fetch; split out so a unit test can pin the
+/// layout without pulling 40 MB.
+fn disk_path(name: &str) -> PathBuf {
+    tests_dir().join(name)
 }
 
 /// Returns the ROM asset directory, `<xdg_data_dir>/assets/roms`.
@@ -74,7 +80,7 @@ pub mod rom {
     pub const COCO3: &str = "coco3.rom";
     /// Disk Extended Color BASIC.
     pub const DISK11: &str = "disk11.rom";
-    /// HDB-DOS 1.1 DriveWire 3, Becker build for CoCo 3 (`tests/drivewire_boot.rs`).
+    /// HDB-DOS 1.4 DriveWire 3, Becker build for CoCo 3 (`tests/drivewire_boot.rs`).
     pub const HDBDW3BC3: &str = "hdbdw3bc3.rom";
     /// Color BASIC 1.2 (CoCo 1) / the CoCo 2's Color BASIC half of its flat
     /// image (`tests/coco1_boot.rs`, `tests/coco2_boot/common.rs`).

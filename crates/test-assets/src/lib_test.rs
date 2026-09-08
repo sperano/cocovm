@@ -24,5 +24,5 @@ fn rom_path_is_under_xdg_roms_dir() {
 
 #[test]
 fn disk_path_is_under_xdg_tests_dir() {
-    assert_eq!(disk(disk::EOU_BOOT), tests_dir().join(disk::EOU_BOOT));
+    assert_eq!(disk_path(disk::EOU_BOOT), tests_dir().join(disk::EOU_BOOT));
 }

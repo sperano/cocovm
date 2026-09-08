@@ -56,6 +56,19 @@ fn install_bundle_overwrites_existing_files_and_keeps_others() {
 }
 
 #[test]
+fn install_bundle_sweeps_staging_left_by_a_killed_run() {
+    let assets = scratch("stale");
+    let stale = assets.join(staging_name(999_999));
+    fs::create_dir_all(stale.join(TESTS_KIND)).unwrap();
+    fs::write(stale.join(TESTS_KIND).join("partial.VHD"), b"trunc").unwrap();
+
+    install_bundle(&bundle(&[("a.dsk", b"a")])[..], &assets.join(TESTS_KIND)).unwrap();
+
+    assert!(!stale.exists());
+    assert!(assets.join(TESTS_KIND).join("a.dsk").exists());
+}
+
+#[test]
 fn install_bundle_rejects_garbage_without_touching_dest() {
     let dest = scratch("garbage").join(TESTS_KIND);
     assert!(install_bundle(&b"not a tarball"[..], &dest).is_err());

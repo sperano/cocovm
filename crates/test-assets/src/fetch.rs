@@ -4,6 +4,7 @@
 
 use std::path::Path;
 use std::sync::OnceLock;
+use std::time::Duration;
 use std::{fs, io};
 
 use crate::{TESTS_KIND, tests_dir};
@@ -19,6 +20,10 @@ pub const TEST_ASSETS_URL_ENV: &str = "COCOVM_TEST_ASSETS_URL";
 /// Advisory lock file beside the tests directory, serializing concurrent
 /// test processes (nextest runs one per test) so only the first downloads.
 const LOCK_FILE: &str = ".tests.lock";
+/// Give up on an unreachable host quickly rather than hanging the suite.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Upper bound on the whole download — 40 MB on a slow link, not forever.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// Fetch the bundle if `path` is absent — at most once per process, so a
 /// failure costs one attempt, not one per test. Never panics: on failure it
@@ -55,7 +60,13 @@ fn fetch_bundle_locked(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     eprintln!("test-assets: downloading {url} into {}", dest.display());
-    let response = ureq::get(&url).call()?;
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_connect(Some(CONNECT_TIMEOUT))
+            .timeout_global(Some(FETCH_TIMEOUT))
+            .build(),
+    );
+    let response = agent.get(&url).call()?;
     install_bundle(response.into_body().into_reader(), &dest)?;
     Ok(())
 }
@@ -69,11 +80,34 @@ pub(crate) fn install_bundle(reader: impl io::Read, dest: &Path) -> io::Result<(
         .parent()
         .ok_or_else(|| io::Error::other("tests dir has no parent"))?;
     fs::create_dir_all(parent)?;
-    let staging = parent.join(format!(".{TESTS_KIND}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&staging);
+    remove_stale_staging(parent)?;
+    let staging = parent.join(staging_name(std::process::id()));
     let result = unpack_then_move(reader, &staging, dest);
     let _ = fs::remove_dir_all(&staging);
     result
+}
+
+/// `.tests-`: what every staging directory name starts with.
+fn staging_prefix() -> String {
+    format!(".{TESTS_KIND}-")
+}
+
+/// `.tests-<pid>`: the staging directory a fetching process unpacks into.
+fn staging_name(pid: u32) -> String {
+    format!("{}{pid}", staging_prefix())
+}
+
+/// Delete staging directories left by runs that were killed mid-download —
+/// fetches are serialized, so any that exist are dead.
+fn remove_stale_staging(parent: &Path) -> io::Result<()> {
+    let prefix = staging_prefix();
+    for entry in fs::read_dir(parent)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().starts_with(&prefix) {
+            fs::remove_dir_all(entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn unpack_then_move(reader: impl io::Read, staging: &Path, dest: &Path) -> io::Result<()> {
