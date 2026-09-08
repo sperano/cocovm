@@ -10,6 +10,9 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/mc6809/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/mc6809/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/crates/test-assets/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/tms7000/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/tms7000/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/tms7000/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
