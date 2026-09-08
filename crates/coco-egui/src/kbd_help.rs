@@ -12,7 +12,9 @@ mod layout;
 
 use eframe::egui;
 
-use coco_core::MachineVariant;
+use coco_core::{MachineVariant, keyboard};
+
+use crate::typeahead::{KeyModifiers, KeyTap};
 
 use layout::{Cap, Dir, Legend, Slot};
 
@@ -63,9 +65,18 @@ const HOST_GREEN: egui::Color32 = egui::Color32::from_rgb(0x30, 0xC0, 0x30);
 
 /// Draw the keyboard-mapping window. `open` is toggled by the window's close
 /// box; `variant` picks the key plan since the CoCo 3 added ALT/CTRL/F1/F2.
-pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: MachineVariant) {
+pub fn window(
+    ctx: &egui::Context,
+    open: &mut bool,
+    symbolic: bool,
+    variant: MachineVariant,
+    enabled: bool,
+    modifiers: &mut KeyModifiers,
+) -> Vec<KeyTap> {
+    let mut taps = Vec::new();
     egui::Window::new(crate::window_title(ctx, "CoCo Keyboard Mapping"))
         .open(open)
+        .enabled(enabled)
         .resizable(false)
         .collapsible(true)
         .show(ctx, |ui| {
@@ -77,15 +88,22 @@ pub fn window(ctx: &egui::Context, open: &mut bool, symbolic: bool, variant: Mac
             ui.scope(|ui| {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 for row in layout::rows(variant) {
-                    draw_row(ui, row, symbolic);
+                    draw_row(ui, row, symbolic, modifiers, &mut taps);
                 }
             });
             ui.add_space(SECTION_GAP);
             footer(ui, ctx, variant);
         });
+    if !*open {
+        *modifiers = KeyModifiers::default();
+    }
+    taps
 }
 
 fn header(ui: &mut egui::Ui, symbolic: bool) {
+    ui.small(
+        "Click a key to type. Click modifiers to toggle them; they stay on until toggled off.",
+    );
     if symbolic {
         ui.label("Symbolic mode — type the character you want; it is sent as typed.");
         // Name the keys that produce no text — they're what people come to this window for.
@@ -122,12 +140,22 @@ fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
     ui.small(crate::save_state::slot_shortcuts_hint(ctx));
 }
 
-fn draw_row(ui: &mut egui::Ui, row: layout::Row, symbolic: bool) {
+fn draw_row(
+    ui: &mut egui::Ui,
+    row: layout::Row,
+    symbolic: bool,
+    modifiers: &mut KeyModifiers,
+    taps: &mut Vec<KeyTap>,
+) {
     ui.horizontal(|ui| {
         for slot in layout::slots(row) {
             match slot {
                 Slot::Gap(units) => ui.add_space(units * UNIT_W),
-                Slot::Cap(cap) => draw_cap(ui, cap, symbolic),
+                Slot::Cap(cap) => {
+                    if let Some(tap) = draw_cap(ui, cap, symbolic, modifiers) {
+                        taps.push(tap);
+                    }
+                }
             }
         }
     });
@@ -136,14 +164,57 @@ fn draw_row(ui: &mut egui::Ui, row: layout::Row, symbolic: bool) {
 /// One key cap: shifted legend along the top, CoCo legend in the middle,
 /// host key (positional mode) along the bottom — mirroring the real caps'
 /// shifted-above-unshifted print.
-fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
-    let pitch_rect = ui.allocate_space(egui::vec2(cap.width * UNIT_W, ROW_H)).1;
-    // Drawn inside its pitch, leaving the channel to neighbours (`CAP_INSET`).
+fn draw_cap(
+    ui: &mut egui::Ui,
+    cap: &Cap,
+    symbolic: bool,
+    modifiers: &mut KeyModifiers,
+) -> Option<KeyTap> {
+    let (id, pitch_rect) = ui.allocate_space(egui::vec2(cap.width * UNIT_W, ROW_H));
     let rect = pitch_rect.shrink(CAP_INSET);
+    let response = ui.interact(rect, id, egui::Sense::click());
+    let modifier = match cap.pos() {
+        keyboard::SHIFT => Some(&mut modifiers.shift),
+        keyboard::CTRL => Some(&mut modifiers.ctrl),
+        keyboard::ALT => Some(&mut modifiers.alt),
+        _ => None,
+    };
+    let mut selected = modifier.as_deref().copied().unwrap_or(false);
+    let mut tap = None;
+    if response.clicked() {
+        // Release any previous text field's focus as well as this keycap's.
+        ui.memory_mut(|memory| {
+            if let Some(focused) = memory.focused() {
+                memory.surrender_focus(focused);
+            }
+        });
+        if let Some(latched) = modifier {
+            *latched = !*latched;
+            selected = *latched;
+        } else {
+            tap = Some(KeyTap {
+                pos: cap.pos(),
+                modifiers: *modifiers,
+            });
+        }
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            selected,
+            cap.label(),
+        )
+    });
+    let visuals = ui.style().interact_selectable(&response, selected);
+    ui.painter().rect_filled(rect, CAP_RADIUS, visuals.bg_fill);
+    paint_cap_legends(ui, cap, symbolic, rect);
+    tap
+}
+
+fn paint_cap_legends(ui: &egui::Ui, cap: &Cap, symbolic: bool, rect: egui::Rect) {
     let visuals = ui.visuals();
     let painter = ui.painter();
-    painter.rect_filled(rect, CAP_RADIUS, visuals.widgets.inactive.bg_fill);
-
     let cx = rect.center().x;
     let shift_h = if cap.shift.is_some() {
         SHIFT_LINE_H
@@ -169,7 +240,26 @@ fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
     let top = rect.top() + CAP_PAD + shift_h;
     let bottom = rect.bottom() - CAP_PAD - host_h;
     let middle = egui::pos2(cx, (top + bottom) / 2.0);
-    match cap.main {
+    paint_main_legend(painter, cap.main, middle, visuals.strong_text_color());
+
+    if show_host {
+        painter.text(
+            egui::pos2(cx, rect.bottom() - CAP_PAD),
+            egui::Align2::CENTER_BOTTOM,
+            cap.host,
+            egui::FontId::proportional(HOST_SIZE),
+            HOST_GREEN,
+        );
+    }
+}
+
+fn paint_main_legend(
+    painter: &egui::Painter,
+    legend: Legend,
+    middle: egui::Pos2,
+    color: egui::Color32,
+) {
+    match legend {
         Legend::Text(text) => {
             let size = if text.chars().count() > WORD_LEN {
                 WORD_SIZE
@@ -181,20 +271,10 @@ fn draw_cap(ui: &mut egui::Ui, cap: &Cap, symbolic: bool) {
                 egui::Align2::CENTER_CENTER,
                 text,
                 egui::FontId::proportional(size),
-                visuals.strong_text_color(),
+                color,
             );
         }
-        Legend::Arrow(dir) => paint_arrow(painter, middle, dir, visuals.strong_text_color()),
-    }
-
-    if show_host {
-        painter.text(
-            egui::pos2(cx, rect.bottom() - CAP_PAD),
-            egui::Align2::CENTER_BOTTOM,
-            cap.host,
-            egui::FontId::proportional(HOST_SIZE),
-            HOST_GREEN,
-        );
+        Legend::Arrow(dir) => paint_arrow(painter, middle, dir, color),
     }
 }
 
@@ -231,3 +311,7 @@ fn paint_arrow(painter: &egui::Painter, center: egui::Pos2, dir: Dir, color: egu
         egui::Stroke::NONE,
     ));
 }
+
+#[cfg(test)]
+#[path = "kbd_help_test.rs"]
+mod tests;

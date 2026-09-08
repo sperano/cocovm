@@ -19,6 +19,7 @@ pub(crate) struct CocoApp {
     pub(crate) kb_mode: KbMode,
     pub(crate) type_ahead: TypeAhead,
     pub(crate) show_kbd_help: bool,
+    pub(crate) keyboard_modifiers: typeahead::KeyModifiers,
     pub(crate) show_about: bool,
     /// "View > Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
     /// Stays whatever the user last set even if the cartridge is later
@@ -294,6 +295,7 @@ impl CocoApp {
             kb_mode: KbMode::Positional,
             type_ahead: TypeAhead::default(),
             show_kbd_help: false,
+            keyboard_modifiers: typeahead::KeyModifiers::default(),
             show_about: false,
             show_orch90: false,
             aspect_correct: true,

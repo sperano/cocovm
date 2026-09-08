@@ -20,6 +20,7 @@
 //! scaffold/peripherals/lifecycle).
 
 mod harness;
+mod keyboard_test;
 mod manager_lifecycle;
 mod manager_peripherals;
 mod manager_selection;

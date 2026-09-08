@@ -32,6 +32,7 @@ impl CocoApp {
     fn release_keyboard_state(&mut self) {
         self.machine.bus.keyboard.release_all();
         self.type_ahead.clear();
+        self.keyboard_modifiers = typeahead::KeyModifiers::default();
     }
 
     /// Queue a string as symbolic key taps (used by clipboard paste and, in symbolic
@@ -39,7 +40,7 @@ impl CocoApp {
     pub(crate) fn enqueue_text(&mut self, text: &str) {
         for c in text.chars() {
             if let Some(entry) = kbd::char_key(c) {
-                self.type_ahead.queue.push_back(entry);
+                self.type_ahead.queue.push_back(entry.into());
             }
         }
     }
@@ -161,7 +162,7 @@ impl CocoApp {
                         continue;
                     }
                     if let Some(pos) = control_key_pos(*key) {
-                        self.type_ahead.queue.push_back((pos, false));
+                        self.type_ahead.queue.push_back((pos, false).into());
                     }
                 }
                 _ => {}

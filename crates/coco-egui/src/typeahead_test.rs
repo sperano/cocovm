@@ -9,7 +9,7 @@ fn is_down(kb: &kbd::Keyboard, pos: Pos) -> bool {
 fn hold_survives_a_release_all_between_fields() {
     let mut ta = TypeAhead::default();
     let (pos, _) = kbd::char_key('a').unwrap();
-    ta.queue.push_back((pos, false));
+    ta.queue.push_back((pos, false).into());
     let mut kb = kbd::Keyboard::new();
 
     ta.advance(&mut kb);
@@ -24,7 +24,7 @@ fn hold_survives_a_release_all_between_fields() {
 #[test]
 fn one_tap_takes_fields_per_tap_advances() {
     let mut ta = TypeAhead::default();
-    ta.queue.push_back(kbd::char_key('a').unwrap());
+    ta.queue.push_back(kbd::char_key('a').unwrap().into());
     let mut kb = kbd::Keyboard::new();
     for _ in 0..FIELDS_PER_TAP - 1 {
         ta.advance(&mut kb);
@@ -39,7 +39,7 @@ fn shifted_tap_holds_shift_and_releases_both() {
     let mut ta = TypeAhead::default();
     let (pos, shift) = kbd::char_key('!').unwrap();
     assert!(shift);
-    ta.queue.push_back((pos, shift));
+    ta.queue.push_back((pos, shift).into());
     let mut kb = kbd::Keyboard::new();
 
     for _ in 0..=TYPE_HOLD_FIELDS {
@@ -48,4 +48,37 @@ fn shifted_tap_holds_shift_and_releases_both() {
     }
     ta.advance(&mut kb);
     assert!(!is_down(&kb, pos) && !is_down(&kb, kbd::SHIFT));
+}
+
+#[test]
+fn clicked_chord_releases_all_modifiers_before_the_next_tap() {
+    let mut ta = TypeAhead::default();
+    let (pos, _) = kbd::char_key('a').unwrap();
+    ta.queue.push_back(KeyTap {
+        pos,
+        modifiers: KeyModifiers {
+            shift: true,
+            ctrl: true,
+            alt: true,
+        },
+    });
+    ta.queue.push_back((pos, false).into());
+    let mut kb = kbd::Keyboard::new();
+    for _ in 0..=TYPE_HOLD_FIELDS {
+        ta.advance(&mut kb);
+        for key in [pos, kbd::SHIFT, kbd::CTRL, kbd::ALT] {
+            assert!(is_down(&kb, key));
+        }
+    }
+    for _ in TYPE_HOLD_FIELDS as u64 + 1..FIELDS_PER_TAP {
+        ta.advance(&mut kb);
+        for key in [pos, kbd::SHIFT, kbd::CTRL, kbd::ALT] {
+            assert!(!is_down(&kb, key));
+        }
+    }
+    ta.advance(&mut kb);
+    assert!(is_down(&kb, pos));
+    for modifier in [kbd::SHIFT, kbd::CTRL, kbd::ALT] {
+        assert!(!is_down(&kb, modifier));
+    }
 }
