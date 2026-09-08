@@ -49,6 +49,7 @@ fn cli_flag_beats_file_and_default() {
     assert_eq!(config.control_port, 1234);
     assert_eq!(config.assets_url, "https://cli.example.test/bundle.tgz");
     assert!(config.toolbar_icons_only);
+    assert!(config.toolbar_icons_only_overridden);
 }
 
 #[test]
@@ -77,6 +78,7 @@ fn file_value_beats_built_in_default() {
     assert_eq!(config.control_port, 4242);
     assert_eq!(config.assets_url, "https://file.example.test/bundle.tgz");
     assert!(config.toolbar_icons_only);
+    assert!(!config.toolbar_icons_only_overridden);
 }
 
 #[test]
@@ -101,7 +103,7 @@ fn missing_config_file_yields_the_empty_file_config() {
     let dir = TempDir::new("config-missing-file");
     let path = dir.path().join("config.toml");
     assert!(!path.is_file());
-    assert_eq!(load(Some(path)), Ok(FileConfig::default()));
+    assert_eq!(load(Some(&path)), Ok(FileConfig::default()));
 }
 
 #[test]
@@ -109,7 +111,7 @@ fn malformed_config_file_error_names_the_path() {
     let dir = TempDir::new("config-malformed");
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "log_level = [this is not valid toml").unwrap();
-    let err = load(Some(path.clone())).expect_err("malformed TOML must fail");
+    let err = load(Some(&path)).expect_err("malformed TOML must fail");
     assert!(
         err.contains(&path.display().to_string()),
         "error must name the file: {err}"
@@ -249,7 +251,7 @@ fn freshly_seeded_file_loads_as_the_empty_file_config() {
     let dir = TempDir::new("config-seed-loads");
     let path = dir.path().join("config.toml");
     seed_default_file(&path);
-    assert_eq!(load(Some(path)), Ok(FileConfig::default()));
+    assert_eq!(load(Some(&path)), Ok(FileConfig::default()));
 }
 
 #[test]
@@ -266,7 +268,7 @@ fn a_valid_full_config_file_loads() {
         "#,
     )
     .unwrap();
-    let file = load(Some(path)).expect("valid config must load");
+    let file = load(Some(&path)).expect("valid config must load");
     assert_eq!(
         file,
         FileConfig {
@@ -275,5 +277,100 @@ fn a_valid_full_config_file_loads() {
             assets_url: Some("https://example.test/bundle.tgz".to_string()),
             toolbar_icons_only: Some(true),
         }
+    );
+}
+
+#[test]
+fn save_file_round_trips_through_load() {
+    let dir = TempDir::new("config-save-roundtrip");
+    let path = dir.path().join("config.toml");
+    let file = FileConfig {
+        log_level: Some(LogLevel::Debug),
+        control_port: Some(7001),
+        assets_url: Some("https://example.test/bundle.tgz".to_string()),
+        toolbar_icons_only: Some(true),
+    };
+    save_file(&path, &file).expect("save must succeed");
+    assert_eq!(load(Some(&path)).expect("saved file must load"), file);
+}
+
+#[test]
+fn save_file_preserves_template_comments_while_updating_a_key() {
+    let dir = TempDir::new("config-save-preserves-comments");
+    let path = dir.path().join("config.toml");
+    seed_default_file(&path);
+    let template = std::fs::read_to_string(&path).unwrap();
+
+    save_file(
+        &path,
+        &FileConfig {
+            control_port: Some(7002),
+            ..FileConfig::default()
+        },
+    )
+    .expect("save must succeed");
+
+    let saved = std::fs::read_to_string(&path).unwrap();
+    for line in template.lines().filter(|l| l.trim_start().starts_with('#')) {
+        assert!(saved.contains(line), "comment line lost: {line}\n{saved}");
+    }
+    assert!(saved.contains("control_port = 7002"), "{saved}");
+}
+
+#[test]
+fn save_file_removes_a_key_set_back_to_none() {
+    let dir = TempDir::new("config-save-remove-key");
+    let path = dir.path().join("config.toml");
+    save_file(
+        &path,
+        &FileConfig {
+            control_port: Some(7003),
+            ..FileConfig::default()
+        },
+    )
+    .expect("first save must succeed");
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .any(|l| l.trim_start().starts_with("control_port"))
+    );
+
+    save_file(&path, &FileConfig::default()).expect("second save must succeed");
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !saved
+            .lines()
+            .any(|l| l.trim_start().starts_with("control_port")),
+        "control_port key must be removed: {saved}"
+    );
+}
+
+#[test]
+fn save_file_with_no_existing_file_starts_from_the_template() {
+    let dir = TempDir::new("config-save-no-file");
+    let path = dir.path().join("config.toml");
+    assert!(!path.is_file());
+
+    save_file(
+        &path,
+        &FileConfig {
+            log_level: Some(LogLevel::Trace),
+            ..FileConfig::default()
+        },
+    )
+    .expect("save must succeed");
+
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        saved.contains("# cocovm global config."),
+        "template header must survive: {saved}"
+    );
+    assert!(saved.contains("log_level = \"trace\""), "{saved}");
+    assert!(
+        !saved
+            .lines()
+            .any(|l| l.trim_start().starts_with("control_port")),
+        "untouched field must stay unset: {saved}"
     );
 }

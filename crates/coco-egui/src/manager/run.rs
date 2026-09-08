@@ -6,12 +6,19 @@ use crate::{machine_def, photo_view};
 
 use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
 
-/// Open the manager as the application's main window.
-pub fn run(config: crate::config::Config) -> eframe::Result<()> {
+/// Open the manager as the application's main window. `config_path` is the
+/// same path `main.rs` resolved `config` from (`None` when no home
+/// directory exists — `paths::config_dir` docs); the Settings dialog reads
+/// and writes it directly (`manager/settings.rs`).
+pub fn run(
+    config: crate::config::Config,
+    config_path: Option<std::path::PathBuf>,
+) -> eframe::Result<()> {
     let crate::config::Config {
         control_port,
         assets_url,
         toolbar_icons_only,
+        toolbar_icons_only_overridden,
         ..
     } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
@@ -62,6 +69,8 @@ pub fn run(config: crate::config::Config) -> eframe::Result<()> {
                 control,
             );
             app.toolbar_icons_only = toolbar_icons_only;
+            app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
+            app.config_path = config_path;
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
             }

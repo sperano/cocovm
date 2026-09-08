@@ -36,6 +36,7 @@ mod list;
 mod rename;
 mod run;
 mod selection;
+mod settings;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
@@ -329,6 +330,17 @@ pub struct ManagerApp {
     pub(crate) asset_dialog: Option<assets::AssetDialog>,
     /// Global toolbar caption toggle, copied to each launched VM.
     pub(crate) toolbar_icons_only: bool,
+    /// True when a CLI flag or env var supplied `toolbar_icons_only`
+    /// (`Config::toolbar_icons_only_overridden`); Settings then skips the
+    /// live apply on save so the override keeps winning until restart.
+    pub(crate) toolbar_icons_only_overridden: bool,
+    /// Where `config.toml` lives (`run::run`'s own `config_path`), for the
+    /// Settings dialog to load and save. `None` when no home directory
+    /// exists (`paths::config_dir` docs) — Settings then opens with the
+    /// built-in defaults and reports the problem on Save instead.
+    pub(crate) config_path: Option<PathBuf>,
+    /// The Settings dialog (`manager/settings.rs`), open while `Some`.
+    pub(crate) settings: Option<settings::SettingsDialog>,
 }
 
 impl ManagerApp {
@@ -367,6 +379,9 @@ impl ManagerApp {
             pending_rename: None,
             asset_dialog: None,
             toolbar_icons_only: false,
+            toolbar_icons_only_overridden: false,
+            config_path: None,
+            settings: None,
         }
     }
 }
@@ -458,6 +473,7 @@ impl eframe::App for ManagerApp {
         });
 
         self.draw_delete_confirmation(ctx);
+        self.draw_settings_dialog(ctx);
         self.drain_control();
         self.draw_running_vms(ctx);
         self.resolve_control_pending(ctx);

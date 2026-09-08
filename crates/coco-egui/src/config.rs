@@ -6,19 +6,22 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use clap::ValueEnum;
 
 use crate::cli::{Cli, LogLevel};
 
+/// Global config file's name under [`crate::paths::config_dir`].
+pub(crate) const CONFIG_FILE_NAME: &str = "config.toml";
+
 /// Built-in default for `log_level` when neither a CLI flag, an environment
 /// variable, nor `config.toml` names one.
-const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Warn;
+pub(crate) const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Warn;
 
 /// Built-in default for `toolbar_icons_only`: caption-and-icon tiles, today's
 /// only behavior before this file existed.
-const DEFAULT_TOOLBAR_ICONS_ONLY: bool = false;
+pub(crate) const DEFAULT_TOOLBAR_ICONS_ONLY: bool = false;
 
 /// `config.toml`'s schema. Every field is optional so a partial file only
 /// overrides what it names; `deny_unknown_fields` turns a typo'd key into a
@@ -39,6 +42,9 @@ pub(crate) struct Config {
     pub(crate) control_port: u16,
     pub(crate) assets_url: String,
     pub(crate) toolbar_icons_only: bool,
+    /// True when a CLI flag or env var supplied `toolbar_icons_only`; the
+    /// Settings dialog then leaves the live value alone on save.
+    pub(crate) toolbar_icons_only_overridden: bool,
 }
 
 /// Reads `config.toml`. `path` is `None` when no home directory could be
@@ -46,11 +52,11 @@ pub(crate) struct Config {
 /// [`FileConfig`], so every parameter falls through to the next layer. Any
 /// other read or parse failure is `Err`, naming the file, for the caller to
 /// print and exit on (mirrors `machine_def::io::load_one`'s severity).
-pub(crate) fn load(path: Option<PathBuf>) -> Result<FileConfig, String> {
+pub(crate) fn load(path: Option<&Path>) -> Result<FileConfig, String> {
     let Some(path) = path else {
         return Ok(FileConfig::default());
     };
-    read(&path)
+    read(path)
 }
 
 fn read(path: &Path) -> Result<FileConfig, String> {
@@ -66,6 +72,7 @@ fn read(path: &Path) -> Result<FileConfig, String> {
 /// folding in clap's own env fallback — see `cli.rs`'s struct doc) beats the
 /// file value, which beats the built-in default.
 pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
+    let toolbar_icons_only_overridden = cli.toolbar_icons_only.is_some();
     Config {
         log_level: cli
             .log_level
@@ -83,6 +90,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .toolbar_icons_only
             .or(file.toolbar_icons_only)
             .unwrap_or(DEFAULT_TOOLBAR_ICONS_ONLY),
+        toolbar_icons_only_overridden,
     }
 }
 
@@ -90,10 +98,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
 /// commented out, showing its built-in default, so a user who has never
 /// touched `config.toml` still finds a reference instead of an empty file.
 fn default_config_template() -> String {
-    let log_level_value = DEFAULT_LOG_LEVEL
-        .to_possible_value()
-        .expect("LogLevel has no skip_value variants");
-    let log_level = log_level_value.get_name();
+    let log_level = log_level_name(DEFAULT_LOG_LEVEL);
     // `assets_url` is interpolated into a quoted TOML string unescaped: it
     // must never contain `"` or `\` (see `DEFAULT_ASSETS_URL`'s own doc in
     // startup.rs), or the generated file stops parsing.
@@ -146,6 +151,60 @@ pub(crate) fn seed_default_file(path: &Path) {
     match file.write_all(default_config_template().as_bytes()) {
         Ok(()) => println!("Wrote default config to {}", path.display()),
         Err(e) => eprintln!("coco: cannot write {}: {e}", path.display()),
+    }
+}
+
+/// Writes `file` into `path`, for the Settings dialog (`manager/settings.rs`).
+/// Starts from `path`'s existing text, or [`default_config_template`] when
+/// there is none yet, and edits it with `toml_edit` rather than
+/// re-serializing from scratch, so the user's comments survive. Each of the
+/// four keys is set when `file` names it, or removed so it keeps tracking
+/// future built-in defaults. Written atomically (`.tmp` + rename), like
+/// `machine_def::io::save`.
+pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => default_config_template(),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let mut doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+
+    set_or_remove(&mut doc, "log_level", file.log_level.map(log_level_name));
+    set_or_remove(&mut doc, "control_port", file.control_port.map(i64::from));
+    set_or_remove(&mut doc, "assets_url", file.assets_url.clone());
+    set_or_remove(&mut doc, "toolbar_icons_only", file.toolbar_icons_only);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+    let tmp_path = path.with_extension("toml.tmp");
+    fs::write(&tmp_path, doc.to_string()).map_err(|e| format!("{}: {e}", tmp_path.display()))?;
+    fs::rename(&tmp_path, path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// `level`'s TOML/CLI spelling — the lowercase `ValueEnum` name (`"warn"`).
+pub(crate) fn log_level_name(level: LogLevel) -> String {
+    level
+        .to_possible_value()
+        .expect("LogLevel has no skip_value variants")
+        .get_name()
+        .to_string()
+}
+
+/// Sets `doc[key]` to `value`, or removes `key` entirely when `value` is
+/// `None` — [`save_file`]'s one rule applied per field.
+fn set_or_remove<T: Into<toml_edit::Value>>(
+    doc: &mut toml_edit::DocumentMut,
+    key: &str,
+    value: Option<T>,
+) {
+    match value {
+        Some(v) => doc[key] = toml_edit::value(v),
+        None => {
+            doc.remove(key);
+        }
     }
 }
 

@@ -2,6 +2,8 @@
 //! shared icon-over-label tile widget in [`crate::widgets`] (also used by the
 //! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
 //! Suspend – Stop – Reset – separator – Settings – separator – Help.
+//! Settings opens the global `config.toml` editor (`manager/settings.rs`);
+//! Help is still inert scaffolding.
 //! The four transport tiles act on the current selection through the same
 //! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch used by the
 //! bulk context menu — one code path, three surfaces.
@@ -42,8 +44,8 @@ const STOP_DISABLED_HOVER: &str = "None of the selected machines are running or 
 const RESET_HOVER: &str = "Press the reset button on the selected running machines";
 
 impl ManagerApp {
-    /// The manager actions row. "Settings"/"Help" are still inert
-    /// scaffolding; the four transport tiles dispatch through
+    /// The manager actions row. "Help" is still inert scaffolding; the four
+    /// transport tiles dispatch through
     /// [`ManagerApp::apply_bulk`] against every currently selected row.
     pub(super) fn draw_toolbar(&mut self, ui: &mut egui::Ui) {
         let indices: Vec<usize> = self.selection.iter().collect();
@@ -104,7 +106,9 @@ impl ManagerApp {
             }
 
             toolbar_separator(ui);
-            let _ = toolbar_button(ui, SETTINGS_ICON, "Settings", true, icons_only);
+            if toolbar_button(ui, SETTINGS_ICON, "Settings", true, icons_only).clicked() {
+                self.open_settings_dialog();
+            }
             toolbar_separator(ui);
             let _ = toolbar_button(ui, HELP_ICON, "Help", true, icons_only);
         });
