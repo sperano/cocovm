@@ -27,8 +27,8 @@ fn vm_window_inner_size() -> egui::Vec2 {
 
 impl ManagerApp {
     /// One native OS window per running VM: an immediate viewport per
-    /// entry, keyed by a stable id from the slug so egui reuses the same OS
-    /// window across frames. Called once per `ManagerApp::update`, after
+    /// entry, keyed by a runtime session id so egui reuses the same OS
+    /// window across frames and machine renames. Called once per `ManagerApp::update`, after
     /// the manager's own panels.
     pub(super) fn draw_running_vms(&mut self, ctx: &egui::Context) {
         // Indices suspended or resumed this frame, for `focus_first_failed_row`
@@ -42,9 +42,9 @@ impl ManagerApp {
             if self.entries[i].vm.is_none() {
                 continue;
             }
-            let slug = self.entries[i].slug.clone();
             let name = self.entries[i].def.name.clone();
-            let viewport_id = egui::ViewportId::from_hash_of(("vm-window", &slug));
+            let window_session = self.entries[i].window_session;
+            let viewport_id = egui::ViewportId::from_hash_of(("vm-window", window_session));
             let inner_size = vm_window_inner_size();
             let builder = egui::ViewportBuilder::default()
                 .with_title(name.clone())
@@ -70,7 +70,7 @@ impl ManagerApp {
                     // window's full size, which would eat clicks meant for
                     // the manager's panels.
                     egui::Window::new(crate::window_title(child_ctx, &name))
-                        .id(egui::Id::new(("vm-window-embedded", slug.as_str())))
+                        .id(egui::Id::new(("vm-window-embedded", window_session)))
                         .open(&mut open)
                         .resizable(false)
                         .default_size(EMBEDDED_FALLBACK_SIZE)

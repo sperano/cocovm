@@ -832,6 +832,9 @@ name = "cocovm-test-assets"
 version = "0.7.4"
 dependencies = [
  "etcetera",
+ "flate2",
+ "tar",
+ "ureq",
 ]
 
 [[package]]

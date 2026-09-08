@@ -7,7 +7,7 @@
 //! Indices are into `ManagerApp::entries`, so any mutation that reorders or
 //! shrinks that list must fix the selection up in the same move:
 //! [`Selection::snapshot`]/[`Selection::restore`] for a re-sort (a rename's
-//! `lifecycle::migrate_slug`), [`Selection::remove_index`] for a removal
+//! `rename::rekey_rename`), [`Selection::remove_index`] for a removal
 //! (`lifecycle::delete_machine`).
 
 use std::cmp::Ordering;

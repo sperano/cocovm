@@ -1,9 +1,14 @@
 //! Development-only helper for locating test assets shared by the workspace's
 //! `tests/` and `#[cfg(test)]` suites. Every asset resolves under the same
-//! XDG data directory used by the application. Repository-local asset
-//! directories are deliberately ignored.
+//! XDG data directory used by the application. ROMs come from the app's
+//! own first-run download; the disk/VHD test images come from a separate
+//! bundle this crate fetches on first use (see [`fetch`]).
+
+mod fetch;
 
 use std::path::PathBuf;
+
+pub use fetch::{DEFAULT_TEST_ASSETS_URL, TEST_ASSETS_URL_ENV};
 
 use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
 
@@ -12,10 +17,9 @@ use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
 const ASSETS_KIND: &str = "assets";
 /// Directory name for ROM images under the asset root.
 const ROMS_KIND: &str = "roms";
-/// Directory name for disk/VHD images, directly under the data root — not
-/// under `assets/`: unlike the ROM bundle, not everything there is
-/// downloadable bundle content.
-const DISKS_KIND: &str = "disks";
+/// Directory name for the disk/VHD test images under the asset root; also
+/// the top-level directory inside the test bundle tarball.
+const TESTS_KIND: &str = "tests";
 
 /// The app's XDG data directory (`~/.local/share/cocovm` on Linux/macOS), or
 /// `None` if no home directory can be determined. The following `AppStrategyArgs`
@@ -36,15 +40,26 @@ fn resolve_data_dir() -> PathBuf {
     xdg_data_dir().expect("cannot determine the cocovm XDG data directory")
 }
 
-/// Returns the path to ROM file `name` (see [`rom`] for well-known names):
+/// Returns the path to ROM file `name` (see [`mod@rom`] for well-known names):
 /// `<xdg_data_dir>/assets/roms/<name>`.
 pub fn rom(name: &str) -> PathBuf {
     roms_dir().join(name)
 }
 
-/// Returns the path to disk/VHD image `name` under `<xdg_data_dir>/disks`.
+/// Returns the path to disk/VHD image `name` (see [`mod@disk`] for well-known
+/// names): `<xdg_data_dir>/assets/tests/<name>`. When the file is absent the
+/// test bundle is fetched first (once per process); if that fails the path
+/// is returned anyway and callers skip as usual.
 pub fn disk(name: &str) -> PathBuf {
-    disks_dir().join(name)
+    let path = disk_path(name);
+    fetch::ensure_present(&path);
+    path
+}
+
+/// [`disk`]'s path without the fetch; split out so a unit test can pin the
+/// layout without pulling 40 MB.
+fn disk_path(name: &str) -> PathBuf {
+    tests_dir().join(name)
 }
 
 /// Returns the ROM asset directory, `<xdg_data_dir>/assets/roms`.
@@ -52,9 +67,9 @@ pub fn roms_dir() -> PathBuf {
     resolve_data_dir().join(ASSETS_KIND).join(ROMS_KIND)
 }
 
-/// Returns the disk/VHD asset directory, `<xdg_data_dir>/disks`.
-pub fn disks_dir() -> PathBuf {
-    resolve_data_dir().join(DISKS_KIND)
+/// Returns the disk/VHD test-image directory, `<xdg_data_dir>/assets/tests`.
+pub fn tests_dir() -> PathBuf {
+    resolve_data_dir().join(ASSETS_KIND).join(TESTS_KIND)
 }
 
 /// Defines well-known ROM file names used across many call sites, avoiding
@@ -65,7 +80,7 @@ pub mod rom {
     pub const COCO3: &str = "coco3.rom";
     /// Disk Extended Color BASIC.
     pub const DISK11: &str = "disk11.rom";
-    /// HDB-DOS 1.1 DriveWire 3, Becker build for CoCo 3 (`tests/drivewire_boot.rs`).
+    /// HDB-DOS 1.4 DriveWire 3, Becker build for CoCo 3 (`tests/drivewire_boot.rs`).
     pub const HDBDW3BC3: &str = "hdbdw3bc3.rom";
     /// Color BASIC 1.2 (CoCo 1) / the CoCo 2's Color BASIC half of its flat
     /// image (`tests/coco1_boot.rs`, `tests/coco2_boot/common.rs`).

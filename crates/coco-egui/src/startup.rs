@@ -124,13 +124,13 @@ pub(crate) fn banner(info: &StartupInfo) {
 /// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden. Must
 /// never contain `"` or `\` — `config::default_config_template` interpolates
 /// it unescaped into a quoted TOML string.
-pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
+pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm/cocovm-assets-v6.tgz";
 
 /// ROM images the bundle at [`DEFAULT_ASSETS_URL`] carries. Any one missing from
 /// the installed ROM directory triggers a (re)download, so an install that
 /// predates a bundle addition catches up instead of staying at whatever it
 /// first unpacked.
-pub(crate) const BUNDLED_ROMS: [&str; 10] = [
+pub(crate) const BUNDLED_ROMS: [&str; 11] = [
     "bas10.rom",
     "bas11.rom",
     "bas12.rom",
@@ -141,6 +141,7 @@ pub(crate) const BUNDLED_ROMS: [&str; 10] = [
     "disk11.rom",
     "sp0256-al2.rom",
     "ssc-tms7040.rom",
+    "hdbdw3bc3.rom",
 ];
 
 /// Whether `dir` exists and contains at least one entry.
@@ -189,7 +190,8 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
 /// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
 /// are absent on disk, as display paths: an empty images directory counts
 /// as one entry, plus each missing [`BUNDLED_ROMS`] image. Empty means no
-/// download is needed.
+/// download is needed. The integration tests' disk images are not the
+/// app's business: `crates/test-assets` fetches its own bundle.
 pub(crate) fn missing_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))

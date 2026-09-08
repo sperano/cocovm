@@ -40,6 +40,7 @@ mod orch90_meters;
 mod paper_export;
 mod paper_render;
 mod paper_view;
+mod path_remap;
 mod paths;
 mod photo_view;
 mod rom_load;

@@ -12,9 +12,8 @@ use super::{ManagerApp, PendingCondition, PendingControl};
 /// One [`PendingControl`]'s outcome this frame.
 enum Outcome {
     Done,
-    /// The target entry vanished (renamed away — impossible, since a rename
-    /// keeps the slug map to the new slug via `migrate_slug` — stopped, or
-    /// its window closed) since the request was accepted.
+    /// The target entry vanished because it stopped or its window closed.
+    /// Rename transactions retarget pending requests before re-sorting.
     Gone(String),
     Waiting,
 }

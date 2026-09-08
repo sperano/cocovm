@@ -53,6 +53,23 @@ fn reply_pair() -> (ReplyHandle, mpsc::Receiver<Response>) {
 }
 
 #[test]
+fn retarget_changes_only_the_matching_slug() {
+    let (reply, _receiver) = reply_pair();
+    let mut pending = PendingControl::new(
+        reply,
+        "old".to_string(),
+        PendingCondition::TypeTextDrained,
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    );
+
+    pending.retarget("other", "ignored");
+    assert_eq!(pending.slug, "old");
+    pending.retarget("old", "new");
+    assert_eq!(pending.slug, "new");
+}
+
+#[test]
 fn replies_done_once_the_condition_is_already_met() {
     let mut manager = manager(vec![running_entry("live")]);
     let (reply, rx) = reply_pair();
