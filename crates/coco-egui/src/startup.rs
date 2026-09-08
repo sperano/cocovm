@@ -141,16 +141,29 @@ pub(crate) const BUNDLED_ROMS: [&str; 10] = [
     "ssc-tms7040.rom",
 ];
 
+/// Disk/VHD images the bundle installs under [`paths::tests_dir`] for the
+/// workspace's integration tests; checked per file like [`BUNDLED_ROMS`].
+/// Must match `test_assets::disk`'s names (`startup_test.rs` guards it).
+pub(crate) const BUNDLED_TEST_IMAGES: [&str; 6] = [
+    "68EMU.dsk",
+    "68SDC.VHD",
+    "spetris.dsk",
+    "blank02.dsk",
+    "NOS9_6809_L2_v030300_coco3_40d_1.dsk",
+    "nos96809l2v030300coco3_becker.dsk",
+];
+
 /// Whether `dir` exists and contains at least one entry.
 pub(crate) fn dir_has_files(dir: &Path) -> bool {
     fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some())
 }
 
-/// The [`BUNDLED_ROMS`] not present as files under `roms_dir`.
-pub(crate) fn missing_bundled_roms(roms_dir: &Path) -> Vec<&'static str> {
-    BUNDLED_ROMS
-        .into_iter()
-        .filter(|name| !roms_dir.join(name).is_file())
+/// The `names` not present as files under `dir`.
+pub(crate) fn missing_bundled<'a>(dir: &Path, names: &[&'a str]) -> Vec<&'a str> {
+    names
+        .iter()
+        .copied()
+        .filter(|name| !dir.join(name).is_file())
         .collect()
 }
 
@@ -185,22 +198,26 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
 }
 
 /// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
-/// are absent on disk, as display paths: an empty images or tests directory
-/// counts as one entry each, plus each missing [`BUNDLED_ROMS`] image. Empty
-/// means no download is needed.
+/// are absent on disk, as display paths: an empty images directory counts
+/// as one entry, plus each missing [`BUNDLED_ROMS`] and
+/// [`BUNDLED_TEST_IMAGES`] file. Empty means no download is needed.
 pub(crate) fn missing_assets() -> Vec<String> {
-    let mut missing: Vec<String> = [paths::images_dir(), paths::tests_dir()]
-        .into_iter()
-        .flatten()
+    let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())
+        .into_iter()
         .collect();
-    if let Some(roms_dir) = paths::roms_dir() {
-        missing.extend(
-            missing_bundled_roms(&roms_dir)
-                .into_iter()
-                .map(|name| roms_dir.join(name).display().to_string()),
-        );
+    for (dir, names) in [
+        (paths::roms_dir(), &BUNDLED_ROMS[..]),
+        (paths::tests_dir(), &BUNDLED_TEST_IMAGES[..]),
+    ] {
+        if let Some(dir) = dir {
+            missing.extend(
+                missing_bundled(&dir, names)
+                    .into_iter()
+                    .map(|name| dir.join(name).display().to_string()),
+            );
+        }
     }
     missing
 }

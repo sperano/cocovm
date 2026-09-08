@@ -35,13 +35,13 @@ fn resolve_data_dir() -> PathBuf {
     xdg_data_dir().expect("cannot determine the cocovm XDG data directory")
 }
 
-/// Returns the path to ROM file `name` (see [`rom`] for well-known names):
+/// Returns the path to ROM file `name` (see [`mod@rom`] for well-known names):
 /// `<xdg_data_dir>/assets/roms/<name>`.
 pub fn rom(name: &str) -> PathBuf {
     roms_dir().join(name)
 }
 
-/// Returns the path to disk/VHD image `name` (see [`disk`] for well-known
+/// Returns the path to disk/VHD image `name` (see [`mod@disk`] for well-known
 /// names): `<xdg_data_dir>/assets/tests/<name>`.
 pub fn disk(name: &str) -> PathBuf {
     tests_dir().join(name)
