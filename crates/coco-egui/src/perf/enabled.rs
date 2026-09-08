@@ -11,7 +11,8 @@ mod histogram;
 
 use histogram::Histogram;
 
-const STAGE_NAMES: [&str; 7] = [
+const STAGE_COUNT: usize = Stage::SnapshotRestore as usize + 1;
+const STAGE_NAMES: [&str; STAGE_COUNT] = [
     "manager_update",
     "vm_ui_update",
     "field_execution",
@@ -19,6 +20,9 @@ const STAGE_NAMES: [&str; 7] = [
     "texture_enqueue_cpu",
     "audio_push",
     "audio_callback_lock_wait",
+    "host_operation",
+    "snapshot_save",
+    "snapshot_restore",
 ];
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
 pub(super) static ENABLED: AtomicBool = AtomicBool::new(false);

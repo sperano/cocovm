@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -14,6 +15,18 @@ SHORT_TERMINATE_GRACE = 0.05
 
 
 class BaselineTests(unittest.TestCase):
+    def test_control_load_must_complete_at_least_one_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "no client report"):
+                baseline.validate_control_load(run_dir)
+            path = run_dir / "control.json"
+            path.write_text(json.dumps([{"successes": 0, "failures": 100}]))
+            with self.assertRaisesRegex(RuntimeError, "no successful MCP"):
+                baseline.validate_control_load(run_dir)
+            path.write_text(json.dumps([{"successes": 0}, {"successes": 1}]))
+            baseline.validate_control_load(run_dir)
+
     def test_uncooperative_child_is_killed_and_reaped(self):
         child = subprocess.Popen([sys.executable, "-c",
             "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -29,7 +42,7 @@ class BaselineTests(unittest.TestCase):
 
     def test_sampler_failure_reaps_child_and_preserves_resource_artifacts(self):
         args = SimpleNamespace(kind="core", warmup=1, duration=1, no_allocations=False,
-                               sample_profile=False, no_telemetry=False)
+                               sample_profile=False, no_telemetry=False, keep_foreground=False)
         observed = []
 
         def fail_sample(pid):

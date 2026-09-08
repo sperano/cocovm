@@ -32,23 +32,31 @@ def measurements(directory):
 def row(name, runs):
     native = "stages" in runs[0][0]
     cpu = [r.get("cpu_percent_one_core") for _, r in runs]
-    rss = [r.get("peak_sampled_rss_bytes", 0) / MEBIBYTE for _, r in runs]
+    rss = [r["peak_sampled_rss_bytes"] / MEBIBYTE
+           if r.get("peak_sampled_rss_bytes") is not None else None for _, r in runs]
     rates, allocations, bytes_allocated, uploads, p99, missing = [], [], [], [], [], []
     for metrics, _ in runs:
         if native:
             duration = metrics["measurement_duration_seconds"]
             stages = metrics["stages"]
+            if not metrics.get("enabled", True):
+                fields = metrics.get("scenario", {}).get("fields_run")
+                rates.append(fields / duration if fields is not None else None)
+                continue
             rates.append(stages["field_execution"]["count"] / duration)
             allocations.append(metrics["allocations"]["count"] / duration)
             bytes_allocated.append(metrics["allocations"]["requested_bytes"] / duration / MEBIBYTE)
             uploads.append(metrics["texture_enqueue_cpu"]["bytes"] / duration / MEBIBYTE)
-            p99.append(stages["vm_ui_update"]["p99_ns"] / NANOSECONDS_PER_MILLISECOND)
-            missing.append(metrics["audio"]["missing_frames"])
+            p99.append(stages["vm_ui_update"]["p99_ns"] / NANOSECONDS_PER_MILLISECOND
+                       if stages["vm_ui_update"]["count"] else None)
+            missing.append(metrics["audio"]["missing_frames"]
+                           if metrics["audio"]["callbacks"] else None)
         else:
             duration = metrics["elapsed_secs"]
             rates.append(metrics["fields_per_sec"])
-            allocations.append(metrics["allocations"] / duration)
-            bytes_allocated.append(metrics["allocated_bytes"] / duration / MEBIBYTE)
+            if metrics.get("allocation_tracking", True):
+                allocations.append(metrics["allocations"] / duration)
+                bytes_allocated.append(metrics["allocated_bytes"] / duration / MEBIBYTE)
     return (f"| {name} | {len(runs)} | {value_range(cpu)} | {value_range(rss)} | "
             f"{value_range(rates, 1)} | {value_range(allocations, 0)} | "
             f"{value_range(bytes_allocated)} | {value_range(uploads)} | "

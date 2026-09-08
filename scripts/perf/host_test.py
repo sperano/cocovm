@@ -4,6 +4,14 @@ import host
 
 
 class HostTests(unittest.TestCase):
+    def test_device_identifiers_are_removed_from_nested_metadata(self):
+        value = {"displays": [{"name": "Monitor", "refresh_rate": 60,
+                               "_spdisplays_display-serial-number": "private",
+                               "details": {"DeviceUUID": "private", "width": 1920}}]}
+        self.assertEqual(host.strip_device_identifiers(value),
+                         {"displays": [{"name": "Monitor", "refresh_rate": 60,
+                                        "details": {"width": 1920}}]})
+
     def test_cpu_time_accepts_ps_fractional_and_day_formats(self):
         for text, seconds in (("0:01.25", 1.25), ("02:03:04.5", 7384.5),
                               ("2-03:04:05", 183845), ("00:00.00", 0)):

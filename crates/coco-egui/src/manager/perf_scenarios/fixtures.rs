@@ -21,6 +21,13 @@ pub(super) fn prepare(app: &mut ManagerApp, config: &Config) -> Result<(), Strin
     if config.name == "manager-idle" {
         return Ok(());
     }
+    if config.name == "snapshot" {
+        let root = app
+            .artifacts_root
+            .as_ref()
+            .ok_or("artifact root required")?;
+        std::fs::create_dir_all(root).map_err(|error| error.to_string())?;
+    }
     let count = if config.name == "saved-previews" {
         1
     } else {
@@ -179,31 +186,45 @@ pub(super) fn operate(
 ) -> Result<bool, String> {
     match config.name.as_str() {
         "snapshot" => {
-            let path = app
-                .artifacts_root
-                .as_ref()
-                .ok_or("artifact root required")?
-                .join(SNAPSHOT_FILE);
-            let vm = app.entries[0].vm.as_mut().ok_or("snapshot VM missing")?;
-            vm.save_state_to(&path)?;
-            vm.load_state_from(&path)?;
+            let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
+            snapshot_round_trip(app)?;
         }
         "lifecycle" => {
-            const LIFECYCLE_STEPS: u64 = 6;
-            match operation % LIFECYCLE_STEPS {
-                0 => app.suspend_vm(0),
-                1 => app.close_vm_window(0),
-                2 => app.resume_vm(0),
-                3 => app.stop_vm(0),
-                4 => app.start_vm(0),
-                _ => {
-                    app.close_vm_window(0);
-                    app.start_vm(0);
-                }
-            }
-            check_entry(app, 0)?;
+            let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
+            lifecycle_step(app, operation)?;
         }
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+fn snapshot_round_trip(app: &mut ManagerApp) -> Result<(), String> {
+    let path = app
+        .artifacts_root
+        .as_ref()
+        .ok_or("artifact root required")?
+        .join(SNAPSHOT_FILE);
+    let vm = app.entries[0].vm.as_mut().ok_or("snapshot VM missing")?;
+    {
+        let _save = crate::perf::span(crate::perf::Stage::SnapshotSave);
+        vm.save_state_to(&path)?;
+    }
+    let _restore = crate::perf::span(crate::perf::Stage::SnapshotRestore);
+    vm.load_state_from(&path)
+}
+
+fn lifecycle_step(app: &mut ManagerApp, operation: u64) -> Result<(), String> {
+    const LIFECYCLE_STEPS: u64 = 6;
+    match operation % LIFECYCLE_STEPS {
+        0 => app.suspend_vm(0),
+        1 => app.close_vm_window(0),
+        2 => app.resume_vm(0),
+        3 => app.stop_vm(0),
+        4 => app.start_vm(0),
+        _ => {
+            app.close_vm_window(0);
+            app.start_vm(0);
+        }
+    }
+    check_entry(app, 0)
 }

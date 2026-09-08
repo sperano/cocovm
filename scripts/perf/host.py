@@ -53,6 +53,15 @@ def command(args, timeout=COMMAND_TIMEOUT):
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def strip_device_identifiers(value):
+    if isinstance(value, dict):
+        return {key: strip_device_identifiers(item) for key, item in value.items()
+                if not any(identifier in key.lower() for identifier in ("serial", "uuid"))}
+    if isinstance(value, list):
+        return [strip_device_identifiers(item) for item in value]
+    return value
+
+
 def metadata(root):
     data = {"os": platform.platform(), "architecture": platform.machine(),
             "commit": command(["git", "-C", str(root), "rev-parse", "HEAD"]),
@@ -65,8 +74,8 @@ def metadata(root):
         hardware = info.get("SPHardwareDataType", [{}])[0]
         data["hardware"] = {key: hardware.get(key) for key in
                             ("chip_type", "machine_model", "physical_memory", "number_processors")}
-        data["displays"] = info.get("SPDisplaysDataType")
-        data["audio_devices"] = info.get("SPAudioDataType")
+        data["displays"] = strip_device_identifiers(info.get("SPDisplaysDataType"))
+        data["audio_devices"] = strip_device_identifiers(info.get("SPAudioDataType"))
     else:
         data["cpu"] = command(["lscpu"])
         data["displays"] = None

@@ -5,12 +5,15 @@ import json
 import math
 import os
 from pathlib import Path
+import platform
 import socket
 import subprocess
 import tempfile
 import time
 
+import assets
 import control
+import foreground
 import host
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,6 +24,7 @@ EXIT_GRACE = 30.0
 TERMINATE_GRACE = 2.0
 PROFILE_SECONDS = 2
 PROFILE_INTERVAL_MS = 1
+FOCUS_WARMUP_FRACTION = 0.5
 NATIVE_SCENARIOS = ("manager-idle", "basic-idle", "graphics", "paused", "suspended",
                     "background", "multi-vm", "tv", "dac", "cartridge", "saved-previews",
                     "printer", "snapshot", "lifecycle", "control-load")
@@ -41,6 +45,8 @@ def arguments():
     parser.add_argument("--sample-profile", action="store_true", help="capture macOS sample; adds overhead")
     parser.add_argument("--no-allocations", action="store_true", help="core allocator-overhead comparison")
     parser.add_argument("--no-telemetry", action="store_true", help="native instrumentation-overhead comparison")
+    parser.add_argument("--keep-foreground", action="store_true",
+                        help="macOS native: maintain owned process focus; adds automation overhead")
     args = parser.parse_args()
     if not all(math.isfinite(value) and value > 0 for value in (args.warmup, args.duration, args.repeats)):
         parser.error("warmup, duration, and repeats must be positive and finite")
@@ -49,6 +55,8 @@ def arguments():
         parser.error(f"scenario must be one of {allowed}")
     if args.vm_count is not None and args.vm_count <= 0:
         parser.error("vm-count must be positive")
+    if args.keep_foreground and (args.kind != "native" or platform.system() != "Darwin"):
+        parser.error("keep-foreground requires a native macOS run")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=False)
     return args
@@ -65,11 +73,8 @@ def environment(args, fixture, report, scenario):
     env.update(COCOVM_PERF_WARMUP_SECS=str(args.warmup), COCOVM_PERF_DURATION_SECS=str(args.duration),
                COCOVM_PERF_REPEATS="1", COCOVM_PERF_OUTPUT=str(report),
                COCOVM_PERF_DISABLE_METRICS="1" if args.no_telemetry else "0", COCOVM_PERF_ALLOCATIONS="0" if args.no_allocations else "1")
+    assets.prepare(args.kind, env, fixture, report)
     if args.kind == "native":
-        source = Path(env.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "cocovm/assets"
-        data = fixture / "data/cocovm"
-        data.mkdir(parents=True)
-        (data / "assets").symlink_to(source.resolve(), target_is_directory=True)
         config = fixture / "config"
         config.mkdir()
         env.update(XDG_CONFIG_HOME=str(config), XDG_DATA_HOME=str(fixture / "data"),
@@ -105,16 +110,43 @@ def start_profiler(process, run_dir):
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def update_focus(process, args, scenario, elapsed, focus):
+    if not args.keep_foreground or scenario == "background" or elapsed < args.warmup * FOCUS_WARMUP_FRACTION:
+        return True
+    focus["checks"] += 1
+    try:
+        focus["changes"] += int(foreground.ensure(process.pid))
+    except RuntimeError:
+        if process.poll() is None:
+            raise
+        return False
+    return True
+
+
+def finish_observation(load, profiler, run_dir, focus, keep_foreground):
+    try:
+        if load:
+            (run_dir / "control.json").write_text(json.dumps(control.finish(load), indent=2))
+    finally:
+        try:
+            if profiler:
+                stop_process(profiler)
+        finally:
+            if keep_foreground:
+                (run_dir / "foreground.json").write_text(json.dumps(focus, indent=2))
+
+
 def observe(process, args, scenario, run_dir, port, samples):
     started = time.monotonic()
     load, profiler = None, None
     backgrounded = False
+    focus = {"checks": 0, "changes": 0}
     try:
         while process.poll() is None:
             elapsed = time.monotonic() - started
             if elapsed > args.warmup + args.duration + EXIT_GRACE:
                 raise TimeoutError("scenario did not exit by its deadline")
-            if scenario == "background" and elapsed >= args.warmup / 2 and not backgrounded:
+            if scenario == "background" and elapsed >= args.warmup * FOCUS_WARMUP_FRACTION and not backgrounded:
                 subprocess.run(["osascript", "-e", 'tell application "Finder" to activate'],
                                check=True, timeout=host.COMMAND_TIMEOUT)
                 backgrounded = True
@@ -127,17 +159,14 @@ def observe(process, args, scenario, run_dir, port, samples):
                     profiler = start_profiler(process, run_dir)
             if finished:
                 break
+            if not update_focus(process, args, scenario, elapsed, focus):
+                break
             measurement = host.sample(process.pid)
             if measurement:
                 samples.append(measurement)
             time.sleep(host.SAMPLE_INTERVAL)
     finally:
-        try:
-            if load:
-                (run_dir / "control.json").write_text(json.dumps(control.finish(load), indent=2))
-        finally:
-            if profiler:
-                stop_process(profiler)
+        finish_observation(load, profiler, run_dir, focus, args.keep_foreground)
     process.wait(timeout=EXIT_GRACE)
 
 
@@ -150,6 +179,15 @@ def write_resources(run_dir, process, command, samples):
                    total_observations=len(samples), observations_inside_window=len(selected))
     (run_dir / "resources.json").write_text(json.dumps(summary, indent=2))
     (run_dir / "samples.json").write_text(json.dumps(samples, indent=2))
+
+
+def validate_control_load(run_dir):
+    path = run_dir / "control.json"
+    if not path.exists():
+        raise RuntimeError("control-load produced no client report")
+    clients = json.loads(path.read_text())
+    if sum(client.get("successes", 0) for client in clients) <= 0:
+        raise RuntimeError("control-load completed no successful MCP requests")
 
 
 def execute(args, scenario, run_dir, command, port, directory):
@@ -171,6 +209,8 @@ def execute(args, scenario, run_dir, command, port, directory):
     if not (run_dir / "metrics.json").exists():
         raise RuntimeError(f"{scenario} produced no report")
     json.loads((run_dir / "metrics.json").read_text())
+    if scenario == "control-load":
+        validate_control_load(run_dir)
 
 
 def run(args, scenario, repeat):

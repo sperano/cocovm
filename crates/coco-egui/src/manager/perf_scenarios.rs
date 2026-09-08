@@ -166,6 +166,11 @@ impl ScenarioRun {
             "saved_entries": app.entries.len(), "vm_count": app.entries.iter().filter(|e| e.vm.is_some()).count(),
             "focused_updates": self.focused_updates, "unfocused_updates": self.unfocused_updates,
             "unknown_focus_updates": self.unknown_focus_updates, "operations": self.operations,
+            "operation_type": match self.config.name.as_str() {
+                "snapshot" => "snapshot save and restore round trip",
+                "lifecycle" => "one lifecycle step: suspend, close suspended window, cold resume, stop, start, close and restart",
+                _ => "none"
+            },
             "measurement_unix_started": self.unix_started, "measurement_unix_finished": unix_finished,
             "fields_run": self.fields.iter().map(|(_, _, total)| total).sum::<u64>(),
             "printer_pages": if self.config.name == "printer" { config::PRINTER_PAGE_COUNT } else { 0 },

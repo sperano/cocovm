@@ -31,8 +31,19 @@ The background scenario activates Finder on macOS. Recorded viewport focus count
 show whether the intended focus condition held. A focus request cannot establish
 whether a window is physically occluded. Inspect these counts before comparing runs.
 
+For a focused macOS run, add `--keep-foreground`. Once half the warmup time has
+elapsed, the runner checks the owned benchmark process by PID during each resource
+sampling cycle and brings it forward only when needed. The background scenario
+skips this action. `foreground.json` records check and focus-change counts. Automation
+failures fail the run. These checks and any resulting focus/input events add overhead;
+use the same setting in comparisons and continue checking recorded viewport focus.
+
 The runner creates temporary XDG configuration and data directories, links the
-installed asset directory, and generates machine definitions there. It rejects an
+installed ROM directory, and generates machine definitions there. The manager image
+directory contains one generated 1280 × 960 RGB gradient PNG, making its otherwise
+random image selection reproducible. `inputs.json` records the generator version,
+image and pixel SHA-256 hashes, and installed ROM filenames and SHA-256 hashes.
+Core runs also identify the CoCo 3 BASIC ROM hash. It rejects an
 existing output directory. The native driver rejects a nonempty machine library.
 Snapshots, previews, and printer fixtures remain in the temporary directory and
 are removed when the process exits. Run from the repository root. Python uses only
@@ -108,6 +119,9 @@ the last successfully opened stream. Multiple VMs use the same default device.
 Startup and reset can overlap a callback; the reset boundary is not an atomic
 transaction across threads.
 
+`warmup_including_cold_first_update` preserves initial UI and preview-loading costs
+before the steady-state counter reset. Fixture generation precedes both intervals.
+
 `resources.json` and `samples.json` record externally sampled process CPU, resident
 memory, threads, and file descriptors. On macOS, `proc_pid_rusage` also reports
 package idle wakeups, interrupt wakeups, and physical footprint. These wakeup
@@ -134,6 +148,11 @@ The first command captures a two-second macOS `sample` report. For GPU timing,
 input-to-photon latency, and hardware display behavior, use an appropriate native
 capture and attach its settings and limitations. Missing measurements must remain
 explicitly unavailable.
+
+The native `--no-telemetry` comparison uses the same feature-enabled binary with
+recording disabled. Allocator and span enable checks, callback-local accounting,
+the scenario driver, and external sampling remain active. This comparison measures
+recording overhead, not the entire cost of compiling telemetry into the application.
 
 The `perf` feature is disabled in normal builds. Without it, measurement hooks
 compile to empty functions. With it, counters remain disabled until a scenario
