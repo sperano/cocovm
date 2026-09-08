@@ -122,7 +122,7 @@ pub(crate) fn banner(info: &StartupInfo) {
 }
 
 /// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden.
-pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v3.tgz";
+pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm-assets-v5.tgz";
 
 /// ROM images the bundle at [`DEFAULT_ASSETS_URL`] carries. Any one missing from
 /// the installed ROM directory triggers a (re)download, so an install that
@@ -185,14 +185,15 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
 }
 
 /// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
-/// are absent on disk, as display paths: an empty images directory counts
-/// as one entry, plus each missing [`BUNDLED_ROMS`] image. Empty means no
-/// download is needed.
+/// are absent on disk, as display paths: an empty images or tests directory
+/// counts as one entry each, plus each missing [`BUNDLED_ROMS`] image. Empty
+/// means no download is needed.
 pub(crate) fn missing_assets() -> Vec<String> {
-    let mut missing: Vec<String> = paths::images_dir()
+    let mut missing: Vec<String> = [paths::images_dir(), paths::tests_dir()]
+        .into_iter()
+        .flatten()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())
-        .into_iter()
         .collect();
     if let Some(roms_dir) = paths::roms_dir() {
         missing.extend(

@@ -20,3 +20,7 @@ manager). `book/` is a 16-chapter course built from this codebase.
   (`manager/assets.rs` dialog over `startup::missing_assets`); tests resolve them
   via `crates/test-assets`. There is no repo-root `roms/` directory — don't
   create one.
+- `~/.local/share/cocovm/assets/tests/` — the disk/VHD images the integration
+  tests boot (EOU 1.0.1 `68EMU.dsk`/`68SDC.VHD`, NitrOS-9, DriveWire `.dsk`s),
+  from the same bundle; `test_assets::disk()` resolves them. Tests skip when
+  they are absent.

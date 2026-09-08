@@ -1,9 +1,9 @@
 //! End-to-end regression: **HDB-DOS** (a Disk BASIC ROM replacement that
 //! talks the DriveWire protocol over the Becker port, $FF41/$FF42, instead
 //! of driving an FD-502) boots in the emulated CoCo 3 and lists/writes files
-//! on a DriveWire-served `.dsk` through `DIR`/`SAVE`. The ignored assets are:
+//! on a DriveWire-served `.dsk` through `DIR`/`SAVE`. The installed assets are:
 //! `roms/coco3.rom`, `roms/hdbdw3bc3.rom` (HDB-DOS 1.1 DriveWire 3, Becker
-//! build for CoCo 3), `disks/spetris.dsk` and `disks/blank02.dsk` (standard
+//! build for CoCo 3), `tests/spetris.dsk` and `tests/blank02.dsk` (standard
 //! flat 35-track/18-sector DECB images, 161,280 bytes = 630 × 256-byte
 //! sectors, no header). Skips when any asset is absent.
 //!
@@ -46,12 +46,12 @@ fn load_roms(label: &str) -> Option<(Vec<u8>, Vec<u8>)> {
     Some((coco, hdbdos))
 }
 
-/// Resolves `disks/name` under the repository root. If the file is absent,
+/// Resolves `name` under the installed `assets/tests/`. If the file is absent,
 /// prints a skip notice tagged with `label` and returns `None`.
 fn require_disk_asset(name: &str, label: &str) -> Option<PathBuf> {
     let path = test_assets::disk(name);
     if !path.exists() {
-        eprintln!("skipping {label}: disks/{name} not present");
+        eprintln!("skipping {label}: {} not present", path.display());
         return None;
     }
     Some(path)
@@ -225,7 +225,7 @@ fn hdbdos_dir_lists_drivewire_disk() {
     // sectors 3-11 of that track (LSN 308+), 32 bytes each, name in bytes
     // 0-7 and extension in bytes 8-10. The first live entry at LSN 308,
     // offset 0, is `AUTOEXEC` / `BAS` (verified directly against the
-    // checked-in disks/spetris.dsk bytes).
+    // installed tests/spetris.dsk bytes).
     assert!(
         screen.contains("AUTOEXEC.BAS"),
         "expected AUTOEXEC.BAS in the DriveWire-served directory listing; screen:\n{screen}"
@@ -308,7 +308,7 @@ fn hdbdos_save_writes_through_drivewire() {
 /// directly with true per-drive LSNs, so HDB-DOS's global lsn/630 remap
 /// (`set_hdbdos_mode`) must stay off because enabling it would double-remap
 /// NitrOS-9's own LSNs. Ignored asset:
-/// `disks/nos96809l2v030300coco3_becker.dsk`, a flat LSN (635,648 bytes =
+/// `tests/nos96809l2v030300coco3_becker.dsk`, a flat LSN (635,648 bytes =
 /// 2483 x 256-byte sectors) NitrOS-9 3.3.0 Level 2 CoCo3 image whose boot
 /// track and bootfile carry the Becker-transport drivers. Skips when any
 /// asset is absent.

@@ -12,10 +12,9 @@ use etcetera::app_strategy::{AppStrategy, AppStrategyArgs};
 const ASSETS_KIND: &str = "assets";
 /// Directory name for ROM images under the asset root.
 const ROMS_KIND: &str = "roms";
-/// Directory name for disk/VHD images, directly under the data root — not
-/// under `assets/`: unlike the ROM bundle, not everything there is
-/// downloadable bundle content.
-const DISKS_KIND: &str = "disks";
+/// Directory name for the disk/VHD test images under the asset root —
+/// mirrors `coco-egui/src/paths.rs`'s `tests_dir`.
+const TESTS_KIND: &str = "tests";
 
 /// The app's XDG data directory (`~/.local/share/cocovm` on Linux/macOS), or
 /// `None` if no home directory can be determined. The following `AppStrategyArgs`
@@ -42,9 +41,10 @@ pub fn rom(name: &str) -> PathBuf {
     roms_dir().join(name)
 }
 
-/// Returns the path to disk/VHD image `name` under `<xdg_data_dir>/disks`.
+/// Returns the path to disk/VHD image `name` (see [`disk`] for well-known
+/// names): `<xdg_data_dir>/assets/tests/<name>`.
 pub fn disk(name: &str) -> PathBuf {
-    disks_dir().join(name)
+    tests_dir().join(name)
 }
 
 /// Returns the ROM asset directory, `<xdg_data_dir>/assets/roms`.
@@ -52,9 +52,9 @@ pub fn roms_dir() -> PathBuf {
     resolve_data_dir().join(ASSETS_KIND).join(ROMS_KIND)
 }
 
-/// Returns the disk/VHD asset directory, `<xdg_data_dir>/disks`.
-pub fn disks_dir() -> PathBuf {
-    resolve_data_dir().join(DISKS_KIND)
+/// Returns the disk/VHD test-image directory, `<xdg_data_dir>/assets/tests`.
+pub fn tests_dir() -> PathBuf {
+    resolve_data_dir().join(ASSETS_KIND).join(TESTS_KIND)
 }
 
 /// Defines well-known ROM file names used across many call sites, avoiding

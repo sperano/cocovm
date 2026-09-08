@@ -253,7 +253,7 @@ fn nitros9_l2_boot_reaches_shell_prompt() {
         try_load_disk(DISK),
     ) else {
         eprintln!(
-            "skipping nitros9_l2_boot_reaches_shell_prompt: roms/ or disks/ assets not present"
+            "skipping nitros9_l2_boot_reaches_shell_prompt: roms/ or tests/ assets not present"
         );
         return;
     };

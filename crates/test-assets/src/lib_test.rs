@@ -10,8 +10,11 @@ fn roms_dir_is_under_the_xdg_assets_dir() {
 }
 
 #[test]
-fn disks_dir_is_under_the_xdg_data_dir() {
-    assert_eq!(disks_dir(), xdg_data_dir().unwrap().join(DISKS_KIND));
+fn tests_dir_is_under_the_xdg_assets_dir() {
+    assert_eq!(
+        tests_dir(),
+        xdg_data_dir().unwrap().join(ASSETS_KIND).join(TESTS_KIND)
+    );
 }
 
 #[test]
@@ -20,6 +23,6 @@ fn rom_path_is_under_xdg_roms_dir() {
 }
 
 #[test]
-fn disk_path_is_under_xdg_disks_dir() {
-    assert_eq!(disk(disk::EOU_BOOT), disks_dir().join(disk::EOU_BOOT));
+fn disk_path_is_under_xdg_tests_dir() {
+    assert_eq!(disk(disk::EOU_BOOT), tests_dir().join(disk::EOU_BOOT));
 }
