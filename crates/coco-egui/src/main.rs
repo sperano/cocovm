@@ -42,6 +42,7 @@ mod paper_render;
 mod paper_view;
 mod path_remap;
 mod paths;
+mod perf;
 mod photo_view;
 mod rom_load;
 mod rs232;

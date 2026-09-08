@@ -277,7 +277,15 @@ impl AudioOutput {
             .build_output_stream(
                 stream_config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    #[cfg(feature = "perf")]
+                    let wait = crate::perf::span(crate::perf::Stage::AudioCallbackLockWait);
                     let mut buf = lock(&ring);
+                    #[cfg(feature = "perf")]
+                    drop(wait);
+                    #[cfg(feature = "perf")]
+                    let queue_before = buf.len();
+                    #[cfg(feature = "perf")]
+                    let mut missing = 0;
                     for frame in data.chunks_mut(channels) {
                         let [l, r] = match buf.pop_front() {
                             Some(s) => {
@@ -285,6 +293,10 @@ impl AudioOutput {
                                 s
                             }
                             None => {
+                                #[cfg(feature = "perf")]
+                                {
+                                    missing += 1;
+                                }
                                 held[0] *= decay;
                                 held[1] *= decay;
                                 held
@@ -299,12 +311,20 @@ impl AudioOutput {
                             }
                         }
                     }
+                    #[cfg(feature = "perf")]
+                    {
+                        let queue_after = buf.len();
+                        drop(buf);
+                        crate::perf::audio_callback(missing, queue_before, queue_after);
+                    }
                 },
                 |err| tracing::error!("audio stream error: {err}"),
                 None,
             )
             .map_err(|e| e.to_string())?;
         stream.play().map_err(|e| e.to_string())?;
+        #[cfg(feature = "perf")]
+        crate::perf::audio_config(device_rate as u32, channels as u16);
 
         Ok((stream, device_rate, ring_cap))
     }
@@ -312,6 +332,7 @@ impl AudioOutput {
     /// Resamples and enqueues one batch of stereo speaker frames. A no-op
     /// when no output device was found.
     pub fn push_samples(&mut self, samples: impl Iterator<Item = [f32; 2]>, source_rate: f64) {
+        let _perf = crate::perf::span(crate::perf::Stage::AudioPush);
         if !self.is_enabled() {
             return;
         }
@@ -349,9 +370,11 @@ impl AudioOutput {
 
         let mut buf = lock(&self.ring);
         buf.extend(resampled);
+        let dropped = buf.len().saturating_sub(self.ring_cap);
         while buf.len() > self.ring_cap {
             buf.pop_front();
         }
+        crate::perf::audio_queue(buf.len(), dropped);
     }
 
     /// Mute checkbox and volume slider, or a disabled label when no output

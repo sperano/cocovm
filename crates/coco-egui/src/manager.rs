@@ -33,6 +33,8 @@ mod detail;
 mod detail_map;
 mod lifecycle;
 mod list;
+#[cfg(feature = "perf")]
+mod perf_scenarios;
 mod rename;
 mod run;
 mod selection;
@@ -269,6 +271,8 @@ struct EditState {
 }
 
 pub struct ManagerApp {
+    #[cfg(feature = "perf")]
+    perf_scenario: Option<perf_scenarios::ScenarioRun>,
     /// Decoded photo pending its first-frame texture upload.
     photo: Option<Photo>,
     /// The uploaded photo texture, once a frame has run.
@@ -363,6 +367,8 @@ impl ManagerApp {
             }
         }
         Self {
+            #[cfg(feature = "perf")]
+            perf_scenario: None,
             photo,
             photo_texture: None,
             machines_dir,
@@ -406,6 +412,10 @@ impl eframe::App for ManagerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(feature = "perf")]
+        self.drive_perf_scenario(ctx);
+        crate::perf::initialize();
+        let _perf = crate::perf::span(crate::perf::Stage::ManagerUpdate);
         // Dialog-first phase: while the asset dialog is up, it is the
         // window's only content — the manager UI appears after a successful
         // download (Cancel quits the app, `manager/assets.rs`).
