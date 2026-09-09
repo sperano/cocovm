@@ -221,11 +221,8 @@ pub(crate) struct CocoApp {
     /// request polls this to know when its target field count has elapsed.
     pub(crate) fields_run: u64,
     /// Mirror of [`crate::manager::ManagerApp`]'s global `toolbar_icons_only`
-    /// setting (`config.rs`), read by `chrome::toolbar`. Global, not
-    /// per-machine, so it isn't an [`AppParams`] field: `launch_machine`
-    /// only sees one definition, not the manager's config — set directly on
-    /// the returned `CocoApp` by `manager::lifecycle::launch_vm`, the same
-    /// way `manager::run` sets `ManagerApp::asset_dialog` post-construction.
+    /// (`config.rs`), read by `chrome::toolbar`; the manager rewrites it every
+    /// frame (`manager/vm_windows.rs`), so it is not an [`AppParams`] field.
     pub(crate) toolbar_icons_only: bool,
 }
 

@@ -82,8 +82,7 @@ impl ManagerApp {
     fn launch_vm(&mut self, index: usize) -> bool {
         self.entries[index].launch_error = None;
         match crate::launch_machine(&self.entries[index].def, &self.entries[index].slug) {
-            Ok(mut vm) => {
-                vm.toolbar_icons_only = self.toolbar_icons_only;
+            Ok(vm) => {
                 self.entries[index].vm = Some(Box::new(vm));
                 true
             }

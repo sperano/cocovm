@@ -332,7 +332,8 @@ pub struct ManagerApp {
     /// The first-run asset download dialog (`manager/assets.rs`), open while
     /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
     pub(crate) asset_dialog: Option<assets::AssetDialog>,
-    /// Global toolbar caption toggle, copied to each launched VM.
+    /// Global toolbar caption toggle, pushed to every open VM window each
+    /// frame (`manager/vm_windows.rs`) so Settings changes apply everywhere.
     pub(crate) toolbar_icons_only: bool,
     /// True when a CLI flag or env var supplied `toolbar_icons_only`
     /// (`Config::toolbar_icons_only_overridden`); Settings then skips the
