@@ -9,6 +9,8 @@ The [September 8, 2026 baseline](results/2026-09-08/RESULTS.md) publishes 92 run
 profiler summaries, measurement limits, and targets for subsequent optimizations.
 The [audio buffer comparison](results/2026-09-08-audio/RESULTS.md) measures the
 first audio allocation optimization against that baseline.
+The [display comparison](results/2026-09-08-display/RESULTS.md) measures
+presentation caching and reusable TV-processing buffers.
 
 ## Build and run
 
@@ -110,7 +112,8 @@ scope durations, not input-to-photon latency. Manager updates include immediate
 child viewport work and backend waits. Do not add nested timing scopes together.
 
 Texture bytes count `load_texture` and `TextureHandle::set` calls. They describe
-requested CPU-to-renderer work, including the existing first-frame double enqueue.
+requested CPU-to-renderer work. The original baseline includes a first-frame
+double enqueue that the presentation cache removes.
 They do not establish actual GPU transfer volume or GPU execution time. The
 renderer can consolidate requests. GPU timing must come from a native GPU profiler.
 
