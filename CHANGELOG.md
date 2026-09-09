@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-09-09
+
+### Added
+- DMP-130 printer, selectable alongside the DMP-105. It supports the
+  Tandy DP/WP and graphics command sets plus IBM emulation, with buffered
+  text, counted graphics, forms, margins, tabs, and style controls. Output
+  uses the same paper window, PNG/PDF exports, and save-state flow as the
+  DMP-105. Fonts remain approximations and some extended characters and
+  country substitutions are incomplete.
+- Global configuration file: `~/.config/cocovm/config.toml`
+  (`%APPDATA%\spe\cocovm\config.toml` on Windows) holds the log level,
+  control port, asset bundle URL, and toolbar style. Precedence per
+  parameter is CLI flag > environment variable > config file > built-in
+  default. A commented-out template listing every parameter and its
+  default is seeded on first start; a malformed file or unknown key is a
+  startup error naming the path.
+- Settings dialog: the manager toolbar's Settings tile edits the config
+  file in place, preserving its comments. Fields left at their defaults
+  are removed from the file so they keep tracking future defaults.
+  Toolbar style applies immediately; the other keys apply on next start.
+- Icon-only toolbars via `toolbar_icons_only` (also
+  `--toolbar-icons-only` / `COCOVM_TOOLBAR_ICONS_ONLY`): manager and VM
+  window toolbars draw square icon tiles with the caption as hover text.
+- Clickable on-screen keyboard: keycaps in the keyboard help window send
+  the CoCo key directly to the matrix. Shift, Ctrl, and Alt caps toggle
+  visible latches so combinations are reachable by successive clicks.
+  Disabled while a remote keyboard session is active.
+- The VM details panel shows the machine's slug under its name.
+
+### Changed
+- **Breaking: save states from earlier versions no longer load.** The
+  snapshot schema moved to version 2 for the new printer representation
+  and paper geometry; schema 1 snapshots are rejected and there is no
+  migration. Re-create save states after upgrading.
+- DMP-105 graphics output was distorted: picture dumps used text-dot
+  spacing horizontally and the text line feed for graphics carriage
+  returns. Graphics geometry and positioning now follow the command
+  table, and paper coordinates represent the documented feed increments
+  exactly. Existing DMP-105 machine definitions keep their meaning.
+- Asset bundle v6 adds `hdbdw3bc3.rom` (HDB-DOS 1.4 Becker) and moves to a
+  new location on the asset host. Existing installs are prompted for the
+  new bundle on their next start.
+- Rendering and audio allocate far less: unchanged framebuffers reuse
+  their GPU texture instead of re-uploading on every UI repaint, TV
+  processing reuses its scratch buffers, audio buffers are retained
+  across scanlines, and the audio queue is preallocated and drops the
+  oldest frames rather than growing past its bound. Static or paused
+  windows no longer request animation repaints. TV noise now advances on a
+  60 Hz clock, including on paused TVs.
+- Sound/Speech Cartridge: the TMS7040 core now models the external
+  interrupt pulse latch, Timer 1 event-counter mode, and IOCNT0 memory
+  expansion modes per the TI data manuals, and validates restored
+  snapshots so a corrupted state cannot hang or panic the emulator. The
+  disassembler now decodes `MOV B,A` (0xB1). None of these paths are
+  exercised by the cartridge firmware, so its behavior is unchanged.
+- The `tms7000` crate ships MAME's BSD-3-Clause notice and is
+  publishable on its own.
+
+### Fixed
+- The disk/VHD-based integration tests resolved their images from a
+  directory nothing ever created and skipped silently. They now fetch a
+  separate test bundle into `assets/tests` on first use (override with
+  `COCOVM_TEST_ASSETS_URL`; empty disables the fetch).
+
 ## [0.7.4] - 2026-09-06
 
 ### Added
