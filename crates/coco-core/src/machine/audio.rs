@@ -35,7 +35,7 @@ impl Machine {
         let slot_dt = 1.0 / sample_rate;
         let cassette_bit = self.bus.cassette.playing() && self.bus.cassette.input_bit();
 
-        let events = std::mem::take(&mut self.bus.audio_events);
+        let events = &self.bus.audio_events;
         let mut inputs = self.audio_line_inputs;
         let mut cursor = 0;
         for k in 0..u64::from(audio::OVERSAMPLE) {
@@ -54,5 +54,10 @@ impl Machine {
         }
         // Final-slot-tail events carry over as next line's start state.
         self.audio_line_inputs = self.bus.audio_inputs;
+        self.bus.audio_events.clear();
     }
 }
+
+#[cfg(test)]
+#[path = "audio_test.rs"]
+mod tests;

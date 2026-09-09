@@ -11,6 +11,8 @@ pub(crate) enum Stage {
     #[cfg(feature = "perf")]
     AudioCallbackLockWait,
     #[cfg(feature = "perf")]
+    AudioCallbackLockHold,
+    #[cfg(feature = "perf")]
     HostOperation,
     #[cfg(feature = "perf")]
     SnapshotSave,
