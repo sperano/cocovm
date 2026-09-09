@@ -1,0 +1,315 @@
+{
+  "profile": "release",
+  "source_commit": "036b734e9c8bead013154311f94c05265e4b0ac4",
+  "runs": [
+    {
+      "cases": [
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 120,
+              "requested_bytes": 73728000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.087343708,
+            "microseconds_per_frame": 727.8642333333335
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.083959958,
+            "microseconds_per_frame": 699.6663166666666
+          },
+          "scanline_pct": 0,
+          "tv": "Color"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 240,
+              "requested_bytes": 221184000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.10548775,
+            "microseconds_per_frame": 879.0645833333333
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.100876709,
+            "microseconds_per_frame": 840.6392416666665
+          },
+          "scanline_pct": 35,
+          "tv": "Color"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 240,
+              "requested_bytes": 147456000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.151006417,
+            "microseconds_per_frame": 1258.3868083333334
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.14622825,
+            "microseconds_per_frame": 1218.56875
+          },
+          "scanline_pct": 0,
+          "tv": "BW"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 360,
+              "requested_bytes": 294912000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.168987292,
+            "microseconds_per_frame": 1408.2274333333335
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.163116,
+            "microseconds_per_frame": 1359.3
+          },
+          "scanline_pct": 35,
+          "tv": "BW"
+        }
+      ],
+      "height": 240,
+      "iterations": 120,
+      "width": 640
+    },
+    {
+      "cases": [
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 120,
+              "requested_bytes": 73728000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.087580167,
+            "microseconds_per_frame": 729.834725
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.083981792,
+            "microseconds_per_frame": 699.8482666666666
+          },
+          "scanline_pct": 0,
+          "tv": "Color"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 240,
+              "requested_bytes": 221184000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.106240167,
+            "microseconds_per_frame": 885.334725
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.1004895,
+            "microseconds_per_frame": 837.4125
+          },
+          "scanline_pct": 35,
+          "tv": "Color"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 240,
+              "requested_bytes": 147456000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.150162042,
+            "microseconds_per_frame": 1251.35035
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.144039,
+            "microseconds_per_frame": 1200.325
+          },
+          "scanline_pct": 0,
+          "tv": "BW"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 360,
+              "requested_bytes": 294912000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.166770875,
+            "microseconds_per_frame": 1389.7572916666666
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.16455175,
+            "microseconds_per_frame": 1371.2645833333333
+          },
+          "scanline_pct": 35,
+          "tv": "BW"
+        }
+      ],
+      "height": 240,
+      "iterations": 120,
+      "width": 640
+    },
+    {
+      "cases": [
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 120,
+              "requested_bytes": 73728000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.087335667,
+            "microseconds_per_frame": 727.797225
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.08198625,
+            "microseconds_per_frame": 683.21875
+          },
+          "scanline_pct": 0,
+          "tv": "Color"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 240,
+              "requested_bytes": 221184000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.1050915,
+            "microseconds_per_frame": 875.7625
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.099858917,
+            "microseconds_per_frame": 832.1576416666667
+          },
+          "scanline_pct": 35,
+          "tv": "Color"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 240,
+              "requested_bytes": 147456000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.149399167,
+            "microseconds_per_frame": 1244.9930583333332
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.144685666,
+            "microseconds_per_frame": 1205.7138833333333
+          },
+          "scanline_pct": 0,
+          "tv": "BW"
+        },
+        {
+          "fixed_seed": 7,
+          "noise_pct": 5,
+          "previous": {
+            "allocations": {
+              "count": 360,
+              "requested_bytes": 294912000,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.1708415,
+            "microseconds_per_frame": 1423.6791666666666
+          },
+          "reused": {
+            "allocations": {
+              "count": 0,
+              "requested_bytes": 0,
+              "scope": "whole process; successful allocations and reallocations"
+            },
+            "elapsed_seconds": 0.163046125,
+            "microseconds_per_frame": 1358.7177083333333
+          },
+          "scanline_pct": 35,
+          "tv": "BW"
+        }
+      ],
+      "height": 240,
+      "iterations": 120,
+      "width": 640
+    }
+  ]
+}

@@ -16,21 +16,20 @@ impl ManagerApp {
             return;
         };
         let entry = &mut self.entries[index];
-        let Some(vm) = entry.vm.as_ref() else {
+        let Some(vm) = entry.vm.as_mut() else {
             return;
         };
         // Runs the TV-processing chain here too, since the raw framebuffer
         // bypasses `upload_framebuffer_texture`'s.
-        let frame = crate::display::process(
+        let frame = vm.presentation.snapshot(
             vm.display,
             vm.tv,
-            vm.tv_frame,
             vm.machine.fb_width as usize,
             &vm.machine.framebuffer,
         );
         if let Err(e) = super::write_thumbnail_png(
             &root.join(&entry.slug),
-            &frame.pixels,
+            frame.pixels,
             frame.width as u32,
             frame.height as u32,
         ) {

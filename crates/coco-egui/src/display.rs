@@ -11,11 +11,10 @@
 //! expressed — no invariant to enforce anywhere.
 //!
 //! A composite monitor and a TV share a signal path but not a look:
-//! [`process`] — the TV chain, which only acts on `TV(_)` — is where the
+//! [`Processor::process`] — the TV chain, which only acts on `TV(_)` — is where the
 //! CRT/RF treatment (B&W luma collapse, bandwidth limit, scanlines, and
 //! future vintage effects) accumulates, while a monitor stays clean.
 
-use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use coco_core::{MachineConfig, MachineVariant, MonitorType};
@@ -275,69 +274,80 @@ const BLUR_TAPS: [u16; 3] = [1, 2, 1];
 /// Derived, so re-tuning the taps can't silently break normalization.
 const BLUR_SUM: u16 = BLUR_TAPS[0] + BLUR_TAPS[1] + BLUR_TAPS[2];
 
-/// [`process`]'s output: the frame to actually show, with its own
-/// dimensions — the TV chain's scanline pass doubles the height, so the
-/// output shape is the chain's to decide, not the caller's. `Cow`: a
-/// monitor borrows the framebuffer untouched (zero copies), only a TV
-/// owns a transformed buffer.
+/// The displayed frame, borrowing the source for a monitor or the
+/// processor's retained buffers for a TV. Scanlines double the height.
 #[derive(Debug)]
 pub(crate) struct Frame<'a> {
-    pub(crate) pixels: Cow<'a, [u8]>,
+    pub(crate) pixels: &'a [u8],
     pub(crate) width: usize,
     pub(crate) height: usize,
 }
 
-/// The TV chain: framebuffer to displayed frame. A monitor passes through
-/// untouched; a TV gets luma collapse (B&W only), horizontal blur, noise,
-/// then scanline doubling, in that order.
-pub(crate) fn process<'a>(
-    display: Display,
-    settings: TVSettings,
-    seed: u32,
-    width: usize,
-    src: &'a [u8],
-) -> Frame<'a> {
-    let height = src.len() / (width * PX);
-    let Display::TV(tv) = display else {
-        return Frame {
-            pixels: Cow::Borrowed(src),
+/// Retained storage for the TV chain. The signal buffer holds the blurred
+/// picture; the output buffer holds luma input, then the expanded scanlines.
+#[derive(Default)]
+pub(crate) struct Processor {
+    signal: Vec<u8>,
+    output: Vec<u8>,
+}
+
+impl Processor {
+    /// Apply luma collapse (B&W only), horizontal blur, noise, and scanlines
+    /// in that order. Monitors borrow `src` without touching either buffer.
+    pub(crate) fn process<'a>(
+        &'a mut self,
+        display: Display,
+        settings: TVSettings,
+        seed: u32,
+        width: usize,
+        src: &'a [u8],
+    ) -> Frame<'a> {
+        let height = src.len() / (width * PX);
+        let Display::TV(tv) = display else {
+            return Frame {
+                pixels: src,
+                width,
+                height,
+            };
+        };
+        // B&W collapses to luma first; blurring a grey keeps it grey either way.
+        let input = match tv {
+            TV::Color => src,
+            TV::BW => {
+                collapse_to_luma(src, &mut self.output);
+                &self.output
+            }
+        };
+        blur_rows(width, input, &mut self.signal);
+        if settings.noise_pct > 0 {
+            noise_rows(settings.noise_pct, seed, &mut self.signal);
+        }
+        let (pixels, height) = if settings.scanline_pct == 0 {
+            (self.signal.as_slice(), height)
+        } else {
+            expand_scanlines(settings.scanline_pct, width, &self.signal, &mut self.output);
+            (self.output.as_slice(), height * SCANLINE_ROWS)
+        };
+        Frame {
+            pixels,
             width,
             height,
-        };
-    };
-    // B&W collapses to luma first; blurring a grey keeps it grey either way.
-    let signal: Cow<[u8]> = match tv {
-        TV::Color => Cow::Borrowed(src),
-        TV::BW => Cow::Owned(collapse_to_luma(src)),
-    };
-    let mut pixels = blur_rows(width, &signal);
-    if settings.noise_pct > 0 {
-        noise_rows(settings.noise_pct, seed, &mut pixels);
-    }
-    let (pixels, height) = if settings.scanline_pct == 0 {
-        (pixels, height)
-    } else {
-        (
-            expand_scanlines(settings.scanline_pct, width, &pixels),
-            height * 2,
-        )
-    };
-    Frame {
-        pixels: Cow::Owned(pixels),
-        width,
-        height,
+        }
     }
 }
 
+/// Each source scanline produces one bright row and one dimmed row.
+const SCANLINE_ROWS: usize = 2;
+
 /// The B&W set's picture: every pixel replaced by its [`luma`] grey,
 /// alpha carried through.
-fn collapse_to_luma(src: &[u8]) -> Vec<u8> {
-    let mut out = src.to_vec();
+fn collapse_to_luma(src: &[u8], out: &mut Vec<u8>) {
+    out.clear();
+    out.extend_from_slice(src);
     for px in out.chunks_exact_mut(PX) {
         let y = luma(px[0], px[1], px[2]);
         px[..3].fill(y);
     }
-    out
 }
 
 /// Noise amplitude at `noise_pct = 100`, in 8-bit levels: full snow that
@@ -367,27 +377,28 @@ fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
 /// [`scanline_scale`]-dimmed copy, mimicking a CRT raster's line/gap
 /// structure. Must double rather than darken in place — the source rows
 /// *are* the scanlines.
-fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8]) -> Vec<u8> {
+fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8], out: &mut Vec<u8>) {
     let row_len = width * PX;
     let scale = scanline_scale(scanline_pct);
     // +128 for round-to-nearest; scale ≤ 256 keeps the product in u16.
     let dark = |v: u8| ((u16::from(v) * scale + 128) >> 8) as u8;
-    let mut out = Vec::with_capacity(src.len() * 2);
+    out.clear();
+    out.reserve(src.len() * SCANLINE_ROWS);
     for row in src.chunks_exact(row_len) {
         out.extend_from_slice(row);
         for px in row.chunks_exact(PX) {
             out.extend_from_slice(&[dark(px[0]), dark(px[1]), dark(px[2]), px[3]]);
         }
     }
-    out
 }
 
 /// Horizontal bandwidth limit: a [`BLUR_TAPS`] FIR across each row only —
 /// an analog signal band-limits per scanline, so rows stay separate while
 /// detail smears along the line. Edges clamp; alpha passes through.
-fn blur_rows(width: usize, src: &[u8]) -> Vec<u8> {
+fn blur_rows(width: usize, src: &[u8], out: &mut Vec<u8>) {
     let row_len = width * PX;
-    let mut out = Vec::with_capacity(src.len());
+    out.clear();
+    out.reserve(src.len());
     for row in src.chunks_exact(row_len) {
         for x in 0..width {
             let window = |i: usize| &row[i * PX..][..PX];
@@ -404,9 +415,16 @@ fn blur_rows(width: usize, src: &[u8]) -> Vec<u8> {
             out.push(cur[3]);
         }
     }
-    out
 }
 
 #[cfg(test)]
 #[path = "display_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "display_processor_test.rs"]
+mod processor_tests;
+
+#[cfg(all(test, feature = "perf"))]
+#[path = "display_perf_test.rs"]
+mod perf_tests;

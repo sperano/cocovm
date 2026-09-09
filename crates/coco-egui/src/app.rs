@@ -8,6 +8,7 @@ use crate::*;
 mod control;
 pub(crate) use control::{RemoteHold, RemoteStick};
 mod frame;
+mod presentation;
 pub(crate) use frame::background_repaint_delay;
 mod input;
 pub(crate) use input::has_keyboard_focus;
@@ -37,12 +38,8 @@ pub(crate) struct CocoApp {
     /// `display`: `[ui]` keys provide the starting values, and the display
     /// menu's sliders update them. Only consulted while `display` is a TV.
     pub(crate) tv: display::TVSettings,
-    /// Frame counter feeding the TV chain's noise seed
-    /// (`display::process`), bumped every texture upload so the snow
-    /// shimmers. Pure UI state — never serialized. A suspended VM keeps
-    /// uploading (and so keeps shimmering), which is exactly what a real
-    /// TV showing a frozen picture would do.
-    pub(crate) tv_frame: u32,
+    /// Retained display buffers and the last presented pixel/settings state.
+    pub(crate) presentation: presentation::Presentation,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -301,7 +298,7 @@ impl CocoApp {
             aspect_correct: true,
             display,
             tv: display::TVSettings::default(),
-            tv_frame: 0,
+            presentation: presentation::Presentation::default(),
             last_update: None,
             field_debt: 0.0,
             audio_cushion_fields: 0,
@@ -385,7 +382,7 @@ impl CocoApp {
         self.running
     }
 
-    /// The framebuffer texture [`Self::step_emulation`] uploads every frame;
+    /// The framebuffer texture reused until pixels or display settings change;
     /// `None` only before the VM's first frame. The manager uses it to
     /// reuse the same handle to draw a list-row thumbnail.
     pub(crate) fn framebuffer_texture(&self) -> Option<&egui::TextureHandle> {

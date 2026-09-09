@@ -82,7 +82,8 @@ fn blur_smears_along_the_row_only() {
         0, 0, 0, 255,   255, 255, 255, 255,   0, 0, 0, 255,
         0, 0, 0, 255,   0, 0, 0, 255,         0, 0, 0, 255,
     ];
-    let out = blur_rows(3, &src);
+    let mut out = Vec::new();
+    blur_rows(3, &src, &mut out);
     let expect_top = [64u8, 128, 64];
     for (x, &expected) in expect_top.iter().enumerate() {
         assert_eq!(
@@ -103,7 +104,8 @@ fn expand_scanlines_interleaves_bright_and_dimmed_rows() {
     let pct = DEFAULT_SCANLINE_PCT;
     let rgba = [200u8, 120, 40, 255];
     let src = uniform(4, 2, rgba);
-    let out = expand_scanlines(pct, 4, &src);
+    let mut out = Vec::new();
+    expand_scanlines(pct, 4, &src, &mut out);
     assert_eq!(out.len(), src.len() * 2);
     let dim = [
         dark(rgba[0], pct),
@@ -125,7 +127,8 @@ fn expand_scanlines_interleaves_bright_and_dimmed_rows() {
 fn scanline_strength_endpoints() {
     // 0% is a separate skip path in `process`, covered elsewhere.
     let src = uniform(4, 1, [200, 120, 40, 255]);
-    let out = expand_scanlines(100, 4, &src);
+    let mut out = Vec::new();
+    expand_scanlines(100, 4, &src, &mut out);
     for px in out[4 * 4..].chunks_exact(4) {
         assert_eq!(px, [0, 0, 0, 255]);
     }
@@ -164,8 +167,9 @@ fn noise_varies_with_the_seed_and_is_reproducible() {
 
 #[test]
 fn process_is_identity_for_monitors() {
+    let mut processor = Processor::default();
     for monitor in [MonitorType::RGB, MonitorType::Composite] {
-        let frame = process(
+        let frame = processor.process(
             Display::Monitor(monitor),
             TVSettings::default(),
             0,
@@ -173,11 +177,11 @@ fn process_is_identity_for_monitors() {
             &FRAME,
         );
         assert_eq!(
-            &*frame.pixels, FRAME,
+            frame.pixels, FRAME,
             "Monitor({monitor:?}) must pass through"
         );
         assert!(
-            matches!(frame.pixels, std::borrow::Cow::Borrowed(_)),
+            std::ptr::eq(frame.pixels, FRAME.as_slice()),
             "a monitor must not copy the framebuffer"
         );
         assert_eq!((frame.width, frame.height), (FRAME_W, 1));
@@ -187,7 +191,8 @@ fn process_is_identity_for_monitors() {
 #[test]
 fn process_tv_doubles_height_for_scanlines() {
     let src = uniform(8, 4, [200, 120, 40, 255]);
-    let frame = process(Display::TV(TV::Color), quiet(), 0, 8, &src);
+    let mut processor = Processor::default();
+    let frame = processor.process(Display::TV(TV::Color), quiet(), 0, 8, &src);
     assert_eq!((frame.width, frame.height), (8, 8));
 }
 
@@ -198,7 +203,8 @@ fn process_skips_doubling_at_zero_scanlines() {
         scanline_pct: 0,
         ..quiet()
     };
-    let frame = process(Display::TV(TV::Color), settings, 0, 8, &src);
+    let mut processor = Processor::default();
+    let frame = processor.process(Display::TV(TV::Color), settings, 0, 8, &src);
     assert_eq!((frame.width, frame.height), (8, 4));
 }
 
@@ -206,7 +212,8 @@ fn process_skips_doubling_at_zero_scanlines() {
 fn process_bw_output_is_grey_everywhere() {
     // Blur and scanlines scale channels identically, so grey stays grey after luma collapse.
     let src = uniform(8, 4, [255, 0, 0, 255]);
-    let frame = process(Display::TV(TV::BW), quiet(), 0, 8, &src);
+    let mut processor = Processor::default();
+    let frame = processor.process(Display::TV(TV::BW), quiet(), 0, 8, &src);
     for px in frame.pixels.chunks_exact(4) {
         assert!(px[0] == px[1] && px[1] == px[2], "must stay grey");
         assert_eq!(px[3], 255);

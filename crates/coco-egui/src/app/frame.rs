@@ -158,29 +158,38 @@ impl CocoApp {
     /// [`Self::step_emulation`] that a suspended VM's window still runs, so its
     /// picture stays on screen without input handling.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        let conversion = crate::perf::span(crate::perf::Stage::DisplayConversion);
-        // TV chain (B&W collapse, bandwidth limit, scanlines) — a display preference, not state.
-        self.tv_frame = self.tv_frame.wrapping_add(1);
-        let frame = crate::display::process(
+        self.present_framebuffer(ctx, std::time::Instant::now());
+    }
+
+    fn present_framebuffer(&mut self, ctx: &egui::Context, now: std::time::Instant) {
+        let background_delay =
+            ctx.input(|i| background_repaint_delay(i.raw.viewports.values().map(|v| v.focused)));
+        if let Some(delay) =
+            self.presentation
+                .repaint_after(self.display, self.tv, now, background_delay)
+        {
+            ctx.request_repaint_after(delay);
+        }
+        if self.texture.is_none() {
+            self.presentation.invalidate();
+        }
+        let Some(image) = self.presentation.prepare(
             self.display,
             self.tv,
-            self.tv_frame,
             self.machine.fb_width as usize,
             &self.machine.framebuffer,
-        );
-        let image =
-            egui::ColorImage::from_rgba_unmultiplied([frame.width, frame.height], &frame.pixels);
-        drop(conversion);
+            now,
+        ) else {
+            return;
+        };
         let _enqueue = crate::perf::span(crate::perf::Stage::TextureEnqueue);
-        // NEAREST for monitors, LINEAR for TVs; passed every `set` so switching re-filters
-        // immediately.
         let options = crate::display::texture_options(self.display);
-        let texture = self.texture.get_or_insert_with(|| {
-            crate::perf::texture_enqueue(frame.pixels.len());
-            ctx.load_texture("coco-fb", image.clone(), options)
-        });
-        crate::perf::texture_enqueue(frame.pixels.len());
-        texture.set(image, options);
+        crate::perf::texture_enqueue(image.pixels.len() * coco_core::video::BYTES_PER_PIXEL);
+        if let Some(texture) = &mut self.texture {
+            texture.set(image, options);
+        } else {
+            self.texture = Some(ctx.load_texture("coco-fb", image, options));
+        }
     }
 
     /// The CoCo display: the letterboxed, optionally aspect-corrected framebuffer
@@ -252,3 +261,7 @@ impl CocoApp {
 #[cfg(test)]
 #[path = "frame_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "presentation_integration_test.rs"]
+mod presentation_tests;
