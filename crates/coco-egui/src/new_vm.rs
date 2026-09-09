@@ -154,18 +154,21 @@ pub enum SerialChoice {
     None,
     /// A DMP-105 dot-matrix printer, shown in the Printer Paper window.
     Printer,
+    /// A DMP-130 dot-matrix printer, shown in the Printer Paper window.
+    Dmp130,
     /// Plain text capture to `printout.txt`.
     PrintFile,
 }
 
 impl SerialChoice {
-    pub const ALL: [Self; 3] = [Self::None, Self::Printer, Self::PrintFile];
+    pub const ALL: [Self; 4] = [Self::None, Self::Printer, Self::Dmp130, Self::PrintFile];
 }
 
 fn serial_label(serial: SerialChoice) -> &'static str {
     match serial {
         SerialChoice::None => "None",
         SerialChoice::Printer => "Printer (DMP-105)",
+        SerialChoice::Dmp130 => "Printer (DMP-130)",
         SerialChoice::PrintFile => "Print to file",
     }
 }
@@ -182,6 +185,7 @@ impl From<SerialChoice> for Option<SerialDTO> {
         match serial {
             SerialChoice::None => None,
             SerialChoice::Printer => Some(SerialDTO::Printer),
+            SerialChoice::Dmp130 => Some(SerialDTO::Dmp130),
             SerialChoice::PrintFile => Some(SerialDTO::File),
         }
     }
@@ -192,6 +196,7 @@ impl From<Option<SerialDTO>> for SerialChoice {
         match serial {
             None => Self::None,
             Some(SerialDTO::Printer) => Self::Printer,
+            Some(SerialDTO::Dmp130) => Self::Dmp130,
             Some(SerialDTO::File) => Self::PrintFile,
         }
     }

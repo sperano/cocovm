@@ -173,9 +173,9 @@ impl CocoApp {
                 .map(|n| n.to_string()),
         );
 
-        // Re-link the paper window only if the restored sink is a live DMP-105;
+        // Re-link the paper window only if the restored sink is a live DMP printer;
         // a file capture restores it stopped.
-        match self.machine.bus.bitbanger.dmp105_handle() {
+        match self.machine.bus.bitbanger.printer_handle() {
             Some(handle) => self.paper_window.resync(Some(handle)),
             None => self.paper_window.detach(),
         }

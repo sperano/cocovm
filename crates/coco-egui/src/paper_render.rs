@@ -1,6 +1,6 @@
 //! Pure, egui-free rasterizer for the virtual fanfold "paper" window.
-//! Turns a [`DotSource`] (the DMP-105's abstract dot-matrix impressions from
-//! `coco_core::printer`/`dmp105`) into an RGBA8 raster of period-correct
+//! Turns a [`DotSource`] (the DMP printer's abstract dot-matrix impressions from
+//! `coco_core::printer`/`dmp`) into an RGBA8 raster of period-correct
 //! tractor-feed stationery: tractor
 //! strips with sprocket holes on both edges, a dotted perforation line
 //! separating each strip from the printable body, horizontal page
@@ -112,20 +112,20 @@ pub const WINDOW_BG_COLOR: [u8; 4] = [0x3A, 0x3A, 0x40, 0xFF];
 /// requested render range before querying [`DotSource::dots_in_range`]:
 /// a dot's *center* can sit just outside `[y0, y1]` while its rendered
 /// circle (radius [`DOT_DIAMETER_IN`] / 2) still bleeds into the visible
-/// band. `y`-units are coarse (1/72") relative to the dot's sub-unit
-/// diameter, so this is a generous fixed pad rather than a computed exact
-/// radius — the judgment call the T5 spec leaves to this module.
+/// band. Round the physical radius up to a whole paper unit so the
+/// query remains valid when the paper coordinate resolution changes.
 ///
 /// `pub(crate)` because the paper window's dirty-page invalidation must
 /// widen changed ranges by the same bleed before mapping them to page
 /// textures: a dot near a page's top edge also renders into the bottom of
 /// the previous page's texture.
-pub(crate) const DOT_QUERY_PAD_Y_UNITS: u32 = 2;
+pub(crate) const DOT_QUERY_PAD_Y_UNITS: u32 =
+    (DOT_DIAMETER_IN / 2.0 * Y_UNITS_PER_INCH as f32) as u32 + 1;
 
 /// A source of already-printed dot impressions, in the same `(x, y)` unit
 /// system as `coco_core::printer::Paper`: `x` in [`X_UNITS_PER_INCH`]
 /// units, `y` in [`Y_UNITS_PER_INCH`] units. A local trait over the two
-/// foreign paper types (`Paper` itself, and `DMP105Handle`'s live-printer
+/// foreign paper types (`Paper` itself, and `DmpHandle`'s live-printer
 /// view of one) so `rasterize` doesn't care which it's drawing.
 pub trait DotSource {
     /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs.
@@ -138,9 +138,9 @@ impl DotSource for coco_core::printer::Paper {
     }
 }
 
-impl DotSource for coco_core::dmp105::DMP105Handle {
+impl DotSource for coco_core::dmp::DmpHandle {
     fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        coco_core::dmp105::DMP105Handle::dots_in_range(self, y0, y1)
+        coco_core::dmp::DmpHandle::dots_in_range(self, y0, y1)
     }
 }
 

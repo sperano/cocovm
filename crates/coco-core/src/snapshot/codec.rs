@@ -113,9 +113,7 @@ fn decode_payload(cbor: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     ciborium::from_reader(cbor).map_err(|e| SnapshotError::Decode(e.to_string()))
 }
 
-/// Migration dispatch point for old schema versions; empty today (schema 1
-/// is the only one that has existed). Register old-schema decoders here
-/// when [`SCHEMA_VERSION`] bumps.
+/// No migration is provided for the retired schema-1 printer representation.
 fn migrate(_old_schema: u32, _cbor: &[u8]) -> Option<Result<SnapshotPayload, SnapshotError>> {
     None
 }

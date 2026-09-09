@@ -166,7 +166,7 @@ impl CocoApp {
         });
     }
 
-    /// Printer menu: toggle DMP-105 paper window or open a captured print file.
+    /// Printer menu: toggle printer paper window or open a captured print file.
     pub(super) fn printer_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("View Papers").clicked() {
             self.toggle_paper_window();

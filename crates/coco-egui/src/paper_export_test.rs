@@ -95,3 +95,30 @@ fn crop_to_trimmed_width_removes_both_tractor_strips() {
     assert_eq!(cropped.width, (expected_width_in * dpi).round() as u32);
     assert_eq!(cropped.height, img.height);
 }
+
+#[test]
+fn both_dmp_models_render_ink_and_export_png_and_pdf() {
+    use coco_core::bitbanger::PrinterSink;
+    use coco_core::dmp::{DmpHandle, DmpModel};
+    const HEIGHT_IN: f32 = 1.0;
+    let dpi = paper_render::RASTER_DPI;
+    let blank = paper_render::rasterize(&EmptyDots, 0.0, HEIGHT_IN, dpi, false);
+    for model in [DmpModel::Dmp105, DmpModel::Dmp130] {
+        let mut handle = DmpHandle::with_model(model);
+        for &byte in b"PRINT TEST\r" {
+            handle.write_byte(byte);
+        }
+        let page = paper_render::rasterize(&handle, 0.0, HEIGHT_IN, dpi, false);
+        assert_ne!(page.pixels, blank.pixels, "{model:?} must render ink");
+        let path = scratch_path("printer-model.png");
+        save_png(&page, &path).unwrap();
+        assert_eq!(
+            image::open(&path).unwrap().to_rgba8().as_raw(),
+            &page.pixels
+        );
+        let mut pdf = Vec::new();
+        write_pdf(std::slice::from_ref(&page), dpi, &mut pdf).unwrap();
+        assert!(pdf.starts_with(b"%PDF-"));
+        std::fs::remove_file(path).unwrap();
+    }
+}

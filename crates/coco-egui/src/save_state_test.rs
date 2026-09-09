@@ -455,3 +455,32 @@ fn mpi_slot_rs232_tcp_endpoint_survives_a_save_load_round_trip() {
         "the pak nested in the slot must still be reachable through the MultiPak"
     );
 }
+
+#[test]
+fn printer_model_and_paper_survive_save_load() {
+    use coco_core::bitbanger::PrinterSink;
+    use coco_core::dmp::DmpModel;
+    let dir = scratch_dir("printer-round-trip");
+    let path = dir.join("state.ccstate");
+    for model in [DmpModel::Dmp105, DmpModel::Dmp130] {
+        let mut app = boot_app();
+        app.attach_printer(model);
+        let mut saved_handle = app.paper_window.handle.clone().unwrap();
+        for &byte in b"PRINTER\r" {
+            saved_handle.write_byte(byte);
+        }
+        let saved_extent = saved_handle.paper_extent();
+        assert!(saved_extent.dot_count > 0);
+        app.save_state_to(&path).unwrap();
+        app.attach_printer(DmpModel::Dmp105);
+        app.load_state_from(&path).unwrap();
+        let restored = app.paper_window.handle.as_ref().unwrap();
+        assert_eq!(restored.model(), model);
+        assert_eq!(restored.paper_extent(), saved_extent);
+        let mut sink = app.machine.bus.bitbanger.printer_handle().unwrap();
+        sink.write_byte(b'A');
+        sink.write_byte(b'\r');
+        assert!(restored.paper_extent().dot_count > saved_extent.dot_count);
+        assert_eq!(saved_handle.paper_extent(), saved_extent);
+    }
+}

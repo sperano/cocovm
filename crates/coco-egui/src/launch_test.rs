@@ -147,20 +147,27 @@ fn rs232_bind_failure_toast_does_not_swallow_a_prior_cart_error() {
     drop(blocker);
 }
 
-/// `[ports].serial "printer"` attaches a DMP-105 to the bit-banger with
-/// the paper window closed; it shows accumulating output once opened.
+/// Each printer definition attaches the chosen model with its paper window closed.
 #[test]
-fn printer_def_attaches_the_paper_window_handle() {
-    let mut def = base_def();
-    def.ports.serial = Some(crate::machine_def::SerialDTO::Printer);
+fn printer_def_attaches_the_selected_paper_window_handle() {
+    use crate::machine_def::SerialDTO;
+    use coco_core::dmp::DmpModel;
 
-    let app = super::launch_machine(&def, "launch-test-printer")
-        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
-    assert!(
-        app.paper_window.handle.is_some(),
-        "the paper window should hold a DMP-105 handle"
-    );
-    assert!(!app.paper_window.open, "attached with the window closed");
+    for (serial, model) in [
+        (SerialDTO::Printer, DmpModel::Dmp105),
+        (SerialDTO::Dmp130, DmpModel::Dmp130),
+    ] {
+        let mut def = base_def();
+        def.ports.serial = Some(serial);
+        let app = super::launch_machine(&def, "launch-test-printer")
+            .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+        assert_eq!(app.paper_window.handle.as_ref().unwrap().model(), model);
+        assert_eq!(
+            app.machine.bus.bitbanger.printer_handle().unwrap().model(),
+            model
+        );
+        assert!(!app.paper_window.open, "attached with the window closed");
+    }
 }
 
 /// `[ui].joy_left`/`joy_right` reach the launched `CocoApp`'s

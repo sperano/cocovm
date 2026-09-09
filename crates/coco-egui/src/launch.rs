@@ -374,7 +374,12 @@ fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug:
     match serial {
         // Attached with the paper window closed; output accumulates and View ▸ Printer Paper
         // shows it.
-        Some(machine_def::SerialDTO::Printer) => app.attach_dmp105(),
+        Some(machine_def::SerialDTO::Printer) => {
+            app.attach_printer(coco_core::dmp::DmpModel::Dmp105);
+        }
+        Some(machine_def::SerialDTO::Dmp130) => {
+            app.attach_printer(coco_core::dmp::DmpModel::Dmp130);
+        }
         Some(machine_def::SerialDTO::File) => {
             let path = machine_def::resolve_media_path(PRINTOUT_FILE, slug);
             if let Some(parent) = path.parent() {

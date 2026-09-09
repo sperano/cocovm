@@ -313,6 +313,8 @@ pub struct MediaDTO {
 pub enum SerialDTO {
     /// The DMP-105 dot-matrix printer, shown in the Printer Paper window.
     Printer,
+    /// The DMP-130 dot-matrix printer, shown in the Printer Paper window.
+    Dmp130,
     /// Plain text capture to `printout.txt` in the machine's artifact
     /// directory. The file is truncated on every launch (`FileSink::create`
     /// semantics, same as the runtime menu's Start Print Capture) — each

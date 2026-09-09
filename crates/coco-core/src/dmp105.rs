@@ -17,31 +17,16 @@
 //! integers, never floats (see `printer.rs`'s doc comment for why those
 //! particular denominators were chosen).
 //!
-//! The protocol spec (`dmp105-protocol.md` §5) states "11 full-pitch LFs = 18
-//! graphics LFs exactly; 11 half LFs = 9 graphics LFs" and labels this a
-//! manual-verified "rounding trap". This module does not reproduce that
-//! statement as a literal equality. The
-//! independently verified values are a text LF pitch of 1/6" = 12 y-units
-//! and a graphics LF of 7/72" = 7 y-units. Therefore, `11 * 12 = 132` while
-//! `18 * 7 = 126`, and no integer y-unit choice makes `11 * k = 126` work
-//! because 126 is not divisible by 11. Reconciling the manual's identity
-//! requires a physical stepper-motor step-resolution fact that the spec does
-//! not provide. The likely explanation is discrete motor-step rounding across
-//! repeated feeds rather than nominal inch math, but this module does not
-//! invent that missing fact. It implements the y-unit arithmetic exactly per
-//! the individually verified values. See the test
-//! `graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts`
-//! for the documented discrepancy.
-
-use std::cell::RefCell;
-use std::rc::Rc;
+//! Graphics line feed follows the explicit 7/72-inch command definition
+//! on manual pp.25 and 39. Appendix D p.51 gives an incompatible repeated-
+//! feed ratio; no available evidence establishes the inferred 22/216-inch
+//! alternative. See `docs/dmp105-protocol.md` for the source conflict.
 
 use serde::{Deserialize, Serialize};
 
 use crate::bitbanger::PrinterSink;
-use crate::bitbanger::sink_serde::SinkState;
 use crate::dmp105_font::Glyph;
-use crate::printer::{Paper, PaperExtent, X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
+use crate::printer::{Paper, X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
 
 mod protocol;
 
@@ -51,10 +36,11 @@ const CELL_DOTS: u32 = 12;
 
 /// Row offset (in dot rows) of the descender row below the 7-dot glyph body
 /// (`dmp105-protocol.md` §1/§6).
-const DESCENDER_ROW: u32 = 7;
+const DOT_ROW_UNITS: u32 = Y_UNITS_PER_INCH / 72;
+const DESCENDER_ROW: u32 = 7 * DOT_ROW_UNITS;
 
 /// Fixed graphics-mode line feed: 7/72" (`dmp105-protocol.md` §5).
-const GRAPHICS_LF_UNITS: u32 = 7;
+const GRAPHICS_LF_UNITS: u32 = 7 * DOT_ROW_UNITS;
 
 /// Right limit of the physical print zone in x-units: the head cannot move
 /// past the 8.0" line (`dmp105-protocol.md` §1 — 960 dot columns at 10 CPI).
@@ -75,6 +61,8 @@ mod control {
     pub const NUL_IGNORED_1: u8 = 0x01;
     pub const LF: u8 = 0x0A;
     pub const CR: u8 = 0x0D;
+    pub const LF_HIGH: u8 = 0x8A;
+    pub const CR_HIGH: u8 = 0x8D;
     pub const END_UNDERLINE: u8 = 0x0E;
     pub const START_UNDERLINE: u8 = 0x0F;
     pub const SELECT_GRAPHICS: u8 = 0x12;
@@ -168,6 +156,12 @@ impl Pitch {
     const fn dot_spacing(self) -> u32 {
         X_UNITS_PER_INCH / self.dots_per_inch()
     }
+
+    /// Manual pp.30/33: host positioning and graphics address every other
+    /// text dot (480/576/800 columns across the 8-inch print area).
+    const fn addressable_spacing(self) -> u32 {
+        2 * self.dot_spacing()
+    }
 }
 
 /// Assembly state for a not-yet-complete multi-byte escape or repeat
@@ -197,15 +191,9 @@ enum Pending {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DMP105 {
     mode: Mode,
-    /// Live pitch setting (`1B 13`/`1B 14`/`1B 17`), always up to date even
-    /// while printing graphics (which uses `graphics_pitch` instead — see
-    /// its doc comment).
+    /// Character pitch; ignored pitch commands in graphics do not change it.
     pitch: Pitch,
-    /// Density latched at Graphics-mode entry (`dmp105-protocol.md` §5:
-    /// "Pitch must be selected *before* entry (ignored inside)"): pitch
-    /// changes received while in Graphics mode still update `pitch` (for
-    /// whenever CP mode resumes) but never this field, so an in-progress
-    /// graphics run's dot spacing never shifts underneath it.
+    /// Density selected before graphics entry (manual p.33).
     graphics_pitch: Pitch,
     /// Latched line-feed pitch in [`Y_UNITS_PER_INCH`] units, set by
     /// `1B 1C`/`1B 36`/`1B 38`/`1B 5B n` and consumed by plain `LF`/`CR`.
@@ -300,7 +288,7 @@ impl DMP105 {
     fn plot_column(&mut self, cx: u32, bits: u8) {
         for row in 0..7u32 {
             if bits & (1 << row) != 0 {
-                self.mark_dot(cx, self.y.saturating_add(row));
+                self.mark_dot(cx, self.y.saturating_add(row * DOT_ROW_UNITS));
             }
         }
         if bits & 0x80 != 0 {
@@ -326,10 +314,12 @@ impl DMP105 {
         let weights = b & 0x7F;
         for row in 0..7u32 {
             if weights & (1 << row) != 0 {
-                self.mark_dot(self.x, self.y.saturating_add(row));
+                self.mark_dot(self.x, self.y.saturating_add(row * DOT_ROW_UNITS));
             }
         }
-        self.x = self.x.saturating_add(self.graphics_pitch.dot_spacing());
+        self.x = self
+            .x
+            .saturating_add(self.graphics_pitch.addressable_spacing());
     }
 }
 
@@ -339,72 +329,13 @@ impl PrinterSink for DMP105 {
     }
 }
 
-/// Shared handle to a live [`DMP105`]: the `CaptureSink` `Rc<RefCell<_>>`
-/// pattern (`bitbanger.rs`), needed here because the frontend must be able
-/// to read the accumulating paper while [`crate::bitbanger::BitBanger`] owns
-/// the other half as its sink. Clone before handing one half to
-/// [`crate::bitbanger::BitBanger::start_dmp105`]; keep the other to poll the
-/// paper.
-#[derive(Clone, Default)]
-pub struct DMP105Handle(Rc<RefCell<DMP105>>);
-
-impl DMP105Handle {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Restore-path-only: rebuild a handle around an already-deserialized
-    /// [`DMP105`] state, wrapping it in a fresh `Rc<RefCell<_>>`.
-    pub(crate) fn from_state(state: DMP105) -> Self {
-        Self(Rc::new(RefCell::new(state)))
-    }
-
-    /// How much paper has been printed on so far.
-    pub fn paper_extent(&self) -> PaperExtent {
-        self.0.borrow().paper.extent()
-    }
-
-    /// Every dot in the inclusive row range `y0..=y1` — see
-    /// [`Paper::dots_in_range`].
-    pub fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        self.0.borrow().paper.dots_in_range(y0, y1)
-    }
-
-    /// The row range touched since the last poll — see [`Paper::take_dirty`].
-    pub fn take_dirty(&self) -> Option<(u32, u32)> {
-        self.0.borrow_mut().paper.take_dirty()
-    }
-
-    /// Tear off: discard the printed paper (see [`Paper::clear`]'s doc
-    /// comment on what this does and doesn't rebase).
-    pub fn tear_off(&self) {
-        self.0.borrow_mut().paper.clear();
-    }
-
-    /// Power-cycle the printer (see [`DMP105::reset`]): every register back
-    /// to its power-on default, paper untouched.
-    pub fn reset(&self) {
-        self.0.borrow_mut().reset();
-    }
-}
-
-impl PrinterSink for DMP105Handle {
-    fn write_byte(&mut self, b: u8) {
-        self.0.borrow_mut().feed(b);
-    }
-
-    /// The whole interpreter and paper state, cloned from the shared
-    /// `Rc<RefCell<_>>`. The state is plain `Clone` data, so this copy has low
-    /// overhead.
-    fn snapshot(&self) -> SinkState {
-        SinkState::DMP105(self.0.borrow().clone())
-    }
-
-    fn as_dmp105(&self) -> Option<&DMP105Handle> {
-        Some(self)
-    }
-}
+/// Default DMP-105 handle; shared paper access also supports the DMP-130.
+pub type DMP105Handle = crate::dmp::DmpHandle;
 
 #[cfg(test)]
 #[path = "dmp105_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "dmp105_graphics_test.rs"]
+mod graphics_tests;

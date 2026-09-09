@@ -11,11 +11,9 @@
 //! value converts to an exact integer — no floats anywhere in position
 //! accounting:
 //!
-//! - **Vertical** ([`Y_UNITS_PER_INCH`]): 1/72", matching every documented
-//!   vertical fact directly — the three text line-feed pitches (1/6", 1/8",
-//!   1/12" — `dmp105-protocol.md` §4 T9) and the fixed graphics line feed
-//!   (7/72" — §5) are all already whole numbers of 1/72" (12, 9, 6, and 7
-//!   respectively), so no finer unit is needed to keep them exact.
+//! - **Vertical** ([`Y_UNITS_PER_INCH`]): 1/432 inch, the least common
+//!   multiple of the DMP-105 and DMP-130's documented feed denominators
+//!   (48, 72, 144, and 216). This is software precision, not a motor claim.
 //! - **Horizontal** ([`X_UNITS_PER_INCH`]): see its doc comment — a derived
 //!   internal choice, not a hardware register, so the three pitch densities
 //!   (`dmp105-protocol.md` §1 Appendix G) share one exact integer grid.
@@ -24,11 +22,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Vertical fixed-point resolution: 1/72" per unit. Not itself a hardware
-/// register — it's the finest unit that keeps every documented vertical fact
-/// in `dmp105-protocol.md` (§4 T9's 1/6"/1/8"/1/12" line-feed pitches, §5's
-/// fixed 7/72" graphics line feed) an exact integer count of units.
-pub const Y_UNITS_PER_INCH: u32 = 72;
+/// Exact software grid for both printers' documented vertical feed commands.
+/// See `docs/dmp130-protocol.md`; not a physical stepper resolution.
+pub const Y_UNITS_PER_INCH: u32 = 432;
 
 /// Horizontal fixed-point resolution: 1/3600". Derived, not a hardware fact:
 /// `dmp105-protocol.md` Appendix G (p.59) gives 960/1152/1600 dots over an
@@ -45,7 +41,7 @@ pub const X_UNITS_PER_INCH: u32 = 3600;
 /// frame for a live-updating view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PaperExtent {
-    /// Highest `y` (1/72" units) any dot has been marked at; 0 if the paper
+    /// Highest `y` (1/432" units) any dot has been marked at; 0 if the paper
     /// is blank.
     pub max_y: u32,
     /// Total dots marked so far (not deduplicated — a dot re-struck at the

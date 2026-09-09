@@ -332,7 +332,7 @@ fn manager_edit_with_ssc_records_the_peripheral() {
 }
 
 /// Picking Serial = "Printer (DMP-105)" auto-saves `[ports].serial =
-/// "printer"`; switching to "Print to file" updates it to `"file"`.
+/// "printer"`; DMP-130 and file capture persist their distinct values.
 #[test]
 fn manager_edit_with_serial_records_the_port() {
     let dir = TempDir::new("create-serial");
@@ -353,7 +353,15 @@ fn manager_edit_with_serial_records_the_port() {
         "the TOML must record the serial sink:\n{contents}"
     );
 
-    select_combo_at(&mut harness, "Printer (DMP-105)", 0, "Print to file");
+    select_combo_at(&mut harness, "Printer (DMP-105)", 0, "Printer (DMP-130)");
+    assert_eq!(
+        harness.state().entries[0].def.ports.serial,
+        Some(machine_def::SerialDTO::Dmp130)
+    );
+    let contents = fs::read_to_string(&file).unwrap();
+    assert!(contents.contains("serial = \"dmp130\""));
+
+    select_combo_at(&mut harness, "Printer (DMP-130)", 0, "Print to file");
     assert_eq!(
         harness.state().entries[0].def.ports.serial,
         Some(machine_def::SerialDTO::File)

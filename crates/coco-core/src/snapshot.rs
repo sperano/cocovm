@@ -2,37 +2,16 @@
 //! references, and the restore flow that turns a decoded payload plus
 //! resolved media bytes back into a running [`Machine`](crate::Machine).
 //!
-//! ## Compatibility contract
+//! ## Compatibility
 //!
-//! **A snapshot written today must load in every future version**
-//! (user requirement 2026-07-16). The payload is CBOR (`ciborium`), not a
-//! positional format like bincode/postcard: CBOR carries field names with
-//! the data, so serde's evolution tools (`#[serde(default)]`/`alias`) work
-//! across versions instead of every struct needing hand-rolled versioning.
-//! RAM and other big buffers stay compact using `serde_bytes`/
-//! [`crate::serde_util::byte_array`] rather than base64-in-JSON. The whole
-//! payload is gzipped with `flate2`.
+//! Schema 2 changes printer coordinates and interpreter state. Schema 1
+//! snapshots are deliberately unsupported; no migration is provided.
+//! Within a schema, serialized fields retain their units and enum meanings.
+//! Additive fields must have defaults. Incompatible changes bump the schema
+//! and need an explicit compatibility decision.
 //!
-//! Four evolution rules govern every change to a type that lives inside
-//! [`SnapshotPayload`] (enforced in review, not by the compiler):
-//!
-//! 1. never remove or rename a serialized field without `#[serde(alias =
-//!    "old_name")]` or a migration — except a redundant copy of another
-//!    field that restore re-derives (`SystemBus::variant`), which may become
-//!    `#[serde(skip)]` since old payloads' stray key is ignored on load;
-//! 2. every added field carries `#[serde(default = "...")]` whose default
-//!    reproduces the *old* behaviour (a snapshot from before the field
-//!    existed must load as if the field had always held that value);
-//! 3. never change the meaning or units of an existing field — add a new
-//!    field and migrate instead;
-//! 4. enum variants may be added, never repurposed.
-//!
-//! What actually *guarantees* rule compliance, per the plan, is the
-//! golden-fixture gate: every time [`SCHEMA_VERSION`] bumps, or a release is
-//! cut, a real snapshot fixture (small RAM, mid-BASIC-program) is committed
-//! under `crates/coco-core/tests/fixtures/snapshots/`, and a test loads every
-//! committed fixture and runs the trace-continuation check from it
-//! (`tests/snapshot_fixtures.rs`).
+//! Golden fixtures verify deterministic continuation for supported schemas
+//! and explicit rejection of retired schemas.
 //!
 //! ## Container format
 //!
@@ -89,11 +68,8 @@ pub const CONTAINER_MAGIC: &[u8; 7] = b"CCSTATE";
 /// from [`SCHEMA_VERSION`], which versions the machine tree the container
 /// carries.
 pub const CONTAINER_VERSION: u8 = 1;
-/// Machine-tree schema version. Bump ONLY on a semantic break the four
-/// evolution rules in the module doc can't express; every other change
-/// (added/renamed/removed fields, new enum variants) stays on the current
-/// schema.
-pub const SCHEMA_VERSION: u32 = 1;
+/// Machine-tree version; schema 2 deliberately retires schema 1 snapshots.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Byte length of the container header: magic + version byte + schema `u32`.
 const HEADER_LEN: usize = CONTAINER_MAGIC.len() + 1 + 4;

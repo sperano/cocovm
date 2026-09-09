@@ -1,5 +1,5 @@
 //! The "Printer Paper" window: a scrollable,
-//! auto-following view of the DMP-105's virtual fanfold paper, built on the
+//! auto-following view of the DMP printer's virtual fanfold paper, built on the
 //! pure rasterizer in [`crate::paper_render`].
 //!
 //! Shown as its own native OS window (an egui *immediate viewport*), so it
@@ -9,7 +9,7 @@
 //! multi-window support egui reports `ViewportClass::Embedded` and the view
 //! falls back to an in-viewport `egui::Window`.
 //!
-//! Sink ownership: [`PaperWindow`] never attaches its own [`DMP105Handle`] —
+//! Sink ownership: [`PaperWindow`] never attaches its own [`DmpHandle`] —
 //! that handshake (which touches [`crate::CocoApp::print_capture_path`] and
 //! `bus.bitbanger`, both owned by `CocoApp`) lives in
 //! [`crate::CocoApp::toggle_paper_window`]. This window holds whatever
@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use coco_core::dmp105::DMP105Handle;
+use coco_core::dmp::DmpHandle;
 use coco_core::printer::{PaperExtent, Y_UNITS_PER_INCH};
 use eframe::egui;
 
@@ -37,10 +37,10 @@ pub struct PaperWindow {
     /// checkbox (through [`crate::CocoApp::toggle_paper_window`]) or the
     /// window's own close button — neither touches `handle`.
     pub open: bool,
-    /// The live DMP-105 handle this window reads from, if the bit-banger's
-    /// sink is currently a DMP-105 (see the module doc comment on who
+    /// The live DMP printer handle this window reads from, if the bit-banger's
+    /// sink is currently a DMP printer (see the module doc comment on who
     /// attaches/detaches this).
-    pub handle: Option<DMP105Handle>,
+    pub handle: Option<DmpHandle>,
     /// Green-bar banding toggle, exposed in the window's header row.
     green_bar: bool,
     /// Whether `green_bar` changed since the cache was last built —
@@ -78,7 +78,7 @@ impl PaperWindow {
     /// Re-binds this window after a snapshot restore replaces the live machine. `Some(handle)`
     /// drops every cached page texture but leaves `open` alone; `None` delegates to
     /// [`Self::detach`].
-    pub fn resync(&mut self, handle: Option<DMP105Handle>) {
+    pub fn resync(&mut self, handle: Option<DmpHandle>) {
         match handle {
             Some(handle) => {
                 self.handle = Some(handle);
@@ -103,7 +103,7 @@ impl PaperWindow {
         last_content_page + 2
     }
 
-    /// Tears off: discards the printed roll ([`DMP105Handle::tear_off`]) and resets every view
+    /// Tears off: discards the printed roll ([`DmpHandle::tear_off`]) and resets every view
     /// state that referred to the old roll, so the next frame sees a fresh blank page. No-op if
     /// no handle is attached.
     fn perform_tear_off(&mut self) {
@@ -186,7 +186,7 @@ impl PaperWindow {
 
     /// Drop every cached page whose range intersects what changed since the
     /// last poll, forcing a re-rasterize next time that page is visible.
-    fn invalidate_dirty_pages(&mut self, handle: &DMP105Handle) {
+    fn invalidate_dirty_pages(&mut self, handle: &DmpHandle) {
         let Some((y0, y1)) = handle.take_dirty() else {
             return;
         };
@@ -250,7 +250,7 @@ impl PaperWindow {
     fn contents(
         &mut self,
         ui: &mut egui::Ui,
-        handle: &DMP105Handle,
+        handle: &DmpHandle,
         total_pages: u32,
         printed_pages: u32,
         error: &mut Option<String>,
@@ -284,7 +284,7 @@ impl PaperWindow {
     fn export_menu(
         &mut self,
         ui: &mut egui::Ui,
-        handle: &DMP105Handle,
+        handle: &DmpHandle,
         total_pages: u32,
         error: &mut Option<String>,
     ) {
@@ -390,7 +390,7 @@ impl PaperWindow {
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
-        handle: &DMP105Handle,
+        handle: &DmpHandle,
         total_pages: u32,
     ) {
         // Fit-width scaling: no horizontal scrolling at default zoom.
