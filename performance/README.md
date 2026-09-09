@@ -7,6 +7,8 @@ have no absolute CI timing assertions.
 
 The [September 8, 2026 baseline](results/2026-09-08/RESULTS.md) publishes 92 runs,
 profiler summaries, measurement limits, and targets for subsequent optimizations.
+The [audio buffer comparison](results/2026-09-08-audio/RESULTS.md) measures the
+first audio allocation optimization against that baseline.
 
 ## Build and run
 
