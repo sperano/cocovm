@@ -20,6 +20,7 @@ const STAGE_NAMES: [&str; STAGE_COUNT] = [
     "texture_enqueue_cpu",
     "audio_push",
     "audio_callback_lock_wait",
+    "audio_callback_lock_hold",
     "host_operation",
     "snapshot_save",
     "snapshot_restore",

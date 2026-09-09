@@ -18,8 +18,9 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui;
+
+mod stream;
 
 /// Default output volume (of `menu_ui`'s 0.0..=1.0 slider) — audible but not
 /// jarring the first time the app starts.
@@ -44,6 +45,11 @@ const LOWPASS_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
 /// starts dropping the oldest queued frames. Bounds worst-case output latency
 /// and keeps a paused/backgrounded UI from growing the buffer unboundedly.
 const RING_BUFFER_SECS: f64 = 0.25;
+/// Initial producer scratch space, allowing several fields per UI update.
+/// Unusually large batches can grow this storage; subsequent batches reuse it.
+const INITIAL_PROCESSED_CAPACITY: usize = 16_384;
+/// Rounding headroom for the resampler's carried fractional position.
+const RESAMPLER_CAPACITY_HEADROOM: usize = 1;
 /// How long a continuous underrun takes to fade the held-over output frame to
 /// (effectively) silence, so a starved ring buffer decays smoothly instead of
 /// clicking or parking at a stuck DC level.
@@ -180,6 +186,8 @@ pub struct AudioOutput {
     /// The source rate `lowpass` was designed for — redesign on change.
     lowpass_rate: f64,
     resampler: Resampler,
+    processed: Vec<[f32; 2]>,
+    resampled: Vec<[f32; 2]>,
 }
 
 impl AudioOutput {
@@ -203,7 +211,7 @@ impl AudioOutput {
         let ring_cap = ring_capacity(device_rate);
         Self::from_parts(
             None,
-            Arc::new(Mutex::new(VecDeque::new())),
+            Arc::new(Mutex::new(VecDeque::with_capacity(ring_cap))),
             device_rate,
             ring_cap,
         )
@@ -226,6 +234,16 @@ impl AudioOutput {
             lowpass: None,
             lowpass_rate: 0.0,
             resampler: Resampler::default(),
+            processed: Vec::with_capacity(if device_rate > 0.0 {
+                INITIAL_PROCESSED_CAPACITY
+            } else {
+                0
+            }),
+            resampled: Vec::with_capacity(if device_rate > 0.0 {
+                ring_cap + RESAMPLER_CAPACITY_HEADROOM
+            } else {
+                0
+            }),
         }
     }
 
@@ -244,89 +262,14 @@ impl AudioOutput {
         self.lowpass = None;
         self.lowpass_rate = 0.0;
         self.resampler = Resampler::default();
+        self.processed.clear();
+        self.resampled.clear();
     }
 
     /// Frames waiting in the ring buffer for the device to consume.
     #[cfg(test)]
     pub(crate) fn queued_frames(&self) -> usize {
         lock(&self.ring).len()
-    }
-
-    /// Opens the default output device and starts a stream fed from `ring`.
-    /// Every fallible step is folded into one `Err` so `new()` has a single
-    /// place to log and degrade.
-    fn try_build_stream(
-        ring: Arc<Mutex<VecDeque<[f32; 2]>>>,
-    ) -> Result<(cpal::Stream, f64, usize), String> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| "no output device".to_string())?;
-        let supported = device.default_output_config().map_err(|e| e.to_string())?;
-        let channels = supported.channels() as usize;
-        let device_rate = supported.sample_rate() as f64;
-        let ring_cap = ring_capacity(device_rate);
-        let stream_config: cpal::StreamConfig = supported.into();
-
-        // Per-frame decay so the underrun fade takes UNDERRUN_FADE_SECS regardless of device rate.
-        let fade_frames = (device_rate * UNDERRUN_FADE_SECS).max(1.0);
-        let decay = UNDERRUN_FADE_FLOOR.powf(1.0 / fade_frames as f32);
-        let mut held = [0.0f32; 2];
-
-        let stream = device
-            .build_output_stream(
-                stream_config,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    #[cfg(feature = "perf")]
-                    let wait = crate::perf::span(crate::perf::Stage::AudioCallbackLockWait);
-                    let mut buf = lock(&ring);
-                    #[cfg(feature = "perf")]
-                    drop(wait);
-                    #[cfg(feature = "perf")]
-                    let queue_before = buf.len();
-                    #[cfg(feature = "perf")]
-                    let mut missing = 0;
-                    for frame in data.chunks_mut(channels) {
-                        let [l, r] = match buf.pop_front() {
-                            Some(s) => {
-                                held = s;
-                                s
-                            }
-                            None => {
-                                #[cfg(feature = "perf")]
-                                {
-                                    missing += 1;
-                                }
-                                held[0] *= decay;
-                                held[1] *= decay;
-                                held
-                            }
-                        };
-                        // L→even channels, R→odd; a mono device gets the mix.
-                        if frame.len() == 1 {
-                            frame[0] = (l + r) * 0.5;
-                        } else {
-                            for (i, out) in frame.iter_mut().enumerate() {
-                                *out = if i % 2 == 0 { l } else { r };
-                            }
-                        }
-                    }
-                    #[cfg(feature = "perf")]
-                    {
-                        let queue_after = buf.len();
-                        drop(buf);
-                        crate::perf::audio_callback(missing, queue_before, queue_after);
-                    }
-                },
-                |err| tracing::error!("audio stream error: {err}"),
-                None,
-            )
-            .map_err(|e| e.to_string())?;
-        stream.play().map_err(|e| e.to_string())?;
-        #[cfg(feature = "perf")]
-        crate::perf::audio_config(device_rate as u32, channels as u16);
-
-        Ok((stream, device_rate, ring_cap))
     }
 
     /// Resamples and enqueues one batch of stereo speaker frames. A no-op
@@ -336,6 +279,23 @@ impl AudioOutput {
         if !self.is_enabled() {
             return;
         }
+        self.process_samples(samples, source_rate);
+        self.resampled.clear();
+        self.resampler.process(
+            &self.processed,
+            source_rate / self.device_rate,
+            &mut self.resampled,
+        );
+        if self.muted {
+            self.resampled.fill([0.0; 2]);
+        }
+
+        let mut buf = lock(&self.ring);
+        let dropped = enqueue(&mut buf, &self.resampled, self.ring_cap);
+        crate::perf::audio_queue(buf.len(), dropped);
+    }
+
+    fn process_samples(&mut self, samples: impl Iterator<Item = [f32; 2]>, source_rate: f64) {
         // Redesign anti-alias filters when the source rate changes; only needed when decimating.
         if source_rate != self.lowpass_rate {
             self.lowpass_rate = source_rate;
@@ -347,34 +307,16 @@ impl AudioOutput {
 
         // Applied regardless of mute so filter state doesn't pop when unmuting mid-stream.
         let gain = MASTER_GAIN * self.volume;
-        let processed: Vec<[f32; 2]> = samples
-            .map(|[l, r]| {
-                let mut l = self.dc[0].process(l) * gain;
-                let mut r = self.dc[1].process(r) * gain;
-                if let Some(lp) = self.lowpass.as_mut() {
-                    l = lp[0].process(l);
-                    r = lp[1].process(r);
-                }
-                [l, r]
-            })
-            .collect();
-        let step = source_rate / self.device_rate;
-        let mut resampled = Vec::with_capacity(
-            (processed.len() as f64 * self.device_rate / source_rate).ceil() as usize + 1,
-        );
-        self.resampler.process(&processed, step, &mut resampled);
-
-        if self.muted {
-            resampled.iter_mut().for_each(|s| *s = [0.0; 2]);
-        }
-
-        let mut buf = lock(&self.ring);
-        buf.extend(resampled);
-        let dropped = buf.len().saturating_sub(self.ring_cap);
-        while buf.len() > self.ring_cap {
-            buf.pop_front();
-        }
-        crate::perf::audio_queue(buf.len(), dropped);
+        self.processed.clear();
+        self.processed.extend(samples.map(|[l, r]| {
+            let mut l = self.dc[0].process(l) * gain;
+            let mut r = self.dc[1].process(r) * gain;
+            if let Some(lp) = self.lowpass.as_mut() {
+                l = lp[0].process(l);
+                r = lp[1].process(r);
+            }
+            [l, r]
+        }));
     }
 
     /// Mute checkbox and volume slider, or a disabled label when no output
@@ -387,6 +329,20 @@ impl AudioOutput {
         ui.checkbox(&mut self.muted, "Mute");
         ui.add(egui::Slider::new(&mut self.volume, 0.0..=1.0).text("Volume"));
     }
+}
+
+/// Discard the oldest frames before appending, so the deque never grows beyond
+/// its preallocated logical limit, even when a single batch exceeds that limit.
+fn enqueue(buf: &mut VecDeque<[f32; 2]>, samples: &[[f32; 2]], capacity: usize) -> usize {
+    let dropped = buf
+        .len()
+        .saturating_add(samples.len())
+        .saturating_sub(capacity);
+    let old_dropped = dropped.min(buf.len());
+    buf.drain(..old_dropped);
+    let new_dropped = samples.len().saturating_sub(capacity);
+    buf.extend(samples[new_dropped..].iter().copied());
+    dropped
 }
 
 /// [`AudioOutput::ring_cap`] for a device at `device_rate` Hz:
@@ -404,3 +360,11 @@ fn lock(ring: &Mutex<VecDeque<[f32; 2]>>) -> MutexGuard<'_, VecDeque<[f32; 2]>> 
 #[cfg(test)]
 #[path = "audio_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "audio/pipeline_test.rs"]
+mod pipeline_tests;
+
+#[cfg(all(test, feature = "perf"))]
+#[path = "audio_perf_test.rs"]
+mod perf_tests;
