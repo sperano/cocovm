@@ -54,6 +54,7 @@ impl ManagerApp {
             let mut vm = self.entries[i].vm.take().expect("checked Some above");
             let suspended = self.entries[i].suspended;
             vm.suspended = suspended;
+            vm.toolbar_icons_only = self.toolbar_icons_only;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 if class == egui::ViewportClass::Embedded {

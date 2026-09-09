@@ -176,12 +176,8 @@ impl ManagerApp {
         }
     }
 
-    /// Saves the dialog's draft to [`ManagerApp::config_path`]. On success,
-    /// applies `toolbar_icons_only` to the manager's own toolbar immediately
-    /// — unless a CLI flag or env var supplied it for this run, which keeps
-    /// winning until restart, matching the dialog's own hint (a running VM
-    /// keeps its own copy until its next launch — `manager/lifecycle.rs`) —
-    /// and closes the dialog; on failure, shows the error and leaves it open.
+    /// Saves the draft to [`ManagerApp::config_path`] and closes the dialog;
+    /// applies `toolbar_icons_only` live unless a CLI/env override is active.
     fn commit_settings(&mut self) {
         let Some(path) = self.config_path.as_deref() else {
             if let Some(dialog) = &mut self.settings {
