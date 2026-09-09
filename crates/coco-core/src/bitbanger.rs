@@ -35,7 +35,7 @@ use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dmp105::DMP105Handle;
+use crate::dmp::{DmpHandle, DmpModel};
 
 /// PIA1 Port A bit 1 ($FF20): the TX line to the printer. 1 = mark/idle
 /// (high), 0 = space. Only meaningful as an output when PIA1 DDRA bit 1 is
@@ -87,8 +87,8 @@ pub trait PrinterSink {
         sink_serde::SinkState::Noop
     }
 
-    /// Downcast hook: `Some` only for a live [`DMP105Handle`] sink. Default: not a DMP-105 sink.
-    fn as_dmp105(&self) -> Option<&DMP105Handle> {
+    /// Shared handle for a live DMP printer sink.
+    fn as_printer(&self) -> Option<&DmpHandle> {
         None
     }
 
@@ -330,18 +330,19 @@ impl BitBanger {
         self.sink = Box::new(NoopSink);
     }
 
-    /// Attach a [`DMP105`](crate::dmp105::DMP105) interpreter as the live sink,
-    /// returning a cloned [`DMP105Handle`] so the frontend can read the accumulating paper.
-    pub fn start_dmp105(&mut self) -> DMP105Handle {
-        let handle = DMP105Handle::new();
+    /// Attach a printer, returning shared access to its paper.
+    pub fn start_printer(&mut self, model: DmpModel) -> DmpHandle {
+        let handle = DmpHandle::with_model(model);
         self.sink = Box::new(handle.clone());
         handle
     }
 
-    /// The live sink's [`DMP105Handle`], if it is one. Cloning the reference
-    /// is inexpensive, so callers can use this every frame.
-    pub fn dmp105_handle(&self) -> Option<DMP105Handle> {
-        self.sink.as_dmp105().cloned()
+    pub fn start_dmp105(&mut self) -> DmpHandle {
+        self.start_printer(DmpModel::Dmp105)
+    }
+
+    pub fn printer_handle(&self) -> Option<DmpHandle> {
+        self.sink.as_printer().cloned()
     }
 
     /// True if this `BitBanger` returned from a snapshot restore whose
@@ -427,7 +428,7 @@ pub mod sink_serde {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     use super::{NoopSink, PrinterSink};
-    use crate::dmp105::{DMP105, DMP105Handle};
+    use crate::dmp::{DmpHandle, DmpPrinter};
 
     /// What actually needs to survive a snapshot, per live sink kind: a
     /// no-op sink and a file capture both restore to [`NoopSink`] (`FileSink`
@@ -438,7 +439,7 @@ pub mod sink_serde {
     pub enum SinkState {
         Noop,
         FileCapture,
-        DMP105(DMP105),
+        Dmp(DmpPrinter),
     }
 
     // `&Box<dyn PrinterSink>`, not `&dyn PrinterSink`: this is what the
@@ -462,7 +463,7 @@ pub mod sink_serde {
             SinkState::Noop => Box::new(NoopSink),
             // Distinct from `SinkState::Noop`, even though both currently behave identically.
             SinkState::FileCapture => Box::new(super::StoppedFileCaptureSink),
-            SinkState::DMP105(state) => Box::new(DMP105Handle::from_state(state)),
+            SinkState::Dmp(state) => Box::new(DmpHandle::from_state(state)),
         })
     }
 }

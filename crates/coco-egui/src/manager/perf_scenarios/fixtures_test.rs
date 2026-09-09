@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn sparse_printer_fixture_reaches_every_requested_page() {
     const MAX_DOTS_PER_PAGE: usize = 1000;
-    let mut handle = coco_core::dmp105::DMP105Handle::new();
+    let mut handle = coco_core::dmp::DmpHandle::new();
     fill_printer(&mut handle);
     let extent = handle.paper_extent();
     let page_height =

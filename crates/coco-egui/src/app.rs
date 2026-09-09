@@ -141,7 +141,7 @@ pub(crate) struct CocoApp {
     /// tracked by [`MPISlot::DistoRTC`] instead.
     pub(crate) rtc_direct: bool,
     /// The virtual fanfold-paper window, showing
-    /// the DMP-105's dot-matrix output on period-correct tractor-feed
+    /// the DMP printer's dot-matrix output on period-correct tractor-feed
     /// stationery. See [`Self::toggle_paper_window`] for the sink-ownership
     /// handshake with print-file-capture.
     pub(crate) paper_window: paper_view::PaperWindow,

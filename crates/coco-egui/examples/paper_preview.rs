@@ -1,5 +1,5 @@
 //! Headless sign-off example for the virtual fanfold-paper renderer. It feeds
-//! a canned byte stream through a real [`DMP105Handle`], rasterizes the whole
+//! a canned byte stream through a real [`DmpHandle`], rasterizes the whole
 //! printed roll (plus
 //! one trailing blank page, same "+2 pages" rule the live window uses), and
 //! writes two PNGs so a human can eyeball the result without launching the
@@ -16,15 +16,16 @@
 mod paper_render;
 
 use coco_core::bitbanger::PrinterSink;
-use coco_core::dmp105::DMP105Handle;
+use coco_core::dmp::DmpHandle;
 use coco_core::printer::Y_UNITS_PER_INCH;
 use paper_render::{PAGE_HEIGHT_IN, RASTER_DPI};
 
 /// Bare `\r`s fed after the styled lines, to land solidly on page 2. 66
 /// lines/page at 6 LPI is the real "lines per page" convention
-/// (`PAGE_HEIGHT_IN * Y_UNITS_PER_INCH / 12 == 66` exactly, checked later);
+/// (`PAGE_HEIGHT_IN * DEFAULT_LINES_PER_INCH == 66`, checked later);
 /// this is comfortably past that boundary.
 const BLANK_LINES_TO_PAGE_2: usize = 75;
+const DEFAULT_LINES_PER_INCH: f32 = 6.0;
 
 /// Display convenience for `full.png` — not a T5 spec value, but a
 /// sensible width for a human skimming the whole roll in an image viewer.
@@ -40,7 +41,7 @@ const DETAIL_Y0_IN: f32 = 0.0;
 const DETAIL_WIDTH_IN: f32 = 3.0;
 const DETAIL_HEIGHT_IN: f32 = 1.0;
 
-fn feed(printer: &mut DMP105Handle, bytes: &[u8]) {
+fn feed(printer: &mut DmpHandle, bytes: &[u8]) {
     for &b in bytes {
         printer.write_byte(b);
     }
@@ -50,12 +51,12 @@ fn main() {
     // 66 lines/page @ 6 LPI: the real-hardware convention this module's
     // page-boundary byte count is chosen to cross.
     assert_eq!(
-        (PAGE_HEIGHT_IN * Y_UNITS_PER_INCH as f32 / 12.0).round() as u32,
+        (PAGE_HEIGHT_IN * DEFAULT_LINES_PER_INCH).round() as u32,
         66,
-        "PAGE_HEIGHT_IN and Y_UNITS_PER_INCH must still agree with the 66-lines-per-page convention"
+        "PAGE_HEIGHT_IN and default line spacing must still agree with the 66-lines-per-page convention"
     );
 
-    let mut printer = DMP105Handle::new();
+    let mut printer = DmpHandle::new();
 
     // Plain ASCII lines, bare-CR terminated (BASIC's own line ending).
     feed(&mut printer, b"REM FANFOLD PAPER TEST\r");
@@ -75,7 +76,7 @@ fn main() {
     // Condensed-pitch line: ESC 14 (condensed) ... ESC 13 (restore Normal).
     feed(&mut printer, b"\x1B\x14CONDENSED PITCH LINE\x1B\x13\r");
 
-    // Enough bare CRs (default mode is CR+LF, 1/6" pitch = 12 y-units each)
+    // Enough bare CRs (default mode is CR+LF, 1/6" pitch)
     // to cross a full page boundary onto page 2.
     for _ in 0..BLANK_LINES_TO_PAGE_2 {
         feed(&mut printer, b"\r");

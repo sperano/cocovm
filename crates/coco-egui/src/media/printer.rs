@@ -1,6 +1,7 @@
 //! Bit-banger print capture to a host file, and the paper window.
 
 use crate::*;
+use coco_core::dmp::DmpModel;
 
 impl CocoApp {
     /// Starts "print to text file" capture at `path` (create/truncate); failures
@@ -27,13 +28,14 @@ impl CocoApp {
         self.print_capture_path = None;
     }
 
-    /// Attaches a DMP-105 to the bit-banger, stopping any active print-file
+    /// Attaches a DMP printer to the bit-banger, stopping any active print-file
     /// capture first — only one sink is live at a time. Does not open the paper window.
-    pub(crate) fn attach_dmp105(&mut self) {
+    pub(crate) fn attach_printer(&mut self, model: DmpModel) {
         if self.print_capture_path.is_some() {
             self.stop_print_capture();
         }
-        self.paper_window.handle = Some(self.machine.bus.bitbanger.start_dmp105());
+        let handle = self.machine.bus.bitbanger.start_printer(model);
+        self.paper_window.resync(Some(handle));
     }
 
     /// View-menu "Printer Paper" checkbox handler: opening attaches a DMP-105 if
@@ -44,7 +46,7 @@ impl CocoApp {
             return;
         }
         if self.paper_window.handle.is_none() {
-            self.attach_dmp105();
+            self.attach_printer(DmpModel::Dmp105);
         }
         self.paper_window.open = true;
     }

@@ -70,7 +70,7 @@ fn blank_paper_in_print_area_is_pure_paper_color_no_ink() {
 fn single_dot_marks_ink_at_the_mapped_pixel() {
     let dpi = RASTER_DPI;
     let x_units = 360; // 0.1" into the print area
-    let y_units = 72; // 1.0" down the roll
+    let y_units = Y_UNITS_PER_INCH; // 1.0" down the roll
     let dots = FixedDots(vec![(x_units, y_units)]);
     let img = rasterize(&dots, 0.0, 2.0, dpi, false);
 

@@ -8,8 +8,8 @@
 use crate::dmp105_font;
 
 use super::{
-    DMP105, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12, Mode, NlMode,
-    Pending, Pitch, control, esc,
+    DMP105, DOT_ROW_UNITS, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12,
+    Mode, NlMode, Pending, Pitch, control, esc,
 };
 
 impl DMP105 {
@@ -56,8 +56,8 @@ impl DMP105 {
     fn dispatch_cp(&mut self, b: u8) {
         match b {
             control::NUL_IGNORED_0 | control::NUL_IGNORED_1 => {}
-            control::LF => self.y = self.y.saturating_add(self.lf_pitch_units),
-            control::CR => self.control_cr(),
+            control::LF | control::LF_HIGH => self.y = self.y.saturating_add(self.lf_pitch_units),
+            control::CR | control::CR_HIGH => self.control_cr(),
             control::END_UNDERLINE => self.underline = false,
             control::START_UNDERLINE => self.underline = true,
             control::SELECT_GRAPHICS => {
@@ -91,12 +91,16 @@ impl DMP105 {
         }
     }
 
-    /// `CR` is identical in both modes: return to column 0, and additionally
-    /// feed a line at the latched (text) LF pitch if NL mode is CR+LF.
+    /// Manual p.39: CR uses the fixed graphics feed in graphics mode;
+    /// otherwise it uses the latched text pitch.
     fn control_cr(&mut self) {
         self.x = 0;
         if self.nl_mode == NlMode::CrLf {
-            self.y = self.y.saturating_add(self.lf_pitch_units);
+            let feed = match self.mode {
+                Mode::CharacterPrint => self.lf_pitch_units,
+                Mode::Graphics => GRAPHICS_LF_UNITS,
+            };
+            self.y = self.y.saturating_add(feed);
         }
     }
 
@@ -131,12 +135,20 @@ impl DMP105 {
     /// Execute a fully-assembled escape sequence. An unrecognized selector is
     /// silently ignored rather than inventing undocumented behavior.
     fn execute_esc(&mut self, selector: u8, ops: &[u8]) {
+        // Appendix A pp.39–40: these are the only escapes active in graphics.
+        if self.mode == Mode::Graphics
+            && !matches!(
+                selector,
+                esc::ELONGATE_START | esc::ELONGATE_END | esc::POSITION | esc::FEED_IMMEDIATE
+            )
+        {
+            return;
+        }
         match selector {
             esc::ELONGATE_START => self.elongation = true,
             esc::ELONGATE_END => self.elongation = false,
             esc::POSITION => {
-                let column = u32::from(ops[0]) * 256 + u32::from(ops[1]);
-                self.x = column * self.active_pitch().dot_spacing();
+                self.position_head(u16::from_be_bytes([ops[0], ops[1]]));
             }
             esc::PITCH_NORMAL => self.pitch = Pitch::Normal,
             esc::PITCH_CONDENSED => self.pitch = Pitch::Condensed,
@@ -156,14 +168,29 @@ impl DMP105 {
                 };
             }
             // Immediate feed applies in both modes, unlike the latched-only 5B case that follows.
-            esc::FEED_IMMEDIATE => self.y = self.y.saturating_add(u32::from(ops[0])),
+            esc::FEED_IMMEDIATE => {
+                self.y = self.y.saturating_add(u32::from(ops[0]) * DOT_ROW_UNITS)
+            }
             // Latched feed is CP-mode only; in Graphics mode it falls to the
             // catch-all, consumed but inert.
             esc::FEED_LATCH if self.mode == Mode::CharacterPrint => {
-                self.lf_pitch_units = u32::from(ops[0]);
+                self.lf_pitch_units = u32::from(ops[0]) * DOT_ROW_UNITS;
             }
             _ => {}
         }
+    }
+
+    fn position_head(&mut self, column: u16) {
+        let spacing = self.active_pitch().addressable_spacing();
+        let position = u32::from(column) * spacing;
+        if position < super::PRINT_WIDTH_X_UNITS {
+            self.x = position;
+        } else if self.mode == Mode::Graphics && position == super::PRINT_WIDTH_X_UNITS {
+            // Manual p.34: POS 800 at condensed pitch wraps to the next line.
+            self.x = 0;
+            self.y = self.y.saturating_add(GRAPHICS_LF_UNITS);
+        }
+        // Other out-of-range positions are ignored (manual p.27).
     }
 
     /// Execute `28 n c` / `1C n c`: repeat `c` `n` times (in Graphics mode,
@@ -176,6 +203,9 @@ impl DMP105 {
         }
         for _ in 0..n {
             match self.mode {
+                Mode::CharacterPrint if c < 0x20 => {
+                    self.print_glyph(dmp105_font::undefined_glyph());
+                }
                 Mode::CharacterPrint => self.dispatch_cp(c),
                 Mode::Graphics => self.dispatch_graphics(c),
             }

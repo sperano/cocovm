@@ -102,3 +102,27 @@ fn constrain_display_snaps_to_tv_where_no_monitor_port_exists() {
     assert_eq!(form.config.monitor, Some(MonitorType::Composite));
     assert!(form.config.validate().is_ok());
 }
+
+#[test]
+fn serial_choices_preserve_models_through_form_and_saved_definition() {
+    use crate::machine_def::{self, MachineDef, tests::TempDir};
+    let dir = TempDir::new("serial-models");
+    for (choice, persisted) in [
+        (SerialChoice::None, None),
+        (SerialChoice::Printer, Some("printer")),
+        (SerialChoice::Dmp130, Some("dmp130")),
+        (SerialChoice::PrintFile, Some("file")),
+    ] {
+        let mut def = MachineDef::from_config("Serial".into(), None, &MachineConfig::default());
+        def.ports.serial = choice.into();
+        machine_def::save(dir.path(), "serial", &def).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("serial.toml")).unwrap();
+        if let Some(value) = persisted {
+            assert!(text.contains(&format!("serial = \"{value}\"")));
+        } else {
+            assert!(!text.contains("serial ="));
+        }
+        let loaded = machine_def::load_all(dir.path()).unwrap();
+        assert_eq!(SerialChoice::from(loaded[0].1.ports.serial), choice);
+    }
+}

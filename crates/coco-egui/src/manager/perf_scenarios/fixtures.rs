@@ -132,7 +132,7 @@ fn prepare_printer(vm: &mut crate::CocoApp) {
     fill_printer(&mut handle);
 }
 
-fn fill_printer(handle: &mut coco_core::dmp105::DMP105Handle) {
+fn fill_printer(handle: &mut coco_core::dmp::DmpHandle) {
     use coco_core::bitbanger::PrinterSink;
     for _ in 0..PRINTER_PAGE_COUNT {
         for &byte in PRINTER_LINE {

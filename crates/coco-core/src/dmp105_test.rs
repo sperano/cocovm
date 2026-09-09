@@ -98,7 +98,11 @@ fn hello_cr_at_normal_pitch_produces_expected_glyph_columns_and_row() {
         .filter(|&&(x, _)| x == Pitch::Normal.dot_spacing())
         .map(|&(_, y)| y)
         .collect();
-    assert_eq!(h_col1, vec![0, 1, 2, 3, 4, 5, 6], "H's left stroke column");
+    assert_eq!(
+        h_col1,
+        (0..7).map(|row| row * DOT_ROW_UNITS).collect::<Vec<_>>(),
+        "H's left stroke column"
+    );
 
     // Five glyph cells wide (H, E, L, L, O); check ink within O's cell and
     // none immediately past it.
@@ -262,9 +266,9 @@ fn repeat_code_in_graphics_mode_requires_msb_set_on_c() {
 
     // c with MSB set: valid graphics data, repeated n times.
     feed_str(&mut dmp, b"\x1C\x03\xFF"); // n=3, c=0xFF (all 7 dots)
-    let spacing = Pitch::Normal.dot_spacing();
+    let spacing = Pitch::Normal.addressable_spacing();
     assert_eq!(dmp.x, 3 * spacing);
-    assert_eq!(dmp.paper.dots_in_range(0, 6).len(), 3 * 7);
+    assert_eq!(dmp.paper.dots_in_range(0, 6 * DOT_ROW_UNITS).len(), 3 * 7);
 }
 
 #[test]
@@ -281,9 +285,9 @@ fn graphics_mode_enter_data_lf_and_exit_round_trip() {
     );
 
     dmp.feed(0xFF); // all 7 dots
-    let spacing = Pitch::Normal.dot_spacing();
+    let spacing = Pitch::Normal.addressable_spacing();
     assert_eq!(dmp.x, x_before_graphics + spacing);
-    let dots = dmp.paper.dots_in_range(0, 6);
+    let dots = dmp.paper.dots_in_range(0, 6 * DOT_ROW_UNITS);
     assert_eq!(
         dots.iter()
             .filter(|&&(x, _)| x == x_before_graphics)
@@ -313,8 +317,8 @@ fn graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts() {
     // resolution.
     let full_pitch_total = 11 * LF_PITCH_1_6;
     let graphics_total = 18 * GRAPHICS_LF_UNITS;
-    assert_eq!(full_pitch_total, 132);
-    assert_eq!(graphics_total, 126);
+    assert_eq!(full_pitch_total, 132 * DOT_ROW_UNITS);
+    assert_eq!(graphics_total, 126 * DOT_ROW_UNITS);
     assert_ne!(
         full_pitch_total, graphics_total,
         "if this ever holds, the manual's identity has become reproducible \
@@ -331,7 +335,7 @@ fn head_positioning_sets_absolute_column_including_explicit_zero_band() {
 
     // n1=1, n2=44 -> column 300, at Normal pitch (30 x-units/dot).
     feed_str(&mut dmp, b"\x1B\x10\x01\x2C");
-    let expected = (256 + 44) * Pitch::Normal.dot_spacing();
+    let expected = (256 + 44) * Pitch::Normal.addressable_spacing();
     assert_eq!(dmp.x, expected);
 }
 
@@ -358,17 +362,18 @@ fn undefined_codes_print_the_x_glyph() {
 fn esc_5a_feeds_immediately_esc_5b_only_latches() {
     let mut immediate = DMP105::new();
     feed_str(&mut immediate, b"\x1B\x5A\x0A"); // ESC 5A 10: feed 10/72" now
-    assert_eq!(immediate.y, 10);
+    assert_eq!(immediate.y, 10 * DOT_ROW_UNITS);
     // Latched pitch is untouched: a later plain LF still uses the default 1/6" pitch.
     immediate.feed(control::LF);
-    assert_eq!(immediate.y, 10 + LF_PITCH_1_6);
+    assert_eq!(immediate.y, 10 * DOT_ROW_UNITS + LF_PITCH_1_6);
 
     let mut latched = DMP105::new();
     feed_str(&mut latched, b"\x1B\x5B\x0A"); // ESC 5B 10: latch only, no feed
     assert_eq!(latched.y, 0, "5B must not feed immediately");
     latched.feed(control::LF);
     assert_eq!(
-        latched.y, 10,
+        latched.y,
+        10 * DOT_ROW_UNITS,
         "a later plain LF must use the newly latched pitch"
     );
 }

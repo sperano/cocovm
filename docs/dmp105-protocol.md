@@ -9,7 +9,7 @@ Manual* (same archive). MAME has **no** Tandy DMP-family printer device
 on. Page numbers are the manual's printed page numbers.
 
 Every claim below is VERIFIED against the manual unless explicitly flagged
-INFERRED or UNVERIFIABLE. Phase 2 implements only VERIFIED entries.
+INFERRED or UNVERIFIABLE. Behavior follows the explicit command tables and worked examples. Source conflicts and implementation choices are called out below.
 
 ## 1. Machine basics
 
@@ -20,7 +20,8 @@ INFERRED or UNVERIFIABLE. Phase 2 implements only VERIFIED entries.
 | Descenders/underline | one extra dot row below the 7-dot body (g p q y j; ç µ § ß ƒ) | p.47, p.48 |
 | Head pin count | **UNVERIFIABLE** — manual never states it; 9-pin plausible (7+descender+underline) but INFERRED only | p.57 schematic unreadable at scan resolution |
 | Columns @ 10 CPI | 80 | Appendix G p.59 |
-| Dots/line | Normal 960, Compressed(12 CPI) 1152, Condensed(16.7 CPI) 1600 | Appendix G p.59 |
+| Text dots/line | Normal 960, Compressed(12 CPI) 1152, Condensed(16.7 CPI) 1600 | Appendix G p.59 |
+| Graphics and positioning columns/line | Normal 480, Compressed 576, Condensed 800; only every second text dot is addressable | p.30 Table 14, p.33 Table 17 |
 | Character cell | 12 dots wide at every pitch (9 glyph + 3 gap); no adjustable letter-spacing exists | p.59 (dots/char = 12) |
 | Paper | fanfold 4"–9.5" tractor, or friction single sheets; platen lever selects | p.7, p.9, p.59 |
 | Carriage | bidirectional minimum-distance, power-on default; `1B 55 01` = unidirectional, `1B 55 00` = bidirectional | p.3, p.32 Table 16 |
@@ -50,7 +51,7 @@ INFERRED or UNVERIFIABLE. Phase 2 implements only VERIFIED entries.
 |---|---|---|---|---|---|
 | 0,1 | 00,01 | — | ignored | ignored | p.39 |
 | 10/138 | 0A/8A | LF | print buffer, feed at latched LF pitch (default 1/6") | 0A: fixed 7/72" feed; 8A is graphics data | p.25, p.39 |
-| 13/141 | 0D/8D | CR | print buffer; CR-only or CR+LF per NL mode | 0D same; 8D is graphics data | p.26, p.39 |
+| 13/141 | 0D/8D | CR | print buffer; CR-only or CR+LF per NL mode | 0D returns home and, in NL mode, feeds the fixed graphics pitch; 8D is data | p.26, p.39 |
 | 14 | 0E | End Underline | stop underlining | ignored | p.29 T13, p.39 |
 | 15 | 0F | Start Underline | start (2-pass: chars then rule) | ignored | p.29 T13, p.39 |
 | 18 | 12 | Select Graphics | enter Graphics Mode | ignored | p.39 |
@@ -74,7 +75,7 @@ INFERRED or UNVERIFIABLE. Phase 2 implements only VERIFIED entries.
 | Bytes (hex) | Effect | Source |
 |---|---|---|
 | 1B 0E / 1B 0F | Start / End Elongation (double-width) | p.22 T6 |
-| 1B 10 n1 n2 | Head positioning to dot column n1*256+n2 (n1 0–3; max col 799) — both modes | p.30, p.34 T18 |
+| 1B 10 n1 n2 | Head positioning to dot column n1*256+n2 (n1 0–3; every second text dot) — both modes | p.30, p.34 T18 |
 | 1B 13 | Normal 10 CPI (default) | p.22 T6 |
 | 1B 14 | Condensed 16.7 CPI | p.22 T6 |
 | 1B 15 | CR = CR only | p.26 T11 |
@@ -93,27 +94,31 @@ raw n/72" (Appendix G p.59).
 
 ## 5. Graphics mode (ch.7 pp.33–35)
 
-- Enter `12`, exit `1E`. Pitch must be selected *before* entry (ignored inside).
-- Density follows the prior character pitch: 960/1152/1600 dots/line.
+- Enter `12`, exit `1E`. Pitch must be selected *before* entry. Pitch commands inside graphics are ignored, including their effect on subsequent text.
+- Density follows the prior character pitch: **480/576/800 graphics columns/line** (60/72/100 DPI over 8 inches). Text uses twice as many horizontal dot positions. The earlier specification incorrectly used the text-dot counts for graphics.
 - Data byte = 128 + dot weights: bit0 = **top** dot (weight 1) … bit6 =
   **bottom** dot (weight 64); bit7 always set as the data marker (not an 8th
   pin). `FF` = all 7 dots (manual derives 1+2+…+64=127 explicitly). This is
   LSB-first-top — the **opposite** of Epson ESC/P conventions.
 - `1B 10 n1 n2` positioning: n1 = 256-column band (0–3), n2 = offset; CHR$(0)
-  must still be sent when n1=0 (worked example p.34).
-- Line feed inside Graphics: only `0A`, nominally 7/72". **Manual-internal
-  contradiction found during T4 implementation**: Appendix D item 8 (p.51)
-  states 11 full-pitch LFs = 18 graphics LFs exactly (and 11 half LFs = 9),
-  but 11 × 12/72" = 132/72" ≠ 18 × 7/72" = 126/72". The two claims cannot
-  both be exact. The 18:11 ratio implies graphics LF = 11/108" = 22 steps of
-  a 1/216" mechanical unit — under which every documented pitch is an integer
-  step count (full LF 36, 1/8" 27, 1/12" 18, n/72" = 3n, graphics 22) and
-  "7/72" (21 steps) is a rounded nominal. INFERRED, not verified; resolve in
-  V3 before Phase 3 graphics ships (check the DMP-130 manual's graphics LF
-  wording for corroboration). Current code implements the individually-stated
-  facts (graphics LF = 7/72") and carries a test documenting that the p.51
-  identity does not hold under them
-  (`dmp105.rs::graphics_lf_vs_text_lf_rounding_trap_is_not_reproducible_from_given_facts`).
+  must still be sent when n1=0 (worked example p.34). At condensed pitch,
+  position 800 wraps to column zero of the next graphics line (p.34);
+  other out-of-range position commands are ignored (p.27).
+- Graphics `LF` and the feed portion of `CR` use **7/72 inch**, as stated
+  explicitly on p.25 and in Appendix A p.39. Text feed-pitch commands do
+  not change this. Select CR-only or CR+LF before graphics entry: those
+  escape commands are also ignored inside graphics (p.39).
+- **Conflicting source, explicit implementation choice:** Appendix D item 8,
+  p.51 says 11 full-pitch feeds equal 18 graphics feeds. That implies
+  11/108 inch, not 7/72 inch. Reinspection of the scan confirms the conflict
+  is in the manual. DMP-130 p.63 independently specifies 7/72 inch; it does
+  not establish DMP-105 mechanics. Use the repeated, explicit DMP-105 feed
+  definitions on pp.25/39. Do not adopt the speculative 22/216-inch feed or
+  claim a verified motor-step size. Hardware measurement or firmware could
+  justify revising this choice later.
+- Graphics-active escapes: elongation on/off, absolute positioning, and
+  immediate `ESC Z n` feed. Other documented escapes are consumed and
+  ignored, including direction and latched pitch commands (pp.39–40).
 - Manual has no full-bitmap dump example, but the model above is complete;
   no freehand/joystick mode exists (that's DMP-130 only).
 
@@ -137,10 +142,10 @@ entry point is a power-cycle event, not a byte sequence.
 
 ## 8. Family context
 
-DMP-105 and DMP-130 share a common Tandy DMP control-code core (identical
-bytes for CR/LF pairs, the 0E=end/0F=start underline ordering — confirmed in
-both manuals, not an OCR error — elongation, graphics entry `12`). DMP-130 is
-a strict superset adding FF/TOF/page-length, backspace, IBM emulation mode,
-hex dump, margins, perforation skip, country sets, DP/WP/BI modes. Architect a
-shared DMP core with per-model extensions; do not port any DMP-130-only code
-into the 105 interpreter. DMP-100/110/120 not examined (deferred to V3).
+DMP-105 and DMP-130 share several Tandy control codes, including underline,
+elongation, and graphics entry. They require separate interpreters:
+DMP-130 is **not a strict protocol superset**. Its graphics density is
+fixed at 480 columns, its Tandy direction operands are reversed, and it
+does not provide DMP-105's `ESC Z n` / `ESC [ n` feeds in Tandy mode.
+See `dmp130-protocol.md` for the model-specific commands and source conflicts.
+Both interpreters share the paper representation, display, and exports.

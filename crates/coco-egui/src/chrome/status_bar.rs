@@ -269,7 +269,7 @@ impl CocoApp {
     }
 
     /// Always shown: the icon flashes on serial-port (bit-banger) output even with no
-    /// sink attached. Click the icon for a menu to toggle the DMP-105 paper window or
+    /// sink attached. Click the icon for a menu to toggle the printer paper window or
     /// open a captured print file. The label names the attached sink.
     fn printer_status(&mut self, ui: &mut egui::Ui) {
         let bytes_out = self.machine.bus.bitbanger.bytes_out();
@@ -280,9 +280,15 @@ impl CocoApp {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Printer menu")
         });
         let capture_path = self.print_capture_path.as_deref();
-        let sink_label = capture_path
-            .map(file_name)
-            .or_else(|| self.paper_window.handle.is_some().then_some("DMP-105"));
+        let sink_label = capture_path.map(file_name).or_else(|| {
+            self.paper_window
+                .handle
+                .as_ref()
+                .map(|handle| match handle.model() {
+                    coco_core::dmp::DmpModel::Dmp105 => "DMP-105",
+                    coco_core::dmp::DmpModel::Dmp130 => "DMP-130",
+                })
+        });
         let label_text = match sink_label {
             Some(name) => format!("Printer: {name}"),
             None => "Printer".to_string(),

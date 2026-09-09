@@ -26,7 +26,7 @@ fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
 #[test]
 fn tear_off_resets_paper_extent_and_view_state() {
     let mut window = PaperWindow::new();
-    let mut handle = DMP105Handle::new();
+    let mut handle = DmpHandle::new();
     // Print enough real ink (not line feeds, which mark no dots) to have state to reset
     // away from.
     for _ in 0..80 {
@@ -57,7 +57,7 @@ fn tear_off_resets_paper_extent_and_view_state() {
 #[test]
 fn detach_also_resets_current_page_and_pending_tear_off() {
     let mut window = PaperWindow::new();
-    window.handle = Some(DMP105Handle::new());
+    window.handle = Some(DmpHandle::new());
     window.open = true;
     window.current_page = 5;
     window.pending_tear_off = true;
