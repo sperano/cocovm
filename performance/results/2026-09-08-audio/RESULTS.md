@@ -73,10 +73,14 @@ reflects documentation and result files only. The measured code matches that com
 
 Host: Apple M3 Max, 64 GB RAM, macOS 26.6.2, Rust 1.97.0. Native audio uses
 MacBook Pro Speakers at 44,100 Hz, stereo. VMs use CoCo 3, NTSC, 512 KiB RAM, and
-RGB display. Host metadata reports 60 Hz external panels and a 120 Hz internal
-panel; viewport-to-panel mapping was not captured. Default captures use 3 s warmup
-and 10 s measurement. Native focus is maintained except for the background scenario;
-lifecycle transitions can temporarily leave all windows unfocused.
+RGB display. The initial native matrix used the internal 120 Hz display. The
+follow-up captures also had two 60 Hz external panels attached. Aggregate native
+ranges span both topologies, further limiting CPU comparisons. Viewport-to-panel
+mapping was not captured. Default captures use 3 s warmup and 10 s measurement.
+Foreground focus was requested. Before captures still recorded 29 unfocused
+multi-VM updates, three unfocused snapshot updates, and ten unfocused follow-up
+DAC updates. Background scenarios deliberately release focus; lifecycle transitions
+can also leave all windows unfocused.
 
 Core order is before/after, after/before, before/after across the three repeats.
 Native runs capture the full matrix before and then after, followed by a DAC and

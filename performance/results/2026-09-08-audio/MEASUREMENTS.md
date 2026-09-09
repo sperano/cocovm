@@ -16,15 +16,18 @@ CPU uses one core = 100%. All throughput captures use release builds.
 
 Whole-process allocations include display and UI work. Foreground DAC has three
 retained before runs and four after runs. Cartridge has four per revision. Other
-scenarios have three per revision. The first before DAC capture remains in the
+scenarios have three per revision. The initial native matrix used the internal 120 Hz display; follow-up captures
+also had two 60 Hz external displays attached. These aggregate ranges span both
+topologies and cannot isolate CPU effects from presentation changes.
+The first before DAC capture remains in the
 raw data but is excluded because compiler overlap during startup is uncertain.
 
 | Scenario/revision | Runs | CPU % | RSS MiB | Fields/s | Allocations/s | Allocated MiB/s | Enqueued MiB/s | VM UI p99 ms | Missing audio frames |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | dac / before | 3 | 21.77 (20.48–21.84) | 175.25 (162.83–175.31) | 60.0 (59.9–60.0) | 97442 (89649–97952) | 80.71 (71.77–81.27) | 55.94 (49.31–56.35) | 0.426 (0.426–0.623) | 101 (0–253) |
-| dac / after | 4 | 22.28 (20.87–22.52) | 175.23 (160.30–175.77) | 59.9 (59.9–60.0) | 67699 (61140–68336) | 77.66 (70.14–78.39) | 57.48 (51.91–58.02) | 0.410 (0.393–0.475) | 50 (0–221) |
+| dac / after | 4 | 22.28 (20.87–22.52) | 175.23 (160.30–175.77) | 59.9 (59.9–60.0) | 67699 (61140–68336) | 77.66 (70.14–78.39) | 57.48 (51.91–58.02) | 0.410 (0.393–0.475) | 50.5 (0–221) |
 | cartridge / before | 4 | 21.88 (21.27–22.08) | 175.20 (159.97–175.33) | 60.0 (59.9–60.0) | 97742 (93323–98046) | 81.04 (75.97–81.39) | 56.18 (52.42–56.44) | 0.442 (0.442–0.475) | 85 (0–471) |
-| cartridge / after | 4 | 22.44 (20.99–22.61) | 175.09 (160.38–175.91) | 60.0 (59.9–60.0) | 68101 (61817–68387) | 78.12 (70.92–78.45) | 57.82 (52.48–58.06) | 0.426 (0.426–0.459) | 96 (0–343) |
+| cartridge / after | 4 | 22.44 (20.99–22.61) | 175.09 (160.38–175.91) | 60.0 (59.9–60.0) | 68101 (61817–68387) | 78.12 (70.92–78.45) | 57.82 (52.48–58.06) | 0.426 (0.426–0.459) | 96.5 (0–343) |
 | background / before | 3 | 4.04 (3.93–4.05) | 175.42 (174.48–175.67) | 59.9 (59.9–60.0) | 8320 (8318–8941) | 10.32 (10.32–11.03) | 7.03 (7.03–7.56) | 1.245 (1.245–1.245) | 0 (0–0) |
 | background / after | 3 | 4.17 (4.05–4.29) | 170.83 (169.53–175.48) | 59.9 (59.9–60.0) | 8359 (8359–8363) | 9.57 (9.57–9.58) | 7.08 (7.08–7.09) | 1.245 (1.245–1.376) | 0 (0–0) |
 | multi-vm / before | 3 | 43.78 (42.97–44.03) | 182.67 (182.08–183.30) | 239.8 (239.8–240.1) | 127683 (126113–129159) | 245.46 (242.48–248.26) | 195.53 (193.10–197.79) | 0.360 (0.360–0.688) | 872 (573–1302) |
