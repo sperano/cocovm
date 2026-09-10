@@ -10,7 +10,6 @@ use std::sync::mpsc;
 use eframe::egui;
 
 use super::{DETAIL_SECTION_GAP, ManagerApp, WINDOW_SIZE};
-use crate::photo_view;
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
@@ -169,8 +168,8 @@ impl ManagerApp {
                 self.asset_dialog = None;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(WINDOW_SIZE.into()));
-                if self.photo.is_none() && self.photo_texture.is_none() {
-                    self.photo = photo_view::random();
+                if self.welcome_image.is_blank() {
+                    self.welcome_image.load_random();
                 }
             }
             Verdict::Cancelled => ctx.send_viewport_cmd(egui::ViewportCommand::Close),

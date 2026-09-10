@@ -21,6 +21,9 @@ fn no_relevant_env_vars_set() -> bool {
         "COCOVM_ASSETS_URL",
         "COCOVM_TOOLBAR_ICONS_ONLY",
         "COCOVM_STATUS_BAR_ICONS_ONLY",
+        "COCOVM_WELCOME_IMAGE_CYCLE",
+        "COCOVM_WELCOME_IMAGE_CYCLE_SECS",
+        "COCOVM_WELCOME_IMAGE_SHUFFLE",
     ]
     .iter()
     .all(|var| std::env::var_os(var).is_none())
@@ -38,6 +41,10 @@ fn cli_flag_beats_file_and_default() {
         "https://cli.example.test/bundle.tgz",
         "--toolbar-icons-only",
         "--status-bar-icons-only",
+        "--welcome-image-cycle",
+        "--welcome-image-cycle-secs",
+        "5",
+        "--welcome-image-shuffle",
     ])
     .expect("flags parse");
     let file = FileConfig {
@@ -46,6 +53,9 @@ fn cli_flag_beats_file_and_default() {
         assets_url: Some("https://file.example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(false),
         status_bar_icons_only: Some(false),
+        welcome_image_cycle: Some(false),
+        welcome_image_cycle_secs: NonZeroU32::new(99),
+        welcome_image_shuffle: Some(false),
     };
     let config = resolve(cli, file);
     assert_eq!(config.log_level, LogLevel::Trace);
@@ -57,6 +67,12 @@ fn cli_flag_beats_file_and_default() {
     assert!(config.toolbar_icons_only_overridden);
     assert!(config.status_bar_icons_only);
     assert!(config.status_bar_icons_only_overridden);
+    assert!(config.welcome_image_cycle);
+    assert!(config.welcome_image_cycle_overridden);
+    assert_eq!(config.welcome_image_cycle_secs.get(), 5);
+    assert!(config.welcome_image_cycle_secs_overridden);
+    assert!(config.welcome_image_shuffle);
+    assert!(config.welcome_image_shuffle_overridden);
 }
 
 #[test]
@@ -91,6 +107,9 @@ fn file_value_beats_built_in_default() {
         assets_url: Some("https://file.example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(true),
         status_bar_icons_only: Some(true),
+        welcome_image_cycle: Some(true),
+        welcome_image_cycle_secs: NonZeroU32::new(8),
+        welcome_image_shuffle: Some(true),
     };
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
@@ -102,6 +121,12 @@ fn file_value_beats_built_in_default() {
     assert!(!config.toolbar_icons_only_overridden);
     assert!(config.status_bar_icons_only);
     assert!(!config.status_bar_icons_only_overridden);
+    assert!(config.welcome_image_cycle);
+    assert!(!config.welcome_image_cycle_overridden);
+    assert_eq!(config.welcome_image_cycle_secs.get(), 8);
+    assert!(!config.welcome_image_cycle_secs_overridden);
+    assert!(config.welcome_image_shuffle);
+    assert!(!config.welcome_image_shuffle_overridden);
 }
 
 #[test]
@@ -219,6 +244,9 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         assets_url,
         toolbar_icons_only,
         status_bar_icons_only,
+        welcome_image_cycle,
+        welcome_image_cycle_secs,
+        welcome_image_shuffle,
     } = &file;
     assert!(
         log_level.is_some(),
@@ -238,6 +266,18 @@ fn default_template_uncommented_resolves_to_true_defaults() {
     );
     assert!(
         status_bar_icons_only.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        welcome_image_cycle.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        welcome_image_cycle_secs.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        welcome_image_shuffle.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
 
@@ -295,6 +335,9 @@ fn a_valid_full_config_file_loads() {
         assets_url = "https://example.test/bundle.tgz"
         toolbar_icons_only = true
         status_bar_icons_only = true
+        welcome_image_cycle = true
+        welcome_image_cycle_secs = 45
+        welcome_image_shuffle = true
         "#,
     )
     .unwrap();
@@ -307,7 +350,22 @@ fn a_valid_full_config_file_loads() {
             assets_url: Some("https://example.test/bundle.tgz".to_string()),
             toolbar_icons_only: Some(true),
             status_bar_icons_only: Some(true),
+            welcome_image_cycle: Some(true),
+            welcome_image_cycle_secs: NonZeroU32::new(45),
+            welcome_image_shuffle: Some(true),
         }
+    );
+}
+
+#[test]
+fn a_zero_welcome_image_cycle_secs_is_a_load_error() {
+    let dir = TempDir::new("config-zero-shuffle-secs");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "welcome_image_cycle_secs = 0\n").unwrap();
+    let error = load(Some(&path)).expect_err("zero must be rejected");
+    assert!(
+        error.contains("welcome_image_cycle_secs"),
+        "error must name the key: {error}"
     );
 }
 
@@ -321,6 +379,9 @@ fn save_file_round_trips_through_load() {
         assets_url: Some("https://example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(true),
         status_bar_icons_only: Some(true),
+        welcome_image_cycle: Some(true),
+        welcome_image_cycle_secs: NonZeroU32::new(12),
+        welcome_image_shuffle: Some(true),
     };
     save_file(&path, &file).expect("save must succeed");
     assert_eq!(load(Some(&path)).expect("saved file must load"), file);

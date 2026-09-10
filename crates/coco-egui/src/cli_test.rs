@@ -108,6 +108,45 @@ fn status_bar_icons_only_bare_flag_means_true_and_takes_an_explicit_value() {
     );
 }
 
+#[test]
+fn welcome_image_flags_parse_and_reject_a_zero_interval() {
+    use clap::Parser as _;
+
+    let parse = |args: &[&str]| {
+        Cli::try_parse_from(args)
+            .map(|cli| {
+                (
+                    cli.welcome_image_cycle,
+                    cli.welcome_image_cycle_secs,
+                    cli.welcome_image_shuffle,
+                )
+            })
+            .ok()
+    };
+    assert_eq!(parse(&["cocovm"]), Some((None, None, None)));
+    assert_eq!(
+        parse(&["cocovm", "--welcome-image-cycle"]),
+        Some((Some(true), None, None))
+    );
+    assert_eq!(
+        parse(&["cocovm", "--welcome-image-cycle=false"]),
+        Some((Some(false), None, None))
+    );
+    assert_eq!(
+        parse(&["cocovm", "--welcome-image-cycle-secs", "15"]),
+        Some((None, std::num::NonZeroU32::new(15), None))
+    );
+    assert_eq!(parse(&["cocovm", "--welcome-image-cycle-secs", "0"]), None);
+    assert_eq!(
+        parse(&["cocovm", "--welcome-image-shuffle"]),
+        Some((None, None, Some(true)))
+    );
+    assert_eq!(
+        parse(&["cocovm", "--welcome-image-shuffle=no"]),
+        Some((None, None, Some(false)))
+    );
+}
+
 /// `BoolishValueParser` — the dominant env-var boolean spelling
 /// (`COCOVM_TOOLBAR_ICONS_ONLY=1`), not just `true`/`false`.
 #[test]

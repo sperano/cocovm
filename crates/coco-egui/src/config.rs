@@ -6,6 +6,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::Write as _;
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use clap::ValueEnum;
@@ -26,6 +27,16 @@ pub(crate) const DEFAULT_TOOLBAR_ICONS_ONLY: bool = false;
 /// Built-in default for `status_bar_icons_only`: icon-and-readout entries.
 pub(crate) const DEFAULT_STATUS_BAR_ICONS_ONLY: bool = false;
 
+/// Built-in default for `welcome_image_cycle`: the manager keeps the
+/// welcome image it picked at startup.
+pub(crate) const DEFAULT_WELCOME_IMAGE_CYCLE: bool = false;
+
+/// Built-in default for `welcome_image_cycle_secs`.
+pub(crate) const DEFAULT_WELCOME_IMAGE_CYCLE_SECS: NonZeroU32 = NonZeroU32::new(30).unwrap();
+
+/// Built-in default for `welcome_image_shuffle`: cycle in file-name order.
+pub(crate) const DEFAULT_WELCOME_IMAGE_SHUFFLE: bool = false;
+
 /// `config.toml`'s schema. Every field is optional so a partial file only
 /// overrides what it names; `deny_unknown_fields` turns a typo'd key into a
 /// startup error instead of a silently ignored setting.
@@ -37,6 +48,11 @@ pub(crate) struct FileConfig {
     pub(crate) assets_url: Option<String>,
     pub(crate) toolbar_icons_only: Option<bool>,
     pub(crate) status_bar_icons_only: Option<bool>,
+    pub(crate) welcome_image_cycle: Option<bool>,
+    /// `NonZeroU32`: a `0` in the file is a parse error, not a
+    /// swap-every-frame loop.
+    pub(crate) welcome_image_cycle_secs: Option<NonZeroU32>,
+    pub(crate) welcome_image_shuffle: Option<bool>,
 }
 
 /// Every global parameter, resolved to a concrete value.
@@ -58,6 +74,15 @@ pub(crate) struct Config {
     pub(crate) status_bar_icons_only: bool,
     /// `toolbar_icons_only_overridden`'s counterpart for `status_bar_icons_only`.
     pub(crate) status_bar_icons_only_overridden: bool,
+    pub(crate) welcome_image_cycle: bool,
+    /// `toolbar_icons_only_overridden`'s counterpart for `welcome_image_cycle`.
+    pub(crate) welcome_image_cycle_overridden: bool,
+    pub(crate) welcome_image_cycle_secs: NonZeroU32,
+    /// `toolbar_icons_only_overridden`'s counterpart for `welcome_image_cycle_secs`.
+    pub(crate) welcome_image_cycle_secs_overridden: bool,
+    pub(crate) welcome_image_shuffle: bool,
+    /// `toolbar_icons_only_overridden`'s counterpart for `welcome_image_shuffle`.
+    pub(crate) welcome_image_shuffle_overridden: bool,
 }
 
 /// Reads `config.toml`. `path` is `None` when no home directory could be
@@ -89,6 +114,9 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
     let control_port_overridden = cli.control_port.is_some();
     let toolbar_icons_only_overridden = cli.toolbar_icons_only.is_some();
     let status_bar_icons_only_overridden = cli.status_bar_icons_only.is_some();
+    let welcome_image_cycle_overridden = cli.welcome_image_cycle.is_some();
+    let welcome_image_cycle_secs_overridden = cli.welcome_image_cycle_secs.is_some();
+    let welcome_image_shuffle_overridden = cli.welcome_image_shuffle.is_some();
     Config {
         log_level: cli
             .log_level
@@ -114,6 +142,21 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .or(file.status_bar_icons_only)
             .unwrap_or(DEFAULT_STATUS_BAR_ICONS_ONLY),
         status_bar_icons_only_overridden,
+        welcome_image_cycle: cli
+            .welcome_image_cycle
+            .or(file.welcome_image_cycle)
+            .unwrap_or(DEFAULT_WELCOME_IMAGE_CYCLE),
+        welcome_image_cycle_overridden,
+        welcome_image_cycle_secs: cli
+            .welcome_image_cycle_secs
+            .or(file.welcome_image_cycle_secs)
+            .unwrap_or(DEFAULT_WELCOME_IMAGE_CYCLE_SECS),
+        welcome_image_cycle_secs_overridden,
+        welcome_image_shuffle: cli
+            .welcome_image_shuffle
+            .or(file.welcome_image_shuffle)
+            .unwrap_or(DEFAULT_WELCOME_IMAGE_SHUFFLE),
+        welcome_image_shuffle_overridden,
     }
 }
 
@@ -146,11 +189,23 @@ fn default_config_template() -> String {
 
 # draw every iconed VM status-bar entry as icon-only, readout moved into hover text
 # status_bar_icons_only = {status_bar_icons_only}
+
+# change the manager's welcome image on a timer
+# welcome_image_cycle = {welcome_image_cycle}
+
+# seconds between welcome-image changes (at least 1); only read while welcome_image_cycle is true
+# welcome_image_cycle_secs = {welcome_image_cycle_secs}
+
+# pick each next welcome image at random instead of in file-name order; only read while welcome_image_cycle is true
+# welcome_image_shuffle = {welcome_image_shuffle}
 ",
         control_port = crate::control::DEFAULT_PORT,
         assets_url = crate::startup::DEFAULT_ASSETS_URL,
         toolbar_icons_only = DEFAULT_TOOLBAR_ICONS_ONLY,
         status_bar_icons_only = DEFAULT_STATUS_BAR_ICONS_ONLY,
+        welcome_image_cycle = DEFAULT_WELCOME_IMAGE_CYCLE,
+        welcome_image_cycle_secs = DEFAULT_WELCOME_IMAGE_CYCLE_SECS,
+        welcome_image_shuffle = DEFAULT_WELCOME_IMAGE_SHUFFLE,
     )
 }
 
@@ -184,8 +239,8 @@ pub(crate) fn seed_default_file(path: &Path) {
 /// Writes `file` into `path`, for the Settings dialog (`manager/settings.rs`).
 /// Starts from `path`'s existing text, or [`default_config_template`] when
 /// there is none yet, and edits it with `toml_edit` rather than
-/// re-serializing from scratch, so the user's comments survive. Each of the
-/// five keys is set when `file` names it, or removed so it keeps tracking
+/// re-serializing from scratch, so the user's comments survive. Each key
+/// is set when `file` names it, or removed so it keeps tracking
 /// future built-in defaults. Written atomically (`.tmp` + rename), like
 /// `machine_def::io::save`.
 pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
@@ -206,6 +261,17 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
         &mut doc,
         "status_bar_icons_only",
         file.status_bar_icons_only,
+    );
+    set_or_remove(&mut doc, "welcome_image_cycle", file.welcome_image_cycle);
+    set_or_remove(
+        &mut doc,
+        "welcome_image_cycle_secs",
+        file.welcome_image_cycle_secs.map(|s| i64::from(s.get())),
+    );
+    set_or_remove(
+        &mut doc,
+        "welcome_image_shuffle",
+        file.welcome_image_shuffle,
     );
 
     if let Some(parent) = path.parent() {

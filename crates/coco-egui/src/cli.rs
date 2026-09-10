@@ -1,10 +1,12 @@
+use std::num::NonZeroU32;
+
 use clap::{Parser, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
 /// The app's whole CLI surface: the manager window is always what runs (see
 /// `main.rs`). Besides the log level, the other flags are the control
-/// listener's port, the asset bundle's URL, and the toolbar and status-bar
-/// caption toggles.
+/// listener's port, the asset bundle's URL, the toolbar and status-bar
+/// caption toggles, and the welcome-image cycle.
 /// Every field is `Option`: `None` means "not given here", so `config::resolve`
 /// can fall through to `config.toml` and then the built-in default
 /// (`config.rs`'s precedence chain). clap's own `env` fallback already
@@ -56,6 +58,34 @@ pub(crate) struct Cli {
         value_parser = clap::builder::BoolishValueParser::new()
     )]
     pub(crate) status_bar_icons_only: Option<bool>,
+
+    /// Change the manager window's welcome image every
+    /// `--welcome-image-cycle-secs`. Same flag grammar as `--toolbar-icons-only`.
+    #[arg(
+        long,
+        env = "COCOVM_WELCOME_IMAGE_CYCLE",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    pub(crate) welcome_image_cycle: Option<bool>,
+
+    /// Seconds between welcome-image changes; only read while
+    /// `--welcome-image-cycle` is on. Zero is rejected.
+    #[arg(long, env = "COCOVM_WELCOME_IMAGE_CYCLE_SECS")]
+    pub(crate) welcome_image_cycle_secs: Option<NonZeroU32>,
+
+    /// Pick each next welcome image at random instead of in file-name
+    /// order; only read while `--welcome-image-cycle` is on. Same flag
+    /// grammar as `--toolbar-icons-only`.
+    #[arg(
+        long,
+        env = "COCOVM_WELCOME_IMAGE_SHUFFLE",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    pub(crate) welcome_image_shuffle: Option<bool>,
 }
 
 /// `--log-level`, the CLI's spelling of a [`LevelFilter`]. Also `config.toml`'s
