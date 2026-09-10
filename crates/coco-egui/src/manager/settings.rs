@@ -181,10 +181,9 @@ impl ManagerApp {
         }
     }
 
-    /// Saves the draft to [`ManagerApp::config_path`] and closes the dialog;
-    /// applies `toolbar_icons_only` and `control_port` live unless a CLI/env
-    /// override is active. A failure (write or bind) shows in the dialog and
-    /// leaves it open; a failed bind keeps the old listener serving.
+    /// Saves the draft and closes the dialog; applies `toolbar_icons_only` and
+    /// `control_port` live unless a CLI/env override wins. A save or bind
+    /// failure shows in the dialog, which stays open with the old listener.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &self.settings else {
             return;

@@ -123,7 +123,9 @@ fn try_bind_control(
 impl ManagerApp {
     /// The live listener's port, `0` when there is none.
     pub(super) fn control_port(&self) -> u16 {
-        self.control.as_ref().map_or(0, |server| server.port())
+        self.control
+            .as_ref()
+            .map_or(0, crate::control::ControlServer::port)
     }
 
     /// Move the listener to `port` for a Settings save: a no-op when already
