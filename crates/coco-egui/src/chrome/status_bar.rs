@@ -7,6 +7,11 @@ const SUSPENDED_STATUS: &str = "Suspended";
 /// Hover text of that marker: what the window can still do.
 const SUSPENDED_STATUS_HOVER: &str =
     "Frozen to disk — press Start to resume, or close the window to keep it suspended";
+/// Readout of an installed FD-502 with no disk in any drive.
+pub(crate) const NO_DISKS_READOUT: &str = "No disks";
+/// Hover text of that readout: where to mount one.
+pub(crate) const NO_DISKS_HOVER: &str =
+    "FD-502 — no disk mounted; insert one from the Machine menu";
 
 impl CocoApp {
     /// The status bar: live readouts, plus the five entries that double as control menus.
@@ -184,25 +189,29 @@ impl CocoApp {
         readout(ui, self.status_bar_icons_only, icon, label).on_hover_text("Multi-Pak Interface");
     }
 
+    /// The FD-502's drives: one entry per mounted disk, or a single "No disks" entry when
+    /// the controller is installed with nothing mounted (disks can still be inserted from
+    /// the Machine menu). No controller, no entry.
     fn disk_status(&mut self, ui: &mut egui::Ui) {
+        let Some(disk_cart) = self.machine.bus.cart.as_disk_cart() else {
+            return;
+        };
+        if self.disk_paths.iter().all(Option::is_none) {
+            ui.separator();
+            // Motor light works with no disk mounted (DIR on an empty drive spins it).
+            let motor_on = (0..UI_DRIVES).any(|drive| disk_cart.drive_active(drive));
+            let icon = floppy_icon(ui, motor_on);
+            readout(ui, self.status_bar_icons_only, icon, NO_DISKS_READOUT)
+                .on_hover_text(NO_DISKS_HOVER);
+            return;
+        }
         for drive in 0..UI_DRIVES {
             let Some(path) = &self.disk_paths[drive] else {
                 continue;
             };
             // "*" = modified in memory; written back on eject/exit.
-            let dirty = self
-                .machine
-                .bus
-                .cart
-                .as_disk_cart()
-                .and_then(|c| c.disk(drive))
-                .is_some_and(|d| d.dirty());
-            let active = self
-                .machine
-                .bus
-                .cart
-                .as_disk_cart()
-                .is_some_and(|c| c.drive_active(drive));
+            let dirty = disk_cart.disk(drive).is_some_and(|d| d.dirty());
+            let active = disk_cart.drive_active(drive);
             ui.separator();
             let label = format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty));
             let icon = floppy_icon(ui, active);
