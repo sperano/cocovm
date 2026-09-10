@@ -412,3 +412,41 @@ fn handle_exposes_extent_dirty_range_and_tear_off() {
     handle.tear_off();
     assert_eq!(handle.paper_extent().dot_count, 0);
 }
+
+fn body_dots(bytes: &[u8]) -> Vec<(u32, u32)> {
+    let mut dmp = DMP105::new();
+    feed_str(&mut dmp, bytes);
+    dmp.paper.dots_in_range(0, DESCENDER_ROW)
+}
+
+#[test]
+fn european_codes_print_symbols_and_extended_codes_stay_undefined() {
+    let placeholder = body_dots(b"X");
+    let a_grave = body_dots(b"\xA1");
+    assert!(!a_grave.is_empty());
+    assert_ne!(a_grave, placeholder);
+    assert_ne!(body_dots(b"\xBF"), placeholder);
+    assert_eq!(body_dots(b"\xC0"), placeholder);
+    assert_eq!(body_dots(b"\xFF"), placeholder);
+}
+
+#[test]
+fn block_graphics_fill_the_cell_and_join_across_cells() {
+    let dot = Pitch::Normal.dot_spacing();
+    let bar = body_dots(b"\xF1\xF1");
+    let xs: std::collections::BTreeSet<u32> = bar.iter().map(|&(x, _)| x).collect();
+    let expected: std::collections::BTreeSet<u32> =
+        (0..2 * CELL_DOTS).map(|position| position * dot).collect();
+    assert_eq!(xs, expected);
+    let ys: std::collections::BTreeSet<u32> = bar.iter().map(|&(_, y)| y).collect();
+    assert_eq!(ys.len(), 1);
+    assert!(body_dots(b"\xE0").is_empty());
+    let mut blank = DMP105::new();
+    feed_str(&mut blank, b"\xE0");
+    assert_eq!(blank.x, normal_cell_width());
+    let full = body_dots(b"\xEF");
+    assert_eq!(full.len(), CELL_DOTS as usize * BLOCK_SIZE);
+    let stem = body_dots(b"\xF5");
+    let stem_xs: std::collections::BTreeSet<u32> = stem.iter().map(|&(x, _)| x).collect();
+    assert_eq!(stem_xs.len(), BLOCK_DOT_STEP);
+}

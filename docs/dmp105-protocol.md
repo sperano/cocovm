@@ -126,12 +126,31 @@ raw n/72" (Appendix G p.59).
 
 - $20–$7E: standard 94-char ASCII, 1:1.
 - $80–$9F: undefined (prints `X`).
-- $A0–$BF: 32 European symbols (à ç £ µ § ® © ¼ ¾ ½ ¶ ¥ Å … ß ™).
+- $A0–$BF: 32 European symbols, in code order (p.48):
+  ``´ à ç £ ` µ ° ▼ † § ® © ¼ ¾ ½ ¶`` for $A0–$AF and
+  ``¥ Ä Ö Ü ¢ ‾ ä ö ü ß ™ é ù è ¨ ƒ`` for $B0–$BF. The typeset table leaves
+  $A4, $B5 and $BE unreadable; those three are INFERRED from the DMP-130's
+  printout of the same table (DMP-130 manual p.81), which prints grave,
+  overline and diaeresis there. Descenders: ç µ § ß ƒ (p.48 note 2).
 - $C0–$DF: undefined (prints `X`).
-- $E0–$FE: 30 block-graphic chars ($E0 = blank); note says use 1/12" LF for
-  seamless diagrams. $FF unused.
+- $E0–$FE: 30 block-graphic chars (p.49), a 6×6 dot matrix (p.22) spread
+  over the 12-dot cell so neighbours join (INFERRED: each column struck on
+  both of its dot positions so areas print solid); use 1/12"
+  LF for seamless diagrams (p.49 note). $E0 = blank. $E1–$EF are the 15
+  combinations of a 2×2 quadrant grid in this order: the four single
+  quadrants (top-left, top-right, bottom-left, bottom-right), the two
+  diagonals (top-left+bottom-right, top-right+bottom-left), top row, bottom
+  row, left column, right column, the four three-quarter blocks (missing
+  bottom-right, bottom-left, top-right, top-left), then the full block.
+  $F0–$FA are thin box-drawing pieces `┌ ─ ┐ ┬ ├ │ └ ┘ ┴ ┤ ┼`. $FB–$FE are
+  filled right triangles with the right angle at top-left, bottom-right,
+  top-right, bottom-left. $FF unused.
 - Manual claims "158 patterns in ROM" but its own tables total 156 — internal
   inconsistency in the manual; the three tables (94/32/30) are authoritative.
+- **Dot patterns are UNVERIFIABLE.** The controller is a mask-ROM
+  microcontroller (`EP-106`, Appendix F schematic p.57) and no dump exists;
+  every glyph bitmap in the emulator is an artistic approximation. Only the
+  code-to-symbol mapping above is verified. See `docs/dmp-font-sources.md`.
 
 ## 7. Power-on defaults (Appendix D item 1, p.51)
 

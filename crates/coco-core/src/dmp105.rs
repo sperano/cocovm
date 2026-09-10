@@ -25,6 +25,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::bitbanger::PrinterSink;
+use crate::dmp_charset::{BLOCK_SIZE, BlockGlyph};
 use crate::dmp105_font::Glyph;
 use crate::printer::{Paper, X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
 
@@ -33,6 +34,11 @@ mod protocol;
 /// Character cell width in dots at every pitch: 9 glyph + 3 gap
 /// (`dmp105-protocol.md` §1, Appendix G p.59: "dots/char = 12").
 const CELL_DOTS: u32 = 12;
+
+/// Block graphics spread their 6 dot columns over the whole 12-dot cell so
+/// adjoining cells join (`dmp105-protocol.md` §6); each column fills both
+/// positions so areas print solid, as bold text already does.
+const BLOCK_DOT_STEP: usize = CELL_DOTS as usize / BLOCK_SIZE;
 
 /// Row offset (in dot rows) of the descender row below the 7-dot glyph body
 /// (`dmp105-protocol.md` §1/§6).
@@ -256,12 +262,26 @@ impl DMP105 {
         &mut self.paper
     }
 
-    /// Render one glyph at the current head position, advance `x` by one
-    /// cell, and apply bold/elongation/underline style bits.
+    /// Render one text glyph at the current head position.
     fn print_glyph(&mut self, glyph: Glyph) {
+        self.print_cell(&glyph);
+    }
+
+    /// Render one block-graphic cell at the current head position.
+    fn print_block(&mut self, block: BlockGlyph) {
+        let mut cell = [0u8; CELL_DOTS as usize];
+        for (positions, &bits) in cell.chunks_mut(BLOCK_DOT_STEP).zip(block.iter()) {
+            positions.fill(bits);
+        }
+        self.print_cell(&cell);
+    }
+
+    /// Plot `columns` (one byte per dot position) from the current head
+    /// position, advance `x` by one cell, and apply bold/elongation/underline.
+    fn print_cell(&mut self, columns: &[u8]) {
         let dot = self.pitch.dot_spacing();
         let col_step = if self.elongation { dot * 2 } else { dot };
-        for (col, &bits) in glyph.iter().enumerate() {
+        for (col, &bits) in columns.iter().enumerate() {
             let cx = self.x.saturating_add(col as u32 * col_step);
             self.plot_column(cx, bits);
             if self.bold {

@@ -1,6 +1,7 @@
 //! Font impressions are an explicit artistic approximation, not ROM glyphs.
 //! Metrics follow manual pp. 31–44, 53, 59–63; see the protocol document.
 use super::*;
+use crate::dmp_charset::{BLOCK_SIZE, BlockGlyph};
 use crate::dmp105_font::Glyph;
 const NORMAL_DOTS: u32 = 960;
 const ELITE_DOTS: u32 = 1152;
@@ -16,6 +17,8 @@ const GLYPH_ROWS: u32 = 8;
 const BODY_ROWS: u32 = 9;
 const NLQ_ROWS: u32 = 18;
 const NLQ_COLUMNS: u32 = 19;
+/// Dot positions per block-graphic column (12 positions over 6 columns).
+const BLOCK_STRIKES: u64 = 2;
 impl DMP130 {
     pub(super) fn active_pitch(&self) -> Pitch {
         if self.grammar == Grammar::Tandy {
@@ -90,7 +93,37 @@ impl DMP130 {
         if self.x.saturating_add(width) > self.right {
             self.wrap_line();
         }
-        let glyph = self.glyph(byte);
+        match font::block(self.charset, byte) {
+            Some(block) => self.block_dots(block, width),
+            None => self.text_dots(self.glyph(byte)),
+        }
+        if self.style.underline {
+            self.underline_to(self.x.saturating_add(width));
+        }
+        self.x = self.x.saturating_add(width);
+        if self.x >= self.right {
+            self.carriage_return();
+        }
+    }
+    /// Six dot columns spread evenly over the whole cell so neighbouring
+    /// blocks join at every pitch, each struck twice so areas print solid
+    /// (p. 34: 6-dot-high graphics, half line feed for diagrams).
+    fn block_dots(&mut self, block: BlockGlyph, width: u64) {
+        let positions = BLOCK_SIZE as u64 * BLOCK_STRIKES;
+        for (column, bits) in block.iter().enumerate() {
+            for row in 0..BLOCK_SIZE {
+                if bits & (1 << row) != 0 {
+                    let y = self.y.saturating_add(row as u32 * PIN_PITCH);
+                    for strike in 0..BLOCK_STRIKES {
+                        let position = column as u64 * BLOCK_STRIKES + strike;
+                        let x = self.x.saturating_add(width * position / positions);
+                        self.styled_dot(x, y, false);
+                    }
+                }
+            }
+        }
+    }
+    fn text_dots(&mut self, glyph: Glyph) {
         let columns = if self.nlq_density() {
             NLQ_COLUMNS
         } else if self.active_pitch() == Pitch::Condensed {
@@ -110,13 +143,6 @@ impl DMP130 {
                     self.text_dot(column, row, rows);
                 }
             }
-        }
-        if self.style.underline {
-            self.underline_to(self.x.saturating_add(width));
-        }
-        self.x = self.x.saturating_add(width);
-        if self.x >= self.right {
-            self.carriage_return();
         }
     }
     pub(super) fn text_dot(&mut self, column: u32, row: u32, rows: u32) {
@@ -143,9 +169,14 @@ impl DMP130 {
             .x
             .saturating_add(u64::from(column + italic) * step * self.width_multiplier());
         let y = self.y.saturating_add(vertical);
+        self.styled_dot(x, y, half);
+    }
+    /// One dot plus its bold and double-strike companions; `half` marks
+    /// half-height script text, which gets neither.
+    fn styled_dot(&mut self, x: u64, y: u32, half: bool) {
         self.buffer_dot(x, y);
         if self.style.bold && self.active_pitch() != Pitch::Condensed && !half {
-            self.buffer_dot(x.saturating_add(step), y);
+            self.buffer_dot(x.saturating_add(self.dot_step()), y);
         }
         if self.style.double_strike && !self.nlq_active() && !half {
             self.buffer_dot(x, y.saturating_add(PIN_PITCH / 2));

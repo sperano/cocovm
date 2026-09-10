@@ -16,6 +16,8 @@ pub mod dmp;
 pub mod dmp105;
 mod dmp105_font;
 pub mod dmp130;
+mod dmp_charset;
+mod dmp_symbols;
 pub mod drivewire;
 pub mod fdc;
 mod font6847;

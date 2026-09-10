@@ -5,12 +5,21 @@
 //! (`dmp105-protocol.md` §3/§4). Glyph and dot rendering lives in the parent
 //! `dmp105` module.
 
-use crate::dmp105_font;
+use crate::dmp105_font::{self, Glyph};
+use crate::{dmp_charset, dmp_symbols};
 
 use super::{
     DMP105, DOT_ROW_UNITS, Direction, GRAPHICS_LF_UNITS, LF_PITCH_1_6, LF_PITCH_1_8, LF_PITCH_1_12,
     Mode, NlMode, Pending, Pitch, control, esc,
 };
+
+/// Glyph for a CP-mode byte that is not a block graphic (`dmp105-protocol.md`
+/// §6): ASCII, then the European table, else the undefined-code `X`.
+fn text_glyph(byte: u8) -> Glyph {
+    dmp105_font::ascii_glyph(byte)
+        .or_else(|| dmp_charset::european_symbol(byte).map(dmp_symbols::symbol_glyph))
+        .unwrap_or_else(dmp105_font::undefined_glyph)
+}
 
 impl DMP105 {
     /// Feed one decoded byte through the interpreter.
@@ -65,13 +74,10 @@ impl DMP105 {
                 self.mode = Mode::Graphics;
             }
             control::END_GRAPHICS => {} // already CP mode: ignored
-            0x20..=0x7E => self.print_glyph(dmp105_font::ascii_glyph(b).expect("in range")),
-            0xA0..=0xBF => self
-                .print_glyph(dmp105_font::european_glyph(b).expect("in range, TODO placeholder")),
-            0xE0..=0xFE => self.print_glyph(
-                dmp105_font::block_glyph(b).unwrap_or_else(dmp105_font::undefined_glyph),
-            ),
-            _ => self.print_glyph(dmp105_font::undefined_glyph()),
+            _ => match dmp_charset::block_glyph(b) {
+                Some(block) => self.print_block(block),
+                None => self.print_glyph(text_glyph(b)),
+            },
         }
     }
 
