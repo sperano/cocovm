@@ -1,7 +1,7 @@
 use crate::{CocoApp, egui};
 
 mod menu_bar;
-mod status_bar;
+pub(crate) mod status_bar;
 mod toolbar;
 mod windows;
 

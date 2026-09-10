@@ -3,11 +3,10 @@
 
 use egui_kittest::kittest::Queryable;
 
+use crate::chrome::status_bar::{NO_DISKS_HOVER, NO_DISKS_READOUT as NO_DISKS};
 use crate::machine_def::tests::TempDir;
 
 use super::harness::*;
-
-const NO_DISKS: &str = "No disks";
 
 /// Installs an FD-502 in a booted harness (there is no runtime menu for that).
 fn harness_with_fd502() -> AppHarness {
@@ -55,11 +54,15 @@ fn mounting_a_disk_replaces_the_no_disks_entry() {
 }
 
 /// Under `status_bar_icons_only` the placeholder folds into the icon's accessible name,
-/// like every other passive readout.
+/// like every other passive readout — and the hover text stacked after it does not.
 #[test]
 fn icons_only_no_disks_readout_becomes_the_icons_accessible_name() {
     let mut harness = harness_with_fd502();
     harness.state_mut().status_bar_icons_only = true;
     harness.step();
     harness.get_by_label(NO_DISKS);
+    assert!(
+        harness.query_by_label(NO_DISKS_HOVER).is_none(),
+        "the hover text must not become the accessible name"
+    );
 }

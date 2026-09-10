@@ -19,7 +19,7 @@
 mod about;
 mod app;
 mod audio;
-mod chrome;
+pub(crate) mod chrome;
 mod cli;
 mod config;
 mod control;

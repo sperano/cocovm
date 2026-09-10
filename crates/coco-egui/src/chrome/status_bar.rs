@@ -8,9 +8,10 @@ const SUSPENDED_STATUS: &str = "Suspended";
 const SUSPENDED_STATUS_HOVER: &str =
     "Frozen to disk — press Start to resume, or close the window to keep it suspended";
 /// Readout of an installed FD-502 with no disk in any drive.
-const NO_DISKS_READOUT: &str = "No disks";
+pub(crate) const NO_DISKS_READOUT: &str = "No disks";
 /// Hover text of that readout: where to mount one.
-const NO_DISKS_HOVER: &str = "FD-502 — no disk mounted; insert one from the Machine menu";
+pub(crate) const NO_DISKS_HOVER: &str =
+    "FD-502 — no disk mounted; insert one from the Machine menu";
 
 impl CocoApp {
     /// The status bar: live readouts, plus the five entries that double as control menus.
@@ -197,7 +198,9 @@ impl CocoApp {
         };
         if self.disk_paths.iter().all(Option::is_none) {
             ui.separator();
-            let icon = floppy_icon(ui, false);
+            // Motor light works with no disk mounted (DIR on an empty drive spins it).
+            let motor_on = (0..UI_DRIVES).any(|drive| disk_cart.drive_active(drive));
+            let icon = floppy_icon(ui, motor_on);
             readout(ui, self.status_bar_icons_only, icon, NO_DISKS_READOUT)
                 .on_hover_text(NO_DISKS_HOVER);
             return;
