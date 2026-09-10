@@ -23,6 +23,9 @@ pub(crate) const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Warn;
 /// only behavior before this file existed.
 pub(crate) const DEFAULT_TOOLBAR_ICONS_ONLY: bool = false;
 
+/// Built-in default for `status_bar_icons_only`: icon-and-readout entries.
+pub(crate) const DEFAULT_STATUS_BAR_ICONS_ONLY: bool = false;
+
 /// `config.toml`'s schema. Every field is optional so a partial file only
 /// overrides what it names; `deny_unknown_fields` turns a typo'd key into a
 /// startup error instead of a silently ignored setting.
@@ -33,6 +36,7 @@ pub(crate) struct FileConfig {
     pub(crate) control_port: Option<u16>,
     pub(crate) assets_url: Option<String>,
     pub(crate) toolbar_icons_only: Option<bool>,
+    pub(crate) status_bar_icons_only: Option<bool>,
 }
 
 /// Every global parameter, resolved to a concrete value.
@@ -45,6 +49,9 @@ pub(crate) struct Config {
     /// True when a CLI flag or env var supplied `toolbar_icons_only`; the
     /// Settings dialog then leaves the live value alone on save.
     pub(crate) toolbar_icons_only_overridden: bool,
+    pub(crate) status_bar_icons_only: bool,
+    /// `toolbar_icons_only_overridden`'s counterpart for `status_bar_icons_only`.
+    pub(crate) status_bar_icons_only_overridden: bool,
 }
 
 /// Reads `config.toml`. `path` is `None` when no home directory could be
@@ -73,6 +80,7 @@ fn read(path: &Path) -> Result<FileConfig, String> {
 /// file value, which beats the built-in default.
 pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
     let toolbar_icons_only_overridden = cli.toolbar_icons_only.is_some();
+    let status_bar_icons_only_overridden = cli.status_bar_icons_only.is_some();
     Config {
         log_level: cli
             .log_level
@@ -91,6 +99,11 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .or(file.toolbar_icons_only)
             .unwrap_or(DEFAULT_TOOLBAR_ICONS_ONLY),
         toolbar_icons_only_overridden,
+        status_bar_icons_only: cli
+            .status_bar_icons_only
+            .or(file.status_bar_icons_only)
+            .unwrap_or(DEFAULT_STATUS_BAR_ICONS_ONLY),
+        status_bar_icons_only_overridden,
     }
 }
 
@@ -120,10 +133,14 @@ fn default_config_template() -> String {
 
 # draw every toolbar as icon-only, caption moved into hover text
 # toolbar_icons_only = {toolbar_icons_only}
+
+# draw every iconed VM status-bar entry as icon-only, readout moved into hover text
+# status_bar_icons_only = {status_bar_icons_only}
 ",
         control_port = crate::control::DEFAULT_PORT,
         assets_url = crate::startup::DEFAULT_ASSETS_URL,
         toolbar_icons_only = DEFAULT_TOOLBAR_ICONS_ONLY,
+        status_bar_icons_only = DEFAULT_STATUS_BAR_ICONS_ONLY,
     )
 }
 
@@ -158,7 +175,7 @@ pub(crate) fn seed_default_file(path: &Path) {
 /// Starts from `path`'s existing text, or [`default_config_template`] when
 /// there is none yet, and edits it with `toml_edit` rather than
 /// re-serializing from scratch, so the user's comments survive. Each of the
-/// four keys is set when `file` names it, or removed so it keeps tracking
+/// five keys is set when `file` names it, or removed so it keeps tracking
 /// future built-in defaults. Written atomically (`.tmp` + rename), like
 /// `machine_def::io::save`.
 pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
@@ -175,6 +192,11 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
     set_or_remove(&mut doc, "control_port", file.control_port.map(i64::from));
     set_or_remove(&mut doc, "assets_url", file.assets_url.clone());
     set_or_remove(&mut doc, "toolbar_icons_only", file.toolbar_icons_only);
+    set_or_remove(
+        &mut doc,
+        "status_bar_icons_only",
+        file.status_bar_icons_only,
+    );
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;

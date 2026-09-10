@@ -20,6 +20,7 @@ fn no_relevant_env_vars_set() -> bool {
         "COCOVM_CONTROL_PORT",
         "COCOVM_ASSETS_URL",
         "COCOVM_TOOLBAR_ICONS_ONLY",
+        "COCOVM_STATUS_BAR_ICONS_ONLY",
     ]
     .iter()
     .all(|var| std::env::var_os(var).is_none())
@@ -36,6 +37,7 @@ fn cli_flag_beats_file_and_default() {
         "--assets-url",
         "https://cli.example.test/bundle.tgz",
         "--toolbar-icons-only",
+        "--status-bar-icons-only",
     ])
     .expect("flags parse");
     let file = FileConfig {
@@ -43,6 +45,7 @@ fn cli_flag_beats_file_and_default() {
         control_port: Some(9999),
         assets_url: Some("https://file.example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(false),
+        status_bar_icons_only: Some(false),
     };
     let config = resolve(cli, file);
     assert_eq!(config.log_level, LogLevel::Trace);
@@ -50,6 +53,8 @@ fn cli_flag_beats_file_and_default() {
     assert_eq!(config.assets_url, "https://cli.example.test/bundle.tgz");
     assert!(config.toolbar_icons_only);
     assert!(config.toolbar_icons_only_overridden);
+    assert!(config.status_bar_icons_only);
+    assert!(config.status_bar_icons_only_overridden);
 }
 
 #[test]
@@ -63,6 +68,17 @@ fn toolbar_icons_only_flag_can_explicitly_override_a_true_file_value_to_false() 
 }
 
 #[test]
+fn status_bar_icons_only_flag_can_explicitly_override_a_true_file_value_to_false() {
+    let cli =
+        Cli::try_parse_from(["cocovm", "--status-bar-icons-only=false"]).expect("flag parses");
+    let file = FileConfig {
+        status_bar_icons_only: Some(true),
+        ..FileConfig::default()
+    };
+    assert!(!resolve(cli, file).status_bar_icons_only);
+}
+
+#[test]
 fn file_value_beats_built_in_default() {
     if !no_relevant_env_vars_set() {
         return;
@@ -72,6 +88,7 @@ fn file_value_beats_built_in_default() {
         control_port: Some(4242),
         assets_url: Some("https://file.example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(true),
+        status_bar_icons_only: Some(true),
     };
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
@@ -79,6 +96,8 @@ fn file_value_beats_built_in_default() {
     assert_eq!(config.assets_url, "https://file.example.test/bundle.tgz");
     assert!(config.toolbar_icons_only);
     assert!(!config.toolbar_icons_only_overridden);
+    assert!(config.status_bar_icons_only);
+    assert!(!config.status_bar_icons_only_overridden);
 }
 
 #[test]
@@ -91,6 +110,7 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
     assert_eq!(config.control_port, crate::control::DEFAULT_PORT);
     assert_eq!(config.assets_url, crate::startup::DEFAULT_ASSETS_URL);
     assert!(!config.toolbar_icons_only);
+    assert!(!config.status_bar_icons_only);
 }
 
 #[test]
@@ -149,7 +169,7 @@ fn log_level_strings_match_the_cli_flags_spelling() {
 /// as long as no such prose line happens to contain `" = "` after a
 /// lowercase/underscore run, which would make it spuriously uncommented.
 /// That failure mode isn't silent: `FileConfig`'s `deny_unknown_fields`
-/// rejects any resulting key that isn't one of the four real parameters.
+/// rejects any resulting key that isn't one of the five real parameters.
 fn uncomment_template_parameters(template: &str) -> String {
     template
         .lines()
@@ -194,6 +214,7 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         control_port,
         assets_url,
         toolbar_icons_only,
+        status_bar_icons_only,
     } = &file;
     assert!(
         log_level.is_some(),
@@ -209,6 +230,10 @@ fn default_template_uncommented_resolves_to_true_defaults() {
     );
     assert!(
         toolbar_icons_only.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        status_bar_icons_only.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
 
@@ -265,6 +290,7 @@ fn a_valid_full_config_file_loads() {
         control_port = 7000
         assets_url = "https://example.test/bundle.tgz"
         toolbar_icons_only = true
+        status_bar_icons_only = true
         "#,
     )
     .unwrap();
@@ -276,6 +302,7 @@ fn a_valid_full_config_file_loads() {
             control_port: Some(7000),
             assets_url: Some("https://example.test/bundle.tgz".to_string()),
             toolbar_icons_only: Some(true),
+            status_bar_icons_only: Some(true),
         }
     );
 }
@@ -289,6 +316,7 @@ fn save_file_round_trips_through_load() {
         control_port: Some(7001),
         assets_url: Some("https://example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(true),
+        status_bar_icons_only: Some(true),
     };
     save_file(&path, &file).expect("save must succeed");
     assert_eq!(load(Some(&path)).expect("saved file must load"), file);

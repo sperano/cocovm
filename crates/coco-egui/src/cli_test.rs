@@ -88,6 +88,26 @@ fn toolbar_icons_only_bare_flag_means_true_and_takes_an_explicit_value() {
     );
 }
 
+#[test]
+fn status_bar_icons_only_bare_flag_means_true_and_takes_an_explicit_value() {
+    use clap::Parser as _;
+
+    let parse = |args: &[&str]| {
+        Cli::try_parse_from(args)
+            .map(|cli| cli.status_bar_icons_only)
+            .ok()
+    };
+    assert_eq!(parse(&["cocovm"]), Some(None));
+    assert_eq!(
+        parse(&["cocovm", "--status-bar-icons-only"]),
+        Some(Some(true))
+    );
+    assert_eq!(
+        parse(&["cocovm", "--status-bar-icons-only=false"]),
+        Some(Some(false))
+    );
+}
+
 /// `BoolishValueParser` — the dominant env-var boolean spelling
 /// (`COCOVM_TOOLBAR_ICONS_ONLY=1`), not just `true`/`false`.
 #[test]

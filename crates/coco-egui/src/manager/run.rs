@@ -19,6 +19,8 @@ pub fn run(
         assets_url,
         toolbar_icons_only,
         toolbar_icons_only_overridden,
+        status_bar_icons_only,
+        status_bar_icons_only_overridden,
         ..
     } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
@@ -70,6 +72,8 @@ pub fn run(
             );
             app.toolbar_icons_only = toolbar_icons_only;
             app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
+            app.status_bar_icons_only = status_bar_icons_only;
+            app.status_bar_icons_only_overridden = status_bar_icons_only_overridden;
             app.config_path = config_path;
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));

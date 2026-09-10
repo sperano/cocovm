@@ -34,6 +34,7 @@ pub(crate) struct SettingsDialog {
     control_port: u16,
     assets_url: String,
     toolbar_icons_only: bool,
+    status_bar_icons_only: bool,
     error: Option<String>,
 }
 
@@ -66,6 +67,9 @@ impl SettingsDialog {
             toolbar_icons_only: file
                 .toolbar_icons_only
                 .unwrap_or(config::DEFAULT_TOOLBAR_ICONS_ONLY),
+            status_bar_icons_only: file
+                .status_bar_icons_only
+                .unwrap_or(config::DEFAULT_STATUS_BAR_ICONS_ONLY),
             error,
         }
     }
@@ -84,10 +88,13 @@ impl SettingsDialog {
                 .then(|| self.assets_url.clone()),
             toolbar_icons_only: (self.toolbar_icons_only != config::DEFAULT_TOOLBAR_ICONS_ONLY)
                 .then_some(self.toolbar_icons_only),
+            status_bar_icons_only: (self.status_bar_icons_only
+                != config::DEFAULT_STATUS_BAR_ICONS_ONLY)
+                .then_some(self.status_bar_icons_only),
         }
     }
 
-    /// The modal's contents: the four fields, the restart hint, any error
+    /// The modal's contents: the five fields, the restart hint, any error
     /// from the last load/save, and the Save/Cancel row.
     fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
         ui.heading("Settings");
@@ -124,6 +131,7 @@ impl SettingsDialog {
 
         ui.add_space(DETAIL_SECTION_GAP);
         ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
+        ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
 
         ui.add_space(DETAIL_SECTION_GAP);
         ui.label(RESTART_HINT);
@@ -177,7 +185,7 @@ impl ManagerApp {
     }
 
     /// Saves the draft to [`ManagerApp::config_path`] and closes the dialog;
-    /// applies `toolbar_icons_only` live unless a CLI/env override is active.
+    /// applies the icons-only toggles live unless a CLI/env override is active.
     fn commit_settings(&mut self) {
         let Some(path) = self.config_path.as_deref() else {
             if let Some(dialog) = &mut self.settings {
@@ -192,6 +200,9 @@ impl ManagerApp {
             Ok(()) => {
                 if !self.toolbar_icons_only_overridden {
                     self.toolbar_icons_only = dialog.toolbar_icons_only;
+                }
+                if !self.status_bar_icons_only_overridden {
+                    self.status_bar_icons_only = dialog.status_bar_icons_only;
                 }
                 self.settings = None;
             }

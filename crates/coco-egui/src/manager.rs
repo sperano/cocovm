@@ -339,6 +339,12 @@ pub struct ManagerApp {
     /// (`Config::toolbar_icons_only_overridden`); Settings then skips the
     /// live apply on save so the override keeps winning until restart.
     pub(crate) toolbar_icons_only_overridden: bool,
+    /// Global status-bar readout toggle, pushed to every open VM window
+    /// each frame like `toolbar_icons_only`. The manager has no status bar
+    /// of its own, so nothing here reads it.
+    pub(crate) status_bar_icons_only: bool,
+    /// `toolbar_icons_only_overridden`'s counterpart for `status_bar_icons_only`.
+    pub(crate) status_bar_icons_only_overridden: bool,
     /// Where `config.toml` lives (`run::run`'s own `config_path`), for the
     /// Settings dialog to load and save. `None` when no home directory
     /// exists (`paths::config_dir` docs) — Settings then opens with the
@@ -387,6 +393,8 @@ impl ManagerApp {
             asset_dialog: None,
             toolbar_icons_only: false,
             toolbar_icons_only_overridden: false,
+            status_bar_icons_only: false,
+            status_bar_icons_only_overridden: false,
             config_path: None,
             settings: None,
         }
