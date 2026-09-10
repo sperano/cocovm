@@ -110,18 +110,22 @@ fn draw_statistics(ui: &mut egui::Ui, slug: &str, entry: &super::MachineEntry) {
                 ui.end_row();
             }
             ui.label("Runtime");
-            ui.label(humanize_runtime(displayed_runtime_secs(entry)));
+            let runtime = ui.label(humanize_runtime(displayed_runtime_secs(entry)));
+            if ui.is_rect_visible(runtime.rect)
+                && !entry.suspended
+                && entry.vm.as_ref().is_some_and(|vm| vm.running)
+            {
+                crate::app::scheduling::request_repaint_at(
+                    ui.ctx(),
+                    std::time::Instant::now() + STATS_REPAINT_INTERVAL,
+                );
+            }
             ui.end_row();
             ui.label("Started");
             ui.label(started_label(entry.def.stats.starts));
             ui.end_row();
         });
     });
-    if entry.is_running() {
-        // Native-viewport windows need this to keep Runtime ticking;
-        // redundant but harmless under the Embedded fallback.
-        ui.ctx().request_repaint_after(STATS_REPAINT_INTERVAL);
-    }
 }
 
 impl ManagerApp {

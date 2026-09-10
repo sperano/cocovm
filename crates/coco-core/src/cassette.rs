@@ -122,9 +122,7 @@ pub struct Cassette {
     /// high. Good enough for [`Cassette::position`] to move during a
     /// recording without demodulating the capture every frame; the accurate
     /// count only comes from [`Cassette::finalize_recording`]'s own decode.
-    /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]):
-    /// a pre-field snapshot restores with the counter at 0, exactly the old
-    /// behaviour.
+    /// Defaults to 0 when omitted from the snapshot payload.
     #[serde(default)]
     record_bits: u64,
     /// Whether the last captured level sat above [`DAC_LIVE_MIDPOINT`], for
@@ -136,10 +134,8 @@ pub struct Cassette {
     /// records starting at the head's current position rather than
     /// replacing the whole reel, so [`Cassette::finalize_recording`] grafts
     /// the demodulated capture into `tape` at this offset instead of
-    /// overwriting it outright. `#[serde(default)]` (snapshot evolution rule
-    /// 2, [`crate::snapshot`]): a pre-field snapshot restores with the
-    /// anchor at 0, which reproduces the old whole-tape-replace behaviour
-    /// (truncating to 0 and extending is exactly a replace).
+    /// overwriting it outright. Defaults to 0 when omitted from the snapshot
+    /// payload, placing the anchor at the start of the tape.
     #[serde(default)]
     record_anchor: usize,
     /// Whether a tape is mounted at all (a blank tape is an empty stream, so
@@ -168,19 +164,15 @@ pub struct Cassette {
     /// Motor-off cycles accumulated while a capture is in flight, counting
     /// towards [`RECORD_IDLE_FINALIZE_CYCLES`] auto-finalizing the recording.
     /// Reset whenever the motor is on, and in [`Cassette::finalize_recording`]
-    /// alongside the other record-state resets. `#[serde(default)]` (snapshot
-    /// evolution rule 2, [`crate::snapshot`]): a pre-field snapshot restores
-    /// with the counter at 0 — worst case a snapshot taken mid-gap waits the
-    /// full idle window again before auto-finalizing, not a correctness issue.
+    /// alongside the other record-state resets. Defaults to 0 when omitted
+    /// from the snapshot payload, restarting the idle window.
     #[serde(default)]
     idle_cycles: u64,
     /// Set when [`Cassette::finalize_recording`] actually spliced new content
     /// into the tape (never on a discarded sync-less capture) — the
     /// frontend's cue to save the tape back to disk without waiting for an
     /// eject/quit boundary; consumed through [`Cassette::take_recording_landed`].
-    /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]): a
-    /// pre-field snapshot restores with the flag clear, exactly the old (no
-    /// auto-save) behaviour.
+    /// Defaults to false when omitted from the snapshot payload.
     #[serde(default)]
     recording_landed: bool,
 }

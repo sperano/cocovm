@@ -184,12 +184,8 @@ impl ManagerApp {
         }
     }
 
-    /// Saves the dialog's draft to [`ManagerApp::config_path`]. On success,
-    /// applies the icons-only toggles to the manager's own toolbar and to
-    /// every running VM immediately — unless a CLI flag or env var supplied
-    /// one for this run, which keeps winning until restart, matching the
-    /// dialog's own hint — and closes the dialog; on failure, shows the
-    /// error and leaves it open.
+    /// Saves the draft to [`ManagerApp::config_path`] and closes the dialog;
+    /// applies the icons-only toggles live unless a CLI/env override is active.
     fn commit_settings(&mut self) {
         let Some(path) = self.config_path.as_deref() else {
             if let Some(dialog) = &mut self.settings {
@@ -208,7 +204,6 @@ impl ManagerApp {
                 if !self.status_bar_icons_only_overridden {
                     self.status_bar_icons_only = dialog.status_bar_icons_only;
                 }
-                self.apply_icons_only_to_running_vms();
                 self.settings = None;
             }
             Err(e) => dialog.error = Some(e),

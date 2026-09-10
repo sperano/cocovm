@@ -3,18 +3,8 @@
 
 use std::time::Duration;
 
+use super::scheduling;
 use crate::*;
-
-/// `Some(BACKGROUND_REPAINT_INTERVAL)` when every viewport reports unfocused;
-/// `None` (full rate) if any is focused, unknown (`None`), or there are none.
-pub(crate) fn background_repaint_delay(
-    focus: impl IntoIterator<Item = Option<bool>>,
-) -> Option<Duration> {
-    let mut focus = focus.into_iter().peekable();
-    focus.peek()?;
-    let any_focused = focus.any(|f| f.unwrap_or(true));
-    (!any_focused).then_some(BACKGROUND_REPAINT_INTERVAL)
-}
 
 impl CocoApp {
     /// Power-cycle the core and drop the host-side audio it already emitted.
@@ -29,22 +19,27 @@ impl CocoApp {
         self.audio_cushion_fields = 0;
     }
 
+    pub(crate) fn reset_emulation_clock(&mut self) {
+        self.last_update = None;
+        self.field_debt = 0.0;
+        self.audio_cushion_fields = 0;
+        self.schedule.stop_service();
+    }
+
     /// Entering the throttle runs one interval of fields ahead so the ring never
     /// drains between wake-ups; leaving it owes those fields back, so emulation
     /// idles while the cushion plays out and realigns with the wall clock.
     fn adjust_audio_cushion(&mut self, repaint_delay: Option<Duration>) {
-        match repaint_delay {
-            Some(delay) if self.audio_cushion_fields == 0 => {
-                let fields = (delay.as_secs_f64() * self.machine.config.video.field_rate_hz())
-                    .ceil() as usize;
-                self.run_fields(fields);
-                self.audio_cushion_fields = fields;
-            }
-            None if self.audio_cushion_fields > 0 => {
-                self.field_debt -= self.audio_cushion_fields as f64;
-                self.audio_cushion_fields = 0;
-            }
-            _ => {}
+        let desired = repaint_delay.map_or(0, |delay| {
+            scheduling::cushion_fields(self.machine.config.video.field_rate_hz(), delay)
+        });
+        if desired > self.audio_cushion_fields {
+            let before = self.fields_run;
+            self.run_fields(desired - self.audio_cushion_fields);
+            self.audio_cushion_fields += (self.fields_run - before) as usize;
+        } else if desired < self.audio_cushion_fields {
+            self.field_debt -= (self.audio_cushion_fields - desired) as f64;
+            self.audio_cushion_fields = desired;
         }
     }
 
@@ -107,7 +102,10 @@ impl CocoApp {
     /// field rate. Also accumulates [`Self::total_runtime`], clamped by
     /// [`MAX_FRAME_DT`] so a host stall can't burst the catch-up.
     pub(crate) fn fields_due(&mut self) -> usize {
-        let now = std::time::Instant::now();
+        self.fields_due_at(std::time::Instant::now())
+    }
+
+    fn fields_due_at(&mut self, now: std::time::Instant) -> usize {
         let elapsed = self
             .last_update
             .replace(now)
@@ -123,13 +121,16 @@ impl CocoApp {
 
     /// Advance emulation for one host frame: input, joysticks, the field loop,
     /// audio, and the framebuffer upload. Runs before any chrome is drawn.
-    /// `repaint_delay` is the caller's [`background_repaint_delay`] decision.
+    /// `repaint_delay` describes this viewport's background presentation policy.
     pub(crate) fn step_emulation(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
         if self.running {
-            self.run_emulation_fields(repaint_delay);
+            let cushion = repaint_delay.unwrap_or_else(|| {
+                scheduling::foreground_cushion(self.machine.config.video.field_rate_hz())
+            });
+            self.run_emulation_fields(Some(cushion));
             // Only the save half runs here — re-finalizing would fold a same-field
             // capture into the already-landed recording, discarding its leader.
             if self.machine.bus.cassette.take_recording_landed()
@@ -140,36 +141,49 @@ impl CocoApp {
             let sample_rate = self.machine.audio_sample_rate();
             self.audio
                 .push_samples(self.machine.take_audio(), sample_rate);
-            match repaint_delay {
-                Some(delay) => ctx.request_repaint_after(delay),
-                None => ctx.request_repaint(),
-            }
-        } else {
-            self.last_update = None;
-            // Drop fields owed while paused, so resuming doesn't instantly catch up.
-            self.field_debt = 0.0;
-            self.audio_cushion_fields = 0;
+        }
+        if !self.running {
+            // Includes breakpoints hit above, even if no paused repaint follows.
+            self.reset_emulation_clock();
         }
 
         self.upload_framebuffer_texture(ctx);
+        if self.running {
+            let now = std::time::Instant::now();
+            let interval = scheduling::service_interval(
+                self.machine.config.video.field_rate_hz(),
+                repaint_delay,
+            );
+            let deadline = self.schedule.service_deadline(now, interval);
+            scheduling::request_repaint_at(ctx, deadline);
+        }
     }
 
     /// Upload the framebuffer as `self.texture`. This is the only part of
     /// [`Self::step_emulation`] that a suspended VM's window still runs, so its
     /// picture stays on screen without input handling.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        self.present_framebuffer(ctx, std::time::Instant::now());
+        let now = std::time::Instant::now();
+        let background = scheduling::background_delay(ctx);
+        let mut interval =
+            scheduling::service_interval(self.machine.config.video.field_rate_hz(), background);
+        let active = self.running && !self.suspended;
+        let animated = matches!(self.display, Display::TV(_)) && self.tv.noise_pct > 0;
+        if !active {
+            interval = background.unwrap_or(super::presentation::NOISE_INTERVAL);
+        }
+        let due = self.schedule.presentation_due(now, interval);
+        if self.texture.is_none() || (!active && !animated) || due {
+            self.present_framebuffer(ctx, now);
+        }
+        // Running VMs animate on their service ticks. A separate 60 Hz noise
+        // timer would interleave with the machine's slightly different field rate.
+        if !active && animated {
+            scheduling::request_repaint_at(ctx, self.schedule.presentation_deadline());
+        }
     }
 
     fn present_framebuffer(&mut self, ctx: &egui::Context, now: std::time::Instant) {
-        let background_delay =
-            ctx.input(|i| background_repaint_delay(i.raw.viewports.values().map(|v| v.focused)));
-        if let Some(delay) =
-            self.presentation
-                .repaint_after(self.display, self.tv, now, background_delay)
-        {
-            ctx.request_repaint_after(delay);
-        }
         if self.texture.is_none() {
             self.presentation.invalidate();
         }

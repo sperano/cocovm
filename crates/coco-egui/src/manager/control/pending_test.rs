@@ -110,6 +110,27 @@ fn errors_when_the_target_vm_no_longer_exists() {
 }
 
 #[test]
+fn errors_when_the_target_vm_has_stopped() {
+    let mut manager = manager(vec![off_entry("stopped")]);
+    let (reply, rx) = reply_pair();
+
+    manager.pending.push(PendingControl::new(
+        reply,
+        "stopped".to_string(),
+        PendingCondition::WaitUntilField(1),
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    ));
+    manager.resolve_control_pending(&egui::Context::default());
+
+    match rx.recv().expect("reply sent") {
+        Response::Err(msg) => assert!(msg.contains("no longer running")),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert!(manager.pending.is_empty());
+}
+
+#[test]
 fn keeps_waiting_while_the_condition_is_unmet_and_the_deadline_has_not_passed() {
     let mut manager = manager(vec![running_entry("live")]);
     manager.entries[0]
@@ -150,15 +171,47 @@ fn times_out_once_the_deadline_has_passed() {
         NO_FIELDS,
         FIELD_RATE_HZ,
     );
-    pending.deadline = Instant::now() - Duration::from_secs(1);
+    let now = Instant::now();
+    pending.deadline = now - Duration::from_secs(1);
     manager.pending.push(pending);
-    manager.resolve_control_pending(&egui::Context::default());
+    manager.resolve_control_pending_at(&egui::Context::default(), now);
 
     match rx.recv().expect("reply sent") {
         Response::Err(msg) => assert!(msg.contains("timed out")),
         other => panic!("expected an Err reply, got {other:?}"),
     }
     assert!(manager.pending.is_empty());
+}
+
+#[test]
+fn paused_vm_waits_for_its_deadline_without_an_immediate_poll() {
+    const UNTIL_DEADLINE: Duration = Duration::from_secs(5);
+
+    let mut manager = manager(vec![running_entry("paused")]);
+    manager.entries[0].vm.as_mut().unwrap().running = false;
+    let (reply, _rx) = reply_pair();
+    let now = Instant::now();
+    let mut pending = PendingControl::new(
+        reply,
+        "paused".to_string(),
+        PendingCondition::WaitUntilField(1),
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    );
+    pending.deadline = now + UNTIL_DEADLINE;
+    manager.pending.push(pending);
+
+    let (repaint_tx, repaint_rx) = mpsc::channel();
+    let ctx = egui::Context::default();
+    ctx.set_request_repaint_callback(move |info| {
+        repaint_tx.send(info.delay).expect("record repaint request");
+    });
+    manager.resolve_control_pending_at(&ctx, now);
+
+    let delay = repaint_rx.try_recv().expect("deadline repaint requested");
+    assert!(delay > Duration::ZERO);
+    assert!(delay <= UNTIL_DEADLINE);
+    assert_eq!(manager.pending.len(), 1);
 }
 
 #[test]

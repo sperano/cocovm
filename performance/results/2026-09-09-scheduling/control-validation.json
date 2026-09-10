@@ -1,0 +1,641 @@
+{
+  "purpose": "functional validation with telemetry enabled",
+  "binary": "/Users/eric/code/cocovm/.worktrees/task-227/target/release/cocovm",
+  "static_paused_case": {
+    "timeout": {
+      "elapsed_seconds": 11.128335665911436,
+      "response": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "timed out waiting for the requested fields to elapse",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    "manager_update_count": 75,
+    "measurement_duration_seconds": 15.000697458,
+    "audio": {
+      "callbacks": 1292,
+      "config_scope": "last successfully opened output stream",
+      "device_channels": 2,
+      "device_rate_hz": 44100,
+      "missing_frames": 661504,
+      "overflow_batches": 0,
+      "overflow_frames": 0,
+      "queue_max_frames": 0,
+      "queue_min_frames": 0,
+      "queue_samples": 2584,
+      "requested_frames": 661504,
+      "underrun_callbacks": 1292
+    },
+    "functional_validation_metrics": {
+      "allocations": {
+        "count": 51684,
+        "requested_bytes": 16180537,
+        "scope": "whole process; successful allocations and reallocations"
+      },
+      "audio": {
+        "callbacks": 1292,
+        "config_scope": "last successfully opened output stream",
+        "device_channels": 2,
+        "device_rate_hz": 44100,
+        "missing_frames": 661504,
+        "overflow_batches": 0,
+        "overflow_frames": 0,
+        "queue_max_frames": 0,
+        "queue_min_frames": 0,
+        "queue_samples": 2584,
+        "requested_frames": 661504,
+        "underrun_callbacks": 1292
+      },
+      "enabled": true,
+      "histogram": "fixed nanosecond buckets, 16 subdivisions per power of two; percentiles are upper bounds (at most 6.25% bucket width)",
+      "measurement_duration_seconds": 15.000697458,
+      "scenario": {
+        "display": "rgb",
+        "duration_seconds": 15.000878666,
+        "fields_run": 0,
+        "focused_updates": 70,
+        "measurement_unix_finished": 1789004665.248964,
+        "measurement_unix_started": 1789004650.248007,
+        "name": "paused",
+        "operation_type": "none",
+        "operations": 0,
+        "printer_input": "one short ink line followed by 65 blank line feeds per page",
+        "printer_pages": 0,
+        "saved_entries": 1,
+        "unfocused_updates": 6,
+        "unknown_focus_updates": 0,
+        "variant": "coco3",
+        "vm_count": 1,
+        "vms": [
+          {
+            "audio_source_rate": 62817.119999999995,
+            "fields_run": 0,
+            "framebuffer_width": 640,
+            "running": false,
+            "slug": "perf-0000",
+            "suspended": false
+          }
+        ],
+        "warmup_seconds": 1.0
+      },
+      "scope": "process-wide aggregates across all VMs; sampled concurrently",
+      "stages": {
+        "audio_callback_lock_hold": {
+          "count": 1292,
+          "max_ns": 13917,
+          "p95_ns": 5887,
+          "p99_ns": 6399
+        },
+        "audio_callback_lock_wait": {
+          "count": 1292,
+          "max_ns": 1541,
+          "p95_ns": 735,
+          "p99_ns": 959
+        },
+        "audio_push": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "display_conversion": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "field_execution": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "host_operation": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "manager_update": {
+          "count": 75,
+          "max_ns": 12419500,
+          "p95_ns": 12582911,
+          "p99_ns": 12582911
+        },
+        "snapshot_restore": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "snapshot_save": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "texture_enqueue_cpu": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "vm_ui_update": {
+          "count": 75,
+          "max_ns": 102000,
+          "p95_ns": 94207,
+          "p99_ns": 102399
+        }
+      },
+      "texture_enqueue_cpu": {
+        "bytes": 0,
+        "count": 0
+      },
+      "viewport_states_at_finish": [
+        {
+          "focused": false,
+          "minimized": false,
+          "title": "Performance 0"
+        },
+        {
+          "focused": false,
+          "minimized": false,
+          "title": "CocoVM"
+        }
+      ],
+      "warmup_including_cold_first_update": {
+        "allocations": {
+          "count": 7559,
+          "requested_bytes": 22806113,
+          "scope": "whole process; successful allocations and reallocations"
+        },
+        "audio": {
+          "callbacks": 87,
+          "config_scope": "last successfully opened output stream",
+          "device_channels": 2,
+          "device_rate_hz": 44100,
+          "missing_frames": 44544,
+          "overflow_batches": 0,
+          "overflow_frames": 0,
+          "queue_max_frames": 0,
+          "queue_min_frames": 0,
+          "queue_samples": 174,
+          "requested_frames": 44544,
+          "underrun_callbacks": 87
+        },
+        "enabled": true,
+        "histogram": "fixed nanosecond buckets, 16 subdivisions per power of two; percentiles are upper bounds (at most 6.25% bucket width)",
+        "measurement_duration_seconds": 1.000972375,
+        "scope": "process-wide aggregates across all VMs; sampled concurrently",
+        "stages": {
+          "audio_callback_lock_hold": {
+            "count": 87,
+            "max_ns": 6041,
+            "p95_ns": 5887,
+            "p99_ns": 6143
+          },
+          "audio_callback_lock_wait": {
+            "count": 87,
+            "max_ns": 1208,
+            "p95_ns": 671,
+            "p99_ns": 1215
+          },
+          "audio_push": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "display_conversion": {
+            "count": 1,
+            "max_ns": 119875,
+            "p95_ns": 122879,
+            "p99_ns": 122879
+          },
+          "field_execution": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "host_operation": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "manager_update": {
+            "count": 10,
+            "max_ns": 51630125,
+            "p95_ns": 52428799,
+            "p99_ns": 52428799
+          },
+          "snapshot_restore": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "snapshot_save": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "texture_enqueue_cpu": {
+            "count": 1,
+            "max_ns": 709,
+            "p95_ns": 735,
+            "p99_ns": 735
+          },
+          "vm_ui_update": {
+            "count": 10,
+            "max_ns": 413333,
+            "p95_ns": 425983,
+            "p99_ns": 425983
+          }
+        },
+        "texture_enqueue_cpu": {
+          "bytes": 614400,
+          "count": 1
+        }
+      }
+    }
+  },
+  "pause_cases": {
+    "controls": {
+      "pause_for_timeout": {
+        "elapsed_seconds": 0.055908125010319054,
+        "response": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "Paused.",
+                "type": "text"
+              }
+            ],
+            "isError": false
+          }
+        }
+      },
+      "paused_list_vms": {
+        "elapsed_seconds": 0.013839416904374957,
+        "response": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "perf-0000 \u2014 Performance 0 (running)\nperf-0001 \u2014 Performance 1 (running)",
+                "type": "text"
+              }
+            ],
+            "isError": false
+          }
+        }
+      },
+      "running_peer_completion": {
+        "elapsed_seconds": 1.0117216249927878,
+        "response": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "Waited 60 fields.",
+                "type": "text"
+              }
+            ],
+            "isError": false
+          }
+        }
+      },
+      "paused_timeout": {
+        "elapsed_seconds": 11.149566250038333,
+        "response": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "timed out waiting for the requested fields to elapse",
+                "type": "text"
+              }
+            ],
+            "isError": true
+          }
+        }
+      },
+      "resume": {
+        "elapsed_seconds": 0.0004420420154929161,
+        "response": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "Resumed.",
+                "type": "text"
+              }
+            ],
+            "isError": false
+          }
+        }
+      },
+      "resumed_completion": {
+        "elapsed_seconds": 11.943137541995384,
+        "response": {
+          "id": 1,
+          "jsonrpc": "2.0",
+          "result": {
+            "content": [
+              {
+                "text": "Waited 600 fields.",
+                "type": "text"
+              }
+            ],
+            "isError": false
+          }
+        }
+      },
+      "suspended_mixed": {
+        "unavailable": "Suspend AX failed: 517:554: execution error: accessible Suspend button not found (-2700)",
+        "coverage": "lifecycle suspend/close and mixed paused/running"
+      }
+    },
+    "functional_validation_metrics": {
+      "allocations": {
+        "count": 2885114,
+        "requested_bytes": 1480100161,
+        "scope": "whole process; successful allocations and reallocations"
+      },
+      "audio": {
+        "callbacks": 8612,
+        "config_scope": "last successfully opened output stream",
+        "device_channels": 2,
+        "device_rate_hz": 44100,
+        "missing_frames": 528054,
+        "overflow_batches": 0,
+        "overflow_frames": 0,
+        "queue_max_frames": 4733,
+        "queue_min_frames": 0,
+        "queue_samples": 22489,
+        "requested_frames": 4409344,
+        "underrun_callbacks": 1033
+      },
+      "enabled": true,
+      "histogram": "fixed nanosecond buckets, 16 subdivisions per power of two; percentiles are upper bounds (at most 6.25% bucket width)",
+      "measurement_duration_seconds": 50.001163667,
+      "scenario": {
+        "display": "rgb",
+        "duration_seconds": 50.001335875,
+        "fields_run": 5281,
+        "focused_updates": 2991,
+        "measurement_unix_finished": 1789004716.946837,
+        "measurement_unix_started": 1789004666.945113,
+        "name": "multi-vm",
+        "operation_type": "none",
+        "operations": 0,
+        "printer_input": "one short ink line followed by 65 blank line feeds per page",
+        "printer_pages": 0,
+        "saved_entries": 2,
+        "unfocused_updates": 0,
+        "unknown_focus_updates": 0,
+        "variant": "coco3",
+        "vm_count": 2,
+        "vms": [
+          {
+            "audio_source_rate": 62817.119999999995,
+            "fields_run": 2284,
+            "framebuffer_width": 640,
+            "running": true,
+            "slug": "perf-0000",
+            "suspended": false
+          },
+          {
+            "audio_source_rate": 62817.119999999995,
+            "fields_run": 2997,
+            "framebuffer_width": 640,
+            "running": true,
+            "slug": "perf-0001",
+            "suspended": false
+          }
+        ],
+        "warmup_seconds": 1.0
+      },
+      "scope": "process-wide aggregates across all VMs; sampled concurrently",
+      "stages": {
+        "audio_callback_lock_hold": {
+          "count": 8612,
+          "max_ns": 12750,
+          "p95_ns": 5887,
+          "p99_ns": 6399
+        },
+        "audio_callback_lock_wait": {
+          "count": 8612,
+          "max_ns": 5500,
+          "p95_ns": 639,
+          "p99_ns": 863
+        },
+        "audio_push": {
+          "count": 5265,
+          "max_ns": 61792,
+          "p95_ns": 19455,
+          "p99_ns": 20479
+        },
+        "display_conversion": {
+          "count": 744,
+          "max_ns": 163250,
+          "p95_ns": 98303,
+          "p99_ns": 110591
+        },
+        "field_execution": {
+          "count": 5281,
+          "max_ns": 208458,
+          "p95_ns": 180223,
+          "p99_ns": 188415
+        },
+        "host_operation": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "manager_update": {
+          "count": 2990,
+          "max_ns": 26875041,
+          "p95_ns": 6815743,
+          "p99_ns": 22020095
+        },
+        "snapshot_restore": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "snapshot_save": {
+          "count": 0,
+          "max_ns": 0,
+          "p95_ns": 0,
+          "p99_ns": 0
+        },
+        "texture_enqueue_cpu": {
+          "count": 744,
+          "max_ns": 4167,
+          "p95_ns": 1151,
+          "p99_ns": 2175
+        },
+        "vm_ui_update": {
+          "count": 5980,
+          "max_ns": 1202167,
+          "p95_ns": 409599,
+          "p99_ns": 524287
+        }
+      },
+      "texture_enqueue_cpu": {
+        "bytes": 457113600,
+        "count": 744
+      },
+      "viewport_states_at_finish": [
+        {
+          "focused": false,
+          "minimized": false,
+          "title": "Performance 0"
+        },
+        {
+          "focused": true,
+          "minimized": false,
+          "title": "Performance 1"
+        },
+        {
+          "focused": false,
+          "minimized": false,
+          "title": "CocoVM"
+        }
+      ],
+      "warmup_including_cold_first_update": {
+        "allocations": {
+          "count": 48071,
+          "requested_bytes": 47140238,
+          "scope": "whole process; successful allocations and reallocations"
+        },
+        "audio": {
+          "callbacks": 174,
+          "config_scope": "last successfully opened output stream",
+          "device_channels": 2,
+          "device_rate_hz": 44100,
+          "missing_frames": 45954,
+          "overflow_batches": 0,
+          "overflow_frames": 0,
+          "queue_max_frames": 4415,
+          "queue_min_frames": 0,
+          "queue_samples": 398,
+          "requested_frames": 89088,
+          "underrun_callbacks": 91
+        },
+        "enabled": true,
+        "histogram": "fixed nanosecond buckets, 16 subdivisions per power of two; percentiles are upper bounds (at most 6.25% bucket width)",
+        "measurement_duration_seconds": 1.00323325,
+        "scope": "process-wide aggregates across all VMs; sampled concurrently",
+        "stages": {
+          "audio_callback_lock_hold": {
+            "count": 174,
+            "max_ns": 7417,
+            "p95_ns": 5887,
+            "p99_ns": 7167
+          },
+          "audio_callback_lock_wait": {
+            "count": 174,
+            "max_ns": 2167,
+            "p95_ns": 671,
+            "p99_ns": 863
+          },
+          "audio_push": {
+            "count": 50,
+            "max_ns": 62750,
+            "p95_ns": 21503,
+            "p99_ns": 63487
+          },
+          "display_conversion": {
+            "count": 9,
+            "max_ns": 140125,
+            "p95_ns": 147455,
+            "p99_ns": 147455
+          },
+          "field_execution": {
+            "count": 61,
+            "max_ns": 215334,
+            "p95_ns": 180223,
+            "p99_ns": 221183
+          },
+          "host_operation": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "manager_update": {
+            "count": 49,
+            "max_ns": 71280500,
+            "p95_ns": 18874367,
+            "p99_ns": 71303167
+          },
+          "snapshot_restore": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "snapshot_save": {
+            "count": 0,
+            "max_ns": 0,
+            "p95_ns": 0,
+            "p99_ns": 0
+          },
+          "texture_enqueue_cpu": {
+            "count": 9,
+            "max_ns": 2292,
+            "p95_ns": 2303,
+            "p99_ns": 2303
+          },
+          "vm_ui_update": {
+            "count": 98,
+            "max_ns": 1435333,
+            "p95_ns": 409599,
+            "p99_ns": 1441791
+          }
+        },
+        "texture_enqueue_cpu": {
+          "bytes": 5529600,
+          "count": 9
+        }
+      }
+    }
+  },
+  "stopped_case": {
+    "elapsed_seconds": 6.130015624919906,
+    "response": {
+      "id": 1,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "VM 'perf-0000' is no longer running",
+            "type": "text"
+          }
+        ],
+        "isError": true
+      }
+    }
+  }
+}

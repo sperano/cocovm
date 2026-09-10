@@ -157,6 +157,7 @@ impl ScenarioRun {
     fn finish(&mut self, app: &ManagerApp, ctx: &egui::Context) -> Result<(), String> {
         let unix_finished = unix_seconds();
         let mut report = crate::perf::snapshot();
+        report["viewport_states_at_finish"] = viewport_states(ctx);
         self.write_marker("finished", unix_finished)?;
         report["warmup_including_cold_first_update"] = self.warmup_report.take();
         report["scenario"] = json!({
@@ -196,4 +197,22 @@ fn unix_seconds() -> f64 {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock is after UNIX epoch")
         .as_secs_f64()
+}
+
+fn viewport_states(ctx: &egui::Context) -> serde_json::Value {
+    ctx.input(|input| {
+        input
+            .raw
+            .viewports
+            .values()
+            .map(|viewport| {
+                json!({
+                    "title": viewport.title,
+                    "focused": viewport.focused,
+                    "minimized": viewport.minimized,
+                })
+            })
+            .collect::<Vec<_>>()
+            .into()
+    })
 }

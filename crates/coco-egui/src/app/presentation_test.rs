@@ -249,42 +249,6 @@ fn incidental_repaints_do_not_advance_snow() {
 }
 
 #[test]
-fn snow_deadline_tracks_tick_and_preserves_background_cap() {
-    let mut presentation = Presentation::default();
-    let now = Instant::now();
-    presentation
-        .prepare(COLOR_TV, SNOW, WIDTH, &source(), now)
-        .unwrap();
-    let half_tick = NOISE_INTERVAL / 2;
-    assert_eq!(
-        presentation.repaint_after(COLOR_TV, SNOW, now, None),
-        Some(NOISE_INTERVAL)
-    );
-    assert_eq!(
-        presentation.repaint_after(COLOR_TV, SNOW, now + half_tick, None),
-        Some(NOISE_INTERVAL - half_tick)
-    );
-    assert_eq!(
-        presentation.repaint_after(COLOR_TV, SNOW, now + NOISE_INTERVAL, None),
-        Some(NOISE_INTERVAL)
-    );
-    assert_eq!(
-        presentation.repaint_after(
-            COLOR_TV,
-            SNOW,
-            now + half_tick,
-            Some(crate::BACKGROUND_REPAINT_INTERVAL)
-        ),
-        Some(crate::BACKGROUND_REPAINT_INTERVAL)
-    );
-    assert_eq!(
-        presentation.repaint_after(COLOR_TV, STATIC, now, None),
-        None
-    );
-    assert_eq!(presentation.repaint_after(RGB, SNOW, now, None), None);
-}
-
-#[test]
 fn invalidation_rebuilds_unchanged_texture_once() {
     let mut presentation = Presentation::default();
     let now = Instant::now();

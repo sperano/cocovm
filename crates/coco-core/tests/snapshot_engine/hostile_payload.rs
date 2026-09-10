@@ -26,9 +26,8 @@ use mc6809::Bus;
 use super::common::{boot_machine, expect_err, load_rom, system_rom_only_media};
 
 /// Header length ([`snapshot::CONTAINER_MAGIC`] + version byte + `u32`
-/// schema) — mirrors the `schema_offset` calculation in
-/// `future_schema_is_reported_as_schema_too_new`; `snapshot::HEADER_LEN` itself isn't
-/// public.
+/// schema) — mirrors the `HEADER_LEN` calculation in the header tests;
+/// `snapshot::HEADER_LEN` itself isn't public.
 fn header_len() -> usize {
     snapshot::CONTAINER_MAGIC.len() + 1 + 4
 }

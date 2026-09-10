@@ -94,26 +94,6 @@ impl Presentation {
         self.processor.process(display, settings, seed, width, src)
     }
 
-    /// Called even on cache hits. Animated paused/suspended TVs still need a
-    /// deadline; static displays request none. Preserve the app's background cap.
-    pub(super) fn repaint_after(
-        &self,
-        display: Display,
-        settings: TVSettings,
-        now: Instant,
-        background_delay: Option<Duration>,
-    ) -> Option<Duration> {
-        if !matches!(display, Display::TV(_)) || settings.noise_pct == 0 {
-            return None;
-        }
-        let elapsed = self
-            .epoch
-            .map_or(Duration::ZERO, |epoch| now.saturating_duration_since(epoch));
-        let within_tick = (elapsed.as_nanos() % NOISE_INTERVAL.as_nanos()) as u64;
-        let remaining = NOISE_INTERVAL - Duration::from_nanos(within_tick);
-        Some(remaining.max(background_delay.unwrap_or_default()))
-    }
-
     pub(super) fn invalidate(&mut self) {
         self.key = None;
     }

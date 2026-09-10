@@ -84,27 +84,12 @@ impl ManagerApp {
         match crate::launch_machine(&self.entries[index].def, &self.entries[index].slug) {
             Ok(vm) => {
                 self.entries[index].vm = Some(Box::new(vm));
-                self.apply_icons_only_to_running_vms();
                 true
             }
             Err(e) => {
                 self.entries[index].launch_error = Some(e);
                 false
             }
-        }
-    }
-
-    /// Copy the manager's icons-only toggles into every running VM: at
-    /// launch, and again when Settings changes them (`manager/settings.rs`).
-    pub(super) fn apply_icons_only_to_running_vms(&mut self) {
-        let (toolbar, status_bar) = (self.toolbar_icons_only, self.status_bar_icons_only);
-        for vm in self
-            .entries
-            .iter_mut()
-            .filter_map(|entry| entry.vm.as_deref_mut())
-        {
-            vm.toolbar_icons_only = toolbar;
-            vm.status_bar_icons_only = status_bar;
         }
     }
 

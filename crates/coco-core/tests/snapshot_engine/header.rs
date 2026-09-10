@@ -1,12 +1,18 @@
 //! 2. Header checks
 
+use std::io::Write;
+
 use coco_core::snapshot::{self, MediaRefs, SnapshotError};
 use coco_core::{Machine, MachineConfig};
+use flate2::Compression;
+use flate2::write::GzEncoder;
 
 use super::common::expect_err;
 
-/// A valid container's bytes, cheap to build (no ROM execution needed — the
-/// header tests only ever patch/truncate bytes, never decode the payload).
+const SCHEMA_OFFSET: usize = snapshot::CONTAINER_MAGIC.len() + size_of::<u8>();
+const HEADER_LEN: usize = SCHEMA_OFFSET + size_of::<u32>();
+
+/// A valid container's bytes, cheap to build without ROM execution.
 fn a_valid_save() -> Vec<u8> {
     let machine = Machine::new(MachineConfig::default(), Box::new([]));
     snapshot::save(&machine, &MediaRefs::default()).expect("save")
@@ -43,17 +49,40 @@ fn future_container_version_is_unsupported() {
 }
 
 #[test]
-fn future_schema_is_reported_as_schema_too_new() {
-    let mut bytes = a_valid_save();
-    let schema_offset = snapshot::CONTAINER_MAGIC.len() + 1;
-    let future = snapshot::SCHEMA_VERSION + 1;
-    bytes[schema_offset..schema_offset + 4].copy_from_slice(&future.to_le_bytes());
-    let err = expect_err(snapshot::load(&bytes));
-    match err {
-        SnapshotError::SchemaTooNew { found, current } => {
-            assert_eq!(found, future);
-            assert_eq!(current, snapshot::SCHEMA_VERSION);
+fn mismatched_schema_is_rejected_before_decompression() {
+    for schema in [snapshot::SCHEMA_VERSION - 1, snapshot::SCHEMA_VERSION + 1] {
+        let mut bytes = a_valid_save();
+        bytes[SCHEMA_OFFSET..HEADER_LEN].copy_from_slice(&schema.to_le_bytes());
+        bytes.truncate(HEADER_LEN);
+        bytes.extend_from_slice(b"invalid gzip");
+        let err = expect_err(snapshot::load(&bytes));
+        match err {
+            SnapshotError::UnsupportedSchema { found, supported } => {
+                assert_eq!(found, schema);
+                assert_eq!(supported, snapshot::SCHEMA_VERSION);
+            }
+            other => panic!("expected UnsupportedSchema, got {other:?}"),
         }
-        other => panic!("expected SchemaTooNew, got {other:?}"),
     }
+}
+
+#[test]
+fn malformed_gzip_returns_decode_error() {
+    let mut bytes = a_valid_save();
+    bytes.truncate(HEADER_LEN);
+    bytes.extend_from_slice(b"invalid gzip");
+    let err = expect_err(snapshot::load(&bytes));
+    assert!(matches!(err, SnapshotError::Decode(_)), "{err:?}");
+}
+
+#[test]
+fn malformed_cbor_returns_decode_error() {
+    const UNEXPECTED_CBOR_BREAK: u8 = 0xff;
+    let mut bytes = a_valid_save();
+    bytes.truncate(HEADER_LEN);
+    let mut gzip = GzEncoder::new(Vec::new(), Compression::default());
+    gzip.write_all(&[UNEXPECTED_CBOR_BREAK]).expect("gzip CBOR");
+    bytes.extend_from_slice(&gzip.finish().expect("finish gzip"));
+    let err = expect_err(snapshot::load(&bytes));
+    assert!(matches!(err, SnapshotError::Decode(_)), "{err:?}");
 }

@@ -8,9 +8,9 @@ use crate::*;
 mod control;
 pub(crate) use control::{RemoteHold, RemoteStick};
 mod frame;
-mod presentation;
-pub(crate) use frame::background_repaint_delay;
 mod input;
+mod presentation;
+pub(crate) mod scheduling;
 pub(crate) use input::has_keyboard_focus;
 
 pub(crate) struct CocoApp {
@@ -40,6 +40,7 @@ pub(crate) struct CocoApp {
     pub(crate) tv: display::TVSettings,
     /// Retained display buffers and the last presented pixel/settings state.
     pub(crate) presentation: presentation::Presentation,
+    pub(crate) schedule: scheduling::Schedule,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -221,15 +222,12 @@ pub(crate) struct CocoApp {
     /// request polls this to know when its target field count has elapsed.
     pub(crate) fields_run: u64,
     /// Mirror of [`crate::manager::ManagerApp`]'s global `toolbar_icons_only`
-    /// setting (`config.rs`), read by `chrome::toolbar`. Global, not
-    /// per-machine, so it isn't an [`AppParams`] field: `launch_machine`
-    /// only sees one definition, not the manager's config — pushed onto the
-    /// running `CocoApp` by `manager::lifecycle::apply_icons_only_to_running_vms`
-    /// at launch and on every Settings save.
+    /// (`config.rs`), read by `chrome::toolbar`; the manager rewrites it every
+    /// frame (`manager/vm_windows.rs`), so it is not an [`AppParams`] field.
     pub(crate) toolbar_icons_only: bool,
     /// `toolbar_icons_only`'s counterpart for the status bar
     /// (`chrome::status_bar`): entries draw their icon alone, with the
-    /// readout moved into hover text. Plumbed the same way.
+    /// readout moved into hover text. Rewritten every frame the same way.
     pub(crate) status_bar_icons_only: bool,
 }
 
@@ -303,6 +301,7 @@ impl CocoApp {
             display,
             tv: display::TVSettings::default(),
             presentation: presentation::Presentation::default(),
+            schedule: scheduling::Schedule::default(),
             last_update: None,
             field_debt: 0.0,
             audio_cushion_fields: 0,
@@ -377,6 +376,9 @@ impl CocoApp {
     /// Set whether emulation advances. Exposed since `running` isn't `pub`;
     /// used by the manager's Suspend/Resume to freeze/un-freeze a VM.
     pub(crate) fn set_running(&mut self, running: bool) {
+        if self.running != running {
+            self.reset_emulation_clock();
+        }
         self.running = running;
     }
 
@@ -410,8 +412,8 @@ impl eframe::App for CocoApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let focused = ctx.input(|i| i.viewport().focused);
-        self.window_ui(ctx, background_repaint_delay([focused]));
+        let delay = scheduling::background_delay(ctx);
+        self.window_ui(ctx, delay);
     }
 }
 

@@ -1,6 +1,5 @@
-//! Golden fixtures verify supported snapshots and deterministic continuation.
-//! Schema 1 was retired when printer coordinates changed. Its fixture must
-//! return an explicit unsupported-schema error instead of loading wrong units.
+//! Golden fixtures verify the development snapshot format and deterministic continuation.
+//! Regenerate the fixture when the serialized machine state changes incompatibly.
 //!
 //! ## Why a synthetic ROM, not `roms/coco3.rom`
 //!
@@ -125,7 +124,7 @@ fn continuation_trace(m: &mut Machine) -> Vec<String> {
 /// this is well past several palette-register cycles.
 const WARMUP_STEPS: u32 = 5_000;
 
-/// Not a CI test: writes the three `v2-synthetic.*` files under
+/// Not a CI test: writes the three `v1-synthetic.*` files under
 /// `tests/fixtures/snapshots/`, to be committed alongside this branch. Run
 /// once by hand: `cargo test -p coco-core -- --ignored generate_golden_fixture`.
 #[test]
@@ -139,7 +138,7 @@ fn generate_golden_fixture() {
 
     let media = MediaRefs {
         system_rom: Some(MediaRef {
-            path: PathBuf::from("v2-synthetic.rom"),
+            path: PathBuf::from("v1-synthetic.rom"),
             sha256: snapshot::sha256_hex(&rom),
         }),
         ..MediaRefs::default()
@@ -149,9 +148,9 @@ fn generate_golden_fixture() {
 
     let dir = fixtures_dir();
     std::fs::create_dir_all(&dir).expect("create tests/fixtures/snapshots");
-    std::fs::write(dir.join("v2-synthetic.ccstate"), &ccstate).expect("write .ccstate");
-    std::fs::write(dir.join("v2-synthetic.rom"), &rom).expect("write .rom");
-    std::fs::write(dir.join("v2-synthetic.trace"), trace.join("\n") + "\n").expect("write .trace");
+    std::fs::write(dir.join("v1-synthetic.ccstate"), &ccstate).expect("write .ccstate");
+    std::fs::write(dir.join("v1-synthetic.rom"), &rom).expect("write .rom");
+    std::fs::write(dir.join("v1-synthetic.trace"), trace.join("\n") + "\n").expect("write .trace");
 }
 
 // ---- Gate: every committed fixture must still load and continue ---------
@@ -164,7 +163,7 @@ fn generate_golden_fixture() {
 const FIXTURE_MAX_BYTES: u64 = 200 * 1024;
 
 #[test]
-fn supported_fixtures_continue_and_retired_schema_is_rejected() {
+fn committed_fixtures_continue() {
     let dir = fixtures_dir();
     let mut checked = 0;
     for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
@@ -172,20 +171,21 @@ fn supported_fixtures_continue_and_retired_schema_is_rejected() {
         if path.extension().and_then(|e| e.to_str()) != Some("ccstate") {
             continue;
         }
-        checked += usize::from(check_fixture(&path));
+        check_fixture(&path);
+        checked += 1;
     }
     assert!(
         checked > 0,
-        "no supported *.ccstate fixtures found under {}",
+        "no *.ccstate fixtures found under {}",
         dir.display()
     );
 }
 
 /// Load, restore, and trace-continue one fixture, comparing against its
 /// committed `.trace` — future fixtures (`<stem>.ccstate` + `<stem>.rom` +
-/// `<stem>.trace`) join this gate automatically through [`supported_fixtures_continue_and_retired_schema_is_rejected`]'s
+/// `<stem>.trace`) join this gate automatically through [`committed_fixtures_continue`]'s
 /// directory scan.
-fn check_fixture(ccstate_path: &Path) -> bool {
+fn check_fixture(ccstate_path: &Path) {
     let stem = ccstate_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -202,16 +202,6 @@ fn check_fixture(ccstate_path: &Path) -> bool {
          start embedding media bytes into a snapshot fixture?",
         ccstate.len()
     );
-    if stem == "v1-synthetic" {
-        assert!(matches!(
-            snapshot::load(&ccstate),
-            Err(snapshot::SnapshotError::NoMigration {
-                found: 1,
-                current
-            }) if current == snapshot::SCHEMA_VERSION
-        ));
-        return false;
-    }
     let rom =
         std::fs::read(&rom_path).unwrap_or_else(|e| panic!("read {}: {e}", rom_path.display()));
     let expected_trace = std::fs::read_to_string(&trace_path)
@@ -232,5 +222,4 @@ fn check_fixture(ccstate_path: &Path) -> bool {
         actual_trace, expected_trace,
         "fixture {stem}'s continuation trace no longer matches its committed .trace"
     );
-    true
 }

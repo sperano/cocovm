@@ -60,8 +60,7 @@ pub struct SlotROMRef {
     /// `None` = the machine's own cartridge port; `Some(i)` = Multi-Pak slot
     /// `i` (0-3).
     pub mpi_slot: Option<u8>,
-    /// `#[serde(default)]` (evolution rule 2): snapshots from before the
-    /// field carry only primary images.
+    /// Defaults to the primary image role when omitted from the payload.
     #[serde(default)]
     pub role: CartROMRole,
     pub rom: MediaRef,
@@ -86,16 +85,11 @@ impl CartROMSource {
     }
 }
 
-/// Every media reference a snapshot might carry. Every field is
-/// `#[serde(default)]` per evolution rule 2 — a future field added here must
-/// still load an older snapshot as "this media slot was never used".
+/// Every media reference a snapshot might carry. Missing fields default to
+/// unused media slots.
 ///
-/// `disks`/`vhds`/`drivewire` are `Vec`, not `[Option<MediaRef>;
-/// N::DRIVE_COUNT]`: a fixed-size array bakes today's `DRIVE_COUNT` into the
-/// serialized shape, so a future change to it would fail to deserialize (or
-/// silently truncate) every snapshot written before the change — the
-/// evolution contract earlier forbids that. [`super::restore`] matches these up
-/// against the machine's actual drive count itself (zip-style: a short `Vec`
+/// `disks`/`vhds`/`drivewire` use variable-length vectors. [`super::restore`]
+/// matches these against the machine's actual drive count (zip-style: a short `Vec`
 /// leaves trailing drives as "never mounted"; a `Vec` longer than the current
 /// build's `DRIVE_COUNT` is [`super::SnapshotError::InvalidPayload`], naming the
 /// slot).
