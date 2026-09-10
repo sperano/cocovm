@@ -2,7 +2,7 @@
 //! `coco` always opens. Toolbar across the top, machine list down the left
 //! (one row per `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and
 //! a detail/edit pane on the right for the selected machine — or, with no machine
-//! selected, a random photo asset filling the pane.
+//! selected, a random photo asset filling the pane (`manager/welcome_image.rs`).
 //!
 //! The detail pane's Start button calls `crate::launch_machine`. Once a
 //! `MachineEntry` holds a running `CocoApp`, `ManagerApp::update` opens it in
@@ -42,6 +42,7 @@ mod settings;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
+mod welcome_image;
 
 pub use run::run;
 
@@ -273,10 +274,9 @@ struct EditState {
 pub struct ManagerApp {
     #[cfg(feature = "perf")]
     perf_scenario: Option<perf_scenarios::ScenarioRun>,
-    /// Decoded photo pending its first-frame texture upload.
-    photo: Option<Photo>,
-    /// The uploaded photo texture, once a frame has run.
-    photo_texture: Option<egui::TextureHandle>,
+    /// The right pane's photo while nothing is selected, its timer, and
+    /// their settings (`manager/welcome_image.rs`).
+    pub(crate) welcome_image: welcome_image::WelcomeImage,
     /// Directory new/edited definitions are saved to. `None` when no home
     /// directory exists (`paths::config_dir` docs) — Save/Create then report
     /// the problem in place rather than silently doing nothing.
@@ -385,8 +385,7 @@ impl ManagerApp {
         Self {
             #[cfg(feature = "perf")]
             perf_scenario: None,
-            photo,
-            photo_texture: None,
+            welcome_image: welcome_image::WelcomeImage::new(photo),
             machines_dir,
             artifacts_root,
             entries,
@@ -445,10 +444,7 @@ impl eframe::App for ManagerApp {
             return;
         }
 
-        if let Some(photo) = self.photo.take() {
-            self.photo_texture =
-                Some(ctx.load_texture(&photo.title, photo.pixels, egui::TextureOptions::LINEAR));
-        }
+        self.welcome_image.service(ctx, self.selection.is_empty());
 
         // Apply a committed rename before any panel draws — row indices must
         // stay stable for the frame.
@@ -478,19 +474,11 @@ impl eframe::App for ManagerApp {
                 self.draw_machine_list(ui);
             });
 
-        // Detail form for a single selection, bulk pane for many, or a
-        // random photo when nothing's selected.
+        // Detail form for a single selection, bulk pane for many, or the
+        // welcome image when nothing's selected.
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.selection.is_empty() {
-                if let Some(texture) = &self.photo_texture {
-                    ui.centered_and_justified(|ui| {
-                        ui.add(
-                            egui::Image::new(texture)
-                                .max_size(ui.available_size())
-                                .maintain_aspect_ratio(true),
-                        );
-                    });
-                }
+                self.welcome_image.draw(ui);
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     egui::Frame::NONE

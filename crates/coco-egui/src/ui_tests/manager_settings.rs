@@ -197,6 +197,43 @@ fn save_keeps_a_cli_env_icons_only_override_until_restart() {
     );
 }
 
+/// `welcome_image_cycle`'s Save path: the key lands in `config.toml` and
+/// the manager's welcome-image timer flips on immediately; the shuffle
+/// checkbox, left alone, stays out of the file.
+#[test]
+fn save_applies_the_welcome_image_cycle_toggle() {
+    let dir = TempDir::new("settings-save-welcome-cycle");
+    let config_path = dir.path().join("config.toml");
+    let mut harness = settings_harness(config_path.clone());
+    assert!(!harness.state().welcome_image.cycle);
+
+    click(&mut harness, "Settings");
+    click(&mut harness, "Change welcome image every");
+    click(&mut harness, "Save");
+
+    assert!(harness.state().welcome_image.cycle);
+    assert!(!harness.state().welcome_image.shuffle);
+    let saved = std::fs::read_to_string(&config_path).expect("save_file must create the file");
+    assert!(
+        saved
+            .lines()
+            .any(|l| l.trim() == "welcome_image_cycle = true"),
+        "config.toml must contain the saved key: {saved}"
+    );
+    assert!(
+        !saved
+            .lines()
+            .any(|l| l.trim().starts_with("welcome_image_cycle_secs =")),
+        "an untouched interval must not be pinned into the file: {saved}"
+    );
+    assert!(
+        !saved
+            .lines()
+            .any(|l| l.trim().starts_with("welcome_image_shuffle =")),
+        "an untouched shuffle must not be pinned into the file: {saved}"
+    );
+}
+
 /// Cancel discards the draft: no file is written and the manager's own
 /// toolbar setting is untouched.
 #[test]

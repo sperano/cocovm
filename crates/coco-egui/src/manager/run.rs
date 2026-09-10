@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::{machine_def, photo_view};
+use crate::machine_def;
 
 use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
 
@@ -25,6 +25,12 @@ pub fn run(
         toolbar_icons_only_overridden,
         status_bar_icons_only,
         status_bar_icons_only_overridden,
+        welcome_image_cycle,
+        welcome_image_cycle_overridden,
+        welcome_image_cycle_secs,
+        welcome_image_cycle_secs_overridden,
+        welcome_image_shuffle,
+        welcome_image_shuffle_overridden,
         ..
     } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
@@ -67,18 +73,21 @@ pub fn run(
                 renderer: crate::renderer_info(creation),
             });
             let control = control::bind_control(control_port, &creation.egui_ctx);
-            let mut app = ManagerApp::new(
-                photo_view::random(),
-                machines_dir,
-                artifacts_root,
-                entries,
-                control,
-            );
+            let mut app = ManagerApp::new(None, machines_dir, artifacts_root, entries, control);
             app.toolbar_icons_only = toolbar_icons_only;
             app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
             app.control_port_overridden = control_port_overridden;
             app.status_bar_icons_only = status_bar_icons_only;
             app.status_bar_icons_only_overridden = status_bar_icons_only_overridden;
+            let welcome = &mut app.welcome_image;
+            welcome.images_dir = crate::paths::images_dir();
+            welcome.cycle = welcome_image_cycle;
+            welcome.cycle_overridden = welcome_image_cycle_overridden;
+            welcome.cycle_secs = welcome_image_cycle_secs;
+            welcome.cycle_secs_overridden = welcome_image_cycle_secs_overridden;
+            welcome.shuffle = welcome_image_shuffle;
+            welcome.shuffle_overridden = welcome_image_shuffle_overridden;
+            welcome.load_random();
             app.config_path = config_path;
             app.log_reload = Some(log_reload);
             app.log_level_overridden = log_level_overridden;

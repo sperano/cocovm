@@ -10,6 +10,8 @@ use eframe::egui;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::{EnvFilter, Registry, reload};
 
+use std::num::NonZeroU32;
+
 use super::SettingsDialog;
 use crate::cli::LogLevel;
 use crate::config::FileConfig;
@@ -31,6 +33,9 @@ fn non_default_values_round_trip() {
         assets_url: Some("https://example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(true),
         status_bar_icons_only: Some(true),
+        welcome_image_cycle: Some(true),
+        welcome_image_cycle_secs: NonZeroU32::new(7),
+        welcome_image_shuffle: Some(true),
     };
     let dialog = SettingsDialog::from_file(
         FileConfig {
@@ -39,10 +44,20 @@ fn non_default_values_round_trip() {
             assets_url: file.assets_url.clone(),
             toolbar_icons_only: file.toolbar_icons_only,
             status_bar_icons_only: file.status_bar_icons_only,
+            welcome_image_cycle: file.welcome_image_cycle,
+            welcome_image_cycle_secs: file.welcome_image_cycle_secs,
+            welcome_image_shuffle: file.welcome_image_shuffle,
         },
         None,
     );
     assert_eq!(dialog.to_file_config(), file);
+}
+
+#[test]
+fn a_zeroed_shuffle_interval_draft_collapses_to_the_default() {
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog.welcome_image_cycle_secs = 0;
+    assert_eq!(dialog.to_file_config().welcome_image_cycle_secs, None);
 }
 
 #[test]

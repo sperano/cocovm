@@ -4,6 +4,7 @@
 //! goes through [`config::save_file`], which preserves the file's comments
 //! and any hand-added keys.
 
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use clap::ValueEnum;
@@ -21,6 +22,10 @@ const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
 /// Width of the `assets_url` text field.
 const ASSETS_URL_WIDTH: f32 = 360.0;
 
+/// `welcome_image_cycle_secs`'s DragValue range: the config key is
+/// `NonZeroU32`, so the draft can never hold a zero.
+const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
+
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
 pub(crate) struct SettingsDialog {
@@ -32,6 +37,11 @@ pub(crate) struct SettingsDialog {
     assets_url: String,
     toolbar_icons_only: bool,
     status_bar_icons_only: bool,
+    welcome_image_cycle: bool,
+    /// Plain `u32` so `DragValue` can edit it; [`WELCOME_IMAGE_CYCLE_SECS_RANGE`]
+    /// keeps it nonzero.
+    welcome_image_cycle_secs: u32,
+    welcome_image_shuffle: bool,
     error: Option<String>,
 }
 
@@ -69,6 +79,16 @@ impl SettingsDialog {
             status_bar_icons_only: file
                 .status_bar_icons_only
                 .unwrap_or(config::DEFAULT_STATUS_BAR_ICONS_ONLY),
+            welcome_image_cycle: file
+                .welcome_image_cycle
+                .unwrap_or(config::DEFAULT_WELCOME_IMAGE_CYCLE),
+            welcome_image_cycle_secs: file
+                .welcome_image_cycle_secs
+                .unwrap_or(config::DEFAULT_WELCOME_IMAGE_CYCLE_SECS)
+                .get(),
+            welcome_image_shuffle: file
+                .welcome_image_shuffle
+                .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
             error,
         }
     }
@@ -90,11 +110,18 @@ impl SettingsDialog {
             status_bar_icons_only: (self.status_bar_icons_only
                 != config::DEFAULT_STATUS_BAR_ICONS_ONLY)
                 .then_some(self.status_bar_icons_only),
+            welcome_image_cycle: (self.welcome_image_cycle != config::DEFAULT_WELCOME_IMAGE_CYCLE)
+                .then_some(self.welcome_image_cycle),
+            welcome_image_cycle_secs: NonZeroU32::new(self.welcome_image_cycle_secs)
+                .filter(|secs| *secs != config::DEFAULT_WELCOME_IMAGE_CYCLE_SECS),
+            welcome_image_shuffle: (self.welcome_image_shuffle
+                != config::DEFAULT_WELCOME_IMAGE_SHUFFLE)
+                .then_some(self.welcome_image_shuffle),
         }
     }
 
-    /// The modal's contents: the five fields, any error
-    /// from the last load/save, and the Save/Cancel row.
+    /// The modal's contents: the fields, any error from the last
+    /// load/save, and the Save/Cancel row.
     fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
         ui.heading("Settings");
         ui.add_space(DETAIL_SECTION_GAP);
@@ -131,6 +158,19 @@ impl SettingsDialog {
         ui.add_space(DETAIL_SECTION_GAP);
         ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
         ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.welcome_image_cycle, "Change welcome image every");
+            ui.add_enabled(
+                self.welcome_image_cycle,
+                egui::DragValue::new(&mut self.welcome_image_cycle_secs)
+                    .range(WELCOME_IMAGE_CYCLE_SECS_RANGE)
+                    .suffix(" s"),
+            );
+        });
+        ui.add_enabled(
+            self.welcome_image_cycle,
+            egui::Checkbox::new(&mut self.welcome_image_shuffle, "Shuffle welcome images"),
+        );
 
         if let Some(err) = &self.error {
             ui.colored_label(ui.visuals().error_fg_color, err);
@@ -181,15 +221,15 @@ impl ManagerApp {
     }
 
     /// Saves the draft and closes the dialog; applies the icons-only toggles,
-    /// `log_level` and `control_port` live unless a CLI/env override wins. A
-    /// failure shows in the dialog, which stays open with the old listener.
+    /// the welcome-image cycle, `log_level` and `control_port` live unless a
+    /// CLI/env override wins. A failure shows in the dialog, which stays open
+    /// with the old listener.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &self.settings else {
             return;
         };
         let file = dialog.to_file_config();
-        let (toolbar_icons_only, status_bar_icons_only) =
-            (dialog.toolbar_icons_only, dialog.status_bar_icons_only);
+        let live = LiveSettings::from_dialog(dialog);
         let log_level = (!self.log_level_overridden).then_some(dialog.log_level);
         let port_change = (dialog.control_port != dialog.opened_control_port
             && !self.control_port_overridden)
@@ -199,12 +239,7 @@ impl ManagerApp {
             None => Err(NO_CONFIG_DIR.to_string()),
         }
         .and_then(|()| {
-            if !self.toolbar_icons_only_overridden {
-                self.toolbar_icons_only = toolbar_icons_only;
-            }
-            if !self.status_bar_icons_only_overridden {
-                self.status_bar_icons_only = status_bar_icons_only;
-            }
+            self.apply_live_settings(&live);
             if let Some(level) = log_level {
                 self.relevel_logging(level)?;
             }
@@ -232,6 +267,54 @@ impl ManagerApp {
         handle
             .reload(crate::startup::log_filter(level.into()))
             .map_err(|e| format!("could not change the log level: {e}"))
+    }
+
+    /// The settings that take effect without a restart, skipping any the
+    /// CLI/env overrode. Re-arms the welcome-image timer so a new interval
+    /// counts from now rather than from the old deadline.
+    fn apply_live_settings(&mut self, live: &LiveSettings) {
+        if !self.toolbar_icons_only_overridden {
+            self.toolbar_icons_only = live.toolbar_icons_only;
+        }
+        if !self.status_bar_icons_only_overridden {
+            self.status_bar_icons_only = live.status_bar_icons_only;
+        }
+        let welcome = &mut self.welcome_image;
+        if !welcome.cycle_overridden {
+            welcome.cycle = live.welcome_image_cycle;
+        }
+        if !welcome.cycle_secs_overridden
+            && let Some(secs) = live.welcome_image_cycle_secs
+        {
+            welcome.cycle_secs = secs;
+        }
+        if !welcome.shuffle_overridden {
+            welcome.shuffle = live.welcome_image_shuffle;
+        }
+        welcome.rearm();
+    }
+}
+
+/// The draft values [`ManagerApp::apply_live_settings`] copies onto the
+/// manager, read out of the dialog before the save borrows `self`.
+struct LiveSettings {
+    toolbar_icons_only: bool,
+    status_bar_icons_only: bool,
+    welcome_image_cycle: bool,
+    /// `None` only for a zero draft, which the DragValue range never produces.
+    welcome_image_cycle_secs: Option<NonZeroU32>,
+    welcome_image_shuffle: bool,
+}
+
+impl LiveSettings {
+    fn from_dialog(dialog: &SettingsDialog) -> Self {
+        Self {
+            toolbar_icons_only: dialog.toolbar_icons_only,
+            status_bar_icons_only: dialog.status_bar_icons_only,
+            welcome_image_cycle: dialog.welcome_image_cycle,
+            welcome_image_cycle_secs: NonZeroU32::new(dialog.welcome_image_cycle_secs),
+            welcome_image_shuffle: dialog.welcome_image_shuffle,
+        }
     }
 }
 

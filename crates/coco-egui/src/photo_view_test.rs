@@ -15,7 +15,7 @@ fn random_from_dir_picks_and_decodes_an_image() {
     // AppleDouble sidecar: right extension, but hidden and not a PNG.
     std::fs::write(dir.join("._page-1.png"), b"AppleDouble junk").unwrap();
 
-    let photo = random_from_dir(&dir).expect("an image exists, so a photo is decoded");
+    let photo = random_from_dir(&dir, None).expect("an image exists, so a photo is decoded");
     assert_eq!(photo.title, "page-1");
     assert_eq!(photo.pixels.size, [4, 6]);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -25,8 +25,58 @@ fn random_from_dir_picks_and_decodes_an_image() {
 fn random_from_dir_yields_none_when_no_images() {
     let dir = std::env::temp_dir().join("coco-photo-view-test-empty");
     std::fs::create_dir_all(&dir).unwrap();
-    assert!(random_from_dir(&dir).is_none());
+    assert!(random_from_dir(&dir, None).is_none());
     std::fs::remove_dir_all(&dir).unwrap();
 
-    assert!(random_from_dir(Path::new("/nonexistent-dir")).is_none());
+    assert!(random_from_dir(Path::new("/nonexistent-dir"), None).is_none());
+}
+
+#[test]
+fn random_from_dir_skips_the_excluded_title_when_another_image_exists() {
+    let dir = std::env::temp_dir().join("coco-photo-view-test-exclude");
+    std::fs::create_dir_all(&dir).unwrap();
+    write_test_png(&dir.join("page-1.png"), 4, 6);
+    write_test_png(&dir.join("page-2.png"), 4, 6);
+
+    for _ in 0..8 {
+        let photo = random_from_dir(&dir, Some("page-1")).expect("page-2 remains");
+        assert_eq!(photo.title, "page-2");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn random_from_dir_keeps_the_only_image_even_when_excluded() {
+    let dir = std::env::temp_dir().join("coco-photo-view-test-exclude-only");
+    std::fs::create_dir_all(&dir).unwrap();
+    write_test_png(&dir.join("page-1.png"), 4, 6);
+
+    let photo = random_from_dir(&dir, Some("page-1")).expect("the only image still shows");
+    assert_eq!(photo.title, "page-1");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn next_in_dir_follows_file_name_order_and_wraps() {
+    let dir = std::env::temp_dir().join("coco-photo-view-test-next");
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in ["page-1.png", "page-2.png", "page-3.png"] {
+        write_test_png(&dir.join(name), 4, 6);
+    }
+
+    let next = |current: Option<&str>| next_in_dir(&dir, current).map(|p| p.title);
+    assert_eq!(next(None).as_deref(), Some("page-1"));
+    assert_eq!(next(Some("page-1")).as_deref(), Some("page-2"));
+    assert_eq!(next(Some("page-3")).as_deref(), Some("page-1"));
+    assert_eq!(
+        next(Some("gone")).as_deref(),
+        Some("page-1"),
+        "an unknown current image restarts from the first"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn next_in_dir_yields_none_when_no_images() {
+    assert!(next_in_dir(Path::new("/nonexistent-dir"), None).is_none());
 }

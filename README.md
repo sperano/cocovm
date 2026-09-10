@@ -43,6 +43,15 @@ toolbar_icons_only = false
 
 # draw every iconed VM status-bar entry as icon-only, readout moved into hover text (default: false)
 status_bar_icons_only = false
+
+# change the manager's welcome image on a timer (default: false)
+welcome_image_cycle = false
+
+# seconds between welcome-image changes, at least 1; only read while welcome_image_cycle is true (default: 30)
+welcome_image_cycle_secs = 30
+
+# pick each next welcome image at random instead of in file-name order; only read while welcome_image_cycle is true (default: false)
+welcome_image_shuffle = false
 ```
 
 ## Driving a VM from an AI (MCP)
