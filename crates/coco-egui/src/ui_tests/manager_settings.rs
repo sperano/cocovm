@@ -98,13 +98,13 @@ fn open_vm_entry() -> manager::MachineEntry {
     entry
 }
 
-/// The first entry's open VM window's `toolbar_icons_only`.
-fn vm_icons_only(harness: &ManagerHarness) -> bool {
-    harness.state().entries[0]
+/// The first entry's open VM window's `(toolbar_icons_only, status_bar_icons_only)`.
+fn vm_icons_only(harness: &ManagerHarness) -> (bool, bool) {
+    let vm = harness.state().entries[0]
         .vm
         .as_ref()
-        .expect("the VM stays open")
-        .toolbar_icons_only
+        .expect("the VM stays open");
+    (vm.toolbar_icons_only, vm.status_bar_icons_only)
 }
 
 /// Save pushes `toolbar_icons_only` to every VM window that is already
@@ -115,27 +115,60 @@ fn save_applies_the_toggle_to_open_vm_windows() {
     let mut harness = settings_harness_with(dir.path().join("config.toml"), |app| {
         app.entries.push(open_vm_entry());
     });
-    assert!(!vm_icons_only(&harness));
+    assert_eq!(vm_icons_only(&harness), (false, false));
 
     click(&mut harness, "Settings");
     click(&mut harness, "Toolbar icons only");
     click(&mut harness, "Save");
 
-    assert!(
+    assert_eq!(
         vm_icons_only(&harness),
+        (true, false),
         "Save must apply the toggle to VM windows that are already open"
     );
 }
 
-/// When a CLI flag or env var supplied `toolbar_icons_only`, Save leaves
-/// the manager and open VM windows on the override; only the file changes.
+/// `status_bar_icons_only`'s Save path: the key lands in `config.toml`, and
+/// the manager's copy and every open VM window's status bar flip immediately.
 #[test]
-fn save_keeps_a_cli_env_toolbar_override_until_restart() {
+fn save_applies_the_status_bar_toggle_to_open_vm_windows() {
+    let dir = TempDir::new("settings-save-status-bar");
+    let config_path = dir.path().join("config.toml");
+    let mut harness = settings_harness_with(config_path.clone(), |app| {
+        app.entries.push(open_vm_entry());
+    });
+    assert!(!harness.state().status_bar_icons_only);
+
+    click(&mut harness, "Settings");
+    click(&mut harness, "Status bar icons only");
+    click(&mut harness, "Save");
+
+    assert!(harness.state().status_bar_icons_only);
+    assert_eq!(
+        vm_icons_only(&harness),
+        (false, true),
+        "Save must apply the toggle to VM windows that are already open"
+    );
+    let saved = std::fs::read_to_string(&config_path).expect("save_file must create the file");
+    assert!(
+        saved
+            .lines()
+            .any(|l| l.trim() == "status_bar_icons_only = true"),
+        "config.toml must contain the saved key: {saved}"
+    );
+}
+
+/// When a CLI flag or env var supplied either icons-only toggle, Save
+/// leaves the manager and open VM windows on the override; only the file changes.
+#[test]
+fn save_keeps_a_cli_env_icons_only_override_until_restart() {
     let dir = TempDir::new("settings-override");
     let config_path = dir.path().join("config.toml");
     let mut harness = settings_harness_with(config_path.clone(), |app| {
         app.toolbar_icons_only = true;
         app.toolbar_icons_only_overridden = true;
+        app.status_bar_icons_only = true;
+        app.status_bar_icons_only_overridden = true;
         app.entries.push(open_vm_entry());
     });
 
@@ -147,8 +180,13 @@ fn save_keeps_a_cli_env_toolbar_override_until_restart() {
         "Save must not clobber a CLI/env toolbar_icons_only override"
     );
     assert!(
+        harness.state().status_bar_icons_only,
+        "Save must not clobber a CLI/env status_bar_icons_only override"
+    );
+    assert_eq!(
         vm_icons_only(&harness),
-        "an open VM window must keep the CLI/env override too"
+        (true, true),
+        "an open VM window must keep the CLI/env overrides too"
     );
     let saved = std::fs::read_to_string(&config_path).expect("save_file must create the file");
     assert!(

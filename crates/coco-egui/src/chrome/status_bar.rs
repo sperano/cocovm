@@ -9,9 +9,12 @@ const SUSPENDED_STATUS_HOVER: &str =
     "Frozen to disk — press Start to resume, or close the window to keep it suspended";
 
 impl CocoApp {
-    /// The status bar: live readouts, plus the four entries that double as control menus.
+    /// The status bar: live readouts, plus the five entries that double as control menus.
     /// Height is pinned to [`STATUS_BAR_H`] to match what the window-sizing math reserves for it.
     /// While suspended the readouts draw disabled (no popups) under a "Suspended" marker.
+    /// Under `status_bar_icons_only` (`config.rs`) each iconed entry drops its readout into
+    /// hover text ([`readout`], [`menu_entry`]); the icon-less Suspended marker, toast and
+    /// runtime readout are unaffected.
     pub(crate) fn status_bar_ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar")
             .exact_height(STATUS_BAR_H)
@@ -57,7 +60,7 @@ impl CocoApp {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Keyboard menu")
         });
         let mode = self.kb_mode.label();
-        let entry = (icon | ui.add(egui::Button::new(mode).frame(false))).on_hover_text(format!(
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, mode).on_hover_text(format!(
             "Keyboard input mode: {mode} — click for the keyboard menu (F12 toggles)"
         ));
         egui::Popup::menu(&entry)
@@ -80,11 +83,16 @@ impl CocoApp {
         icon.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Display menu")
         });
-        let entry = (icon | ui.add(egui::Button::new(self.display.short_label()).frame(false)))
-            .on_hover_text(format!(
-                "Display: {} — click for the display menu",
-                self.display.label()
-            ));
+        let entry = menu_entry(
+            ui,
+            self.status_bar_icons_only,
+            icon,
+            self.display.short_label(),
+        )
+        .on_hover_text(format!(
+            "Display: {} — click for the display menu",
+            self.display.label()
+        ));
         egui::Popup::menu(&entry)
             .id(ui.id().with("display_menu"))
             .align(egui::RectAlign::TOP_START)
@@ -94,8 +102,9 @@ impl CocoApp {
     fn cart_status(&self, ui: &mut egui::Ui) {
         let Some(path) = &self.cart_path else { return };
         ui.separator();
-        cart_icon(ui).on_hover_text("Cartridge ROM pak");
-        ui.label(format!("Cart: {}", file_name(path)));
+        let label = format!("Cart: {}", file_name(path));
+        let icon = cart_icon(ui);
+        readout(ui, self.status_bar_icons_only, icon, label).on_hover_text("Cartridge ROM pak");
     }
 
     /// The joysticks entry, built like [`Self::keyboard_status`]: icon lights while either
@@ -132,7 +141,7 @@ impl CocoApp {
                 source.label().to_string()
             }
         };
-        let entry = (icon | ui.add(egui::Button::new(label).frame(false))).on_hover_text(format!(
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, label).on_hover_text(format!(
             "Joysticks — right: {}, left: {} — click for the joysticks menu",
             port_hover(RIGHT),
             port_hover(LEFT)
@@ -155,21 +164,24 @@ impl CocoApp {
         let tx_active = self.activity.rs232_tx.observe(tx);
         let rx_active = self.activity.rs232_rx.observe(rx);
         ui.separator();
-        rs232_icon(ui, tx_active || rx_active).on_hover_text("RS-232 — byte sent or received");
-        ui.label(format!("RS-232 [{}] ↑{tx} ↓{rx}", endpoint.label()));
+        let label = format!("RS-232 [{}] ↑{tx} ↓{rx}", endpoint.label());
+        let icon = rs232_icon(ui, tx_active || rx_active);
+        readout(ui, self.status_bar_icons_only, icon, label)
+            .on_hover_text("RS-232 — byte sent or received");
     }
 
     fn mpi_status(&self, ui: &mut egui::Ui) {
         let Some(mpi) = &self.mpi else { return };
         ui.separator();
-        mpi_icon(ui).on_hover_text("Multi-Pak Interface");
         let slots: Vec<String> = mpi
             .slots
             .iter()
             .enumerate()
             .map(|(i, slot)| format!("S{}:{}", i + 1, slot_label(slot)))
             .collect();
-        ui.label(format!("MPI [{}]", slots.join(" ")));
+        let label = format!("MPI [{}]", slots.join(" "));
+        let icon = mpi_icon(ui);
+        readout(ui, self.status_bar_icons_only, icon, label).on_hover_text("Multi-Pak Interface");
     }
 
     fn disk_status(&mut self, ui: &mut egui::Ui) {
@@ -192,12 +204,10 @@ impl CocoApp {
                 .as_disk_cart()
                 .is_some_and(|c| c.drive_active(drive));
             ui.separator();
-            floppy_icon(ui, active).on_hover_text(format!("Drive {drive} — motor on"));
-            ui.label(format!(
-                "D{drive}: {}{}",
-                file_name(path),
-                dirty_mark(dirty)
-            ));
+            let label = format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty));
+            let icon = floppy_icon(ui, active);
+            readout(ui, self.status_bar_icons_only, icon, label)
+                .on_hover_text(format!("Drive {drive} — motor on"));
         }
     }
 
@@ -209,8 +219,10 @@ impl CocoApp {
             let count = self.machine.bus.vhd.access_count(drive);
             let active = self.activity.vhd[drive].observe(count);
             ui.separator();
-            vhd_icon(ui, active).on_hover_text(format!("VHD drive {drive} — sector I/O"));
-            ui.label(format!("VHD{drive}: {}", file_name(path)));
+            let label = format!("VHD{drive}: {}", file_name(path));
+            let icon = vhd_icon(ui, active);
+            readout(ui, self.status_bar_icons_only, icon, label)
+                .on_hover_text(format!("VHD drive {drive} — sector I/O"));
         }
     }
 
@@ -225,13 +237,14 @@ impl CocoApp {
             let count = dw.drive_ops(drive);
             let active = self.activity.dw[drive].observe(count);
             ui.separator();
-            drivewire_icon(ui, active)
-                .on_hover_text(format!("DriveWire drive {drive} — sector I/O"));
-            ui.label(format!(
+            let label = format!(
                 "DW{drive}: {}{}",
                 file_name(path),
                 dirty_mark(dw.dirty(drive))
-            ));
+            );
+            let icon = drivewire_icon(ui, active);
+            readout(ui, self.status_bar_icons_only, icon, label)
+                .on_hover_text(format!("DriveWire drive {drive} — sector I/O"));
         }
     }
 
@@ -255,7 +268,7 @@ impl CocoApp {
             Some(path) => format!("{} [{pos}/{len}]", file_name(path)),
             None => "No tape".to_string(),
         };
-        let entry = (icon | ui.add(egui::Button::new(label).frame(false))).on_hover_text(format!(
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, label).on_hover_text(format!(
             "Cassette deck: {} — click for the tape menu",
             self.tape_path.as_deref().map_or("no tape", file_name)
         ));
@@ -293,7 +306,7 @@ impl CocoApp {
             Some(name) => format!("Printer: {name}"),
             None => "Printer".to_string(),
         };
-        let entry = (icon | ui.add(egui::Button::new(label_text).frame(false)))
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, label_text)
             .on_hover_text("Printer — byte sent on the serial port — click for menu");
         egui::Popup::menu(&entry)
             .id(ui.id().with("printer_menu"))
@@ -311,6 +324,51 @@ impl CocoApp {
         ))
         .on_hover_text("Total powered-on time, all sessions");
     }
+}
+
+/// A passive entry's readout after its `icon`: drawn as a label, or under `icons_only`
+/// folded into `icon`'s hover text and accessible name instead. Returns `icon` so the
+/// caller's own hover text stacks after the readout, like `widgets::toolbar_button`.
+fn readout(
+    ui: &mut egui::Ui,
+    icons_only: bool,
+    icon: egui::Response,
+    text: impl Into<String>,
+) -> egui::Response {
+    if icons_only {
+        let text = text.into();
+        // The bare icon has no accessible name of its own (`status_icons::paint`).
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), text.clone())
+        });
+        return hover_text_even_disabled(icon, text);
+    }
+    ui.label(text.into());
+    icon
+}
+
+/// A menu entry's readout after its `icon`: a frameless button unioned with `icon` so
+/// both halves open the menu, or under `icons_only` a hover text on `icon` alone — which
+/// stays the click target, keeping its own accessible name (the menu, not the text).
+fn menu_entry(
+    ui: &mut egui::Ui,
+    icons_only: bool,
+    icon: egui::Response,
+    text: impl Into<String>,
+) -> egui::Response {
+    if icons_only {
+        return hover_text_even_disabled(icon, text.into());
+    }
+    icon | ui.add(egui::Button::new(text.into()).frame(false))
+}
+
+/// `text` as `response`'s tooltip in both the enabled and the disabled state: a
+/// suspended machine's bar is disabled (`status_bar_ui`), and in icons-only mode the
+/// tooltip is the readout's only remaining carrier.
+fn hover_text_even_disabled(response: egui::Response, text: String) -> egui::Response {
+    response
+        .on_hover_text(text.clone())
+        .on_disabled_hover_text(text)
 }
 
 /// The file name of a mounted image, for the one-line status readout.
