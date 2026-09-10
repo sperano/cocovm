@@ -46,7 +46,7 @@ pub(crate) struct Cli {
     )]
     pub(crate) toolbar_icons_only: Option<bool>,
 
-    /// Draw every VM status-bar entry as its icon alone, with the readout
+    /// Draw every iconed VM status-bar entry as its icon alone, with the readout
     /// moved into the hover text. Same flag grammar as `--toolbar-icons-only`.
     #[arg(
         long,

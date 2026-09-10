@@ -327,8 +327,8 @@ impl CocoApp {
 }
 
 /// A passive entry's readout after its `icon`: drawn as a label, or under `icons_only`
-/// folded into `icon`'s hover text instead — stacked ahead of the caller's own hover
-/// text, like `widgets::toolbar_button`. Returns `icon` for that chaining.
+/// folded into `icon`'s hover text and accessible name instead. Returns `icon` so the
+/// caller's own hover text stacks after the readout, like `widgets::toolbar_button`.
 fn readout(
     ui: &mut egui::Ui,
     icons_only: bool,
@@ -336,15 +336,20 @@ fn readout(
     text: impl Into<String>,
 ) -> egui::Response {
     if icons_only {
-        return icon.on_hover_text(text.into());
+        let text = text.into();
+        // The bare icon has no accessible name of its own (`status_icons::paint`).
+        icon.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), text.clone())
+        });
+        return hover_text_even_disabled(icon, text);
     }
     ui.label(text.into());
     icon
 }
 
 /// A menu entry's readout after its `icon`: a frameless button unioned with `icon` so
-/// both halves open the menu, or under `icons_only` the [`readout`] treatment — the
-/// icon alone stays the click target (its accessible name is the menu, not the text).
+/// both halves open the menu, or under `icons_only` a hover text on `icon` alone — which
+/// stays the click target, keeping its own accessible name (the menu, not the text).
 fn menu_entry(
     ui: &mut egui::Ui,
     icons_only: bool,
@@ -352,9 +357,18 @@ fn menu_entry(
     text: impl Into<String>,
 ) -> egui::Response {
     if icons_only {
-        return icon.on_hover_text(text.into());
+        return hover_text_even_disabled(icon, text.into());
     }
     icon | ui.add(egui::Button::new(text.into()).frame(false))
+}
+
+/// `text` as `response`'s tooltip in both the enabled and the disabled state: a
+/// suspended machine's bar is disabled (`status_bar_ui`), and in icons-only mode the
+/// tooltip is the readout's only remaining carrier.
+fn hover_text_even_disabled(response: egui::Response, text: String) -> egui::Response {
+    response
+        .on_hover_text(text.clone())
+        .on_disabled_hover_text(text)
 }
 
 /// The file name of a mounted image, for the one-line status readout.

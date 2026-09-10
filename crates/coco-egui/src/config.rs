@@ -134,7 +134,7 @@ fn default_config_template() -> String {
 # draw every toolbar as icon-only, caption moved into hover text
 # toolbar_icons_only = {toolbar_icons_only}
 
-# draw every VM status-bar entry as icon-only, readout moved into hover text
+# draw every iconed VM status-bar entry as icon-only, readout moved into hover text
 # status_bar_icons_only = {status_bar_icons_only}
 ",
         control_port = crate::control::DEFAULT_PORT,

@@ -41,7 +41,7 @@ assets_url = "https://assets.spe.quebec/cocovm-assets-v3.tgz"
 # draw every toolbar as icon-only, caption moved into hover text (default: false)
 toolbar_icons_only = false
 
-# draw every VM status-bar entry as icon-only, readout moved into hover text (default: false)
+# draw every iconed VM status-bar entry as icon-only, readout moved into hover text (default: false)
 status_bar_icons_only = false
 ```
 
