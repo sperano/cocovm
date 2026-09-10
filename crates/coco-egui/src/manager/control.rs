@@ -127,13 +127,13 @@ impl ManagerApp {
     }
 
     /// Move the listener to `port` for a Settings save: a no-op when already
-    /// there, otherwise drops the old listener (its open connections finish
-    /// on their own) before binding the new one, so `Err` leaves no listener.
+    /// there. Binds the new port before the assignment drops the old
+    /// listener, so an `Err` keeps the old one serving (its open connections
+    /// finish on their own either way).
     pub(super) fn rebind_control(&mut self, port: u16, ctx: &egui::Context) -> Result<(), String> {
         if port == self.control_port() {
             return Ok(());
         }
-        self.control = None;
         self.control = try_bind_control(port, ctx)?;
         Ok(())
     }

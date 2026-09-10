@@ -128,13 +128,14 @@ fn commit_leaves_a_cli_env_port_override_alone() {
 }
 
 /// A port already in use: the file is saved, but the dialog stays open
-/// naming the bind failure, and no listener is left behind.
+/// naming the bind failure, and the old listener keeps serving.
 #[test]
 fn commit_reports_a_bind_failure_in_the_dialog() {
     let dir = TempDir::new("settings-port-taken");
     let taken = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind ephemeral port");
     let port = taken.local_addr().expect("local addr").port();
     let mut manager = manager_with_listener(&dir, port);
+    let before = manager.control_port();
 
     manager.commit_settings(&egui::Context::default());
 
@@ -144,7 +145,11 @@ fn commit_reports_a_bind_failure_in_the_dialog() {
         .as_deref()
         .expect("dialog must show the bind error");
     assert!(error.contains(&port.to_string()), "{error}");
-    assert!(manager.control.is_none());
+    assert_eq!(
+        manager.control_port(),
+        before,
+        "the old listener must survive"
+    );
     assert!(
         dir.path().join("config.toml").is_file(),
         "the file is saved before the rebind is attempted"

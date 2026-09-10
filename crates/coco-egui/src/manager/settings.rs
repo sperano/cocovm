@@ -23,8 +23,9 @@ const ASSETS_URL_WIDTH: f32 = 360.0;
 
 /// Hint line under the fields: which changes are immediate and which need a
 /// restart, and that CLI/env overrides still win.
-const RESTART_HINT: &str = "Log level and assets URL take effect the next time cocovm starts. \
-     A command-line flag or environment variable for any of these still overrides this file.";
+const RESTART_HINT: &str = "Log level and assets URL take effect the next time cocovm starts; \
+     the control port moves as soon as you save. A command-line flag or environment variable for \
+     any of these still overrides this file.";
 
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
@@ -183,7 +184,7 @@ impl ManagerApp {
     /// Saves the draft to [`ManagerApp::config_path`] and closes the dialog;
     /// applies `toolbar_icons_only` and `control_port` live unless a CLI/env
     /// override is active. A failure (write or bind) shows in the dialog and
-    /// leaves it open.
+    /// leaves it open; a failed bind keeps the old listener serving.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &self.settings else {
             return;
