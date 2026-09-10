@@ -40,6 +40,9 @@ pub(crate) struct FileConfig {
 pub(crate) struct Config {
     pub(crate) log_level: LogLevel,
     pub(crate) control_port: u16,
+    /// True when a CLI flag or env var supplied `control_port`; the Settings
+    /// dialog then leaves the live listener alone on save.
+    pub(crate) control_port_overridden: bool,
     pub(crate) assets_url: String,
     pub(crate) toolbar_icons_only: bool,
     /// True when a CLI flag or env var supplied `toolbar_icons_only`; the
@@ -72,6 +75,7 @@ fn read(path: &Path) -> Result<FileConfig, String> {
 /// folding in clap's own env fallback — see `cli.rs`'s struct doc) beats the
 /// file value, which beats the built-in default.
 pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
+    let control_port_overridden = cli.control_port.is_some();
     let toolbar_icons_only_overridden = cli.toolbar_icons_only.is_some();
     Config {
         log_level: cli
@@ -82,6 +86,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .control_port
             .or(file.control_port)
             .unwrap_or(crate::control::DEFAULT_PORT),
+        control_port_overridden,
         assets_url: cli
             .assets_url
             .or(file.assets_url)

@@ -16,6 +16,7 @@ pub fn run(
 ) -> eframe::Result<()> {
     let crate::config::Config {
         control_port,
+        control_port_overridden,
         assets_url,
         toolbar_icons_only,
         toolbar_icons_only_overridden,
@@ -70,6 +71,7 @@ pub fn run(
             );
             app.toolbar_icons_only = toolbar_icons_only;
             app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
+            app.control_port_overridden = control_port_overridden;
             app.config_path = config_path;
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));

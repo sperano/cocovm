@@ -23,15 +23,17 @@ const ASSETS_URL_WIDTH: f32 = 360.0;
 
 /// Hint line under the fields: which changes are immediate and which need a
 /// restart, and that CLI/env overrides still win.
-const RESTART_HINT: &str = "Log level, control port, and assets URL take effect the next time \
-     cocovm starts. A command-line flag or environment variable for any of these still overrides \
-     this file.";
+const RESTART_HINT: &str = "Log level and assets URL take effect the next time cocovm starts. \
+     A command-line flag or environment variable for any of these still overrides this file.";
 
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
 pub(crate) struct SettingsDialog {
     log_level: LogLevel,
     control_port: u16,
+    /// `control_port` as opened; Save only moves the listener when the user
+    /// changed it here, so an unrelated save never retries a failed bind.
+    opened_control_port: u16,
     assets_url: String,
     toolbar_icons_only: bool,
     error: Option<String>,
@@ -57,9 +59,11 @@ impl SettingsDialog {
     }
 
     fn from_file(file: FileConfig, error: Option<String>) -> Self {
+        let control_port = file.control_port.unwrap_or(crate::control::DEFAULT_PORT);
         Self {
             log_level: file.log_level.unwrap_or(config::DEFAULT_LOG_LEVEL),
-            control_port: file.control_port.unwrap_or(crate::control::DEFAULT_PORT),
+            control_port,
+            opened_control_port: control_port,
             assets_url: file
                 .assets_url
                 .unwrap_or_else(|| crate::startup::DEFAULT_ASSETS_URL.to_string()),
@@ -169,7 +173,7 @@ impl ManagerApp {
         match action {
             SettingsAction::None => {}
             SettingsAction::Cancel => self.settings = None,
-            SettingsAction::Save => self.commit_settings(),
+            SettingsAction::Save => self.commit_settings(ctx),
         }
         if modal.should_close() {
             self.settings = None;
@@ -177,25 +181,38 @@ impl ManagerApp {
     }
 
     /// Saves the draft to [`ManagerApp::config_path`] and closes the dialog;
-    /// applies `toolbar_icons_only` live unless a CLI/env override is active.
-    fn commit_settings(&mut self) {
-        let Some(path) = self.config_path.as_deref() else {
-            if let Some(dialog) = &mut self.settings {
-                dialog.error = Some(NO_CONFIG_DIR.to_string());
+    /// applies `toolbar_icons_only` and `control_port` live unless a CLI/env
+    /// override is active. A failure (write or bind) shows in the dialog and
+    /// leaves it open.
+    fn commit_settings(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = &self.settings else {
+            return;
+        };
+        let file = dialog.to_file_config();
+        let toolbar_icons_only = dialog.toolbar_icons_only;
+        let port_change = (dialog.control_port != dialog.opened_control_port
+            && !self.control_port_overridden)
+            .then_some(dialog.control_port);
+        let result = match self.config_path.as_deref() {
+            Some(path) => config::save_file(path, &file),
+            None => Err(NO_CONFIG_DIR.to_string()),
+        }
+        .and_then(|()| {
+            if !self.toolbar_icons_only_overridden {
+                self.toolbar_icons_only = toolbar_icons_only;
             }
-            return;
-        };
-        let Some(dialog) = &mut self.settings else {
-            return;
-        };
-        match config::save_file(path, &dialog.to_file_config()) {
-            Ok(()) => {
-                if !self.toolbar_icons_only_overridden {
-                    self.toolbar_icons_only = dialog.toolbar_icons_only;
+            match port_change {
+                Some(port) => self.rebind_control(port, ctx),
+                None => Ok(()),
+            }
+        });
+        match result {
+            Ok(()) => self.settings = None,
+            Err(e) => {
+                if let Some(dialog) = &mut self.settings {
+                    dialog.error = Some(e);
                 }
-                self.settings = None;
             }
-            Err(e) => dialog.error = Some(e),
         }
     }
 }

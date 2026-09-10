@@ -47,6 +47,7 @@ fn cli_flag_beats_file_and_default() {
     let config = resolve(cli, file);
     assert_eq!(config.log_level, LogLevel::Trace);
     assert_eq!(config.control_port, 1234);
+    assert!(config.control_port_overridden);
     assert_eq!(config.assets_url, "https://cli.example.test/bundle.tgz");
     assert!(config.toolbar_icons_only);
     assert!(config.toolbar_icons_only_overridden);
@@ -76,6 +77,7 @@ fn file_value_beats_built_in_default() {
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
     assert_eq!(config.control_port, 4242);
+    assert!(!config.control_port_overridden);
     assert_eq!(config.assets_url, "https://file.example.test/bundle.tgz");
     assert!(config.toolbar_icons_only);
     assert!(!config.toolbar_icons_only_overridden);
