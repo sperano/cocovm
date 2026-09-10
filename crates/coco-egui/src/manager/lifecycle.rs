@@ -84,6 +84,7 @@ impl ManagerApp {
         match crate::launch_machine(&self.entries[index].def, &self.entries[index].slug) {
             Ok(mut vm) => {
                 vm.toolbar_icons_only = self.toolbar_icons_only;
+                vm.status_bar_icons_only = self.status_bar_icons_only;
                 self.entries[index].vm = Some(Box::new(vm));
                 true
             }

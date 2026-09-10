@@ -18,6 +18,7 @@ fn non_default_values_round_trip() {
         control_port: Some(7002),
         assets_url: Some("https://example.test/bundle.tgz".to_string()),
         toolbar_icons_only: Some(true),
+        status_bar_icons_only: Some(true),
     };
     let dialog = SettingsDialog::from_file(
         FileConfig {
@@ -25,6 +26,7 @@ fn non_default_values_round_trip() {
             control_port: file.control_port,
             assets_url: file.assets_url.clone(),
             toolbar_icons_only: file.toolbar_icons_only,
+            status_bar_icons_only: file.status_bar_icons_only,
         },
         None,
     );

@@ -227,6 +227,10 @@ pub(crate) struct CocoApp {
     /// the returned `CocoApp` by `manager::lifecycle::launch_vm`, the same
     /// way `manager::run` sets `ManagerApp::asset_dialog` post-construction.
     pub(crate) toolbar_icons_only: bool,
+    /// `toolbar_icons_only`'s counterpart for the status bar
+    /// (`chrome::status_bar`): entries draw their icon alone, with the
+    /// readout moved into hover text. Plumbed the same way.
+    pub(crate) status_bar_icons_only: bool,
 }
 
 /// DriveWire launch settings — the payload of [`AppParams::drivewire`],
@@ -337,6 +341,7 @@ impl CocoApp {
             remote_joy: [None, None],
             fields_run: 0,
             toolbar_icons_only: false,
+            status_bar_icons_only: false,
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path, cart_autostart);

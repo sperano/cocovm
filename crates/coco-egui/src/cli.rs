@@ -3,7 +3,8 @@ use tracing_subscriber::filter::LevelFilter;
 
 /// The app's whole CLI surface: the manager window is always what runs (see
 /// `main.rs`). Besides the log level, the other flags are the control
-/// listener's port, the asset bundle's URL, and the toolbar's caption toggle.
+/// listener's port, the asset bundle's URL, and the toolbar and status-bar
+/// caption toggles.
 /// Every field is `Option`: `None` means "not given here", so `config::resolve`
 /// can fall through to `config.toml` and then the built-in default
 /// (`config.rs`'s precedence chain). clap's own `env` fallback already
@@ -44,6 +45,17 @@ pub(crate) struct Cli {
         value_parser = clap::builder::BoolishValueParser::new()
     )]
     pub(crate) toolbar_icons_only: Option<bool>,
+
+    /// Draw every VM status-bar entry as its icon alone, with the readout
+    /// moved into the hover text. Same flag grammar as `--toolbar-icons-only`.
+    #[arg(
+        long,
+        env = "COCOVM_STATUS_BAR_ICONS_ONLY",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    pub(crate) status_bar_icons_only: Option<bool>,
 }
 
 /// `--log-level`, the CLI's spelling of a [`LevelFilter`]. Also `config.toml`'s

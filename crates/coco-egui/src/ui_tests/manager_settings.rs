@@ -90,15 +90,41 @@ fn save_writes_the_toggled_value_and_reopening_shows_it() {
     );
 }
 
-/// When a CLI flag or env var supplied `toolbar_icons_only`, Save leaves
-/// the live toolbar on the override; only the file changes.
+/// `status_bar_icons_only`'s Save path: the key lands in `config.toml` and
+/// the manager's copy — what the next VM launch inherits
+/// (`manager/lifecycle.rs`) — flips immediately, like the toolbar toggle.
 #[test]
-fn save_keeps_a_cli_env_toolbar_override_until_restart() {
+fn save_applies_the_status_bar_toggle_to_the_next_launch() {
+    let dir = TempDir::new("settings-save-status-bar");
+    let config_path = dir.path().join("config.toml");
+    let mut harness = settings_harness(config_path.clone());
+    assert!(!harness.state().status_bar_icons_only);
+
+    click(&mut harness, "Settings");
+    click(&mut harness, "Status bar icons only");
+    click(&mut harness, "Save");
+
+    assert!(harness.state().status_bar_icons_only);
+    let saved = std::fs::read_to_string(&config_path).expect("save_file must create the file");
+    assert!(
+        saved
+            .lines()
+            .any(|l| l.trim() == "status_bar_icons_only = true"),
+        "config.toml must contain the saved key: {saved}"
+    );
+}
+
+/// When a CLI flag or env var supplied either icons-only toggle, Save
+/// leaves the live value on the override; only the file changes.
+#[test]
+fn save_keeps_a_cli_env_icons_only_override_until_restart() {
     let dir = TempDir::new("settings-override");
     let config_path = dir.path().join("config.toml");
     let mut harness = settings_harness_with(config_path.clone(), |app| {
         app.toolbar_icons_only = true;
         app.toolbar_icons_only_overridden = true;
+        app.status_bar_icons_only = true;
+        app.status_bar_icons_only_overridden = true;
     });
 
     click(&mut harness, "Settings");
@@ -107,6 +133,10 @@ fn save_keeps_a_cli_env_toolbar_override_until_restart() {
     assert!(
         harness.state().toolbar_icons_only,
         "Save must not clobber a CLI/env toolbar_icons_only override"
+    );
+    assert!(
+        harness.state().status_bar_icons_only,
+        "Save must not clobber a CLI/env status_bar_icons_only override"
     );
     let saved = std::fs::read_to_string(&config_path).expect("save_file must create the file");
     assert!(
