@@ -16,7 +16,7 @@
 //! Split by topic: [`harness`] holds the shared harness-construction and
 //! click/hover/combo-select interaction helpers every other module builds
 //! on; the rest are one topic apiece (the VM window's own dialogs/menus, its
-//! status-bar tape and joysticks entries/menus and icon-only mode, and the manager window's
+//! status-bar disk, tape and joysticks entries/menus and icon-only mode, and the manager window's
 //! scaffold/peripherals/lifecycle/settings).
 
 mod harness;
@@ -27,6 +27,7 @@ mod manager_roms;
 mod manager_selection;
 mod manager_settings;
 mod manager_window;
+mod vm_window_disks;
 mod vm_window_joysticks;
 mod vm_window_menus;
 mod vm_window_status_bar;
