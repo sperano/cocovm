@@ -169,6 +169,7 @@ fn log_reload_at_warn() -> Option<(
     crate::startup::LogReload,
 )> {
     if std::env::var_os("RUST_LOG").is_some() {
+        eprintln!("skipping log re-level test: RUST_LOG is set");
         return None;
     }
     Some(reload::Layer::new(crate::startup::log_filter(

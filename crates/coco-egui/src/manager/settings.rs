@@ -231,9 +231,7 @@ impl ManagerApp {
             }
         }
     }
-}
 
-impl ManagerApp {
     /// Swap the live log filter to `level` through [`ManagerApp::log_reload`];
     /// a no-op without one (tests).
     fn relevel_logging(&self, level: LogLevel) -> Result<(), String> {
