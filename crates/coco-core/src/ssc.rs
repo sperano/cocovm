@@ -109,11 +109,10 @@ pub struct FirmwareTraceEntry {
 #[derive(Serialize, Deserialize)]
 pub struct SoundSpeechCartridge {
     ay: AY8913,
-    /// `#[serde(default)]` (snapshot evolution rule 2, [`crate::snapshot`]):
-    /// a pre-field snapshot restores the chip in reset.
+    /// Defaults to a reset chip when omitted from the snapshot payload.
     #[serde(default)]
     sp0256: SP0256,
-    /// The microcontroller; a pre-field snapshot restores it with its reset
+    /// The microcontroller; an omitted field restores it with its reset
     /// pending, so the firmware boots on the first tick after reattachment.
     #[serde(default)]
     tms: TMS7040,

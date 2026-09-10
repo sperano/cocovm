@@ -13,11 +13,8 @@ pub enum SnapshotError {
     NotASnapshot,
     /// The container's own framing version isn't one this build understands.
     UnsupportedContainer { found: u8, supported: u8 },
-    /// The machine-tree schema is newer than this build knows how to read.
-    SchemaTooNew { found: u32, current: u32 },
-    /// The machine-tree schema is older than current, and no migration is
-    /// registered for it (see `super::migrate`).
-    NoMigration { found: u32, current: u32 },
+    /// The serialized machine schema isn't the one this build supports.
+    UnsupportedSchema { found: u32, supported: u32 },
     /// CBOR encoding failed (besides the dedicated
     /// [`SnapshotError::CustomCartNotSnapshotable`] case).
     Encode(String),
@@ -49,15 +46,9 @@ impl fmt::Display for SnapshotError {
                 f,
                 "unsupported save-state container version {found} (this build supports {supported})"
             ),
-            SnapshotError::SchemaTooNew { found, current } => write!(
+            SnapshotError::UnsupportedSchema { found, supported } => write!(
                 f,
-                "this save state was written by a newer version (schema {found}); this build \
-                 understands up to schema {current}"
-            ),
-            SnapshotError::NoMigration { found, current } => write!(
-                f,
-                "this save state is schema {found}; this build is schema {current} and has no \
-                 migration path from {found}"
+                "unsupported save-state schema {found} (this build supports {supported})"
             ),
             SnapshotError::Encode(msg) => write!(f, "failed to encode save state: {msg}"),
             SnapshotError::Decode(msg) => write!(f, "failed to decode save state: {msg}"),

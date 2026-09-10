@@ -4,14 +4,9 @@
 //!
 //! ## Compatibility
 //!
-//! Schema 2 changes printer coordinates and interpreter state. Schema 1
-//! snapshots are deliberately unsupported; no migration is provided.
-//! Within a schema, serialized fields retain their units and enum meanings.
-//! Additive fields must have defaults. Incompatible changes bump the schema
-//! and need an explicit compatibility decision.
-//!
-//! Golden fixtures verify deterministic continuation for supported schemas
-//! and explicit rejection of retired schemas.
+//! The snapshot format is in development and has no backward compatibility
+//! guarantee. Only the current schema is accepted; unreadable snapshots
+//! return a load error.
 //!
 //! ## Container format
 //!
@@ -20,11 +15,9 @@
 //! ```
 //!
 //! [`CONTAINER_VERSION`] is the container/header layout itself (this module's
-//! own framing); [`SCHEMA_VERSION`] is the *machine-tree* schema and is
-//! bumped only on a semantic break serde's evolution tools can't express —
-//! everything the four rules earlier can absorb should NOT bump it. Recommended
-//! file extension: `.ccstate` (a frontend concern; this module works on plain
-//! bytes and never touches a file itself).
+//! own framing); [`SCHEMA_VERSION`] identifies the serialized machine state.
+//! Recommended file extension: `.ccstate` (a frontend concern; this module
+//! works on plain bytes and never touches a file itself).
 //!
 //! ## Media: references, not content
 //!
@@ -68,8 +61,8 @@ pub const CONTAINER_MAGIC: &[u8; 7] = b"CCSTATE";
 /// from [`SCHEMA_VERSION`], which versions the machine tree the container
 /// carries.
 pub const CONTAINER_VERSION: u8 = 1;
-/// Machine-tree version; schema 2 deliberately retires schema 1 snapshots.
-pub const SCHEMA_VERSION: u32 = 2;
+/// Version of the serialized machine state.
+pub const SCHEMA_VERSION: u32 = 1;
 
 /// Byte length of the container header: magic + version byte + schema `u32`.
 const HEADER_LEN: usize = CONTAINER_MAGIC.len() + 1 + 4;

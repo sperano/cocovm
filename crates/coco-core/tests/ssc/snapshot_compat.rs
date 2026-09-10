@@ -1,7 +1,6 @@
-//! Snapshot evolution rule 2 (`crate::snapshot`): a cartridge payload saved
-//! before the firmware fields existed must still deserialize, a payload
-//! saved mid-speech resumes once both ROMs are reattached, and the engine
-//! keys the two images by [`CartROMRole`].
+//! Missing firmware fields deserialize with defaults. A payload saved
+//! mid-speech resumes once both ROMs are reattached, and the engine keys
+//! the two images by [`CartROMRole`].
 
 use std::path::PathBuf;
 
@@ -18,11 +17,11 @@ use super::common::{
     pump, send, skip, try_coco3_bus_with_ssc, wait_for_speech,
 };
 
-/// Serialized field names added by the firmware work.
+/// Serialized microcontroller, board, and execution-budget field names.
 const FIRMWARE_FIELDS: [&str; 3] = ["tms", "board", "tms_budget"];
 
 #[test]
-fn a_pre_firmware_snapshot_deserializes_with_a_reset_pending() {
+fn missing_firmware_fields_deserialize_with_reset_pending() {
     let saved = blank_ssc();
     let mut value = ciborium::Value::serialized(&saved).expect("serializes");
     let ciborium::Value::Map(entries) = &mut value else {
@@ -34,7 +33,8 @@ fn a_pre_firmware_snapshot_deserializes_with_a_reset_pending() {
     );
     assert_eq!(entries.len(), before - FIRMWARE_FIELDS.len());
 
-    let mut restored: SoundSpeechCartridge = value.deserialized().expect("pre-field payload loads");
+    let mut restored: SoundSpeechCartridge =
+        value.deserialized().expect("missing fields use defaults");
     assert!(restored.firmware().pending_reset());
     restored.reattach_firmware_rom(&BLANK_FIRMWARE).unwrap();
     restored.reattach_speech_rom(&BLANK_SPEECH_ROM).unwrap();

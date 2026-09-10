@@ -113,31 +113,17 @@ fn decode_payload(cbor: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     ciborium::from_reader(cbor).map_err(|e| SnapshotError::Decode(e.to_string()))
 }
 
-/// No migration is provided for the retired schema-1 printer representation.
-fn migrate(_old_schema: u32, _cbor: &[u8]) -> Option<Result<SnapshotPayload, SnapshotError>> {
-    None
-}
-
 /// Decodes a `.ccstate` container's bytes into a [`SnapshotPayload`]. Pure
 /// decode — no file I/O or media resolution; that's [`super::restore`]'s job.
 pub fn load(bytes: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     let header = parse_header(bytes)?;
-    // Reject newer schemas before decompressing, so a crafted file never pays to inflate its body.
-    if header.schema > SCHEMA_VERSION {
-        return Err(SnapshotError::SchemaTooNew {
+    // Reject unsupported schemas before decompressing their payloads.
+    if header.schema != SCHEMA_VERSION {
+        return Err(SnapshotError::UnsupportedSchema {
             found: header.schema,
-            current: SCHEMA_VERSION,
+            supported: SCHEMA_VERSION,
         });
     }
     let cbor = gunzip(header.body)?;
-    // Only Equal/Less remain here; Greater already returned earlier.
-    if header.schema == SCHEMA_VERSION {
-        return decode_payload(&cbor);
-    }
-    migrate(header.schema, &cbor).unwrap_or_else(|| {
-        Err(SnapshotError::NoMigration {
-            found: header.schema,
-            current: SCHEMA_VERSION,
-        })
-    })
+    decode_payload(&cbor)
 }

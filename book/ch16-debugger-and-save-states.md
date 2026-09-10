@@ -1534,49 +1534,34 @@ pub fn save(machine: &Machine, media: &MediaRefs) -> Result<Vec<u8>, SnapshotErr
 }
 ```
 
-Two version numbers, deliberately independent, and the module doc is
-explicit about why there are two:
+The header contains two independent version numbers, both set to `1`:
 
-- **`CONTAINER_VERSION`** — this module's own framing: magic, header layout,
-  where the schema field sits, where the gzip body starts. Bumping it means
-  "the *shape of the file itself* changed" — extremely rare, and every
-  `.ccstate` ever written would need this exact byte checked to know how to
-  even find the schema field.
-- **`SCHEMA_VERSION`** — the *machine-tree* schema: what `SnapshotPayload`
-  (and everything nested inside `Machine`) looks like. This one is meant to
-  almost never move either — see §16.8 — because the whole point of the
-  evolution rules is to absorb ordinary struct growth without a version
-  bump at all. "Everything the four rules... can absorb should NOT bump it."
+- `CONTAINER_VERSION` identifies the framing: the magic bytes, header layout,
+  and gzip body offset.
+- `SCHEMA_VERSION` identifies the serialized `SnapshotPayload` and the machine
+  state nested inside it.
 
-Both are checked in `load` *before* touching the (attacker-controlled) gzip
-body, in this order:
+The loader accepts only these values. It checks both before decompressing
+an untrusted gzip body:
 
 ```rust
 pub fn load(bytes: &[u8]) -> Result<SnapshotPayload, SnapshotError> {
     let header = parse_header(bytes)?;
-    if header.schema > SCHEMA_VERSION {
-        return Err(SnapshotError::SchemaTooNew { found: header.schema, current: SCHEMA_VERSION });
+    if header.schema != SCHEMA_VERSION {
+        return Err(SnapshotError::UnsupportedSchema {
+            found: header.schema,
+            supported: SCHEMA_VERSION,
+        });
     }
     let cbor = gunzip(header.body)?;
-    if header.schema == SCHEMA_VERSION {
-        return decode_payload(&cbor);
-    }
-    migrate(header.schema, &cbor).unwrap_or_else(|| {
-        Err(SnapshotError::NoMigration { found: header.schema, current: SCHEMA_VERSION })
-    })
+    decode_payload(&cbor)
 }
 ```
 
-Notice the ordering: a schema *newer* than this build understands is
-rejected before a single byte of the gzip body is even inflated — "so a
-crafted file claiming one never pays for (or risks) inflating its gzip body
-at all," in the code's own words. `migrate` is a hook, currently empty
-(`fn migrate(_old_schema: u32, _cbor: &[u8]) -> Option<...> { None }`) — the
-table a future breaking change would populate, keyed by old schema number,
-to decode the old shape and upgrade it. Since `SCHEMA_VERSION` has never
-moved past `1`, this table has never needed an entry; it exists as the
-documented place a real migration would go, not as evidence one has ever
-been written.
+A different schema produces `UnsupportedSchema` before decompression.
+A matching schema proceeds to gzip and CBOR decoding, which can also fail.
+There is one development format and no conversion path for other schemas.
+Section 16.8 explains what the fixture tests verify within that format.
 
 ### Three ways to not be a save state
 
@@ -1621,8 +1606,8 @@ but whose container version is unknown is `UnsupportedContainer { found,
 supported }`, which is a completely different message: this *is* a CoCo save
 state, written by a build whose framing this build doesn't understand, and the
 numbers in the error tell you which. And a file whose container is fine but
-whose *schema* is too new becomes `SchemaTooNew`, checked back in `load` —
-"your emulator is older than this save state."
+whose schema differs becomes `UnsupportedSchema { found, supported }`,
+checked in `load`. The error reports the file's schema and the supported schema.
 
 Merging any two of those into one error would cost the user real information.
 Merging all three into a generic "could not load file" is the default outcome
@@ -1642,29 +1627,15 @@ rather than merely possible.
 
 ### Why CBOR, not bincode/postcard
 
-The module doc gives the real reason, and it's worth sitting with because it
-determines whether the evolution rules in §16.8 are even possible to state:
+CBOR stores the serialized structs as maps with field-name keys. The decoder
+matches these keys to fields instead of relying on their position in a byte
+sequence. This also makes the payload practical to inspect with a CBOR tool.
 
-> CBOR carries field names with the data, so serde's evolution tools
-> (`#[serde(default)]`/`alias`) work across versions instead of every struct
-> needing hand-rolled versioning.
-
-A positional binary format (bincode, postcard) encodes a struct as "field 1's
-bytes, then field 2's bytes, then field 3's bytes" with no names anywhere in
-the wire format — decoding *requires* the reader's struct definition to have
-the exact same fields in the exact same order as the writer's, or the bytes
-land in the wrong fields silently. CBOR (when serde derives it the way this
-codebase does — as a map) instead writes `{"a": ..., "b": ..., "c": ...}`
-with real field-name keys. That single difference is what makes "add a field
-with `#[serde(default)]`" a *decodable* operation at all: a decoder reading
-an old file simply never sees the new key in the map, so `#[serde(default)]`
-supplies the value the derive macro would otherwise have nowhere to get.
-Positional formats can't offer this without hand-written
-versioning schemes bolted on top; CBOR gets it from serde's ordinary derive
-machinery for free, which is the whole reason this format was chosen over
-faster, smaller binary alternatives — the compatibility contract (§16.8) is
-the entire point, and it's cheaper to buy with the right wire format than to
-build by hand on top of the wrong one.
+Serde attributes control how missing fields decode. For example,
+`#[serde(default)]` supplies a value when a map lacks the corresponding key.
+A missing required field instead produces a decode error. These mechanisms
+help describe optional state, but they do not establish a backward
+compatibility promise for the development format (§16.8).
 
 ### The compression bomb guard
 
@@ -1769,25 +1740,14 @@ two separate and equally load-bearing reasons, both stated in the module doc:
 
 ### Why every drive list is a `Vec`
 
-The container for all of that is one struct, and its shape encodes an evolution
-lesson that took a review cycle to learn. Here it is in full, doc comment
-included, from
-[`payload.rs:53-89`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/snapshot/payload.rs#L53-L89):
+`MediaRefs` collects the external media references. Its optional fields and
+variable-length drive lists let the restore path validate references against
+the machine's drive slots:
 
 ```rust
-/// Every media reference a snapshot might carry. Every field is
-/// `#[serde(default)]` per evolution rule 2 — a future field added here must
-/// still load an older snapshot as "this media slot was never used".
-///
-/// `disks`/`vhds`/`drivewire` are `Vec`, not `[Option<MediaRef>;
-/// N::DRIVE_COUNT]`: a fixed-size array bakes today's `DRIVE_COUNT` into the
-/// serialized shape, so a future change to it would fail to deserialize (or
-/// silently truncate) every snapshot written before the change — the
-/// evolution contract above forbids that. [`super::restore`] matches these up
-/// against the machine's actual drive count itself (zip-style: a short `Vec`
-/// leaves trailing drives as "never mounted"; a `Vec` longer than the current
-/// build's `DRIVE_COUNT` is [`super::SnapshotError::InvalidPayload`], naming the
-/// slot).
+/// Every media reference a snapshot might carry.
+/// Missing optional references default to empty media slots.
+/// Drive lists are validated against the machine's drive count during restore.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MediaRefs {
     #[serde(default)]
@@ -1814,34 +1774,15 @@ pub struct MediaRefs {
 }
 ```
 
-The obvious way to declare `disks` is `[Option<MediaRef>; fdc::DRIVE_COUNT]`.
-It is more precise than a `Vec`, it needs no capacity check anywhere, and it
-makes an impossible state — more disk references than the machine has drives —
-unrepresentable. Everything about Rust's type-driven instincts says to write
-that. And it would be a latent bug in a serialized format, because a fixed-size
-array serializes as a *fixed-length sequence*: the moment a future release
-supports five drives instead of four, every snapshot ever written with four
-entries either fails to decode or silently loses a drive. The array's precision
-is precision about *today's* build, baked into a file that has to outlive it.
+A fixed-size array would require an exact number of drive references during
+decoding. A `Vec` lets the restore path handle the length explicitly: a short
+list leaves trailing drives unmounted, and a list longer than `DRIVE_COUNT`
+produces `InvalidPayload`, naming the offending slot.
 
-So the length constraint moves out of the type and into the restore path, where
-it can be enforced with an error message instead of a decode failure. A short
-`Vec` means the trailing drives were never mounted, which is exactly right for a
-snapshot written before a drive existed. A `Vec` longer than this build's
-`DRIVE_COUNT` is `InvalidPayload`, naming the offending slot. This is the one
-place in the whole engine where "make illegal states unrepresentable" is
-consciously traded away, and the reason it is traded away is that the
-serialized shape is a *published interface* — the compatibility contract from
-§16.6 applies to it, and a type that changes shape when a constant changes
-cannot honor that contract.
-
-The `#[serde(default)]` on every single field is evolution rule 2 applied
-pre-emptively, before any field has ever needed it. A snapshot from a build
-that had no `drivewire` field at all still decodes: the key is simply absent
-from the CBOR map, and the default supplies an empty `Vec`, which reads as "no
-DriveWire drives were mounted." That is precisely the "reproduces the old
-behavior" standard rule 2 demands, and arranging it in advance costs one
-attribute per field.
+The `#[serde(default)]` attributes give missing optional references their empty
+values. For example, an absent `drivewire` key decodes as an empty list of
+DriveWire media references. These defaults describe valid absent media within
+the format; they do not require preserving snapshots across development changes.
 
 ### Hashing without reading
 
@@ -1909,88 +1850,39 @@ every missing file in one pass rather than one frustrating retry at a time.
 
 ---
 
-## 16.8 The four evolution rules, and what breaks without each one
+## 16.8 The development format and its fixture test
 
-The module doc states four rules governing every type inside
-`SnapshotPayload`. Each one earns its place by describing exactly what fails
-if you skip it — read them that way, not as arbitrary style guidance:
+Snapshots use one development schema, version `1`. CocoVM does not promise
+backward compatibility for snapshots created by other development builds.
+There are no schema migrations or legacy decoders. A different schema number
+produces `UnsupportedSchema`, and unreadable gzip or CBOR data produces a
+decode error.
 
-**Rule 1 — never remove or rename a field without `#[serde(alias = "old_name")]`
-or a migration.** CBOR decodes by matching key names in the map against the
-struct's field names. Delete a field outright, or rename it without an
-alias, and every snapshot written before that change now has a map key the
-current struct doesn't recognize — for a *removed* field this is silently
-harmless (the extra key is just ignored), but for a *renamed* field it means
-the old data for that logical field is invisible to the new struct, and — if
-the field had no `#[serde(default)]` — decoding fails outright with a
-missing-field error. `#[serde(alias = "old_name")]` tells the derive macro
-"also accept this key as populating this field," which is exactly a rename
-with backward compatibility built in.
+Matching version numbers identify the expected format, but they do not prove
+that a payload contains valid machine state. Restore also validates device
+state and media references before resuming execution. If a serialized field
+changes during development, review the effects on save, load, and restore,
+and update the fixture when the format intentionally changes.
 
-**Rule 2 — every added field carries `#[serde(default = "...")]` reproducing
-the *old* behavior.** Without this, loading a snapshot written before the
-field existed hits a required key that's missing from the CBOR map, and
-`ciborium::from_reader` returns a hard decode error — the *entire* snapshot
-fails to load over one new `bool`. `#[serde(default)]` (or a named default
-function for a non-`Default`-able type, or a non-zero sentinel) tells serde
-"if this key is absent, use this value instead of failing" — and the rule's
-insistence on "reproduces the old behavior" matters precisely because the
-wrong default is worse than a load failure: it loads *successfully* into
-the wrong state, silently, with no error to catch it.
+### What the fixture verifies
 
-**Rule 3 — never change the meaning or units of an existing field; add a new
-field and migrate instead.** This one has no compiler or serde mechanism
-backing it at all — a `u32` field storing microseconds yesterday and
-milliseconds today deserializes without complaint either way; the bytes on
-disk are the same shape, just interpreted differently. An old snapshot
-would load *successfully* and then behave subtly, catastrophically wrong —
-a timer firing 1000× too fast or too slow, discovered only by whoever
-happens to load an old file after the change ships. This rule exists purely
-in review discipline (the module doc says so: "enforced in review, not by
-the compiler"), which is exactly why it's stated explicitly rather than left
-implicit — the other three rules are things serde can be *made* to enforce;
-this one can only be caught by someone reading the diff and asking "does
-this field mean the same thing it meant yesterday?"
-
-**Rule 4 — enum variants may be added, never repurposed.** CBOR encodes an
-enum by variant name (same self-describing principle as struct field names),
-so adding a new variant to, say, `RestoreNote` is exactly as safe as adding a
-struct field — old snapshots simply never produced that variant, and nothing
-about their decoding changes. But if a future change reused an *existing*
-variant name for a different meaning, every snapshot that recorded the old
-meaning would silently decode as the new one — the same "loads successfully,
-means something else" failure as rule 3, specific to enums.
-
-### What actually *guarantees* compliance
-
-The four rules are review discipline — nothing forces a developer to follow
-them except a code reviewer catching a violation. What makes them
-*verifiable* rather than merely aspirational is the golden-fixture gate,
-`snapshot_fixtures.rs`: a real `.ccstate` file, committed to the repository
-alongside the synthetic ROM it was booted from and a `.trace` file recording
-2,000 instructions of continuation from the snapshot point. Every future
-build must still load that exact file, restore it, and continue producing
-*that exact trace*:
+`snapshot_fixtures.rs` tests the checked-in development format with the
+`v1-synthetic` fixture. The test `committed_fixtures_continue` loads its
+`.ccstate` file, restores the machine, and compares 2,000 instructions of
+continuation with the recorded `.trace` file:
 
 ```rust
-let payload = snapshot::load(&ccstate).unwrap_or_else(|e| {
-    panic!(
-        "fixture {stem} failed to load -- the snapshot compatibility contract \
-         (`coco_core::snapshot`'s module doc: a snapshot written today must load in every \
-         future version) was broken: {e}"
-    )
-});
+let payload = snapshot::load(&ccstate)
+    .unwrap_or_else(|e| panic!("fixture {stem} failed to load: {e}"));
 ```
 
-This is what turns "we promise never to break old snapshots" from a
-sentence in a doc comment into a test that fails, loudly, with a precise
-diagnostic, the moment any future change to `Machine`'s tree violates one of
-the four rules against a file that has already shipped. The fixture uses a
-small hand-assembled synthetic ROM rather than the real Color BASIC image
-specifically so it's safe to commit — booting the real ROM copies its
-32K image into RAM during cold start (a fact `snapshot_roundtrip.rs`'s
-doc comment records too), which would embed copyrighted bytes into a test
-fixture forever.
+This test catches unintended changes to decoding and execution for the
+committed fixture. It is a regression test for the supported format, without
+a requirement to preserve every snapshot from earlier development builds.
+
+The fixture uses a small hand-assembled synthetic ROM so it can be committed.
+Booting the real Color BASIC ROM copies its 32K image into RAM during cold
+start, which would embed copyrighted bytes in a saved machine state.
 
 That synthetic ROM is worth looking at, because it is a small exercise in
 designing a test input for what it must *prove* rather than for what it
@@ -2032,14 +1924,10 @@ loop, finally, means neither the generator's 5,000 warmup steps nor the gate's
 2,000 replayed steps is a magic number anyone has to defend — the program never
 terminates, so any counts work.
 
-Each fixture is three files sharing a stem — `<stem>.ccstate`, the snapshot;
-`<stem>.rom`, the synthetic ROM it was booted from; and `<stem>.trace`, the
-expected 2,000-line continuation — and `all_committed_fixtures_still_load`
-finds them by scanning the directory for `.ccstate` files rather than by
-consulting a list. Adding a second fixture to the gate is therefore a matter of
-committing three files, with no test code to edit, which is the property that
-determines whether a gate like this actually grows over a project's life or
-quietly stops being extended.
+The fixture consists of three files sharing the stem `v1-synthetic`:
+`.ccstate` stores the snapshot, `.rom` stores the synthetic ROM, and `.trace`
+stores the expected 2,000-line continuation. `committed_fixtures_continue`
+finds the fixture by scanning the directory for `.ccstate` files.
 
 One guard in that gate is doing a job nobody would guess from its name. Every
 fixture is checked against a 200 KB size cap, and the assertion message
@@ -2523,7 +2411,7 @@ against) and four of `media.rs`'s tests that hash or reattach the real
 system ROM.
 
 The other twelve `snapshot_engine` tests — every `header.rs` test (magic,
-container version, schema-too-new), all four `hostile_payload.rs` attacks
+container version, unsupported schema), all four `hostile_payload.rs` attacks
 (SSC, WD1773, cassette, nested Multi-Pak) plus the oversized-gzip guard, and
 three of `media.rs`'s tests (`MediaRef::verify`, the RAM-length-mismatch
 guard, `sha256_file`/`sha256_hex` agreement) — need no ROM at all, because
@@ -2534,7 +2422,7 @@ passes its one real (non-`#[ignore]`d) test completely: the golden-fixture
 gate that proves the committed `v1-synthetic.ccstate` still loads, restores,
 and continues trace-identically, using a hand-assembled synthetic ROM that
 was written specifically so this test *never* needs a real, copyrighted ROM
-image to prove the compatibility contract holds.
+image to verify snapshot continuation.
 
 The pattern is exactly what Chapter 1's "ROMs are local-only" warning
 predicted, and it doubles as a small confirmation of this chapter's own
@@ -2792,21 +2680,14 @@ clean and every test that failed is green again. Write two sentences on
 what specific guarantee that one line was providing, based on what broke
 without it.
 
-**16.5 — Add a field, prove old snapshots still load (build).** Pick any
-struct that lives inside `Machine`'s serde tree with a `u8`- or `bool`-shaped
-piece of state you understand (a decent candidate: `crate::pia::MC6821`, or
-any small device struct in a file you've already read from an earlier
-chapter). Add a new field — something genuinely new, e.g. a `debug_counter:
-u32` that increments once per `tick`/`step` call — following evolution
-rules 1 and 2 exactly: `#[serde(default)]`, and a default that reproduces
-old behavior (zero, if the counter is purely informational). Then run
-`cargo test -p coco-core --test snapshot_fixtures` and confirm
-`all_committed_fixtures_still_load` still passes — the committed
-`v1-synthetic.ccstate` fixture, written *before* your field existed, must
-still load, restore, and produce its exact committed `.trace` continuation.
-If it fails, you violated one of the four rules; say which one and fix it.
-Revert your change once you've proven the point, unless you were explicitly
-asked to keep it.
+**16.5 — Inspect the supported snapshot schema (read + build).** Open
+`snapshot::load` and identify the check that accepts only schema `1`. Make a
+copy of `v1-synthetic.ccstate`, change its schema header to an unsupported
+value, and verify that loading it returns `UnsupportedSchema` with the found
+and supported values. Leave the committed fixture unchanged. Then run
+`cargo test -p coco-core --test snapshot_fixtures` and confirm that
+`committed_fixtures_continue` passes. Explain why rejecting an unsupported
+header and reproducing the committed continuation test different properties.
 
 **16.6 — Lockstep, read and predict (read + predict).** Before running
 anything, predict: if you take [`snapshot_engine/lockstep.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/snapshot_engine/lockstep.rs)'s
