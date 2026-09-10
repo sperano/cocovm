@@ -150,13 +150,22 @@ Proportional output treats the listed widths as advances; the manual does not
 independently explain their blank-column accounting. The interpreter retains
 suspended style flags so that changing the applicable font can restore them.
 
-Verified extended Tandy mappings include C0–C4, C8–CE, D0–D1, D4–D6, D8,
-DA–DC, and DF. German and French country substitutions are transcribed from
-p. 57. Other country substitutions, unidentified extended glyphs, and IBM's
-extended symbol tables remain incomplete. Unknown extended symbols use the
-undefined-character placeholder. Unsupported country substitutions retain the
-ASCII symbol. The block-character shapes retain the DMP-105 artistic placeholders.
-These limitations concern glyph fidelity, not recognition of charset commands.
+Code-to-symbol mappings for the whole Tandy set are verified from p. 81 (the
+grid and the printout below it) and p. 57 (Table 26): the European symbols
+$A0–$BF are the DMP-105 table; the extended symbols $C0–$DF are
+`â ê î ô û ^ ë ï á í ó ú ¡ ñ ã õ` then `Æ æ Å å Ø ø Ñ É Á Í Ó Ú ¿ Ù È Â`; the
+block graphics $E0–$FE are the DMP-105 set (quadrants, box pieces,
+triangles) printed six dots across the cell. All eleven country
+substitutions (USA, Germany, France, Norway, Sweden, Denmark, Finland,
+Italy, Spain, England, Belgium) come from Table 26. INFERRED readings, where
+the typeset table drops a diacritic or leaves a cell blank: Denmark `@` É,
+Norway `^` Ä, France `~` blank, and the long dash at `~` for Finland,
+England and Belgium as an overline; bare A O U a o u in umlaut positions
+are read as Ä Ö Ü ä ö ü, as Germany's row proves the typesetter dropped
+them. IBM's extended symbol tables (pp. 84–85) remain untranscribed and
+print the undefined-character placeholder. Dot patterns for every symbol
+are artistic: the font lives in mask ROM and no dump exists
+(`docs/dmp-font-sources.md`).
 
 The following policies resolve contradictions explicitly:
 

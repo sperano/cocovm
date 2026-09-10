@@ -4,11 +4,10 @@
 //! ç µ § ß ƒ)").
 //!
 //! **ARTISTIC APPROXIMATION — not hardware-verified.** The manual gives cell
-//! *geometry* (9x7 plus a descender row), but the available source material
-//! does not provide the ROM's actual per-dot bitmaps. Every glyph bit pattern
-//! that follows is hand-authored as a plausible, legible dot-matrix rendering at this
-//! cell size. It is not a transcription of real DMP-105 ROM data and must not
-//! be cited as a hardware fact.
+//! *geometry* (9x7 plus a descender row), but the font lives in the
+//! printer's mask-ROM microcontroller and no dump exists
+//! (`docs/dmp-font-sources.md`). Every bit pattern here is hand-authored as
+//! a plausible, legible rendering at this cell size, not real ROM data.
 //!
 //! # Representation
 //!
@@ -19,40 +18,20 @@
 //! descender-row dot (only ever set for the specific characters the spec
 //! lists as having one).
 //!
-//! # Character sets
-//!
-//! - `$20-$7E`: the full 95-character printable ASCII set (`ASCII_FONT`), 1:1 per
-//!   `dmp105-protocol.md` §6.
-//! - `$A0-$BF`: 32 European symbols. **TODO — not implemented per-code.**
-//!   The spec document lists only example characters (à ç £ µ § ® © ¼ ¾ ½ ¶ ¥
-//!   Å … ß ™), not the full ordered 32-entry code table, so there is no
-//!   verified code-to-glyph mapping to author against. Rather than invent an
-//!   assignment, every code in this range currently renders as the
-//!   undefined-code placeholder (`undefined_glyph`). Revisit if the full
-//!   Appendix C table is transcribed.
-//! - `$E0-$FE`: 30 block-graphic characters, described only as "geometric,
-//!   quadrant/sextant-style" blocks with no per-code bitmap given either.
-//!   [`BLOCK_FONT`] is a **systematic placeholder**, not a verified mapping:
-//!   a 2-wide x 3-tall grid of 6 sub-cells (63 non-blank combinations of 6
-//!   bits, chosen because 30 fits comfortably and a 2x3 "sextant" grid is the
-//!   documented shape family), enumerated in increasing bit order starting
-//!   from `$E0` = blank (all 6 sub-cells off, matching the one verified
-//!   detail: "$E0 = blank"). The `$E0-$FE` range is actually 31 codes but the
-//!   spec claims exactly 30 defined characters (itself a known internal
-//!   inconsistency the spec document already flags elsewhere for a different
-//!   count); this implementation reconciles that by leaving the last code
-//!   (`$FE`) undefined rather than guessing which one the real ROM omits.
+//! This module holds the 95 printable ASCII glyphs. The European symbols
+//! (`$A0-$BF`) come from [`crate::dmp_symbols`] via the verified code table
+//! in [`crate::dmp_charset`], which also owns the block graphics (`$E0-$FE`).
 
 /// One glyph: 9 columns, each byte's bits 0-6 = body dot rows top-to-bottom,
 /// bit 7 = the descender-row dot for that column.
 pub type Glyph = [u8; 9];
 
 /// Bit position of the descender-row dot within a glyph column byte.
-const DESCENDER_BIT: u8 = 0x80;
+pub(crate) const DESCENDER_BIT: u8 = 0x80;
 
 /// Author a glyph from row-major ASCII art (`#` = dot), transposed here into
 /// the column-major [`Glyph`] representation described in the module doc comment.
-const fn glyph(rows: [&str; 8]) -> Glyph {
+pub(crate) const fn glyph(rows: [&str; 8]) -> Glyph {
     let mut cols: Glyph = [0u8; 9];
     let mut r = 0;
     while r < 8 {
@@ -72,7 +51,7 @@ const fn glyph(rows: [&str; 8]) -> Glyph {
 
 /// A row with no descender dots, for the 89 of 95 ASCII glyphs that don't
 /// need one.
-const BLANK_DESCENDER: &str = ".........";
+pub(crate) const BLANK_DESCENDER: &str = ".........";
 
 /// 95 glyphs for `$20` (space) through `$7E` (`~`), index 0 = `$20`.
 pub const ASCII_FONT: [Glyph; 95] = [
@@ -252,15 +231,15 @@ pub const ASCII_FONT: [Glyph; 95] = [
         "..#......",
         BLANK_DESCENDER,
     ]),
-    // $30 '0'
+    // $30 '0': a plain oval, narrower than 'O' (DMP-130 p.81 printout)
     glyph([
-        "..#####..",
-        ".#.....#.",
-        ".#....##.",
-        ".#...#.#.",
-        ".##..#.#.",
-        ".#.....#.",
-        "..#####..",
+        "...###...",
+        "..#...#..",
+        "..#...#..",
+        "..#...#..",
+        "..#...#..",
+        "..#...#..",
+        "...###...",
         BLANK_DESCENDER,
     ]),
     // $31 '1'
@@ -1129,21 +1108,6 @@ pub const ASCII_FONT: [Glyph; 95] = [
 const ASCII_FIRST: u8 = 0x20;
 const ASCII_LAST: u8 = 0x7E;
 
-/// First/last codes of the European set (`dmp105-protocol.md` §6). See the
-/// module doc comment: TODO, no per-code mapping available, so this whole
-/// range falls back to [`undefined_glyph`].
-const EUROPEAN_FIRST: u8 = 0xA0;
-const EUROPEAN_LAST: u8 = 0xBF;
-
-/// First/last codes of the block-graphics set (`dmp105-protocol.md` §6).
-const BLOCK_FIRST: u8 = 0xE0;
-const BLOCK_LAST: u8 = 0xFE;
-
-/// Number of block-graphics characters the spec claims (`dmp105-protocol.md`
-/// §6: "30 block-graphic chars"), one fewer than the 31 codes the `$E0-$FE`
-/// range actually spans — see the module doc comment's reconciliation note.
-const BLOCK_COUNT: u32 = 30;
-
 /// Look up a glyph for a printable ASCII code (`$20-$7E`).
 pub fn ascii_glyph(code: u8) -> Option<Glyph> {
     if (ASCII_FIRST..=ASCII_LAST).contains(&code) {
@@ -1156,61 +1120,6 @@ pub fn ascii_glyph(code: u8) -> Option<Glyph> {
 /// The literal `X` glyph printed for every undefined/unimplemented code (`dmp105-protocol.md` §3).
 pub fn undefined_glyph() -> Glyph {
     ascii_glyph(b'X').expect("'X' is always present in ASCII_FONT")
-}
-
-/// European symbol glyph (`$A0-$BF`) — see the module doc comment: not
-/// implemented per-code (no verified mapping), always the placeholder.
-pub fn european_glyph(code: u8) -> Option<Glyph> {
-    if (EUROPEAN_FIRST..=EUROPEAN_LAST).contains(&code) {
-        Some(undefined_glyph())
-    } else {
-        None
-    }
-}
-
-/// Sextant-style block-graphics glyph (`$E0-$FE`) — an unverified systematic
-/// placeholder, not a transcription of the real ROM table (see module doc comment).
-pub fn block_glyph(code: u8) -> Option<Glyph> {
-    if !(BLOCK_FIRST..=BLOCK_LAST).contains(&code) {
-        return None;
-    }
-    let index = u32::from(code - BLOCK_FIRST);
-    if index >= BLOCK_COUNT {
-        return None;
-    }
-    Some(sextant_glyph(index))
-}
-
-/// Build glyph `index` (0..=62, 6 bits) as a 2x3 grid of sub-blocks: bit 0 =
-/// top-left, bit 1 = top-right, ... bit 5 = bottom-right.
-fn sextant_glyph(index: u32) -> Glyph {
-    const LEFT_COLS: std::ops::Range<usize> = 1..5;
-    const RIGHT_COLS: std::ops::Range<usize> = 5..9;
-    const TOP_ROWS: std::ops::Range<usize> = 0..2;
-    const MID_ROWS: std::ops::Range<usize> = 2..5;
-    const BOTTOM_ROWS: std::ops::Range<usize> = 5..7;
-
-    let sub_blocks: [(bool, std::ops::Range<usize>, std::ops::Range<usize>); 6] = [
-        (index & 0x01 != 0, LEFT_COLS, TOP_ROWS.clone()),
-        (index & 0x02 != 0, RIGHT_COLS, TOP_ROWS),
-        (index & 0x04 != 0, LEFT_COLS, MID_ROWS.clone()),
-        (index & 0x08 != 0, RIGHT_COLS, MID_ROWS),
-        (index & 0x10 != 0, LEFT_COLS, BOTTOM_ROWS.clone()),
-        (index & 0x20 != 0, RIGHT_COLS, BOTTOM_ROWS),
-    ];
-
-    let mut cols: Glyph = [0u8; 9];
-    for (on, col_range, row_range) in sub_blocks {
-        if !on {
-            continue;
-        }
-        for c in col_range {
-            for r in row_range.clone() {
-                cols[c] |= 1u8 << r;
-            }
-        }
-    }
-    cols
 }
 
 #[cfg(test)]

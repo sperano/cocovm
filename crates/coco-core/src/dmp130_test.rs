@@ -201,13 +201,51 @@ fn backspace_flushes_before_cancel_in_all_ibm_encodings() {
 #[test]
 fn verified_extended_and_country_symbols_have_distinct_impressions() {
     let mut accented = DMP130::new();
-    send(&mut accented, b"\xc8\r");
+    send(&mut accented, b"\xb6\r");
     let mut plain = DMP130::new();
     send(&mut plain, b"a\r");
     assert_ne!(dots(&accented), dots(&plain));
     let mut german = DMP130::new();
     send(&mut german, b"\x1bY\x21{\r");
     assert_eq!(dots(&accented), dots(&german));
+    let mut spanish = DMP130::new();
+    send(&mut spanish, b"\x1bY\x28\\\r");
+    let mut extended_n_tilde = DMP130::new();
+    send(&mut extended_n_tilde, b"\xd6\r");
+    assert_eq!(dots(&spanish), dots(&extended_n_tilde));
+    let mut acute = DMP130::new();
+    send(&mut acute, b"\xc8\r");
+    assert_ne!(dots(&acute), dots(&accented));
+}
+#[test]
+fn block_graphics_join_across_cells() {
+    const POSITIONS_PER_CELL: usize = 12;
+    fn even_bar(printer: &DMP130, cells: usize) {
+        let xs: std::collections::BTreeSet<u32> = dots(printer).iter().map(|&(x, _)| x).collect();
+        assert_eq!(xs.len(), cells * POSITIONS_PER_CELL);
+        let xs: Vec<u32> = xs.into_iter().collect();
+        let gaps: Vec<u32> = xs.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        let (min, max) = (gaps.iter().min().unwrap(), gaps.iter().max().unwrap());
+        assert!(max - min <= 1, "uneven block spacing: {gaps:?}");
+        let ys: std::collections::BTreeSet<u32> = dots(printer).iter().map(|&(_, y)| y).collect();
+        assert_eq!(ys.len(), 1);
+    }
+    let mut pica = DMP130::new();
+    send(&mut pica, b"\xf1\xf1\r");
+    even_bar(&pica, 2);
+    const BAR_ROW: u32 = 2;
+    assert_eq!(dots(&pica)[0], (0, BAR_ROW * Y_UNITS_PER_INCH / 72));
+    // Condensed cells are 14 dots wide, not a multiple of 6.
+    let mut condensed = DMP130::new();
+    send(&mut condensed, b"\x1b\x14\xf1\xf1\r");
+    even_bar(&condensed, 2);
+    let mut wide = DMP130::new();
+    send(&mut wide, b"\x1b\x0e\xf1\r");
+    even_bar(&wide, 1);
+    assert_eq!(dots(&wide).len(), dots(&pica).len() / 2);
+    let mut ibm = DMP130::new();
+    send(&mut ibm, b"\x1b:\xf1\r");
+    assert_ne!(dots(&ibm), dots(&pica));
 }
 #[test]
 fn proportional_metrics_use_manual_widths() {
