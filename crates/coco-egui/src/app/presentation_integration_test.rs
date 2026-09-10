@@ -99,14 +99,16 @@ fn check_idle_presentations(display: Display) {
     let resumed = ctx.run(egui::RawInput::default(), |ctx| {
         app.step_emulation(ctx, None)
     });
-    assert!(framebuffer_deltas(&app, resumed).is_empty());
-    assert_eq!(app.fields_run, 0);
+    assert_eq!(framebuffer_deltas(&app, resumed).len(), 1);
+    const FOREGROUND_STARTUP_FIELDS: u64 = 2;
+    assert_eq!(app.fields_run, FOREGROUND_STARTUP_FIELDS);
+    assert!(present(&mut app, &ctx, now).is_empty());
     app.run_fields(BOOT_FIELDS);
     assert_upload_once(&mut app, &ctx, now);
 }
 
 #[test]
-fn first_upload_is_followed_by_cache_hits_when_paused_suspended_or_no_fields_are_due() {
+fn startup_cushion_upload_is_then_cached_while_paused_or_suspended() {
     for display in [
         Display::Monitor(coco_core::MonitorType::RGB),
         Display::TV(TV::Color),
@@ -131,6 +133,28 @@ fn paused_and_suspended_snow_only_uploads_at_animation_ticks() {
         assert_upload_once(&mut app, &ctx, now + NOISE_INTERVAL);
         assert_eq!(app.fields_run, 0);
     }
+}
+
+#[test]
+fn incidental_paused_repaints_do_not_upload_background_snow_early() {
+    let mut app = app();
+    let ctx = egui::Context::default();
+    app.running = false;
+    app.display = Display::TV(TV::Color);
+    let mut input = egui::RawInput::default();
+    input.viewports.insert(
+        egui::ViewportId::ROOT,
+        egui::ViewportInfo {
+            focused: Some(false),
+            minimized: Some(false),
+            ..Default::default()
+        },
+    );
+
+    let initial = ctx.run(input.clone(), |ctx| app.step_emulation(ctx, None));
+    assert_eq!(framebuffer_deltas(&app, initial).len(), 1);
+    let incidental = ctx.run(input, |ctx| app.step_emulation(ctx, None));
+    assert!(framebuffer_deltas(&app, incidental).is_empty());
 }
 
 #[test]

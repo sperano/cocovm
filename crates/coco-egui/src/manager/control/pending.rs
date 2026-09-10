@@ -22,13 +22,16 @@ impl ManagerApp {
     /// Reply to and drop every [`PendingControl`] whose condition is met,
     /// whose target vanished, or whose deadline passed; keep the rest.
     /// Called once per `update()`, after [`Self::draw_running_vms`] has run
-    /// this frame's fields. Requests another repaint while anything is
-    /// still waiting, so a slow condition (a long `wait`) keeps being polled.
+    /// this frame's fields. Running VM viewports wake the manager as fields
+    /// advance; the earliest deadline supplies a bounded wake for stalled VMs.
     pub(in crate::manager) fn resolve_control_pending(&mut self, ctx: &egui::Context) {
+        self.resolve_control_pending_at(ctx, Instant::now());
+    }
+
+    fn resolve_control_pending_at(&mut self, ctx: &egui::Context, now: Instant) {
         if self.pending.is_empty() {
             return;
         }
-        let now = Instant::now();
         let mut still_pending = Vec::new();
         // `mem::take` rather than `self.pending.drain(..)`: the loop body's
         // `self.check_pending` needs to borrow `self` immutably, which a
@@ -45,8 +48,8 @@ impl ManagerApp {
             }
         }
         self.pending = still_pending;
-        if !self.pending.is_empty() {
-            ctx.request_repaint();
+        if let Some(deadline) = self.pending.iter().map(|pending| pending.deadline).min() {
+            crate::app::scheduling::request_repaint_at(ctx, deadline);
         }
     }
 

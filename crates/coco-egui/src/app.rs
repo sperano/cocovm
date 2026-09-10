@@ -8,9 +8,9 @@ use crate::*;
 mod control;
 pub(crate) use control::{RemoteHold, RemoteStick};
 mod frame;
-mod presentation;
-pub(crate) use frame::background_repaint_delay;
 mod input;
+mod presentation;
+pub(crate) mod scheduling;
 pub(crate) use input::has_keyboard_focus;
 
 pub(crate) struct CocoApp {
@@ -40,6 +40,7 @@ pub(crate) struct CocoApp {
     pub(crate) tv: display::TVSettings,
     /// Retained display buffers and the last presented pixel/settings state.
     pub(crate) presentation: presentation::Presentation,
+    pub(crate) schedule: scheduling::Schedule,
     /// Wall-clock instant of the previous update while running; `None` right
     /// after a pause/start so the first frame credits no elapsed time.
     pub(crate) last_update: Option<std::time::Instant>,
@@ -296,6 +297,7 @@ impl CocoApp {
             display,
             tv: display::TVSettings::default(),
             presentation: presentation::Presentation::default(),
+            schedule: scheduling::Schedule::default(),
             last_update: None,
             field_debt: 0.0,
             audio_cushion_fields: 0,
@@ -369,6 +371,9 @@ impl CocoApp {
     /// Set whether emulation advances. Exposed since `running` isn't `pub`;
     /// used by the manager's Suspend/Resume to freeze/un-freeze a VM.
     pub(crate) fn set_running(&mut self, running: bool) {
+        if self.running != running {
+            self.reset_emulation_clock();
+        }
         self.running = running;
     }
 
@@ -402,8 +407,8 @@ impl eframe::App for CocoApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let focused = ctx.input(|i| i.viewport().focused);
-        self.window_ui(ctx, background_repaint_delay([focused]));
+        let delay = scheduling::background_delay(ctx);
+        self.window_ui(ctx, delay);
     }
 }
 

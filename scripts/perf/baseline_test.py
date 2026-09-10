@@ -16,6 +16,16 @@ SHORT_TERMINATE_GRACE = 0.05
 
 
 class BaselineTests(unittest.TestCase):
+    def test_focus_vm_requires_keep_foreground(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            argv = ["baseline.py", "native", "--output", str(output), "--focus-vm"]
+            with patch("sys.argv", argv), patch("sys.stderr", io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    baseline.arguments()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertFalse(output.exists())
+
     def test_window_limit_includes_boundary_and_rejects_nonfinite_values(self):
         self.assertTrue(baseline.valid_window_seconds(baseline.MAX_WINDOW_SECONDS))
         for value in (0, -1, float("nan"), float("inf"), baseline.MAX_WINDOW_SECONDS + 1):

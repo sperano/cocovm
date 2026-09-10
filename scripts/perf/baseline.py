@@ -26,6 +26,7 @@ TERMINATE_GRACE = 2.0
 PROFILE_SECONDS = 2
 PROFILE_INTERVAL_MS = 1
 FOCUS_WARMUP_FRACTION = 0.5
+PERF_VM_WINDOW_TITLE = "Performance 0"
 NATIVE_SCENARIOS = ("manager-idle", "basic-idle", "graphics", "paused", "suspended",
                     "background", "multi-vm", "tv", "dac", "cartridge", "saved-previews",
                     "printer", "snapshot", "lifecycle", "control-load")
@@ -52,6 +53,8 @@ def arguments():
     parser.add_argument("--no-telemetry", action="store_true", help="native instrumentation-overhead comparison")
     parser.add_argument("--keep-foreground", action="store_true",
                         help="macOS native: maintain owned process focus; adds automation overhead")
+    parser.add_argument("--focus-vm", action="store_true",
+                        help="macOS native: make the first VM viewport the main window")
     args = parser.parse_args()
     if not all(valid_window_seconds(value) for value in (args.warmup, args.duration)):
         parser.error(f"warmup and duration must be finite, positive, and at most {MAX_WINDOW_SECONDS:g} seconds")
@@ -64,6 +67,8 @@ def arguments():
         parser.error("vm-count must be positive")
     if args.keep_foreground and (args.kind != "native" or platform.system() != "Darwin"):
         parser.error("keep-foreground requires a native macOS run")
+    if args.focus_vm and not args.keep_foreground:
+        parser.error("focus-vm requires keep-foreground")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=False)
     return args
@@ -122,7 +127,9 @@ def update_focus(process, args, scenario, elapsed, focus):
         return True
     focus["checks"] += 1
     try:
-        focus["changes"] += int(foreground.ensure(process.pid))
+        ensure = (lambda: foreground.ensure_window(process.pid, PERF_VM_WINDOW_TITLE)) \
+            if args.focus_vm else (lambda: foreground.ensure(process.pid))
+        focus["changes"] += int(ensure())
     except RuntimeError:
         if process.poll() is None:
             raise

@@ -23,6 +23,18 @@ class ForegroundTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Not authorized"):
                 foreground.ensure(BENCHMARK_PID)
 
+    def test_named_window_is_raised_and_made_main(self):
+        with patch.object(foreground.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="changed\n")) as run:
+            self.assertTrue(foreground.ensure_window(BENCHMARK_PID, 'Performance "0"'))
+        script = run.call_args.args[0][-1]
+        self.assertIn(f"whose unix id is {BENCHMARK_PID}", script)
+        self.assertIn('whose name is "Performance \\"0\\""', script)
+        self.assertIn('perform action "AXRaise"', script)
+        self.assertIn('attribute "AXMain"', script)
+        self.assertIn('attribute "AXFocused"', script)
+        self.assertIn('if not changedState then', script)
+
 
 if __name__ == "__main__":
     unittest.main()

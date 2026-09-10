@@ -34,10 +34,6 @@ impl ManagerApp {
         // Indices suspended or resumed this frame, for `focus_first_failed_row`
         // later to focus the first failure.
         let mut acted: Vec<usize> = Vec::new();
-        // One app-wide decision: every VM viewport repaints the manager anyway.
-        let repaint_delay = ctx.input(|i| {
-            crate::app::background_repaint_delay(i.raw.viewports.values().map(|v| v.focused))
-        });
         for i in 0..self.entries.len() {
             if self.entries[i].vm.is_none() {
                 continue;
@@ -57,6 +53,7 @@ impl ManagerApp {
             vm.toolbar_icons_only = self.toolbar_icons_only;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
+                let repaint_delay = crate::app::scheduling::background_delay(child_ctx);
                 if class == egui::ViewportClass::Embedded {
                     // Embedded fallback: draws only the VM's display in a
                     // plain `egui::Window`, never the full chrome, to avoid
