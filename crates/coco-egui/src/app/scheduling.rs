@@ -1,11 +1,15 @@
 //! Host deadlines are independent of incidental UI events and monitor refresh.
 
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use eframe::egui;
 
 /// Two fields protect foreground audio from a late host presentation/callback.
 const FOREGROUND_CUSHION_FIELDS: f64 = 2.0;
+/// Immediate viewports share redraw work. Align equal-cadence deadlines so
+/// each VM doesn't wake every other VM at a different phase of the same period.
+static SCHEDULING_EPOCH: OnceLock<Instant> = OnceLock::new();
 
 /// Focus and minimization belong to this VM's viewport, not the manager. egui
 /// does not expose occlusion/visibility here. Unknown state stays at foreground
@@ -37,7 +41,7 @@ pub(super) fn service_interval(field_rate: f64, background: Option<Duration>) ->
     // old egui delay implicitly subtracted predicted_dt; make this explicit.
     background.map_or(field, |delay| {
         let fields = cushion_fields(field_rate, delay).saturating_sub(1).max(1);
-        Duration::from_secs_f64(fields as f64 / field_rate)
+        field * fields as u32
     })
 }
 
@@ -51,22 +55,36 @@ pub(crate) fn request_repaint_at(ctx: &egui::Context, deadline: Instant) {
     ctx.request_repaint_after(remaining.saturating_add(predicted));
 }
 
-#[derive(Default)]
 pub(crate) struct Schedule {
+    epoch: Instant,
     service: Option<(Instant, Duration)>,
     presentation: Option<(Instant, Duration)>,
 }
 
+impl Default for Schedule {
+    fn default() -> Self {
+        Self::with_epoch(*SCHEDULING_EPOCH.get_or_init(Instant::now))
+    }
+}
+
 impl Schedule {
+    fn with_epoch(epoch: Instant) -> Self {
+        Self {
+            epoch,
+            service: None,
+            presentation: None,
+        }
+    }
+
     /// Keep an absolute cadence through extra input/manager repaints. A host
     /// stall skips expired deadlines; the bounded field debt handles catch-up.
     pub(super) fn service_deadline(&mut self, now: Instant, interval: Duration) -> Instant {
-        advance(&mut self.service, now, interval);
+        advance(&mut self.service, self.epoch, now, interval);
         self.service.expect("advance sets deadline").0
     }
 
     pub(super) fn presentation_due(&mut self, now: Instant, interval: Duration) -> bool {
-        advance(&mut self.presentation, now, interval)
+        advance(&mut self.presentation, self.epoch, now, interval)
     }
 
     pub(super) fn presentation_deadline(&self) -> Instant {
@@ -78,19 +96,21 @@ impl Schedule {
     }
 }
 
-fn advance(timer: &mut Option<(Instant, Duration)>, now: Instant, interval: Duration) -> bool {
+fn advance(
+    timer: &mut Option<(Instant, Duration)>,
+    epoch: Instant,
+    now: Instant,
+    interval: Duration,
+) -> bool {
     if let Some((deadline, previous_interval)) = *timer
         && interval == previous_interval
+        && now < deadline
     {
-        if now < deadline {
-            return false;
-        }
-        let late = now.saturating_duration_since(deadline).as_nanos();
-        let remainder = Duration::from_nanos((late % interval.as_nanos()) as u64);
-        *timer = Some((now + interval - remainder, interval));
-    } else {
-        *timer = Some((now + interval, interval));
+        return false;
     }
+    let elapsed = now.saturating_duration_since(epoch).as_nanos();
+    let remainder = Duration::from_nanos((elapsed % interval.as_nanos()) as u64);
+    *timer = Some((now + interval - remainder, interval));
     true
 }
 

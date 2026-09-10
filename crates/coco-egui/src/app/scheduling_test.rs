@@ -31,7 +31,7 @@ fn viewport_state_selects_its_own_background_policy() {
 #[test]
 fn incidental_high_refresh_repaints_do_not_move_the_deadline() {
     let start = Instant::now();
-    let mut schedule = Schedule::default();
+    let mut schedule = Schedule::with_epoch(start);
     assert_eq!(schedule.service_deadline(start, FIELD), start + FIELD);
 
     for millis in [2, 4, 6, 8, 10, 12, 14] {
@@ -49,7 +49,7 @@ fn incidental_high_refresh_repaints_do_not_move_the_deadline() {
 #[test]
 fn host_stall_skips_expired_deadlines_without_shifting_cadence() {
     let start = Instant::now();
-    let mut schedule = Schedule::default();
+    let mut schedule = Schedule::with_epoch(start);
     schedule.service_deadline(start, FIELD);
 
     let stalled = start + 5 * FIELD + Duration::from_millis(3);
@@ -57,28 +57,28 @@ fn host_stall_skips_expired_deadlines_without_shifting_cadence() {
 }
 
 #[test]
-fn foreground_background_and_unknown_transitions_restart_from_transition_time() {
+fn foreground_background_and_unknown_transitions_keep_the_shared_epoch() {
     let start = Instant::now();
-    let mut schedule = Schedule::default();
+    let mut schedule = Schedule::with_epoch(start);
     assert_eq!(schedule.service_deadline(start, FIELD), start + FIELD);
 
     let backgrounded = start + Duration::from_millis(5);
     assert_eq!(
         schedule.service_deadline(backgrounded, BACKGROUND),
-        backgrounded + BACKGROUND
+        start + BACKGROUND
     );
     let foregrounded = backgrounded + Duration::from_millis(20);
     assert_eq!(
         schedule.service_deadline(foregrounded, FIELD),
-        foregrounded + FIELD
+        start + 2 * FIELD
     );
 }
 
 #[test]
 fn mixed_vm_schedules_advance_independently() {
     let start = Instant::now();
-    let mut foreground = Schedule::default();
-    let mut background = Schedule::default();
+    let mut foreground = Schedule::with_epoch(start);
+    let mut background = Schedule::with_epoch(start);
 
     assert_eq!(foreground.service_deadline(start, FIELD), start + FIELD);
     assert_eq!(
@@ -97,21 +97,25 @@ fn mixed_vm_schedules_advance_independently() {
 
 #[test]
 fn stopping_and_resuming_drops_the_old_service_deadline() {
+    const NEXT_SERVICE_FIELD: u32 = 63;
     let start = Instant::now();
     let resumed = start + Duration::from_secs(1);
-    let mut schedule = Schedule::default();
+    let mut schedule = Schedule::with_epoch(start);
     schedule.service_deadline(start, FIELD);
     assert!(schedule.presentation_due(start, FIELD));
 
     schedule.stop_service();
 
-    assert_eq!(schedule.service_deadline(resumed, FIELD), resumed + FIELD);
+    assert_eq!(
+        schedule.service_deadline(resumed, FIELD),
+        start + NEXT_SERVICE_FIELD * FIELD
+    );
 }
 
 #[test]
 fn stopping_service_preserves_the_idle_presentation_cadence() {
     let start = Instant::now();
-    let mut schedule = Schedule::default();
+    let mut schedule = Schedule::with_epoch(start);
     assert!(schedule.presentation_due(start, BACKGROUND));
 
     schedule.stop_service();
@@ -151,7 +155,7 @@ fn background_cushion_fits_the_audio_ring_and_service_keeps_one_field_in_reserve
 #[test]
 fn presentation_deadline_ignores_early_repaints_and_skips_stale_ticks() {
     let start = Instant::now();
-    let mut schedule = Schedule::default();
+    let mut schedule = Schedule::with_epoch(start);
     assert!(schedule.presentation_due(start, FIELD));
     assert!(!schedule.presentation_due(start + FIELD / 2, FIELD));
     assert!(schedule.presentation_due(start + 4 * FIELD + FIELD / 2, FIELD));
@@ -177,5 +181,51 @@ fn repaint_request_compensates_for_egui_predicted_frame_time() {
     assert!(
         output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
             >= DEADLINE_DELAY - CLOCK_TOLERANCE
+    );
+}
+
+#[test]
+fn staggered_background_vms_share_service_and_presentation_deadlines() {
+    const BACKGROUND_FIELDS: u32 = 5;
+    let start = Instant::now();
+    let interval = FIELD * BACKGROUND_FIELDS;
+    let offsets = [Duration::ZERO, FIELD / 2, FIELD, FIELD * 2];
+    let mut schedules = offsets.map(|offset| {
+        let mut schedule = Schedule::with_epoch(start);
+        assert_eq!(
+            schedule.service_deadline(start + offset, interval),
+            start + interval
+        );
+        assert!(schedule.presentation_due(start + offset, interval));
+        assert_eq!(schedule.presentation_deadline(), start + interval);
+        schedule
+    });
+
+    for schedule in &mut schedules {
+        assert!(!schedule.presentation_due(start + interval - FIELD, interval));
+        assert_eq!(
+            schedule.service_deadline(start + interval, interval),
+            start + interval * 2
+        );
+        assert!(schedule.presentation_due(start + interval, interval));
+        assert_eq!(schedule.presentation_deadline(), start + interval * 2);
+    }
+}
+
+#[test]
+fn background_service_aligns_with_a_foreground_tick() {
+    const BACKGROUND_FIELDS: u32 = 5;
+    let start = Instant::now();
+    let background = FIELD * BACKGROUND_FIELDS;
+    let mut foreground_vm = Schedule::with_epoch(start);
+    let mut background_vm = Schedule::with_epoch(start);
+    let now = start + FIELD * (BACKGROUND_FIELDS - 1);
+    assert_eq!(
+        foreground_vm.service_deadline(now, FIELD),
+        start + background
+    );
+    assert_eq!(
+        background_vm.service_deadline(now, background),
+        start + background
     );
 }

@@ -2,7 +2,10 @@
 
 The frontend uses absolute host deadlines for emulation service and presentation.
 Input and control arrivals can wake the UI before a deadline. Extra UI updates do
-not postpone the next deadline or advance TV noise by themselves.
+not postpone the next deadline or advance TV noise by themselves. VMs with the
+same cadence share a clock epoch, so their deadlines coincide even when their
+windows open at different times. Background service intervals are whole multiples
+of foreground fields, allowing their wakes to coincide too.
 
 Each VM uses its own viewport's focus and minimized state. A known unfocused or
 minimized VM uses the background policy. Unknown focus remains at foreground
