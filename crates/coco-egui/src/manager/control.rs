@@ -90,31 +90,56 @@ fn control_status(entry: &MachineEntry) -> crate::control::VmStatus {
     }
 }
 
-/// Bind the control listener on `port`, waking `ctx` whenever a request
-/// lands. `port == 0` disables the listener outright; a bind failure is
-/// logged and also disables it — neither is fatal to the app.
+/// Bind the control listener on `port` at startup, waking `ctx` whenever a
+/// request lands. `port == 0` disables the listener outright; a bind failure
+/// is logged and also disables it — neither is fatal to the app.
 pub(super) fn bind_control(
     port: u16,
     ctx: &egui::Context,
 ) -> Option<crate::control::ControlServer> {
+    try_bind_control(port, ctx).unwrap_or_else(|e| {
+        tracing::warn!("{e}");
+        None
+    })
+}
+
+/// [`bind_control`]'s fallible core: `Ok(None)` for `port == 0`, `Err` naming
+/// the port a bind failed on.
+fn try_bind_control(
+    port: u16,
+    ctx: &egui::Context,
+) -> Result<Option<crate::control::ControlServer>, String> {
     if port == 0 {
-        return None;
+        return Ok(None);
     }
     let ctx = ctx.clone();
     let wake: crate::control::Wake = std::sync::Arc::new(move || ctx.request_repaint());
-    match crate::control::ControlServer::bind(port, wake) {
-        Ok(server) => {
-            tracing::info!("control: listening on 127.0.0.1:{}", server.port());
-            Some(server)
-        }
-        Err(e) => {
-            tracing::warn!("control: could not bind 127.0.0.1:{port}: {e}");
-            None
-        }
-    }
+    let server = crate::control::ControlServer::bind(port, wake)
+        .map_err(|e| format!("control: could not bind 127.0.0.1:{port}: {e}"))?;
+    tracing::info!("control: listening on 127.0.0.1:{}", server.port());
+    Ok(Some(server))
 }
 
 impl ManagerApp {
+    /// The live listener's port, `0` when there is none.
+    pub(super) fn control_port(&self) -> u16 {
+        self.control
+            .as_ref()
+            .map_or(0, crate::control::ControlServer::port)
+    }
+
+    /// Move the listener to `port` for a Settings save: a no-op when already
+    /// there. Binds the new port before the assignment drops the old
+    /// listener, so an `Err` keeps the old one serving (its open connections
+    /// finish on their own either way).
+    pub(super) fn rebind_control(&mut self, port: u16, ctx: &egui::Context) -> Result<(), String> {
+        if port == self.control_port() {
+            return Ok(());
+        }
+        self.control = try_bind_control(port, ctx)?;
+        Ok(())
+    }
+
     /// Drain every request queued since last frame, dispatching each one —
     /// immediate actions reply right away; others join [`Self::pending`].
     /// Called once per `update()`, before [`Self::draw_running_vms`].

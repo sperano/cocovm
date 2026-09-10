@@ -16,6 +16,7 @@ pub fn run(
 ) -> eframe::Result<()> {
     let crate::config::Config {
         control_port,
+        control_port_overridden,
         assets_url,
         toolbar_icons_only,
         toolbar_icons_only_overridden,
@@ -72,6 +73,7 @@ pub fn run(
             );
             app.toolbar_icons_only = toolbar_icons_only;
             app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
+            app.control_port_overridden = control_port_overridden;
             app.status_bar_icons_only = status_bar_icons_only;
             app.status_bar_icons_only_overridden = status_bar_icons_only_overridden;
             app.config_path = config_path;

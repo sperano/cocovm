@@ -339,6 +339,10 @@ pub struct ManagerApp {
     /// (`Config::toolbar_icons_only_overridden`); Settings then skips the
     /// live apply on save so the override keeps winning until restart.
     pub(crate) toolbar_icons_only_overridden: bool,
+    /// True when a CLI flag or env var supplied `control_port`
+    /// (`Config::control_port_overridden`); Settings then leaves the live
+    /// listener alone on save so the override keeps winning until restart.
+    pub(crate) control_port_overridden: bool,
     /// Global status-bar readout toggle, pushed to every open VM window
     /// each frame like `toolbar_icons_only`. The manager has no status bar
     /// of its own, so nothing here reads it.
@@ -393,6 +397,7 @@ impl ManagerApp {
             asset_dialog: None,
             toolbar_icons_only: false,
             toolbar_icons_only_overridden: false,
+            control_port_overridden: false,
             status_bar_icons_only: false,
             status_bar_icons_only_overridden: false,
             config_path: None,
