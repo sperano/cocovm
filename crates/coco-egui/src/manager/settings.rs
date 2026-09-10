@@ -21,9 +21,9 @@ const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
 /// Width of the `assets_url` text field.
 const ASSETS_URL_WIDTH: f32 = 360.0;
 
-/// Hint line under the fields: which changes are immediate and which need a
+/// Hint line under the fields: which changes apply on save and which need a
 /// restart, and that CLI/env overrides still win.
-const RESTART_HINT: &str = "The assets URL takes effect the next time cocovm starts; the log \
+const APPLY_HINT: &str = "The assets URL takes effect the next time cocovm starts; the log \
      level and control port apply as soon as you save. A command-line flag or environment \
      variable for any of these still overrides this file.";
 
@@ -139,7 +139,7 @@ impl SettingsDialog {
         ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
 
         ui.add_space(DETAIL_SECTION_GAP);
-        ui.label(RESTART_HINT);
+        ui.label(APPLY_HINT);
 
         if let Some(err) = &self.error {
             ui.colored_label(ui.visuals().error_fg_color, err);

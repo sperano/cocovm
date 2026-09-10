@@ -344,7 +344,7 @@ pub struct ManagerApp {
     /// listener alone on save so the override keeps winning until restart.
     pub(crate) control_port_overridden: bool,
     /// Re-levels the global log subscriber on a Settings save
-    /// (`startup::setup_logging`). `None` in tests, which install none.
+    /// (`startup::setup_logging`); `None` outside the app unless a test seeds one.
     pub(crate) log_reload: Option<crate::startup::LogReload>,
     /// `control_port_overridden`'s counterpart for `log_level`.
     pub(crate) log_level_overridden: bool,
