@@ -23,9 +23,9 @@ const ASSETS_URL_WIDTH: f32 = 360.0;
 
 /// Hint line under the fields: which changes are immediate and which need a
 /// restart, and that CLI/env overrides still win.
-const RESTART_HINT: &str = "Log level and assets URL take effect the next time cocovm starts; \
-     the control port moves as soon as you save. A command-line flag or environment variable for \
-     any of these still overrides this file.";
+const RESTART_HINT: &str = "The assets URL takes effect the next time cocovm starts; the log \
+     level and control port apply as soon as you save. A command-line flag or environment \
+     variable for any of these still overrides this file.";
 
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
@@ -189,8 +189,8 @@ impl ManagerApp {
         }
     }
 
-    /// Saves the draft and closes the dialog; applies the icons-only toggles
-    /// and `control_port` live unless a CLI/env override wins. A save or bind
+    /// Saves the draft and closes the dialog; applies the icons-only toggles,
+    /// `log_level` and `control_port` live unless a CLI/env override wins. A
     /// failure shows in the dialog, which stays open with the old listener.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &self.settings else {
@@ -199,6 +199,7 @@ impl ManagerApp {
         let file = dialog.to_file_config();
         let (toolbar_icons_only, status_bar_icons_only) =
             (dialog.toolbar_icons_only, dialog.status_bar_icons_only);
+        let log_level = (!self.log_level_overridden).then_some(dialog.log_level);
         let port_change = (dialog.control_port != dialog.opened_control_port
             && !self.control_port_overridden)
             .then_some(dialog.control_port);
@@ -213,6 +214,9 @@ impl ManagerApp {
             if !self.status_bar_icons_only_overridden {
                 self.status_bar_icons_only = status_bar_icons_only;
             }
+            if let Some(level) = log_level {
+                self.relevel_logging(level)?;
+            }
             match port_change {
                 Some(port) => self.rebind_control(port, ctx),
                 None => Ok(()),
@@ -226,6 +230,19 @@ impl ManagerApp {
                 }
             }
         }
+    }
+}
+
+impl ManagerApp {
+    /// Swap the live log filter to `level` through [`ManagerApp::log_reload`];
+    /// a no-op without one (tests).
+    fn relevel_logging(&self, level: LogLevel) -> Result<(), String> {
+        let Some(handle) = &self.log_reload else {
+            return Ok(());
+        };
+        handle
+            .reload(crate::startup::log_filter(level.into()))
+            .map_err(|e| format!("could not change the log level: {e}"))
     }
 }
 

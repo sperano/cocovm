@@ -1,12 +1,14 @@
 //! `SettingsDialog::to_file_config`'s collapse rules: only values that
 //! diverge from the built-in defaults reach `config.toml`. Plus
-//! `commit_settings`'s live control-port moves, which need the private
-//! dialog fields a `ui_tests` harness can't reach.
+//! `commit_settings`'s live control-port moves and log re-leveling, which
+//! need the private dialog fields a `ui_tests` harness can't reach.
 
 use std::net::{Ipv4Addr, TcpListener};
 use std::sync::Arc;
 
 use eframe::egui;
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::{EnvFilter, Registry, reload};
 
 use super::SettingsDialog;
 use crate::cli::LogLevel;
@@ -156,4 +158,65 @@ fn commit_reports_a_bind_failure_in_the_dialog() {
         dir.path().join("config.toml").is_file(),
         "the file is saved before the rebind is attempted"
     );
+}
+
+/// A reload layer over a WARN filter that is never installed globally — the
+/// handle swaps the filter whether or not a subscriber uses it, but only
+/// weakly references the layer, so the caller must keep the layer alive.
+/// Skipped under `RUST_LOG`: the env directives would change the hint.
+fn log_reload_at_warn() -> Option<(
+    reload::Layer<EnvFilter, Registry>,
+    crate::startup::LogReload,
+)> {
+    if std::env::var_os("RUST_LOG").is_some() {
+        return None;
+    }
+    Some(reload::Layer::new(crate::startup::log_filter(
+        LevelFilter::WARN,
+    )))
+}
+
+fn current_level(handle: &crate::startup::LogReload) -> Option<LevelFilter> {
+    handle
+        .with_current(|filter| filter.max_level_hint())
+        .expect("layer still alive")
+}
+
+#[test]
+fn commit_relevels_the_log_subscriber() {
+    let Some((_layer, handle)) = log_reload_at_warn() else {
+        return;
+    };
+    let dir = TempDir::new("settings-log-level");
+    let mut manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    manager.config_path = Some(dir.path().join("config.toml"));
+    manager.log_reload = Some(handle.clone());
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog.log_level = LogLevel::Trace;
+    manager.settings = Some(dialog);
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none());
+    assert_eq!(current_level(&handle), Some(LevelFilter::TRACE));
+}
+
+#[test]
+fn commit_leaves_a_cli_env_log_level_override_alone() {
+    let Some((_layer, handle)) = log_reload_at_warn() else {
+        return;
+    };
+    let dir = TempDir::new("settings-log-level-override");
+    let mut manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    manager.config_path = Some(dir.path().join("config.toml"));
+    manager.log_reload = Some(handle.clone());
+    manager.log_level_overridden = true;
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog.log_level = LogLevel::Trace;
+    manager.settings = Some(dialog);
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none());
+    assert_eq!(current_level(&handle), Some(LevelFilter::WARN));
 }

@@ -5,6 +5,9 @@ use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
 use pluralizer::pluralize;
 use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::{EnvFilter, Registry, reload};
 
 use crate::paths;
 
@@ -25,18 +28,26 @@ pub(crate) fn use_color() -> bool {
         && std::io::IsTerminal::is_terminal(&std::io::stdout())
 }
 
+/// Swaps the live log filter (`SettingsDialog`'s log level, `manager/settings.rs`).
+pub(crate) type LogReload = reload::Handle<EnvFilter, Registry>;
+
 /// Install the global log subscriber at `level`, colored only when
-/// `use_color` allows it. `RUST_LOG` still wins when set — it filters per
-/// module, which `--log-level` cannot express.
-pub(crate) fn setup_logging(use_color: bool, level: LevelFilter) {
-    tracing_subscriber::fmt()
-        .with_ansi(use_color)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(level.into())
-                .from_env_lossy(),
-        )
+/// `use_color` allows it, and return the handle that re-levels it later.
+pub(crate) fn setup_logging(use_color: bool, level: LevelFilter) -> LogReload {
+    let (filter, handle) = reload::Layer::new(log_filter(level));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().with_ansi(use_color))
         .init();
+    handle
+}
+
+/// The filter for `level`. `RUST_LOG` still wins when set — it filters per
+/// module, which `--log-level` cannot express — so re-leveling keeps it too.
+pub(crate) fn log_filter(level: LevelFilter) -> EnvFilter {
+    EnvFilter::builder()
+        .with_default_directive(level.into())
+        .from_env_lossy()
 }
 
 /// Inner width of the banner box, in columns.
