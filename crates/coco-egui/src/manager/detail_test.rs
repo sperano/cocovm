@@ -32,6 +32,7 @@ fn rename_fixture(name: &str) -> (TempDir, ManagerApp, EditState) {
         slug: "alpha".to_string(),
         name: name.to_string(),
         form,
+        roms: Vec::new(),
         packed,
     };
     (machines_dir, manager, edit)
@@ -98,6 +99,7 @@ fn collision_resolution_back_to_the_current_slug_does_not_rename() {
         slug: "alpha-2".to_string(),
         name: "Alpha".to_string(),
         form,
+        roms: Vec::new(),
         packed,
     };
 
