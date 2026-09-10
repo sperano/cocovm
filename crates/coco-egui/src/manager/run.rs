@@ -89,6 +89,7 @@ pub fn run(
             welcome.shuffle_overridden = welcome_image_shuffle_overridden;
             welcome.load_random();
             app.config_path = config_path;
+            app.roms_dir = crate::paths::roms_dir();
             app.log_reload = Some(log_reload);
             app.log_level_overridden = log_level_overridden;
             if !missing.is_empty() {

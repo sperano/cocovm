@@ -176,16 +176,22 @@ pub(crate) fn installed_roms_dir() -> PathBuf {
     crate::paths::roms_dir().expect("no home directory (checked at startup by require_data_dir)")
 }
 
+/// The FD-502's Disk Extended Color BASIC dump under the roms dir.
+pub(crate) const DISK_BASIC_ROM: &str = "disk11.rom";
+
+/// The Deluxe RS-232 Pak's optional EPROM dump under the roms dir.
+pub(crate) const RS232_EPROM_ROM: &str = "rs232.rom";
+
 /// Where the FD-502 disk controller and save-state hashing read the Disk
 /// BASIC ROM from.
 pub(crate) fn disk_basic_rom_path() -> PathBuf {
-    installed_roms_dir().join("disk11.rom")
+    installed_roms_dir().join(DISK_BASIC_ROM)
 }
 
 /// Where [`crate::CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional
 /// EPROM dump from, if present.
 pub(crate) fn rs232_eprom_default_path() -> PathBuf {
-    installed_roms_dir().join("rs232.rom")
+    installed_roms_dir().join(RS232_EPROM_ROM)
 }
 
 /// The Sound/Speech Cartridge's SP0256-AL2 allophone ROM (MAME's

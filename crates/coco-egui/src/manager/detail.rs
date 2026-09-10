@@ -9,8 +9,32 @@ use eframe::egui;
 
 use crate::{humanize_runtime, machine_def, new_vm, titled_group};
 
-use super::detail_map;
-use super::{DETAIL_SECTION_GAP, EditState, ManagerApp, NO_CONFIG_DIR, vm_status_label};
+use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR, detail_map, roms, vm_status_label};
+
+/// The detail pane's working state for the selected entry: the shared
+/// [`new_vm::MachineForm`] over its definition, auto-saved on every change
+/// (macOS System Settings style — no Save/Revert).
+pub(super) struct EditState {
+    /// Which entry this state belongs to — a mismatch (a different row was
+    /// clicked) means it must be reseeded before it's shown again.
+    pub(super) slug: String,
+    /// The Name field's draft. Unlike the form, it only commits (saves, and
+    /// migrates the slug — [`ManagerApp::commit_name`]) on focus loss/Enter,
+    /// so half-typed names aren't saved keystroke by keystroke.
+    pub(super) name: String,
+    pub(super) form: new_vm::MachineForm,
+    /// The definition the form's picks last packed into ([`ManagerApp::pack_def`]) —
+    /// the auto-save baseline. Seeded from the freshly seeded form (NOT
+    /// from the entry's definition): packing normalizes (explicit `vdg`,
+    /// re-seated MPI slots, dropped conflicting flags), and merely
+    /// selecting a row must never rewrite a hand-edited file. Only a real
+    /// user change makes the repack differ from this and triggers a save.
+    pub(super) packed: machine_def::MachineDef,
+    /// The ROMs group's rows (`roms::rom_rows`), recomputed when the
+    /// definition changes rather than every frame: each row reads and
+    /// checksums its file.
+    pub(super) roms: Vec<roms::ROMRow>,
+}
 
 /// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
 /// [`new_vm::FORM_LABEL_MIN_WIDTH`]) — the shared floor keeps the sections'
@@ -161,6 +185,7 @@ impl ManagerApp {
                 slug: slug.clone(),
                 name: def.name.clone(),
                 form,
+                roms: roms::rom_rows(&packed, &slug, self.roms_dir.as_deref()),
                 packed,
             });
             self.save_error = None;
@@ -179,6 +204,8 @@ impl ManagerApp {
         ui.add_space(DETAIL_SECTION_GAP);
 
         draw_form_sections(ui, &slug, &mut edit.form);
+        ui.add_space(DETAIL_SECTION_GAP);
+        roms::draw_roms(ui, &slug, &edit.roms);
         if self.entries[index].is_alive() {
             ui.add_space(DETAIL_SECTION_GAP);
             // Resume restores the frozen snapshot's hardware wholesale, so
@@ -230,6 +257,7 @@ impl ManagerApp {
                     match result {
                         Ok(()) => {
                             self.entries[index].def = new_def.clone();
+                            edit.roms = roms::rom_rows(&new_def, slug, self.roms_dir.as_deref());
                             edit.packed = new_def;
                             self.save_error = None;
                         }

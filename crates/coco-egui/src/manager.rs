@@ -23,6 +23,7 @@ use eframe::egui;
 use crate::photo_view::Photo;
 use crate::{CocoApp, machine_def, new_vm};
 
+use detail::EditState;
 use selection::Selection;
 
 pub(crate) mod assets;
@@ -36,6 +37,7 @@ mod list;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
 mod rename;
+mod roms;
 mod run;
 mod selection;
 mod settings;
@@ -250,27 +252,6 @@ fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), St
     fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))
 }
 
-/// The detail pane's working state for the selected entry: the shared
-/// [`new_vm::MachineForm`] over its definition, auto-saved on every change
-/// (macOS System Settings style — no Save/Revert).
-struct EditState {
-    /// Which entry this state belongs to — a mismatch (a different row was
-    /// clicked) means it must be reseeded before it's shown again.
-    slug: String,
-    /// The Name field's draft. Unlike the form, it only commits (saves, and
-    /// migrates the slug — [`ManagerApp::commit_name`]) on focus loss/Enter,
-    /// so half-typed names aren't saved keystroke by keystroke.
-    name: String,
-    form: new_vm::MachineForm,
-    /// The definition the form's picks last packed into ([`ManagerApp::pack_def`]) —
-    /// the auto-save baseline. Seeded from the freshly seeded form (NOT
-    /// from the entry's definition): packing normalizes (explicit `vdg`,
-    /// re-seated MPI slots, dropped conflicting flags), and merely
-    /// selecting a row must never rewrite a hand-edited file. Only a real
-    /// user change makes the repack differ from this and triggers a save.
-    packed: machine_def::MachineDef,
-}
-
 pub struct ManagerApp {
     #[cfg(feature = "perf")]
     perf_scenario: Option<perf_scenarios::ScenarioRun>,
@@ -281,6 +262,10 @@ pub struct ManagerApp {
     /// directory exists (`paths::config_dir` docs) — Save/Create then report
     /// the problem in place rather than silently doing nothing.
     machines_dir: Option<PathBuf>,
+    /// Installed ROM directory (`paths::roms_dir()`) the detail pane's
+    /// ROMs group resolves stock images under; `None` when no home
+    /// directory exists, and in tests, which must never read the real one.
+    pub(crate) roms_dir: Option<PathBuf>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
     /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
@@ -387,6 +372,7 @@ impl ManagerApp {
             perf_scenario: None,
             welcome_image: welcome_image::WelcomeImage::new(photo),
             machines_dir,
+            roms_dir: None,
             artifacts_root,
             entries,
             selection: Selection::default(),
