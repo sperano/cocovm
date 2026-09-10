@@ -46,6 +46,8 @@ def arguments():
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
     parser.add_argument("--repeats", type=int, default=DEFAULT_REPEATS)
     parser.add_argument("--profile", choices=("release", "dev"), default="release")
+    parser.add_argument("--checkout", type=Path, default=ROOT,
+                        help="checkout that owns the measured binary and revision metadata")
     parser.add_argument("--display", choices=("rgb", "cmp", "tv", "tv-bw"))
     parser.add_argument("--vm-count", type=int)
     parser.add_argument("--sample-profile", action="store_true", help="capture macOS sample; adds overhead")
@@ -55,6 +57,10 @@ def arguments():
                         help="macOS native: maintain owned process focus; adds automation overhead")
     parser.add_argument("--focus-vm", action="store_true",
                         help="macOS native: make the first VM viewport the main window")
+    parser.add_argument("--focus-after-warmup", action="store_true",
+                        help="macOS native: move VM focus at the measurement boundary")
+    parser.add_argument("--vm-position", nargs=2, type=int, metavar=("X", "Y"),
+                        help="macOS native: position the focused first VM viewport")
     args = parser.parse_args()
     if not all(valid_window_seconds(value) for value in (args.warmup, args.duration)):
         parser.error(f"warmup and duration must be finite, positive, and at most {MAX_WINDOW_SECONDS:g} seconds")
@@ -69,7 +75,15 @@ def arguments():
         parser.error("keep-foreground requires a native macOS run")
     if args.focus_vm and not args.keep_foreground:
         parser.error("focus-vm requires keep-foreground")
+    if args.vm_position and not args.focus_vm:
+        parser.error("vm-position requires focus-vm")
+    if args.focus_after_warmup and not args.focus_vm:
+        parser.error("focus-after-warmup requires focus-vm")
+    selected_scenarios = args.scenario or allowed
+    if args.focus_vm and "background" in selected_scenarios:
+        parser.error("focus-vm cannot be combined with the intentionally background scenario")
     args.output = args.output.resolve()
+    args.checkout = args.checkout.resolve()
     args.output.mkdir(parents=True, exist_ok=False)
     return args
 
@@ -122,22 +136,28 @@ def start_profiler(process, run_dir):
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def update_focus(process, args, scenario, elapsed, focus):
+def update_focus(process, args, scenario, elapsed, focus, run_dir):
     if not args.keep_foreground or scenario == "background" or elapsed < args.warmup * FOCUS_WARMUP_FRACTION:
+        return True
+    if args.focus_after_warmup and marker(run_dir, "started") is None:
         return True
     focus["checks"] += 1
     try:
-        ensure = (lambda: foreground.ensure_window(process.pid, PERF_VM_WINDOW_TITLE)) \
-            if args.focus_vm else (lambda: foreground.ensure(process.pid))
-        focus["changes"] += int(ensure())
+        changed = foreground.ensure_window(process.pid, PERF_VM_WINDOW_TITLE, args.vm_position) \
+            if args.focus_vm else foreground.ensure(process.pid)
+        if changed is None:
+            focus["missing"] += 1
+        else:
+            focus["verified"] += 1
+            focus["changes"] += int(changed)
     except RuntimeError:
-        if process.poll() is None:
+        if process.poll() is None and marker(run_dir, "finished") is None:
             raise
         return False
     return True
 
 
-def finish_observation(load, profiler, run_dir, focus, keep_foreground):
+def finish_observation(load, profiler, run_dir, focus, args):
     try:
         if load:
             (run_dir / "control.json").write_text(json.dumps(control.finish(load), indent=2))
@@ -146,15 +166,17 @@ def finish_observation(load, profiler, run_dir, focus, keep_foreground):
             if profiler:
                 stop_process(profiler)
         finally:
-            if keep_foreground:
+            if args.keep_foreground:
                 (run_dir / "foreground.json").write_text(json.dumps(focus, indent=2))
+                if args.focus_vm and focus["verified"] == 0:
+                    raise RuntimeError(f"never verified focused window {PERF_VM_WINDOW_TITLE!r}")
 
 
 def observe(process, args, scenario, run_dir, port, samples):
     started = time.monotonic()
     load, profiler = None, None
     backgrounded = False
-    focus = {"checks": 0, "changes": 0}
+    focus = {"checks": 0, "changes": 0, "missing": 0, "verified": 0}
     try:
         while process.poll() is None:
             elapsed = time.monotonic() - started
@@ -173,14 +195,14 @@ def observe(process, args, scenario, run_dir, port, samples):
                     profiler = start_profiler(process, run_dir)
             if finished:
                 break
-            if not update_focus(process, args, scenario, elapsed, focus):
+            if not update_focus(process, args, scenario, elapsed, focus, run_dir):
                 break
             measurement = host.sample(process.pid)
             if measurement:
                 samples.append(measurement)
             time.sleep(host.SAMPLE_INTERVAL)
     finally:
-        finish_observation(load, profiler, run_dir, focus, args.keep_foreground)
+        finish_observation(load, profiler, run_dir, focus, args)
     process.wait(timeout=EXIT_GRACE)
 
 
@@ -231,7 +253,7 @@ def run(args, scenario, repeat):
     run_dir = args.output / f"{scenario}-{repeat}"
     run_dir.mkdir()
     profile = "debug" if args.profile == "dev" else "release"
-    target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")).resolve() / profile
+    target = Path(os.environ.get("CARGO_TARGET_DIR", args.checkout / "target")).resolve() / profile
     binary = target / ("cocovm" if args.kind == "native" else "examples/perf_baseline")
     port = free_port() if scenario == "control-load" else 0
     command = [str(binary), "--control-port", str(port)] if args.kind == "native" else [str(binary), scenario]
@@ -246,7 +268,7 @@ def run(args, scenario, repeat):
 
 def main():
     args = arguments()
-    metadata = host.metadata(ROOT)
+    metadata = host.metadata(args.checkout)
     metadata["settings"] = {key: str(value) if isinstance(value, Path) else value
                             for key, value in vars(args).items()}
     (args.output / "metadata.json").write_text(json.dumps(metadata, indent=2))

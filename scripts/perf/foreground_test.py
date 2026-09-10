@@ -29,11 +29,24 @@ class ForegroundTests(unittest.TestCase):
             self.assertTrue(foreground.ensure_window(BENCHMARK_PID, 'Performance "0"'))
         script = run.call_args.args[0][-1]
         self.assertIn(f"whose unix id is {BENCHMARK_PID}", script)
-        self.assertIn('whose name is "Performance \\"0\\""', script)
+        self.assertIn('window "Performance \\"0\\"" of benchmarkProcess', script)
         self.assertIn('perform action "AXRaise"', script)
         self.assertIn('attribute "AXMain"', script)
         self.assertIn('attribute "AXFocused"', script)
         self.assertIn('if not changedState then', script)
+
+    def test_missing_named_window_can_be_retried(self):
+        with patch.object(foreground.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="missing\n")):
+            self.assertIsNone(foreground.ensure_window(BENCHMARK_PID, "Performance 0"))
+
+    def test_named_window_position_is_set(self):
+        with patch.object(foreground.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="changed\n")) as run:
+            foreground.ensure_window(BENCHMARK_PID, "Performance 0", (-1450, 80))
+        script = run.call_args.args[0][-1]
+        self.assertIn("position of benchmarkWindow is not {-1450, 80}", script)
+        self.assertIn("set position of benchmarkWindow to {-1450, 80}", script)
 
 
 if __name__ == "__main__":
