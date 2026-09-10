@@ -16,6 +16,57 @@ SHORT_TERMINATE_GRACE = 0.05
 
 
 class BaselineTests(unittest.TestCase):
+    def test_checkout_is_resolved_for_binary_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            checkout = Path(directory) / "checkout"
+            argv = ["baseline.py", "core", "--output", str(output),
+                    "--checkout", str(checkout)]
+            with patch("sys.argv", argv):
+                args = baseline.arguments()
+            self.assertEqual(args.checkout, checkout.resolve())
+
+    def test_focus_vm_requires_a_verified_window(self):
+        args = SimpleNamespace(keep_foreground=True, focus_vm=True)
+        focus = {"checks": 1, "changes": 0, "missing": 1, "verified": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "never verified focused window"):
+                baseline.finish_observation(None, None, run_dir, focus, args)
+            self.assertEqual(json.loads((run_dir / "foreground.json").read_text()), focus)
+
+    def test_focus_vm_requires_keep_foreground(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            argv = ["baseline.py", "native", "--output", str(output), "--focus-vm"]
+            with patch("sys.argv", argv), patch("sys.stderr", io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    baseline.arguments()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertFalse(output.exists())
+
+    def test_focus_after_warmup_requires_focus_vm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            argv = ["baseline.py", "native", "--output", str(output),
+                    "--keep-foreground", "--focus-after-warmup"]
+            with patch("sys.argv", argv), patch("sys.stderr", io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    baseline.arguments()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertFalse(output.exists())
+
+    def test_focus_vm_rejects_intentionally_background_scenario(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            argv = ["baseline.py", "native", "--output", str(output),
+                    "--scenario", "background", "--keep-foreground", "--focus-vm"]
+            with patch("sys.argv", argv), patch("sys.stderr", io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    baseline.arguments()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertFalse(output.exists())
+
     def test_window_limit_includes_boundary_and_rejects_nonfinite_values(self):
         self.assertTrue(baseline.valid_window_seconds(baseline.MAX_WINDOW_SECONDS))
         for value in (0, -1, float("nan"), float("inf"), baseline.MAX_WINDOW_SECONDS + 1):

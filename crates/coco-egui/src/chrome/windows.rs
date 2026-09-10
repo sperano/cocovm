@@ -12,8 +12,13 @@ impl CocoApp {
         {
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
+        let was_running = self.running;
         self.debugger
             .windows_ui(ctx, &mut self.machine, &mut self.running);
+        if was_running != self.running {
+            self.reset_emulation_clock();
+            ctx.request_repaint();
+        }
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }

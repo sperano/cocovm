@@ -116,10 +116,9 @@ pub(crate) const MAX_FIELDS_PER_UPDATE: usize = 8;
 /// Longest wall-clock gap credited to the emulation clock, in seconds. Gaps
 /// beyond this (window drag, app hidden, debugger pause) are discarded.
 pub(crate) const MAX_FRAME_DT: f64 = 0.25;
-/// Repaint cadence for running VMs while no cocovm window has focus (egui
-/// subtracts its 1/60 s `predicted_dt`, so wake-ups land every ~83 ms). Bounds:
-/// the wake gap must stay under the one-interval audio cushion, and cushion +
-/// `MAX_FIELDS_PER_UPDATE` fields must stay under the 0.25 s audio ring.
+/// Audio cushion for an unfocused or minimized VM. The host service deadline
+/// reserves one field of this interval for callback and presentation jitter.
+/// Cushion plus bounded catch-up remains below the 0.25 s audio ring at NTSC/PAL.
 pub(crate) const BACKGROUND_REPAINT_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(100);
 /// Height reserved for the top menu bar row when sizing the window.

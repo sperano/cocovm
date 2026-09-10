@@ -11,6 +11,9 @@ The [audio buffer comparison](results/2026-09-08-audio/RESULTS.md) measures the
 first audio allocation optimization against that baseline.
 The [display comparison](results/2026-09-08-display/RESULTS.md) measures
 presentation caching and reusable TV-processing buffers.
+The [scheduling comparison](results/2026-09-09-scheduling/RESULTS.md) measures
+deadline scheduling, per-window focus policies, and audio continuity. See
+[Schedule frontend work](scheduling.md) for the timing and queue budgets.
 
 ## Build and run
 
@@ -37,16 +40,24 @@ an update before stopping. The reports record actual elapsed time.
 
 The native harness opens windows and uses the default audio device. Leave the
 benchmark windows unobstructed and avoid other host workloads during measurements.
-The background scenario activates Finder on macOS. Recorded viewport focus counts
-show whether the intended focus condition held. A focus request cannot establish
-whether a window is physically occluded. Inspect these counts before comparing runs.
+The background scenario activates Finder on macOS. Recorded focus counters describe
+the whole application. `viewport_states_at_finish` records each viewport's focus
+and minimized state when the report is written. Neither establishes physical
+occlusion. Inspect the recorded states before comparing runs.
 
-For a focused macOS run, add `--keep-foreground`. Once half the warmup time has
+For an application-focused macOS run, add `--keep-foreground`. Once half the warmup time has
 elapsed, the runner checks the owned benchmark process by PID during each resource
 sampling cycle and brings it forward only when needed. The background scenario
 skips this action. `foreground.json` records check and focus-change counts. Automation
 failures fail the run. These checks and any resulting focus/input events add overhead;
 use the same setting in comparisons and continue checking recorded viewport focus.
+
+The fixture initially focuses the manager. To measure a focused VM, also pass
+`--focus-vm`. The runner targets the owned process's **Performance 0** window and
+verifies its main-window and focused-window attributes. It raises the window only
+when needed. `foreground.json` records successful verifications and missing-window
+checks separately; a run without a successful verification fails. Keep
+manager-focused and VM-focused results separate when comparing presentation rates.
 
 The runner creates temporary XDG configuration and data directories, links the
 installed ROM directory, and generates machine definitions there. The manager image

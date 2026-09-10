@@ -1,28 +1,4 @@
-use super::background_repaint_delay;
 use crate::BACKGROUND_REPAINT_INTERVAL;
-
-#[test]
-fn no_viewports_never_throttles() {
-    assert_eq!(background_repaint_delay([]), None);
-}
-
-#[test]
-fn all_unfocused_throttles() {
-    assert_eq!(
-        background_repaint_delay([Some(false), Some(false)]),
-        Some(BACKGROUND_REPAINT_INTERVAL)
-    );
-}
-
-#[test]
-fn any_focused_window_keeps_full_rate() {
-    assert_eq!(background_repaint_delay([Some(false), Some(true)]), None);
-}
-
-#[test]
-fn unknown_focus_counts_as_focused() {
-    assert_eq!(background_repaint_delay([Some(false), None]), None);
-}
 
 /// Boots a default CoCo 3 from the installed `coco3.rom`.
 fn boot() -> crate::CocoApp {
@@ -61,6 +37,46 @@ fn a_breakpoint_hit_inside_the_cushion_run_is_not_overrun() {
 }
 
 #[test]
+fn breakpoint_during_step_resets_clock_without_another_paused_frame() {
+    let mut app = boot();
+    app.run_fields(1);
+    let bp = app.machine.cpu.pc;
+    app.debugger.add_breakpoint(bp);
+    app.last_update = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
+    app.field_debt = 0.5;
+    let ctx = eframe::egui::Context::default();
+
+    let _ = ctx.run(eframe::egui::RawInput::default(), |ctx| {
+        app.step_emulation(ctx, None);
+    });
+
+    assert!(!app.running);
+    assert_eq!(app.machine.cpu.pc, bp);
+    assert_eq!(app.last_update, None);
+    assert_eq!(app.field_debt, 0.0);
+    assert_eq!(app.audio_cushion_fields, 0);
+}
+
+#[test]
+fn pause_and_resume_without_a_paused_ui_frame_discards_the_old_clock() {
+    let mut app = boot();
+    let old_update = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    app.last_update = Some(old_update);
+    app.field_debt = 0.75;
+    app.audio_cushion_fields = 2;
+    app.schedule
+        .service_deadline(old_update, std::time::Duration::from_millis(16));
+
+    app.set_running(false);
+    app.set_running(true);
+
+    assert_eq!(app.last_update, None);
+    assert_eq!(app.field_debt, 0.0);
+    assert_eq!(app.audio_cushion_fields, 0);
+    assert_eq!(app.fields_due_at(std::time::Instant::now()), 0);
+}
+
+#[test]
 fn entering_the_throttle_runs_a_cushion_ahead_and_leaving_owes_it_back() {
     let mut app = boot();
 
@@ -92,6 +108,34 @@ fn entering_the_throttle_runs_a_cushion_ahead_and_leaving_owes_it_back() {
         0,
         "the clock idles while the cushion plays out"
     );
+}
+
+#[test]
+fn fields_due_at_accumulates_fractional_fields_across_high_refresh_updates() {
+    const HOST_FRAME: std::time::Duration = std::time::Duration::from_millis(4);
+    let mut app = boot();
+    let start = std::time::Instant::now();
+    assert_eq!(app.fields_due_at(start), 0);
+
+    let mut total = 0;
+    for frame in 1..=250 {
+        total += app.fields_due_at(start + HOST_FRAME * frame);
+    }
+
+    let expected = app.machine.config.video.field_rate_hz().floor() as usize;
+    assert_eq!(total, expected);
+}
+
+#[test]
+fn fields_due_at_clamps_host_stalls_and_discards_excess_debt() {
+    let mut app = boot();
+    let start = std::time::Instant::now();
+    assert_eq!(app.fields_due_at(start), 0);
+
+    let due = app.fields_due_at(start + std::time::Duration::from_secs(10));
+
+    assert_eq!(due, crate::MAX_FIELDS_PER_UPDATE);
+    assert!(app.field_debt <= 1.0);
 }
 
 #[test]

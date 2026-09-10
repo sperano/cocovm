@@ -44,7 +44,7 @@ const LOWPASS_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
 /// Ring buffer bound, in seconds of buffered audio, before `push_samples`
 /// starts dropping the oldest queued frames. Bounds worst-case output latency
 /// and keeps a paused/backgrounded UI from growing the buffer unboundedly.
-const RING_BUFFER_SECS: f64 = 0.25;
+pub(crate) const RING_BUFFER_SECS: f64 = 0.25;
 /// Initial producer scratch space, allowing several fields per UI update.
 /// Unusually large batches can grow this storage; subsequent batches reuse it.
 const INITIAL_PROCESSED_CAPACITY: usize = 16_384;
