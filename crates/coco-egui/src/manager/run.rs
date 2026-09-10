@@ -9,12 +9,15 @@ use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
 /// Open the manager as the application's main window. `config_path` is the
 /// same path `main.rs` resolved `config` from (`None` when no home
 /// directory exists — `paths::config_dir` docs); the Settings dialog reads
-/// and writes it directly (`manager/settings.rs`).
+/// and writes it directly (`manager/settings.rs`), and re-levels the log
+/// subscriber through `log_reload`.
 pub fn run(
     config: crate::config::Config,
     config_path: Option<std::path::PathBuf>,
+    log_reload: crate::startup::LogReload,
 ) -> eframe::Result<()> {
     let crate::config::Config {
+        log_level_overridden,
         control_port,
         control_port_overridden,
         assets_url,
@@ -77,6 +80,8 @@ pub fn run(
             app.status_bar_icons_only = status_bar_icons_only;
             app.status_bar_icons_only_overridden = status_bar_icons_only_overridden;
             app.config_path = config_path;
+            app.log_reload = Some(log_reload);
+            app.log_level_overridden = log_level_overridden;
             if !missing.is_empty() {
                 app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
             }

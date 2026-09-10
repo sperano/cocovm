@@ -343,6 +343,11 @@ pub struct ManagerApp {
     /// (`Config::control_port_overridden`); Settings then leaves the live
     /// listener alone on save so the override keeps winning until restart.
     pub(crate) control_port_overridden: bool,
+    /// Re-levels the global log subscriber on a Settings save
+    /// (`startup::setup_logging`); `None` outside the app unless a test seeds one.
+    pub(crate) log_reload: Option<crate::startup::LogReload>,
+    /// `control_port_overridden`'s counterpart for `log_level`.
+    pub(crate) log_level_overridden: bool,
     /// Global status-bar readout toggle, pushed to every open VM window
     /// each frame like `toolbar_icons_only`. The manager has no status bar
     /// of its own, so nothing here reads it.
@@ -398,6 +403,8 @@ impl ManagerApp {
             toolbar_icons_only: false,
             toolbar_icons_only_overridden: false,
             control_port_overridden: false,
+            log_reload: None,
+            log_level_overridden: false,
             status_bar_icons_only: false,
             status_bar_icons_only_overridden: false,
             config_path: None,
