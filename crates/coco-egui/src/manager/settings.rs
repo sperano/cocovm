@@ -24,8 +24,8 @@ const ASSETS_URL_WIDTH: f32 = 360.0;
 /// Hint line under the fields: which changes are immediate and which need a
 /// restart, and that CLI/env overrides still win.
 const RESTART_HINT: &str = "Log level, control port, and assets URL take effect the next time \
-     cocovm starts; status bar style applies to the next VM launch. A command-line flag or \
-     environment variable for any of these still overrides this file.";
+     cocovm starts. A command-line flag or environment variable for any of these still overrides \
+     this file.";
 
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
@@ -185,12 +185,11 @@ impl ManagerApp {
     }
 
     /// Saves the dialog's draft to [`ManagerApp::config_path`]. On success,
-    /// applies `toolbar_icons_only` to the manager's own toolbar immediately
-    /// and `status_bar_icons_only` to the next VM launch — unless a CLI flag
-    /// or env var supplied it for this run, which keeps winning until
-    /// restart, matching the dialog's own hint (a running VM keeps its own
-    /// copies until its next launch — `manager/lifecycle.rs`) — and closes
-    /// the dialog; on failure, shows the error and leaves it open.
+    /// applies the icons-only toggles to the manager's own toolbar and to
+    /// every running VM immediately — unless a CLI flag or env var supplied
+    /// one for this run, which keeps winning until restart, matching the
+    /// dialog's own hint — and closes the dialog; on failure, shows the
+    /// error and leaves it open.
     fn commit_settings(&mut self) {
         let Some(path) = self.config_path.as_deref() else {
             if let Some(dialog) = &mut self.settings {
@@ -209,6 +208,7 @@ impl ManagerApp {
                 if !self.status_bar_icons_only_overridden {
                     self.status_bar_icons_only = dialog.status_bar_icons_only;
                 }
+                self.apply_icons_only_to_running_vms();
                 self.settings = None;
             }
             Err(e) => dialog.error = Some(e),

@@ -91,10 +91,10 @@ fn save_writes_the_toggled_value_and_reopening_shows_it() {
 }
 
 /// `status_bar_icons_only`'s Save path: the key lands in `config.toml` and
-/// the manager's copy — what the next VM launch inherits
-/// (`manager/lifecycle.rs`) — flips immediately, like the toolbar toggle.
+/// the manager's copy — what running and future VMs inherit
+/// (`lifecycle::apply_icons_only_to_running_vms`) — flips immediately.
 #[test]
-fn save_applies_the_status_bar_toggle_to_the_next_launch() {
+fn save_writes_the_status_bar_toggle() {
     let dir = TempDir::new("settings-save-status-bar");
     let config_path = dir.path().join("config.toml");
     let mut harness = settings_harness(config_path.clone());

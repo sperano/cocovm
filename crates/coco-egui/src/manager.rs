@@ -332,15 +332,16 @@ pub struct ManagerApp {
     /// The first-run asset download dialog (`manager/assets.rs`), open while
     /// `Some`. `pub(crate)`: `ui_tests.rs` seeds and asserts on it, like `entries`.
     pub(crate) asset_dialog: Option<assets::AssetDialog>,
-    /// Global toolbar caption toggle, copied to each launched VM.
+    /// Global toolbar caption toggle, pushed to every running VM
+    /// (`lifecycle::apply_icons_only_to_running_vms`).
     pub(crate) toolbar_icons_only: bool,
     /// True when a CLI flag or env var supplied `toolbar_icons_only`
     /// (`Config::toolbar_icons_only_overridden`); Settings then skips the
     /// live apply on save so the override keeps winning until restart.
     pub(crate) toolbar_icons_only_overridden: bool,
-    /// Global status-bar readout toggle, copied to each launched VM
-    /// (`CocoApp::status_bar_icons_only`). The manager has no status bar
-    /// of its own, so nothing here reads it.
+    /// Global status-bar readout toggle, pushed to every running VM like
+    /// `toolbar_icons_only`. The manager has no status bar of its own, so
+    /// nothing here reads it.
     pub(crate) status_bar_icons_only: bool,
     /// `toolbar_icons_only_overridden`'s counterpart for `status_bar_icons_only`.
     pub(crate) status_bar_icons_only_overridden: bool,
