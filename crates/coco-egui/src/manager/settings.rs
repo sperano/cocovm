@@ -21,12 +21,6 @@ const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
 /// Width of the `assets_url` text field.
 const ASSETS_URL_WIDTH: f32 = 360.0;
 
-/// Hint line under the fields: which changes apply on save and which need a
-/// restart, and that CLI/env overrides still win.
-const APPLY_HINT: &str = "The assets URL takes effect the next time cocovm starts; the log \
-     level and control port apply as soon as you save. A command-line flag or environment \
-     variable for any of these still overrides this file.";
-
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
 pub(crate) struct SettingsDialog {
@@ -99,7 +93,7 @@ impl SettingsDialog {
         }
     }
 
-    /// The modal's contents: the five fields, the restart hint, any error
+    /// The modal's contents: the five fields, any error
     /// from the last load/save, and the Save/Cancel row.
     fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
         ui.heading("Settings");
@@ -137,9 +131,6 @@ impl SettingsDialog {
         ui.add_space(DETAIL_SECTION_GAP);
         ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
         ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.label(APPLY_HINT);
 
         if let Some(err) = &self.error {
             ui.colored_label(ui.visuals().error_fg_color, err);
