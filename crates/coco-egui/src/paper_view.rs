@@ -57,6 +57,11 @@ pub struct PaperWindow {
     /// Set by the "Tear Off" button; the next frame renders a confirm/
     /// cancel dialog instead of acting immediately (T6).
     pending_tear_off: bool,
+    /// Whether the previous frame drew the window; a rising edge means it just (re)opened.
+    shown_last_frame: bool,
+    /// One-shot request consumed by the scroll area: start at the roll's top instead of
+    /// egui's default of sticking to the end.
+    scroll_to_top: bool,
 }
 
 impl PaperWindow {
@@ -114,13 +119,20 @@ impl PaperWindow {
         self.pending_tear_off = false;
     }
 
+    /// Records whether this frame draws the window; returns `true` on the frame it (re)opens.
+    fn note_shown(&mut self, shown: bool) -> bool {
+        let was_shown = std::mem::replace(&mut self.shown_last_frame, shown);
+        shown && !was_shown
+    }
+
     /// Draws the window if open and a handle is attached; a no-op frame otherwise. Returns an
     /// error message to surface if a PNG/PDF export failed.
     pub fn ui(&mut self, ctx: &egui::Context) -> Option<String> {
-        let handle = self.handle.clone()?;
-        if !self.open {
-            return None;
+        let shown = self.open && self.handle.is_some();
+        if self.note_shown(shown) {
+            self.scroll_to_top = true;
         }
+        let handle = self.handle.clone().filter(|_| shown)?;
         let mut error: Option<String> = None;
 
         self.invalidate_dirty_pages(&handle);
@@ -405,49 +417,53 @@ impl PaperWindow {
         // Page topmost in the viewport this frame.
         let mut current_page_local = self.current_page;
 
-        egui::ScrollArea::vertical()
-            .stick_to_bottom(true)
-            .show_viewport(ui, |ui, viewport| {
-                let keep_min = viewport.min.y - keep_margin_px;
-                let keep_max = viewport.max.y + keep_margin_px;
-                current_page_local = (viewport.min.y / page_size.y)
-                    .floor()
-                    .clamp(0.0, (total_pages - 1) as f32)
-                    as u32;
+        // On the opening frame, egui's stick-to-bottom would snap a fresh scroll area to the
+        // end of the roll; start at the top instead and only stick once the user scrolls there.
+        let scroll_to_top = std::mem::take(&mut self.scroll_to_top);
+        let mut scroll_area = egui::ScrollArea::vertical().stick_to_bottom(!scroll_to_top);
+        if scroll_to_top {
+            scroll_area = scroll_area.vertical_scroll_offset(0.0);
+        }
+        scroll_area.show_viewport(ui, |ui, viewport| {
+            let keep_min = viewport.min.y - keep_margin_px;
+            let keep_max = viewport.max.y + keep_margin_px;
+            current_page_local = (viewport.min.y / page_size.y)
+                .floor()
+                .clamp(0.0, (total_pages - 1) as f32) as u32;
 
-                for page in 0..total_pages {
-                    let y0 = page as f32 * page_size.y;
-                    let y1 = y0 + page_size.y;
-                    let (rect, _resp) = ui.allocate_exact_size(page_size, egui::Sense::hover());
+            for page in 0..total_pages {
+                let y0 = page as f32 * page_size.y;
+                let y1 = y0 + page_size.y;
+                let (rect, _resp) = ui.allocate_exact_size(page_size, egui::Sense::hover());
 
-                    let in_keep_range = y1 >= keep_min && y0 <= keep_max;
-                    if !in_keep_range {
-                        continue;
-                    }
-                    keep_pages.insert(page);
-
-                    let texture = self.pages.entry(page).or_insert_with(|| {
-                        let img = paper_render::rasterize(
-                            handle,
-                            page as f32 * PAGE_HEIGHT_IN,
-                            PAGE_HEIGHT_IN,
-                            RASTER_DPI,
-                            green_bar,
-                        );
-                        let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                            [img.width as usize, img.height as usize],
-                            &img.pixels,
-                        );
-                        ctx.load_texture(
-                            format!("paper-page-{page}"),
-                            color_image,
-                            egui::TextureOptions::NEAREST,
-                        )
-                    });
-                    let sized = egui::load::SizedTexture::new(texture.id(), rect.size());
-                    ui.put(rect, egui::Image::new(sized));
+                let in_keep_range = y1 >= keep_min && y0 <= keep_max;
+                if !in_keep_range {
+                    continue;
                 }
-            });
+                keep_pages.insert(page);
+
+                let texture = self.pages.entry(page).or_insert_with(|| {
+                    let img = paper_render::rasterize(
+                        handle,
+                        page as f32 * PAGE_HEIGHT_IN,
+                        PAGE_HEIGHT_IN,
+                        RASTER_DPI,
+                        green_bar,
+                    );
+                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                        [img.width as usize, img.height as usize],
+                        &img.pixels,
+                    );
+                    ctx.load_texture(
+                        format!("paper-page-{page}"),
+                        color_image,
+                        egui::TextureOptions::NEAREST,
+                    )
+                });
+                let sized = egui::load::SizedTexture::new(texture.id(), rect.size());
+                ui.put(rect, egui::Image::new(sized));
+            }
+        });
 
         // Evict cached textures outside the keep-set.
         self.pages.retain(|page, _| keep_pages.contains(page));

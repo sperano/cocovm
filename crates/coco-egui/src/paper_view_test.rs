@@ -70,3 +70,21 @@ fn detach_also_resets_current_page_and_pending_tear_off() {
     assert_eq!(window.current_page, 0);
     assert!(!window.pending_tear_off);
 }
+
+/// The scroll area starts at the roll's top on the frame the window opens or reopens, and
+/// only on that frame — later frames leave egui's stick-to-bottom in charge.
+#[test]
+fn window_asks_for_the_top_only_on_the_frame_it_opens() {
+    let mut window = PaperWindow::new();
+    assert!(!window.note_shown(false), "hidden: nothing opened");
+    assert!(
+        window.note_shown(true),
+        "first shown frame is the opening frame"
+    );
+    assert!(!window.note_shown(true), "still open: no new edge");
+    assert!(!window.note_shown(false), "closing is not an opening edge");
+    assert!(
+        window.note_shown(true),
+        "reopening is an opening edge again"
+    );
+}
