@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 
 use coco_core::dmp::DmpHandle;
-use coco_core::printer::{PaperExtent, Y_UNITS_PER_INCH};
+use coco_core::printer::PaperExtent;
 use eframe::egui;
 
 use crate::paper_export;
@@ -48,7 +48,7 @@ pub struct PaperWindow {
     /// whole-page rendering choice, not a per-region dirty range).
     cached_green_bar: bool,
     /// Rasterized page textures, keyed by page index
-    /// (`floor(y_in / PAGE_HEIGHT_IN)`), viewport-limited: see
+    /// ([`paper_render::page_of_units`]), viewport-limited: see
     /// [`PaperWindow::ui`].
     pages: HashMap<u32, egui::TextureHandle>,
     /// Page index topmost in the scroll viewport as of the last frame —
@@ -97,8 +97,7 @@ impl PaperWindow {
         let last_content_page = if extent.dot_count == 0 {
             0
         } else {
-            let max_y_in = extent.max_y as f32 / Y_UNITS_PER_INCH as f32;
-            (max_y_in / PAGE_HEIGHT_IN).floor() as u32
+            paper_render::page_of_units(extent.max_y)
         };
         last_content_page + 2
     }
@@ -192,12 +191,10 @@ impl PaperWindow {
         };
         // Widen by the rasterizer's dot-bleed pad: a dot near a page edge also renders into the
         // adjacent page's texture.
-        let y0 = y0.saturating_sub(paper_render::DOT_QUERY_PAD_Y_UNITS);
-        let y1 = y1.saturating_add(paper_render::DOT_QUERY_PAD_Y_UNITS);
-        let y0_in = y0 as f32 / Y_UNITS_PER_INCH as f32;
-        let y1_in = y1 as f32 / Y_UNITS_PER_INCH as f32;
-        let first_page = (y0_in / PAGE_HEIGHT_IN).floor() as u32;
-        let last_page = (y1_in / PAGE_HEIGHT_IN).floor() as u32;
+        let first_page =
+            paper_render::page_of_units(y0.saturating_sub(paper_render::DOT_QUERY_PAD_Y_UNITS));
+        let last_page =
+            paper_render::page_of_units(y1.saturating_add(paper_render::DOT_QUERY_PAD_Y_UNITS));
         self.pages
             .retain(|&page, _| page < first_page || page > last_page);
     }

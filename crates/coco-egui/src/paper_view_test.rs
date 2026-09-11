@@ -1,5 +1,6 @@
 use super::*;
 use coco_core::bitbanger::PrinterSink;
+use coco_core::printer::Y_UNITS_PER_INCH;
 
 #[test]
 fn total_pages_for_extent_is_one_blank_page_when_empty() {
@@ -12,9 +13,9 @@ fn total_pages_for_extent_is_one_blank_page_when_empty() {
 
 #[test]
 fn total_pages_for_extent_always_counts_one_trailing_blank_page() {
-    // A single dot near the top of page 3 (0-indexed page 2): total_pages must be 2 + 2 = 4.
+    // A single dot mid-way down page 3 (0-indexed page 2): total_pages must be 2 + 2 = 4.
     let extent = PaperExtent {
-        max_y: (2.5 * PAGE_HEIGHT_IN * Y_UNITS_PER_INCH as f32) as u32,
+        max_y: (2.4 * PAGE_HEIGHT_IN * Y_UNITS_PER_INCH as f32) as u32,
         dot_count: 1,
     };
     assert_eq!(PaperWindow::total_pages_for_extent(extent), 4);

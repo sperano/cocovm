@@ -59,6 +59,19 @@ pub const PRINT_AREA_LEFT_IN: f32 = 0.75;
 /// Width of the printable body (independent of the wider strip-to-strip
 /// span used for green-bar banding).
 pub const PRINT_AREA_WIDTH_IN: f32 = 8.0;
+/// Text line pitch at the printers' power-on 6 LPI.
+pub const TEXT_LINE_PITCH_IN: f32 = 1.0 / 6.0;
+/// Vertical span of a DMP-105 text cell's dot-row centres: rows 0..=7 (7 pins plus the
+/// descender row) at 1/72". The DMP-130's taller cell may graze a perforation when underlined.
+pub const TEXT_CELL_HEIGHT_IN: f32 = 7.0 / 72.0;
+/// Blank 6 LPI lines left above the first print row when the paper is
+/// loaded — how far below the leading perforation the head's `y = 0` sits.
+pub const TOP_MARGIN_LINES: f32 = 3.0;
+/// Y position where the paper model's `y = 0` (the head's first dot row) maps: the half
+/// inter-line gap keeps each 11" perforation centred between two 6 LPI lines (66 lines span
+/// a page exactly, so the margin only shifts which line lands where, never the phase).
+pub const PRINT_AREA_TOP_IN: f32 =
+    TOP_MARGIN_LINES * TEXT_LINE_PITCH_IN + (TEXT_LINE_PITCH_IN - TEXT_CELL_HEIGHT_IN) / 2.0;
 /// Diameter of one rendered ink dot: a 1/72" nominal dot-matrix pitch,
 /// bled out 15% so adjacent dots visually overlap like real dot-matrix
 /// impact print rather than leaving hairline gaps.
@@ -121,6 +134,22 @@ pub const WINDOW_BG_COLOR: [u8; 4] = [0x3A, 0x3A, 0x40, 0xFF];
 /// the previous page's texture.
 pub(crate) const DOT_QUERY_PAD_Y_UNITS: u32 =
     (DOT_DIAMETER_IN / 2.0 * Y_UNITS_PER_INCH as f32) as u32 + 1;
+
+/// Absolute roll position, in inches, of a paper-model `y` coordinate.
+fn y_units_to_roll_in(y_units: u32) -> f32 {
+    PRINT_AREA_TOP_IN + y_units as f32 / Y_UNITS_PER_INCH as f32
+}
+
+/// Unrounded paper-model `y` (in [`Y_UNITS_PER_INCH`] units, clamped at the roll's start)
+/// of an absolute roll position in inches; callers floor/ceil it to a row.
+fn roll_in_to_y_units(y_in: f32) -> f32 {
+    ((y_in - PRINT_AREA_TOP_IN) * Y_UNITS_PER_INCH as f32).max(0.0)
+}
+
+/// Index of the 11" page containing a paper-model `y` coordinate.
+pub fn page_of_units(y_units: u32) -> u32 {
+    (y_units_to_roll_in(y_units) / PAGE_HEIGHT_IN).floor() as u32
+}
 
 /// A source of already-printed dot impressions, in the same `(x, y)` unit
 /// system as `coco_core::printer::Paper`: `x` in [`X_UNITS_PER_INCH`]
@@ -448,12 +477,11 @@ fn paint_ink_dots<D: DotSource>(
     let y1_in = top_in + height_in;
     // Pad the y-unit query range: a dot's center can sit just outside [y0, y1] while its circle
     // still bleeds into view.
-    let y0_units = ((y0_in * Y_UNITS_PER_INCH as f32).floor() as i64 - DOT_QUERY_PAD_Y_UNITS as i64)
-        .max(0) as u32;
-    let y1_units = (y1_in * Y_UNITS_PER_INCH as f32).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;
+    let y0_units = (roll_in_to_y_units(y0_in).floor() as u32).saturating_sub(DOT_QUERY_PAD_Y_UNITS);
+    let y1_units = roll_in_to_y_units(y1_in).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;
     for (x_units, y_units) in dots.dots_in_range(y0_units, y1_units) {
         let x_in = PRINT_AREA_LEFT_IN + x_units as f32 / X_UNITS_PER_INCH as f32;
-        let y_in = y_units as f32 / Y_UNITS_PER_INCH as f32;
+        let y_in = y_units_to_roll_in(y_units);
         let cx_px = x_in * dpi;
         let cy_px = (y_in - top_in) * dpi;
         image.fill_circle(cx_px, cy_px, dot_radius_px, INK_COLOR, DOT_CORE_ALPHA);
