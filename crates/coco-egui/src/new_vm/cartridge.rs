@@ -8,8 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
-use coco_core::rom_db::{self, CartridgeHardware};
+use coco_core::rom_db::{self, CartridgeHardware, KnownCartridgeROM};
 use coco_core::rtc::DistoRTCModel;
+use owo_colors::colors::xterm;
+use owo_colors::{OwoColorize, Stream};
 
 use crate::machine_def::{self, CartridgeDTO, RS232EndpointDTO, SlotDTO};
 
@@ -164,11 +166,10 @@ pub(super) fn orch90_file_dialog() -> rfd::FileDialog {
 /// creates one — checked, matching `CartridgeDTO`'s own field default.
 pub(super) const DEFAULT_AUTOSTART: bool = true;
 
-fn identify_image_hardware(path: &Path) -> Option<CartridgeHardware> {
+fn identify_image(path: &Path) -> Option<&'static KnownCartridgeROM> {
     std::fs::read(path)
         .ok()
         .and_then(|bytes| rom_db::identify_cartridge(&bytes))
-        .map(|known| known.hardware)
 }
 
 fn image_choice(
@@ -176,12 +177,59 @@ fn image_choice(
     autostart: bool,
     fallback: CartridgeHardware,
 ) -> CartridgeImageChoice {
-    let detected = identify_image_hardware(&path);
+    let detected = identify_image(&path);
     CartridgeImageChoice {
         path,
         autostart,
-        hardware: detected.unwrap_or(fallback),
+        hardware: detected.map_or(fallback, |known| known.hardware),
         hardware_detected: detected.is_some(),
+    }
+}
+
+fn hardware_name(hardware: CartridgeHardware) -> &'static str {
+    match hardware {
+        CartridgeHardware::RomPak => "ROM Pak",
+        CartridgeHardware::BankedRomPak => "Banked ROM Pak",
+        CartridgeHardware::GamesMaster => "Games Master Cartridge",
+    }
+}
+
+fn announce_image_detection(path: &Path, known: Option<&KnownCartridgeROM>) {
+    let file_name = path
+        .file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy();
+    match known {
+        Some(known) => println!(
+            " {} {}: {} {}",
+            "Detected".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
+            file_name.if_supports_color(Stream::Stdout, |v| {
+                v.fg::<xterm::BrightElectricViolet>()
+            }),
+            known.desc.if_supports_color(Stream::Stdout, |v| v.cyan()),
+            format!("→ {}", hardware_name(known.hardware))
+                .if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
+        ),
+        None => println!(
+            " {} {} {}",
+            "Unrecognized"
+                .if_supports_color(Stream::Stdout, |v| { v.fg::<xterm::BittersweetOrange>() }),
+            file_name.if_supports_color(Stream::Stdout, |v| {
+                v.fg::<xterm::BrightElectricViolet>()
+            }),
+            "→ using ROM Pak fallback".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+        ),
+    }
+}
+
+fn selected_image_choice(path: PathBuf) -> CartridgeImageChoice {
+    let known = identify_image(&path);
+    announce_image_detection(&path, known);
+    CartridgeImageChoice {
+        path,
+        autostart: DEFAULT_AUTOSTART,
+        hardware: known.map_or(CartridgeHardware::RomPak, |rom| rom.hardware),
+        hardware_detected: known.is_some(),
     }
 }
 
@@ -198,20 +246,12 @@ fn persisted_image_choice(
 
 /// A content-detected cartridge image, with ROM Pak as the unknown fallback.
 pub(super) fn cartridge_rom(path: PathBuf) -> CartridgeChoice {
-    CartridgeChoice::Image(image_choice(
-        path,
-        DEFAULT_AUTOSTART,
-        CartridgeHardware::RomPak,
-    ))
+    CartridgeChoice::Image(selected_image_choice(path))
 }
 
 /// [`cartridge_rom`]'s MPI-slot sibling.
 pub(super) fn slot_cartridge_rom(path: PathBuf) -> SlotChoice {
-    SlotChoice::Image(image_choice(
-        path,
-        DEFAULT_AUTOSTART,
-        CartridgeHardware::RomPak,
-    ))
+    SlotChoice::Image(selected_image_choice(path))
 }
 
 fn slot_dto_for_image(image: &CartridgeImageChoice) -> SlotDTO {

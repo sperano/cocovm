@@ -11,6 +11,19 @@ const COLOR_BASEBALL_CRC_SUFFIX: [u8; 4] = [0x11, 0x35, 0xa2, 0xf7];
 const MIND_ROLL_CRC_SUFFIX: [u8; 4] = [0xe0, 0x24, 0x53, 0x1e];
 const CYD_GMC_CRC_SUFFIX: [u8; 4] = [0x17, 0x60, 0x50, 0x9b];
 
+#[test]
+fn terminal_hardware_names_are_specific() {
+    assert_eq!(hardware_name(CartridgeHardware::RomPak), "ROM Pak");
+    assert_eq!(
+        hardware_name(CartridgeHardware::BankedRomPak),
+        "Banked ROM Pak"
+    );
+    assert_eq!(
+        hardware_name(CartridgeHardware::GamesMaster),
+        "Games Master Cartridge"
+    );
+}
+
 fn write_image(dir: &TempDir, name: &str, bytes: &[u8]) -> PathBuf {
     let path = dir.path().join(name);
     fs::write(&path, bytes).expect("write cartridge test image");
