@@ -201,14 +201,11 @@ fn announce_image_detection(path: &Path, known: Option<&KnownCartridgeROM>) {
         .to_string_lossy();
     match known {
         Some(known) => println!(
-            " {} {}: {} {}",
+            " {} {} {} {}",
             "Detected".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
-            file_name.if_supports_color(Stream::Stdout, |v| {
-                v.fg::<xterm::BrightElectricViolet>()
-            }),
             known.desc.if_supports_color(Stream::Stdout, |v| v.cyan()),
-            format!("→ {}", hardware_name(known.hardware))
-                .if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
+            "→".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+            hardware_name(known.hardware).if_supports_color(Stream::Stdout, |v| v.white()),
         ),
         None => println!(
             " {} {} {}",
