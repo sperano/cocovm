@@ -194,11 +194,7 @@ fn hardware_name(hardware: CartridgeHardware) -> &'static str {
     }
 }
 
-fn announce_image_detection(path: &Path, known: Option<&KnownCartridgeROM>) {
-    let file_name = path
-        .file_name()
-        .unwrap_or(path.as_os_str())
-        .to_string_lossy();
+fn announce_image_detection(known: Option<&KnownCartridgeROM>) {
     match known {
         Some(known) => println!(
             " {} {} {} {}",
@@ -208,20 +204,19 @@ fn announce_image_detection(path: &Path, known: Option<&KnownCartridgeROM>) {
             hardware_name(known.hardware).if_supports_color(Stream::Stdout, |v| v.white()),
         ),
         None => println!(
-            " {} {} {}",
+            " {} {} {} {}",
             "Unrecognized"
                 .if_supports_color(Stream::Stdout, |v| { v.fg::<xterm::BittersweetOrange>() }),
-            file_name.if_supports_color(Stream::Stdout, |v| {
-                v.fg::<xterm::BrightElectricViolet>()
-            }),
-            "→ using ROM Pak fallback".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+            "cartridge ROM".if_supports_color(Stream::Stdout, |v| v.cyan()),
+            "→".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+            "using ROM Pak fallback".if_supports_color(Stream::Stdout, |v| v.white()),
         ),
     }
 }
 
 fn selected_image_choice(path: PathBuf) -> CartridgeImageChoice {
     let known = identify_image(&path);
-    announce_image_detection(&path, known);
+    announce_image_detection(known);
     CartridgeImageChoice {
         path,
         autostart: DEFAULT_AUTOSTART,
