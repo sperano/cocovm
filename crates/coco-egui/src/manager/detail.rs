@@ -9,7 +9,9 @@ use eframe::egui;
 
 use crate::{humanize_runtime, machine_def, new_vm, titled_group};
 
-use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR, detail_map, roms, vm_status_label};
+use super::{
+    DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR, detail_map, roms, thumbnails, vm_status_label,
+};
 
 /// The detail pane's working state for the selected entry: the shared
 /// [`new_vm::MachineForm`] over its definition, auto-saved on every change
@@ -46,10 +48,9 @@ fn form_grid(salt: (&str, &str)) -> egui::Grid {
         .min_col_width(new_vm::FORM_LABEL_MIN_WIDTH)
 }
 
-/// The machine form, laid out in sections: Machine, RAM, Display,
-/// Peripherals, Ports, Joysticks, and Keyboard — each its own grid, since a
-/// `titled_group` can't sit inside a grid row.
-fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
+/// The header's left-column form sections — Machine and RAM
+/// ([`ManagerApp::draw_header_with_preview`]).
+fn draw_machine_ram_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Machine", |ui| {
         form_grid(("detail_form_machine", slug)).show(ui, |ui| {
             form.machine_rows(ui);
@@ -64,8 +65,11 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
             }
         });
     });
+}
 
-    ui.add_space(DETAIL_SECTION_GAP);
+/// The full-width sections below the header: Display through Keyboard —
+/// each its own grid, since a `titled_group` can't sit inside a grid row.
+fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Display", |ui| {
         form_grid(("detail_form_display", slug)).show(ui, |ui| {
             form.display_rows(ui);
@@ -192,15 +196,10 @@ impl ManagerApp {
         }
         let mut edit = self.edit.take().expect("just ensured above");
 
-        self.draw_name_field(ui, index, &mut edit);
-        ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
-        ui.add_space(DETAIL_SECTION_GAP);
-        // The transport buttons moved to the toolbar — this pane keeps only
-        // the status, plus the last launch failure.
-        ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
-        if let Some(err) = &self.entries[index].launch_error {
-            ui.colored_label(ui.visuals().error_fg_color, err);
-        }
+        // A suspended, window-closed machine's saved preview loads (once)
+        // before the header draws — same as before its list row.
+        self.ensure_row_thumbnail(&ui.ctx().clone(), index);
+        self.draw_header_with_preview(ui, index, &slug, &mut edit);
         ui.add_space(DETAIL_SECTION_GAP);
 
         draw_form_sections(ui, &slug, &mut edit.form);
@@ -224,6 +223,35 @@ impl ManagerApp {
         }
 
         self.edit = Some(edit);
+    }
+
+    /// The pane's header: identity, status, Machine and RAM in a half-width
+    /// left column; the big screen preview on the right spans its height.
+    fn draw_header_with_preview(
+        &mut self,
+        ui: &mut egui::Ui,
+        index: usize,
+        slug: &str,
+        edit: &mut EditState,
+    ) {
+        ui.horizontal_top(|ui| {
+            let left_width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+            let left = ui.vertical(|ui| {
+                ui.set_max_width(left_width);
+                self.draw_name_field(ui, index, edit);
+                ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
+                ui.add_space(DETAIL_SECTION_GAP);
+                // The transport buttons moved to the toolbar — this pane keeps
+                // only the status, plus the last launch failure.
+                ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
+                if let Some(err) = &self.entries[index].launch_error {
+                    ui.colored_label(ui.visuals().error_fg_color, err);
+                }
+                ui.add_space(DETAIL_SECTION_GAP);
+                draw_machine_ram_sections(ui, slug, &mut edit.form);
+            });
+            draw_screen_preview(ui, left.response.rect.height(), &self.entries[index]);
+        });
     }
 
     /// The Name field: commits on focus loss/Enter — not per keystroke, so
@@ -292,6 +320,16 @@ impl ManagerApp {
             Err(error) => self.save_error = Some(error),
         }
     }
+}
+
+/// The header's screen preview: `height` tall at [`super::THUMBNAIL_ASPECT`],
+/// centered in the right half, shrunk ratio-kept when the pane is narrow.
+fn draw_screen_preview(ui: &mut egui::Ui, height: f32, entry: &super::MachineEntry) {
+    let width = (height * super::THUMBNAIL_ASPECT).min(ui.available_width());
+    let height = width / super::THUMBNAIL_ASPECT;
+    ui.add_space((ui.available_width() - width) / 2.0);
+    let (texture, uv) = thumbnails::preview_source(entry);
+    thumbnails::draw_preview(ui, egui::vec2(width, height), texture, uv);
 }
 
 #[cfg(test)]
