@@ -24,39 +24,43 @@ fn write_crc_image(dir: &TempDir, name: &str, size: usize, suffix: [u8; 4]) -> P
     write_image(dir, name, &bytes)
 }
 
-fn assert_banked_rompak(choice: CartridgeChoice, path: &Path) {
+fn assert_direct_image(
+    choice: CartridgeChoice,
+    path: &Path,
+    hardware: CartridgeHardware,
+    hardware_detected: bool,
+) {
     assert_eq!(
         choice,
-        CartridgeChoice::BankedROMPak {
+        CartridgeChoice::Image(CartridgeImageChoice {
             path: path.to_path_buf(),
             autostart: DEFAULT_AUTOSTART,
-        }
+            hardware,
+            hardware_detected,
+        })
     );
 }
 
-fn assert_rompak(choice: CartridgeChoice, path: &Path) {
+fn assert_slot_image(
+    choice: SlotChoice,
+    path: &Path,
+    hardware: CartridgeHardware,
+    hardware_detected: bool,
+) {
     assert_eq!(
         choice,
-        CartridgeChoice::ROMPak {
+        SlotChoice::Image(CartridgeImageChoice {
             path: path.to_path_buf(),
             autostart: DEFAULT_AUTOSTART,
-        }
-    );
-}
-
-fn assert_games_master(choice: CartridgeChoice, path: &Path) {
-    assert_eq!(
-        choice,
-        CartridgeChoice::GamesMaster {
-            path: path.to_path_buf(),
-            autostart: DEFAULT_AUTOSTART,
-        }
+            hardware,
+            hardware_detected,
+        })
     );
 }
 
 #[test]
-fn known_rompak_overrides_direct_games_master_fallback() {
-    let dir = TempDir::new("known-rompak-direct");
+fn known_rompak_is_detected_for_direct_and_mpi_use() {
+    let dir = TempDir::new("known-rompak");
     let path = write_crc_image(
         &dir,
         "color-baseball.rom",
@@ -64,12 +68,23 @@ fn known_rompak_overrides_direct_games_master_fallback() {
         COLOR_BASEBALL_CRC_SUFFIX,
     );
 
-    assert_rompak(games_master(path.clone()), &path);
+    assert_direct_image(
+        cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::RomPak,
+        true,
+    );
+    assert_slot_image(
+        slot_cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::RomPak,
+        true,
+    );
 }
 
 #[test]
-fn cyd_gmc_overrides_direct_rompak_fallback() {
-    let dir = TempDir::new("cyd-gmc-direct");
+fn cyd_gmc_is_detected_for_direct_and_mpi_use() {
+    let dir = TempDir::new("cyd-gmc");
     let path = write_crc_image(
         &dir,
         "cyd_gmc.rom",
@@ -77,43 +92,22 @@ fn cyd_gmc_overrides_direct_rompak_fallback() {
         CYD_GMC_CRC_SUFFIX,
     );
 
-    assert_games_master(rompak(path.clone()), &path);
-}
-
-#[test]
-fn known_hardware_overrides_mpi_fallbacks() {
-    let dir = TempDir::new("known-mpi");
-    let rompak_path = write_crc_image(
-        &dir,
-        "rompak.rom",
-        STANDARD_CARTRIDGE_IMAGE_SIZE,
-        COLOR_BASEBALL_CRC_SUFFIX,
+    assert_direct_image(
+        cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::GamesMaster,
+        true,
     );
-    let gmc_path = write_crc_image(
-        &dir,
-        "cyd_gmc.rom",
-        STANDARD_CARTRIDGE_IMAGE_SIZE,
-        CYD_GMC_CRC_SUFFIX,
-    );
-
-    assert_eq!(
-        slot_games_master(rompak_path.clone()),
-        SlotChoice::ROMPak {
-            path: rompak_path,
-            autostart: DEFAULT_AUTOSTART,
-        }
-    );
-    assert_eq!(
-        slot_rompak(gmc_path.clone()),
-        SlotChoice::GamesMaster {
-            path: gmc_path,
-            autostart: DEFAULT_AUTOSTART,
-        }
+    assert_slot_image(
+        slot_cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::GamesMaster,
+        true,
     );
 }
 
 #[test]
-fn mind_roll_selects_banked_rompak_without_gmc_sound() {
+fn mind_roll_is_detected_as_banked_without_gmc_sound() {
     let dir = TempDir::new("mind-roll-banked");
     let path = write_crc_image(
         &dir,
@@ -122,50 +116,79 @@ fn mind_roll_selects_banked_rompak_without_gmc_sound() {
         MIND_ROLL_CRC_SUFFIX,
     );
 
-    assert_banked_rompak(rompak(path.clone()), &path);
-    assert!(matches!(
-        slot_games_master(path),
-        SlotChoice::BankedROMPak { .. }
-    ));
+    assert_direct_image(
+        cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::BankedRomPak,
+        true,
+    );
+    assert_slot_image(
+        slot_cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::BankedRomPak,
+        true,
+    );
 }
 
 #[test]
-fn unknown_direct_image_preserves_selected_fallback() {
-    let dir = TempDir::new("unknown-direct");
+fn unknown_images_use_an_overridable_rompak_fallback() {
+    let dir = TempDir::new("unknown");
     let path = write_image(&dir, "unknown.rom", b"unknown cartridge");
 
-    assert_rompak(rompak(path.clone()), &path);
-    assert_games_master(games_master(path.clone()), &path);
+    assert_direct_image(
+        cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::RomPak,
+        false,
+    );
+    assert_slot_image(
+        slot_cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::RomPak,
+        false,
+    );
 }
 
 #[test]
-fn unknown_mpi_image_preserves_selected_fallback() {
-    let dir = TempDir::new("unknown-mpi");
-    let path = write_image(&dir, "unknown.rom", b"unknown cartridge");
-
-    assert!(matches!(
-        slot_rompak(path.clone()),
-        SlotChoice::ROMPak { .. }
-    ));
-    assert!(matches!(
-        slot_games_master(path),
-        SlotChoice::GamesMaster { .. }
-    ));
-}
-
-#[test]
-fn unreadable_images_preserve_direct_and_mpi_fallbacks() {
+fn unreadable_images_use_an_overridable_rompak_fallback() {
     let dir = TempDir::new("unreadable");
     let path = dir.path().join("missing.rom");
 
-    assert_rompak(rompak(path.clone()), &path);
-    assert_games_master(games_master(path.clone()), &path);
-    assert!(matches!(
-        slot_rompak(path.clone()),
-        SlotChoice::ROMPak { .. }
-    ));
-    assert!(matches!(
-        slot_games_master(path),
-        SlotChoice::GamesMaster { .. }
-    ));
+    assert_direct_image(
+        cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::RomPak,
+        false,
+    );
+    assert_slot_image(
+        slot_cartridge_rom(path.clone()),
+        &path,
+        CartridgeHardware::RomPak,
+        false,
+    );
+}
+
+#[test]
+fn manual_unknown_hardware_is_persisted() {
+    let image = CartridgeImageChoice {
+        path: PathBuf::from("unknown.rom"),
+        autostart: false,
+        hardware: CartridgeHardware::GamesMaster,
+        hardware_detected: false,
+    };
+
+    assert_eq!(
+        cartridge_dto_for_image(&image),
+        CartridgeDTO::GamesMaster {
+            path: "unknown.rom".to_string(),
+            autostart: false,
+        }
+    );
+    assert_eq!(
+        slot_dto_for_image(&image),
+        SlotDTO::GamesMaster {
+            path: "unknown.rom".to_string(),
+            autostart: false,
+        }
+    );
 }

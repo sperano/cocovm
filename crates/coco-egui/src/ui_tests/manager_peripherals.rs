@@ -120,14 +120,14 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    harness
+    let form = harness
         .state_mut()
         .edit_form_mut()
-        .expect("pane form seeded")
-        .cartridge = new_vm::CartridgeChoice::ROMPak {
-        path: pak.clone(),
-        autostart: true,
-    };
+        .expect("pane form seeded");
+    form.cartridge = new_vm::CartridgeChoice::Image(cartridge_image_choice(
+        pak.clone(),
+        coco_core::rom_db::CartridgeHardware::RomPak,
+    ));
     harness.step();
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
@@ -148,14 +148,14 @@ fn manager_edit_with_rom_pak_records_the_cart() {
             .edit_form_mut()
             .expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
-        form.mpi_slots[1] = new_vm::SlotChoice::ROMPak {
-            path: pak.clone(),
-            autostart: true,
-        };
-        form.mpi_slots[3] = new_vm::SlotChoice::ROMPak {
-            path: PathBuf::from("/paks/other.ccc"),
-            autostart: true,
-        };
+        form.mpi_slots[1] = new_vm::SlotChoice::Image(cartridge_image_choice(
+            pak.clone(),
+            coco_core::rom_db::CartridgeHardware::RomPak,
+        ));
+        form.mpi_slots[3] = new_vm::SlotChoice::Image(cartridge_image_choice(
+            PathBuf::from("/paks/other.ccc"),
+            coco_core::rom_db::CartridgeHardware::RomPak,
+        ));
     }
     harness.step();
     assert_eq!(harness.state().entries.len(), 2);
@@ -251,14 +251,14 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
-    harness
+    let form = harness
         .state_mut()
         .edit_form_mut()
-        .expect("pane form seeded")
-        .cartridge = new_vm::CartridgeChoice::GamesMaster {
-        path: gmc.clone(),
-        autostart: true,
-    };
+        .expect("pane form seeded");
+    form.cartridge = new_vm::CartridgeChoice::Image(cartridge_image_choice(
+        gmc.clone(),
+        coco_core::rom_db::CartridgeHardware::GamesMaster,
+    ));
     harness.step();
     assert_eq!(
         harness.state().entries[0].def.peripherals.cartridge,
