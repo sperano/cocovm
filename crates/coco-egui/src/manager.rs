@@ -4,7 +4,7 @@
 //! a detail/edit pane on the right for the selected machine — or, with no machine
 //! selected, a random photo asset filling the pane (`manager/welcome_image.rs`).
 //!
-//! The detail pane's Start button calls `crate::launch_machine`. Once a
+//! The detail pane's Start button calls `crate::launch_machine_with_gamepad`. Once a
 //! `MachineEntry` holds a running `CocoApp`, `ManagerApp::update` opens it in
 //! its own native OS window every frame—an *immediate viewport*, like the
 //! printer-paper window in `paper_view::PaperWindow`. All VM state stays on
@@ -32,6 +32,7 @@ mod control;
 mod delete;
 mod detail;
 mod detail_map;
+mod gamepad_service;
 mod lifecycle;
 mod list;
 #[cfg(feature = "perf")]
@@ -148,6 +149,10 @@ pub struct MachineEntry {
     /// machine with no thumbnail file doesn't retry the filesystem every
     /// frame. Cleared (with `thumbnail`) whenever a fresh PNG is written.
     thumbnail_load_attempted: bool,
+    /// Whether an evicted preview can reload. False after a missing or bad file.
+    thumbnail_known_available: bool,
+    /// Manager-local use stamp for deterministic saved-preview LRU eviction.
+    thumbnail_last_used: u64,
     /// Runtime-only identity for egui's immediate viewport. It stays stable
     /// when the persisted machine slug changes.
     window_session: u64,
@@ -168,6 +173,8 @@ impl MachineEntry {
             launch_error: None,
             thumbnail: None,
             thumbnail_load_attempted: false,
+            thumbnail_known_available: false,
+            thumbnail_last_used: 0,
             window_session: NEXT_WINDOW_SESSION.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -255,6 +262,8 @@ fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), St
 pub struct ManagerApp {
     #[cfg(feature = "perf")]
     perf_scenario: Option<perf_scenarios::ScenarioRun>,
+    /// Single host gamepad backend retained across every VM lifecycle.
+    gamepad: crate::joy::SharedGamepad,
     /// The right pane's photo while nothing is selected, its timer, and
     /// their settings (`manager/welcome_image.rs`).
     pub(crate) welcome_image: welcome_image::WelcomeImage,
@@ -346,6 +355,10 @@ pub struct ManagerApp {
     pub(crate) config_path: Option<PathBuf>,
     /// The Settings dialog (`manager/settings.rs`), open while `Some`.
     pub(crate) settings: Option<settings::SettingsDialog>,
+    /// Monotonic clock for saved-preview LRU stamps.
+    thumbnail_use_clock: u64,
+    /// Synchronous preview decodes still available in this manager update.
+    thumbnail_loads_remaining: usize,
 }
 
 impl ManagerApp {
@@ -370,6 +383,7 @@ impl ManagerApp {
         Self {
             #[cfg(feature = "perf")]
             perf_scenario: None,
+            gamepad: crate::joy::SharedGamepad::new(),
             welcome_image: welcome_image::WelcomeImage::new(photo),
             machines_dir,
             roms_dir: None,
@@ -394,6 +408,8 @@ impl ManagerApp {
             status_bar_icons_only_overridden: false,
             config_path: None,
             settings: None,
+            thumbnail_use_clock: 0,
+            thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
         }
     }
 }
@@ -422,6 +438,7 @@ impl eframe::App for ManagerApp {
         self.drive_perf_scenario(ctx);
         crate::perf::initialize();
         let _perf = crate::perf::span(crate::perf::Stage::ManagerUpdate);
+        self.service_gamepad(ctx);
         // Dialog-first phase: while the asset dialog is up, it is the
         // window's only content — the manager UI appears after a successful
         // download (Cancel quits the app, `manager/assets.rs`).
@@ -431,6 +448,7 @@ impl eframe::App for ManagerApp {
         }
 
         self.welcome_image.service(ctx, self.selection.is_empty());
+        self.thumbnail_loads_remaining = thumbnails::THUMBNAIL_LOADS_PER_UPDATE;
 
         // Apply a committed rename before any panel draws — row indices must
         // stay stable for the frame.

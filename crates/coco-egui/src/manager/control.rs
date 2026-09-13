@@ -19,6 +19,12 @@ mod pending;
 /// Slack a deferred request (`type_text`, `press_keys`, `wait`) gets beyond
 /// the wall-clock time its fields should take, before it times out.
 const CONTROL_DEFER_MARGIN: Duration = Duration::from_secs(10);
+/// Most deferred control operations retained across all VMs.
+pub(super) const MAX_PENDING_CONTROL_REQUESTS: usize = 16;
+/// Most queued control requests applied during one manager update.
+pub(super) const MAX_CONTROL_DISPATCH_PER_UPDATE: usize = 8;
+
+const CONTROL_PENDING_OVERLOADED: &str = "too many deferred control requests; retry later";
 
 /// A request whose reply is deferred until the VM finishes some work.
 /// Targets the VM by slug, not entry index — an index can shift under a
@@ -35,6 +41,10 @@ impl PendingControl {
         if self.slug == old_slug {
             self.slug = new_slug.to_string();
         }
+    }
+
+    fn is_abandoned(&self) -> bool {
+        self.reply.is_abandoned()
     }
 
     /// `expected_fields` at `field_rate_hz` sets the deadline, plus
@@ -140,12 +150,27 @@ impl ManagerApp {
         Ok(())
     }
 
-    /// Drain every request queued since last frame, dispatching each one —
-    /// immediate actions reply right away; others join [`Self::pending`].
+    /// Dispatch up to [`MAX_CONTROL_DISPATCH_PER_UPDATE`] queued requests.
+    /// Immediate actions reply right away; others join [`Self::pending`].
     /// Called once per `update()`, before [`Self::draw_running_vms`].
     pub(super) fn drain_control(&mut self) {
-        while let Some(incoming) = self.control.as_ref().and_then(|s| s.try_recv()) {
+        let Some(server) = self.control.as_ref() else {
+            return;
+        };
+        server.begin_dispatch();
+        let mut dispatched = 0;
+        while dispatched < MAX_CONTROL_DISPATCH_PER_UPDATE {
+            let Some(incoming) = self.control.as_ref().and_then(|server| server.try_recv()) else {
+                break;
+            };
             self.dispatch_control(incoming);
+            dispatched += 1;
+        }
+        if dispatched == MAX_CONTROL_DISPATCH_PER_UPDATE {
+            self.control
+                .as_ref()
+                .expect("control server remained bound during dispatch")
+                .request_dispatch();
         }
     }
 

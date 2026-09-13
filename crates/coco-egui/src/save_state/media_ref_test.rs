@@ -21,6 +21,7 @@ fn app_with_ssc_in_slot(slot: usize) -> Option<CocoApp> {
         rom,
         ROMSource::File(rom_path),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     );
     app.insert_multipak();
     app.mpi_insert_ssc(slot);

@@ -93,3 +93,38 @@ fn origin_is_local_accepts_loopback_hosts_and_rejects_others() {
     assert!(origin_is_local("http://[::1]:6809"));
     assert!(!origin_is_local("http://evil.example"));
 }
+
+#[test]
+fn session_store_rejects_capacity_until_a_session_expires() {
+    let now = Instant::now();
+    let mut store = SessionStore::default();
+    for _ in 0..MAX_CONTROL_SESSIONS {
+        assert!(store.create(now).is_some());
+    }
+    assert!(store.create(now).is_none());
+
+    let expired = now + CONTROL_SESSION_IDLE_TIMEOUT;
+    assert!(store.create(expired).is_some());
+    assert_eq!(store.sessions.len(), 1);
+}
+
+#[test]
+fn session_lookup_refreshes_its_idle_deadline() {
+    let now = Instant::now();
+    let mut store = SessionStore::default();
+    let id = store.create(now).expect("session admitted");
+    let refreshed = now + CONTROL_SESSION_IDLE_TIMEOUT / 2;
+
+    assert!(store.contains_and_touch(&id, refreshed));
+    assert!(store.contains_and_touch(&id, now + CONTROL_SESSION_IDLE_TIMEOUT));
+}
+
+#[test]
+fn close_response_advertises_connection_close() {
+    let mut out = Vec::new();
+    write_close_response(&mut out, 503, "text/plain", b"busy").unwrap();
+    let text = String::from_utf8(out).unwrap();
+
+    assert!(text.starts_with("HTTP/1.1 503 Service Unavailable\r\n"));
+    assert!(text.contains("Connection: close\r\n"));
+}

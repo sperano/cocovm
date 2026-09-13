@@ -109,7 +109,7 @@ fn joy_source_default_is_none() {
 
 #[test]
 fn keys_active_reflects_either_port() {
-    let mut inputs = JoystickInputs::new();
+    let mut inputs = JoystickInputs::new(SharedGamepad::without_backend());
     assert!(!inputs.keys_active());
     inputs.sources[LEFT] = JoySource::Keys;
     assert!(inputs.keys_active());
@@ -117,7 +117,8 @@ fn keys_active_reflects_either_port() {
 
 #[test]
 fn joystick_inputs_start_not_in_use() {
-    assert_eq!(JoystickInputs::new().in_use, [false, false]);
+    let inputs = JoystickInputs::new(SharedGamepad::without_backend());
+    assert_eq!(inputs.in_use, [false, false]);
 }
 
 #[test]
@@ -224,7 +225,7 @@ fn mouse_fire_frame(
 #[test]
 fn releasing_one_mouse_button_keeps_the_other_latched() {
     let ctx = egui::Context::default();
-    let mut inputs = JoystickInputs::new();
+    let mut inputs = JoystickInputs::new(SharedGamepad::without_backend());
     let inside = egui::pos2(60.0, 50.0);
     use egui::PointerButton::{Primary, Secondary};
     // Hold primary on the display…
@@ -244,7 +245,7 @@ fn releasing_one_mouse_button_keeps_the_other_latched() {
 #[test]
 fn chrome_press_is_not_regated_by_a_later_display_press() {
     let ctx = egui::Context::default();
-    let mut inputs = JoystickInputs::new();
+    let mut inputs = JoystickInputs::new(SharedGamepad::without_backend());
     use egui::PointerButton::{Primary, Secondary};
     // Primary pressed on the chrome above the display…
     let ev = vec![button_event(egui::pos2(60.0, 5.0), Primary, true)];
@@ -259,7 +260,7 @@ fn chrome_press_is_not_regated_by_a_later_display_press() {
 #[test]
 fn mouse_fire_latch_clears_if_release_event_never_arrives() {
     let ctx = egui::Context::default();
-    let mut inputs = JoystickInputs::new();
+    let mut inputs = JoystickInputs::new(SharedGamepad::without_backend());
     let ev = vec![button_event(
         egui::pos2(60.0, 50.0),
         egui::PointerButton::Primary,

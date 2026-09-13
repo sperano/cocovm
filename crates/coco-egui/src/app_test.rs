@@ -39,6 +39,7 @@ fn boot_with_drivewire(drivewire: Option<DriveWireLaunch>) -> CocoApp {
             drivewire,
             ..AppParams::default()
         },
+        crate::joy::SharedGamepad::without_backend(),
     )
 }
 

@@ -9,23 +9,21 @@
 //! [`ReplyHandle`] channel for that request's [`Response`], then
 //! [`control::tools`] formats it into MCP content.
 
-use std::collections::HashSet;
-use std::io;
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
 pub mod http;
 pub mod jsonrpc;
 pub mod key_names;
 pub mod mcp;
 pub mod protocol;
+mod server;
 pub mod tool_defs;
 pub mod tools;
 
 pub use protocol::{Action, Reply, Request, Response, Stick, VmInfo, VmStatus};
+pub use server::ControlServer;
 
 /// Loopback port the app listens on unless told otherwise.
 pub const DEFAULT_PORT: u16 = 6809;
@@ -48,7 +46,21 @@ pub const MAX_POKE_LEN: usize = 4096;
 /// Most characters a single `type_text` may queue — about a minute of
 /// typing at the app's tap timing, so the deferred reply stays bounded.
 pub const MAX_TYPE_TEXT_CHARS: usize = 600;
-
+/// Most accepted client sockets served at once. Additional clients receive
+/// HTTP 503 without getting a connection thread.
+pub(crate) const MAX_CONTROL_CONNECTIONS: usize = 32;
+/// Most `tools/call` requests waiting for the UI thread.
+pub(crate) const MAX_INCOMING_CONTROL_REQUESTS: usize = 16;
+/// Most HTTP sessions retained across all connections.
+pub(crate) const MAX_CONTROL_SESSIONS: usize = 64;
+/// Idle HTTP session lifetime. A later request with an expired ID receives
+/// the same 404 as any other unknown session.
+pub(crate) const CONTROL_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Bounds reads from slow clients and writes to clients that stop reading.
+pub(crate) const CONTROL_IO_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest a connection thread waits for the UI to answer an accepted call.
+/// This exceeds the longest valid deferred operation and its margin.
+pub(crate) const CONTROL_REPLY_TIMEOUT: Duration = Duration::from_secs(90);
 /// Called from the accept/connection threads whenever a request lands, so a
 /// frame loop that only repaints on events wakes up to service it.
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
@@ -87,121 +99,34 @@ impl Incoming {
 }
 
 /// The channel a request's reply goes back on, once it is done.
-pub struct ReplyHandle(Sender<Response>);
+pub struct ReplyHandle {
+    tx: mpsc::Sender<Response>,
+    abandoned: Arc<AtomicBool>,
+}
 
 impl ReplyHandle {
     /// Build a handle directly from its reply channel — for tests that need
     /// a [`ReplyHandle`]/[`Incoming`] without a real HTTP connection.
-    pub(crate) fn new(tx: Sender<Response>) -> Self {
-        Self(tx)
+    #[cfg(test)]
+    pub(crate) fn new(tx: mpsc::Sender<Response>) -> Self {
+        Self {
+            tx,
+            abandoned: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Send the reply; a connection that has since closed is not an error.
     pub fn reply(self, response: Response) {
-        let _ = self.0.send(response);
-    }
-}
-
-/// The listener and its request queue. Dropping it stops accepting.
-pub struct ControlServer {
-    addr: SocketAddr,
-    incoming: Receiver<Incoming>,
-    shutdown: Arc<AtomicBool>,
-}
-
-impl ControlServer {
-    /// Bind `127.0.0.1:port` (`0` picks a free port, see [`Self::port`]).
-    pub fn bind(port: u16, wake: Wake) -> io::Result<Self> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))?;
-        let addr = listener.local_addr()?;
-        let (tx, incoming) = mpsc::channel();
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let stop = Arc::clone(&shutdown);
-        thread::Builder::new()
-            .name("cocovm-mcp-accept".into())
-            .spawn(move || accept_loop(listener, tx, wake, stop))?;
-        Ok(Self {
-            addr,
-            incoming,
-            shutdown,
-        })
+        let _ = self.tx.send(response);
     }
 
-    pub fn port(&self) -> u16 {
-        self.addr.port()
+    /// Whether the connection stopped waiting for this reply.
+    pub(crate) fn is_abandoned(&self) -> bool {
+        self.abandoned.load(Ordering::Acquire)
     }
 
-    /// The next queued request, if any. Never blocks.
-    pub fn try_recv(&self) -> Option<Incoming> {
-        self.incoming.try_recv().ok()
+    #[cfg(test)]
+    pub(crate) fn abandon_for_test(&self) {
+        self.abandoned.store(true, Ordering::Release);
     }
 }
-
-impl Drop for ControlServer {
-    fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::SeqCst);
-        // Unblock `accept` so the thread sees the flag and exits.
-        let _ = TcpStream::connect(self.addr);
-    }
-}
-
-fn accept_loop(listener: TcpListener, tx: Sender<Incoming>, wake: Wake, stop: Arc<AtomicBool>) {
-    let sessions: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-    for stream in listener.incoming() {
-        if stop.load(Ordering::SeqCst) {
-            break;
-        }
-        let Ok(stream) = stream else { continue };
-        let tx = tx.clone();
-        let wake = Arc::clone(&wake);
-        let sessions = Arc::clone(&sessions);
-        let _ = thread::Builder::new()
-            .name("cocovm-mcp-conn".into())
-            .spawn(move || serve_connection(stream, tx, wake, sessions));
-    }
-}
-
-/// One connection: an HTTP client bound to the MCP endpoint. Its
-/// `tools/call` requests are relayed to the frame loop through `tx`/`wake`
-/// and blocked on ([`QueueBackend`]); `initialize`/`tools/list`/notifications
-/// are answered inline ([`mcp::Mcp`]).
-fn serve_connection(
-    stream: TcpStream,
-    tx: Sender<Incoming>,
-    wake: Wake,
-    sessions: Arc<Mutex<HashSet<String>>>,
-) {
-    let backend = QueueBackend { tx, wake };
-    let mut mcp = mcp::Mcp::new(Box::new(backend));
-    http::serve_connection(stream, &mut mcp, &sessions);
-}
-
-/// The real [`tools::Backend`]: queues a [`Request`] for the frame loop and
-/// blocks for its [`Response`].
-struct QueueBackend {
-    tx: Sender<Incoming>,
-    wake: Wake,
-}
-
-impl tools::Backend for QueueBackend {
-    fn call(&mut self, req: &Request) -> Result<Reply, String> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        let incoming = Incoming {
-            request: req.clone(),
-            reply: ReplyHandle::new(reply_tx),
-        };
-        if self.tx.send(incoming).is_err() {
-            return Err("cocovm dropped the request".to_string());
-        }
-        (self.wake)();
-        match reply_rx.recv() {
-            Ok(Response::Ok(reply)) => Ok(reply),
-            Ok(Response::Err(msg)) => Err(msg),
-            Err(_) => Err("cocovm dropped the request".to_string()),
-        }
-    }
-}
-
-#[cfg(test)]
-#[path = "control/control_test.rs"]
-mod tests;

@@ -12,18 +12,51 @@ use super::{
 use crate::new_vm;
 use crate::widgets::SUSPEND_HOVER;
 
+/// Saved previews are prepared for the visible rows plus this many rows on
+/// either side. This hides decode latency during ordinary wheel scrolling
+/// without making filesystem work depend on the full library size.
+const THUMBNAIL_NEAR_RANGE_ROWS: usize = 4;
+
 impl ManagerApp {
     /// Left panel: the machine list. `ui.set_min_width` keeps the
     /// `SidePanel`'s divider draggable even when the list is empty.
     pub(super) fn draw_machine_list(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(ui.available_width());
         if !self.entries.is_empty() {
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            let row_height = machine_row_height(ui);
+            #[cfg(feature = "perf")]
+            let row_spacing = ui.spacing().item_spacing.y;
+            let entry_count = self.entries.len();
+            let ctx = ui.ctx().clone();
+            let scroll_area = egui::ScrollArea::vertical();
+            #[cfg(feature = "perf")]
+            let scroll_area =
+                match self.perf_manager_scroll_target() {
+                    Some(target_row) => scroll_area.vertical_scroll_offset(
+                        machine_row_scroll_offset(target_row, row_height, row_spacing),
+                    ),
+                    None => scroll_area,
+                };
+            #[cfg(feature = "perf")]
+            let draw_started = std::time::Instant::now();
+            #[cfg(feature = "perf")]
+            let mut actual_visible_rows = None;
+            scroll_area.show_rows(ui, row_height, entry_count, |ui, visible_rows| {
+                #[cfg(feature = "perf")]
+                {
+                    actual_visible_rows = Some(visible_rows.clone());
+                }
+                let near_rows = thumbnail_near_range(visible_rows.clone(), entry_count);
+                self.prepare_row_thumbnails(&ctx, near_rows, visible_rows.clone());
                 ui.set_min_width(ui.available_width());
-                for i in 0..self.entries.len() {
-                    self.draw_machine_row(ui, i);
+                for index in visible_rows {
+                    self.draw_machine_row(ui, index);
                 }
             });
+            #[cfg(feature = "perf")]
+            if let Some(actual_visible_rows) = actual_visible_rows {
+                self.complete_perf_manager_scroll(actual_visible_rows, draw_started.elapsed());
+            }
         }
         self.deselect_on_empty_click(ui);
     }
@@ -47,8 +80,6 @@ impl ManagerApp {
     /// One machine-list row: thumbnail + name/subtitle/status. Clicking
     /// anywhere in the row selects it (`ui.interact` over the frame's rect).
     pub(super) fn draw_machine_row(&mut self, ui: &mut egui::Ui, i: usize) {
-        // A stopped machine's saved preview, if any, loads (once) before the row draws.
-        self.ensure_row_thumbnail(&ui.ctx().clone(), i);
         let selected = self.selection.contains(i);
         let fill = if selected {
             ui.visuals().selection.bg_fill
@@ -90,13 +121,18 @@ impl ManagerApp {
                 .to_machine_config()
                 .expect("list entries are validated on load/save");
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new(&def.name).strong());
-                ui.label(format!(
-                    "{} · {}",
-                    crate::machine_label(config.variant),
-                    new_vm::ram_label(config.memory),
-                ));
-                ui.weak(vm_status_label(entry));
+                ui.add(egui::Label::new(egui::RichText::new(&def.name).strong()).truncate());
+                ui.add(
+                    egui::Label::new(format!(
+                        "{} · {}",
+                        crate::machine_label(config.variant),
+                        new_vm::ram_label(config.memory),
+                    ))
+                    .truncate(),
+                );
+                ui.add(
+                    egui::Label::new(egui::RichText::new(vm_status_label(entry)).weak()).truncate(),
+                );
             });
         });
     }
@@ -277,3 +313,37 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
     let spacing = ui.spacing().item_spacing.y;
     line_height * 3.0 + spacing * 2.0
 }
+
+/// Fixed row height required by [`egui::ScrollArea::show_rows`]. Labels are
+/// truncated to one line, so row construction and scrolling use the same
+/// geometry even for long machine names.
+fn machine_row_height(ui: &egui::Ui) -> f32 {
+    row_content_height(ui) + ROW_MARGIN * 2.0
+}
+
+#[cfg(any(feature = "perf", test))]
+fn machine_row_stride(row_height: f32, row_spacing: f32) -> f32 {
+    row_height + row_spacing
+}
+
+#[cfg(any(feature = "perf", test))]
+fn machine_row_scroll_offset(target_row: usize, row_height: f32, row_spacing: f32) -> f32 {
+    target_row as f32 * machine_row_stride(row_height, row_spacing)
+}
+
+/// Expands the constructed row range into the preview-preload range without
+/// exceeding the machine library.
+fn thumbnail_near_range(
+    visible_rows: std::ops::Range<usize>,
+    entry_count: usize,
+) -> std::ops::Range<usize> {
+    visible_rows.start.saturating_sub(THUMBNAIL_NEAR_RANGE_ROWS)
+        ..visible_rows
+            .end
+            .saturating_add(THUMBNAIL_NEAR_RANGE_ROWS)
+            .min(entry_count)
+}
+
+#[cfg(test)]
+#[path = "list_test.rs"]
+mod tests;

@@ -37,6 +37,9 @@ impl ManagerApp {
         // `self.check_pending` needs to borrow `self` immutably, which a
         // live draining borrow of `self.pending` would conflict with.
         for pending in std::mem::take(&mut self.pending) {
+            if pending.is_abandoned() {
+                continue;
+            }
             match self.check_pending(&pending) {
                 Outcome::Done => pending.reply.reply(Response::Ok(Reply::Done)),
                 Outcome::Gone(msg) => pending.reply.reply(Response::Err(msg)),

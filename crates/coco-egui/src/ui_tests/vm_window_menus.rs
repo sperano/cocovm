@@ -517,6 +517,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
             rom,
             rom_source,
             AppParams::default(),
+            crate::joy::SharedGamepad::without_backend(),
         )
     });
     // Drive the app-glue directly: the menu item's click handler opens a native file dialog.

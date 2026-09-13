@@ -29,6 +29,7 @@ fn running_entry(slug: &str) -> MachineEntry {
         rom,
         ROMSource::File(rom_path),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     );
     let mut entry = off_entry(slug);
     entry.vm = Some(Box::new(vm));

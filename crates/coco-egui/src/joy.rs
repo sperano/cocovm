@@ -9,6 +9,10 @@ use eframe::egui;
 
 use crate::machine_def::JoySourceDTO;
 
+mod gamepad;
+use gamepad::GamepadState;
+pub(crate) use gamepad::SharedGamepad;
+
 /// Pot floor (0 = fully left/up), named to match `joystick::AXIS_MAX` (63 =
 /// fully right/down) rather than leaving a bare `0` at each call site.
 const AXIS_MIN: u8 = 0;
@@ -81,18 +85,12 @@ struct KeyState {
     button1: bool,
 }
 
-/// Runtime state for the two joystick ports: which source drives each, plus
-/// the (optional) gilrs handle shared by any port set to `Gamepad`.
+/// Per-VM joystick selections and mouse state, with a handle to the one
+/// application-lifetime gamepad backend.
 pub struct JoystickInputs {
     /// Indexed by `coco_core::joystick::{RIGHT, LEFT}`.
     pub sources: [JoySource; 2],
-    /// `None` when no gamepad backend is available on this host (`gilrs::Gilrs::new`
-    /// failed) — the `Gamepad` source is then selectable but stays centered.
-    gilrs: Option<gilrs::Gilrs>,
-    /// Left analog stick of the first gamepad seen, in gilrs' -1.0..=1.0 range.
-    pad_axes: [f32; 2],
-    /// South (button 0) / East (button 1) state of the first gamepad seen.
-    pad_buttons: [bool; 2],
+    gamepad: SharedGamepad,
     /// Whether each port's source is currently being actively driven —
     /// set every frame in [`Self::apply`], read by the status bar's
     /// joystick activity light. Indexed like `sources`. What "actively
@@ -117,67 +115,29 @@ pub struct JoystickInputs {
 }
 
 impl JoystickInputs {
-    pub fn new() -> Self {
-        let gilrs = match gilrs::Gilrs::new() {
-            Ok(g) => Some(g),
-            Err(e) => {
-                tracing::warn!("gamepad input unavailable: {e}");
-                None
-            }
-        };
+    pub fn new(gamepad: SharedGamepad) -> Self {
         Self {
             // Off by default: a mouse silently driving the pots surprised more than it helped.
             sources: [JoySource::None, JoySource::None],
-            gilrs,
-            pad_axes: [0.0, 0.0],
-            pad_buttons: [false, false],
+            gamepad,
             in_use: [false, false],
             mouse_fire: [false, false],
         }
     }
 
     pub fn gamepad_available(&self) -> bool {
-        self.gilrs.is_some()
+        self.gamepad.available()
+    }
+
+    #[cfg(all(test, feature = "perf"))]
+    pub(crate) fn shares_gamepad(&self, gamepad: &SharedGamepad) -> bool {
+        self.gamepad.shares_backend(gamepad)
     }
 
     /// True if either port is set to `Keys`, meaning arrow/Z/X keys are claimed by
     /// the joystick and must not also reach the CoCo keyboard matrix.
     pub fn keys_active(&self) -> bool {
         self.sources.contains(&JoySource::Keys)
-    }
-
-    /// Pump pending gilrs events into `pad_axes`/`pad_buttons` from whichever
-    /// gamepad reports them first. D-pad presses arrive as `ButtonPressed`
-    /// (gilrs' default filters) and are treated as full deflection.
-    fn poll_gamepad(&mut self) {
-        use gilrs::{Axis, Button, EventType};
-
-        let Some(gilrs) = self.gilrs.as_mut() else {
-            return;
-        };
-        while let Some(gilrs::Event { event, .. }) = gilrs.next_event() {
-            match event {
-                EventType::AxisChanged(Axis::LeftStickX, v, _) => self.pad_axes[0] = v,
-                // gilrs reports stick-up as negative (HID/SDL convention), matching the pot's 0
-                // = up.
-                EventType::AxisChanged(Axis::LeftStickY, v, _) => self.pad_axes[1] = v,
-                EventType::ButtonPressed(Button::DPadLeft, _) => self.pad_axes[0] = -1.0,
-                EventType::ButtonPressed(Button::DPadRight, _) => self.pad_axes[0] = 1.0,
-                EventType::ButtonReleased(Button::DPadLeft | Button::DPadRight, _) => {
-                    self.pad_axes[0] = 0.0;
-                }
-                EventType::ButtonPressed(Button::DPadUp, _) => self.pad_axes[1] = -1.0,
-                EventType::ButtonPressed(Button::DPadDown, _) => self.pad_axes[1] = 1.0,
-                EventType::ButtonReleased(Button::DPadUp | Button::DPadDown, _) => {
-                    self.pad_axes[1] = 0.0;
-                }
-                EventType::ButtonPressed(Button::South, _) => self.pad_buttons[0] = true,
-                EventType::ButtonReleased(Button::South, _) => self.pad_buttons[0] = false,
-                EventType::ButtonPressed(Button::East, _) => self.pad_buttons[1] = true,
-                EventType::ButtonReleased(Button::East, _) => self.pad_buttons[1] = false,
-                _ => {}
-            }
-        }
     }
 
     /// Update the [`Self::mouse_fire`] latches from this frame's
@@ -252,7 +212,7 @@ impl JoystickInputs {
         display_layer: egui::LayerId,
         machine: &mut Machine,
     ) {
-        self.poll_gamepad();
+        let GamepadState { axes, buttons } = self.gamepad.poll();
 
         let (pointer_pos, primary_down, secondary_down) = ctx.input(|i| {
             (
@@ -297,19 +257,13 @@ impl JoystickInputs {
                     mouse_in_use(fire0, fire1)
                 }
                 JoySource::Gamepad => {
-                    let x = pot_from_bipolar(self.pad_axes[0]);
-                    let y = pot_from_bipolar(self.pad_axes[1]);
+                    let x = pot_from_bipolar(axes[0]);
+                    let y = pot_from_bipolar(axes[1]);
                     machine.bus.joysticks.set_axis(stick, AXIS_X, x);
                     machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
-                    machine
-                        .bus
-                        .joysticks
-                        .set_button(stick, 0, self.pad_buttons[0]);
-                    machine
-                        .bus
-                        .joysticks
-                        .set_button(stick, 1, self.pad_buttons[1]);
-                    gamepad_in_use(self.pad_buttons, self.pad_axes)
+                    machine.bus.joysticks.set_button(stick, 0, buttons[0]);
+                    machine.bus.joysticks.set_button(stick, 1, buttons[1]);
+                    gamepad_in_use(buttons, axes)
                 }
                 JoySource::Keys => {
                     let x = axis_from_keys(keys.left, keys.right);

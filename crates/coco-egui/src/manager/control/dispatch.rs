@@ -44,6 +44,9 @@ impl ManagerApp {
     /// `incoming` before returning, or moves it into `self.pending`.
     pub(super) fn dispatch_control(&mut self, incoming: Incoming) {
         let (crate::control::protocol::Request { vm, action }, reply) = incoming.into_parts();
+        if reply.is_abandoned() {
+            return;
+        }
         match action {
             Action::ListVms => reply.reply(Response::Ok(Reply::Vms(self.vm_infos()))),
             Action::StartVm => reply.reply(response(self.start_vm_action(&vm))),
@@ -204,6 +207,13 @@ impl ManagerApp {
         vm: Option<String>,
         start: impl FnOnce(&mut CocoApp) -> Result<(PendingCondition, u64), String>,
     ) {
+        if reply.is_abandoned() {
+            return;
+        }
+        self.pending.retain(|pending| !pending.is_abandoned());
+        if self.pending.len() >= super::MAX_PENDING_CONTROL_REQUESTS {
+            return reply.reply(Response::Err(super::CONTROL_PENDING_OVERLOADED.to_string()));
+        }
         let idx = match self.resolve_vm(&vm, true) {
             Ok(idx) => idx,
             Err(e) => return reply.reply(Response::Err(e)),

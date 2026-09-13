@@ -13,6 +13,58 @@ const LINES_PER_PAGE: usize = 66;
 const PRINTER_LINE: &[u8] = b"PERFORMANCE BASELINE 0123456789\r";
 const PRINTER_NEWLINE: u8 = b'\r';
 const SNAPSHOT_FILE: &str = "performance.ccstate";
+const LIFECYCLE_STEP_COUNT: u64 = 9;
+const SCROLL_PHASE_COUNT: u64 = 3;
+
+pub(super) const MANAGER_SCROLL_SURFACE: &str = "manager-list";
+pub(super) const PRINTER_SCROLL_SURFACE: &str = "printer-paper";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ScrollPosition {
+    Beginning,
+    Middle,
+    End,
+}
+
+impl ScrollPosition {
+    fn for_operation(operation: u64) -> Self {
+        match operation % SCROLL_PHASE_COUNT {
+            0 => Self::Beginning,
+            1 => Self::Middle,
+            _ => Self::End,
+        }
+    }
+
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::Beginning => "beginning",
+            Self::Middle => "middle",
+            Self::End => "end",
+        }
+    }
+
+    fn target_index(self, item_count: usize) -> usize {
+        match self {
+            Self::Beginning => 0,
+            Self::Middle => (item_count / 2).min(item_count.saturating_sub(1)),
+            Self::End => item_count.saturating_sub(1),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PerformedScroll {
+    pub(super) surface: &'static str,
+    pub(super) position: ScrollPosition,
+    pub(super) target_index: usize,
+}
+
+pub(super) struct PerformedOperation {
+    pub(super) name: &'static str,
+    pub(super) cycle: Option<u64>,
+    pub(super) cycle_step: Option<u64>,
+    pub(super) scroll: Option<PerformedScroll>,
+}
 
 pub(super) fn prepare(app: &mut ManagerApp, config: &Config) -> Result<(), String> {
     if !app.entries.is_empty() {
@@ -183,19 +235,58 @@ pub(super) fn operate(
     app: &mut ManagerApp,
     config: &Config,
     operation: u64,
-) -> Result<bool, String> {
+) -> Result<Option<PerformedOperation>, String> {
     match config.name.as_str() {
         "snapshot" => {
             let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
             snapshot_round_trip(app)?;
+            Ok(Some(PerformedOperation {
+                name: "snapshot-round-trip",
+                cycle: None,
+                cycle_step: None,
+                scroll: None,
+            }))
         }
         "lifecycle" => {
             let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
-            lifecycle_step(app, operation)?;
+            lifecycle_step(app, operation)
         }
-        _ => return Ok(false),
+        "saved-previews" => Ok(Some(scroll_operation(
+            MANAGER_SCROLL_SURFACE,
+            app.entries.len(),
+            operation,
+        ))),
+        "printer" => {
+            let performed = scroll_operation(PRINTER_SCROLL_SURFACE, PRINTER_PAGE_COUNT, operation);
+            let target_page = performed.scroll.expect("scroll operation").target_index as u32;
+            app.entries[0]
+                .vm
+                .as_mut()
+                .ok_or("printer VM missing")?
+                .paper_window
+                .request_perf_scroll(operation, target_page);
+            Ok(Some(performed))
+        }
+        _ => Ok(None),
     }
-    Ok(true)
+}
+
+fn scroll_operation(
+    surface: &'static str,
+    item_count: usize,
+    operation: u64,
+) -> PerformedOperation {
+    let position = ScrollPosition::for_operation(operation);
+    PerformedOperation {
+        name: "scroll",
+        cycle: Some(operation / SCROLL_PHASE_COUNT),
+        cycle_step: Some(operation % SCROLL_PHASE_COUNT),
+        scroll: Some(PerformedScroll {
+            surface,
+            position,
+            target_index: position.target_index(item_count),
+        }),
+    }
 }
 
 fn snapshot_round_trip(app: &mut ManagerApp) -> Result<(), String> {
@@ -213,18 +304,38 @@ fn snapshot_round_trip(app: &mut ManagerApp) -> Result<(), String> {
     vm.load_state_from(&path)
 }
 
-fn lifecycle_step(app: &mut ManagerApp, operation: u64) -> Result<(), String> {
-    const LIFECYCLE_STEPS: u64 = 6;
-    match operation % LIFECYCLE_STEPS {
+fn lifecycle_step(
+    app: &mut ManagerApp,
+    operation: u64,
+) -> Result<Option<PerformedOperation>, String> {
+    let cycle_step = operation % LIFECYCLE_STEP_COUNT;
+    let name = match cycle_step {
+        0 => "suspend-for-warm-resume",
+        1 => "resume-live-vm",
+        2 => "suspend-for-window-close",
+        3 => "close-suspended-window",
+        4 => "resume-cold-vm",
+        5 => "stop-vm",
+        6 => "start-vm",
+        7 => "close-running-window",
+        _ => "restart-after-window-close",
+    };
+    match cycle_step {
         0 => app.suspend_vm(0),
-        1 => app.close_vm_window(0),
-        2 => app.resume_vm(0),
-        3 => app.stop_vm(0),
-        4 => app.start_vm(0),
-        _ => {
-            app.close_vm_window(0);
-            app.start_vm(0);
-        }
+        1 => app.resume_vm(0),
+        2 => app.suspend_vm(0),
+        3 => app.close_vm_window(0),
+        4 => app.resume_vm(0),
+        5 => app.stop_vm(0),
+        6 => app.start_vm(0),
+        7 => app.close_vm_window(0),
+        _ => app.start_vm(0),
     }
-    check_entry(app, 0)
+    check_entry(app, 0)?;
+    Ok(Some(PerformedOperation {
+        name,
+        cycle: Some(operation / LIFECYCLE_STEP_COUNT),
+        cycle_step: Some(cycle_step),
+        scroll: None,
+    }))
 }

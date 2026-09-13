@@ -163,6 +163,7 @@ fn vm_with_dirty_disk(disk_path: &Path) -> Box<CocoApp> {
         rom,
         ROMSource::File(rom_path),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     );
     vm.insert_disk_controller()
         .unwrap_or_else(|e| panic!("test fixture FD-502 install: {e}"));

@@ -72,7 +72,11 @@ enum Slot {
 /// Builds a running [`CocoApp`] from a saved machine definition, loads the ROM,
 /// and mounts `[media]`, `[peripherals]`, and `[ports]`. Any failure returns `Err`
 /// instead of a partial VM.
-pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
+pub(crate) fn launch_machine_with_gamepad(
+    def: &machine_def::MachineDef,
+    slug: &str,
+    gamepad: crate::joy::SharedGamepad,
+) -> Result<CocoApp, String> {
     let config = def.to_machine_config()?;
     let explicit_rom = def.hardware.rom.as_ref().map(PathBuf::from);
     let (rom, rom_source) = load_rom(explicit_rom.as_deref(), config.variant)?;
@@ -81,7 +85,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
     let cartridge = resolve_cartridge(def, slug);
     validate_disk_media(&media, &cartridge)?;
 
-    let mut app = new_app(config, rom, rom_source, &media, &cartridge);
+    let mut app = new_app(config, rom, rom_source, &media, &cartridge, gamepad);
     mount_peripherals(&mut app, media, cartridge);
     mount_serial(&mut app, def.ports.serial, slug);
 
@@ -233,6 +237,7 @@ fn new_app(
     rom_source: ROMSource,
     media: &Media,
     cartridge: &Cartridge,
+    gamepad: crate::joy::SharedGamepad,
 ) -> CocoApp {
     let (cart_path, cart_autostart) = match cartridge {
         Cartridge::ROMPak { path, autostart } => (Some(path.clone()), *autostart),
@@ -250,7 +255,15 @@ fn new_app(
             // field drives them yet (see the `AppParams` field docs).
             ..AppParams::default()
         },
+        gamepad,
     )
+}
+
+/// Test-only convenience for launch behavior that isn't concerned with manager
+/// ownership. Production launches always receive the manager's shared backend.
+#[cfg(test)]
+pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Result<CocoApp, String> {
+    launch_machine_with_gamepad(def, slug, crate::joy::SharedGamepad::without_backend())
 }
 
 /// Installs whichever peripheral claims the cartridge port (or an MPI slot), then

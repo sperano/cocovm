@@ -17,19 +17,34 @@
 //! close/reopen — only [`PaperWindow::detach`] (called when print-file-
 //! capture yanks the sink away) drops it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use coco_core::dmp::DmpHandle;
 use coco_core::printer::PaperExtent;
 use eframe::egui;
 
 use crate::paper_export;
-use crate::paper_render::{self, PAGE_HEIGHT_IN, PAPER_WIDTH_IN, RASTER_DPI};
+use crate::paper_render::{self, PAGE_HEIGHT_IN, RASTER_DPI};
 
-/// Fixed number of pages of look-ahead/behind kept rendered around the
-/// visible viewport (see [`PaperWindow::ui`]'s viewport-limited texture
-/// cache).
-const KEEP_MARGIN_PAGES: f32 = 1.0;
+mod scroll;
+
+#[cfg(feature = "perf")]
+struct PerfScrollRequest {
+    operation: u64,
+    target_page: u32,
+    requested: std::time::Instant,
+}
+
+#[cfg(feature = "perf")]
+pub(crate) struct PerfScrollResult {
+    pub(crate) operation: u64,
+    pub(crate) target_page: u32,
+    pub(crate) visible_pages: std::ops::Range<u32>,
+    pub(crate) request_to_render: std::time::Duration,
+    pub(crate) draw_duration: std::time::Duration,
+    pub(crate) resident_items: usize,
+    pub(crate) resident_bytes: usize,
+}
 
 #[derive(Default)]
 pub struct PaperWindow {
@@ -62,11 +77,29 @@ pub struct PaperWindow {
     /// One-shot request consumed by the scroll area: start at the roll's top instead of
     /// egui's default of sticking to the end.
     scroll_to_top: bool,
+    #[cfg(feature = "perf")]
+    perf_scroll_request: Option<PerfScrollRequest>,
+    #[cfg(feature = "perf")]
+    perf_scroll_result: Option<PerfScrollResult>,
 }
 
 impl PaperWindow {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    #[cfg(feature = "perf")]
+    pub(crate) fn request_perf_scroll(&mut self, operation: u64, target_page: u32) {
+        self.perf_scroll_request = Some(PerfScrollRequest {
+            operation,
+            target_page,
+            requested: std::time::Instant::now(),
+        });
+    }
+
+    #[cfg(feature = "perf")]
+    pub(crate) fn take_perf_scroll_result(&mut self) -> Option<PerfScrollResult> {
+        self.perf_scroll_result.take()
     }
 
     /// Detaches the current sink handle: closes the window and drops every cached page texture
@@ -390,84 +423,6 @@ impl PaperWindow {
                 }
             }
         });
-    }
-
-    /// The scrolling fanfold view: allocates one rect per page at fit-width scale, lazily
-    /// rasterizing/uploading a texture for any page entering the
-    /// viewport-plus-[`KEEP_MARGIN_PAGES`] keep range, evicting the rest.
-    fn fanfold_scroll_area(
-        &mut self,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        handle: &DmpHandle,
-        total_pages: u32,
-    ) {
-        // Fit-width scaling: no horizontal scrolling at default zoom.
-        let scale = ui.available_width() / (PAPER_WIDTH_IN * RASTER_DPI);
-        let page_size = egui::vec2(
-            PAPER_WIDTH_IN * RASTER_DPI * scale,
-            PAGE_HEIGHT_IN * RASTER_DPI * scale,
-        );
-        let keep_margin_px = page_size.y * KEEP_MARGIN_PAGES;
-        // Copied out before the loop: the closure can't re-borrow `self` while
-        // `self.pages.entry(...)` holds a mutable borrow.
-        let green_bar = self.green_bar;
-
-        let mut keep_pages: HashSet<u32> = HashSet::new();
-        // Page topmost in the viewport this frame.
-        let mut current_page_local = self.current_page;
-
-        // On the opening frame, egui's stick-to-bottom would snap a fresh scroll area to the
-        // end of the roll; start at the top instead and only stick once the user scrolls there.
-        let scroll_to_top = std::mem::take(&mut self.scroll_to_top);
-        let mut scroll_area = egui::ScrollArea::vertical().stick_to_bottom(!scroll_to_top);
-        if scroll_to_top {
-            scroll_area = scroll_area.vertical_scroll_offset(0.0);
-        }
-        scroll_area.show_viewport(ui, |ui, viewport| {
-            let keep_min = viewport.min.y - keep_margin_px;
-            let keep_max = viewport.max.y + keep_margin_px;
-            current_page_local = (viewport.min.y / page_size.y)
-                .floor()
-                .clamp(0.0, (total_pages - 1) as f32) as u32;
-
-            for page in 0..total_pages {
-                let y0 = page as f32 * page_size.y;
-                let y1 = y0 + page_size.y;
-                let (rect, _resp) = ui.allocate_exact_size(page_size, egui::Sense::hover());
-
-                let in_keep_range = y1 >= keep_min && y0 <= keep_max;
-                if !in_keep_range {
-                    continue;
-                }
-                keep_pages.insert(page);
-
-                let texture = self.pages.entry(page).or_insert_with(|| {
-                    let img = paper_render::rasterize(
-                        handle,
-                        page as f32 * PAGE_HEIGHT_IN,
-                        PAGE_HEIGHT_IN,
-                        RASTER_DPI,
-                        green_bar,
-                    );
-                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                        [img.width as usize, img.height as usize],
-                        &img.pixels,
-                    );
-                    ctx.load_texture(
-                        format!("paper-page-{page}"),
-                        color_image,
-                        egui::TextureOptions::NEAREST,
-                    )
-                });
-                let sized = egui::load::SizedTexture::new(texture.id(), rect.size());
-                ui.put(rect, egui::Image::new(sized));
-            }
-        });
-
-        // Evict cached textures outside the keep-set.
-        self.pages.retain(|page, _| keep_pages.contains(page));
-        self.current_page = current_page_local;
     }
 }
 

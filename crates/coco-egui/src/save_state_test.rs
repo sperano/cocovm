@@ -103,6 +103,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
         rom,
         ROMSource::File(rom_path.clone()),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     );
     app.insert_multipak();
     app.mpi_insert_rompak(0, cart_path.clone(), true);
@@ -180,6 +181,7 @@ pub(crate) fn boot_app() -> CocoApp {
         rom,
         ROMSource::File(rom_path),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     )
 }
 
