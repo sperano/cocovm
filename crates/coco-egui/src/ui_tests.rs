@@ -19,6 +19,7 @@
 //! status-bar disk, tape and joysticks entries/menus and icon-only mode, and the manager window's
 //! scaffold/peripherals/lifecycle/settings).
 
+mod cartridge_detection;
 mod harness;
 mod keyboard_test;
 mod manager_lifecycle;

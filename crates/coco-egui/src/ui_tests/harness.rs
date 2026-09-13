@@ -5,6 +5,8 @@
 //! fixture builders
 //! (`sample_entry`, `sample_coco2_entry`).
 
+use std::path::PathBuf;
+
 use egui_kittest::kittest::Queryable;
 
 use coco_core::{MachineVariant, MemorySize, VDGVariant, VideoStandard};
@@ -15,6 +17,18 @@ use crate::*;
 
 pub(super) type AppHarness = egui_kittest::Harness<'static, CocoApp>;
 pub(super) type ManagerHarness = egui_kittest::Harness<'static, manager::ManagerApp>;
+
+pub(super) fn cartridge_image_choice(
+    path: PathBuf,
+    hardware: coco_core::rom_db::CartridgeHardware,
+) -> new_vm::CartridgeImageChoice {
+    new_vm::CartridgeImageChoice {
+        path,
+        autostart: true,
+        hardware,
+        hardware_detected: false,
+    }
+}
 
 /// Resolve the effective color of the shape that paints `text` in the
 /// manager's latest frame.
@@ -113,13 +127,12 @@ pub(super) fn click_containing<S: 'static>(
     harness.step();
 }
 
-/// Select an item in a form combo box: among all combos currently showing
-/// `current`, open the `index`-th in screen order and click `target`.
-pub(super) fn select_combo_at<S: 'static>(
+/// Open a form combo box: among all combos currently showing `current`, use
+/// the `index`-th in screen order.
+pub(super) fn open_combo_at<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     current: &str,
     index: usize,
-    target: &str,
 ) {
     fn nth<'t, S>(
         harness: &'t egui_kittest::Harness<'static, S>,
@@ -141,6 +154,16 @@ pub(super) fn select_combo_at<S: 'static>(
     nth(harness, current, index).click();
     harness.step();
     harness.step();
+}
+
+/// Select an item in a form combo box.
+pub(super) fn select_combo_at<S: 'static>(
+    harness: &mut egui_kittest::Harness<'static, S>,
+    current: &str,
+    index: usize,
+    target: &str,
+) {
+    open_combo_at(harness, current, index);
     click(harness, target);
 }
 

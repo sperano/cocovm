@@ -34,9 +34,10 @@ pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISl
             .map(|r| r.rom.path.clone())
     };
     match cart {
-        Cart::ROMPak(_) | Cart::BankedROMPak(_) => {
-            rom_path().map(MPISlot::ROMPak).unwrap_or(MPISlot::Empty)
-        }
+        Cart::ROMPak(_) => rom_path().map(MPISlot::ROMPak).unwrap_or(MPISlot::Empty),
+        Cart::BankedROMPak(_) => rom_path()
+            .map(MPISlot::BankedROMPak)
+            .unwrap_or(MPISlot::Empty),
         Cart::GamesMasterCartridge(_) => rom_path()
             .map(MPISlot::GamesMasterCartridge)
             .unwrap_or(MPISlot::Empty),

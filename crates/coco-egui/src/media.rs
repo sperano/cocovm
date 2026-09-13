@@ -3,6 +3,7 @@
 //! driven from the Machine menu (`chrome::menu_bar`) and from the manager's
 //! launch path (`launch`).
 
+mod banked_rompak;
 mod cart;
 pub(crate) mod disk;
 mod drivewire;

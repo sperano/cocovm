@@ -60,7 +60,7 @@ pub(crate) use app::{AppParams, CocoApp};
 use chrono::{Datelike, Timelike};
 use clap::Parser;
 use cli::Cli;
-use coco_core::cart::{GamesMasterCartridge, MultiPak, ROMPak};
+use coco_core::cart::{BankedROMPak, GamesMasterCartridge, MultiPak, ROMPak};
 use coco_core::drivewire::{self, DWImage, DWTime};
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::{self as kbd, Pos};

@@ -15,7 +15,7 @@ impl ManagerApp {
     }
 
     /// Mutable access to the detail pane's edit form — needed because the
-    /// "ROM Pak…" combo opens native file dialogs a headless test harness
+    /// "Cartridge ROM…" combo opens native file dialogs a headless test harness
     /// can't drive.
     pub(crate) fn edit_form_mut(&mut self) -> Option<&mut new_vm::MachineForm> {
         self.edit.as_mut().map(|e| &mut e.form)

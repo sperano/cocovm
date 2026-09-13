@@ -240,7 +240,7 @@ impl CocoApp {
     /// other cartridge kinds can't hold a dirty floppy. `false` means the
     /// caller must abort without mutating anything.
     #[must_use]
-    fn mpi_flush_before_replacing_slot(&mut self, slot: usize) -> bool {
+    pub(super) fn mpi_flush_before_replacing_slot(&mut self, slot: usize) -> bool {
         let holds_fd502 = self
             .mpi
             .as_ref()

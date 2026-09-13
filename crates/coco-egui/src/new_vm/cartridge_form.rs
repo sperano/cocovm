@@ -5,13 +5,14 @@
 
 use std::path::PathBuf;
 
+use coco_core::rom_db::CartridgeHardware;
 use coco_core::rtc::DistoRTCModel;
 use eframe::egui;
 
 use super::cartridge::{
-    CartridgeChoice, RS232EndpointChoice, SlotChoice, cartridge_label, games_master,
-    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, rompak, rtc_label, slot_games_master,
-    slot_label, slot_rompak,
+    CartridgeChoice, CartridgeImageChoice, RS232EndpointChoice, SlotChoice, cartridge_label,
+    cartridge_rom, cartridge_rom_file_dialog, orch90_file_dialog, rtc_label, slot_cartridge_rom,
+    slot_label,
 };
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
 
@@ -25,10 +26,9 @@ pub(super) fn drives_available(
         CartridgeChoice::FD502 => true,
         CartridgeChoice::MPI => mpi_slots.contains(&SlotChoice::FD502),
         CartridgeChoice::None
-        | CartridgeChoice::ROMPak { .. }
+        | CartridgeChoice::Image(_)
         | CartridgeChoice::RTC(_)
         | CartridgeChoice::RS232
-        | CartridgeChoice::GamesMaster { .. }
         | CartridgeChoice::Orch90(_)
         | CartridgeChoice::SoundSpeech => false,
     }
@@ -73,9 +73,8 @@ pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: Car
         CartridgeChoice::RS232 => {
             sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, rs232_endpoint));
         }
-        CartridgeChoice::ROMPak { autostart, .. }
-        | CartridgeChoice::GamesMaster { autostart, .. } => {
-            sub_form_row(ui, |ui| autostart_row(ui, autostart));
+        CartridgeChoice::Image(image) => {
+            sub_form_row(ui, |ui| cartridge_image_sub_form(ui, salt, font, image));
         }
         CartridgeChoice::None
         | CartridgeChoice::RTC(_)
@@ -111,9 +110,10 @@ fn mpi_sub_form(
                     SlotChoice::RS232(endpoint) => {
                         sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, endpoint));
                     }
-                    SlotChoice::ROMPak { autostart, .. }
-                    | SlotChoice::GamesMaster { autostart, .. } => {
-                        sub_form_row(ui, |ui| autostart_row(ui, autostart));
+                    SlotChoice::Image(image) => {
+                        sub_form_row(ui, |ui| {
+                            cartridge_image_sub_form(ui, (salt, "slot", slot), font, image)
+                        });
                     }
                     _ => {}
                 }
@@ -193,11 +193,65 @@ fn rs232_endpoint_combo(ui: &mut egui::Ui, salt: &str, endpoint: &mut RS232Endpo
         });
 }
 
-/// A ROM Pak/Games Master's Auto-start checkbox — ties CART* to Q so the pak
-/// runs at power-up ([`crate::CocoApp::insert_cartridge`]'s doc). Checked by
-/// default; no nested Grid needed for a single checkbox.
-fn autostart_row(ui: &mut egui::Ui, autostart: &mut bool) {
-    ui.checkbox(autostart, "Auto-start");
+fn cartridge_hardware_label(hardware: CartridgeHardware) -> &'static str {
+    match hardware {
+        CartridgeHardware::RomPak => "ROM Pak",
+        CartridgeHardware::BankedRomPak => "Banked ROM Pak",
+        CartridgeHardware::GamesMaster => "Games Master Cartridge",
+    }
+}
+
+fn cartridge_hardware_combo(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    hardware: &mut CartridgeHardware,
+) {
+    egui::ComboBox::from_id_salt(id_salt)
+        .selected_text(format!(
+            "{} (fallback)",
+            cartridge_hardware_label(*hardware)
+        ))
+        .show_ui(ui, |ui| {
+            for choice in [
+                CartridgeHardware::RomPak,
+                CartridgeHardware::BankedRomPak,
+                CartridgeHardware::GamesMaster,
+            ] {
+                combo_item(
+                    ui,
+                    cartridge_hardware_label(choice),
+                    *hardware == choice,
+                    || *hardware = choice,
+                );
+            }
+        });
+}
+
+/// Shows detected hardware as read-only. Unknown ROMs get a fallback selector.
+fn cartridge_image_sub_form(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash,
+    font: f32,
+    image: &mut CartridgeImageChoice,
+) {
+    egui::Grid::new(("cartridge_image", &id_salt))
+        .num_columns(2)
+        .spacing(FORM_GRID_SPACING)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Hardware").size(font));
+            if image.hardware_detected {
+                ui.label(format!(
+                    "{} (detected)",
+                    cartridge_hardware_label(image.hardware)
+                ));
+            } else {
+                cartridge_hardware_combo(ui, &id_salt, &mut image.hardware);
+            }
+            ui.end_row();
+            ui.label("");
+            ui.checkbox(&mut image.autostart, "Auto-start");
+            ui.end_row();
+        });
 }
 
 /// The Disk rows as their own label+combo grid, one row per drive.
@@ -301,9 +355,8 @@ fn slot_rtc_combo_items(
     }
 }
 
-/// The Cartridge-row combo. Every image-backed pick ("ROM Pak…", "Games
-/// Master…", "Orchestra-90…") opens a file dialog on the spot; a cancelled
-/// dialog keeps the previous choice.
+/// The Cartridge-row combo. Cartridge hardware is detected after the unified
+/// cartridge ROM picker returns a file.
 fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoice) {
     egui::ComboBox::from_id_salt((salt, "cartridge"))
         .selected_text(cartridge_label(cartridge))
@@ -316,10 +369,10 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
             });
             image_combo_item(
                 ui,
-                "ROM Pak…",
-                matches!(cartridge, CartridgeChoice::ROMPak { .. }),
-                rom_pak_file_dialog,
-                |path| *cartridge = rompak(path),
+                "Cartridge ROM…",
+                matches!(cartridge, CartridgeChoice::Image(_)),
+                cartridge_rom_file_dialog,
+                |path| *cartridge = cartridge_rom(path),
             );
             cartridge_rtc_combo_items(ui, cartridge);
             combo_item(
@@ -327,13 +380,6 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 "RS-232 Pak",
                 *cartridge == CartridgeChoice::RS232,
                 || *cartridge = CartridgeChoice::RS232,
-            );
-            image_combo_item(
-                ui,
-                "Games Master…",
-                matches!(cartridge, CartridgeChoice::GamesMaster { .. }),
-                gmc_file_dialog,
-                |path| *cartridge = games_master(path),
             );
             image_combo_item(
                 ui,
@@ -359,8 +405,8 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
 
 /// One "Slot N:" label + combo, drawn while the MPI is selected. Claiming
 /// the FD-502 or RTC releases it from any other slot (one controller/clock
-/// max — [`SlotChoice`]'s doc); ROM Paks, the Games Master, Orchestra-90,
-/// and the Sound/Speech Cartridge may each fill any number of slots.
+/// max — [`SlotChoice`]'s doc); cartridge ROMs, Orchestra-90, and the
+/// Sound/Speech Cartridge may each fill any number of slots.
 fn slot_combo(
     ui: &mut egui::Ui,
     salt: &str,
@@ -381,10 +427,10 @@ fn slot_combo(
             });
             image_combo_item(
                 ui,
-                "ROM Pak…",
-                matches!(mpi_slots[slot], SlotChoice::ROMPak { .. }),
-                rom_pak_file_dialog,
-                |path| mpi_slots[slot] = slot_rompak(path),
+                "Cartridge ROM…",
+                matches!(mpi_slots[slot], SlotChoice::Image(_)),
+                cartridge_rom_file_dialog,
+                |path| mpi_slots[slot] = slot_cartridge_rom(path),
             );
             slot_rtc_combo_items(ui, mpi_slots, slot);
             combo_item(
@@ -400,13 +446,6 @@ fn slot_combo(
                     };
                     mpi_slots[slot] = SlotChoice::RS232(endpoint);
                 },
-            );
-            image_combo_item(
-                ui,
-                "Games Master…",
-                matches!(mpi_slots[slot], SlotChoice::GamesMaster { .. }),
-                gmc_file_dialog,
-                |path| mpi_slots[slot] = slot_games_master(path),
             );
             image_combo_item(
                 ui,
