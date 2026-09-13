@@ -213,7 +213,7 @@ fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
     mount_and_dirty(&mut app, 0, &disk_path);
 
     let _ro = ReadOnly::new(&disk_path);
-    app.mpi_insert_rtc(FD502_SLOT, DistoRTCModel::FourInOne);
+    app.mpi_insert_rtc(FD502_SLOT);
     let err = app
         .cart_error
         .clone()

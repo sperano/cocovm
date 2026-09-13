@@ -75,7 +75,7 @@ fn single_dot_marks_ink_at_the_mapped_pixel() {
     let img = rasterize(&dots, 0.0, 2.0, dpi, false);
 
     let x_in = PRINT_AREA_LEFT_IN + x_units as f32 / X_UNITS_PER_INCH as f32;
-    let y_in = y_units as f32 / Y_UNITS_PER_INCH as f32;
+    let y_in = y_units_to_roll_in(y_units);
     let px = (x_in * dpi).floor() as u32;
     let py = (y_in * dpi).floor() as u32;
 
@@ -86,6 +86,51 @@ fn single_dot_marks_ink_at_the_mapped_pixel() {
     });
     let got = pixel(&img, px, py);
     assert_eq!([got[0], got[1], got[2]], expected);
+}
+
+/// The head's first row lands a top margin below the roll's leading edge, not on it: the
+/// rows above `PRINT_AREA_TOP_IN` stay pure paper even with a dot at model `y = 0`.
+#[test]
+fn first_print_row_sits_below_the_top_margin() {
+    let dpi = RASTER_DPI;
+    let dots = FixedDots(vec![(0, 0)]);
+    let img = rasterize(&dots, 0.0, 1.0, dpi, false);
+    let x0 = (PRINT_AREA_LEFT_IN * dpi).round() as u32;
+    let x1 = ((PRINT_AREA_LEFT_IN + PRINT_AREA_WIDTH_IN) * dpi).round() as u32;
+    let margin_rows = ((PRINT_AREA_TOP_IN - DOT_DIAMETER_IN / 2.0) * dpi).floor() as u32;
+    assert!(margin_rows > 0);
+    for y in 0..margin_rows {
+        for x in x0..x1 {
+            assert_eq!(
+                pixel(&img, x, y),
+                PAPER_COLOR,
+                "ink above the top margin at ({x},{y})"
+            );
+        }
+    }
+}
+
+#[test]
+fn page_of_units_counts_pages_from_the_offset_first_row() {
+    assert_eq!(page_of_units(0), 0);
+    let first_row_on_page_2 = roll_in_to_y_units(PAGE_HEIGHT_IN).ceil() as u32;
+    assert_eq!(page_of_units(first_row_on_page_2 - 1), 0);
+    assert_eq!(page_of_units(first_row_on_page_2), 1);
+}
+
+/// At 6 LPI, 66 lines span exactly one 11" page, and the top-of-form offset phases them so
+/// every page perforation falls centred in the gap between two lines, never through a row.
+#[test]
+fn page_perforation_is_centred_between_text_lines() {
+    let line_units = (TEXT_LINE_PITCH_IN * Y_UNITS_PER_INCH as f32).round() as u32;
+    let lines_per_page = (PAGE_HEIGHT_IN / TEXT_LINE_PITCH_IN).round() as u32;
+    let last_line_on_page_1 = lines_per_page - 1 - TOP_MARGIN_LINES as u32;
+    let last_row_in = y_units_to_roll_in(last_line_on_page_1 * line_units) + TEXT_CELL_HEIGHT_IN;
+    let next_row_in = y_units_to_roll_in((last_line_on_page_1 + 1) * line_units);
+    let clearance_above = PAGE_HEIGHT_IN - last_row_in;
+    let clearance_below = next_row_in - PAGE_HEIGHT_IN;
+    assert!(clearance_above > 0.0 && clearance_below > 0.0);
+    assert!((clearance_above - clearance_below).abs() < 1e-5);
 }
 
 #[test]

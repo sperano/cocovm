@@ -17,7 +17,6 @@ mod paper_render;
 
 use coco_core::bitbanger::PrinterSink;
 use coco_core::dmp::DmpHandle;
-use coco_core::printer::Y_UNITS_PER_INCH;
 use paper_render::{PAGE_HEIGHT_IN, RASTER_DPI};
 
 /// Bare `\r`s fed after the styled lines, to land solidly on page 2. 66
@@ -32,12 +31,11 @@ const DEFAULT_LINES_PER_INCH: f32 = 6.0;
 const FULL_PREVIEW_WIDTH_PX: u32 = 900;
 
 /// `detail.png` crop origin/size, in inches. Width (3") is spec-given; the
-/// rest are this example's own choice of a region with real content: near
-/// the roll's start so the left tractor strip's first sprocket hole
-/// (0.25") and the plain text lines fed first (all within the first ~0.9")
-/// both land inside the crop.
+/// rest are this example's own choice of a region with real content: from
+/// the first print row (just below the top margin) so the plain and styled
+/// text lines fed first, plus a sprocket hole, all land inside the crop.
 const DETAIL_X0_IN: f32 = 0.0;
-const DETAIL_Y0_IN: f32 = 0.0;
+const DETAIL_Y0_IN: f32 = paper_render::PRINT_AREA_TOP_IN;
 const DETAIL_WIDTH_IN: f32 = 3.0;
 const DETAIL_HEIGHT_IN: f32 = 1.0;
 
@@ -95,8 +93,7 @@ fn main() {
     let last_content_page = if extent.dot_count == 0 {
         0
     } else {
-        let max_y_in = extent.max_y as f32 / Y_UNITS_PER_INCH as f32;
-        (max_y_in / PAGE_HEIGHT_IN).floor() as u32
+        paper_render::page_of_units(extent.max_y)
     };
     let total_pages = last_content_page + 2;
     let total_height_in = total_pages as f32 * PAGE_HEIGHT_IN;

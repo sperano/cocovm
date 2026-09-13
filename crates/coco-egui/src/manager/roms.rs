@@ -106,7 +106,7 @@ fn system_rows(def: &MachineDef, roms_dir: Option<&Path>, rows: &mut Vec<ROMRow>
 
 fn cartridge_occupant(cartridge: &CartridgeDTO) -> Occupant<'_> {
     match cartridge {
-        CartridgeDTO::None | CartridgeDTO::RTC { .. } | CartridgeDTO::MPI { .. } => Occupant::None,
+        CartridgeDTO::None | CartridgeDTO::RTC | CartridgeDTO::MPI { .. } => Occupant::None,
         CartridgeDTO::FD502 => Occupant::FD502,
         CartridgeDTO::ROMPak { path, .. } => Occupant::Image {
             kind: "ROM Pak",
@@ -131,7 +131,7 @@ fn cartridge_occupant(cartridge: &CartridgeDTO) -> Occupant<'_> {
 
 fn slot_occupant(slot: &SlotDTO) -> Occupant<'_> {
     match slot {
-        SlotDTO::Empty | SlotDTO::RTC { .. } => Occupant::None,
+        SlotDTO::Empty | SlotDTO::RTC => Occupant::None,
         SlotDTO::FD502 => Occupant::FD502,
         SlotDTO::ROMPak { path, .. } => Occupant::Image {
             kind: "ROM Pak",

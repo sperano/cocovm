@@ -1,13 +1,13 @@
 //! The machine-list panel: [`ManagerApp::draw_machine_list`] and one row's
-//! worth of drawing/interaction ([`ManagerApp::draw_machine_row`]), plus the
-//! row-thumbnail rendering helpers only this panel needs.
+//! worth of drawing/interaction ([`ManagerApp::draw_machine_row`]). The
+//! preview rendering itself is shared with the detail pane
+//! (`manager::thumbnails`).
 
 use eframe::egui;
 
 use super::bulk::BulkAction;
 use super::{
-    CocoApp, ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, THUMBNAIL_ASPECT, THUMBNAIL_CORNER_RADIUS,
-    THUMBNAIL_PLACEHOLDER_FILL, vm_status_label,
+    ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, THUMBNAIL_ASPECT, thumbnails, vm_status_label,
 };
 use crate::new_vm;
 use crate::widgets::SUSPEND_HOVER;
@@ -76,19 +76,14 @@ impl ManagerApp {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
             let content_height = row_content_height(ui);
-            // Preview priority: live VM framebuffer, else a window-closed
-            // Suspended machine's saved thumbnail, else the black placeholder.
             let entry = &self.entries[i];
-            let texture = entry
-                .vm
-                .as_deref()
-                .and_then(CocoApp::framebuffer_texture)
-                .or(entry.thumbnail.as_ref().filter(|_| entry.suspended));
-            let uv = entry.vm.as_deref().map_or_else(
-                || definition_texture_uv(&entry.def),
-                |vm| crate::display::texture_uv(vm.display, vm.tv),
+            let (texture, uv) = thumbnails::preview_source(entry);
+            thumbnails::draw_preview(
+                ui,
+                egui::vec2(content_height * THUMBNAIL_ASPECT, content_height),
+                texture,
+                uv,
             );
-            draw_row_thumbnail(ui, content_height, texture, uv);
 
             let def = &entry.def;
             let config = def
@@ -281,39 +276,4 @@ fn row_content_height(ui: &egui::Ui) -> f32 {
     let line_height = ui.fonts_mut(|f| f.row_height(&font_id));
     let spacing = ui.spacing().item_spacing.y;
     line_height * 3.0 + spacing * 2.0
-}
-
-/// One list row's thumbnail: the resolved preview `texture`, sized to
-/// `height` tall at the fixed [`THUMBNAIL_ASPECT`]. A paused VM's texture
-/// stops changing, freezing the thumbnail on its last frame; with no texture,
-/// the placeholder shows.
-fn draw_row_thumbnail(
-    ui: &mut egui::Ui,
-    height: f32,
-    texture: Option<&egui::TextureHandle>,
-    uv: egui::Rect,
-) -> egui::Rect {
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(height * THUMBNAIL_ASPECT, height),
-        egui::Sense::hover(),
-    );
-
-    let painter = ui.painter();
-    painter.rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
-    if let Some(texture) = texture {
-        painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
-    }
-    rect
-}
-
-/// Texture crop for a stopped or window-closed suspended VM, reconstructed
-/// from the same persisted preferences that seed a live [`CocoApp`].
-fn definition_texture_uv(def: &crate::machine_def::MachineDef) -> egui::Rect {
-    let settings = crate::display::TVSettings {
-        scanline_pct: def.ui.tv_scanline,
-        noise_pct: def.ui.tv_noise,
-        overscan_pct: def.ui.tv_overscan,
-    }
-    .clamped();
-    crate::display::texture_uv(def.display(), settings)
 }
