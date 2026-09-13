@@ -328,6 +328,64 @@ fn rompak_autostart_false_does_not_tie_cart_line_to_q() {
     );
 }
 
+#[test]
+fn banked_rompak_mounts_without_games_master_hardware() {
+    const BANKED_ROM_SIZE: usize = 0x8000;
+    let dir = crate::machine_def::tests::TempDir::new("launch-banked-rompak");
+    let rom_path = dir.path().join("mind-roll.rom");
+    std::fs::write(&rom_path, vec![0x11u8; BANKED_ROM_SIZE]).expect("write banked ROM Pak fixture");
+
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::BankedROMPak {
+        path: rom_path.display().to_string(),
+        autostart: true,
+    };
+
+    let app = super::launch_machine(&def, "launch-test-banked-rompak")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    assert!(matches!(
+        &app.machine.bus.cart,
+        coco_core::cart::Cart::BankedROMPak(_)
+    ));
+    assert!(!app.machine.bus.cart.contains_games_master());
+}
+
+#[test]
+fn mpi_slot_mounts_banked_rompak_without_games_master_hardware() {
+    const BANKED_ROM_SIZE: usize = 0x10000;
+    const BANKED_SLOT: u8 = 0;
+    let dir = crate::machine_def::tests::TempDir::new("launch-mpi-banked-rompak");
+    let rom_path = dir.path().join("predator.rom");
+    std::fs::write(&rom_path, vec![0x22u8; BANKED_ROM_SIZE]).expect("write banked ROM Pak fixture");
+
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::MPI {
+        slots: [
+            SlotDTO::BankedROMPak {
+                path: rom_path.display().to_string(),
+                autostart: true,
+            },
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+            SlotDTO::Empty,
+        ],
+        switch: usize::from(BANKED_SLOT) + 1,
+    };
+
+    let mut app = super::launch_machine(&def, "launch-test-mpi-banked-rompak")
+        .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
+    let (_, slot_cart) = app
+        .machine
+        .bus
+        .cart
+        .slots_mut()
+        .into_iter()
+        .find(|(slot, _)| *slot == Some(BANKED_SLOT))
+        .expect("banked slot must exist");
+    assert!(matches!(slot_cart, coco_core::cart::Cart::BankedROMPak(_)));
+    assert!(!app.machine.bus.cart.contains_games_master());
+}
+
 /// An MPI slot may hold the Deluxe RS-232 Pak: it decodes its ACIA at
 /// `$FF68-$FF6B` off the full address bus itself, so it's reachable
 /// regardless of the MPI's switch/`$FF7F` selection — here the pak is in

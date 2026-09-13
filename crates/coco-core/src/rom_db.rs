@@ -1,12 +1,15 @@
-//! Known-ROM manifest: CRC32s of the system ROM dumps this emulator targets,
-//! copied from MAME's ROM definitions (`src/mame/trs/coco3.cpp`,
+//! Known-ROM manifests for system firmware and CoCo cartridge images. System
+//! ROM CRC32s come from MAME's ROM definitions (`src/mame/trs/coco3.cpp`,
 //! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`, master as
-//! of 2026-07). File names follow the MAME romset convention so dumps can be
-//! taken straight out of a MAME `roms/` tree.
+//! of 2026-07). [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
 //!
 //! Validation is advisory: an unrecognized or mismatching image still boots
 //! (patched and homebrew ROMs are legitimate), but the loader can tell the
 //! user exactly which known dump they have — or that they don't have one.
+
+mod cartridges;
+
+pub use cartridges::KNOWN_CARTRIDGE_ROMS;
 
 /// One known-good dump from MAME's manifest.
 #[derive(Debug, PartialEq, Eq)]
@@ -18,6 +21,30 @@ pub struct KnownROM {
     /// CRC32 (IEEE, as printed by MAME's `CRC(...)`).
     pub crc32: u32,
     pub desc: &'static str,
+}
+
+/// Cartridge implementation used to run a known ROM image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CartridgeHardware {
+    /// A fixed ROM Pak image of up to 32 KiB.
+    RomPak,
+    /// A legacy `$FF40`-selected 16 KiB banked ROM Pak without GMC audio.
+    BankedRomPak,
+    /// A Games Master Cartridge with banked ROM and SN76489A sound.
+    GamesMaster,
+}
+
+/// One known CoCo cartridge ROM image.
+#[derive(Debug, PartialEq, Eq)]
+pub struct KnownCartridgeROM {
+    /// Size in bytes; CRC32 matches are only trusted at the right size.
+    pub size: usize,
+    /// CRC32 (IEEE, as printed by XRoar).
+    pub crc32: u32,
+    /// Human-readable title and release metadata.
+    pub desc: &'static str,
+    /// Cartridge implementation that runs this image.
+    pub hardware: CartridgeHardware,
 }
 
 /// Every system ROM the emulator knows how to use, per MAME.
@@ -134,6 +161,17 @@ pub fn identify(bytes: &[u8]) -> Option<&'static KnownROM> {
     KNOWN_ROMS
         .iter()
         .find(|r| r.size == bytes.len() && r.crc32 == crc)
+}
+
+/// Look up a cartridge image by contents alone (size + CRC32).
+pub fn identify_cartridge(bytes: &[u8]) -> Option<&'static KnownCartridgeROM> {
+    identify_cartridge_fingerprint(bytes.len(), crc32(bytes))
+}
+
+fn identify_cartridge_fingerprint(size: usize, crc32: u32) -> Option<&'static KnownCartridgeROM> {
+    KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .find(|rom| rom.size == size && rom.crc32 == crc32)
 }
 
 /// Validate an image against the manifest. `file_name` is the bare name

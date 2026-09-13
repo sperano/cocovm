@@ -2,13 +2,25 @@
 
 use crate::*;
 
+const GMC_BECKER_CONFLICT_HINT: &str =
+    "The Games Master Cartridge sound port also uses $FF41. Remove it before enabling Becker.";
+
+fn becker_toggle_enabled(becker_enabled: bool, cart: &coco_core::cart::Cart) -> bool {
+    becker_enabled || !cart.contains_games_master()
+}
+
 impl CocoApp {
     /// The Machine menu's DriveWire submenu: the virtual serial link
     /// and the four disk images it serves.
     pub(super) fn drivewire_menu_ui(&mut self, ui: &mut egui::Ui) {
         let becker_enabled = self.machine.bus.drivewire.is_some();
+        let toggle_enabled = becker_toggle_enabled(becker_enabled, &self.machine.bus.cart);
         if ui
-            .selectable_label(becker_enabled, "Enable Becker port ($FF41/$FF42)")
+            .add_enabled(
+                toggle_enabled,
+                egui::Button::selectable(becker_enabled, "Enable Becker port ($FF41/$FF42)"),
+            )
+            .on_disabled_hover_text(GMC_BECKER_CONFLICT_HINT)
             .clicked()
         {
             if becker_enabled {
@@ -52,3 +64,7 @@ impl CocoApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "drivewire_test.rs"]
+mod tests;

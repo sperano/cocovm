@@ -277,6 +277,17 @@ impl Cart {
         }
     }
 
+    /// True if this cart (or, for a [`MultiPak`], any of its slots) contains
+    /// a [`Cart::GamesMasterCartridge`]. The frontend uses this to keep the
+    /// GMC's `$FF41` sound port from colliding with the Becker port.
+    pub fn contains_games_master(&self) -> bool {
+        match self {
+            Cart::GamesMasterCartridge(_) => true,
+            Cart::MultiPak(mp) => mp.slots.iter().any(Cart::contains_games_master),
+            _ => false,
+        }
+    }
+
     /// True if this cart is a [`MultiPak`] with a `Cart::MultiPak` nested in
     /// one of its own slots — not valid hardware, reachable only from a
     /// hand-crafted payload. Checked by
@@ -356,3 +367,7 @@ impl From<MultiPak> for Cart {
         Cart::MultiPak(Box::new(mp))
     }
 }
+
+#[cfg(test)]
+#[path = "cart_enum_test.rs"]
+mod tests;

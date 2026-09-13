@@ -20,6 +20,8 @@ mod cartridge_form;
 mod config_form;
 mod form;
 
+#[cfg(test)]
+pub use cartridge::CartridgeImageChoice;
 pub use cartridge::{CartridgeChoice, RS232EndpointChoice, SlotChoice};
 pub(crate) use cartridge::{pack_peripherals, seed_peripherals};
 

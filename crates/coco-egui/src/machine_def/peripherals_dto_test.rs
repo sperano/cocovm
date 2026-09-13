@@ -251,6 +251,25 @@ autostart = false
     );
 }
 
+#[test]
+fn banked_rompak_kind_round_trips() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "banked_rompak"
+path = "/paks/robocop.rom"
+autostart = false
+"#,
+    )
+    .expect("banked ROM Pak must parse");
+    assert_eq!(
+        dto,
+        CartridgeDTO::BankedROMPak {
+            path: "/paks/robocop.rom".to_string(),
+            autostart: false,
+        }
+    );
+}
+
 /// Definitions written while `{ kind = "rtc", model = "4n1" }` was the shape
 /// still load: the legacy `model` key is ignored.
 #[test]

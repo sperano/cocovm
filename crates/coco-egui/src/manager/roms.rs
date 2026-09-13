@@ -112,6 +112,10 @@ fn cartridge_occupant(cartridge: &CartridgeDTO) -> Occupant<'_> {
             kind: "ROM Pak",
             path,
         },
+        CartridgeDTO::BankedROMPak { path, .. } => Occupant::Image {
+            kind: "Banked ROM Pak",
+            path,
+        },
         CartridgeDTO::RS232 { .. } => Occupant::RS232,
         CartridgeDTO::GamesMaster { path, .. } => Occupant::Image {
             kind: "Games Master ROM",
@@ -131,6 +135,10 @@ fn slot_occupant(slot: &SlotDTO) -> Occupant<'_> {
         SlotDTO::FD502 => Occupant::FD502,
         SlotDTO::ROMPak { path, .. } => Occupant::Image {
             kind: "ROM Pak",
+            path,
+        },
+        SlotDTO::BankedROMPak { path, .. } => Occupant::Image {
+            kind: "Banked ROM Pak",
             path,
         },
         SlotDTO::RS232 { .. } => Occupant::RS232,

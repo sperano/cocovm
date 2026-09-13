@@ -394,6 +394,7 @@ fn slot_label(slot: &MPISlot) -> String {
     match slot {
         MPISlot::Empty => "-".to_string(),
         MPISlot::ROMPak(p) => file_name(p).to_string(),
+        MPISlot::BankedROMPak(p) => format!("Banked:{}", file_name(p)),
         MPISlot::FD502 => "FD-502".to_string(),
         MPISlot::DistoRTC => "RTC".to_string(),
         MPISlot::DeluxeRS232(_) => "RS-232".to_string(),

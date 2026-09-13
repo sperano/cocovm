@@ -6,7 +6,11 @@
 //! other — split out of `new_vm.rs` once it grew past the project's
 //! ~500-line ceiling.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use coco_core::rom_db::{self, CartridgeHardware, KnownCartridgeROM};
+use owo_colors::colors::xterm;
+use owo_colors::{OwoColorize, Stream};
 
 use crate::machine_def::{self, CartridgeDTO, RS232EndpointDTO, SlotDTO};
 
@@ -23,10 +27,10 @@ pub enum CartridgeChoice {
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
     FD502,
-    /// A program ROM Pak image plugged straight into the port; picked with
-    /// a file dialog on selection. `autostart` ties CART* to Q so the pak
-    /// runs at power-up.
-    ROMPak { path: PathBuf, autostart: bool },
+    /// A cartridge ROM image plugged straight into the port. Its hardware
+    /// implementation comes from content detection or the unknown-ROM
+    /// fallback in [`CartridgeImageChoice`].
+    Image(CartridgeImageChoice),
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
     /// a VHD boot; for RTC + floppies use an MPI slot.
     RTC,
@@ -36,10 +40,6 @@ pub enum CartridgeChoice {
     /// Can also be picked per-slot ([`SlotChoice::RS232`]) while the MPI is
     /// selected.
     RS232,
-    /// Games Master Cartridge (banked ROM + SN76489A) plugged straight into
-    /// the port; picked with a file dialog on selection. `autostart` like
-    /// [`Self::ROMPak`]'s.
-    GamesMaster { path: PathBuf, autostart: bool },
     /// Orchestra-90/CC plugged straight into the port; picked with a file
     /// dialog on selection. Always autostarts — no `autostart` field.
     Orch90(PathBuf),
@@ -65,11 +65,8 @@ pub enum SlotChoice {
     #[default]
     Empty,
     FD502,
-    /// A program ROM Pak image in this slot (see [`CartridgeChoice::ROMPak`]).
-    ROMPak {
-        path: PathBuf,
-        autostart: bool,
-    },
+    /// A cartridge ROM image in this slot (see [`CartridgeChoice::Image`]).
+    Image(CartridgeImageChoice),
     /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
     RTC,
     /// Deluxe RS-232 Pak in this slot (see [`CartridgeChoice::RS232`]); at
@@ -77,16 +74,22 @@ pub enum SlotChoice {
     /// ACIA at `$FF68`, reachable from any slot regardless of switch/`$FF7F`
     /// selection (the pak decodes the full address bus itself).
     RS232(RS232EndpointChoice),
-    /// Games Master Cartridge in this slot (see [`CartridgeChoice::GamesMaster`]).
-    GamesMaster {
-        path: PathBuf,
-        autostart: bool,
-    },
     /// Orchestra-90/CC in this slot (see [`CartridgeChoice::Orch90`]).
     Orch90(PathBuf),
     /// Sound/Speech Cartridge in this slot (see
     /// [`CartridgeChoice::SoundSpeech`]).
     SoundSpeech,
+}
+
+/// One cartridge ROM selection and the hardware used to run it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CartridgeImageChoice {
+    pub path: PathBuf,
+    pub autostart: bool,
+    pub hardware: CartridgeHardware,
+    /// `true` when the ROM database identified `hardware`; `false` when the
+    /// user can change the fallback for an unknown or unreadable image.
+    pub hardware_detected: bool,
 }
 
 /// [`super::MachineForm::rs232_endpoint`]'s pick — which host backend the
@@ -110,10 +113,9 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
     match slot {
         SlotChoice::Empty => "Empty".to_string(),
         SlotChoice::FD502 => "FD-502".to_string(),
-        SlotChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
+        SlotChoice::Image(image) => cart_file_name(&image.path, "Cartridge ROM"),
         SlotChoice::RTC => RTC_LABEL.to_string(),
         SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
-        SlotChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
         SlotChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
         SlotChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
     }
@@ -123,10 +125,9 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
     match cartridge {
         CartridgeChoice::None => "None".to_string(),
         CartridgeChoice::FD502 => "FD-502".to_string(),
-        CartridgeChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
+        CartridgeChoice::Image(image) => cart_file_name(&image.path, "Cartridge ROM"),
         CartridgeChoice::RTC => RTC_LABEL.to_string(),
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
-        CartridgeChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
         CartridgeChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
         CartridgeChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),
@@ -145,18 +146,12 @@ fn cart_file_name(path: &std::path::Path, fallback: &str) -> String {
 /// NitrOS-9 clock driver (`clock2_disto4`) it answers to.
 pub(super) const RTC_LABEL: &str = "Disto RTC (4-N-1)";
 
-/// The extensions every cartridge-image file dialog (ROM Pak, Games Master,
-/// Orchestra-90) accepts.
+/// The extensions every cartridge-image file dialog accepts.
 const ROM_EXTENSIONS: &[&str] = &["rom", "ccc", "bin"];
 
-/// The ROM Pak combo entry's file dialog.
-pub(super) fn rom_pak_file_dialog() -> rfd::FileDialog {
-    rfd::FileDialog::new().add_filter("ROM Pak", ROM_EXTENSIONS)
-}
-
-/// The Games Master combo entry's file dialog.
-pub(super) fn gmc_file_dialog() -> rfd::FileDialog {
-    rfd::FileDialog::new().add_filter("Games Master ROM", ROM_EXTENSIONS)
+/// The unified cartridge ROM combo entry's file dialog.
+pub(super) fn cartridge_rom_file_dialog() -> rfd::FileDialog {
+    rfd::FileDialog::new().add_filter("Cartridge ROM", ROM_EXTENSIONS)
 }
 
 /// The Orchestra-90 combo entry's file dialog.
@@ -164,41 +159,123 @@ pub(super) fn orch90_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Orchestra-90 ROM", ROM_EXTENSIONS)
 }
 
-/// `CartridgeChoice::ROMPak`/`GamesMaster`'s (and their `SlotChoice`
-/// equivalents') autostart default when a combo pick first creates one —
-/// checked, matching `CartridgeDTO`'s own field default.
+/// Image-backed ROM cartridges' autostart default when a combo pick first
+/// creates one — checked, matching `CartridgeDTO`'s own field default.
 pub(super) const DEFAULT_AUTOSTART: bool = true;
 
-/// A ROM Pak cartridge pick with [`DEFAULT_AUTOSTART`] — the Cartridge combo's
-/// "ROM Pak…" entry's on-pick constructor.
-pub(super) fn rompak(path: PathBuf) -> CartridgeChoice {
-    CartridgeChoice::ROMPak {
+fn identify_image(path: &Path) -> Option<&'static KnownCartridgeROM> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| rom_db::identify_cartridge(&bytes))
+}
+
+fn image_choice(
+    path: PathBuf,
+    autostart: bool,
+    fallback: CartridgeHardware,
+) -> CartridgeImageChoice {
+    let detected = identify_image(&path);
+    CartridgeImageChoice {
         path,
-        autostart: DEFAULT_AUTOSTART,
+        autostart,
+        hardware: detected.map_or(fallback, |known| known.hardware),
+        hardware_detected: detected.is_some(),
     }
 }
 
-/// [`rompak`]'s Games Master sibling.
-pub(super) fn games_master(path: PathBuf) -> CartridgeChoice {
-    CartridgeChoice::GamesMaster {
-        path,
-        autostart: DEFAULT_AUTOSTART,
+fn hardware_name(hardware: CartridgeHardware) -> &'static str {
+    match hardware {
+        CartridgeHardware::RomPak => "ROM Pak",
+        CartridgeHardware::BankedRomPak => "Banked ROM Pak",
+        CartridgeHardware::GamesMaster => "Games Master Cartridge",
     }
 }
 
-/// [`rompak`]'s MPI-slot sibling, for the Slot combo's "ROM Pak…" entry.
-pub(super) fn slot_rompak(path: PathBuf) -> SlotChoice {
-    SlotChoice::ROMPak {
-        path,
-        autostart: DEFAULT_AUTOSTART,
+fn announce_image_detection(known: Option<&KnownCartridgeROM>) {
+    match known {
+        Some(known) => println!(
+            " {} {} {} {}",
+            "Detected".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
+            known.desc.if_supports_color(Stream::Stdout, |v| v.cyan()),
+            "→".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+            hardware_name(known.hardware).if_supports_color(Stream::Stdout, |v| v.white()),
+        ),
+        None => println!(
+            " {} {} {} {}",
+            "Unrecognized"
+                .if_supports_color(Stream::Stdout, |v| { v.fg::<xterm::BittersweetOrange>() }),
+            "cartridge ROM".if_supports_color(Stream::Stdout, |v| v.cyan()),
+            "→".if_supports_color(Stream::Stdout, |v| v.dimmed()),
+            "using ROM Pak fallback".if_supports_color(Stream::Stdout, |v| v.white()),
+        ),
     }
 }
 
-/// [`games_master`]'s MPI-slot sibling.
-pub(super) fn slot_games_master(path: PathBuf) -> SlotChoice {
-    SlotChoice::GamesMaster {
+fn selected_image_choice(path: PathBuf) -> CartridgeImageChoice {
+    let known = identify_image(&path);
+    announce_image_detection(known);
+    CartridgeImageChoice {
         path,
         autostart: DEFAULT_AUTOSTART,
+        hardware: known.map_or(CartridgeHardware::RomPak, |rom| rom.hardware),
+        hardware_detected: known.is_some(),
+    }
+}
+
+fn persisted_image_choice(
+    path: &str,
+    autostart: bool,
+    hardware: CartridgeHardware,
+) -> CartridgeImageChoice {
+    let mut image = image_choice(PathBuf::from(path), autostart, hardware);
+    image.hardware_detected &= image.hardware == hardware;
+    image.hardware = hardware;
+    image
+}
+
+/// A content-detected cartridge image, with ROM Pak as the unknown fallback.
+pub(super) fn cartridge_rom(path: PathBuf) -> CartridgeChoice {
+    CartridgeChoice::Image(selected_image_choice(path))
+}
+
+/// [`cartridge_rom`]'s MPI-slot sibling.
+pub(super) fn slot_cartridge_rom(path: PathBuf) -> SlotChoice {
+    SlotChoice::Image(selected_image_choice(path))
+}
+
+fn slot_dto_for_image(image: &CartridgeImageChoice) -> SlotDTO {
+    let path = image.path.display().to_string();
+    match image.hardware {
+        CartridgeHardware::RomPak => SlotDTO::ROMPak {
+            path,
+            autostart: image.autostart,
+        },
+        CartridgeHardware::BankedRomPak => SlotDTO::BankedROMPak {
+            path,
+            autostart: image.autostart,
+        },
+        CartridgeHardware::GamesMaster => SlotDTO::GamesMaster {
+            path,
+            autostart: image.autostart,
+        },
+    }
+}
+
+fn cartridge_dto_for_image(image: &CartridgeImageChoice) -> CartridgeDTO {
+    let path = image.path.display().to_string();
+    match image.hardware {
+        CartridgeHardware::RomPak => CartridgeDTO::ROMPak {
+            path,
+            autostart: image.autostart,
+        },
+        CartridgeHardware::BankedRomPak => CartridgeDTO::BankedROMPak {
+            path,
+            autostart: image.autostart,
+        },
+        CartridgeHardware::GamesMaster => CartridgeDTO::GamesMaster {
+            path,
+            autostart: image.autostart,
+        },
     }
 }
 
@@ -210,16 +287,17 @@ impl From<&CartridgeDTO> for CartridgeChoice {
         match dto {
             CartridgeDTO::None => CartridgeChoice::None,
             CartridgeDTO::FD502 => CartridgeChoice::FD502,
-            CartridgeDTO::ROMPak { path, autostart } => CartridgeChoice::ROMPak {
-                path: PathBuf::from(path),
-                autostart: *autostart,
-            },
+            CartridgeDTO::ROMPak { path, autostart } => CartridgeChoice::Image(
+                persisted_image_choice(path, *autostart, CartridgeHardware::RomPak),
+            ),
+            CartridgeDTO::BankedROMPak { path, autostart } => CartridgeChoice::Image(
+                persisted_image_choice(path, *autostart, CartridgeHardware::BankedRomPak),
+            ),
             CartridgeDTO::RTC => CartridgeChoice::RTC,
             CartridgeDTO::RS232 { .. } => CartridgeChoice::RS232,
-            CartridgeDTO::GamesMaster { path, autostart } => CartridgeChoice::GamesMaster {
-                path: PathBuf::from(path),
-                autostart: *autostart,
-            },
+            CartridgeDTO::GamesMaster { path, autostart } => CartridgeChoice::Image(
+                persisted_image_choice(path, *autostart, CartridgeHardware::GamesMaster),
+            ),
             CartridgeDTO::Orch90 { path } => CartridgeChoice::Orch90(PathBuf::from(path)),
             CartridgeDTO::SoundSpeech => CartridgeChoice::SoundSpeech,
             CartridgeDTO::MPI { .. } => CartridgeChoice::MPI,
@@ -232,17 +310,10 @@ impl From<&SlotChoice> for SlotDTO {
         match choice {
             SlotChoice::Empty => SlotDTO::Empty,
             SlotChoice::FD502 => SlotDTO::FD502,
-            SlotChoice::ROMPak { path, autostart } => SlotDTO::ROMPak {
-                path: path.display().to_string(),
-                autostart: *autostart,
-            },
+            SlotChoice::Image(image) => slot_dto_for_image(image),
             SlotChoice::RTC => SlotDTO::RTC,
             SlotChoice::RS232(endpoint) => SlotDTO::RS232 {
                 endpoint: endpoint.into(),
-            },
-            SlotChoice::GamesMaster { path, autostart } => SlotDTO::GamesMaster {
-                path: path.display().to_string(),
-                autostart: *autostart,
             },
             SlotChoice::Orch90(path) => SlotDTO::Orch90 {
                 path: path.display().to_string(),
@@ -257,16 +328,23 @@ impl From<&SlotDTO> for SlotChoice {
         match dto {
             SlotDTO::Empty => SlotChoice::Empty,
             SlotDTO::FD502 => SlotChoice::FD502,
-            SlotDTO::ROMPak { path, autostart } => SlotChoice::ROMPak {
-                path: PathBuf::from(path),
-                autostart: *autostart,
-            },
+            SlotDTO::ROMPak { path, autostart } => SlotChoice::Image(persisted_image_choice(
+                path,
+                *autostart,
+                CartridgeHardware::RomPak,
+            )),
+            SlotDTO::BankedROMPak { path, autostart } => SlotChoice::Image(persisted_image_choice(
+                path,
+                *autostart,
+                CartridgeHardware::BankedRomPak,
+            )),
             SlotDTO::RTC => SlotChoice::RTC,
             SlotDTO::RS232 { endpoint } => SlotChoice::RS232(endpoint.into()),
-            SlotDTO::GamesMaster { path, autostart } => SlotChoice::GamesMaster {
-                path: PathBuf::from(path),
-                autostart: *autostart,
-            },
+            SlotDTO::GamesMaster { path, autostart } => SlotChoice::Image(persisted_image_choice(
+                path,
+                *autostart,
+                CartridgeHardware::GamesMaster,
+            )),
             SlotDTO::Orch90 { path } => SlotChoice::Orch90(PathBuf::from(path)),
             SlotDTO::SoundSpeech => SlotChoice::SoundSpeech,
         }
@@ -326,17 +404,10 @@ pub(crate) fn pack_peripherals(
     let cartridge = match cartridge {
         CartridgeChoice::None => CartridgeDTO::None,
         CartridgeChoice::FD502 => CartridgeDTO::FD502,
-        CartridgeChoice::ROMPak { path, autostart } => CartridgeDTO::ROMPak {
-            path: path.display().to_string(),
-            autostart: *autostart,
-        },
+        CartridgeChoice::Image(image) => cartridge_dto_for_image(image),
         CartridgeChoice::RTC => CartridgeDTO::RTC,
         CartridgeChoice::RS232 => CartridgeDTO::RS232 {
             endpoint: rs232_endpoint.into(),
-        },
-        CartridgeChoice::GamesMaster { path, autostart } => CartridgeDTO::GamesMaster {
-            path: path.display().to_string(),
-            autostart: *autostart,
         },
         CartridgeChoice::Orch90(path) => CartridgeDTO::Orch90 {
             path: path.display().to_string(),
@@ -387,3 +458,7 @@ pub(crate) fn seed_peripherals(
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "cartridge_test.rs"]
+mod tests;

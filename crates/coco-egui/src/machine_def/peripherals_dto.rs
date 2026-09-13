@@ -4,8 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Default for [`CartridgeDTO::ROMPak`]/[`GamesMaster`]'s `autostart` and
-/// [`SlotDTO`]'s equivalents: tie CART* to Q so the pak runs at power-up,
+/// Default for the image-backed ROM cartridge kinds' `autostart` fields and
+/// their [`SlotDTO`] equivalents: tie CART* to Q so the pak runs at power-up,
 /// like the runtime insert flow's old default checkbox state.
 ///
 /// [`GamesMaster`]: CartridgeDTO::GamesMaster
@@ -40,6 +40,13 @@ pub enum CartridgeDTO {
     /// power-up.
     #[serde(rename = "rompak")]
     ROMPak {
+        path: String,
+        #[serde(default = "default_autostart")]
+        autostart: bool,
+    },
+    /// A 16 KiB-window bank-switched ROM Pak with no sound hardware.
+    #[serde(rename = "banked_rompak")]
+    BankedROMPak {
         path: String,
         #[serde(default = "default_autostart")]
         autostart: bool,
@@ -101,6 +108,12 @@ pub enum SlotDTO {
     FD502,
     #[serde(rename = "rompak")]
     ROMPak {
+        path: String,
+        #[serde(default = "default_autostart")]
+        autostart: bool,
+    },
+    #[serde(rename = "banked_rompak")]
+    BankedROMPak {
         path: String,
         #[serde(default = "default_autostart")]
         autostart: bool,
