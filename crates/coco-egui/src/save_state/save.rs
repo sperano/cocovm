@@ -91,7 +91,10 @@ impl CocoApp {
             for (i, slot) in mpi.slots.iter().enumerate() {
                 let mpi_slot = Some(i as u8);
                 match slot {
-                    MPISlot::ROMPak(p) | MPISlot::GamesMasterCartridge(p) | MPISlot::Orch90(p) => {
+                    MPISlot::ROMPak(p)
+                    | MPISlot::BankedROMPak(p)
+                    | MPISlot::GamesMasterCartridge(p)
+                    | MPISlot::Orch90(p) => {
                         paths.push((mpi_slot, CartROMRole::Primary, p.clone()));
                     }
                     MPISlot::FD502 => {

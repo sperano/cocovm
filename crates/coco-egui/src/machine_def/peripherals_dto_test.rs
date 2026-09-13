@@ -251,6 +251,25 @@ autostart = false
     );
 }
 
+#[test]
+fn banked_rompak_kind_round_trips() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "banked_rompak"
+path = "/paks/robocop.rom"
+autostart = false
+"#,
+    )
+    .expect("banked ROM Pak must parse");
+    assert_eq!(
+        dto,
+        CartridgeDTO::BankedROMPak {
+            path: "/paks/robocop.rom".to_string(),
+            autostart: false,
+        }
+    );
+}
+
 /// `[peripherals].cartridge = { kind = "rtc" }` with no `model` key defaults to the 4-N-1
 /// chip fit ([`RTCModelDTO`]'s `Default`).
 #[test]

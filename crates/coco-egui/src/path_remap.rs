@@ -43,6 +43,7 @@ fn remap_optional_string(path: &mut Option<String>, old_dir: &Path, new_dir: &Pa
 fn remap_slot_dto(slot: &mut SlotDTO, old_dir: &Path, new_dir: &Path) {
     match slot {
         SlotDTO::ROMPak { path, .. }
+        | SlotDTO::BankedROMPak { path, .. }
         | SlotDTO::GamesMaster { path, .. }
         | SlotDTO::Orch90 { path } => remap_string(path, old_dir, new_dir),
         SlotDTO::Empty
@@ -56,6 +57,7 @@ fn remap_slot_dto(slot: &mut SlotDTO, old_dir: &Path, new_dir: &Path) {
 fn remap_cartridge_dto(cartridge: &mut CartridgeDTO, old_dir: &Path, new_dir: &Path) {
     match cartridge {
         CartridgeDTO::ROMPak { path, .. }
+        | CartridgeDTO::BankedROMPak { path, .. }
         | CartridgeDTO::GamesMaster { path, .. }
         | CartridgeDTO::Orch90 { path } => remap_string(path, old_dir, new_dir),
         CartridgeDTO::MPI { slots, .. } => {
@@ -83,9 +85,10 @@ pub(crate) fn remap_definition_paths(def: &mut MachineDef, old_dir: &Path, new_d
 
 fn remap_mpi_slot(slot: &mut MPISlot, old_dir: &Path, new_dir: &Path) {
     match slot {
-        MPISlot::ROMPak(path) | MPISlot::GamesMasterCartridge(path) | MPISlot::Orch90(path) => {
-            remap_path(path, old_dir, new_dir)
-        }
+        MPISlot::ROMPak(path)
+        | MPISlot::BankedROMPak(path)
+        | MPISlot::GamesMasterCartridge(path)
+        | MPISlot::Orch90(path) => remap_path(path, old_dir, new_dir),
         MPISlot::DeluxeRS232(Some(path)) => remap_path(path, old_dir, new_dir),
         MPISlot::Empty
         | MPISlot::FD502

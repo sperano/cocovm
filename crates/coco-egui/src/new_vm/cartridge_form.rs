@@ -9,11 +9,15 @@ use coco_core::rtc::DistoRTCModel;
 use eframe::egui;
 
 use super::cartridge::{
-    CartridgeChoice, RS232EndpointChoice, SlotChoice, cartridge_label, games_master,
-    gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog, rompak, rtc_label, slot_games_master,
-    slot_label, slot_rompak,
+    CartridgeChoice, RS232EndpointChoice, SlotChoice, banked_rom_pak_file_dialog, banked_rompak,
+    cartridge_label, games_master, gmc_file_dialog, orch90_file_dialog, rom_pak_file_dialog,
+    rompak, rtc_label, slot_banked_rompak, slot_games_master, slot_label, slot_rompak,
 };
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
+
+/// Keeps every cartridge kind visible without scrolling at the normal manager
+/// window size.
+const CARTRIDGE_COMBO_MAX_HEIGHT: f32 = 320.0;
 
 /// Whether a disk controller is reachable from the given cartridge/slot
 /// picks: the bare FD-502, or one in an MPI slot.
@@ -26,6 +30,7 @@ pub(super) fn drives_available(
         CartridgeChoice::MPI => mpi_slots.contains(&SlotChoice::FD502),
         CartridgeChoice::None
         | CartridgeChoice::ROMPak { .. }
+        | CartridgeChoice::BankedROMPak { .. }
         | CartridgeChoice::RTC(_)
         | CartridgeChoice::RS232
         | CartridgeChoice::GamesMaster { .. }
@@ -74,6 +79,7 @@ pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: Car
             sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, rs232_endpoint));
         }
         CartridgeChoice::ROMPak { autostart, .. }
+        | CartridgeChoice::BankedROMPak { autostart, .. }
         | CartridgeChoice::GamesMaster { autostart, .. } => {
             sub_form_row(ui, |ui| autostart_row(ui, autostart));
         }
@@ -112,6 +118,7 @@ fn mpi_sub_form(
                         sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, endpoint));
                     }
                     SlotChoice::ROMPak { autostart, .. }
+                    | SlotChoice::BankedROMPak { autostart, .. }
                     | SlotChoice::GamesMaster { autostart, .. } => {
                         sub_form_row(ui, |ui| autostart_row(ui, autostart));
                     }
@@ -306,6 +313,7 @@ fn slot_rtc_combo_items(
 /// dialog keeps the previous choice.
 fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoice) {
     egui::ComboBox::from_id_salt((salt, "cartridge"))
+        .height(CARTRIDGE_COMBO_MAX_HEIGHT)
         .selected_text(cartridge_label(cartridge))
         .show_ui(ui, |ui| {
             combo_item(ui, "None", *cartridge == CartridgeChoice::None, || {
@@ -320,6 +328,13 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 matches!(cartridge, CartridgeChoice::ROMPak { .. }),
                 rom_pak_file_dialog,
                 |path| *cartridge = rompak(path),
+            );
+            image_combo_item(
+                ui,
+                "Banked ROM Pak…",
+                matches!(cartridge, CartridgeChoice::BankedROMPak { .. }),
+                banked_rom_pak_file_dialog,
+                |path| *cartridge = banked_rompak(path),
             );
             cartridge_rtc_combo_items(ui, cartridge);
             combo_item(
@@ -370,6 +385,7 @@ fn slot_combo(
 ) {
     ui.label(egui::RichText::new(format!("Slot {}:", slot + 1)).size(font));
     egui::ComboBox::from_id_salt((salt, "mpi_slot", slot))
+        .height(CARTRIDGE_COMBO_MAX_HEIGHT)
         .selected_text(slot_label(&mpi_slots[slot]))
         .show_ui(ui, |ui| {
             combo_item(ui, "Empty", mpi_slots[slot] == SlotChoice::Empty, || {
@@ -385,6 +401,13 @@ fn slot_combo(
                 matches!(mpi_slots[slot], SlotChoice::ROMPak { .. }),
                 rom_pak_file_dialog,
                 |path| mpi_slots[slot] = slot_rompak(path),
+            );
+            image_combo_item(
+                ui,
+                "Banked ROM Pak…",
+                matches!(mpi_slots[slot], SlotChoice::BankedROMPak { .. }),
+                banked_rom_pak_file_dialog,
+                |path| mpi_slots[slot] = slot_banked_rompak(path),
             );
             slot_rtc_combo_items(ui, mpi_slots, slot);
             combo_item(

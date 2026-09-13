@@ -23,6 +23,7 @@ pub(crate) const DEFAULT_MPI_SWITCH_SLOT: usize = MPI_SLOT_COUNT - 1;
 pub(crate) enum MPISlot {
     Empty,
     ROMPak(PathBuf),
+    BankedROMPak(PathBuf),
     FD502,
     DistoRTC(DistoRTCModel),
     /// Deluxe RS-232 Pak; `None` if it has no EPROM dump installed (it's

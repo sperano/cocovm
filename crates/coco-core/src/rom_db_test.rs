@@ -1,5 +1,12 @@
 use super::*;
 
+fn bytes_with_crc_suffix(size: usize, suffix: [u8; 4]) -> Vec<u8> {
+    const CRC_SUFFIX_SIZE: usize = 4;
+    let mut bytes = vec![0; size - CRC_SUFFIX_SIZE];
+    bytes.extend_from_slice(&suffix);
+    bytes
+}
+
 #[test]
 fn crc32_check_value() {
     // The standard CRC-32/ISO-HDLC check value.
@@ -41,4 +48,120 @@ fn validate_flags_corrupt_known_name() {
 #[test]
 fn validate_passes_unknown_names_through() {
     assert_eq!(validate("homebrew.rom", &[0u8; 16]), Validation::Unknown);
+}
+
+#[test]
+fn cartridge_manifest_has_expected_counts() {
+    const XROAR_COCO_CARTRIDGES: usize = 102;
+    const COCOVM_ADDITIONS: usize = 1;
+    const BANKED_ROM_PAKS: usize = 4;
+    const GMC_CARTRIDGES: usize = 3;
+
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS.len(),
+        XROAR_COCO_CARTRIDGES + COCOVM_ADDITIONS
+    );
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS
+            .iter()
+            .filter(|rom| rom.hardware == CartridgeHardware::BankedRomPak)
+            .count(),
+        BANKED_ROM_PAKS
+    );
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS
+            .iter()
+            .filter(|rom| rom.hardware == CartridgeHardware::GamesMaster)
+            .count(),
+        GMC_CARTRIDGES
+    );
+}
+
+#[test]
+fn cartridge_manifest_has_no_duplicate_fingerprints() {
+    for (index, first) in KNOWN_CARTRIDGE_ROMS.iter().enumerate() {
+        for second in &KNOWN_CARTRIDGE_ROMS[index + 1..] {
+            assert_ne!(
+                (first.crc32, first.size),
+                (second.crc32, second.size),
+                "{} vs {}",
+                first.desc,
+                second.desc
+            );
+        }
+    }
+}
+
+#[test]
+fn identifies_known_rom_pak_content() {
+    const ANDRONE_SIZE: usize = 0x2000;
+    const ANDRONE_CRC_SUFFIX: [u8; 4] = [0xf2, 0x92, 0x9e, 0x42];
+    let bytes = bytes_with_crc_suffix(ANDRONE_SIZE, ANDRONE_CRC_SUFFIX);
+
+    let known = identify_cartridge(&bytes).unwrap();
+    assert_eq!(known.desc, "Androne (1983) (Tandy) (26-3096)");
+    assert_eq!(known.hardware, CartridgeHardware::RomPak);
+}
+
+#[test]
+fn identifies_cyd_games_master_content() {
+    const CYD_SIZE: usize = 0x2000;
+    const CYD_CRC_SUFFIX: [u8; 4] = [0x17, 0x60, 0x50, 0x9b];
+    let bytes = bytes_with_crc_suffix(CYD_SIZE, CYD_CRC_SUFFIX);
+
+    assert_eq!(
+        identify_cartridge(&bytes).map(|known| known.hardware),
+        Some(CartridgeHardware::GamesMaster)
+    );
+}
+
+#[test]
+fn identifies_every_banked_rom_pak_fingerprint() {
+    const EXPECTED_BANKED_ROM_PAKS: &[(usize, u32, &str)] = &[
+        (0x8000, 0x83bd_6056, "Mind Roll (1988) (Tandy) (26-3100)"),
+        (0x10000, 0xa968_0ede, "Predator (1989) (Tandy) (26-3165)"),
+        (0x20000, 0xdd94_dd06, "RoboCop (1988) (Tandy) (26-3164)"),
+        (
+            0x8000,
+            0x8789_06fe,
+            "Mind Roll (1988) (Tandy) (26-3100) [f plane1]",
+        ),
+    ];
+
+    for &(size, crc32, desc) in EXPECTED_BANKED_ROM_PAKS {
+        let known = identify_cartridge_fingerprint(size, crc32).unwrap();
+        assert_eq!(known.desc, desc);
+        assert_eq!(known.hardware, CartridgeHardware::BankedRomPak);
+    }
+}
+
+#[test]
+fn identifies_every_games_master_fingerprint() {
+    const EXPECTED_GMC: &[(usize, u32, &str)] = &[
+        (0x4000, 0xabe7_bb9e, "Blockdown (2021) (Teipen Mwnci)"),
+        (0x10000, 0x5871_6b7f, "Dunjunz (2020) (Teipen Mwnci)"),
+        (0x2000, 0x808b_2a0a, "CyD Games Master Cartridge ROM"),
+    ];
+
+    for &(size, crc32, desc) in EXPECTED_GMC {
+        let known = identify_cartridge_fingerprint(size, crc32).unwrap();
+        assert_eq!(known.desc, desc);
+        assert_eq!(known.hardware, CartridgeHardware::GamesMaster);
+    }
+}
+
+#[test]
+fn cartridge_fingerprint_rejects_wrong_size() {
+    const ANDRONE_SIZE: usize = 0x2000;
+    const ANDRONE_CRC32: u32 = 0x7d1c_ac0e;
+
+    assert_eq!(
+        identify_cartridge_fingerprint(ANDRONE_SIZE + 1, ANDRONE_CRC32),
+        None
+    );
+}
+
+#[test]
+fn unknown_cartridge_content_is_not_identified() {
+    assert_eq!(identify_cartridge(&[0; 16]), None);
 }

@@ -38,6 +38,10 @@ enum Cartridge {
         path: PathBuf,
         autostart: bool,
     },
+    BankedROMPak {
+        path: PathBuf,
+        autostart: bool,
+    },
     RTC(DistoRTCModel),
     RS232 {
         endpoint: RS232EndpointDTO,
@@ -63,6 +67,7 @@ enum Slot {
     Empty,
     FD502,
     ROMPak { path: PathBuf, autostart: bool },
+    BankedROMPak { path: PathBuf, autostart: bool },
     RTC(DistoRTCModel),
     RS232 { endpoint: RS232EndpointDTO },
     GamesMaster { path: PathBuf, autostart: bool },
@@ -157,6 +162,10 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
             path: path(p),
             autostart: *autostart,
         },
+        CartridgeDTO::BankedROMPak { path: p, autostart } => Cartridge::BankedROMPak {
+            path: path(p),
+            autostart: *autostart,
+        },
         CartridgeDTO::RTC { model } => Cartridge::RTC((*model).into()),
         CartridgeDTO::RS232 { endpoint } => Cartridge::RS232 {
             endpoint: endpoint.clone(),
@@ -183,6 +192,10 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
             path: path(p),
             autostart: *autostart,
         },
+        SlotDTO::BankedROMPak { path: p, autostart } => Slot::BankedROMPak {
+            path: path(p),
+            autostart: *autostart,
+        },
         SlotDTO::RTC { model } => Slot::RTC((*model).into()),
         SlotDTO::RS232 { endpoint } => Slot::RS232 {
             endpoint: endpoint.clone(),
@@ -203,6 +216,7 @@ fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
         Cartridge::MPI { slots, .. } => slots.iter().any(|s| matches!(s, Slot::FD502)),
         Cartridge::None
         | Cartridge::ROMPak { .. }
+        | Cartridge::BankedROMPak { .. }
         | Cartridge::RTC(_)
         | Cartridge::RS232 { .. }
         | Cartridge::GamesMaster { .. }
@@ -260,6 +274,7 @@ fn new_app(
 fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     match cartridge {
         Cartridge::None | Cartridge::ROMPak { .. } => {}
+        Cartridge::BankedROMPak { path, autostart } => app.insert_banked_rompak(path, autostart),
         Cartridge::FD502 => {
             if let Err(e) = app.insert_disk_controller() {
                 app.cart_error = Some(e);
@@ -278,6 +293,9 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                     Slot::FD502 => app.mpi_insert_fd502(slot),
                     Slot::ROMPak { path, autostart } => {
                         app.mpi_insert_rompak(slot, path, autostart)
+                    }
+                    Slot::BankedROMPak { path, autostart } => {
+                        app.mpi_insert_banked_rompak(slot, path, autostart)
                     }
                     Slot::RTC(model) => app.mpi_insert_rtc(slot, model),
                     Slot::RS232 { endpoint } => {

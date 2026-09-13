@@ -6,8 +6,9 @@
 //! other — split out of `new_vm.rs` once it grew past the project's
 //! ~500-line ceiling.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use coco_core::rom_db::{self, CartridgeHardware};
 use coco_core::rtc::DistoRTCModel;
 
 use crate::machine_def::{self, CartridgeDTO, RS232EndpointDTO, SlotDTO};
@@ -29,6 +30,8 @@ pub enum CartridgeChoice {
     /// a file dialog on selection. `autostart` ties CART* to Q so the pak
     /// runs at power-up.
     ROMPak { path: PathBuf, autostart: bool },
+    /// A 16 KiB-window bank-switched ROM Pak with no sound hardware.
+    BankedROMPak { path: PathBuf, autostart: bool },
     /// Disto RTC plugged straight into the port. No boot ROM — pairs with
     /// a VHD boot; for RTC + floppies use an MPI slot. The payload picks
     /// which Disto chip fit is installed.
@@ -73,6 +76,11 @@ pub enum SlotChoice {
         path: PathBuf,
         autostart: bool,
     },
+    /// A bank-switched ROM Pak image in this slot.
+    BankedROMPak {
+        path: PathBuf,
+        autostart: bool,
+    },
     /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
     RTC(DistoRTCModel),
     /// Deluxe RS-232 Pak in this slot (see [`CartridgeChoice::RS232`]); at
@@ -114,6 +122,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::Empty => "Empty".to_string(),
         SlotChoice::FD502 => "FD-502".to_string(),
         SlotChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
+        SlotChoice::BankedROMPak { path, .. } => cart_file_name(path, "Banked ROM Pak"),
         SlotChoice::RTC(model) => rtc_label(*model),
         SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
         SlotChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
@@ -127,6 +136,7 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::None => "None".to_string(),
         CartridgeChoice::FD502 => "FD-502".to_string(),
         CartridgeChoice::ROMPak { path, .. } => cart_file_name(path, "ROM Pak"),
+        CartridgeChoice::BankedROMPak { path, .. } => cart_file_name(path, "Banked ROM Pak"),
         CartridgeChoice::RTC(model) => rtc_label(*model),
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
         CartridgeChoice::GamesMaster { path, .. } => cart_file_name(path, "Games Master"),
@@ -158,6 +168,11 @@ pub(super) fn rom_pak_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("ROM Pak", ROM_EXTENSIONS)
 }
 
+/// The banked ROM Pak combo entry's file dialog.
+pub(super) fn banked_rom_pak_file_dialog() -> rfd::FileDialog {
+    rfd::FileDialog::new().add_filter("Banked ROM Pak", ROM_EXTENSIONS)
+}
+
 /// The Games Master combo entry's file dialog.
 pub(super) fn gmc_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Games Master ROM", ROM_EXTENSIONS)
@@ -168,42 +183,81 @@ pub(super) fn orch90_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Orchestra-90 ROM", ROM_EXTENSIONS)
 }
 
-/// `CartridgeChoice::ROMPak`/`GamesMaster`'s (and their `SlotChoice`
-/// equivalents') autostart default when a combo pick first creates one —
-/// checked, matching `CartridgeDTO`'s own field default.
+/// Image-backed ROM cartridges' autostart default when a combo pick first
+/// creates one — checked, matching `CartridgeDTO`'s own field default.
 pub(super) const DEFAULT_AUTOSTART: bool = true;
+
+fn identify_image_hardware(path: &Path, fallback: CartridgeHardware) -> CartridgeHardware {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| rom_db::identify_cartridge(&bytes))
+        .map(|known| known.hardware)
+        .unwrap_or(fallback)
+}
+
+fn cartridge_image(path: PathBuf, fallback: CartridgeHardware) -> CartridgeChoice {
+    match identify_image_hardware(&path, fallback) {
+        CartridgeHardware::RomPak => CartridgeChoice::ROMPak {
+            path,
+            autostart: DEFAULT_AUTOSTART,
+        },
+        CartridgeHardware::BankedRomPak => CartridgeChoice::BankedROMPak {
+            path,
+            autostart: DEFAULT_AUTOSTART,
+        },
+        CartridgeHardware::GamesMaster => CartridgeChoice::GamesMaster {
+            path,
+            autostart: DEFAULT_AUTOSTART,
+        },
+    }
+}
+
+fn slot_image(path: PathBuf, fallback: CartridgeHardware) -> SlotChoice {
+    match identify_image_hardware(&path, fallback) {
+        CartridgeHardware::RomPak => SlotChoice::ROMPak {
+            path,
+            autostart: DEFAULT_AUTOSTART,
+        },
+        CartridgeHardware::BankedRomPak => SlotChoice::BankedROMPak {
+            path,
+            autostart: DEFAULT_AUTOSTART,
+        },
+        CartridgeHardware::GamesMaster => SlotChoice::GamesMaster {
+            path,
+            autostart: DEFAULT_AUTOSTART,
+        },
+    }
+}
 
 /// A ROM Pak cartridge pick with [`DEFAULT_AUTOSTART`] — the Cartridge combo's
 /// "ROM Pak…" entry's on-pick constructor.
 pub(super) fn rompak(path: PathBuf) -> CartridgeChoice {
-    CartridgeChoice::ROMPak {
-        path,
-        autostart: DEFAULT_AUTOSTART,
-    }
+    cartridge_image(path, CartridgeHardware::RomPak)
+}
+
+/// [`rompak`]'s bank-switched sibling.
+pub(super) fn banked_rompak(path: PathBuf) -> CartridgeChoice {
+    cartridge_image(path, CartridgeHardware::BankedRomPak)
 }
 
 /// [`rompak`]'s Games Master sibling.
 pub(super) fn games_master(path: PathBuf) -> CartridgeChoice {
-    CartridgeChoice::GamesMaster {
-        path,
-        autostart: DEFAULT_AUTOSTART,
-    }
+    cartridge_image(path, CartridgeHardware::GamesMaster)
 }
 
 /// [`rompak`]'s MPI-slot sibling, for the Slot combo's "ROM Pak…" entry.
 pub(super) fn slot_rompak(path: PathBuf) -> SlotChoice {
-    SlotChoice::ROMPak {
-        path,
-        autostart: DEFAULT_AUTOSTART,
-    }
+    slot_image(path, CartridgeHardware::RomPak)
+}
+
+/// [`banked_rompak`]'s MPI-slot sibling.
+pub(super) fn slot_banked_rompak(path: PathBuf) -> SlotChoice {
+    slot_image(path, CartridgeHardware::BankedRomPak)
 }
 
 /// [`games_master`]'s MPI-slot sibling.
 pub(super) fn slot_games_master(path: PathBuf) -> SlotChoice {
-    SlotChoice::GamesMaster {
-        path,
-        autostart: DEFAULT_AUTOSTART,
-    }
+    slot_image(path, CartridgeHardware::GamesMaster)
 }
 
 impl From<&CartridgeDTO> for CartridgeChoice {
@@ -215,6 +269,10 @@ impl From<&CartridgeDTO> for CartridgeChoice {
             CartridgeDTO::None => CartridgeChoice::None,
             CartridgeDTO::FD502 => CartridgeChoice::FD502,
             CartridgeDTO::ROMPak { path, autostart } => CartridgeChoice::ROMPak {
+                path: PathBuf::from(path),
+                autostart: *autostart,
+            },
+            CartridgeDTO::BankedROMPak { path, autostart } => CartridgeChoice::BankedROMPak {
                 path: PathBuf::from(path),
                 autostart: *autostart,
             },
@@ -237,6 +295,10 @@ impl From<&SlotChoice> for SlotDTO {
             SlotChoice::Empty => SlotDTO::Empty,
             SlotChoice::FD502 => SlotDTO::FD502,
             SlotChoice::ROMPak { path, autostart } => SlotDTO::ROMPak {
+                path: path.display().to_string(),
+                autostart: *autostart,
+            },
+            SlotChoice::BankedROMPak { path, autostart } => SlotDTO::BankedROMPak {
                 path: path.display().to_string(),
                 autostart: *autostart,
             },
@@ -264,6 +326,10 @@ impl From<&SlotDTO> for SlotChoice {
             SlotDTO::Empty => SlotChoice::Empty,
             SlotDTO::FD502 => SlotChoice::FD502,
             SlotDTO::ROMPak { path, autostart } => SlotChoice::ROMPak {
+                path: PathBuf::from(path),
+                autostart: *autostart,
+            },
+            SlotDTO::BankedROMPak { path, autostart } => SlotChoice::BankedROMPak {
                 path: PathBuf::from(path),
                 autostart: *autostart,
             },
@@ -336,6 +402,10 @@ pub(crate) fn pack_peripherals(
             path: path.display().to_string(),
             autostart: *autostart,
         },
+        CartridgeChoice::BankedROMPak { path, autostart } => CartridgeDTO::BankedROMPak {
+            path: path.display().to_string(),
+            autostart: *autostart,
+        },
         CartridgeChoice::RTC(model) => CartridgeDTO::RTC {
             model: (*model).into(),
         },
@@ -395,3 +465,7 @@ pub(crate) fn seed_peripherals(
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "cartridge_test.rs"]
+mod tests;
