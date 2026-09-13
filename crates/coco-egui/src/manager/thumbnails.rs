@@ -2,10 +2,58 @@
 //! its artifact directory at suspend time, and lazily loading a suspended
 //! machine's saved preview into a texture for the list row. See
 //! [`super::write_thumbnail_png`] for the on-disk format/write contract.
+//! Also the preview-drawing helpers shared by the list rows and the detail
+//! pane's big screen preview.
 
 use eframe::egui;
 
-use super::{ManagerApp, THUMBNAIL_FILE};
+use super::{
+    CocoApp, MachineEntry, ManagerApp, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_FILE,
+    THUMBNAIL_PLACEHOLDER_FILL,
+};
+
+/// One entry's preview — live VM framebuffer, else a suspended machine's
+/// saved thumbnail (`None` = placeholder) — with its TV-settings crop.
+pub(super) fn preview_source(entry: &MachineEntry) -> (Option<&egui::TextureHandle>, egui::Rect) {
+    let texture = entry
+        .vm
+        .as_deref()
+        .and_then(CocoApp::framebuffer_texture)
+        .or(entry.thumbnail.as_ref().filter(|_| entry.suspended));
+    let uv = entry.vm.as_deref().map_or_else(
+        || definition_texture_uv(&entry.def),
+        |vm| crate::display::texture_uv(vm.display, vm.tv),
+    );
+    (texture, uv)
+}
+
+/// Texture crop for a stopped or window-closed suspended VM, reconstructed
+/// from the same persisted preferences that seed a live [`CocoApp`].
+fn definition_texture_uv(def: &crate::machine_def::MachineDef) -> egui::Rect {
+    let settings = crate::display::TVSettings {
+        scanline_pct: def.ui.tv_scanline,
+        noise_pct: def.ui.tv_noise,
+        overscan_pct: def.ui.tv_overscan,
+    }
+    .clamped();
+    crate::display::texture_uv(def.display(), settings)
+}
+
+/// Paint one screen preview at `size`: the black placeholder under the
+/// resolved `texture`, if any.
+pub(super) fn draw_preview(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    texture: Option<&egui::TextureHandle>,
+    uv: egui::Rect,
+) {
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(rect, THUMBNAIL_CORNER_RADIUS, THUMBNAIL_PLACEHOLDER_FILL);
+    if let Some(texture) = texture {
+        painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
+    }
+}
 
 impl ManagerApp {
     /// Snapshot `entries[index]`'s live VM screen into its artifact dir and
@@ -58,10 +106,12 @@ impl ManagerApp {
         let image = image.to_rgba8();
         let size = [image.width() as usize, image.height() as usize];
         let pixels = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+        // The display's own filtering (Monitor = NEAREST), not a hardcoded
+        // LINEAR: the detail pane's big preview upscales this texture.
         entry.thumbnail = Some(ctx.load_texture(
             format!("thumbnail-{}", entry.slug),
             pixels,
-            egui::TextureOptions::LINEAR,
+            crate::display::texture_options(entry.def.display()),
         ));
     }
 }
