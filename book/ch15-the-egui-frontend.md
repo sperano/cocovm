@@ -810,15 +810,16 @@ pixels crisp and square-edged when magnified, while a TV deliberately
 uploads with `LINEAR` — a CRT tube has no sharp pixel edges at all, and
 that soft scale is the cheapest single ingredient of the TV look.
 
-Linear sampling appears twice more, both times for
-photographs rather than emulated screens. The manager's decorative photo
-pane uploads with `TextureOptions::LINEAR`
-([`crates/coco-egui/src/manager.rs:377-380`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L377-L380)), and so does a suspended
-machine's saved screen thumbnail when it is loaded back from its PNG
-([`crates/coco-egui/src/manager/thumbnails.rs:71-75`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L71-L75)). Both are being
-scaled *down* into a small area rather than up, and a photograph shrunk
-with nearest sampling looks harsh and aliased. Same API, and a choice you
-can justify in one sentence either way.
+The manager's decorative photo pane is another use of linear sampling
+([`crates/coco-egui/src/manager/welcome_image.rs:150-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/welcome_image.rs#L150-L157)). A photograph shrunk
+with nearest sampling looks harsh and aliased. A suspended machine's saved
+screen thumbnail makes a different choice: it uses the machine definition's
+display options when the PNG becomes a texture
+([`crates/coco-egui/src/manager/thumbnails.rs:198-224`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L198-L224)). Monitor previews stay
+crisp with nearest sampling, while TV previews retain the linear sampling
+of the live display. The detail pane can enlarge that same cached texture,
+so hard-coding linear sampling merely because the list shrinks it would be
+wrong.
 
 ### One rectangle, and the arithmetic that places it
 
@@ -1137,7 +1138,7 @@ dismiss the debugger even from the debugger's own goto box; paste runs
 *after* it because a paste while a text field is focused belongs to the
 field, not to the machine. The keys-mode joystick applies the same gate
 from its own polling path
-([`crates/coco-egui/src/joy.rs:246-254`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy.rs#L246-L254)),
+([`crates/coco-egui/src/joy.rs:187-201`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy.rs#L187-L201)),
 so arrows typed at a focused field don't nudge an emulated stick either.
 
 ### Shortcuts the CoCo never sees
@@ -1818,29 +1819,52 @@ than widgets: do not store what you can compute — and when something
 genuinely must persist, make the artifact itself the truth rather than a
 second record of it.
 
-Starting is short:
+Starting keeps host resource ownership in the manager:
 
 ```rust
-    pub(super) fn start_vm(&mut self, index: usize) {
-        let entry = &mut self.entries[index];
-        entry.launch_error = None;
-        match crate::launch_machine(&entry.def, &entry.slug) {
-            Ok(vm) => entry.vm = Some(Box::new(vm)),
-            Err(e) => entry.launch_error = Some(e),
+    fn launch_vm(&mut self, index: usize) -> bool {
+        self.entries[index].launch_error = None;
+        match crate::launch_machine_with_gamepad(
+            &self.entries[index].def,
+            &self.entries[index].slug,
+            self.gamepad.clone(),
+        ) {
+            Ok(vm) => {
+                self.entries[index].vm = Some(Box::new(vm));
+                true
+            }
+            Err(e) => {
+                self.entries[index].launch_error = Some(e);
+                false
+            }
         }
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:71-78`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L71-L78).) `launch_machine`
-is `launch.rs`'s one job — turning a saved machine definition into a
-running `CocoApp` — and its own doc comment describes exactly that
-handoff ([`crates/coco-egui/src/launch.rs:39-53`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L39-L53)). The property worth
-noticing is its error handling: every mount-time failure comes back as a
-returned `Err` for the detail pane to display, never a `panic!` or a
-process exit, since crashing the whole manager because one machine's disk
-image is missing would be absurd. On failure `vm` is
-left untouched at `None`, so a failed Start leaves a Powered Off row
-rather than a half-constructed one.
+([`crates/coco-egui/src/manager/lifecycle.rs:82-98`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L82-L98).) `ManagerApp` creates one
+`SharedGamepad` host, which opens at most one backend, and passes a cloned
+handle into every `CocoApp`
+([`crates/coco-egui/src/manager.rs:262-266`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L262-L266),
+[`crates/coco-egui/src/manager.rs:383-386`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L383-L386)).
+Stopping a VM drops that VM's handle, but the manager keeps the backend
+alive for the next Start or cold Resume. The handle retains the latest axes
+and buttons after one VM drains the host event queue, so later VMs in the
+same update read the same state instead of each opening and polling a
+separate device backend
+([`crates/coco-egui/src/joy/gamepad.rs:19-84`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy/gamepad.rs#L19-L84)). Even with no live VM,
+`service_gamepad` drains `gilrs` and requests another repaint after 100 ms,
+so the shared event queue cannot accumulate across idle lifecycle periods
+([`crates/coco-egui/src/manager/gamepad_service.rs:9-19`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/gamepad_service.rs#L9-L19)). This is the lifecycle boundary:
+joystick selection and mouse latches belong to one VM, while host gamepad
+handles and helper resources belong to the manager.
+
+`launch_machine_with_gamepad` is `launch.rs`'s main job — turning a saved
+machine definition and that shared host handle into a running `CocoApp`
+([`crates/coco-egui/src/launch.rs:72-90`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L72-L90)). Its error handling matters:
+every mount-time failure comes back as a returned `Err` for the detail pane
+to display, never a `panic!` or a process exit. One missing disk image must
+not crash the whole manager. On failure `vm` remains `None`, so a failed
+Start leaves a Powered Off row rather than a half-constructed one.
 
 Suspend is the transport's ⏸, enabled only while Running, and it composes
 three things this chapter and the next already own: capture the screen as
@@ -1864,33 +1888,56 @@ Stopping is the power switch:
 
 ```rust
     pub(super) fn stop_vm(&mut self, index: usize) {
-        if let Some(mut vm) = self.entries[index].vm.take() {
-            vm.flush_media();
-        }
+        self.print_action("Stopping", index);
+        self.fold_runtime_into_def(index);
+        let flush_error = self.entries[index]
+            .vm
+            .take()
+            .and_then(|mut vm| vm.flush_media().err());
         let entry = &mut self.entries[index];
-        entry.suspended = false;
-        entry.thumbnail = None;
-        entry.thumbnail_load_attempted = false;
+        let mut discard_error = None;
         if let Some(root) = &self.artifacts_root {
             let dir = root.join(&entry.slug);
-            for file in [SUSPEND_STATE_FILE, THUMBNAIL_FILE] {
-                if let Err(e) = fs::remove_file(dir.join(file))
-                    && e.kind() != std::io::ErrorKind::NotFound
-                {
-                    tracing::warn!("could not remove {file} for '{}': {e}", entry.slug);
+            let state_path = dir.join(SUSPEND_STATE_FILE);
+            match fs::remove_file(&state_path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    discard_error =
+                        Some(format!("could not discard {}: {e}", state_path.display()));
+                }
+                _ => {
+                    entry.suspended = false;
+                    entry.invalidate_thumbnail();
+                    if let Err(e) = fs::remove_file(dir.join(THUMBNAIL_FILE))
+                        && e.kind() != std::io::ErrorKind::NotFound
+                    {
+                        tracing::warn!(
+                            "could not remove {THUMBNAIL_FILE} for '{}': {e}",
+                            entry.slug
+                        );
+                    }
                 }
             }
+        } else {
+            // No artifact root means Suspend never wrote a state file or
+            // thumbnail, so there's nothing on disk to reconcile.
+            entry.suspended = false;
+            entry.invalidate_thumbnail();
         }
+        entry.launch_error = match (flush_error, discard_error) {
+            (Some(flush), Some(discard)) => Some(format!("{flush}\n{discard}")),
+            (either, None) | (None, either) => either,
+        };
     }
 ```
 
-([`crates/coco-egui/src/manager/lifecycle.rs:172-190`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L172-L190).) Flush dirty
-media — the same `flush_media` that `CocoApp::on_exit` runs whenever a VM
-window's own OS close box is used instead — drop the `Box`, and discard both halves of any frozen
-state: the `.ccstate` and the screenshot, since a powered-off row shows a
-black preview, never a stale picture. Dropping the `Box` is what shuts the
-machine down; there is no `shutdown()` method, because Rust's ownership
-already provides one.
+([`crates/coco-egui/src/manager/lifecycle.rs:221-265`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L221-L265).) Fold in runtime, flush dirty
+media, drop the `Box`, and discard both halves of any frozen state: the
+`.ccstate` and the screenshot. `invalidate_thumbnail` also clears the
+in-memory texture, its negative-cache flag, its reloadability flag, and its
+least-recently-used stamp, so a powered-off row cannot retain any saved
+preview cache state. Dropping the `Box` is what shuts the machine down;
+there is no `shutdown()` method, because Rust's ownership already provides
+one.
 
 > **Rust corner — `Option<Box<CocoApp>>`, not `Option<CocoApp>`.**
 > `CocoApp` is a large struct. It contains the whole `Machine` (CPU, RAM,
@@ -2040,13 +2087,43 @@ because emulation was deliberately separated from the drawing of chrome.
 
 ### Thumbnails: the suspend-time screenshot
 
+The list does not construct one egui row for every saved machine. It gives
+`ScrollArea::show_rows` a fixed row height and the library length, then
+draws only the range that intersects the viewport:
+
+```rust
+            scroll_area.show_rows(ui, row_height, entry_count, |ui, visible_rows| {
+                #[cfg(feature = "perf")]
+                {
+                    actual_visible_rows = Some(visible_rows.clone());
+                }
+                let near_rows = thumbnail_near_range(visible_rows.clone(), entry_count);
+                self.prepare_row_thumbnails(&ctx, near_rows, visible_rows.clone());
+                ui.set_min_width(ui.available_width());
+                for index in visible_rows {
+                    self.draw_machine_row(ui, index);
+                }
+            });
+```
+
+([`crates/coco-egui/src/manager/list.rs:44-55`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs#L44-L55).) `show_rows` reserves the full scroll
+height without laying out offscreen widgets, so UI work follows the number
+of visible rows rather than the number of definitions. That requires every
+row to have the height promised to the scroll area. The three labels are
+therefore truncated to one line, and `machine_row_height` computes the
+matching fixed geometry from the font metrics and margins
+([`crates/coco-egui/src/manager/list.rs:105-138`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs#L105-L138),
+[`crates/coco-egui/src/manager/list.rs:306-322`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs#L306-L322)). A long machine name
+can lose visible characters; it cannot make virtualization's geometry
+false.
+
 Each machine's row preview is a direct statement of its state. A Running
 machine shows its live framebuffer — the very texture §15.3 uploaded,
 drawn a second time in a smaller rectangle, one extra quad and no extra
 upload. A Powered Off machine shows plain black, like the screen of a
 machine with no power. And a Suspended one shows the *frozen frame*: at
 suspend time, `write_entry_thumbnail`
-([`crates/coco-egui/src/manager/thumbnails.rs:18-48`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L18-L48)) captures the
+([`crates/coco-egui/src/manager/thumbnails.rs:89-118`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L89-L118)) captures the
 framebuffer as a plain PNG at `<artifact-dir>/<slug>/thumbnail.png`, so
 the row keeps showing that exact frame after the VM
 window closes, and even across manager restarts. Powering off deletes it
@@ -2054,9 +2131,29 @@ along with the state file; the screenshot has no meaning without the
 frozen machine it depicts.
 
 While the suspended VM object is still alive its (unchanging) live texture
-serves as the preview for free; the PNG is loaded back lazily, only once
-the object is gone
-([`crates/coco-egui/src/manager/thumbnails.rs:56-76`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L56-L76)).
+serves as the preview for free. Once the object is gone, the manager loads
+saved PNGs for visible rows first, then for four rows on either side of the
+viewport. It attempts at most four synchronous decodes per manager update,
+so opening or scrolling a large library spreads filesystem and decoder work
+across frames. The selected machine's detail preview uses the same budget
+even when its list row is offscreen
+([`crates/coco-egui/src/manager/thumbnails.rs:120-150`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L120-L150),
+[`crates/coco-egui/src/manager/detail.rs:197-202`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/detail.rs#L197-L202)).
+
+The loader bounds both transient and retained resources. It rejects a PNG
+larger than 640×480 pixels or one whose decoder allocation exceeds 8 MiB.
+A missing, oversized, or undecodable file is remembered as unavailable, so
+the manager does not retry it every frame.
+
+A successful texture enters a deterministic least-recently-used cache with
+an approximate 32 MiB GPU budget—enough for 27 maximum-size saved previews.
+Visible textures receive newer use stamps than nearby prefetched ones.
+Eviction drops the texture
+but remembers that its PNG is valid, which lets a later scroll reload it.
+Live VM textures remain owned by their VMs and do not count against this
+saved-preview budget
+([`crates/coco-egui/src/manager/thumbnails.rs:18-33`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L18-L33),
+[`crates/coco-egui/src/manager/thumbnails.rs:152-265`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs#L152-L265)).
 
 One small heuristic in the PNG writer deserves attention:
 
@@ -2069,7 +2166,7 @@ One small heuristic in the PNG writer deserves attention:
     }
 ```
 
-([`crates/coco-egui/src/manager.rs:234-239`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L234-L239).) Consider what a
+([`crates/coco-egui/src/manager.rs:242-247`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs#L242-L247).) Consider what a
 screen capture is exposed to. The CoCo's screen is genuinely, uniformly
 black at plenty of legitimate moments: during a mode switch, right after a
 `CLS 0`, in the instant following a reset before the ROM has painted
@@ -2266,41 +2363,37 @@ code, because each line is a bug somebody already paid for:
 
 ```rust
 pub(super) fn boot_harness() -> AppHarness {
-    let roms_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../roms");
-    let rom = load_default_rom(MachineVariant::Coco3, &roms_dir)
-        .expect("roms/coco3.rom is required (git-ignored, local-only)");
-    let rom_source = ROMSource::File(roms_dir.join("coco3.rom"));
+    let roms_dir = test_assets::roms_dir();
+    let (rom, rom_source) = load_default_rom(MachineVariant::Coco3, &roms_dir)
+        .expect("coco3.rom is required in the cocovm XDG data directory");
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
         CocoApp::new(
             MachineConfig::default(),
             rom,
             rom_source,
-            None,
-            [None, None],
-            [None, None],
-            std::array::from_fn(|_| None),
-            false,
-            false,
-            false,
+            AppParams::default(),
+            crate::joy::SharedGamepad::without_backend(),
         )
     });
-    // Room for the full Machine menu: egui only puts on-screen widgets in
-    // the AccessKit tree, so a too-small viewport hides the lower items.
+    // egui only puts on-screen widgets in the AccessKit tree, so size for the full Machine menu.
     harness.set_size(egui::vec2(1024.0, 768.0));
     harness.step();
     harness
 }
 ```
 
-([`crates/coco-egui/src/ui_tests/harness.rs:20-44`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L20-L44).) Three things in
+([`crates/coco-egui/src/ui_tests/harness.rs:48-65`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs#L48-L65).) Three things in
 there are worth calling out.
 
 `Harness::new_eframe` takes the same `CocoApp::new` constructor the
 manager's own launch path calls
-([`crates/coco-egui/src/launch.rs:171-182`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L171-L182), inside the private
-`new_app` helper `launch_machine` builds on), with the same ten arguments,
-and no test-only shortcuts. There is no `CocoApp::new_for_testing`.
-Whatever the harness exercises is what the application does.
+([`crates/coco-egui/src/launch.rs:234-259`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/launch.rs#L234-L259), inside the private
+`new_app` helper `launch_machine_with_gamepad` builds on). The harness uses
+the same five-parameter constructor, including an explicit shared-gamepad
+handle. Its test-only handle has no host backend, which keeps tests from
+opening device resources while retaining the production `JoystickInputs`
+path. There is no `CocoApp::new_for_testing`. Whatever the harness exercises
+is what the application does.
 
 `harness.step()` is one simulated frame. It runs `update()` exactly as a
 real event loop would, and it is called *manually*, exactly once per unit
@@ -2583,9 +2676,10 @@ reason. The failing set breaks down cleanly into four groups:
 
 - `debugger::tests::*` (5) and `save_state::tests::*` (1) — unit tests that
   boot a real `Machine` directly with `Machine::new(config, load_rom())`.
-- `launch::tests::*` (4) — unit tests of `launch_machine` itself, each
-  building a full `CocoApp` from a saved definition and so loading the
-  real ROM.
+- `launch::tests::*` (4) — unit tests of the test-only `launch_machine`
+  wrapper, which gives `launch_machine_with_gamepad` a backend-free shared
+  handle. Each test still builds a full `CocoApp` from a saved definition
+  and therefore loads the real ROM.
 - `ui_tests::vm_window_menus::*` (20) — every kittest test that calls
   `boot_harness()`, which requires the real system ROM to construct a
   `CocoApp` at all.
@@ -2663,11 +2757,12 @@ In this order:
 3. **[`crates/coco-egui/src/app/frame.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs)** — `fields_due`, `step_emulation`,
    `draw_display`, `window_ui`, in full. This is the file to reread when
    anything about timing or the display feels wrong later in the course.
-4. **[`crates/coco-egui/src/app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs)** and **[`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs)** — every
-   function in both files is short; read them all, not just the excerpts
-   above.
+4. **[`crates/coco-egui/src/app/input.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs)**, **[`keymap.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/keymap.rs)**, **[`joy.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy.rs)**,
+   and **[`joy/gamepad.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/joy/gamepad.rs)** — read the input arbitration first, then trace
+   where per-VM joystick state ends and the manager-owned host backend
+   begins.
 5. **[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs)**, **[`manager/lifecycle.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs)**,
-   **[`manager/selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/selection.rs)**, **[`manager/bulk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/bulk.rs)**, **[`manager/delete.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/delete.rs)**,
+   **[`manager/list.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/list.rs)**, **[`manager/thumbnails.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/thumbnails.rs)**, **[`manager/selection.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/selection.rs)**, **[`manager/bulk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/bulk.rs)**, **[`manager/delete.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/delete.rs)**,
    and **[`manager/vm_windows.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/vm_windows.rs)** — the module doc comment at the top of
    [`manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) first, then the files in that order.
 6. **[`crates/coco-egui/src/media/disk.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/media/disk.rs)** in full — then skim

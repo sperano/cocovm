@@ -21,7 +21,7 @@ def collect(source):
         run = {"run": path.parent.name, "metrics": json.loads(path.read_text()),
                "resources": json.loads(path.with_name("resources.json").read_text()),
                "samples": json.loads(path.with_name("samples.json").read_text())}
-        for extra in ("control", "inputs", "foreground"):
+        for extra in ("control", "inputs", "foreground", "lifecycle"):
             artifact = path.with_name(f"{extra}.json")
             if artifact.exists():
                 run[extra] = public_metadata(json.loads(artifact.read_text()))

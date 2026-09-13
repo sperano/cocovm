@@ -196,9 +196,8 @@ impl ManagerApp {
         }
         let mut edit = self.edit.take().expect("just ensured above");
 
-        // A suspended, window-closed machine's saved preview loads (once)
-        // before the header draws — same as before its list row.
-        self.ensure_row_thumbnail(&ui.ctx().clone(), index);
+        // The selected preview stays eligible even when its list row is offscreen.
+        self.prepare_detail_thumbnail(&ui.ctx().clone(), index);
         self.draw_header_with_preview(ui, index, &slug, &mut edit);
         ui.add_space(DETAIL_SECTION_GAP);
 

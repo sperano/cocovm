@@ -81,7 +81,11 @@ impl ManagerApp {
     /// with no stats bookkeeping. Returns whether the launch succeeded.
     fn launch_vm(&mut self, index: usize) -> bool {
         self.entries[index].launch_error = None;
-        match crate::launch_machine(&self.entries[index].def, &self.entries[index].slug) {
+        match crate::launch_machine_with_gamepad(
+            &self.entries[index].def,
+            &self.entries[index].slug,
+            self.gamepad.clone(),
+        ) {
             Ok(vm) => {
                 self.entries[index].vm = Some(Box::new(vm));
                 true
@@ -237,8 +241,7 @@ impl ManagerApp {
                 }
                 _ => {
                     entry.suspended = false;
-                    entry.thumbnail = None;
-                    entry.thumbnail_load_attempted = false;
+                    entry.invalidate_thumbnail();
                     if let Err(e) = fs::remove_file(dir.join(THUMBNAIL_FILE))
                         && e.kind() != std::io::ErrorKind::NotFound
                     {
@@ -253,8 +256,7 @@ impl ManagerApp {
             // No artifact root means Suspend never wrote a state file or
             // thumbnail, so there's nothing on disk to reconcile.
             entry.suspended = false;
-            entry.thumbnail = None;
-            entry.thumbnail_load_attempted = false;
+            entry.invalidate_thumbnail();
         }
         entry.launch_error = match (flush_error, discard_error) {
             (Some(flush), Some(discard)) => Some(format!("{flush}\n{discard}")),

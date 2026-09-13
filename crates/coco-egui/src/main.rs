@@ -78,7 +78,9 @@ pub(crate) use defaults::{default_ram, default_vdg, machine_label};
 pub(crate) use display::Display;
 pub(crate) use host::{host_dw_clock, host_time_source};
 pub(crate) use keymap::{control_key_pos, is_joystick_key, key_to_pos};
+#[cfg(test)]
 pub(crate) use launch::launch_machine;
+pub(crate) use launch::launch_machine_with_gamepad;
 pub(crate) use media::disk::NO_FD502_HINT;
 pub(crate) use mpi::{DEFAULT_MPI_SWITCH_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState};
 pub(crate) use rom_load::{

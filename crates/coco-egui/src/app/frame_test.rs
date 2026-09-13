@@ -11,6 +11,7 @@ fn boot() -> crate::CocoApp {
         rom,
         crate::ROMSource::File(rom_path),
         crate::AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     )
 }
 

@@ -23,6 +23,7 @@ fn app() -> CocoApp {
         rom,
         crate::ROMSource::File(path),
         crate::AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     )
 }
 

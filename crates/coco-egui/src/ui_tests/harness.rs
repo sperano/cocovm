@@ -69,6 +69,7 @@ pub(super) fn boot_harness() -> AppHarness {
             rom,
             rom_source,
             AppParams::default(),
+            crate::joy::SharedGamepad::without_backend(),
         )
     });
     // egui only puts on-screen widgets in the AccessKit tree, so size for the full Machine menu.

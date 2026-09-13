@@ -31,7 +31,7 @@ pub(crate) struct CocoApp {
     /// What the video output is plugged into — monitor or (B&W) TV
     /// (`display.rs`). A UI preference like `aspect_correct`: seeded from
     /// the config here, overridden by the definition's `[hardware].display`
-    /// (`launch::launch_machine`), and live-switchable from the status bar's
+    /// (`launch::launch_machine_with_gamepad`), and live-switchable from the status bar's
     /// display entry afterwards.
     pub(crate) display: Display,
     /// The TV chain's knobs (scanline strength, …) — same lifecycle as
@@ -195,7 +195,7 @@ pub(crate) struct CocoApp {
     /// `running` branch of `step_emulation`, so a paused interval (debugger
     /// breakpoint included) never reaches this field at all. Seeded at
     /// launch from the persisted `[stats].runtime_secs`
-    /// (`launch::launch_machine`), and persisted by
+    /// (`launch::launch_machine_with_gamepad`), and persisted by
     /// [`manager::lifecycle::fold_runtime_into_def`] on Suspend, Stop, and
     /// quit.
     pub(crate) total_runtime: std::time::Duration,
@@ -277,6 +277,7 @@ impl CocoApp {
         rom: Box<[u8]>,
         rom_source: ROMSource,
         params: AppParams,
+        gamepad: crate::joy::SharedGamepad,
     ) -> Self {
         let AppParams {
             cart_path,
@@ -306,7 +307,7 @@ impl CocoApp {
             field_debt: 0.0,
             audio_cushion_fields: 0,
             total_runtime: std::time::Duration::ZERO,
-            joysticks: JoystickInputs::new(),
+            joysticks: JoystickInputs::new(gamepad),
             display_rect: egui::Rect::NOTHING,
             display_layer: egui::LayerId::background(),
             audio: audio::AudioOutput::new(),

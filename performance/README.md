@@ -94,8 +94,8 @@ and audio information are recorded with the run.
 | `tv` | BASIC with default color-TV scanline, noise, and overscan effects. |
 | `dac` | Guest `STA / ADDA #4 / BRA` loop with PIA DAC routing enabled. |
 | `cartridge` | Guest stereo writes to an Orchestra-90 with a synthetic cartridge ROM. |
-| `saved-previews` | 500 saved machine definitions and valid suspended states with previews. |
-| `printer` | 2000 pages of generated sparse printer output. |
+| `saved-previews` | 500 saved machine definitions and valid suspended states with previews, scrolled through rows 0, 250, and 499. |
+| `printer` | 2000 pages of generated sparse printer output, scrolled through pages 0, 1000, and 1999. |
 | `snapshot` | Save and restore an actual VM snapshot once per second. |
 | `lifecycle` | Repeated launch, suspend, resume, stop, and window-close transitions. |
 | `control-load` | Four concurrent local MCP clients repeatedly request `list_vms`. |
@@ -108,6 +108,25 @@ python3 scripts/perf/baseline.py native --scenario graphics --scenario dac --dis
 python3 scripts/perf/baseline.py native --scenario background --vm-count 4 --output /tmp/cocovm-four-background
 python3 scripts/perf/baseline.py native --scenario lifecycle --duration 60 --output /tmp/cocovm-lifecycle
 ```
+
+Lifecycle runs use a named nine-step cycle that distinguishes live (warm) resume
+from relaunch-and-restore (cold) resume, and ends by recovering from a running
+window close. The app records each completed transition and its lifecycle state in
+`metrics.json`. The runner samples lifecycle resources every 0.2 seconds and writes
+`lifecycle.json`, which correlates each transition with the nearest complete samples
+before and after it. Post-recovery samples at completed cycle boundaries provide a
+resource-growth series; use a 60-second or longer window and multiple fresh-process
+repeats when evaluating a plateau.
+
+The `saved-previews` and `printer` scenarios issue a scroll operation every second.
+They repeat a named beginning, middle, and end cycle throughout the measurement
+window. The printer's end phase targets the last generated page, not the trailing
+blank page that the paper UI adds. Each request appears in `operation_events`.
+The corresponding `scroll_phase_events` entry records the requested index, the
+rendered visible range, the request-to-render duration, and the scroll-area draw
+duration. It also records resident texture or page counts and their estimated
+texture bytes after retention. The scenario fails if the requested index isn't in the rendered range
+or if the next phase starts before the previous phase renders.
 
 Fixture source is in `crates/coco-core/examples/perf/workloads.rs` and
 `crates/coco-egui/src/manager/perf_scenarios/fixtures.rs`. A configuration rejected
@@ -144,6 +163,14 @@ transaction across threads.
 `warmup_including_cold_first_update` preserves initial UI and preview-loading costs
 before the steady-state counter reset. Fixture generation precedes both intervals.
 
+Scroll request-to-render duration starts when the scenario driver issues the
+request and ends after the matching list or paper scroll area draws. Scroll-area
+draw duration measures CPU work inside that draw, including synchronous preview
+decoding or page rasterization and texture enqueueing. These durations don't
+include renderer completion, GPU execution, display presentation, or
+input-to-photon latency. Use the recorded Unix and measurement-relative timestamps
+to align scroll phases with external resource samples.
+
 `resources.json` and `samples.json` record externally sampled process CPU, resident
 memory, threads, and file descriptors. On macOS, `proc_pid_rusage` also reports
 package idle wakeups, interrupt wakeups, and physical footprint. These wakeup
@@ -154,6 +181,12 @@ brief peaks. Unavailable counters remain null. Host metadata includes CPU, GPU,
 OS, Rust compiler, commit, profile, display information, and audio devices. If a
 refresh rate is absent from host metadata, record it manually with the result;
 frame cadence is not a substitute for panel refresh rate.
+
+The lifecycle correlation remains observational. A resource command that overlaps
+a transition is excluded from both sides, before/after samples can be up to 1.5
+seconds away, and the finite sampling cadence can miss short-lived streams, file
+handles, threads, or allocation peaks. `lifecycle.json` reports missing correlations
+as null and does not label a run stable automatically.
 
 ## Profiling and measurement overhead
 

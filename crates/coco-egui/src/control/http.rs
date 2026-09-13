@@ -5,17 +5,17 @@
 //! it, dispatch its body through [`crate::control::jsonrpc::dispatch`], and
 //! reply — repeating until the client closes the connection.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
-use super::MCP_PATH;
 use super::jsonrpc::{self, Handler};
+use super::{CONTROL_SESSION_IDLE_TIMEOUT, MAX_CONTROL_SESSIONS, MCP_PATH};
 
 /// Longest request line + headers accepted, before the connection is closed
 /// with a 400.
@@ -131,12 +131,40 @@ pub(crate) fn write_response(
     body: &[u8],
     extra_headers: &[(&str, &str)],
 ) -> io::Result<()> {
+    write_response_with_connection(
+        writer,
+        status,
+        content_type,
+        body,
+        extra_headers,
+        "keep-alive",
+    )
+}
+
+/// Write a response that tells the peer this socket won't be reused.
+pub(super) fn write_close_response(
+    writer: &mut impl Write,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) -> io::Result<()> {
+    write_response_with_connection(writer, status, content_type, body, &[], "close")
+}
+
+fn write_response_with_connection(
+    writer: &mut impl Write,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    extra_headers: &[(&str, &str)],
+    connection: &str,
+) -> io::Result<()> {
     write!(writer, "HTTP/1.1 {status} {}\r\n", reason_phrase(status))?;
     if !content_type.is_empty() {
         write!(writer, "Content-Type: {content_type}\r\n")?;
     }
     write!(writer, "Content-Length: {}\r\n", body.len())?;
-    write!(writer, "Connection: keep-alive\r\n")?;
+    write!(writer, "Connection: {connection}\r\n")?;
     for (name, value) in extra_headers {
         write!(writer, "{name}: {value}\r\n")?;
     }
@@ -153,17 +181,55 @@ fn reason_phrase(status: u16) -> &'static str {
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        503 => "Service Unavailable",
         _ => "Error",
+    }
+}
+
+/// MCP sessions and their most recent successful lookup time.
+#[derive(Default)]
+pub(super) struct SessionStore {
+    sessions: HashMap<String, Instant>,
+}
+
+impl SessionStore {
+    fn create(&mut self, now: Instant) -> Option<String> {
+        self.expire_idle(now);
+        if self.sessions.len() >= MAX_CONTROL_SESSIONS {
+            return None;
+        }
+        let id = generate_session_id();
+        self.sessions.insert(id.clone(), now);
+        Some(id)
+    }
+
+    fn remove(&mut self, id: &str) {
+        self.sessions.remove(id);
+    }
+
+    fn contains_and_touch(&mut self, id: &str, now: Instant) -> bool {
+        self.expire_idle(now);
+        let Some(last_used) = self.sessions.get_mut(id) else {
+            return false;
+        };
+        *last_used = now;
+        true
+    }
+
+    fn expire_idle(&mut self, now: Instant) {
+        self.sessions.retain(|_, last_used| {
+            now.saturating_duration_since(*last_used) < CONTROL_SESSION_IDLE_TIMEOUT
+        });
     }
 }
 
 /// Serve one connection: parse-route-reply in a loop until EOF, a protocol
 /// error, or a `Connection: close` request. `sessions` is shared across every
 /// connection the listener accepts (MCP session IDs aren't per-connection).
-pub(crate) fn serve_connection(
+pub(super) fn serve_connection(
     stream: TcpStream,
     handler: &mut impl Handler,
-    sessions: &Arc<Mutex<HashSet<String>>>,
+    sessions: &Arc<Mutex<SessionStore>>,
 ) {
     let Ok(write_half) = stream.try_clone() else {
         return;
@@ -174,6 +240,7 @@ pub(crate) fn serve_connection(
         let request = match parse_request(&mut reader) {
             Ok(Some(request)) => request,
             Ok(None) => return,
+            Err(e) if is_timeout(&e) => return,
             Err(_) => {
                 let _ = write_response(&mut writer, 400, "text/plain", b"bad request", &[]);
                 return;
@@ -191,10 +258,17 @@ pub(crate) fn serve_connection(
     }
 }
 
+fn is_timeout(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+    )
+}
+
 fn handle_request(
     request: &HttpRequest,
     handler: &mut impl Handler,
-    sessions: &Arc<Mutex<HashSet<String>>>,
+    sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
     if request.path != MCP_PATH {
@@ -224,30 +298,74 @@ fn handle_request(
 fn handle_post(
     request: &HttpRequest,
     handler: &mut impl Handler,
-    sessions: &Arc<Mutex<HashSet<String>>>,
+    sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
-    let value: Value = match serde_json::from_slice(&request.body) {
-        Ok(Value::Array(_)) | Err(_) => {
-            return write_response(writer, 400, "text/plain", b"bad request", &[]);
-        }
-        Ok(v) => v,
+    let Some(value) = parse_json_body(&request.body) else {
+        return write_response(writer, 400, "text/plain", b"bad request", &[]);
     };
     let method = value.get("method").and_then(Value::as_str).unwrap_or("");
     let is_initialize = method == "initialize";
-    if !is_initialize && let Err(status) = check_session(request, sessions) {
+    let session_id = match admit_initialize_session(is_initialize, sessions) {
+        Ok(id) => id,
+        Err(()) => {
+            return write_response(
+                writer,
+                503,
+                "text/plain",
+                b"session capacity reached; retry later",
+                &[],
+            );
+        }
+    };
+    if !is_initialize && let Err(status) = check_session(request, sessions, Instant::now()) {
         return write_response(writer, status, "text/plain", b"", &[]);
     }
+    dispatch_post(handler, value, session_id, sessions, writer)
+}
+
+fn parse_json_body(body: &[u8]) -> Option<Value> {
+    match serde_json::from_slice(body) {
+        Ok(Value::Array(_)) | Err(_) => None,
+        Ok(value) => Some(value),
+    }
+}
+
+fn admit_initialize_session(
+    initialize: bool,
+    sessions: &Arc<Mutex<SessionStore>>,
+) -> Result<Option<String>, ()> {
+    if !initialize {
+        return Ok(None);
+    }
+    sessions
+        .lock()
+        .expect("sessions mutex poisoned")
+        .create(Instant::now())
+        .map(Some)
+        .ok_or(())
+}
+
+fn dispatch_post(
+    handler: &mut impl Handler,
+    value: Value,
+    session_id: Option<String>,
+    sessions: &Arc<Mutex<SessionStore>>,
+    writer: &mut impl Write,
+) -> io::Result<()> {
     match jsonrpc::dispatch(handler, value) {
-        None => write_response(writer, 202, "application/json", b"", &[]),
-        Some(response) => {
-            let body = serde_json::to_vec(&response).unwrap_or_default();
-            if is_initialize {
-                let session_id = generate_session_id();
+        None => {
+            if let Some(id) = session_id {
                 sessions
                     .lock()
                     .expect("sessions mutex poisoned")
-                    .insert(session_id.clone());
+                    .remove(&id);
+            }
+            write_response(writer, 202, "application/json", b"", &[])
+        }
+        Some(response) => {
+            let body = serde_json::to_vec(&response).unwrap_or_default();
+            if let Some(session_id) = session_id {
                 write_response(
                     writer,
                     200,
@@ -266,14 +384,18 @@ fn handle_post(
 /// when the header is missing outright, `404` when it names a session the
 /// server doesn't know (expired, or never `initialize`d) — the spec's cue
 /// for the client to re-initialize.
-fn check_session(request: &HttpRequest, sessions: &Arc<Mutex<HashSet<String>>>) -> Result<(), u16> {
+fn check_session(
+    request: &HttpRequest,
+    sessions: &Arc<Mutex<SessionStore>>,
+    now: Instant,
+) -> Result<(), u16> {
     match request.header("mcp-session-id") {
         None => Err(400),
         Some(id)
             if sessions
                 .lock()
                 .expect("sessions mutex poisoned")
-                .contains(id) =>
+                .contains_and_touch(id, now) =>
         {
             Ok(())
         }

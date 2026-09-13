@@ -79,7 +79,13 @@ fn test_app() -> CocoApp {
     let roms_dir = test_assets::roms_dir();
     let (rom, source) = load_default_rom(coco_core::MachineVariant::Coco3, &roms_dir)
         .expect("coco3.rom is required in the cocovm XDG data directory");
-    CocoApp::new(MachineConfig::default(), rom, source, AppParams::default())
+    CocoApp::new(
+        MachineConfig::default(),
+        rom,
+        source,
+        AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
+    )
 }
 
 fn run_input_frame(ctx: &egui::Context, app: &mut CocoApp, raw: egui::RawInput) {

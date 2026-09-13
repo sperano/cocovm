@@ -15,6 +15,7 @@ import assets
 import control
 import foreground
 import host
+import lifecycle
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WARMUP = 3.0
@@ -27,6 +28,7 @@ PROFILE_SECONDS = 2
 PROFILE_INTERVAL_MS = 1
 FOCUS_WARMUP_FRACTION = 0.5
 PERF_VM_WINDOW_TITLE = "Performance 0"
+LIFECYCLE_SAMPLE_INTERVAL = 0.2
 NATIVE_SCENARIOS = ("manager-idle", "basic-idle", "graphics", "paused", "suspended",
                     "background", "multi-vm", "tv", "dac", "cartridge", "saved-previews",
                     "printer", "snapshot", "lifecycle", "control-load")
@@ -200,13 +202,14 @@ def observe(process, args, scenario, run_dir, port, samples):
             measurement = host.sample(process.pid)
             if measurement:
                 samples.append(measurement)
-            time.sleep(host.SAMPLE_INTERVAL)
+            interval = LIFECYCLE_SAMPLE_INTERVAL if scenario == "lifecycle" else host.SAMPLE_INTERVAL
+            time.sleep(interval)
     finally:
         finish_observation(load, profiler, run_dir, focus, args)
     process.wait(timeout=EXIT_GRACE)
 
 
-def write_resources(run_dir, process, command, samples):
+def write_resources(run_dir, process, command, samples, scenario):
     started, finished = marker(run_dir, "started"), marker(run_dir, "finished")
     selected = host.interval_samples(samples, started, finished)
     summary = host.summarize(selected)
@@ -215,6 +218,8 @@ def write_resources(run_dir, process, command, samples):
                    total_observations=len(samples), observations_inside_window=len(selected))
     (run_dir / "resources.json").write_text(json.dumps(summary, indent=2))
     (run_dir / "samples.json").write_text(json.dumps(samples, indent=2))
+    interval = LIFECYCLE_SAMPLE_INTERVAL if scenario == "lifecycle" else host.SAMPLE_INTERVAL
+    lifecycle.write(run_dir, selected, interval)
 
 
 def validate_control_load(run_dir):
@@ -237,7 +242,7 @@ def execute(args, scenario, run_dir, command, port, directory):
             try:
                 stop_process(process)
             finally:
-                write_resources(run_dir, process, command, samples)
+                write_resources(run_dir, process, command, samples, scenario)
     if process.returncode:
         raise RuntimeError(f"{scenario} exited {process.returncode}; see {run_dir / 'stderr.log'}")
     if args.kind == "core":

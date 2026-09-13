@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -241,4 +242,168 @@ fn a_non_mcp_path_is_not_found() {
     let server = bind();
     let (status, _, _) = send(server.port(), "POST", "/other", &[], "{}");
     assert_eq!(status, 404);
+}
+
+#[test]
+fn wake_requests_are_coalesced_until_dispatch_begins() {
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let wake_count = Arc::clone(&wakes);
+    let gate = WakeGate::new(Arc::new(move || {
+        wake_count.fetch_add(1, Ordering::Relaxed);
+    }));
+
+    gate.request();
+    gate.request();
+    assert_eq!(wakes.load(Ordering::Relaxed), 1);
+
+    gate.clear();
+    gate.request();
+    assert_eq!(wakes.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn a_full_incoming_queue_returns_an_overload_error() {
+    let (tx, _rx) = mpsc::sync_channel(1);
+    let (occupied_reply, _occupied_wait) = ReplyWait::pair();
+    tx.try_send(Incoming {
+        request: Request {
+            vm: None,
+            action: Action::ListVms,
+        },
+        reply: occupied_reply,
+    })
+    .expect("occupy queue");
+    let mut backend = QueueBackend {
+        tx,
+        wake: Arc::new(WakeGate::new(Arc::new(|| {}))),
+        stop: Arc::new(AtomicBool::new(false)),
+        disconnect_probe: None,
+    };
+
+    let err = tools::Backend::call(
+        &mut backend,
+        &Request {
+            vm: None,
+            action: Action::ListVms,
+        },
+    )
+    .expect_err("a full queue must reject admission");
+
+    assert!(err.contains("overloaded"));
+}
+
+#[test]
+fn reply_timeout_marks_queued_work_abandoned() {
+    let (tx, rx) = mpsc::sync_channel(1);
+    let backend = QueueBackend {
+        tx,
+        wake: Arc::new(WakeGate::new(Arc::new(|| {}))),
+        stop: Arc::new(AtomicBool::new(false)),
+        disconnect_probe: None,
+    };
+    let request = Request {
+        vm: None,
+        action: Action::ListVms,
+    };
+
+    let (reply, wait) = ReplyWait::pair();
+    backend
+        .tx
+        .try_send(Incoming { request, reply })
+        .expect("queue request");
+    let err = backend
+        .wait_for_reply_until(wait, Instant::now())
+        .expect_err("past deadline must time out");
+    let queued = rx.try_recv().expect("queued request remains available");
+
+    assert!(err.contains("timed out"));
+    assert!(queued.reply.is_abandoned());
+}
+
+#[test]
+fn dropping_the_server_joins_idle_connection_threads() {
+    const SHUTDOWN_LIMIT: Duration = Duration::from_secs(1);
+
+    let server = bind();
+    let _idle = connect(server.port());
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while server
+        .active
+        .lock()
+        .expect("active connections mutex")
+        .streams
+        .is_empty()
+    {
+        assert!(Instant::now() < deadline, "connection wasn't accepted");
+        thread::yield_now();
+    }
+
+    let started = Instant::now();
+    drop(server);
+
+    assert!(started.elapsed() < SHUTDOWN_LIMIT);
+}
+
+#[test]
+fn connections_beyond_the_limit_receive_service_unavailable() {
+    let server = bind();
+    let clients: Vec<_> = (0..MAX_CONTROL_CONNECTIONS)
+        .map(|_| connect(server.port()))
+        .collect();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while server
+        .active
+        .lock()
+        .expect("active connections mutex")
+        .streams
+        .len()
+        < MAX_CONTROL_CONNECTIONS
+    {
+        assert!(Instant::now() < deadline, "connections weren't accepted");
+        thread::yield_now();
+    }
+
+    let overloaded = connect(server.port());
+    let (status, headers, body) = read_response(&mut BufReader::new(overloaded));
+
+    assert_eq!(status, 503);
+    assert_eq!(headers["connection"], "close");
+    assert!(body.contains("overloaded"));
+    drop(clients);
+}
+
+#[test]
+fn a_disconnected_client_marks_its_queued_request_abandoned() {
+    let server = bind();
+    let (status, headers, _) = send(server.port(), "POST", MCP_PATH, &[], INITIALIZE);
+    assert_eq!(status, 200);
+    let session_id = headers["mcp-session-id"].clone();
+    let mut client = connect(server.port());
+    let call = r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"list_vms","arguments":{}}}"#;
+    client
+        .write_all(
+            request_text(
+                "POST",
+                MCP_PATH,
+                &[("Mcp-Session-Id", &session_id)],
+                call,
+                false,
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+    drop(client);
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let incoming = loop {
+        if let Some(incoming) = server.try_recv() {
+            break incoming;
+        }
+        assert!(Instant::now() < deadline, "request wasn't queued");
+        thread::yield_now();
+    };
+    while !incoming.reply.is_abandoned() {
+        assert!(Instant::now() < deadline, "disconnect wasn't detected");
+        thread::yield_now();
+    }
 }

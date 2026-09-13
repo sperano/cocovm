@@ -30,6 +30,7 @@ fn running_entry(slug: &str) -> MachineEntry {
         rom,
         ROMSource::File(rom_path),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     );
     let mut entry = off_entry(slug);
     entry.vm = Some(Box::new(vm));
@@ -228,4 +229,23 @@ fn deadline_scales_with_the_expected_fields() {
     let expected =
         Duration::from_secs_f64(f64::from(crate::control::MAX_WAIT_FIELDS) / FIELD_RATE_HZ);
     assert!(pending.deadline >= before + expected + crate::manager::control::CONTROL_DEFER_MARGIN);
+}
+
+#[test]
+fn abandoned_pending_request_is_reclaimed_without_a_reply() {
+    let mut manager = manager(vec![running_entry("live")]);
+    let (reply, rx) = reply_pair();
+    reply.abandon_for_test();
+    manager.pending.push(PendingControl::new(
+        reply,
+        "live".to_string(),
+        PendingCondition::WaitUntilField(u64::MAX),
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    ));
+
+    manager.resolve_control_pending(&egui::Context::default());
+
+    assert!(manager.pending.is_empty());
+    assert!(rx.try_recv().is_err());
 }

@@ -31,6 +31,7 @@ fn running_entry(slug: &str) -> MachineEntry {
         rom,
         ROMSource::File(rom_path),
         AppParams::default(),
+        crate::joy::SharedGamepad::without_backend(),
     );
     let mut entry = off_entry(slug);
     entry.vm = Some(Box::new(vm));
@@ -137,5 +138,39 @@ fn eject_disk_action_keeps_a_stale_cart_error_when_it_succeeds() {
     assert_eq!(
         app.entries[0].vm.as_ref().unwrap().cart_error.as_deref(),
         Some(STALE)
+    );
+}
+
+#[test]
+fn deferred_capacity_is_reserved_before_vm_mutation() {
+    let mut app = manager(vec![running_entry("live")]);
+    for _ in 0..super::super::MAX_PENDING_CONTROL_REQUESTS {
+        let (tx, _rx) = mpsc::channel();
+        app.pending.push(PendingControl::new(
+            ReplyHandle::new(tx),
+            "live".to_string(),
+            PendingCondition::TypeTextDrained,
+            0,
+            60.0,
+        ));
+    }
+    let (tx, rx) = mpsc::channel();
+
+    app.start_deferred(ReplyHandle::new(tx), Some("live".to_string()), |vm| {
+        let fields = vm.start_remote_typing("A")?;
+        Ok((PendingCondition::TypeTextDrained, fields))
+    });
+
+    let Response::Err(message) = rx.recv().expect("overload reply") else {
+        panic!("expected overload error");
+    };
+    assert!(message.contains("too many deferred"));
+    assert!(
+        !app.entries[0]
+            .vm
+            .as_ref()
+            .unwrap()
+            .remote_type_ahead
+            .is_active()
     );
 }
