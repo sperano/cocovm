@@ -1,6 +1,5 @@
-//! Disto MEB real-time clock ($FF50-$FF53): the 4-N-1's MSM6242 register
-//! readout, settability and control bits; the 2-N-1's MSM5832 register map
-//! as `clock2_disto2.asm` walks it; and routing through the cartridge port /
+//! Disto 4-N-1 real-time clock ($FF50-$FF53): MSM6242 register readout,
+//! settability and control bits, and routing through the cartridge port /
 //! Multi-Pak.
 
 use std::cell::Cell;
@@ -9,15 +8,15 @@ use std::rc::Rc;
 use coco_core::Machine;
 use coco_core::cart::{Cartridge, MultiPak};
 use coco_core::config::MachineConfig;
-use coco_core::rtc::{DistoRTC, DistoRTCModel, RTCTime};
+use coco_core::rtc::{DistoRTC, RTCTime};
 use mc6809::Bus;
 use test_assets::rom::COCO3;
 
 const RTC_DATA: u16 = 0xFF50;
 /// Register-select latch as `clock2_disto4.asm` (Disto 4-N-1) uses it.
 const RTC_SELECT_DISTO4: u16 = 0xFF51;
-/// Register-select latch as `clock2_disto2.asm` (Disto 2-N-1) uses it.
-const RTC_SELECT_DISTO2: u16 = 0xFF52;
+/// The alternate register-select latch (MAME decodes `$FF51-$FF53` alike).
+const RTC_SELECT_ALT: u16 = 0xFF52;
 
 /// MSM6242 register numbers (MAME `msm6242.cpp` enum).
 const REG_S1: u8 = 0;
@@ -26,23 +25,6 @@ const REG_H10: u8 = 5;
 const REG_Y10: u8 = 11;
 const REG_CD: u8 = 13;
 const REG_CF: u8 = 15;
-
-/// MSM5832 register numbers (2-N-1): weekday at 6, date digits one up.
-const MSM5832_REG_S10: u8 = 1;
-const MSM5832_REG_MI10: u8 = 3;
-const MSM5832_REG_H10: u8 = 5;
-const MSM5832_REG_W: u8 = 6;
-const MSM5832_REG_D10: u8 = 8;
-const MSM5832_REG_MO10: u8 = 10;
-const MSM5832_REG_Y10: u8 = 12;
-/// First register number past the MSM5832's 13 (no control registers).
-const MSM5832_REG_UNUSED: u8 = 13;
-const MSM5832_UNUSED_READ: u8 = 0x0F;
-/// MSM5832 hour-tens bit 3 (24-hour mode) and day-tens bit 2 (leap year).
-const MSM5832_H10_24H: u8 = 0x08;
-const MSM5832_D10_LEAP: u8 = 0x04;
-/// `clock2_disto2.asm`'s hour-tens read mask (`anda #3`).
-const MSM5832_H10_TENS_MASK: u8 = 0x03;
 
 /// CD HOLD bit; CF RESET/STOP/24-12 bits.
 const CD_HOLD: u8 = 0x01;
@@ -61,10 +43,6 @@ const FIXED_TIME: RTCTime = RTCTime {
 
 fn fixed_rtc() -> DistoRTC {
     DistoRTC::new(Box::new(|| FIXED_TIME))
-}
-
-fn fixed_rtc_2n1() -> DistoRTC {
-    DistoRTC::with_model(DistoRTCModel::TwoInOne, Box::new(|| FIXED_TIME))
 }
 
 /// An RTC whose time source's seconds-within-minute field the test can
@@ -120,111 +98,11 @@ fn gettime_via_ff51_matches_injected_time_disto4_dialect() {
 }
 
 #[test]
-fn four_in_one_also_latches_through_ff52() {
+fn also_latches_through_ff52() {
     // MAME's superset decode: every latch address reaches the same chip.
     let mut cart = fixed_rtc();
-    let [y, mo, d, h, mi, s] = nitros9_gettime(&mut cart, RTC_SELECT_DISTO2);
+    let [y, mo, d, h, mi, s] = nitros9_gettime(&mut cart, RTC_SELECT_ALT);
     assert_eq!((y, mo, d, h, mi, s), (26, 7, 8, 21, 34, 56));
-}
-
-/// `clock2_disto2.asm`'s `GetTime` walk over the MSM5832: registers 12 down
-/// to 7 for year/month/day, then 5 down to 0 for hour/minute/second, hour
-/// tens masked with `anda #3`.
-fn clock2_disto2_gettime(cart: &mut dyn Cartridge) -> [u8; 6] {
-    let mut fields = [0u8; 6];
-    let mut reg = MSM5832_REG_Y10;
-    for (i, field) in fields.iter_mut().enumerate() {
-        if i == 3 {
-            reg = MSM5832_REG_H10;
-        }
-        let mask = if reg == MSM5832_REG_H10 {
-            MSM5832_H10_TENS_MASK
-        } else {
-            0x0F
-        };
-        let tens = read_reg(cart, RTC_SELECT_DISTO2, reg) & mask;
-        let ones = read_reg(cart, RTC_SELECT_DISTO2, reg - 1);
-        *field = tens * 10 + ones;
-        reg = reg.wrapping_sub(2);
-    }
-    fields
-}
-
-#[test]
-fn two_in_one_gettime_matches_injected_time_disto2_dialect() {
-    let mut cart = fixed_rtc_2n1();
-    assert_eq!(clock2_disto2_gettime(&mut cart), [26, 7, 8, 21, 34, 56]);
-}
-
-#[test]
-fn two_in_one_weekday_sits_at_register_6_with_leap_and_24h_flags() {
-    // 2026-07-08 is a Wednesday (Sunday = 0); 2026 is not a leap year.
-    let mut cart = fixed_rtc_2n1();
-    assert_eq!(read_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_W), 3);
-    assert_eq!(
-        read_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_D10) & MSM5832_D10_LEAP,
-        0
-    );
-    assert_eq!(
-        read_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_H10),
-        MSM5832_H10_24H | 2,
-        "power-on 24-hour mode shows in hour-tens bit 3"
-    );
-    let mut leap = DistoRTC::with_model(
-        DistoRTCModel::TwoInOne,
-        Box::new(|| RTCTime {
-            year: 2024,
-            ..FIXED_TIME
-        }),
-    );
-    assert_eq!(
-        read_reg(&mut leap, RTC_SELECT_DISTO2, MSM5832_REG_D10),
-        MSM5832_D10_LEAP,
-        "leap year sets day-tens bit 2 (day 08 -> tens 0)"
-    );
-}
-
-#[test]
-fn two_in_one_settime_writes_stick_in_disto2_register_order() {
-    let mut cart = fixed_rtc_2n1();
-    // `clock2_disto2.asm` SetTime: year (12/11) down to day (8/7), hour with
-    // `$08` OR-ed into the tens (5/4), minute, second — tens then ones.
-    let fields: [(u8, u8); 6] = [
-        (MSM5832_REG_Y10, 99),
-        (MSM5832_REG_MO10, 12),
-        (MSM5832_REG_D10, 31),
-        (MSM5832_REG_H10, 23),
-        (MSM5832_REG_MI10, 59),
-        (MSM5832_REG_S10, 10),
-    ];
-    for (tens_reg, value) in fields {
-        let mut tens = value / 10;
-        if tens_reg == MSM5832_REG_H10 {
-            tens |= MSM5832_H10_24H;
-        }
-        write_reg(&mut cart, RTC_SELECT_DISTO2, tens_reg, tens);
-        write_reg(&mut cart, RTC_SELECT_DISTO2, tens_reg - 1, value % 10);
-    }
-    assert_eq!(clock2_disto2_gettime(&mut cart), [99, 12, 31, 23, 59, 10]);
-}
-
-#[test]
-fn two_in_one_twelve_hour_mode_is_hour_tens_bit_3() {
-    let mut cart = fixed_rtc_2n1();
-    // Writing the tens digit with bit 3 clear drops to 12-hour mode; the
-    // digit written is the 12-hour one: tens 0 + PM (bit 2) keeps 21:xx as 9 PM.
-    const PM: u8 = 0x04;
-    write_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_H10, PM);
-    assert_eq!(read_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_H10), 0x4);
-    assert_eq!(
-        read_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_H10 - 1),
-        9
-    );
-    assert_eq!(
-        read_reg(&mut cart, RTC_SELECT_DISTO2, MSM5832_REG_UNUSED),
-        MSM5832_UNUSED_READ,
-        "no control registers: 13-15 read $0F like MAME's msm5832"
-    );
 }
 
 #[test]
@@ -236,9 +114,9 @@ fn weekday_register_derives_from_date() {
 }
 
 #[test]
-fn defaults_to_24_hour_mode_for_the_init_less_disto2_driver() {
-    // `clock2_disto2.asm` has no Init: it relies on the chip's power-on CF
-    // (MAME `device_start` default) already being in 24-hour mode.
+fn defaults_to_24_hour_mode_for_init_less_drivers() {
+    // A driver that never writes CF relies on the chip's power-on CF (MAME
+    // `device_start` default) already being in 24-hour mode.
     let mut cart = fixed_rtc();
     assert_eq!(
         read_reg(&mut cart, RTC_SELECT_DISTO4, REG_CF) & CF_24H,

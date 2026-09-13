@@ -68,9 +68,7 @@ fn full_def() -> MachineDef {
                         autostart: false,
                     },
                     SlotDTO::Empty,
-                    SlotDTO::RTC {
-                        model: RTCModelDTO::default(),
-                    },
+                    SlotDTO::RTC,
                     SlotDTO::FD502,
                 ],
                 switch: 2,

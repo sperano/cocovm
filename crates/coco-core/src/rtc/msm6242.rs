@@ -47,8 +47,8 @@ mod cf {
 }
 
 /// Power-on control-register values (MAME `msm6242.cpp` `device_start`):
-/// CD clear, CE = STD|t0, CF = 24-hour mode. `clock2_disto2.asm` never
-/// initializes CF and relies on this default for 24-hour readout.
+/// CD clear, CE = STD|t0, CF = 24-hour mode — a driver that never writes CF
+/// still reads 24-hour time.
 const CD_POWER_ON: u8 = 0x00;
 const CE_POWER_ON: u8 = 0x06;
 const CF_POWER_ON: u8 = cf::H24;
@@ -163,25 +163,6 @@ impl MSM6242 {
     pub fn set_time_source(&mut self, now: TimeSource) {
         self.now = now;
     }
-
-    /// True in 24-hour mode (CF bit 2).
-    pub fn is_24h(&self) -> bool {
-        self.reg_cf & cf::H24 != 0
-    }
-
-    /// Set 24/12-hour mode directly, bypassing the CF RESET latch — for
-    /// chips whose mode is a plain register bit (the MSM5832 view).
-    pub fn set_24h(&mut self, on: bool) {
-        if on {
-            self.reg_cf |= cf::H24;
-        } else {
-            self.reg_cf &= !cf::H24;
-        }
-    }
-
-    /// The weekday register's number, for views that remap the register
-    /// file (the MSM5832 view in `msm5832.rs`).
-    pub(super) const WEEKDAY_REG: u8 = REG_W;
 
     /// Read register `reg` (0-15). Returns a nibble; the upper data bits are 0
     /// (MAME: the 4-bit chip's bus returns the value zero-extended).

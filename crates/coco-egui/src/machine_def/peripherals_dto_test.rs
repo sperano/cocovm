@@ -4,7 +4,7 @@
 
 use std::fs;
 
-use super::{CartridgeDTO, RS232EndpointDTO, RTCModelDTO, SlotDTO};
+use super::{CartridgeDTO, RS232EndpointDTO, SlotDTO};
 use crate::MPI_SLOT_COUNT;
 use crate::machine_def::tests::TempDir;
 use crate::machine_def::{MachineDef, load_all, save};
@@ -251,36 +251,18 @@ autostart = false
     );
 }
 
-/// `[peripherals].cartridge = { kind = "rtc" }` with no `model` key defaults to the 4-N-1
-/// chip fit ([`RTCModelDTO`]'s `Default`).
+/// Definitions written while `{ kind = "rtc", model = "4n1" }` was the shape
+/// still load: the legacy `model` key is ignored.
 #[test]
-fn rtc_with_no_model_defaults_to_four_in_one() {
-    let dto: CartridgeDTO =
-        toml::from_str(r#"kind = "rtc""#).expect("a model-less rtc must still parse");
-    assert_eq!(
-        dto,
-        CartridgeDTO::RTC {
-            model: RTCModelDTO::FourInOne,
-        }
-    );
-}
-
-/// `[peripherals].cartridge = { kind = "rtc", model = "2n1" }` records the 2-N-1 chip fit.
-#[test]
-fn rtc_with_2n1_model_round_trips() {
+fn rtc_with_legacy_model_key_still_parses() {
     let dto: CartridgeDTO = toml::from_str(
         r#"
 kind = "rtc"
-model = "2n1"
+model = "4n1"
 "#,
     )
-    .expect("a 2n1 rtc must parse");
-    assert_eq!(
-        dto,
-        CartridgeDTO::RTC {
-            model: RTCModelDTO::TwoInOne,
-        }
-    );
+    .expect("an rtc with a legacy model key must still parse");
+    assert_eq!(dto, CartridgeDTO::RTC);
 }
 
 /// The legacy shapes from before `switch`/`endpoint` existed — `{ kind = "mpi", slots = [...] }`

@@ -24,7 +24,7 @@ pub(crate) enum MPISlot {
     Empty,
     ROMPak(PathBuf),
     FD502,
-    DistoRTC(DistoRTCModel),
+    DistoRTC,
     /// Deluxe RS-232 Pak; `None` if it has no EPROM dump installed (it's
     /// fully usable ROM-less — CTS reads answer open-bus). At most one
     /// across the whole machine — two would fight over the shared ACIA at
