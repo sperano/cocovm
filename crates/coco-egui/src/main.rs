@@ -65,7 +65,7 @@ use coco_core::drivewire::{self, DWImage, DWTime};
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::{self as kbd, Pos};
 use coco_core::orch90::Orch90;
-use coco_core::rtc::{DistoRTC, DistoRTCModel, RTCTime};
+use coco_core::rtc::{DistoRTC, RTCTime};
 use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::vhd::VHDImage;
 use coco_core::{Machine, MachineConfig};

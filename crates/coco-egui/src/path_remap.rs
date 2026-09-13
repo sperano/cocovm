@@ -47,7 +47,7 @@ fn remap_slot_dto(slot: &mut SlotDTO, old_dir: &Path, new_dir: &Path) {
         | SlotDTO::Orch90 { path } => remap_string(path, old_dir, new_dir),
         SlotDTO::Empty
         | SlotDTO::FD502
-        | SlotDTO::RTC { .. }
+        | SlotDTO::RTC
         | SlotDTO::RS232 { .. }
         | SlotDTO::SoundSpeech => {}
     }
@@ -65,7 +65,7 @@ fn remap_cartridge_dto(cartridge: &mut CartridgeDTO, old_dir: &Path, new_dir: &P
         }
         CartridgeDTO::None
         | CartridgeDTO::FD502
-        | CartridgeDTO::RTC { .. }
+        | CartridgeDTO::RTC
         | CartridgeDTO::RS232 { .. }
         | CartridgeDTO::SoundSpeech => {}
     }
@@ -89,7 +89,7 @@ fn remap_mpi_slot(slot: &mut MPISlot, old_dir: &Path, new_dir: &Path) {
         MPISlot::DeluxeRS232(Some(path)) => remap_path(path, old_dir, new_dir),
         MPISlot::Empty
         | MPISlot::FD502
-        | MPISlot::DistoRTC(_)
+        | MPISlot::DistoRTC
         | MPISlot::DeluxeRS232(None)
         | MPISlot::SoundSpeechCartridge => {}
     }

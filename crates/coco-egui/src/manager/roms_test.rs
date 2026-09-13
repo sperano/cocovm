@@ -106,9 +106,7 @@ fn mpi_slots_prefix_their_rows_and_skip_romless_occupants() {
             SlotDTO::RS232 {
                 endpoint: RS232EndpointDTO::default(),
             },
-            SlotDTO::RTC {
-                model: Default::default(),
-            },
+            SlotDTO::RTC,
             SlotDTO::SoundSpeech,
         ],
         switch: 1,

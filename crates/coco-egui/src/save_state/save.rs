@@ -101,7 +101,7 @@ impl CocoApp {
                     MPISlot::DeluxeRS232(Some(p)) => {
                         paths.push((mpi_slot, CartROMRole::Primary, p.clone()));
                     }
-                    MPISlot::Empty | MPISlot::DistoRTC(_) | MPISlot::DeluxeRS232(None) => {}
+                    MPISlot::Empty | MPISlot::DistoRTC | MPISlot::DeluxeRS232(None) => {}
                 }
             }
         } else {

@@ -1,14 +1,9 @@
-//! Disto Memory Expansion Bus real-time clock, decoded in the SCS window at
-//! `$FF50-$FF53` (MAME `meb_rtime.cpp` `disto_rtime_device`), in both of
-//! Disto's chip fits:
-//! - 4-N-1: OKI MSM6242 (`msm6242.rs`) — NitrOS-9 `clock2_disto4.asm` selects
-//!   through `$FF51`. Verified live against that driver (`date`/`setime`).
-//! - 2-N-1: OKI MSM5832 (`msm5832.rs`) — `clock2_disto2.asm` selects through
-//!   `$FF52` and expects the 5832's register map (weekday at 6, date digits
-//!   one register higher). MAME models only the MSM6242 and so misreads the
-//!   2-N-1 driver's date; this does not.
+//! Disto 4-N-1 real-time clock: an OKI MSM6242 (`msm6242.rs`) decoded in the
+//! SCS window at `$FF50-$FF53` (MAME `meb_rtime.cpp` `disto_rtime_device`).
+//! NitrOS-9 `clock2_disto4.asm` selects through `$FF51`; verified live
+//! against that driver (`date`/`setime`).
 //!
-//! Register interface, common to both:
+//! Register interface:
 //! - `$FF50` read/write — data register, indexed by the address latch.
 //! - `$FF51`, `$FF52`, `$FF53` write — address latch. On the real cards
 //!   `$FF52`/`$FF53` double as the Centronics printer strobe, not modeled;
@@ -20,7 +15,6 @@
 //! chip behavior; MAME drops these writes) sticks without the emulated
 //! clock drifting when the machine is paused or the CPU runs double-speed.
 
-mod msm5832;
 pub mod msm6242;
 
 use serde::{Deserialize, Serialize};
@@ -87,11 +81,6 @@ fn civil_from_days(days: i64) -> (i32, u8, u8) {
     (y as i32, m as u8, d as u8)
 }
 
-/// Gregorian leap year — the MSM5832's day-tens leap flag.
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
 impl RTCTime {
     /// Seconds since the 1970-01-01 00:00:00 epoch (proleptic Gregorian).
     /// Out-of-range month/day are clamped rather than rejected, so a
@@ -143,35 +132,12 @@ const RESTORED_PLACEHOLDER_TIME: RTCTime = RTCTime {
 
 const RTC_DATA: u16 = 0xFF50;
 const RTC_SELECT: u16 = 0xFF51;
-/// `$FF52`/`$FF53` are also address-latch writes (MAME `meb_rtime.cpp` — the
-/// 2-N-1's NitrOS-9 driver selects through `$FF52`); on the real card they
-/// double as the Centronics strobe/BUSY port, not modeled here.
+/// `$FF52`/`$FF53` are also address-latch writes (MAME `meb_rtime.cpp`); on
+/// the real card they double as the Centronics strobe/BUSY port, not modeled.
 const RTC_SELECT_ALT: u16 = 0xFF52;
 const RTC_SELECT_ALT2: u16 = 0xFF53;
 
-/// Which Disto card the clock sits on, i.e. which chip's register map the
-/// guest sees at `$FF50`. Old snapshots and definitions without a model are
-/// the 4-N-1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum DistoRTCModel {
-    /// Disto 4-N-1: OKI MSM6242.
-    #[default]
-    FourInOne,
-    /// Disto 2-N-1: OKI MSM5832.
-    TwoInOne,
-}
-
-impl DistoRTCModel {
-    /// The card name as Disto printed it.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::FourInOne => "4-N-1",
-            Self::TwoInOne => "2-N-1",
-        }
-    }
-}
-
-/// The Disto MEB real-time clock as a cartridge-port device: a clock chip
+/// The Disto 4-N-1 real-time clock as a cartridge-port device: a clock chip
 /// behind a one-byte address latch at `$FF50-$FF53` in the SCS window. Rides
 /// the existing cartridge routing — plug it into the port directly (NitrOS-9
 /// boots from VHD without a disk controller) or into a Multi-Pak slot next to
@@ -179,15 +145,12 @@ impl DistoRTCModel {
 #[derive(Serialize, Deserialize)]
 pub struct DistoRTC {
     rtc: MSM6242,
-    #[serde(default)]
-    model: DistoRTCModel,
     address_latch: u8,
 }
 
 impl std::fmt::Debug for DistoRTC {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DistoRTC")
-            .field("model", &self.model)
             .field("address_latch", &self.address_latch)
             .field("rtc", &self.rtc)
             .finish()
@@ -195,23 +158,13 @@ impl std::fmt::Debug for DistoRTC {
 }
 
 impl DistoRTC {
-    /// A 4-N-1 clock around a host time source; starts at the source's time
+    /// A clock around a host time source; starts at the source's time
     /// (offset 0), like a battery-backed chip that was already set.
     pub fn new(now: TimeSource) -> Self {
-        Self::with_model(DistoRTCModel::FourInOne, now)
-    }
-
-    /// [`DistoRTC::new`] for either card.
-    pub fn with_model(model: DistoRTCModel, now: TimeSource) -> Self {
         Self {
             rtc: MSM6242::new(now),
-            model,
             address_latch: 0,
         }
-    }
-
-    pub fn model(&self) -> DistoRTCModel {
-        self.model
     }
 
     /// Direct access to the clock core (frontend set/sync UI).
@@ -225,19 +178,11 @@ impl DistoRTC {
     }
 
     fn read_reg(&mut self) -> u8 {
-        let reg = self.address_latch & 0x0F;
-        match self.model {
-            DistoRTCModel::FourInOne => self.rtc.read(reg),
-            DistoRTCModel::TwoInOne => msm5832::read(&mut self.rtc, reg),
-        }
+        self.rtc.read(self.address_latch & 0x0F)
     }
 
     fn write_reg(&mut self, val: u8) {
-        let reg = self.address_latch & 0x0F;
-        match self.model {
-            DistoRTCModel::FourInOne => self.rtc.write(reg, val),
-            DistoRTCModel::TwoInOne => msm5832::write(&mut self.rtc, reg, val),
-        }
+        self.rtc.write(self.address_latch & 0x0F, val);
     }
 }
 

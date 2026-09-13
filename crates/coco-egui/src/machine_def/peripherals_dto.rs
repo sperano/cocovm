@@ -2,7 +2,6 @@
 //! grew past the project's ~500-line ceiling. See that module's doc for the
 //! overall DTO convention.
 
-use coco_core::rtc::DistoRTCModel;
 use serde::{Deserialize, Serialize};
 
 /// Default for [`CartridgeDTO::ROMPak`]/[`GamesMaster`]'s `autostart` and
@@ -45,13 +44,10 @@ pub enum CartridgeDTO {
         #[serde(default = "default_autostart")]
         autostart: bool,
     },
-    /// Disto RTC. No boot ROM — pairs with a VHD boot; for RTC + floppies
-    /// use an MPI slot. `model` picks the chip fit; absent defaults to 4-N-1.
+    /// Disto 4-N-1 RTC. No boot ROM — pairs with a VHD boot; for RTC +
+    /// floppies use an MPI slot. A legacy `model` key is ignored.
     #[serde(rename = "rtc")]
-    RTC {
-        #[serde(default)]
-        model: RTCModelDTO,
-    },
+    RTC,
     /// Deluxe RS-232 Pak. `endpoint` picks the host backend its serial line
     /// is wired to; can also appear nested in a [`SlotDTO`] (the pak decodes
     /// its ACIA off the full address bus itself, so it's reachable from any
@@ -110,10 +106,7 @@ pub enum SlotDTO {
         autostart: bool,
     },
     #[serde(rename = "rtc")]
-    RTC {
-        #[serde(default)]
-        model: RTCModelDTO,
-    },
+    RTC,
     /// Deluxe RS-232 Pak in this slot — at most one across the whole
     /// machine, since two would fight over the ACIA at `$FF68`; a second one
     /// is rejected at load time.
@@ -132,35 +125,6 @@ pub enum SlotDTO {
     Orch90 { path: String },
     #[serde(rename = "ssc")]
     SoundSpeech,
-}
-
-/// [`CartridgeDTO::RTC`]/[`SlotDTO::RTC`]'s `model` — which Disto chip fit is
-/// installed. Maps to [`DistoRTCModel`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum RTCModelDTO {
-    #[default]
-    #[serde(rename = "4n1")]
-    FourInOne,
-    #[serde(rename = "2n1")]
-    TwoInOne,
-}
-
-impl From<DistoRTCModel> for RTCModelDTO {
-    fn from(model: DistoRTCModel) -> Self {
-        match model {
-            DistoRTCModel::FourInOne => RTCModelDTO::FourInOne,
-            DistoRTCModel::TwoInOne => RTCModelDTO::TwoInOne,
-        }
-    }
-}
-
-impl From<RTCModelDTO> for DistoRTCModel {
-    fn from(model: RTCModelDTO) -> Self {
-        match model {
-            RTCModelDTO::FourInOne => DistoRTCModel::FourInOne,
-            RTCModelDTO::TwoInOne => DistoRTCModel::TwoInOne,
-        }
-    }
 }
 
 /// [`CartridgeDTO::RS232`]'s `endpoint` — which host backend the Deluxe
