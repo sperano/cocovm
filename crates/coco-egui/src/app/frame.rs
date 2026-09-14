@@ -11,7 +11,7 @@ pub(crate) const SUSPENDED_SCRIM: egui::Color32 = egui::Color32::from_black_alph
 /// Text of the suspended display's centered marker.
 const SUSPENDED_OVERLAY_TEXT: &str = "Suspended";
 /// Marker text height as a fraction of the display rect, so it scales with the window.
-const SUSPENDED_TEXT_HEIGHT_FRACTION: f32 = 0.10;
+const SUSPENDED_TEXT_HEIGHT_FRACTION: f32 = 0.06;
 /// Resume (Play) glyph height as a fraction of the display rect.
 const SUSPENDED_GLYPH_HEIGHT_FRACTION: f32 = 0.16;
 /// Marker color — light grey, readable over the scrimmed frame.
@@ -292,18 +292,20 @@ impl CocoApp {
     }
 }
 
-/// Grey scrim with a Play glyph over a centered "Suspended" marker (as
-/// `Label`s so AccessKit exposes them) on the frozen display. The whole rect
-/// is clickable; returns true when clicked to request a resume.
+/// Grey scrim with a centered Play glyph and a "Suspended" marker halfway
+/// between it and the bottom edge (as `Label`s so AccessKit exposes them) on
+/// the frozen display. The whole rect is clickable; returns true when clicked
+/// to request a resume.
 fn suspended_overlay(ui: &mut egui::Ui, rect: egui::Rect) -> bool {
     ui.painter().rect_filled(rect, 0.0, SUSPENDED_SCRIM);
     let glyph_font = overlay_font(rect.height() * SUSPENDED_GLYPH_HEIGHT_FRACTION);
     let text_font = overlay_font(rect.height() * SUSPENDED_TEXT_HEIGHT_FRACTION);
-    let top = rect.center().y - (glyph_font.size + text_font.size) / 2.0;
-    let glyph_rect = egui::Rect::from_x_y_ranges(rect.x_range(), top..=top + glyph_font.size);
-    let text_rect = egui::Rect::from_x_y_ranges(
-        rect.x_range(),
-        glyph_rect.bottom()..=glyph_rect.bottom() + text_font.size,
+    let glyph_rect =
+        egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), glyph_font.size));
+    // The marker sits halfway between the Play glyph and the bottom edge.
+    let text_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, (glyph_rect.bottom() + rect.bottom()) / 2.0),
+        egui::vec2(rect.width(), text_font.size),
     );
     for (r, s, font) in [
         (glyph_rect, PLAY_GLYPH, glyph_font),

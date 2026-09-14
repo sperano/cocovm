@@ -51,8 +51,8 @@ fn suspended_window_keeps_chrome_with_start_as_resume() {
 }
 
 /// The suspended display carries its own overlay beyond the status bar's
-/// marker: a scrim over the whole frame, with a Play glyph and a "Suspended"
-/// marker centered on it.
+/// marker: a scrim over the whole frame, a centered Play glyph, and a
+/// "Suspended" marker between the glyph and the bottom edge.
 #[test]
 fn suspended_display_shows_the_overlay() {
     let mut harness = boot_harness();
@@ -75,15 +75,15 @@ fn suspended_display_shows_the_overlay() {
             })
             .count()
     };
-    assert_eq!(
-        on_display("Suspended"),
-        1,
-        "one marker centered on the display"
-    );
+    assert_eq!(on_display("Suspended"), 1, "one marker on the display");
     assert_eq!(
         on_display(PLAY_GLYPH),
         1,
         "one Play glyph centered on the display"
+    );
+    assert!(
+        overlay_marker(&harness).rect().center().y > display.center().y,
+        "the marker sits below the centered glyph"
     );
     assert!(
         scrim_covers(&harness, display),
