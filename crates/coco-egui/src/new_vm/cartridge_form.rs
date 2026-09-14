@@ -13,6 +13,7 @@ use super::cartridge::{
     cartridge_label, cartridge_rom, cartridge_rom_file_dialog, orch90_file_dialog,
     slot_cartridge_rom, slot_label,
 };
+use super::known_cartridges::known_cartridge_submenu;
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
 
 /// Whether a disk controller is reachable from the given cartridge/slot
@@ -338,6 +339,13 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 cartridge_rom_file_dialog,
                 |path| *cartridge = cartridge_rom(path),
             );
+            let current_image_path = match cartridge {
+                CartridgeChoice::Image(image) => Some(image.path.clone()),
+                _ => None,
+            };
+            known_cartridge_submenu(ui, current_image_path.as_deref(), |path| {
+                *cartridge = cartridge_rom(path)
+            });
             combo_item(ui, RTC_LABEL, *cartridge == CartridgeChoice::RTC, || {
                 *cartridge = CartridgeChoice::RTC
             });
@@ -398,6 +406,13 @@ fn slot_combo(
                 cartridge_rom_file_dialog,
                 |path| mpi_slots[slot] = slot_cartridge_rom(path),
             );
+            let current_image_path = match &mpi_slots[slot] {
+                SlotChoice::Image(image) => Some(image.path.clone()),
+                _ => None,
+            };
+            known_cartridge_submenu(ui, current_image_path.as_deref(), |path| {
+                mpi_slots[slot] = slot_cartridge_rom(path)
+            });
             combo_item(ui, RTC_LABEL, mpi_slots[slot] == SlotChoice::RTC, || {
                 release_slot(mpi_slots, SlotChoice::RTC);
                 mpi_slots[slot] = SlotChoice::RTC;
