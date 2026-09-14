@@ -8,6 +8,8 @@ use crate::*;
 mod control;
 pub(crate) use control::{RemoteHold, RemoteStick};
 mod frame;
+#[cfg(test)]
+pub(crate) use frame::SUSPENDED_SCRIM;
 mod input;
 mod presentation;
 pub(crate) mod scheduling;
