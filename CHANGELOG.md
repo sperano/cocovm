@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6] - 2026-09-14
+
+### Added
+- Suspended machines are now obvious at a glance: the VM window's display
+  dims under a translucent scrim with a large Play glyph and a "Suspended"
+  marker, and clicking anywhere on the screen resumes the machine, same as
+  the toolbar's Start tile.
+- Known Cartridges picker: the New VM form's Cartridge combo and each MPI
+  Slot combo list the cartridge images the asset bundle ships, next to the
+  unchanged manual file picker. Cartridge hardware (fixed ROM, legacy
+  banked, Games Master) is detected from the image's size and CRC32
+  fingerprint, so the separate ROM Pak, banked ROM Pak, and Games Master
+  entries collapse into one Cartridge ROM choice.
+- The manager's detail pane gains a read-only ROMs group listing every ROM
+  image the selected definition will load at its next cold start, so a
+  missing or doubtful dump shows before Start instead of as a boot failure.
+- The manager's welcome image can change on a timer, in file-name order or
+  shuffled, with a short crossfade (config keys/flags follow the
+  `toolbar_icons_only` pattern).
+- Icon-only VM status bar via `status_bar_icons_only`
+  (`--status-bar-icons-only` / `COCOVM_STATUS_BAR_ICONS_ONLY`), with a
+  matching Settings checkbox.
+
+### Changed
+- **Breaking: save states from 0.7.5 no longer load.** The snapshot schema
+  was renumbered to version 1; re-create save states after upgrading.
+- The manager's detail pane shows a much larger screen preview, spanning
+  the right half of the header next to the identity and hardware groups.
+- The paper window starts printing below a top-of-form margin: the first
+  line no longer lands on the paper's edge and page perforations no longer
+  cut through a character row.
+- The status bar shows an installed FD-502 with a "No disks" readout while
+  its drives are empty, instead of drawing nothing.
+- Settings save applies immediately: changing the log level re-levels the
+  live logger, and changing the control port moves the built-in MCP
+  listener without a restart.
+- The Disto RTC now models only the 4-N-1 (OKI MSM6242); the 2-N-1 chip
+  fit was dropped.
+- Performance and memory: printer PNG/PDF exports run on cancellable
+  background workers with bounded memory and atomic output files; the
+  machine list and saved previews load visible-first under strict decode
+  and cache budgets; VM repaint scheduling coalesces deadlines instead of
+  requesting immediate repaints.
+
+### Fixed
+- The Becker port can no longer be enabled alongside a Games Master
+  Cartridge — they share the $FF41 sound port; the disabled control's
+  hover text explains the conflict.
+- DMP printers print the manuals' verified character tables for the
+  European range $A0–$BF and the block graphics $E0–$FE, replacing
+  placeholder and invented glyphs.
+- Icon-only toolbar style now applies to already-open VM windows instead
+  of only newly opened ones.
+
 ## [0.7.5] - 2026-09-09
 
 ### Added
