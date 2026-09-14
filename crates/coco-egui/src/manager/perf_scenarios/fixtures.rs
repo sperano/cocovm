@@ -3,6 +3,7 @@ use super::config::{Config, PREVIEW_COUNT, PRINTER_PAGE_COUNT};
 use crate::display::{Display, TV};
 use crate::machine_def::MachineDef;
 use coco_core::{MachineConfig, MachineVariant, MemorySize, MonitorType};
+use std::time::{Duration, Instant};
 
 #[path = "../../../../coco-core/examples/perf/workloads.rs"]
 #[allow(dead_code)] // Shared with the core-only harness, which also constructs synthetic ROMs.
@@ -64,6 +65,12 @@ pub(super) struct PerformedOperation {
     pub(super) cycle: Option<u64>,
     pub(super) cycle_step: Option<u64>,
     pub(super) scroll: Option<PerformedScroll>,
+}
+
+pub(super) struct OperationAttempt {
+    pub(super) operation: PerformedOperation,
+    pub(super) duration: Duration,
+    pub(super) outcome: Result<(), String>,
 }
 
 pub(super) fn prepare(app: &mut ManagerApp, config: &Config) -> Result<(), String> {
@@ -235,23 +242,25 @@ pub(super) fn operate(
     app: &mut ManagerApp,
     config: &Config,
     operation: u64,
-) -> Result<Option<PerformedOperation>, String> {
+) -> Option<OperationAttempt> {
     match config.name.as_str() {
-        "snapshot" => {
-            let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
-            snapshot_round_trip(app)?;
-            Ok(Some(PerformedOperation {
+        "snapshot" => Some(timed_operation(
+            PerformedOperation {
                 name: "snapshot-round-trip",
                 cycle: None,
                 cycle_step: None,
                 scroll: None,
-            }))
-        }
-        "lifecycle" => {
+            },
+            || {
+                let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
+                snapshot_round_trip(app)
+            },
+        )),
+        "lifecycle" => Some(timed_operation(lifecycle_operation(operation), || {
             let _operation = crate::perf::span(crate::perf::Stage::HostOperation);
             lifecycle_step(app, operation)
-        }
-        "saved-previews" => Ok(Some(scroll_operation(
+        })),
+        "saved-previews" => Some(successful_operation(scroll_operation(
             MANAGER_SCROLL_SURFACE,
             app.entries.len(),
             operation,
@@ -259,16 +268,31 @@ pub(super) fn operate(
         "printer" => {
             let performed = scroll_operation(PRINTER_SCROLL_SURFACE, PRINTER_PAGE_COUNT, operation);
             let target_page = performed.scroll.expect("scroll operation").target_index as u32;
-            app.entries[0]
-                .vm
-                .as_mut()
-                .ok_or("printer VM missing")?
-                .paper_window
-                .request_perf_scroll(operation, target_page);
-            Ok(Some(performed))
+            Some(timed_operation(performed, || {
+                let vm = app.entries[0].vm.as_mut().ok_or("printer VM missing")?;
+                vm.paper_window.request_perf_scroll(operation, target_page);
+                Ok(())
+            }))
         }
-        _ => Ok(None),
+        _ => None,
     }
+}
+
+fn timed_operation(
+    operation: PerformedOperation,
+    action: impl FnOnce() -> Result<(), String>,
+) -> OperationAttempt {
+    let started = Instant::now();
+    let outcome = action();
+    OperationAttempt {
+        operation,
+        duration: started.elapsed(),
+        outcome,
+    }
+}
+
+fn successful_operation(operation: PerformedOperation) -> OperationAttempt {
+    timed_operation(operation, || Ok(()))
 }
 
 fn scroll_operation(
@@ -304,22 +328,8 @@ fn snapshot_round_trip(app: &mut ManagerApp) -> Result<(), String> {
     vm.load_state_from(&path)
 }
 
-fn lifecycle_step(
-    app: &mut ManagerApp,
-    operation: u64,
-) -> Result<Option<PerformedOperation>, String> {
+fn lifecycle_step(app: &mut ManagerApp, operation: u64) -> Result<(), String> {
     let cycle_step = operation % LIFECYCLE_STEP_COUNT;
-    let name = match cycle_step {
-        0 => "suspend-for-warm-resume",
-        1 => "resume-live-vm",
-        2 => "suspend-for-window-close",
-        3 => "close-suspended-window",
-        4 => "resume-cold-vm",
-        5 => "stop-vm",
-        6 => "start-vm",
-        7 => "close-running-window",
-        _ => "restart-after-window-close",
-    };
     match cycle_step {
         0 => app.suspend_vm(0),
         1 => app.resume_vm(0),
@@ -332,10 +342,26 @@ fn lifecycle_step(
         _ => app.start_vm(0),
     }
     check_entry(app, 0)?;
-    Ok(Some(PerformedOperation {
+    Ok(())
+}
+
+fn lifecycle_operation(operation: u64) -> PerformedOperation {
+    let cycle_step = operation % LIFECYCLE_STEP_COUNT;
+    let name = match cycle_step {
+        0 => "suspend-for-warm-resume",
+        1 => "resume-live-vm",
+        2 => "suspend-for-window-close",
+        3 => "close-suspended-window",
+        4 => "resume-cold-vm",
+        5 => "stop-vm",
+        6 => "start-vm",
+        7 => "close-running-window",
+        _ => "restart-after-window-close",
+    };
+    PerformedOperation {
         name,
         cycle: Some(operation / LIFECYCLE_STEP_COUNT),
         cycle_step: Some(cycle_step),
         scroll: None,
-    }))
+    }
 }

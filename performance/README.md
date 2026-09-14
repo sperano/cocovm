@@ -122,6 +122,10 @@ The `saved-previews` and `printer` scenarios issue a scroll operation every seco
 They repeat a named beginning, middle, and end cycle throughout the measurement
 window. The printer's end phase targets the last generated page, not the trailing
 blank page that the paper UI adds. Each request appears in `operation_events`.
+Every operation event records its caller-thread `duration_seconds`, `success`,
+and `outcome`, in addition to its name, cycle, timestamp, and resulting VM state.
+If a periodic operation fails, the app writes the partial metrics report before
+ending the scenario with a failure.
 The corresponding `scroll_phase_events` entry records the requested index, the
 rendered visible range, the request-to-render duration, and the scroll-area draw
 duration. It also records resident texture or page counts and their estimated

@@ -30,6 +30,21 @@ fn dots_in_range_only_returns_the_requested_band() {
 }
 
 #[test]
+fn visit_dots_in_range_matches_the_collecting_adapter() {
+    let mut paper = Paper::new();
+    paper.mark(1, 0);
+    paper.mark(2, 10);
+    paper.mark(3, 20);
+    paper.mark(4, 30);
+    let expected = paper.dots_in_range(10, 20);
+    let mut visited = Vec::new();
+
+    paper.visit_dots_in_range(10, 20, |x, y| visited.push((x, y)));
+
+    assert_eq!(visited, expected);
+}
+
+#[test]
 fn dirty_range_reported_then_cleared_on_take() {
     let mut paper = Paper::new();
     assert_eq!(paper.take_dirty(), None);
@@ -52,4 +67,21 @@ fn clear_empties_dots_but_does_not_touch_future_absolute_y() {
     // A mark at a large absolute y after clear lands exactly there.
     paper.mark(0, 9_000);
     assert_eq!(paper.extent().max_y, 9_000);
+}
+
+#[test]
+fn owned_byte_estimate_accounts_for_rows_and_dot_capacity() {
+    let mut paper = Paper::new();
+    let empty_bytes = paper.estimated_owned_bytes();
+    paper.mark(1, 10);
+    let one_row_bytes = paper.estimated_owned_bytes();
+    paper.mark(2, 20);
+    let two_row_bytes = paper.estimated_owned_bytes();
+
+    assert!(one_row_bytes > empty_bytes);
+    assert!(two_row_bytes > one_row_bytes);
+    assert!(
+        two_row_bytes - one_row_bytes >= BTREE_ROW_ALLOCATION_OVERHEAD_ESTIMATE,
+        "each allocated row must include the conservative B-tree allowance"
+    );
 }

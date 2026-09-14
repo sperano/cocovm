@@ -20,7 +20,13 @@
 //! headless PNG-export path (`examples/paper_preview.rs`, and later T6) and
 //! by the live `paper_view.rs` window alike.
 
+use std::ops::ControlFlow;
+
 use coco_core::printer::{X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
+
+#[path = "paper_render/dots.rs"]
+mod dots;
+pub use dots::DotSource;
 
 // ---------------------------------------------------------------------
 // Geometry constants.
@@ -122,7 +128,7 @@ pub const GREEN_BAR_COLOR: [u8; 4] = [0xDD, 0xEB, 0xDC, 0xFF];
 pub const WINDOW_BG_COLOR: [u8; 4] = [0x3A, 0x3A, 0x40, 0xFF];
 
 /// A padding, in [`Y_UNITS_PER_INCH`] units, applied on both sides of a
-/// requested render range before querying [`DotSource::dots_in_range`]:
+/// requested render range before querying [`DotSource::visit_dots_in_range`]:
 /// a dot's *center* can sit just outside `[y0, y1]` while its rendered
 /// circle (radius [`DOT_DIAMETER_IN`] / 2) still bleeds into the visible
 /// band. Round the physical radius up to a whole paper unit so the
@@ -134,6 +140,7 @@ pub const WINDOW_BG_COLOR: [u8; 4] = [0x3A, 0x3A, 0x40, 0xFF];
 /// the previous page's texture.
 pub(crate) const DOT_QUERY_PAD_Y_UNITS: u32 =
     (DOT_DIAMETER_IN / 2.0 * Y_UNITS_PER_INCH as f32) as u32 + 1;
+const DOTS_PER_CANCEL_CHECK: usize = 256;
 
 /// Absolute roll position, in inches, of a paper-model `y` coordinate.
 fn y_units_to_roll_in(y_units: u32) -> f32 {
@@ -149,28 +156,6 @@ fn roll_in_to_y_units(y_in: f32) -> f32 {
 /// Index of the 11" page containing a paper-model `y` coordinate.
 pub fn page_of_units(y_units: u32) -> u32 {
     (y_units_to_roll_in(y_units) / PAGE_HEIGHT_IN).floor() as u32
-}
-
-/// A source of already-printed dot impressions, in the same `(x, y)` unit
-/// system as `coco_core::printer::Paper`: `x` in [`X_UNITS_PER_INCH`]
-/// units, `y` in [`Y_UNITS_PER_INCH`] units. A local trait over the two
-/// foreign paper types (`Paper` itself, and `DmpHandle`'s live-printer
-/// view of one) so `rasterize` doesn't care which it's drawing.
-pub trait DotSource {
-    /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs.
-    fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)>;
-}
-
-impl DotSource for coco_core::printer::Paper {
-    fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        coco_core::printer::Paper::dots_in_range(self, y0, y1)
-    }
-}
-
-impl DotSource for coco_core::dmp::DmpHandle {
-    fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        coco_core::dmp::DmpHandle::dots_in_range(self, y0, y1)
-    }
 }
 
 /// A rasterized slice of paper: RGBA8, row-major, top-left origin.
@@ -326,6 +311,19 @@ pub fn rasterize<D: DotSource>(
     dpi: f32,
     green_bar: bool,
 ) -> RasterImage {
+    rasterize_cancellable(dots, top_in, height_in, dpi, green_bar, &|| false)
+        .expect("non-cancellable rasterization")
+}
+
+/// Rasterizes like [`rasterize`], returning `None` when cancellation is requested.
+pub fn rasterize_cancellable<D: DotSource>(
+    dots: &D,
+    top_in: f32,
+    height_in: f32,
+    dpi: f32,
+    green_bar: bool,
+    is_cancelled: &impl Fn() -> bool,
+) -> Option<RasterImage> {
     // Verify that the printable body fits within the tractor-strip-to-tractor-strip
     // span, guarding against an incompatible future constant edit.
     #[allow(clippy::assertions_on_constants)]
@@ -336,6 +334,9 @@ pub fn rasterize<D: DotSource>(
     let width_px = (PAPER_WIDTH_IN * dpi).round() as u32;
     let height_px = (height_in * dpi).round() as u32;
     let mut image = RasterImage::blank(width_px, height_px, PAPER_COLOR);
+    if is_cancelled() {
+        return None;
+    }
 
     // 1. Paper base color: already the blank fill earlier.
 
@@ -354,9 +355,11 @@ pub fn rasterize<D: DotSource>(
     paint_sprocket_holes(&mut image, top_in, height_in, dpi);
 
     // 6. Ink dots (topmost).
-    paint_ink_dots(&mut image, dots, top_in, height_in, dpi);
+    if !paint_ink_dots(&mut image, dots, top_in, height_in, dpi, is_cancelled) {
+        return None;
+    }
 
-    image
+    Some(image)
 }
 
 /// Step 2: green-bar bands, clipped to the tractor-strip-to-tractor-strip body (not the
@@ -470,7 +473,8 @@ fn paint_ink_dots<D: DotSource>(
     top_in: f32,
     height_in: f32,
     dpi: f32,
-) {
+    is_cancelled: &impl Fn() -> bool,
+) -> bool {
     let dot_radius_in = DOT_DIAMETER_IN / 2.0;
     let dot_radius_px = dot_radius_in * dpi;
     let y0_in = top_in;
@@ -479,13 +483,23 @@ fn paint_ink_dots<D: DotSource>(
     // still bleeds into view.
     let y0_units = (roll_in_to_y_units(y0_in).floor() as u32).saturating_sub(DOT_QUERY_PAD_Y_UNITS);
     let y1_units = roll_in_to_y_units(y1_in).ceil() as u32 + DOT_QUERY_PAD_Y_UNITS;
-    for (x_units, y_units) in dots.dots_in_range(y0_units, y1_units) {
+    let mut dots_until_cancel_check = 0;
+    let completed = dots.try_visit_dots_in_range(y0_units, y1_units, &mut |x_units, y_units| {
+        if dots_until_cancel_check == 0 {
+            if is_cancelled() {
+                return ControlFlow::Break(());
+            }
+            dots_until_cancel_check = DOTS_PER_CANCEL_CHECK;
+        }
+        dots_until_cancel_check -= 1;
         let x_in = PRINT_AREA_LEFT_IN + x_units as f32 / X_UNITS_PER_INCH as f32;
         let y_in = y_units_to_roll_in(y_units);
         let cx_px = x_in * dpi;
         let cy_px = (y_in - top_in) * dpi;
         image.fill_circle(cx_px, cy_px, dot_radius_px, INK_COLOR, DOT_CORE_ALPHA);
-    }
+        ControlFlow::Continue(())
+    });
+    matches!(completed, ControlFlow::Continue(()))
 }
 
 #[cfg(test)]
