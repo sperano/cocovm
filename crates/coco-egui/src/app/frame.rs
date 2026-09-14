@@ -6,6 +6,23 @@ use std::time::Duration;
 use super::scheduling;
 use crate::*;
 
+/// Scrim over the frozen frame of a suspended display.
+pub(crate) const SUSPENDED_SCRIM: egui::Color32 = egui::Color32::from_black_alpha(140);
+/// Text of the suspended display's centered marker.
+const SUSPENDED_OVERLAY_TEXT: &str = "Suspended";
+/// Marker text height as a fraction of the display rect, so it scales with the window.
+const SUSPENDED_TEXT_HEIGHT_FRACTION: f32 = 0.06;
+/// Resume (Play) glyph height as a fraction of the display rect.
+const SUSPENDED_GLYPH_HEIGHT_FRACTION: f32 = 0.16;
+/// Marker color — light grey, readable over the scrimmed frame.
+const SUSPENDED_OVERLAY_COLOR: egui::Color32 = egui::Color32::from_gray(230);
+/// Marker font sizes snap to this step and clamp below, so resizing a
+/// suspended window walks a few cached glyph sizes, not hundreds
+/// (epaint's font atlas never evicts within a session).
+const SUSPENDED_FONT_STEP: f32 = 8.0;
+const SUSPENDED_FONT_MIN: f32 = 16.0;
+const SUSPENDED_FONT_MAX: f32 = 120.0;
+
 impl CocoApp {
     /// Power-cycle the core and drop the host-side audio it already emitted.
     pub(crate) fn power_cycle(&mut self) {
@@ -229,6 +246,9 @@ impl CocoApp {
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
         let uv = crate::display::texture_uv(self.display, self.tv);
         ui.put(rect, egui::Image::new(sized).uv(uv));
+        if self.suspended && suspended_overlay(ui, rect) {
+            self.pending_resume = true;
+        }
         // Remembered for `drive_joysticks` next frame (pointer → joystick axes,
         // mouse fire gating).
         self.display_rect = rect;
@@ -270,6 +290,45 @@ impl CocoApp {
             .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
             .show(ctx, |ui| self.draw_display(ui));
     }
+}
+
+/// Grey scrim with a centered Play glyph and a "Suspended" marker halfway
+/// between it and the bottom edge (as `Label`s so AccessKit exposes them) on
+/// the frozen display. The whole rect is clickable; returns true when clicked
+/// to request a resume.
+fn suspended_overlay(ui: &mut egui::Ui, rect: egui::Rect) -> bool {
+    ui.painter().rect_filled(rect, 0.0, SUSPENDED_SCRIM);
+    let glyph_font = overlay_font(rect.height() * SUSPENDED_GLYPH_HEIGHT_FRACTION);
+    let text_font = overlay_font(rect.height() * SUSPENDED_TEXT_HEIGHT_FRACTION);
+    let glyph_rect =
+        egui::Rect::from_center_size(rect.center(), egui::vec2(rect.width(), glyph_font.size));
+    // The marker sits halfway between the Play glyph and the bottom edge.
+    let text_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, (glyph_rect.bottom() + rect.bottom()) / 2.0),
+        egui::vec2(rect.width(), text_font.size),
+    );
+    for (r, s, font) in [
+        (glyph_rect, PLAY_GLYPH, glyph_font),
+        (text_rect, SUSPENDED_OVERLAY_TEXT, text_font),
+    ] {
+        let text = egui::RichText::new(s)
+            .font(font)
+            .color(SUSPENDED_OVERLAY_COLOR);
+        ui.put(r, egui::Label::new(text).selectable(false));
+    }
+    ui.interact(
+        rect,
+        ui.id().with("suspended_overlay"),
+        egui::Sense::click(),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    .clicked()
+}
+
+/// Marker font at `px`, snapped to [`SUSPENDED_FONT_STEP`] and clamped.
+fn overlay_font(px: f32) -> egui::FontId {
+    let size = (px / SUSPENDED_FONT_STEP).round() * SUSPENDED_FONT_STEP;
+    egui::FontId::proportional(size.clamp(SUSPENDED_FONT_MIN, SUSPENDED_FONT_MAX))
 }
 
 #[cfg(test)]

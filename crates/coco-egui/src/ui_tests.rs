@@ -32,4 +32,5 @@ mod vm_window_disks;
 mod vm_window_joysticks;
 mod vm_window_menus;
 mod vm_window_status_bar;
+mod vm_window_suspend;
 mod vm_window_tape;
