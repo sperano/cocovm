@@ -55,6 +55,12 @@ pub fn images_dir() -> Option<PathBuf> {
     assets_dir().map(|d| d.join("images"))
 }
 
+/// Directory for cartridge ROM assets
+/// (`~/.local/share/cocovm/assets/cartridges` on Linux/macOS).
+pub fn cartridges_dir() -> Option<PathBuf> {
+    assets_dir().map(|d| d.join("cartridges"))
+}
+
 #[cfg(test)]
 #[path = "paths_test.rs"]
 mod tests;

@@ -19,6 +19,7 @@ mod cartridge;
 mod cartridge_form;
 mod config_form;
 mod form;
+mod known_cartridges;
 
 #[cfg(test)]
 pub use cartridge::CartridgeImageChoice;

@@ -196,7 +196,9 @@ fn announce_image_detection(known: Option<&KnownCartridgeROM>) {
         Some(known) => println!(
             " {} {} {} {}",
             "Detected".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
-            known.desc.if_supports_color(Stream::Stdout, |v| v.cyan()),
+            known
+                .title()
+                .if_supports_color(Stream::Stdout, |v| v.cyan()),
             "→".if_supports_color(Stream::Stdout, |v| v.dimmed()),
             hardware_name(known.hardware).if_supports_color(Stream::Stdout, |v| v.white()),
         ),

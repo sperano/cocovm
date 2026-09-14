@@ -85,10 +85,25 @@ fn cartridge_manifest_has_no_duplicate_fingerprints() {
                 (first.crc32, first.size),
                 (second.crc32, second.size),
                 "{} vs {}",
-                first.desc,
-                second.desc
+                first.title(),
+                second.title()
             );
         }
+    }
+}
+
+#[test]
+fn cartridge_manifest_bundled_files_are_unique_ccc_names() {
+    const BUNDLED_CARTRIDGES: usize = 89;
+    let bundled: Vec<&str> = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .filter_map(|rom| rom.bundled_file)
+        .collect();
+    assert_eq!(bundled.len(), BUNDLED_CARTRIDGES);
+    for (index, file) in bundled.iter().enumerate() {
+        assert!(file.ends_with(".ccc"), "{file}");
+        assert!(!file.contains('/'), "{file}");
+        assert!(!bundled[index + 1..].contains(file), "duplicate {file}");
     }
 }
 
@@ -99,7 +114,7 @@ fn identifies_known_rom_pak_content() {
     let bytes = bytes_with_crc_suffix(ANDRONE_SIZE, ANDRONE_CRC_SUFFIX);
 
     let known = identify_cartridge(&bytes).unwrap();
-    assert_eq!(known.desc, "Androne (1983) (Tandy) (26-3096)");
+    assert_eq!(known.title(), "Androne (1983) (Tandy) (26-3096)");
     assert_eq!(known.hardware, CartridgeHardware::RomPak);
 }
 
@@ -130,7 +145,7 @@ fn identifies_every_banked_rom_pak_fingerprint() {
 
     for &(size, crc32, desc) in EXPECTED_BANKED_ROM_PAKS {
         let known = identify_cartridge_fingerprint(size, crc32).unwrap();
-        assert_eq!(known.desc, desc);
+        assert_eq!(known.title(), desc);
         assert_eq!(known.hardware, CartridgeHardware::BankedRomPak);
     }
 }
@@ -145,7 +160,7 @@ fn identifies_every_games_master_fingerprint() {
 
     for &(size, crc32, desc) in EXPECTED_GMC {
         let known = identify_cartridge_fingerprint(size, crc32).unwrap();
-        assert_eq!(known.desc, desc);
+        assert_eq!(known.title(), desc);
         assert_eq!(known.hardware, CartridgeHardware::GamesMaster);
     }
 }

@@ -41,10 +41,38 @@ pub struct KnownCartridgeROM {
     pub size: usize,
     /// CRC32 (IEEE, as printed by XRoar).
     pub crc32: u32,
-    /// Human-readable title and release metadata.
-    pub desc: &'static str,
+    /// Title as printed on the cartridge label.
+    pub name: &'static str,
+    /// Release year, when known.
+    pub year: Option<u16>,
+    /// Publisher, when known.
+    pub vendor: Option<&'static str>,
+    /// Radio Shack catalog number (`26-xxxx`), for cartridges Tandy sold.
+    pub catalog: Option<&'static str>,
+    /// Dump-variant tag (XRoar's bracket suffix): "alt", "coco12", fix tags.
+    pub variant: Option<&'static str>,
     /// Cartridge implementation that runs this image.
     pub hardware: CartridgeHardware,
+    /// File name under the asset bundle's `cartridges/` directory, when the bundle ships this image.
+    pub bundled_file: Option<&'static str>,
+}
+
+impl KnownCartridgeROM {
+    /// The XRoar-derived one-line description, e.g. "Atom (1983) (Tandy) (26-3149)".
+    pub fn title(&self) -> String {
+        use std::fmt::Write as _;
+        let mut title = self.name.to_string();
+        if let Some(year) = self.year {
+            let _ = write!(title, " ({year})");
+        }
+        for field in [self.vendor, self.catalog].into_iter().flatten() {
+            let _ = write!(title, " ({field})");
+        }
+        if let Some(variant) = self.variant {
+            let _ = write!(title, " [{variant}]");
+        }
+        title
+    }
 }
 
 /// Every system ROM the emulator knows how to use, per MAME.
