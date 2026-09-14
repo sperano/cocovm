@@ -23,9 +23,9 @@ use coco_core::dmp::DmpHandle;
 use coco_core::printer::PaperExtent;
 use eframe::egui;
 
-use crate::paper_export;
-use crate::paper_render::{self, PAGE_HEIGHT_IN, RASTER_DPI};
+use crate::paper_render;
 
+mod export;
 mod scroll;
 
 #[cfg(feature = "perf")]
@@ -77,6 +77,7 @@ pub struct PaperWindow {
     /// One-shot request consumed by the scroll area: start at the roll's top instead of
     /// egui's default of sticking to the end.
     scroll_to_top: bool,
+    export: export::Controller,
     #[cfg(feature = "perf")]
     perf_scroll_request: Option<PerfScrollRequest>,
     #[cfg(feature = "perf")]
@@ -161,12 +162,17 @@ impl PaperWindow {
     /// Draws the window if open and a handle is attached; a no-op frame otherwise. Returns an
     /// error message to surface if a PNG/PDF export failed.
     pub fn ui(&mut self, ctx: &egui::Context) -> Option<String> {
+        let mut error = self.export.poll();
+        if self.export.is_active() {
+            ctx.request_repaint_after(export::EXPORT_REPAINT_INTERVAL);
+        }
         let shown = self.open && self.handle.is_some();
         if self.note_shown(shown) {
             self.scroll_to_top = true;
         }
-        let handle = self.handle.clone().filter(|_| shown)?;
-        let mut error: Option<String> = None;
+        let Some(handle) = self.handle.clone().filter(|_| shown) else {
+            return error;
+        };
 
         self.invalidate_dirty_pages(&handle);
         self.invalidate_on_green_bar_change();
@@ -306,7 +312,17 @@ impl PaperWindow {
             ui.separator();
             ui.checkbox(&mut self.green_bar, "Green bar");
             ui.separator();
-            self.export_menu(ui, handle, total_pages, error);
+            if let Some(export_error) = export::menu(
+                ui,
+                &mut self.export,
+                handle,
+                self.current_page,
+                total_pages,
+                self.green_bar,
+            ) {
+                *error = Some(export_error);
+            }
+            self.export.status(ui);
             ui.separator();
             // Nothing to tear off a blank roll.
             if ui
@@ -319,110 +335,6 @@ impl PaperWindow {
         ui.separator();
 
         self.fanfold_scroll_area(ui, &ctx, handle, total_pages);
-    }
-
-    /// The header row's "Export" menu button: PNG (current page or whole roll) and PDF (fanfold
-    /// with tractor strips, or trimmed 8.5x11) exports.
-    fn export_menu(
-        &mut self,
-        ui: &mut egui::Ui,
-        handle: &DmpHandle,
-        total_pages: u32,
-        error: &mut Option<String>,
-    ) {
-        ui.menu_button("Export", |ui| {
-            if ui.button("Save Page as PNG…").clicked() {
-                ui.close();
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PNG image", &["png"])
-                    .set_file_name(format!("page-{}.png", self.current_page + 1))
-                    .save_file()
-                {
-                    let img = paper_render::rasterize(
-                        handle,
-                        self.current_page as f32 * PAGE_HEIGHT_IN,
-                        PAGE_HEIGHT_IN,
-                        RASTER_DPI,
-                        self.green_bar,
-                    );
-                    if let Err(e) = paper_export::save_png(&img, &path) {
-                        *error = Some(e);
-                    }
-                }
-            }
-            if ui.button("Save Roll as PNG…").clicked() {
-                ui.close();
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PNG image", &["png"])
-                    .set_file_name("roll.png")
-                    .save_file()
-                {
-                    // The whole printed roll plus the trailing blank page, so the image ends on
-                    // a page boundary.
-                    let img = paper_render::rasterize(
-                        handle,
-                        0.0,
-                        total_pages as f32 * PAGE_HEIGHT_IN,
-                        RASTER_DPI,
-                        self.green_bar,
-                    );
-                    if let Err(e) = paper_export::save_png(&img, &path) {
-                        *error = Some(e);
-                    }
-                }
-            }
-            ui.separator();
-            if ui
-                .button("Save as PDF (fanfold, with tractor strips)…")
-                .clicked()
-            {
-                ui.close();
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PDF document", &["pdf"])
-                    .set_file_name("printout.pdf")
-                    .save_file()
-                {
-                    let pages: Vec<_> = (0..total_pages)
-                        .map(|page| {
-                            paper_render::rasterize(
-                                handle,
-                                page as f32 * PAGE_HEIGHT_IN,
-                                PAGE_HEIGHT_IN,
-                                RASTER_DPI,
-                                self.green_bar,
-                            )
-                        })
-                        .collect();
-                    if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
-                        *error = Some(e);
-                    }
-                }
-            }
-            if ui.button("Save as PDF (trimmed, 8.5×11)…").clicked() {
-                ui.close();
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PDF document", &["pdf"])
-                    .set_file_name("printout-trimmed.pdf")
-                    .save_file()
-                {
-                    let pages: Vec<_> = (0..total_pages)
-                        .map(|page| {
-                            let img = paper_render::rasterize(
-                                handle,
-                                page as f32 * PAGE_HEIGHT_IN,
-                                PAGE_HEIGHT_IN,
-                                RASTER_DPI,
-                                self.green_bar,
-                            );
-                            paper_export::crop_to_trimmed_width(&img, RASTER_DPI)
-                        })
-                        .collect();
-                    if let Err(e) = paper_export::save_pdf(&pages, RASTER_DPI, &path) {
-                        *error = Some(e);
-                    }
-                }
-            }
-        });
     }
 }
 

@@ -1,9 +1,29 @@
+from pathlib import Path
+import sys
 import unittest
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
 import report
 
 
 class ReportTests(unittest.TestCase):
+    def test_operation_measurements_group_named_attempts(self):
+        metrics = {
+            "scenario": {
+                "operation_events": [
+                    {"name": "save", "duration_seconds": 0.002, "success": True},
+                    {"name": "restore", "duration_seconds": 0.001, "success": False},
+                ]
+            }
+        }
+
+        groups = report.operation_measurements([(metrics, {})])
+
+        self.assertEqual(groups["save"][0]["duration_seconds"], 0.002)
+        self.assertFalse(groups["restore"][0]["success"])
+
     def test_disabled_native_telemetry_uses_field_accounting_and_shows_unknowns(self):
         metrics = {"stages": {}, "enabled": False, "measurement_duration_seconds": 2,
                    "scenario": {"fields_run": 120}}

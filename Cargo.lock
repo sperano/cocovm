@@ -817,6 +817,7 @@ dependencies = [
  "mc6809",
  "owo-colors",
  "pluralizer",
+ "png",
  "rfd",
  "serde",
  "serde_json",

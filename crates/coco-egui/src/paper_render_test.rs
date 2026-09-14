@@ -4,12 +4,16 @@ use super::*;
 struct FixedDots(Vec<(u32, u32)>);
 
 impl DotSource for FixedDots {
-    fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        self.0
-            .iter()
-            .copied()
-            .filter(|&(_, y)| y >= y0 && y <= y1)
-            .collect()
+    fn try_visit_dots_in_range(
+        &self,
+        y0: u32,
+        y1: u32,
+        visit: &mut dyn FnMut(u32, u32) -> ControlFlow<()>,
+    ) -> ControlFlow<()> {
+        for &(x, y) in self.0.iter().filter(|&&(_, y)| y >= y0 && y <= y1) {
+            visit(x, y)?;
+        }
+        ControlFlow::Continue(())
     }
 }
 

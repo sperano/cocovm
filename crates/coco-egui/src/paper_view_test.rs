@@ -1,4 +1,5 @@
 use super::*;
+use crate::paper_render::PAGE_HEIGHT_IN;
 use coco_core::bitbanger::PrinterSink;
 use coco_core::printer::Y_UNITS_PER_INCH;
 

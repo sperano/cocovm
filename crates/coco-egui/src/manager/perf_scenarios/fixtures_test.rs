@@ -66,17 +66,15 @@ fn snapshot_fixture_creates_missing_artifact_root_and_round_trips_real_vm() {
     let vm = app.entries[0].vm.as_mut().expect("real ROM booted");
     vm.machine.bus.ram[0] = MEMORY_SENTINEL;
     let saved_pc = vm.machine.cpu.pc;
-    assert!(
-        operate(&mut app, &config, 0)
-            .expect("first snapshot round trip")
-            .is_some()
-    );
+    operate(&mut app, &config, 0)
+        .expect("first snapshot round trip")
+        .outcome
+        .expect("first snapshot succeeds");
     assert!(root.join(SNAPSHOT_FILE).is_file());
-    assert!(
-        operate(&mut app, &config, 1)
-            .expect("replace existing snapshot")
-            .is_some()
-    );
+    operate(&mut app, &config, 1)
+        .expect("replace existing snapshot")
+        .outcome
+        .expect("replacement snapshot succeeds");
     let vm = app.entries[0].vm.as_ref().expect("VM remains live");
     assert_eq!(vm.machine.cpu.pc, saved_pc);
     assert_eq!(vm.machine.bus.ram[0], MEMORY_SENTINEL);
@@ -125,10 +123,10 @@ fn lifecycle_fixture_names_warm_cold_and_recovery_transitions() {
     ];
 
     for (step, (name, live, suspended)) in expected.into_iter().enumerate() {
-        let operation = operate(&mut app, &config, step as u64)
-            .expect("lifecycle operation succeeds")
-            .expect("lifecycle operation is recorded");
-        assert_eq!(operation.name, name);
+        let attempt =
+            operate(&mut app, &config, step as u64).expect("lifecycle operation is recorded");
+        attempt.outcome.expect("lifecycle operation succeeds");
+        assert_eq!(attempt.operation.name, name);
         assert_eq!(app.entries[0].vm.is_some(), live, "{name}");
         assert_eq!(app.entries[0].suspended, suspended, "{name}");
         if let Some(vm) = app.entries[0].vm.as_ref() {

@@ -19,6 +19,8 @@
 //!   (`dmp105-protocol.md` §1 Appendix G) share one exact integer grid.
 
 use std::collections::BTreeMap;
+use std::mem;
+use std::ops::ControlFlow;
 
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,12 @@ pub const Y_UNITS_PER_INCH: u32 = 432;
 /// number of these units — one common fixed-point grid all three pitches
 /// (and mid-line pitch changes) can share without rounding.
 pub const X_UNITS_PER_INCH: u32 = 3600;
+
+/// Conservative per-row allowance for the B-tree node, key, allocator
+/// metadata, and unused node slots that `size_of::<BTreeMap>()` cannot see.
+const BTREE_ROW_ALLOCATION_OVERHEAD_ESTIMATE: usize = 128;
+/// Covers the sparsely occupied root node independently of row count.
+const BTREE_BASE_ALLOCATION_OVERHEAD_ESTIMATE: usize = 512;
 
 /// Snapshot of how much paper has been printed on: the furthest dot row
 /// reached and how much ink has been laid down. The frontend can poll it every
@@ -56,9 +64,8 @@ pub struct PaperExtent {
 /// perforations) is entirely a frontend concern (T5).
 ///
 /// Storage is "Vec-of-bands": one row (`y`) maps to its list of marked `x`
-/// columns. A `BTreeMap` lets a frontend asking for a
-/// visible window (`dots_in_range`) gets an efficient range scan rather than
-/// a linear filter over the whole roll.
+/// columns. A `BTreeMap` lets the frontend scan a visible window efficiently
+/// instead of filtering the whole roll.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Paper {
     rows: BTreeMap<u32, Vec<u32>>,
@@ -93,13 +100,53 @@ impl Paper {
         }
     }
 
+    /// Estimates owned storage, including allocated dot-vector capacity and
+    /// a conservative allowance for each row's B-tree storage.
+    ///
+    /// This value is a memory-budget guard, not an allocator measurement.
+    pub fn estimated_owned_bytes(&self) -> usize {
+        self.rows.values().fold(
+            mem::size_of::<Self>().saturating_add(BTREE_BASE_ALLOCATION_OVERHEAD_ESTIMATE),
+            |total, dots| {
+                total
+                    .saturating_add(BTREE_ROW_ALLOCATION_OVERHEAD_ESTIMATE)
+                    .saturating_add(dots.capacity().saturating_mul(mem::size_of::<u32>()))
+            },
+        )
+    }
+
     /// Every dot in the inclusive row range `y0..=y1`, as `(x, y)` pairs — for
     /// rendering a visible scroll window without walking the whole roll.
     pub fn dots_in_range(&self, y0: u32, y1: u32) -> Vec<(u32, u32)> {
-        self.rows
-            .range(y0..=y1)
-            .flat_map(|(&y, xs)| xs.iter().map(move |&x| (x, y)))
-            .collect()
+        let mut dots = Vec::new();
+        self.visit_dots_in_range(y0, y1, |x, y| dots.push((x, y)));
+        dots
+    }
+
+    /// Calls `visit` for every dot in the inclusive row range `y0..=y1`.
+    ///
+    /// Rendering uses this form to avoid allocating a second, page-local copy
+    /// of the paper's dots.
+    pub fn visit_dots_in_range(&self, y0: u32, y1: u32, mut visit: impl FnMut(u32, u32)) {
+        let _ = self.try_visit_dots_in_range(y0, y1, |x, y| {
+            visit(x, y);
+            ControlFlow::Continue(())
+        });
+    }
+
+    /// Visits dots until `visit` requests an early break.
+    pub fn try_visit_dots_in_range(
+        &self,
+        y0: u32,
+        y1: u32,
+        mut visit: impl FnMut(u32, u32) -> ControlFlow<()>,
+    ) -> ControlFlow<()> {
+        for (&y, xs) in self.rows.range(y0..=y1) {
+            for &x in xs {
+                visit(x, y)?;
+            }
+        }
+        ControlFlow::Continue(())
     }
 
     /// The row range touched since the last call (or since construction), then

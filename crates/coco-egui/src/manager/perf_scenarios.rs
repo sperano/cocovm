@@ -109,9 +109,13 @@ impl ScenarioRun {
             return Ok(());
         }
         if now >= self.next_operation {
-            if let Some(operation) = fixtures::operate(app, &self.config, self.operations)? {
-                self.record_operation(app, operation)?;
+            if let Some(operation) = fixtures::operate(app, &self.config, self.operations) {
+                self.record_operation(app, &operation)?;
                 self.operations += 1;
+                if let Err(error) = operation.outcome {
+                    self.finish(app, ctx)?;
+                    return Err(error);
+                }
             }
             self.next_operation = now + OPERATION_INTERVAL;
         }
@@ -161,23 +165,18 @@ impl ScenarioRun {
     fn record_operation(
         &mut self,
         app: &ManagerApp,
-        operation: fixtures::PerformedOperation,
+        attempt: &fixtures::OperationAttempt,
     ) -> Result<(), String> {
         let entry = &app.entries[0];
+        let operation = &attempt.operation;
         let scroll = operation.scroll;
-        self.operation_events.push(json!({
-            "name": operation.name,
-            "operation": self.operations,
-            "cycle": operation.cycle,
-            "cycle_step": operation.cycle_step,
-            "unix_seconds": unix_seconds(),
-            "measurement_elapsed_seconds": self.measuring.expect("started").elapsed().as_secs_f64(),
-            "vm_live": entry.vm.is_some(),
-            "suspended": entry.suspended,
-            "scroll_surface": scroll.map(|scroll| scroll.surface),
-            "scroll_position": scroll.map(|scroll| scroll.position.name()),
-            "scroll_target_index": scroll.map(|scroll| scroll.target_index),
-        }));
+        self.operation_events.push(operation_event(
+            attempt,
+            self.operations,
+            self.measuring.expect("started").elapsed(),
+            entry.vm.is_some(),
+            entry.suspended,
+        ));
         if let Some(scroll) = scroll {
             if self.pending_scroll.is_some() {
                 return Err("previous performance scroll phase did not render".into());
@@ -380,6 +379,33 @@ fn unix_seconds() -> f64 {
         .as_secs_f64()
 }
 
+fn operation_event(
+    attempt: &fixtures::OperationAttempt,
+    operation_index: u64,
+    measurement_elapsed: Duration,
+    vm_live: bool,
+    suspended: bool,
+) -> serde_json::Value {
+    let operation = &attempt.operation;
+    let scroll = operation.scroll;
+    let outcome = match &attempt.outcome {
+        Ok(()) => json!("success"),
+        Err(error) => json!(error),
+    };
+    json!({
+        "name": operation.name, "operation": operation_index,
+        "cycle": operation.cycle, "cycle_step": operation.cycle_step,
+        "duration_seconds": attempt.duration.as_secs_f64(),
+        "success": attempt.outcome.is_ok(), "outcome": outcome,
+        "unix_seconds": unix_seconds(),
+        "measurement_elapsed_seconds": measurement_elapsed.as_secs_f64(),
+        "vm_live": vm_live, "suspended": suspended,
+        "scroll_surface": scroll.map(|scroll| scroll.surface),
+        "scroll_position": scroll.map(|scroll| scroll.position.name()),
+        "scroll_target_index": scroll.map(|scroll| scroll.target_index),
+    })
+}
+
 fn viewport_states(ctx: &egui::Context) -> serde_json::Value {
     ctx.input(|input| {
         input
@@ -397,3 +423,7 @@ fn viewport_states(ctx: &egui::Context) -> serde_json::Value {
             .into()
     })
 }
+
+#[cfg(test)]
+#[path = "perf_scenarios_test.rs"]
+mod tests;

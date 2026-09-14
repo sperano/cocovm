@@ -7,6 +7,7 @@ import statistics
 
 MEBIBYTE = 1024 * 1024
 NANOSECONDS_PER_MILLISECOND = 1_000_000
+MILLISECONDS_PER_SECOND = 1_000
 
 
 def value_range(values, digits=2):
@@ -63,6 +64,30 @@ def row(name, runs):
             f"{value_range(p99, 3)} | {value_range(missing, 0)} |")
 
 
+def operation_measurements(runs):
+    groups = {}
+    for metrics, _ in runs:
+        scenario = metrics.get("scenario", {})
+        if not isinstance(scenario, dict):
+            continue
+        for event in scenario.get("operation_events", []):
+            groups.setdefault(event["name"], []).append(event)
+    return groups
+
+
+def print_operation_table(groups):
+    if not groups:
+        return
+    print("\nOperation timings include work performed synchronously by each request.")
+    print("\n| Operation | Attempts | Failures | Duration ms |")
+    print("|---|---:|---:|---:|")
+    for name, events in groups.items():
+        durations = [event["duration_seconds"] * MILLISECONDS_PER_SECOND
+                     for event in events]
+        failures = sum(not event.get("success", True) for event in events)
+        print(f"| {name} | {len(events)} | {failures} | {value_range(durations, 3)} |")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
@@ -72,6 +97,7 @@ def main():
     print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for name, runs in measurements(args.directory).items():
         print(row(name, runs))
+        print_operation_table(operation_measurements(runs))
 
 
 if __name__ == "__main__":

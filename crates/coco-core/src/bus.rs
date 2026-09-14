@@ -38,6 +38,8 @@ use regs::{
     OPEN_BUS, ROM_WINDOW_BASE,
 };
 
+const PAGE_OFFSET_MASK: usize = 0xFF;
+
 #[derive(Serialize, Deserialize)]
 pub struct SystemBus {
     /// Which machine this bus decodes addresses for. `Bus::read`/`Bus::write`
@@ -215,13 +217,15 @@ impl SystemBus {
 
     /// Physical RAM offset for a CPU address, masked to installed RAM.
     fn phys(&self, addr: u16) -> usize {
+        debug_assert!(self.ram.len().is_power_of_two());
+        let ram_mask = self.ram.len() - 1;
         // MC3: hold the $FE00 page constant at physical $7FE00 regardless of the MMU.
         if (CONSTANT_RAM_BASE..=CONSTANT_RAM_LAST).contains(&addr)
             && self.gime.init0 & gime::init0::MC3 != 0
         {
-            return (CONSTANT_RAM_PHYS | (addr as usize & 0xFF)) % self.ram.len();
+            return (CONSTANT_RAM_PHYS | (addr as usize & PAGE_OFFSET_MASK)) & ram_mask;
         }
-        self.gime.translate(addr) % self.ram.len()
+        self.gime.translate(addr) & ram_mask
     }
 
     /// True when `addr` reads ROM: the `$8000–$FDFF` window when ROM is mapped,

@@ -28,3 +28,28 @@ fn both_printers_resume_partial_commands_and_paper_after_serialization() {
         assert!(handle.paper_extent().dot_count > 0);
     }
 }
+
+#[test]
+fn paper_snapshot_is_independent_of_later_printer_changes() {
+    let mut handle = DmpHandle::new();
+    handle.write_byte(b'A');
+    let snapshot = handle.paper_snapshot();
+    let snapshot_extent = snapshot.extent();
+
+    handle.write_byte(b'B');
+
+    assert_eq!(snapshot.extent(), snapshot_extent);
+    assert!(handle.paper_extent().dot_count > snapshot_extent.dot_count);
+}
+
+#[test]
+fn paper_snapshot_limit_rejects_before_cloning_large_paper() {
+    let mut handle = DmpHandle::new();
+    handle.write_byte(b'A');
+    let limit_bytes = 0;
+
+    let error = handle.paper_snapshot_with_limit(limit_bytes).unwrap_err();
+
+    assert!(error.estimated_bytes > 0);
+    assert_eq!(error.limit_bytes, limit_bytes);
+}

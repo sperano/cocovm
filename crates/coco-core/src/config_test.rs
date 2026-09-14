@@ -6,6 +6,21 @@ fn default_config_is_valid() {
 }
 
 #[test]
+fn every_memory_size_has_a_power_of_two_byte_count() {
+    for memory in [
+        MemorySize::K4,
+        MemorySize::K16,
+        MemorySize::K32,
+        MemorySize::K64,
+        MemorySize::K128,
+        MemorySize::K512,
+        MemorySize::K2048,
+    ] {
+        assert!(memory.bytes().is_power_of_two(), "{memory:?}");
+    }
+}
+
+#[test]
 fn coco3_rejects_coco12_memory_sizes() {
     let cfg = MachineConfig {
         variant: MachineVariant::Coco3,
