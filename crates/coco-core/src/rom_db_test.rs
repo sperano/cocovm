@@ -56,6 +56,8 @@ fn cartridge_manifest_has_expected_counts() {
     const COCOVM_ADDITIONS: usize = 1;
     const BANKED_ROM_PAKS: usize = 4;
     const GMC_CARTRIDGES: usize = 3;
+    const COCO3_ONLY: usize = 14;
+    const COCO12_ONLY: usize = 2;
 
     assert_eq!(
         KNOWN_CARTRIDGE_ROMS.len(),
@@ -75,6 +77,55 @@ fn cartridge_manifest_has_expected_counts() {
             .count(),
         GMC_CARTRIDGES
     );
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS
+            .iter()
+            .filter(|rom| rom.machine == CartridgeMachine::Coco3)
+            .count(),
+        COCO3_ONLY
+    );
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS
+            .iter()
+            .filter(|rom| rom.machine == CartridgeMachine::Coco12)
+            .count(),
+        COCO12_ONLY
+    );
+}
+
+#[test]
+fn cartridge_machine_supports_matches_family() {
+    use crate::config::MachineVariant;
+    for variant in MachineVariant::ALL {
+        assert!(CartridgeMachine::Any.supports(variant), "{variant:?}");
+        assert_eq!(
+            CartridgeMachine::Coco3.supports(variant),
+            variant == MachineVariant::Coco3,
+            "{variant:?}"
+        );
+        assert_eq!(
+            CartridgeMachine::Coco12.supports(variant),
+            variant != MachineVariant::Coco3,
+            "{variant:?}"
+        );
+    }
+}
+
+#[test]
+fn coco3_only_titles_are_tagged() {
+    let coco3: Vec<&str> = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .filter(|rom| rom.machine == CartridgeMachine::Coco3)
+        .map(|rom| rom.name)
+        .collect();
+    for title in ["Thexder", "Predator", "RoboCop", "Castle of Tharoggad"] {
+        assert!(coco3.contains(&title), "{title}");
+    }
+    let daggorath = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .find(|rom| rom.name == "Dungeons of Daggorath")
+        .unwrap();
+    assert_eq!(daggorath.machine, CartridgeMachine::Any);
 }
 
 #[test]

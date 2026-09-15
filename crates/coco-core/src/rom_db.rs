@@ -11,6 +11,8 @@ mod cartridges;
 
 pub use cartridges::KNOWN_CARTRIDGE_ROMS;
 
+use crate::config::MachineVariant;
+
 /// One known-good dump from MAME's manifest.
 #[derive(Debug, PartialEq, Eq)]
 pub struct KnownROM {
@@ -34,6 +36,38 @@ pub enum CartridgeHardware {
     GamesMaster,
 }
 
+/// Which machine family a known cartridge image needs, per MAME's
+/// `coco_cart.xml` compatibility tags cross-checked against XRoar's `rom.c`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CartridgeMachine {
+    /// Runs on every CoCo, or detects the machine itself (Mind Roll, Tetris).
+    Any,
+    /// CoCo 1/2 build of a title that has a separate CoCo 3 dump.
+    Coco12,
+    /// Needs the CoCo 3 (GIME video, 128K).
+    Coco3,
+}
+
+impl CartridgeMachine {
+    /// Whether an image with this requirement runs on `variant`.
+    pub fn supports(self, variant: MachineVariant) -> bool {
+        match self {
+            CartridgeMachine::Any => true,
+            CartridgeMachine::Coco12 => variant != MachineVariant::Coco3,
+            CartridgeMachine::Coco3 => variant == MachineVariant::Coco3,
+        }
+    }
+
+    /// Short UI label ("CoCo 3", "CoCo 1/2"); none when any machine will do.
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            CartridgeMachine::Any => None,
+            CartridgeMachine::Coco12 => Some("CoCo 1/2"),
+            CartridgeMachine::Coco3 => Some("CoCo 3"),
+        }
+    }
+}
+
 /// One known CoCo cartridge ROM image.
 #[derive(Debug, PartialEq, Eq)]
 pub struct KnownCartridgeROM {
@@ -53,6 +87,8 @@ pub struct KnownCartridgeROM {
     pub variant: Option<&'static str>,
     /// Cartridge implementation that runs this image.
     pub hardware: CartridgeHardware,
+    /// Machine family the image needs.
+    pub machine: CartridgeMachine,
     /// File name under the asset bundle's `cartridges/` directory, when the bundle ships this image.
     pub bundled_file: Option<&'static str>,
 }
