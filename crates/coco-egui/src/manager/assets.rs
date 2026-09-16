@@ -12,8 +12,7 @@ use eframe::egui;
 use super::{DETAIL_SECTION_GAP, ManagerApp, WINDOW_SIZE};
 
 /// What the dialog asks before fetching anything.
-const PROMPT_TEXT: &str =
-    "CocoVM needs to download some copyrighted assets (ROMs, images) to function properly.";
+const PROMPT_TEXT: &str = "CocoVM needs to download some copyrighted assets (ROMs, cartridges, images) to function properly.";
 
 /// Window size while the dialog is the only content.
 pub(super) const DIALOG_WINDOW_SIZE: [f32; 2] = [500.0, 190.0];
@@ -56,7 +55,7 @@ impl AssetDialog {
     /// Fold a finished download thread's result back in. Returns whether
     /// the download completed successfully (the dialog's work is done). An
     /// unpack that still leaves files missing — a stale bundle behind a new
-    /// [`crate::startup::BUNDLED_ROMS`] entry — reads as a failure, not a
+    /// [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry — reads as a failure, not a
     /// silent close followed by a re-prompt on every start.
     fn poll(&mut self) -> bool {
         let Some(rx) = &self.job else {
