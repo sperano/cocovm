@@ -43,8 +43,8 @@ pub const DEFAULT_HOLD_FIELDS: u32 = 2;
 pub const MAX_PEEK_LEN: u16 = 4096;
 /// Most bytes a single `poke` may write.
 pub const MAX_POKE_LEN: usize = 4096;
-/// Most characters a single `type_text` may queue — about a minute of
-/// typing at the app's tap timing, so the deferred reply stays bounded.
+/// Most characters a single `type_text` may queue — about a minute of typing
+/// at the nominal tap pace, so the deferred reply stays bounded.
 pub const MAX_TYPE_TEXT_CHARS: usize = 600;
 /// Most accepted client sockets served at once. Additional clients receive
 /// HTTP 503 without getting a connection thread.
@@ -59,7 +59,8 @@ pub(crate) const CONTROL_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(5 
 /// Bounds reads from slow clients and writes to clients that stop reading.
 pub(crate) const CONTROL_IO_TIMEOUT: Duration = Duration::from_secs(30);
 /// Longest a connection thread waits for the UI to answer an accepted call.
-/// This exceeds the longest valid deferred operation and its margin.
+/// This exceeds the nominal length of any deferred operation and its margin;
+/// a `type_text` into a target that stalls between keys can still hit it.
 pub(crate) const CONTROL_REPLY_TIMEOUT: Duration = Duration::from_secs(90);
 /// Called from the accept/connection threads whenever a request lands, so a
 /// frame loop that only repaints on events wakes up to service it.

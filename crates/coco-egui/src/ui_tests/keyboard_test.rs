@@ -22,8 +22,13 @@ fn is_down(app: &CocoApp, pos: kbd::Pos) -> bool {
     app.machine.bus.keyboard.sense(!(1 << pos.1)) & (1 << pos.0) == 0
 }
 
+/// Advance a tap with the paused machine standing in for a ROM that scans
+/// the keyboard every field.
 fn advance_tap(app: &mut CocoApp) {
     app.type_ahead.advance(&mut app.machine.bus.keyboard);
+    for _ in 0..typeahead::TAP_READS_TO_REGISTER {
+        typeahead::tests::scan_matrix(&mut app.machine.bus.keyboard);
+    }
 }
 
 #[test]

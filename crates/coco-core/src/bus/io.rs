@@ -84,8 +84,9 @@ impl SystemBus {
         match addr {
             IO_BASE..=PIA0_LAST => {
                 // Refresh port A's input pins (keyboard rows + joystick) before the PIA read.
-                self.pia0.a.input = self.pia0_pa_pins();
-                self.pia0.read((addr & 0x03) as u8)
+                let reg = (addr & 0x03) as u8;
+                self.pia0.a.input = self.pia0_pa_read(reg);
+                self.pia0.read(reg)
             }
             PIA1_BASE..=PIA1_LAST => {
                 self.pia1.a.input = self.pia1_pa_pins();

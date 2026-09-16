@@ -16,6 +16,9 @@ enum Outcome {
     /// Rename transactions retarget pending requests before re-sorting.
     Gone(String),
     Waiting,
+    /// Still waiting, but a `type_text` burst has drained to this many taps
+    /// since the last check.
+    Progressed(usize),
 }
 
 impl ManagerApp {
@@ -36,7 +39,7 @@ impl ManagerApp {
         // `mem::take` rather than `self.pending.drain(..)`: the loop body's
         // `self.check_pending` needs to borrow `self` immutably, which a
         // live draining borrow of `self.pending` would conflict with.
-        for pending in std::mem::take(&mut self.pending) {
+        for mut pending in std::mem::take(&mut self.pending) {
             if pending.is_abandoned() {
                 continue;
             }
@@ -48,6 +51,10 @@ impl ManagerApp {
                     pending.reply.reply(Response::Err(msg));
                 }
                 Outcome::Waiting => still_pending.push(pending),
+                Outcome::Progressed(remaining) => {
+                    pending.note_progress(remaining, now);
+                    still_pending.push(pending);
+                }
             }
         }
         self.pending = still_pending;
@@ -71,7 +78,12 @@ impl ManagerApp {
             PendingCondition::WaitUntilField(target) => vm.fields_run >= target,
         };
         if done {
-            Outcome::Done
+            return Outcome::Done;
+        }
+        let remaining = vm.remote_type_ahead.queue.len();
+        let typing = matches!(pending.condition, PendingCondition::TypeTextDrained);
+        if typing && remaining < pending.remaining_taps {
+            Outcome::Progressed(remaining)
         } else {
             Outcome::Waiting
         }

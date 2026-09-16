@@ -185,6 +185,44 @@ fn times_out_once_the_deadline_has_passed() {
 }
 
 #[test]
+fn type_text_past_its_deadline_lives_on_while_the_burst_still_drains() {
+    let mut manager = manager(vec![running_entry("live")]);
+    manager.entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .start_remote_typing("AB")
+        .expect("typing succeeds");
+    let (reply, rx) = reply_pair();
+
+    let mut pending = PendingControl::new(
+        reply,
+        "live".to_string(),
+        PendingCondition::TypeTextDrained,
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    );
+    let now = Instant::now();
+    pending.deadline = now - Duration::from_secs(1);
+    // Two taps queued: fewer than at the last check, so the burst progressed.
+    pending.remaining_taps = 3;
+    manager.pending.push(pending);
+    manager.resolve_control_pending_at(&egui::Context::default(), now);
+    assert_eq!(manager.pending.len(), 1, "progress renews the deadline");
+    assert_eq!(manager.pending[0].remaining_taps, 2);
+    assert!(manager.pending[0].deadline >= now + crate::manager::control::CONTROL_DEFER_MARGIN);
+
+    // No further progress once the renewed deadline passes: it times out.
+    let later = now + crate::manager::control::CONTROL_DEFER_MARGIN + Duration::from_secs(1);
+    manager.resolve_control_pending_at(&egui::Context::default(), later);
+    match rx.recv().expect("reply sent") {
+        Response::Err(msg) => assert!(msg.contains("timed out")),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert!(manager.pending.is_empty());
+}
+
+#[test]
 fn paused_vm_waits_for_its_deadline_without_an_immediate_poll() {
     const UNTIL_DEADLINE: Duration = Duration::from_secs(5);
 
