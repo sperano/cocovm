@@ -11,9 +11,13 @@
 //! stock BASIC prompt that resolves to pure green (`#00FF00`) on black. The CSS
 //! orange colour set is TODO (`§6`); GIME native text/graphics live in `gime_video`.
 
+mod artifact;
 mod graphics;
 mod text;
 
+pub use artifact::{
+    RG6_BYTES_PER_LINE, RG6_PIXELS_PER_LINE, RG6ArtifactDecoder, RG6ArtifactEdges, RG6ArtifactPhase,
+};
 pub use graphics::{
     LEGACY_GFX_LINES_PER_ROW, MAX_VDG_COLORS, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, VDGGraphicsMode,
     decode_vdg_graphics, paint_legacy_graphics_line, render_graphics, render_sampled_graphics,

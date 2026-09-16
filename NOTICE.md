@@ -27,10 +27,10 @@ permissive code may be combined into a GPL work), never the reverse — keep
 
 ## Bundled third-party material
 
-Several tables and CPU cores were copied or ported from **MAME**. The source
-files are per-file licensed **BSD-3-Clause**, with the copyright holder noted
-per entry below (verified against the file headers 2026-07-01 — an earlier
-version of this notice recorded the font/palette entries as
+Several tables, decoders, and CPU cores were copied or ported from **MAME**.
+The source files are per-file licensed **BSD-3-Clause**, with the copyright
+holder noted per entry below (verified against the file headers 2026-07-01 —
+an earlier version of this notice recorded the font/palette entries as
 GPL-2.0-or-later, which was wrong, and later misattributed the TMS7000
 entries to Nathan Woods). BSD-3-Clause is GPL-compatible; the attribution
 below satisfies its notice requirement.
@@ -38,6 +38,12 @@ below satisfies its notice requirement.
 - **MC6847 fonts (`crates/coco-core/src/font6847.rs`)** — `vdg_fontdata8x12`
   and `vdg_t1_fontdata8x12` from `src/devices/video/mc6847.cpp`, copyright
   **Nathan Woods** (MAME project).
+- **MC6847 NTSC RG6 artifact decoder
+  (`crates/coco-core/src/video/artifact.rs`)** — a port of
+  `mc6847_base_device::artifacter` from `src/devices/video/mc6847.cpp` and
+  `mc6847.h` (artifact color factors, correction lookup, six-pixel
+  neighborhood, phase selection, and scaling), which are BSD-3-Clause,
+  copyright **Nathan Woods** (MAME project).
 - **GIME fonts (`crates/coco-core/src/font_gime.rs`)** —
   `gime_device::hires_font` and `gime_device::lowres_font` from
   `src/mame/trs/gime.cpp`, copyright **Nathan Woods** (MAME project).
