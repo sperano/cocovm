@@ -148,4 +148,7 @@ pub const KNOWN_CARTRIDGE_ROMS: &[KnownCartridgeROM] = &[
     rom!(0xabe7bb9e, 0x4000, GamesMaster, Any, "Blockdown", Some(2021), Some("Teipen Mwnci"), None, None, None),
     rom!(0x58716b7f, 0x10000, GamesMaster, Any, "Dunjunz", Some(2020), Some("Teipen Mwnci"), None, None, None),
     rom!(0x808b2a0a, 0x2000, GamesMaster, Any, "CyD Games Master Cartridge ROM", None, None, None, None, Some("cyd_gmc.ccc")),
+    // Color Computer Archive dumps XRoar does not fingerprint.
+    rom!(0x23e3869f, 0x2000, RomPak, Any, "Canyon Climber", Some(1982), Some("Tandy"), Some("26-3089"), Some("alt"), Some("Canyon Climber (1982) (26-3089) (Tandy) (alt).ccc")),
+    rom!(0x9c241cdc, 0x8000, BankedRomPak, Any, "Mind Roll", Some(1988), Some("Tandy"), Some("26-3100"), Some("hack"), Some("Mind-Roll (1988) (26-3100) (Tandy) (Coco 1-2) (Coco 3) (hack).ccc")),
 ];
