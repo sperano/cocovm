@@ -100,7 +100,7 @@ fn cyd_gmc_is_detected_for_direct_and_mpi_use() {
     let dir = TempDir::new("cyd-gmc");
     let path = write_crc_image(
         &dir,
-        "cyd_gmc.rom",
+        "cyd_gmc.ccc",
         STANDARD_CARTRIDGE_IMAGE_SIZE,
         CYD_GMC_CRC_SUFFIX,
     );

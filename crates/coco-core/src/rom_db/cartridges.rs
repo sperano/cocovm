@@ -147,5 +147,5 @@ pub const KNOWN_CARTRIDGE_ROMS: &[KnownCartridgeROM] = &[
     rom!(0x878906fe, 0x8000, BankedRomPak, Any, "Mind Roll", Some(1988), Some("Tandy"), Some("26-3100"), Some("f plane1"), None),
     rom!(0xabe7bb9e, 0x4000, GamesMaster, Any, "Blockdown", Some(2021), Some("Teipen Mwnci"), None, None, None),
     rom!(0x58716b7f, 0x10000, GamesMaster, Any, "Dunjunz", Some(2020), Some("Teipen Mwnci"), None, None, None),
-    rom!(0x808b2a0a, 0x2000, GamesMaster, Any, "CyD Games Master Cartridge ROM", None, None, None, None, None),
+    rom!(0x808b2a0a, 0x2000, GamesMaster, Any, "CyD Games Master Cartridge ROM", None, None, None, None, Some("cyd_gmc.ccc")),
 ];
