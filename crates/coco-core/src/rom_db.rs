@@ -1,7 +1,7 @@
 //! Known-ROM manifests for system firmware and CoCo cartridge images. System
 //! ROM CRC32s come from MAME's ROM definitions (`src/mame/trs/coco3.cpp`,
-//! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`, master as
-//! of 2026-07). [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
+//! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`,
+//! `src/devices/bus/coco/coco_rs232.cpp`, master as of 2026-07). [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
 //!
 //! Validation is advisory: an unrecognized or mismatching image still boots
 //! (patched and homebrew ROMs are legitimate), but the loader can tell the
@@ -190,6 +190,24 @@ pub const KNOWN_ROMS: &[KnownROM] = &[
         size: 0x2000,
         crc32: 0x0b9c5415,
         desc: "Disk Extended Color BASIC 1.1 (FD-502)",
+    },
+    KnownROM {
+        file: "hdbdw3bck.rom",
+        size: 0x2000,
+        crc32: 0x867a3f42,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 1/2)",
+    },
+    KnownROM {
+        file: "hdbdw3bc3.rom",
+        size: 0x2000,
+        crc32: 0x309a9efd,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 3)",
+    },
+    KnownROM {
+        file: "rs232.rom",
+        size: 0x1000,
+        crc32: 0xd990e1f9,
+        desc: "Deluxe RS-232 Program Pak EPROM (26-2226)",
     },
 ];
 
