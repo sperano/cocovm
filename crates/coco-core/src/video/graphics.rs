@@ -60,6 +60,13 @@ pub struct VDGGraphicsMode {
     pub logical_w: usize,
 }
 
+impl VDGGraphicsMode {
+    /// Whether this is the MC6847's 256×192 one-bit RG6 mode (PMODE 4).
+    pub const fn is_rg6(&self) -> bool {
+        self.logical_w == ACTIVE_W && self.rows == ACTIVE_H && self.bpp == 1
+    }
+}
+
 /// Decode the MC6847 graphics mode selected by PIA1 $FF22 GM2-0.
 ///
 /// All four geometry/decode fields belong to the VDG. The discrete MC6883

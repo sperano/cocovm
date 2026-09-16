@@ -3,8 +3,9 @@
 
 use mc6809::Bus;
 
-use crate::config::{MachineVariant, VDGVariant};
-use crate::{gime, gime_video, raster, video};
+use crate::config::{MachineVariant, VDGVariant, VideoStandard};
+use crate::gime::{self, MonitorType, vmode};
+use crate::{gime_video, raster, video};
 
 use super::{BYTES_PER_PIXEL, FB_HEIGHT, FB_WIDTH, Machine, TEXT_BORDER_COLOR};
 
@@ -153,6 +154,12 @@ impl Machine {
         }
 
         let palette = self.legacy_palette(css);
+        let artifact_phase = if ag {
+            let mode = video::decode_vdg_graphics(ff22);
+            self.coco3_rg6_artifact_phase(&mode)
+        } else {
+            None
+        };
         let active = &mut self.framebuffer
             [(row * raster::CANVAS_W + raster::NON_WIDE_BORDER_X) * BYTES_PER_PIXEL..]
             [..raster::NON_WIDE_ACTIVE_W * BYTES_PER_PIXEL];
@@ -164,13 +171,19 @@ impl Machine {
                 *slot = palette[reg];
             }
             let xscale = raster::NON_WIDE_ACTIVE_W / mode.logical_w;
-            video::paint_legacy_graphics_line(
-                &buf[..row_bytes],
-                &mode,
-                &colors[..indices.len()],
-                xscale,
-                active,
-            );
+            if let Some(phase) = artifact_phase {
+                let decoder = video::RG6ArtifactDecoder::new([colors[0], colors[1]], phase);
+                let edges = video::RG6ArtifactEdges::solid(border == colors[1]);
+                decoder.decode_scanline(&buf, edges, xscale, active);
+            } else {
+                video::paint_legacy_graphics_line(
+                    &buf[..row_bytes],
+                    &mode,
+                    &colors[..indices.len()],
+                    xscale,
+                    active,
+                );
+            }
         } else {
             let generator = video::AlphaGenerator::GIME;
             let xscale = raster::NON_WIDE_ACTIVE_W / (video::COLS * video::CELL_W);
@@ -192,6 +205,27 @@ impl Machine {
             scan.line_in_row = 0;
             scan.row_base += row_bytes;
         }
+    }
+
+    /// The live CoCo 3 artifact phase for this scanline, when its output path
+    /// carries NTSC composite RG6. Compatibility mode is already field-latched
+    /// by the caller; BPI and the monitor cable remain live per scanline.
+    fn coco3_rg6_artifact_phase(
+        &self,
+        mode: &video::VDGGraphicsMode,
+    ) -> Option<video::RG6ArtifactPhase> {
+        if self.config.variant != MachineVariant::Coco3
+            || self.config.video != VideoStandard::NTSC
+            || self.bus.gime.monitor != MonitorType::Composite
+            || !mode.is_rg6()
+        {
+            return None;
+        }
+        Some(if self.bus.gime.vmode & vmode::BPI == 0 {
+            video::RG6ArtifactPhase::Standard
+        } else {
+            video::RG6ArtifactPhase::Reverse
+        })
     }
 
     /// Render one video field into `framebuffer` at field end. Only CoCo 1/2
@@ -312,3 +346,7 @@ impl Machine {
         self.fb_height = FB_HEIGHT;
     }
 }
+
+#[cfg(test)]
+#[path = "render_test.rs"]
+mod tests;

@@ -1,3 +1,6 @@
+use coco_core::video::{
+    RG6_BYTES_PER_LINE, RG6_PIXELS_PER_LINE, RG6ArtifactDecoder, RG6ArtifactEdges, RG6ArtifactPhase,
+};
 use coco_core::{MachineConfig, MachineVariant, MonitorType};
 use eframe::egui;
 
@@ -221,6 +224,53 @@ fn process_bw_output_is_grey_everywhere() {
     let y = luma(255, 0, 0);
     let center = &frame.pixels[(4 * 8 + 4) * 4..][..4];
     assert_eq!(center[0], y, "bright-row pixel carries the luma");
+}
+
+#[test]
+fn tv_processing_keeps_artifact_chroma_only_on_color_sets() {
+    const BLACK: [u8; PX] = [0, 0, 0, u8::MAX];
+    const WHITE: [u8; PX] = [u8::MAX; PX];
+    let source = [0x55; RG6_BYTES_PER_LINE];
+    let decoder = RG6ArtifactDecoder::new([BLACK, WHITE], RG6ArtifactPhase::Standard);
+    let mut artifacts = vec![0; RG6_PIXELS_PER_LINE * PX];
+    decoder.decode_scanline(&source, RG6ArtifactEdges::solid(false), 1, &mut artifacts);
+    let settings = TVSettings {
+        scanline_pct: 0,
+        ..quiet()
+    };
+    let mut processor = Processor::default();
+    let color = processor
+        .process(
+            Display::TV(TV::Color),
+            settings,
+            0,
+            RG6_PIXELS_PER_LINE,
+            &artifacts,
+        )
+        .pixels
+        .to_vec();
+    let bw = processor
+        .process(
+            Display::TV(TV::BW),
+            settings,
+            0,
+            RG6_PIXELS_PER_LINE,
+            &artifacts,
+        )
+        .pixels
+        .to_vec();
+
+    assert!(
+        color
+            .chunks_exact(PX)
+            .any(|pixel| pixel[0] != pixel[1] || pixel[1] != pixel[2]),
+        "color TV must retain artifact chroma"
+    );
+    assert!(
+        bw.chunks_exact(PX)
+            .all(|pixel| pixel[0] == pixel[1] && pixel[1] == pixel[2]),
+        "B&W TV must collapse artifact colors to luma"
+    );
 }
 
 // ---- Display resolution table ----
