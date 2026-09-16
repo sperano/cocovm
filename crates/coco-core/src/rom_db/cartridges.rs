@@ -20,7 +20,7 @@
 // Orchestra-90, Disk BASIC) ship as `roms/*.rom` and are omitted here, so
 // XRoar's Deluxe RS-232 Program Pak row is dropped.
 
-use super::{CartridgeHardware, CartridgeMachine, KnownCartridgeROM};
+use super::{CartridgeHardware, KnownCartridgeROM, MachineFamily};
 
 // Arguments: crc32, size, hardware, machine, name, year, vendor, catalog
 // (Radio Shack 26-xxxx number), dump-variant tag, file name in the asset
@@ -37,7 +37,7 @@ macro_rules! rom {
             catalog: $catalog,
             variant: $variant,
             hardware: CartridgeHardware::$hardware,
-            machine: CartridgeMachine::$machine,
+            machine: MachineFamily::$machine,
             bundled_file: $bundled,
         }
     };

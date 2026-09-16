@@ -26,6 +26,8 @@ pub struct KnownROM {
     /// CRC32 (IEEE, as printed by MAME's `CRC(...)`).
     pub crc32: u32,
     pub desc: &'static str,
+    /// Machine family the image needs.
+    pub machine: MachineFamily,
 }
 
 /// Cartridge implementation used to run a known ROM image.
@@ -39,34 +41,35 @@ pub enum CartridgeHardware {
     GamesMaster,
 }
 
-/// Which machine family a known cartridge image needs, per MAME's
-/// `coco_cart.xml` compatibility tags cross-checked against XRoar's `rom.c`.
+/// Which machine family a known ROM image needs. Cartridge rows follow
+/// MAME's `coco_cart.xml` compatibility tags cross-checked against XRoar's
+/// `rom.c`; system ROM rows follow the firmware's own target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CartridgeMachine {
+pub enum MachineFamily {
     /// Runs on every CoCo, or detects the machine itself (Mind Roll, Tetris).
     Any,
-    /// CoCo 1/2 build of a title that has a separate CoCo 3 dump.
+    /// CoCo 1/2 only: its BASIC, or a build of a title with a separate CoCo 3 dump.
     Coco12,
     /// Needs the CoCo 3 (GIME video, 128K).
     Coco3,
 }
 
-impl CartridgeMachine {
+impl MachineFamily {
     /// Whether an image with this requirement runs on `variant`.
     pub fn supports(self, variant: MachineVariant) -> bool {
         match self {
-            CartridgeMachine::Any => true,
-            CartridgeMachine::Coco12 => variant != MachineVariant::Coco3,
-            CartridgeMachine::Coco3 => variant == MachineVariant::Coco3,
+            MachineFamily::Any => true,
+            MachineFamily::Coco12 => variant != MachineVariant::Coco3,
+            MachineFamily::Coco3 => variant == MachineVariant::Coco3,
         }
     }
 
     /// Short UI label ("CoCo 3", "CoCo 1/2"); none when any machine will do.
     pub fn label(self) -> Option<&'static str> {
         match self {
-            CartridgeMachine::Any => None,
-            CartridgeMachine::Coco12 => Some("CoCo 1/2"),
-            CartridgeMachine::Coco3 => Some("CoCo 3"),
+            MachineFamily::Any => None,
+            MachineFamily::Coco12 => Some("CoCo 1/2"),
+            MachineFamily::Coco3 => Some("CoCo 3"),
         }
     }
 }
@@ -91,7 +94,7 @@ pub struct KnownCartridgeROM {
     /// Cartridge implementation that runs this image.
     pub hardware: CartridgeHardware,
     /// Machine family the image needs.
-    pub machine: CartridgeMachine,
+    pub machine: MachineFamily,
     /// File name under the asset bundle's `cartridges/` directory, when the bundle ships this image.
     pub bundled_file: Option<&'static str>,
 }
@@ -121,114 +124,133 @@ pub const KNOWN_ROMS: &[KnownROM] = &[
         size: 0x8000,
         crc32: 0xb4c88d6c,
         desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)",
+        machine: MachineFamily::Coco3,
     },
     KnownROM {
         file: "coco3p.rom",
         size: 0x8000,
         crc32: 0xff050d80,
         desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)",
+        machine: MachineFamily::Coco3,
     },
     KnownROM {
         file: "bas10.rom",
         size: 0x2000,
         crc32: 0x00b50aaa,
         desc: "Color BASIC 1.0 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "bas11.rom",
         size: 0x2000,
         crc32: 0x6270955a,
         desc: "Color BASIC 1.1 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "bas12.rom",
         size: 0x2000,
         crc32: 0x54368805,
         desc: "Color BASIC 1.2 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "bas13.rom",
         size: 0x2000,
         crc32: 0xd8f4d15e,
         desc: "Color BASIC 1.3 (CoCo 2B)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "extbas10.rom",
         size: 0x2000,
         crc32: 0x6111a086,
         desc: "Extended Color BASIC 1.0 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "extbas11.rom",
         size: 0x2000,
         crc32: 0xa82a6254,
         desc: "Extended Color BASIC 1.1 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "sp0256-al2.rom",
         size: 0x800,
         crc32: 0xb504ac15,
         desc: "SP0256-AL2 allophone ROM (Sound/Speech Cartridge)",
+        machine: MachineFamily::Any,
     },
     KnownROM {
         file: "ssc-tms7040.rom",
         size: 0x1000,
         crc32: 0xa8e2eb98,
         desc: "Sound/Speech Cartridge TMS7040 firmware (PIC-7040-510)",
+        machine: MachineFamily::Any,
     },
     KnownROM {
         file: "orch90.rom",
         size: 0x2000,
         crc32: 0x15fb39af,
         desc: "Orchestra-90/CC (26-3143)",
+        machine: MachineFamily::Any,
     },
     KnownROM {
         file: "disk10.rom",
         size: 0x2000,
         crc32: 0xb4f9968e,
         desc: "Disk Extended Color BASIC 1.0 (FD-502)",
+        machine: MachineFamily::Any,
     },
     KnownROM {
         file: "disk11.rom",
         size: 0x2000,
         crc32: 0x0b9c5415,
         desc: "Disk Extended Color BASIC 1.1 (FD-502)",
+        machine: MachineFamily::Any,
     },
     KnownROM {
         file: "hdbdw3bck.rom",
         size: 0x2000,
         crc32: 0x867a3f42,
         desc: "HDB-DOS DriveWire 3 Becker (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "hdbdw3bc3.rom",
         size: 0x2000,
         crc32: 0x309a9efd,
         desc: "HDB-DOS DriveWire 3 Becker (CoCo 3)",
+        machine: MachineFamily::Coco3,
     },
     KnownROM {
         file: "rs232.rom",
         size: 0x1000,
         crc32: 0xd990e1f9,
         desc: "Deluxe RS-232 Program Pak EPROM (26-2226)",
+        machine: MachineFamily::Any,
     },
     KnownROM {
         file: "rgbdos.rom",
         size: 0x2000,
         crc32: 0xe548c0a3,
         desc: "RGB-DOS (CoCo 3, VCC build)",
+        machine: MachineFamily::Coco3,
     },
     KnownROM {
         file: "hdbdw3bck_w-offset_5A000.rom",
         size: 0x2000,
         crc32: 0xcb690587,
         desc: "HDB-DOS DriveWire 3 Becker (CoCo 1/2), drive 0 at sector $5A000 (VCC build)",
+        machine: MachineFamily::Coco12,
     },
     KnownROM {
         file: "hdbdw3bc3_w-offset_5A000.rom",
         size: 0x2000,
         crc32: 0x7d89a438,
         desc: "HDB-DOS DriveWire 3 Becker (CoCo 3), drive 0 at sector $5A000 (VCC build)",
+        machine: MachineFamily::Coco3,
     },
 ];
 

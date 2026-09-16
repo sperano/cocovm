@@ -30,6 +30,23 @@ fn manifest_has_no_duplicate_names_or_crcs() {
 }
 
 #[test]
+fn system_roms_are_tagged_with_their_machine() {
+    let family = |file: &str| {
+        KNOWN_ROMS
+            .iter()
+            .find(|rom| rom.file == file)
+            .unwrap_or_else(|| panic!("{file} not in KNOWN_ROMS"))
+            .machine
+    };
+    assert_eq!(family("coco3.rom"), MachineFamily::Coco3);
+    assert_eq!(family("bas12.rom"), MachineFamily::Coco12);
+    assert_eq!(family("extbas11.rom"), MachineFamily::Coco12);
+    assert_eq!(family("disk11.rom"), MachineFamily::Any);
+    assert_eq!(family("hdbdw3bck.rom"), MachineFamily::Coco12);
+    assert_eq!(family("hdbdw3bc3.rom"), MachineFamily::Coco3);
+}
+
+#[test]
 fn validate_flags_corrupt_known_name() {
     let bytes = vec![0u8; 0x2000];
     match validate("bas12.rom", &bytes) {
@@ -80,14 +97,14 @@ fn cartridge_manifest_has_expected_counts() {
     assert_eq!(
         KNOWN_CARTRIDGE_ROMS
             .iter()
-            .filter(|rom| rom.machine == CartridgeMachine::Coco3)
+            .filter(|rom| rom.machine == MachineFamily::Coco3)
             .count(),
         COCO3_ONLY
     );
     assert_eq!(
         KNOWN_CARTRIDGE_ROMS
             .iter()
-            .filter(|rom| rom.machine == CartridgeMachine::Coco12)
+            .filter(|rom| rom.machine == MachineFamily::Coco12)
             .count(),
         COCO12_ONLY
     );
@@ -97,14 +114,14 @@ fn cartridge_manifest_has_expected_counts() {
 fn cartridge_machine_supports_matches_family() {
     use crate::config::MachineVariant;
     for variant in MachineVariant::ALL {
-        assert!(CartridgeMachine::Any.supports(variant), "{variant:?}");
+        assert!(MachineFamily::Any.supports(variant), "{variant:?}");
         assert_eq!(
-            CartridgeMachine::Coco3.supports(variant),
+            MachineFamily::Coco3.supports(variant),
             variant == MachineVariant::Coco3,
             "{variant:?}"
         );
         assert_eq!(
-            CartridgeMachine::Coco12.supports(variant),
+            MachineFamily::Coco12.supports(variant),
             variant != MachineVariant::Coco3,
             "{variant:?}"
         );
@@ -115,7 +132,7 @@ fn cartridge_machine_supports_matches_family() {
 fn coco3_only_titles_are_tagged() {
     let coco3: Vec<&str> = KNOWN_CARTRIDGE_ROMS
         .iter()
-        .filter(|rom| rom.machine == CartridgeMachine::Coco3)
+        .filter(|rom| rom.machine == MachineFamily::Coco3)
         .map(|rom| rom.name)
         .collect();
     for title in ["Thexder", "Predator", "RoboCop", "Castle of Tharoggad"] {
@@ -125,7 +142,7 @@ fn coco3_only_titles_are_tagged() {
         .iter()
         .find(|rom| rom.name == "Dungeons of Daggorath")
         .unwrap();
-    assert_eq!(daggorath.machine, CartridgeMachine::Any);
+    assert_eq!(daggorath.machine, MachineFamily::Any);
 }
 
 #[test]
