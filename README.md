@@ -36,7 +36,7 @@ log_level = "warn"
 control_port = 6809
 
 # first-run asset bundle URL (default: the bundled release URL)
-assets_url = "https://assets.spe.quebec/cocovm-assets-v3.tgz"
+assets_url = "https://assets.spe.quebec/cocovm/cocovm-assets-v8.tgz"
 
 # draw every toolbar as icon-only, caption moved into hover text (default: false)
 toolbar_icons_only = false
