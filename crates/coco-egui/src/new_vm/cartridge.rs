@@ -40,9 +40,9 @@ pub enum CartridgeChoice {
     /// Can also be picked per-slot ([`SlotChoice::RS232`]) while the MPI is
     /// selected.
     RS232,
-    /// Orchestra-90/CC plugged straight into the port; picked with a file
-    /// dialog on selection. Always autostarts — no `autostart` field.
-    Orch90(PathBuf),
+    /// Orchestra-90/CC plugged straight into the port. No file to pick —
+    /// fixed ROM. Always autostarts — no `autostart` field.
+    Orch90,
     /// Sound/Speech Cartridge plugged straight into the port. No file to
     /// pick.
     SoundSpeech,
@@ -75,7 +75,7 @@ pub enum SlotChoice {
     /// selection (the pak decodes the full address bus itself).
     RS232(RS232EndpointChoice),
     /// Orchestra-90/CC in this slot (see [`CartridgeChoice::Orch90`]).
-    Orch90(PathBuf),
+    Orch90,
     /// Sound/Speech Cartridge in this slot (see
     /// [`CartridgeChoice::SoundSpeech`]).
     SoundSpeech,
@@ -116,7 +116,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::Image(image) => cart_file_name(&image.path, "Cartridge ROM"),
         SlotChoice::RTC => RTC_LABEL.to_string(),
         SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
-        SlotChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
+        SlotChoice::Orch90 => "Orchestra-90".to_string(),
         SlotChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
     }
 }
@@ -128,7 +128,7 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::Image(image) => cart_file_name(&image.path, "Cartridge ROM"),
         CartridgeChoice::RTC => RTC_LABEL.to_string(),
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
-        CartridgeChoice::Orch90(path) => cart_file_name(path, "Orchestra-90"),
+        CartridgeChoice::Orch90 => "Orchestra-90".to_string(),
         CartridgeChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),
     }
@@ -152,11 +152,6 @@ const ROM_EXTENSIONS: &[&str] = &["rom", "ccc", "bin"];
 /// The unified cartridge ROM combo entry's file dialog.
 pub(super) fn cartridge_rom_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Cartridge ROM", ROM_EXTENSIONS)
-}
-
-/// The Orchestra-90 combo entry's file dialog.
-pub(super) fn orch90_file_dialog() -> rfd::FileDialog {
-    rfd::FileDialog::new().add_filter("Orchestra-90 ROM", ROM_EXTENSIONS)
 }
 
 /// Image-backed ROM cartridges' autostart default when a combo pick first
@@ -300,7 +295,7 @@ impl From<&CartridgeDTO> for CartridgeChoice {
             CartridgeDTO::GamesMaster { path, autostart } => CartridgeChoice::Image(
                 persisted_image_choice(path, *autostart, CartridgeHardware::GamesMaster),
             ),
-            CartridgeDTO::Orch90 { path } => CartridgeChoice::Orch90(PathBuf::from(path)),
+            CartridgeDTO::Orch90 => CartridgeChoice::Orch90,
             CartridgeDTO::SoundSpeech => CartridgeChoice::SoundSpeech,
             CartridgeDTO::MPI { .. } => CartridgeChoice::MPI,
         }
@@ -317,9 +312,7 @@ impl From<&SlotChoice> for SlotDTO {
             SlotChoice::RS232(endpoint) => SlotDTO::RS232 {
                 endpoint: endpoint.into(),
             },
-            SlotChoice::Orch90(path) => SlotDTO::Orch90 {
-                path: path.display().to_string(),
-            },
+            SlotChoice::Orch90 => SlotDTO::Orch90,
             SlotChoice::SoundSpeech => SlotDTO::SoundSpeech,
         }
     }
@@ -347,7 +340,7 @@ impl From<&SlotDTO> for SlotChoice {
                 *autostart,
                 CartridgeHardware::GamesMaster,
             )),
-            SlotDTO::Orch90 { path } => SlotChoice::Orch90(PathBuf::from(path)),
+            SlotDTO::Orch90 => SlotChoice::Orch90,
             SlotDTO::SoundSpeech => SlotChoice::SoundSpeech,
         }
     }
@@ -411,9 +404,7 @@ pub(crate) fn pack_peripherals(
         CartridgeChoice::RS232 => CartridgeDTO::RS232 {
             endpoint: rs232_endpoint.into(),
         },
-        CartridgeChoice::Orch90(path) => CartridgeDTO::Orch90 {
-            path: path.display().to_string(),
-        },
+        CartridgeChoice::Orch90 => CartridgeDTO::Orch90,
         CartridgeChoice::SoundSpeech => CartridgeDTO::SoundSpeech,
         CartridgeChoice::MPI => CartridgeDTO::MPI {
             slots: std::array::from_fn(|i| (&mpi_slots[i]).into()),

@@ -41,7 +41,7 @@ pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISl
         Cart::GamesMasterCartridge(_) => rom_path()
             .map(MPISlot::GamesMasterCartridge)
             .unwrap_or(MPISlot::Empty),
-        Cart::Orch90(_) => rom_path().map(MPISlot::Orch90).unwrap_or(MPISlot::Empty),
+        Cart::Orch90(_) => MPISlot::Orch90,
         Cart::DiskCart(_) => MPISlot::FD502,
         Cart::DistoRTC(_) => MPISlot::DistoRTC,
         Cart::DeluxeRS232(_) => MPISlot::DeluxeRS232(rom_path()),

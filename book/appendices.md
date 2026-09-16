@@ -982,7 +982,7 @@ the emulator at all, is "is your ROM dump good?"
 user exactly which known dump they have — or that they don't have one." `identify()`/`validate()` check a
 loaded image's size and CRC32 (a from-scratch reflected-polynomial
 implementation, [`rom_db.rs:53-67`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/rom_db.rs#L53-L67) — not a crate dependency) against
-`KNOWN_ROMS`, a ten-entry manifest copied directly from MAME's own ROM
+`SYSTEM_ROMS`, a ten-entry manifest copied directly from MAME's own ROM
 definitions (`coco3.cpp`, `coco12.cpp`, `coco_fdc.cpp`), and report one of
 three outcomes: `Verified` (byte-identical to a known-good dump),
 `Mismatch` (the file name matches a known ROM but the bytes don't — a

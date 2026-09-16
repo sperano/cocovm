@@ -103,9 +103,10 @@ impl AssetDialog {
     fn draw(&mut self, ctx: &egui::Context) -> Verdict {
         if self.poll() {
             println!(" Assets installed in {}", self.install_dir.display());
-            let roms = crate::rom_count();
-            // Not `pluralize` — same reason as `StartupInfo::inventory`.
-            println!(" {roms} ROM{} found.", if roms == 1 { "" } else { "s" });
+            println!(
+                " {} found.",
+                crate::startup::asset_inventory(crate::rom_count(), crate::cartridge_count())
+            );
             return Verdict::Installed;
         }
         let mut verdict = Verdict::Pending;

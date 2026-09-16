@@ -15,8 +15,8 @@ fn crc32_check_value() {
 
 #[test]
 fn manifest_has_no_duplicate_names_or_crcs() {
-    for (i, a) in KNOWN_ROMS.iter().enumerate() {
-        for b in &KNOWN_ROMS[i + 1..] {
+    for (i, a) in SYSTEM_ROMS.iter().enumerate() {
+        for b in &SYSTEM_ROMS[i + 1..] {
             assert_ne!(a.file, b.file);
             assert_ne!(
                 (a.crc32, a.size),
@@ -27,6 +27,23 @@ fn manifest_has_no_duplicate_names_or_crcs() {
             );
         }
     }
+}
+
+#[test]
+fn system_roms_are_tagged_with_their_machine() {
+    let family = |file: &str| {
+        SYSTEM_ROMS
+            .iter()
+            .find(|rom| rom.file == file)
+            .unwrap_or_else(|| panic!("{file} not in SYSTEM_ROMS"))
+            .machine
+    };
+    assert_eq!(family("coco3.rom"), MachineFamily::Coco3);
+    assert_eq!(family("bas12.rom"), MachineFamily::Coco12);
+    assert_eq!(family("extbas11.rom"), MachineFamily::Coco12);
+    assert_eq!(family("disk11.rom"), MachineFamily::Any);
+    assert_eq!(family("hdbdw3bck.rom"), MachineFamily::Coco12);
+    assert_eq!(family("hdbdw3bc3.rom"), MachineFamily::Coco3);
 }
 
 #[test]
@@ -52,10 +69,12 @@ fn validate_passes_unknown_names_through() {
 
 #[test]
 fn cartridge_manifest_has_expected_counts() {
-    const XROAR_COCO_CARTRIDGES: usize = 102;
-    const COCOVM_ADDITIONS: usize = 1;
-    const BANKED_ROM_PAKS: usize = 4;
+    const XROAR_COCO_CARTRIDGES: usize = 101;
+    const COCOVM_ADDITIONS: usize = 3;
+    const BANKED_ROM_PAKS: usize = 5;
     const GMC_CARTRIDGES: usize = 3;
+    const COCO3_ONLY: usize = 14;
+    const COCO12_ONLY: usize = 2;
 
     assert_eq!(
         KNOWN_CARTRIDGE_ROMS.len(),
@@ -75,6 +94,37 @@ fn cartridge_manifest_has_expected_counts() {
             .count(),
         GMC_CARTRIDGES
     );
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS
+            .iter()
+            .filter(|rom| rom.machine == MachineFamily::Coco3)
+            .count(),
+        COCO3_ONLY
+    );
+    assert_eq!(
+        KNOWN_CARTRIDGE_ROMS
+            .iter()
+            .filter(|rom| rom.machine == MachineFamily::Coco12)
+            .count(),
+        COCO12_ONLY
+    );
+}
+
+#[test]
+fn coco3_only_titles_are_tagged() {
+    let coco3: Vec<&str> = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .filter(|rom| rom.machine == MachineFamily::Coco3)
+        .map(|rom| rom.name)
+        .collect();
+    for title in ["Thexder", "Predator", "RoboCop", "Castle of Tharoggad"] {
+        assert!(coco3.contains(&title), "{title}");
+    }
+    let daggorath = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .find(|rom| rom.name == "Dungeons of Daggorath")
+        .unwrap();
+    assert_eq!(daggorath.machine, MachineFamily::Any);
 }
 
 #[test]
@@ -94,7 +144,7 @@ fn cartridge_manifest_has_no_duplicate_fingerprints() {
 
 #[test]
 fn cartridge_manifest_bundled_files_are_unique_ccc_names() {
-    const BUNDLED_CARTRIDGES: usize = 89;
+    const BUNDLED_CARTRIDGES: usize = 99;
     let bundled: Vec<&str> = KNOWN_CARTRIDGE_ROMS
         .iter()
         .filter_map(|rom| rom.bundled_file)

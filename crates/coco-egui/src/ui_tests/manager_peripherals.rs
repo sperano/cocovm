@@ -234,12 +234,12 @@ fn manager_edit_with_slotted_rs232_records_the_peripheral() {
     );
 }
 
-/// The Games Master and Orchestra-90 cartridges — image-backed like the ROM Pak — record
-/// `[peripherals].cartridge` with their path, in the port or in an MPI slot.
+/// The Games Master cartridge — image-backed like the ROM Pak — records
+/// `[peripherals].cartridge` with its path. Orchestra-90 in an MPI slot — fixed ROM, no
+/// path — records like the Sound/Speech Cartridge.
 #[test]
 fn manager_edit_with_gmc_and_orch90_records_the_cart() {
     let gmc = PathBuf::from("/paks/gmc.ccc");
-    let orch90 = PathBuf::from("/paks/orch90.ccc");
     let dir = TempDir::new("create-gmc-orch90");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
@@ -268,7 +268,7 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
             .edit_form_mut()
             .expect("pane form seeded");
         form.cartridge = new_vm::CartridgeChoice::MPI;
-        form.mpi_slots[2] = new_vm::SlotChoice::Orch90(orch90.clone());
+        form.mpi_slots[2] = new_vm::SlotChoice::Orch90;
     }
     harness.step();
     let def = &harness.state().entries[1].def;
@@ -278,9 +278,7 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
             slots: [
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::Empty,
-                machine_def::SlotDTO::Orch90 {
-                    path: "/paks/orch90.ccc".to_string()
-                },
+                machine_def::SlotDTO::Orch90,
                 machine_def::SlotDTO::Empty,
             ],
             switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
@@ -61,6 +61,8 @@ const BANNER_WIDTH: usize = 74;
 pub(crate) struct StartupInfo {
     /// ROM images installed in [`paths::roms_dir`], from [`rom_count`].
     pub roms: usize,
+    /// Cartridge images installed in [`paths::cartridges_dir`], from [`cartridge_count`].
+    pub cartridges: usize,
     /// Machine definitions the manager loaded.
     pub machines: usize,
     /// One-line graphics backend description, from [`renderer_info`].
@@ -68,14 +70,26 @@ pub(crate) struct StartupInfo {
 }
 
 impl StartupInfo {
-    /// `"8 ROMs and 7 machine configurations found."`
+    /// `"8 ROMs, 126 cartridges and 7 machine configurations found."`
     fn inventory(&self) -> String {
-        // Not `pluralize`: it upper-cases ROMS's suffix; the initialism reads as ROMs.
-        let roms = format!("{} ROM{}", self.roms, if self.roms == 1 { "" } else { "s" });
-        let machine_count = isize::try_from(self.machines).unwrap_or(isize::MAX);
-        let machines = pluralize("machine configuration", machine_count, true);
-        format!("{roms} and {machines} found.")
+        let assets = asset_inventory(self.roms, self.cartridges);
+        let machines = pluralize("machine configuration", to_isize(self.machines), true);
+        format!("{assets} and {machines} found.")
     }
+}
+
+/// `"8 ROMs, 126 cartridges"` — the installed-asset half of [`StartupInfo::inventory`],
+/// also printed after a bundle install.
+pub(crate) fn asset_inventory(roms: usize, cartridges: usize) -> String {
+    // Not `pluralize`: it upper-cases ROMS's suffix; the initialism reads as ROMs.
+    let roms = format!("{roms} ROM{}", if roms == 1 { "" } else { "s" });
+    let cartridges = pluralize("cartridge", to_isize(cartridges), true);
+    format!("{roms}, {cartridges}")
+}
+
+/// `pluralize` takes a signed count; saturate rather than wrap.
+fn to_isize(count: usize) -> isize {
+    isize::try_from(count).unwrap_or(isize::MAX)
 }
 
 /// Dim `s` when stdout is a color-capable terminal, else pass it through.
@@ -84,16 +98,27 @@ fn dim(s: &str) -> String {
         .to_string()
 }
 
-/// Whether a directory entry names a ROM image. Dotfiles are rejected —
-/// macOS's AppleDouble `._name.rom` siblings would double the count.
-fn is_rom_file(name: &str) -> bool {
-    !name.starts_with('.') && name.ends_with(".rom")
+/// Whether a directory entry names an asset with `extension`. Dotfiles are
+/// rejected — macOS's AppleDouble `._name.rom` siblings would double the count.
+fn is_asset_file(name: &str, extension: &str) -> bool {
+    !name.starts_with('.') && name.ends_with(extension)
 }
 
-/// How many ROM images are installed in [`paths::roms_dir`]. A missing or
-/// unreadable directory counts as zero.
-pub(crate) fn rom_count() -> usize {
-    let Some(dir) = paths::roms_dir() else {
+/// Whether a directory entry names a ROM image.
+fn is_rom_file(name: &str) -> bool {
+    is_asset_file(name, ".rom")
+}
+
+/// Whether a directory entry names a cartridge image (`.ccc`, the bundle's
+/// cartridge format).
+fn is_cartridge_file(name: &str) -> bool {
+    is_asset_file(name, ".ccc")
+}
+
+/// How many entries of `dir` satisfy `is_asset`. A missing or unreadable
+/// directory counts as zero.
+fn asset_count(dir: Option<PathBuf>, is_asset: fn(&str) -> bool) -> usize {
+    let Some(dir) = dir else {
         return 0;
     };
     let Ok(entries) = fs::read_dir(dir) else {
@@ -101,8 +126,18 @@ pub(crate) fn rom_count() -> usize {
     };
     entries
         .flatten()
-        .filter(|entry| is_rom_file(&entry.file_name().to_string_lossy()))
+        .filter(|entry| is_asset(&entry.file_name().to_string_lossy()))
         .count()
+}
+
+/// How many ROM images are installed in [`paths::roms_dir`].
+pub(crate) fn rom_count() -> usize {
+    asset_count(paths::roms_dir(), is_rom_file)
+}
+
+/// How many cartridge images are installed in [`paths::cartridges_dir`].
+pub(crate) fn cartridge_count() -> usize {
+    asset_count(paths::cartridges_dir(), is_cartridge_file)
 }
 
 /// Print one content row of the banner box, padded out to the right wall.
@@ -135,13 +170,13 @@ pub(crate) fn banner(info: &StartupInfo) {
 /// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden. Must
 /// never contain `"` or `\` — `config::default_config_template` interpolates
 /// it unescaped into a quoted TOML string.
-pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm/cocovm-assets-v6.tgz";
+pub(crate) const DEFAULT_ASSETS_URL: &str = "https://assets.spe.quebec/cocovm/cocovm-assets-v8.tgz";
 
 /// ROM images the bundle at [`DEFAULT_ASSETS_URL`] carries. Any one missing from
 /// the installed ROM directory triggers a (re)download, so an install that
 /// predates a bundle addition catches up instead of staying at whatever it
 /// first unpacked.
-pub(crate) const BUNDLED_ROMS: [&str; 11] = [
+pub(crate) const BUNDLED_ROMS: [&str; 13] = [
     "bas10.rom",
     "bas11.rom",
     "bas12.rom",
@@ -153,6 +188,8 @@ pub(crate) const BUNDLED_ROMS: [&str; 11] = [
     "sp0256-al2.rom",
     "ssc-tms7040.rom",
     "hdbdw3bc3.rom",
+    "rs232.rom",
+    "orch90.rom",
 ];
 
 /// Whether `dir` exists and contains at least one entry.

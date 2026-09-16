@@ -10,8 +10,7 @@ use eframe::egui;
 
 use super::cartridge::{
     CartridgeChoice, CartridgeImageChoice, RS232EndpointChoice, RTC_LABEL, SlotChoice,
-    cartridge_label, cartridge_rom, cartridge_rom_file_dialog, orch90_file_dialog,
-    slot_cartridge_rom, slot_label,
+    cartridge_label, cartridge_rom, cartridge_rom_file_dialog, slot_cartridge_rom, slot_label,
 };
 use super::known_cartridges::known_cartridge_submenu;
 use super::{FORM_GRID_SPACING, MediaChoice, disk_file_dialog, media_choice_text, sub_form_row};
@@ -29,7 +28,7 @@ pub(super) fn drives_available(
         | CartridgeChoice::Image(_)
         | CartridgeChoice::RTC
         | CartridgeChoice::RS232
-        | CartridgeChoice::Orch90(_)
+        | CartridgeChoice::Orch90
         | CartridgeChoice::SoundSpeech => false,
     }
 }
@@ -78,7 +77,7 @@ pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: Car
         }
         CartridgeChoice::None
         | CartridgeChoice::RTC
-        | CartridgeChoice::Orch90(_)
+        | CartridgeChoice::Orch90
         | CartridgeChoice::SoundSpeech => {}
     }
 }
@@ -283,7 +282,7 @@ fn combo_item(ui: &mut egui::Ui, label: &str, selected: bool, on_click: impl FnO
 
 /// [`combo_item`]'s image-backed sibling: opens `dialog` on click and, unless
 /// it's cancelled, calls `set` with the picked path — the ROM Pak/Games
-/// Master/Orchestra-90 combo entries' shared shape.
+/// Master combo entries' shared shape.
 fn image_combo_item(
     ui: &mut egui::Ui,
     label: &str,
@@ -355,12 +354,11 @@ fn cartridge_combo(ui: &mut egui::Ui, salt: &str, cartridge: &mut CartridgeChoic
                 *cartridge == CartridgeChoice::RS232,
                 || *cartridge = CartridgeChoice::RS232,
             );
-            image_combo_item(
+            combo_item(
                 ui,
-                "Orchestra-90…",
-                matches!(cartridge, CartridgeChoice::Orch90(_)),
-                orch90_file_dialog,
-                |path| *cartridge = CartridgeChoice::Orch90(path),
+                "Orchestra-90",
+                *cartridge == CartridgeChoice::Orch90,
+                || *cartridge = CartridgeChoice::Orch90,
             );
             combo_item(
                 ui,
@@ -431,12 +429,11 @@ fn slot_combo(
                     mpi_slots[slot] = SlotChoice::RS232(endpoint);
                 },
             );
-            image_combo_item(
+            combo_item(
                 ui,
-                "Orchestra-90…",
-                matches!(mpi_slots[slot], SlotChoice::Orch90(_)),
-                orch90_file_dialog,
-                |path| mpi_slots[slot] = SlotChoice::Orch90(path),
+                "Orchestra-90",
+                mpi_slots[slot] == SlotChoice::Orch90,
+                || mpi_slots[slot] = SlotChoice::Orch90,
             );
             combo_item(
                 ui,

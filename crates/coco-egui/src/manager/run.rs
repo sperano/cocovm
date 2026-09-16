@@ -69,6 +69,7 @@ pub fn run(
         Box::new(move |creation| {
             crate::banner(&crate::StartupInfo {
                 roms: crate::rom_count(),
+                cartridges: crate::cartridge_count(),
                 machines: machine_count,
                 renderer: crate::renderer_info(creation),
             });

@@ -39,6 +39,26 @@ fn sound_speech_cartridge_in(roms_dir: &Path) -> Result<SoundSpeechCartridge, St
     })
 }
 
+/// The Orchestra-90/CC built from its fixed 8K ROM
+/// ([`rom_load::orch90_rom_path`]); the error names the file if it is
+/// missing or the wrong size.
+pub(crate) fn orchestra_90() -> Result<Orch90, String> {
+    orchestra_90_in(&installed_roms_dir())
+}
+
+/// [`orchestra_90`] reading the ROM image from `roms_dir`.
+fn orchestra_90_in(roms_dir: &Path) -> Result<Orch90, String> {
+    let rom_path = roms_dir.join(rom_load::ORCH90_ROM);
+    let bytes = std::fs::read(&rom_path).map_err(|e| {
+        format!(
+            "could not read Orchestra-90 ROM {}: {e}",
+            rom_path.display()
+        )
+    })?;
+    report_rom_validation(&rom_path, &bytes);
+    Orch90::from_rom_bytes(&bytes).map_err(|e| format!("{}: {e}", rom_path.display()))
+}
+
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
     /// (cartridge swaps are machine-off ops). `autostart` ties CART* to Q so
@@ -99,34 +119,29 @@ impl CocoApp {
         }
     }
 
-    /// Loads an Orchestra-90/CC ROM from `path` and inserts it. No `autostart` choice
-    /// to honor — [`Orch90::cart_line_ties_q`] always autostarts, like the
-    /// real pak's CART*-tied-to-Q wiring.
+    /// Plugs the Orchestra-90/CC into the cartridge slot. No file to pick —
+    /// its ROM must be installed at [`rom_load::orch90_rom_path`]; a missing
+    /// or wrong-size one lands in [`Self::cart_error`]. No `autostart` choice
+    /// to honor either — [`Orch90::cart_line_ties_q`] always autostarts, like
+    /// the real pak's CART*-tied-to-Q wiring.
     ///
     /// [`Orch90::cart_line_ties_q`]: coco_core::cart::Cartridge::cart_line_ties_q
-    pub(crate) fn insert_orch90(&mut self, path: PathBuf) {
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
+    pub(crate) fn insert_orch90(&mut self) {
+        let cart = match orchestra_90() {
+            Ok(cart) => cart,
             Err(e) => {
-                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                self.cart_error = Some(e);
                 return;
             }
         };
-        match Orch90::from_rom_bytes(&bytes) {
-            Ok(cart) => {
-                if !self.flush_dirty_disks_or_report() {
-                    return;
-                }
-                self.machine.insert_cartridge(cart);
-                self.power_cycle();
-                self.cart_path = Some(path);
-                self.disk_paths = [None, None];
-                self.mpi = None; // plugging straight into the port removes any MPI
-            }
-            Err(e) => {
-                self.cart_error = Some(format!("{}: {e}", path.display()));
-            }
+        if !self.flush_dirty_disks_or_report() {
+            return;
         }
+        self.machine.insert_cartridge(cart);
+        self.power_cycle();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.mpi = None; // plugging straight into the port removes any MPI
     }
 
     /// Inserts a Deluxe RS-232 Program Pak, starting on the inert loopback endpoint
@@ -140,6 +155,7 @@ impl CocoApp {
         let mut pak = coco_core::rs232::DeluxeRS232::new();
         let rom_path = rs232_eprom_default_path();
         let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
+            report_rom_validation(&rom_path, &bytes);
             pak.set_eprom(&bytes);
             Some(rom_path)
         } else {
@@ -314,33 +330,27 @@ impl CocoApp {
         }
     }
 
-    /// Loads an Orchestra-90/CC ROM into MPI `slot`. Mirrors
-    /// [`Self::mpi_insert_rompak`]'s flush contract, minus the `autostart` choice.
-    pub(crate) fn mpi_insert_orch90(&mut self, slot: usize, path: PathBuf) {
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
+    /// Inserts the Orchestra-90/CC into MPI `slot`. Mirrors
+    /// [`Self::mpi_insert_ssc`]: no file to pick, and a missing or wrong-size
+    /// ROM lands in [`Self::cart_error`].
+    pub(crate) fn mpi_insert_orch90(&mut self, slot: usize) {
+        let cart = match orchestra_90() {
+            Ok(cart) => cart,
             Err(e) => {
-                self.cart_error = Some(format!("could not read {}: {e}", path.display()));
+                self.cart_error = Some(e);
                 return;
             }
         };
-        match Orch90::from_rom_bytes(&bytes) {
-            Ok(cart) => {
-                if !self.mpi_flush_before_replacing_slot(slot) {
-                    return;
-                }
-                if let Some(mp) = self.machine.bus.cart.as_multipak() {
-                    mp.insert(slot, cart);
-                }
-                if let Some(mpi) = &mut self.mpi {
-                    mpi.slots[slot] = MPISlot::Orch90(path);
-                }
-                self.power_cycle();
-            }
-            Err(e) => {
-                self.cart_error = Some(format!("{}: {e}", path.display()));
-            }
+        if !self.mpi_flush_before_replacing_slot(slot) {
+            return;
         }
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.insert(slot, cart);
+        }
+        if let Some(mpi) = &mut self.mpi {
+            mpi.slots[slot] = MPISlot::Orch90;
+        }
+        self.power_cycle();
     }
 
     /// Inserts the FD-502 disk controller into MPI `slot`, unless one is already installed
@@ -458,6 +468,7 @@ impl CocoApp {
         let mut pak = coco_core::rs232::DeluxeRS232::new();
         let rom_path = rs232_eprom_default_path();
         let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
+            report_rom_validation(&rom_path, &bytes);
             pak.set_eprom(&bytes);
             Some(rom_path)
         } else {

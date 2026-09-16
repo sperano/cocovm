@@ -8,7 +8,9 @@ use coco_core::fdc;
 use coco_core::snapshot::{self, CartROMRole, MediaRef, MediaRefs, SlotROMRef};
 use coco_core::vhd;
 
-use crate::{CocoApp, MPISlot, ROMSource, disk_basic_rom_path, rom_db_pseudo_path};
+use crate::{
+    CocoApp, MPISlot, ROMSource, disk_basic_rom_path, orch90_rom_path, rom_db_pseudo_path,
+};
 
 use super::media_ref::hash_media_ref;
 
@@ -93,12 +95,14 @@ impl CocoApp {
                 match slot {
                     MPISlot::ROMPak(p)
                     | MPISlot::BankedROMPak(p)
-                    | MPISlot::GamesMasterCartridge(p)
-                    | MPISlot::Orch90(p) => {
+                    | MPISlot::GamesMasterCartridge(p) => {
                         paths.push((mpi_slot, CartROMRole::Primary, p.clone()));
                     }
                     MPISlot::FD502 => {
                         paths.push((mpi_slot, CartROMRole::Primary, disk_basic_rom_path()));
+                    }
+                    MPISlot::Orch90 => {
+                        paths.push((mpi_slot, CartROMRole::Primary, orch90_rom_path()));
                     }
                     MPISlot::SoundSpeechCartridge => paths.extend(ssc_rom_paths(mpi_slot)),
                     MPISlot::DeluxeRS232(Some(p)) => {
@@ -114,6 +118,8 @@ impl CocoApp {
                 paths.push((None, CartROMRole::Primary, disk_basic_rom_path()));
             } else if self.machine.bus.cart.as_ssc().is_some() {
                 paths.extend(ssc_rom_paths(None));
+            } else if self.machine.bus.cart.as_orch90().is_some() {
+                paths.push((None, CartROMRole::Primary, orch90_rom_path()));
             }
             if let Some(path) = &self.rs232_eprom_path {
                 paths.push((None, CartROMRole::Primary, path.clone()));

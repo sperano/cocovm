@@ -33,7 +33,7 @@ pub(crate) enum MPISlot {
     /// selection (the pak decodes the full address bus itself).
     DeluxeRS232(Option<PathBuf>),
     GamesMasterCartridge(PathBuf),
-    Orch90(PathBuf),
+    Orch90,
     SoundSpeechCartridge,
 }
 

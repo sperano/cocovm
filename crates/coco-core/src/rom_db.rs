@@ -1,7 +1,10 @@
 //! Known-ROM manifests for system firmware and CoCo cartridge images. System
 //! ROM CRC32s come from MAME's ROM definitions (`src/mame/trs/coco3.cpp`,
-//! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`, master as
-//! of 2026-07). [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
+//! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`,
+//! `src/devices/bus/coco/coco_rs232.cpp`, master as of 2026-07), except the
+//! RGB-DOS and offset HDB-DOS builds, which MAME lacks: those are the images
+//! VCC 2.1.9.1 ships (Color Computer Archive, `Emulators/Windows/Vcc/`).
+//! [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
 //!
 //! Validation is advisory: an unrecognized or mismatching image still boots
 //! (patched and homebrew ROMs are legitimate), but the loader can tell the
@@ -13,7 +16,7 @@ pub use cartridges::KNOWN_CARTRIDGE_ROMS;
 
 /// One known-good dump from MAME's manifest.
 #[derive(Debug, PartialEq, Eq)]
-pub struct KnownROM {
+pub struct SystemROM {
     /// Canonical file name in the MAME romset.
     pub file: &'static str,
     /// Size in bytes; CRC32 matches are only trusted at the right size.
@@ -21,6 +24,8 @@ pub struct KnownROM {
     /// CRC32 (IEEE, as printed by MAME's `CRC(...)`).
     pub crc32: u32,
     pub desc: &'static str,
+    /// Machine family the image needs.
+    pub machine: MachineFamily,
 }
 
 /// Cartridge implementation used to run a known ROM image.
@@ -34,12 +39,36 @@ pub enum CartridgeHardware {
     GamesMaster,
 }
 
+/// Which machine family a known ROM image needs. Cartridge rows follow
+/// MAME's `coco_cart.xml` compatibility tags cross-checked against XRoar's
+/// `rom.c`; system ROM rows follow the firmware's own target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MachineFamily {
+    /// Runs on every CoCo, or detects the machine itself (Mind Roll, Tetris).
+    Any,
+    /// CoCo 1/2 only: its BASIC, or a build of a title with a separate CoCo 3 dump.
+    Coco12,
+    /// Needs the CoCo 3 (GIME video, 128K).
+    Coco3,
+}
+
+impl MachineFamily {
+    /// Short UI label ("CoCo 3", "CoCo 1/2"); none when any machine will do.
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            MachineFamily::Any => None,
+            MachineFamily::Coco12 => Some("CoCo 1/2"),
+            MachineFamily::Coco3 => Some("CoCo 3"),
+        }
+    }
+}
+
 /// One known CoCo cartridge ROM image.
 #[derive(Debug, PartialEq, Eq)]
 pub struct KnownCartridgeROM {
     /// Size in bytes; CRC32 matches are only trusted at the right size.
     pub size: usize,
-    /// CRC32 (IEEE, as printed by XRoar).
+    /// CRC32
     pub crc32: u32,
     /// Title as printed on the cartridge label.
     pub name: &'static str,
@@ -53,6 +82,8 @@ pub struct KnownCartridgeROM {
     pub variant: Option<&'static str>,
     /// Cartridge implementation that runs this image.
     pub hardware: CartridgeHardware,
+    /// Machine family the image needs.
+    pub machine: MachineFamily,
     /// File name under the asset bundle's `cartridges/` directory, when the bundle ships this image.
     pub bundled_file: Option<&'static str>,
 }
@@ -76,78 +107,139 @@ impl KnownCartridgeROM {
 }
 
 /// Every system ROM the emulator knows how to use, per MAME.
-pub const KNOWN_ROMS: &[KnownROM] = &[
-    KnownROM {
+pub const SYSTEM_ROMS: &[SystemROM] = &[
+    SystemROM {
         file: "coco3.rom",
         size: 0x8000,
         crc32: 0xb4c88d6c,
         desc: "Super Extended Color BASIC 2.0 (CoCo 3 NTSC)",
+        machine: MachineFamily::Coco3,
     },
-    KnownROM {
+    SystemROM {
         file: "coco3p.rom",
         size: 0x8000,
         crc32: 0xff050d80,
         desc: "Super Extended Color BASIC 2.0 (CoCo 3 PAL)",
+        machine: MachineFamily::Coco3,
     },
-    KnownROM {
+    SystemROM {
         file: "bas10.rom",
         size: 0x2000,
         crc32: 0x00b50aaa,
         desc: "Color BASIC 1.0 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
-    KnownROM {
+    SystemROM {
         file: "bas11.rom",
         size: 0x2000,
         crc32: 0x6270955a,
         desc: "Color BASIC 1.1 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
-    KnownROM {
+    SystemROM {
         file: "bas12.rom",
         size: 0x2000,
         crc32: 0x54368805,
         desc: "Color BASIC 1.2 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
-    KnownROM {
+    SystemROM {
         file: "bas13.rom",
         size: 0x2000,
         crc32: 0xd8f4d15e,
         desc: "Color BASIC 1.3 (CoCo 2B)",
+        machine: MachineFamily::Coco12,
     },
-    KnownROM {
+    SystemROM {
         file: "extbas10.rom",
         size: 0x2000,
         crc32: 0x6111a086,
         desc: "Extended Color BASIC 1.0 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
-    KnownROM {
+    SystemROM {
         file: "extbas11.rom",
         size: 0x2000,
         crc32: 0xa82a6254,
         desc: "Extended Color BASIC 1.1 (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
     },
-    KnownROM {
+    SystemROM {
         file: "sp0256-al2.rom",
         size: 0x800,
         crc32: 0xb504ac15,
         desc: "SP0256-AL2 allophone ROM (Sound/Speech Cartridge)",
+        machine: MachineFamily::Any,
     },
-    KnownROM {
+    SystemROM {
         file: "ssc-tms7040.rom",
         size: 0x1000,
         crc32: 0xa8e2eb98,
         desc: "Sound/Speech Cartridge TMS7040 firmware (PIC-7040-510)",
+        machine: MachineFamily::Any,
     },
-    KnownROM {
+    SystemROM {
+        file: "orch90.rom",
+        size: 0x2000,
+        crc32: 0x15fb39af,
+        desc: "Orchestra-90/CC (26-3143)",
+        machine: MachineFamily::Any,
+    },
+    SystemROM {
         file: "disk10.rom",
         size: 0x2000,
         crc32: 0xb4f9968e,
         desc: "Disk Extended Color BASIC 1.0 (FD-502)",
+        machine: MachineFamily::Any,
     },
-    KnownROM {
+    SystemROM {
         file: "disk11.rom",
         size: 0x2000,
         crc32: 0x0b9c5415,
         desc: "Disk Extended Color BASIC 1.1 (FD-502)",
+        machine: MachineFamily::Any,
+    },
+    SystemROM {
+        file: "hdbdw3bck.rom",
+        size: 0x2000,
+        crc32: 0x867a3f42,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 1/2)",
+        machine: MachineFamily::Coco12,
+    },
+    SystemROM {
+        file: "hdbdw3bc3.rom",
+        size: 0x2000,
+        crc32: 0x309a9efd,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 3)",
+        machine: MachineFamily::Coco3,
+    },
+    SystemROM {
+        file: "rs232.rom",
+        size: 0x1000,
+        crc32: 0xd990e1f9,
+        desc: "Deluxe RS-232 Program Pak EPROM (26-2226)",
+        machine: MachineFamily::Any,
+    },
+    SystemROM {
+        file: "rgbdos.rom",
+        size: 0x2000,
+        crc32: 0xe548c0a3,
+        desc: "RGB-DOS (CoCo 3, VCC build)",
+        machine: MachineFamily::Coco3,
+    },
+    SystemROM {
+        file: "hdbdw3bck_w-offset_5A000.rom",
+        size: 0x2000,
+        crc32: 0xcb690587,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 1/2), drive 0 at sector $5A000 (VCC build)",
+        machine: MachineFamily::Coco12,
+    },
+    SystemROM {
+        file: "hdbdw3bc3_w-offset_5A000.rom",
+        size: 0x2000,
+        crc32: 0x7d89a438,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 3), drive 0 at sector $5A000 (VCC build)",
+        machine: MachineFamily::Coco3,
     },
 ];
 
@@ -155,10 +247,10 @@ pub const KNOWN_ROMS: &[KnownROM] = &[
 #[derive(Debug, PartialEq, Eq)]
 pub enum Validation {
     /// Byte-identical to a known dump (matched by size + CRC32).
-    Verified(&'static KnownROM),
+    Verified(&'static SystemROM),
     /// The file name claims a known ROM, but the contents differ.
     Mismatch {
-        expected: &'static KnownROM,
+        expected: &'static SystemROM,
         actual_crc32: u32,
         actual_size: usize,
     },
@@ -184,9 +276,9 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 }
 
 /// Look up an image by contents alone (size + CRC32), regardless of name.
-pub fn identify(bytes: &[u8]) -> Option<&'static KnownROM> {
+pub fn identify(bytes: &[u8]) -> Option<&'static SystemROM> {
     let crc = crc32(bytes);
-    KNOWN_ROMS
+    SYSTEM_ROMS
         .iter()
         .find(|r| r.size == bytes.len() && r.crc32 == crc)
 }
@@ -208,7 +300,7 @@ pub fn validate(file_name: &str, bytes: &[u8]) -> Validation {
     if let Some(known) = identify(bytes) {
         return Validation::Verified(known);
     }
-    match KNOWN_ROMS.iter().find(|r| r.file == file_name) {
+    match SYSTEM_ROMS.iter().find(|r| r.file == file_name) {
         Some(expected) => Validation::Mismatch {
             expected,
             actual_crc32: crc32(bytes),

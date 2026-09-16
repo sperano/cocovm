@@ -6,6 +6,20 @@ const ANDRONE_FILE: &str = "Androne (1983) (26-3096) (Tandy).ccc";
 const TETRIS_FILE: &str = "Tetris (1987) (26-3163) (Tandy) (Coco 1-2) (Coco 3).ccc";
 
 #[test]
+fn row_details_lists_year_vendor_catalog_and_machine() {
+    let thexder = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .find(|known| known.name == "Thexder")
+        .unwrap();
+    assert_eq!(row_details(thexder), "1987 · Tandy · 26-3072 · CoCo 3");
+    let androne = KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .find(|known| known.name == "Androne")
+        .unwrap();
+    assert_eq!(row_details(androne), "1983 · Tandy · 26-3096");
+}
+
+#[test]
 fn missing_dir_is_empty() {
     let dir = TempDir::new("known-cartridges");
     assert!(bundled_cartridges_in(&dir.path().join("absent")).is_empty());

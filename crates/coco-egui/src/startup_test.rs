@@ -67,22 +67,32 @@ fn is_rom_file_accepts_roms_and_rejects_appledouble_siblings() {
 }
 
 #[test]
-fn inventory_pluralizes_both_halves() {
-    let info = |roms, machines| StartupInfo {
+fn is_cartridge_file_accepts_ccc_and_rejects_appledouble_siblings() {
+    assert!(is_cartridge_file("Atom (1983) (26-3149) (Tandy).ccc"));
+    assert!(!is_cartridge_file("._Atom (1983) (26-3149) (Tandy).ccc"));
+    assert!(!is_cartridge_file(".DS_Store"));
+    assert!(!is_cartridge_file("coco3.rom"));
+    assert!(!is_cartridge_file("ccc"));
+}
+
+#[test]
+fn inventory_pluralizes_every_count() {
+    let info = |roms, cartridges, machines| StartupInfo {
         roms,
+        cartridges,
         machines,
         renderer: String::new(),
     };
     assert_eq!(
-        info(8, 7).inventory(),
-        "8 ROMs and 7 machine configurations found."
+        info(8, 126, 7).inventory(),
+        "8 ROMs, 126 cartridges and 7 machine configurations found."
     );
     assert_eq!(
-        info(1, 1).inventory(),
-        "1 ROM and 1 machine configuration found."
+        info(1, 1, 1).inventory(),
+        "1 ROM, 1 cartridge and 1 machine configuration found."
     );
     assert_eq!(
-        info(0, 0).inventory(),
-        "0 ROMs and 0 machine configurations found."
+        info(0, 0, 0).inventory(),
+        "0 ROMs, 0 cartridges and 0 machine configurations found."
     );
 }

@@ -39,14 +39,19 @@ fn row_label(known: &KnownCartridgeROM) -> String {
 }
 
 /// Submenu row hover text — the metadata the label leaves out, e.g.
-/// "1983 · Tandy · 26-3149". Empty when the manifest has none.
+/// "1987 · Tandy · 26-3072 · CoCo 3". Empty when the manifest has none.
 fn row_details(known: &KnownCartridgeROM) -> String {
     let year = known.year.map(|year| year.to_string());
-    [year.as_deref(), known.vendor, known.catalog]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" · ")
+    [
+        year.as_deref(),
+        known.vendor,
+        known.catalog,
+        known.machine.label(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
 }
 
 /// [`bundled_cartridges_in`] against the installed asset bundle
