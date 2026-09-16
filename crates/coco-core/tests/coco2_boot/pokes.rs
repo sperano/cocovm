@@ -11,9 +11,9 @@ use super::common::{
 /// Phase 6 acceptance test 1: `PMODE 4,1:SCREEN 1,1`
 /// switches PIA1 $FF22's A/G bit on, `Machine::video_mode_summary` reports
 /// the CoCo-compatible graphics dispatch, and the framebuffer's border and
-/// interior pixels resolve through the fixed VDG palette
-/// (`render_coco12.rs`'s unit-level coverage of the same colour source,
-/// exercised here end-to-end through real ROM code).
+/// a solid interior region resolves through the fixed VDG palette away from
+/// its artifact-decoder edge halo (`render_coco12.rs`'s unit-level coverage of
+/// the same colour source, exercised here end-to-end through real ROM code).
 ///
 /// `PMODE`/`SCREEN` must run from a *running program*, not typed directly at
 /// the `OK` prompt: verified empirically against the real ROMs (traced using a
@@ -66,15 +66,15 @@ fn coco2_pmode_switches_to_graphics_with_fixed_vdg_colors() {
     );
 
     // RG6/PMODE4's 2-colour table: palette regs 8/9 (CSS=0) or 10/11 (CSS=1)
-    // — see `video.rs::vdg_palette_indices`/`render_coco12.rs`. Whatever
-    // PCLS filled the page with, every interior pixel must resolve to one of
-    // those two fixed colours, not a GIME-palette leftover.
+    // — see `video.rs::vdg_palette_indices`/`render_coco12.rs`. PCLS fills a
+    // solid page, so a sample away from the left-edge decoder halo must resolve
+    // to one of those fixed colours, not a GIME-palette leftover.
     let (off_index, on_index) = if css { (10, 11) } else { (8, 9) };
     let off = coco_core::video::VDG_FIXED_PALETTE[off_index];
     let on = coco_core::video::VDG_FIXED_PALETTE[on_index];
     let interior = px(
         &m.framebuffer,
-        coco_core::video::BORDER,
+        coco_core::video::BORDER + coco_core::video::RG6_PIXELS_PER_LINE / 2,
         coco_core::video::BORDER,
     );
     assert!(

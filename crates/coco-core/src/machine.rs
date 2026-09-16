@@ -2,6 +2,7 @@
 //! loop, video mode classification/rendering, and the audio grid bridge.
 //! See `DESIGN.md` §1/§2b.
 
+mod artifact_phase;
 mod audio;
 mod render;
 mod run;
@@ -14,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::MachineConfig;
 use crate::{GIME, cart, gime_video, pia, sam, video};
+
+use artifact_phase::ArtifactPhaseState;
 
 /// Framebuffer geometry: the VDG 32×16 text display plus border (`DESIGN.md` §6).
 const FB_WIDTH: u32 = video::FB_W as u32;
@@ -141,6 +144,11 @@ pub struct Machine {
     /// by line through this ([`gime_video::paint_scanline`]); legacy fields
     /// keep the whole-frame snapshot path in [`Machine::render_field`].
     field_scan: Option<gime_video::FieldScan>,
+    /// Selected CoCo 1/2 NTSC artifact phase and its reset-to-reset random
+    /// source. Serialized so resume preserves both the visible phase and the
+    /// deterministic sequence used by later resets.
+    #[serde(default)]
+    artifact_phase: ArtifactPhaseState,
 }
 
 /// What a single [`Machine::step_instruction`] advanced. Both fields are
@@ -175,6 +183,13 @@ pub enum StepKind {
 
 impl Machine {
     pub fn new(config: MachineConfig, rom: Box<[u8]>) -> Self {
+        Self::new_with_artifact_seed(config, rom, artifact_phase::fresh_seed())
+    }
+
+    /// Constructs a machine with a deterministic CoCo 1/2 artifact-phase
+    /// source. Production callers use [`Self::new`]; tests can supply a seed
+    /// to reproduce reset-time phase selections.
+    pub(crate) fn new_with_artifact_seed(config: MachineConfig, rom: Box<[u8]>, seed: u64) -> Self {
         let mut cpu = MC6809::new();
         let mut bus = crate::SystemBus::new(config.variant, config.memory, rom);
         // `None` (CoCo 1/2) leaves the GIME default; unused on those variants.
@@ -182,6 +197,7 @@ impl Machine {
             bus.gime.monitor = monitor;
         }
         cpu.reset(&mut bus);
+        let artifact_phase = ArtifactPhaseState::new(seed, config.variant);
         Self {
             cpu,
             bus,
@@ -199,6 +215,7 @@ impl Machine {
             line_cycles_spent: 0,
             line_budget: 0,
             field_scan: None,
+            artifact_phase,
         }
     }
 
@@ -297,8 +314,15 @@ impl Machine {
     /// clear RAM. Also resets the cartridge, since RESET* is shared with the
     /// CPU's.
     pub fn reset(&mut self) {
+        self.artifact_phase.select_for_reset(self.config.variant);
         self.cpu.reset(&mut self.bus);
         self.bus.cart.reset();
+    }
+
+    /// The stable NTSC artifact phase selected for a CoCo 1/2. CoCo 3 output
+    /// selects its live phase from BPI instead.
+    pub fn ntsc_rg6_artifact_phase(&self) -> video::RG6ArtifactPhase {
+        self.artifact_phase.selected()
     }
 
     /// Power the machine off and on: clears RAM and returns the GIME/PIAs to
@@ -346,3 +370,7 @@ impl Machine {
         self.bus.cart = cart::Cart::default();
     }
 }
+
+#[cfg(test)]
+#[path = "machine/artifact_phase_test.rs"]
+mod artifact_phase_tests;

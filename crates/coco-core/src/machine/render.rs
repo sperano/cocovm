@@ -228,6 +228,26 @@ impl Machine {
         })
     }
 
+    /// The reset-selected CoCo 1/2 phase when the verified MC1372 burst
+    /// circuit is active. The external burst injector requires both RG6's GM0
+    /// and CSS lines high, so CSS=0 retains the fixed two-color output.
+    fn coco12_rg6_artifact_phase(
+        &self,
+        mode: &video::VDGGraphicsMode,
+        css: bool,
+    ) -> Option<video::RG6ArtifactPhase> {
+        if !matches!(
+            self.config.variant,
+            MachineVariant::Coco1 | MachineVariant::Coco2
+        ) || self.config.video != VideoStandard::NTSC
+            || !mode.is_rg6()
+            || !css
+        {
+            return None;
+        }
+        Some(self.ntsc_rg6_artifact_phase())
+    }
+
     /// Render one video field into `framebuffer` at field end. Only CoCo 1/2
     /// renders here as a whole-frame snapshot; CoCo 3 fields are already
     /// painted line by line by [`Machine::render_scanline`].
@@ -314,6 +334,30 @@ impl Machine {
             border,
             &mut self.framebuffer,
         );
+        if let Some(phase) = self.coco12_rg6_artifact_phase(&mode, css_bit) {
+            self.artifact_coco12_rg6_field(colors, border, phase);
+        }
+    }
+
+    fn artifact_coco12_rg6_field(
+        &mut self,
+        colors: &[[u8; 4]],
+        border: [u8; 4],
+        phase: video::RG6ArtifactPhase,
+    ) {
+        let decoder = video::RG6ArtifactDecoder::new([colors[0], colors[1]], phase);
+        let edges = video::RG6ArtifactEdges::solid(border == colors[1]);
+        for y in 0..video::ACTIVE_H {
+            let data_start = y * video::RG6_BYTES_PER_LINE;
+            let row_data = self.graphics_scratch[data_start..][..video::RG6_BYTES_PER_LINE]
+                .try_into()
+                .expect("RG6 row has fixed width");
+            let output_start =
+                ((video::BORDER + y) * video::FB_W + video::BORDER) * BYTES_PER_PIXEL;
+            let output = &mut self.framebuffer[output_start..]
+                [..video::RG6_PIXELS_PER_LINE * BYTES_PER_PIXEL];
+            decoder.decode_scanline(row_data, edges, 1, output);
+        }
     }
 
     /// Resolve each MC6847 request to the physical RAM address emitted by the

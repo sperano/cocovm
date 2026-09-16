@@ -5,6 +5,7 @@
 //! BSD-3-Clause, copyright Nathan Woods. See `NOTICE.md`.
 
 use super::BYTES_PER_PIXEL;
+use serde::{Deserialize, Serialize};
 
 /// Logical pixels in one MC6847 RG6 scanline.
 pub const RG6_PIXELS_PER_LINE: usize = 256;
@@ -23,8 +24,9 @@ const LEFT_HALO_PIXELS: isize = HALO_PIXELS_PER_SIDE as isize;
 const ROUNDING_BIAS: f64 = 0.5;
 
 /// NTSC color-burst phase used to assign the complementary artifact colors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RG6ArtifactPhase {
+    #[default]
     Standard,
     Reverse,
 }

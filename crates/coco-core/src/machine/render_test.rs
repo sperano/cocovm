@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{MachineConfig, MemorySize};
+use crate::config::{MachineConfig, MemorySize, VDGVariant};
 use crate::gime::init0;
 use crate::keyboard;
 use crate::video::{VDG_AG, VDG_CSS};
@@ -16,6 +16,12 @@ const BLACK6: u8 = 0x00;
 const WHITE6: u8 = 0x3f;
 const FIRST_PATTERN: u8 = 0x55;
 const SECOND_PATTERN: u8 = 0xaa;
+const COCO12_ROM_SIZE: usize = 16 * 1024;
+const COCO12_SCREEN_BASE: u16 = 0x0400;
+const SAM_F1_SET: u16 = 0xffc9;
+const SAM_V1_SET: u16 = 0xffc3;
+const SAM_V2_SET: u16 = 0xffc5;
+const PHASE_SEARCH_RESETS: usize = 16;
 
 fn config(video_standard: VideoStandard, monitor: MonitorType) -> MachineConfig {
     MachineConfig {
@@ -81,6 +87,56 @@ fn is_grey(color: [u8; BYTES_PER_PIXEL]) -> bool {
     color[0] == color[1] && color[1] == color[2]
 }
 
+fn coco12_config(variant: MachineVariant, vdg: VDGVariant) -> MachineConfig {
+    MachineConfig {
+        variant,
+        video: VideoStandard::NTSC,
+        memory: match variant {
+            MachineVariant::Coco1 => MemorySize::K32,
+            MachineVariant::Coco2 => MemorySize::K64,
+            MachineVariant::Coco3 => unreachable!("CoCo 3 has no VDG"),
+        },
+        monitor: None,
+        vdg: Some(vdg),
+    }
+}
+
+fn parked_coco12(variant: MachineVariant, vdg: VDGVariant, seed: u64) -> Machine {
+    let mut machine = Machine::new_with_artifact_seed(
+        coco12_config(variant, vdg),
+        vec![0; COCO12_ROM_SIZE].into_boxed_slice(),
+        seed,
+    );
+    machine.bus.pia1.b.output = RG6_CSS1;
+    machine.bus.write(SAM_F1_SET, 0);
+    machine.bus.write(SAM_V1_SET, 0);
+    machine.bus.write(SAM_V2_SET, 0);
+    machine
+}
+
+fn fill_coco12_pattern(machine: &mut Machine, first_half: u8, second_half: u8) {
+    let bytes_per_row = video::RG6_BYTES_PER_LINE;
+    for y in 0..video::ACTIVE_H {
+        for x in 0..bytes_per_row {
+            let value = if x < bytes_per_row / 2 {
+                first_half
+            } else {
+                second_half
+            };
+            machine
+                .bus
+                .write(COCO12_SCREEN_BASE + (y * bytes_per_row + x) as u16, value);
+        }
+    }
+}
+
+fn coco12_pixel(machine: &Machine, x: usize, y: usize) -> [u8; BYTES_PER_PIXEL] {
+    let offset = ((video::BORDER + y) * video::FB_W + video::BORDER + x) * BYTES_PER_PIXEL;
+    machine.framebuffer[offset..offset + BYTES_PER_PIXEL]
+        .try_into()
+        .expect("RGBA pixel")
+}
+
 #[test]
 fn coco3_composite_rg6_uses_live_bpi_phase_per_scanline() {
     let mut machine = parked_coco3(VideoStandard::NTSC, MonitorType::Composite, RG6_CSS1);
@@ -104,6 +160,90 @@ fn coco3_composite_rg6_uses_live_bpi_phase_per_scanline() {
     assert_ne!(standard_first, standard_second);
     assert_eq!(standard_first, logical_pixel(&reverse, second_x));
     assert_eq!(standard_second, logical_pixel(&reverse, first_x));
+}
+
+#[test]
+fn coco1_and_coco2_vdgs_render_rg6_artifact_colors() {
+    let variants = [
+        (MachineVariant::Coco1, VDGVariant::MC6847),
+        (MachineVariant::Coco2, VDGVariant::MC6847),
+        (MachineVariant::Coco2, VDGVariant::MC6847T1),
+    ];
+    for (variant, vdg) in variants {
+        let mut machine = parked_coco12(variant, vdg, 0);
+        fill_coco12_pattern(&mut machine, SECOND_PATTERN, FIRST_PATTERN);
+        machine.render_field();
+        let first = coco12_pixel(&machine, video::RG6_PIXELS_PER_LINE / 4, 0);
+        let second = coco12_pixel(&machine, video::RG6_PIXELS_PER_LINE * 3 / 4, 0);
+        let base_colors = [
+            video::VDG_FIXED_PALETTE[RG6_C0_INDEX],
+            video::VDG_FIXED_PALETTE[RG6_C1_INDEX],
+        ];
+
+        assert!(
+            !base_colors.contains(&first),
+            "{variant:?} {vdg:?} first region"
+        );
+        assert!(
+            !base_colors.contains(&second),
+            "{variant:?} {vdg:?} second region"
+        );
+        assert_ne!(first, second, "{variant:?} {vdg:?} complementary regions");
+
+        fill_coco12_pattern(&mut machine, 0xff, 0x00);
+        machine.render_field();
+        assert_eq!(
+            coco12_pixel(
+                &machine,
+                video::RG6_PIXELS_PER_LINE / 4,
+                video::ACTIVE_H - 1
+            ),
+            base_colors[1]
+        );
+        assert_eq!(
+            coco12_pixel(
+                &machine,
+                video::RG6_PIXELS_PER_LINE * 3 / 4,
+                video::ACTIVE_H - 1
+            ),
+            base_colors[0]
+        );
+    }
+}
+
+#[test]
+fn coco2_reset_can_swap_rg6_artifact_colors() {
+    let mut machine = parked_coco12(MachineVariant::Coco2, VDGVariant::MC6847, 0);
+    fill_coco12_pattern(&mut machine, SECOND_PATTERN, FIRST_PATTERN);
+    machine.render_field();
+    let sample_x = video::RG6_PIXELS_PER_LINE / 4;
+    let before = coco12_pixel(&machine, sample_x, 0);
+    let initial_phase = machine.ntsc_rg6_artifact_phase();
+    for _ in 0..PHASE_SEARCH_RESETS {
+        machine.reset();
+        if machine.ntsc_rg6_artifact_phase() != initial_phase {
+            break;
+        }
+    }
+    assert_ne!(machine.ntsc_rg6_artifact_phase(), initial_phase);
+    machine.render_field();
+    let after = coco12_pixel(&machine, sample_x, 0);
+
+    assert_ne!(before, after);
+}
+
+#[test]
+fn coco2_rg6_css_zero_keeps_verified_nonburst_colors() {
+    const RG6_CSS0: u8 = VDG_AG | RG6_MODE_BITS;
+    let mut machine = parked_coco12(MachineVariant::Coco2, VDGVariant::MC6847, 0);
+    machine.bus.pia1.b.output = RG6_CSS0;
+    fill_coco12_pattern(&mut machine, SECOND_PATTERN, FIRST_PATTERN);
+    machine.render_field();
+    let base_colors = [video::VDG_FIXED_PALETTE[8], video::VDG_FIXED_PALETTE[9]];
+
+    for x in 0..video::RG6_PIXELS_PER_LINE {
+        assert!(base_colors.contains(&coco12_pixel(&machine, x, 0)));
+    }
 }
 
 #[test]
