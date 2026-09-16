@@ -151,5 +151,7 @@ what shipped.
   `gh workflow run release.yml -f tag=vX.Y.Z`. It reuses the draft and
   publishes once all targets succeed.
 - If a release was published without binaries, it cannot be repaired: it is
-  immutable. Delete it (`gh release delete vX.Y.Z`, which keeps the tag),
-  recreate the draft with the same notes, and dispatch the workflow as above.
+  immutable, and deleting it does not help because GitHub permanently
+  refuses to publish another release under a tag name an immutable release
+  once used (`tag_name was used by an immutable release`). Leave the
+  release as is and cut the next patch version.
