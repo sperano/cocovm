@@ -15,8 +15,8 @@ fn crc32_check_value() {
 
 #[test]
 fn manifest_has_no_duplicate_names_or_crcs() {
-    for (i, a) in KNOWN_ROMS.iter().enumerate() {
-        for b in &KNOWN_ROMS[i + 1..] {
+    for (i, a) in SYSTEM_ROMS.iter().enumerate() {
+        for b in &SYSTEM_ROMS[i + 1..] {
             assert_ne!(a.file, b.file);
             assert_ne!(
                 (a.crc32, a.size),
@@ -32,10 +32,10 @@ fn manifest_has_no_duplicate_names_or_crcs() {
 #[test]
 fn system_roms_are_tagged_with_their_machine() {
     let family = |file: &str| {
-        KNOWN_ROMS
+        SYSTEM_ROMS
             .iter()
             .find(|rom| rom.file == file)
-            .unwrap_or_else(|| panic!("{file} not in KNOWN_ROMS"))
+            .unwrap_or_else(|| panic!("{file} not in SYSTEM_ROMS"))
             .machine
     };
     assert_eq!(family("coco3.rom"), MachineFamily::Coco3);
