@@ -9,6 +9,8 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Registry, reload};
 
+use coco_core::rom_db::KNOWN_CARTRIDGE_ROMS;
+
 use crate::paths;
 
 /// Seed the environment from a `.env` file, before anything reads it. Two
@@ -205,6 +207,25 @@ pub(crate) fn missing_bundled_roms(roms_dir: &Path) -> Vec<&'static str> {
         .collect()
 }
 
+/// Cartridge images the bundle at [`DEFAULT_ASSETS_URL`] carries: every
+/// `KnownCartridgeROM::bundled_file`. Checked per file like [`BUNDLED_ROMS`],
+/// so an install that predates the bundle's `cartridges/` directory (v7) or a
+/// later manifest addition catches up. Setting a new `bundled_file` therefore
+/// requires publishing a bundle that ships it and bumping [`DEFAULT_ASSETS_URL`],
+/// or every existing install lands in a download loop it can only cancel.
+fn bundled_cartridges() -> impl Iterator<Item = &'static str> {
+    KNOWN_CARTRIDGE_ROMS
+        .iter()
+        .filter_map(|known| known.bundled_file)
+}
+
+/// The [`bundled_cartridges`] not present as files under `cartridges_dir`.
+pub(crate) fn missing_bundled_cartridges(cartridges_dir: &Path) -> Vec<&'static str> {
+    bundled_cartridges()
+        .filter(|name| !cartridges_dir.join(name).is_file())
+        .collect()
+}
+
 /// Unpack a gzipped tar stream into `dest`. Split from the download so the
 /// extraction can be unit-tested without a network.
 pub(crate) fn unpack_assets(reader: impl std::io::Read, dest: &Path) -> std::io::Result<()> {
@@ -237,9 +258,10 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
 
 /// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
 /// are absent on disk, as display paths: an empty images directory counts
-/// as one entry, plus each missing [`BUNDLED_ROMS`] image. Empty means no
-/// download is needed. The integration tests' disk images are not the
-/// app's business: `crates/test-assets` fetches its own bundle.
+/// as one entry, plus each missing [`BUNDLED_ROMS`] image and each missing
+/// [`bundled_cartridges`] image. Empty means no download is needed. The
+/// integration tests' disk images are not the app's business:
+/// `crates/test-assets` fetches its own bundle.
 pub(crate) fn missing_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
@@ -247,13 +269,23 @@ pub(crate) fn missing_assets() -> Vec<String> {
         .into_iter()
         .collect();
     if let Some(roms_dir) = paths::roms_dir() {
-        missing.extend(
-            missing_bundled_roms(&roms_dir)
-                .into_iter()
-                .map(|name| roms_dir.join(name).display().to_string()),
-        );
+        missing.extend(display_paths(&roms_dir, missing_bundled_roms(&roms_dir)));
+    }
+    if let Some(cartridges_dir) = paths::cartridges_dir() {
+        missing.extend(display_paths(
+            &cartridges_dir,
+            missing_bundled_cartridges(&cartridges_dir),
+        ));
     }
     missing
+}
+
+/// Each of `names` joined under `dir`, as a display path.
+fn display_paths(dir: &Path, names: Vec<&'static str>) -> Vec<String> {
+    names
+        .into_iter()
+        .map(|name| dir.join(name).display().to_string())
+        .collect()
 }
 
 /// Describe which graphics backend eframe actually created, and on what

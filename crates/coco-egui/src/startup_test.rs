@@ -56,6 +56,26 @@ fn missing_bundled_roms_names_only_the_absent_files() {
 }
 
 #[test]
+fn missing_bundled_cartridges_names_only_the_absent_files() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/tmp-test-assets/missing-cartridges");
+    let _ = std::fs::remove_dir_all(&dir);
+    let all: Vec<&str> = bundled_cartridges().collect();
+    assert!(!all.is_empty());
+    assert_eq!(missing_bundled_cartridges(&dir), all, "no dir: all missing");
+
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in &all {
+        std::fs::write(dir.join(name), b"\xAA").unwrap();
+    }
+    assert!(missing_bundled_cartridges(&dir).is_empty());
+
+    let removed = all[0];
+    std::fs::remove_file(dir.join(removed)).unwrap();
+    assert_eq!(missing_bundled_cartridges(&dir), vec![removed]);
+}
+
+#[test]
 fn is_rom_file_accepts_roms_and_rejects_appledouble_siblings() {
     assert!(is_rom_file("coco3.rom"));
     assert!(is_rom_file("extbas11.rom"));
