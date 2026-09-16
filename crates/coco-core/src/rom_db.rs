@@ -14,8 +14,6 @@ mod cartridges;
 
 pub use cartridges::KNOWN_CARTRIDGE_ROMS;
 
-use crate::config::MachineVariant;
-
 /// One known-good dump from MAME's manifest.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SystemROM {
@@ -55,15 +53,6 @@ pub enum MachineFamily {
 }
 
 impl MachineFamily {
-    /// Whether an image with this requirement runs on `variant`.
-    pub fn supports(self, variant: MachineVariant) -> bool {
-        match self {
-            MachineFamily::Any => true,
-            MachineFamily::Coco12 => variant != MachineVariant::Coco3,
-            MachineFamily::Coco3 => variant == MachineVariant::Coco3,
-        }
-    }
-
     /// Short UI label ("CoCo 3", "CoCo 1/2"); none when any machine will do.
     pub fn label(self) -> Option<&'static str> {
         match self {

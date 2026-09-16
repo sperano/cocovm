@@ -111,24 +111,6 @@ fn cartridge_manifest_has_expected_counts() {
 }
 
 #[test]
-fn cartridge_machine_supports_matches_family() {
-    use crate::config::MachineVariant;
-    for variant in MachineVariant::ALL {
-        assert!(MachineFamily::Any.supports(variant), "{variant:?}");
-        assert_eq!(
-            MachineFamily::Coco3.supports(variant),
-            variant == MachineVariant::Coco3,
-            "{variant:?}"
-        );
-        assert_eq!(
-            MachineFamily::Coco12.supports(variant),
-            variant != MachineVariant::Coco3,
-            "{variant:?}"
-        );
-    }
-}
-
-#[test]
 fn coco3_only_titles_are_tagged() {
     let coco3: Vec<&str> = KNOWN_CARTRIDGE_ROMS
         .iter()

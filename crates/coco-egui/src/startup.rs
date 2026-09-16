@@ -72,12 +72,19 @@ pub(crate) struct StartupInfo {
 impl StartupInfo {
     /// `"8 ROMs, 126 cartridges and 7 machine configurations found."`
     fn inventory(&self) -> String {
-        // Not `pluralize`: it upper-cases ROMS's suffix; the initialism reads as ROMs.
-        let roms = format!("{} ROM{}", self.roms, if self.roms == 1 { "" } else { "s" });
-        let cartridges = pluralize("cartridge", to_isize(self.cartridges), true);
+        let assets = asset_inventory(self.roms, self.cartridges);
         let machines = pluralize("machine configuration", to_isize(self.machines), true);
-        format!("{roms}, {cartridges} and {machines} found.")
+        format!("{assets} and {machines} found.")
     }
+}
+
+/// `"8 ROMs, 126 cartridges"` — the installed-asset half of [`StartupInfo::inventory`],
+/// also printed after a bundle install.
+pub(crate) fn asset_inventory(roms: usize, cartridges: usize) -> String {
+    // Not `pluralize`: it upper-cases ROMS's suffix; the initialism reads as ROMs.
+    let roms = format!("{roms} ROM{}", if roms == 1 { "" } else { "s" });
+    let cartridges = pluralize("cartridge", to_isize(cartridges), true);
+    format!("{roms}, {cartridges}")
 }
 
 /// `pluralize` takes a signed count; saturate rather than wrap.

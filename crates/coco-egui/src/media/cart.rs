@@ -55,6 +55,7 @@ fn orchestra_90_in(roms_dir: &Path) -> Result<Orch90, String> {
             rom_path.display()
         )
     })?;
+    report_rom_validation(&rom_path, &bytes);
     Orch90::from_rom_bytes(&bytes).map_err(|e| format!("{}: {e}", rom_path.display()))
 }
 
@@ -154,6 +155,7 @@ impl CocoApp {
         let mut pak = coco_core::rs232::DeluxeRS232::new();
         let rom_path = rs232_eprom_default_path();
         let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
+            report_rom_validation(&rom_path, &bytes);
             pak.set_eprom(&bytes);
             Some(rom_path)
         } else {
@@ -466,6 +468,7 @@ impl CocoApp {
         let mut pak = coco_core::rs232::DeluxeRS232::new();
         let rom_path = rs232_eprom_default_path();
         let eprom_path = if let Ok(bytes) = std::fs::read(&rom_path) {
+            report_rom_validation(&rom_path, &bytes);
             pak.set_eprom(&bytes);
             Some(rom_path)
         } else {
