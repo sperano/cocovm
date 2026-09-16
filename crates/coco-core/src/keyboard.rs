@@ -45,6 +45,10 @@ pub const AT: Pos = (0, 0);
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Keyboard {
     rows: [u8; ROWS],
+    /// CPU row-sense reads per strobed column, so a host type-ahead can tell
+    /// when software has actually scanned a key. Host-side, not machine state.
+    #[serde(skip)]
+    column_reads: [u32; COLS],
 }
 
 impl Keyboard {
@@ -68,6 +72,25 @@ impl Keyboard {
     /// Release every key.
     pub fn release_all(&mut self) {
         self.rows = [0; ROWS];
+    }
+
+    /// Record a CPU read of the row sense with `strobe` on port B: every
+    /// column strobed low counts one read.
+    pub fn note_read(&mut self, strobe: u8) {
+        let selected = !strobe;
+        for (col, reads) in self.column_reads.iter_mut().enumerate() {
+            if selected & (1 << col) != 0 {
+                *reads = reads.wrapping_add(1);
+            }
+        }
+    }
+
+    /// Wrapping count of CPU row-sense reads with column `col` strobed.
+    pub fn column_reads(&self, col: u8) -> u32 {
+        self.column_reads
+            .get(col as usize)
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Compute the PIA0 port-A row sense for a given port-B column strobe.

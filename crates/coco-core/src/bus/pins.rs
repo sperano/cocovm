@@ -26,6 +26,17 @@ impl SystemBus {
         pa
     }
 
+    /// [`Self::pia0_pa_pins`] for a CPU read of PIA0 register `reg`, which
+    /// also counts a keyboard scan when `reg` is the port-A data register.
+    pub(super) fn pia0_pa_read(&mut self, reg: u8) -> u8 {
+        const PORT_A: u8 = 0;
+        let data_selected = self.pia0.a.control & crate::pia::cr::DDR_ACCESS != 0;
+        if reg == PORT_A && data_selected {
+            self.keyboard.note_read(self.pia0.b.output);
+        }
+        self.pia0_pa_pins()
+    }
+
     /// PIA1 port-A input pins: only bit 0 (cassette data in, `$FF20`) is
     /// driven by anything emulated. The rest float high like every other
     /// unused CoCo input pin.

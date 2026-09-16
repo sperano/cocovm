@@ -30,6 +30,32 @@ fn sense_reports_no_key_when_idle() {
     assert_eq!(kb.sense(0x00), 0xFF);
 }
 
+#[test]
+fn note_read_counts_every_strobed_column() {
+    let mut kb = Keyboard::new();
+    kb.note_read(!(1u8 << 1)); // column 1 only
+    kb.note_read(0x00); // every column
+    kb.note_read(0xFF); // no column strobed: nothing read
+    assert_eq!(kb.column_reads(1), 2);
+    assert_eq!(kb.column_reads(2), 1);
+    assert_eq!(kb.column_reads(8), 0, "out-of-range column reads as zero");
+}
+
+#[test]
+fn cpu_reads_of_port_a_data_count_as_keyboard_scans() {
+    let mut m = boot_to_prompt();
+    const PIA0_PORT_A: u16 = 0xFF00;
+    const PIA0_PORT_B: u16 = 0xFF02;
+    const COLUMN_3_STROBE: u8 = !(1 << 3);
+    m.bus.write(PIA0_PORT_B, COLUMN_3_STROBE);
+    let before = m.bus.keyboard.column_reads(3);
+    let other = m.bus.keyboard.column_reads(0);
+    m.bus.read(PIA0_PORT_A);
+    m.bus.read(PIA0_PORT_B); // port B is not a row sense
+    assert_eq!(m.bus.keyboard.column_reads(3), before + 1);
+    assert_eq!(m.bus.keyboard.column_reads(0), other);
+}
+
 // ---- symbolic char map ------------------------------------------------------
 
 #[test]

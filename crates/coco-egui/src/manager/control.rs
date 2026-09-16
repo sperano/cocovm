@@ -34,9 +34,18 @@ pub(super) struct PendingControl {
     slug: String,
     condition: PendingCondition,
     deadline: Instant,
+    /// Taps still queued when a `type_text` burst was last checked.
+    remaining_taps: usize,
 }
 
 impl PendingControl {
+    /// A `type_text` burst drained to `remaining` taps. A busy target stretches
+    /// taps, so keep the deadline at least [`CONTROL_DEFER_MARGIN`] past this.
+    fn note_progress(&mut self, remaining: usize, now: Instant) {
+        self.remaining_taps = remaining;
+        self.deadline = self.deadline.max(now + CONTROL_DEFER_MARGIN);
+    }
+
     pub(super) fn retarget(&mut self, old_slug: &str, new_slug: &str) {
         if self.slug == old_slug {
             self.slug = new_slug.to_string();
@@ -62,6 +71,7 @@ impl PendingControl {
             slug,
             condition,
             deadline: Instant::now() + expected + CONTROL_DEFER_MARGIN,
+            remaining_taps: usize::MAX,
         }
     }
 }

@@ -71,7 +71,8 @@ impl CocoApp {
 
     /// `type_text`: queue `text` on [`Self::remote_type_ahead`], same
     /// mapping as [`Self::enqueue_text`] uses for the host's own type-ahead.
-    /// Returns the fields the burst will take to drain.
+    /// Returns the fields the burst takes to drain into a target that scans
+    /// the keyboard continuously; a busy target stretches each tap.
     pub(crate) fn start_remote_typing(&mut self, text: &str) -> Result<u64, String> {
         if !self.running {
             return Err("VM is paused; call set_running or start_vm first".to_string());

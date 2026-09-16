@@ -152,9 +152,13 @@ pub(crate) const TOOLBAR_H: f32 = BUTTON_SIZE.y + 2.0 * TOOLBAR_PANEL_MARGIN_Y a
 /// Roomier than the text alone needs — it has to clear the device icons,
 /// which are drawn at `status_icons::paint`'s `ICON_SCALE`.
 pub(crate) const STATUS_BAR_H: f32 = 28.0;
-/// Symbolic-mode key timing, in fields: hold a synthesized key then release.
+/// Symbolic-mode key timing, in fields: the minimum a synthesized key is held,
+/// then the minimum it stays released (see `typeahead::TypeAhead`).
 pub(crate) const TYPE_HOLD_FIELDS: u8 = 2;
 pub(crate) const TYPE_GAP_FIELDS: u8 = 1;
+/// Longest a type-ahead hold or gap waits for the CPU to scan the key's
+/// column before moving on regardless.
+pub(crate) const TYPE_SCAN_TIMEOUT_FIELDS: u8 = 60;
 
 fn main() -> eframe::Result<()> {
     // Before anything reads the environment: RUST_LOG and clap's env fallbacks need `.env`

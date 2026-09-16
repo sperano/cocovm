@@ -15,9 +15,15 @@ impl KbMode {
     }
 }
 
-/// Fields one queued tap occupies in [`TypeAhead::advance`]: the hold and gap
-/// counts plus the three phase-transition fields (pop, hold→gap, gap→idle).
+/// Fields one queued tap occupies in [`TypeAhead::advance`] under a target
+/// that scans continuously: hold + gap minimums + three transition fields.
 pub(crate) const FIELDS_PER_TAP: u64 = TYPE_HOLD_FIELDS as u64 + TYPE_GAP_FIELDS as u64 + 3;
+
+/// Column reads that prove the target registered a held key: Color BASIC's
+/// KEYIN scan, its debounce re-read, and the next scan.
+pub(crate) const TAP_READS_TO_REGISTER: u32 = 3;
+/// Column reads that prove the target saw the key released.
+const TAP_READS_TO_RELEASE: u32 = 1;
 
 /// Modifiers captured with a queued tap, independent of the host keyboard.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -54,15 +60,18 @@ impl KeyTap {
     }
 }
 
-/// Type-ahead: replays queued keys and their modifiers with hold/gap timing
-/// so the ROM's 60 Hz keyboard scan registers each one.
+/// Type-ahead: replays queued keys at the pace the target scans them, holding
+/// and releasing each until the CPU has read its column (see `phase_done`).
 #[derive(Default)]
 pub(crate) struct TypeAhead {
     pub(crate) queue: VecDeque<KeyTap>,
     pub(crate) phase: TypePhase,
     pub(crate) current: KeyTap,
+    /// The key's column-read count when the current phase began.
+    reads_at_phase_start: u32,
 }
 
+/// Where the current tap is; the payload counts fields spent in the phase.
 #[derive(Default, Clone, Copy)]
 pub(crate) enum TypePhase {
     #[default]
@@ -89,26 +98,47 @@ impl TypeAhead {
             TypePhase::Idle => {
                 if let Some(entry) = self.queue.pop_front() {
                     self.current = entry;
-                    entry.apply(kb, true);
-                    self.phase = TypePhase::Hold(TYPE_HOLD_FIELDS);
+                    self.begin_phase(kb, true, TypePhase::Hold(0));
                 }
             }
-            TypePhase::Hold(0) => {
-                self.current.apply(kb, false);
-                self.phase = TypePhase::Gap(TYPE_GAP_FIELDS);
+            TypePhase::Hold(fields) => {
+                if self.phase_done(kb, fields, TYPE_HOLD_FIELDS, TAP_READS_TO_REGISTER) {
+                    self.begin_phase(kb, false, TypePhase::Gap(0));
+                } else {
+                    // Re-asserted every field: a focus-loss `release_all` between
+                    // fields must not cut the hold short.
+                    self.current.apply(kb, true);
+                    self.phase = TypePhase::Hold(fields + 1);
+                }
             }
-            TypePhase::Hold(n) => {
-                // Re-asserted every field: a focus-loss `release_all` between
-                // fields must not cut the hold short.
-                self.current.apply(kb, true);
-                self.phase = TypePhase::Hold(n - 1);
+            TypePhase::Gap(fields) => {
+                if self.phase_done(kb, fields, TYPE_GAP_FIELDS, TAP_READS_TO_RELEASE) {
+                    self.phase = TypePhase::Idle;
+                } else {
+                    self.phase = TypePhase::Gap(fields + 1);
+                }
             }
-            TypePhase::Gap(0) => self.phase = TypePhase::Idle,
-            TypePhase::Gap(n) => self.phase = TypePhase::Gap(n - 1),
         }
+    }
+
+    /// Press or release the current tap and start counting the CPU's reads
+    /// of its column from here.
+    fn begin_phase(&mut self, kb: &mut kbd::Keyboard, down: bool, phase: TypePhase) {
+        self.current.apply(kb, down);
+        self.reads_at_phase_start = kb.column_reads(self.current.pos.1);
+        self.phase = phase;
+    }
+
+    /// A phase ends once `min_fields` have elapsed and the CPU has read the
+    /// key's column `reads` times since it began, or at the scan timeout.
+    fn phase_done(&self, kb: &kbd::Keyboard, fields: u8, min_fields: u8, reads: u32) -> bool {
+        let seen = kb
+            .column_reads(self.current.pos.1)
+            .wrapping_sub(self.reads_at_phase_start);
+        fields >= min_fields && (seen >= reads || fields >= TYPE_SCAN_TIMEOUT_FIELDS)
     }
 }
 
 #[cfg(test)]
 #[path = "typeahead_test.rs"]
-mod tests;
+pub(crate) mod tests;
