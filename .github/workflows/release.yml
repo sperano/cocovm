@@ -213,8 +213,24 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "ARCHIVE=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Attach to release
+      # The repository uses immutable releases: once published, a release
+      # accepts no more assets. Uploads therefore go to a draft (created by
+      # the release skill, or here if missing) and the publish job below
+      # promotes it once every target has attached its archive.
+      - name: Attach to draft release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: ${{ env.ARCHIVE }}
+          draft: true
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Publish draft release
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false

@@ -114,16 +114,23 @@ git push --follow-tags
   user's confirmation (the push publishes the tag; everything before it is
   local and reversible — `git tag -d` and `git commit --amend` fix wording).
 
-### 6. GitHub release
+### 6. GitHub release (draft)
+
+Run this immediately after the push:
 
 ```
-gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <notes>
+gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes-file <notes>
 ```
 
 where `<notes>` is a temp file (scratchpad) containing just this version's
-changelog section (without the `## [X.Y.Z]` heading line). If a CI workflow
-exists that attaches binaries on `v*` tags, note that it will run; otherwise
-the release ships notes-only.
+changelog section (without the `## [X.Y.Z]` heading line).
+
+The release **must** be created as a draft. The repository uses immutable
+releases: a published release accepts no further assets, so the binaries the
+`Release binaries` workflow uploads would be rejected. The workflow, triggered
+by the tag push, attaches every target's archive to the draft and its final
+`publish` job flips it to published. Never run `gh release edit --draft=false`
+by hand while the workflow is still running.
 
 ### 7. Report
 
@@ -136,4 +143,13 @@ what shipped.
   `git tag -d vX.Y.Z` and re-tag on the corrected commit. Never retag a
   version that has already been pushed — bump again instead.
 - If the push succeeded but `gh release create` failed, just re-run the
-  `gh release create` step; the tag is already up.
+  `gh release create --draft` step; the tag is already up. If the workflow
+  got there first the draft already exists: use
+  `gh release edit vX.Y.Z --title "vX.Y.Z" --notes-file <notes>` instead.
+- If a build target failed, the draft stays unpublished. Fix the cause on
+  main and re-run the workflow against the existing tag:
+  `gh workflow run release.yml -f tag=vX.Y.Z`. It reuses the draft and
+  publishes once all targets succeed.
+- If a release was published without binaries, it cannot be repaired: it is
+  immutable. Delete it (`gh release delete vX.Y.Z`, which keeps the tag),
+  recreate the draft with the same notes, and dispatch the workflow as above.
