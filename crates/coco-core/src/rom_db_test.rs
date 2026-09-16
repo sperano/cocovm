@@ -162,7 +162,7 @@ fn cartridge_manifest_has_no_duplicate_fingerprints() {
 
 #[test]
 fn cartridge_manifest_bundled_files_are_unique_ccc_names() {
-    const BUNDLED_CARTRIDGES: usize = 89;
+    const BUNDLED_CARTRIDGES: usize = 97;
     let bundled: Vec<&str> = KNOWN_CARTRIDGE_ROMS
         .iter()
         .filter_map(|rom| rom.bundled_file)
