@@ -52,7 +52,7 @@ fn validate_passes_unknown_names_through() {
 
 #[test]
 fn cartridge_manifest_has_expected_counts() {
-    const XROAR_COCO_CARTRIDGES: usize = 102;
+    const XROAR_COCO_CARTRIDGES: usize = 101;
     const COCOVM_ADDITIONS: usize = 1;
     const BANKED_ROM_PAKS: usize = 4;
     const GMC_CARTRIDGES: usize = 3;
@@ -145,7 +145,7 @@ fn cartridge_manifest_has_no_duplicate_fingerprints() {
 
 #[test]
 fn cartridge_manifest_bundled_files_are_unique_ccc_names() {
-    const BUNDLED_CARTRIDGES: usize = 89;
+    const BUNDLED_CARTRIDGES: usize = 88;
     let bundled: Vec<&str> = KNOWN_CARTRIDGE_ROMS
         .iter()
         .filter_map(|rom| rom.bundled_file)

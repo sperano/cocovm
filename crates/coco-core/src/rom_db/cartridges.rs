@@ -15,6 +15,10 @@
 // agrees. Departures: TypeMate is CoCo 3 per MAME (XRoar: any); Dungeons of
 // Daggorath is any (XRoar: CoCo 3, but it predates the machine); the
 // `coco12` dump variants are CoCo 1/2 (XRoar marks Silpheed's as CoCo 3).
+//
+// This table holds games and applications only. Hardware paks (RS-232,
+// Orchestra-90, Disk BASIC) ship as `roms/*.rom` and are omitted here, so
+// XRoar's Deluxe RS-232 Program Pak row is dropped.
 
 use super::{CartridgeHardware, CartridgeMachine, KnownCartridgeROM};
 
@@ -64,7 +68,6 @@ pub const KNOWN_CARTRIDGE_ROMS: &[KnownCartridgeROM] = &[
     rom!(0x7bffd03a, 0x4000, RomPak, Any, "Color Scripsit II", Some(1986), Some("Tandy"), Some("26-3109"), None, Some("Color Scripsit II (1986) (26-3109) (Tandy) (6847T1).ccc")),
     rom!(0x06075f2a, 0x1000, RomPak, Any, "Crosswords", Some(1981), None, Some("26-3082"), None, Some("Crosswords (1981) (26-3082) (Tandy).ccc")),
     rom!(0xbfa3585d, 0x4000, RomPak, Any, "Cyrus World Class Chess", Some(1983), Some("Tandy"), Some("26-3064"), None, Some("Cyrus World Class Chess (1983) (26-3064) (Tandy).ccc")),
-    rom!(0xd990e1f9, 0x1000, RomPak, Any, "Deluxe RS-232 Program Pak", Some(1983), Some("Tandy"), Some("26-2226"), None, Some("Deluxe RS-232 Program Pak (1983) (26-2226) (Tandy).ccc")),
     rom!(0x1199d27f, 0x2000, RomPak, Any, "Demolition Derby", Some(1984), Some("Tandy"), Some("26-3044"), None, Some("Demolition Derby (1984) (26-3044) (Tandy).ccc")),
     rom!(0xb7a1aa3e, 0x3f00, RomPak, Any, "Demon Attack", Some(1984), Some("Tandy"), Some("26-3099"), None, Some("Demon Attack (1984) (26-3099) (Tandy).ccc")),
     rom!(0xd5257b50, 0x0800, RomPak, Any, "Diagnostics", Some(1980), Some("Tandy"), Some("26-3019"), None, Some("Diagnostics (1980) (26-3019) (Tandy).ccc")),
