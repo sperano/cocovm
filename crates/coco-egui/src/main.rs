@@ -85,7 +85,8 @@ pub(crate) use media::disk::NO_FD502_HINT;
 pub(crate) use mpi::{DEFAULT_MPI_SWITCH_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState};
 pub(crate) use rom_load::{
     Coco12ROMResult, ROM_DB_PSEUDO_PATH_PREFIX, ROMSource, compose_coco12_rom, disk_basic_rom_path,
-    installed_roms_dir, report_rom_validation, rom_db_pseudo_path, rs232_eprom_default_path,
+    installed_roms_dir, orch90_rom_path, report_rom_validation, rom_db_pseudo_path,
+    rs232_eprom_default_path,
 };
 pub(crate) use rs232::{RS232_TCP_DEFAULT_ADDR, RS232Endpoint, RS232EndpointKind};
 pub(crate) use runtime_fmt::humanize_runtime;

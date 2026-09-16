@@ -49,7 +49,7 @@ enum Cartridge {
         path: PathBuf,
         autostart: bool,
     },
-    Orch90(PathBuf),
+    Orch90,
     SoundSpeech,
     MPI {
         slots: [Slot; MPI_SLOT_COUNT],
@@ -70,7 +70,7 @@ enum Slot {
     RTC,
     RS232 { endpoint: RS232EndpointDTO },
     GamesMaster { path: PathBuf, autostart: bool },
-    Orch90(PathBuf),
+    Orch90,
     SoundSpeech,
 }
 
@@ -177,7 +177,7 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
             path: path(p),
             autostart: *autostart,
         },
-        CartridgeDTO::Orch90 { path: p } => Cartridge::Orch90(path(p)),
+        CartridgeDTO::Orch90 => Cartridge::Orch90,
         CartridgeDTO::SoundSpeech => Cartridge::SoundSpeech,
         CartridgeDTO::MPI { slots, switch } => Cartridge::MPI {
             slots: std::array::from_fn(|i| resolve_slot(&slots[i], slug)),
@@ -207,7 +207,7 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
             path: path(p),
             autostart: *autostart,
         },
-        SlotDTO::Orch90 { path: p } => Slot::Orch90(path(p)),
+        SlotDTO::Orch90 => Slot::Orch90,
         SlotDTO::SoundSpeech => Slot::SoundSpeech,
     }
 }
@@ -223,7 +223,7 @@ fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
         | Cartridge::RTC
         | Cartridge::RS232 { .. }
         | Cartridge::GamesMaster { .. }
-        | Cartridge::Orch90(_)
+        | Cartridge::Orch90
         | Cartridge::SoundSpeech => false,
     }
 }
@@ -295,7 +295,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
         Cartridge::RTC => app.insert_rtc(),
         Cartridge::RS232 { endpoint } => mount_rs232(app, endpoint),
         Cartridge::GamesMaster { path, autostart } => app.insert_gmc(path, autostart),
-        Cartridge::Orch90(path) => app.insert_orch90(path),
+        Cartridge::Orch90 => app.insert_orch90(),
         Cartridge::SoundSpeech => app.insert_ssc(),
         Cartridge::MPI { slots, switch } => {
             app.insert_multipak();
@@ -317,7 +317,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                     Slot::GamesMaster { path, autostart } => {
                         app.mpi_insert_gmc(slot, path, autostart)
                     }
-                    Slot::Orch90(path) => app.mpi_insert_orch90(slot, path),
+                    Slot::Orch90 => app.mpi_insert_orch90(slot),
                     Slot::SoundSpeech => app.mpi_insert_ssc(slot),
                 }
             }

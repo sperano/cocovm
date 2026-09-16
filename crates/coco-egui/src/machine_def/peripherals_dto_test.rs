@@ -284,6 +284,30 @@ model = "4n1"
     assert_eq!(dto, CartridgeDTO::RTC);
 }
 
+/// Definitions written while Orchestra-90/CC took a user-chosen ROM `path`
+/// still load: it's now a fixed-ROM unit variant like [`CartridgeDTO::SoundSpeech`],
+/// so the leftover `path` key is ignored.
+#[test]
+fn orch90_with_legacy_path_key_still_parses() {
+    let dto: CartridgeDTO = toml::from_str(
+        r#"
+kind = "orch90"
+path = "/old/orch90.ccc"
+"#,
+    )
+    .expect("an orch90 with a legacy path key must still parse");
+    assert_eq!(dto, CartridgeDTO::Orch90);
+
+    let slot: SlotDTO = toml::from_str(
+        r#"
+kind = "orch90"
+path = "/old/orch90.ccc"
+"#,
+    )
+    .expect("a slotted orch90 with a legacy path key must still parse");
+    assert_eq!(slot, SlotDTO::Orch90);
+}
+
 /// The legacy shapes from before `switch`/`endpoint` existed — `{ kind = "mpi", slots = [...] }`
 /// with no `switch` key, and `{ kind = "rs232" }` with no `endpoint` key — still deserialize,
 /// using the documented defaults (`peripherals_dto.rs`'s `default_mpi_switch`/`RS232EndpointDTO`'s

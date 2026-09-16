@@ -52,6 +52,7 @@ enum Occupant<'a> {
         path: &'a str,
     },
     RS232,
+    Orch90,
     SoundSpeech,
 }
 
@@ -121,10 +122,7 @@ fn cartridge_occupant(cartridge: &CartridgeDTO) -> Occupant<'_> {
             kind: "Games Master ROM",
             path,
         },
-        CartridgeDTO::Orch90 { path } => Occupant::Image {
-            kind: "Orchestra-90 ROM",
-            path,
-        },
+        CartridgeDTO::Orch90 => Occupant::Orch90,
         CartridgeDTO::SoundSpeech => Occupant::SoundSpeech,
     }
 }
@@ -146,10 +144,7 @@ fn slot_occupant(slot: &SlotDTO) -> Occupant<'_> {
             kind: "Games Master ROM",
             path,
         },
-        SlotDTO::Orch90 { path } => Occupant::Image {
-            kind: "Orchestra-90 ROM",
-            path,
-        },
+        SlotDTO::Orch90 => Occupant::Orch90,
         SlotDTO::SoundSpeech => Occupant::SoundSpeech,
     }
 }
@@ -197,6 +192,12 @@ fn occupant_rows(
                 Need::Required,
             ));
         }
+        Occupant::Orch90 => rows.push(stock(
+            &role("Orchestra-90 ROM"),
+            &[rom_load::ORCH90_ROM],
+            roms_dir,
+            Need::Required,
+        )),
     }
 }
 

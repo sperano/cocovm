@@ -72,10 +72,11 @@ pub enum CartridgeDTO {
         #[serde(default = "default_autostart")]
         autostart: bool,
     },
-    /// Orchestra-90/CC. Always autostarts — its own CART* line ties to Q, so
-    /// there's no `autostart` field to override it.
+    /// Orchestra-90/CC. Fixed ROM at `roms/orch90.rom` — no `path` to pick.
+    /// Always autostarts — its own CART* line ties to Q, so there's no
+    /// `autostart` field to override it.
     #[serde(rename = "orch90")]
-    Orch90 { path: String },
+    Orch90,
     /// Sound/Speech Cartridge.
     #[serde(rename = "ssc")]
     SoundSpeech,
@@ -134,8 +135,9 @@ pub enum SlotDTO {
         #[serde(default = "default_autostart")]
         autostart: bool,
     },
+    /// Orchestra-90/CC. Fixed ROM at `roms/orch90.rom` — no `path` to pick.
     #[serde(rename = "orch90")]
-    Orch90 { path: String },
+    Orch90,
     #[serde(rename = "ssc")]
     SoundSpeech,
 }

@@ -211,6 +211,14 @@ pub(crate) fn ssc_firmware_rom_path() -> PathBuf {
     installed_roms_dir().join(SSC_FIRMWARE_ROM)
 }
 
+/// The Orchestra-90/CC's fixed 8K ROM (26-3143).
+pub(crate) const ORCH90_ROM: &str = "orch90.rom";
+
+/// Where the Orchestra-90/CC reads its ROM from.
+pub(crate) fn orch90_rom_path() -> PathBuf {
+    installed_roms_dir().join(ORCH90_ROM)
+}
+
 /// Where the currently-loaded system ROM image came from — tracked so
 /// `CocoApp::save_state_to`/`CocoApp::load_state_from` (`save_state.rs`) can
 /// record and re-resolve it without a second copy of the boot-time ROM logic

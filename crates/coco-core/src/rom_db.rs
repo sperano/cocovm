@@ -174,6 +174,12 @@ pub const KNOWN_ROMS: &[KnownROM] = &[
         desc: "Sound/Speech Cartridge TMS7040 firmware (PIC-7040-510)",
     },
     KnownROM {
+        file: "orch90.rom",
+        size: 0x2000,
+        crc32: 0x15fb39af,
+        desc: "Orchestra-90/CC (26-3143)",
+    },
+    KnownROM {
         file: "disk10.rom",
         size: 0x2000,
         crc32: 0xb4f9968e,

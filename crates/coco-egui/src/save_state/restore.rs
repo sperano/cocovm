@@ -290,10 +290,7 @@ impl CocoApp {
                 let mut new_rs232_eprom_path = None;
                 for (_, cart) in self.machine.bus.cart.slots_mut() {
                     match cart {
-                        Cart::ROMPak(_)
-                        | Cart::BankedROMPak(_)
-                        | Cart::GamesMasterCartridge(_)
-                        | Cart::Orch90(_) => {
+                        Cart::ROMPak(_) | Cart::BankedROMPak(_) | Cart::GamesMasterCartridge(_) => {
                             new_cart_path = direct_port_rom_path(media);
                         }
                         Cart::DistoRTC(_) => new_rtc_direct = true,

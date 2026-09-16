@@ -146,3 +146,16 @@ fn a_rom_pak_in_the_bare_port_resolves_its_own_image() {
     assert_eq!(rows[1].path, Path::new(&pak));
     assert_eq!(rows[1].status, ROMStatus::Unrecognized(64));
 }
+
+#[test]
+fn orch90_in_the_bare_port_resolves_its_stock_rom() {
+    let dir = TempDir::new("roms-orch90");
+    let mut def = coco3_def();
+    def.peripherals.cartridge = CartridgeDTO::Orch90;
+
+    let rows = rom_rows(&def, "alpha", Some(dir.path()));
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].role, "Orchestra-90 ROM");
+    assert_eq!(rows[1].path, dir.path().join(rom_load::ORCH90_ROM));
+    assert_eq!(rows[1].status, ROMStatus::Missing);
+}

@@ -399,7 +399,7 @@ fn slot_label(slot: &MPISlot) -> String {
         MPISlot::DistoRTC => "RTC".to_string(),
         MPISlot::DeluxeRS232(_) => "RS-232".to_string(),
         MPISlot::GamesMasterCartridge(p) => format!("GMC:{}", file_name(p)),
-        MPISlot::Orch90(p) => format!("Orchestra-90:{}", file_name(p)),
+        MPISlot::Orch90 => "Orchestra-90".to_string(),
         MPISlot::SoundSpeechCartridge => "SSC".to_string(),
     }
 }

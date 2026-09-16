@@ -264,3 +264,30 @@ fn sound_speech_cartridge_names_a_wrong_sized_speech_rom() {
     assert!(err.contains(rom_load::SP0256_ROM), "{err}");
     assert!(err.contains("2048 bytes"), "{err}");
 }
+
+#[test]
+fn orchestra_90_loads_when_the_rom_is_present() {
+    let dir = scratch_dir("orch90-present");
+    std::fs::write(dir.join(rom_load::ORCH90_ROM), vec![0; 8192]).unwrap();
+    assert!(orchestra_90_in(&dir).is_ok());
+}
+
+#[test]
+fn orchestra_90_names_the_missing_rom() {
+    let dir = scratch_dir("orch90-missing");
+    let _ = std::fs::remove_file(dir.join(rom_load::ORCH90_ROM));
+    let err = orchestra_90_in(&dir).expect_err("refused");
+    assert!(err.contains(rom_load::ORCH90_ROM), "{err}");
+}
+
+#[test]
+fn orchestra_90_names_a_wrong_sized_rom() {
+    // `Orch90::from_rom_bytes` delegates to `ROMPak::from_bytes`, which only
+    // rejects an empty image or one over the 32K external ROM window — there
+    // is no other "wrong size" to construct.
+    let dir = scratch_dir("orch90-empty");
+    std::fs::write(dir.join(rom_load::ORCH90_ROM), []).unwrap();
+    let err = orchestra_90_in(&dir).expect_err("refused");
+    assert!(err.contains(rom_load::ORCH90_ROM), "{err}");
+    assert!(err.contains("empty"), "{err}");
+}
