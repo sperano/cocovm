@@ -1,7 +1,10 @@
 //! Known-ROM manifests for system firmware and CoCo cartridge images. System
 //! ROM CRC32s come from MAME's ROM definitions (`src/mame/trs/coco3.cpp`,
 //! `src/mame/trs/coco12.cpp`, `src/devices/bus/coco/coco_fdc.cpp`,
-//! `src/devices/bus/coco/coco_rs232.cpp`, master as of 2026-07). [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
+//! `src/devices/bus/coco/coco_rs232.cpp`, master as of 2026-07), except the
+//! RGB-DOS and offset HDB-DOS builds, which MAME lacks: those are the images
+//! VCC 2.1.9.1 ships (Color Computer Archive, `Emulators/Windows/Vcc/`).
+//! [`KNOWN_CARTRIDGE_ROMS`] documents its separate provenance.
 //!
 //! Validation is advisory: an unrecognized or mismatching image still boots
 //! (patched and homebrew ROMs are legitimate), but the loader can tell the
@@ -208,6 +211,24 @@ pub const KNOWN_ROMS: &[KnownROM] = &[
         size: 0x1000,
         crc32: 0xd990e1f9,
         desc: "Deluxe RS-232 Program Pak EPROM (26-2226)",
+    },
+    KnownROM {
+        file: "rgbdos.rom",
+        size: 0x2000,
+        crc32: 0xe548c0a3,
+        desc: "RGB-DOS (CoCo 3, VCC build)",
+    },
+    KnownROM {
+        file: "hdbdw3bck_w-offset_5A000.rom",
+        size: 0x2000,
+        crc32: 0xcb690587,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 1/2), drive 0 at sector $5A000 (VCC build)",
+    },
+    KnownROM {
+        file: "hdbdw3bc3_w-offset_5A000.rom",
+        size: 0x2000,
+        crc32: 0x7d89a438,
+        desc: "HDB-DOS DriveWire 3 Becker (CoCo 3), drive 0 at sector $5A000 (VCC build)",
     },
 ];
 
