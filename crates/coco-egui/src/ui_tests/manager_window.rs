@@ -131,7 +131,7 @@ fn asset_dialog_cancel_quits_without_downloading() {
     harness.step();
 
     harness.get_by_label(
-        "CocoVM needs to download some copyrighted assets (ROMs, images) to function properly.",
+        "CocoVM needs to download some copyrighted assets (ROMs, cartridges, images) to function properly.",
     );
     assert!(
         harness.query_by_label("New").is_none(),
