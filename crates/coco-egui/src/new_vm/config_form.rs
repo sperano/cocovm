@@ -1,13 +1,13 @@
 //! The hardware-config rows, split by the detail pane's sections:
-//! [`machine_rows`] (Model) and [`display_rows`] (VDG, Video, Monitor) —
+//! [`machine_rows`] (Model) and [`display_rows`] (VDG) —
 //! see the parent module doc. RAM is deliberately absent: the detail pane
 //! draws it as its own titled radio-button group (`manager::detail`), not
 //! a grid row.
 
-use coco_core::{MachineConfig, MachineVariant, VDGVariant, VideoStandard};
+use coco_core::{MachineConfig, MachineVariant, VDGVariant};
 use eframe::egui;
 
-use super::{constrain, vdg_label, video_label};
+use super::{constrain, vdg_label};
 
 /// The Model row (which CoCo this machine is), label + combo box — the detail pane hosts
 /// it inside its "Machine" titled group. Must be called inside an already-open two-column
@@ -31,9 +31,10 @@ pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
     ui.end_row();
 }
 
-/// The conditional VDG row (CoCo 2 only) and the Video row — [`machine_rows`]'s sibling,
-/// hosted by the detail pane's "Display" titled group. The monitor/TV row itself lives in
-/// [`super::MachineForm::display_rows`].
+/// The conditional VDG row (CoCo 2 only) — [`machine_rows`]'s sibling, hosted by the
+/// detail pane's "Display" titled group. The monitor/TV row itself lives in
+/// [`super::MachineForm::display_rows`]. There is no Video (NTSC/PAL) row: PAL isn't
+/// modeled well enough to offer, so the form leaves `config.video` alone.
 pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
     let font = ui.style().text_styles[&egui::TextStyle::Button].size;
 
@@ -51,25 +52,4 @@ pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
             });
         ui.end_row();
     }
-
-    // Two-value choices are radio pairs, not combos — same as RAM and Keyboard.
-    ui.label(egui::RichText::new("Video").size(font));
-    ui.horizontal(|ui| {
-        ui.radio_value(
-            &mut draft.video,
-            VideoStandard::NTSC,
-            video_label(VideoStandard::NTSC),
-        );
-        // CoCo 1/2 PAL timing isn't modeled; `constrain` already snapped the draft back to NTSC.
-        let pal_possible = draft.variant == MachineVariant::Coco3;
-        ui.add_enabled_ui(pal_possible, |ui| {
-            ui.radio_value(
-                &mut draft.video,
-                VideoStandard::PAL,
-                video_label(VideoStandard::PAL),
-            )
-            .on_disabled_hover_text("PAL is only supported on the CoCo 3");
-        });
-    });
-    ui.end_row();
 }

@@ -7,35 +7,29 @@ use super::*;
 #[test]
 fn every_selectable_config_validates() {
     for variant in MachineVariant::ALL {
-        let videos: &[VideoStandard] = if variant == MachineVariant::Coco3 {
-            &[VideoStandard::NTSC, VideoStandard::PAL]
-        } else {
-            &[VideoStandard::NTSC]
-        };
         let vdgs: &[Option<VDGVariant>] = match variant {
             MachineVariant::Coco2 => &[Some(VDGVariant::MC6847), Some(VDGVariant::MC6847T1)],
             MachineVariant::Coco1 => &[Some(VDGVariant::MC6847)],
             MachineVariant::Coco3 => &[None],
         };
         for &memory in ram_choices(variant) {
-            for &video in videos {
-                // The form's Display row is the only writer of
-                // `config.monitor`, so the monitor axis is exactly its
-                // per-variant choice list.
-                for &display in Display::choices(variant) {
-                    for &vdg in vdgs {
-                        let config = MachineConfig {
-                            variant,
-                            video,
-                            memory,
-                            monitor: display.to_monitor(variant),
-                            vdg,
-                        };
-                        assert!(
-                            config.validate().is_ok(),
-                            "form offered invalid config: {config:?}"
-                        );
-                    }
+            // The form's Display row is the only writer of
+            // `config.monitor`, so the monitor axis is exactly its
+            // per-variant choice list. The form has no Video row (PAL
+            // isn't offered), so `video` is always NTSC.
+            for &display in Display::choices(variant) {
+                for &vdg in vdgs {
+                    let config = MachineConfig {
+                        variant,
+                        video: VideoStandard::NTSC,
+                        memory,
+                        monitor: display.to_monitor(variant),
+                        vdg,
+                    };
+                    assert!(
+                        config.validate().is_ok(),
+                        "form offered invalid config: {config:?}"
+                    );
                 }
             }
         }
