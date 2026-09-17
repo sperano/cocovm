@@ -405,13 +405,16 @@ in the middle. The GIME is still the *centerpiece*; it's just not the *entry poi
 
 ### Settled decisions
 
-- **Both NTSC and PAL.** Chosen at construction via a `VideoStandard` enum that
-  feeds a constants table (lines-per-field, field rate, pacing period). See §4.
+- **Both NTSC and PAL in the core.** Chosen at construction via a `VideoStandard`
+  enum that feeds a constants table (lines-per-field, field rate, pacing period).
+  The frontend does not offer PAL: the CoCo 3 PAL ROM isn't wired up and the PAL
+  field-sync edges are unverified, so only a hand-edited machine definition can
+  select it. See §4.
 - **User-selectable memory: 128K / 512K / 2048K** (1024K trivially follows). Single
   `Box<[u8]>` sized at construction. The MMU models the real **write-8-bits /
   read-low-6-bits asymmetry** rather than a single mask, and smaller machines map
   RAM into the high blocks. 2 MB on a stock GIME is real hardware. See §2b and §3.
 
 Both become fields of a `MachineConfig` passed to `Machine::new` — the frontend
-exposes them as menu options, and they are part of the serialized save-state
-header so a snapshot restores into a matching machine.
+exposes memory (not the video standard) in the machine form, and both are part of
+the serialized save-state header so a snapshot restores into a matching machine.
