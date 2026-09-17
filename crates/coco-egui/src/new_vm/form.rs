@@ -50,7 +50,7 @@ impl MachineForm {
         config_form::machine_rows(ui, self.salt, &mut self.config);
     }
 
-    /// The VDG/Video/Display rows and the 4:3 aspect checkbox, hosted in the detail pane's
+    /// The VDG/Display rows and the 4:3 aspect checkbox, hosted in the detail pane's
     /// "Display" titled group. Re-constrains the Display pick first, since it owns
     /// `config.monitor` and must stay valid for the current variant.
     pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {

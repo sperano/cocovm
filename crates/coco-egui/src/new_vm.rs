@@ -92,13 +92,6 @@ const fn vdg_label(vdg: VDGVariant) -> &'static str {
     }
 }
 
-const fn video_label(video: VideoStandard) -> &'static str {
-    match video {
-        VideoStandard::NTSC => "NTSC",
-        VideoStandard::PAL => "PAL",
-    }
-}
-
 pub(crate) const fn ram_label(memory: MemorySize) -> &'static str {
     match memory {
         MemorySize::K4 => "4K",
@@ -206,7 +199,8 @@ impl From<Option<SerialDTO>> for SerialChoice {
 }
 
 /// Re-constrains a draft after a model change: snaps RAM to the new family's default when
-/// invalid, and forces NTSC where PAL isn't modeled.
+/// invalid, and forces NTSC where PAL isn't modeled at all (the form never offers PAL, but a
+/// hand-edited definition may carry it).
 fn constrain(draft: &mut MachineConfig) {
     if !ram_choices(draft.variant).contains(&draft.memory) {
         draft.memory = crate::default_ram(draft.variant);
