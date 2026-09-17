@@ -152,9 +152,15 @@ fn incidental_paused_repaints_do_not_upload_background_snow_early() {
         },
     );
 
-    let initial = ctx.run(input.clone(), |ctx| app.step_emulation(ctx, None));
+    use crate::app::presentation::NOISE_INTERVAL;
+    let now = Instant::now();
+    let initial = ctx.run(input.clone(), |ctx| {
+        app.upload_framebuffer_texture_at(ctx, now)
+    });
     assert_eq!(framebuffer_deltas(&app, initial).len(), 1);
-    let incidental = ctx.run(input, |ctx| app.step_emulation(ctx, None));
+    let incidental = ctx.run(input, |ctx| {
+        app.upload_framebuffer_texture_at(ctx, now + NOISE_INTERVAL / 2)
+    });
     assert!(framebuffer_deltas(&app, incidental).is_empty());
 }
 

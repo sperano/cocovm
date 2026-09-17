@@ -14,14 +14,16 @@ use mc6809::{Bus, MC6809};
 use serde::{Deserialize, Serialize};
 
 use crate::config::MachineConfig;
-use crate::{GIME, cart, gime_video, pia, sam, video};
+use crate::{GIME, cart, gime_video, pia, raster, sam, video};
 
 use artifact_phase::ArtifactPhaseState;
 
-/// Framebuffer geometry: the VDG 32×16 text display plus border (`DESIGN.md` §6).
-const FB_WIDTH: u32 = video::FB_W as u32;
-const FB_HEIGHT: u32 = video::FB_H as u32;
+/// Framebuffer geometry: the canonical 640×240 raster every variant paints.
+const FB_WIDTH: u32 = raster::CANVAS_W as u32;
+const FB_HEIGHT: u32 = raster::CANVAS_H as u32;
 const BYTES_PER_PIXEL: usize = video::BYTES_PER_PIXEL;
+/// Bytes in the framebuffer: the one size both allocation sites use.
+const FB_BYTES: usize = (FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL;
 
 /// GIME palette value for the legacy CoCo-compatible text border: black.
 const TEXT_BORDER_COLOR: u8 = 0x00;
@@ -50,10 +52,9 @@ const AUDIO_BUFFER_CAP: usize = 8 * 262 * crate::audio::OVERSAMPLE as usize;
 /// The video path that the GIME drives. `render_field` dispatches on this value.
 ///
 /// Only [`VideoMode::CocoText`] is implemented. The other variants are the
-/// branch points for planned PMODE and HSCREEN graphics renderers. Each
-/// renderer fills its native-size buffer and the frontend scales to fit. See the
-/// `video-output-architecture` note (Option A). Option B (one canonical raster) is
-/// the planned follow-up for per-scanline mode changes.
+/// branch points for planned PMODE and HSCREEN graphics renderers. Every
+/// renderer paints the one canonical 640×240 raster (`video-output-architecture`
+/// Option B), so the frontend never sees a mode-dependent size.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum VideoMode {
     /// INIT0 COCO=1, VDG alphanumerics/semigraphics: the legacy 32×16 text screen.
@@ -77,11 +78,10 @@ pub struct Machine {
     pub cpu: MC6809,
     pub bus: crate::SystemBus,
     pub config: MachineConfig,
-    /// RGBA framebuffer for the active video field (`DESIGN.md` §6). Its size is
-    /// mode-dependent: each renderer fills a native-size buffer and the frontend
-    /// scales to fit (`video-output-architecture` Option A). Skipped because the
-    /// render target can be rebuilt, then restored to legacy geometry by
-    /// [`Machine::after_restore`].
+    /// RGBA framebuffer for the active video field (`DESIGN.md` §6): always the
+    /// canonical 640×240 raster (`raster`), whatever the variant or mode. Skipped
+    /// because the render target can be rebuilt; [`Machine::after_restore`]
+    /// reallocates it.
     #[serde(skip)]
     pub framebuffer: Vec<u8>,
     #[serde(skip)]
@@ -202,7 +202,7 @@ impl Machine {
             cpu,
             bus,
             config,
-            framebuffer: vec![0u8; (FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL],
+            framebuffer: vec![0u8; FB_BYTES],
             fb_width: FB_WIDTH,
             fb_height: FB_HEIGHT,
             graphics_scratch: Vec::new(),
@@ -220,20 +220,13 @@ impl Machine {
     }
 
     /// Restore-time fixups for every `#[serde(skip)]` field after a snapshot
-    /// round-trip. A latched `field_scan` must reallocate the canvas-sized
-    /// framebuffer here, or the next painted line indexes out of bounds.
+    /// round-trip. The skipped framebuffer must be reallocated to the canvas
+    /// here, or the next painted line indexes out of bounds.
     pub fn after_restore(&mut self) {
         self.bus.variant = self.config.variant;
-        if self.field_scan.is_some() {
-            self.framebuffer.resize(
-                crate::raster::CANVAS_W * crate::raster::CANVAS_H * BYTES_PER_PIXEL,
-                0,
-            );
-            self.fb_width = crate::raster::CANVAS_W as u32;
-            self.fb_height = crate::raster::CANVAS_H as u32;
-        } else {
-            self.reset_legacy_fb();
-        }
+        self.framebuffer.resize(FB_BYTES, 0);
+        self.fb_width = FB_WIDTH;
+        self.fb_height = FB_HEIGHT;
         self.bus.after_restore();
     }
 

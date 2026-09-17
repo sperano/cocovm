@@ -56,7 +56,7 @@ fn coco2_pmode_switches_to_graphics_with_fixed_vdg_colors() {
     let expected_border = coco_core::video::VDG_FIXED_PALETTE[border_index];
 
     let px = |fb: &[u8], x: usize, y: usize| -> [u8; 4] {
-        let i = (y * coco_core::video::FB_W + x) * coco_core::video::BYTES_PER_PIXEL;
+        let i = (y * coco_core::raster::CANVAS_W + x) * coco_core::video::BYTES_PER_PIXEL;
         fb[i..i + 4].try_into().unwrap()
     };
     assert_eq!(
@@ -74,8 +74,9 @@ fn coco2_pmode_switches_to_graphics_with_fixed_vdg_colors() {
     let on = coco_core::video::VDG_FIXED_PALETTE[on_index];
     let interior = px(
         &m.framebuffer,
-        coco_core::video::BORDER + coco_core::video::RG6_PIXELS_PER_LINE / 2,
-        coco_core::video::BORDER,
+        coco_core::raster::NON_WIDE_BORDER_X
+            + coco_core::video::RG6_PIXELS_PER_LINE / 2 * coco_core::video::VDG_XSCALE,
+        coco_core::video::VDG_ACTIVE_TOP,
     );
     assert!(
         interior == off || interior == on,

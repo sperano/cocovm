@@ -13,7 +13,7 @@ use coco_core::video::{CELL_H, TEXT_FG_INDEX, VDG_GM0_INTEXT};
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
 
-use super::common::{CODE_A, CODE_O, PLAIN_O_GLYPH, T1_O_GLYPH, glyph_bits, sample_cell_canonical};
+use super::common::{CODE_A, CODE_O, PLAIN_O_GLYPH, T1_O_GLYPH, glyph_bits, sample_cell};
 
 /// `GIME_LOWRES_FONT[15]` ('O').
 const GIME_O_GLYPH: [u8; CELL_H] = [
@@ -63,7 +63,7 @@ fn coco3_compat_text_draws_gime_font_not_either_vdg_font() {
     m.bus.write(COCO3_SCREEN_BASE, CODE_O);
     m.run_field();
 
-    let cell = sample_cell_canonical(&m.framebuffer, 0, 0, GIME_WHITE_RGBA, GIME_BLACK_RGBA);
+    let cell = sample_cell(&m.framebuffer, 0, 0, GIME_WHITE_RGBA, GIME_BLACK_RGBA);
 
     assert_eq!(
         cell,
@@ -92,7 +92,7 @@ fn coco3_compat_text_true_lowercase_uses_gime_lowercase_font() {
     // True lowercase swaps fg/bg relative to the normal non-inverse mapping:
     // "on" pixels draw in the background colour (black), "off" pixels in
     // the foreground colour (white) — see `video.rs::resolve_alpha_cell`.
-    let cell = sample_cell_canonical(&m.framebuffer, 0, 0, GIME_BLACK_RGBA, GIME_WHITE_RGBA);
+    let cell = sample_cell(&m.framebuffer, 0, 0, GIME_BLACK_RGBA, GIME_WHITE_RGBA);
     assert_eq!(
         cell,
         glyph_bits(&GIME_LOWER_A_GLYPH),

@@ -151,9 +151,9 @@ fn the_coco12_puts_its_arrows_at_the_row_ends_not_in_a_diamond() {
 
 #[test]
 fn the_keyboard_fits_the_window_it_is_drawn_in() {
-    // The falsifiable claim: the widest keyboard must fit the VM window, FB_H * SCALE *
+    // The falsifiable claim: the widest keyboard must fit the VM window, CANVAS_H * SCALE *
     // TARGET_ASPECT wide.
-    let window_w = coco_core::video::FB_H as f32 * crate::SCALE * crate::TARGET_ASPECT;
+    let window_w = coco_core::raster::CANVAS_H as f32 * crate::SCALE * crate::TARGET_ASPECT;
     let widest = width_units(MachineVariant::Coco3) * super::super::UNIT_W;
     assert!(
         widest < window_w,

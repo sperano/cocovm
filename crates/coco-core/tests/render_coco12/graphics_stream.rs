@@ -1,9 +1,9 @@
 //! Machine-level proof that CoCo 1/2 graphics fetches follow the MC6883 stream.
 
-use coco_core::video::{BORDER, VDG_FIXED_PALETTE};
+use coco_core::video::VDG_FIXED_PALETTE;
 use mc6809::Bus;
 
-use super::common::{SCREEN_BASE, boot_parked_machine, px};
+use super::common::{SCREEN_BASE, boot_parked_machine, dot};
 
 const FF22_AG: u8 = 0x80;
 const FF22_GM_RG6: u8 = 7 << 4;
@@ -29,12 +29,12 @@ fn mismatched_rg6_v3_repeats_each_sixteen_byte_half_line() {
 
     let on = VDG_FIXED_PALETTE[9];
     let off = VDG_FIXED_PALETTE[8];
-    let repeated_x = BORDER + REPEATED_HALF_OFFSET * PIXELS_PER_RG6_BYTE;
-    assert_eq!(px(&machine.framebuffer, BORDER, BORDER), on);
+    let repeated_x = REPEATED_HALF_OFFSET * PIXELS_PER_RG6_BYTE;
+    assert_eq!(dot(&machine.framebuffer, 0, 0), on);
     assert_eq!(
-        px(&machine.framebuffer, repeated_x, BORDER),
+        dot(&machine.framebuffer, repeated_x, 0),
         on,
         "the second half-line must re-read the first half's SAM addresses"
     );
-    assert_eq!(px(&machine.framebuffer, repeated_x + 1, BORDER), off);
+    assert_eq!(dot(&machine.framebuffer, repeated_x + 1, 0), off);
 }

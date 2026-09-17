@@ -65,10 +65,11 @@ impl CocoApp {
     pub(super) fn display_menu_ui(&mut self, ui: &mut egui::Ui) {
         let variant = self.machine.config.variant;
         for &display in Display::choices(variant) {
-            if ui
-                .selectable_label(self.display == display, display.label())
-                .clicked()
-            {
+            let mut response = ui.selectable_label(self.display == display, display.label());
+            if let Some(note) = display.note(variant) {
+                response = response.on_hover_text(note);
+            }
+            if response.clicked() {
                 self.display = display;
                 // CoCo 1/2 has no GIME palette to steer; renderer never consults `gime.monitor`.
                 if let Some(monitor) = display.to_monitor(variant) {

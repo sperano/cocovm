@@ -180,7 +180,16 @@ impl CocoApp {
     /// [`Self::step_emulation`] that a suspended VM's window still runs, so its
     /// picture stays on screen without input handling.
     pub(crate) fn upload_framebuffer_texture(&mut self, ctx: &egui::Context) {
-        let now = std::time::Instant::now();
+        self.upload_framebuffer_texture_at(ctx, std::time::Instant::now());
+    }
+
+    /// [`Self::upload_framebuffer_texture`] at an explicit instant, so tests
+    /// can place repaints within or across a presentation interval.
+    pub(crate) fn upload_framebuffer_texture_at(
+        &mut self,
+        ctx: &egui::Context,
+        now: std::time::Instant,
+    ) {
         let background = scheduling::background_delay(ctx);
         let mut interval =
             scheduling::service_interval(self.machine.config.video.field_rate_hz(), background);

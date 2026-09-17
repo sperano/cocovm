@@ -6,10 +6,10 @@
 //! `Machine` (like `render.rs`'s `text_renderer_follows_sam_page_register`)
 //! since the colour-source dispatch lives in `lib.rs`, not `video.rs` itself.
 
-use coco_core::video::{BORDER, CELL_H, CELL_W, VDG_FIXED_PALETTE};
+use coco_core::video::{CELL_H, CELL_W, VDG_FIXED_PALETTE};
 use mc6809::Bus;
 
-use super::common::{SCREEN_BASE, boot_parked_machine, px};
+use super::common::{SCREEN_BASE, boot_parked_machine, dot, px};
 
 /// PIA1 $FF22: A/G, GM2-0, CSS (SAM strobes move the display base, not this).
 const FF22_AG: u8 = 0x80;
@@ -36,9 +36,9 @@ fn text_uses_fixed_green_set_by_default() {
         "text border must be fixed black"
     );
     let mut fg_seen = false;
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
-            let p = px(&m.framebuffer, x, y);
+    for y in 0..CELL_H {
+        for x in 0..CELL_W {
+            let p = dot(&m.framebuffer, x, y);
             assert!(
                 p == fg || p == bg,
                 "unexpected colour {p:?} in glyph cell (not fg/bg green set)"
@@ -59,9 +59,9 @@ fn text_uses_fixed_orange_set_when_css_set() {
     let fg = VDG_FIXED_PALETTE[15]; // ALPHANUMERIC BRIGHT ORANGE
     let bg = VDG_FIXED_PALETTE[14]; // ALPHANUMERIC DARK ORANGE
     let mut fg_seen = false;
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
-            let p = px(&m.framebuffer, x, y);
+    for y in 0..CELL_H {
+        for x in 0..CELL_W {
+            let p = dot(&m.framebuffer, x, y);
             assert!(
                 p == fg || p == bg,
                 "unexpected colour {p:?} in glyph cell (not fg/bg orange set)"
@@ -85,23 +85,19 @@ fn semigraphics4_uses_fixed_vdg_colors() {
     let off = VDG_FIXED_PALETTE[8]; // BLACK
     let quad_x = CELL_W / 2;
     let quad_y = CELL_H / 2;
+    assert_eq!(dot(&m.framebuffer, 0, 0), on, "upper-left quadrant lit");
     assert_eq!(
-        px(&m.framebuffer, BORDER, BORDER),
-        on,
-        "upper-left quadrant lit"
-    );
-    assert_eq!(
-        px(&m.framebuffer, BORDER + quad_x, BORDER),
+        dot(&m.framebuffer, quad_x, 0),
         off,
         "upper-right quadrant unlit"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER, BORDER + quad_y),
+        dot(&m.framebuffer, 0, quad_y),
         off,
         "lower-left quadrant unlit"
     );
     assert_eq!(
-        px(&m.framebuffer, BORDER + quad_x, BORDER + quad_y),
+        dot(&m.framebuffer, quad_x, quad_y),
         on,
         "lower-right quadrant lit"
     );
@@ -127,14 +123,6 @@ fn pmode4_style_graphics_uses_fixed_colors_and_green_border() {
         border,
         "graphics border must be green (CSS=0)"
     );
-    assert_eq!(
-        px(&m.framebuffer, BORDER, BORDER),
-        c1,
-        "MSB pixel = colour 1 (on)"
-    );
-    assert_eq!(
-        px(&m.framebuffer, BORDER + 1, BORDER),
-        c0,
-        "next pixel = colour 0 (off)"
-    );
+    assert_eq!(dot(&m.framebuffer, 0, 0), c1, "MSB pixel = colour 1 (on)");
+    assert_eq!(dot(&m.framebuffer, 1, 0), c0, "next pixel = colour 0 (off)");
 }

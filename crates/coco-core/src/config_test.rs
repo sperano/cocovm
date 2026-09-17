@@ -177,7 +177,10 @@ fn coco12_rejects_monitor_and_coco3_requires_one() {
         monitor: Some(MonitorType::RGB),
         vdg: Some(VDGVariant::MC6847),
     };
-    assert!(cfg.validate().is_err(), "Coco2 has no monitor port");
+    assert!(
+        cfg.validate().is_err(),
+        "Coco2 has no monitor signal path to select"
+    );
     cfg.monitor = None;
     assert!(cfg.validate().is_ok());
 

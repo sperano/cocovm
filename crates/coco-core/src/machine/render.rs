@@ -1,5 +1,5 @@
-//! Framebuffer rendering: the CoCo 3 canonical-raster per-scanline path
-//! (Option B) and the CoCo 1/2 whole-field snapshot path.
+//! Framebuffer rendering onto the canonical 640×240 raster (Option B): the
+//! CoCo 3 per-scanline path and the CoCo 1/2 whole-field snapshot path.
 
 use mc6809::Bus;
 
@@ -7,7 +7,7 @@ use crate::config::{MachineVariant, VDGVariant, VideoStandard};
 use crate::gime::{self, MonitorType, vmode};
 use crate::{gime_video, raster, video};
 
-use super::{BYTES_PER_PIXEL, FB_HEIGHT, FB_WIDTH, Machine, TEXT_BORDER_COLOR};
+use super::{BYTES_PER_PIXEL, Machine, TEXT_BORDER_COLOR};
 
 /// The active (non-border) picture rectangle within the framebuffer, in
 /// framebuffer pixels — [`Machine::active_rect`]'s return type. `u32` to
@@ -35,9 +35,9 @@ impl Machine {
     pub fn active_rect(&self) -> ActiveRect {
         if self.config.variant != MachineVariant::Coco3 {
             return ActiveRect {
-                x: video::BORDER as u32,
-                y: video::BORDER as u32,
-                width: video::ACTIVE_W as u32,
+                x: raster::NON_WIDE_BORDER_X as u32,
+                y: video::VDG_ACTIVE_TOP as u32,
+                width: raster::NON_WIDE_ACTIVE_W as u32,
                 height: video::ACTIVE_H as u32,
             };
         }
@@ -264,7 +264,6 @@ impl Machine {
 
     /// Render the legacy CoCo-compatible 32×16 text screen (`DESIGN.md` §6).
     fn render_coco_text(&mut self) {
-        self.reset_legacy_fb();
         // Snapshot the text screen through the bus from the display-base register.
         // TODO: per-scanline scanout straight from RAM (`DESIGN.md` §2b/§6).
         let base = self.legacy_display_base();
@@ -304,7 +303,6 @@ impl Machine {
 
     /// Render a VDG bitmap graphics (PMODE) field through the discrete MC6883.
     fn render_coco_graphics(&mut self) {
-        self.reset_legacy_fb();
         let ff22 = self.bus.pia1.b.output;
         let mode = video::decode_vdg_graphics(ff22);
         let css_bit = ff22 & video::VDG_CSS != 0;
@@ -352,11 +350,8 @@ impl Machine {
             let row_data = self.graphics_scratch[data_start..][..video::RG6_BYTES_PER_LINE]
                 .try_into()
                 .expect("RG6 row has fixed width");
-            let output_start =
-                ((video::BORDER + y) * video::FB_W + video::BORDER) * BYTES_PER_PIXEL;
-            let output = &mut self.framebuffer[output_start..]
-                [..video::RG6_PIXELS_PER_LINE * BYTES_PER_PIXEL];
-            decoder.decode_scanline(row_data, edges, 1, output);
+            let output = &mut self.framebuffer[video::active_row_range(y)];
+            decoder.decode_scanline(row_data, edges, video::VDG_XSCALE, output);
         }
     }
 
@@ -379,15 +374,6 @@ impl Machine {
             }
             stream.horizontal_sync();
         }
-    }
-
-    /// Restore the fixed legacy-mode framebuffer geometry after a GIME-native
-    /// mode may have resized it, such as when `WIDTH 32` follows `WIDTH 80`.
-    pub(super) fn reset_legacy_fb(&mut self) {
-        self.framebuffer
-            .resize((FB_WIDTH * FB_HEIGHT) as usize * BYTES_PER_PIXEL, 0);
-        self.fb_width = FB_WIDTH;
-        self.fb_height = FB_HEIGHT;
     }
 }
 

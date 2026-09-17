@@ -1,4 +1,5 @@
-use coco_core::video::{BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_W};
+use coco_core::raster::{CANVAS_W, NON_WIDE_BORDER_X};
+use coco_core::video::{BYTES_PER_PIXEL, CELL_H, CELL_W, VDG_ACTIVE_TOP, VDG_XSCALE};
 use coco_core::{Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard};
 use mc6809::Bus;
 
@@ -53,9 +54,17 @@ pub fn boot_parked_machine() -> Machine {
     boot_parked_machine_with(coco2_config())
 }
 
+/// A raw canvas pixel.
 pub fn px(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
-    let i = (y * FB_W + x) * BYTES_PER_PIXEL;
+    let i = (y * CANVAS_W + x) * BYTES_PER_PIXEL;
     fb[i..i + 4].try_into().unwrap()
+}
+
+/// The left canvas pixel of VDG dot (`x`, `y`) within the active area: every
+/// variant renders legacy modes on the canonical 640×240 raster, the 512 px
+/// body behind a 64 px border (dots doubled), top at row 25 (LPF=%00).
+pub fn dot(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
+    px(fb, NON_WIDE_BORDER_X + x * VDG_XSCALE, VDG_ACTIVE_TOP + y)
 }
 
 // --- MC6847 versus MC6847T1 font and lowercase tests (`crates/coco-core/src/font6847.rs`) ---
@@ -81,8 +90,8 @@ pub const T1_O_GLYPH: [u8; CELL_H] = [
 ];
 
 /// Sample the 8×12 cell at (row, col) into a bit grid: `true` where the
-/// pixel equals `on_color`, `false` where it equals `off_color` (panics on
-/// any other color — every glyph pixel must be one or the other).
+/// dot equals `on_color`, `false` where it equals `off_color` (panics on
+/// any other color — every glyph dot must be one or the other).
 pub fn sample_cell(
     fb: &[u8],
     row: usize,
@@ -93,39 +102,7 @@ pub fn sample_cell(
     let mut out = [[false; CELL_W]; CELL_H];
     for (cy, row_out) in out.iter_mut().enumerate() {
         for (cx, bit) in row_out.iter_mut().enumerate() {
-            let p = px(fb, BORDER + col * CELL_W + cx, BORDER + row * CELL_H + cy);
-            *bit = if p == on_color {
-                true
-            } else if p == off_color {
-                false
-            } else {
-                panic!("unexpected colour {p:?} at cell ({row},{col}) px ({cx},{cy})");
-            };
-        }
-    }
-    out
-}
-
-/// [`sample_cell`] for the CoCo 3, whose legacy modes render on the
-/// canonical 640×240 raster: non-wide 512 px body behind a 64 px border
-/// (native pixels doubled, so a cell pixel spans 2 canvas px — the left one
-/// is sampled), body top at row 25 (LPF=%00).
-pub fn sample_cell_canonical(
-    fb: &[u8],
-    row: usize,
-    col: usize,
-    on_color: [u8; 4],
-    off_color: [u8; 4],
-) -> [[bool; CELL_W]; CELL_H] {
-    use coco_core::raster::{CANVAS_W, NON_WIDE_BORDER_X};
-    const TOP: usize = 25;
-    let mut out = [[false; CELL_W]; CELL_H];
-    for (cy, row_out) in out.iter_mut().enumerate() {
-        for (cx, bit) in row_out.iter_mut().enumerate() {
-            let x = NON_WIDE_BORDER_X + (col * CELL_W + cx) * 2;
-            let y = TOP + row * CELL_H + cy;
-            let i = (y * CANVAS_W + x) * 4;
-            let p: [u8; 4] = fb[i..i + 4].try_into().unwrap();
+            let p = dot(fb, col * CELL_W + cx, row * CELL_H + cy);
             *bit = if p == on_color {
                 true
             } else if p == off_color {
@@ -140,7 +117,7 @@ pub fn sample_cell_canonical(
 
 /// Decode a raw font row byte array into the same bit-grid shape
 /// [`sample_cell`] produces (leftmost pixel = bit mask `0x80 >> col`,
-/// matching `video.rs::blit_cell`).
+/// matching `paint_legacy_text_line`).
 pub fn glyph_bits(glyph: &[u8; CELL_H]) -> [[bool; CELL_W]; CELL_H] {
     let mut out = [[false; CELL_W]; CELL_H];
     for (cy, &bits) in glyph.iter().enumerate() {
