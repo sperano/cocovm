@@ -1,14 +1,15 @@
-//! What the machine's video output is plugged into — a monitor (CoCo 3
-//! only) or a TV, color or black & white — and the frontend post-pass that
-//! look implies.
+//! What the machine's video output is plugged into — a monitor or a TV,
+//! color or black & white — and the frontend post-pass that look implies.
 //!
 //! A real CoCo 3 drives its RGB, composite, and RF outputs simultaneously.
 //! The TV hangs off the RF modulator, which is fed the composite signal.
 //! A TV—color or B&W—always sees the composite palette, never the RGB
-//! unpack. A CoCo 1/2 has no monitor port at all: RF to a TV is its only
-//! output. Making the display device a sum type over both facts means the
-//! one illegal combination (RGB signal into a B&W TV) cannot be
-//! expressed — no invariant to enforce anywhere.
+//! unpack. A stock CoCo 1/2 has only the RF modulator, but the composite
+//! video-output mod that taps the signal ahead of it was common, so a
+//! composite monitor is offered there too; RGB is not, since the VDG has
+//! no RGB output to tap. Making the display device a sum type over these
+//! facts means the illegal combinations (RGB signal into a B&W TV, RGB out
+//! of a VDG) cannot be expressed — no invariant to enforce anywhere.
 //!
 //! A composite monitor and a TV share a signal path but not a look:
 //! [`Processor::process`] — the TV chain, which only acts on `TV(_)` — is where the
@@ -34,9 +35,10 @@ pub(crate) enum TV {
 /// states never carry this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Display {
-    /// A monitor on the CoCo 3's RGB or composite port. Invalid on a CoCo
-    /// 1/2 (no monitor port) — [`Self::to_monitor`] passes the choice
-    /// through so `MachineConfig::validate` rejects it with the real reason.
+    /// A monitor on the CoCo 3's RGB or composite port, or a composite
+    /// monitor on a CoCo 1/2's video-output mod. RGB on a CoCo 1/2 is
+    /// invalid — [`Self::to_monitor`] passes it through so
+    /// `MachineConfig::validate` rejects it with the real reason.
     Monitor(MonitorType),
     /// A TV on the RF output — every machine has one of those.
     TV(TV),
@@ -50,48 +52,70 @@ const ALL: [Display; 4] = [
     Display::TV(TV::BW),
 ];
 
-/// The TV-only tail of [`ALL`], for machines without a monitor port.
-const TV_ONLY: [Display; 2] = [Display::TV(TV::Color), Display::TV(TV::BW)];
+/// The tail of [`ALL`] a CoCo 1/2 can drive: no RGB, since the VDG has none.
+const COCO12: [Display; 3] = [
+    Display::Monitor(MonitorType::Composite),
+    Display::TV(TV::Color),
+    Display::TV(TV::BW),
+];
+
+/// Hint shown beside the composite-monitor choice on a CoCo 1/2.
+const VIDEO_MOD_NOTE: &str =
+    "A stock CoCo 1/2 has only RF out; this assumes the common composite video-output mod.";
 
 impl Display {
-    /// The choices `variant` can actually drive: all four on a CoCo 3, only
-    /// the two TVs on a CoCo 1/2.
+    /// The choices `variant` can actually drive: all four on a CoCo 3, all
+    /// but the RGB monitor on a CoCo 1/2.
     pub(crate) const fn choices(variant: MachineVariant) -> &'static [Display] {
         match variant {
             MachineVariant::Coco3 => &ALL,
-            MachineVariant::Coco1 | MachineVariant::Coco2 => &TV_ONLY,
+            MachineVariant::Coco1 | MachineVariant::Coco2 => &COCO12,
         }
     }
 
-    /// Per-variant default when nothing is chosen: RGB monitor on CoCo 3,
-    /// color TV on CoCo 1/2.
+    /// Per-variant default when nothing is chosen: the crisp monitor each
+    /// machine can drive — RGB on CoCo 3, composite on CoCo 1/2.
     pub(crate) const fn default_for(variant: MachineVariant) -> Self {
         match variant {
             MachineVariant::Coco3 => Display::Monitor(MonitorType::RGB),
-            MachineVariant::Coco1 | MachineVariant::Coco2 => Display::TV(TV::Color),
+            MachineVariant::Coco1 | MachineVariant::Coco2 => {
+                Display::Monitor(MonitorType::Composite)
+            }
         }
     }
 
-    /// The core-side signal (`MachineConfig::monitor`) this display implies:
-    /// composite for a CoCo 3 TV, `None` for a CoCo 1/2 TV; a monitor choice
-    /// passes through so `validate` can reject it where no port exists.
+    /// The core-side signal (`MachineConfig::monitor`) this display implies.
+    /// A CoCo 3 always has one: its monitor, or composite behind a TV. A CoCo
+    /// 1/2 has no GIME to steer, so its TV and composite monitor imply
+    /// `None`; only an RGB monitor passes through, so `validate` can reject
+    /// it where no such output exists.
     pub(crate) const fn to_monitor(self, variant: MachineVariant) -> Option<MonitorType> {
-        match self {
-            Display::Monitor(monitor) => Some(monitor),
-            Display::TV(_) => match variant {
-                MachineVariant::Coco3 => Some(MonitorType::Composite),
-                MachineVariant::Coco1 | MachineVariant::Coco2 => None,
-            },
+        match (variant, self) {
+            (MachineVariant::Coco3, Display::Monitor(monitor)) => Some(monitor),
+            (MachineVariant::Coco3, Display::TV(_)) => Some(MonitorType::Composite),
+            (_, Display::Monitor(MonitorType::RGB)) => Some(MonitorType::RGB),
+            (_, Display::Monitor(MonitorType::Composite) | Display::TV(_)) => None,
         }
     }
 
     /// The display a validated config implies. Lossy one way: a CoCo 3 TV
-    /// serializes as composite, so callers with the real choice must
-    /// overwrite this afterwards.
+    /// serializes as composite and a CoCo 1/2's choice as `None`, so callers
+    /// with the real choice must overwrite this afterwards.
     pub(crate) const fn from_config(config: &MachineConfig) -> Self {
         match config.monitor {
             Some(monitor) => Display::Monitor(monitor),
-            None => Display::TV(TV::Color),
+            None => Display::default_for(config.variant),
+        }
+    }
+
+    /// A caveat worth a tooltip beside this choice on `variant`, if any.
+    pub(crate) const fn note(self, variant: MachineVariant) -> Option<&'static str> {
+        match (variant, self) {
+            (
+                MachineVariant::Coco1 | MachineVariant::Coco2,
+                Display::Monitor(MonitorType::Composite),
+            ) => Some(VIDEO_MOD_NOTE),
+            _ => None,
         }
     }
 

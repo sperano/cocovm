@@ -8,7 +8,7 @@
 //! programs a stock GM/V pairing, but deliberate mismatches produce a non-linear
 //! address stream. The CoCo 3's GIME compatibility path uses its own row model.
 
-use super::{ACTIVE_H, ACTIVE_W, BORDER, BYTES_PER_PIXEL, FB_H, FB_W, paint_px};
+use super::{ACTIVE_H, ACTIVE_W, VDG_XSCALE, paint_field, paint_px};
 
 /// PIA1 $FF22 bit 7: 1 = VDG graphics, 0 = alphanumeric/semigraphics.
 pub const VDG_AG: u8 = 0x80;
@@ -128,6 +128,12 @@ pub fn paint_legacy_graphics_line(
     }
 }
 
+/// Canvas pixels per logical pixel of `mode`: its own doubling into the
+/// 256-dot line, times the dot doubling onto the canvas.
+fn canvas_xscale(mode: &VDGGraphicsMode) -> usize {
+    ACTIVE_W / mode.logical_w * VDG_XSCALE
+}
+
 /// Renders a VDG graphics field. `data` is the video RAM snapshot
 /// (`bytes_per_row * rows` bytes); `colors` is the resolved 2- or 4-entry
 /// LUT, scaled to fill the 256×192 active area.
@@ -138,29 +144,12 @@ pub fn render_graphics(
     border: [u8; 4],
     fb: &mut [u8],
 ) {
-    debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
-    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
-        px.copy_from_slice(&border);
-    }
-
-    let hscale = ACTIVE_W / mode.logical_w;
     let vscale = ACTIVE_H / mode.rows;
-    let pixels_per_byte = 8 / mode.bpp;
-    let mask = (1u8 << mode.bpp) - 1;
-
-    for ly in 0..mode.rows {
-        for bx in 0..mode.bytes_per_row {
-            let byte = data.get(ly * mode.bytes_per_row + bx).copied().unwrap_or(0);
-            for j in 0..pixels_per_byte {
-                // Pixels are packed MSB-first within the byte.
-                let shift = 8 - mode.bpp * (j + 1);
-                let value = ((byte >> shift) & mask) as usize;
-                let color = colors[value.min(colors.len() - 1)];
-                let lx = bx * pixels_per_byte + j;
-                blit_block(fb, lx * hscale, ly * vscale, hscale, vscale, color);
-            }
-        }
-    }
+    let xscale = canvas_xscale(mode);
+    paint_field(border, fb, |y, out| {
+        let row_data = row_bytes(data, y / vscale, mode);
+        paint_legacy_graphics_line(row_data, mode, colors, xscale, out);
+    });
 }
 
 /// Render the 192 physical scanlines sampled through the discrete MC6883.
@@ -173,32 +162,16 @@ pub fn render_sampled_graphics(
     border: [u8; 4],
     fb: &mut [u8],
 ) {
-    debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
-    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
-        px.copy_from_slice(&border);
-    }
-
-    let xscale = ACTIVE_W / mode.logical_w;
-    for y in 0..ACTIVE_H {
-        let data_start = y * mode.bytes_per_row;
-        let output_start = ((BORDER + y) * FB_W + BORDER) * BYTES_PER_PIXEL;
-        paint_legacy_graphics_line(
-            data.get(data_start..data_start + mode.bytes_per_row)
-                .unwrap_or_default(),
-            mode,
-            colors,
-            xscale,
-            &mut fb[output_start..output_start + ACTIVE_W * BYTES_PER_PIXEL],
-        );
-    }
+    let xscale = canvas_xscale(mode);
+    paint_field(border, fb, |y, out| {
+        let row_data = row_bytes(data, y, mode);
+        paint_legacy_graphics_line(row_data, mode, colors, xscale, out);
+    });
 }
 
-/// Fill an `w`×`h` block of the active area (offset by [`BORDER`]) with one colour.
-fn blit_block(fb: &mut [u8], x: usize, y: usize, w: usize, h: usize, color: [u8; 4]) {
-    for dy in 0..h {
-        for dx in 0..w {
-            let idx = ((BORDER + y + dy) * FB_W + (BORDER + x + dx)) * BYTES_PER_PIXEL;
-            fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
-        }
-    }
+/// Row `row` of `data` in `mode`'s stride; empty (a blank row) when short.
+fn row_bytes<'a>(data: &'a [u8], row: usize, mode: &VDGGraphicsMode) -> &'a [u8] {
+    let start = row * mode.bytes_per_row;
+    data.get(start..start + mode.bytes_per_row)
+        .unwrap_or_default()
 }

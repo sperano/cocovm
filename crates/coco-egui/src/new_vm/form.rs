@@ -63,7 +63,11 @@ impl MachineForm {
         ui.label(egui::RichText::new("Display").size(font));
         ui.horizontal(|ui| {
             for &display in Display::choices(variant) {
-                if ui.radio(self.display == display, display.label()).clicked() {
+                let mut response = ui.radio(self.display == display, display.label());
+                if let Some(note) = display.note(variant) {
+                    response = response.on_hover_text(note);
+                }
+                if response.clicked() {
                     self.display = display;
                     self.config.monitor = display.to_monitor(variant);
                 }
@@ -104,8 +108,8 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// `constrain`'s display-shaped sibling: snaps a monitor pick to the default TV where the
-    /// model has no monitor port, then re-derives `config.monitor` from the pick.
+    /// `constrain`'s display-shaped sibling: snaps a pick the model cannot drive (RGB on a
+    /// CoCo 1/2) to the model's default, then re-derives `config.monitor` from the pick.
     pub(crate) fn constrain_display(&mut self) {
         let variant = self.config.variant;
         if !Display::choices(variant).contains(&self.display) {

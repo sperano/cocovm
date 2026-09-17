@@ -198,7 +198,7 @@ impl MachineConfig {
                 }
                 if self.monitor.is_some() {
                     return Err(format!(
-                        "{:?} has no monitor port (RF TV output only); monitor must be None",
+                        "{:?} has no GIME signal path to select (VDG composite/RF only); monitor must be None",
                         self.variant
                     ));
                 }

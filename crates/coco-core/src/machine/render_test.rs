@@ -131,7 +131,7 @@ fn fill_coco12_pattern(machine: &mut Machine, first_half: u8, second_half: u8) {
 }
 
 fn coco12_pixel(machine: &Machine, x: usize, y: usize) -> [u8; BYTES_PER_PIXEL] {
-    let offset = ((video::BORDER + y) * video::FB_W + video::BORDER + x) * BYTES_PER_PIXEL;
+    let offset = video::active_row_range(y).start + x * video::VDG_XSCALE * BYTES_PER_PIXEL;
     machine.framebuffer[offset..offset + BYTES_PER_PIXEL]
         .try_into()
         .expect("RGBA pixel")

@@ -6,8 +6,8 @@ use crate::font_gime::GIME_LOWRES_FONT;
 use crate::font6847::{MC6847_FONT, MC6847T1_FONT};
 
 use super::{
-    BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, COLS, FB_H, FB_W, PALETTE_LEN, ROWS, TEXT_BG_INDEX,
-    TEXT_FG_INDEX, VDG_AG, VDG_CSS, VDG_GM0_INTEXT, paint_px,
+    CELL_H, CELL_W, COLS, PALETTE_LEN, TEXT_BG_INDEX, TEXT_FG_INDEX, VDG_AG, VDG_CSS,
+    VDG_GM0_INTEXT, VDG_XSCALE, paint_field, paint_px,
 };
 
 /// Number of glyphs in the font (VDG codes $00–$3F).
@@ -203,10 +203,11 @@ pub fn paint_legacy_text_line(
     }
 }
 
-/// Renders the text screen (`SCREEN_LEN` bytes) into `fb`. Each byte is an
-/// alphanumeric character (bit 7 clear, coloured from palette regs 12/13) or
-/// a semigraphics block (bit 7 set); `generator`/`ff22` select SG4 versus
-/// SG6, the font, and true-lowercase decode (see [`resolve_alpha_cell`]).
+/// Renders the text screen (`SCREEN_LEN` bytes) onto a canonical canvas,
+/// each dot doubled ([`VDG_XSCALE`]). Each byte is an alphanumeric character
+/// (bit 7 clear, coloured from palette regs 12/13) or a semigraphics block
+/// (bit 7 set); `generator`/`ff22` select SG4 versus SG6, the font, and
+/// true-lowercase decode (see [`resolve_alpha_cell`]).
 pub fn render_text(
     screen: &[u8],
     palette: &[[u8; 4]; PALETTE_LEN],
@@ -215,71 +216,16 @@ pub fn render_text(
     ff22: u8,
     fb: &mut [u8],
 ) {
-    debug_assert!(fb.len() >= FB_W * FB_H * BYTES_PER_PIXEL);
-
-    // Border fills everything first; active cells overwrite the interior.
-    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
-        px.copy_from_slice(&border);
-    }
-
-    let fg = palette[TEXT_FG_INDEX];
-    let bg = palette[TEXT_BG_INDEX];
-
-    for row in 0..ROWS {
-        for col in 0..COLS {
-            let code = screen.get(row * COLS + col).copied().unwrap_or(0);
-            if code & SEMIGRAPHICS_BIT != 0 {
-                blit_semigraphics(fb, row, col, code, palette, generator, ff22);
-            } else {
-                let (cell_fg, cell_bg, glyph) = resolve_alpha_cell(generator, ff22, code, fg, bg);
-                blit_cell(fb, row, col, glyph, cell_fg, cell_bg);
-            }
-        }
-    }
-}
-
-/// Render one semigraphics cell: SG4 is a 2×2 grid and SG6 a 2×3 grid.
-fn blit_semigraphics(
-    fb: &mut [u8],
-    row: usize,
-    col: usize,
-    code: u8,
-    palette: &[[u8; 4]; PALETTE_LEN],
-    generator: AlphaGenerator,
-    ff22: u8,
-) {
-    let x0 = BORDER + col * CELL_W;
-    let y0 = BORDER + row * CELL_H;
-    for cy in 0..CELL_H {
-        let (on, off, pixels) = semigraphics_line(generator, ff22, code, cy, palette);
-        for cx in 0..CELL_W {
-            let color = if pixels & (PIXEL_MSB >> cx) != 0 {
-                on
-            } else {
-                off
-            };
-            let idx = ((y0 + cy) * FB_W + (x0 + cx)) * BYTES_PER_PIXEL;
-            fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
-        }
-    }
-}
-
-fn blit_cell(
-    fb: &mut [u8],
-    row: usize,
-    col: usize,
-    glyph: &[u8; CELL_H],
-    fg: [u8; 4],
-    bg: [u8; 4],
-) {
-    let x0 = BORDER + col * CELL_W;
-    let y0 = BORDER + row * CELL_H;
-    for (cy, &bits) in glyph.iter().enumerate() {
-        for cx in 0..CELL_W {
-            let on = bits & (0x80 >> cx) != 0;
-            let color = if on { fg } else { bg };
-            let idx = ((y0 + cy) * FB_W + (x0 + cx)) * BYTES_PER_PIXEL;
-            fb[idx..idx + BYTES_PER_PIXEL].copy_from_slice(&color);
-        }
-    }
+    paint_field(border, fb, |y, out| {
+        let row_bytes = screen.get(y / CELL_H * COLS..).unwrap_or_default();
+        paint_legacy_text_line(
+            row_bytes,
+            palette,
+            generator,
+            ff22,
+            y % CELL_H,
+            VDG_XSCALE,
+            out,
+        );
+    });
 }

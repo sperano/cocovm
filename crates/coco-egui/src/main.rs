@@ -107,11 +107,11 @@ pub(crate) use widgets::{
     toolbar_button, window_title,
 };
 
-/// Integer scale factor for the (small) CoCo framebuffer.
+/// Integer scale factor for the canvas rows when sizing a VM window.
 pub(crate) const SCALE: f32 = 3.0;
-/// Physical aspect the CoCo frame fills on an NTSC set (4:3). The framebuffer is
-/// 288×224 (≈1.29:1); when aspect correction is on, the image is stretched
-/// horizontally to this ratio so pixels are ~3% wider than tall, as on real hardware.
+/// Physical aspect the CoCo frame fills on an NTSC set (4:3). The canvas is
+/// 640×240 (two pixels per VDG dot); when aspect correction is on, the image
+/// is fitted to this ratio so a dot comes out roughly square, as on real hardware.
 pub(crate) const TARGET_ASPECT: f32 = 4.0 / 3.0;
 /// Cap on emulated fields run in one UI update: catches up after short host
 /// stalls (~130 ms) but drops time beyond that instead of spiralling.

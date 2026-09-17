@@ -3,9 +3,10 @@
 //! Colours are supplied through a resolved palette, so tests use sentinel colours.
 
 use coco_core::gime::init0;
+use coco_core::raster::{CANVAS_H, CANVAS_W, NON_WIDE_BORDER_X};
 use coco_core::video::{
-    AlphaGenerator, BORDER, BYTES_PER_PIXEL, CELL_H, CELL_W, FB_H, FB_W, PALETTE_LEN, SCREEN_LEN,
-    TEXT_BG_INDEX, TEXT_FG_INDEX, render_text,
+    AlphaGenerator, BYTES_PER_PIXEL, CELL_H, CELL_W, PALETTE_LEN, SCREEN_LEN, TEXT_BG_INDEX,
+    TEXT_FG_INDEX, VDG_ACTIVE_TOP, VDG_XSCALE, render_text,
 };
 use coco_core::{Machine, MachineConfig};
 use mc6809::Bus;
@@ -34,12 +35,18 @@ fn palette() -> [[u8; 4]; PALETTE_LEN] {
 }
 
 fn fb() -> Vec<u8> {
-    vec![0u8; FB_W * FB_H * BYTES_PER_PIXEL]
+    vec![0u8; CANVAS_W * CANVAS_H * BYTES_PER_PIXEL]
 }
 
+/// A raw canvas pixel.
 fn px(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
-    let i = (y * FB_W + x) * BYTES_PER_PIXEL;
+    let i = (y * CANVAS_W + x) * BYTES_PER_PIXEL;
     fb[i..i + 4].try_into().unwrap()
+}
+
+/// The left canvas pixel of VDG dot (`x`, `y`) within the active area.
+fn dot(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
+    px(fb, NON_WIDE_BORDER_X + x * VDG_XSCALE, VDG_ACTIVE_TOP + y)
 }
 
 /// VDG code for a blank cell (space).
@@ -60,10 +67,13 @@ fn border_and_active_area_use_their_colors() {
     );
 
     assert_eq!(px(&fb, 0, 0), BD);
-    assert_eq!(px(&fb, FB_W - 1, FB_H - 1), BD);
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
-            assert_eq!(px(&fb, x, y), BG);
+    assert_eq!(px(&fb, CANVAS_W - 1, CANVAS_H - 1), BD);
+    // The body sits exactly where a CoCo 3 legacy field puts it.
+    assert_eq!(px(&fb, NON_WIDE_BORDER_X - 1, VDG_ACTIVE_TOP), BD);
+    assert_eq!(px(&fb, NON_WIDE_BORDER_X, VDG_ACTIVE_TOP - 1), BD);
+    for y in 0..CELL_H {
+        for x in 0..CELL_W {
+            assert_eq!(dot(&fb, x, y), BG);
         }
     }
 }
@@ -83,18 +93,27 @@ fn glyph_cell_has_foreground_pixels_blank_cell_does_not() {
     );
 
     let mut fg_pixels = 0;
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
-            if px(&fb, x, y) == FG {
+    for y in 0..CELL_H {
+        for x in 0..CELL_W {
+            if dot(&fb, x, y) == FG {
                 fg_pixels += 1;
             }
         }
     }
     assert!(fg_pixels > 0, "'@' cell rendered no foreground pixels");
 
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER + CELL_W..BORDER + 2 * CELL_W {
-            assert_eq!(px(&fb, x, y), BG, "blank cell should be all background");
+    // Every dot is doubled: both canvas pixels of a dot carry the same colour.
+    for y in 0..CELL_H {
+        for x in 0..CELL_W {
+            let left = NON_WIDE_BORDER_X + x * VDG_XSCALE;
+            let row = VDG_ACTIVE_TOP + y;
+            assert_eq!(px(&fb, left, row), px(&fb, left + 1, row), "dot ({x},{y})");
+        }
+    }
+
+    for y in 0..CELL_H {
+        for x in CELL_W..2 * CELL_W {
+            assert_eq!(dot(&fb, x, y), BG, "blank cell should be all background");
         }
     }
 }
@@ -115,9 +134,9 @@ fn inverse_video_swaps_fg_and_bg() {
     );
 
     let mut counts = (0, 0);
-    for y in BORDER..BORDER + CELL_H {
-        for x in BORDER..BORDER + CELL_W {
-            match px(&fb, x, y) {
+    for y in 0..CELL_H {
+        for x in 0..CELL_W {
+            match dot(&fb, x, y) {
                 p if p == FG => counts.0 += 1,
                 p if p == BG => counts.1 += 1,
                 _ => {}
@@ -208,12 +227,12 @@ fn semigraphics4_renders_2x2_color_blocks() {
     let quad_x = CELL_W / 2;
     let quad_y = CELL_H / 2;
     // Upper-left quadrant: lit → SG_COLOR.
-    assert_eq!(px(&fb, BORDER, BORDER), SG_COLOR);
-    assert_eq!(px(&fb, BORDER + quad_x - 1, BORDER + quad_y - 1), SG_COLOR);
+    assert_eq!(dot(&fb, 0, 0), SG_COLOR);
+    assert_eq!(dot(&fb, quad_x - 1, quad_y - 1), SG_COLOR);
     // Upper-right quadrant: unlit → SG_OFF.
-    assert_eq!(px(&fb, BORDER + quad_x, BORDER), SG_OFF);
+    assert_eq!(dot(&fb, quad_x, 0), SG_OFF);
     // Lower-left quadrant: unlit → SG_OFF.
-    assert_eq!(px(&fb, BORDER, BORDER + quad_y), SG_OFF);
+    assert_eq!(dot(&fb, 0, quad_y), SG_OFF);
     // Lower-right quadrant: lit → SG_COLOR.
-    assert_eq!(px(&fb, BORDER + quad_x, BORDER + quad_y), SG_COLOR);
+    assert_eq!(dot(&fb, quad_x, quad_y), SG_COLOR);
 }

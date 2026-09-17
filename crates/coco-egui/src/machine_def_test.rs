@@ -265,8 +265,8 @@ video = "ntsc"
     assert_eq!(config.monitor, None, "no monitor key, no monitor port");
     assert_eq!(
         loaded[0].1.display(),
-        Display::TV(TV::Color),
-        "a CoCo 1/2's default display is the color TV — its only real option"
+        Display::Monitor(MonitorType::Composite),
+        "a CoCo 1/2's default display is the crisp composite monitor"
     );
 }
 

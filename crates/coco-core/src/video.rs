@@ -1,8 +1,10 @@
 //! VDG-compatible 32×16 text scanout (`DESIGN.md` §6).
 //!
-//! Renders the CoCo-compatible alphanumeric text screen to an RGBA framebuffer
-//! using the authentic MC6847 character generator (`font6847`). Each screen byte
-//! holds the VDG internal glyph code in its low 6 bits (`code & 0x3F`).
+//! Renders the CoCo-compatible alphanumeric text screen onto the canonical
+//! 640×240 canvas (`raster`), each VDG dot doubled into the 512 px non-wide
+//! span — the same geometry the CoCo 3's legacy modes paint — using the
+//! authentic MC6847 character generator (`font6847`). Each screen byte holds
+//! the VDG internal glyph code in its low 6 bits (`code & 0x3F`).
 //!
 //! Colours are data-driven from the GIME palette registers the ROM programmed, not
 //! hardcoded: CoCo-compatible text takes its background from palette reg
@@ -14,6 +16,8 @@
 mod artifact;
 mod graphics;
 mod text;
+
+use crate::raster;
 
 pub use artifact::{
     RG6_BYTES_PER_LINE, RG6_PIXELS_PER_LINE, RG6ArtifactDecoder, RG6ArtifactEdges, RG6ArtifactPhase,
@@ -34,15 +38,40 @@ pub const CELL_H: usize = 12;
 pub const COLS: usize = 32;
 pub const ROWS: usize = 16;
 
-/// Active display geometry.
+/// Active display geometry, in VDG dots.
 pub const ACTIVE_W: usize = COLS * CELL_W; // 256
 pub const ACTIVE_H: usize = ROWS * CELL_H; // 192
-/// Border thickness around the active area.
-pub const BORDER: usize = 16;
-pub const FB_W: usize = ACTIVE_W + 2 * BORDER; // 288
-pub const FB_H: usize = ACTIVE_H + 2 * BORDER; // 224
+
+/// Canvas pixels per VDG dot: the 256-dot line fills the canonical raster's
+/// 512 px non-wide span, exactly as the GIME's legacy modes scan it.
+pub const VDG_XSCALE: usize = raster::NON_WIDE_ACTIVE_W / ACTIVE_W;
+/// LPF field value for the 192-line body the VDG always scans.
+const LPF_192: usize = 0;
+/// Canvas row where the VDG's active body starts: the GIME's LPF=%00 window,
+/// so a CoCo 1/2 field lands on the same rows as a CoCo 3 legacy field.
+pub const VDG_ACTIVE_TOP: usize = raster::vertical_window(LPF_192).0;
 
 pub const BYTES_PER_PIXEL: usize = 4;
+
+/// Byte range of active scanline `y` (`0..ACTIVE_H`) within a canonical
+/// canvas: the 512 px span behind the 64 px side border.
+pub fn active_row_range(y: usize) -> std::ops::Range<usize> {
+    let start =
+        ((VDG_ACTIVE_TOP + y) * raster::CANVAS_W + raster::NON_WIDE_BORDER_X) * BYTES_PER_PIXEL;
+    start..start + raster::NON_WIDE_ACTIVE_W * BYTES_PER_PIXEL
+}
+
+/// Paints a whole VDG field into a canonical canvas: `border` everywhere,
+/// then `paint_row(y, row)` over each active scanline's 512 px span.
+fn paint_field(border: [u8; 4], fb: &mut [u8], mut paint_row: impl FnMut(usize, &mut [u8])) {
+    debug_assert!(fb.len() >= raster::CANVAS_W * raster::CANVAS_H * BYTES_PER_PIXEL);
+    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
+        px.copy_from_slice(&border);
+    }
+    for y in 0..ACTIVE_H {
+        paint_row(y, &mut fb[active_row_range(y)]);
+    }
+}
 
 /// The text screen is 512 bytes (32×16).
 pub const SCREEN_LEN: usize = COLS * ROWS;

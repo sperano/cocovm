@@ -276,23 +276,51 @@ fn tv_processing_keeps_artifact_chroma_only_on_color_sets() {
 // ---- Display resolution table ----
 
 /// The whole design table: which signal path each display resolves to, per
-/// variant. A monitor passes through even with no port so `validate` can
-/// reject it.
+/// variant. An RGB monitor passes through even where no RGB output exists so
+/// `validate` can reject it; a CoCo 1/2 composite monitor implies nothing to
+/// steer, like its TV.
 #[test]
 fn to_monitor_covers_the_design_table() {
     use MachineVariant::{Coco1, Coco2, Coco3};
-    for variant in [Coco1, Coco2, Coco3] {
-        for monitor in [MonitorType::RGB, MonitorType::Composite] {
-            assert_eq!(Display::Monitor(monitor).to_monitor(variant), Some(monitor));
-        }
-        let tv_path = match variant {
-            Coco3 => Some(MonitorType::Composite),
-            Coco1 | Coco2 => None,
-        };
+    for monitor in [MonitorType::RGB, MonitorType::Composite] {
+        assert_eq!(Display::Monitor(monitor).to_monitor(Coco3), Some(monitor));
+    }
+    for tv in [TV::Color, TV::BW] {
+        assert_eq!(
+            Display::TV(tv).to_monitor(Coco3),
+            Some(MonitorType::Composite)
+        );
+    }
+    for variant in [Coco1, Coco2] {
+        assert_eq!(
+            Display::Monitor(MonitorType::RGB).to_monitor(variant),
+            Some(MonitorType::RGB)
+        );
+        assert_eq!(
+            Display::Monitor(MonitorType::Composite).to_monitor(variant),
+            None
+        );
         for tv in [TV::Color, TV::BW] {
-            assert_eq!(Display::TV(tv).to_monitor(variant), tv_path);
+            assert_eq!(Display::TV(tv).to_monitor(variant), None);
         }
     }
+}
+
+#[test]
+fn coco12_rgb_monitor_is_rejected_by_validate() {
+    let config = MachineConfig {
+        variant: MachineVariant::Coco2,
+        video: coco_core::VideoStandard::NTSC,
+        memory: coco_core::MemorySize::K64,
+        monitor: Display::Monitor(MonitorType::RGB).to_monitor(MachineVariant::Coco2),
+        vdg: Some(coco_core::VDGVariant::MC6847),
+    };
+    assert!(config.validate().is_err());
+    let config = MachineConfig {
+        monitor: Display::Monitor(MonitorType::Composite).to_monitor(MachineVariant::Coco2),
+        ..config
+    };
+    assert!(config.validate().is_ok());
 }
 
 #[test]
@@ -347,24 +375,67 @@ fn tv_texture_uv_clamps_hand_edited_overscan() {
 }
 
 #[test]
-fn choices_offer_monitors_only_where_a_port_exists() {
+fn choices_offer_only_the_signals_each_machine_can_drive() {
     assert_eq!(Display::choices(MachineVariant::Coco3).len(), 4);
     for variant in [MachineVariant::Coco1, MachineVariant::Coco2] {
         assert_eq!(
             Display::choices(variant),
-            &[Display::TV(TV::Color), Display::TV(TV::BW)]
+            &[
+                Display::Monitor(MonitorType::Composite),
+                Display::TV(TV::Color),
+                Display::TV(TV::BW)
+            ]
+        );
+        assert!(Display::choices(variant).contains(&Display::default_for(variant)));
+    }
+}
+
+#[test]
+fn every_machine_defaults_to_its_crisp_monitor() {
+    assert_eq!(
+        Display::default_for(MachineVariant::Coco3),
+        Display::Monitor(MonitorType::RGB)
+    );
+    for variant in [MachineVariant::Coco1, MachineVariant::Coco2] {
+        assert_eq!(
+            Display::default_for(variant),
+            Display::Monitor(MonitorType::Composite)
         );
     }
 }
 
 #[test]
+fn only_the_coco12_composite_monitor_carries_the_video_mod_note() {
+    for variant in [
+        MachineVariant::Coco1,
+        MachineVariant::Coco2,
+        MachineVariant::Coco3,
+    ] {
+        for &display in Display::choices(variant) {
+            let expected = variant != MachineVariant::Coco3
+                && display == Display::Monitor(MonitorType::Composite);
+            assert_eq!(
+                display.note(variant).is_some(),
+                expected,
+                "{variant:?} {display:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn from_config_round_trips_through_to_monitor_where_it_can() {
-    // Exact except a CoCo 3 TV, which serializes as composite.
+    // Exact except a CoCo 3 TV, which serializes as composite, and a CoCo
+    // 1/2, whose `None` reads back as its default.
     let mut config = MachineConfig::default();
     assert_eq!(
         Display::from_config(&config),
         Display::Monitor(MonitorType::RGB)
     );
+    config.variant = MachineVariant::Coco2;
     config.monitor = None;
-    assert_eq!(Display::from_config(&config), Display::TV(TV::Color));
+    assert_eq!(
+        Display::from_config(&config),
+        Display::Monitor(MonitorType::Composite)
+    );
 }

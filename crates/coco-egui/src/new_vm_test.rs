@@ -76,25 +76,26 @@ fn constrain_draft_snaps_family_specific_fields() {
     assert_eq!(config.vdg, Some(VDGVariant::MC6847));
 }
 
-/// The display half of the re-constrain (run before drawing): a monitor pick snaps to the
-/// default TV when the model loses its monitor port, and the config's signal path follows.
+/// The display half of the re-constrain (run before drawing): an RGB pick snaps to the
+/// composite monitor when the model has no RGB output, and the config's signal path follows.
 #[test]
-fn constrain_display_snaps_to_tv_where_no_monitor_port_exists() {
+fn constrain_display_snaps_rgb_to_composite_where_no_rgb_output_exists() {
     let mut form = MachineForm::new("test");
     assert_eq!(form.display, Display::Monitor(MonitorType::RGB));
 
     form.config.variant = MachineVariant::Coco2;
     constrain(&mut form.config);
     form.constrain_display();
-    assert_eq!(form.display, Display::TV(crate::display::TV::Color));
+    assert_eq!(form.display, Display::Monitor(MonitorType::Composite));
     assert_eq!(
         form.config.monitor, None,
-        "a CoCo 2 has no monitor port to configure"
+        "a CoCo 2 has no GIME signal path to configure"
     );
     assert!(form.config.validate().is_ok());
 
     // A TV pick survives the trip back to CoCo 3, resolving to the
     // composite path, not the RGB default.
+    form.display = Display::TV(crate::display::TV::Color);
     form.config.variant = MachineVariant::Coco3;
     constrain(&mut form.config);
     form.constrain_display();

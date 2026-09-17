@@ -1,9 +1,9 @@
 //! Coverage for `Machine::active_rect` — the active (non-border) picture
 //! rectangle over which the frontend maps pointer positions for mouse-as-joystick.
-//! Mirrors the geometry the renderers themselves paint:
-//! `video::BORDER`/`ACTIVE_W`/`ACTIVE_H` on CoCo 1/2, and on CoCo 3
-//! `gime_video::active_span`'s wide/non-wide split plus `active_rows`'s
-//! LPF placement — the same helpers that the renderers use. The corresponding
+//! Mirrors the geometry the renderers themselves paint: the fixed non-wide
+//! 192-line window on CoCo 1/2 (`video::VDG_ACTIVE_TOP`/`ACTIVE_H`), and on
+//! CoCo 3 `gime_video::active_span`'s wide/non-wide split plus
+//! `active_rows`'s LPF placement — the same helpers that the renderers use. The corresponding
 //! renderer tests are in `render_gime.rs` and `render.rs`.
 //!
 //! CPU execution is not needed because `active_rect` only reads live
@@ -14,14 +14,6 @@
 use coco_core::gime::init0;
 use coco_core::{
     ActiveRect, Machine, MachineConfig, MachineVariant, MemorySize, VDGVariant, VideoStandard,
-};
-
-/// CoCo 1/2 fixed VDG geometry (`video::BORDER`/`ACTIVE_W`/`ACTIVE_H`).
-const COCO12_ACTIVE_RECT: ActiveRect = ActiveRect {
-    x: 16,
-    y: 16,
-    width: 256,
-    height: 192,
 };
 
 /// $FF99 HRES=%100 (64-column text): non-wide, 512 px active span with 64 px
@@ -41,8 +33,9 @@ const LPF_GLITCHED_210: u8 = 0x40;
 /// $FF99 LPF=%11: 225-line body, 8 top border rows.
 const LPF_225: u8 = 0x60;
 
-/// The non-wide CoCo 3 span: 512 px at x0=64 (`raster::NON_WIDE_BORDER_X`/
-/// `NON_WIDE_ACTIVE_W`), with the 192-line LPF window.
+/// The non-wide span: 512 px at x0=64 (`raster::NON_WIDE_BORDER_X`/
+/// `NON_WIDE_ACTIVE_W`), with the 192-line LPF window — the CoCo 3's
+/// legacy placement and the CoCo 1/2's only one.
 const NON_WIDE_LPF_192_RECT: ActiveRect = ActiveRect {
     x: 64,
     y: 25,
@@ -58,7 +51,7 @@ fn coco3_machine() -> Machine {
 }
 
 #[test]
-fn coco2_uses_the_fixed_vdg_active_rect() {
+fn coco2_shares_the_coco3_legacy_active_rect() {
     let config = MachineConfig {
         variant: MachineVariant::Coco2,
         video: VideoStandard::NTSC,
@@ -68,7 +61,7 @@ fn coco2_uses_the_fixed_vdg_active_rect() {
     };
     config.validate().expect("Coco2/Ntsc/K64 is valid");
     let m = Machine::new(config, vec![0u8; 16 * 1024].into_boxed_slice());
-    assert_eq!(m.active_rect(), COCO12_ACTIVE_RECT);
+    assert_eq!(m.active_rect(), NON_WIDE_LPF_192_RECT);
 }
 
 #[test]
