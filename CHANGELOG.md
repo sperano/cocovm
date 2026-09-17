@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.7] - 2026-09-17
+
+### Added
+- NTSC artifact colors. CoCo 1/2 PMODE 4 (RG6) screens with the color-set
+  bit on now show the red/blue artifact hues on a composite monitor or TV,
+  with the phase picked at reset like real hardware and preserved in save
+  states. A CoCo 3 on NTSC composite gets the same treatment, following its
+  live burst-phase bit; RGB monitors and native GIME modes are unchanged. A
+  color TV keeps the artifact chroma, a black-and-white TV collapses it.
+- Composite monitor as a display choice on the CoCo 1/2, standing in for the
+  common composite video-output mod. It is the new default there (matching
+  the CoCo 3's RGB default); a TV stays one click away, and definitions that
+  saved `display = "tv"` keep it. RGB is still refused, since the VDG has no
+  RGB output.
+- Orchestra-90 CC is a plain entry in the Cartridge and MPI Slot combos, like
+  the Sound/Speech Cartridge, loading its fixed `roms/orch90.rom`; insertion
+  is refused with a message naming the file when it is missing. The `path`
+  key is gone from machine definitions; old files still load.
+- Asset bundle v8: `orch90.rom` and `rs232.rom` join the bundled ROMs, the
+  cartridge set gains new and refreshed dumps (99 images), and the ROM
+  database knows which machine family each ROM and cartridge needs. The
+  startup banner counts cartridges, and Known Cartridges hover text shows the
+  machine family.
+- The first-run asset download also checks for the bundled cartridge images,
+  so an install from before the cartridges shipped picks them up and the
+  Known Cartridges picker fills in.
+
+### Changed
+- CoCo 1/2 screens now render on the same canvas as CoCo 3 legacy modes, so a
+  CoCo 2 on Color TV is exactly as sharp as a CoCo 3 showing the same screen
+  instead of about twice as blurry.
+- The machine form no longer offers a Video (NTSC/PAL) row. PAL was disabled
+  on the CoCo 1/2 and on the CoCo 3 only ran the NTSC ROM on unverified
+  50 Hz timing. Hand-edited definitions with `video = "pal"` still load.
+
+### Fixed
+- Pasting a BASIC program dropped characters after ENTER on long lines (a
+  line such as `30 PMODE 4,1` could arrive as line 0). Paste and the remote
+  `type_text` tool now pace each key by the machine's actual keyboard scans,
+  so a key is held until Color BASIC has seen it and released until it has
+  seen the release.
+- GitHub releases ship binaries again. Every release since v0.7.0 was
+  published before the build workflow could attach its archives; the
+  workflow now uploads to a draft and publishes once every target has
+  built.
+
 ## [0.7.6] - 2026-09-14
 
 ### Added
