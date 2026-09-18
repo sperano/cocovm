@@ -83,15 +83,18 @@ pub enum HiResChoice {
     None,
     /// Tandy 26-3025.
     Tandy,
+    /// CoCo Max III hi-res unit.
+    CoCoMax3,
 }
 
 impl HiResChoice {
-    pub const ALL: [Self; 2] = [Self::None, Self::Tandy];
+    pub const ALL: [Self; 3] = [Self::None, Self::Tandy, Self::CoCoMax3];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::None => "None",
             Self::Tandy => "Tandy Hi-Res",
+            Self::CoCoMax3 => "CoCo Max III Hi-Res",
         }
     }
 }
@@ -103,6 +106,7 @@ impl From<HiResInterfaceDTO> for HiResChoice {
         match dto {
             HiResInterfaceDTO::None => Self::None,
             HiResInterfaceDTO::Tandy => Self::Tandy,
+            HiResInterfaceDTO::CoCoMax3 => Self::CoCoMax3,
         }
     }
 }
@@ -112,6 +116,7 @@ impl From<HiResChoice> for HiResInterfaceDTO {
         match choice {
             HiResChoice::None => Self::None,
             HiResChoice::Tandy => Self::Tandy,
+            HiResChoice::CoCoMax3 => Self::CoCoMax3,
         }
     }
 }
@@ -123,6 +128,7 @@ impl From<HiResChoice> for HiResInterface {
         match choice {
             HiResChoice::None => Self::None,
             HiResChoice::Tandy => Self::Tandy,
+            HiResChoice::CoCoMax3 => Self::CoCoMax3,
         }
     }
 }

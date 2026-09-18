@@ -6,15 +6,16 @@
 //! own registers.
 
 use crate::gime;
+use crate::hires_joystick::TriggerInputs;
 
 use super::regs::{
     BECKER_DATA, BECKER_STATUS, BORDER_REG, CART_EXT_BASE, CART_EXT_LAST, FIRQENR_REG, GIME_LAST,
     GIME_RESERVED_BASE, GIME_RESERVED_LAST, HOFFSET_REG, INIT0_REG, INIT1_REG, IO_BASE, IRQENR_REG,
-    MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE, PALETTE_LAST, PIA0_LAST,
-    PIA1_BASE, PIA1_LAST, PIA1_PORT_A_OFFSET, PIA1_REG_MASK, SCS_BASE, SCS_GATE_CLOSED, SCS_LAST,
-    TIMER_LSB_REG, TIMER_MSB_REG, VBANK_REG, VHD_BUFFER_HI, VHD_BUFFER_LO, VHD_COMMAND_STATUS,
-    VHD_LRN_HI, VHD_LRN_LO, VHD_LRN_MID, VHD_SELECT, VMODE_REG, VOFFSET0_REG, VOFFSET1_REG,
-    VRES_REG, VSCROLL_REG,
+    MMU_BASE, MMU_LAST, MPI_CONTROL_REG, OPEN_BUS, PALETTE_BASE, PALETTE_LAST, PIA_REG_MASK,
+    PIA0_LAST, PIA0_PORT_A_OFFSET, PIA1_BASE, PIA1_LAST, PIA1_PORT_A_OFFSET, SCS_BASE,
+    SCS_GATE_CLOSED, SCS_LAST, TIMER_LSB_REG, TIMER_MSB_REG, VBANK_REG, VHD_BUFFER_HI,
+    VHD_BUFFER_LO, VHD_COMMAND_STATUS, VHD_LRN_HI, VHD_LRN_LO, VHD_LRN_MID, VHD_SELECT, VMODE_REG,
+    VOFFSET0_REG, VOFFSET1_REG, VRES_REG, VSCROLL_REG,
 };
 use super::{SystemBus, mmu_index};
 
@@ -165,32 +166,38 @@ impl SystemBus {
     }
 
     /// PIA0 register write ($FF00-$FF03, mirrored through $FF1F): the PIA
-    /// register write itself, the sound-mux touch, and the Tandy hi-res
-    /// trigger's mux-address observation — shared by both the GIME I/O-page
-    /// path and the plain-SAM path.
+    /// register write itself, the sound-mux touch, and a plugged-in hi-res
+    /// interface's trigger observation (mux-address change for any kind, plus
+    /// the PA0-3 pin-nibble change for CoCo Max III) — shared by both the
+    /// GIME I/O-page path and the plain-SAM path.
     pub(super) fn write_pia0(&mut self, addr: u16, val: u8) {
         let mux_before = self.joystick_mux();
-        self.pia0.write((addr & 0x03) as u8, val);
+        let nibble_before = self.pia0_pa_nibble();
+        let reg = (addr & PIA_REG_MASK) as u8;
+        self.pia0.write(reg, val);
         self.note_audio_write(); // CA2/CB2 are the sound mux selects
-        self.observe_mux_change(mux_before);
+        let port_a_write = reg == PIA0_PORT_A_OFFSET;
+        self.observe_pia0_change(mux_before, nibble_before, port_a_write);
     }
 
     /// PIA1 register write ($FF20-$FF23, mirrored through $FF3F): the PIA
-    /// register write itself, the Port-A-gated cassette DAC tap and Tandy
-    /// hi-res trigger, and the sound-mux touch — shared by both the GIME
-    /// I/O-page path and the plain-SAM path.
+    /// register write itself, the Port-A-gated cassette DAC tap and hi-res
+    /// trigger, and the sound-mux touch — shared by both the GIME I/O-page
+    /// path and the plain-SAM path.
     pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
-        let reg = addr & PIA1_REG_MASK;
+        let reg = addr & PIA_REG_MASK;
         self.pia1.write(reg as u8, val);
         // Cassette record-out and the hi-res trigger are direct,
-        // unconditional taps of the DAC, but only sample on Port A
+        // unconditional taps of the DAC/PA0-3 nibble, but only sample on Port A
         // output/DDR writes, not CRA writes: MAME's `update_cassout()`/
         // `hires_trigger` run only from `pia1_pa_changed()`.
         if reg == PIA1_PORT_A_OFFSET {
             let dac = self.pia1_dac_output();
             self.cassette.record_dac(dac, self.pia1.a.c2_output());
             let (stick, axis) = self.joystick_mux();
-            self.joysticks.observe_dac(dac, stick, axis);
+            let pa_nibble = self.pia0_pa_nibble();
+            self.joysticks
+                .observe(stick, axis, TriggerInputs { dac, pa_nibble });
         }
         self.note_audio_write(); // DAC / PB1 / SNDEN / relay
     }
