@@ -99,6 +99,11 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     titled_group(ui, "Keyboard", |ui| {
         form.keyboard_row(ui);
     });
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "DriveWire", |ui| {
+        form.drivewire_rows(ui);
+    });
 }
 
 /// How often the detail pane asks for its next repaint while showing a

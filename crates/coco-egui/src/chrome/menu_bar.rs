@@ -6,7 +6,6 @@
 
 use crate::*;
 
-mod drivewire;
 mod machine;
 
 impl CocoApp {

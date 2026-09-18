@@ -96,6 +96,18 @@ pub enum CartridgeDTO {
     },
 }
 
+impl CartridgeDTO {
+    pub fn contains_games_master(&self) -> bool {
+        match self {
+            Self::GamesMaster { .. } => true,
+            Self::MPI { slots, .. } => slots
+                .iter()
+                .any(|slot| matches!(slot, SlotDTO::GamesMaster { .. })),
+            _ => false,
+        }
+    }
+}
+
 /// One MultiPak slot's occupant ([`CartridgeDTO::MPI`]'s `slots`) —
 /// [`CartridgeDTO`]'s sibling minus nested MPI (real MPIs can't nest). Maps
 /// to [`crate::new_vm::SlotChoice`].

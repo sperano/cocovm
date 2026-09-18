@@ -13,13 +13,6 @@ impl CocoApp {
         }
     }
 
-    /// Disable the Becker port, ejecting all mounted DriveWire images and
-    /// clearing the path tracking.
-    pub(crate) fn disable_drivewire(&mut self) {
-        self.machine.bus.drivewire = None;
-        self.dw_paths = std::array::from_fn(|_| None);
-    }
-
     /// Mount the DriveWire image at `path` in `drive`. Like VHD, writes hit the
     /// backing file directly. Failures land in [`Self::cart_error`].
     pub(crate) fn insert_dw_disk(&mut self, drive: usize, path: PathBuf) {
@@ -40,14 +33,5 @@ impl CocoApp {
         if let Err(e) = result {
             self.cart_error = Some(e);
         }
-    }
-
-    /// Eject the DriveWire image in `drive`. No write-back: writes already hit
-    /// the backing file directly.
-    pub(crate) fn eject_dw_disk(&mut self, drive: usize) {
-        if let Some(ref mut dw) = self.machine.bus.drivewire {
-            dw.eject(drive);
-        }
-        self.dw_paths[drive] = None;
     }
 }

@@ -1,11 +1,11 @@
-//! The Machine menu: save state, disk/DriveWire drives, and
+//! The Machine menu: save state, disk drives, and
 //! print capture. Peripherals live in `[peripherals]`, not here.
 
 use crate::*;
 
 impl CocoApp {
-    /// The Machine menu: disk drives, DriveWire, and print capture. Reset
-    /// lives on the toolbar; VHDs are mounted only through the machine definition.
+    /// The Machine menu: disk drives and print capture. Reset lives on the
+    /// toolbar; VHD and DriveWire startup mounts live in the machine definition.
     /// Peripherals (cartridges, MultiPak, RS-232, RTC) are configured only
     /// through the machine definition's `[peripherals]` and mounted at
     /// launch — there is no runtime insert/eject here. The cassette deck
@@ -14,8 +14,6 @@ impl CocoApp {
         self.draw_save_state_menu(ui);
         ui.separator();
         self.machine_disk_items(ui);
-        ui.separator();
-        ui.menu_button("DriveWire", |ui| self.drivewire_menu_ui(ui));
         ui.separator();
         self.machine_print_items(ui);
     }

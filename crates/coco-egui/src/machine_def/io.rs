@@ -15,6 +15,7 @@ const TOP_LEVEL_KEYS: &[&str] = &[
     "created",
     "hardware",
     "media",
+    "drivewire",
     "peripherals",
     "ports",
     "ui",
@@ -26,6 +27,7 @@ const HARDWARE_KEYS: &[&str] = &[
     "variant", "ram", "video", "monitor", "display", "vdg", "rom",
 ];
 const MEDIA_KEYS: &[&str] = &["disk0", "disk1", "vhd0", "vhd1", "tape"];
+const DRIVEWIRE_KEYS: &[&str] = &["enabled", "hdbdos_mode", "disk0", "disk1", "disk2", "disk3"];
 // `mpi`/`rtc`/`fd502`/`rs232` (schema-1's booleans) are deliberately absent: a
 // schema-1 file's leftover `[peripherals]` must report them as unknown, not
 // silently accept them (`PeripheralsDTO::cartridge`'s doc explains why the
@@ -50,6 +52,7 @@ const STATS_KEYS: &[&str] = &["runtime_secs", "starts"];
 const KNOWN_SECTIONS: &[(&str, &[&str])] = &[
     ("hardware", HARDWARE_KEYS),
     ("media", MEDIA_KEYS),
+    ("drivewire", DRIVEWIRE_KEYS),
     ("peripherals", PERIPHERALS_KEYS),
     ("ports", PORTS_KEYS),
     ("ui", UI_KEYS),

@@ -1,0 +1,37 @@
+# Configure DriveWire
+
+Select a VM in the manager and use its **DriveWire** section to enable
+DriveWire, select **HDB-DOS mode**, and assign images to DW0 through DW3.
+**Mount DW0…** selects the startup image for drive zero. **Eject DW0** clears
+that assignment. The other drives work the same way. Changes save automatically.
+
+All DriveWire settings apply at the next start from power off. Changing
+settings while the VM runs leaves its active session and mounted images
+intact. Resetting the CPU does not apply these settings. Resuming a suspended
+VM or restoring a saved state restores that session's mode and mounts.
+Guest-selected runtime mounts do not replace the saved startup assignments.
+
+Disabling DriveWire retains its mode and image assignments for later use.
+DriveWire defaults to disabled for definitions without a `[drivewire]`
+section. The Games Master Cartridge conflicts with the Becker port, including
+when the cartridge occupies a MultiPak slot. Remove the cartridge or disable
+DriveWire before saving the conflicting change.
+
+The definition records startup settings in a separate section:
+
+```toml
+[drivewire]
+enabled = true
+hdbdos_mode = false
+disk0 = "system.dsk"
+disk3 = "/path/to/data.vhd"
+```
+
+Omitted disk keys represent empty drives. Relative paths resolve against the
+VM's artifact directory, as other media paths do. Missing or inaccessible
+images prevent startup and display an error in the VM's detail pane. Images
+open for reading and writing, and disk writes update their backing files.
+
+Each VM owns its DriveWire session. Its activity indicators remain in the
+running window's status bar. Host shares and service options belong in this
+settings section as those features become available.

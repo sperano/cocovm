@@ -18,6 +18,7 @@ use crate::machine_def::SerialDTO;
 mod cartridge;
 mod cartridge_form;
 mod config_form;
+mod drivewire_form;
 mod form;
 mod known_cartridges;
 
@@ -228,6 +229,8 @@ pub struct MachineForm {
     /// the form more than once in the same frame.
     salt: &'static str,
     pub config: MachineConfig,
+    /// Saved startup configuration, independent of the running DriveWire session.
+    pub drivewire: crate::machine_def::DriveWireDTO,
     /// The Cartridge-row pick.
     pub cartridge: CartridgeChoice,
     /// The MPI Slot picks (indented rows under the Cartridge combo);

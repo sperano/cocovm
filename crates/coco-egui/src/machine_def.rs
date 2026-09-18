@@ -31,7 +31,8 @@ mod io;
 mod peripherals_dto;
 
 pub use dto::{
-    HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO, SerialDTO, StatsDTO, UIDTO,
+    DriveWireDTO, HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO, SerialDTO, StatsDTO,
+    UIDTO,
 };
 pub use peripherals_dto::{CartridgeDTO, PeripheralsDTO, RS232EndpointDTO, SlotDTO};
 // Only tests build definitions with an explicit display DTO so far —
@@ -65,6 +66,8 @@ pub struct MachineDef {
     #[serde(default)]
     pub media: MediaDTO,
     #[serde(default)]
+    pub drivewire: DriveWireDTO,
+    #[serde(default)]
     pub peripherals: PeripheralsDTO,
     #[serde(default)]
     pub ports: PortsDTO,
@@ -92,6 +95,7 @@ impl MachineDef {
     /// so an unsupported hardware combination (for example, CoCo 2 + PAL) fails here
     /// rather than at boot.
     pub fn to_machine_config(&self) -> Result<MachineConfig, String> {
+        self.validate_drivewire()?;
         let variant: MachineVariant = self.hardware.variant.into();
         let memory: MemorySize = self.hardware.ram.into();
         let video: VideoStandard = self.hardware.video.into();
@@ -111,6 +115,16 @@ impl MachineDef {
         };
         config.validate()?;
         Ok(config)
+    }
+
+    pub(crate) fn validate_drivewire(&self) -> Result<(), String> {
+        if self.drivewire.enabled && self.peripherals.cartridge.contains_games_master() {
+            return Err(
+                "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 
     /// The display device this definition asks for: `[hardware].display`,
@@ -133,6 +147,7 @@ impl MachineDef {
             created,
             hardware: HardwareDTO::from_config(config, Display::from_config(config), None),
             media: MediaDTO::default(),
+            drivewire: DriveWireDTO::default(),
             peripherals: PeripheralsDTO::default(),
             ports: PortsDTO::default(),
             ui: UIDTO::default(),

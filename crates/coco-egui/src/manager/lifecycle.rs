@@ -81,8 +81,14 @@ impl ManagerApp {
     /// with no stats bookkeeping. Returns whether the launch succeeded.
     fn launch_vm(&mut self, index: usize) -> bool {
         self.entries[index].launch_error = None;
+        let mut def = self.entries[index].def.clone();
+        if self.entries[index].suspended {
+            // Resume restores DriveWire from the snapshot. Startup images may
+            // have changed or disappeared since suspension and must not block it.
+            def.drivewire = machine_def::DriveWireDTO::default();
+        }
         match crate::launch_machine_with_gamepad(
-            &self.entries[index].def,
+            &def,
             &self.entries[index].slug,
             self.gamepad.clone(),
         ) {
@@ -277,3 +283,7 @@ impl ManagerApp {
 #[cfg(test)]
 #[path = "lifecycle_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "lifecycle_drivewire_test.rs"]
+mod drivewire_tests;
