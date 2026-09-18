@@ -6,6 +6,10 @@ use crate::config::MachineVariant;
 
 use super::SystemBus;
 
+/// Mask isolating PIA0 port-A pins PA0-PA3 — the joystick fire-button lines a CoCo Max III
+/// hi-res unit reads as its trigger nibble (MAME `coco_cm3_hires_joy`: `a_output() & 0x0f`).
+const PA_NIBBLE_MASK: u8 = 0x0F;
+
 impl SystemBus {
     /// PIA0 port-A input pins: keyboard rows for the current column strobe,
     /// fire buttons pulling their rows low, and the joystick comparator on
@@ -27,8 +31,8 @@ impl SystemBus {
 
     /// Current analog-mux selection: SEL1/CA2 (PIA0 side A) picks the axis,
     /// SEL2/CB2 (side B) picks the stick — the same pair [`Self::pia0_pa_pins`]
-    /// reads, exposed so a PIA0 write can detect when it changes (the Tandy
-    /// hi-res interface's trigger observes every such change, not just DAC
+    /// reads, exposed so a PIA0 write can detect when it changes (a plugged-in
+    /// hi-res interface's trigger observes every such change, not just DAC/PA0-3
     /// writes — see `crate::hires_joystick`).
     pub(super) fn joystick_mux(&self) -> (usize, usize) {
         let axis = usize::from(self.pia0.a.c2_output()); // SEL1: 0 = X, 1 = Y
@@ -44,16 +48,35 @@ impl SystemBus {
         (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2
     }
 
-    /// After a PIA0 write, feed the Tandy hi-res trigger if that write moved
-    /// the analog mux onto a new (stick, axis) — `mux_before` is
-    /// [`Self::joystick_mux`]'s reading from just before the write. No-op for
-    /// a port with no hi-res interface installed ([`crate::joystick::Joysticks::observe_dac`]).
-    pub(super) fn observe_mux_change(&mut self, mux_before: (usize, usize)) {
-        let mux_after = self.joystick_mux();
-        if mux_after != mux_before {
-            let dac = self.pia1_dac_output();
-            self.joysticks.observe_dac(dac, mux_after.0, mux_after.1);
-        }
+    /// PIA0 port-A PA0-PA3 pin nibble as a CoCo Max III hi-res unit's trigger sees it: the PIN
+    /// state (driven output on output-configured lines, live input pins on the rest), not just
+    /// the output register — a button held on an input-configured line pulls it low too.
+    pub(super) fn pia0_pa_nibble(&self) -> u8 {
+        let pins =
+            (self.pia0.a.output & self.pia0.a.ddr) | (self.pia0_pa_pins() & !self.pia0.a.ddr);
+        pins & PA_NIBBLE_MASK
+    }
+
+    /// After a PIA0 write, re-run the mux-selected port's hi-res trigger if the write moved the
+    /// analog mux (any kind), or — CoCoMax3 only — changed the PA0-PA3 pin nibble via a port-A
+    /// data/DDR write, not CRA (see [`super::regs::PIA0_PORT_A_OFFSET`]'s doc).
+    /// `mux_before`/`nibble_before` are this module's readings from just before the write;
+    /// `port_a_write` is whether the write's register was PIA0's port-A data/DDR ($FF00).
+    pub(super) fn observe_pia0_change(
+        &mut self,
+        mux_before: (usize, usize),
+        nibble_before: u8,
+        port_a_write: bool,
+    ) {
+        self.joysticks
+            .observe_pia0(crate::joystick::PIA0WriteObservation {
+                mux_before,
+                mux_after: self.joystick_mux(),
+                nibble_before,
+                nibble_after: self.pia0_pa_nibble(),
+                port_a_write,
+                dac: self.pia1_dac_output(),
+            });
     }
 
     /// [`Self::pia0_pa_pins`] for a CPU read of PIA0 register `reg`, which

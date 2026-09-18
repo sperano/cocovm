@@ -10,13 +10,13 @@
 //! `poll_keyboard`/`joyin` — PA7 = `dac_output() <= joyval`.)
 //!
 //! A port's pot is stored at 10-bit resolution ([`POT_MAX`]) even though the
-//! stock comparator only ever sees its top 6 bits — a plugged-in Tandy hi-res
+//! stock comparator only ever sees its top 6 bits — a plugged-in hi-res
 //! interface ([`crate::hires_joystick`]) needs the extra precision the DAC
 //! sweep alone can't read back.
 
 use serde::{Deserialize, Serialize};
 
-use crate::hires_joystick::{HiResInterface, HiResPort};
+use crate::hires_joystick::{HiResInterface, HiResPort, TriggerInputs};
 
 /// Pot values the stock comparator sweeps: the DAC's own 6-bit range.
 pub const AXIS_MAX: u8 = 63;
@@ -46,6 +46,21 @@ const BUTTON_ROW_BITS: [[u8; 2]; 2] = [[0x01, 0x04], [0x02, 0x08]];
 /// corner instead of idle center.
 fn default_pots() -> [[u16; 2]; 2] {
     [[POT_CENTER; 2]; 2]
+}
+
+/// [`Joysticks::observe_pia0`]'s inputs, bundled so its two same-typed pairs
+/// (`mux_before`/`mux_after`, `nibble_before`/`nibble_after`) can't be silently transposed at
+/// a call site the way plain positional `(usize, usize)`/`u8` arguments could be.
+#[derive(Debug, Clone, Copy)]
+pub struct PIA0WriteObservation {
+    pub mux_before: (usize, usize),
+    pub mux_after: (usize, usize),
+    pub nibble_before: u8,
+    pub nibble_after: u8,
+    /// Whether the write was to PIA0 side A's data/DDR register ($FF00) — never CRA
+    /// ($FF01) or either side-B register.
+    pub port_a_write: bool,
+    pub dac: u8,
 }
 
 /// Both joystick ports: pot positions, button states, and any plugged-in
@@ -112,12 +127,18 @@ impl Joysticks {
 
     /// Install (or remove, with [`HiResInterface::None`]) a hi-res interface
     /// on `stick`. There's only one physical DAC to time a one-shot off of,
-    /// so installing [`HiResInterface::Tandy`] here removes it from the
-    /// other port first (MAME refuses a second `coco_tandy_hires_joy`).
+    /// so installing [`HiResInterface::Tandy`] here removes a Tandy already
+    /// on the other port first (MAME refuses a second `coco_tandy_hires_joy`)
+    /// — but only a Tandy; a CoCoMax3 on the other port is untouched, so
+    /// eviction doesn't depend on which port is set up first.
+    /// [`HiResInterface::CoCoMax3`] has no such restriction — its trigger is
+    /// per-port PIA0 pin lines, not the shared DAC, so a unit may sit on
+    /// both ports (or alongside a Tandy unit) at once.
     pub fn set_hires(&mut self, stick: usize, kind: HiResInterface) {
         let stick = stick & 1;
-        if kind == HiResInterface::Tandy {
-            self.hires[stick ^ 1].set_kind(HiResInterface::None);
+        let other = stick ^ 1;
+        if kind == HiResInterface::Tandy && self.hires[other].kind() == HiResInterface::Tandy {
+            self.hires[other].set_kind(HiResInterface::None);
         }
         self.hires[stick].set_kind(kind);
     }
@@ -147,15 +168,36 @@ impl Joysticks {
         }
     }
 
-    /// Feed a DAC change or analog-mux address change to `stick`'s hi-res
-    /// interface (a no-op if it has none) — MAME's `hires_trigger`, run on
-    /// every PIA1 port-A write and every PIA0 CA2/CB2 change
-    /// (`SystemBus::write_pia1`/`SystemBus::joystick_mux`).
-    pub fn observe_dac(&mut self, dac: u8, stick: usize, axis: usize) {
+    /// Feed a DAC change, PIA0 port-A pin-nibble change, or analog-mux change to `stick`'s
+    /// hi-res interface (a no-op if it has none) — `HiResPort::observe` picks whichever of
+    /// `trigger`'s two fields its own kind cares about.
+    pub fn observe(&mut self, stick: usize, axis: usize, trigger: TriggerInputs) {
         let stick = stick & 1;
         let axis = axis & 1;
         let pot = self.pot(stick, axis);
-        self.hires[stick].observe(dac == 0, axis, pot);
+        self.hires[stick].observe(trigger, axis, pot);
+    }
+
+    /// Decide whether a PIA0 write should re-run the mux-selected port's hi-res trigger:
+    /// unconditionally on a mux change (any kind), or — CoCoMax3 only — a PIA0 port-A
+    /// data/DDR write that changed the port-A pin nibble. The nibble-changed check is
+    /// deliberately an inequality rather than "any port-A write": MAME re-triggers on every
+    /// port-A write regardless of value, but re-observing an identical low write here would
+    /// clear [`HiResPort`]'s latched `saturated` slot, where MAME leaves it set.
+    pub fn observe_pia0(&mut self, obs: PIA0WriteObservation) {
+        let mux_changed = obs.mux_after != obs.mux_before;
+        let nibble_changed = obs.port_a_write && obs.nibble_after != obs.nibble_before;
+        let selected_is_cocomax3 = self.hires(obs.mux_after.0) == HiResInterface::CoCoMax3;
+        if mux_changed || (nibble_changed && selected_is_cocomax3) {
+            self.observe(
+                obs.mux_after.0,
+                obs.mux_after.1,
+                TriggerInputs {
+                    dac: obs.dac,
+                    pa_nibble: obs.nibble_after,
+                },
+            );
+        }
     }
 
     /// Comparator output for the mux-selected pot: high while the DAC level

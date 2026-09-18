@@ -110,6 +110,15 @@ fn full_def() -> MachineDef {
     }
 }
 
+/// A new enum variant's serde shape is easy to get wrong silently ([`HiResInterfaceDTO`]'s
+/// `rename_all = "lowercase"` relies on the derive lowercasing `CoCoMax3` verbatim, not a
+/// manual rename) — confirmed directly rather than only via [`full_def`]'s one sampled value.
+#[test]
+fn hires_interface_dto_cocomax3_serializes_lowercase() {
+    let value = toml::Value::try_from(HiResInterfaceDTO::CoCoMax3).expect("serialize");
+    assert_eq!(value.as_str(), Some("cocomax3"));
+}
+
 #[test]
 fn round_trip_full_definition() {
     let dir = TempDir::new("roundtrip");

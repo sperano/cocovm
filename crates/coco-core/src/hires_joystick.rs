@@ -1,6 +1,7 @@
-//! Tandy Hi-Res Joystick Interface (26-3025): an RC one-shot timed off the DAC and
-//! read back through the stock PA7 comparator. No datasheet exists; ported from MAME's
-//! `coco_tandy_hires_joy` device (`src/mame/trs/coco.cpp`, `hires_trigger`).
+//! Tandy Hi-Res Joystick Interface (26-3025) and CoCo Max III hi-res interface: both an RC
+//! one-shot timed off a trigger source and read back through the stock PA7 comparator. No
+//! datasheet exists; ported from MAME's `coco_tandy_hires_joy`/`coco_cm3_hires_joy` devices
+//! (`src/mame/trs/coco.cpp`, `hires_trigger`).
 
 use serde::{Deserialize, Serialize};
 
@@ -9,14 +10,20 @@ const TANDY_OFFSET_US: f64 = 560.0;
 /// See [`TANDY_OFFSET_US`].
 const TANDY_SPAN_US: f64 = 4856.0;
 
-/// Which hi-res joystick interface, if any, is plugged into a port. Left
-/// open for a future CoCoMax3-style variant on the same trigger mechanism.
+/// One-shot delay curve, per MAME `coco_cm3_hires_joy`'s ctor.
+const COCOMAX3_OFFSET_US: f64 = 500.0;
+/// See [`COCOMAX3_OFFSET_US`].
+const COCOMAX3_SPAN_US: f64 = 2624.0;
+
+/// Which hi-res joystick interface, if any, is plugged into a port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum HiResInterface {
     #[default]
     None,
     /// Tandy 26-3025.
     Tandy,
+    /// CoCo Max III.
+    CoCoMax3,
 }
 
 /// One port's pending one-shot: which axis is charging, and how many
@@ -27,9 +34,18 @@ struct ChargeTimer {
     remaining: u32,
 }
 
-/// One joystick port's Tandy hi-res state: MAME's `hires_trigger(state, now,
-/// axis, joy_val)` reimplemented with an elapsed-cycle counter standing in for
-/// its absolute `now`.
+/// The two candidate trigger sources a PIA0/PIA1 write can carry: the 6-bit DAC reading
+/// (Tandy's trigger) and the PIA0 port-A PA0-PA3 pin nibble (CoCo Max III's trigger).
+/// [`HiResPort::observe`] picks whichever its own `kind` cares about.
+#[derive(Debug, Clone, Copy)]
+pub struct TriggerInputs {
+    pub dac: u8,
+    pub pa_nibble: u8,
+}
+
+/// One joystick port's hi-res interface state (Tandy or CoCo Max III): MAME's
+/// `hires_trigger(state, now, axis, joy_val)` reimplemented with an elapsed-cycle counter
+/// standing in for its absolute `now`.
 ///
 /// Doesn't model MAME's mux-output re-entrancy quirk (it re-enters
 /// `hires_trigger` when a saturation flips the mux output it reads back — an
@@ -39,7 +55,7 @@ struct ChargeTimer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HiResPort {
     kind: HiResInterface,
-    /// Level of the trigger (DAC == 0) as of the last [`Self::observe`] call.
+    /// Level of this port's trigger source as of the last [`Self::observe`] call.
     was_low: bool,
     /// Cycles elapsed since the current charge cycle started
     /// (MAME's `now - charge_start`).
@@ -76,14 +92,17 @@ impl HiResPort {
         };
     }
 
-    /// MAME `hires_trigger`: called on every DAC write and every analog-mux
-    /// address change while this port is CB2-selected. `trigger_low` is the
-    /// 6-bit DAC reading exactly 0 (`is_low = (state == 0)`); `axis` is the
-    /// CA2-selected axis; `pot` is that axis's current pot position.
-    pub fn observe(&mut self, trigger_low: bool, axis: usize, pot: u16) {
-        if self.kind == HiResInterface::None {
-            return;
-        }
+    /// MAME `hires_trigger`: called on every DAC write, PIA0 port-A pin-nibble write, and
+    /// analog-mux address change while this port is CB2-selected. `trigger` carries both
+    /// candidate trigger sources; this port's own `kind` picks the one it cares about (the
+    /// DAC for Tandy, the PA0-PA3 nibble for CoCo Max III) and is low when that reading is
+    /// exactly 0. `axis` is the CA2-selected axis; `pot` is that axis's current pot position.
+    pub fn observe(&mut self, trigger: TriggerInputs, axis: usize, pot: u16) {
+        let trigger_low = match self.kind {
+            HiResInterface::None => return,
+            HiResInterface::Tandy => trigger.dac == 0,
+            HiResInterface::CoCoMax3 => trigger.pa_nibble == 0,
+        };
         let axis = axis & 1;
         if trigger_low {
             let duration = duration_cycles(self.kind, pot);
@@ -148,6 +167,7 @@ pub fn duration_cycles(kind: HiResInterface, pot: u16) -> u32 {
     let (offset_us, span_us) = match kind {
         HiResInterface::None => return 0,
         HiResInterface::Tandy => (TANDY_OFFSET_US, TANDY_SPAN_US),
+        HiResInterface::CoCoMax3 => (COCOMAX3_OFFSET_US, COCOMAX3_SPAN_US),
     };
     let duration_us = f64::from(pot) / f64::from(crate::joystick::POT_MAX) * span_us + offset_us;
     (duration_us * crate::CPU_HZ / 1_000_000.0).round() as u32

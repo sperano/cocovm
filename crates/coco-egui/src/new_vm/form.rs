@@ -282,8 +282,9 @@ impl MachineForm {
     }
 
     /// One port's hi-res interface combo. There's only one physical DAC to time a one-shot
-    /// off of, so picking [`HiResChoice::Tandy`] here clears it from the other port
-    /// (`coco_core::joystick::Joysticks::set_hires`'s doc explains why).
+    /// off of, so picking [`HiResChoice::Tandy`] here clears a Tandy already on the other port
+    /// (`coco_core::joystick::Joysticks::set_hires`'s doc explains why) — but only a Tandy; a
+    /// CoCoMax3 on the other port is untouched.
     fn hires_combo(&mut self, ui: &mut egui::Ui, port: usize) {
         let mut choice = self.hires[port];
         egui::ComboBox::from_id_salt((self.salt, "hires", port))
@@ -295,7 +296,7 @@ impl MachineForm {
             });
         if choice != self.hires[port] {
             self.hires[port] = choice;
-            if choice == HiResChoice::Tandy {
+            if choice == HiResChoice::Tandy && self.hires[port ^ 1] == HiResChoice::Tandy {
                 self.hires[port ^ 1] = HiResChoice::None;
             }
         }

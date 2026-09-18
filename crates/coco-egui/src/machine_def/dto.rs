@@ -252,6 +252,8 @@ pub enum HiResInterfaceDTO {
     None,
     /// Tandy 26-3025.
     Tandy,
+    /// CoCo Max III.
+    CoCoMax3,
 }
 
 /// `[hardware]` section.
