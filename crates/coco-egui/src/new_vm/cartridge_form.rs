@@ -3,6 +3,7 @@
 //! project's ~500-line ceiling. Free functions over borrowed form fields,
 //! like `config_form`'s, rather than `MachineForm` methods.
 
+use crate::machine_def::DosRom;
 use coco_core::MachineVariant;
 use coco_core::rom_db::CartridgeHardware;
 use eframe::egui;
@@ -18,8 +19,10 @@ pub(super) fn drives_available(
     mpi_slots: &[SlotChoice; crate::MPI_SLOT_COUNT],
 ) -> bool {
     match cartridge {
-        CartridgeChoice::FD502 => true,
-        CartridgeChoice::MPI => mpi_slots.contains(&SlotChoice::FD502),
+        CartridgeChoice::FD502 { .. } => true,
+        CartridgeChoice::MPI => mpi_slots
+            .iter()
+            .any(|slot| matches!(slot, SlotChoice::FD502 { .. })),
         CartridgeChoice::None
         | CartridgeChoice::Image(_)
         | CartridgeChoice::RTC
@@ -63,8 +66,8 @@ pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: Car
     ui.end_row();
 
     match cartridge {
-        CartridgeChoice::FD502 => {
-            sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks));
+        CartridgeChoice::FD502 { dos_rom } => {
+            sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks, dos_rom, variant));
         }
         CartridgeChoice::MPI => {
             sub_form_row(ui, |ui| {
@@ -107,8 +110,8 @@ fn mpi_sub_form(
                 slot_combo(ui, salt, font, mpi_slots, slot, variant);
                 ui.end_row();
                 match &mut mpi_slots[slot] {
-                    SlotChoice::FD502 => {
-                        sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks));
+                    SlotChoice::FD502 { dos_rom } => {
+                        sub_form_row(ui, |ui| disk_rows(ui, salt, font, disks, dos_rom, variant));
                     }
                     SlotChoice::RS232(endpoint) => {
                         sub_form_row(ui, |ui| rs232_sub_form(ui, salt, font, endpoint));
@@ -263,16 +266,33 @@ fn disk_rows(
     salt: &str,
     font: f32,
     disks: &mut [MediaChoice; crate::UI_DRIVES],
+    dos_rom: &mut DosRom,
+    variant: MachineVariant,
 ) {
     egui::Grid::new((salt, "disks"))
         .num_columns(2)
         .spacing(FORM_GRID_SPACING)
         .show(ui, |ui| {
+            dos_rom_row(ui, salt, dos_rom, variant);
             for drive in 0..crate::UI_DRIVES {
                 disk_combo(ui, salt, font, disks, drive);
                 ui.end_row();
             }
         });
+}
+
+fn dos_rom_row(ui: &mut egui::Ui, salt: &str, dos_rom: &mut DosRom, variant: MachineVariant) {
+    ui.label("DOS ROM");
+    egui::ComboBox::from_id_salt((salt, "dos_rom"))
+        .selected_text(dos_rom.label())
+        .show_ui(ui, |ui| {
+            ui.selectable_value(dos_rom, DosRom::DiskBasic, DosRom::DiskBasic.label());
+            ui.add_enabled_ui(variant == MachineVariant::Coco3, |ui| {
+                ui.selectable_value(dos_rom, DosRom::HdbDosDw3, DosRom::HdbDosDw3.label())
+                    .on_disabled_hover_text("This HDB-DOS ROM requires a CoCo 3.");
+            });
+        });
+    ui.end_row();
 }
 
 /// One combo entry: a label, whether it's the current selection, and what

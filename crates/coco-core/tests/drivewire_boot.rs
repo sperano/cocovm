@@ -1,6 +1,7 @@
 //! End-to-end regression: **HDB-DOS** (a Disk BASIC ROM replacement that
 //! talks the DriveWire protocol over the Becker port, $FF41/$FF42, instead
-//! of driving an FD-502) boots in the emulated CoCo 3 and lists/writes files
+//! of driving an FD-502 while `DRIVE ON`) boots in the emulated CoCo 3 and
+//! lists/writes files
 //! on a DriveWire-served `.dsk` through `DIR`/`SAVE`. The installed assets are:
 //! `roms/coco3.rom`, `roms/hdbdw3bc3.rom` (HDB-DOS 1.1 DriveWire 3, Becker
 //! build for CoCo 3), `tests/spetris.dsk` and `tests/blank02.dsk` (standard
@@ -12,8 +13,9 @@
 //! `disk_basic_pak_integrates_at_cold_start`, same mechanism as `disk11.rom`
 //! Disk BASIC), not through the CART* FIRQ autostart line. The test inserts it as
 //! a plain, non-autostart [`ROMPak`], exactly like `disk11.rom` elsewhere in
-//! this test suite. No FD-502 or [`coco_core::fdc::DiskCart`] is involved
-//! because the Becker port replaces the floppy hardware.
+//! this test suite. These tests exercise the Becker path without an FD-502.
+//! `fd502_hdbdos_test.rs` covers HDB-DOS in a [`coco_core::fdc::DiskCart`],
+//! including its `DRIVE OFF` path through the floppy hardware.
 //!
 //! `spetris.dsk` carries an `AUTOEXEC.BAS` that HDB-DOS auto-runs (real
 //! DECB/HDB-DOS behaviour, observed directly: booting with the disk already

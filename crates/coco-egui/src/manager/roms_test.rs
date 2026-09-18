@@ -102,7 +102,9 @@ fn mpi_slots_prefix_their_rows_and_skip_romless_occupants() {
     let mut def = coco3_def();
     def.peripherals.cartridge = CartridgeDTO::MPI {
         slots: [
-            SlotDTO::FD502,
+            SlotDTO::FD502 {
+                dos_rom: Default::default(),
+            },
             SlotDTO::RS232 {
                 endpoint: RS232EndpointDTO::default(),
             },
@@ -118,7 +120,7 @@ fn mpi_slots_prefix_their_rows_and_skip_romless_occupants() {
         roles,
         [
             "System ROM",
-            "Slot 1: Disk BASIC",
+            "Slot 1: Disk BASIC 1.1",
             "Slot 2: RS-232 Pak EPROM",
             "Slot 4: Speech/Sound allophones",
             "Slot 4: Speech/Sound firmware",
@@ -158,4 +160,27 @@ fn orch90_in_the_bare_port_resolves_its_stock_rom() {
     assert_eq!(rows[1].role, "Orchestra-90 ROM");
     assert_eq!(rows[1].path, dir.path().join(rom_load::ORCH90_ROM));
     assert_eq!(rows[1].status, ROMStatus::Missing);
+}
+
+#[test]
+fn hdbdos_rom_is_listed_direct_and_in_mpi() {
+    for mpi in [false, true] {
+        let mut def = coco3_def();
+        let dos_rom = DosRom::HdbDosDw3;
+        def.peripherals.cartridge = if mpi {
+            let mut slots = std::array::from_fn(|_| SlotDTO::Empty);
+            slots[crate::DEFAULT_MPI_SWITCH_SLOT] = SlotDTO::FD502 { dos_rom };
+            CartridgeDTO::MPI {
+                slots,
+                switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
+            }
+        } else {
+            CartridgeDTO::FD502 { dos_rom }
+        };
+        let rows = rom_rows(&def, "alpha", None);
+        let row = rows.last().unwrap();
+        assert!(row.role.ends_with(dos_rom.label()));
+        assert_eq!(file_name(&row.path), dos_rom.filename());
+        assert_eq!(row.status, ROMStatus::Missing);
+    }
 }

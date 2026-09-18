@@ -81,6 +81,7 @@ impl CocoApp {
                 self.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
+                self.disk_rom_path = None;
                 self.mpi = None; // plugging straight into the port removes any MPI
                 self.rs232 = None; // ...and any RS-232 pak
                 self.rs232_eprom_path = None;
@@ -111,6 +112,7 @@ impl CocoApp {
                 self.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
+                self.disk_rom_path = None;
                 self.mpi = None; // plugging straight into the port removes any MPI
             }
             Err(e) => {
@@ -141,6 +143,7 @@ impl CocoApp {
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         self.mpi = None; // plugging straight into the port removes any MPI
     }
 
@@ -165,6 +168,7 @@ impl CocoApp {
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         self.mpi = None;
         self.rs232 = Some(RS232Endpoint::Loopback);
         self.rs232_eprom_path = eprom_path;
@@ -227,6 +231,7 @@ impl CocoApp {
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         self.mpi = None; // plugging straight into the port removes any MPI
         self.rs232 = None;
         self.rs232_eprom_path = None;
@@ -247,6 +252,7 @@ impl CocoApp {
         });
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         self.rs232 = None;
         self.rs232_eprom_path = None;
         self.rtc_direct = false;
@@ -276,6 +282,7 @@ impl CocoApp {
         self.rtc_direct = true;
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         self.mpi = None;
     }
 
@@ -296,6 +303,7 @@ impl CocoApp {
         self.power_cycle();
         self.cart_path = None;
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         self.mpi = None; // plugging straight into the port removes any MPI
     }
 }

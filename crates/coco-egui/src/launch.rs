@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use coco_core::MachineVariant;
 
 use crate::app::DriveWireLaunch;
-use crate::machine_def::{CartridgeDTO, RS232EndpointDTO, SlotDTO};
+use crate::machine_def::{CartridgeDTO, DosRom, RS232EndpointDTO, SlotDTO};
 use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
     AppParams, CocoApp, KbMode, MPI_SLOT_COUNT, ROMSource, RS232EndpointKind, UI_DRIVES,
@@ -34,7 +34,9 @@ struct Media {
 /// (`resolve_cartridge`).
 enum Cartridge {
     None,
-    FD502,
+    FD502 {
+        dos_rom: DosRom,
+    },
     ROMPak {
         path: PathBuf,
         autostart: bool,
@@ -67,7 +69,7 @@ enum Cartridge {
 /// (real MPIs can't nest).
 enum Slot {
     Empty,
-    FD502,
+    FD502 { dos_rom: DosRom },
     ROMPak { path: PathBuf, autostart: bool },
     BankedROMPak { path: PathBuf, autostart: bool },
     RTC,
@@ -95,8 +97,9 @@ pub(crate) fn launch_machine_with_gamepad(
     validate_disk_media(&media, &cartridge)?;
     validate_drivewire_media(def, &media)?;
 
-    let drivewire = def.drivewire.enabled.then(|| DriveWireLaunch {
-        hdbdos_mode: def.drivewire.hdbdos_mode,
+    let hdbdos = def.peripherals.cartridge.uses_hdbdos();
+    let drivewire = (def.drivewire.enabled || hdbdos).then(|| DriveWireLaunch {
+        hdbdos_mode: def.drivewire.hdbdos_mode || hdbdos,
         disk_paths: media.drivewire.clone(),
     });
     let mut app = new_app(
@@ -174,7 +177,7 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
 }
 
 fn validate_drivewire_media(def: &machine_def::MachineDef, media: &Media) -> Result<(), String> {
-    if !def.drivewire.enabled {
+    if !def.drivewire.enabled && !def.peripherals.cartridge.uses_hdbdos() {
         return Ok(());
     }
     for path in media.drivewire.iter().flatten() {
@@ -193,7 +196,7 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
     let path = |p: &str| machine_def::resolve_media_path(p, slug);
     match &def.peripherals.cartridge {
         CartridgeDTO::None => Cartridge::None,
-        CartridgeDTO::FD502 => Cartridge::FD502,
+        CartridgeDTO::FD502 { dos_rom } => Cartridge::FD502 { dos_rom: *dos_rom },
         CartridgeDTO::ROMPak { path: p, autostart } => Cartridge::ROMPak {
             path: path(p),
             autostart: *autostart,
@@ -224,7 +227,7 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
     let path = |p: &str| machine_def::resolve_media_path(p, slug);
     match slot {
         SlotDTO::Empty => Slot::Empty,
-        SlotDTO::FD502 => Slot::FD502,
+        SlotDTO::FD502 { dos_rom } => Slot::FD502 { dos_rom: *dos_rom },
         SlotDTO::ROMPak { path: p, autostart } => Slot::ROMPak {
             path: path(p),
             autostart: *autostart,
@@ -250,8 +253,8 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
 /// Whether a disk controller is reachable: the bare FD-502, or one in an MPI slot.
 fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
     match cartridge {
-        Cartridge::FD502 => true,
-        Cartridge::MPI { slots, .. } => slots.iter().any(|s| matches!(s, Slot::FD502)),
+        Cartridge::FD502 { .. } => true,
+        Cartridge::MPI { slots, .. } => slots.iter().any(|s| matches!(s, Slot::FD502 { .. })),
         Cartridge::None
         | Cartridge::ROMPak { .. }
         | Cartridge::BankedROMPak { .. }
@@ -323,8 +326,8 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     match cartridge {
         Cartridge::None | Cartridge::ROMPak { .. } => {}
         Cartridge::BankedROMPak { path, autostart } => app.insert_banked_rompak(path, autostart),
-        Cartridge::FD502 => {
-            if let Err(e) = app.insert_disk_controller() {
+        Cartridge::FD502 { dos_rom } => {
+            if let Err(e) = app.insert_disk_controller(dos_rom) {
                 app.cart_error = Some(e);
             }
         }
@@ -339,7 +342,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
             for (slot, occupant) in slots.into_iter().enumerate() {
                 match occupant {
                     Slot::Empty => {}
-                    Slot::FD502 => app.mpi_insert_fd502(slot),
+                    Slot::FD502 { dos_rom } => app.mpi_insert_fd502(slot, dos_rom),
                     Slot::ROMPak { path, autostart } => {
                         app.mpi_insert_rompak(slot, path, autostart)
                     }

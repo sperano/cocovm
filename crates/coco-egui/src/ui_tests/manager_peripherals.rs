@@ -23,7 +23,9 @@ fn manager_edit_with_fd502_records_the_peripheral() {
     assert_eq!(harness.state().entries.len(), 1);
     assert_eq!(
         harness.state().entries[0].def.peripherals.cartridge,
-        machine_def::CartridgeDTO::FD502
+        machine_def::CartridgeDTO::FD502 {
+            dos_rom: Default::default()
+        }
     );
     let file = dir.path().join("coco-3.toml");
     let contents = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
@@ -413,7 +415,12 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
 
     assert_eq!(harness.state().entries.len(), 1);
     let def = &harness.state().entries[0].def;
-    assert_eq!(def.peripherals.cartridge, machine_def::CartridgeDTO::FD502);
+    assert_eq!(
+        def.peripherals.cartridge,
+        machine_def::CartridgeDTO::FD502 {
+            dos_rom: Default::default()
+        }
+    );
     assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
     assert_eq!(def.media.disk1.as_deref(), Some("disk1.dsk"));
     assert_eq!(def.media.tape.as_deref(), Some("tape.cas"));

@@ -98,7 +98,7 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
 
     let mut app = boot_app();
     app.insert_multipak();
-    app.mpi_insert_fd502(FD502_SLOT);
+    app.mpi_insert_fd502(FD502_SLOT, Default::default());
     assert!(
         app.cart_error.is_none(),
         "mounting the FD-502: {:?}",
@@ -165,7 +165,7 @@ fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
 
     let mut app = boot_app();
     app.insert_multipak();
-    app.mpi_insert_fd502(FD502_SLOT);
+    app.mpi_insert_fd502(FD502_SLOT, Default::default());
     assert!(
         app.cart_error.is_none(),
         "mounting the FD-502: {:?}",
@@ -204,7 +204,7 @@ fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
 
     let mut app = boot_app();
     app.insert_multipak();
-    app.mpi_insert_fd502(FD502_SLOT);
+    app.mpi_insert_fd502(FD502_SLOT, Default::default());
     assert!(
         app.cart_error.is_none(),
         "mounting the FD-502: {:?}",

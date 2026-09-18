@@ -13,7 +13,7 @@ fn harness_with_fd502() -> AppHarness {
     let mut harness = boot_harness();
     harness
         .state_mut()
-        .insert_disk_controller()
+        .insert_disk_controller(Default::default())
         .unwrap_or_else(|e| panic!("insert_disk_controller failed: {e}"));
     harness.step();
     harness

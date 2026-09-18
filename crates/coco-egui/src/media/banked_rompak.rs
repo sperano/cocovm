@@ -21,6 +21,7 @@ impl CocoApp {
                 self.power_cycle();
                 self.cart_path = Some(path);
                 self.disk_paths = [None, None];
+                self.disk_rom_path = None;
                 self.mpi = None;
                 self.rs232 = None;
                 self.rs232_eprom_path = None;

@@ -73,9 +73,18 @@ pub(super) fn cartridge_combo(
             combo_item(ui, "None", *cartridge == CartridgeChoice::None, || {
                 *cartridge = CartridgeChoice::None
             });
-            combo_item(ui, "FD-502", *cartridge == CartridgeChoice::FD502, || {
-                *cartridge = CartridgeChoice::FD502
-            });
+            combo_item(
+                ui,
+                "FD-502",
+                matches!(cartridge, CartridgeChoice::FD502 { .. }),
+                || {
+                    if !matches!(cartridge, CartridgeChoice::FD502 { .. }) {
+                        *cartridge = CartridgeChoice::FD502 {
+                            dos_rom: Default::default(),
+                        };
+                    }
+                },
+            );
             image_combo_item(
                 ui,
                 "Cartridge ROM…",
@@ -147,10 +156,20 @@ pub(super) fn slot_combo(
             combo_item(ui, "Empty", mpi_slots[slot] == SlotChoice::Empty, || {
                 mpi_slots[slot] = SlotChoice::Empty
             });
-            combo_item(ui, "FD-502", mpi_slots[slot] == SlotChoice::FD502, || {
-                release_slot(mpi_slots, SlotChoice::FD502);
-                mpi_slots[slot] = SlotChoice::FD502;
-            });
+            combo_item(
+                ui,
+                "FD-502",
+                matches!(mpi_slots[slot], SlotChoice::FD502 { .. }),
+                || {
+                    let controller = release_slot_matching(mpi_slots, |slot| {
+                        matches!(slot, SlotChoice::FD502 { .. })
+                    })
+                    .unwrap_or(SlotChoice::FD502 {
+                        dos_rom: Default::default(),
+                    });
+                    mpi_slots[slot] = controller;
+                },
+            );
             image_combo_item(
                 ui,
                 "Cartridge ROM…",

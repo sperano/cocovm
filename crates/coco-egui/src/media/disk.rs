@@ -14,17 +14,21 @@ impl CocoApp {
     /// definition wants disk media but no MultiPak is installed — cold-resetting the
     /// machine, since BASIC only probes for Disk BASIC at cold start. Call only with no
     /// disk cart already present and no MPI installed; both are the launch caller's job.
-    pub(crate) fn insert_disk_controller(&mut self) -> Result<(), String> {
+    pub(crate) fn insert_disk_controller(
+        &mut self,
+        dos_rom: machine_def::DosRom,
+    ) -> Result<(), String> {
         debug_assert!(
             self.machine.bus.cart.as_disk_cart().is_none() && self.mpi.is_none(),
             "insert_disk_controller would replace an existing disk cart or MPI"
         );
-        let path = disk_basic_rom_path();
+        let path = dos_rom_path(dos_rom);
         let rom = std::fs::read(&path)
-            .map_err(|e| format!("could not read Disk BASIC ROM {}: {e}", path.display()))?;
+            .map_err(|e| format!("could not read DOS ROM {}: {e}", path.display()))?;
         report_rom_validation(&path, &rom);
         self.machine
             .insert_cartridge(DiskCart::new(rom.into_boxed_slice()));
+        self.disk_rom_path = Some(path);
         self.power_cycle();
         Ok(())
     }

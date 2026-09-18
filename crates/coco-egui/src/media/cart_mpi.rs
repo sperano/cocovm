@@ -24,6 +24,7 @@ impl CocoApp {
             return false;
         }
         self.disk_paths = [None, None];
+        self.disk_rom_path = None;
         true
     }
 
@@ -111,19 +112,16 @@ impl CocoApp {
 
     /// Inserts the FD-502 disk controller into MPI `slot`, unless one is already installed
     /// in a different slot — the FD-502 latch only ever models one controller.
-    pub(crate) fn mpi_insert_fd502(&mut self, slot: usize) {
+    pub(crate) fn mpi_insert_fd502(&mut self, slot: usize, dos_rom: machine_def::DosRom) {
         if self.machine.bus.cart.as_disk_cart().is_some() {
             self.cart_error = Some("An FD-502 is already installed in another slot.".to_string());
             return;
         }
-        let path = disk_basic_rom_path();
+        let path = dos_rom_path(dos_rom);
         let rom = match std::fs::read(&path) {
             Ok(rom) => rom,
             Err(e) => {
-                self.cart_error = Some(format!(
-                    "could not read Disk BASIC ROM {}: {e}",
-                    path.display()
-                ));
+                self.cart_error = Some(format!("could not read DOS ROM {}: {e}", path.display()));
                 return;
             }
         };
@@ -133,6 +131,7 @@ impl CocoApp {
         }
         if let Some(mpi) = &mut self.mpi {
             mpi.slots[slot] = MPISlot::FD502;
+            self.disk_rom_path = Some(path);
         }
         self.disk_paths = [None, None];
         self.power_cycle();

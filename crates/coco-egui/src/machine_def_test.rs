@@ -77,7 +77,9 @@ fn full_def() -> MachineDef {
                     },
                     SlotDTO::Empty,
                     SlotDTO::RTC,
-                    SlotDTO::FD502,
+                    SlotDTO::FD502 {
+                        dos_rom: Default::default(),
+                    },
                 ],
                 switch: 2,
             },

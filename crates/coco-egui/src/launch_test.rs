@@ -273,7 +273,9 @@ fn disk_media_with_mpi_fd502_launches() {
         &dir,
         CartridgeDTO::MPI {
             slots: [
-                SlotDTO::FD502,
+                SlotDTO::FD502 {
+                    dos_rom: Default::default(),
+                },
                 SlotDTO::Empty,
                 SlotDTO::Empty,
                 SlotDTO::Empty,
@@ -289,7 +291,12 @@ fn disk_media_with_mpi_fd502_launches() {
 #[test]
 fn disk_media_with_bare_fd502_launches() {
     let dir = crate::machine_def::tests::TempDir::new("launch-disk-bare-fd502");
-    let def = disk0_def(&dir, CartridgeDTO::FD502);
+    let def = disk0_def(
+        &dir,
+        CartridgeDTO::FD502 {
+            dos_rom: Default::default(),
+        },
+    );
     assert_disk0_mounted(&def, "launch-test-disk-bare-fd502");
 }
 
@@ -418,7 +425,9 @@ fn mpi_slot_rs232_reaches_the_acia_regardless_of_switch() {
             },
             SlotDTO::Empty,
             SlotDTO::Empty,
-            SlotDTO::FD502,
+            SlotDTO::FD502 {
+                dos_rom: Default::default(),
+            },
         ],
         switch: 4,
     };
