@@ -38,7 +38,7 @@ impl CocoApp {
         self.paper_window.resync(Some(handle));
     }
 
-    /// View-menu "Printer Paper" checkbox handler: opening attaches a DMP-105 if
+    /// Printer-menu "View Papers" handler: opening attaches a DMP-105 if
     /// none is live yet; closing only hides the window — capture keeps running in the background.
     pub(crate) fn toggle_paper_window(&mut self) {
         if self.paper_window.open {

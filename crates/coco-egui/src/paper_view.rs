@@ -48,8 +48,8 @@ pub(crate) struct PerfScrollResult {
 
 #[derive(Default)]
 pub struct PaperWindow {
-    /// Whether the window is currently shown. Toggled by the View-menu
-    /// checkbox (through [`crate::CocoApp::toggle_paper_window`]) or the
+    /// Whether the window is currently shown. Toggled by the status bar's
+    /// printer menu (through [`crate::CocoApp::toggle_paper_window`]) or the
     /// window's own close button — neither touches `handle`.
     pub open: bool,
     /// The live DMP printer handle this window reads from, if the bit-banger's

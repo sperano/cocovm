@@ -42,13 +42,10 @@ impl CocoApp {
         }
     }
 
-    /// The View menu: optional windows. Display choice
-    /// lives in [`Self::display_menu_ui`], not here.
+    /// The View menu: optional windows. Display choice lives in
+    /// [`Self::display_menu_ui`] and the printer paper window in
+    /// [`Self::printer_menu_ui`], not here.
     fn view_menu_ui(&mut self, ui: &mut egui::Ui) {
-        let mut paper_open = self.paper_window.open;
-        if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
-            self.toggle_paper_window();
-        }
         // Only meaningful with an Orchestra-90 cartridge inserted; `as_orch90` searches both slots.
         let orch90_present = self.machine.bus.cart.as_orch90().is_some();
         ui.add_enabled(
