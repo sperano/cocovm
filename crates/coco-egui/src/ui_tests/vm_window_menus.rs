@@ -213,12 +213,12 @@ fn status_bar_display_entry_switches_display() {
 }
 
 #[test]
-fn view_menu_opens_the_printer_paper_window() {
+fn printer_menu_opens_the_printer_paper_window() {
     let mut harness = boot_harness();
     assert!(!harness.state().paper_window.open);
 
-    click(&mut harness, "View");
-    click(&mut harness, "Printer Paper");
+    click(&mut harness, "Printer menu");
+    click(&mut harness, "View Papers");
     assert!(harness.state().paper_window.open);
     harness.get_by_label_contains("Printer Paper");
 }

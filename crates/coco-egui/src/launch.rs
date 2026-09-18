@@ -440,8 +440,8 @@ fn mount_rs232_pty(app: &mut CocoApp) {
 /// `launch_machine`'s `cart_error` promotion so failures surface the same way.
 fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
     match serial {
-        // Attached with the paper window closed; output accumulates and View ▸ Printer Paper
-        // shows it.
+        // Attached with the paper window closed; output accumulates and the status bar's
+        // printer menu ("View Papers") shows it.
         Some(machine_def::SerialDTO::Printer) => {
             app.attach_printer(coco_core::dmp::DmpModel::Dmp105);
         }
