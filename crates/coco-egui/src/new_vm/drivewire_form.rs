@@ -12,6 +12,9 @@ const GMC_CONFLICT_HINT: &str =
     "DriveWire and the Games Master Cartridge cannot be enabled together.";
 const STARTUP_HINT: &str = "DriveWire changes apply at the next start from power off. \
     Resume keeps the saved session.";
+const HDBDOS_MODE_HINT: &str = "Enable for HDB-DOS BASIC disk commands. Translates HDB-DOS \
+    sector addresses into separate disk images in DW0–DW3. Leave disabled for NitrOS-9, \
+    which uses its own DriveWire driver.";
 
 impl MachineForm {
     /// Settings edit the startup definition only. They never inspect or
@@ -36,7 +39,9 @@ impl MachineForm {
         ui.add_enabled(
             self.drivewire.enabled,
             egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
-        );
+        )
+        .on_hover_text(HDBDOS_MODE_HINT)
+        .on_disabled_hover_text(HDBDOS_MODE_HINT);
         self.drivewire_disks(ui);
         ui.small(STARTUP_HINT);
     }
