@@ -173,7 +173,7 @@ fn edits_leave_the_active_drivewire_session_unchanged() {
     dw.data_write(CLIENT_VERSION, SECOND_CYCLE);
     assert_eq!(dw.status_read(), REPLY_AVAILABLE);
 
-    click(&mut harness, "4:3 aspect correction");
+    click(&mut harness, "Symbolic");
     harness.state_mut().edit_form_mut().unwrap().drivewire.disk0 =
         Some(next_startup.display().to_string());
     harness

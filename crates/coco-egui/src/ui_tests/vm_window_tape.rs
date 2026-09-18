@@ -184,15 +184,15 @@ fn typing_in_the_seek_field_does_not_reach_the_coco_keyboard() {
     harness.step();
 
     // F-key hotkeys are NOT gated: handle_hotkeys runs before the focus gate.
-    let aspect_before = harness.state().aspect_correct;
-    harness.key_press(egui::Key::F9);
+    let mode_before = harness.state().kb_mode;
+    harness.key_press(egui::Key::F12);
     harness.step();
     assert_ne!(
-        harness.state().aspect_correct,
-        aspect_before,
+        harness.state().kb_mode,
+        mode_before,
         "F-key hotkeys must stay live while a text widget is focused"
     );
-    harness.key_press(egui::Key::F9);
+    harness.key_press(egui::Key::F12);
     harness.step();
 
     #[cfg(feature = "debug-ui")]

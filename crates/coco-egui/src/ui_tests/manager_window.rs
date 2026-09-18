@@ -436,10 +436,7 @@ fn manager_detail_edits_save_immediately() {
     let entry = sample_entry("dev-coco-3", "Dev CoCo 3");
     machine_def::save(dir.path(), "dev-coco-3", &entry.def)
         .expect("seed the file the entry claims to be");
-    assert!(
-        entry.def.ui.aspect_correct,
-        "test assumes the sample starts aspect-corrected"
-    );
+    assert_eq!(entry.def.ui.kb_mode, machine_def::KbModeDTO::Positional);
 
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
     let file = dir.path().join("dev-coco-3.toml");
@@ -461,14 +458,18 @@ fn manager_detail_edits_save_immediately() {
         "selecting a row must not rewrite its definition"
     );
 
-    click(&mut harness, "4:3 aspect correction");
+    click(&mut harness, "Symbolic");
     let saved: machine_def::MachineDef =
         toml::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
-    assert!(
-        !saved.ui.aspect_correct,
-        "the toggle must reach the file without any Save click"
+    assert_eq!(
+        saved.ui.kb_mode,
+        machine_def::KbModeDTO::Symbolic,
+        "the keyboard mode must reach the file without any Save click"
     );
-    assert!(!harness.state().entries[0].def.ui.aspect_correct);
+    assert_eq!(
+        harness.state().entries[0].def.ui.kb_mode,
+        machine_def::KbModeDTO::Symbolic
+    );
 }
 
 /// Committing a new name (focus leaves the Name field) saves it and

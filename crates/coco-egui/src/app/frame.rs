@@ -232,18 +232,12 @@ impl CocoApp {
         }
     }
 
-    /// The CoCo display: the letterboxed, optionally aspect-corrected framebuffer
+    /// The CoCo display: the letterboxed 4:3 framebuffer
     /// texture. Requires [`Self::step_emulation`] to have already run this frame.
     pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
         let tex = self.texture.as_ref().unwrap();
-        let tex_size = tex.size_vec2();
-        // 4:3 when corrected, else the raw square-pixel aspect.
-        let aspect = if self.aspect_correct {
-            TARGET_ASPECT
-        } else {
-            tex_size.x / tex_size.y
-        };
-        // Largest rect of that aspect that fits the panel, centered (letterboxed).
+        let aspect = TARGET_ASPECT;
+        // Largest 4:3 rect that fits the panel, centered (letterboxed).
         let avail = ui.available_rect_before_wrap();
         let mut w = avail.width();
         let mut h = w / aspect;

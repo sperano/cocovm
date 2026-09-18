@@ -109,9 +109,8 @@ pub(crate) fn launch_machine_with_gamepad(
         return Err(err);
     }
 
-    // [ui] preferences are the window's starting state only; F9/F12/joysticks stay live toggles
+    // [ui] preferences are the window's starting state only; F12/joysticks stay live toggles
     // afterward.
-    app.aspect_correct = def.ui.aspect_correct;
     // Seeds the status bar's cumulative Runtime readout with whatever this machine already accrued.
     app.total_runtime = std::time::Duration::from_secs(def.stats.runtime_secs);
     // `CocoApp::new` derived a display from the signal path alone, which can't tell a CoCo 3 TV

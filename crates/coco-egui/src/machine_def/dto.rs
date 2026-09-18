@@ -358,12 +358,6 @@ pub struct PortsDTO {
     pub serial: Option<SerialDTO>,
 }
 
-/// Default for `[ui].aspect_correct`: `true` (aspect correction on), unlike
-/// `bool::default()`'s `false`.
-fn default_aspect_correct() -> bool {
-    true
-}
-
 /// Default for `[ui].tv_scanline`: [`TVSettings::default`]'s strength, so an
 /// absent key means "the tuned look", not "scanlines off".
 fn default_tv_scanline() -> u8 {
@@ -383,8 +377,6 @@ fn default_tv_overscan() -> u8 {
 /// `[ui]` section — section itself optional.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UIDTO {
-    #[serde(default = "default_aspect_correct")]
-    pub aspect_correct: bool,
     #[serde(default)]
     pub kb_mode: KbModeDTO,
     /// Absent ⇒ off, matching `JoystickInputs::new`: nothing drives a port
@@ -414,7 +406,6 @@ pub struct UIDTO {
 impl Default for UIDTO {
     fn default() -> Self {
         Self {
-            aspect_correct: true,
             kb_mode: KbModeDTO::default(),
             joy_left: JoySourceDTO::default(),
             joy_right: JoySourceDTO::default(),

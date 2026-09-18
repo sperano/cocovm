@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- The optional 4:3 aspect setting, its View menu item, and the F9 shortcut.
+  Displays use a fixed 4:3 aspect ratio across RGB, composite, and TV modes.
+
 ## [0.7.7] - 2026-09-17
 
 ### Added

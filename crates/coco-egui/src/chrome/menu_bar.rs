@@ -42,11 +42,9 @@ impl CocoApp {
         }
     }
 
-    /// The View menu: aspect correction and optional windows. Display choice
+    /// The View menu: optional windows. Display choice
     /// lives in [`Self::display_menu_ui`], not here.
     fn view_menu_ui(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
-        ui.separator();
         let mut paper_open = self.paper_window.open;
         if ui.checkbox(&mut paper_open, "Printer Paper").changed() {
             self.toggle_paper_window();
