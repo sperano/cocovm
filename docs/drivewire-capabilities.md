@@ -7,7 +7,8 @@ existing code. The CocoVM baseline is `fcd60cf`.
 CocoVM already embeds a disk-oriented DriveWire server in each VM. The useful
 extension is host-file access and the services layered on virtual channels.
 Keep protocol sessions per VM, with optional shared resource definitions in the
-manager. Choose the guest interface for directory access before implementing it.
+manager. VM settings own DriveWire configuration. Choose the guest interface for
+directory access before implementing it.
 
 ## Protocol capabilities
 
@@ -147,6 +148,25 @@ the VM definition. Specify reset, stop, suspend, and snapshot behavior for every
 resource. Snapshots must not imply that a TCP connection or open host handle can
 be restored by deserializing it.
 
+## VM settings and runtime controls
+
+VM settings are the primary place to configure DriveWire. Move the existing
+enablement, HDB-DOS mode, and image mount/eject controls there. Add shared-folder
+selection, access permissions, and service options to the same settings section
+as those capabilities are implemented. Persist the configuration with the VM so
+a fresh start uses the saved choices.
+
+The default design removes the dedicated **Machine > DriveWire** submenu. If a
+runtime entry remains, limit it to a shortcut to the VM's DriveWire settings or
+status. Do not duplicate the configuration form or a list of per-drive mount and
+eject actions in that menu. Keep drive activity visible in the status bar.
+
+Use the same settings model when configuring a stopped VM or changing supported
+options while it runs. Distinguish changes that apply immediately from changes
+that require a restart. Saving unrelated settings must not reset the connection
+or remount active media. Keep saved startup mounts distinct from temporary mount
+changes made by guest commands, unless the user explicitly saves those changes.
+
 ## Proposed implementation sequence
 
 This sequence is a recommendation, not an approved reduction to a particular
@@ -154,8 +174,9 @@ subset of DriveWire:
 
 1. Select the directory experience and guest software to support. Evaluate RFM
    before claiming transparent host-folder access.
-2. Persist per-VM DriveWire configuration and define share roots, write access,
-   path handling, and resource lifecycle.
+2. Move DriveWire configuration into VM settings and persist it per VM. Remove
+   the dedicated runtime submenu or limit it to settings access or status.
+   Define share roots, write access, path handling, and resource lifecycle.
 3. Implement functional virtual channels with bounded buffering, polling,
    status, block transfers, and end-of-file behavior.
 4. Add directory listing, file retrieval, and disk selection through compatible
@@ -169,6 +190,9 @@ timeouts, errors, and two independent VM sessions. Host-file tests must cover
 paths outside the selected root, symlinks, read-only roots, and conflicting writes.
 Run guest-level acceptance with the actual NitrOS-9 modules or BASIC tools that
 use each service. Preserve the existing HDB-DOS and NitrOS-9 boot coverage.
+Frontend acceptance must cover configuring DriveWire through VM settings,
+restoring those settings on a fresh start, and applying supported runtime changes
+without disturbing unrelated media or connections.
 
 ## Sources and validation boundary
 
