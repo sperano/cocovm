@@ -3,7 +3,8 @@ use std::path::Path;
 use super::*;
 use crate::machine_def::{CartridgeDTO, MachineDef, RS232EndpointDTO, SlotDTO};
 use crate::rom_load::COCO3_ROM_FILE;
-use crate::{AppParams, ROMSource, RS232Endpoint, disk_basic_rom_path, installed_roms_dir};
+use crate::rom_load::disk_basic_rom_path;
+use crate::{AppParams, ROMSource, RS232Endpoint, installed_roms_dir};
 use coco_core::cassette::test_support::{SPINUP_BURN_CYCLES, record_bytes_fsk, tape_block};
 use coco_core::snapshot;
 use coco_core::{MachineConfig, fdc};
@@ -128,7 +129,7 @@ fn build_media_refs_hashes_match_the_mounted_files() {
     );
     app.insert_multipak();
     app.mpi_insert_rompak(0, cart_path.clone(), true);
-    app.mpi_insert_fd502(3);
+    app.mpi_insert_fd502(3, Default::default());
     assert!(
         app.cart_error.is_none(),
         "mounting the MPI slots: {:?}",
@@ -253,7 +254,7 @@ pub(crate) fn mount_and_dirty(app: &mut CocoApp, drive: usize, disk_path: &Path)
             app.mpi.is_none(),
             "an MPI needs its own mpi_insert_fd502 first; a bare FD-502 would replace it"
         );
-        app.insert_disk_controller()
+        app.insert_disk_controller(Default::default())
             .unwrap_or_else(|e| panic!("test fixture FD-502 install: {e}"));
     }
     app.insert_disk(drive, disk_path.to_path_buf());
@@ -277,7 +278,7 @@ fn save_state_to_fails_and_leaves_disk_dirty_when_write_back_fails() {
     write_one_track_disk(&disk_path);
 
     let mut app = boot_app();
-    app.insert_disk_controller()
+    app.insert_disk_controller(Default::default())
         .unwrap_or_else(|e| panic!("test fixture FD-502 install: {e}"));
     app.insert_disk(0, disk_path.clone());
     assert!(

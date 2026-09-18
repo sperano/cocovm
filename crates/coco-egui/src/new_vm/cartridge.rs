@@ -12,7 +12,7 @@ use coco_core::rom_db::{self, CartridgeHardware, KnownCartridgeROM};
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
 
-use crate::machine_def::{self, CartridgeDTO, RS232EndpointDTO, SlotDTO};
+use crate::machine_def::{self, CartridgeDTO, DosRom, RS232EndpointDTO, SlotDTO};
 
 /// The form's Cartridge row. Not part of [`MachineConfig`] — the
 /// cartridge port is populated after machine construction (the same way
@@ -26,7 +26,7 @@ pub enum CartridgeChoice {
     #[default]
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
-    FD502,
+    FD502 { dos_rom: DosRom },
     /// A cartridge ROM image plugged straight into the port. Its hardware
     /// implementation comes from content detection or the unknown-ROM
     /// fallback in [`CartridgeImageChoice`].
@@ -68,7 +68,9 @@ pub enum CartridgeChoice {
 pub enum SlotChoice {
     #[default]
     Empty,
-    FD502,
+    FD502 {
+        dos_rom: DosRom,
+    },
     /// A cartridge ROM image in this slot (see [`CartridgeChoice::Image`]).
     Image(CartridgeImageChoice),
     /// Disto RTC in this slot (see [`CartridgeChoice::RTC`]).
@@ -119,7 +121,7 @@ pub enum RS232EndpointChoice {
 pub(super) fn slot_label(slot: &SlotChoice) -> String {
     match slot {
         SlotChoice::Empty => "Empty".to_string(),
-        SlotChoice::FD502 => "FD-502".to_string(),
+        SlotChoice::FD502 { .. } => "FD-502".to_string(),
         SlotChoice::Image(image) => cart_file_name(&image.path, "Cartridge ROM"),
         SlotChoice::RTC => RTC_LABEL.to_string(),
         SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
@@ -132,7 +134,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
 pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
     match cartridge {
         CartridgeChoice::None => "None".to_string(),
-        CartridgeChoice::FD502 => "FD-502".to_string(),
+        CartridgeChoice::FD502 { .. } => "FD-502".to_string(),
         CartridgeChoice::Image(image) => cart_file_name(&image.path, "Cartridge ROM"),
         CartridgeChoice::RTC => RTC_LABEL.to_string(),
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
@@ -295,7 +297,7 @@ impl From<&CartridgeDTO> for CartridgeChoice {
     fn from(dto: &CartridgeDTO) -> Self {
         match dto {
             CartridgeDTO::None => CartridgeChoice::None,
-            CartridgeDTO::FD502 => CartridgeChoice::FD502,
+            CartridgeDTO::FD502 { dos_rom } => CartridgeChoice::FD502 { dos_rom: *dos_rom },
             CartridgeDTO::ROMPak { path, autostart } => CartridgeChoice::Image(
                 persisted_image_choice(path, *autostart, CartridgeHardware::RomPak),
             ),
@@ -319,7 +321,7 @@ impl From<&SlotChoice> for SlotDTO {
     fn from(choice: &SlotChoice) -> Self {
         match choice {
             SlotChoice::Empty => SlotDTO::Empty,
-            SlotChoice::FD502 => SlotDTO::FD502,
+            SlotChoice::FD502 { dos_rom } => SlotDTO::FD502 { dos_rom: *dos_rom },
             SlotChoice::Image(image) => slot_dto_for_image(image),
             SlotChoice::RTC => SlotDTO::RTC,
             SlotChoice::RS232(endpoint) => SlotDTO::RS232 {
@@ -336,7 +338,7 @@ impl From<&SlotDTO> for SlotChoice {
     fn from(dto: &SlotDTO) -> Self {
         match dto {
             SlotDTO::Empty => SlotChoice::Empty,
-            SlotDTO::FD502 => SlotChoice::FD502,
+            SlotDTO::FD502 { dos_rom } => SlotChoice::FD502 { dos_rom: *dos_rom },
             SlotDTO::ROMPak { path, autostart } => SlotChoice::Image(persisted_image_choice(
                 path,
                 *autostart,
@@ -413,7 +415,7 @@ pub(crate) fn pack_peripherals(
 ) -> machine_def::PeripheralsDTO {
     let cartridge = match cartridge {
         CartridgeChoice::None => CartridgeDTO::None,
-        CartridgeChoice::FD502 => CartridgeDTO::FD502,
+        CartridgeChoice::FD502 { dos_rom } => CartridgeDTO::FD502 { dos_rom: *dos_rom },
         CartridgeChoice::Image(image) => cartridge_dto_for_image(image),
         CartridgeChoice::RTC => CartridgeDTO::RTC,
         CartridgeChoice::RS232 => CartridgeDTO::RS232 {

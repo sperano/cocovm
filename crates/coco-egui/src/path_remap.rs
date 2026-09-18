@@ -46,7 +46,7 @@ fn remap_slot_dto(slot: &mut SlotDTO, old_dir: &Path, new_dir: &Path) {
         | SlotDTO::BankedROMPak { path, .. }
         | SlotDTO::GamesMaster { path, .. } => remap_string(path, old_dir, new_dir),
         SlotDTO::Empty
-        | SlotDTO::FD502
+        | SlotDTO::FD502 { .. }
         | SlotDTO::RTC
         | SlotDTO::RS232 { .. }
         | SlotDTO::Orch90
@@ -66,7 +66,7 @@ fn remap_cartridge_dto(cartridge: &mut CartridgeDTO, old_dir: &Path, new_dir: &P
             }
         }
         CartridgeDTO::None
-        | CartridgeDTO::FD502
+        | CartridgeDTO::FD502 { .. }
         | CartridgeDTO::RTC
         | CartridgeDTO::RS232 { .. }
         | CartridgeDTO::Orch90
@@ -108,6 +108,7 @@ fn remap_mpi_slot(slot: &mut MPISlot, old_dir: &Path, new_dir: &Path) {
 impl CocoApp {
     pub(crate) fn remap_managed_paths(&mut self, old_dir: &Path, new_dir: &Path) {
         remap_optional_path(&mut self.cart_path, old_dir, new_dir);
+        remap_optional_path(&mut self.disk_rom_path, old_dir, new_dir);
         for path in &mut self.disk_paths {
             remap_optional_path(path, old_dir, new_dir);
         }

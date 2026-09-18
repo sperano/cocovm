@@ -265,6 +265,22 @@ impl CocoApp {
     /// the restored cart tree plus `media` (for the paths `slots_mut` doesn't carry).
     fn rebuild_cart_mirrors(&mut self, media: &MediaRefs) {
         self.cart_path = None;
+        self.disk_rom_path =
+            self.machine
+                .bus
+                .cart
+                .slots_mut()
+                .into_iter()
+                .find_map(|(slot, cart)| {
+                    if !matches!(cart, Cart::DiskCart(_)) {
+                        return None;
+                    }
+                    media
+                        .cart_roms
+                        .iter()
+                        .find(|r| r.mpi_slot == slot)
+                        .map(|r| r.rom.path.clone())
+                });
         self.rtc_direct = false;
         self.rs232 = None;
         self.rs232_eprom_path = None;

@@ -49,6 +49,7 @@ impl MachineForm {
     /// called inside an already-open two-column [`egui::Grid`] with [`FORM_GRID_SPACING`].
     pub(crate) fn machine_rows(&mut self, ui: &mut egui::Ui) {
         config_form::machine_rows(ui, self.salt, &mut self.config);
+        self.constrain_dos_rom();
     }
 
     /// The VDG/Display rows and TV controls, hosted in the detail pane's
@@ -163,6 +164,8 @@ impl MachineForm {
                 variant: self.config.variant,
             },
         );
+
+        self.constrain_dos_rom();
 
         // The VHD hard disks, below removable media. Always shown, no cartridge required.
         for drive in 0..crate::UI_DRIVES {

@@ -409,7 +409,7 @@ fn disk_menu_items_are_disabled_without_an_fd502() {
 
     harness
         .state_mut()
-        .insert_disk_controller()
+        .insert_disk_controller(Default::default())
         .unwrap_or_else(|e| panic!("insert_disk_controller failed: {e}"));
     harness.step();
 

@@ -8,13 +8,13 @@ use std::path::{Path, PathBuf};
 use coco_core::rom_db::{self, Validation};
 use eframe::egui;
 
-use crate::machine_def::{self, CartridgeDTO, MachineDef, SlotDTO};
+use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef, SlotDTO};
 use crate::{new_vm, rom_load};
 
 /// One ROM image the definition will load.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct ROMRow {
-    /// What the image is for ("System ROM", "Slot 2: Disk BASIC").
+    /// What the image is for ("System ROM", "Slot 2: Disk BASIC 1.1").
     pub(super) role: String,
     /// Where it is read from.
     pub(super) path: PathBuf,
@@ -45,7 +45,7 @@ enum Need {
 /// The ROM-bearing cartridge kinds, shared by the bare port and MPI slots.
 enum Occupant<'a> {
     None,
-    FD502,
+    FD502(DosRom),
     /// A user-supplied image: its role name and the definition's path.
     Image {
         kind: &'static str,
@@ -111,7 +111,7 @@ fn cartridge_occupant(cartridge: &CartridgeDTO) -> Occupant<'_> {
         | CartridgeDTO::RTC
         | CartridgeDTO::CoCoMax
         | CartridgeDTO::MPI { .. } => Occupant::None,
-        CartridgeDTO::FD502 => Occupant::FD502,
+        CartridgeDTO::FD502 { dos_rom } => Occupant::FD502(*dos_rom),
         CartridgeDTO::ROMPak { path, .. } => Occupant::Image {
             kind: "ROM Pak",
             path,
@@ -133,7 +133,7 @@ fn cartridge_occupant(cartridge: &CartridgeDTO) -> Occupant<'_> {
 fn slot_occupant(slot: &SlotDTO) -> Occupant<'_> {
     match slot {
         SlotDTO::Empty | SlotDTO::RTC | SlotDTO::CoCoMax => Occupant::None,
-        SlotDTO::FD502 => Occupant::FD502,
+        SlotDTO::FD502 { dos_rom } => Occupant::FD502(*dos_rom),
         SlotDTO::ROMPak { path, .. } => Occupant::Image {
             kind: "ROM Pak",
             path,
@@ -164,9 +164,9 @@ fn occupant_rows(
     let role = |name: &str| format!("{prefix}{name}");
     match occupant {
         Occupant::None => {}
-        Occupant::FD502 => rows.push(stock(
-            &role("Disk BASIC"),
-            &[rom_load::DISK_BASIC_ROM],
+        Occupant::FD502(dos_rom) => rows.push(stock(
+            &role(dos_rom.label()),
+            &[dos_rom.filename()],
             roms_dir,
             Need::Required,
         )),

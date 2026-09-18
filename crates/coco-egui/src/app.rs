@@ -78,6 +78,8 @@ pub(crate) struct CocoApp {
     /// exposes (status bar, eject menu items, and write-back targets — a
     /// modified image is written back to its file on eject/replace/exit).
     pub(crate) disk_paths: [Option<PathBuf>; UI_DRIVES],
+    /// ROM source for the single FD-502, in the direct port or an MPI slot.
+    pub(crate) disk_rom_path: Option<PathBuf>,
     /// Source paths of the VHD (virtual hard disk) images mounted in the two
     /// drives the UI exposes (status bar). Unlike `disk_paths`, VHD writes
     /// hit the backing file directly — there is no in-memory dirty state
@@ -310,6 +312,7 @@ impl CocoApp {
             display_layer: egui::LayerId::background(),
             audio: audio::AudioOutput::new(),
             cart_path: None,
+            disk_rom_path: None,
             cart_error: None,
             disk_paths: [None, None],
             vhd_paths: [None, None],

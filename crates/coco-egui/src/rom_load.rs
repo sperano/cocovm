@@ -176,16 +176,17 @@ pub(crate) fn installed_roms_dir() -> PathBuf {
     crate::paths::roms_dir().expect("no home directory (checked at startup by require_data_dir)")
 }
 
-/// The FD-502's Disk Extended Color BASIC dump under the roms dir.
-pub(crate) const DISK_BASIC_ROM: &str = "disk11.rom";
-
 /// The Deluxe RS-232 Pak's optional EPROM dump under the roms dir.
 pub(crate) const RS232_EPROM_ROM: &str = "rs232.rom";
 
-/// Where the FD-502 disk controller and save-state hashing read the Disk
-/// BASIC ROM from.
+/// Resolve the selected FD-502 DOS ROM under the installed ROM directory.
+pub(crate) fn dos_rom_path(dos_rom: crate::machine_def::DosRom) -> PathBuf {
+    installed_roms_dir().join(dos_rom.filename())
+}
+
+#[cfg(test)]
 pub(crate) fn disk_basic_rom_path() -> PathBuf {
-    installed_roms_dir().join(DISK_BASIC_ROM)
+    dos_rom_path(crate::machine_def::DosRom::DiskBasic)
 }
 
 /// Where [`crate::CocoApp::insert_rs232`] reads the Deluxe RS-232 pak's optional

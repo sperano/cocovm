@@ -8,9 +8,7 @@ use coco_core::fdc;
 use coco_core::snapshot::{self, CartROMRole, MediaRef, MediaRefs, SlotROMRef};
 use coco_core::vhd;
 
-use crate::{
-    CocoApp, MPISlot, ROMSource, disk_basic_rom_path, orch90_rom_path, rom_db_pseudo_path,
-};
+use crate::{CocoApp, MPISlot, ROMSource, orch90_rom_path, rom_db_pseudo_path};
 
 use super::media_ref::hash_media_ref;
 
@@ -95,6 +93,12 @@ impl CocoApp {
         }
     }
 
+    fn fd502_rom_path(&self) -> Result<PathBuf, String> {
+        self.disk_rom_path
+            .clone()
+            .ok_or_else(|| "FD-502 DOS ROM source is missing".to_string())
+    }
+
     /// [`MediaRefs::cart_roms`]: one entry per ROM image the app tracks a
     /// path for — direct port/MPI slots, the FD-502's Disk BASIC ROM, the
     /// SSC's two ROMs, and the RS-232 pak's optional EPROM.
@@ -110,7 +114,7 @@ impl CocoApp {
                         paths.push((mpi_slot, CartROMRole::Primary, p.clone()));
                     }
                     MPISlot::FD502 => {
-                        paths.push((mpi_slot, CartROMRole::Primary, disk_basic_rom_path()));
+                        paths.push((mpi_slot, CartROMRole::Primary, self.fd502_rom_path()?));
                     }
                     MPISlot::Orch90 => {
                         paths.push((mpi_slot, CartROMRole::Primary, orch90_rom_path()));
@@ -129,7 +133,7 @@ impl CocoApp {
             if let Some(path) = &self.cart_path {
                 paths.push((None, CartROMRole::Primary, path.clone()));
             } else if self.machine.bus.cart.as_disk_cart().is_some() {
-                paths.push((None, CartROMRole::Primary, disk_basic_rom_path()));
+                paths.push((None, CartROMRole::Primary, self.fd502_rom_path()?));
             } else if self.machine.bus.cart.as_ssc().is_some() {
                 paths.extend(ssc_rom_paths(None));
             } else if self.machine.bus.cart.as_orch90().is_some() {

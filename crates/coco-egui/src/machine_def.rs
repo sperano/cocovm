@@ -34,7 +34,7 @@ pub use dto::{
     DriveWireDTO, HardwareDTO, HiResInterfaceDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO,
     SerialDTO, StatsDTO, UIDTO,
 };
-pub use peripherals_dto::{CartridgeDTO, PeripheralsDTO, RS232EndpointDTO, SlotDTO};
+pub use peripherals_dto::{CartridgeDTO, DosRom, PeripheralsDTO, RS232EndpointDTO, SlotDTO};
 // Only tests build definitions with an explicit display DTO so far —
 // production writers go through `HardwareDTO::from_config`.
 #[cfg(test)]
@@ -118,7 +118,13 @@ impl MachineDef {
     }
 
     pub(crate) fn validate_drivewire(&self) -> Result<(), String> {
-        if self.drivewire.enabled && self.peripherals.cartridge.contains_games_master() {
+        let uses_hdbdos = self.peripherals.cartridge.uses_hdbdos();
+        if uses_hdbdos && self.hardware.variant != dto::MachineVariantDTO::Coco3 {
+            return Err("HDB-DOS (DriveWire, CoCo 3) requires a CoCo 3".to_string());
+        }
+        if (self.drivewire.enabled || uses_hdbdos)
+            && self.peripherals.cartridge.contains_games_master()
+        {
             return Err(
                 "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41"
                     .to_string(),
@@ -226,3 +232,7 @@ pub fn artifacts_root() -> Option<PathBuf> {
 #[cfg(test)]
 #[path = "machine_def_test.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "machine_def/dos_rom_test.rs"]
+mod dos_rom_tests;

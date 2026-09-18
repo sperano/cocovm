@@ -4,6 +4,31 @@
 
 use serde::{Deserialize, Serialize};
 
+/// DOS firmware installed in an FD-502 controller.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DosRom {
+    #[default]
+    DiskBasic,
+    HdbDosDw3,
+}
+
+impl DosRom {
+    pub const fn filename(self) -> &'static str {
+        match self {
+            Self::DiskBasic => "disk11.rom",
+            Self::HdbDosDw3 => "hdbdw3bc3.rom",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::DiskBasic => "Disk BASIC 1.1",
+            Self::HdbDosDw3 => "HDB-DOS DW3",
+        }
+    }
+}
+
 /// Default for the image-backed ROM cartridge kinds' `autostart` fields and
 /// their [`SlotDTO`] equivalents: tie CART* to Q so the pak runs at power-up,
 /// like the runtime insert flow's old default checkbox state.
@@ -34,7 +59,10 @@ pub enum CartridgeDTO {
     None,
     /// FD-502 disk controller (Disk BASIC ROM + WD1773, empty drives).
     #[serde(rename = "fd502")]
-    FD502,
+    FD502 {
+        #[serde(default)]
+        dos_rom: DosRom,
+    },
     /// A program ROM Pak image, `path` resolved like `[media]`'s paths
     /// (`resolve_media_path`). `autostart` ties CART* to Q so the pak runs at
     /// power-up.
@@ -102,6 +130,21 @@ pub enum CartridgeDTO {
 }
 
 impl CartridgeDTO {
+    pub fn dos_rom(&self) -> Option<DosRom> {
+        match self {
+            Self::FD502 { dos_rom } => Some(*dos_rom),
+            Self::MPI { slots, .. } => slots.iter().find_map(|slot| match slot {
+                SlotDTO::FD502 { dos_rom } => Some(*dos_rom),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+
+    pub fn uses_hdbdos(&self) -> bool {
+        self.dos_rom() == Some(DosRom::HdbDosDw3)
+    }
+
     pub fn contains_games_master(&self) -> bool {
         match self {
             Self::GamesMaster { .. } => true,
@@ -123,7 +166,10 @@ pub enum SlotDTO {
     #[serde(rename = "empty")]
     Empty,
     #[serde(rename = "fd502")]
-    FD502,
+    FD502 {
+        #[serde(default)]
+        dos_rom: DosRom,
+    },
     #[serde(rename = "rompak")]
     ROMPak {
         path: String,
