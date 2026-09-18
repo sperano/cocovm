@@ -28,6 +28,7 @@ impl SystemBus {
     /// (CoCo 1/2) path calls it ungated.
     pub(super) fn becker_read(&mut self, addr: u16) -> Option<u8> {
         let dw = self.drivewire.as_mut()?;
+        dw.poll_host();
         match addr {
             BECKER_STATUS => Some(dw.status_read()),
             BECKER_DATA => Some(dw.data_read()),

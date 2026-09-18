@@ -39,6 +39,22 @@ fn cold_resume_ignores_changed_startup_media_and_restores_saved_drivewire() {
         assert!(manager.entries[0].vm.is_some());
         manager.suspend_vm(0);
         assert!(manager.entries[0].suspended);
+        if enabled {
+            let diagnostics = manager.entries[0]
+                .vm
+                .as_ref()
+                .unwrap()
+                .machine
+                .bus
+                .drivewire
+                .as_ref()
+                .unwrap()
+                .host_diagnostics();
+            assert_eq!(
+                diagnostics.state,
+                coco_core::drivewire::host::HostState::Suspended
+            );
+        }
         manager.entries[0].vm = None;
         let next = &mut manager.entries[0].def.drivewire;
         next.enabled = true;
@@ -55,6 +71,10 @@ fn cold_resume_ignores_changed_startup_media_and_restores_saved_drivewire() {
         let vm = entry.vm.as_ref().expect("saved session resumed");
         assert_eq!(vm.machine.bus.drivewire.is_some(), enabled);
         if let Some(dw) = &vm.machine.bus.drivewire {
+            assert_eq!(
+                dw.host_diagnostics().state,
+                coco_core::drivewire::host::HostState::Running
+            );
             assert!(dw.hdbdos_mode());
             assert!(dw.is_mounted(0));
             assert_eq!(vm.dw_paths[0], Some(image));

@@ -77,6 +77,27 @@ fn scratch_dir(name: &str) -> PathBuf {
     dir
 }
 
+#[test]
+fn save_and_load_reject_pending_drivewire_host_io_before_file_access() {
+    let mut app = boot_app();
+    app.enable_drivewire(false);
+    let dw = app.machine.bus.drivewire.as_mut().unwrap();
+    let (executor, _host) = coco_core::drivewire::host::HostExecutor::manual(1);
+    *dw = coco_core::drivewire::DWServer::with_host_executor(executor);
+    dw.submit_host_service(Box::new(|_| Ok(Vec::new())))
+        .unwrap();
+
+    let path = scratch_dir("drivewire-host-busy").join("busy.ccstate");
+    let error = app.save_state_to(&path).unwrap_err();
+
+    assert_eq!(error, crate::save_state::DRIVEWIRE_HOST_BUSY);
+    assert!(!path.exists());
+    assert_eq!(
+        app.load_state_from(&path).unwrap_err(),
+        crate::save_state::DRIVEWIRE_HOST_BUSY
+    );
+}
+
 /// A ROM pak and floppy mounted through a MultiPak (the only way to combine
 /// them — FD-502 and cart share the single cartridge port) produce
 /// [`MediaRefs`] whose hashes match [`snapshot::sha256_file`] of every file.

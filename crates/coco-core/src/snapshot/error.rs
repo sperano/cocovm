@@ -23,6 +23,8 @@ pub enum SnapshotError {
     /// The machine being saved has a [`crate::cart::Cart::Custom`] test double
     /// inserted, which has no serializable shape.
     CustomCartNotSnapshotable,
+    /// Host work must finish before media can be hashed and checkpointed.
+    DriveWireBusy,
     /// One or more media sources needed by [`super::restore`] weren't provided;
     /// `descriptions` names every one collected, so a caller can prompt for
     /// all of them at once.
@@ -54,6 +56,9 @@ impl fmt::Display for SnapshotError {
             SnapshotError::Decode(msg) => write!(f, "failed to decode save state: {msg}"),
             SnapshotError::CustomCartNotSnapshotable => {
                 write!(f, "cannot save: an out-of-crate test cartridge is inserted")
+            }
+            SnapshotError::DriveWireBusy => {
+                write!(f, "DriveWire host I/O is still pending; try saving again")
             }
             SnapshotError::MissingMedia { descriptions } => {
                 write!(f, "missing media needed to restore this save state:")?;

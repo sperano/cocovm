@@ -140,6 +140,7 @@ impl CocoApp {
     /// audio, and the framebuffer upload. Runs before any chrome is drawn.
     /// `repaint_delay` describes this viewport's background presentation policy.
     pub(crate) fn step_emulation(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
+        self.poll_drivewire_host();
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
@@ -163,6 +164,7 @@ impl CocoApp {
             // Includes breakpoints hit above, even if no paused repaint follows.
             self.reset_emulation_clock();
         }
+        self.poll_drivewire_host();
 
         self.upload_framebuffer_texture(ctx);
         if self.running {

@@ -27,6 +27,15 @@ impl CocoApp {
     /// [`CocoApp::machine`] wholesale. Does not touch the window title —
     /// callers use [`Self::refresh_window_title`] for that.
     pub(crate) fn load_state_from(&mut self, path: &Path) -> Result<(), String> {
+        if self
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .is_some_and(|dw| !dw.host_is_idle())
+        {
+            return Err(super::DRIVEWIRE_HOST_BUSY.to_string());
+        }
         let bytes =
             std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
         let mut payload = snapshot::load(&bytes).map_err(|e| e.to_string())?;
@@ -151,6 +160,7 @@ impl CocoApp {
         media: &MediaRefs,
         notes: &mut Vec<String>,
     ) {
+        self.stop_drivewire_host();
         self.machine = restored.machine;
 
         // A key held at quick-save time must not stay stuck held after quick-load.

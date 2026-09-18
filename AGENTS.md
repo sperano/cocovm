@@ -13,6 +13,9 @@ manager). `book/` is a 16-chapter course built from this codebase.
   worktree or on `main`.
 - Finish every Vikunja task by creating a pull request.
 - Temporarily skip the book PR hooks when creating these pull requests.
+- When the user reports that a PR was merged, verify the worktree is clean
+  and its changes are merged, then remove that worktree and its local branch.
+  Preserve any uncommitted or unmerged work instead of forcing cleanup.
 
 ## Local resources (copyrighted, present only on this machine)
 

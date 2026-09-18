@@ -307,6 +307,9 @@ impl Machine {
     /// clear RAM. Also resets the cartridge, since RESET* is shared with the
     /// CPU's.
     pub fn reset(&mut self) {
+        if let Some(dw) = self.bus.drivewire.as_mut() {
+            dw.reset_session();
+        }
         self.artifact_phase.select_for_reset(self.config.variant);
         self.cpu.reset(&mut self.bus);
         self.bus.cart.reset();

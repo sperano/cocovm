@@ -372,6 +372,34 @@ impl CocoApp {
         }
     }
 
+    /// Poll completed DriveWire host work without blocking the UI thread.
+    pub(crate) fn poll_drivewire_host(&mut self) {
+        if let Some(dw) = self.machine.bus.drivewire.as_mut() {
+            dw.poll_host();
+        }
+    }
+
+    /// Stop DriveWire host work before this VM is dropped or replaced.
+    pub(crate) fn stop_drivewire_host(&mut self) {
+        if let Some(dw) = self.machine.bus.drivewire.as_mut() {
+            dw.stop_host();
+        }
+    }
+
+    /// Suspend DriveWire host work after the VM reaches an idle save point.
+    pub(crate) fn suspend_drivewire_host(&mut self) {
+        if let Some(dw) = self.machine.bus.drivewire.as_mut() {
+            dw.suspend_host();
+        }
+    }
+
+    /// Resume DriveWire host work before emulation starts again.
+    pub(crate) fn resume_drivewire_host(&mut self) {
+        if let Some(dw) = self.machine.bus.drivewire.as_mut() {
+            dw.resume_host();
+        }
+    }
+
     /// Set whether emulation advances. Exposed since `running` isn't `pub`;
     /// used by the manager's Suspend/Resume to freeze/un-freeze a VM.
     pub(crate) fn set_running(&mut self, running: bool) {
@@ -405,6 +433,7 @@ impl eframe::App for CocoApp {
     /// Write modified floppies and tape back to their files on quit. Failures
     /// are only logged — the app is going away, so there's no dialog to show them in.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.stop_drivewire_host();
         if let Err(e) = self.flush_media() {
             tracing::warn!("could not flush media on exit: {e}");
         }

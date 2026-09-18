@@ -171,6 +171,7 @@ impl ManagerApp {
             entry.launch_error = Some(e);
             return;
         }
+        vm.suspend_drivewire_host();
         vm.set_running(false);
         entry.suspended = true;
         entry.launch_error = None;
@@ -204,6 +205,7 @@ impl ManagerApp {
                 return; // launch failed; launch_vm already recorded the error
             };
             if let Err(e) = vm.load_state_from(&path) {
+                vm.stop_drivewire_host();
                 entry.vm = None;
                 entry.launch_error = Some(e);
                 return;
@@ -224,12 +226,22 @@ impl ManagerApp {
         {
             let entry = &mut self.entries[index];
             if cold {
+                entry
+                    .vm
+                    .as_mut()
+                    .expect("cold resume launched a VM")
+                    .stop_drivewire_host();
                 entry.vm = None; // back to Suspended with the window closed
             }
             entry.launch_error = Some(format!("could not remove {}: {e}", path.display()));
             return;
         }
         let entry = &mut self.entries[index];
+        entry
+            .vm
+            .as_mut()
+            .expect("alive or just restored")
+            .resume_drivewire_host();
         entry
             .vm
             .as_mut()
@@ -246,6 +258,9 @@ impl ManagerApp {
     pub(super) fn stop_vm(&mut self, index: usize) {
         self.print_action("Stopping", index);
         self.fold_runtime_into_def(index);
+        if let Some(vm) = self.entries[index].vm.as_mut() {
+            vm.stop_drivewire_host();
+        }
         let flush_error = self.entries[index]
             .vm
             .take()

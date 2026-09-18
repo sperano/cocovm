@@ -18,14 +18,19 @@
 //! READ/WRITE family's actual sector I/O lives in [`transfer`].
 
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use serde::{Deserialize, Serialize};
 
+pub mod host;
+mod image;
+mod lifecycle;
 mod protocol;
+pub use image::DWImage;
 mod transfer;
 
+use host::HostCompletion;
+use host::HostExecutor;
+use lifecycle::PendingHost;
 use protocol::State;
 
 /// Fixed sector size for DriveWire images: a flat file with sector N at
@@ -206,82 +211,6 @@ const TIME_REPLY_YEAR_BASE: u16 = 1900;
 /// constant only names the bit value this in-process server reports.
 const STATUS_DATA_AVAILABLE: u8 = 0x02;
 
-/// A DriveWire backing image: either an in-memory buffer (small and suitable
-/// for tests) or a real file, accessed by
-/// seeking rather than loaded whole. Mirrors [`crate::vhd::VHDImage`] with
-/// one deliberate difference: a read whose sector lies fully or partly
-/// beyond the image's current length is an *error* here (DriveWire has no
-/// "sparse image" semantics — a read past the end means the client asked
-/// for an LSN the image doesn't have), whereas a write at or beyond the end
-/// silently extends the image, so a fresh, empty image file can become a
-/// valid disk by formatting it. DECB `FORMAT`/NitrOS-9 `format` write
-/// every sector of a new volume in ascending LSN order).
-pub enum DWImage {
-    Memory(Vec<u8>),
-    File(File),
-}
-
-impl DWImage {
-    /// Current length of the backing image in bytes.
-    fn len(&self) -> io::Result<u64> {
-        match self {
-            DWImage::Memory(bytes) => Ok(bytes.len() as u64),
-            DWImage::File(file) => Ok(file.metadata()?.len()),
-        }
-    }
-
-    /// Read exactly `buf.len()` bytes at `offset`; errors (mapped by the
-    /// caller to [`error::READ`]) past the image's end or on I/O failure.
-    pub(crate) fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
-        let len = self.len()?;
-        if offset.saturating_add(buf.len() as u64) > len {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "DriveWire read past end of image",
-            ));
-        }
-        match self {
-            DWImage::Memory(bytes) => {
-                let start = offset as usize;
-                buf.copy_from_slice(&bytes[start..start + buf.len()]);
-                Ok(())
-            }
-            DWImage::File(file) => {
-                file.seek(SeekFrom::Start(offset))?;
-                file.read_exact(buf)
-            }
-        }
-    }
-
-    /// Write `buf` at `offset`, growing the image (zero-filling any gap)
-    /// if `offset + buf.len()` exceeds the current length.
-    pub(crate) fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
-        match self {
-            DWImage::Memory(bytes) => {
-                let end = offset as usize + buf.len();
-                if bytes.len() < end {
-                    bytes.resize(end, 0);
-                }
-                bytes[offset as usize..end].copy_from_slice(buf);
-                Ok(())
-            }
-            DWImage::File(file) => {
-                file.seek(SeekFrom::Start(offset))?;
-                file.write_all(buf)
-            }
-        }
-    }
-
-    /// The image's raw bytes; `Some` only for the in-memory variant, `None`
-    /// for a file-backed image.
-    pub fn as_memory(&self) -> Option<&[u8]> {
-        match self {
-            DWImage::Memory(bytes) => Some(bytes),
-            DWImage::File(_) => None,
-        }
-    }
-}
-
 /// A wall-clock timestamp for [`opcode::TIME`] replies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DWTime {
@@ -339,6 +268,12 @@ pub struct DWServer {
     /// remounted by path on restore through [`DWServer::reattach`].
     #[serde(skip)]
     drives: [Option<DWImage>; DRIVE_COUNT],
+    #[serde(skip)]
+    host: HostExecutor,
+    #[serde(skip)]
+    pending_host: Option<PendingHost>,
+    #[serde(skip)]
+    service_completions: VecDeque<HostCompletion>,
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DWServer::mount`]/[`DWServer::eject`].
     dirty: [bool; DRIVE_COUNT],
@@ -364,8 +299,8 @@ pub struct DWServer {
     /// construction, for the status bar's DriveWire activity light
     /// (`status_icons.rs`'s `ActivityLatch`) — mirrors [`Self::sectors_read`]/
     /// [`Self::sectors_written`] but per-drive and combined, matching what a
-    /// single drive light should track. Bumped in `transfer::read_sector`/
-    /// `transfer::write_sector` only on success; `NOT_READY`/`READ`/`WRITE`
+    /// single drive light should track. Bumped in `transfer::finish_read`/
+    /// `transfer::finish_write` only on success; `NOT_READY`/`READ`/`WRITE`
     /// errors don't bump it. `#[serde(default)]` so an older save state
     /// without this field restores to all-zero counts rather than failing
     /// to load.
@@ -377,6 +312,9 @@ impl DWServer {
     pub fn new() -> Self {
         Self {
             drives: std::array::from_fn(|_| None),
+            host: HostExecutor::new(),
+            pending_host: None,
+            service_completions: VecDeque::new(),
             dirty: [false; DRIVE_COUNT],
             reply: VecDeque::new(),
             state: State::Idle,
@@ -394,12 +332,14 @@ impl DWServer {
     /// Mount `image` in `drive`, replacing anything already there and
     /// clearing its dirty flag.
     pub fn mount(&mut self, drive: usize, image: DWImage) {
-        self.drives[drive] = Some(image);
+        self.invalidate_drive_request(drive);
+        self.drives[drive] = Some(image.into_async());
         self.dirty[drive] = false;
     }
 
     /// Unmount `drive`'s image, if any, and clear its dirty flag.
     pub fn eject(&mut self, drive: usize) {
+        self.invalidate_drive_request(drive);
         self.drives[drive] = None;
         self.dirty[drive] = false;
     }
@@ -407,7 +347,8 @@ impl DWServer {
     /// Re-inject a mounted image after a snapshot restore without clearing `dirty[drive]`
     /// (unlike [`DWServer::mount`]) — the dirty flag is real state, not reset by remounting.
     pub fn reattach(&mut self, drive: usize, image: DWImage) {
-        self.drives[drive] = Some(image);
+        self.invalidate_drive_request(drive);
+        self.drives[drive] = Some(image.into_async());
     }
 
     pub fn is_mounted(&self, drive: usize) -> bool {

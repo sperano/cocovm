@@ -84,6 +84,11 @@ pub(super) enum State {
     AwaitWriteBody {
         buf: Vec<u8>,
     },
+    /// A complete request waits for host I/O; no payload bytes remain.
+    AwaitHostRead {
+        ex: bool,
+    },
+    AwaitHostWrite,
 }
 
 impl DWServer {
@@ -91,9 +96,11 @@ impl DWServer {
     /// protocol state machine. `cycle` detects a stalled transaction by
     /// comparing it with the previous byte's cycle using `wrapping_sub`.
     pub fn data_write(&mut self, byte: u8, cycle: u64) {
+        self.poll_host();
         if let Some(prev) = self.last_byte_cycle {
             let idle = matches!(self.state, State::Idle);
             if !idle && cycle.wrapping_sub(prev) > TRANSACTION_TIMEOUT_CYCLES {
+                self.cancel_host_request();
                 self.state = State::Idle;
             }
         }
@@ -108,6 +115,7 @@ impl DWServer {
             State::Idle => self.handle_opcode(byte),
             State::AwaitDwInitVersion => {
                 // The client driver version byte itself is ignored.
+                self.reset_session();
                 self.reply.push_back(DW_PROTOCOL_VERSION);
             }
             State::AwaitDiscard { remaining } => self.feed_discard(remaining),
@@ -120,6 +128,12 @@ impl DWServer {
                 buf,
             } => self.feed_read_ex_checksum(expected, pending_error, buf, byte),
             State::AwaitWriteBody { buf } => self.feed_write_body(buf, byte),
+            State::AwaitHostRead { .. } | State::AwaitHostWrite => {
+                // A disk client must wait for its reply before sending another
+                // request. An early opcode abandons the unanswered request.
+                self.cancel_host_request();
+                self.handle_opcode(byte);
+            }
         }
     }
 
@@ -214,14 +228,10 @@ impl DWServer {
     /// `self.state == State::Idle`).
     fn handle_opcode(&mut self, op: u8) {
         match op {
-            opcode::NOP
-            | opcode::INIT
-            | opcode::TERM
-            | opcode::RESET1
-            | opcode::RESET2
-            | opcode::RESET3 => {
+            opcode::NOP | opcode::INIT | opcode::TERM => {
                 // Single byte, no reply, no state change.
             }
+            opcode::RESET1 | opcode::RESET2 | opcode::RESET3 => self.protocol_reset(),
             opcode::TIME => self.reply_time(),
             opcode::DWINIT => self.state = State::AwaitDwInitVersion,
             opcode::GETSTAT | opcode::SETSTAT => {
