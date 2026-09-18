@@ -7,6 +7,8 @@
 
 use crate::*;
 
+use super::status_bar;
+
 mod machine;
 
 impl CocoApp {
@@ -126,10 +128,7 @@ impl CocoApp {
         }
         self.tape_seek_ui(ui, tape_mounted);
         let label = match &self.tape_path {
-            Some(p) => format!(
-                "Eject Tape ({})",
-                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
-            ),
+            Some(p) => format!("Eject Tape ({})", status_bar::file_name(p)),
             None => "Eject Tape".to_string(),
         };
         if ui
@@ -162,19 +161,19 @@ impl CocoApp {
         });
     }
 
-    /// The "No disks" entry's menu: every FD-502 drive's items, separated.
-    pub(super) fn disks_menu_ui(&mut self, ui: &mut egui::Ui) {
-        for drive in 0..UI_DRIVES {
-            if drive > 0 {
+    /// The disks menu, popped up from any of the status bar's disk entries: every
+    /// FD-502 drive's section, `first` on top. An FD-502 is always present here.
+    pub(super) fn disks_menu_ui(&mut self, ui: &mut egui::Ui, first: usize) {
+        for i in 0..UI_DRIVES {
+            if i > 0 {
                 ui.separator();
             }
-            self.drive_menu_ui(ui, drive);
+            self.drive_menu_section(ui, (first + i) % UI_DRIVES);
         }
     }
 
-    /// One FD-502 drive's menu: insert, format blank, and eject. It pops up
-    /// from the drive's status-bar entry, so an FD-502 is always present.
-    pub(super) fn drive_menu_ui(&mut self, ui: &mut egui::Ui, drive: usize) {
+    /// One drive's section of [`Self::disks_menu_ui`]: insert, format blank, and eject.
+    fn drive_menu_section(&mut self, ui: &mut egui::Ui, drive: usize) {
         if ui
             .button(format!("Insert Disk in Drive {drive}…"))
             .clicked()
@@ -201,10 +200,7 @@ impl CocoApp {
             }
         }
         let label = match &self.disk_paths[drive] {
-            Some(p) => format!(
-                "Eject Drive {drive} ({})",
-                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
-            ),
+            Some(p) => format!("Eject Drive {drive} ({})", status_bar::file_name(p)),
             None => format!("Eject Drive {drive}"),
         };
         let mounted = self.disk_paths[drive].is_some();

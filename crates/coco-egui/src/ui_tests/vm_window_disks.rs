@@ -89,10 +89,10 @@ fn disks_menu_offers_insert_and_new_blank_per_drive() {
     }
 }
 
-/// A mounted drive's entry opens a menu for that drive alone, with an enabled eject
-/// naming the image; ejecting from it restores the placeholder.
+/// A mounted drive's entry opens the all-drives menu with its own section first, so the
+/// empty sibling drive stays mountable; ejecting from it restores the placeholder.
 #[test]
-fn mounted_drive_entry_opens_its_own_drive_menu() {
+fn mounted_drive_entry_opens_the_disks_menu_with_its_drive_first() {
     let mut harness = harness_with_fd502();
     let dir = TempDir::new("status-bar-drive-menu");
     harness
@@ -101,10 +101,17 @@ fn mounted_drive_entry_opens_its_own_drive_menu() {
     harness.step();
 
     click(&mut harness, "Drive 1 menu");
-    harness.get_by_label("Insert Disk in Drive 1…");
+    let drive1 = harness.get_by_label("Insert Disk in Drive 1…").rect();
+    let drive0 = harness.get_by_label("Insert Disk in Drive 0…").rect();
     assert!(
-        harness.query_by_label("Insert Disk in Drive 0…").is_none(),
-        "drive 1's menu must not list drive 0's items"
+        drive1.top() < drive0.top(),
+        "the clicked drive's section must come first"
+    );
+    assert!(
+        !harness
+            .get_by_label("Eject Drive 1 (blank.dsk)")
+            .accesskit_node()
+            .is_disabled()
     );
     click(&mut harness, "Eject Drive 1 (blank.dsk)");
     harness.get_by_label(NO_DISKS);

@@ -35,7 +35,7 @@ impl CocoApp {
         let label = match &self.print_capture_path {
             Some(p) => format!(
                 "Stop Print Capture ({})",
-                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                crate::chrome::status_bar::file_name(p)
             ),
             None => "Stop Print Capture".to_string(),
         };

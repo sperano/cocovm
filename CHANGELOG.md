@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Floppy disks are inserted, created, and ejected from the status bar's disk
-  entries, like the cassette deck: the "No disks" entry opens a menu covering
-  every drive, and each mounted disk's entry opens a menu for that drive. The
+  entries, like the cassette deck: the "No disks" entry and each mounted
+  disk's entry open a menu covering every drive, the clicked drive first. The
   Machine menu no longer lists them.
 
 ### Removed
