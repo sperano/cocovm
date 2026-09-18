@@ -1,13 +1,10 @@
-//! `CocoApp::new`'s DriveWire launch path — the [`DriveWireLaunch`] half of
-//! [`AppParams`] that no production caller builds yet (`machine_def.rs` has
-//! no DriveWire fields), exercised here so the becker-mount branch stays
-//! covered.
+//! `CocoApp::new`'s DriveWire launch path, also used by saved VM definitions.
 
 use super::*;
 use crate::rom_load::COCO3_ROM_FILE;
 
 /// Asset-free: the default params must leave DriveWire off — the invariant
-/// every production launch and every other test relies on.
+/// for a machine whose definition omits DriveWire settings.
 #[test]
 fn appparams_default_leaves_drivewire_off() {
     assert!(

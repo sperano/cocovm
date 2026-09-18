@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineVariant;
 
+use crate::app::DriveWireLaunch;
 use crate::machine_def::{CartridgeDTO, RS232EndpointDTO, SlotDTO};
 use crate::rom_load::{load_default_rom, load_explicit_rom};
 use crate::{
@@ -25,6 +26,7 @@ struct Media {
     disks: [Option<PathBuf>; UI_DRIVES],
     vhds: [Option<PathBuf>; UI_DRIVES],
     tape: Option<PathBuf>,
+    drivewire: [Option<PathBuf>; coco_core::drivewire::DRIVE_COUNT],
 }
 
 /// The definition's cartridge-port occupant, with any embedded path already
@@ -89,8 +91,15 @@ pub(crate) fn launch_machine_with_gamepad(
     let media = resolve_media(def, slug);
     let cartridge = resolve_cartridge(def, slug);
     validate_disk_media(&media, &cartridge)?;
+    validate_drivewire_media(def, &media)?;
 
-    let mut app = new_app(config, rom, rom_source, &media, &cartridge, gamepad);
+    let drivewire = def.drivewire.enabled.then(|| DriveWireLaunch {
+        hdbdos_mode: def.drivewire.hdbdos_mode,
+        disk_paths: media.drivewire.clone(),
+    });
+    let mut app = new_app(
+        config, rom, rom_source, &media, &cartridge, drivewire, gamepad,
+    );
     mount_peripherals(&mut app, media, cartridge);
     mount_serial(&mut app, def.ports.serial, slug);
 
@@ -151,7 +160,22 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
             resolve(def.media.vhd1.as_deref()),
         ],
         tape: resolve(def.media.tape.as_deref()),
+        drivewire: def.drivewire.disk_paths().map(resolve),
     }
+}
+
+fn validate_drivewire_media(def: &machine_def::MachineDef, media: &Media) -> Result<(), String> {
+    if !def.drivewire.enabled {
+        return Ok(());
+    }
+    for path in media.drivewire.iter().flatten() {
+        let metadata = fs::metadata(path)
+            .map_err(|e| format!("could not open DriveWire image {}: {e}", path.display()))?;
+        if !metadata.is_file() {
+            return Err(format!("DriveWire image {} is not a file", path.display()));
+        }
+    }
+    Ok(())
 }
 
 /// Resolve `[peripherals].cartridge` into [`Cartridge`], resolving any
@@ -251,6 +275,7 @@ fn new_app(
     rom_source: ROMSource,
     media: &Media,
     cartridge: &Cartridge,
+    drivewire: Option<DriveWireLaunch>,
     gamepad: crate::joy::SharedGamepad,
 ) -> CocoApp {
     let (cart_path, cart_autostart) = match cartridge {
@@ -265,8 +290,7 @@ fn new_app(
             cart_path,
             cart_autostart,
             vhd_paths: media.vhds.clone(),
-            // DriveWire and tape-wav stay at their defaults: no definition
-            // field drives them yet (see the `AppParams` field docs).
+            drivewire,
             ..AppParams::default()
         },
         gamepad,
@@ -428,3 +452,7 @@ fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug:
 #[cfg(test)]
 #[path = "launch_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "launch_drivewire_test.rs"]
+mod drivewire_tests;

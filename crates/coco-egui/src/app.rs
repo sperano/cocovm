@@ -260,10 +260,8 @@ pub(crate) struct AppParams {
     pub(crate) cart_autostart: bool,
     pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
     /// `Some` boots with the Becker port enabled ([`DriveWireLaunch`]).
-    /// Not yet reachable from a machine definition — the schema
-    /// (`machine_def.rs`) has no DriveWire fields, so production always
-    /// passes `None`; DriveWire is enabled at runtime in its menu
-    /// (`chrome/menu_bar/drivewire.rs`).
+    /// The production launcher builds this from `[drivewire]`; guest-selected
+    /// runtime mounts remain independent of these startup assignments.
     pub(crate) drivewire: Option<DriveWireLaunch>,
     /// UI preference, not persisted per-machine yet — always `false` at
     /// launch, toggled at runtime in the tape menu (status bar's Cassette

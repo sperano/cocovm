@@ -80,6 +80,10 @@ pub(crate) fn remap_definition_paths(def: &mut MachineDef, old_dir: &Path, new_d
     remap_optional_string(&mut def.media.vhd0, old_dir, new_dir);
     remap_optional_string(&mut def.media.vhd1, old_dir, new_dir);
     remap_optional_string(&mut def.media.tape, old_dir, new_dir);
+    remap_optional_string(&mut def.drivewire.disk0, old_dir, new_dir);
+    remap_optional_string(&mut def.drivewire.disk1, old_dir, new_dir);
+    remap_optional_string(&mut def.drivewire.disk2, old_dir, new_dir);
+    remap_optional_string(&mut def.drivewire.disk3, old_dir, new_dir);
     remap_cartridge_dto(&mut def.peripherals.cartridge, old_dir, new_dir);
 }
 

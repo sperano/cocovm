@@ -22,6 +22,7 @@
 mod cartridge_detection;
 mod harness;
 mod keyboard_test;
+mod manager_drivewire_test;
 mod manager_lifecycle;
 mod manager_peripherals;
 mod manager_roms;

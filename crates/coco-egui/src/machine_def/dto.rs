@@ -304,6 +304,35 @@ pub struct MediaDTO {
     pub tape: Option<String>,
 }
 
+/// `[drivewire]` cold-start settings. Disk paths use the same relative-path
+/// resolution as `[media]` paths.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveWireDTO {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub hdbdos_mode: bool,
+    #[serde(default)]
+    pub disk0: Option<String>,
+    #[serde(default)]
+    pub disk1: Option<String>,
+    #[serde(default)]
+    pub disk2: Option<String>,
+    #[serde(default)]
+    pub disk3: Option<String>,
+}
+
+impl DriveWireDTO {
+    pub fn disk_paths(&self) -> [Option<&str>; coco_core::drivewire::DRIVE_COUNT] {
+        [
+            self.disk0.as_deref(),
+            self.disk1.as_deref(),
+            self.disk2.as_deref(),
+            self.disk3.as_deref(),
+        ]
+    }
+}
+
 /// `[ports].serial`. What host sink the built-in bit-banger serial port
 /// (the 4-pin DIN every CoCo has — `coco_core::bitbanger::BitBanger`, not
 /// the Deluxe RS-232 Pak's ACIA) starts wired to. Absent ⇒ nothing

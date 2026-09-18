@@ -49,6 +49,7 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     form.disks = [media_choice(&media.disk0), media_choice(&media.disk1)];
     form.tape = media_choice(&media.tape);
     form.vhds = [media_choice(&media.vhd0), media_choice(&media.vhd1)];
+    form.drivewire = def.drivewire.clone();
     form.display = def.display();
     form.tv = crate::display::TVSettings {
         scanline_pct: def.ui.tv_scanline,
@@ -126,6 +127,8 @@ impl ManagerApp {
             form.mpi_switch,
             &form.rs232_endpoint,
         );
+        def.drivewire = form.drivewire.clone();
+        def.validate_drivewire()?;
         self.pack_media(slug, form, &mut def)?;
         pack_ui(form, &mut def);
         Ok(def)

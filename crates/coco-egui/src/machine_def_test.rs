@@ -60,6 +60,14 @@ fn full_def() -> MachineDef {
             vhd1: None,
             tape: Some("session.cas".to_string()),
         },
+        drivewire: DriveWireDTO {
+            enabled: true,
+            hdbdos_mode: true,
+            disk0: Some("dw0.dsk".to_string()),
+            disk1: None,
+            disk2: Some("/shared/dw2.dsk".to_string()),
+            disk3: None,
+        },
         peripherals: PeripheralsDTO {
             cartridge: CartridgeDTO::MPI {
                 slots: [
@@ -108,6 +116,24 @@ fn round_trip_full_definition() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].0, "dev-coco-3");
     assert_eq!(&loaded[0].1, &def);
+}
+
+#[test]
+fn missing_drivewire_section_defaults_disabled() {
+    let parsed: MachineDef = toml::from_str(
+        r#"
+schema = 1
+name = "Legacy"
+
+[hardware]
+variant = "coco3"
+ram = "512k"
+video = "ntsc"
+"#,
+    )
+    .expect("definition without DriveWire should parse");
+
+    assert_eq!(parsed.drivewire, DriveWireDTO::default());
 }
 
 /// `[peripherals].cartridge = { kind = "rs232" }` and `[ports].serial`
@@ -418,6 +444,12 @@ schema = 1
 name = "Has Extras"
 future_top_level_field = true
 
+[drivewire]
+enabled = true
+hdbdos_mode = false
+disk0 = "dw0.dsk"
+future_drivewire_field = "preserve me"
+
 [hardware]
 variant = "coco3"
 ram = "512k"
@@ -447,6 +479,12 @@ fn save_preserves_unknown_keys() {
 schema = 1
 name = "Has Extras"
 future_top_level_field = true
+
+[drivewire]
+enabled = true
+hdbdos_mode = false
+disk0 = "dw0.dsk"
+future_drivewire_field = "preserve me"
 
 [hardware]
 variant = "coco3"
@@ -481,6 +519,10 @@ future_ui_field = 42
     assert_eq!(
         table["ui"].get("future_ui_field"),
         Some(&toml::Value::Integer(42))
+    );
+    assert_eq!(
+        table["drivewire"].get("future_drivewire_field"),
+        Some(&toml::Value::String("preserve me".to_string()))
     );
 
     // And the edit itself did take effect.

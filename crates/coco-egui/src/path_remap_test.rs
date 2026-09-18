@@ -19,6 +19,7 @@ fn definition_remap_changes_only_absolute_managed_paths() {
     def.hardware.rom = Some(old_dir.join("system.rom").to_string_lossy().into_owned());
     def.media.disk0 = Some("disk0.dsk".to_string());
     def.media.disk1 = Some(external.to_string());
+    def.drivewire.disk0 = Some(old_dir.join("dw0.dsk").to_string_lossy().into_owned());
     def.peripherals.cartridge = CartridgeDTO::MPI {
         slots: [
             SlotDTO::ROMPak {
@@ -40,6 +41,10 @@ fn definition_remap_changes_only_absolute_managed_paths() {
     );
     assert_eq!(def.media.disk0.as_deref(), Some("disk0.dsk"));
     assert_eq!(def.media.disk1.as_deref(), Some(external));
+    assert_eq!(
+        def.drivewire.disk0.as_deref(),
+        Some("/data/machines/new/dw0.dsk")
+    );
     let CartridgeDTO::MPI { slots, .. } = &def.peripherals.cartridge else {
         panic!("MPI fixture must remain an MPI");
     };

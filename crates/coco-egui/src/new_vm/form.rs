@@ -28,6 +28,7 @@ impl MachineForm {
             display: Display::from_config(&config),
             tv: crate::display::TVSettings::default(),
             config,
+            drivewire: crate::machine_def::DriveWireDTO::default(),
             cartridge: CartridgeChoice::None,
             mpi_slots: std::array::from_fn(|_| SlotChoice::Empty),
             mpi_switch: crate::DEFAULT_MPI_SWITCH_SLOT,
