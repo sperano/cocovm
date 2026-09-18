@@ -261,7 +261,7 @@ fn status_bar_tape_menu_seek_field_is_disabled_without_a_tape() {
 
 #[test]
 fn media_actions_are_disabled_until_media_is_present() {
-    let mut harness = boot_harness();
+    let mut harness = harness_with_fd502();
 
     click(&mut harness, "Machine");
     assert!(
@@ -271,6 +271,11 @@ fn media_actions_are_disabled_until_media_is_present() {
             .is_disabled(),
         "Stop Print Capture should be disabled with nothing captured"
     );
+
+    // Toggle each menu closed before opening the next, so the entry's click opens its
+    // popup rather than dismissing the previous one.
+    click(&mut harness, "Machine");
+    click(&mut harness, "Disks menu");
     // Nothing mounted, so both drive eject entries are disabled too.
     for drive in 0..UI_DRIVES {
         assert!(
@@ -281,9 +286,7 @@ fn media_actions_are_disabled_until_media_is_present() {
         );
     }
 
-    // Toggle the Machine menu closed first so the tape entry's click opens its popup, not
-    // dismisses one.
-    click(&mut harness, "Machine");
+    click(&mut harness, "Disks menu");
     click(&mut harness, "Tape menu");
     for label in ["Rewind Tape", "Eject Tape"] {
         assert!(
@@ -385,47 +388,6 @@ fn cartridge_error_dialog_dismisses_with_ok() {
     click(&mut harness, "OK");
     assert!(harness.state().cart_error.is_none());
     assert!(harness.query_by_label("could not read pak").is_none());
-}
-
-/// Insert Disk/New Blank Disk stay disabled — with a hover explanation — until an FD-502 is
-/// actually present, and enable once one is installed (`insert_disk_controller`, driven
-/// directly here — there is no runtime menu to install one anymore).
-#[test]
-fn disk_menu_items_are_disabled_without_an_fd502() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Machine");
-    for drive in 0..UI_DRIVES {
-        for label in [
-            format!("Insert Disk in Drive {drive}…"),
-            format!("New Blank Disk in Drive {drive}…"),
-        ] {
-            assert!(
-                harness.get_by_label(&label).accesskit_node().is_disabled(),
-                "{label} should be disabled with no FD-502 installed"
-            );
-        }
-    }
-
-    harness
-        .state_mut()
-        .insert_disk_controller(Default::default())
-        .unwrap_or_else(|e| panic!("insert_disk_controller failed: {e}"));
-    harness.step();
-
-    // The Machine menu is still open from earlier — nothing closed it, since this test never
-    // clicks a menu item.
-    for drive in 0..UI_DRIVES {
-        for label in [
-            format!("Insert Disk in Drive {drive}…"),
-            format!("New Blank Disk in Drive {drive}…"),
-        ] {
-            assert!(
-                !harness.get_by_label(&label).accesskit_node().is_disabled(),
-                "{label} should be enabled once an FD-502 is installed"
-            );
-        }
-    }
 }
 
 #[test]

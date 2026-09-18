@@ -1,8 +1,9 @@
 //! The menu bar: Machine, View, Sound, and Help. Each menu that is more
 //! than a handful of items lives in its own submodule; the short ones
-//! (Keyboard, View, Help, and the status bar's display and tape menus) stay
-//! here. The keyboard, display, tape, and joysticks menus have no menu-bar
-//! button — each pops up from its status-bar entry (`chrome::status_bar`).
+//! (Keyboard, View, Help, and the status bar's display, tape, and disk
+//! menus) stay here. The keyboard, display, tape, disk, and joysticks menus
+//! have no menu-bar button — each pops up from its status-bar entry
+//! (`chrome::status_bar`).
 
 use crate::*;
 
@@ -159,6 +160,58 @@ impl CocoApp {
                 }
             });
         });
+    }
+
+    /// The "No disks" entry's menu: every FD-502 drive's items, separated.
+    pub(super) fn disks_menu_ui(&mut self, ui: &mut egui::Ui) {
+        for drive in 0..UI_DRIVES {
+            if drive > 0 {
+                ui.separator();
+            }
+            self.drive_menu_ui(ui, drive);
+        }
+    }
+
+    /// One FD-502 drive's menu: insert, format blank, and eject. It pops up
+    /// from the drive's status-bar entry, so an FD-502 is always present.
+    pub(super) fn drive_menu_ui(&mut self, ui: &mut egui::Ui, drive: usize) {
+        if ui
+            .button(format!("Insert Disk in Drive {drive}…"))
+            .clicked()
+        {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Disk image", &["dsk", "jvc", "os9"])
+                .pick_file()
+            {
+                self.insert_disk(drive, path);
+            }
+        }
+        if ui
+            .button(format!("New Blank Disk in Drive {drive}…"))
+            .clicked()
+        {
+            ui.close();
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Disk image", &["dsk"])
+                .set_file_name("untitled.dsk")
+                .save_file()
+            {
+                self.new_blank_disk(drive, path);
+            }
+        }
+        let label = match &self.disk_paths[drive] {
+            Some(p) => format!(
+                "Eject Drive {drive} ({})",
+                p.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+            ),
+            None => format!("Eject Drive {drive}"),
+        };
+        let mounted = self.disk_paths[drive].is_some();
+        if ui.add_enabled(mounted, egui::Button::new(label)).clicked() {
+            self.eject_disk(drive);
+            ui.close();
+        }
     }
 
     /// Printer menu: toggle printer paper window or open a captured print file.
