@@ -132,21 +132,17 @@ The consequence that has to be internalized before anything else in this
 chapter makes sense is this: *the framework remembers nothing about your
 application, so your application must remember everything.*
 
-Look at the checkbox that controls the Orchestra-90 levels window in the
-View menu:
+Look at the checkbox that toggles aspect correction, in the View menu:
 
 ```rust
-        ui.add_enabled(
-            orch90_present,
-            egui::Checkbox::new(&mut self.show_orch90, "Orchestra-90 Levels"),
-        );
+        ui.checkbox(&mut self.aspect_correct, "4:3 aspect (F9)");
 ```
 
-([`view_menu_ui`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L47).) The signature is the
-whole lesson. `egui::Checkbox::new` takes a `&mut bool` — a mutable borrow of a
-field that belongs to `CocoApp`. Passing the checkbox to `ui.add_enabled`
-draws the box in that state. When the cartridge is present, clicking the
-checkbox flips the bool before the call returns. The widget and the model were never two
+([`crates/coco-egui/src/chrome/menu_bar.rs:50`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/menu_bar.rs#L50).) The signature is the
+whole lesson. `ui.checkbox` takes a `&mut bool` — a mutable borrow of a
+field that belongs to `CocoApp`. It draws the box in whichever state that
+bool currently holds, and, if the click landed on it this frame, it flips
+the bool in place before returning. The widget and the model were never two
 things needing synchronization; there was only ever one bool, and the
 checkbox is a temporary lens onto it that exists for the duration of one
 function call and then evaporates.
@@ -154,7 +150,7 @@ function call and then evaporates.
 Scale that up and you have `CocoApp` itself: roughly thirty-five fields
 ([`crates/coco-egui/src/app.rs:11-168`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app.rs#L11-L168)) that between them constitute the
 *entire* durable memory of the user interface. `self.running`,
-`self.show_orch90`, `self.kb_mode`, `self.show_kbd_help`,
+`self.aspect_correct`, `self.kb_mode`, `self.show_kbd_help`,
 `self.cart_path` — read that struct and you have read every fact the UI
 knows about itself. Nothing is hiding in a framework's internals. There is
 no equivalent of "ask the widget what it currently says," because there is
@@ -341,7 +337,7 @@ clickable on the next frame, because the next frame recomputes
 > The Rust consequence is worth noticing, because it explains the shape of
 > essentially every function in this crate. Those closures capture `self`
 > by unique (mutable) reference — they have to, since they call
-> `self.cart_status(ui)` and mutate `self.show_orch90`. That means no
+> `self.cart_status(ui)` and mutate `self.aspect_correct`. That means no
 > *other* live borrow of `self` may exist for the closure's duration.
 > Nearly all of the frontend's methods therefore take `&mut self`, do their
 > work through field accesses, and hand out no long-lived references. When
@@ -833,8 +829,16 @@ than graphics API calls:
 ```rust
     pub(crate) fn draw_display(&mut self, ui: &mut egui::Ui) {
         let tex = self.texture.as_ref().unwrap();
-        let aspect = TARGET_ASPECT;
-        // Largest 4:3 rect that fits the panel, centered (letterboxed).
+        let tex_size = tex.size_vec2();
+        // Aspect the displayed frame should have, independent of the buffer's
+        // pixel dimensions: 4:3 when corrected, else the raw square-pixel aspect.
+        // This keeps the frontend mode-agnostic — any renderer's buffer size fits.
+        let aspect = if self.aspect_correct {
+            TARGET_ASPECT
+        } else {
+            tex_size.x / tex_size.y
+        };
+        // Largest rect of that aspect that fits the panel, centered (letterboxed).
         let avail = ui.available_rect_before_wrap();
         let mut w = avail.width();
         let mut h = w / aspect;
@@ -844,20 +848,17 @@ than graphics API calls:
         }
         let rect = egui::Rect::from_center_size(avail.center(), egui::vec2(w, h));
         let sized = egui::load::SizedTexture::new(tex.id(), rect.size());
-        let uv = crate::display::texture_uv(self.display, self.tv);
-        ui.put(rect, egui::Image::new(sized).uv(uv));
-        if self.suspended && suspended_overlay(ui, rect) {
-            self.pending_resume = true;
-        }
-        // Remembered for `drive_joysticks` next frame (pointer → joystick axes,
-        // mouse fire gating).
+        ui.put(rect, egui::Image::new(sized));
+        // Remembered for `drive_joysticks` next frame, to map pointer
+        // position to joystick axes and gate the mouse fire buttons (see
+        // the `display_rect` and `display_layer` field docs).
         self.display_rect = rect;
         self.display_layer = ui.layer_id();
     }
 ```
 
-([`draw_display`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L236).) Find
-`ui.put(rect, egui::Image::new(sized).uv(uv))` in the middle of that. It is the
+([`crates/coco-egui/src/app/frame.rs:108-135`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L108-L135).) Find
+`ui.put(rect, egui::Image::new(sized))` in the middle of that. It is the
 display path's second and last GPU-facing call: draw one textured quad,
 sized to `rect`. Every line above it exists to decide what `rect`
 should *be*, and the lines below it merely record the answer.
@@ -909,14 +910,14 @@ the same one that puts bars at the sides of a 4:3 broadcast on a widescreen
 set. Trace the algorithm as four steps:
 
 1. Decide the *target aspect ratio*, independent of the texture's actual
-   pixel dimensions. The display uses `TARGET_ASPECT = 4.0 / 3.0` for
-   RGB monitors, composite monitors, and TVs. Scanline effects can change
-   the texture dimensions without changing this target ratio.
+   pixel dimensions. That is `TARGET_ASPECT = 4.0 / 3.0` when aspect
+   correction is on — the real shape of an NTSC picture — or the texture's
+   own raw width-over-height when correction is off.
 2. Assume the panel's *full width* first, and derive the height that aspect
-   demands: `h = w / TARGET_ASPECT`.
+   demands: `h = w / aspect`.
 3. If that guess is *taller* than the panel, the width assumption was
    wrong. Clamp to the panel's full height instead and recompute the width
-   from it: `w = h * TARGET_ASPECT`.
+   from it: `w = h * aspect`.
 4. Center the resulting `w × h` rectangle in the panel. Whatever is left
    over on the unconstrained axis is the letterbox (or pillarbox) margin.
    `ui.put` never draws anything there, so it stays whatever the
@@ -946,29 +947,56 @@ constraint, so the leftover space is horizontal: roughly
 `(1920 − 1306.7) / 2 ≈ 307` pixels of black bar down each side. That is
 pillarboxing.
 
-For a narrow **500 × 900** panel, the same ratio produces a different result:
+**Aspect-uncorrected**, so `aspect = tex_size.x / tex_size.y = 640/240 ≈
+2.6667` — the raw, non-square-pixel shape of the canvas itself:
 
 ```
-w = 500                  (try full width)
-h = 500 / (4/3) = 375    (fits inside 900 — no clamp needed)
+w = 1920                 (try full width)
+h = 1920 / 2.6667 = 720  (fits inside 980 — no clamp needed)
 ```
 
-The final rectangle is **500 × 375**, centered. Width is the binding
-constraint, leaving `(900 − 375) / 2 = 262.5` pixels above and below.
-The panel dimensions determine which axis limits the picture. The target
-ratio stays 4:3 regardless of the texture dimensions or display effects.
+The final rectangle is **1920 × 720**, centered. Width was the binding
+constraint this time, the `if` did not fire, and the leftover space is
+vertical: `(980 − 720) / 2 = 130` pixels of black bar top and
+bottom. That is letterboxing.
 
-### Why texture dimensions don't determine the display shape
+Two different final rectangles, same algorithm, same source texture. The
+only thing that changed between them was which `aspect` value was fed in.
+That is the whole payoff of computing `aspect` *before* the fit logic runs,
+as a mode-agnostic scalar, rather than hard-coding "stretch to 4:3" into
+the layout math. The doc comment says so directly: "This keeps the frontend
+mode-agnostic — any renderer's buffer size fits"
+([`crates/coco-egui/src/app/frame.rs:112-114`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/frame.rs#L112-L114)). A CoCo 1 in a legacy VDG
+mode hands this function a 288×224 buffer instead of a 640×240 one and
+needs no code change whatsoever, because the function never assumed a size.
 
-The canonical canvas is 640×240, which has a width-to-height ratio of 8:3.
-Displaying it at 4:3 means each source pixel occupies half as much width
-as height. Texture pixels are samples of the picture, not a requirement
-that each sample appear square on the host screen.
+### Why the pixels aren't square in the first place
 
-The TV scanline effect doubles the texture height to 480 by inserting
-rows. That changes the texture's width-to-height ratio to 4:3, but it
-must not change the picture's shape. Using the fixed `TARGET_ASPECT`
-keeps RGB, composite, and TV displays consistent.
+One more number is worth internalizing, and it comes from `main.rs`'s own
+doc comment on `TARGET_ASPECT`:
+
+> Physical aspect the CoCo frame fills on an NTSC set (4:3). The
+> framebuffer is 288×224 (≈1.29:1); when aspect correction is on, the image
+> is stretched horizontally to this ratio so pixels are ~3% wider than
+> tall, as on real hardware.
+> ([`crates/coco-egui/src/main.rs:97-100`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L97-L100))
+
+That 288×224 figure is `coco_core::video::FB_W` and `FB_H` — the CoCo 1
+and 2 legacy VDG canvas, which is a 256×192 active area plus a 16-pixel
+border on every side ([`crates/coco-core/src/video.rs:33-38`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/video.rs#L33-L38)). Do the
+division: `4/3 ÷ (288/224) ≈ 1.037`, a 3.7% horizontal stretch, which
+matches the "~3%" the comment claims.
+
+This is not an emulator quirk to apologize for. Real NTSC CoCos drove
+non-square pixels onto a 4:3 tube in exactly this way, because the
+hardware's dot clock and the television's physical aspect ratio were never
+designed to agree pixel for pixel — the dot clock came from the color
+subcarrier (Chapter 1, §1.2), and the tube's shape came from a broadcast
+standard set decades earlier. `TARGET_ASPECT` is the frontend choosing to
+reproduce that historical mismatch rather than "fix" it into square pixels
+that no CoCo owner ever actually saw. Turning aspect correction off with F9
+is the other choice, and it is the right one when comparing a screenshot
+against a reference emulator pixel for pixel.
 
 ### The initial window size, and why getting it wrong is harmless
 
@@ -1172,6 +1200,7 @@ the clipboard has its own function on the far side of the focus gate:
                         self.set_mode(next);
                     }
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
+                    egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
                     egui::Key::F11 => self.debugger.open = !self.debugger.open,
                     _ => {}
                 }
@@ -1196,7 +1225,7 @@ function; the focus gate split them, since the hotkeys must run before
 it and the paste after. Two details repay a second
 look. The pattern `pressed: true, repeat: false` means these toggles fire
 once per physical press and ignore the operating system's auto-repeat —
-holding F10 down does not toggle the keyboard help window forty times a
+holding F9 down does not strobe aspect correction on and off forty times a
 second. And `Event::Paste` is a single event regardless of platform,
 because, as `handle_paste`'s doc comment says, egui and eframe normalize
 the platform paste shortcut — ⌘V on macOS, Ctrl+V elsewhere — into one
@@ -2759,12 +2788,13 @@ cargo test -p coco-egui
 **15.1 — Letterbox arithmetic (compute).** A `CentralPanel` measures
 **1200 × 700** pixels (already net of menu/toolbar/status chrome). The
 mounted texture is the CoCo 3's 640×240 canonical canvas. Compute the
-final displayed rectangle, by hand, using `aspect = 4/3`. State which
-axis is the binding constraint and how large the margin bars are on the
-other axis. Then repeat for a **500 × 900** panel. Explain why the
-`if h > avail.height()` branch changes. Finally, repeat with a 640×480
-texture produced by the TV scanline effect and explain why the displayed
-rectangles stay the same.
+final displayed rectangle, by hand, for (a) aspect correction **on**
+(`aspect = 4/3`) and (b) aspect correction **off** (`aspect = 640/240`).
+For each, state which axis is the binding constraint and how large the
+margin bars are on the other axis. Then do it again for a panel of
+**500 × 900** (a narrow, portrait-oriented window) with correction on —
+notice which branch of `draw_display`'s `if h > avail.height()` fires this
+time, and why it's the opposite branch from part (a).
 
 **15.2 — `field_debt` simulation (compute).** A machine runs NTSC
 (`field_rate_hz() = 59.94`). `update()` is called at these wall-clock
