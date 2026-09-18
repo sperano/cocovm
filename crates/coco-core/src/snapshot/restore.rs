@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::cart::Cart;
+use crate::config::MachineVariant;
 use crate::{Machine, drivewire, fdc, vhd};
 
 use super::error::SnapshotError;
@@ -88,6 +89,13 @@ pub(crate) fn validate_payload_shape(machine: &Machine) -> Result<(), SnapshotEr
     if machine.bus.cart.contains_nested_multipak() {
         return Err(SnapshotError::InvalidPayload(
             "nested Multi-Pak is not valid hardware".to_string(),
+        ));
+    }
+    if machine.config.variant == MachineVariant::Coco3 && machine.bus.cart.contains_cocomax() {
+        return Err(SnapshotError::InvalidPayload(
+            "CoCo Max Hi-Res Input Module requires a CoCo 1 or CoCo 2 (the CoCo 3's GIME owns \
+             its $FF90-$FF97 window)"
+                .to_string(),
         ));
     }
     machine
@@ -199,7 +207,7 @@ fn restore_cart_roms(
                     |b| ssc.reattach_firmware_rom(b),
                 )?
             }
-            Cart::Empty(_) | Cart::DistoRTC(_) => {} // no ROM
+            Cart::Empty(_) | Cart::DistoRTC(_) | Cart::CoCoMaxModule(_) => {} // no ROM
             // Never produced by slots_mut (yields inner slots, not itself) or deserialization.
             Cart::MultiPak(_) | Cart::Custom(_) => {}
         }

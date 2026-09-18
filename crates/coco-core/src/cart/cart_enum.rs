@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::Cartridge;
+use super::cocomax::CoCoMaxModule;
 use super::empty::EmptySlot;
 use super::gmc::GamesMasterCartridge;
 use super::multipak::MultiPak;
@@ -46,6 +47,9 @@ pub enum Cart {
     /// Sound/Speech Cartridge. Boxed for size: the AY + speech-engine state
     /// is by far the largest cartridge (clippy `large_enum_variant`).
     SoundSpeechCartridge(Box<crate::ssc::SoundSpeechCartridge>),
+    /// CoCo Max Hi-Res Input Module: a mouse/joystick pak with its own ADC,
+    /// CoCo 1/2 only.
+    CoCoMaxModule(CoCoMaxModule),
     /// Out-of-crate [`Cartridge`] implementation (test doubles) — see the
     /// type-level doc. Skipped: a boxed trait object has no serializable
     /// shape, so serializing a machine with one inserted is a hard error
@@ -73,6 +77,7 @@ macro_rules! with_each_cart {
             Cart::DistoRTC($cart) => $body,
             Cart::DeluxeRS232($cart) => $body,
             Cart::SoundSpeechCartridge($cart) => $body,
+            Cart::CoCoMaxModule($cart) => $body,
             Cart::Custom($cart) => $body,
         }
     };
@@ -105,6 +110,18 @@ impl Cart {
     /// See [`Cartridge::peek_control`].
     pub fn peek_control(&self) -> u8 {
         with_each_cart!(self, cart => cart.peek_control())
+    }
+    /// See [`Cartridge::upper_io_read`].
+    pub fn upper_io_read(&mut self, addr: u16) -> u8 {
+        with_each_cart!(self, cart => cart.upper_io_read(addr))
+    }
+    /// See [`Cartridge::upper_io_write`].
+    pub fn upper_io_write(&mut self, addr: u16, val: u8) {
+        with_each_cart!(self, cart => cart.upper_io_write(addr, val))
+    }
+    /// See [`Cartridge::upper_io_peek`].
+    pub fn upper_io_peek(&self, addr: u16) -> u8 {
+        with_each_cart!(self, cart => cart.upper_io_peek(addr))
     }
     /// See [`Cartridge::cart_line_ties_q`].
     pub fn cart_line_ties_q(&self) -> bool {
@@ -236,6 +253,12 @@ impl Cart {
         /// bypassing the `$FF7D`/`$FF7E` host-byte protocol.
         as_ssc, find_ssc, SoundSpeechCartridge, crate::ssc::SoundSpeechCartridge
     );
+
+    cart_accessor!(
+        /// The CoCo Max Hi-Res Input Module, if one is inserted — how the
+        /// frontend feeds mouse position/buttons into its ADC each frame.
+        as_cocomax, find_cocomax, CoCoMaxModule, CoCoMaxModule
+    );
 }
 
 impl Default for Cart {
@@ -288,6 +311,18 @@ impl Cart {
         }
     }
 
+    /// True if this cart (or, for a [`MultiPak`], any of its slots) contains
+    /// a [`Cart::CoCoMaxModule`]. [`crate::snapshot::restore::validate_payload_shape`]
+    /// uses this to refuse a payload pairing the module with a CoCo 3
+    /// variant, whose GIME owns its `$FF90-$FF97` window instead.
+    pub fn contains_cocomax(&self) -> bool {
+        match self {
+            Cart::CoCoMaxModule(_) => true,
+            Cart::MultiPak(mp) => mp.slots.iter().any(Cart::contains_cocomax),
+            _ => false,
+        }
+    }
+
     /// True if this cart is a [`MultiPak`] with a `Cart::MultiPak` nested in
     /// one of its own slots — not valid hardware, reachable only from a
     /// hand-crafted payload. Checked by
@@ -320,6 +355,7 @@ impl std::fmt::Debug for Cart {
             Cart::DistoRTC(rtc) => f.debug_tuple("DistoRTC").field(rtc).finish(),
             Cart::DeluxeRS232(_) => f.write_str("DeluxeRS232"),
             Cart::SoundSpeechCartridge(_) => f.write_str("SoundSpeechCartridge"),
+            Cart::CoCoMaxModule(cocomax) => f.debug_tuple("CoCoMaxModule").field(cocomax).finish(),
             Cart::Custom(_) => f.write_str("Custom"),
         }
     }
@@ -345,6 +381,7 @@ impl_from_cart!(
     crate::orch90::Orch90 => Orch90,
     crate::rtc::DistoRTC => DistoRTC,
     crate::rs232::DeluxeRS232 => DeluxeRS232,
+    CoCoMaxModule => CoCoMaxModule,
 );
 
 impl From<crate::fdc::DiskCart> for Cart {

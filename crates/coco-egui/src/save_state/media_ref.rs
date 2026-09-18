@@ -46,6 +46,7 @@ pub(super) fn mpi_slot_from_cart(cart: &Cart, i: u8, media: &MediaRefs) -> MPISl
         Cart::DistoRTC(_) => MPISlot::DistoRTC,
         Cart::DeluxeRS232(_) => MPISlot::DeluxeRS232(rom_path()),
         Cart::SoundSpeechCartridge(_) => MPISlot::SoundSpeechCartridge,
+        Cart::CoCoMaxModule(_) => MPISlot::CoCoMax,
         _ => MPISlot::Empty,
     }
 }

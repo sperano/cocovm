@@ -11,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::cart::{COCOMAX_IO_BASE, COCOMAX_IO_LAST};
+
 /// Base/last of the SAM control-strobe address range ($FFC0–$FFDF). Every SAM
 /// bit is a pair of addresses: the even one clears it, the odd one sets it —
 /// the data written is ignored (service manual p. 8; MAME `6883sam.h`
@@ -25,7 +27,10 @@ pub const STROBE_LAST: u16 = 0xFFDF;
 /// only reports that this range is I/O).
 const IO_BASE: u16 = 0xFF00;
 /// $FF7F–$FFBF: no GIME (hence no MPI-style `$FF7F` decode either) on these
-/// machines — open bus.
+/// machines — open bus, apart from the [`COCOMAX_IO_BASE`]..[`COCOMAX_IO_LAST`]
+/// carve-out below (real CoCo 1/2 hardware has nothing else in that range,
+/// but a plugged-in CoCo Max module answers it directly off the raw address
+/// bus, the same way the cart SCS* extension does).
 const OPEN_BUS_BASE: u16 = 0xFF7F;
 const OPEN_BUS_LAST: u16 = 0xFFBF;
 
@@ -177,7 +182,12 @@ pub enum SAMTarget {
     /// its extension ($FF60–$FF7E), or a SAM control strobe ($FFC0–$FFDF) —
     /// the bus decodes further by address.
     Io,
-    /// $FF7F–$FFBF: no GIME registers exist on these machines.
+    /// $FF90–$FF97: the CoCo Max Hi-Res Input Module's ADC window — routed
+    /// to the cartridge's [`crate::cart::Cartridge::upper_io_read`]/
+    /// `upper_io_write`/`upper_io_peek`, not the ordinary SCS* dispatch.
+    CartUpperIo,
+    /// $FF7F–$FFBF (minus the [`SAMTarget::CartUpperIo`] carve-out): no
+    /// GIME registers exist on these machines.
     OpenBus,
 }
 
@@ -251,8 +261,11 @@ impl SAM {
         if addr >= STROBE_BASE {
             return SAMTarget::Io; // $FFC0-$FFDF: SAM control strobes.
         }
+        if (COCOMAX_IO_BASE..=COCOMAX_IO_LAST).contains(&addr) {
+            return SAMTarget::CartUpperIo; // $FF90-$FF97.
+        }
         if (OPEN_BUS_BASE..=OPEN_BUS_LAST).contains(&addr) {
-            return SAMTarget::OpenBus; // $FF7F-$FFBF.
+            return SAMTarget::OpenBus; // $FF7F-$FFBF (minus the carve-out above).
         }
         if addr >= IO_BASE {
             return SAMTarget::Io; // $FF00-$FF7E: PIA0/PIA1/cart SCS (+ extension).

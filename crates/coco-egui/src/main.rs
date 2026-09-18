@@ -60,7 +60,7 @@ pub(crate) use app::{AppParams, CocoApp};
 use chrono::{Datelike, Timelike};
 use clap::Parser;
 use cli::Cli;
-use coco_core::cart::{BankedROMPak, GamesMasterCartridge, MultiPak, ROMPak};
+use coco_core::cart::{BankedROMPak, CoCoMaxModule, GamesMasterCartridge, MultiPak, ROMPak};
 use coco_core::drivewire::{self, DWImage, DWTime};
 use coco_core::fdc::{DiskCart, JVCDisk};
 use coco_core::keyboard::{self as kbd, Pos};
@@ -68,7 +68,7 @@ use coco_core::orch90::Orch90;
 use coco_core::rtc::{DistoRTC, RTCTime};
 use coco_core::ssc::SoundSpeechCartridge;
 use coco_core::vhd::VHDImage;
-use coco_core::{Machine, MachineConfig};
+use coco_core::{Machine, MachineConfig, MachineVariant};
 use eframe::egui;
 use joy::JoystickInputs;
 // Re-exported rather than plainly imported: the modules carved out of this file

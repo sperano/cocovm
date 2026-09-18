@@ -108,6 +108,7 @@ impl SystemBus {
                 .cart
                 .rom_peek(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
             SAMTarget::Io => self.sam_io_peek(addr),
+            SAMTarget::CartUpperIo => self.cart.upper_io_peek(addr),
             SAMTarget::OpenBus => OPEN_BUS,
         }
     }

@@ -35,6 +35,7 @@ pub(crate) enum MPISlot {
     GamesMasterCartridge(PathBuf),
     Orch90,
     SoundSpeechCartridge,
+    CoCoMax,
 }
 
 /// Frontend-tracked state of an inserted [`MultiPak`]: which slot the

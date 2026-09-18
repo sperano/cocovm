@@ -46,6 +46,10 @@ pub enum CartridgeChoice {
     /// Sound/Speech Cartridge plugged straight into the port. No file to
     /// pick.
     SoundSpeech,
+    /// CoCo Max Hi-Res Input Module plugged straight into the port. No file
+    /// to pick — it's a mouse pak with its own ADC, not a ROM. CoCo 1/2
+    /// only; offered only for those models ([`super::form`]'s Model row).
+    CoCoMax,
     /// MultiPak Interface; the form then shows its four Slot rows, and
     /// the Disk rows only once a slot holds the FD-502. The switch pick
     /// itself lives in [`super::MachineForm::mpi_switch`], a sibling field,
@@ -79,6 +83,9 @@ pub enum SlotChoice {
     /// Sound/Speech Cartridge in this slot (see
     /// [`CartridgeChoice::SoundSpeech`]).
     SoundSpeech,
+    /// CoCo Max Hi-Res Input Module in this slot (see
+    /// [`CartridgeChoice::CoCoMax`]).
+    CoCoMax,
 }
 
 /// One cartridge ROM selection and the hardware used to run it.
@@ -118,6 +125,7 @@ pub(super) fn slot_label(slot: &SlotChoice) -> String {
         SlotChoice::RS232(_) => "RS-232 Pak".to_string(),
         SlotChoice::Orch90 => "Orchestra-90".to_string(),
         SlotChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
+        SlotChoice::CoCoMax => COCOMAX_LABEL.to_string(),
     }
 }
 
@@ -130,6 +138,7 @@ pub(super) fn cartridge_label(cartridge: &CartridgeChoice) -> String {
         CartridgeChoice::RS232 => "RS-232 Pak".to_string(),
         CartridgeChoice::Orch90 => "Orchestra-90".to_string(),
         CartridgeChoice::SoundSpeech => "Sound/Speech Cartridge".to_string(),
+        CartridgeChoice::CoCoMax => COCOMAX_LABEL.to_string(),
         CartridgeChoice::MPI => "MultiPak Interface".to_string(),
     }
 }
@@ -145,6 +154,9 @@ fn cart_file_name(path: &std::path::Path, fallback: &str) -> String {
 /// Combo text for the Disto RTC pick; names the card so the user knows which
 /// NitrOS-9 clock driver (`clock2_disto4`) it answers to.
 pub(super) const RTC_LABEL: &str = "Disto RTC (4-N-1)";
+
+/// Combo text for the CoCo Max Hi-Res Input Module pick.
+pub(super) const COCOMAX_LABEL: &str = "CoCo Max Hi-Res Input Module";
 
 /// The extensions every cartridge-image file dialog accepts.
 const ROM_EXTENSIONS: &[&str] = &["rom", "ccc", "bin"];
@@ -297,6 +309,7 @@ impl From<&CartridgeDTO> for CartridgeChoice {
             ),
             CartridgeDTO::Orch90 => CartridgeChoice::Orch90,
             CartridgeDTO::SoundSpeech => CartridgeChoice::SoundSpeech,
+            CartridgeDTO::CoCoMax => CartridgeChoice::CoCoMax,
             CartridgeDTO::MPI { .. } => CartridgeChoice::MPI,
         }
     }
@@ -314,6 +327,7 @@ impl From<&SlotChoice> for SlotDTO {
             },
             SlotChoice::Orch90 => SlotDTO::Orch90,
             SlotChoice::SoundSpeech => SlotDTO::SoundSpeech,
+            SlotChoice::CoCoMax => SlotDTO::CoCoMax,
         }
     }
 }
@@ -342,6 +356,7 @@ impl From<&SlotDTO> for SlotChoice {
             )),
             SlotDTO::Orch90 => SlotChoice::Orch90,
             SlotDTO::SoundSpeech => SlotChoice::SoundSpeech,
+            SlotDTO::CoCoMax => SlotChoice::CoCoMax,
         }
     }
 }
@@ -406,6 +421,7 @@ pub(crate) fn pack_peripherals(
         },
         CartridgeChoice::Orch90 => CartridgeDTO::Orch90,
         CartridgeChoice::SoundSpeech => CartridgeDTO::SoundSpeech,
+        CartridgeChoice::CoCoMax => CartridgeDTO::CoCoMax,
         CartridgeChoice::MPI => CartridgeDTO::MPI {
             slots: std::array::from_fn(|i| (&mpi_slots[i]).into()),
             // The form keeps the app's 0-based switch convention; the DTO is 1-based (the UI's

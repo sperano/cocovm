@@ -80,6 +80,11 @@ pub enum CartridgeDTO {
     /// Sound/Speech Cartridge.
     #[serde(rename = "ssc")]
     SoundSpeech,
+    /// CoCo Max Hi-Res Input Module (Colorware, 1985): a mouse pak with its
+    /// own ADC, CoCo 1/2 only. No file to pick, and no `autostart` — it
+    /// isn't a ROM pak.
+    #[serde(rename = "cocomax")]
+    CoCoMax,
     /// MultiPak Interface; `slots` lists its 4 occupants (`SlotDTO::Empty`
     /// for an unused one), and is required — not `#[serde(default)]` — so a
     /// file that names the MPI without a loadout fails to load with serde's
@@ -152,6 +157,10 @@ pub enum SlotDTO {
     Orch90,
     #[serde(rename = "ssc")]
     SoundSpeech,
+    /// CoCo Max Hi-Res Input Module in this slot (see
+    /// [`CartridgeDTO::CoCoMax`]).
+    #[serde(rename = "cocomax")]
+    CoCoMax,
 }
 
 /// [`CartridgeDTO::RS232`]'s `endpoint` — which host backend the Deluxe
