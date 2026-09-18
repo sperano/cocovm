@@ -15,8 +15,7 @@ impl SystemBus {
         const COMPARATOR_BIT: u8 = 0x80;
         let mut pa = self.keyboard.sense(self.pia0.b.output);
         pa &= !self.joysticks.button_rows();
-        let axis = usize::from(self.pia0.a.c2_output()); // SEL1: 0 = X, 1 = Y
-        let stick = usize::from(self.pia0.b.c2_output()); // SEL2: 0 = right
+        let (stick, axis) = self.joystick_mux();
         let dac = (self.pia1.a.output & 0xFC) >> 2;
         if self.joysticks.compare(stick, axis, dac) {
             pa |= COMPARATOR_BIT;
@@ -24,6 +23,37 @@ impl SystemBus {
             pa &= !COMPARATOR_BIT;
         }
         pa
+    }
+
+    /// Current analog-mux selection: SEL1/CA2 (PIA0 side A) picks the axis,
+    /// SEL2/CB2 (side B) picks the stick — the same pair [`Self::pia0_pa_pins`]
+    /// reads, exposed so a PIA0 write can detect when it changes (the Tandy
+    /// hi-res interface's trigger observes every such change, not just DAC
+    /// writes — see `crate::hires_joystick`).
+    pub(super) fn joystick_mux(&self) -> (usize, usize) {
+        let axis = usize::from(self.pia0.a.c2_output()); // SEL1: 0 = X, 1 = Y
+        let stick = usize::from(self.pia0.b.c2_output()); // SEL2: 0 = right
+        (stick, axis)
+    }
+
+    /// PIA1 port-A's 6-bit DAC value (`$FF20`, bits 7:2), gated by DDR — the
+    /// reading both the cassette record tap and the Tandy hi-res trigger
+    /// observe (MAME `update_cassout()`/`hires_trigger` both read the same
+    /// masked value).
+    pub(super) fn pia1_dac_output(&self) -> u8 {
+        (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2
+    }
+
+    /// After a PIA0 write, feed the Tandy hi-res trigger if that write moved
+    /// the analog mux onto a new (stick, axis) — `mux_before` is
+    /// [`Self::joystick_mux`]'s reading from just before the write. No-op for
+    /// a port with no hi-res interface installed ([`crate::joystick::Joysticks::observe_dac`]).
+    pub(super) fn observe_mux_change(&mut self, mux_before: (usize, usize)) {
+        let mux_after = self.joystick_mux();
+        if mux_after != mux_before {
+            let dac = self.pia1_dac_output();
+            self.joysticks.observe_dac(dac, mux_after.0, mux_after.1);
+        }
     }
 
     /// [`Self::pia0_pa_pins`] for a CPU read of PIA0 register `reg`, which

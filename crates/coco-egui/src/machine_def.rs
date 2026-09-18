@@ -31,8 +31,8 @@ mod io;
 mod peripherals_dto;
 
 pub use dto::{
-    DriveWireDTO, HardwareDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO, SerialDTO, StatsDTO,
-    UIDTO,
+    DriveWireDTO, HardwareDTO, HiResInterfaceDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO,
+    SerialDTO, StatsDTO, UIDTO,
 };
 pub use peripherals_dto::{CartridgeDTO, PeripheralsDTO, RS232EndpointDTO, SlotDTO};
 // Only tests build definitions with an explicit display DTO so far —

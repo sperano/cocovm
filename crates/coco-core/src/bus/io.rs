@@ -117,10 +117,7 @@ impl SystemBus {
 
     pub(super) fn io_write(&mut self, addr: u16, val: u8) {
         match addr {
-            IO_BASE..=PIA0_LAST => {
-                self.pia0.write((addr & 0x03) as u8, val);
-                self.note_audio_write(); // CA2/CB2 are the sound mux selects
-            }
+            IO_BASE..=PIA0_LAST => self.write_pia0(addr, val),
             PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
             SCS_BASE..=SCS_LAST => self.write_scs(addr, val),
             CART_EXT_BASE..=CART_EXT_LAST => {
@@ -167,18 +164,33 @@ impl SystemBus {
         }
     }
 
+    /// PIA0 register write ($FF00-$FF03, mirrored through $FF1F): the PIA
+    /// register write itself, the sound-mux touch, and the Tandy hi-res
+    /// trigger's mux-address observation — shared by both the GIME I/O-page
+    /// path and the plain-SAM path.
+    pub(super) fn write_pia0(&mut self, addr: u16, val: u8) {
+        let mux_before = self.joystick_mux();
+        self.pia0.write((addr & 0x03) as u8, val);
+        self.note_audio_write(); // CA2/CB2 are the sound mux selects
+        self.observe_mux_change(mux_before);
+    }
+
     /// PIA1 register write ($FF20-$FF23, mirrored through $FF3F): the PIA
-    /// register write itself, the Port-A-gated cassette DAC tap, and the
-    /// sound-mux touch — shared by both the GIME I/O-page path and the plain-SAM path.
+    /// register write itself, the Port-A-gated cassette DAC tap and Tandy
+    /// hi-res trigger, and the sound-mux touch — shared by both the GIME
+    /// I/O-page path and the plain-SAM path.
     pub(super) fn write_pia1(&mut self, addr: u16, val: u8) {
         let reg = addr & PIA1_REG_MASK;
         self.pia1.write(reg as u8, val);
-        // Cassette record-out is a direct, unconditional tap of the DAC, but
-        // only samples on Port A output/DDR writes, not CRA writes: MAME's
-        // `update_cassout()` runs only from `pia1_pa_changed()`.
+        // Cassette record-out and the hi-res trigger are direct,
+        // unconditional taps of the DAC, but only sample on Port A
+        // output/DDR writes, not CRA writes: MAME's `update_cassout()`/
+        // `hires_trigger` run only from `pia1_pa_changed()`.
         if reg == PIA1_PORT_A_OFFSET {
-            let dac = (self.pia1.a.output & self.pia1.a.ddr & 0xFC) >> 2;
+            let dac = self.pia1_dac_output();
             self.cassette.record_dac(dac, self.pia1.a.c2_output());
+            let (stick, axis) = self.joystick_mux();
+            self.joysticks.observe_dac(dac, stick, axis);
         }
         self.note_audio_write(); // DAC / PB1 / SNDEN / relay
     }

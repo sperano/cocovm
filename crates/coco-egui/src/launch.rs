@@ -128,6 +128,14 @@ pub(crate) fn launch_machine_with_gamepad(
     };
     app.joysticks.sources[coco_core::joystick::RIGHT] = def.ui.joy_right.into();
     app.joysticks.sources[coco_core::joystick::LEFT] = def.ui.joy_left.into();
+    app.machine.bus.joysticks.set_hires(
+        coco_core::joystick::RIGHT,
+        crate::joy::HiResChoice::from(def.ui.hires_right).into(),
+    );
+    app.machine.bus.joysticks.set_hires(
+        coco_core::joystick::LEFT,
+        crate::joy::HiResChoice::from(def.ui.hires_left).into(),
+    );
     Ok(app)
 }
 

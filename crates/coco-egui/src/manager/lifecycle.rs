@@ -193,6 +193,13 @@ impl ManagerApp {
         if cold {
             self.launch_vm(index);
             let entry = &mut self.entries[index];
+            // `load_state_from` below replaces the whole bus, including its snapshot-carried
+            // hi-res interface state, which can be stale relative to the definition (edited
+            // while suspended, or simply absent from an older snapshot). Capture the
+            // definition's pick now so it can be re-asserted afterward — the same precedence
+            // `app.joysticks.sources` already has for free, since no snapshot touches it.
+            let hires_right = entry.def.ui.hires_right;
+            let hires_left = entry.def.ui.hires_left;
             let Some(vm) = entry.vm.as_mut() else {
                 return; // launch failed; launch_vm already recorded the error
             };
@@ -201,6 +208,14 @@ impl ManagerApp {
                 entry.launch_error = Some(e);
                 return;
             }
+            vm.machine.bus.joysticks.set_hires(
+                coco_core::joystick::RIGHT,
+                crate::joy::HiResChoice::from(hires_right).into(),
+            );
+            vm.machine.bus.joysticks.set_hires(
+                coco_core::joystick::LEFT,
+                crate::joy::HiResChoice::from(hires_left).into(),
+            );
         }
         // NotFound still counts as consumed — the VM already holds the
         // state, so there's nothing left to misreport Suspended.

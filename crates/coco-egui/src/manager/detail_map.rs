@@ -61,6 +61,8 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
     // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like `new_vm::MachineForm::joy_sources`.
     form.joy_sources[coco_core::joystick::RIGHT] = def.ui.joy_right.into();
     form.joy_sources[coco_core::joystick::LEFT] = def.ui.joy_left.into();
+    form.hires[coco_core::joystick::RIGHT] = def.ui.hires_right.into();
+    form.hires[coco_core::joystick::LEFT] = def.ui.hires_left.into();
     form.kb_mode = match def.ui.kb_mode {
         machine_def::KbModeDTO::Positional => crate::KbMode::Positional,
         machine_def::KbModeDTO::Symbolic => crate::KbMode::Symbolic,
@@ -165,7 +167,8 @@ impl ManagerApp {
 }
 
 /// Pack the form's remaining `[ports]`/`[ui]` picks: the Serial sink,
-/// TV settings, per-port joystick source, and keyboard mode.
+/// TV settings, per-port joystick source and hi-res interface, and keyboard
+/// mode.
 fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
     def.ports.serial = form.serial.into();
     def.ui.tv_scanline = form.tv.scanline_pct;
@@ -173,6 +176,8 @@ fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
     def.ui.tv_overscan = form.tv.overscan_pct;
     def.ui.joy_right = form.joy_sources[coco_core::joystick::RIGHT].into();
     def.ui.joy_left = form.joy_sources[coco_core::joystick::LEFT].into();
+    def.ui.hires_right = form.hires[coco_core::joystick::RIGHT].into();
+    def.ui.hires_left = form.hires[coco_core::joystick::LEFT].into();
     def.ui.kb_mode = match form.kb_mode {
         crate::KbMode::Positional => machine_def::KbModeDTO::Positional,
         crate::KbMode::Symbolic => machine_def::KbModeDTO::Symbolic,

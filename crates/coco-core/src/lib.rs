@@ -24,6 +24,7 @@ mod font6847;
 mod font_gime;
 pub mod gime;
 pub mod gime_video;
+pub mod hires_joystick;
 pub mod joystick;
 pub mod keyboard;
 mod machine;
