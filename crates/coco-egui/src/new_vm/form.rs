@@ -136,6 +136,20 @@ impl MachineForm {
         if !self.drives_available() {
             self.disks = std::array::from_fn(|_| MediaChoice::None);
         }
+        // The CoCo Max module is CoCo 1/2-only hardware (the CoCo 3's GIME
+        // owns its $FF90-$FF97 window) — drop an already-picked one, bare
+        // port or MPI slot, the moment the model moves to CoCo 3, the same
+        // way the resets above drop fields their own picks made irrelevant.
+        if self.config.variant == MachineVariant::Coco3 {
+            if self.cartridge == CartridgeChoice::CoCoMax {
+                self.cartridge = CartridgeChoice::None;
+            }
+            for slot in &mut self.mpi_slots {
+                if *slot == SlotChoice::CoCoMax {
+                    *slot = SlotChoice::Empty;
+                }
+            }
+        }
         cartridge_form::cartridge_row(
             ui,
             self.salt,
@@ -146,6 +160,7 @@ impl MachineForm {
                 mpi_switch: &mut self.mpi_switch,
                 rs232_endpoint: &mut self.rs232_endpoint,
                 disks: &mut self.disks,
+                variant: self.config.variant,
             },
         );
 

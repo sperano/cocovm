@@ -48,6 +48,7 @@ impl SystemBus {
                 .cart
                 .rom_read(SAM_CART_ROM_BASE.wrapping_add(off as u16)),
             SAMTarget::Io => self.sam_io_read(addr),
+            SAMTarget::CartUpperIo => self.cart.upper_io_read(addr),
             SAMTarget::OpenBus => OPEN_BUS,
         }
     }
@@ -66,6 +67,7 @@ impl SystemBus {
             | SAMTarget::Cart(_)
             | SAMTarget::OpenBus => {}
             SAMTarget::Io => self.sam_io_write(addr, val),
+            SAMTarget::CartUpperIo => self.cart.upper_io_write(addr, val),
         }
     }
 

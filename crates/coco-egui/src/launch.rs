@@ -53,6 +53,7 @@ enum Cartridge {
     },
     Orch90,
     SoundSpeech,
+    CoCoMax,
     MPI {
         slots: [Slot; MPI_SLOT_COUNT],
         /// 1-based front-panel slot ([`CartridgeDTO::MPI`]'s `switch`);
@@ -74,6 +75,7 @@ enum Slot {
     GamesMaster { path: PathBuf, autostart: bool },
     Orch90,
     SoundSpeech,
+    CoCoMax,
 }
 
 /// Builds a running [`CocoApp`] from a saved machine definition, loads the ROM,
@@ -210,6 +212,7 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
         },
         CartridgeDTO::Orch90 => Cartridge::Orch90,
         CartridgeDTO::SoundSpeech => Cartridge::SoundSpeech,
+        CartridgeDTO::CoCoMax => Cartridge::CoCoMax,
         CartridgeDTO::MPI { slots, switch } => Cartridge::MPI {
             slots: std::array::from_fn(|i| resolve_slot(&slots[i], slug)),
             switch: *switch,
@@ -240,6 +243,7 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
         },
         SlotDTO::Orch90 => Slot::Orch90,
         SlotDTO::SoundSpeech => Slot::SoundSpeech,
+        SlotDTO::CoCoMax => Slot::CoCoMax,
     }
 }
 
@@ -255,7 +259,8 @@ fn cartridge_has_fd502(cartridge: &Cartridge) -> bool {
         | Cartridge::RS232 { .. }
         | Cartridge::GamesMaster { .. }
         | Cartridge::Orch90
-        | Cartridge::SoundSpeech => false,
+        | Cartridge::SoundSpeech
+        | Cartridge::CoCoMax => false,
     }
 }
 
@@ -328,6 +333,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
         Cartridge::GamesMaster { path, autostart } => app.insert_gmc(path, autostart),
         Cartridge::Orch90 => app.insert_orch90(),
         Cartridge::SoundSpeech => app.insert_ssc(),
+        Cartridge::CoCoMax => app.insert_cocomax(),
         Cartridge::MPI { slots, switch } => {
             app.insert_multipak();
             for (slot, occupant) in slots.into_iter().enumerate() {
@@ -350,6 +356,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                     }
                     Slot::Orch90 => app.mpi_insert_orch90(slot),
                     Slot::SoundSpeech => app.mpi_insert_ssc(slot),
+                    Slot::CoCoMax => app.mpi_insert_cocomax(slot),
                 }
             }
             // `switch` is 1-based (matching the UI's "Slot 1"); `mpi_set_switch` is 0-based.

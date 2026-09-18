@@ -207,6 +207,24 @@ fn disk_media_with_no_controller_errors() {
     );
 }
 
+/// The CoCo Max Hi-Res Input Module requires CoCo 1/2 hardware: the CoCo 3's
+/// GIME owns its `$FF90-$FF97` ADC window, so `launch_machine` must refuse
+/// it on `base_def`'s CoCo 3, the same way `insert_cocomax` refuses it at
+/// runtime.
+#[test]
+fn cocomax_refuses_a_coco3_machine() {
+    let mut def = base_def();
+    def.peripherals.cartridge = CartridgeDTO::CoCoMax;
+
+    let err = super::launch_machine(&def, "launch-test-cocomax-coco3")
+        .err()
+        .expect("the CoCo Max module must be refused on a CoCo 3");
+    assert!(
+        err.contains("CoCo 1") && err.contains("CoCo 2"),
+        "error should name the fix: {err}"
+    );
+}
+
 /// Writes a one-track blank floppy image and returns a definition mounting it as
 /// `disk0` with `cartridge` as the port occupant.
 fn disk0_def(dir: &crate::machine_def::tests::TempDir, cartridge: CartridgeDTO) -> MachineDef {

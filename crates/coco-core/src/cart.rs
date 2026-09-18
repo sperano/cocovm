@@ -8,12 +8,14 @@
 //! for out-of-crate test doubles through [`Cart::custom`]).
 
 mod cart_enum;
+mod cocomax;
 mod empty;
 mod gmc;
 mod multipak;
 mod rompak;
 
 pub use cart_enum::Cart;
+pub use cocomax::{COCOMAX_IO_BASE, COCOMAX_IO_LAST, CoCoMaxModule};
 pub use empty::EmptySlot;
 pub use gmc::GamesMasterCartridge;
 pub use multipak::{MultiPak, mpi};
@@ -57,6 +59,19 @@ pub trait Cartridge {
     /// Side-effect-free twin of [`Cartridge::control_read`] (`$FF7F`) for
     /// [`crate::SystemBus::peek`].
     fn peek_control(&self) -> u8 {
+        IO_OPEN_BUS
+    }
+    /// Read the CoCo Max Hi-Res Input Module's ADC window (`$FF90-$FF97`),
+    /// decoded by the plain-SAM bus path only (CoCo 1/2) — unreachable on
+    /// the CoCo 3, where the GIME owns that range instead. Default: open
+    /// bus, since no other cartridge decodes anything there.
+    fn upper_io_read(&mut self, _addr: u16) -> u8 {
+        IO_OPEN_BUS
+    }
+    /// See [`Cartridge::upper_io_read`]; writes are ignored by default.
+    fn upper_io_write(&mut self, _addr: u16, _val: u8) {}
+    /// Side-effect-free twin of [`Cartridge::upper_io_read`].
+    fn upper_io_peek(&self, _addr: u16) -> u8 {
         IO_OPEN_BUS
     }
     /// True while this cartridge ties the expansion-port CART* line to the Q

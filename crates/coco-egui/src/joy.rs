@@ -291,6 +291,20 @@ impl JoystickInputs {
         let [fire0, fire1] = self.mouse_fire;
         let keys = Self::key_state(ctx);
 
+        // The CoCo Max Hi-Res Input Module is its own device with its own
+        // jack — it takes the mouse unconditionally, regardless of either
+        // port's `JoySource` pick, the same latched fire buttons the mouse
+        // joystick source uses above.
+        if let Some(cocomax) = machine.bus.cart.as_cocomax() {
+            if let Some(pos) = pointer_pos
+                && display_rect.contains(pos)
+                && let Some((x, y)) = cocomax_axes_from_pointer(pos, active_rect)
+            {
+                cocomax.set_position(x, y);
+            }
+            cocomax.set_buttons(fire0, fire1);
+        }
+
         for stick in [RIGHT, LEFT] {
             self.in_use[stick] = match self.sources[stick] {
                 JoySource::None => {
@@ -407,16 +421,37 @@ fn pot_from_unit(frac: f32) -> u16 {
     (frac.clamp(0.0, 1.0) * POT_MAX as f32).round() as u16
 }
 
-/// Map a mouse pointer position to `(pot_x, pot_y)` normalized over
-/// `active_rect`. `None` on a degenerate `active_rect` (zero-size, negative,
-/// or NaN extents), which would otherwise corrupt the pot state with NaN.
-fn pot_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u16, u16)> {
+/// [`pot_from_unit`]'s full-byte sibling: maps a 0.0..=1.0 fraction to a
+/// 0..=255 value, the CoCo Max module's ADC range.
+fn adc_from_unit(frac: f32) -> u8 {
+    (frac.clamp(0.0, 1.0) * u8::MAX as f32).round() as u8
+}
+
+/// Pointer position as an unnormalized `(x, y)` fraction of `active_rect`
+/// (0.0 = left/top, 1.0 = right/bottom, unclamped past the edges). `None` on
+/// a degenerate `active_rect` (zero-size, negative, or NaN extents), which
+/// would otherwise corrupt the caller's mapped axes with NaN.
+fn pointer_fraction(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(f32, f32)> {
     if !(active_rect.width() > 0.0 && active_rect.height() > 0.0) {
         return None;
     }
     let nx = (pos.x - active_rect.left()) / active_rect.width();
     let ny = (pos.y - active_rect.top()) / active_rect.height();
+    Some((nx, ny))
+}
+
+/// Map a mouse pointer position to `(pot_x, pot_y)` normalized over
+/// `active_rect`.
+fn pot_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u16, u16)> {
+    let (nx, ny) = pointer_fraction(pos, active_rect)?;
     Some((pot_from_unit(nx), pot_from_unit(ny)))
+}
+
+/// [`pot_axes_from_pointer`]'s CoCo Max sibling: the module's ADC is a full
+/// 8-bit channel (0-255), not the joystick pot's 10-bit range.
+fn cocomax_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u8, u8)> {
+    let (nx, ny) = pointer_fraction(pos, active_rect)?;
+    Some((adc_from_unit(nx), adc_from_unit(ny)))
 }
 
 /// Map a gilrs-style -1.0..=1.0 analog axis to a 0..=1023 pot value.

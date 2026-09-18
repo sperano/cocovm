@@ -431,5 +431,6 @@ fn slot_label(slot: &MPISlot) -> String {
         MPISlot::GamesMasterCartridge(p) => format!("GMC:{}", file_name(p)),
         MPISlot::Orch90 => "Orchestra-90".to_string(),
         MPISlot::SoundSpeechCartridge => "SSC".to_string(),
+        MPISlot::CoCoMax => "CoCo Max".to_string(),
     }
 }

@@ -5,6 +5,7 @@
 
 mod banked_rompak;
 mod cart;
+mod cart_mpi;
 pub(crate) mod disk;
 mod drivewire;
 mod printer;

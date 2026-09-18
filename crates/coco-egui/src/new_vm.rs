@@ -16,6 +16,7 @@ use crate::display::Display;
 use crate::machine_def::SerialDTO;
 
 mod cartridge;
+mod cartridge_combo;
 mod cartridge_form;
 mod config_form;
 mod drivewire_form;

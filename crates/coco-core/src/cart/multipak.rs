@@ -195,6 +195,36 @@ impl Cartridge for MultiPak {
         self.select | mpi::READBACK_OR_MASK
     }
 
+    /// `$FF90-$FF97` (the CoCo Max module's ADC window) is broadcast to
+    /// every slot, same as the `$FF60-$FF7E` extension — the module has no
+    /// SCS* wiring of its own; like the Deluxe RS-232 Pak's ACIA, it decodes
+    /// the raw address bus, which the MPI does not switch (MAME's
+    /// `coco_multipak_device::cartridge_space()` forwards straight to the
+    /// parent bus for every slot, not just the one `$FF7F` selects).
+    fn upper_io_read(&mut self, addr: u16) -> u8 {
+        self.slots
+            .iter_mut()
+            .map(|slot| slot.upper_io_read(addr))
+            .find(|&val| val != IO_OPEN_BUS)
+            .unwrap_or(IO_OPEN_BUS)
+    }
+
+    /// See [`MultiPak::upper_io_read`]'s doc: broadcast, not SCS-selected.
+    fn upper_io_write(&mut self, addr: u16, val: u8) {
+        for slot in &mut self.slots {
+            slot.upper_io_write(addr, val);
+        }
+    }
+
+    /// [`MultiPak::upper_io_read`]'s side-effect-free twin.
+    fn upper_io_peek(&self, addr: u16) -> u8 {
+        self.slots
+            .iter()
+            .map(|slot| slot.upper_io_peek(addr))
+            .find(|&val| val != IO_OPEN_BUS)
+            .unwrap_or(IO_OPEN_BUS)
+    }
+
     fn cart_line_ties_q(&self) -> bool {
         self.slots[self.cts_slot()].cart_line_ties_q()
     }
@@ -339,5 +369,10 @@ impl MultiPak {
     /// The Sound/Speech Cartridge in any slot, if one is plugged in.
     pub fn find_ssc(&mut self) -> Option<&mut crate::ssc::SoundSpeechCartridge> {
         self.slots.iter_mut().find_map(Cart::as_ssc)
+    }
+
+    /// The CoCo Max Hi-Res Input Module in any slot, if one is plugged in.
+    pub fn find_cocomax(&mut self) -> Option<&mut super::cocomax::CoCoMaxModule> {
+        self.slots.iter_mut().find_map(Cart::as_cocomax)
     }
 }
