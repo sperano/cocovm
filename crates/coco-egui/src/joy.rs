@@ -4,18 +4,19 @@
 //! joysticks entry pops up ([`JoystickInputs::menu_ui`]).
 
 use coco_core::Machine;
-use coco_core::joystick::{AXIS_CENTER, AXIS_MAX, AXIS_X, AXIS_Y, LEFT, RIGHT};
+use coco_core::hires_joystick::HiResInterface;
+use coco_core::joystick::{AXIS_X, AXIS_Y, LEFT, POT_CENTER, POT_MAX, RIGHT};
 use eframe::egui;
 
-use crate::machine_def::JoySourceDTO;
+use crate::machine_def::{HiResInterfaceDTO, JoySourceDTO};
 
 mod gamepad;
 use gamepad::GamepadState;
 pub(crate) use gamepad::SharedGamepad;
 
-/// Pot floor (0 = fully left/up), named to match `joystick::AXIS_MAX` (63 =
+/// Pot floor (0 = fully left/up), named to match `joystick::POT_MAX` (1023 =
 /// fully right/down) rather than leaving a bare `0` at each call site.
-const AXIS_MIN: u8 = 0;
+const POT_MIN: u16 = 0;
 
 /// Minimum absolute gamepad axis deflection (gilrs' -1.0..=1.0 range) that
 /// counts as "in use" for the status bar's joystick activity light — small
@@ -69,6 +70,65 @@ impl From<JoySource> for JoySourceDTO {
             JoySource::Mouse => Self::Mouse,
             JoySource::Gamepad => Self::Gamepad,
             JoySource::Keys => Self::Keys,
+        }
+    }
+}
+
+/// Which hi-res joystick interface (if any) a port has plugged in — the
+/// Joysticks fieldset's per-port "Interface" pick, CoCo 3 only
+/// (`new_vm::MachineForm::constrain_hires`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum HiResChoice {
+    #[default]
+    None,
+    /// Tandy 26-3025.
+    Tandy,
+    /// CoCo Max III hi-res unit.
+    CoCoMax3,
+}
+
+impl HiResChoice {
+    pub const ALL: [Self; 3] = [Self::None, Self::Tandy, Self::CoCoMax3];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::Tandy => "Tandy Hi-Res",
+            Self::CoCoMax3 => "CoCo Max III Hi-Res",
+        }
+    }
+}
+
+// `[ui].hires_left`/`hires_right`'s `From` impls, kept here for the same reason as
+// `JoySourceDTO`'s pair just above: shared by `manager::detail_map` and `launch.rs`.
+impl From<HiResInterfaceDTO> for HiResChoice {
+    fn from(dto: HiResInterfaceDTO) -> Self {
+        match dto {
+            HiResInterfaceDTO::None => Self::None,
+            HiResInterfaceDTO::Tandy => Self::Tandy,
+            HiResInterfaceDTO::CoCoMax3 => Self::CoCoMax3,
+        }
+    }
+}
+
+impl From<HiResChoice> for HiResInterfaceDTO {
+    fn from(choice: HiResChoice) -> Self {
+        match choice {
+            HiResChoice::None => Self::None,
+            HiResChoice::Tandy => Self::Tandy,
+            HiResChoice::CoCoMax3 => Self::CoCoMax3,
+        }
+    }
+}
+
+/// `HiResChoice` -> the core hardware enum `set_hires` takes, used by
+/// `launch.rs` at definition ⇒ runtime time.
+impl From<HiResChoice> for HiResInterface {
+    fn from(choice: HiResChoice) -> Self {
+        match choice {
+            HiResChoice::None => Self::None,
+            HiResChoice::Tandy => Self::Tandy,
+            HiResChoice::CoCoMax3 => Self::CoCoMax3,
         }
     }
 }
@@ -235,8 +295,8 @@ impl JoystickInputs {
             self.in_use[stick] = match self.sources[stick] {
                 JoySource::None => {
                     // Recenter so a port doesn't stay wherever the previous source left it.
-                    machine.bus.joysticks.set_axis(stick, AXIS_X, AXIS_CENTER);
-                    machine.bus.joysticks.set_axis(stick, AXIS_Y, AXIS_CENTER);
+                    machine.bus.joysticks.set_pot(stick, AXIS_X, POT_CENTER);
+                    machine.bus.joysticks.set_pot(stick, AXIS_Y, POT_CENTER);
                     machine.bus.joysticks.set_button(stick, 0, false);
                     machine.bus.joysticks.set_button(stick, 1, false);
                     false
@@ -248,8 +308,8 @@ impl JoystickInputs {
                         && display_rect.contains(pos)
                         && let Some((px, py)) = pot_axes_from_pointer(pos, active_rect)
                     {
-                        machine.bus.joysticks.set_axis(stick, AXIS_X, px);
-                        machine.bus.joysticks.set_axis(stick, AXIS_Y, py);
+                        machine.bus.joysticks.set_pot(stick, AXIS_X, px);
+                        machine.bus.joysticks.set_pot(stick, AXIS_Y, py);
                     }
                     machine.bus.joysticks.set_button(stick, 0, fire0);
                     machine.bus.joysticks.set_button(stick, 1, fire1);
@@ -259,8 +319,8 @@ impl JoystickInputs {
                 JoySource::Gamepad => {
                     let x = pot_from_bipolar(axes[0]);
                     let y = pot_from_bipolar(axes[1]);
-                    machine.bus.joysticks.set_axis(stick, AXIS_X, x);
-                    machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
+                    machine.bus.joysticks.set_pot(stick, AXIS_X, x);
+                    machine.bus.joysticks.set_pot(stick, AXIS_Y, y);
                     machine.bus.joysticks.set_button(stick, 0, buttons[0]);
                     machine.bus.joysticks.set_button(stick, 1, buttons[1]);
                     gamepad_in_use(buttons, axes)
@@ -268,8 +328,8 @@ impl JoystickInputs {
                 JoySource::Keys => {
                     let x = axis_from_keys(keys.left, keys.right);
                     let y = axis_from_keys(keys.up, keys.down);
-                    machine.bus.joysticks.set_axis(stick, AXIS_X, x);
-                    machine.bus.joysticks.set_axis(stick, AXIS_Y, y);
+                    machine.bus.joysticks.set_pot(stick, AXIS_X, x);
+                    machine.bus.joysticks.set_pot(stick, AXIS_Y, y);
                     machine.bus.joysticks.set_button(stick, 0, keys.button0);
                     machine.bus.joysticks.set_button(stick, 1, keys.button1);
                     keys_in_use(keys)
@@ -302,11 +362,11 @@ impl JoystickInputs {
 
 /// Full deflection while exactly one of a key pair is held, else centered —
 /// covers "neither held" and "both held" (for example, opposing arrows) the same way.
-fn axis_from_keys(negative: bool, positive: bool) -> u8 {
+fn axis_from_keys(negative: bool, positive: bool) -> u16 {
     match (negative, positive) {
-        (true, false) => AXIS_MIN,
-        (false, true) => AXIS_MAX,
-        _ => AXIS_CENTER,
+        (true, false) => POT_MIN,
+        (false, true) => POT_MAX,
+        _ => POT_CENTER,
     }
 }
 
@@ -342,15 +402,15 @@ fn keys_in_use(keys: KeyState) -> bool {
 }
 
 /// Map a 0.0..=1.0 fraction (for example, a pointer position within the display rect) to
-/// a 0..=63 pot value.
-fn pot_from_unit(frac: f32) -> u8 {
-    (frac.clamp(0.0, 1.0) * AXIS_MAX as f32).round() as u8
+/// a 0..=1023 pot value.
+fn pot_from_unit(frac: f32) -> u16 {
+    (frac.clamp(0.0, 1.0) * POT_MAX as f32).round() as u16
 }
 
 /// Map a mouse pointer position to `(pot_x, pot_y)` normalized over
 /// `active_rect`. `None` on a degenerate `active_rect` (zero-size, negative,
 /// or NaN extents), which would otherwise corrupt the pot state with NaN.
-fn pot_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u8, u8)> {
+fn pot_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u16, u16)> {
     if !(active_rect.width() > 0.0 && active_rect.height() > 0.0) {
         return None;
     }
@@ -359,8 +419,8 @@ fn pot_axes_from_pointer(pos: egui::Pos2, active_rect: egui::Rect) -> Option<(u8
     Some((pot_from_unit(nx), pot_from_unit(ny)))
 }
 
-/// Map a gilrs-style -1.0..=1.0 analog axis to a 0..=63 pot value.
-fn pot_from_bipolar(v: f32) -> u8 {
+/// Map a gilrs-style -1.0..=1.0 analog axis to a 0..=1023 pot value.
+fn pot_from_bipolar(v: f32) -> u16 {
     pot_from_unit((v.clamp(-1.0, 1.0) + 1.0) / 2.0)
 }
 

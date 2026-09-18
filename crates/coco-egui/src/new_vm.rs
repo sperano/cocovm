@@ -265,6 +265,11 @@ pub struct MachineForm {
     /// by `coco_core::joystick::{RIGHT, LEFT}` like
     /// `crate::joy::JoystickInputs::sources`.
     pub joy_sources: [crate::joy::JoySource; 2],
+    /// The Joysticks fieldset's per-port hi-res interface picks
+    /// (`[ui].hires_left`/`hires_right`), indexed like [`Self::joy_sources`].
+    /// CoCo 3 only — [`MachineForm::constrain_hires`] resets both on any
+    /// other model.
+    pub hires: [crate::joy::HiResChoice; 2],
     /// The Keyboard fieldset's pick (`[ui].kb_mode`).
     pub kb_mode: crate::KbMode,
 }

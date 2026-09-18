@@ -84,9 +84,11 @@ impl Machine {
             let cycles = u32::try_from(elapsed).expect("one CPU unit must fit in u32 cycles");
             (cycles, true)
         };
+        let cpu_fast = self.cpu_fast();
         self.bus.cart.tick(cycles);
         self.bus.cassette.tick(cycles, self.bus.pia1.a.c2_output());
         self.bus.bitbanger.tick(cycles, self.bus.pia1_tx_mark());
+        self.bus.joysticks.tick(cycles, cpu_fast);
         self.bus.cycle_clock = self.bus.cycle_clock.wrapping_add(u64::from(cycles));
         (cycles, was_instruction)
     }
@@ -146,13 +148,19 @@ impl Machine {
     }
 
     fn cycles_per_field(&self) -> u32 {
-        // Speed-poke source differs per variant: GIME's R1 latch (CoCo 3) vs
-        // SAM's R0|R1 strobes (CoCo 1/2).
-        let cpu_fast = match self.config.variant {
+        self.cycles_per_field_at(self.cpu_fast())
+    }
+
+    /// Whether the double-speed poke is currently active. Speed-poke source
+    /// differs per variant: GIME's R1 latch (CoCo 3) vs SAM's R0|R1 strobes
+    /// (CoCo 1/2). Shared by the field-budget calc and the per-cycle hi-res
+    /// joystick tick ([`Machine::step_cpu_unit`]), which both need to know
+    /// the real-time-to-raw-cycle ratio currently in effect.
+    fn cpu_fast(&self) -> bool {
+        match self.config.variant {
             MachineVariant::Coco3 => self.bus.gime.cpu_fast,
             MachineVariant::Coco1 | MachineVariant::Coco2 => self.bus.sam.cpu_fast(),
-        };
-        self.cycles_per_field_at(cpu_fast)
+        }
     }
 
     /// Field cycle count at the given CPU speed; shared with restore validation.

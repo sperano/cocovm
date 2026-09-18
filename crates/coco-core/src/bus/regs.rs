@@ -8,15 +8,20 @@ pub(super) const PIA0_LAST: u16 = 0xFF1F;
 pub(super) const PIA1_BASE: u16 = 0xFF20;
 pub(super) const PIA1_LAST: u16 = 0xFF3F;
 /// Register-select mask within each 4-byte mirrored PIA block
-/// (`MC6821::write`/`read`'s `reg & 0x03` decode in `pia.rs`).
-pub(super) const PIA1_REG_MASK: u16 = 0x03;
+/// (`MC6821::write`/`read`'s `reg & 0x03` decode in `pia.rs`) — same for PIA0 and PIA1.
+pub(super) const PIA_REG_MASK: u16 = 0x03;
 /// Offset of PIA1 Port A's data/DDR register within each 4-byte mirrored
 /// PIA block (0 = Port A, 1 = CRA, 2 = Port B, 3 = CRB — see
-/// [`PIA1_REG_MASK`]). Cassette record-out only samples the DAC
+/// [`PIA_REG_MASK`]). Cassette record-out only samples the DAC
 /// on writes here, not on CRA ($FF21) writes — MAME's `update_cassout()` is
 /// called only from `pia1_pa_changed()`, never from `pia1_ca2_w()` (the
 /// motor-relay callback); see `SystemBus::write_pia1` in `io.rs`.
 pub(super) const PIA1_PORT_A_OFFSET: u16 = 0x00;
+/// Offset of PIA0 Port A's data/DDR register — see [`PIA1_PORT_A_OFFSET`]. A CoCo Max III
+/// hi-res port's trigger nibble only re-observes from a write here, not CRA ($FF01): MAME's
+/// `pia0_pa_w` re-runs the trigger, `control_a_w` doesn't (and a CRA write can't change the
+/// nibble anyway — a CA2/axis change it does make is already covered by the mux-change arm).
+pub(super) const PIA0_PORT_A_OFFSET: u8 = 0x00;
 /// Standard SCS* window: gated as one unit by INIT0 MC2 on the GIME path
 /// (`GIME::scs_enabled`, `SystemBus::io_read`/`io_write`) — MAME
 /// `coco3_m.cpp` `ff40_read`/`ff40_write`. Not gated on the plain-SAM path

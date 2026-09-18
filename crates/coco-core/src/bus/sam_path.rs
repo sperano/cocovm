@@ -101,10 +101,7 @@ impl SystemBus {
             return;
         }
         match addr {
-            IO_BASE..=PIA0_LAST => {
-                self.pia0.write((addr & 0x03) as u8, val);
-                self.note_audio_write(); // CA2/CB2 are the sound mux selects
-            }
+            IO_BASE..=PIA0_LAST => self.write_pia0(addr, val),
             PIA1_BASE..=PIA1_LAST => self.write_pia1(addr, val),
             // Ungated, same as the earlier sam_io_read — no GIME/MC2 on CoCo 1/2.
             SCS_BASE..=CART_EXT_LAST => {

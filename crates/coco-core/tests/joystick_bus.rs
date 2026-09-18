@@ -2,7 +2,8 @@
 //! comparator on PIA0 PA7, and fire buttons on the keyboard rows
 //! (`DESIGN.md` §7; wiring verified against SEB Unravelled II + MAME coco.cpp).
 
-use coco_core::joystick::{AXIS_X, AXIS_Y, LEFT, RIGHT};
+use coco_core::hires_joystick::{HiResInterface, duration_cycles};
+use coco_core::joystick::{AXIS_X, AXIS_Y, LEFT, POT_CENTER, RIGHT};
 use coco_core::{MachineVariant, MemorySize, SystemBus};
 use mc6809::Bus;
 
@@ -13,6 +14,9 @@ const PIA0_CRB: u16 = 0xFF03;
 const CR_C2_LOW: u8 = 0x34;
 /// Same with the C2 output level high.
 const CR_C2_HIGH: u8 = 0x3C;
+/// [`CR_C2_LOW`] with the DDR-access bit cleared: selects PIA0 side A's DDR register at
+/// $FF00 instead of its data/output register, same CA2 output level (axis select preserved).
+const CRA_DDR_ACCESS: u8 = 0x30;
 const COMPARATOR: u8 = 0x80;
 
 fn bus() -> SystemBus {
@@ -80,4 +84,60 @@ fn fire_buttons_pull_rows_low_regardless_of_strobe() {
     assert_eq!(held & 0x01, 0, "right button 1 pulls PA0");
     assert_eq!(held & 0x08, 0, "left button 2 pulls PA3");
     assert_eq!(held & 0x06, 0x06, "other rows stay high");
+}
+
+#[test]
+fn cocomax3_arms_from_a_port_a_data_write_and_cancels_on_the_next_one() {
+    let mut b = bus();
+    b.joysticks.set_hires(RIGHT, HiResInterface::CoCoMax3);
+    b.joysticks.set_pot(RIGHT, AXIS_X, POT_CENTER);
+
+    // Establish a nonzero output-register nibble while DDR is still 0 (all input): a no-op
+    // on the pins, but sets up the value the DDR write below will expose.
+    b.write(PIA0_PA, 0x0F);
+    b.write(PIA0_CRA, CRA_DDR_ACCESS);
+    b.write(PIA0_PA, 0x0F); // DDRA = $0F: PA0-3 now outputs, nibble = $0F (still unarmed).
+    b.write(PIA0_CRA, CR_C2_LOW); // back to data-register access for the arming write + readback.
+    assert_eq!(
+        b.read(PIA0_PA) & COMPARATOR,
+        0,
+        "nonzero nibble: not yet armed"
+    );
+
+    b.write(PIA0_PA, 0x00); // nibble -> 0: arms the one-shot.
+    b.joysticks
+        .tick(duration_cycles(HiResInterface::CoCoMax3, POT_CENTER), false);
+    assert_ne!(
+        b.read(PIA0_PA) & COMPARATOR,
+        0,
+        "must saturate after its full duration"
+    );
+
+    b.write(PIA0_PA, 0x01); // nibble -> nonzero again: cancels.
+    assert_eq!(
+        b.read(PIA0_PA) & COMPARATOR,
+        0,
+        "a nonzero nibble write must cancel and clear saturation"
+    );
+}
+
+#[test]
+fn cocomax3_arms_from_a_ddr_write_alone() {
+    let mut b = bus();
+    b.joysticks.set_hires(RIGHT, HiResInterface::CoCoMax3);
+    b.joysticks.set_pot(RIGHT, AXIS_X, POT_CENTER);
+
+    // Output register is still 0 from reset: switching PA0-3 to outputs alone drives the
+    // nibble to 0 and must arm the one-shot, without any separate data-register write.
+    b.write(PIA0_CRA, CRA_DDR_ACCESS);
+    b.write(PIA0_PA, 0x0F); // DDRA = $0F.
+    b.write(PIA0_CRA, CR_C2_LOW); // back to data-register access for readback.
+
+    b.joysticks
+        .tick(duration_cycles(HiResInterface::CoCoMax3, POT_CENTER), false);
+    assert_ne!(
+        b.read(PIA0_PA) & COMPARATOR,
+        0,
+        "the DDR write alone must reach the trigger observer"
+    );
 }

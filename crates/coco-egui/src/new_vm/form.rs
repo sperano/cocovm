@@ -4,11 +4,12 @@
 //! [`MachineForm::ports_rows`]), plus each combo box's own picker logic. See
 //! the parent module doc.
 
+use coco_core::MachineVariant;
 use coco_core::joystick::{LEFT, RIGHT};
 use eframe::egui;
 
 use crate::display::Display;
-use crate::joy::JoySource;
+use crate::joy::{HiResChoice, JoySource};
 
 use super::cartridge::{CartridgeChoice, RS232EndpointChoice, SlotChoice};
 use super::{
@@ -39,6 +40,7 @@ impl MachineForm {
             serial: SerialChoice::None,
             // Indexed by `coco_core::joystick::{RIGHT, LEFT}`; both ports off until opted in.
             joy_sources: [JoySource::None, JoySource::None],
+            hires: [HiResChoice::None, HiResChoice::None],
             kb_mode: crate::KbMode::Positional,
         }
     }
@@ -235,10 +237,12 @@ impl MachineForm {
         ui.end_row();
     }
 
-    /// The Joysticks fieldset's one row, between Ports and Keyboard. Left is shown before Right
+    /// The Joysticks fieldset's rows, between Ports and Keyboard. Left is shown before Right
     /// even though the right port is [`RIGHT`] (the CoCo's primary stick) — Left/Right reads
-    /// naturally in that order to a user.
+    /// naturally in that order to a user. The hi-res Interface row only appears on a CoCo 3
+    /// ([`Self::constrain_hires`]).
     pub(crate) fn joystick_row(&mut self, ui: &mut egui::Ui) {
+        self.constrain_hires();
         ui.horizontal(|ui| {
             ui.label("Left:");
             self.joy_combo(ui, LEFT);
@@ -246,6 +250,24 @@ impl MachineForm {
             ui.label("Right:");
             self.joy_combo(ui, RIGHT);
         });
+        if self.config.variant == MachineVariant::Coco3 {
+            ui.horizontal(|ui| {
+                ui.label("Left interface:");
+                self.hires_combo(ui, LEFT);
+                ui.add_space(FORM_GRID_SPACING[0]);
+                ui.label("Right interface:");
+                self.hires_combo(ui, RIGHT);
+            });
+        }
+    }
+
+    /// `constrain`'s hi-res sibling: the Interface picks are offered CoCo 3 only (a form scope
+    /// decision, not a hardware limit), so switching models resets both to `None`, like
+    /// [`Self::constrain_display`] does for the Display pick.
+    pub(crate) fn constrain_hires(&mut self) {
+        if self.config.variant != MachineVariant::Coco3 {
+            self.hires = [HiResChoice::None, HiResChoice::None];
+        }
     }
 
     /// One port's source combo, over every [`JoySource::ALL`] choice.
@@ -257,6 +279,27 @@ impl MachineForm {
                     ui.selectable_value(&mut self.joy_sources[port], source, source.label());
                 }
             });
+    }
+
+    /// One port's hi-res interface combo. There's only one physical DAC to time a one-shot
+    /// off of, so picking [`HiResChoice::Tandy`] here clears a Tandy already on the other port
+    /// (`coco_core::joystick::Joysticks::set_hires`'s doc explains why) — but only a Tandy; a
+    /// CoCoMax3 on the other port is untouched.
+    fn hires_combo(&mut self, ui: &mut egui::Ui, port: usize) {
+        let mut choice = self.hires[port];
+        egui::ComboBox::from_id_salt((self.salt, "hires", port))
+            .selected_text(choice.label())
+            .show_ui(ui, |ui| {
+                for c in HiResChoice::ALL {
+                    ui.selectable_value(&mut choice, c, c.label());
+                }
+            });
+        if choice != self.hires[port] {
+            self.hires[port] = choice;
+            if choice == HiResChoice::Tandy && self.hires[port ^ 1] == HiResChoice::Tandy {
+                self.hires[port ^ 1] = HiResChoice::None;
+            }
+        }
     }
 
     /// The Keyboard fieldset's one row, hosted last in the detail pane's own "Keyboard" titled

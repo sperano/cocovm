@@ -241,6 +241,21 @@ pub enum JoySourceDTO {
     Keys,
 }
 
+/// `[ui].hires_left` / `[ui].hires_right` — which hi-res joystick interface
+/// (if any) is plugged into that port. Maps to `crate::joy::HiResChoice` (the
+/// `From` impls live in `joy.rs`, alongside `JoySourceDTO`'s — see its doc
+/// comment for why).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum HiResInterfaceDTO {
+    #[default]
+    None,
+    /// Tandy 26-3025.
+    Tandy,
+    /// CoCo Max III.
+    CoCoMax3,
+}
+
 /// `[hardware]` section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HardwareDTO {
@@ -386,6 +401,13 @@ pub struct UIDTO {
     /// Absent ⇒ off; see [`Self::joy_left`].
     #[serde(default)]
     pub joy_right: JoySourceDTO,
+    /// Absent ⇒ none plugged in. CoCo 3 only — the form resets both to `none`
+    /// on any other model (`new_vm::MachineForm::constrain_hires`).
+    #[serde(default)]
+    pub hires_left: HiResInterfaceDTO,
+    /// Absent ⇒ none plugged in; see [`Self::hires_left`].
+    #[serde(default)]
+    pub hires_right: HiResInterfaceDTO,
     /// Scanline strength of the TV look, `0..=100`
     /// ([`TVSettings::scanline_pct`]). Kept even while the display is a
     /// monitor — switching back to a TV restores the tuned strength.
@@ -409,6 +431,8 @@ impl Default for UIDTO {
             kb_mode: KbModeDTO::default(),
             joy_left: JoySourceDTO::default(),
             joy_right: JoySourceDTO::default(),
+            hires_left: HiResInterfaceDTO::default(),
+            hires_right: HiResInterfaceDTO::default(),
             tv_scanline: default_tv_scanline(),
             tv_noise: default_tv_noise(),
             tv_overscan: default_tv_overscan(),

@@ -319,6 +319,71 @@ fn cold_resume_does_not_add_a_second_start() {
     );
 }
 
+/// A cold resume's `load_state_from` swaps in the whole bus, including whatever hi-res
+/// interface state was live at suspend time. If the definition was edited to a different
+/// pick while suspended, that current pick must still win over the stale snapshot value —
+/// matching the precedence `app.joysticks.sources` already gets for free.
+#[test]
+fn cold_resume_reapplies_the_definitions_hires_pick_over_the_snapshot() {
+    let machines_dir = TempDir::new("lifecycle-cold-resume-hires-machines");
+    let artifacts_root = TempDir::new("lifecycle-cold-resume-hires-artifacts");
+    let mut def = base_def();
+    def.ui.hires_right = machine_def::HiResInterfaceDTO::Tandy;
+    let mut manager = test_manager(
+        machines_dir.path(),
+        artifacts_root.path(),
+        "lifecycle-cold-resume-hires",
+        def,
+    );
+
+    manager.start_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[0].launch_error
+    );
+    assert_eq!(
+        manager.entries[0]
+            .vm
+            .as_ref()
+            .unwrap()
+            .machine
+            .bus
+            .joysticks
+            .hires(coco_core::joystick::RIGHT),
+        coco_core::hires_joystick::HiResInterface::Tandy,
+        "launch must apply the definition's pick"
+    );
+
+    manager.suspend_vm(0);
+    assert!(manager.entries[0].suspended);
+
+    // Edited while suspended: the frozen snapshot still carries Tandy.
+    manager.entries[0].def.ui.hires_right = machine_def::HiResInterfaceDTO::None;
+    // Simulate the window having been closed, forcing resume through the relaunch +
+    // load_state_from branch this precedence fix targets.
+    manager.entries[0].vm = None;
+
+    manager.resume_vm(0);
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "resume should relaunch: {:?}",
+        manager.entries[0].launch_error
+    );
+    assert_eq!(
+        manager.entries[0]
+            .vm
+            .as_ref()
+            .unwrap()
+            .machine
+            .bus
+            .joysticks
+            .hires(coco_core::joystick::RIGHT),
+        coco_core::hires_joystick::HiResInterface::None,
+        "resume must re-apply the definition's current pick, not the stale snapshot's"
+    );
+}
+
 /// `resume_vm` must consume `suspended.ccstate` before declaring the
 /// machine Running: with deletion injected to fail, the resume itself must
 /// fail and leave the entry Suspended, its VM paused, and the checkpoint

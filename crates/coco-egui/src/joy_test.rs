@@ -2,18 +2,18 @@ use super::*;
 
 #[test]
 fn pot_from_unit_clamps_and_scales() {
-    assert_eq!(pot_from_unit(0.0), AXIS_MIN);
-    assert_eq!(pot_from_unit(1.0), AXIS_MAX);
-    assert_eq!(pot_from_unit(-1.0), AXIS_MIN);
-    assert_eq!(pot_from_unit(2.0), AXIS_MAX);
-    assert_eq!(pot_from_unit(0.5), 32); // rounds to the nearest pot step
+    assert_eq!(pot_from_unit(0.0), POT_MIN);
+    assert_eq!(pot_from_unit(1.0), POT_MAX);
+    assert_eq!(pot_from_unit(-1.0), POT_MIN);
+    assert_eq!(pot_from_unit(2.0), POT_MAX);
+    assert_eq!(pot_from_unit(0.5), 512); // rounds to the nearest pot step
 }
 
 #[test]
 fn pot_from_bipolar_maps_full_range() {
-    assert_eq!(pot_from_bipolar(-1.0), AXIS_MIN);
-    assert_eq!(pot_from_bipolar(1.0), AXIS_MAX);
-    assert_eq!(pot_from_bipolar(0.0), 32);
+    assert_eq!(pot_from_bipolar(-1.0), POT_MIN);
+    assert_eq!(pot_from_bipolar(1.0), POT_MAX);
+    assert_eq!(pot_from_bipolar(0.0), 512);
 }
 
 /// A display rect with a bordered active sub-rect inside it, for the mouse
@@ -28,17 +28,17 @@ fn pot_axes_from_pointer_maps_over_the_active_rect() {
     // Left edge of the active area -> full-left X; vertical center -> center Y.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(20.0, 50.0), ACTIVE),
-        Some((AXIS_MIN, 32))
+        Some((POT_MIN, 512))
     );
     // Center of the active area -> center on both axes.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(60.0, 50.0), ACTIVE),
-        Some((32, 32))
+        Some((512, 512))
     );
     // Bottom-right corner -> full deflection on both axes.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(100.0, 80.0), ACTIVE),
-        Some((AXIS_MAX, AXIS_MAX))
+        Some((POT_MAX, POT_MAX))
     );
 }
 
@@ -47,12 +47,12 @@ fn pot_axes_from_pointer_clamps_a_pointer_in_the_border() {
     // Left of the active area but inside the border pins X at full-left rather than going negative.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(0.0, 50.0), ACTIVE),
-        Some((AXIS_MIN, 32))
+        Some((POT_MIN, 512))
     );
     // Past the corner pins both axes at full deflection rather than overshooting.
     assert_eq!(
         pot_axes_from_pointer(egui::pos2(200.0, 200.0), ACTIVE),
-        Some((AXIS_MAX, AXIS_MAX))
+        Some((POT_MAX, POT_MAX))
     );
 }
 
@@ -67,10 +67,10 @@ fn pot_axes_from_pointer_guards_a_zero_size_active_rect() {
 
 #[test]
 fn axis_from_keys_centers_on_conflict_or_no_input() {
-    assert_eq!(axis_from_keys(false, false), AXIS_CENTER);
-    assert_eq!(axis_from_keys(true, true), AXIS_CENTER);
-    assert_eq!(axis_from_keys(true, false), AXIS_MIN);
-    assert_eq!(axis_from_keys(false, true), AXIS_MAX);
+    assert_eq!(axis_from_keys(false, false), POT_CENTER);
+    assert_eq!(axis_from_keys(true, true), POT_CENTER);
+    assert_eq!(axis_from_keys(true, false), POT_MIN);
+    assert_eq!(axis_from_keys(false, true), POT_MAX);
 }
 
 fn key_state_frame(ctx: &egui::Context, raw: egui::RawInput) -> KeyState {

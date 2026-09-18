@@ -1,6 +1,6 @@
 use super::dto::{
-    DisplayDTO, JoySourceDTO, MachineVariantDTO, RAMDTO, SerialDTO, StatsDTO, VDGVariantDTO,
-    VideoStandardDTO,
+    DisplayDTO, HiResInterfaceDTO, JoySourceDTO, MachineVariantDTO, RAMDTO, SerialDTO, StatsDTO,
+    VDGVariantDTO, VideoStandardDTO,
 };
 use super::*;
 use super::{CartridgeDTO, SlotDTO};
@@ -91,6 +91,11 @@ fn full_def() -> MachineDef {
             // non-default values.
             joy_left: JoySourceDTO::Keys,
             joy_right: JoySourceDTO::Gamepad,
+            // Only `hires_right` moves off the shared `None` default: only one port can ever
+            // have Tandy installed (one physical DAC), so `hires_left` staying `None` here is
+            // the only valid pairing that also exercises the non-default value.
+            hires_left: HiResInterfaceDTO::None,
+            hires_right: HiResInterfaceDTO::Tandy,
             // Away from the defaults (35/5/5) so the round trip exercises all TV settings.
             tv_scanline: 60,
             tv_noise: 20,
@@ -103,6 +108,15 @@ fn full_def() -> MachineDef {
         },
         unknown: toml::Table::new(),
     }
+}
+
+/// A new enum variant's serde shape is easy to get wrong silently ([`HiResInterfaceDTO`]'s
+/// `rename_all = "lowercase"` relies on the derive lowercasing `CoCoMax3` verbatim, not a
+/// manual rename) — confirmed directly rather than only via [`full_def`]'s one sampled value.
+#[test]
+fn hires_interface_dto_cocomax3_serializes_lowercase() {
+    let value = toml::Value::try_from(HiResInterfaceDTO::CoCoMax3).expect("serialize");
+    assert_eq!(value.as_str(), Some("cocomax3"));
 }
 
 #[test]

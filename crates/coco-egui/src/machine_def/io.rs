@@ -41,6 +41,8 @@ const UI_KEYS: &[&str] = &[
     "kb_mode",
     "joy_left",
     "joy_right",
+    "hires_left",
+    "hires_right",
     "tv_scanline",
     "tv_noise",
     "tv_overscan",
