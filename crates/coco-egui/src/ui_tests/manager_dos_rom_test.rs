@@ -1,5 +1,5 @@
-use std::fs;
 use egui_kittest::kittest::{NodeT, Queryable};
+use std::fs;
 
 use crate::machine_def::tests::TempDir;
 use crate::machine_def::{DosRom, MachineDef};
@@ -61,10 +61,17 @@ fn changing_model_resets_hdbdos_direct_and_in_mpi() {
         }
         harness.step();
         for click_model in [false, true] {
-            let combo = harness.get_all_by_value("CoCo 3")
-                .find(|node| node.accesskit_node().role() == eframe::egui::accesskit::Role::ComboBox)
+            let combo = harness
+                .get_all_by_value("CoCo 3")
+                .find(|node| {
+                    node.accesskit_node().role() == eframe::egui::accesskit::Role::ComboBox
+                })
                 .unwrap();
-            if click_model { combo.click(); } else { combo.hover(); }
+            if click_model {
+                combo.click();
+            } else {
+                combo.hover();
+            }
             harness.step();
         }
         harness.step();

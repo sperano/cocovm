@@ -36,7 +36,11 @@ impl MachineForm {
             !required && (self.drivewire.enabled || !conflict),
             egui::Checkbox::new(&mut self.drivewire.enabled, "Enable DriveWire"),
         )
-        .on_disabled_hover_text(if required { HDBDOS_REQUIRED_HINT } else { GMC_CONFLICT_HINT });
+        .on_disabled_hover_text(if required {
+            HDBDOS_REQUIRED_HINT
+        } else {
+            GMC_CONFLICT_HINT
+        });
         if conflict {
             ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
         }
@@ -45,7 +49,11 @@ impl MachineForm {
             egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
         )
         .on_hover_text(HDBDOS_MODE_HINT)
-        .on_disabled_hover_text(if required { HDBDOS_REQUIRED_HINT } else { HDBDOS_MODE_HINT });
+        .on_disabled_hover_text(if required {
+            HDBDOS_REQUIRED_HINT
+        } else {
+            HDBDOS_MODE_HINT
+        });
         self.drivewire_disks(ui);
         ui.small(STARTUP_HINT);
     }
