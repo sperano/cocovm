@@ -259,8 +259,6 @@ pub struct MachineForm {
     /// The TV chain's knobs (`[ui].tv_scanline`, …), edited under the
     /// Display row while a TV is picked.
     pub tv: crate::display::TVSettings,
-    /// The Display group's 4:3 checkbox (`[ui].aspect_correct`).
-    pub aspect_correct: bool,
     /// The Ports fieldset's Serial-row pick (`[ports].serial`).
     pub serial: SerialChoice,
     /// The Joysticks fieldset's picks (`[ui].joy_left`/`joy_right`), indexed

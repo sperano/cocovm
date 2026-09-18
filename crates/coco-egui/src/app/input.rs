@@ -131,7 +131,6 @@ impl CocoApp {
                         self.set_mode(next);
                     }
                     egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
-                    egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
                     _ => {}
                 }
             }

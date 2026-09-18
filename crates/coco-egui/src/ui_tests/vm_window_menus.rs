@@ -112,14 +112,9 @@ fn debugger_shortcut_is_disabled_without_debug_ui() {
 }
 
 #[test]
-fn function_key_hotkeys_toggle_aspect_help_and_keyboard_mode() {
+fn function_key_hotkeys_toggle_help_and_keyboard_mode() {
     let mut harness = boot_harness();
-    assert!(harness.state().aspect_correct);
     assert!(harness.state().kb_mode == KbMode::Positional);
-
-    harness.key_press(egui::Key::F9);
-    harness.step();
-    assert!(!harness.state().aspect_correct, "F9 toggles 4:3 aspect");
 
     harness.key_press(egui::Key::F10);
     harness.step();
@@ -180,15 +175,6 @@ fn status_bar_keyboard_icon_opens_the_keyboard_menu_too() {
 fn status_bar_shows_the_runtime_entry() {
     let harness = boot_harness();
     harness.get_by_label("Runtime: 0 s");
-}
-
-#[test]
-fn view_menu_toggles_aspect() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "View");
-    click(&mut harness, "4:3 aspect (F9)");
-    assert!(!harness.state().aspect_correct);
 }
 
 /// The status bar's display entry is the menu button for the display menu;

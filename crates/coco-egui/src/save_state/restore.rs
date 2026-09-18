@@ -144,7 +144,7 @@ impl CocoApp {
 
     /// Swap in a freshly-restored machine and re-sync frontend state that a
     /// snapshot can't carry itself (host-only resources, printer window,
-    /// path mirrors, pacing). UI prefs like `aspect_correct` are left untouched.
+    /// path mirrors, pacing). UI prefs like `kb_mode` are left untouched.
     fn apply_restored_machine(
         &mut self,
         restored: RestoredMachine,

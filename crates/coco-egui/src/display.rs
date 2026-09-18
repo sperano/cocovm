@@ -30,7 +30,7 @@ pub(crate) enum TV {
 }
 
 /// The display device on the other end of the video cable. A UI-level
-/// preference (like `CocoApp::aspect_correct`): the core's own
+/// preference: the core's own
 /// [`MonitorType`] stays a plain RGB/composite signal-path choice, and save
 /// states never carry this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

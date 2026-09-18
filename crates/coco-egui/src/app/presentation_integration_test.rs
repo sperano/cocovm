@@ -314,7 +314,7 @@ fn framebuffer_dimensions_and_display_settings_reach_texture_metadata() {
 }
 
 #[test]
-fn window_resize_aspect_and_overscan_reuse_texture() {
+fn window_resize_and_overscan_reuse_texture() {
     const WINDOW_SIZE: egui::Vec2 = egui::vec2(900.0, 600.0);
     let mut app = app();
     let ctx = egui::Context::default();
@@ -322,7 +322,6 @@ fn window_resize_aspect_and_overscan_reuse_texture() {
     app.display = Display::TV(TV::Color);
     app.tv = STATIC_TV;
     assert_upload_once(&mut app, &ctx, now);
-    app.aspect_correct = !app.aspect_correct;
     app.tv.overscan_pct = TVSettings::default().overscan_pct;
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, WINDOW_SIZE)),
@@ -368,4 +367,40 @@ fn first_upload_enqueues_once_and_cache_hits_do_not_convert_or_enqueue() {
     let cached = crate::perf::snapshot();
     assert_eq!(cached["texture_enqueue_cpu"], first["texture_enqueue_cpu"]);
     assert_eq!(cached["stages"]["display_conversion"]["count"], 1);
+}
+
+#[test]
+fn display_geometry_stays_four_three_for_every_display() {
+    const WINDOW_SIZES: [egui::Vec2; 2] = [egui::vec2(900.0, 600.0), egui::vec2(400.0, 700.0)];
+    const ASPECT_TOLERANCE: f32 = 0.001;
+    let mut app = app();
+    let ctx = egui::Context::default();
+    let now = Instant::now();
+    for &display in Display::choices(app.machine.config.variant) {
+        app.display = display;
+        for scanline_pct in [0, TVSettings::default().scanline_pct] {
+            app.tv.scanline_pct = scanline_pct;
+            for window_size in WINDOW_SIZES {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, window_size)),
+                    ..Default::default()
+                };
+                let _ = ctx.run(input, |ctx| {
+                    app.present_framebuffer(ctx, now);
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let available = ui.available_rect_before_wrap();
+                        app.draw_display(ui);
+                        let rect = app.display_rect;
+                        assert!(rect.is_positive());
+                        assert!(available.contains_rect(rect));
+                        assert_eq!(rect.center(), available.center());
+                        assert!(
+                            (rect.aspect_ratio() - crate::TARGET_ASPECT).abs() < ASPECT_TOLERANCE,
+                            "{display:?} with scanline strength {scanline_pct}: {rect:?}"
+                        );
+                    });
+                });
+            }
+        }
+    }
 }

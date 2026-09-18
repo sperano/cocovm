@@ -57,7 +57,6 @@ pub(super) fn seed_form(def: &machine_def::MachineDef) -> new_vm::MachineForm {
         overscan_pct: def.ui.tv_overscan,
     }
     .clamped();
-    form.aspect_correct = def.ui.aspect_correct;
     form.serial = def.ports.serial.into();
     // Indexed by `coco_core::joystick::{RIGHT, LEFT}`, like `new_vm::MachineForm::joy_sources`.
     form.joy_sources[coco_core::joystick::RIGHT] = def.ui.joy_right.into();
@@ -166,10 +165,9 @@ impl ManagerApp {
 }
 
 /// Pack the form's remaining `[ports]`/`[ui]` picks: the Serial sink,
-/// aspect correction, per-port joystick source, and keyboard mode.
+/// TV settings, per-port joystick source, and keyboard mode.
 fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
     def.ports.serial = form.serial.into();
-    def.ui.aspect_correct = form.aspect_correct;
     def.ui.tv_scanline = form.tv.scanline_pct;
     def.ui.tv_noise = form.tv.noise_pct;
     def.ui.tv_overscan = form.tv.overscan_pct;

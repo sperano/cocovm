@@ -34,6 +34,8 @@ const DRIVEWIRE_KEYS: &[&str] = &["enabled", "hdbdos_mode", "disk0", "disk1", "d
 // missing-`cartridge` parse error is what actually rejects such a file).
 const PERIPHERALS_KEYS: &[&str] = &["cartridge"];
 const PORTS_KEYS: &[&str] = &["serial"];
+// Recognize the retired `aspect_correct` key so legacy files load quietly
+// and drop it on save instead of preserving it as an unknown future setting.
 const UI_KEYS: &[&str] = &[
     "aspect_correct",
     "kb_mode",

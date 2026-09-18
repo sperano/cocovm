@@ -86,7 +86,6 @@ fn full_def() -> MachineDef {
             serial: Some(SerialDTO::Printer),
         },
         ui: UIDTO {
-            aspect_correct: false,
             kb_mode: KbModeDTO::Symbolic,
             // Both away from their shared `None` default, so the round trip exercises
             // non-default values.
@@ -230,7 +229,6 @@ monitor = "rgb"
     assert_eq!(def.media, MediaDTO::default());
     assert_eq!(def.peripherals.cartridge, CartridgeDTO::None);
     assert_eq!(def.ports.serial, None);
-    assert!(def.ui.aspect_correct);
     assert_eq!(def.ui.kb_mode, KbModeDTO::Positional);
     // Absent joy_left/joy_right ⇒ same defaults `JoystickInputs::new` boots with: off until
     // opted in.
@@ -458,7 +456,7 @@ monitor = "rgb"
 future_hardware_field = "whatever"
 
 [ui]
-aspect_correct = true
+aspect_correct = false
 future_ui_field = 42
 "#,
     )
@@ -494,7 +492,7 @@ monitor = "rgb"
 future_hardware_field = "whatever"
 
 [ui]
-aspect_correct = true
+aspect_correct = false
 future_ui_field = 42
 "#,
     )
@@ -515,6 +513,10 @@ future_ui_field = 42
     assert_eq!(
         table["hardware"].get("future_hardware_field"),
         Some(&toml::Value::String("whatever".to_string()))
+    );
+    assert!(
+        table["ui"].get("aspect_correct").is_none(),
+        "the retired display preference must disappear on save"
     );
     assert_eq!(
         table["ui"].get("future_ui_field"),

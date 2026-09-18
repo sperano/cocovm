@@ -39,7 +39,7 @@ mod stack;
 /// The debugger toggle: ⌘D on macOS, Ctrl+D on Windows/Linux
 /// ([`egui::Modifiers::COMMAND`] resolves to the platform's primary
 /// modifier). Checked against every existing binding: the bare F-keys
-/// (F9/F10/F12, `app/input.rs`), `new_vm::NEW_MACHINE_SHORTCUT` = ⌘N, the
+/// (F10/F12, `app/input.rs`), `new_vm::NEW_MACHINE_SHORTCUT` = ⌘N, the
 /// manager-only select-all ⌘A (`manager.rs`), and the ⌘`<n>`/⌘⇧`<n>` state
 /// slots (`save_state.rs`).
 #[cfg(feature = "debug-ui")]

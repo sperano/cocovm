@@ -13,7 +13,7 @@ use crate::*;
 use super::harness::*;
 
 /// `[ui]` preferences in a definition are the launched VM's *starting*
-/// state (they stay live F9/F12 toggles afterwards).
+/// state (they stay live F12 toggles afterwards).
 #[test]
 fn launch_honors_ui_settings() {
     let mut def = machine_def::MachineDef::from_config(
@@ -21,7 +21,6 @@ fn launch_honors_ui_settings() {
         None,
         &MachineConfig::default(),
     );
-    def.ui.aspect_correct = false;
     def.ui.kb_mode = machine_def::KbModeDTO::Symbolic;
     def.hardware.display = Some(machine_def::DisplayDTO::TVBW);
     def.ui.tv_scanline = 80;
@@ -29,7 +28,6 @@ fn launch_honors_ui_settings() {
     def.ui.tv_overscan = 7;
 
     let vm = launch_machine(&def, "ui-prefs").expect("a default CoCo 3 definition launches");
-    assert!(!vm.aspect_correct, "[ui].aspect_correct must reach the VM");
     assert!(
         vm.kb_mode == KbMode::Symbolic,
         "[ui].kb_mode must reach the VM"
@@ -330,7 +328,7 @@ fn startup_seeds_suspended_from_disk_and_failed_resume_keeps_it() {
     );
 }
 
-/// A suspended VM's window is display-only down to input: F9 (aspect
+/// A suspended VM's window is display-only down to input: F12 (keyboard-mode
 /// toggle) must bounce off it and work again once resumed.
 #[test]
 fn suspended_vm_window_ignores_input() {
@@ -342,34 +340,22 @@ fn suspended_vm_window_ignores_input() {
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, "Start");
     click(&mut harness, "Suspend");
-    let before = harness.state().entries[0]
-        .vm
-        .as_ref()
-        .unwrap()
-        .aspect_correct;
+    let before = harness.state().entries[0].vm.as_ref().unwrap().kb_mode;
 
-    harness.key_press(egui::Key::F9);
+    harness.key_press(egui::Key::F12);
     harness.step();
     assert_eq!(
-        harness.state().entries[0]
-            .vm
-            .as_ref()
-            .unwrap()
-            .aspect_correct,
+        harness.state().entries[0].vm.as_ref().unwrap().kb_mode,
         before,
         "a suspended VM's window must not process app shortcuts"
     );
 
     click(&mut harness, "Start");
-    harness.key_press(egui::Key::F9);
+    harness.key_press(egui::Key::F12);
     harness.step();
-    assert_eq!(
-        harness.state().entries[0]
-            .vm
-            .as_ref()
-            .unwrap()
-            .aspect_correct,
-        !before,
+    assert_ne!(
+        harness.state().entries[0].vm.as_ref().unwrap().kb_mode,
+        before,
         "a resumed VM's window processes shortcuts again"
     );
 }

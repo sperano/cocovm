@@ -29,9 +29,8 @@ pub(crate) struct CocoApp {
     /// ejected — the window doesn't draw without a live `Orch90`
     /// (see the call site in `update`).
     pub(crate) show_orch90: bool,
-    pub(crate) aspect_correct: bool,
     /// What the video output is plugged into — monitor or (B&W) TV
-    /// (`display.rs`). A UI preference like `aspect_correct`: seeded from
+    /// (`display.rs`). A UI preference seeded from
     /// the config here, overridden by the definition's `[hardware].display`
     /// (`launch::launch_machine_with_gamepad`), and live-switchable from the status bar's
     /// display entry afterwards.
@@ -298,7 +297,6 @@ impl CocoApp {
             keyboard_modifiers: typeahead::KeyModifiers::default(),
             show_about: false,
             show_orch90: false,
-            aspect_correct: true,
             display,
             tv: display::TVSettings::default(),
             presentation: presentation::Presentation::default(),
