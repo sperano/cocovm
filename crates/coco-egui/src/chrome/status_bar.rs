@@ -239,6 +239,13 @@ impl CocoApp {
         let Some(dw) = &self.machine.bus.drivewire else {
             return;
         };
+        if self.dw_paths.iter().all(Option::is_none) {
+            ui.separator();
+            let icon = drivewire_icon(ui, false);
+            readout(ui, self.status_bar_icons_only, icon, "DriveWire")
+                .on_hover_text(drivewire_hover(dw, None));
+            return;
+        }
         for drive in 0..drivewire::DRIVE_COUNT {
             let Some(path) = &self.dw_paths[drive] else {
                 continue;
@@ -253,7 +260,7 @@ impl CocoApp {
             );
             let icon = drivewire_icon(ui, active);
             readout(ui, self.status_bar_icons_only, icon, label)
-                .on_hover_text(format!("DriveWire drive {drive} — sector I/O"));
+                .on_hover_text(drivewire_hover(dw, Some(drive)));
         }
     }
 
@@ -333,6 +340,29 @@ impl CocoApp {
         ))
         .on_hover_text("Total powered-on time, all sessions");
     }
+}
+
+fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) -> String {
+    let diagnostics = dw.host_diagnostics();
+    let heading = drive.map_or_else(
+        || "DriveWire host services".to_string(),
+        |drive| format!("DriveWire drive {drive} — sector I/O"),
+    );
+    let mut hover = format!(
+        "{heading}\nHost: {:?}, pending: {}, outstanding: {}\nCompleted: {}, errors: {}, cancelled: {}, stale: {}, backpressure: {}",
+        diagnostics.state,
+        diagnostics.pending,
+        diagnostics.outstanding,
+        diagnostics.completions,
+        diagnostics.errors,
+        diagnostics.cancelled,
+        diagnostics.stale,
+        diagnostics.backpressure,
+    );
+    if let Some(error) = diagnostics.last_error {
+        hover.push_str(&format!("\nLast error: {error:?}"));
+    }
+    hover
 }
 
 /// A passive entry's readout after its `icon`: drawn as a label, or under `icons_only`

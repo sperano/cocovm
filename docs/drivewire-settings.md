@@ -35,3 +35,8 @@ open for reading and writing, and disk writes update their backing files.
 Each VM owns its DriveWire session. Its activity indicators remain in the
 running window's status bar. Host shares and service options belong in this
 settings section as those features become available.
+
+File-backed disk transfers run on a host worker. Hover over a DriveWire status
+entry to inspect pending work and errors. If host I/O is pending, save, suspend,
+and restore report an error so you can retry after it finishes. See
+[host-service lifecycle](drivewire-lifecycle.md) for reset and cancellation behavior.

@@ -35,9 +35,6 @@ impl DWServer {
         image
             .read_at(lsn * SECTOR_SIZE as u64, &mut sector)
             .map_err(|_| error::READ)?;
-        if let Some(ops) = self.drive_ops.get_mut(drive) {
-            *ops += 1;
-        }
         Ok(sector)
     }
 
@@ -49,16 +46,7 @@ impl DWServer {
             return error::NOT_READY;
         };
         match image.write_at(lsn * SECTOR_SIZE as u64, sector) {
-            Ok(()) => {
-                self.sectors_written += 1;
-                if let Some(dirty) = self.dirty.get_mut(drive) {
-                    *dirty = true;
-                }
-                if let Some(ops) = self.drive_ops.get_mut(drive) {
-                    *ops += 1;
-                }
-                error::OK
-            }
+            Ok(()) => error::OK,
             Err(_) => error::WRITE,
         }
     }
@@ -67,12 +55,33 @@ impl DWServer {
     /// the READEX-family wire behaviour (see [`State`](super::protocol::State)).
     pub(super) fn execute_read(&mut self, ex: bool, header: &[u8]) {
         let (drive, lsn) = self.decode_header(header);
+        let job = self
+            .drives
+            .get(drive)
+            .and_then(Option::as_ref)
+            .and_then(|image| image.read_job(lsn * SECTOR_SIZE as u64));
+        if let Some(job) = job {
+            self.state = State::AwaitHostRead { ex };
+            self.begin_host_request(drive, job);
+            return;
+        }
+        let result = self.read_sector(drive, lsn);
+        self.finish_read(ex, drive, result);
+    }
+
+    pub(super) fn finish_read(
+        &mut self,
+        ex: bool,
+        drive: usize,
+        result: Result<[u8; SECTOR_SIZE], u8>,
+    ) {
+        if result.is_ok() {
+            self.sectors_read += 1;
+            self.drive_ops[drive] += 1;
+        }
         if ex {
-            let (data, pending_error) = match self.read_sector(drive, lsn) {
-                Ok(sector) => {
-                    self.sectors_read += 1;
-                    (sector, error::OK)
-                }
+            let (data, pending_error) = match result {
+                Ok(sector) => (sector, error::OK),
                 Err(status) => ([0u8; SECTOR_SIZE], status),
             };
             let expected = checksum_of(&data);
@@ -83,9 +92,8 @@ impl DWServer {
                 buf: Vec::with_capacity(2),
             };
         } else {
-            match self.read_sector(drive, lsn) {
+            match result {
                 Ok(sector) => {
-                    self.sectors_read += 1;
                     self.reply.push_back(error::OK);
                     let checksum = checksum_of(&sector);
                     self.reply.extend(sector);
@@ -109,7 +117,29 @@ impl DWServer {
             return;
         }
         let (drive, lsn) = self.decode_header(header);
+        let job = self
+            .drives
+            .get(drive)
+            .and_then(Option::as_ref)
+            .and_then(|image| image.write_job(lsn * SECTOR_SIZE as u64, sector));
+        if let Some(job) = job {
+            // A cancelled in-flight write can still reach the host. Conservatively
+            // mark it dirty before handing ownership to the worker.
+            self.dirty[drive] = true;
+            self.state = State::AwaitHostWrite;
+            self.begin_host_request(drive, job);
+            return;
+        }
         let status = self.write_sector(drive, lsn, sector);
+        self.finish_write(drive, status);
+    }
+
+    pub(super) fn finish_write(&mut self, drive: usize, status: u8) {
+        if status == error::OK {
+            self.sectors_written += 1;
+            self.dirty[drive] = true;
+            self.drive_ops[drive] += 1;
+        }
         self.reply.push_back(status);
     }
 }

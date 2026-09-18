@@ -34,6 +34,14 @@ pub fn save(machine: &Machine, media: &MediaRefs) -> Result<Vec<u8>, SnapshotErr
     if machine.bus.cart.contains_custom() {
         return Err(SnapshotError::CustomCartNotSnapshotable);
     }
+    if machine
+        .bus
+        .drivewire
+        .as_ref()
+        .is_some_and(|dw| !dw.host_is_idle())
+    {
+        return Err(SnapshotError::DriveWireBusy);
+    }
 
     let payload = SnapshotPayloadRef { media, machine };
     let mut cbor = Vec::new();

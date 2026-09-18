@@ -157,6 +157,9 @@ impl SystemBus {
     /// also need rebuilding.
     pub fn after_restore(&mut self) {
         self.cart.after_restore();
+        if let Some(dw) = self.drivewire.as_mut() {
+            dw.after_restore();
+        }
     }
 
     /// Restore-time payload-shape validation, called once before any media

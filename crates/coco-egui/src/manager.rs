@@ -422,13 +422,14 @@ impl eframe::App for ManagerApp {
         self.apply_pending_rename();
         for index in 0..self.entries.len() {
             self.fold_runtime_into_def(index);
-            if let Some(mut vm) = self.entries[index].vm.take()
-                && let Err(e) = vm.flush_media()
-            {
-                tracing::warn!(
-                    "could not flush media for '{}' on exit: {e}",
-                    self.entries[index].slug
-                );
+            if let Some(mut vm) = self.entries[index].vm.take() {
+                vm.stop_drivewire_host();
+                if let Err(e) = vm.flush_media() {
+                    tracing::warn!(
+                        "could not flush media for '{}' on exit: {e}",
+                        self.entries[index].slug
+                    );
+                }
             }
         }
     }

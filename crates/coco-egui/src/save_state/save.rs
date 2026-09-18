@@ -14,11 +14,22 @@ use crate::{
 
 use super::media_ref::hash_media_ref;
 
+pub(crate) const DRIVEWIRE_HOST_BUSY: &str = "DriveWire host I/O is still pending; try again";
+
 impl CocoApp {
     /// Flush dirty media, build [`MediaRefs`], and write the encoded
     /// `.ccstate` using tmp-then-rename so a crash mid-write can't leave a
     /// truncated file. A flush failure aborts before anything is written.
     pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
+        if self
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .is_some_and(|dw| !dw.host_is_idle())
+        {
+            return Err(DRIVEWIRE_HOST_BUSY.to_string());
+        }
         self.flush_media()?;
         let media = self.build_media_refs()?;
         let bytes = snapshot::save(&self.machine, &media).map_err(|e| e.to_string())?;

@@ -21,6 +21,8 @@ mod media_ref_test;
 mod restore;
 mod save;
 
+pub(crate) use save::DRIVEWIRE_HOST_BUSY;
+
 /// Number of quick-save/quick-load slots the Machine menu exposes.
 pub(crate) const QUICK_SLOTS: usize = 3;
 

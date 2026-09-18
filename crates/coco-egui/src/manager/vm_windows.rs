@@ -120,6 +120,11 @@ impl ManagerApp {
     /// object — the frozen state is already on disk from suspend time.
     pub(crate) fn close_vm_window(&mut self, index: usize) {
         if self.entries[index].suspended {
+            self.entries[index]
+                .vm
+                .as_mut()
+                .expect("a suspended window has a live VM")
+                .stop_drivewire_host();
             self.entries[index].vm = None;
         } else {
             self.stop_vm(index);
