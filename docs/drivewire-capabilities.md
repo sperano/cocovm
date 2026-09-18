@@ -4,6 +4,12 @@ This is a capability inventory and proposed design for extending CocoVM's
 DriveWire server. It does not claim implementation or compatibility beyond the
 existing code. The CocoVM baseline is `fcd60cf`.
 
+For the selected NitrOS-9-first target, drive-allocation policy, and source
+compatibility details, see the [guest contract](drivewire-guest-contract.md)
+and [acceptance recipes](drivewire-acceptance.md). Persistent configuration
+has since moved into [VM settings](drivewire-settings.md); the implementation
+gaps below describe the original inventory baseline.
+
 CocoVM already embeds a disk-oriented DriveWire server in each VM. The useful
 extension is host-file access and the services layered on virtual channels.
 Keep protocol sessions per VM, with optional shared resource definitions in the
@@ -99,7 +105,7 @@ The relevant code is split across these modules:
 - [`bus.rs`](../crates/coco-core/src/bus.rs) owns the server for each machine.
   [`bus/io.rs`](../crates/coco-core/src/bus/io.rs) feeds it synchronously through
   the in-process Becker port. There is no external DriveWire TCP service.
-- The [DriveWire menu](../crates/coco-egui/src/chrome/menu_bar/drivewire.rs)
+- The [DriveWire menu at the inventory baseline](https://github.com/sperano/cocovm/blob/fcd60cf4ee7ee60086ce0474fd7bd4741ef52efa/crates/coco-egui/src/chrome/menu_bar/drivewire.rs)
   enables the port, selects HDB-DOS mode, and mounts images. It prevents enabling
   Becker alongside the conflicting Games Master cartridge.
 - [Media handling](../crates/coco-egui/src/media/drivewire.rs) opens images for
