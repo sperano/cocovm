@@ -10,11 +10,10 @@ const SUSPENDED_STATUS_HOVER: &str =
 /// Readout of an installed FD-502 with no disk in any drive.
 pub(crate) const NO_DISKS_READOUT: &str = "No disks";
 /// Hover text of that readout: where to mount one.
-pub(crate) const NO_DISKS_HOVER: &str =
-    "FD-502 — no disk mounted; insert one from the Machine menu";
+pub(crate) const NO_DISKS_HOVER: &str = "FD-502 — no disk mounted; click for the disks menu";
 
 impl CocoApp {
-    /// The status bar: live readouts, plus the five entries that double as control menus.
+    /// The status bar: live readouts, plus the six entries that double as control menus.
     /// Height is pinned to [`STATUS_BAR_H`] to match what the window-sizing math reserves for it.
     /// While suspended the readouts draw disabled (no popups) under a "Suspended" marker.
     /// Under `status_bar_icons_only` (`config.rs`) each iconed entry drops its readout into
@@ -61,9 +60,7 @@ impl CocoApp {
     /// keyboard menu — the only way in, since the menu bar has no Keyboard entry.
     fn keyboard_status(&mut self, ui: &mut egui::Ui) {
         let icon = keyboard_icon(ui).interact(egui::Sense::click());
-        icon.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Keyboard menu")
-        });
+        name_menu_icon(ui, &icon, "Keyboard menu");
         let mode = self.kb_mode.label();
         let entry = menu_entry(ui, self.status_bar_icons_only, icon, mode).on_hover_text(format!(
             "Keyboard input mode: {mode} — click for the keyboard menu (F12 toggles)"
@@ -85,9 +82,7 @@ impl CocoApp {
             Display::TV(_) => tv_icon(ui),
         }
         .interact(egui::Sense::click());
-        icon.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Display menu")
-        });
+        name_menu_icon(ui, &icon, "Display menu");
         let entry = menu_entry(
             ui,
             self.status_bar_icons_only,
@@ -119,9 +114,7 @@ impl CocoApp {
         ui.separator();
         let either_active = self.joysticks.in_use[RIGHT] || self.joysticks.in_use[LEFT];
         let icon = joystick_icon(ui, either_active).interact(egui::Sense::click());
-        icon.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Joysticks menu")
-        });
+        name_menu_icon(ui, &icon, "Joysticks menu");
         let assigned: Vec<String> = [(RIGHT, "R"), (LEFT, "L")]
             .into_iter()
             .filter_map(|(stick, prefix)| {
@@ -189,35 +182,61 @@ impl CocoApp {
         readout(ui, self.status_bar_icons_only, icon, label).on_hover_text("Multi-Pak Interface");
     }
 
-    /// The FD-502's drives: one entry per mounted disk, or a single "No disks" entry when
-    /// the controller is installed with nothing mounted (disks can still be inserted from
-    /// the Machine menu). No controller, no entry.
+    /// The FD-502's drives, built like [`Self::tape_status`]: one entry per mounted disk,
+    /// or a single "No disks" entry with nothing mounted. Every entry opens the same
+    /// all-drives menu (the clicked drive's section first), so an empty drive stays
+    /// mountable beside a full one. No controller, no entry — the FD-502 is a launch-time
+    /// peripheral.
     fn disk_status(&mut self, ui: &mut egui::Ui) {
         let Some(disk_cart) = self.machine.bus.cart.as_disk_cart() else {
             return;
         };
+        // Read the lights up front: the popups below need `&mut self`.
+        let motor_on: [bool; UI_DRIVES] =
+            std::array::from_fn(|drive| disk_cart.drive_active(drive));
+        // "*" = modified in memory; written back on eject/exit.
+        let dirty: [bool; UI_DRIVES] =
+            std::array::from_fn(|drive| disk_cart.disk(drive).is_some_and(|d| d.dirty()));
         if self.disk_paths.iter().all(Option::is_none) {
-            ui.separator();
             // Motor light works with no disk mounted (DIR on an empty drive spins it).
-            let motor_on = (0..UI_DRIVES).any(|drive| disk_cart.drive_active(drive));
-            let icon = floppy_icon(ui, motor_on);
-            readout(ui, self.status_bar_icons_only, icon, NO_DISKS_READOUT)
-                .on_hover_text(NO_DISKS_HOVER);
+            self.no_disks_entry(ui, motor_on.iter().any(|&on| on));
             return;
         }
         for drive in 0..UI_DRIVES {
-            let Some(path) = &self.disk_paths[drive] else {
-                continue;
-            };
-            // "*" = modified in memory; written back on eject/exit.
-            let dirty = disk_cart.disk(drive).is_some_and(|d| d.dirty());
-            let active = disk_cart.drive_active(drive);
-            ui.separator();
-            let label = format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty));
-            let icon = floppy_icon(ui, active);
-            readout(ui, self.status_bar_icons_only, icon, label)
-                .on_hover_text(format!("Drive {drive} — motor on"));
+            self.drive_entry(ui, drive, motor_on[drive], dirty[drive]);
         }
+    }
+
+    /// The "No disks" placeholder of [`Self::disk_status`].
+    fn no_disks_entry(&mut self, ui: &mut egui::Ui, motor_on: bool) {
+        ui.separator();
+        let icon = floppy_icon(ui, motor_on).interact(egui::Sense::click());
+        name_menu_icon(ui, &icon, "Disks menu");
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, NO_DISKS_READOUT)
+            .on_hover_text(NO_DISKS_HOVER);
+        egui::Popup::menu(&entry)
+            .id(ui.id().with("disks_menu"))
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.disks_menu_ui(ui, 0));
+    }
+
+    /// One drive's entry of [`Self::disk_status`]; nothing when the drive is empty.
+    fn drive_entry(&mut self, ui: &mut egui::Ui, drive: usize, motor_on: bool, dirty: bool) {
+        let Some(path) = &self.disk_paths[drive] else {
+            return;
+        };
+        ui.separator();
+        let label = format!("D{drive}: {}{}", file_name(path), dirty_mark(dirty));
+        let icon = floppy_icon(ui, motor_on).interact(egui::Sense::click());
+        name_menu_icon(ui, &icon, format!("Drive {drive} menu"));
+        let motor = if motor_on { "on" } else { "off" };
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, label).on_hover_text(format!(
+            "Drive {drive} — motor {motor} — click for the disks menu"
+        ));
+        egui::Popup::menu(&entry)
+            .id(ui.id().with(("drive_menu", drive)))
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.disks_menu_ui(ui, drive));
     }
 
     fn vhd_status(&mut self, ui: &mut egui::Ui) {
@@ -277,9 +296,7 @@ impl CocoApp {
             .tape_reel
             .advance(pos, motor && self.tape_path.is_some(), dt);
         let icon = cassette_icon(ui, motor, angle).interact(egui::Sense::click());
-        icon.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Tape menu")
-        });
+        name_menu_icon(ui, &icon, "Tape menu");
         let label = match &self.tape_path {
             Some(path) => format!("{} [{pos}/{len}]", file_name(path)),
             None => "No tape".to_string(),
@@ -305,9 +322,7 @@ impl CocoApp {
         let active = self.activity.printer.observe(bytes_out);
         ui.separator();
         let icon = printer_icon(ui, active).interact(egui::Sense::click());
-        icon.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Printer menu")
-        });
+        name_menu_icon(ui, &icon, "Printer menu");
         let capture_path = self.print_capture_path.as_deref();
         let sink_label = capture_path.map(file_name).or_else(|| {
             self.paper_window
@@ -365,6 +380,15 @@ fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) ->
     hover
 }
 
+/// Names `icon` as the button that opens `menu` — the bare icon has no accessible name of
+/// its own (`status_icons::paint`).
+fn name_menu_icon(ui: &egui::Ui, icon: &egui::Response, menu: impl Into<String>) {
+    let menu = menu.into();
+    icon.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), menu.clone())
+    });
+}
+
 /// A passive entry's readout after its `icon`: drawn as a label, or under `icons_only`
 /// folded into `icon`'s hover text and accessible name instead. Returns `icon` so the
 /// caller's own hover text stacks after the readout, like `widgets::toolbar_button`.
@@ -410,8 +434,8 @@ fn hover_text_even_disabled(response: egui::Response, text: String) -> egui::Res
         .on_disabled_hover_text(text)
 }
 
-/// The file name of a mounted image, for the one-line status readout.
-fn file_name(path: &Path) -> &str {
+/// The file name of a mounted image, for a one-line readout or menu label.
+pub(crate) fn file_name(path: &Path) -> &str {
     path.file_name().and_then(|n| n.to_str()).unwrap_or("?")
 }
 

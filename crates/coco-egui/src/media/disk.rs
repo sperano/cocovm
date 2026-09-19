@@ -3,8 +3,7 @@
 
 use crate::*;
 
-/// Explains how to get an FD-502 installed — shared by the disabled disk-menu
-/// items' tooltips and the no-controller error from
+/// Explains how to get an FD-502 installed — the no-controller error from
 /// [`CocoApp::insert_disk`]/[`CocoApp::new_blank_disk`].
 pub(crate) const NO_FD502_HINT: &str = "No FD-502 disk controller is installed. Give this machine one in its peripherals \
      (the cartridge port or an MPI slot) before launching it.";
