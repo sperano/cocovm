@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Floppy disks are inserted, created, and ejected from the status bar's disk
+  entries, like the cassette deck: the "No disks" entry and each mounted
+  disk's entry open a menu covering every drive, the clicked drive first. The
+  Machine menu no longer lists them.
+
 ### Removed
 - The optional 4:3 aspect setting, its View menu item, and the F9 shortcut.
   Displays use a fixed 4:3 aspect ratio across RGB, composite, and TV modes.

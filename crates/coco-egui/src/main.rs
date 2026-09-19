@@ -81,7 +81,6 @@ pub(crate) use keymap::{control_key_pos, is_joystick_key, key_to_pos};
 #[cfg(test)]
 pub(crate) use launch::launch_machine;
 pub(crate) use launch::launch_machine_with_gamepad;
-pub(crate) use media::disk::NO_FD502_HINT;
 pub(crate) use mpi::{DEFAULT_MPI_SWITCH_SLOT, MPI_SLOT_COUNT, MPISlot, MPIState};
 pub(crate) use rom_load::{
     Coco12ROMResult, ROM_DB_PSEUDO_PATH_PREFIX, ROMSource, compose_coco12_rom, dos_rom_path,

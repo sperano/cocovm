@@ -78,6 +78,17 @@ pub(super) fn boot_harness() -> AppHarness {
     harness
 }
 
+/// [`boot_harness`] with an FD-502 installed (there is no runtime menu for that).
+pub(super) fn harness_with_fd502() -> AppHarness {
+    let mut harness = boot_harness();
+    harness
+        .state_mut()
+        .insert_disk_controller(Default::default())
+        .unwrap_or_else(|e| panic!("insert_disk_controller failed: {e}"));
+    harness.step();
+    harness
+}
+
 /// Click the widget labelled exactly `label`: hover one frame, then press and
 /// release across the next two — egui fires `clicked` on the release.
 pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>, label: &str) {
