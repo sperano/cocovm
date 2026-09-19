@@ -36,6 +36,39 @@ pub(super) struct EditState {
     /// definition changes rather than every frame: each row reads and
     /// checksums its file.
     pub(super) roms: Vec<roms::ROMRow>,
+    /// The active properties tab. The edit draft stays shared across tabs.
+    tab: DetailTab,
+}
+
+/// The five persistent categories in the machine properties pane.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DetailTab {
+    #[default]
+    General,
+    Display,
+    Devices,
+    Input,
+    DriveWire,
+}
+
+impl DetailTab {
+    const ALL: [Self; 5] = [
+        Self::General,
+        Self::Display,
+        Self::Devices,
+        Self::Input,
+        Self::DriveWire,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::Display => "Display",
+            Self::Devices => "Devices",
+            Self::Input => "Input",
+            Self::DriveWire => "DriveWire",
+        }
+    }
 }
 
 /// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
@@ -48,8 +81,16 @@ fn form_grid(salt: (&str, &str)) -> egui::Grid {
         .min_col_width(new_vm::FORM_LABEL_MIN_WIDTH)
 }
 
-/// The header's left-column form sections — Machine and RAM
-/// ([`ManagerApp::draw_header_with_preview`]).
+/// The persistent selector for the five property categories.
+fn draw_tab_bar(ui: &mut egui::Ui, tab: &mut DetailTab) {
+    ui.horizontal_wrapped(|ui| {
+        for choice in DetailTab::ALL {
+            ui.selectable_value(tab, choice, choice.label());
+        }
+    });
+}
+
+/// The General tab's model and RAM controls.
 fn draw_machine_ram_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Machine", |ui| {
         form_grid(("detail_form_machine", slug)).show(ui, |ui| {
@@ -67,9 +108,7 @@ fn draw_machine_ram_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::M
     });
 }
 
-/// The full-width sections below the header: Display through Keyboard —
-/// each its own grid, since a `titled_group` can't sit inside a grid row.
-fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
+fn draw_display_tab(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Display", |ui| {
         form_grid(("detail_form_display", slug)).show(ui, |ui| {
             form.display_rows(ui);
@@ -77,6 +116,9 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     });
 
     ui.add_space(DETAIL_SECTION_GAP);
+}
+
+fn draw_devices_tab(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Peripherals", |ui| {
         form_grid(("detail_form_media", slug)).show(ui, |ui| {
             form.media_rows(ui);
@@ -91,6 +133,9 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     });
 
     ui.add_space(DETAIL_SECTION_GAP);
+}
+
+fn draw_input_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Joysticks", |ui| {
         form.joystick_row(ui);
     });
@@ -99,11 +144,10 @@ fn draw_form_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineF
     titled_group(ui, "Keyboard", |ui| {
         form.keyboard_row(ui);
     });
+}
 
-    ui.add_space(DETAIL_SECTION_GAP);
-    titled_group(ui, "DriveWire", |ui| {
-        form.drivewire_rows(ui);
-    });
+fn draw_drivewire_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
+    titled_group(ui, "DriveWire", |ui| form.drivewire_rows(ui));
 }
 
 /// How often the detail pane asks for its next repaint while showing a
@@ -183,6 +227,7 @@ impl ManagerApp {
     ) {
         if self.edit.as_ref().is_none_or(|e| e.slug != slug) {
             let mut form = detail_map::seed_form(&def);
+            form.normalize();
             // The auto-save baseline is the seeded form's own repack — see
             // `EditState::packed`'s doc for why it must not be `def`
             // itself. A freshly seeded form holds no Blank picks and at
@@ -196,6 +241,7 @@ impl ManagerApp {
                 form,
                 roms: roms::rom_rows(&packed, &slug, self.roms_dir.as_deref()),
                 packed,
+                tab: DetailTab::default(),
             });
             self.save_error = None;
         }
@@ -203,12 +249,22 @@ impl ManagerApp {
 
         // The selected preview stays eligible even when its list row is offscreen.
         self.prepare_detail_thumbnail(&ui.ctx().clone(), index);
-        self.draw_header_with_preview(ui, index, &slug, &mut edit);
+        edit.form.normalize();
+        self.draw_detail_header(ui, index, &slug, &mut edit);
         ui.add_space(DETAIL_SECTION_GAP);
 
-        draw_form_sections(ui, &slug, &mut edit.form);
+        draw_tab_bar(ui, &mut edit.tab);
         ui.add_space(DETAIL_SECTION_GAP);
-        roms::draw_roms(ui, &slug, &edit.roms);
+        match edit.tab {
+            DetailTab::General => self.draw_general_tab(ui, index, &slug, &mut edit),
+            DetailTab::Display => draw_display_tab(ui, &slug, &mut edit.form),
+            DetailTab::Devices => draw_devices_tab(ui, &slug, &mut edit.form),
+            DetailTab::Input => draw_input_tab(ui, &mut edit.form),
+            DetailTab::DriveWire => draw_drivewire_tab(ui, &mut edit.form),
+        }
+        // Constraints cross tab boundaries: a General-tab model change, for
+        // example, must normalize Display, Input, Devices, and DriveWire.
+        edit.form.normalize();
         if self.entries[index].is_alive() {
             ui.add_space(DETAIL_SECTION_GAP);
             // Resume restores the frozen snapshot's hardware wholesale, so
@@ -216,9 +272,6 @@ impl ManagerApp {
             // only a cold start from power off does.
             ui.small("Changes apply the next time this machine starts from power off.");
         }
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        draw_statistics(ui, &slug, &self.entries[index]);
 
         self.autosave(&slug, index, &mut edit);
         if let Some(err) = &self.save_error {
@@ -229,9 +282,29 @@ impl ManagerApp {
         self.edit = Some(edit);
     }
 
-    /// The pane's header: identity, status, Machine and RAM in a half-width
-    /// left column; the big screen preview on the right spans its height.
-    fn draw_header_with_preview(
+    /// Identity, current state, and launch failure remain visible above every
+    /// tab. The preview belongs only to General, so it does not consume space
+    /// in the settings tabs.
+    fn draw_detail_header(
+        &mut self,
+        ui: &mut egui::Ui,
+        index: usize,
+        slug: &str,
+        edit: &mut EditState,
+    ) {
+        ui.horizontal_wrapped(|ui| {
+            self.draw_name_field(ui, index, edit);
+            ui.separator();
+            ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
+            ui.separator();
+            ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
+        });
+        if let Some(err) = &self.entries[index].launch_error {
+            ui.colored_label(ui.visuals().error_fg_color, err);
+        }
+    }
+
+    fn draw_general_tab(
         &mut self,
         ui: &mut egui::Ui,
         index: usize,
@@ -239,23 +312,17 @@ impl ManagerApp {
         edit: &mut EditState,
     ) {
         ui.horizontal_top(|ui| {
-            let left_width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-            let left = ui.vertical(|ui| {
-                ui.set_max_width(left_width);
-                self.draw_name_field(ui, index, edit);
-                ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
-                ui.add_space(DETAIL_SECTION_GAP);
-                // The transport buttons moved to the toolbar — this pane keeps
-                // only the status, plus the last launch failure.
-                ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
-                if let Some(err) = &self.entries[index].launch_error {
-                    ui.colored_label(ui.visuals().error_fg_color, err);
-                }
-                ui.add_space(DETAIL_SECTION_GAP);
+            let details_width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
+            let details = ui.vertical(|ui| {
+                ui.set_max_width(details_width);
                 draw_machine_ram_sections(ui, slug, &mut edit.form);
             });
-            draw_screen_preview(ui, left.response.rect.height(), &self.entries[index]);
+            draw_screen_preview(ui, details.response.rect.height(), &self.entries[index]);
         });
+        ui.add_space(DETAIL_SECTION_GAP);
+        roms::draw_roms(ui, slug, &edit.roms);
+        ui.add_space(DETAIL_SECTION_GAP);
+        draw_statistics(ui, slug, &self.entries[index]);
     }
 
     /// The Name field: commits on focus loss/Enter — not per keystroke, so

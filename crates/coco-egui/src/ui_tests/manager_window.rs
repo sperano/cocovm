@@ -428,6 +428,20 @@ fn manager_new_creates_a_definition_file_immediately() {
     assert!(dir.path().join("coco-3-2.toml").is_file());
 }
 
+/// The detail pane divides machine properties into the five stable categories
+/// that keep every setting reachable without one long scrolling form.
+#[test]
+fn manager_detail_shows_the_five_property_tabs() {
+    let entries = vec![sample_entry("alpha-coco", "Alpha CoCo 3")];
+    let mut harness = manager_harness(None, entries);
+
+    click(&mut harness, "Alpha CoCo 3");
+
+    for tab in ["General", "Display", "Devices", "Input", "DriveWire"] {
+        harness.get_by_label(tab);
+    }
+}
+
 /// Editing in the detail pane saves immediately (no Save/Revert buttons);
 /// merely selecting a row must not rewrite its file.
 #[test]
@@ -458,6 +472,7 @@ fn manager_detail_edits_save_immediately() {
         "selecting a row must not rewrite its definition"
     );
 
+    click(&mut harness, "Input");
     click(&mut harness, "Symbolic");
     let saved: machine_def::MachineDef =
         toml::from_str(&fs::read_to_string(&file).unwrap()).unwrap();

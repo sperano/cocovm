@@ -16,6 +16,7 @@ fn cartridge_dropdown_has_one_rom_picker() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
+    click(&mut harness, "Devices");
     open_combo_at(&mut harness, "None", 1);
 
     assert_eq!(harness.query_all_by_label("Cartridge ROM…").count(), 1);
@@ -39,6 +40,7 @@ fn unknown_rom_hardware_fallback_can_be_changed() {
         CartridgeHardware::RomPak,
     ));
     harness.step();
+    click(&mut harness, "Devices");
 
     select_combo_at(
         &mut harness,
@@ -73,6 +75,7 @@ fn known_cartridges_submenu_picks_bundled_image() {
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
     click_containing(&mut harness, "New");
+    click(&mut harness, "Devices");
     open_combo_at(&mut harness, "None", 1);
     assert_eq!(
         harness.query_all_by_label("Cartridge ROM…").count(),

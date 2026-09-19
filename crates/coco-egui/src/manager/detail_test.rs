@@ -34,6 +34,7 @@ fn rename_fixture(name: &str) -> (TempDir, ManagerApp, EditState) {
         form,
         roms: Vec::new(),
         packed,
+        tab: DetailTab::default(),
     };
     (machines_dir, manager, edit)
 }
@@ -101,6 +102,7 @@ fn collision_resolution_back_to_the_current_slug_does_not_rename() {
         form,
         roms: Vec::new(),
         packed,
+        tab: DetailTab::default(),
     };
 
     manager.commit_name(1, &mut edit);
