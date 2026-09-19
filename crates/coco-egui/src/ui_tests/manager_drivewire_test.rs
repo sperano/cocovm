@@ -24,7 +24,7 @@ fn seed_manager(name: &str) -> (TempDir, manager::MachineEntry, PathBuf) {
 
 fn select_drivewire(harness: &mut ManagerHarness) {
     click(harness, "DriveWire CoCo");
-    harness.get_by_label("DriveWire");
+    click(harness, "DriveWire");
 }
 
 fn write_disk(dir: &Path, name: &str) -> PathBuf {
@@ -173,6 +173,7 @@ fn edits_leave_the_active_drivewire_session_unchanged() {
     dw.data_write(CLIENT_VERSION, SECOND_CYCLE);
     assert_eq!(dw.status_read(), REPLY_AVAILABLE);
 
+    click(&mut harness, "Input");
     click(&mut harness, "Symbolic");
     harness.state_mut().edit_form_mut().unwrap().drivewire.disk0 =
         Some(next_startup.display().to_string());

@@ -49,14 +49,14 @@ impl MachineForm {
     /// called inside an already-open two-column [`egui::Grid`] with [`FORM_GRID_SPACING`].
     pub(crate) fn machine_rows(&mut self, ui: &mut egui::Ui) {
         config_form::machine_rows(ui, self.salt, &mut self.config);
-        self.constrain_dos_rom();
+        self.normalize();
     }
 
     /// The VDG/Display rows and TV controls, hosted in the detail pane's
     /// "Display" titled group. Re-constrains the Display pick first, since it owns
     /// `config.monitor` and must stay valid for the current variant.
     pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {
-        self.constrain_display();
+        self.normalize();
         let variant = self.config.variant;
 
         config_form::display_rows(ui, self.salt, &mut self.config);
@@ -127,30 +127,7 @@ impl MachineForm {
         self.tape_combo(ui);
         ui.end_row();
 
-        if self.cartridge != CartridgeChoice::MPI {
-            self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
-            self.mpi_switch = crate::DEFAULT_MPI_SWITCH_SLOT;
-        }
-        if self.cartridge != CartridgeChoice::RS232 {
-            self.rs232_endpoint = RS232EndpointChoice::default();
-        }
-        if !self.drives_available() {
-            self.disks = std::array::from_fn(|_| MediaChoice::None);
-        }
-        // The CoCo Max module is CoCo 1/2-only hardware (the CoCo 3's GIME
-        // owns its $FF90-$FF97 window) — drop an already-picked one, bare
-        // port or MPI slot, the moment the model moves to CoCo 3, the same
-        // way the resets above drop fields their own picks made irrelevant.
-        if self.config.variant == MachineVariant::Coco3 {
-            if self.cartridge == CartridgeChoice::CoCoMax {
-                self.cartridge = CartridgeChoice::None;
-            }
-            for slot in &mut self.mpi_slots {
-                if *slot == SlotChoice::CoCoMax {
-                    *slot = SlotChoice::Empty;
-                }
-            }
-        }
+        self.normalize();
         cartridge_form::cartridge_row(
             ui,
             self.salt,
@@ -165,7 +142,7 @@ impl MachineForm {
             },
         );
 
-        self.constrain_dos_rom();
+        self.normalize();
 
         // The VHD hard disks, below removable media. Always shown, no cartridge required.
         for drive in 0..crate::UI_DRIVES {
@@ -286,6 +263,37 @@ impl MachineForm {
         if self.config.variant != MachineVariant::Coco3 {
             self.hires = [HiResChoice::None, HiResChoice::None];
         }
+    }
+
+    /// Applies every cross-section constraint before packing the form. The
+    /// detail pane calls this each frame, including when a tab is hidden, so
+    /// a change in one tab cannot leave an invalid choice in another tab.
+    pub(crate) fn normalize(&mut self) {
+        if self.cartridge != CartridgeChoice::MPI {
+            self.mpi_slots = std::array::from_fn(|_| SlotChoice::Empty);
+            self.mpi_switch = crate::DEFAULT_MPI_SWITCH_SLOT;
+        }
+        if self.cartridge != CartridgeChoice::RS232 {
+            self.rs232_endpoint = RS232EndpointChoice::default();
+        }
+        if !self.drives_available() {
+            self.disks = std::array::from_fn(|_| MediaChoice::None);
+        }
+        // The CoCo Max module is CoCo 1/2-only hardware because the CoCo 3
+        // GIME owns its $FF90-$FF97 window.
+        if self.config.variant == MachineVariant::Coco3 {
+            if self.cartridge == CartridgeChoice::CoCoMax {
+                self.cartridge = CartridgeChoice::None;
+            }
+            for slot in &mut self.mpi_slots {
+                if *slot == SlotChoice::CoCoMax {
+                    *slot = SlotChoice::Empty;
+                }
+            }
+        }
+        self.constrain_dos_rom();
+        self.constrain_display();
+        self.constrain_hires();
     }
 
     /// One port's source combo, over every [`JoySource::ALL`] choice.

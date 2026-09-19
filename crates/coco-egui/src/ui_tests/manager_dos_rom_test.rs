@@ -17,6 +17,7 @@ fn new_machine_dos_rom_selection_saves_drivewire_settings_direct_and_in_mpi() {
         let dir = TempDir::new(&format!("ui-dos-rom-{mpi}"));
         let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
         click_containing(&mut harness, "New");
+        click(&mut harness, "Devices");
         if mpi {
             select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
             select_combo_at(&mut harness, "Empty", 0, "FD-502");
@@ -31,6 +32,7 @@ fn new_machine_dos_rom_selection_saves_drivewire_settings_direct_and_in_mpi() {
         );
         assert!(saved.drivewire.enabled);
         assert!(saved.drivewire.hdbdos_mode);
+        click(&mut harness, "DriveWire");
         for label in ["Enable DriveWire", "HDB-DOS mode"] {
             assert!(harness.get_by_label(label).accesskit_node().is_disabled());
         }
@@ -80,6 +82,7 @@ fn changing_model_resets_hdbdos_direct_and_in_mpi() {
             saved_definition(&dir).peripherals.cartridge.dos_rom(),
             Some(DosRom::DiskBasic)
         );
+        click(&mut harness, "Devices");
         open_combo_at(&mut harness, "Disk BASIC 1.1", 0);
         assert!(
             harness
