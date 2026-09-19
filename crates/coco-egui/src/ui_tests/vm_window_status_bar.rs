@@ -16,7 +16,7 @@ fn icons_only_harness() -> AppHarness {
     harness
 }
 
-/// The five menu entries stay reachable by their icons' accessible names,
+/// The six menu entries stay reachable by their icons' accessible names,
 /// while the readouts they used to draw next to them are gone.
 #[test]
 fn icons_only_keeps_menu_icons_and_drops_their_readouts() {
@@ -25,13 +25,14 @@ fn icons_only_keeps_menu_icons_and_drops_their_readouts() {
     for menu in [
         "Keyboard menu",
         "Display menu",
+        "Sound menu",
         "Tape menu",
         "Joysticks menu",
         "Printer menu",
     ] {
         harness.get_by_label(menu);
     }
-    for readout in ["Positional", "No tape", "No joysticks", "Printer"] {
+    for readout in ["Positional", "Sound", "No tape", "No joysticks", "Printer"] {
         assert!(
             harness.query_all_by_label(readout).next().is_none(),
             "{readout:?} readout must not be drawn in icons-only mode"

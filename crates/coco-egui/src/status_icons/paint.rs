@@ -20,6 +20,10 @@ use eframe::egui;
 
 use super::{ICON_ACTIVE, ICON_IDLE};
 
+mod speaker;
+
+pub(crate) use speaker::speaker_icon;
+
 /// Shared setup for every status-bar device icon: allocates the icon's
 /// rect, resolves the shell color (red/gray per `active`) and the panel
 /// background used to "punch" detail out of the shell, and hands back the

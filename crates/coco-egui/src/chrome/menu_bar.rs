@@ -1,8 +1,8 @@
-//! The menu bar: Machine, View, Sound, and Help. Each menu that is more
+//! The menu bar: Machine, View, and Help. Each menu that is more
 //! than a handful of items lives in its own submodule; the short ones
 //! (Keyboard, View, Help, and the status bar's display, tape, and disk
-//! menus) stay here. The keyboard, display, tape, disk, and joysticks menus
-//! have no menu-bar button — each pops up from its status-bar entry
+//! menus) stay here. The keyboard, display, sound, tape, disk, and joysticks
+//! menus have no menu-bar button — each pops up from its status-bar entry
 //! (`chrome::status_bar`).
 
 use crate::*;
@@ -21,7 +21,6 @@ impl CocoApp {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Machine", |ui| self.machine_menu_ui(ui));
                 ui.menu_button("View", |ui| self.view_menu_ui(ui));
-                ui.menu_button("Sound", |ui| self.audio.menu_ui(ui));
                 ui.menu_button("Help", |ui| self.help_menu_ui(ui));
             });
         });

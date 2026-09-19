@@ -212,6 +212,34 @@ fn status_bar_display_entry_switches_display() {
     assert_eq!(harness.state().machine.bus.gime.monitor, MonitorType::RGB);
 }
 
+/// The status bar's sound entry replaces the menu-bar item and exposes the
+/// existing mute and volume controls.
+#[test]
+fn status_bar_sound_entry_opens_audio_controls() {
+    let mut harness = boot_harness();
+    harness.state_mut().audio = audio::AudioOutput::headless(HEADLESS_SAMPLE_RATE_HZ);
+    harness.step();
+
+    assert_eq!(
+        harness.query_all_by_label("Sound").count(),
+        1,
+        "Sound must have one entry in the status bar"
+    );
+    click(&mut harness, "Sound");
+    assert!(
+        harness.query_all_by_label("Volume").next().is_some(),
+        "the sound popup must contain the volume control"
+    );
+    click(&mut harness, "Mute");
+
+    click(&mut harness, "Sound");
+    assert_eq!(
+        harness.get_by_label("Mute").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True),
+        "the mute control must retain its state"
+    );
+}
+
 #[test]
 fn printer_menu_opens_the_printer_paper_window() {
     let mut harness = boot_harness();

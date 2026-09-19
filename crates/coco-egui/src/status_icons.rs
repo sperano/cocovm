@@ -12,7 +12,7 @@ mod paint;
 
 pub(crate) use paint::{
     cart_icon, cassette_icon, drivewire_icon, floppy_icon, joystick_icon, keyboard_icon,
-    monitor_icon, mpi_icon, printer_icon, rs232_icon, tv_icon, vhd_icon,
+    monitor_icon, mpi_icon, printer_icon, rs232_icon, speaker_icon, tv_icon, vhd_icon,
 };
 
 use coco_core::{drivewire, vhd};

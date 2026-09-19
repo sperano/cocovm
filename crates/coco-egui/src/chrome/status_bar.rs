@@ -13,7 +13,7 @@ pub(crate) const NO_DISKS_READOUT: &str = "No disks";
 pub(crate) const NO_DISKS_HOVER: &str = "FD-502 — no disk mounted; click for the disks menu";
 
 impl CocoApp {
-    /// The status bar: live readouts, plus the six entries that double as control menus.
+    /// The status bar: live readouts, plus the seven entries that double as control menus.
     /// Height is pinned to [`STATUS_BAR_H`] to match what the window-sizing math reserves for it.
     /// While suspended the readouts draw disabled (no popups) under a "Suspended" marker.
     /// Under `status_bar_icons_only` (`config.rs`) each iconed entry drops its readout into
@@ -30,6 +30,7 @@ impl CocoApp {
                     }
                     self.keyboard_status(ui);
                     self.display_status(ui);
+                    self.sound_status(ui);
                     self.tape_status(ui);
                     self.joystick_status(ui);
                     self.cart_status(ui);
@@ -97,6 +98,19 @@ impl CocoApp {
             .id(ui.id().with("display_menu"))
             .align(egui::RectAlign::TOP_START)
             .show(|ui| self.display_menu_ui(ui));
+    }
+
+    /// The sound entry: a speaker icon and optional label open the mute and volume controls.
+    fn sound_status(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        let icon = speaker_icon(ui).interact(egui::Sense::click());
+        name_menu_icon(ui, &icon, "Sound menu");
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, "Sound")
+            .on_hover_text("Sound output — click for mute and volume controls");
+        egui::Popup::menu(&entry)
+            .id(ui.id().with("sound_menu"))
+            .align(egui::RectAlign::TOP_START)
+            .show(|ui| self.audio.menu_ui(ui));
     }
 
     fn cart_status(&self, ui: &mut egui::Ui) {
