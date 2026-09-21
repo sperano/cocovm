@@ -186,6 +186,8 @@ fn disk_path_input(ui: &mut egui::Ui, drive: usize, path: &mut Option<String>, s
         clear_rect.min.x = clear_rect.max.x - CLEAR_BUTTON_WIDTH;
         let clear = ui
             .place(clear_rect, egui::Button::new("×").frame(false))
+            // Placed over the text field, whose I-beam would otherwise win.
+            .on_hover_cursor(egui::CursorIcon::Default)
             .on_hover_text(format!("Clear DW{drive}"));
         clear.widget_info(|| {
             egui::WidgetInfo::labeled(
