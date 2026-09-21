@@ -19,8 +19,6 @@ const PATH_MARGIN: egui::Margin = egui::Margin {
     bottom: 3,
 };
 const CLEAR_BUTTON_INSET: f32 = 2.0;
-/// Extra padding inside the "Disk images" box, on top of the group's own margin.
-const DISK_SECTION_PADDING: egui::Margin = egui::Margin::same(6);
 const ROW_GAPS: f32 = 2.0;
 const EMPTY_PATH_HINT: &str = "No disk image";
 const CLEAR_PATH_HINT: &str = "Clear a path to leave the drive empty.";
@@ -73,13 +71,11 @@ impl MachineForm {
     /// The "Disk images" section: one editable path per startup drive.
     /// Drawn after [`Self::drivewire_rows`], which already constrained `enabled`.
     pub(crate) fn drivewire_disk_rows(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::NONE
-            .inner_margin(DISK_SECTION_PADDING)
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
-                self.drivewire_disks(ui);
-                ui.small(CLEAR_PATH_HINT);
-            });
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
+            self.drivewire_disks(ui);
+            ui.small(CLEAR_PATH_HINT);
+        });
     }
 
     pub(crate) fn constrain_dos_rom(&mut self) {

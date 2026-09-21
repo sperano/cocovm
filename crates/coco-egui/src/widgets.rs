@@ -8,6 +8,9 @@ pub(crate) fn window_title(ctx: &egui::Context, text: &str) -> egui::RichText {
     egui::RichText::new(text).size(size).strong()
 }
 
+/// Padding between every [`titled_group`]'s border and its contents.
+const TITLED_GROUP_PADDING: i8 = 16;
+
 /// Fieldset-style titled group: a bordered box whose title interrupts the
 /// top border (Qt `QGroupBox`/HTML `<fieldset>`, for which egui has no
 /// built-in equivalent). Assumes a vertical host layout and a title
@@ -21,8 +24,6 @@ pub(crate) fn titled_group<R>(
     const TITLE_INDENT: f32 = 8.0;
     /// The title's breathing room inside the gap in the border.
     const TITLE_PAD: f32 = 4.0;
-    /// Padding between the border and the contents.
-    const INNER_MARGIN: i8 = 10;
 
     let font = egui::TextStyle::Body.resolve(ui.style());
     let color = ui.visuals().strong_text_color();
@@ -32,7 +33,7 @@ pub(crate) fn titled_group<R>(
     // Room above the box for the half of the title that overhangs the border line.
     ui.add_space(galley.size().y / 2.0);
     let inner = egui::Frame::NONE
-        .inner_margin(egui::Margin::same(INNER_MARGIN))
+        .inner_margin(egui::Margin::same(TITLED_GROUP_PADDING))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add_contents(ui)

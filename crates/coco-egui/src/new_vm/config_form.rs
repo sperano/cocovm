@@ -32,7 +32,7 @@ pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineCon
 }
 
 /// The conditional VDG row (CoCo 2 only) — [`machine_rows`]'s sibling, hosted by the
-/// detail pane's "Display" titled group. The monitor/TV row itself lives in
+/// detail pane's Display tab. The monitor/TV row itself lives in
 /// [`super::MachineForm::display_rows`]. There is no Video (NTSC/PAL) row: PAL isn't
 /// modeled well enough to offer, so the form leaves `config.video` alone.
 pub(super) fn display_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
