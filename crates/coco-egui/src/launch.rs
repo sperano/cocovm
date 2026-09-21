@@ -94,9 +94,8 @@ pub(crate) fn launch_machine_with_gamepad(
     validate_disk_media(&media, &cartridge)?;
     validate_drivewire_media(def, &media)?;
 
-    let hdbdos = def.peripherals.cartridge.uses_hdbdos();
-    let drivewire = (def.drivewire.enabled || hdbdos).then(|| DriveWireLaunch {
-        hdbdos_mode: def.drivewire.hdbdos_mode || hdbdos,
+    let drivewire = def.drivewire.enabled.then(|| DriveWireLaunch {
+        hdbdos_mode: def.drivewire.hdbdos_mode,
         disk_paths: media.drivewire.clone(),
     });
     let mut app = new_app(
@@ -174,7 +173,7 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
 }
 
 fn validate_drivewire_media(def: &machine_def::MachineDef, media: &Media) -> Result<(), String> {
-    if !def.drivewire.enabled && !def.peripherals.cartridge.uses_hdbdos() {
+    if !def.drivewire.enabled {
         return Ok(());
     }
     for path in media.drivewire.iter().flatten() {

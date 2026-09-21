@@ -118,13 +118,12 @@ impl MachineDef {
     }
 
     pub(crate) fn validate_drivewire(&self) -> Result<(), String> {
-        let uses_hdbdos = self.peripherals.cartridge.uses_hdbdos();
-        if uses_hdbdos && self.hardware.variant != dto::MachineVariantDTO::Coco3 {
+        if self.peripherals.cartridge.uses_hdbdos()
+            && self.hardware.variant != dto::MachineVariantDTO::Coco3
+        {
             return Err("HDB-DOS (DriveWire, CoCo 3) requires a CoCo 3".to_string());
         }
-        if (self.drivewire.enabled || uses_hdbdos)
-            && self.peripherals.cartridge.contains_games_master()
-        {
+        if self.drivewire.enabled && self.peripherals.cartridge.contains_games_master() {
             return Err(
                 "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41"
                     .to_string(),

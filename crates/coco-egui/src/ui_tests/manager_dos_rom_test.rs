@@ -7,6 +7,8 @@ use crate::new_vm::{CartridgeChoice, SlotChoice};
 
 use super::harness::*;
 
+const OPT_OUT_WARNING: &str = "unavailable while DriveWire is disabled";
+
 fn saved_definition(dir: &TempDir) -> MachineDef {
     toml::from_str(&fs::read_to_string(dir.path().join("coco-3.toml")).unwrap()).unwrap()
 }
@@ -33,18 +35,40 @@ fn new_machine_dos_rom_selection_saves_drivewire_settings_direct_and_in_mpi() {
         assert!(saved.drivewire.enabled);
         assert!(saved.drivewire.hdbdos_mode);
         click(&mut harness, "DriveWire");
-        for label in ["Enable DriveWire", "HDB-DOS mode"] {
-            assert!(harness.get_by_label(label).accesskit_node().is_disabled());
-        }
-        let form = harness.state_mut().edit_form_mut().unwrap();
-        form.drivewire.enabled = false;
-        form.drivewire.hdbdos_mode = false;
-        harness.step();
-        harness.step();
+        click(&mut harness, "HDB-DOS mode");
         let saved = saved_definition(&dir);
         assert!(saved.drivewire.enabled);
-        assert!(saved.drivewire.hdbdos_mode);
+        assert!(!saved.drivewire.hdbdos_mode);
+        assert!(harness.query_by_label_contains(OPT_OUT_WARNING).is_none());
+        click(&mut harness, "Enable DriveWire");
+        assert!(!saved_definition(&dir).drivewire.enabled);
+        assert!(harness.query_by_label_contains(OPT_OUT_WARNING).is_some());
     }
+}
+
+#[test]
+fn reopening_an_hdbdos_machine_keeps_drivewire_opted_out() {
+    let dir = TempDir::new("ui-dos-rom-reopen");
+    let mut entry = sample_entry("coco-3", "HDB-DOS machine");
+    entry.def.peripherals.cartridge = crate::machine_def::CartridgeDTO::FD502 {
+        dos_rom: DosRom::HdbDosDw3,
+    };
+    crate::machine_def::save(dir.path(), &entry.slug, &entry.def).unwrap();
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    click(&mut harness, "HDB-DOS machine");
+    click(&mut harness, "DriveWire");
+    assert!(
+        !harness
+            .state_mut()
+            .edit_form_mut()
+            .unwrap()
+            .drivewire
+            .enabled
+    );
+    click(&mut harness, "Enable DriveWire");
+    let saved = saved_definition(&dir);
+    assert!(saved.drivewire.enabled);
+    assert!(!saved.drivewire.hdbdos_mode);
 }
 
 #[test]

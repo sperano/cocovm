@@ -18,6 +18,11 @@ section. The Games Master Cartridge conflicts with the Becker port, including
 when the cartridge occupies a MultiPak slot. Remove the cartridge or disable
 DriveWire before saving the conflicting change.
 
+Selecting the HDB-DOS DOS ROM for the FD-502 turns on DriveWire and HDB-DOS
+mode once, as a default. Both checkboxes stay editable, and the VM starts with
+whatever the definition records, so an HDB-DOS machine with DriveWire disabled
+starts without a Becker port.
+
 The definition records startup settings in a separate section:
 
 ```toml
