@@ -218,3 +218,51 @@ fn single_is_some_only_for_exactly_one_row() {
         "two selected rows is not a single selection"
     );
 }
+
+#[test]
+fn step_from_nothing_starts_at_the_facing_end() {
+    const COUNT: usize = 4;
+
+    let mut sel = Selection::default();
+    assert_eq!(sel.step(Step::Down, COUNT), Some(0));
+    assert_eq!(sel.single(), Some(0));
+
+    sel.clear();
+    assert_eq!(sel.step(Step::Up, COUNT), Some(COUNT - 1));
+    assert_eq!(sel.anchor(), Some(COUNT - 1));
+}
+
+#[test]
+fn step_moves_one_row_and_stops_at_either_end() {
+    const COUNT: usize = 3;
+
+    let mut sel = Selection::default();
+    sel.set_single(1);
+    assert_eq!(sel.step(Step::Down, COUNT), Some(2));
+    assert_eq!(sel.step(Step::Down, COUNT), Some(2), "no wrap past the end");
+
+    sel.set_single(1);
+    assert_eq!(sel.step(Step::Up, COUNT), Some(0));
+    assert_eq!(sel.step(Step::Up, COUNT), Some(0), "no wrap past the top");
+}
+
+#[test]
+fn step_collapses_a_multi_selection_past_its_edge() {
+    const COUNT: usize = 10;
+
+    let mut sel = Selection::default();
+    sel.select_range(3, 6);
+    assert_eq!(sel.step(Step::Down, COUNT), Some(7));
+    assert_eq!(sel.iter().collect::<Vec<_>>(), vec![7]);
+
+    sel.select_range(3, 6);
+    assert_eq!(sel.step(Step::Up, COUNT), Some(2));
+    assert_eq!(sel.iter().collect::<Vec<_>>(), vec![2]);
+}
+
+#[test]
+fn step_in_an_empty_list_selects_nothing() {
+    let mut sel = Selection::default();
+    assert_eq!(sel.step(Step::Down, 0), None);
+    assert!(sel.is_empty());
+}
