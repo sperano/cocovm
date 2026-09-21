@@ -151,6 +151,9 @@ fn draw_drivewire_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Disk images", |ui| form.drivewire_disk_rows(ui));
 }
 
+/// Extra space between the header separator and the slug ID.
+const SLUG_ID_LEFT_MARGIN: f32 = 4.0;
+
 /// How often the detail pane asks for its next repaint while showing a
 /// running machine's ticking Runtime row (see [`draw_statistics`]'s call
 /// site).
@@ -296,7 +299,12 @@ impl ManagerApp {
         ui.horizontal_wrapped(|ui| {
             self.draw_name_field(ui, index, edit);
             ui.separator();
-            ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
+            ui.add_space(SLUG_ID_LEFT_MARGIN);
+            ui.label(
+                egui::RichText::new(format!("Slug ID: {slug}"))
+                    .small()
+                    .weak(),
+            );
             ui.separator();
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         });

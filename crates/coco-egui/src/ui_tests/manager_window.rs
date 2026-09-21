@@ -255,8 +255,8 @@ fn manager_detail_shows_slug_id() {
     harness.get_by_label("Slug ID: alpha-coco");
     assert_eq!(
         painted_text_color(&harness, "Slug ID: alpha-coco"),
-        Some(harness.ctx.style().visuals.strong_text_color()),
-        "the slug ID must use the theme's high-contrast text color"
+        Some(harness.ctx.style().visuals.weak_text_color()),
+        "the slug ID must use the theme's dimmed text color"
     );
 }
 
