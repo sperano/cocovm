@@ -26,6 +26,8 @@ const EMPTY_PATH_HINT: &str = "No disk image";
 const CLEAR_PATH_HINT: &str = "Clear a path to leave the drive empty.";
 const GMC_CONFLICT_HINT: &str =
     "DriveWire and the Games Master Cartridge cannot be enabled together.";
+const HDBDOS_WITHOUT_DRIVEWIRE_HINT: &str = "The selected HDB-DOS ROM reaches its drives through \
+    DriveWire; they are unavailable while DriveWire is disabled.";
 const STARTUP_HINT: &str = "DriveWire changes apply at the next start from power off. \
     Resume keeps the saved session.";
 const HDBDOS_MODE_HINT: &str = "Enable for HDB-DOS BASIC disk commands. Translates HDB-DOS \
@@ -54,6 +56,9 @@ impl MachineForm {
             .on_disabled_hover_text(GMC_CONFLICT_HINT);
             if conflict {
                 ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
+            }
+            if cartridge.uses_hdbdos() && !self.drivewire.enabled {
+                ui.colored_label(ui.visuals().warn_fg_color, HDBDOS_WITHOUT_DRIVEWIRE_HINT);
             }
             ui.add_enabled(
                 self.drivewire.enabled,

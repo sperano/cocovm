@@ -7,6 +7,8 @@ use crate::new_vm::{CartridgeChoice, SlotChoice};
 
 use super::harness::*;
 
+const OPT_OUT_WARNING: &str = "unavailable while DriveWire is disabled";
+
 fn saved_definition(dir: &TempDir) -> MachineDef {
     toml::from_str(&fs::read_to_string(dir.path().join("coco-3.toml")).unwrap()).unwrap()
 }
@@ -37,8 +39,10 @@ fn new_machine_dos_rom_selection_saves_drivewire_settings_direct_and_in_mpi() {
         let saved = saved_definition(&dir);
         assert!(saved.drivewire.enabled);
         assert!(!saved.drivewire.hdbdos_mode);
+        assert!(harness.query_by_label_contains(OPT_OUT_WARNING).is_none());
         click(&mut harness, "Enable DriveWire");
         assert!(!saved_definition(&dir).drivewire.enabled);
+        assert!(harness.query_by_label_contains(OPT_OUT_WARNING).is_some());
     }
 }
 
