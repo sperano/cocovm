@@ -133,13 +133,11 @@ fn enabled_drivewire_rejects_read_only_media() {
 fn enabled_drivewire_rejects_games_master_direct_or_in_mpi() {
     let direct = CartridgeDTO::GamesMaster {
         path: "game.rom".to_string(),
-        autostart: true,
     };
     let mpi = CartridgeDTO::MPI {
         slots: [
             SlotDTO::GamesMaster {
                 path: "game.rom".to_string(),
-                autostart: true,
             },
             SlotDTO::Empty,
             SlotDTO::Empty,

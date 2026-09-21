@@ -24,7 +24,6 @@ fn definition_remap_changes_only_absolute_managed_paths() {
         slots: [
             SlotDTO::ROMPak {
                 path: old_dir.join("pak.rom").to_string_lossy().into_owned(),
-                autostart: true,
             },
             SlotDTO::default(),
             SlotDTO::default(),

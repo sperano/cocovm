@@ -59,7 +59,7 @@ fn icons_only_passive_readout_becomes_the_icons_accessible_name() {
     let dir = TempDir::new("status-bar-icons-only-cart");
     let cart = dir.path().join("game.rom");
     std::fs::write(&cart, vec![0u8; 2048]).unwrap();
-    harness.state_mut().insert_cartridge(cart, false);
+    harness.state_mut().insert_cartridge(cart);
     harness.step();
 
     harness.get_by_label("Cart: game.rom");

@@ -47,7 +47,7 @@ fn insert_cartridge_fails_and_preserves_dirty_disk_when_write_back_fails() {
 
     {
         let _ro = ReadOnly::new(&disk_path);
-        app.insert_cartridge(rom_path.clone(), true);
+        app.insert_cartridge(rom_path.clone());
         let err = app
             .cart_error
             .clone()
@@ -70,7 +70,7 @@ fn insert_cartridge_fails_and_preserves_dirty_disk_when_write_back_fails() {
 
     // Dropping `_ro` earlier restores write access; retry must now succeed.
     app.cart_error = None;
-    app.insert_cartridge(rom_path.clone(), true);
+    app.insert_cartridge(rom_path.clone());
     assert!(
         app.cart_error.is_none(),
         "the retried insert must succeed: {:?}",
@@ -109,7 +109,7 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
     let _ro = ReadOnly::new(&disk_path);
 
     // Replacing the FD-502's own slot must abort.
-    app.mpi_insert_rompak(FD502_SLOT, rom_path.clone(), true);
+    app.mpi_insert_rompak(FD502_SLOT, rom_path.clone());
     let err = app
         .cart_error
         .clone()
@@ -127,7 +127,7 @@ fn mpi_insert_rompak_only_blocks_on_the_fd502s_own_slot() {
 
     // The same failing disk must not block an unrelated slot's insert.
     app.cart_error = None;
-    app.mpi_insert_rompak(OTHER_SLOT, rom_path, true);
+    app.mpi_insert_rompak(OTHER_SLOT, rom_path);
     assert!(
         app.cart_error.is_none(),
         "an unrelated slot's insert must not be blocked by a failing disk: {:?}",
@@ -173,7 +173,7 @@ fn mpi_insert_rompak_flushes_and_clears_disk_paths_on_success() {
     );
     mount_and_dirty(&mut app, 0, &disk_path);
 
-    app.mpi_insert_rompak(FD502_SLOT, rom_path, true);
+    app.mpi_insert_rompak(FD502_SLOT, rom_path);
     assert!(
         app.cart_error.is_none(),
         "the insert must succeed: {:?}",

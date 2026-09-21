@@ -331,25 +331,24 @@ fn mpi_switch_config_sets_the_front_panel_switch() {
     );
 }
 
-/// `[peripherals].cartridge = { kind = "rompak", autostart = false }` leaves the mounted
-/// ROM Pak's CART* line untied from Q — it must not autostart.
+/// `[peripherals].cartridge = { kind = "rompak" }` mounts a ROM Pak whose CART* line
+/// ties to Q — it autostarts at power-up.
 #[test]
-fn rompak_autostart_false_does_not_tie_cart_line_to_q() {
-    let dir = crate::machine_def::tests::TempDir::new("launch-rompak-no-autostart");
+fn rompak_ties_cart_line_to_q() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-rompak-autostart");
     let rom_path = dir.path().join("game.rom");
     std::fs::write(&rom_path, vec![0x11u8; 0x4000]).expect("write ROM pak fixture");
 
     let mut def = base_def();
     def.peripherals.cartridge = CartridgeDTO::ROMPak {
         path: rom_path.display().to_string(),
-        autostart: false,
     };
 
-    let app = super::launch_machine(&def, "launch-test-rompak-no-autostart")
+    let app = super::launch_machine(&def, "launch-test-rompak-autostart")
         .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
     assert!(
-        !app.machine.bus.cart.cart_line_ties_q(),
-        "autostart = false must not tie CART* to Q"
+        app.machine.bus.cart.cart_line_ties_q(),
+        "a ROM Pak must tie CART* to Q"
     );
 }
 
@@ -363,7 +362,6 @@ fn banked_rompak_mounts_without_games_master_hardware() {
     let mut def = base_def();
     def.peripherals.cartridge = CartridgeDTO::BankedROMPak {
         path: rom_path.display().to_string(),
-        autostart: true,
     };
 
     let app = super::launch_machine(&def, "launch-test-banked-rompak")
@@ -388,7 +386,6 @@ fn mpi_slot_mounts_banked_rompak_without_games_master_hardware() {
         slots: [
             SlotDTO::BankedROMPak {
                 path: rom_path.display().to_string(),
-                autostart: true,
             },
             SlotDTO::Empty,
             SlotDTO::Empty,
@@ -502,11 +499,11 @@ fn mpi_slot_rs232_tcp_endpoint_binds_the_configured_address() {
     }
 }
 
-/// `[peripherals].cartridge` naming an MPI slot's ROM Pak with `autostart = false` carries the
-/// same flag through `mpi_insert_rompak`.
+/// `[peripherals].cartridge` naming an MPI slot's ROM Pak autostarts it through
+/// `mpi_insert_rompak` when the switch selects that slot.
 #[test]
-fn mpi_slot_rompak_autostart_false_does_not_tie_cart_line_to_q() {
-    let dir = crate::machine_def::tests::TempDir::new("launch-mpi-rompak-no-autostart");
+fn mpi_slot_rompak_ties_cart_line_to_q() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-mpi-rompak-autostart");
     let rom_path = dir.path().join("game.rom");
     std::fs::write(&rom_path, vec![0x11u8; 0x4000]).expect("write ROM pak fixture");
 
@@ -515,7 +512,6 @@ fn mpi_slot_rompak_autostart_false_does_not_tie_cart_line_to_q() {
         slots: [
             SlotDTO::ROMPak {
                 path: rom_path.display().to_string(),
-                autostart: false,
             },
             SlotDTO::Empty,
             SlotDTO::Empty,
@@ -524,10 +520,10 @@ fn mpi_slot_rompak_autostart_false_does_not_tie_cart_line_to_q() {
         switch: 1,
     };
 
-    let app = super::launch_machine(&def, "launch-test-mpi-rompak-no-autostart")
+    let app = super::launch_machine(&def, "launch-test-mpi-rompak-autostart")
         .unwrap_or_else(|e| panic!("launch should succeed: {e}"));
     assert!(
-        !app.machine.bus.cart.cart_line_ties_q(),
-        "autostart = false must not tie CART* to Q"
+        app.machine.bus.cart.cart_line_ties_q(),
+        "a slotted ROM Pak must tie CART* to Q"
     );
 }

@@ -444,7 +444,7 @@ fn insert_gmc_pages_banked_rom_and_survives_power_cycle() {
         )
     });
     // Drive the app-glue directly: the menu item's click handler opens a native file dialog.
-    harness.state_mut().insert_gmc(path.clone(), true);
+    harness.state_mut().insert_gmc(path.clone());
     harness.step();
 
     let app = harness.state_mut();

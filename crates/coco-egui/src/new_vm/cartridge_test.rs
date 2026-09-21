@@ -47,7 +47,6 @@ fn assert_direct_image(
         choice,
         CartridgeChoice::Image(CartridgeImageChoice {
             path: path.to_path_buf(),
-            autostart: DEFAULT_AUTOSTART,
             hardware,
             hardware_detected,
         })
@@ -64,7 +63,6 @@ fn assert_slot_image(
         choice,
         SlotChoice::Image(CartridgeImageChoice {
             path: path.to_path_buf(),
-            autostart: DEFAULT_AUTOSTART,
             hardware,
             hardware_detected,
         })
@@ -185,7 +183,6 @@ fn unreadable_images_use_an_overridable_rompak_fallback() {
 fn manual_unknown_hardware_is_persisted() {
     let image = CartridgeImageChoice {
         path: PathBuf::from("unknown.rom"),
-        autostart: false,
         hardware: CartridgeHardware::GamesMaster,
         hardware_detected: false,
     };
@@ -194,14 +191,12 @@ fn manual_unknown_hardware_is_persisted() {
         cartridge_dto_for_image(&image),
         CartridgeDTO::GamesMaster {
             path: "unknown.rom".to_string(),
-            autostart: false,
         }
     );
     assert_eq!(
         slot_dto_for_image(&image),
         SlotDTO::GamesMaster {
             path: "unknown.rom".to_string(),
-            autostart: false,
         }
     );
 }

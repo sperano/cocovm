@@ -73,7 +73,6 @@ fn full_def() -> MachineDef {
                 slots: [
                     SlotDTO::ROMPak {
                         path: "/paks/arkanoid.ccc".to_string(),
-                        autostart: false,
                     },
                     SlotDTO::Empty,
                     SlotDTO::RTC,

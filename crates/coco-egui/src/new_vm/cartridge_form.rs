@@ -49,8 +49,8 @@ pub(super) struct CartridgeRowState<'a> {
 }
 
 /// The Cartridge row (label + combo) and its nested sub-form: FD-502's Disk
-/// rows, the MPI's Switch/Slot rows, the RS-232 Pak's Endpoint row, or a ROM
-/// Pak/Games Master's Auto-start checkbox.
+/// rows, the MPI's Switch/Slot rows, the RS-232 Pak's Endpoint row, or a
+/// cartridge image's Hardware row.
 pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: CartridgeRowState) {
     let CartridgeRowState {
         cartridge,
@@ -89,8 +89,8 @@ pub(super) fn cartridge_row(ui: &mut egui::Ui, salt: &str, font: f32, state: Car
 }
 
 /// The MPI's Switch row, then its four Slot rows; the Disk rows nest one
-/// level deeper under whichever slot holds the FD-502, and a ROM Pak/Games
-/// Master slot's Auto-start checkbox nests the same way.
+/// level deeper under whichever slot holds the FD-502, and a cartridge image
+/// slot's Hardware row nests the same way.
 fn mpi_sub_form(
     ui: &mut egui::Ui,
     salt: &str,
@@ -253,9 +253,6 @@ fn cartridge_image_sub_form(
             } else {
                 cartridge_hardware_combo(ui, &id_salt, &mut image.hardware);
             }
-            ui.end_row();
-            ui.label("");
-            ui.checkbox(&mut image.autostart, "Auto-start");
             ui.end_row();
         });
 }
