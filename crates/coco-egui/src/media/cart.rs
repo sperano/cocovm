@@ -5,8 +5,7 @@
 use crate::*;
 
 /// Image-backed ROM cartridges (ROM Pak, banked ROM Pak, Games Master) always
-/// tie CART* to Q so the pak runs at power-up, like real game paks. Only the
-/// FD-502's DOS ROM leaves the line idle, and it has its own insert path.
+/// tie CART* to Q so the pak runs at power-up; only the FD-502's DOS ROM doesn't.
 pub(super) const CART_AUTOSTART: bool = true;
 
 /// A Sound/Speech Cartridge built around its TMS7040 firmware
