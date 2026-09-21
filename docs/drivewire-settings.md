@@ -1,9 +1,10 @@
 # Configure DriveWire
 
-Select a VM in the manager and use its **DriveWire** section to enable
+Select a VM in the manager and use its **DriveWire** tab to enable
 DriveWire, select **HDB-DOS mode**, and assign images to DW0 through DW3.
-**Mount DW0…** selects the startup image for drive zero. **Eject DW0** clears
-that assignment. The other drives work the same way. Changes save automatically.
+Enter a disk image path or click **Browse…** beside a drive to select its
+startup image. Clear the path or click **×** inside the field to leave the
+drive empty. Empty fields display **No disk image**. Changes save automatically.
 
 All DriveWire settings apply at the next start from power off. Changing
 settings while the VM runs leaves its active session and mounted images

@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use coco_core::rom_db::CartridgeHardware;
+use coco_core::{drivewire::DRIVE_COUNT, rom_db::CartridgeHardware};
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
@@ -13,6 +13,12 @@ use super::harness::*;
 
 const CONFLICT_ERROR: &str =
     "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41";
+const STARTUP_PATHS: [&str; DRIVE_COUNT] = [
+    "/images/Boot Disk.dsk",
+    "relative.os9",
+    "disks/日本語.img",
+    " disk.vhd ",
+];
 
 fn seed_manager(name: &str) -> (TempDir, manager::MachineEntry, PathBuf) {
     let dir = TempDir::new(name);
@@ -38,22 +44,30 @@ fn saved_def(file: &Path) -> machine_def::MachineDef {
 }
 
 #[test]
-fn drivewire_controls_persist_and_eject_the_startup_disk() {
+fn drivewire_paths_persist_while_typing_and_reopen_for_clearing() {
     let (dir, entry, file) = seed_manager("ui-drivewire-persist");
-    let disk = write_disk(dir.path(), "dw0.dsk");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
     select_drivewire(&mut harness);
 
     click(&mut harness, "Enable DriveWire");
     click(&mut harness, "HDB-DOS mode");
-    harness.state_mut().edit_form_mut().unwrap().drivewire.disk0 = Some(disk.display().to_string());
-    harness.step();
-    harness.step();
+    for (drive, path) in STARTUP_PATHS.iter().enumerate() {
+        let label = format!("DW{drive} disk image");
+        assert!(
+            harness
+                .query_by_label(&format!("Clear DW{drive}"))
+                .is_none()
+        );
+        harness.get_by_label(&label).focus();
+        harness.step();
+        harness.get_by_label(&label).type_text(path);
+        harness.step();
+        assert_eq!(saved_def(&file).drivewire.disk_paths()[drive], Some(*path));
+    }
 
     let saved = saved_def(&file);
     assert!(saved.drivewire.enabled);
     assert!(saved.drivewire.hdbdos_mode);
-    assert_eq!(saved.drivewire.disk0.as_deref(), disk.to_str());
     harness.get_by_label(
         "DriveWire changes apply at the next start from power off. Resume keeps the saved session.",
     );
@@ -62,9 +76,102 @@ fn drivewire_controls_persist_and_eject_the_startup_disk() {
     let reopened = manager::MachineEntry::new("drivewire".to_string(), saved);
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![reopened]);
     select_drivewire(&mut harness);
-    harness.get_by_label("dw0.dsk");
-    click(&mut harness, "Eject DW0");
+    assert_reopened_paths_and_clear(&mut harness, &file);
+}
+
+fn assert_reopened_paths_and_clear(harness: &mut ManagerHarness, file: &Path) {
+    for (drive, path) in STARTUP_PATHS.iter().enumerate() {
+        assert_eq!(
+            harness
+                .get_by_label(&format!("DW{drive} disk image"))
+                .accesskit_node()
+                .value()
+                .as_deref(),
+            Some(*path)
+        );
+        click(harness, &format!("Clear DW{drive}"));
+        assert!(saved_def(file).drivewire.disk_paths()[drive].is_none());
+        assert!(
+            harness
+                .query_by_label(&format!("Clear DW{drive}"))
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn deleting_path_text_leaves_the_startup_drive_empty() {
+    let (dir, mut entry, file) = seed_manager("ui-drivewire-delete-text");
+    entry.def.drivewire.enabled = true;
+    entry.def.drivewire.disk0 = Some("startup.dsk".to_owned());
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+    harness.get_by_label("DW0 disk image").focus();
+    harness.step();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press(egui::Key::Backspace);
+    harness.step();
+    harness.step();
     assert!(saved_def(&file).drivewire.disk0.is_none());
+    assert!(harness.query_by_label("Clear DW0").is_none());
+}
+
+#[test]
+fn disabled_drivewire_paths_keep_their_contents_and_disable_all_controls() {
+    let (dir, mut entry, file) = seed_manager("ui-drivewire-disabled");
+    entry.def.drivewire.disk0 = Some("startup.dsk".to_owned());
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+    for drive in 0..DRIVE_COUNT {
+        for label in [
+            format!("DW{drive} disk image"),
+            format!("Browse DW{drive}…"),
+        ] {
+            assert!(harness.get_by_label(&label).accesskit_node().is_disabled());
+        }
+    }
+    assert!(
+        harness
+            .get_by_label("Clear DW0")
+            .accesskit_node()
+            .is_disabled()
+    );
+    click(&mut harness, "Enable DriveWire");
+    click(&mut harness, "Enable DriveWire");
+    assert_eq!(
+        saved_def(&file).drivewire.disk0.as_deref(),
+        Some("startup.dsk")
+    );
+}
+
+#[test]
+fn drivewire_paths_and_browse_buttons_align_at_narrow_manager_widths() {
+    const WINDOW_WIDTHS: [f32; 2] = [1080.0, 700.0];
+    const WINDOW_HEIGHT: f32 = 720.0;
+    let (dir, mut entry, _) = seed_manager("ui-drivewire-layout");
+    entry.def.drivewire.enabled = true;
+    entry.def.drivewire.disk0 = Some("/images/a long disk image filename.dsk".to_owned());
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+    for width in WINDOW_WIDTHS {
+        harness.set_size(egui::vec2(width, WINDOW_HEIGHT));
+        harness.step();
+        harness.step();
+        let first = harness.get_by_label("DW0 disk image").rect();
+        let first_browse = harness.get_by_label("Browse DW0…").rect();
+        for drive in 0..DRIVE_COUNT {
+            let input = harness
+                .get_by_label(&format!("DW{drive} disk image"))
+                .rect();
+            let browse = harness.get_by_label(&format!("Browse DW{drive}…")).rect();
+            assert_eq!(input.x_range(), first.x_range());
+            assert_eq!(browse.x_range(), first_browse.x_range());
+            assert!(input.right() <= browse.left());
+            assert!(browse.right() <= width);
+        }
+        let clear = harness.get_by_label("Clear DW0").rect();
+        assert!(first.contains_rect(clear));
+    }
 }
 
 #[test]
