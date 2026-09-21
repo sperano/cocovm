@@ -293,12 +293,21 @@ impl ManagerApp {
         slug: &str,
         edit: &mut EditState,
     ) {
+        /// Indent that lines the slug up with the name field's text.
+        const SLUG_LEFT_MARGIN: f32 = 4.0;
+        /// Explains the unlabelled slug.
+        const SLUG_HOVER_TEXT: &str =
+            "Slug ID: the stable identifier control tools use for this machine";
+
         ui.horizontal_wrapped(|ui| {
             self.draw_name_field(ui, index, edit);
             ui.separator();
-            ui.label(egui::RichText::new(format!("Slug ID: {slug}")).strong());
-            ui.separator();
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(SLUG_LEFT_MARGIN);
+            ui.label(egui::RichText::new(slug).weak())
+                .on_hover_text(SLUG_HOVER_TEXT);
         });
         if let Some(err) = &self.entries[index].launch_error {
             ui.colored_label(ui.visuals().error_fg_color, err);

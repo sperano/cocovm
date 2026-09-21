@@ -252,11 +252,11 @@ fn manager_detail_shows_slug_id() {
 
     click(&mut harness, "Alpha CoCo 3");
 
-    harness.get_by_label("Slug ID: alpha-coco");
+    harness.get_by_label("alpha-coco");
     assert_eq!(
-        painted_text_color(&harness, "Slug ID: alpha-coco"),
-        Some(harness.ctx.style().visuals.strong_text_color()),
-        "the slug ID must use the theme's high-contrast text color"
+        painted_text_color(&harness, "alpha-coco"),
+        Some(harness.ctx.style().visuals.weak_text_color()),
+        "the slug ID must use the theme's dimmed text color"
     );
 }
 
@@ -544,7 +544,7 @@ fn manager_rename_migrates_definition_file_and_artifact_dir() {
         "selection follows the renamed row"
     );
     assert_eq!(harness.state().detail_name(), Some("Alpha Two"));
-    harness.get_by_label("Slug ID: alpha-two");
+    harness.get_by_label("alpha-two");
 }
 
 #[test]
@@ -569,5 +569,5 @@ fn unchanged_name_enter_does_not_rewrite_or_rename() {
 
     assert_eq!(harness.state().entries[0].slug, "alpha");
     assert_eq!(fs::read_to_string(config_path).unwrap(), original);
-    harness.get_by_label("Slug ID: alpha");
+    harness.get_by_label("alpha");
 }
