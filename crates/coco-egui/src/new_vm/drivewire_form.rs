@@ -26,7 +26,6 @@ const EMPTY_PATH_HINT: &str = "No disk image";
 const CLEAR_PATH_HINT: &str = "Clear a path to leave the drive empty.";
 const GMC_CONFLICT_HINT: &str =
     "DriveWire and the Games Master Cartridge cannot be enabled together.";
-const HDBDOS_REQUIRED_HINT: &str = "Required by the selected HDB-DOS DW3 ROM.";
 const STARTUP_HINT: &str = "DriveWire changes apply at the next start from power off. \
     Resume keeps the saved session.";
 const HDBDOS_MODE_HINT: &str = "Enable for HDB-DOS BASIC disk commands. Translates HDB-DOS \
@@ -46,31 +45,22 @@ impl MachineForm {
         )
         .cartridge;
         let conflict = cartridge.contains_games_master();
-        let required = cartridge.uses_hdbdos();
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
             ui.add_enabled(
-                !required && (self.drivewire.enabled || !conflict),
+                self.drivewire.enabled || !conflict,
                 egui::Checkbox::new(&mut self.drivewire.enabled, "Enable DriveWire"),
             )
-            .on_disabled_hover_text(if required {
-                HDBDOS_REQUIRED_HINT
-            } else {
-                GMC_CONFLICT_HINT
-            });
+            .on_disabled_hover_text(GMC_CONFLICT_HINT);
             if conflict {
                 ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
             }
             ui.add_enabled(
-                self.drivewire.enabled && !required,
+                self.drivewire.enabled,
                 egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
             )
             .on_hover_text(HDBDOS_MODE_HINT)
-            .on_disabled_hover_text(if required {
-                HDBDOS_REQUIRED_HINT
-            } else {
-                HDBDOS_MODE_HINT
-            });
+            .on_disabled_hover_text(HDBDOS_MODE_HINT);
             ui.small(STARTUP_HINT);
         });
     }
@@ -108,7 +98,15 @@ impl MachineForm {
             &self.rs232_endpoint,
         )
         .cartridge;
-        if cartridge.uses_hdbdos() {
+        self.default_drivewire_for_hdbdos(cartridge.uses_hdbdos());
+    }
+
+    /// Picking the HDB-DOS ROM switches DriveWire on once; the user may then opt back out.
+    fn default_drivewire_for_hdbdos(&mut self, uses_hdbdos: bool) {
+        // A freshly seeded form (`None`) keeps its definition's flags untouched.
+        let newly_selected = uses_hdbdos && self.hdbdos_selected == Some(false);
+        self.hdbdos_selected = Some(uses_hdbdos);
+        if newly_selected {
             self.drivewire.enabled = true;
             self.drivewire.hdbdos_mode = true;
         }

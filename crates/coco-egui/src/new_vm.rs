@@ -232,6 +232,8 @@ pub struct MachineForm {
     pub config: MachineConfig,
     /// Saved startup configuration, independent of the running DriveWire session.
     pub drivewire: crate::machine_def::DriveWireDTO,
+    /// Whether the HDB-DOS ROM was picked at the last constrain pass; `None` before the first.
+    hdbdos_selected: Option<bool>,
     /// The Cartridge-row pick.
     pub cartridge: CartridgeChoice,
     /// The MPI Slot picks (indented rows under the Cartridge combo);

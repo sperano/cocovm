@@ -47,27 +47,19 @@ fn selected_dos_rom_survives_save_restore_and_resave() {
 }
 
 #[test]
-fn hdbdos_controller_enables_drivewire_for_direct_and_mpi_launches() {
+fn hdbdos_controller_launches_with_the_saved_drivewire_settings() {
     for slotted in [false, true] {
-        let def = definition(DosRom::HdbDosDw3, slotted);
-        assert!(!def.drivewire.enabled);
-        assert!(!def.drivewire.hdbdos_mode);
-        let mut app = crate::launch_machine(&def, "hdbdos-enable").unwrap();
-        let dw = app
-            .machine
-            .bus
-            .drivewire
-            .as_ref()
-            .expect("HDB-DOS needs DriveWire");
-        assert!(dw.hdbdos_mode());
-        assert!(app.machine.bus.cart.as_disk_cart().is_some());
+        for (enabled, hdbdos_mode) in [(false, false), (true, false), (true, true)] {
+            let mut def = definition(DosRom::HdbDosDw3, slotted);
+            def.drivewire.enabled = enabled;
+            def.drivewire.hdbdos_mode = hdbdos_mode;
+            let mut app = crate::launch_machine(&def, "hdbdos-drivewire").unwrap();
+            let dw = app.machine.bus.drivewire.as_ref();
+            assert_eq!(
+                dw.map(|dw| dw.hdbdos_mode()),
+                enabled.then_some(hdbdos_mode)
+            );
+            assert!(app.machine.bus.cart.as_disk_cart().is_some());
+        }
     }
-}
-
-#[test]
-fn hdbdos_controller_validates_implicitly_enabled_drivewire_media() {
-    let mut def = definition(DosRom::HdbDosDw3, true);
-    def.drivewire.disk0 = Some("/missing/hdbdos-disk.dsk".into());
-    let error = crate::launch_machine(&def, "hdbdos-media").err().unwrap();
-    assert!(error.contains("DriveWire image"), "{error}");
 }
