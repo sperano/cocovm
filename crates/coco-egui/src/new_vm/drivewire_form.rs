@@ -47,30 +47,32 @@ impl MachineForm {
         .cartridge;
         let conflict = cartridge.contains_games_master();
         let required = cartridge.uses_hdbdos();
-        ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
-        ui.add_enabled(
-            !required && (self.drivewire.enabled || !conflict),
-            egui::Checkbox::new(&mut self.drivewire.enabled, "Enable DriveWire"),
-        )
-        .on_disabled_hover_text(if required {
-            HDBDOS_REQUIRED_HINT
-        } else {
-            GMC_CONFLICT_HINT
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
+            ui.add_enabled(
+                !required && (self.drivewire.enabled || !conflict),
+                egui::Checkbox::new(&mut self.drivewire.enabled, "Enable DriveWire"),
+            )
+            .on_disabled_hover_text(if required {
+                HDBDOS_REQUIRED_HINT
+            } else {
+                GMC_CONFLICT_HINT
+            });
+            if conflict {
+                ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
+            }
+            ui.add_enabled(
+                self.drivewire.enabled && !required,
+                egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
+            )
+            .on_hover_text(HDBDOS_MODE_HINT)
+            .on_disabled_hover_text(if required {
+                HDBDOS_REQUIRED_HINT
+            } else {
+                HDBDOS_MODE_HINT
+            });
+            ui.small(STARTUP_HINT);
         });
-        if conflict {
-            ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
-        }
-        ui.add_enabled(
-            self.drivewire.enabled && !required,
-            egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
-        )
-        .on_hover_text(HDBDOS_MODE_HINT)
-        .on_disabled_hover_text(if required {
-            HDBDOS_REQUIRED_HINT
-        } else {
-            HDBDOS_MODE_HINT
-        });
-        ui.small(STARTUP_HINT);
     }
 
     /// The "Disk images" section: one editable path per startup drive.
