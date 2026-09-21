@@ -20,10 +20,10 @@ pub(crate) fn titled_group<R>(
     title: &str,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    /// Title's x offset from the box's left corner.
-    const TITLE_INDENT: f32 = 8.0;
     /// The title's breathing room inside the gap in the border.
     const TITLE_PAD: f32 = 4.0;
+    /// The gap's x offset from the box's left corner; lines the title text up with the contents.
+    const TITLE_INDENT: f32 = TITLED_GROUP_PADDING as f32 - TITLE_PAD;
 
     let font = egui::TextStyle::Body.resolve(ui.style());
     let color = ui.visuals().strong_text_color();
