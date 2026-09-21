@@ -64,6 +64,21 @@ impl Selection {
         self.anchor = count.checked_sub(1);
     }
 
+    /// Arrow key: select the one row past the selection's `step`-side edge,
+    /// clamped to `0..count`; from nothing, Down starts at the top, Up at the bottom.
+    pub(super) fn step(&mut self, step: Step, count: usize) -> Option<usize> {
+        let last = count.checked_sub(1)?;
+        let target = match step {
+            Step::Up => self.rows.first().map_or(last, |&top| top.saturating_sub(1)),
+            Step::Down => self
+                .rows
+                .last()
+                .map_or(0, |&bottom| bottom.saturating_add(1).min(last)),
+        };
+        self.set_single(target);
+        Some(target)
+    }
+
     pub(super) fn clear(&mut self) {
         self.rows.clear();
         self.anchor = None;
@@ -155,6 +170,13 @@ impl Selection {
             self.anchor = None;
         }
     }
+}
+
+/// Which way an arrow key moves the selection ([`Selection::step`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Step {
+    Up,
+    Down,
 }
 
 /// One index's fate when `entries.remove(removed)` runs: gone if it *was*

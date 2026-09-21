@@ -6,6 +6,7 @@
 use eframe::egui;
 
 use super::bulk::BulkAction;
+use super::selection::Step;
 use super::{
     ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, THUMBNAIL_ASPECT, thumbnails, vm_status_label,
 };
@@ -17,14 +18,45 @@ use crate::widgets::SUSPEND_HOVER;
 /// without making filesystem work depend on the full library size.
 const THUMBNAIL_NEAR_RANGE_ROWS: usize = 4;
 
+/// Select every row (⌘A/Ctrl+A). Consumed only under [`list_has_keyboard`],
+/// so the detail pane's text fields keep their native select-all.
+const SELECT_ALL_SHORTCUT: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A);
+
+/// The arrow keys that walk the machine list, under the same guard as
+/// [`SELECT_ALL_SHORTCUT`].
+const LIST_STEP_KEYS: [(egui::Key, Step); 2] = [
+    (egui::Key::ArrowUp, Step::Up),
+    (egui::Key::ArrowDown, Step::Down),
+];
+
 impl ManagerApp {
+    /// ⌘A/Ctrl+A selects every row, ↑/↓ move the selection — only while
+    /// the machine list has the keyboard ([`list_has_keyboard`]).
+    pub(super) fn handle_list_shortcuts(&mut self, ctx: &egui::Context) {
+        if !list_has_keyboard(ctx) {
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_shortcut(&SELECT_ALL_SHORTCUT)) {
+            self.select_all_rows();
+        }
+        for (key, step) in LIST_STEP_KEYS {
+            // `consume_key` alone ignores extra Shift/Alt.
+            let bare_key = |i: &mut egui::InputState| {
+                i.modifiers.is_none() && i.consume_key(egui::Modifiers::NONE, key)
+            };
+            if ctx.input_mut(bare_key) {
+                self.step_selection(step);
+            }
+        }
+    }
+
     /// Left panel: the machine list. `ui.set_min_width` keeps the
     /// `SidePanel`'s divider draggable even when the list is empty.
     pub(super) fn draw_machine_list(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(ui.available_width());
         if !self.entries.is_empty() {
             let row_height = machine_row_height(ui);
-            #[cfg(feature = "perf")]
             let row_spacing = ui.spacing().item_spacing.y;
             let entry_count = self.entries.len();
             let ctx = ui.ctx().clone();
@@ -49,6 +81,10 @@ impl ManagerApp {
                 let near_rows = thumbnail_near_range(visible_rows.clone(), entry_count);
                 self.prepare_row_thumbnails(&ctx, near_rows, visible_rows.clone());
                 ui.set_min_width(ui.available_width());
+                if let Some(row) = self.scroll_to_row.take() {
+                    let stride = machine_row_stride(row_height, row_spacing);
+                    scroll_row_into_view(ui, row, visible_rows.start, row_height, stride);
+                }
                 for index in visible_rows {
                     self.draw_machine_row(ui, index);
                 }
@@ -153,10 +189,18 @@ impl ManagerApp {
         self.on_selection_changed();
     }
 
-    /// ⌘A/Ctrl+A ([`eframe::App::update`]'s shortcut handler): select
-    /// every row.
-    pub(super) fn select_all_rows(&mut self) {
+    /// ⌘A/Ctrl+A: select every row.
+    fn select_all_rows(&mut self) {
         self.selection.select_all(self.entries.len());
+        self.on_selection_changed();
+    }
+
+    /// ↑/↓: move the selection one row and scroll it into view.
+    fn step_selection(&mut self, step: Step) {
+        let Some(row) = self.selection.step(step, self.entries.len()) else {
+            return;
+        };
+        self.scroll_to_row = Some(row);
         self.on_selection_changed();
     }
 
@@ -303,6 +347,14 @@ impl ManagerApp {
     }
 }
 
+/// The machine list has the keyboard when nothing else claims it: no
+/// focused widget, no modal dialog, no open popup or context menu.
+fn list_has_keyboard(ctx: &egui::Context) -> bool {
+    !ctx.wants_keyboard_input()
+        && ctx.memory(|memory| memory.top_modal_layer().is_none())
+        && !egui::Popup::is_any_open(ctx)
+}
+
 /// Height the row's text column (name/subtitle/status) will render at, used
 /// to size the thumbnail to reach the same bottom edge. Computed from text
 /// metrics up front, since the thumbnail is placed before the text column's
@@ -321,7 +373,6 @@ fn machine_row_height(ui: &egui::Ui) -> f32 {
     row_content_height(ui) + ROW_MARGIN * 2.0
 }
 
-#[cfg(any(feature = "perf", test))]
 fn machine_row_stride(row_height: f32, row_spacing: f32) -> f32 {
     row_height + row_spacing
 }
@@ -329,6 +380,26 @@ fn machine_row_stride(row_height: f32, row_spacing: f32) -> f32 {
 #[cfg(any(feature = "perf", test))]
 fn machine_row_scroll_offset(target_row: usize, row_height: f32, row_spacing: f32) -> f32 {
     target_row as f32 * machine_row_stride(row_height, row_spacing)
+}
+
+/// Top edge of `row`, measured from the first constructed row's top; `row`
+/// may sit on either side of it.
+fn machine_row_top(row: usize, first_visible: usize, first_visible_top: f32, stride: f32) -> f32 {
+    first_visible_top + (row as f32 - first_visible as f32) * stride
+}
+
+/// Inside `show_rows`' closure, whose `ui` starts at `first_visible`'s top:
+/// scroll just far enough to show `row`, constructed or not.
+fn scroll_row_into_view(
+    ui: &egui::Ui,
+    row: usize,
+    first_visible: usize,
+    row_height: f32,
+    stride: f32,
+) {
+    let top = machine_row_top(row, first_visible, ui.max_rect().top(), stride);
+    let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=top + row_height);
+    ui.scroll_to_rect(rect, None);
 }
 
 /// Expands the constructed row range into the preview-preload range without

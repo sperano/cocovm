@@ -94,15 +94,6 @@ const DETAIL_SECTION_GAP: f32 = 12.0;
 /// Inner margin of the detail/edit pane, in egui logical points.
 const DETAIL_PANE_MARGIN: i8 = 10;
 
-/// The "select all rows" shortcut (⌘A/Ctrl+A) for the machine list —
-/// consumed only when no widget owns the keyboard
-/// ([`eframe::App::update`]'s `ctx.wants_keyboard_input()` guard), so the
-/// detail pane's own text fields (the Name field, a future search box)
-/// keep their native select-all instead of it being hijacked into a
-/// row-selection command.
-const SELECT_ALL_SHORTCUT: egui::KeyboardShortcut =
-    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A);
-
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).
 const NO_CONFIG_DIR: &str = "no config directory available";
@@ -359,6 +350,8 @@ pub struct ManagerApp {
     thumbnail_use_clock: u64,
     /// Synchronous preview decodes still available in this manager update.
     thumbnail_loads_remaining: usize,
+    /// Row the machine list scrolls into view on its next draw (arrow keys).
+    scroll_to_row: Option<usize>,
 }
 
 impl ManagerApp {
@@ -410,6 +403,7 @@ impl ManagerApp {
             settings: None,
             thumbnail_use_clock: 0,
             thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
+            scroll_to_row: None,
         }
     }
 }
@@ -460,12 +454,7 @@ impl eframe::App for ManagerApp {
             self.create_machine_now();
         }
 
-        // ⌘A/Ctrl+A selects every row, unless a widget already owns the keyboard.
-        if !ctx.wants_keyboard_input()
-            && ctx.input_mut(|i| i.consume_shortcut(&SELECT_ALL_SHORTCUT))
-        {
-            self.select_all_rows();
-        }
+        self.handle_list_shortcuts(ctx);
 
         egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
             self.draw_toolbar(ui);
