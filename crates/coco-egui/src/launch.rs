@@ -39,11 +39,9 @@ enum Cartridge {
     },
     ROMPak {
         path: PathBuf,
-        autostart: bool,
     },
     BankedROMPak {
         path: PathBuf,
-        autostart: bool,
     },
     RTC,
     RS232 {
@@ -51,7 +49,6 @@ enum Cartridge {
     },
     GamesMaster {
         path: PathBuf,
-        autostart: bool,
     },
     Orch90,
     SoundSpeech,
@@ -70,11 +67,11 @@ enum Cartridge {
 enum Slot {
     Empty,
     FD502 { dos_rom: DosRom },
-    ROMPak { path: PathBuf, autostart: bool },
-    BankedROMPak { path: PathBuf, autostart: bool },
+    ROMPak { path: PathBuf },
+    BankedROMPak { path: PathBuf },
     RTC,
     RS232 { endpoint: RS232EndpointDTO },
-    GamesMaster { path: PathBuf, autostart: bool },
+    GamesMaster { path: PathBuf },
     Orch90,
     SoundSpeech,
     CoCoMax,
@@ -197,22 +194,13 @@ fn resolve_cartridge(def: &machine_def::MachineDef, slug: &str) -> Cartridge {
     match &def.peripherals.cartridge {
         CartridgeDTO::None => Cartridge::None,
         CartridgeDTO::FD502 { dos_rom } => Cartridge::FD502 { dos_rom: *dos_rom },
-        CartridgeDTO::ROMPak { path: p, autostart } => Cartridge::ROMPak {
-            path: path(p),
-            autostart: *autostart,
-        },
-        CartridgeDTO::BankedROMPak { path: p, autostart } => Cartridge::BankedROMPak {
-            path: path(p),
-            autostart: *autostart,
-        },
+        CartridgeDTO::ROMPak { path: p } => Cartridge::ROMPak { path: path(p) },
+        CartridgeDTO::BankedROMPak { path: p } => Cartridge::BankedROMPak { path: path(p) },
         CartridgeDTO::RTC => Cartridge::RTC,
         CartridgeDTO::RS232 { endpoint } => Cartridge::RS232 {
             endpoint: endpoint.clone(),
         },
-        CartridgeDTO::GamesMaster { path: p, autostart } => Cartridge::GamesMaster {
-            path: path(p),
-            autostart: *autostart,
-        },
+        CartridgeDTO::GamesMaster { path: p } => Cartridge::GamesMaster { path: path(p) },
         CartridgeDTO::Orch90 => Cartridge::Orch90,
         CartridgeDTO::SoundSpeech => Cartridge::SoundSpeech,
         CartridgeDTO::CoCoMax => Cartridge::CoCoMax,
@@ -228,22 +216,13 @@ fn resolve_slot(slot: &SlotDTO, slug: &str) -> Slot {
     match slot {
         SlotDTO::Empty => Slot::Empty,
         SlotDTO::FD502 { dos_rom } => Slot::FD502 { dos_rom: *dos_rom },
-        SlotDTO::ROMPak { path: p, autostart } => Slot::ROMPak {
-            path: path(p),
-            autostart: *autostart,
-        },
-        SlotDTO::BankedROMPak { path: p, autostart } => Slot::BankedROMPak {
-            path: path(p),
-            autostart: *autostart,
-        },
+        SlotDTO::ROMPak { path: p } => Slot::ROMPak { path: path(p) },
+        SlotDTO::BankedROMPak { path: p } => Slot::BankedROMPak { path: path(p) },
         SlotDTO::RTC => Slot::RTC,
         SlotDTO::RS232 { endpoint } => Slot::RS232 {
             endpoint: endpoint.clone(),
         },
-        SlotDTO::GamesMaster { path: p, autostart } => Slot::GamesMaster {
-            path: path(p),
-            autostart: *autostart,
-        },
+        SlotDTO::GamesMaster { path: p } => Slot::GamesMaster { path: path(p) },
         SlotDTO::Orch90 => Slot::Orch90,
         SlotDTO::SoundSpeech => Slot::SoundSpeech,
         SlotDTO::CoCoMax => Slot::CoCoMax,
@@ -293,9 +272,9 @@ fn new_app(
     drivewire: Option<DriveWireLaunch>,
     gamepad: crate::joy::SharedGamepad,
 ) -> CocoApp {
-    let (cart_path, cart_autostart) = match cartridge {
-        Cartridge::ROMPak { path, autostart } => (Some(path.clone()), *autostart),
-        _ => (None, false),
+    let cart_path = match cartridge {
+        Cartridge::ROMPak { path } => Some(path.clone()),
+        _ => None,
     };
     CocoApp::new(
         config,
@@ -303,7 +282,6 @@ fn new_app(
         rom_source,
         AppParams {
             cart_path,
-            cart_autostart,
             vhd_paths: media.vhds.clone(),
             drivewire,
             ..AppParams::default()
@@ -325,7 +303,7 @@ pub(crate) fn launch_machine(def: &machine_def::MachineDef, slug: &str) -> Resul
 fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
     match cartridge {
         Cartridge::None | Cartridge::ROMPak { .. } => {}
-        Cartridge::BankedROMPak { path, autostart } => app.insert_banked_rompak(path, autostart),
+        Cartridge::BankedROMPak { path } => app.insert_banked_rompak(path),
         Cartridge::FD502 { dos_rom } => {
             if let Err(e) = app.insert_disk_controller(dos_rom) {
                 app.cart_error = Some(e);
@@ -333,7 +311,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
         }
         Cartridge::RTC => app.insert_rtc(),
         Cartridge::RS232 { endpoint } => mount_rs232(app, endpoint),
-        Cartridge::GamesMaster { path, autostart } => app.insert_gmc(path, autostart),
+        Cartridge::GamesMaster { path } => app.insert_gmc(path),
         Cartridge::Orch90 => app.insert_orch90(),
         Cartridge::SoundSpeech => app.insert_ssc(),
         Cartridge::CoCoMax => app.insert_cocomax(),
@@ -343,20 +321,14 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
                 match occupant {
                     Slot::Empty => {}
                     Slot::FD502 { dos_rom } => app.mpi_insert_fd502(slot, dos_rom),
-                    Slot::ROMPak { path, autostart } => {
-                        app.mpi_insert_rompak(slot, path, autostart)
-                    }
-                    Slot::BankedROMPak { path, autostart } => {
-                        app.mpi_insert_banked_rompak(slot, path, autostart)
-                    }
+                    Slot::ROMPak { path } => app.mpi_insert_rompak(slot, path),
+                    Slot::BankedROMPak { path } => app.mpi_insert_banked_rompak(slot, path),
                     Slot::RTC => app.mpi_insert_rtc(slot),
                     Slot::RS232 { endpoint } => {
                         app.mpi_insert_rs232(slot);
                         apply_rs232_endpoint(app, endpoint);
                     }
-                    Slot::GamesMaster { path, autostart } => {
-                        app.mpi_insert_gmc(slot, path, autostart)
-                    }
+                    Slot::GamesMaster { path } => app.mpi_insert_gmc(slot, path),
                     Slot::Orch90 => app.mpi_insert_orch90(slot),
                     Slot::SoundSpeech => app.mpi_insert_ssc(slot),
                     Slot::CoCoMax => app.mpi_insert_cocomax(slot),

@@ -253,12 +253,6 @@ pub(crate) struct DriveWireLaunch {
 #[derive(Default)]
 pub(crate) struct AppParams {
     pub(crate) cart_path: Option<PathBuf>,
-    /// Whether `cart_path`'s pak should tie CART* to Q (auto-run at
-    /// power-up). Ignored when `cart_path` is `None`. Defaulting to `false`
-    /// here is harmless for that reason — every real ROM Pak launch sets it
-    /// explicitly from `[peripherals].cartridge.autostart`
-    /// (`launch::new_app`).
-    pub(crate) cart_autostart: bool,
     pub(crate) vhd_paths: [Option<PathBuf>; UI_DRIVES],
     /// `Some` boots with the Becker port enabled ([`DriveWireLaunch`]).
     /// The production launcher builds this from `[drivewire]`; guest-selected
@@ -282,7 +276,6 @@ impl CocoApp {
     ) -> Self {
         let AppParams {
             cart_path,
-            cart_autostart,
             vhd_paths,
             drivewire,
             save_tape_wav,
@@ -345,7 +338,7 @@ impl CocoApp {
             status_bar_icons_only: false,
         };
         if let Some(path) = cart_path {
-            app.insert_cartridge(path, cart_autostart);
+            app.insert_cartridge(path);
         }
         for (drive, path) in vhd_paths.into_iter().enumerate() {
             if let Some(path) = path {

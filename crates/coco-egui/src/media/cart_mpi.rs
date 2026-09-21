@@ -4,7 +4,7 @@
 //! every device that can also plug straight into the bare cartridge port
 //! stay in `cart.rs`; this file is only the per-slot half.
 
-use super::cart::{orchestra_90, sound_speech_cartridge};
+use super::cart::{CART_AUTOSTART, orchestra_90, sound_speech_cartridge};
 use crate::*;
 
 impl CocoApp {
@@ -28,10 +28,10 @@ impl CocoApp {
         true
     }
 
-    /// Loads a ROM pak into MPI `slot` (0-3). `autostart` ties CART* to Q so the
-    /// pak runs at power-up. Only a dirty floppy in `slot` itself (that is,
-    /// `slot` holds the FD-502) can abort this — see [`Self::mpi_flush_before_replacing_slot`].
-    pub(crate) fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf, autostart: bool) {
+    /// Loads a ROM pak into MPI `slot` (0-3). Only a dirty floppy in `slot` itself
+    /// (that is, `slot` holds the FD-502) can abort this — see
+    /// [`Self::mpi_flush_before_replacing_slot`].
+    pub(crate) fn mpi_insert_rompak(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -39,7 +39,7 @@ impl CocoApp {
                 return;
             }
         };
-        match ROMPak::from_bytes(&bytes, autostart) {
+        match ROMPak::from_bytes(&bytes, CART_AUTOSTART) {
             Ok(pak) => {
                 if !self.mpi_flush_before_replacing_slot(slot) {
                     return;
@@ -60,7 +60,7 @@ impl CocoApp {
 
     /// Loads a Games Master Cartridge image into MPI `slot`. Mirrors
     /// [`Self::mpi_insert_rompak`]'s target-slot-only flush contract.
-    pub(crate) fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf, autostart: bool) {
+    pub(crate) fn mpi_insert_gmc(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -68,7 +68,7 @@ impl CocoApp {
                 return;
             }
         };
-        match GamesMasterCartridge::from_bytes(&bytes, autostart) {
+        match GamesMasterCartridge::from_bytes(&bytes, CART_AUTOSTART) {
             Ok(cart) => {
                 if !self.mpi_flush_before_replacing_slot(slot) {
                     return;

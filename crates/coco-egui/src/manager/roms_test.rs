@@ -139,7 +139,6 @@ fn a_rom_pak_in_the_bare_port_resolves_its_own_image() {
     let mut def = coco3_def();
     def.peripherals.cartridge = CartridgeDTO::ROMPak {
         path: pak.display().to_string(),
-        autostart: true,
     };
 
     let rows = rom_rows(&def, "alpha", None);

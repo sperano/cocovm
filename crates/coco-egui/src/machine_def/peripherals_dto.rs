@@ -29,15 +29,6 @@ impl DosRom {
     }
 }
 
-/// Default for the image-backed ROM cartridge kinds' `autostart` fields and
-/// their [`SlotDTO`] equivalents: tie CART* to Q so the pak runs at power-up,
-/// like the runtime insert flow's old default checkbox state.
-///
-/// [`GamesMaster`]: CartridgeDTO::GamesMaster
-fn default_autostart() -> bool {
-    true
-}
-
 /// Default for [`CartridgeDTO::MPI`]'s `switch`: front-panel slot 4 (1-based),
 /// the conventional disk-controller default — see
 /// [`crate::DEFAULT_MPI_SWITCH_SLOT`]'s doc.
@@ -64,21 +55,12 @@ pub enum CartridgeDTO {
         dos_rom: DosRom,
     },
     /// A program ROM Pak image, `path` resolved like `[media]`'s paths
-    /// (`resolve_media_path`). `autostart` ties CART* to Q so the pak runs at
-    /// power-up.
+    /// (`resolve_media_path`). Ties CART* to Q, so the pak runs at power-up.
     #[serde(rename = "rompak")]
-    ROMPak {
-        path: String,
-        #[serde(default = "default_autostart")]
-        autostart: bool,
-    },
+    ROMPak { path: String },
     /// A 16 KiB-window bank-switched ROM Pak with no sound hardware.
     #[serde(rename = "banked_rompak")]
-    BankedROMPak {
-        path: String,
-        #[serde(default = "default_autostart")]
-        autostart: bool,
-    },
+    BankedROMPak { path: String },
     /// Disto 4-N-1 RTC. No boot ROM — pairs with a VHD boot; for RTC +
     /// floppies use an MPI slot. A legacy `model` key is ignored.
     #[serde(rename = "rtc")]
@@ -92,25 +74,17 @@ pub enum CartridgeDTO {
         #[serde(default)]
         endpoint: RS232EndpointDTO,
     },
-    /// Games Master Cartridge (banked ROM + SN76489A). `autostart` like
-    /// [`Self::ROMPak`]'s.
+    /// Games Master Cartridge (banked ROM + SN76489A).
     #[serde(rename = "gmc")]
-    GamesMaster {
-        path: String,
-        #[serde(default = "default_autostart")]
-        autostart: bool,
-    },
+    GamesMaster { path: String },
     /// Orchestra-90/CC. Fixed ROM at `roms/orch90.rom` — no `path` to pick.
-    /// Always autostarts — its own CART* line ties to Q, so there's no
-    /// `autostart` field to override it.
     #[serde(rename = "orch90")]
     Orch90,
     /// Sound/Speech Cartridge.
     #[serde(rename = "ssc")]
     SoundSpeech,
     /// CoCo Max Hi-Res Input Module (Colorware, 1985): a mouse pak with its
-    /// own ADC, CoCo 1/2 only. No file to pick, and no `autostart` — it
-    /// isn't a ROM pak.
+    /// own ADC, CoCo 1/2 only. No file to pick — it isn't a ROM pak.
     #[serde(rename = "cocomax")]
     CoCoMax,
     /// MultiPak Interface; `slots` lists its 4 occupants (`SlotDTO::Empty`
@@ -171,17 +145,9 @@ pub enum SlotDTO {
         dos_rom: DosRom,
     },
     #[serde(rename = "rompak")]
-    ROMPak {
-        path: String,
-        #[serde(default = "default_autostart")]
-        autostart: bool,
-    },
+    ROMPak { path: String },
     #[serde(rename = "banked_rompak")]
-    BankedROMPak {
-        path: String,
-        #[serde(default = "default_autostart")]
-        autostart: bool,
-    },
+    BankedROMPak { path: String },
     #[serde(rename = "rtc")]
     RTC,
     /// Deluxe RS-232 Pak in this slot — at most one across the whole
@@ -193,11 +159,7 @@ pub enum SlotDTO {
         endpoint: RS232EndpointDTO,
     },
     #[serde(rename = "gmc")]
-    GamesMaster {
-        path: String,
-        #[serde(default = "default_autostart")]
-        autostart: bool,
-    },
+    GamesMaster { path: String },
     /// Orchestra-90/CC. Fixed ROM at `roms/orch90.rom` — no `path` to pick.
     #[serde(rename = "orch90")]
     Orch90,

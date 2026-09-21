@@ -53,7 +53,6 @@ fn unknown_rom_hardware_fallback_can_be_changed() {
         harness.state().entries[0].def.peripherals.cartridge,
         machine_def::CartridgeDTO::GamesMaster {
             path: "/paks/unknown.rom".to_string(),
-            autostart: true,
         }
     );
 }

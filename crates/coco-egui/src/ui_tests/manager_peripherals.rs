@@ -134,7 +134,6 @@ fn manager_edit_with_rom_pak_records_the_cart() {
         def.peripherals.cartridge,
         machine_def::CartridgeDTO::ROMPak {
             path: "/paks/game.ccc".to_string(),
-            autostart: true,
         }
     );
 
@@ -166,12 +165,10 @@ fn manager_edit_with_rom_pak_records_the_cart() {
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::ROMPak {
                     path: "/paks/game.ccc".to_string(),
-                    autostart: true,
                 },
                 machine_def::SlotDTO::Empty,
                 machine_def::SlotDTO::ROMPak {
                     path: "/paks/other.ccc".to_string(),
-                    autostart: true,
                 },
             ],
             switch: crate::DEFAULT_MPI_SWITCH_SLOT + 1,
@@ -265,7 +262,6 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
         harness.state().entries[0].def.peripherals.cartridge,
         machine_def::CartridgeDTO::GamesMaster {
             path: "/paks/gmc.ccc".to_string(),
-            autostart: true,
         }
     );
 

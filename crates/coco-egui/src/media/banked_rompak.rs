@@ -1,10 +1,11 @@
 //! Legacy `$FF40`-selected banked ROM Paks in the direct port and MPI slots.
 
+use super::cart::CART_AUTOSTART;
 use crate::*;
 
 impl CocoApp {
     /// Loads a banked ROM Pak from `path` without installing GMC sound.
-    pub(crate) fn insert_banked_rompak(&mut self, path: PathBuf, autostart: bool) {
+    pub(crate) fn insert_banked_rompak(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -12,7 +13,7 @@ impl CocoApp {
                 return;
             }
         };
-        match BankedROMPak::from_bytes(&bytes, autostart) {
+        match BankedROMPak::from_bytes(&bytes, CART_AUTOSTART) {
             Ok(pak) => {
                 if !self.flush_dirty_disks_or_report() {
                     return;
@@ -32,7 +33,7 @@ impl CocoApp {
     }
 
     /// Loads a banked ROM Pak into MPI `slot` without installing GMC sound.
-    pub(crate) fn mpi_insert_banked_rompak(&mut self, slot: usize, path: PathBuf, autostart: bool) {
+    pub(crate) fn mpi_insert_banked_rompak(&mut self, slot: usize, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -40,7 +41,7 @@ impl CocoApp {
                 return;
             }
         };
-        match BankedROMPak::from_bytes(&bytes, autostart) {
+        match BankedROMPak::from_bytes(&bytes, CART_AUTOSTART) {
             Ok(pak) => {
                 if !self.mpi_flush_before_replacing_slot(slot) {
                     return;

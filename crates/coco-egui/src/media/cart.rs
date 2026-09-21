@@ -4,6 +4,10 @@
 
 use crate::*;
 
+/// Image-backed ROM cartridges (ROM Pak, banked ROM Pak, Games Master) always
+/// tie CART* to Q so the pak runs at power-up; only the FD-502's DOS ROM doesn't.
+pub(super) const CART_AUTOSTART: bool = true;
+
 /// A Sound/Speech Cartridge built around its TMS7040 firmware
 /// ([`rom_load::ssc_firmware_rom_path`]) and SP0256-AL2 ROM
 /// ([`rom_load::sp0256_rom_path`]); the error names the file that is
@@ -61,10 +65,9 @@ fn orchestra_90_in(roms_dir: &Path) -> Result<Orch90, String> {
 
 impl CocoApp {
     /// Loads a ROM pak from `path` and inserts it, resetting the machine on success
-    /// (cartridge swaps are machine-off ops). `autostart` ties CART* to Q so
-    /// the pak runs at power-up. Aborts on a failed dirty-floppy flush, leaves
-    /// state untouched, and reports the error in [`Self::cart_error`].
-    pub(crate) fn insert_cartridge(&mut self, path: PathBuf, autostart: bool) {
+    /// (cartridge swaps are machine-off ops). Aborts on a failed dirty-floppy
+    /// flush, leaves state untouched, and reports the error in [`Self::cart_error`].
+    pub(crate) fn insert_cartridge(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -72,7 +75,7 @@ impl CocoApp {
                 return;
             }
         };
-        match ROMPak::from_bytes(&bytes, autostart) {
+        match ROMPak::from_bytes(&bytes, CART_AUTOSTART) {
             Ok(pak) => {
                 if !self.flush_dirty_disks_or_report() {
                     return;
@@ -93,9 +96,9 @@ impl CocoApp {
         }
     }
 
-    /// Loads a Games Master Cartridge image (banked ROM + SN76489A) from `path` and inserts
-    /// it. Honors `autostart`, even though GMC's own CART* line ties to Q by default.
-    pub(crate) fn insert_gmc(&mut self, path: PathBuf, autostart: bool) {
+    /// Loads a Games Master Cartridge image (banked ROM + SN76489A) from `path`
+    /// and inserts it, resetting the machine on success.
+    pub(crate) fn insert_gmc(&mut self, path: PathBuf) {
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -103,7 +106,7 @@ impl CocoApp {
                 return;
             }
         };
-        match GamesMasterCartridge::from_bytes(&bytes, autostart) {
+        match GamesMasterCartridge::from_bytes(&bytes, CART_AUTOSTART) {
             Ok(cart) => {
                 if !self.flush_dirty_disks_or_report() {
                     return;
@@ -123,9 +126,8 @@ impl CocoApp {
 
     /// Plugs the Orchestra-90/CC into the cartridge slot. No file to pick —
     /// its ROM must be installed at [`rom_load::orch90_rom_path`]; a missing
-    /// or wrong-size one lands in [`Self::cart_error`]. No `autostart` choice
-    /// to honor either — [`Orch90::cart_line_ties_q`] always autostarts, like
-    /// the real pak's CART*-tied-to-Q wiring.
+    /// or wrong-size one lands in [`Self::cart_error`].
+    /// [`Orch90::cart_line_ties_q`] ties CART* to Q like the real pak's wiring.
     ///
     /// [`Orch90::cart_line_ties_q`]: coco_core::cart::Cartridge::cart_line_ties_q
     pub(crate) fn insert_orch90(&mut self) {

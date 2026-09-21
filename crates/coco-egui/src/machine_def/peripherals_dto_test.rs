@@ -231,9 +231,10 @@ endpoint = { kind = "pty" }
     );
 }
 
-/// `[peripherals].cartridge.autostart = false` round-trips for a ROM Pak.
+/// Definitions written while ROM Paks carried an `autostart` key still load:
+/// the legacy key is ignored, like `rtc`'s `model`.
 #[test]
-fn rompak_autostart_false_round_trips() {
+fn rompak_legacy_autostart_key_is_ignored() {
     let dto: CartridgeDTO = toml::from_str(
         r#"
 kind = "rompak"
@@ -241,12 +242,11 @@ path = "/paks/game.ccc"
 autostart = false
 "#,
     )
-    .expect("autostart = false must parse");
+    .expect("a legacy autostart key must still parse");
     assert_eq!(
         dto,
         CartridgeDTO::ROMPak {
             path: "/paks/game.ccc".to_string(),
-            autostart: false,
         }
     );
 }
@@ -257,7 +257,6 @@ fn banked_rompak_kind_round_trips() {
         r#"
 kind = "banked_rompak"
 path = "/paks/robocop.rom"
-autostart = false
 "#,
     )
     .expect("banked ROM Pak must parse");
@@ -265,7 +264,6 @@ autostart = false
         dto,
         CartridgeDTO::BankedROMPak {
             path: "/paks/robocop.rom".to_string(),
-            autostart: false,
         }
     );
 }

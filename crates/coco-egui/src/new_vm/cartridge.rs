@@ -41,7 +41,7 @@ pub enum CartridgeChoice {
     /// selected.
     RS232,
     /// Orchestra-90/CC plugged straight into the port. No file to pick —
-    /// fixed ROM. Always autostarts — no `autostart` field.
+    /// fixed ROM.
     Orch90,
     /// Sound/Speech Cartridge plugged straight into the port. No file to
     /// pick.
@@ -94,7 +94,6 @@ pub enum SlotChoice {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CartridgeImageChoice {
     pub path: PathBuf,
-    pub autostart: bool,
     pub hardware: CartridgeHardware,
     /// `true` when the ROM database identified `hardware`; `false` when the
     /// user can change the fallback for an unknown or unreadable image.
@@ -168,25 +167,16 @@ pub(super) fn cartridge_rom_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Cartridge ROM", ROM_EXTENSIONS)
 }
 
-/// Image-backed ROM cartridges' autostart default when a combo pick first
-/// creates one — checked, matching `CartridgeDTO`'s own field default.
-pub(super) const DEFAULT_AUTOSTART: bool = true;
-
 fn identify_image(path: &Path) -> Option<&'static KnownCartridgeROM> {
     std::fs::read(path)
         .ok()
         .and_then(|bytes| rom_db::identify_cartridge(&bytes))
 }
 
-fn image_choice(
-    path: PathBuf,
-    autostart: bool,
-    fallback: CartridgeHardware,
-) -> CartridgeImageChoice {
+fn image_choice(path: PathBuf, fallback: CartridgeHardware) -> CartridgeImageChoice {
     let detected = identify_image(&path);
     CartridgeImageChoice {
         path,
-        autostart,
         hardware: detected.map_or(fallback, |known| known.hardware),
         hardware_detected: detected.is_some(),
     }
@@ -227,18 +217,13 @@ fn selected_image_choice(path: PathBuf) -> CartridgeImageChoice {
     announce_image_detection(known);
     CartridgeImageChoice {
         path,
-        autostart: DEFAULT_AUTOSTART,
         hardware: known.map_or(CartridgeHardware::RomPak, |rom| rom.hardware),
         hardware_detected: known.is_some(),
     }
 }
 
-fn persisted_image_choice(
-    path: &str,
-    autostart: bool,
-    hardware: CartridgeHardware,
-) -> CartridgeImageChoice {
-    let mut image = image_choice(PathBuf::from(path), autostart, hardware);
+fn persisted_image_choice(path: &str, hardware: CartridgeHardware) -> CartridgeImageChoice {
+    let mut image = image_choice(PathBuf::from(path), hardware);
     image.hardware_detected &= image.hardware == hardware;
     image.hardware = hardware;
     image
@@ -257,36 +242,18 @@ pub(super) fn slot_cartridge_rom(path: PathBuf) -> SlotChoice {
 fn slot_dto_for_image(image: &CartridgeImageChoice) -> SlotDTO {
     let path = image.path.display().to_string();
     match image.hardware {
-        CartridgeHardware::RomPak => SlotDTO::ROMPak {
-            path,
-            autostart: image.autostart,
-        },
-        CartridgeHardware::BankedRomPak => SlotDTO::BankedROMPak {
-            path,
-            autostart: image.autostart,
-        },
-        CartridgeHardware::GamesMaster => SlotDTO::GamesMaster {
-            path,
-            autostart: image.autostart,
-        },
+        CartridgeHardware::RomPak => SlotDTO::ROMPak { path },
+        CartridgeHardware::BankedRomPak => SlotDTO::BankedROMPak { path },
+        CartridgeHardware::GamesMaster => SlotDTO::GamesMaster { path },
     }
 }
 
 fn cartridge_dto_for_image(image: &CartridgeImageChoice) -> CartridgeDTO {
     let path = image.path.display().to_string();
     match image.hardware {
-        CartridgeHardware::RomPak => CartridgeDTO::ROMPak {
-            path,
-            autostart: image.autostart,
-        },
-        CartridgeHardware::BankedRomPak => CartridgeDTO::BankedROMPak {
-            path,
-            autostart: image.autostart,
-        },
-        CartridgeHardware::GamesMaster => CartridgeDTO::GamesMaster {
-            path,
-            autostart: image.autostart,
-        },
+        CartridgeHardware::RomPak => CartridgeDTO::ROMPak { path },
+        CartridgeHardware::BankedRomPak => CartridgeDTO::BankedROMPak { path },
+        CartridgeHardware::GamesMaster => CartridgeDTO::GamesMaster { path },
     }
 }
 
@@ -298,17 +265,18 @@ impl From<&CartridgeDTO> for CartridgeChoice {
         match dto {
             CartridgeDTO::None => CartridgeChoice::None,
             CartridgeDTO::FD502 { dos_rom } => CartridgeChoice::FD502 { dos_rom: *dos_rom },
-            CartridgeDTO::ROMPak { path, autostart } => CartridgeChoice::Image(
-                persisted_image_choice(path, *autostart, CartridgeHardware::RomPak),
-            ),
-            CartridgeDTO::BankedROMPak { path, autostart } => CartridgeChoice::Image(
-                persisted_image_choice(path, *autostart, CartridgeHardware::BankedRomPak),
-            ),
+            CartridgeDTO::ROMPak { path } => {
+                CartridgeChoice::Image(persisted_image_choice(path, CartridgeHardware::RomPak))
+            }
+            CartridgeDTO::BankedROMPak { path } => CartridgeChoice::Image(persisted_image_choice(
+                path,
+                CartridgeHardware::BankedRomPak,
+            )),
             CartridgeDTO::RTC => CartridgeChoice::RTC,
             CartridgeDTO::RS232 { .. } => CartridgeChoice::RS232,
-            CartridgeDTO::GamesMaster { path, autostart } => CartridgeChoice::Image(
-                persisted_image_choice(path, *autostart, CartridgeHardware::GamesMaster),
-            ),
+            CartridgeDTO::GamesMaster { path } => {
+                CartridgeChoice::Image(persisted_image_choice(path, CartridgeHardware::GamesMaster))
+            }
             CartridgeDTO::Orch90 => CartridgeChoice::Orch90,
             CartridgeDTO::SoundSpeech => CartridgeChoice::SoundSpeech,
             CartridgeDTO::CoCoMax => CartridgeChoice::CoCoMax,
@@ -339,23 +307,18 @@ impl From<&SlotDTO> for SlotChoice {
         match dto {
             SlotDTO::Empty => SlotChoice::Empty,
             SlotDTO::FD502 { dos_rom } => SlotChoice::FD502 { dos_rom: *dos_rom },
-            SlotDTO::ROMPak { path, autostart } => SlotChoice::Image(persisted_image_choice(
+            SlotDTO::ROMPak { path } => {
+                SlotChoice::Image(persisted_image_choice(path, CartridgeHardware::RomPak))
+            }
+            SlotDTO::BankedROMPak { path } => SlotChoice::Image(persisted_image_choice(
                 path,
-                *autostart,
-                CartridgeHardware::RomPak,
-            )),
-            SlotDTO::BankedROMPak { path, autostart } => SlotChoice::Image(persisted_image_choice(
-                path,
-                *autostart,
                 CartridgeHardware::BankedRomPak,
             )),
             SlotDTO::RTC => SlotChoice::RTC,
             SlotDTO::RS232 { endpoint } => SlotChoice::RS232(endpoint.into()),
-            SlotDTO::GamesMaster { path, autostart } => SlotChoice::Image(persisted_image_choice(
-                path,
-                *autostart,
-                CartridgeHardware::GamesMaster,
-            )),
+            SlotDTO::GamesMaster { path } => {
+                SlotChoice::Image(persisted_image_choice(path, CartridgeHardware::GamesMaster))
+            }
             SlotDTO::Orch90 => SlotChoice::Orch90,
             SlotDTO::SoundSpeech => SlotChoice::SoundSpeech,
             SlotDTO::CoCoMax => SlotChoice::CoCoMax,

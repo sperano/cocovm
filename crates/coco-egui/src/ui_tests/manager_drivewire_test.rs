@@ -110,7 +110,6 @@ fn games_master_disables_drivewire_and_rejects_a_later_conflict() {
     let (dir, mut entry, file) = seed_manager("ui-drivewire-gmc");
     entry.def.peripherals.cartridge = machine_def::CartridgeDTO::GamesMaster {
         path: "gmc.rom".to_string(),
-        autostart: false,
     };
     machine_def::save(dir.path(), &entry.slug, &entry.def).unwrap();
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
@@ -129,7 +128,6 @@ fn games_master_disables_drivewire_and_rejects_a_later_conflict() {
     harness.state_mut().edit_form_mut().unwrap().cartridge =
         new_vm::CartridgeChoice::Image(new_vm::CartridgeImageChoice {
             path: dir.path().join("gmc.rom"),
-            autostart: false,
             hardware: CartridgeHardware::GamesMaster,
             hardware_detected: true,
         });

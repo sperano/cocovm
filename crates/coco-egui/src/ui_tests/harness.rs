@@ -24,7 +24,6 @@ pub(super) fn cartridge_image_choice(
 ) -> new_vm::CartridgeImageChoice {
     new_vm::CartridgeImageChoice {
         path,
-        autostart: true,
         hardware,
         hardware_detected: false,
     }

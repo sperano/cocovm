@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Machine menu no longer lists them.
 
 ### Removed
+- The per-cartridge `autostart` setting and its Auto-start checkbox in the
+  New/Edit form. ROM Paks, banked ROM Paks, and the Games Master Cartridge
+  always start at power-up, like real game paks; the FD-502's DOS ROM never
+  did. Machine files that still carry the key load unchanged.
 - The optional 4:3 aspect setting, its View menu item, and the F9 shortcut.
   Displays use a fixed 4:3 aspect ratio across RGB, composite, and TV modes.
 
