@@ -151,6 +151,9 @@ fn draw_drivewire_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Disk images", |ui| form.drivewire_disk_rows(ui));
 }
 
+/// Explains the unlabelled slug under the name field.
+const SLUG_HOVER_TEXT: &str = "Slug ID: the stable identifier control tools use for this machine";
+
 /// How often the detail pane asks for its next repaint while showing a
 /// running machine's ticking Runtime row (see [`draw_statistics`]'s call
 /// site).
@@ -293,20 +296,18 @@ impl ManagerApp {
         slug: &str,
         edit: &mut EditState,
     ) {
-        /// Extra space between the header separator and the slug ID.
-        const SLUG_ID_LEFT_MARGIN: f32 = 4.0;
+        /// Indent that lines the slug up with the name field's text.
+        const SLUG_LEFT_MARGIN: f32 = 4.0;
 
         ui.horizontal_wrapped(|ui| {
             self.draw_name_field(ui, index, edit);
             ui.separator();
-            ui.add_space(SLUG_ID_LEFT_MARGIN);
-            ui.label(
-                egui::RichText::new(format!("Slug ID: {slug}"))
-                    .small()
-                    .weak(),
-            );
-            ui.separator();
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(SLUG_LEFT_MARGIN);
+            ui.label(egui::RichText::new(slug).weak())
+                .on_hover_text(SLUG_HOVER_TEXT);
         });
         if let Some(err) = &self.entries[index].launch_error {
             ui.colored_label(ui.visuals().error_fg_color, err);
