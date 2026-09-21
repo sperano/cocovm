@@ -9,6 +9,18 @@ use super::{CartridgeChoice, FORM_GRID_SPACING, MachineForm, SlotChoice, pack_pe
 use crate::machine_def::DosRom;
 
 const DISK_IMAGE_EXTENSIONS: &[&str] = &["dsk", "os9", "img", "vhd"];
+const DRIVE_LABEL_WIDTH: f32 = 32.0;
+const BROWSE_BUTTON_WIDTH: f32 = 76.0;
+const CLEAR_BUTTON_WIDTH: f32 = 22.0;
+const PATH_MARGIN: egui::Margin = egui::Margin {
+    left: 4,
+    right: 26,
+    top: 3,
+    bottom: 3,
+};
+const CLEAR_BUTTON_INSET: f32 = 2.0;
+const ROW_GAPS: f32 = 2.0;
+const EMPTY_PATH_HINT: &str = "No disk image";
 const GMC_CONFLICT_HINT: &str =
     "DriveWire and the Games Master Cartridge cannot be enabled together.";
 const HDBDOS_REQUIRED_HINT: &str = "Required by the selected HDB-DOS DW3 ROM.";
@@ -55,6 +67,7 @@ impl MachineForm {
             HDBDOS_MODE_HINT
         });
         self.drivewire_disks(ui);
+        ui.small("Clear a path to leave the drive empty.");
         ui.small(STARTUP_HINT);
     }
 
@@ -87,54 +100,101 @@ impl MachineForm {
 
     fn drivewire_disks(&mut self, ui: &mut egui::Ui) {
         ui.add_enabled_ui(self.drivewire.enabled, |ui| {
-            egui::Grid::new((self.salt, "drivewire_disks"))
-                .num_columns(2)
-                .spacing(FORM_GRID_SPACING)
-                .show(ui, |ui| {
-                    for (drive, path) in [
-                        &mut self.drivewire.disk0,
-                        &mut self.drivewire.disk1,
-                        &mut self.drivewire.disk2,
-                        &mut self.drivewire.disk3,
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    {
-                        disk_row(ui, drive, path);
-                    }
-                });
+            ui.push_id((self.salt, "drivewire_disks"), |ui| {
+                ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
+                for (drive, path) in [
+                    &mut self.drivewire.disk0,
+                    &mut self.drivewire.disk1,
+                    &mut self.drivewire.disk2,
+                    &mut self.drivewire.disk3,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    ui.push_id(drive, |ui| disk_row(ui, drive, path));
+                }
+            });
         });
     }
 }
 
 fn disk_row(ui: &mut egui::Ui, drive: usize, path: &mut Option<String>) {
-    ui.label(format!("DW{drive}"));
+    let field_width = (ui.available_width()
+        - DRIVE_LABEL_WIDTH
+        - BROWSE_BUTTON_WIDTH
+        - ROW_GAPS * ui.spacing().item_spacing.x)
+        .max(CLEAR_BUTTON_WIDTH + PATH_MARGIN.sum().x);
+    let height = ui.spacing().interact_size.y;
     ui.horizontal(|ui| {
-        if ui.button(format!("Mount DW{drive}…")).clicked()
-            && let Some(selected) = rfd::FileDialog::new()
-                .add_filter("Disk image", DISK_IMAGE_EXTENSIONS)
-                .pick_file()
-        {
-            *path = Some(selected.display().to_string());
-        }
-        if ui
-            .add_enabled(
-                path.is_some(),
-                egui::Button::new(format!("Eject DW{drive}")),
+        ui.add_sized(
+            [DRIVE_LABEL_WIDTH, height],
+            egui::Label::new(format!("DW{drive}")),
+        );
+        disk_path_input(ui, drive, path, egui::vec2(field_width, height));
+        let browse = ui.add_sized([BROWSE_BUTTON_WIDTH, height], egui::Button::new("Browse…"));
+        browse.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                ui.is_enabled(),
+                format!("Browse DW{drive}…"),
             )
-            .clicked()
+        });
+        if browse.clicked()
+            && let Some(selected) = disk_dialog(path.as_deref()).pick_file()
         {
-            *path = None;
-        }
-        if let Some(path) = path {
-            let name = Path::new(path.as_str())
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(path);
-            ui.label(name).on_hover_text(path.as_str());
-        } else {
-            ui.label("Empty");
+            *path = Some(selected.to_string_lossy().into_owned());
         }
     });
-    ui.end_row();
+}
+
+fn disk_path_input(ui: &mut egui::Ui, drive: usize, path: &mut Option<String>, size: egui::Vec2) {
+    let mut text = path.clone().unwrap_or_default();
+    let response = ui.add_sized(
+        size,
+        egui::TextEdit::singleline(&mut text)
+            .id_salt("path")
+            .hint_text(EMPTY_PATH_HINT)
+            .margin(PATH_MARGIN),
+    );
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::text_edit(
+            ui.is_enabled(),
+            path.as_deref().unwrap_or_default(),
+            &text,
+            EMPTY_PATH_HINT,
+        );
+        info.label = Some(format!("DW{drive} disk image"));
+        info
+    });
+    if !text.is_empty() {
+        let mut clear_rect = response.rect.shrink(CLEAR_BUTTON_INSET);
+        clear_rect.min.x = clear_rect.max.x - CLEAR_BUTTON_WIDTH;
+        let clear = ui
+            .place(clear_rect, egui::Button::new("×").frame(false))
+            .on_hover_text(format!("Clear DW{drive}"));
+        clear.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                ui.is_enabled(),
+                format!("Clear DW{drive}"),
+            )
+        });
+        if clear.clicked() {
+            text.clear();
+        }
+    }
+    *path = (!text.is_empty()).then_some(text);
+}
+
+fn disk_dialog(path: Option<&str>) -> rfd::FileDialog {
+    let mut dialog = rfd::FileDialog::new().add_filter("Disk image", DISK_IMAGE_EXTENSIONS);
+    if let Some(path) = path.map(Path::new) {
+        if let Some(parent) = path.parent().filter(|parent| parent.is_dir()) {
+            dialog = dialog.set_directory(parent);
+        }
+        if let Some(name) = path.file_name() {
+            dialog = dialog.set_file_name(name.to_string_lossy());
+        }
+    }
+    dialog
 }
