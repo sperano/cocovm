@@ -304,7 +304,7 @@ impl ManagerApp {
             ui.separator();
             ui.label(egui::RichText::new(vm_status_label(&self.entries[index])).strong());
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.add_space(SLUG_LEFT_MARGIN);
             ui.label(egui::RichText::new(slug).weak())
                 .on_hover_text(SLUG_HOVER_TEXT);
