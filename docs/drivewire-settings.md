@@ -6,11 +6,15 @@ Enter a disk image path or click **Browse…** beside a drive to select its
 startup image. Clear the path or click **×** inside the field to leave the
 drive empty. Empty fields display **No disk image**. Changes save automatically.
 
-All DriveWire settings apply at the next start from power off. Changing
-settings while the VM runs leaves its active session and mounted images
-intact. Resetting the CPU does not apply these settings. Resuming a suspended
-VM or restoring a saved state restores that session's mode and mounts.
-Guest-selected runtime mounts do not replace the saved startup assignments.
+DriveWire settings reach a running VM as soon as they save; no restart is
+needed. Enabling or disabling DriveWire adds or removes the Becker port,
+**HDB-DOS mode** switches the sector addressing, and a changed path swaps that
+drive's image while the other drives and the protocol session carry on. A path
+that cannot be opened reports an error in the detail pane and leaves the
+drive's current image mounted, so typing a path does not eject a disk midway.
+A suspended VM is left alone: resuming it, or restoring a saved state,
+restores that session's mode and mounts, and the next DriveWire change brings
+it back in line with the definition.
 
 Disabling DriveWire retains its mode and image assignments for later use.
 DriveWire defaults to disabled for definitions without a `[drivewire]`

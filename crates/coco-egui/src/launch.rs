@@ -94,10 +94,7 @@ pub(crate) fn launch_machine_with_gamepad(
     validate_disk_media(&media, &cartridge)?;
     validate_drivewire_media(def, &media)?;
 
-    let drivewire = def.drivewire.enabled.then(|| DriveWireLaunch {
-        hdbdos_mode: def.drivewire.hdbdos_mode,
-        disk_paths: media.drivewire.clone(),
-    });
+    let drivewire = drivewire_settings(def, slug);
     let mut app = new_app(
         config, rom, rom_source, &media, &cartridge, drivewire, gamepad,
     );
@@ -170,6 +167,20 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
         tape: resolve(def.media.tape.as_deref()),
         drivewire: def.drivewire.disk_paths().map(resolve),
     }
+}
+
+/// `[drivewire]` with its paths resolved; `None` when DriveWire is disabled.
+pub(crate) fn drivewire_settings(
+    def: &machine_def::MachineDef,
+    slug: &str,
+) -> Option<DriveWireLaunch> {
+    def.drivewire.enabled.then(|| DriveWireLaunch {
+        hdbdos_mode: def.drivewire.hdbdos_mode,
+        disk_paths: def
+            .drivewire
+            .disk_paths()
+            .map(|path| path.map(|p| machine_def::resolve_media_path(p, slug))),
+    })
 }
 
 fn validate_drivewire_media(def: &machine_def::MachineDef, media: &Media) -> Result<(), String> {

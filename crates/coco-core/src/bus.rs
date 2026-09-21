@@ -182,6 +182,13 @@ impl SystemBus {
         }
     }
 
+    /// Remove the Becker port, stopping its host work and dropping every mount.
+    pub fn disable_drivewire(&mut self) {
+        if let Some(mut dw) = self.drivewire.take() {
+            dw.stop_host();
+        }
+    }
+
     /// Install the debugger's memory-watch table. An empty table installs
     /// `None` so a debugged run with no watchpoints keeps the fast path.
     pub fn install_watches(&mut self, table: crate::debug::WatchTable) {
