@@ -108,14 +108,11 @@ fn draw_machine_ram_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::M
     });
 }
 
+/// The rows sit bare — the tab's own label already says "Display".
 fn draw_display_tab(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
-    titled_group(ui, "Display", |ui| {
-        form_grid(("detail_form_display", slug)).show(ui, |ui| {
-            form.display_rows(ui);
-        });
+    form_grid(("detail_form_display", slug)).show(ui, |ui| {
+        form.display_rows(ui);
     });
-
-    ui.add_space(DETAIL_SECTION_GAP);
 }
 
 fn draw_devices_tab(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {

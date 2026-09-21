@@ -54,7 +54,7 @@ impl MachineForm {
     }
 
     /// The VDG/Display rows and TV controls, hosted in the detail pane's
-    /// "Display" titled group. Re-constrains the Display pick first, since it owns
+    /// Display tab. Re-constrains the Display pick first, since it owns
     /// `config.monitor` and must stay valid for the current variant.
     pub(crate) fn display_rows(&mut self, ui: &mut egui::Ui) {
         self.normalize();
