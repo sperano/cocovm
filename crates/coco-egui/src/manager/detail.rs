@@ -151,9 +151,6 @@ fn draw_drivewire_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Disk images", |ui| form.drivewire_disk_rows(ui));
 }
 
-/// Explains the unlabelled slug under the name field.
-const SLUG_HOVER_TEXT: &str = "Slug ID: the stable identifier control tools use for this machine";
-
 /// How often the detail pane asks for its next repaint while showing a
 /// running machine's ticking Runtime row (see [`draw_statistics`]'s call
 /// site).
@@ -298,6 +295,9 @@ impl ManagerApp {
     ) {
         /// Indent that lines the slug up with the name field's text.
         const SLUG_LEFT_MARGIN: f32 = 4.0;
+        /// Explains the unlabelled slug.
+        const SLUG_HOVER_TEXT: &str =
+            "Slug ID: the stable identifier control tools use for this machine";
 
         ui.horizontal_wrapped(|ui| {
             self.draw_name_field(ui, index, edit);
