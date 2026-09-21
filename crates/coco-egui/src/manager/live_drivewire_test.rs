@@ -127,3 +127,43 @@ fn a_suspended_machine_keeps_its_saved_session() {
     assert!(vm(&manager).machine.bus.drivewire.is_some());
     assert_eq!(vm(&manager).dw_paths[0], Some(disk));
 }
+
+/// Writes one zeroed sector to DW0 through the protocol, leaving the drive dirty.
+fn write_sector_to_drive0(dw: &mut coco_core::drivewire::DWServer) {
+    const HOST_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+    const DRIVE_AND_LSN: [u8; 4] = [0; 4];
+    const ZERO_SECTOR_CHECKSUM: [u8; 2] = [0; 2];
+
+    let mut request = vec![coco_core::drivewire::opcode::WRITE];
+    request.extend(DRIVE_AND_LSN);
+    request.extend([0_u8; coco_core::drivewire::SECTOR_SIZE]);
+    request.extend(ZERO_SECTOR_CHECKSUM);
+    for (cycle, byte) in request.into_iter().enumerate() {
+        dw.data_write(byte, cycle as u64);
+    }
+    let deadline = std::time::Instant::now() + HOST_WRITE_TIMEOUT;
+    while dw.status_read() == 0 {
+        assert!(std::time::Instant::now() < deadline, "host write timed out");
+        dw.poll_host();
+        std::thread::yield_now();
+    }
+    assert_eq!(dw.data_read(), coco_core::drivewire::error::OK);
+}
+
+#[test]
+fn a_mode_change_leaves_mounted_drives_untouched() {
+    let dir = TempDir::new("live-dw-untouched");
+    let disk = write_disk(dir.path(), "live.dsk");
+    let mut manager = running_manager(dir.path(), Some(&disk));
+    let app = manager.entries[0].vm.as_mut().unwrap();
+    app.set_running(false);
+    write_sector_to_drive0(app.machine.bus.drivewire.as_mut().unwrap());
+
+    manager.entries[0].def.drivewire.hdbdos_mode = true;
+    manager.apply_live_drivewire(0);
+
+    let dw = vm(&manager).machine.bus.drivewire.as_ref().unwrap();
+    assert!(dw.hdbdos_mode());
+    // A remount would have cleared the dirty flag.
+    assert!(dw.dirty(0));
+}

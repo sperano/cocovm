@@ -165,7 +165,7 @@ fn resolve_media(def: &machine_def::MachineDef, slug: &str) -> Media {
             resolve(def.media.vhd1.as_deref()),
         ],
         tape: resolve(def.media.tape.as_deref()),
-        drivewire: def.drivewire.disk_paths().map(resolve),
+        drivewire: resolve_drivewire_paths(def, slug),
     }
 }
 
@@ -176,11 +176,17 @@ pub(crate) fn drivewire_settings(
 ) -> Option<DriveWireLaunch> {
     def.drivewire.enabled.then(|| DriveWireLaunch {
         hdbdos_mode: def.drivewire.hdbdos_mode,
-        disk_paths: def
-            .drivewire
-            .disk_paths()
-            .map(|path| path.map(|p| machine_def::resolve_media_path(p, slug))),
+        disk_paths: resolve_drivewire_paths(def, slug),
     })
+}
+
+fn resolve_drivewire_paths(
+    def: &machine_def::MachineDef,
+    slug: &str,
+) -> [Option<PathBuf>; coco_core::drivewire::DRIVE_COUNT] {
+    def.drivewire
+        .disk_paths()
+        .map(|path| path.map(|p| machine_def::resolve_media_path(p, slug)))
 }
 
 fn validate_drivewire_media(def: &machine_def::MachineDef, media: &Media) -> Result<(), String> {
