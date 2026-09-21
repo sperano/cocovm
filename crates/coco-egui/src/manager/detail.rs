@@ -71,6 +71,14 @@ impl DetailTab {
     }
 }
 
+/// Height of each property tab's clickable face.
+const DETAIL_TAB_HEIGHT: f32 = 30.0;
+/// Gap between adjacent property tabs. A narrow gap keeps the labels grouped
+/// as one navigation strip without turning them into a segmented control.
+const DETAIL_TAB_GAP: f32 = 2.0;
+/// Width of the accent rule beneath the active property tab.
+const DETAIL_TAB_INDICATOR_WIDTH: f32 = 2.0;
+
 /// One of the pane's two-column form grids ([`new_vm::FORM_GRID_SPACING`],
 /// [`new_vm::FORM_LABEL_MIN_WIDTH`]) — the shared floor keeps the sections'
 /// combo columns aligned with each other.
@@ -81,13 +89,79 @@ fn form_grid(salt: (&str, &str)) -> egui::Grid {
         .min_col_width(new_vm::FORM_LABEL_MIN_WIDTH)
 }
 
-/// The persistent selector for the five property categories.
+/// One property tab. The active label gets the strip's accent color and
+/// underline; idle labels remain unframed until hover.
+fn detail_tab(ui: &mut egui::Ui, tab: &mut DetailTab, choice: DetailTab) -> egui::Response {
+    let selected = *tab == choice;
+    let label = if selected {
+        egui::RichText::new(choice.label())
+            .strong()
+            .color(ui.visuals().selection.stroke.color)
+    } else {
+        egui::RichText::new(choice.label())
+    };
+    let button = egui::Button::new(label)
+        .min_size(egui::vec2(0.0, DETAIL_TAB_HEIGHT))
+        .frame(true)
+        .frame_when_inactive(false);
+    let mut response = ui.add(button);
+    if response.clicked() && !selected {
+        *tab = choice;
+        response.mark_changed();
+    }
+    let active = *tab == choice;
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::RadioButton,
+            ui.is_enabled(),
+            active,
+            choice.label(),
+        )
+    });
+    response
+}
+
+/// The persistent selector for the five property categories. A baseline ties
+/// the labels together, while an accent rule marks the active tab. Wrapping
+/// keeps every category reachable in a narrow manager window.
 fn draw_tab_bar(ui: &mut egui::Ui, tab: &mut DetailTab) {
-    ui.horizontal_wrapped(|ui| {
+    let available_width = ui.available_width();
+    let mut selected_rect = None;
+    let bar = ui.horizontal_wrapped(|ui| {
+        ui.set_min_width(available_width);
+        ui.spacing_mut().item_spacing.x = DETAIL_TAB_GAP;
         for choice in DetailTab::ALL {
-            ui.selectable_value(tab, choice, choice.label());
+            let response = detail_tab(ui, tab, choice);
+            if *tab == choice {
+                selected_rect = Some(response.rect);
+            }
         }
     });
+    bar.response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::RadioGroup,
+            ui.is_enabled(),
+            "Machine properties",
+        )
+    });
+    let baseline = ui.visuals().widgets.noninteractive.bg_stroke;
+    let baseline_y = bar.response.rect.bottom();
+    ui.painter().line_segment(
+        [
+            egui::pos2(bar.response.rect.left(), baseline_y),
+            egui::pos2(bar.response.rect.right(), baseline_y),
+        ],
+        baseline,
+    );
+    if let Some(rect) = selected_rect {
+        ui.painter().line_segment(
+            [rect.left_bottom(), rect.right_bottom()],
+            egui::Stroke::new(
+                DETAIL_TAB_INDICATOR_WIDTH,
+                ui.visuals().selection.stroke.color,
+            ),
+        );
+    }
 }
 
 /// The General tab's model and RAM controls.

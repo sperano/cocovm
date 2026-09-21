@@ -2,9 +2,95 @@ use super::*;
 
 use std::fs;
 
+use egui_kittest::{
+    Harness,
+    kittest::{NodeT, Queryable},
+};
+
 use crate::machine_def::tests::TempDir;
 
 const RENAME_JOURNAL_FILE_NAME: &str = ".rename-journal.toml";
+const GEOMETRY_EPSILON: f32 = 0.01;
+
+fn any_line(
+    shape: &egui::Shape,
+    predicate: &impl Fn(&[egui::Pos2; 2], egui::Stroke) -> bool,
+) -> bool {
+    match shape {
+        egui::Shape::Vec(shapes) => shapes.iter().any(|shape| any_line(shape, predicate)),
+        egui::Shape::LineSegment { points, stroke } => predicate(points, *stroke),
+        _ => false,
+    }
+}
+
+fn tab_bar_harness(width: f32) -> Harness<'static, DetailTab> {
+    let mut harness = Harness::new_ui_state(draw_tab_bar, DetailTab::General);
+    harness.set_size(egui::vec2(width, 140.0));
+    harness.run();
+    harness
+}
+
+#[test]
+fn tab_bar_moves_the_active_tab() {
+    let mut harness = tab_bar_harness(600.0);
+    assert_eq!(*harness.state(), DetailTab::General);
+    let general = harness.get_by_label("General").accesskit_node();
+    assert_eq!(general.role(), egui::accesskit::Role::RadioButton);
+    assert_eq!(general.toggled(), Some(egui::accesskit::Toggled::True));
+
+    harness.get_by_label("Display").click();
+    harness.step();
+
+    assert_eq!(*harness.state(), DetailTab::Display);
+    assert_eq!(
+        harness.get_by_label("Display").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+}
+
+#[test]
+fn active_tab_adds_an_accent_rule_to_the_strip() {
+    let harness = tab_bar_harness(600.0);
+    let active_rect = harness.get_by_label("General").rect();
+    let style = harness.ctx.style();
+    let baseline = style.visuals.widgets.noninteractive.bg_stroke;
+    let accent = style.visuals.selection.stroke.color;
+    let at_active_bottom = |points: &[egui::Pos2; 2]| {
+        (points[0].y - active_rect.bottom()).abs() < GEOMETRY_EPSILON
+            && (points[1].y - active_rect.bottom()).abs() < GEOMETRY_EPSILON
+    };
+    let shapes = &harness.output().shapes;
+
+    assert!(
+        shapes
+            .iter()
+            .any(|clipped| any_line(&clipped.shape, &|points, stroke| {
+                at_active_bottom(points)
+                    && stroke == baseline
+                    && points[0].x <= active_rect.left() + GEOMETRY_EPSILON
+                    && points[1].x > active_rect.right()
+            }))
+    );
+    assert!(
+        shapes
+            .iter()
+            .any(|clipped| any_line(&clipped.shape, &|points, stroke| {
+                at_active_bottom(points)
+                    && stroke == egui::Stroke::new(DETAIL_TAB_INDICATOR_WIDTH, accent)
+                    && (points[0].x - active_rect.left()).abs() < GEOMETRY_EPSILON
+                    && (points[1].x - active_rect.right()).abs() < GEOMETRY_EPSILON
+            }))
+    );
+}
+
+#[test]
+fn tab_bar_wraps_in_a_narrow_pane() {
+    let harness = tab_bar_harness(220.0);
+    let first_row = harness.get_by_label("General").rect();
+    let last_row = harness.get_by_label("DriveWire").rect();
+
+    assert!(last_row.top() >= first_row.bottom());
+}
 
 fn rename_fixture(name: &str) -> (TempDir, ManagerApp, EditState) {
     let machines_dir = TempDir::new("detail-name-commit");
