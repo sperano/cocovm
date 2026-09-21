@@ -146,8 +146,12 @@ fn draw_input_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     });
 }
 
+/// The switches sit bare — the tab's own label already says "DriveWire".
 fn draw_drivewire_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
-    titled_group(ui, "DriveWire", |ui| form.drivewire_rows(ui));
+    form.drivewire_rows(ui);
+
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Disk images", |ui| form.drivewire_disk_rows(ui));
 }
 
 /// How often the detail pane asks for its next repaint while showing a

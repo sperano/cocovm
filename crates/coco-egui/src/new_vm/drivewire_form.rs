@@ -19,8 +19,11 @@ const PATH_MARGIN: egui::Margin = egui::Margin {
     bottom: 3,
 };
 const CLEAR_BUTTON_INSET: f32 = 2.0;
+/// Extra padding inside the "Disk images" box, on top of the group's own margin.
+const DISK_SECTION_PADDING: egui::Margin = egui::Margin::same(6);
 const ROW_GAPS: f32 = 2.0;
 const EMPTY_PATH_HINT: &str = "No disk image";
+const CLEAR_PATH_HINT: &str = "Clear a path to leave the drive empty.";
 const GMC_CONFLICT_HINT: &str =
     "DriveWire and the Games Master Cartridge cannot be enabled together.";
 const HDBDOS_REQUIRED_HINT: &str = "Required by the selected HDB-DOS DW3 ROM.";
@@ -31,8 +34,8 @@ const HDBDOS_MODE_HINT: &str = "Enable for HDB-DOS BASIC disk commands. Translat
     which uses its own DriveWire driver.";
 
 impl MachineForm {
-    /// Settings edit the startup definition only. They never inspect or
-    /// overwrite guest-selected mounts or a running protocol transaction.
+    /// The enable and HDB-DOS mode switches, drawn bare at the top of the tab.
+    /// Edits the startup definition only, never a running session's mounts.
     pub(crate) fn drivewire_rows(&mut self, ui: &mut egui::Ui) {
         self.constrain_dos_rom();
         let cartridge = pack_peripherals(
@@ -44,31 +47,44 @@ impl MachineForm {
         .cartridge;
         let conflict = cartridge.contains_games_master();
         let required = cartridge.uses_hdbdos();
-        ui.add_enabled(
-            !required && (self.drivewire.enabled || !conflict),
-            egui::Checkbox::new(&mut self.drivewire.enabled, "Enable DriveWire"),
-        )
-        .on_disabled_hover_text(if required {
-            HDBDOS_REQUIRED_HINT
-        } else {
-            GMC_CONFLICT_HINT
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
+            ui.add_enabled(
+                !required && (self.drivewire.enabled || !conflict),
+                egui::Checkbox::new(&mut self.drivewire.enabled, "Enable DriveWire"),
+            )
+            .on_disabled_hover_text(if required {
+                HDBDOS_REQUIRED_HINT
+            } else {
+                GMC_CONFLICT_HINT
+            });
+            if conflict {
+                ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
+            }
+            ui.add_enabled(
+                self.drivewire.enabled && !required,
+                egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
+            )
+            .on_hover_text(HDBDOS_MODE_HINT)
+            .on_disabled_hover_text(if required {
+                HDBDOS_REQUIRED_HINT
+            } else {
+                HDBDOS_MODE_HINT
+            });
+            ui.small(STARTUP_HINT);
         });
-        if conflict {
-            ui.colored_label(ui.visuals().warn_fg_color, GMC_CONFLICT_HINT);
-        }
-        ui.add_enabled(
-            self.drivewire.enabled && !required,
-            egui::Checkbox::new(&mut self.drivewire.hdbdos_mode, "HDB-DOS mode"),
-        )
-        .on_hover_text(HDBDOS_MODE_HINT)
-        .on_disabled_hover_text(if required {
-            HDBDOS_REQUIRED_HINT
-        } else {
-            HDBDOS_MODE_HINT
-        });
-        self.drivewire_disks(ui);
-        ui.small("Clear a path to leave the drive empty.");
-        ui.small(STARTUP_HINT);
+    }
+
+    /// The "Disk images" section: one editable path per startup drive.
+    /// Drawn after [`Self::drivewire_rows`], which already constrained `enabled`.
+    pub(crate) fn drivewire_disk_rows(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::NONE
+            .inner_margin(DISK_SECTION_PADDING)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
+                self.drivewire_disks(ui);
+                ui.small(CLEAR_PATH_HINT);
+            });
     }
 
     pub(crate) fn constrain_dos_rom(&mut self) {
@@ -101,7 +117,6 @@ impl MachineForm {
     fn drivewire_disks(&mut self, ui: &mut egui::Ui) {
         ui.add_enabled_ui(self.drivewire.enabled, |ui| {
             ui.push_id((self.salt, "drivewire_disks"), |ui| {
-                ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
                 for (drive, path) in [
                     &mut self.drivewire.disk0,
                     &mut self.drivewire.disk1,
@@ -171,6 +186,8 @@ fn disk_path_input(ui: &mut egui::Ui, drive: usize, path: &mut Option<String>, s
         clear_rect.min.x = clear_rect.max.x - CLEAR_BUTTON_WIDTH;
         let clear = ui
             .place(clear_rect, egui::Button::new("×").frame(false))
+            // Placed over the text field, whose I-beam would otherwise win.
+            .on_hover_cursor(egui::CursorIcon::Default)
             .on_hover_text(format!("Clear DW{drive}"));
         clear.widget_info(|| {
             egui::WidgetInfo::labeled(
