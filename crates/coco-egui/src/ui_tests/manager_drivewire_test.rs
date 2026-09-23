@@ -69,7 +69,7 @@ fn drivewire_paths_persist_while_typing_and_reopen_for_clearing() {
     assert!(saved.drivewire.enabled);
     assert!(saved.drivewire.hdbdos_mode);
     harness.get_by_label(
-        "DriveWire changes apply at the next start from power off. Resume keeps the saved session.",
+        "DriveWire changes reach a running machine immediately. Resume keeps the saved session.",
     );
 
     drop(harness);
@@ -252,7 +252,7 @@ fn games_master_disables_drivewire_and_rejects_a_later_conflict() {
 }
 
 #[test]
-fn edits_leave_the_active_drivewire_session_unchanged() {
+fn edits_reach_the_running_session_without_resetting_its_protocol() {
     let (dir, mut entry, file) = seed_manager("ui-drivewire-live");
     const CLIENT_VERSION: u8 = 1;
     const SERVER_VERSION: u8 = 4;
@@ -261,7 +261,6 @@ fn edits_leave_the_active_drivewire_session_unchanged() {
     const SECOND_CYCLE: u64 = 2;
 
     let startup = write_disk(dir.path(), "startup.dsk");
-    let runtime = write_disk(dir.path(), "runtime.dsk");
     let next_startup = write_disk(dir.path(), "next-startup.dsk");
     entry.def.drivewire.enabled = true;
     entry.def.drivewire.disk0 = Some(startup.display().to_string());
@@ -272,7 +271,6 @@ fn edits_leave_the_active_drivewire_session_unchanged() {
 
     let vm = harness.state_mut().entries[0].vm.as_mut().unwrap();
     vm.set_running(false);
-    vm.insert_dw_disk(0, runtime.clone());
     let dw = vm.machine.bus.drivewire.as_mut().unwrap();
     dw.data_write(coco_core::drivewire::opcode::DWINIT, FIRST_CYCLE);
     dw.data_write(CLIENT_VERSION, SECOND_CYCLE);
@@ -296,9 +294,10 @@ fn edits_leave_the_active_drivewire_session_unchanged() {
         .as_ref()
         .expect("session remains alive");
     assert!(!vm.is_running());
-    assert_eq!(vm.dw_paths[0].as_deref(), Some(runtime.as_path()));
+    assert_eq!(vm.dw_paths[0].as_deref(), Some(next_startup.as_path()));
     let dw = vm.machine.bus.drivewire.as_ref().unwrap();
-    assert!(!dw.hdbdos_mode());
+    assert!(dw.hdbdos_mode());
+    assert!(dw.is_mounted(0));
     assert_eq!(dw.status_read(), REPLY_AVAILABLE);
     assert_eq!(
         harness.state_mut().entries[0]

@@ -340,7 +340,8 @@ impl ManagerApp {
         // Constraints cross tab boundaries: a General-tab model change, for
         // example, must normalize Display, Input, Devices, and DriveWire.
         edit.form.normalize();
-        if self.entries[index].is_alive() {
+        // The DriveWire tab carries its own hint: its edits apply live.
+        if self.entries[index].is_alive() && edit.tab != DetailTab::DriveWire {
             ui.add_space(DETAIL_SECTION_GAP);
             // Resume restores the frozen snapshot's hardware wholesale, so
             // for a suspended machine even Resume won't pick edits up —
@@ -439,7 +440,11 @@ impl ManagerApp {
                     };
                     match result {
                         Ok(()) => {
+                            let drivewire_changed = new_def.drivewire != edit.packed.drivewire;
                             self.entries[index].def = new_def.clone();
+                            if drivewire_changed {
+                                self.apply_live_drivewire(index);
+                            }
                             edit.roms = roms::rom_rows(&new_def, slug, self.roms_dir.as_deref());
                             edit.packed = new_def;
                             self.save_error = None;

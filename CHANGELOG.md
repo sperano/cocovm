@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- DriveWire settings apply to a running machine as they are edited: enabling
+  or disabling DriveWire, HDB-DOS mode, and the DW0–DW3 images no longer wait
+  for the next start from power off. A suspended machine still resumes its
+  saved session.
 - Floppy disks are inserted, created, and ejected from the status bar's disk
   entries, like the cassette deck: the "No disks" entry and each mounted
   disk's entry open a menu covering every drive, the clicked drive first. The

@@ -35,6 +35,7 @@ mod detail_map;
 mod gamepad_service;
 mod lifecycle;
 mod list;
+mod live_drivewire;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
 mod rename;

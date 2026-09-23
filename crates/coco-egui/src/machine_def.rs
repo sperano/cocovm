@@ -51,6 +51,10 @@ pub const CURRENT_SCHEMA: u32 = 1;
 /// `chrono` format string for `[created]`—an informational ISO date.
 pub const DATE_FORMAT: &str = "%Y-%m-%d";
 
+/// Why DriveWire and the Games Master Cartridge can't share a machine.
+pub(crate) const DRIVEWIRE_GMC_CONFLICT: &str =
+    "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41";
+
 /// A machine definition, as read from / written to `<slug>.toml`. See the
 /// module doc for the schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -124,10 +128,7 @@ impl MachineDef {
             return Err("HDB-DOS (DriveWire, CoCo 3) requires a CoCo 3".to_string());
         }
         if self.drivewire.enabled && self.peripherals.cartridge.contains_games_master() {
-            return Err(
-                "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41"
-                    .to_string(),
-            );
+            return Err(DRIVEWIRE_GMC_CONFLICT.to_string());
         }
         Ok(())
     }

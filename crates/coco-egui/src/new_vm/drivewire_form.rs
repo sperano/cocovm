@@ -26,7 +26,7 @@ const GMC_CONFLICT_HINT: &str =
     "DriveWire and the Games Master Cartridge cannot be enabled together.";
 const HDBDOS_WITHOUT_DRIVEWIRE_HINT: &str = "The selected HDB-DOS ROM reaches its drives through \
     DriveWire; they are unavailable while DriveWire is disabled.";
-const STARTUP_HINT: &str = "DriveWire changes apply at the next start from power off. \
+const LIVE_HINT: &str = "DriveWire changes reach a running machine immediately. \
     Resume keeps the saved session.";
 const HDBDOS_MODE_HINT: &str = "Enable for HDB-DOS BASIC disk commands. Translates HDB-DOS \
     sector addresses into separate disk images in DW0–DW3. Leave disabled for NitrOS-9, \
@@ -34,7 +34,7 @@ const HDBDOS_MODE_HINT: &str = "Enable for HDB-DOS BASIC disk commands. Translat
 
 impl MachineForm {
     /// The enable and HDB-DOS mode switches, drawn bare at the top of the tab.
-    /// Edits the startup definition only, never a running session's mounts.
+    /// Edits the definition only; the manager pushes saved changes into a running VM.
     pub(crate) fn drivewire_rows(&mut self, ui: &mut egui::Ui) {
         self.constrain_dos_rom();
         let cartridge = pack_peripherals(
@@ -64,7 +64,7 @@ impl MachineForm {
             )
             .on_hover_text(HDBDOS_MODE_HINT)
             .on_disabled_hover_text(HDBDOS_MODE_HINT);
-            ui.small(STARTUP_HINT);
+            ui.small(LIVE_HINT);
         });
     }
 
