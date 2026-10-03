@@ -233,8 +233,8 @@ fn default_config_template() -> String {
 
 # UI hotkeys: modifier names, then a key name, joined by +. Modifiers are
 # Cmd (Command on macOS, Ctrl on Windows/Linux), Ctrl, Alt, and Shift. A
-# hotkey without Cmd, Ctrl, or Alt must be a function key from F3 up, so it
-# never types into the machine.
+# hotkey without Cmd or Ctrl must be a function key from F3 up, so it never
+# types into the machine.
 # show/hide the key layout window
 # hotkey_key_layout = \"{key_layout}\"
 # switch positional/symbolic keyboard mode

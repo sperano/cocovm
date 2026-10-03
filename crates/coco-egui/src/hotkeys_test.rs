@@ -90,14 +90,21 @@ fn unknown_key_or_modifier_is_an_error() {
 }
 
 #[test]
-fn a_repeated_modifier_is_an_error() {
-    let err = "Cmd+Command+K".parse::<Hotkey>().expect_err("Cmd twice");
-    assert!(err.contains("given twice"), "{err}");
+fn a_repeated_modifier_counts_once() {
+    assert_eq!("Cmd+Command+K".parse::<Hotkey>(), "Cmd+K".parse::<Hotkey>());
 }
 
 #[test]
 fn bare_typing_key_is_refused() {
-    for text in ["K", "Shift+K", "Escape", "Enter", "Space"] {
+    for text in [
+        "K",
+        "Shift+K",
+        "Alt+K",
+        "Option+Shift+K",
+        "Escape",
+        "Enter",
+        "Space",
+    ] {
         let err = text.parse::<Hotkey>().expect_err(text);
         assert!(err.contains("would type into the machine"), "{text}: {err}");
     }
@@ -109,7 +116,11 @@ fn bare_typing_key_is_refused() {
 fn coco_function_keys_need_a_modifier() {
     assert!("F1".parse::<Hotkey>().is_err());
     assert!("F2".parse::<Hotkey>().is_err());
-    assert!("Alt+F1".parse::<Hotkey>().is_ok());
+    assert!(
+        "Alt+F1".parse::<Hotkey>().is_err(),
+        "Alt is still CoCo ALT+F1"
+    );
+    assert!("Cmd+F1".parse::<Hotkey>().is_ok());
 }
 
 #[test]
@@ -120,6 +131,16 @@ fn reserved_shortcuts_are_refused() {
     }
     // A different chord on the same key is free.
     assert!("Cmd+Alt+1".parse::<Hotkey>().is_ok());
+}
+
+/// A build without the debugger still keeps its binding out of other
+/// hands, so the file it saves loads in a `debug-ui` build.
+#[test]
+fn the_debugger_binding_is_held_in_every_build() {
+    assert_eq!(
+        DEFAULT_HOTKEYS.holder(DEFAULT_HOTKEYS.debugger, HotkeyAction::NewMachine),
+        Some(HotkeyAction::Debugger)
+    );
 }
 
 #[test]

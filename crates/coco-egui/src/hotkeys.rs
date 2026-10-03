@@ -124,16 +124,18 @@ impl Hotkey {
     }
 
     /// A hotkey must leave typing alone and must not shadow another
-    /// binding: without Cmd, Ctrl, or Alt it has to be a function key the
-    /// CoCo keyboard doesn't use (`keymap::key_to_pos`), and it can't be
-    /// one of the [`reserved`] shortcuts.
+    /// binding: without Cmd or Ctrl it has to be a function key the CoCo
+    /// keyboard doesn't use (`keymap::key_to_pos`), and it can't be one of
+    /// the [`reserved`] shortcuts. Alt doesn't count: egui-winit still sends
+    /// the typed text with Alt held, and [`Hotkey::consume`] only removes
+    /// the key event.
     fn validate(self) -> Result<(), String> {
         let m = self.modifiers;
-        let types_text = !(m.command || m.ctrl || m.alt);
+        let types_text = !(m.command || m.ctrl);
         if types_text && (!is_function_key(self.key) || crate::key_to_pos(self.key).is_some()) {
             return Err(format!(
                 "{self} would type into the machine: use a function key from F3 up, \
-                 or add {CMD_NAME}, {CTRL_NAME}, or {ALT_NAME}"
+                 or add {CMD_NAME} or {CTRL_NAME}"
             ));
         }
         if reserved()
@@ -196,9 +198,9 @@ impl std::str::FromStr for Hotkey {
                      (expected {CMD_NAME}, {CTRL_NAME}, {ALT_NAME}, or {SHIFT_NAME})"
                 )
             })?;
-            if std::mem::replace(flag, true) {
-                return Err(format!("hotkey {text:?}: {name} given twice"));
-            }
+            // A repeat counts once: a macOS `Ctrl+Cmd+K` still loads on
+            // Windows/Linux, where both name the Control key.
+            *flag = true;
         }
         let hotkey = Self { modifiers, key };
         hotkey
@@ -247,11 +249,20 @@ pub(crate) enum HotkeyAction {
     /// without acting: creating machines is the manager's job.
     NewMachine,
     /// Open/close the debugger (`debugger.rs`, `debug-ui` builds only).
-    #[cfg_attr(not(feature = "debug-ui"), allow(dead_code))]
     Debugger,
 }
 
 impl HotkeyAction {
+    /// Every action, for clash checks: a build without the debugger still
+    /// keeps its binding free, so the file it saves loads in a `debug-ui`
+    /// build too.
+    const ALL: [Self; 4] = [
+        Self::KeyLayout,
+        Self::KeyboardMode,
+        Self::NewMachine,
+        Self::Debugger,
+    ];
+
     /// Every action this build acts on, in Settings-dialog order. The
     /// debugger exists only with the `debug-ui` feature; its `config.toml`
     /// key still parses without it, so one file serves every build.
@@ -324,19 +335,18 @@ impl Hotkeys {
         }
     }
 
-    /// The active action other than `action` already bound to `hotkey`.
+    /// The action other than `action` already bound to `hotkey`.
     pub(crate) fn holder(&self, hotkey: Hotkey, action: HotkeyAction) -> Option<HotkeyAction> {
-        HotkeyAction::ACTIVE
-            .iter()
-            .copied()
+        HotkeyAction::ALL
+            .into_iter()
             .find(|other| *other != action && self.get(*other) == hotkey)
     }
 
-    /// `Err` naming the first two active actions that share a binding.
+    /// `Err` naming the first two actions that share a binding.
     pub(crate) fn check_distinct(&self) -> Result<(), String> {
-        for action in HotkeyAction::ACTIVE {
-            let hotkey = self.get(*action);
-            if let Some(other) = self.holder(hotkey, *action) {
+        for action in HotkeyAction::ALL {
+            let hotkey = self.get(action);
+            if let Some(other) = self.holder(hotkey, action) {
                 return Err(format!(
                     "{} and {} hotkeys are both {hotkey}",
                     action.label(),
