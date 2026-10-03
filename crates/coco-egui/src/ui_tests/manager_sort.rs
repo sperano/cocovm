@@ -1,5 +1,7 @@
 //! Machine-list sort controls and preference persistence.
 
+use egui_kittest::kittest::{NodeT, Queryable};
+
 use crate::machine_def::tests::TempDir;
 use crate::*;
 
@@ -37,9 +39,15 @@ fn controls_reorder_immediately_and_persist_each_choice() {
             .contains("manager_sort = \"name-desc\"")
     );
 
-    click(&mut harness, "↓");
+    let direction_button = harness.get_by_label("Sort ascending");
+    assert_eq!(
+        direction_button.accesskit_node().role(),
+        egui::accesskit::Role::Button
+    );
+    click(&mut harness, "Sort ascending");
 
     assert_eq!(harness.state().entries[0].slug, "alpha");
+    harness.get_by_label("Sort descending");
     assert!(
         std::fs::read_to_string(config_path)
             .expect("direction change updates config.toml")

@@ -31,8 +31,10 @@ const LIST_STEP_KEYS: [(egui::Key, Step); 2] = [
     (egui::Key::ArrowDown, Step::Down),
 ];
 
-const ASCENDING_GLYPH: &str = "↑";
-const DESCENDING_GLYPH: &str = "↓";
+const SORT_CONTROLS_TOP_INSET: f32 = 4.0;
+const SORT_ARROW_HALF_LENGTH: f32 = 5.0;
+const SORT_ARROW_HEAD_LENGTH: f32 = 3.0;
+const SORT_ARROW_STROKE_WIDTH: f32 = 1.5;
 
 impl ManagerApp {
     /// ⌘A/Ctrl+A selects every row, ↑/↓ move the selection — only while
@@ -105,6 +107,7 @@ impl ManagerApp {
     fn draw_sort_controls(&mut self, ui: &mut egui::Ui) {
         let mut order = self.manager_sort;
         let mut key = order.key();
+        ui.add_space(SORT_CONTROLS_TOP_INSET);
         ui.horizontal(|ui| {
             ui.label("Sort by");
             egui::ComboBox::from_id_salt("manager_sort_key")
@@ -115,12 +118,7 @@ impl ManagerApp {
                     }
                 });
             order = order.with_key(key);
-            let (glyph, hover) = if order.is_ascending() {
-                (ASCENDING_GLYPH, "Ascending")
-            } else {
-                (DESCENDING_GLYPH, "Descending")
-            };
-            if ui.button(glyph).on_hover_text(hover).clicked() {
+            if sort_direction_button(ui, order.is_ascending()).clicked() {
                 order = order.toggled();
             }
         });
@@ -381,6 +379,42 @@ impl ManagerApp {
             self.save_error = None;
         }
     }
+}
+
+fn sort_direction_button(ui: &mut egui::Ui, ascending: bool) -> egui::Response {
+    let action = if ascending {
+        "Sort descending"
+    } else {
+        "Sort ascending"
+    };
+    let side = ui.spacing().interact_size.y;
+    let response = ui.add_sized(egui::Vec2::splat(side), egui::Button::new(""));
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), action)
+    });
+    paint_sort_direction_arrow(ui, &response, ascending);
+    response.on_hover_text(action)
+}
+
+fn paint_sort_direction_arrow(ui: &egui::Ui, response: &egui::Response, ascending: bool) {
+    let direction = if ascending { -1.0 } else { 1.0 };
+    let center = response.rect.center();
+    let tip = center + egui::vec2(0.0, direction * SORT_ARROW_HALF_LENGTH);
+    let tail = center - egui::vec2(0.0, direction * SORT_ARROW_HALF_LENGTH);
+    let head_y = tip.y - direction * SORT_ARROW_HEAD_LENGTH;
+    let stroke = egui::Stroke::new(
+        SORT_ARROW_STROKE_WIDTH,
+        ui.style().interact(response).text_color(),
+    );
+    ui.painter().line_segment([tail, tip], stroke);
+    ui.painter().line_segment(
+        [tip, egui::pos2(tip.x - SORT_ARROW_HEAD_LENGTH, head_y)],
+        stroke,
+    );
+    ui.painter().line_segment(
+        [tip, egui::pos2(tip.x + SORT_ARROW_HEAD_LENGTH, head_y)],
+        stroke,
+    );
 }
 
 /// The machine list has the keyboard when nothing else claims it: no
