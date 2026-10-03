@@ -1,7 +1,7 @@
 //! On-screen keyboard-mapping overlay: draws the machine's own CoCo keyboard
 //! — the real key plan, not a grid (`layout.rs` cites the sources) — and, in
 //! positional mode, the host key that drives each CoCo key. Toggled from the
-//! Keyboard menu or F10.
+//! Keyboard menu or the Key layout hotkey (`hotkeys.rs`, F10 by default).
 //!
 //! Every legend here is either ASCII or a painted shape. That is deliberate:
 //! the arrows and the host modifier symbols (⇧ ⌃ ⌥ ⌫) this window used to
@@ -14,6 +14,7 @@ use eframe::egui;
 
 use coco_core::{MachineVariant, keyboard};
 
+use crate::hotkeys::{Hotkey, Hotkeys};
 use crate::typeahead::{KeyModifiers, KeyTap};
 
 use layout::{Cap, Dir, Legend, Slot};
@@ -61,6 +62,9 @@ const ARROW_SIZE: f32 = 13.0;
 /// Vertical breathing room around the keyboard block.
 const SECTION_GAP: f32 = 8.0;
 
+/// Joins the footer's hints on one line.
+const HINT_SEPARATOR: &str = "   ·   ";
+
 const HOST_GREEN: egui::Color32 = egui::Color32::from_rgb(0x30, 0xC0, 0x30);
 
 /// Draw the keyboard-mapping window. `open` is toggled by the window's close
@@ -72,6 +76,7 @@ pub fn window(
     variant: MachineVariant,
     enabled: bool,
     modifiers: &mut KeyModifiers,
+    hotkeys: &Hotkeys,
 ) -> Vec<KeyTap> {
     let mut taps = Vec::new();
     egui::Window::new(crate::window_title(ctx, "CoCo Keyboard Mapping"))
@@ -92,7 +97,7 @@ pub fn window(
                 }
             });
             ui.add_space(SECTION_GAP);
-            footer(ui, ctx, variant);
+            footer(ui, ctx, variant, hotkeys);
         });
     if !*open {
         *modifiers = KeyModifiers::default();
@@ -122,7 +127,7 @@ fn header(ui: &mut egui::Ui, symbolic: bool) {
     }
 }
 
-fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
+fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant, hotkeys: &Hotkeys) {
     // Shown in both modes — symbolic still routes these by position; spelled out since arrow
     // glyphs would render as tofu.
     let mut hints = String::from("Left arrow also on Backspace   ·   CLEAR also on `");
@@ -130,13 +135,15 @@ fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant) {
         hints.push_str("   ·   F1/F2 may need Fn on a laptop");
     }
     ui.small(hints);
-    #[cfg(feature = "debug-ui")]
-    ui.small(format!(
-        "F12: positional / symbolic   ·   F10: show/hide this help   ·   {}: debugger",
-        ctx.format_shortcut(&crate::debugger::DEBUGGER_SHORTCUT)
-    ));
-    #[cfg(not(feature = "debug-ui"))]
-    ui.small("F12: positional / symbolic   ·   F10: show/hide this help");
+    let name = |hotkey: Hotkey| ctx.format_shortcut(&hotkey.shortcut());
+    let mut hotkey_hints = vec![
+        format!("{}: positional / symbolic", name(hotkeys.keyboard_mode)),
+        format!("{}: show/hide this help", name(hotkeys.key_layout)),
+    ];
+    if cfg!(feature = "debug-ui") {
+        hotkey_hints.push(format!("{}: debugger", name(hotkeys.debugger)));
+    }
+    ui.small(hotkey_hints.join(HINT_SEPARATOR));
     ui.small(crate::save_state::slot_shortcuts_hint(ctx));
 }
 

@@ -57,8 +57,6 @@ impl CocoApp {
         self.consume_app_shortcuts(ctx);
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
-        // F-key hotkeys toggle UI and stay live even while a text widget is focused.
-        self.handle_hotkeys(&events);
 
         // A focused text widget (or Tab-focused button) must own the keyboard; releasing
         // the matrix also unsticks any key that was held when it grabbed focus.
@@ -88,10 +86,23 @@ impl CocoApp {
     }
 
     /// Shortcuts that open UI rather than reaching the machine. Consumed before
-    /// `handle_input`'s event snapshot, so the keypress never reaches the CoCo matrix.
+    /// `handle_input`'s event snapshot, so the keypress never reaches the CoCo matrix,
+    /// and before its text-widget gate, so they stay live while a text field has focus.
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // Consumed here as a deliberate no-op, so it doesn't type an `N` into the machine.
-        let _ = ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
+        // The hotkeys match exactly, so they go before the slot chords, which ignore an
+        // extra Shift/Alt and would otherwise take e.g. a Cmd+Alt+1 hotkey.
+        let hotkeys = self.hotkeys;
+        // Consumed here as a deliberate no-op, so it doesn't type into the machine.
+        let _ = ctx.input_mut(|i| hotkeys.new_machine.consume(i));
+        if ctx.input_mut(|i| hotkeys.key_layout.consume(i)) {
+            self.show_kbd_help = !self.show_kbd_help;
+        }
+        if ctx.input_mut(|i| hotkeys.keyboard_mode.consume(i)) {
+            self.set_mode(match self.kb_mode {
+                KbMode::Positional => KbMode::Symbolic,
+                KbMode::Symbolic => KbMode::Positional,
+            });
+        }
         // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves it.
         for slot in 0..save_state::QUICK_SLOTS {
             if ctx.input_mut(|i| i.consume_shortcut(&save_state::save_slot_shortcut(slot))) {
@@ -103,36 +114,8 @@ impl CocoApp {
         }
         #[cfg(feature = "debug-ui")]
         {
-            // ⌘D toggles the debugger; consumed here so it stays live even while a text widget
-            // has focus.
-            if ctx.input_mut(|i| i.consume_shortcut(&debugger::DEBUGGER_SHORTCUT)) {
+            if ctx.input_mut(|i| hotkeys.debugger.consume(i)) {
                 self.debugger.toggle();
-            }
-        }
-    }
-
-    /// UI hotkeys, never forwarded to the machine and (unlike the paste
-    /// path) not gated on text-widget focus — see `handle_input`.
-    fn handle_hotkeys(&mut self, events: &[egui::Event]) {
-        for ev in events {
-            if let egui::Event::Key {
-                key,
-                pressed: true,
-                repeat: false,
-                ..
-            } = ev
-            {
-                match key {
-                    egui::Key::F12 => {
-                        let next = match self.kb_mode {
-                            KbMode::Positional => KbMode::Symbolic,
-                            KbMode::Symbolic => KbMode::Positional,
-                        };
-                        self.set_mode(next);
-                    }
-                    egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
-                    _ => {}
-                }
             }
         }
     }
@@ -190,9 +173,6 @@ impl CocoApp {
             } = ev
             {
                 let k = physical_key.unwrap_or(*key);
-                if k == egui::Key::F12 {
-                    continue;
-                }
                 if joystick_keys && is_joystick_key(k) {
                     continue;
                 }

@@ -13,8 +13,12 @@ impl CocoApp {
             orch90_meters::window(ctx, &mut self.show_orch90, orch90.left(), orch90.right());
         }
         let was_running = self.running;
-        self.debugger
-            .windows_ui(ctx, &mut self.machine, &mut self.running);
+        self.debugger.windows_ui(
+            ctx,
+            &mut self.machine,
+            &mut self.running,
+            self.hotkeys.debugger,
+        );
         if was_running != self.running {
             self.reset_emulation_clock();
             ctx.request_repaint();
@@ -37,6 +41,7 @@ impl CocoApp {
                 self.machine.config.variant,
                 enabled,
                 &mut self.keyboard_modifiers,
+                &self.hotkeys,
             );
             if !taps.is_empty() {
                 // Start clicks from a clean matrix; stale host keys must not become

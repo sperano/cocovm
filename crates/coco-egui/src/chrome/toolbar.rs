@@ -26,7 +26,7 @@ const DEBUG_GLYPH: &str = "🐞";
 #[cfg(feature = "debug-ui")]
 const DEBUG_LABEL: &str = "Debug";
 /// Hover text for the Debug tile; [`CocoApp::toolbar_ui`] appends the
-/// platform-formatted [`debugger::DEBUGGER_SHORTCUT`].
+/// platform-formatted Debugger hotkey (`hotkeys.rs`).
 #[cfg(feature = "debug-ui")]
 const DEBUG_HOVER: &str = "Open or close the debugger";
 
@@ -91,10 +91,10 @@ impl CocoApp {
                     {
                         toolbar_separator(ui);
 
-                        // Same toggle as ⌘D; hover text formats the shortcut per-platform.
+                        // Same toggle as the Debugger hotkey; hover text formats it per-platform.
                         let debug_hover = format!(
                             "{DEBUG_HOVER} ({})",
-                            ui.ctx().format_shortcut(&debugger::DEBUGGER_SHORTCUT)
+                            ui.ctx().format_shortcut(&self.hotkeys.debugger.shortcut())
                         );
                         if toolbar_button(ui, DEBUG_GLYPH, DEBUG_LABEL, controllable, icons_only)
                             .on_hover_text(debug_hover)

@@ -3,6 +3,10 @@ use clap::Parser as _;
 use super::*;
 use crate::machine_def::tests::TempDir;
 
+fn hotkey(text: &str) -> Option<Hotkey> {
+    Some(text.parse().expect("valid hotkey"))
+}
+
 /// `Cli::try_parse_from` without any of this module's flags — used to stand
 /// in for "neither a flag nor an env var gave this parameter", the same way
 /// `cli_test.rs` does. Skipped whenever a relevant `COCOVM_*`/`RUST_LOG`
@@ -56,6 +60,7 @@ fn cli_flag_beats_file_and_default() {
         welcome_image_cycle: Some(false),
         welcome_image_cycle_secs: NonZeroU32::new(99),
         welcome_image_shuffle: Some(false),
+        ..FileConfig::default()
     };
     let config = resolve(cli, file);
     assert_eq!(config.log_level, LogLevel::Trace);
@@ -110,6 +115,10 @@ fn file_value_beats_built_in_default() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(8),
         welcome_image_shuffle: Some(true),
+        hotkey_key_layout: hotkey("F9"),
+        hotkey_keyboard_mode: hotkey("Shift+F9"),
+        hotkey_new_machine: hotkey("Cmd+Alt+N"),
+        hotkey_debugger: hotkey("Alt+F12"),
     };
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
@@ -127,6 +136,10 @@ fn file_value_beats_built_in_default() {
     assert!(!config.welcome_image_cycle_secs_overridden);
     assert!(config.welcome_image_shuffle);
     assert!(!config.welcome_image_shuffle_overridden);
+    assert_eq!(Some(config.hotkeys.key_layout), hotkey("F9"));
+    assert_eq!(Some(config.hotkeys.keyboard_mode), hotkey("Shift+F9"));
+    assert_eq!(Some(config.hotkeys.new_machine), hotkey("Cmd+Alt+N"));
+    assert_eq!(Some(config.hotkeys.debugger), hotkey("Alt+F12"));
 }
 
 #[test]
@@ -140,6 +153,7 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
     assert_eq!(config.assets_url, crate::startup::DEFAULT_ASSETS_URL);
     assert!(!config.toolbar_icons_only);
     assert!(!config.status_bar_icons_only);
+    assert_eq!(config.hotkeys, DEFAULT_HOTKEYS);
 }
 
 #[test]
@@ -247,6 +261,10 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         welcome_image_cycle,
         welcome_image_cycle_secs,
         welcome_image_shuffle,
+        hotkey_key_layout,
+        hotkey_keyboard_mode,
+        hotkey_new_machine,
+        hotkey_debugger,
     } = &file;
     assert!(
         log_level.is_some(),
@@ -280,6 +298,17 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         welcome_image_shuffle.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
+    for hotkey in [
+        hotkey_key_layout,
+        hotkey_keyboard_mode,
+        hotkey_new_machine,
+        hotkey_debugger,
+    ] {
+        assert!(
+            hotkey.is_some(),
+            "every FileConfig parameter needs a commented line in the template"
+        );
+    }
 
     let config = resolve(bare_cli(), file);
     let expected = resolve(bare_cli(), FileConfig::default());
@@ -338,6 +367,10 @@ fn a_valid_full_config_file_loads() {
         welcome_image_cycle = true
         welcome_image_cycle_secs = 45
         welcome_image_shuffle = true
+        hotkey_key_layout = "F9"
+        hotkey_keyboard_mode = "Shift+F11"
+        hotkey_new_machine = "Cmd+Shift+N"
+        hotkey_debugger = "Alt+F5"
         "#,
     )
     .unwrap();
@@ -353,8 +386,34 @@ fn a_valid_full_config_file_loads() {
             welcome_image_cycle: Some(true),
             welcome_image_cycle_secs: NonZeroU32::new(45),
             welcome_image_shuffle: Some(true),
+            hotkey_key_layout: hotkey("F9"),
+            hotkey_keyboard_mode: hotkey("Shift+F11"),
+            hotkey_new_machine: hotkey("Cmd+Shift+N"),
+            hotkey_debugger: hotkey("Alt+F5"),
         }
     );
+}
+
+#[test]
+fn an_invalid_hotkey_is_a_load_error_naming_the_key() {
+    let dir = TempDir::new("config-bad-hotkey");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "hotkey_key_layout = \"K\"\n").unwrap();
+    let error = load(Some(&path)).expect_err("a bare letter must be rejected");
+    assert!(error.contains("hotkey_key_layout"), "{error}");
+    assert!(error.contains("would type into the machine"), "{error}");
+}
+
+/// Each key is valid alone; the clash only exists against the other
+/// action's built-in default.
+#[test]
+fn a_hotkey_clashing_with_another_actions_default_is_a_load_error() {
+    let dir = TempDir::new("config-hotkey-clash");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "hotkey_key_layout = \"F12\"\n").unwrap();
+    let error = load(Some(&path)).expect_err("F12 is already Keyboard mode");
+    assert!(error.contains(&path.display().to_string()), "{error}");
+    assert!(error.contains("both F12"), "{error}");
 }
 
 #[test]
@@ -382,6 +441,10 @@ fn save_file_round_trips_through_load() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(12),
         welcome_image_shuffle: Some(true),
+        hotkey_key_layout: hotkey("F9"),
+        hotkey_keyboard_mode: hotkey("Alt+F12"),
+        hotkey_new_machine: hotkey("Cmd+Shift+N"),
+        hotkey_debugger: hotkey("F11"),
     };
     save_file(&path, &file).expect("save must succeed");
     assert_eq!(load(Some(&path)).expect("saved file must load"), file);

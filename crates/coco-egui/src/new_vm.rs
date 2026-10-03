@@ -40,14 +40,6 @@ const COCO1_RAM_CHOICES: &[MemorySize] = &[
 const COCO2_RAM_CHOICES: &[MemorySize] = &[MemorySize::K16, MemorySize::K64];
 const COCO3_RAM_CHOICES: &[MemorySize] = &[MemorySize::K128, MemorySize::K512, MemorySize::K2048];
 
-/// The "New machine" shortcut, consumed only by the manager (toolbar
-/// "New…" and its ⌘N): ⌘N on macOS, Ctrl+N on Windows/Linux
-/// ([`egui::Modifiers::COMMAND`] resolves to the platform's primary
-/// modifier). VM windows deliberately have no New shortcut — creating
-/// machines is the manager's job.
-pub const NEW_MACHINE_SHORTCUT: egui::KeyboardShortcut =
-    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::N);
-
 /// Spacing of every form grid — the detail pane's section grids
 /// (`manager::draw_detail_ok`) and the nested Slot/Disk sub-grids alike —
 /// so the sections render as one visually continuous form.

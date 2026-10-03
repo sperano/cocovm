@@ -12,7 +12,6 @@ use eframe::egui;
 
 use super::ManagerApp;
 use super::bulk::BulkAction;
-use crate::new_vm;
 use crate::widgets::{
     BUTTON_GAP, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH, STOP_LABEL,
     SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, toolbar_button, toolbar_separator,
@@ -64,7 +63,10 @@ impl ManagerApp {
             ui.spacing_mut().item_spacing.x = BUTTON_GAP;
             // The shortcut shows on hover, not inline (that's a menu-row convention).
             if toolbar_button(ui, NEW_ICON, "New", true, icons_only)
-                .on_hover_text(ui.ctx().format_shortcut(&new_vm::NEW_MACHINE_SHORTCUT))
+                .on_hover_text(
+                    ui.ctx()
+                        .format_shortcut(&self.hotkeys.new_machine.shortcut()),
+                )
                 .clicked()
             {
                 self.create_machine_now();

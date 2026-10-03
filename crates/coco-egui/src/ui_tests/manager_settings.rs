@@ -12,12 +12,12 @@ use super::harness::*;
 
 /// A manager harness pointed at a temp-dir `config.toml`
 /// (`ManagerApp::config_path`) — never the user's real config directory.
-fn settings_harness(config_path: std::path::PathBuf) -> ManagerHarness {
+pub(super) fn settings_harness(config_path: std::path::PathBuf) -> ManagerHarness {
     settings_harness_with(config_path, |_| {})
 }
 
 /// [`settings_harness`] with extra app setup applied before the first frame.
-fn settings_harness_with(
+pub(super) fn settings_harness_with(
     config_path: std::path::PathBuf,
     configure: impl FnOnce(&mut manager::ManagerApp) + Send + 'static,
 ) -> ManagerHarness {
@@ -91,7 +91,7 @@ fn save_writes_the_toggled_value_and_reopening_shows_it() {
 }
 
 /// A sample entry whose VM is launched, as if its window were open.
-fn open_vm_entry() -> manager::MachineEntry {
+pub(super) fn open_vm_entry() -> manager::MachineEntry {
     let mut entry = sample_entry("open-vm", "Open VM");
     let vm = launch_machine(&entry.def, &entry.slug).expect("a default definition launches");
     entry.vm = Some(Box::new(vm));

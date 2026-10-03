@@ -4,7 +4,7 @@ use super::*;
 use crate::machine_def::tests::TempDir;
 use crate::rom_load::COCO3_ROM_FILE;
 use crate::save_state::tests::ReadOnly;
-use crate::{AppParams, ROMSource, installed_roms_dir};
+use crate::{AppParams, ROMSource, installed_roms_dir, new_vm};
 use coco_core::{MachineConfig, fdc};
 use eframe::App;
 

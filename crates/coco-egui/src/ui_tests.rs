@@ -21,6 +21,7 @@
 
 mod cartridge_detection;
 mod harness;
+mod hotkeys;
 mod keyboard_test;
 mod manager_dos_rom_test;
 mod manager_drivewire_test;

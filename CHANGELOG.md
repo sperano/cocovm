@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Rebindable hotkeys. The Settings dialog has a Hotkeys section for the key
+  layout window (F10), the keyboard mode toggle (F12), New machine (⌘N /
+  Ctrl+N), and the debugger in `debug-ui` builds (⌘D / Ctrl+D): click a
+  binding, then press the new key. They are stored as `hotkey_*` keys in
+  `config.toml` and apply to open VM windows on Save. A hotkey must not type
+  into the machine, clash with another hotkey, or take a built-in shortcut.
+
 ### Changed
 - DriveWire settings apply to a running machine as they are edited: enabling
   or disabling DriveWire, HDB-DOS mode, and the DW0–DW3 images no longer wait

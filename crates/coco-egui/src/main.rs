@@ -27,6 +27,7 @@ mod debugger;
 mod defaults;
 mod display;
 mod host;
+mod hotkeys;
 mod joy;
 mod kbd_help;
 mod keymap;

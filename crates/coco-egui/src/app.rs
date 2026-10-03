@@ -232,6 +232,10 @@ pub(crate) struct CocoApp {
     /// (`chrome::status_bar`): entries draw their icon alone, with the
     /// readout moved into hover text. Rewritten every frame the same way.
     pub(crate) status_bar_icons_only: bool,
+    /// The manager's rebindable hotkeys (`hotkeys.rs`), consumed in
+    /// `app/input.rs` and named in the menus and help. Rewritten every
+    /// frame the same way.
+    pub(crate) hotkeys: crate::hotkeys::Hotkeys,
 }
 
 /// DriveWire launch settings — the payload of [`AppParams::drivewire`],
@@ -336,6 +340,7 @@ impl CocoApp {
             fields_run: 0,
             toolbar_icons_only: false,
             status_bar_icons_only: false,
+            hotkeys: crate::hotkeys::Hotkeys::default(),
         };
         if let Some(path) = cart_path {
             app.insert_cartridge(path);
