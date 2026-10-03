@@ -68,7 +68,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key><string>cocovm</string>
-  <key>CFBundleDisplayName</key><string>CocoVM</string>
+  <key>CFBundleDisplayName</key><string>CoCoVM</string>
   <key>CFBundleIdentifier</key><string>com.sperano.cocovm</string>
   <key>CFBundleExecutable</key><string>cocovm</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -123,7 +123,7 @@ mkdir "$DMGROOT"
 cp -R "$APP" "$DMGROOT/"
 cp LICENSE NOTICE.md "$DMGROOT/"
 ln -s /Applications "$DMGROOT/Applications"
-hdiutil create -volname "CocoVM" -srcfolder "$DMGROOT" \
+hdiutil create -volname "CoCoVM" -srcfolder "$DMGROOT" \
   -ov -format UDZO "dist/$STAGE.dmg"
 codesign --sign "$IDENTITY" --timestamp "dist/$STAGE.dmg"
 

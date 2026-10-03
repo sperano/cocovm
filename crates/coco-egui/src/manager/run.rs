@@ -32,6 +32,7 @@ pub fn run(
         welcome_image_shuffle,
         welcome_image_shuffle_overridden,
         hotkeys,
+        manager_sort,
         ..
     } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
@@ -46,7 +47,7 @@ pub fn run(
             assets::DIALOG_WINDOW_SIZE
         })
         .with_icon(icon)
-        .with_title("CocoVM");
+        .with_title("CoCoVM");
     if !missing.is_empty() {
         viewport = viewport.with_resizable(false);
     }
@@ -75,7 +76,14 @@ pub fn run(
                 renderer: crate::renderer_info(creation),
             });
             let control = control::bind_control(control_port, &creation.egui_ctx);
-            let mut app = ManagerApp::new(None, machines_dir, artifacts_root, entries, control);
+            let mut app = ManagerApp::new_with_sort(
+                None,
+                machines_dir,
+                artifacts_root,
+                entries,
+                control,
+                manager_sort,
+            );
             app.toolbar_icons_only = toolbar_icons_only;
             app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
             app.control_port_overridden = control_port_overridden;

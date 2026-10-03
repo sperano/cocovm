@@ -60,6 +60,7 @@ fn cli_flag_beats_file_and_default() {
         welcome_image_cycle: Some(false),
         welcome_image_cycle_secs: NonZeroU32::new(99),
         welcome_image_shuffle: Some(false),
+        manager_sort: Some(ManagerSort::NameDesc),
         ..FileConfig::default()
     };
     let config = resolve(cli, file);
@@ -78,6 +79,7 @@ fn cli_flag_beats_file_and_default() {
     assert!(config.welcome_image_cycle_secs_overridden);
     assert!(config.welcome_image_shuffle);
     assert!(config.welcome_image_shuffle_overridden);
+    assert_eq!(config.manager_sort, ManagerSort::NameDesc);
 }
 
 #[test]
@@ -119,6 +121,7 @@ fn file_value_beats_built_in_default() {
         hotkey_keyboard_mode: hotkey("Shift+F9"),
         hotkey_new_machine: hotkey("Cmd+Alt+N"),
         hotkey_debugger: hotkey("Alt+F12"),
+        manager_sort: Some(ManagerSort::NameAsc),
     };
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
@@ -140,6 +143,7 @@ fn file_value_beats_built_in_default() {
     assert_eq!(Some(config.hotkeys.keyboard_mode), hotkey("Shift+F9"));
     assert_eq!(Some(config.hotkeys.new_machine), hotkey("Cmd+Alt+N"));
     assert_eq!(Some(config.hotkeys.debugger), hotkey("Alt+F12"));
+    assert_eq!(config.manager_sort, ManagerSort::NameAsc);
 }
 
 #[test]
@@ -154,6 +158,7 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
     assert!(!config.toolbar_icons_only);
     assert!(!config.status_bar_icons_only);
     assert_eq!(config.hotkeys, DEFAULT_HOTKEYS);
+    assert_eq!(config.manager_sort, ManagerSort::CreatedDesc);
 }
 
 #[test]
@@ -265,6 +270,7 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         hotkey_keyboard_mode,
         hotkey_new_machine,
         hotkey_debugger,
+        manager_sort,
     } = &file;
     assert!(
         log_level.is_some(),
@@ -309,6 +315,10 @@ fn default_template_uncommented_resolves_to_true_defaults() {
             "every FileConfig parameter needs a commented line in the template"
         );
     }
+    assert!(
+        manager_sort.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
 
     let config = resolve(bare_cli(), file);
     let expected = resolve(bare_cli(), FileConfig::default());
@@ -371,6 +381,7 @@ fn a_valid_full_config_file_loads() {
         hotkey_keyboard_mode = "Shift+F11"
         hotkey_new_machine = "Cmd+Shift+N"
         hotkey_debugger = "Alt+F5"
+        manager_sort = "name-desc"
         "#,
     )
     .unwrap();
@@ -390,6 +401,7 @@ fn a_valid_full_config_file_loads() {
             hotkey_keyboard_mode: hotkey("Shift+F11"),
             hotkey_new_machine: hotkey("Cmd+Shift+N"),
             hotkey_debugger: hotkey("Alt+F5"),
+            manager_sort: Some(ManagerSort::NameDesc),
         }
     );
 }
@@ -429,6 +441,20 @@ fn a_zero_welcome_image_cycle_secs_is_a_load_error() {
 }
 
 #[test]
+fn an_invalid_manager_sort_is_a_load_error() {
+    let dir = TempDir::new("config-invalid-manager-sort");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "manager_sort = \"recent-ish\"\n").unwrap();
+
+    let error = load(Some(&path)).expect_err("unknown sort value must be rejected");
+
+    assert!(
+        error.contains("manager_sort"),
+        "error must name the key: {error}"
+    );
+}
+
+#[test]
 fn save_file_round_trips_through_load() {
     let dir = TempDir::new("config-save-roundtrip");
     let path = dir.path().join("config.toml");
@@ -445,9 +471,28 @@ fn save_file_round_trips_through_load() {
         hotkey_keyboard_mode: hotkey("Alt+F12"),
         hotkey_new_machine: hotkey("Cmd+Shift+N"),
         hotkey_debugger: hotkey("F11"),
+        manager_sort: Some(ManagerSort::CreatedAsc),
     };
     save_file(&path, &file).expect("save must succeed");
     assert_eq!(load(Some(&path)).expect("saved file must load"), file);
+}
+
+#[test]
+fn save_manager_sort_preserves_other_settings() {
+    let dir = TempDir::new("config-save-manager-sort");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "# retained comment\ncontrol_port = 7004\nmanager_sort = \"created-desc\"\n",
+    )
+    .unwrap();
+
+    save_manager_sort(&path, ManagerSort::NameAsc).expect("sort preference saves");
+
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("# retained comment"));
+    assert!(saved.contains("control_port = 7004"));
+    assert!(saved.contains("manager_sort = \"name-asc\""));
 }
 
 #[test]

@@ -14,7 +14,7 @@ use std::num::NonZeroU32;
 
 use super::SettingsDialog;
 use crate::cli::LogLevel;
-use crate::config::FileConfig;
+use crate::config::{FileConfig, ManagerSort};
 use crate::control::ControlServer;
 use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, HotkeyAction};
 use crate::machine_def::tests::TempDir;
@@ -41,6 +41,7 @@ fn non_default_values_round_trip() {
         hotkey_keyboard_mode: hotkey("Shift+F12"),
         hotkey_new_machine: hotkey("Cmd+Shift+N"),
         hotkey_debugger: hotkey("F11"),
+        manager_sort: Some(ManagerSort::NameDesc),
     };
     let dialog = SettingsDialog::from_file(
         FileConfig {
@@ -56,6 +57,7 @@ fn non_default_values_round_trip() {
             hotkey_keyboard_mode: file.hotkey_keyboard_mode,
             hotkey_new_machine: file.hotkey_new_machine,
             hotkey_debugger: file.hotkey_debugger,
+            manager_sort: file.manager_sort,
         },
         None,
     );

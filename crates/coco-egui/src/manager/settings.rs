@@ -11,7 +11,7 @@ use clap::ValueEnum;
 use eframe::egui;
 
 use crate::cli::LogLevel;
-use crate::config::{self, FileConfig};
+use crate::config::{self, FileConfig, ManagerSort};
 use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
 
 use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
@@ -47,6 +47,8 @@ pub(crate) struct SettingsDialog {
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
     hotkey_editor: HotkeyEditor,
+    /// Preserved unchanged because the machine-list control owns this key.
+    manager_sort: Option<ManagerSort>,
     error: Option<String>,
 }
 
@@ -96,6 +98,7 @@ impl SettingsDialog {
                 .welcome_image_shuffle
                 .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
             hotkey_editor: HotkeyEditor::new(hotkeys),
+            manager_sort: file.manager_sort,
             error,
         }
     }
@@ -130,6 +133,7 @@ impl SettingsDialog {
             hotkey_keyboard_mode: changed(hotkeys.keyboard_mode, DEFAULT_HOTKEYS.keyboard_mode),
             hotkey_new_machine: changed(hotkeys.new_machine, DEFAULT_HOTKEYS.new_machine),
             hotkey_debugger: changed(hotkeys.debugger, DEFAULT_HOTKEYS.debugger),
+            manager_sort: self.manager_sort,
         }
     }
 

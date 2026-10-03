@@ -91,10 +91,10 @@ replaying host work. The existing HDB-DOS and NitrOS-9 boot tests exercise the
 file-backed worker through the real guest ROMs and disks.
 
 The [specification][spec] and [Java protocol handler][java] establish the
-wire lifecycle notifications. CocoVM deliberately preserves its configured
+wire lifecycle notifications. CoCoVM deliberately preserves its configured
 HDB-DOS mode on `DWINIT`, as required by the guest contract, instead of copying
 Java's driver-dependent mode change. Host cancellation and snapshot policy are
-CocoVM behavior, not additional wire commands.
+CoCoVM behavior, not additional wire commands.
 
 [spec]: https://github.com/DrPitre/DriveWire/blob/a795310089b00710d797ebc7d0eb0942e439572d/DriveWire%20Specification.md
 [java]: https://github.com/qbancoffee/drivewire4/blob/4e57ffef5340b521f004597b7d002604f5809b32/drivewire4_maven/src/main/java/java/com/groupunix/drivewireserver/dwprotocolhandler/DWProtocolHandler.java

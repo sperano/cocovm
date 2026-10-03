@@ -1,12 +1,12 @@
-# CocoVM
+# CoCoVM
 
-CocoVM is a desktop emulator for the Tandy Color Computer 1, 2, and 3. It
+CoCoVM is a desktop emulator for the Tandy Color Computer 1, 2, and 3. It
 combines a Rust emulation core with an [egui](https://github.com/emilk/egui)
 virtual machine manager for running and organizing multiple CoCo systems.
 
-![A Color Computer 3 running HDB-DOS in CocoVM](crates/coco-egui/assets/coco3on.png)
+![A Color Computer 3 running HDB-DOS in CoCoVM](crates/coco-egui/assets/coco3on.png)
 
-CocoVM is under active development and hasn't reached version 1.0. Save-state
+CoCoVM is under active development and hasn't reached version 1.0. Save-state
 compatibility can change between releases. See the [changelog](CHANGELOG.md) for
 release details and known limitations.
 
@@ -26,7 +26,7 @@ release details and known limitations.
   support
 - A built-in Model Context Protocol (MCP) server for local automation
 
-## Download CocoVM
+## Download CoCoVM
 
 Download a prebuilt archive from the
 [latest GitHub release](https://github.com/sperano/cocovm/releases/latest).
@@ -37,8 +37,8 @@ Release builds target these platforms:
 - Windows on x86-64
 
 The source repository doesn't contain copyrighted ROM images. On first launch,
-CocoVM lists any missing runtime assets and asks before downloading the separate
-asset bundle. On Linux and macOS, CocoVM installs these files under
+CoCoVM lists any missing runtime assets and asks before downloading the separate
+asset bundle. On Linux and macOS, CoCoVM installs these files under
 `~/.local/share/cocovm/assets/`. ROM images remain copyrighted by their
 respective owners and aren't covered by the source-code licenses in this
 repository. See [NOTICE.md](NOTICE.md) for details.
@@ -60,7 +60,7 @@ sudo apt-get install \
   libxcb-xfixes0-dev
 ```
 
-Then clone and run CocoVM:
+Then clone and run CoCoVM:
 
 ```sh
 git clone https://github.com/sperano/cocovm.git
@@ -70,9 +70,9 @@ cargo run -p coco-egui
 
 For an optimized build, add `--release` to the `cargo run` command.
 
-## Configure CocoVM
+## Configure CoCoVM
 
-The manager's settings dialog covers the global application settings. CocoVM
+The manager's settings dialog covers the global application settings. CoCoVM
 also creates a commented `config.toml` template on first launch at these paths:
 
 - Linux and macOS: `~/.config/cocovm/config.toml`
@@ -104,7 +104,7 @@ the `hotkey_*` keys, and the template describes their syntax.
 
 ## Control a VM with MCP
 
-CocoVM serves an MCP endpoint at `http://127.0.0.1:6809/mcp` by default. The
+CoCoVM serves an MCP endpoint at `http://127.0.0.1:6809/mcp` by default. The
 listener accepts local connections only, and it runs inside the application.
 
 To register the endpoint with Claude Code, run:
@@ -118,7 +118,7 @@ from the display, type text, press keys, move joysticks, manage disks, reset or
 pause a machine, wait for video fields, and read or write memory. Call
 `tools/list` through an MCP client for the complete schemas.
 
-## Develop CocoVM
+## Develop CoCoVM
 
 Run the workspace checks before submitting a change:
 

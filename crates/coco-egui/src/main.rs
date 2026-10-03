@@ -185,7 +185,7 @@ fn main() -> eframe::Result<()> {
     let config = config::resolve(cli, file_config);
     let log_reload = setup_logging(use_color, config.log_level.into());
 
-    // The app always opens the CocoVM manager window; a future CLI will build on its machine
+    // The app always opens the CoCoVM manager window; a future CLI will build on its machine
     // definitions.
     manager::run(config, config_path, log_reload)
 }

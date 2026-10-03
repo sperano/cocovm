@@ -2,7 +2,7 @@
 
 This design selects NitrOS-9 commands as the first host-access interface.
 It defines implementation targets, not a claim that those services work in
-CocoVM. The implementation baseline is `685cb87`. The
+CoCoVM. The implementation baseline is `685cb87`. The
 [capability inventory](drivewire-capabilities.md) records the broader scope,
 and [VM settings](drivewire-settings.md) describes implemented configuration.
 
@@ -55,7 +55,7 @@ Unsupported services must remain absent from feature claims and settings.
 | Terminal and virtual-window channels | Follow-up | Select `/Z` or terminal descriptors and a host backend; text transport alone does not implement window rendering. |
 | SSH, aliases beyond named objects, capability extensions, host sound | Research | Server-specific clients and discovery require separate selection and evidence. |
 | EmCee, DLOAD, Dragon DOS Plus, and image adapters | Research | Separate protocol or media compatibility tasks, not implied DW4 support. |
-| WireBug | Research | Specification describes an unfinished feature; CocoVM's debugger is a separate interface. |
+| WireBug | Research | Specification describes an unfinished feature; CoCoVM's debugger is a separate interface. |
 | Server management APIs and external transports | Research | Choose consumers and exposure model; each external connection would require its own session. |
 
 These follow-ups remain in the project backlog. NitrOS-9 command priority does
@@ -68,10 +68,10 @@ The extension-scoping task owns remaining feature and priority decisions.
 
 The wire carries an unsigned drive byte and a 24-bit logical sector number
 (LSN). Sectors contain 256 bytes. The address field can represent drives
-0–255; CocoVM's `DRIVE_COUNT = 4` is an implementation limit.
+0–255; CoCoVM's `DRIVE_COUNT = 4` is an implementation limit.
 [Specification][spec], [core constants](../crates/coco-core/src/drivewire.rs)
 
-With HDB-DOS mode disabled, CocoVM uses `(wire_drive, LSN)` directly. With the
+With HDB-DOS mode disabled, CoCoVM uses `(wire_drive, LSN)` directly. With the
 mode enabled, it ignores the wire drive byte and computes:
 
 ```text
@@ -141,7 +141,7 @@ Proposed coexistence rule: while an object lease is active, sector requests
 whose wire drive equals the leased drive use direct object addressing before
 any HDB-DOS remapping. Other requests retain the selected disk mode. This
 exception requires tests with the selected object client; it is not baseline
-CocoVM behavior. Reset, cancellation, and snapshot lease behavior must be
+CoCoVM behavior. Reset, cancellation, and snapshot lease behavior must be
 specified by the lifecycle implementation before named objects are enabled.
 
 ## Version and feature claims
@@ -183,13 +183,13 @@ dw disk eject 1
 ```
 
 The Java reference accepts a path or URI as the remaining argument for `dir`
-and `list`, and a numeric drive followed by a path for `insert`. CocoVM will
+and `list`, and a numeric drive followed by a path for `insert`. CoCoVM will
 retain the command verbs and response framing while resolving paths inside
 assigned shares. Arbitrary URLs and Java's image adapters are separate scope.
 The first fixture uses ASCII paths without spaces; path encoding, quoting,
 and case handling require explicit share tests.
 
-| Result | Reference command code | Proposed CocoVM behavior |
+| Result | Reference command code | Proposed CoCoVM behavior |
 | --- | --- | --- |
 | Missing required argument | 10 | Return syntax failure without opening a host resource. |
 | Invalid or unsupported drive | 101 | Reject the command; preserve mounts. |
@@ -243,7 +243,7 @@ not the protocol's universal channel limit. The pinned descriptor maps port
 
 The specification describes 15-channel groups and a later 30-channel total;
 the Java defaults allocate 16 N and 16 Z indices. Do not infer usable channels
-from the size of an opcode range. The baseline CocoVM fast-write range is
+from the size of an opcode range. The baseline CoCoVM fast-write range is
 `0x80`–`0x8F`; consuming those opcodes does not establish working channels.
 [Specification][spec], [Java port configuration][java-ports]
 

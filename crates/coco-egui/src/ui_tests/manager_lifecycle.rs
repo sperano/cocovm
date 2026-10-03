@@ -439,21 +439,46 @@ fn starting_two_machines_runs_both() {
 
     click(&mut harness, "Dev CoCo 3");
     click(&mut harness, "Start");
-    assert!(harness.state().entries[0].vm.is_some());
+    assert!(
+        harness
+            .state()
+            .entries
+            .iter()
+            .find(|entry| entry.slug == "dev-coco-3")
+            .expect("CoCo 3 entry")
+            .vm
+            .is_some()
+    );
 
     click(&mut harness, "Dev CoCo 2");
     click(&mut harness, "Start");
-    assert!(harness.state().entries[1].vm.is_some());
+    assert!(
+        harness
+            .state()
+            .entries
+            .iter()
+            .all(|entry| entry.vm.is_some())
+    );
 
-    assert!(harness.state().entries[0].vm.as_ref().unwrap().is_running());
-    assert!(harness.state().entries[1].vm.as_ref().unwrap().is_running());
+    assert!(
+        harness
+            .state()
+            .entries
+            .iter()
+            .all(|entry| entry.vm.as_ref().is_some_and(|vm| vm.is_running()))
+    );
 
     // A few more frames side by side without panicking.
     for _ in 0..5 {
         harness.step();
     }
-    assert!(harness.state().entries[0].vm.is_some());
-    assert!(harness.state().entries[1].vm.is_some());
+    assert!(
+        harness
+            .state()
+            .entries
+            .iter()
+            .all(|entry| entry.vm.is_some())
+    );
 }
 
 /// A definition whose media references a file that doesn't exist reports the

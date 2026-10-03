@@ -12,7 +12,7 @@ use eframe::egui;
 use super::{DETAIL_SECTION_GAP, ManagerApp, WINDOW_SIZE};
 
 /// What the dialog asks before fetching anything.
-const PROMPT_TEXT: &str = "CocoVM needs to download some copyrighted assets (ROMs, cartridges, images) to function properly.";
+const PROMPT_TEXT: &str = "CoCoVM needs to download some copyrighted assets (ROMs, cartridges, images) to function properly.";
 
 /// Window size while the dialog is the only content.
 pub(super) const DIALOG_WINDOW_SIZE: [f32; 2] = [500.0, 190.0];

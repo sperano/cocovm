@@ -1,4 +1,4 @@
-//! The CocoVM manager window: the VirtualBox/Parallels-style main window
+//! The CoCoVM manager window: the VirtualBox/Parallels-style main window
 //! `coco` always opens. Toolbar across the top, machine list down the left
 //! (one row per `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and
 //! a detail/edit pane on the right for the selected machine — or, with no machine
@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use eframe::egui;
 
+use crate::config::ManagerSort;
 use crate::photo_view::Photo;
 use crate::{CocoApp, machine_def};
 
@@ -43,6 +44,7 @@ mod roms;
 mod run;
 mod selection;
 mod settings;
+mod sort;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
@@ -299,7 +301,7 @@ pub struct ManagerApp {
     /// for — a confirmation modal ([`Self::draw_delete_confirmation`]) shows
     /// while this is non-empty. Slugs, not indices: rows can shift under a
     /// pending confirmation (another instance's file picked up on a future
-    /// reload, a Create landing before it alphabetically), and deleting the
+    /// reload, a sort change, or a Create landing elsewhere), and deleting the
     /// wrong row is the one mistake this dialog exists to prevent.
     pending_delete: Vec<String>,
     /// Message from the last failed delete, shown inside the confirmation
@@ -348,6 +350,12 @@ pub struct ManagerApp {
     /// exists (`paths::config_dir` docs) — Settings then opens with the
     /// built-in defaults and reports the problem on Save instead.
     pub(crate) config_path: Option<PathBuf>,
+    /// Current machine-list ordering, loaded from and written to
+    /// `config.toml` through the list's sort controls.
+    pub(crate) manager_sort: ManagerSort,
+    /// The last failure to persist [`Self::manager_sort`], shown beside the
+    /// controls while the live order remains in effect.
+    sort_error: Option<String>,
     /// The Settings dialog (`manager/settings.rs`), open while `Some`.
     pub(crate) settings: Option<settings::SettingsDialog>,
     /// Monotonic clock for saved-preview LRU stamps.
@@ -365,18 +373,38 @@ impl ManagerApp {
     /// [`SUSPEND_STATE_FILE`]'s existence. `control` is already bound (or
     /// `None`) — binding needs a `CreationContext`'s `egui::Context` for its
     /// wake closure, which only [`run`] has, so it happens there.
+    #[cfg(test)]
     pub fn new(
+        photo: Option<Photo>,
+        machines_dir: Option<PathBuf>,
+        artifacts_root: Option<PathBuf>,
+        entries: Vec<MachineEntry>,
+        control: Option<crate::control::ControlServer>,
+    ) -> Self {
+        Self::new_with_sort(
+            photo,
+            machines_dir,
+            artifacts_root,
+            entries,
+            control,
+            crate::config::DEFAULT_MANAGER_SORT,
+        )
+    }
+
+    fn new_with_sort(
         photo: Option<Photo>,
         machines_dir: Option<PathBuf>,
         artifacts_root: Option<PathBuf>,
         mut entries: Vec<MachineEntry>,
         control: Option<crate::control::ControlServer>,
+        manager_sort: ManagerSort,
     ) -> Self {
         if let Some(root) = &artifacts_root {
             for entry in &mut entries {
                 entry.suspended = suspend_state_path(root, &entry.slug).is_file();
             }
         }
+        sort::sort_entries(&mut entries, manager_sort);
         Self {
             #[cfg(feature = "perf")]
             perf_scenario: None,
@@ -405,6 +433,8 @@ impl ManagerApp {
             status_bar_icons_only_overridden: false,
             hotkeys: crate::hotkeys::Hotkeys::default(),
             config_path: None,
+            manager_sort,
+            sort_error: None,
             settings: None,
             thumbnail_use_clock: 0,
             thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
