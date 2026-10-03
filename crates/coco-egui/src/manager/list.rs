@@ -7,6 +7,7 @@ use eframe::egui;
 
 use super::bulk::BulkAction;
 use super::selection::Step;
+use super::sort::SortKey;
 use super::{
     ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, THUMBNAIL_ASPECT, thumbnails, vm_status_label,
 };
@@ -29,6 +30,11 @@ const LIST_STEP_KEYS: [(egui::Key, Step); 2] = [
     (egui::Key::ArrowUp, Step::Up),
     (egui::Key::ArrowDown, Step::Down),
 ];
+
+const SORT_CONTROLS_TOP_INSET: f32 = 4.0;
+const SORT_ARROW_HALF_LENGTH: f32 = 5.0;
+const SORT_ARROW_HEAD_LENGTH: f32 = 3.0;
+const SORT_ARROW_STROKE_WIDTH: f32 = 1.5;
 
 impl ManagerApp {
     /// ⌘A/Ctrl+A selects every row, ↑/↓ move the selection — only while
@@ -55,6 +61,7 @@ impl ManagerApp {
     /// `SidePanel`'s divider draggable even when the list is empty.
     pub(super) fn draw_machine_list(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(ui.available_width());
+        self.draw_sort_controls(ui);
         if !self.entries.is_empty() {
             let row_height = machine_row_height(ui);
             let row_spacing = ui.spacing().item_spacing.y;
@@ -95,6 +102,33 @@ impl ManagerApp {
             }
         }
         self.deselect_on_empty_click(ui);
+    }
+
+    fn draw_sort_controls(&mut self, ui: &mut egui::Ui) {
+        let mut order = self.manager_sort;
+        let mut key = order.key();
+        ui.add_space(SORT_CONTROLS_TOP_INSET);
+        ui.horizontal(|ui| {
+            ui.label("Sort by");
+            egui::ComboBox::from_id_salt("manager_sort_key")
+                .selected_text(key.label())
+                .show_ui(ui, |ui| {
+                    for candidate in SortKey::ALL {
+                        ui.selectable_value(&mut key, candidate, candidate.label());
+                    }
+                });
+            order = order.with_key(key);
+            if sort_direction_button(ui, order.is_ascending()).clicked() {
+                order = order.toggled();
+            }
+        });
+        if order != self.manager_sort {
+            self.change_manager_sort(order);
+        }
+        if let Some(error) = &self.sort_error {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+        }
+        ui.separator();
     }
 
     /// The panel space left below the last row: clicking it clears the
@@ -345,6 +379,42 @@ impl ManagerApp {
             self.save_error = None;
         }
     }
+}
+
+fn sort_direction_button(ui: &mut egui::Ui, ascending: bool) -> egui::Response {
+    let action = if ascending {
+        "Sort descending"
+    } else {
+        "Sort ascending"
+    };
+    let side = ui.spacing().interact_size.y;
+    let response = ui.add_sized(egui::Vec2::splat(side), egui::Button::new(""));
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), action)
+    });
+    paint_sort_direction_arrow(ui, &response, ascending);
+    response.on_hover_text(action)
+}
+
+fn paint_sort_direction_arrow(ui: &egui::Ui, response: &egui::Response, ascending: bool) {
+    let direction = if ascending { -1.0 } else { 1.0 };
+    let center = response.rect.center();
+    let tip = center + egui::vec2(0.0, direction * SORT_ARROW_HALF_LENGTH);
+    let tail = center - egui::vec2(0.0, direction * SORT_ARROW_HALF_LENGTH);
+    let head_y = tip.y - direction * SORT_ARROW_HEAD_LENGTH;
+    let stroke = egui::Stroke::new(
+        SORT_ARROW_STROKE_WIDTH,
+        ui.style().interact(response).text_color(),
+    );
+    ui.painter().line_segment([tail, tip], stroke);
+    ui.painter().line_segment(
+        [tip, egui::pos2(tip.x - SORT_ARROW_HEAD_LENGTH, head_y)],
+        stroke,
+    );
+    ui.painter().line_segment(
+        [tip, egui::pos2(tip.x + SORT_ARROW_HEAD_LENGTH, head_y)],
+        stroke,
+    );
 }
 
 /// The machine list has the keyboard when nothing else claims it: no

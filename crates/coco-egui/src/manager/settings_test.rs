@@ -14,7 +14,7 @@ use std::num::NonZeroU32;
 
 use super::SettingsDialog;
 use crate::cli::LogLevel;
-use crate::config::FileConfig;
+use crate::config::{FileConfig, ManagerSort};
 use crate::control::ControlServer;
 use crate::machine_def::tests::TempDir;
 use crate::manager::ManagerApp;
@@ -36,6 +36,7 @@ fn non_default_values_round_trip() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(7),
         welcome_image_shuffle: Some(true),
+        manager_sort: Some(ManagerSort::NameDesc),
     };
     let dialog = SettingsDialog::from_file(
         FileConfig {
@@ -47,6 +48,7 @@ fn non_default_values_round_trip() {
             welcome_image_cycle: file.welcome_image_cycle,
             welcome_image_cycle_secs: file.welcome_image_cycle_secs,
             welcome_image_shuffle: file.welcome_image_shuffle,
+            manager_sort: file.manager_sort,
         },
         None,
     );

@@ -56,6 +56,7 @@ fn cli_flag_beats_file_and_default() {
         welcome_image_cycle: Some(false),
         welcome_image_cycle_secs: NonZeroU32::new(99),
         welcome_image_shuffle: Some(false),
+        manager_sort: Some(ManagerSort::NameDesc),
     };
     let config = resolve(cli, file);
     assert_eq!(config.log_level, LogLevel::Trace);
@@ -73,6 +74,7 @@ fn cli_flag_beats_file_and_default() {
     assert!(config.welcome_image_cycle_secs_overridden);
     assert!(config.welcome_image_shuffle);
     assert!(config.welcome_image_shuffle_overridden);
+    assert_eq!(config.manager_sort, ManagerSort::NameDesc);
 }
 
 #[test]
@@ -110,6 +112,7 @@ fn file_value_beats_built_in_default() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(8),
         welcome_image_shuffle: Some(true),
+        manager_sort: Some(ManagerSort::NameAsc),
     };
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
@@ -127,6 +130,7 @@ fn file_value_beats_built_in_default() {
     assert!(!config.welcome_image_cycle_secs_overridden);
     assert!(config.welcome_image_shuffle);
     assert!(!config.welcome_image_shuffle_overridden);
+    assert_eq!(config.manager_sort, ManagerSort::NameAsc);
 }
 
 #[test]
@@ -140,6 +144,7 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
     assert_eq!(config.assets_url, crate::startup::DEFAULT_ASSETS_URL);
     assert!(!config.toolbar_icons_only);
     assert!(!config.status_bar_icons_only);
+    assert_eq!(config.manager_sort, ManagerSort::CreatedDesc);
 }
 
 #[test]
@@ -247,6 +252,7 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         welcome_image_cycle,
         welcome_image_cycle_secs,
         welcome_image_shuffle,
+        manager_sort,
     } = &file;
     assert!(
         log_level.is_some(),
@@ -278,6 +284,10 @@ fn default_template_uncommented_resolves_to_true_defaults() {
     );
     assert!(
         welcome_image_shuffle.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        manager_sort.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
 
@@ -338,6 +348,7 @@ fn a_valid_full_config_file_loads() {
         welcome_image_cycle = true
         welcome_image_cycle_secs = 45
         welcome_image_shuffle = true
+        manager_sort = "name-desc"
         "#,
     )
     .unwrap();
@@ -353,6 +364,7 @@ fn a_valid_full_config_file_loads() {
             welcome_image_cycle: Some(true),
             welcome_image_cycle_secs: NonZeroU32::new(45),
             welcome_image_shuffle: Some(true),
+            manager_sort: Some(ManagerSort::NameDesc),
         }
     );
 }
@@ -370,6 +382,20 @@ fn a_zero_welcome_image_cycle_secs_is_a_load_error() {
 }
 
 #[test]
+fn an_invalid_manager_sort_is_a_load_error() {
+    let dir = TempDir::new("config-invalid-manager-sort");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "manager_sort = \"recent-ish\"\n").unwrap();
+
+    let error = load(Some(&path)).expect_err("unknown sort value must be rejected");
+
+    assert!(
+        error.contains("manager_sort"),
+        "error must name the key: {error}"
+    );
+}
+
+#[test]
 fn save_file_round_trips_through_load() {
     let dir = TempDir::new("config-save-roundtrip");
     let path = dir.path().join("config.toml");
@@ -382,9 +408,28 @@ fn save_file_round_trips_through_load() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(12),
         welcome_image_shuffle: Some(true),
+        manager_sort: Some(ManagerSort::CreatedAsc),
     };
     save_file(&path, &file).expect("save must succeed");
     assert_eq!(load(Some(&path)).expect("saved file must load"), file);
+}
+
+#[test]
+fn save_manager_sort_preserves_other_settings() {
+    let dir = TempDir::new("config-save-manager-sort");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "# retained comment\ncontrol_port = 7004\nmanager_sort = \"created-desc\"\n",
+    )
+    .unwrap();
+
+    save_manager_sort(&path, ManagerSort::NameAsc).expect("sort preference saves");
+
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("# retained comment"));
+    assert!(saved.contains("control_port = 7004"));
+    assert!(saved.contains("manager_sort = \"name-asc\""));
 }
 
 #[test]

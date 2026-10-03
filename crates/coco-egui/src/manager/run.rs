@@ -31,6 +31,7 @@ pub fn run(
         welcome_image_cycle_secs_overridden,
         welcome_image_shuffle,
         welcome_image_shuffle_overridden,
+        manager_sort,
         ..
     } = config;
     const ICON_BYTE_COUNT: usize = 8_628;
@@ -74,7 +75,14 @@ pub fn run(
                 renderer: crate::renderer_info(creation),
             });
             let control = control::bind_control(control_port, &creation.egui_ctx);
-            let mut app = ManagerApp::new(None, machines_dir, artifacts_root, entries, control);
+            let mut app = ManagerApp::new_with_sort(
+                None,
+                machines_dir,
+                artifacts_root,
+                entries,
+                control,
+                manager_sort,
+            );
             app.toolbar_icons_only = toolbar_icons_only;
             app.toolbar_icons_only_overridden = toolbar_icons_only_overridden;
             app.control_port_overridden = control_port_overridden;
