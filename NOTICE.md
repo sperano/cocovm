@@ -15,6 +15,9 @@ Licensing is per crate:
   ports MAME's BSD-3-Clause `tms7000` CPU core and disassembler, so the
   crate as a whole is **(MIT OR Apache-2.0) AND BSD-3-Clause**
   (`crates/tms7000/NOTICE`); see the attribution below.
+- **`crates/test-assets`** (development-only test asset helper) —
+  dual-licensed **MIT OR Apache-2.0** under the same terms in
+  `crates/mc6809/LICENSE-MIT` and `crates/mc6809/LICENSE-APACHE`.
 - **`crates/coco-core`, `crates/coco-egui`** (the emulator itself) —
   **GPL-3.0-or-later** (see `LICENSE`): you can redistribute and/or modify
   them under the GNU GPL as published by the Free Software Foundation,

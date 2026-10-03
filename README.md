@@ -1,90 +1,153 @@
 # CocoVM
 
-A Tandy Color Computer (CoCo 1/2/3) emulator in Rust + egui, aiming for
-Virtual ][-level polish.
+CocoVM is a desktop emulator for the Tandy Color Computer 1, 2, and 3. It
+combines a Rust emulation core with an [egui](https://github.com/emilk/egui)
+virtual machine manager for running and organizing multiple CoCo systems.
 
-- `crates/mc6809` — MC6809 CPU core
-- `crates/coco-core` — the headless machine (GIME, SAM, PIAs, disk, tape, sound…)
-- `crates/coco-egui` — the frontend: a VirtualBox-style VM manager with
-  per-machine suspend/resume, and a built-in MCP server for driving a VM
-  from an AI
-- `book/` — a 16-chapter course that builds the emulator from scratch
+![A Color Computer 3 running HDB-DOS in CocoVM](crates/coco-egui/assets/coco3on.png)
 
-Run `cargo run` to open the VM manager. ROM images are not included in the
-repository; the manager downloads them on first launch into its data
-directory (`~/.local/share/cocovm/assets/roms/` on Linux/macOS).
+CocoVM is under active development and hasn't reached version 1.0. Save-state
+compatibility can change between releases. See the [changelog](CHANGELOG.md) for
+release details and known limitations.
 
-## Configuration
+## Features
 
-Global settings — the log level, the MCP control port, the asset bundle URL,
-and the toolbar's caption toggle — can each come from a CLI flag, an
-environment variable, or `config.toml` in cocovm's config directory
-(`~/.config/cocovm/config.toml` on Linux/macOS, `%APPDATA%\spe\cocovm\config.toml`
-on Windows), in that order of precedence (a flag beats an env var, which
-beats the config file, which beats the built-in default). All keys are
-optional; an unset key falls through to the next layer. The file is
-auto-created — fully commented out, showing the built-in defaults — the
-first time cocovm starts if it doesn't exist yet.
+- CoCo 1, CoCo 2, and CoCo 3 models with model-specific memory and video
+  options
+- MC6847 and GIME video with RGB, composite monitor, color TV, and black-and-white
+  TV presentation
+- Keyboard, mouse, and gamepad input, including standard and high-resolution
+  joystick interfaces
+- Cassette, floppy disk, virtual hard disk (VHD), cartridge, Multi-Pak, and
+  DriveWire support
+- Emulated printers, serial hardware, real-time clock, Orchestra-90, and
+  Sound/Speech Cartridge
+- Multiple named virtual machines with pause, suspend, resume, and save-state
+  support
+- A built-in Model Context Protocol (MCP) server for local automation
 
-```toml
-# ~/.config/cocovm/config.toml (Linux/macOS)
+## Download CocoVM
 
-# error | warn | info | debug | trace (default: warn)
-log_level = "warn"
+Download a prebuilt archive from the
+[latest GitHub release](https://github.com/sperano/cocovm/releases/latest).
+Release builds target these platforms:
 
-# MCP control-server port; 0 disables it (default: 6809)
-control_port = 6809
+- macOS 11 or later on Apple silicon and Intel
+- Linux on 64-bit Arm and x86-64
+- Windows on x86-64
 
-# first-run asset bundle URL (default: the bundled release URL)
-assets_url = "https://assets.spe.quebec/cocovm/cocovm-assets-v8.tgz"
+The source repository doesn't contain copyrighted ROM images. On first launch,
+CocoVM lists any missing runtime assets and asks before downloading the separate
+asset bundle. On Linux and macOS, CocoVM installs these files under
+`~/.local/share/cocovm/assets/`. ROM images remain copyrighted by their
+respective owners and aren't covered by the source-code licenses in this
+repository. See [NOTICE.md](NOTICE.md) for details.
 
-# draw every toolbar as icon-only, caption moved into hover text (default: false)
-toolbar_icons_only = false
+## Build from source
 
-# draw every iconed VM status-bar entry as icon-only, readout moved into hover text (default: false)
-status_bar_icons_only = false
+Install the [latest stable Rust toolchain](https://www.rust-lang.org/tools/install).
 
-# change the manager's welcome image on a timer (default: false)
-welcome_image_cycle = false
+On Debian or Ubuntu, install the native development libraries:
 
-# seconds between welcome-image changes, at least 1; only read while welcome_image_cycle is true (default: 30)
-welcome_image_cycle_secs = 30
-
-# pick each next welcome image at random instead of in file-name order; only read while welcome_image_cycle is true (default: false)
-welcome_image_shuffle = false
+```sh
+sudo apt-get install \
+  libasound2-dev \
+  libudev-dev \
+  libxkbcommon-dev \
+  libwayland-dev \
+  libxcb-render0-dev \
+  libxcb-shape0-dev \
+  libxcb-xfixes0-dev
 ```
 
-## Driving a VM from an AI (MCP)
+Then clone and run CocoVM:
 
-`cocovm` serves an [MCP](https://modelcontextprotocol.io) server directly —
-no separate process. It listens on `http://127.0.0.1:6809/mcp` by default
-("streamable HTTP" transport, JSON responses only); override the port with
-`--control-port` or `COCOVM_CONTROL_PORT` (`0` disables it).
+```sh
+git clone https://github.com/sperano/cocovm.git
+cd cocovm
+cargo run -p coco-egui
+```
 
-Register it with Claude Code:
+For an optimized build, add `--release` to the `cargo run` command.
+
+## Configure CocoVM
+
+The manager's settings dialog covers the global application settings. CocoVM
+also creates a commented `config.toml` template on first launch at these paths:
+
+- Linux and macOS: `~/.config/cocovm/config.toml`
+- Windows: `%APPDATA%\spe\cocovm\config.toml`
+
+Each setting can come from a command-line flag, an environment variable, or the
+configuration file. A flag takes precedence over an environment variable, which
+takes precedence over the file. Run `cocovm --help` for the complete command-line
+reference.
+
+The most important settings are:
+
+| Purpose | Flag | Environment variable | Default |
+|---|---|---|---|
+| Log level | `--log-level` | `COCOVM_LOG_LEVEL` | `warn` |
+| MCP server port | `--control-port` | `COCOVM_CONTROL_PORT` | `6809` |
+| Asset bundle URL | `--assets-url` | `COCOVM_ASSETS_URL` | Built-in bundle |
+| Icon-only toolbars | `--toolbar-icons-only` | `COCOVM_TOOLBAR_ICONS_ONLY` | `false` |
+| Icon-only status bar | `--status-bar-icons-only` | `COCOVM_STATUS_BAR_ICONS_ONLY` | `false` |
+
+Set the control port to `0` to disable the MCP server.
+
+## Control a VM with MCP
+
+CocoVM serves an MCP endpoint at `http://127.0.0.1:6809/mcp` by default. The
+listener accepts local connections only, and it runs inside the application.
+
+To register the endpoint with Claude Code, run:
 
 ```sh
 claude mcp add --transport http cocovm http://127.0.0.1:6809/mcp
 ```
 
-Or, for any MCP-compatible client, add an HTTP server pointing at that URL.
+The server provides tools to list and start virtual machines, read text or a PNG
+from the display, type text, press keys, move joysticks, manage disks, reset or
+pause a machine, wait for video fields, and read or write memory. Call
+`tools/list` through an MCP client for the complete schemas.
 
-The server exposes tools to list and start VMs, type BASIC and press keys,
-read the screen as text or a screenshot, mount/eject disks, reset or
-pause/resume a VM, wait for video fields to elapse, and peek/poke memory
-(`list_vms`, `start_vm`, `screen_text`, `screenshot`, `type_text`,
-`press_keys`, `joystick`, `insert_disk`, `eject_disk`, `reset`,
-`set_running`, `wait`, `peek`, `poke`). Every per-VM tool takes an optional
-`vm` argument (the manager slug); omit it when only one VM is running. Full
-argument schemas are in `tools/list`.
+## Develop CocoVM
 
-Example session:
+Run the workspace checks before submitting a change:
 
+```sh
+cargo test --workspace
+cargo clippy --workspace --all-targets
+cargo fmt --all -- --check
 ```
-list_vms                              -> "coco3 — CoCo 3 (powered_off)"
-start_vm {"vm": "coco3"}
-wait {"vm": "coco3", "fields": 300}   -- let BASIC boot to its OK prompt
-type_text {"vm": "coco3", "text": "PRINT 2+2\n"}
-wait {"vm": "coco3", "fields": 60}
-screen_text {"vm": "coco3"}           -> the screen now shows "4"
-```
+
+Some integration tests use installed ROMs or disk images from a separate test
+asset bundle. Many skip when their required assets aren't available, but the
+CoCo 3 boot smoke tests require `coco3.rom`. Set `COCOVM_TEST_ASSETS_URL` to an
+empty value to prevent the test bundle download.
+
+The workspace contains these main components:
+
+| Path | Purpose |
+|---|---|
+| `crates/mc6809` | Reusable MC6809 CPU core |
+| `crates/tms7000` | Reusable TMS7000 CPU core used by the Sound/Speech Cartridge |
+| `crates/coco-core` | Headless machine, devices, media, audio, and video |
+| `crates/coco-egui` | Desktop frontend and virtual machine manager |
+| `crates/test-assets` | Test asset discovery and download support |
+| `book` | A 16-chapter course based on the emulator |
+
+For more detail, read the [course outline](book/README.md), the
+[performance guide](performance/README.md), and the [changelog](CHANGELOG.md).
+
+## License
+
+Licensing differs by crate:
+
+- `coco-core` and `coco-egui` use GPL-3.0-or-later.
+- `mc6809` uses MIT OR Apache-2.0.
+- `tms7000` uses (MIT OR Apache-2.0) AND BSD-3-Clause.
+- `cocovm-test-assets` uses MIT OR Apache-2.0.
+
+See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) for the full terms,
+third-party attributions, and bundled-material details.

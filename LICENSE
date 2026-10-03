@@ -1,10 +1,18 @@
-cocovm — a Tandy Color Computer 3 emulator.
+cocovm — a Tandy Color Computer 1, 2, and 3 emulator.
 Copyright (C) 2026 Éric Spérano
 
 Licensed under the GNU General Public License, version 3 or (at your option)
-any later version, EXCEPT the `crates/mc6809` CPU core, which is dual-licensed
-MIT OR Apache-2.0 (see `crates/mc6809/LICENSE-MIT` and
-`crates/mc6809/LICENSE-APACHE`). The GPL text follows.
+any later version, except the reusable CPU cores:
+
+- `crates/mc6809` is dual-licensed MIT OR Apache-2.0. See
+  `crates/mc6809/LICENSE-MIT` and `crates/mc6809/LICENSE-APACHE`.
+- `crates/tms7000` is licensed (MIT OR Apache-2.0) AND BSD-3-Clause. See
+  `crates/tms7000/LICENSE-MIT`, `crates/tms7000/LICENSE-APACHE`, and
+  `crates/tms7000/NOTICE`.
+- `crates/test-assets` is dual-licensed MIT OR Apache-2.0. The same terms in
+  `crates/mc6809/LICENSE-MIT` and `crates/mc6809/LICENSE-APACHE` apply.
+
+The GPL text follows.
 
 ---
 
