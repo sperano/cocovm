@@ -7,6 +7,7 @@ use eframe::egui;
 
 use super::bulk::BulkAction;
 use super::selection::Step;
+use super::sort::SortKey;
 use super::{
     ManagerApp, ROW_CORNER_RADIUS, ROW_MARGIN, THUMBNAIL_ASPECT, thumbnails, vm_status_label,
 };
@@ -29,6 +30,9 @@ const LIST_STEP_KEYS: [(egui::Key, Step); 2] = [
     (egui::Key::ArrowUp, Step::Up),
     (egui::Key::ArrowDown, Step::Down),
 ];
+
+const ASCENDING_GLYPH: &str = "↑";
+const DESCENDING_GLYPH: &str = "↓";
 
 impl ManagerApp {
     /// ⌘A/Ctrl+A selects every row, ↑/↓ move the selection — only while
@@ -55,6 +59,7 @@ impl ManagerApp {
     /// `SidePanel`'s divider draggable even when the list is empty.
     pub(super) fn draw_machine_list(&mut self, ui: &mut egui::Ui) {
         ui.set_min_width(ui.available_width());
+        self.draw_sort_controls(ui);
         if !self.entries.is_empty() {
             let row_height = machine_row_height(ui);
             let row_spacing = ui.spacing().item_spacing.y;
@@ -95,6 +100,37 @@ impl ManagerApp {
             }
         }
         self.deselect_on_empty_click(ui);
+    }
+
+    fn draw_sort_controls(&mut self, ui: &mut egui::Ui) {
+        let mut order = self.manager_sort;
+        let mut key = order.key();
+        ui.horizontal(|ui| {
+            ui.label("Sort by");
+            egui::ComboBox::from_id_salt("manager_sort_key")
+                .selected_text(key.label())
+                .show_ui(ui, |ui| {
+                    for candidate in SortKey::ALL {
+                        ui.selectable_value(&mut key, candidate, candidate.label());
+                    }
+                });
+            order = order.with_key(key);
+            let (glyph, hover) = if order.is_ascending() {
+                (ASCENDING_GLYPH, "Ascending")
+            } else {
+                (DESCENDING_GLYPH, "Descending")
+            };
+            if ui.button(glyph).on_hover_text(hover).clicked() {
+                order = order.toggled();
+            }
+        });
+        if order != self.manager_sort {
+            self.change_manager_sort(order);
+        }
+        if let Some(error) = &self.sort_error {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+        }
+        ui.separator();
     }
 
     /// The panel space left below the last row: clicking it clears the

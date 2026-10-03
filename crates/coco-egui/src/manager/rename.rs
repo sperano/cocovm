@@ -273,13 +273,13 @@ impl ManagerApp {
     }
 
     fn rekey_rename(&mut self, index: usize, old_slug: &str, new_slug: &str) {
-        let selection = self.selection.snapshot(&self.entries);
-        let entry = self.entries.remove(index);
+        debug_assert_eq!(self.entries[index].slug, new_slug);
+        self.apply_manager_sort(self.manager_sort);
         let destination = self
             .entries
-            .partition_point(|other| other.slug < entry.slug);
-        self.entries.insert(destination, entry);
-        self.selection.restore(&self.entries, &selection);
+            .iter()
+            .position(|entry| entry.slug == new_slug)
+            .expect("renamed entry remains in the list");
         let mut refreshed_form = detail_map::seed_form(&self.entries[destination].def);
         let refreshed_packed = self
             .pack_def(
@@ -326,6 +326,12 @@ impl ManagerApp {
         if self.resolved_rename_slug(&pending.slug, &pending.name) == pending.slug {
             match self.save_name_only(index, pending.name) {
                 Ok(()) => {
+                    self.apply_manager_sort(self.manager_sort);
+                    let index = self
+                        .entries
+                        .iter()
+                        .position(|entry| entry.slug == pending.slug)
+                        .expect("renamed entry remains in the list");
                     if let Some(edit) = self.edit.as_mut()
                         && edit.slug == pending.slug
                     {

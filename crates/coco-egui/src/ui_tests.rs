@@ -29,6 +29,7 @@ mod manager_peripherals;
 mod manager_roms;
 mod manager_selection;
 mod manager_settings;
+mod manager_sort;
 mod manager_window;
 mod vm_window_disks;
 mod vm_window_joysticks;

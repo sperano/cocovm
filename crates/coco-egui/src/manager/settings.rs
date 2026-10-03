@@ -11,7 +11,7 @@ use clap::ValueEnum;
 use eframe::egui;
 
 use crate::cli::LogLevel;
-use crate::config::{self, FileConfig};
+use crate::config::{self, FileConfig, ManagerSort};
 
 use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
 
@@ -42,6 +42,8 @@ pub(crate) struct SettingsDialog {
     /// keeps it nonzero.
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
+    /// Preserved unchanged because the machine-list control owns this key.
+    manager_sort: Option<ManagerSort>,
     error: Option<String>,
 }
 
@@ -89,6 +91,7 @@ impl SettingsDialog {
             welcome_image_shuffle: file
                 .welcome_image_shuffle
                 .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
+            manager_sort: file.manager_sort,
             error,
         }
     }
@@ -117,6 +120,7 @@ impl SettingsDialog {
             welcome_image_shuffle: (self.welcome_image_shuffle
                 != config::DEFAULT_WELCOME_IMAGE_SHUFFLE)
                 .then_some(self.welcome_image_shuffle),
+            manager_sort: self.manager_sort,
         }
     }
 

@@ -37,6 +37,19 @@ pub(crate) const DEFAULT_WELCOME_IMAGE_CYCLE_SECS: NonZeroU32 = NonZeroU32::new(
 /// Built-in default for `welcome_image_shuffle`: cycle in file-name order.
 pub(crate) const DEFAULT_WELCOME_IMAGE_SHUFFLE: bool = false;
 
+/// Machine-list ordering values accepted by `config.toml`'s `manager_sort` key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ManagerSort {
+    CreatedDesc,
+    CreatedAsc,
+    NameAsc,
+    NameDesc,
+}
+
+/// Built-in machine-list ordering: newest definitions first.
+pub(crate) const DEFAULT_MANAGER_SORT: ManagerSort = ManagerSort::CreatedDesc;
+
 /// `config.toml`'s schema. Every field is optional so a partial file only
 /// overrides what it names; `deny_unknown_fields` turns a typo'd key into a
 /// startup error instead of a silently ignored setting.
@@ -53,6 +66,7 @@ pub(crate) struct FileConfig {
     /// swap-every-frame loop.
     pub(crate) welcome_image_cycle_secs: Option<NonZeroU32>,
     pub(crate) welcome_image_shuffle: Option<bool>,
+    pub(crate) manager_sort: Option<ManagerSort>,
 }
 
 /// Every global parameter, resolved to a concrete value.
@@ -83,6 +97,7 @@ pub(crate) struct Config {
     pub(crate) welcome_image_shuffle: bool,
     /// `toolbar_icons_only_overridden`'s counterpart for `welcome_image_shuffle`.
     pub(crate) welcome_image_shuffle_overridden: bool,
+    pub(crate) manager_sort: ManagerSort,
 }
 
 /// Reads `config.toml`. `path` is `None` when no home directory could be
@@ -157,6 +172,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .or(file.welcome_image_shuffle)
             .unwrap_or(DEFAULT_WELCOME_IMAGE_SHUFFLE),
         welcome_image_shuffle_overridden,
+        manager_sort: file.manager_sort.unwrap_or(DEFAULT_MANAGER_SORT),
     }
 }
 
@@ -198,6 +214,9 @@ fn default_config_template() -> String {
 
 # pick each next welcome image at random instead of in file-name order; only read while welcome_image_cycle is true
 # welcome_image_shuffle = {welcome_image_shuffle}
+
+# created-desc | created-asc | name-asc | name-desc
+# manager_sort = \"{manager_sort}\"
 ",
         control_port = crate::control::DEFAULT_PORT,
         assets_url = crate::startup::DEFAULT_ASSETS_URL,
@@ -206,6 +225,7 @@ fn default_config_template() -> String {
         welcome_image_cycle = DEFAULT_WELCOME_IMAGE_CYCLE,
         welcome_image_cycle_secs = DEFAULT_WELCOME_IMAGE_CYCLE_SECS,
         welcome_image_shuffle = DEFAULT_WELCOME_IMAGE_SHUFFLE,
+        manager_sort = manager_sort_name(DEFAULT_MANAGER_SORT),
     )
 }
 
@@ -273,6 +293,11 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
         "welcome_image_shuffle",
         file.welcome_image_shuffle,
     );
+    set_or_remove(
+        &mut doc,
+        "manager_sort",
+        file.manager_sort.map(manager_sort_name),
+    );
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
@@ -280,6 +305,23 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
     let tmp_path = path.with_extension("toml.tmp");
     fs::write(&tmp_path, doc.to_string()).map_err(|e| format!("{}: {e}", tmp_path.display()))?;
     fs::rename(&tmp_path, path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Updates only the manager sort preference while preserving every other
+/// parsed setting and the file's comments.
+pub(crate) fn save_manager_sort(path: &Path, order: ManagerSort) -> Result<(), String> {
+    let mut file = load(Some(path))?;
+    file.manager_sort = Some(order);
+    save_file(path, &file)
+}
+
+fn manager_sort_name(order: ManagerSort) -> &'static str {
+    match order {
+        ManagerSort::CreatedDesc => "created-desc",
+        ManagerSort::CreatedAsc => "created-asc",
+        ManagerSort::NameAsc => "name-asc",
+        ManagerSort::NameDesc => "name-desc",
+    }
 }
 
 /// `level`'s TOML/CLI spelling — the lowercase `ValueEnum` name (`"warn"`).

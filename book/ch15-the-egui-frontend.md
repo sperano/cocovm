@@ -1580,7 +1580,7 @@ pub struct MachineDef {
     pub schema: u32,
     /// Display name — the manager list row's title.
     pub name: String,
-    /// Informational only (e.g. an ISO date); never interpreted.
+    /// ISO creation date. Missing or malformed values sort after valid dates.
     #[serde(default)]
     pub created: Option<String>,
     pub hardware: HardwareDTO,
@@ -1597,6 +1597,14 @@ pub struct MachineDef {
 mirror an external data format field for field and be converted to and from
 the types the program actually runs on. It is kept separate from
 `coco_core::MachineConfig`, the type the emulator is built from.
+
+The `created` string has one interpreted use: machine-list ordering. The
+manager starts with the newest valid `%Y-%m-%d` date first. Its **Sort by**
+control can switch between creation date and case-insensitive display name,
+in either direction. A missing or malformed date stays at the end in both
+date directions, so an old or hand-edited definition remains usable. The
+chosen order takes effect immediately and is saved as `manager_sort` in the
+global `config.toml`.
 
 Why not put `#[derive(Serialize, Deserialize)]` on `MachineConfig` and
 save that? The module doc gives the reason, and it is a good one: an
@@ -1729,15 +1737,14 @@ written by a second running instance or placed there by hand since startup
 on-disk half of that check, `save`'s unconditional rename would silently
 overwrite somebody else's file.
 
-Renaming is therefore exactly two filesystem moves: `<old>.toml` to
-`<new>.toml`, and the machine's artifact directory alongside it. If the
-second move fails partway, the first is rolled back — the definition file
-is renamed back rather than left pointing at a directory that no longer
-matches its own name
-([`crates/coco-egui/src/manager/lifecycle.rs:212-265`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L212-L265)). The comment
-on that rollback states the priority plainly: "a stale slug beats relative
-[media] entries resolving into a directory that no longer matches the
-definition's file name."
+Renaming is a recoverable transaction, not two independent filesystem
+moves. `rename_plan` builds the target definition and remaps managed paths.
+`perform` then writes a staged definition and durable journal, moves the
+artifact directory, rewrites a suspended checkpoint when one exists, and
+installs the staged definition with a backup of the old file. Each failure
+path rolls back the work that preceded it. If the process stops between
+steps, startup calls `recover_pending_rename` before loading any definitions
+([`crates/coco-egui/src/manager/rename.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/rename.rs)).
 
 Why the artifact directory has to follow at all comes down to one function.
 Relative `[media]` paths inside a definition resolve *against the slug's
@@ -1746,36 +1753,20 @@ so a disk image referenced as `"disk0.dsk"` means a different absolute file
 the instant the slug changes. Move the definition without moving the
 directory and every relative media path in it silently points at nothing.
 
-One more subtlety appears only once a feature meets a real user. A machine
-cannot be renamed on disk while its VM is running — the running VM writes
-`thumbnail.png` into the artifact directory by path, and renaming out from
-under it races — nor while it is *suspended*: the frozen
-`suspended.ccstate` records its media by absolute, pre-rename path (week
-16's `MediaRefs`), so moving the artifact directory under it would make
-the frozen state unrestorable. A rename requested in either state merely
-sets a flag, and a separate pass picks it up once the machine is powered
-off:
+A running or suspended machine can still be renamed. After the disk
+transaction succeeds, `commit_rename` remaps a live VM's managed paths to
+the moved artifact directory. For a suspended machine, the transaction has
+already rewritten the checkpoint's absolute media references. The
+`window_session` value stays unchanged, so a running machine keeps the same
+native window even though its persistent slug changes.
 
-```rust
-    pub(super) fn apply_pending_renames(&mut self) {
-        while let Some(index) = self
-            .entries
-            .iter()
-            .position(|e| e.rename_pending && e.vm.is_none() && !e.suspended)
-        {
-            self.migrate_slug(index);
-        }
-    }
-```
-
-([`crates/coco-egui/src/manager/lifecycle.rs:278-286`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L278-L286).) It runs once per
-`update()`, before any panel draws, so row indices stay stable for the
-whole frame — and it re-searches from scratch each iteration rather than
-iterating indices, because each `migrate_slug` re-sorts the list
-alphabetically underneath it. The loop terminates because `migrate_slug`
-clears `rename_pending` unconditionally, on success or failure. Exercise
-15.5 asks you to connect this deferral to a kittest test that has to step
-three frames instead of two.
+The edit form queues one `PendingRename`. On the next `update()`, before any
+panel draws, `apply_pending_rename` handles it. A display-name change that
+keeps the same slug saves the definition directly. A slug change runs the
+transaction and then `rekey_rename` updates every in-memory slug reference
+([`crates/coco-egui/src/manager/rename.rs:309-363`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/rename.rs#L309-L363)). Both paths reapply the
+active date-or-name order. The sort snapshots selected rows and the
+range-selection anchor by slug, then restores them after rows move.
 
 ### Start, Suspend, Stop: where the machine lives
 
@@ -2851,15 +2842,17 @@ problem?
 **15.5 — Read and predict a kittest test (read/predict, then verify by
 running it).** Without running anything yet, read
 `ui_tests::manager_window::manager_rename_migrates_definition_file_and_artifact_dir`
-([`crates/coco-egui/src/ui_tests/manager_window.rs:337-378`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L337-L378)) end to end and
+([`crates/coco-egui/src/ui_tests/manager_window.rs:493-540`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/manager_window.rs#L493-L540)) end to end and
 write down, in order: (a) what `harness.state().entries[0].slug` equals
 immediately after `name_field().focus()` and typing `" Two"` but *before*
 `harness.key_press(egui::Key::Enter)`; (b) why the test calls
 `harness.step()` **three** times after the Enter key press, when most of
 this chapter's helpers only ever call it once or twice in a row — tie your
-answer to `ManagerApp::apply_pending_renames`'s doc comment
-([`manager/lifecycle.rs:267-277`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/lifecycle.rs#L267-L277)) and the `rename_pending` field it
-consumes. Then run `cargo test -p coco-egui ui_tests::manager_window` (this
+answer to the edit form queuing `pending_rename`, followed by
+`ManagerApp::apply_pending_rename` consuming it before the next frame's
+panels draw
+([`manager/rename.rs:309-363`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager/rename.rs#L309-L363)). Then run
+`cargo test -p coco-egui ui_tests::manager_window` (this
 one needs no ROM) and confirm your prediction against the passing test.
 
 **15.6 — Read: the disk write-back chain, end to end (read).** Trace, by

@@ -48,7 +48,7 @@ pub use io::{load_all, save};
 /// changed underneath us.
 pub const CURRENT_SCHEMA: u32 = 1;
 
-/// `chrono` format string for `[created]`—an informational ISO date.
+/// `chrono` format string for `[created]`, used by the manager's date sort.
 pub const DATE_FORMAT: &str = "%Y-%m-%d";
 
 /// Why DriveWire and the Games Master Cartridge can't share a machine.
@@ -63,7 +63,7 @@ pub struct MachineDef {
     pub schema: u32,
     /// Display name — the manager list row's title.
     pub name: String,
-    /// Informational only (for example, an ISO date); never interpreted.
+    /// ISO creation date. Missing or malformed values sort after valid dates.
     #[serde(default)]
     pub created: Option<String>,
     pub hardware: HardwareDTO,

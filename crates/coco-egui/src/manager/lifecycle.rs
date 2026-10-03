@@ -47,9 +47,10 @@ impl ManagerApp {
         let def = machine_def::MachineDef::from_config(name, created, &MachineConfig::default());
         match machine_def::save(&dir, &slug, &def) {
             Ok(()) => {
-                let index = self.entries.partition_point(|e| e.slug < slug);
-                self.entries.insert(index, MachineEntry::new(slug, def));
+                self.entries.push(MachineEntry::new(slug, def));
+                let index = self.entries.len() - 1;
                 self.selection.set_single(index);
+                self.apply_manager_sort(self.manager_sort);
                 self.edit = None; // seeded from the new entry on next draw
                 self.focus_name = true;
                 self.save_error = None;
