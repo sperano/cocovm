@@ -15,7 +15,7 @@ use super::{
     THUMBNAIL_PLACEHOLDER_FILL,
 };
 
-/// Saved previews are produced from CocoVM's bounded framebuffer pipeline.
+/// Saved previews are produced from CoCoVM's bounded framebuffer pipeline.
 /// Rejecting larger replacements keeps one synchronous decode from allocating
 /// an arbitrary image before the cache policy can account for it.
 const THUMBNAIL_MAX_WIDTH: u32 = 640;

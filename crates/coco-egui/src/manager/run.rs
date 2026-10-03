@@ -45,7 +45,7 @@ pub fn run(
             assets::DIALOG_WINDOW_SIZE
         })
         .with_icon(icon)
-        .with_title("CocoVM");
+        .with_title("CoCoVM");
     if !missing.is_empty() {
         viewport = viewport.with_resizable(false);
     }
