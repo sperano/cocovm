@@ -5,9 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.8] - 2026-10-03
 
 ### Added
+- Tandy Hi-Res Joystick Interface (26-3025) as a joystick option ("Tandy
+  Hi-Res"), timing the pot position through the cassette DAC and comparator
+  like the real RC-timer box.
+- CoCo Max Hi-Res Input Module cartridge for the CoCo 1/2, in the Cartridge
+  and MPI Slot combos. It is refused on a CoCo 3, where its I/O window
+  belongs to the GIME.
+- FD-502 controllers can boot Disk BASIC 1.1 or HDB-DOS (CoCo 3 only), in
+  the cartridge port or a MultiPak slot. With HDB-DOS, `DRIVE ON` reaches
+  the DriveWire disks and `DRIVE OFF` the controller's floppies. Existing
+  machines keep Disk BASIC.
+- DriveWire settings are saved with the machine: Enable DriveWire, HDB-DOS
+  mode, and the DW0–DW3 disk images live in a DriveWire tab of the VM
+  settings, edited as file paths with Browse and clear buttons, instead of
+  a Machine menu that forgot them on a cold start.
+- The machine list can be sorted by creation date or name, ascending or
+  descending, from the "Sort by" control above it. The order is remembered
+  in `config.toml` (`manager_sort`); newest first is the default.
+- Up and Down walk the machine list's selection when no text field has the
+  keyboard.
 - Rebindable hotkeys. The Settings dialog has a Hotkeys section for the key
   layout window (F10), the keyboard mode toggle (F12), New machine (⌘N /
   Ctrl+N), and the debugger in `debug-ui` builds (⌘D / Ctrl+D): click a
@@ -16,6 +35,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into the machine, clash with another hotkey, or take a built-in shortcut.
 
 ### Changed
+- VM settings are split into General, Display, Devices, Input, and
+  DriveWire tabs under a tab strip.
+- DriveWire disk reads and writes run off the emulation thread, so a slow
+  host file no longer stalls the machine. The status bar shows DriveWire
+  queue state and errors.
+- Sound's Mute and Volume moved from a top-level menu to a speaker entry
+  in the status bar.
+- The printer paper window opens from the status bar's printer menu only;
+  the View menu entry is gone.
+- The machine's slug shows dimmed under the name field instead of as a
+  bold "Slug ID" item.
+- The product name is written CoCoVM throughout, including the window
+  title.
 - DriveWire settings apply to a running machine as they are edited: enabling
   or disabling DriveWire, HDB-DOS mode, and the DW0–DW3 images no longer wait
   for the next start from power off. A suspended machine still resumes its
@@ -24,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries, like the cassette deck: the "No disks" entry and each mounted
   disk's entry open a menu covering every drive, the clicked drive first. The
   Machine menu no longer lists them.
+
+### Fixed
+- Choosing the HDB-DOS ROM for an FD-502 switches DriveWire and HDB-DOS mode
+  on once instead of locking them on, so both can be turned off again.
 
 ### Removed
 - The per-cartridge `autostart` setting and its Auto-start checkbox in the
