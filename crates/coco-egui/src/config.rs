@@ -12,6 +12,7 @@ use std::path::Path;
 use clap::ValueEnum;
 
 use crate::cli::{Cli, LogLevel};
+use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
 
 /// Global config file's name under [`crate::paths::config_dir`].
 pub(crate) const CONFIG_FILE_NAME: &str = "config.toml";
@@ -66,7 +67,29 @@ pub(crate) struct FileConfig {
     /// swap-every-frame loop.
     pub(crate) welcome_image_cycle_secs: Option<NonZeroU32>,
     pub(crate) welcome_image_shuffle: Option<bool>,
+    /// The `hotkey_*` keys (`hotkeys.rs`). Settings-dialog and file only:
+    /// no CLI flag or environment variable sets a hotkey.
+    pub(crate) hotkey_key_layout: Option<Hotkey>,
+    pub(crate) hotkey_keyboard_mode: Option<Hotkey>,
+    pub(crate) hotkey_new_machine: Option<Hotkey>,
+    pub(crate) hotkey_debugger: Option<Hotkey>,
     pub(crate) manager_sort: Option<ManagerSort>,
+}
+
+impl FileConfig {
+    /// The `hotkey_*` keys over [`DEFAULT_HOTKEYS`].
+    pub(crate) fn hotkeys(&self) -> Hotkeys {
+        Hotkeys {
+            key_layout: self.hotkey_key_layout.unwrap_or(DEFAULT_HOTKEYS.key_layout),
+            keyboard_mode: self
+                .hotkey_keyboard_mode
+                .unwrap_or(DEFAULT_HOTKEYS.keyboard_mode),
+            new_machine: self
+                .hotkey_new_machine
+                .unwrap_or(DEFAULT_HOTKEYS.new_machine),
+            debugger: self.hotkey_debugger.unwrap_or(DEFAULT_HOTKEYS.debugger),
+        }
+    }
 }
 
 /// Every global parameter, resolved to a concrete value.
@@ -97,6 +120,7 @@ pub(crate) struct Config {
     pub(crate) welcome_image_shuffle: bool,
     /// `toolbar_icons_only_overridden`'s counterpart for `welcome_image_shuffle`.
     pub(crate) welcome_image_shuffle_overridden: bool,
+    pub(crate) hotkeys: Hotkeys,
     pub(crate) manager_sort: ManagerSort,
 }
 
@@ -118,7 +142,13 @@ fn read(path: &Path) -> Result<FileConfig, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(FileConfig::default()),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    toml::from_str(&contents).map_err(|e| format!("{}: {e}", path.display()))
+    let file: FileConfig =
+        toml::from_str(&contents).map_err(|e| format!("{}: {e}", path.display()))?;
+    // Each key parses on its own; a clash only shows once they're merged.
+    file.hotkeys()
+        .check_distinct()
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(file)
 }
 
 /// Applies the precedence chain, one field at a time: the CLI value (already
@@ -132,6 +162,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
     let welcome_image_cycle_overridden = cli.welcome_image_cycle.is_some();
     let welcome_image_cycle_secs_overridden = cli.welcome_image_cycle_secs.is_some();
     let welcome_image_shuffle_overridden = cli.welcome_image_shuffle.is_some();
+    let hotkeys = file.hotkeys();
     Config {
         log_level: cli
             .log_level
@@ -172,6 +203,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .or(file.welcome_image_shuffle)
             .unwrap_or(DEFAULT_WELCOME_IMAGE_SHUFFLE),
         welcome_image_shuffle_overridden,
+        hotkeys,
         manager_sort: file.manager_sort.unwrap_or(DEFAULT_MANAGER_SORT),
     }
 }
@@ -215,6 +247,19 @@ fn default_config_template() -> String {
 # pick each next welcome image at random instead of in file-name order; only read while welcome_image_cycle is true
 # welcome_image_shuffle = {welcome_image_shuffle}
 
+# UI hotkeys: modifier names, then a key name, joined by +. Modifiers are
+# Cmd (Command on macOS, Ctrl on Windows/Linux), Ctrl, Alt, and Shift. A
+# hotkey without Cmd or Ctrl must be a function key from F3 up, so it never
+# types into the machine.
+# show/hide the key layout window
+# hotkey_key_layout = \"{key_layout}\"
+# switch positional/symbolic keyboard mode
+# hotkey_keyboard_mode = \"{keyboard_mode}\"
+# create a new machine (manager window)
+# hotkey_new_machine = \"{new_machine}\"
+# open/close the debugger (debug-ui builds)
+# hotkey_debugger = \"{debugger}\"
+
 # created-desc | created-asc | name-asc | name-desc
 # manager_sort = \"{manager_sort}\"
 ",
@@ -225,6 +270,10 @@ fn default_config_template() -> String {
         welcome_image_cycle = DEFAULT_WELCOME_IMAGE_CYCLE,
         welcome_image_cycle_secs = DEFAULT_WELCOME_IMAGE_CYCLE_SECS,
         welcome_image_shuffle = DEFAULT_WELCOME_IMAGE_SHUFFLE,
+        key_layout = DEFAULT_HOTKEYS.key_layout,
+        keyboard_mode = DEFAULT_HOTKEYS.keyboard_mode,
+        new_machine = DEFAULT_HOTKEYS.new_machine,
+        debugger = DEFAULT_HOTKEYS.debugger,
         manager_sort = manager_sort_name(DEFAULT_MANAGER_SORT),
     )
 }
@@ -293,6 +342,15 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
         "welcome_image_shuffle",
         file.welcome_image_shuffle,
     );
+    let hotkey_keys = [
+        ("hotkey_key_layout", file.hotkey_key_layout),
+        ("hotkey_keyboard_mode", file.hotkey_keyboard_mode),
+        ("hotkey_new_machine", file.hotkey_new_machine),
+        ("hotkey_debugger", file.hotkey_debugger),
+    ];
+    for (key, hotkey) in hotkey_keys {
+        set_or_remove(&mut doc, key, hotkey.map(|h| h.to_string()));
+    }
     set_or_remove(
         &mut doc,
         "manager_sort",

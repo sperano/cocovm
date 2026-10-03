@@ -1,7 +1,7 @@
 //! Interactive debugger UI: Controls, Registers,
 //! Disassembly, Memory, Stack, and Hardware-state panels, toggled with the
-//! VM toolbar's Debug tile or `DEBUGGER_SHORTCUT` (⌘D / Ctrl+D, consumed
-//! in `CocoApp::consume_app_shortcuts`).
+//! VM toolbar's Debug tile or the Debugger hotkey (`hotkeys.rs`, ⌘D /
+//! Ctrl+D by default, consumed in `CocoApp::consume_app_shortcuts`).
 //!
 //! Shown as its own native OS window (an egui *immediate viewport*, like the
 //! printer's `paper_view`), so the panels never cover the emulated screen;
@@ -35,16 +35,6 @@ mod hardware;
 mod memory;
 mod registers;
 mod stack;
-
-/// The debugger toggle: ⌘D on macOS, Ctrl+D on Windows/Linux
-/// ([`egui::Modifiers::COMMAND`] resolves to the platform's primary
-/// modifier). Checked against every existing binding: the bare F-keys
-/// (F10/F12, `app/input.rs`), `new_vm::NEW_MACHINE_SHORTCUT` = ⌘N, the
-/// manager-only select-all ⌘A (`manager.rs`), and the ⌘`<n>`/⌘⇧`<n>` state
-/// slots (`save_state.rs`).
-#[cfg(feature = "debug-ui")]
-pub(crate) const DEBUGGER_SHORTCUT: egui::KeyboardShortcut =
-    egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::D);
 
 /// Instructions handed to one [`Debugger::run_until`] call before this module
 /// re-checks its own bookkeeping. Comfortably above one field's instruction
@@ -81,7 +71,7 @@ enum MemoryView {
 /// Panel toggle plus every panel's own navigation/edit state, and the
 /// [`Debugger`] core it drives. One instance lives in `CocoApp`.
 pub struct DebuggerPanel {
-    /// Master toggle (the VM toolbar's Debug tile / `DEBUGGER_SHORTCUT`) —
+    /// Master toggle (the VM toolbar's Debug tile / the Debugger hotkey) —
     /// when false, `windows_ui` draws nothing.
     pub open: bool,
     core: Debugger,
@@ -236,8 +226,16 @@ impl DebuggerPanel {
 
     /// Draw every panel, if [`Self::open`]. The panels live in their own native OS
     /// window so the debugger never covers the emulated screen; falls back to floating
-    /// over the main viewport on backends without multi-window support.
-    pub fn windows_ui(&mut self, ctx: &egui::Context, machine: &mut Machine, running: &mut bool) {
+    /// over the main viewport on backends without multi-window support. `toggle` is the
+    /// Debugger hotkey, which closes the debugger from its own window too.
+    pub fn windows_ui(
+        &mut self,
+        ctx: &egui::Context,
+        machine: &mut Machine,
+        running: &mut bool,
+        #[cfg_attr(not(feature = "debug-ui"), allow(unused_variables))]
+        toggle: crate::hotkeys::Hotkey,
+    ) {
         if !self.open {
             return;
         }
@@ -258,7 +256,7 @@ impl DebuggerPanel {
                 #[cfg(feature = "debug-ui")]
                 {
                     // This viewport has its own InputState, invisible to consume_app_shortcuts.
-                    if ctx.input_mut(|i| i.consume_shortcut(&DEBUGGER_SHORTCUT)) {
+                    if ctx.input_mut(|i| toggle.consume(i)) {
                         self.open = false;
                     }
                 }
@@ -268,7 +266,7 @@ impl DebuggerPanel {
     }
 
     /// The one debugger open/close toggle, shared by the VM toolbar's Debug tile
-    /// and [`DEBUGGER_SHORTCUT`] so the two surfaces can't drift.
+    /// and the Debugger hotkey so the two surfaces can't drift.
     #[cfg(feature = "debug-ui")]
     pub fn toggle(&mut self) {
         self.open = !self.open;

@@ -38,7 +38,10 @@ impl CocoApp {
             }
         }
         ui.separator();
-        if ui.button("Key layout (F10)").clicked() {
+        let hotkey = ui
+            .ctx()
+            .format_shortcut(&self.hotkeys.key_layout.shortcut());
+        if ui.button(format!("Key layout ({hotkey})")).clicked() {
             self.show_kbd_help = !self.show_kbd_help;
             ui.close();
         }

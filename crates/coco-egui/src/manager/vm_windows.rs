@@ -52,6 +52,7 @@ impl ManagerApp {
             vm.suspended = suspended;
             vm.toolbar_icons_only = self.toolbar_icons_only;
             vm.status_bar_icons_only = self.status_bar_icons_only;
+            vm.hotkeys = self.hotkeys;
             let mut close_requested = false;
             ctx.show_viewport_immediate(viewport_id, builder, |child_ctx, class| {
                 let repaint_delay = crate::app::scheduling::background_delay(child_ctx);

@@ -1063,10 +1063,6 @@ is this frame's, not last frame's:
         self.consume_app_shortcuts(ctx);
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));
-        // The F-key hotkeys toggle UI, never reach the machine, and text
-        // widgets don't consume F-keys — so they stay live even while one
-        // is focused (F11 must dismiss the debugger from its own goto box).
-        self.handle_hotkeys(&events);
 
         // `wants_keyboard_input()` reports "some widget currently holds egui
         // focus", not "a text widget is focused": a click only ever focuses
@@ -1103,7 +1099,7 @@ is this frame's, not last frame's:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:25-66`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L25-L66).) `ctx.input(|i| ...)` is
+([`crates/coco-egui/src/app/input.rs:48-86`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L48-L86).) `ctx.input(|i| ...)` is
 egui's own read of this frame's raw events — every key press and release,
 every mouse move, every paste since the last frame — handed to you inside a
 closure. This function copies out the two things it needs and leaves
@@ -1112,10 +1108,9 @@ immediately, which is deliberate: with the events cloned into a local
 independently, in order, without holding anything borrowed from the context
 while they mutate `self`.
 
-Five things then happen, in a specific order, and the order encodes a
-priority. App-level shortcuts go first and are *consumed*, so
-they never reach the CoCo at all. F-key hotkeys go second. Then comes a
-gate: when any widget holds egui's keyboard focus, the emulated matrix is
+Four things then happen, in a specific order, and the order encodes a
+priority. App-level shortcuts and hotkeys go first and are *consumed*, so
+they never reach the CoCo at all. Then comes a gate: when any widget holds egui's keyboard focus, the emulated matrix is
 released and everything downstream is skipped. Clipboard paste and
 symbolic-mode text queuing follow, behind the gate. And direct matrix
 driving goes last — only in positional mode, and only when no paste or
@@ -1133,8 +1128,8 @@ until focus clears. Releasing rather than merely skipping matters for a
 key that was held *when* the widget grabbed focus: its release event
 will be swallowed by the widget too, so without `release_all()` the CoCo
 would see that key stuck down forever. The hotkeys run *before* the gate
-because a text widget never consumes an F-key, and F11 must be able to
-dismiss the debugger even from the debugger's own goto box; paste runs
+so they stay live while a text field has focus, and the debugger hotkey
+can close the debugger even from the debugger's own goto box. Paste runs
 *after* it because a paste while a text field is focused belongs to the
 field, not to the machine. The keys-mode joystick applies the same gate
 from its own polling path
@@ -1148,14 +1143,21 @@ application rather than to the emulated machine:
 
 ```rust
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // ⌘N is the MANAGER's new-machine shortcut and means nothing in a
-        // VM window — but it's still consumed here, as a deliberate no-op,
-        // so a user hitting it out of habit doesn't type an `N` into the
-        // running machine via the positional matrix (which forwards keys
-        // regardless of the COMMAND modifier).
-        let _ = ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT));
-        // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves
-        // it (`save_state.rs`).
+        // The hotkeys match exactly, so they go before the slot chords, which ignore an
+        // extra Shift/Alt and would otherwise take e.g. a Cmd+Alt+1 hotkey.
+        let hotkeys = self.hotkeys;
+        // Consumed here as a deliberate no-op, so it doesn't type into the machine.
+        let _ = ctx.input_mut(|i| hotkeys.new_machine.consume(i));
+        if ctx.input_mut(|i| hotkeys.key_layout.consume(i)) {
+            self.show_kbd_help = !self.show_kbd_help;
+        }
+        if ctx.input_mut(|i| hotkeys.keyboard_mode.consume(i)) {
+            self.set_mode(match self.kb_mode {
+                KbMode::Positional => KbMode::Symbolic,
+                KbMode::Symbolic => KbMode::Positional,
+            });
+        }
+        // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves it.
         for slot in 0..save_state::QUICK_SLOTS {
             if ctx.input_mut(|i| i.consume_shortcut(&save_state::save_slot_shortcut(slot))) {
                 self.quick_save(slot);
@@ -1167,50 +1169,63 @@ application rather than to the emulated machine:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:72-89`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L72-L89).) The word doing the work
-is `consume_shortcut`, and its doc comment on the enclosing function
-explains why it must run first: these shortcuts are "consumed before the
-event snapshot `handle_input` takes, so the keypress never reaches the CoCo
-matrix or the symbolic type-ahead." The ⌘N line is the instructive one:
-creating machines belongs to the *manager* (its toolbar's "New…" and its
-own ⌘N handler), so a VM window consumes the chord and deliberately does
-nothing with it — swallowing it is still better than letting the positional
-matrix type an `N` into BASIC. The quick-save and quick-load slots are
-Chapter 16's feature, wired up here.
+([`crates/coco-egui/src/app/input.rs:91-121`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L91-L121).) The word doing the work
+is `consume`, and the doc comment on the enclosing function explains why
+this stage runs first: these shortcuts are consumed before the event
+snapshot that `handle_input` takes, so the keypress never reaches the CoCo
+matrix or the symbolic type-ahead. The New machine line is the instructive
+one: creating machines belongs to the *manager* (its toolbar's **New**
+button and its own copy of the hotkey), so a VM window consumes the chord
+and deliberately does nothing with it. Swallowing it is still better than
+letting the positional matrix type an `N` into BASIC. The quick-save and
+quick-load slots are Chapter 16's feature, wired up here.
 
-The second stage handles keys the application claims without consuming;
-the clipboard has its own function on the far side of the focus gate:
+None of these keys is hard-coded. `self.hotkeys` is a small `Copy` struct
+of bindings that the manager resolves from `config.toml`, lets you edit in
+its Settings dialog, and writes into every open VM window each frame. The
+defaults are F10 for the key layout window, F12 for the keyboard mode, and
+⌘N or Ctrl+N for New machine. Each binding is a `Hotkey`, and `consume` is
+where it meets egui's event list:
 
 ```rust
-    fn handle_hotkeys(&mut self, events: &[egui::Event]) {
-        for ev in events {
-            if let egui::Event::Key {
+    pub(crate) fn consume(self, input: &mut egui::InputState) -> bool {
+        let mut fresh = false;
+        input.events.retain(|event| match event {
+            egui::Event::Key {
                 key,
+                modifiers,
                 pressed: true,
-                repeat: false,
+                repeat,
                 ..
-            } = ev
-            {
-                match key {
-                    egui::Key::F12 => {
-                        let next = match self.kb_mode {
-                            KbMode::Positional => KbMode::Symbolic,
-                            KbMode::Symbolic => KbMode::Positional,
-                        };
-                        self.set_mode(next);
-                    }
-                    egui::Key::F10 => self.show_kbd_help = !self.show_kbd_help,
-                    egui::Key::F9 => self.aspect_correct = !self.aspect_correct,
-                    egui::Key::F11 => self.debugger.open = !self.debugger.open,
-                    _ => {}
-                }
+            } if self.matches(*key, *modifiers) => {
+                fresh |= !repeat;
+                false
             }
-        }
+            _ => true,
+        });
+        fresh
     }
+```
 
-    /// Clipboard paste into the machine, keyboard-mode-agnostic. egui/eframe
-    /// normalises the platform paste shortcut (Cmd+V / Ctrl+V) into a single
-    /// `Event::Paste`, so this works the same on macOS, Windows, and Linux.
+([`crates/coco-egui/src/hotkeys.rs:108-124`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/hotkeys.rs#L108-L124).) Two details
+repay a second look. Every matching press leaves the list, auto-repeats
+included, but only a fresh press returns `true`. Holding F10 down does not
+strobe the key layout window open and shut forty times a second, and none
+of the repeats leaks through to the matrix. And `matches` compares the
+modifiers exactly, after folding egui's platform-specific report of ⌘ and
+Ctrl into one primary modifier. egui's own `consume_shortcut` ignores an
+extra Shift or Alt, which is right for fixed menu chords but wrong for a
+binding that you chose: if you bind Shift+F9 to one action and F9 to
+another, each press has to reach only its own action. The binding parser
+also refuses anything that would type into the machine, such as a bare
+letter or the CoCo 3's own F1 and F2 keys, so a hotkey never steals a
+keystroke that the CoCo needs.
+
+The clipboard has its own function on the far side of the focus gate:
+
+```rust
+    /// Clipboard paste into the machine, keyboard-mode-agnostic. egui normalises the
+    /// platform paste shortcut into a single `Event::Paste`.
     fn handle_paste(&mut self, events: &[egui::Event]) {
         for ev in events {
             if let egui::Event::Paste(text) = ev {
@@ -1220,21 +1235,16 @@ the clipboard has its own function on the far side of the focus gate:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:93-128`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L93-L128).) These two used to be one
-function; the focus gate split them, since the hotkeys must run before
-it and the paste after. Two details repay a second
-look. The pattern `pressed: true, repeat: false` means these toggles fire
-once per physical press and ignore the operating system's auto-repeat —
-holding F9 down does not strobe aspect correction on and off forty times a
-second. And `Event::Paste` is a single event regardless of platform,
-because, as `handle_paste`'s doc comment says, egui and eframe normalize
-the platform paste shortcut — ⌘V on macOS, Ctrl+V elsewhere — into one
-event. The frontend never has to know which operating system it is on.
+([`crates/coco-egui/src/app/input.rs:123-131`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L123-L131).) `Event::Paste` is a
+single event regardless of platform, because egui and eframe normalize the
+platform paste shortcut, ⌘V on macOS and Ctrl+V elsewhere, into one event.
+The frontend never has to know which operating system it's on.
 
 ### Positional versus symbolic: two philosophies, one matrix
 
 `coco-egui` ships two entirely different answers to the question "which
-CoCo key does this host keypress mean?", switchable live with F12, because
+CoCo key does this host keypress mean?", switchable live with the keyboard
+mode hotkey (F12 by default), because
 the two answers serve goals that cannot both be satisfied at once.
 
 *Positional* mode, the default, maps physical key *location* to matrix
@@ -1291,9 +1301,6 @@ produces. The implementation is a direct, continuous mirror:
             } = ev
             {
                 let k = physical_key.unwrap_or(*key);
-                if k == egui::Key::F12 {
-                    continue;
-                }
                 if joystick_keys && is_joystick_key(k) {
                     continue;
                 }
@@ -1305,15 +1312,16 @@ produces. The implementation is a direct, continuous mirror:
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:155-185`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L155-L185).) The three modifier
+([`crates/coco-egui/src/app/input.rs:157-184`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L157-L184).) The three modifier
 lines are set from egui's `Modifiers` snapshot rather than from events,
 because a modifier is a *level*, not an edge — what matters is whether
 Shift is down right now, not whether it was pressed this frame. Then every
 key event sets its mapped position true or false to match `pressed`. Note
 `physical_key.unwrap_or(*key)`: the physical key is preferred where egui
 can supply it, which is what makes positional mode behave the same on a
-French AZERTY keyboard as on a US QWERTY one. And F12 is skipped
-explicitly, since it belongs to the mode toggle rather than to the CoCo.
+French AZERTY keyboard as on a US QWERTY one. The mode toggle's own key
+needs no special case here, because `consume_app_shortcuts` already took its
+press out of the event list.
 
 *Symbolic* mode maps the character you actually typed to whichever CoCo key
 and shift state *produces* that character. That is `kbd::char_key`, which

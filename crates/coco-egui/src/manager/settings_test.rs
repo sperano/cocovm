@@ -16,6 +16,7 @@ use super::SettingsDialog;
 use crate::cli::LogLevel;
 use crate::config::{FileConfig, ManagerSort};
 use crate::control::ControlServer;
+use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, HotkeyAction};
 use crate::machine_def::tests::TempDir;
 use crate::manager::ManagerApp;
 
@@ -36,6 +37,10 @@ fn non_default_values_round_trip() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(7),
         welcome_image_shuffle: Some(true),
+        hotkey_key_layout: hotkey("F9"),
+        hotkey_keyboard_mode: hotkey("Shift+F12"),
+        hotkey_new_machine: hotkey("Cmd+Shift+N"),
+        hotkey_debugger: hotkey("F11"),
         manager_sort: Some(ManagerSort::NameDesc),
     };
     let dialog = SettingsDialog::from_file(
@@ -48,11 +53,81 @@ fn non_default_values_round_trip() {
             welcome_image_cycle: file.welcome_image_cycle,
             welcome_image_cycle_secs: file.welcome_image_cycle_secs,
             welcome_image_shuffle: file.welcome_image_shuffle,
+            hotkey_key_layout: file.hotkey_key_layout,
+            hotkey_keyboard_mode: file.hotkey_keyboard_mode,
+            hotkey_new_machine: file.hotkey_new_machine,
+            hotkey_debugger: file.hotkey_debugger,
             manager_sort: file.manager_sort,
         },
         None,
     );
     assert_eq!(dialog.to_file_config(), file);
+}
+
+fn hotkey(text: &str) -> Option<Hotkey> {
+    Some(text.parse().expect("valid hotkey"))
+}
+
+/// A hotkey set back to its default leaves the file, so it keeps tracking
+/// future defaults.
+#[test]
+fn a_default_hotkey_collapses_to_none() {
+    let file = FileConfig {
+        hotkey_key_layout: hotkey("F9"),
+        ..FileConfig::default()
+    };
+    let mut dialog = SettingsDialog::from_file(file, None);
+    dialog
+        .hotkey_editor
+        .hotkeys
+        .set(HotkeyAction::KeyLayout, DEFAULT_HOTKEYS.key_layout);
+    assert_eq!(dialog.to_file_config().hotkey_key_layout, None);
+}
+
+/// Save applies the drafted hotkeys to the manager, which pushes them to
+/// its VM windows.
+#[test]
+fn commit_applies_the_hotkeys() {
+    let dir = TempDir::new("settings-hotkeys-apply");
+    let mut manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    manager.config_path = Some(dir.path().join("config.toml"));
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    let f9 = hotkey("F9").expect("parsed");
+    dialog
+        .hotkey_editor
+        .hotkeys
+        .set(HotkeyAction::KeyLayout, f9);
+    manager.settings = Some(dialog);
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none(), "Save must close the dialog");
+    assert_eq!(manager.hotkeys.key_layout, f9);
+}
+
+/// Reset can hand an action back a default another action has taken
+/// meanwhile; Save refuses that draft instead of writing a file that
+/// would fail to load.
+#[test]
+fn commit_refuses_two_actions_on_one_hotkey() {
+    let dir = TempDir::new("settings-hotkeys-clash");
+    let config_path = dir.path().join("config.toml");
+    let mut manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    manager.config_path = Some(config_path.clone());
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog
+        .hotkey_editor
+        .hotkeys
+        .set(HotkeyAction::KeyLayout, DEFAULT_HOTKEYS.keyboard_mode);
+    manager.settings = Some(dialog);
+
+    manager.commit_settings(&egui::Context::default());
+
+    let dialog = manager.settings.as_ref().expect("the dialog stays open");
+    let error = dialog.error.as_deref().expect("the clash is reported");
+    assert!(error.contains("both F12"), "{error}");
+    assert_eq!(manager.hotkeys, DEFAULT_HOTKEYS, "nothing was applied");
+    assert!(!config_path.exists(), "nothing was written");
 }
 
 #[test]

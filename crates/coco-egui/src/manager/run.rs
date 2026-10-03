@@ -31,6 +31,7 @@ pub fn run(
         welcome_image_cycle_secs_overridden,
         welcome_image_shuffle,
         welcome_image_shuffle_overridden,
+        hotkeys,
         manager_sort,
         ..
     } = config;
@@ -88,6 +89,7 @@ pub fn run(
             app.control_port_overridden = control_port_overridden;
             app.status_bar_icons_only = status_bar_icons_only;
             app.status_bar_icons_only_overridden = status_bar_icons_only_overridden;
+            app.hotkeys = hotkeys;
             let welcome = &mut app.welcome_image;
             welcome.images_dir = crate::paths::images_dir();
             welcome.cycle = welcome_image_cycle;

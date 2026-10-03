@@ -189,11 +189,49 @@ fn closing_window_clears_latched_modifiers() {
     );
     let mut harness = Harness::new_state(
         |ctx, (open, modifiers)| {
-            window(ctx, open, false, MachineVariant::Coco3, true, modifiers);
+            window(
+                ctx,
+                open,
+                false,
+                MachineVariant::Coco3,
+                true,
+                modifiers,
+                &crate::hotkeys::DEFAULT_HOTKEYS,
+            );
         },
         state,
     );
     harness.state_mut().0 = false;
     harness.run();
     assert_eq!(harness.state().1, KeyModifiers::default());
+}
+
+/// The footer names the hotkeys the window was given, not the defaults.
+#[test]
+fn footer_names_the_configured_hotkeys() {
+    let mut hotkeys = crate::hotkeys::DEFAULT_HOTKEYS;
+    hotkeys.key_layout = "F9".parse().expect("valid hotkey");
+    hotkeys.keyboard_mode = "Shift+F11".parse().expect("valid hotkey");
+    let mut harness = Harness::new_state(
+        move |ctx, modifiers: &mut KeyModifiers| {
+            let mut open = true;
+            window(
+                ctx,
+                &mut open,
+                false,
+                MachineVariant::Coco3,
+                true,
+                modifiers,
+                &hotkeys,
+            );
+        },
+        KeyModifiers::default(),
+    );
+    harness.set_size(HARNESS_SIZE);
+    harness.run();
+    let mode = harness
+        .ctx
+        .format_shortcut(&hotkeys.keyboard_mode.shortcut());
+    harness.get_by_label_contains(&format!("{mode}: positional / symbolic"));
+    harness.get_by_label_contains("F9: show/hide this help");
 }

@@ -21,7 +21,7 @@ const THUMBNAIL_NEAR_RANGE_ROWS: usize = 4;
 
 /// Select every row (⌘A/Ctrl+A). Consumed only under [`list_has_keyboard`],
 /// so the detail pane's text fields keep their native select-all.
-const SELECT_ALL_SHORTCUT: egui::KeyboardShortcut =
+pub(crate) const SELECT_ALL_SHORTCUT: egui::KeyboardShortcut =
     egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A);
 
 /// The arrow keys that walk the machine list, under the same guard as

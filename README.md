@@ -95,6 +95,13 @@ The most important settings are:
 
 Set the control port to `0` to disable the MCP server.
 
+To change a hotkey, open the settings dialog, click the hotkey's current key,
+and then press the new key. The rebindable hotkeys are the key layout window
+(F10), the keyboard mode toggle (F12), New machine (Cmd+N on macOS, Ctrl+N
+elsewhere), and, in builds with the `debug-ui` feature, the debugger (Cmd+D or
+Ctrl+D). Hotkeys have no flag or environment variable. In `config.toml`, they're
+the `hotkey_*` keys, and the template describes their syntax.
+
 ## Control a VM with MCP
 
 CoCoVM serves an MCP endpoint at `http://127.0.0.1:6809/mcp` by default. The

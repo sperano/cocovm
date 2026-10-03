@@ -22,7 +22,7 @@ use eframe::egui;
 
 use crate::config::ManagerSort;
 use crate::photo_view::Photo;
-use crate::{CocoApp, machine_def, new_vm};
+use crate::{CocoApp, machine_def};
 
 use detail::EditState;
 use selection::Selection;
@@ -35,7 +35,7 @@ mod detail;
 mod detail_map;
 mod gamepad_service;
 mod lifecycle;
-mod list;
+pub(crate) mod list;
 mod live_drivewire;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
@@ -342,6 +342,9 @@ pub struct ManagerApp {
     pub(crate) status_bar_icons_only: bool,
     /// `toolbar_icons_only_overridden`'s counterpart for `status_bar_icons_only`.
     pub(crate) status_bar_icons_only_overridden: bool,
+    /// Rebindable hotkeys (`hotkeys.rs`): New machine fires here, the rest
+    /// are pushed to every open VM window each frame like `toolbar_icons_only`.
+    pub(crate) hotkeys: crate::hotkeys::Hotkeys,
     /// Where `config.toml` lives (`run::run`'s own `config_path`), for the
     /// Settings dialog to load and save. `None` when no home directory
     /// exists (`paths::config_dir` docs) — Settings then opens with the
@@ -428,6 +431,7 @@ impl ManagerApp {
             log_level_overridden: false,
             status_bar_icons_only: false,
             status_bar_icons_only_overridden: false,
+            hotkeys: crate::hotkeys::Hotkeys::default(),
             config_path: None,
             manager_sort,
             sort_error: None,
@@ -480,12 +484,15 @@ impl eframe::App for ManagerApp {
         // stay stable for the frame.
         self.apply_pending_rename();
 
-        // ⌘N/Ctrl+N triggers New…; only fires with the manager window focused.
-        if ctx.input_mut(|i| i.consume_shortcut(&new_vm::NEW_MACHINE_SHORTCUT)) {
-            self.create_machine_now();
+        // The New machine hotkey triggers New…; only fires with the manager window focused.
+        // Settings' hotkey capture needs the raw press, so nothing here takes keys meanwhile.
+        if self.settings.is_none() {
+            let new_machine = self.hotkeys.new_machine;
+            if ctx.input_mut(|i| new_machine.consume(i)) {
+                self.create_machine_now();
+            }
+            self.handle_list_shortcuts(ctx);
         }
-
-        self.handle_list_shortcuts(ctx);
 
         egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
             self.draw_toolbar(ui);

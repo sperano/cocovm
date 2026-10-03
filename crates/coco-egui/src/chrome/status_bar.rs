@@ -63,8 +63,11 @@ impl CocoApp {
         let icon = keyboard_icon(ui).interact(egui::Sense::click());
         name_menu_icon(ui, &icon, "Keyboard menu");
         let mode = self.kb_mode.label();
+        let hotkey = ui
+            .ctx()
+            .format_shortcut(&self.hotkeys.keyboard_mode.shortcut());
         let entry = menu_entry(ui, self.status_bar_icons_only, icon, mode).on_hover_text(format!(
-            "Keyboard input mode: {mode} — click for the keyboard menu (F12 toggles)"
+            "Keyboard input mode: {mode} — click for the keyboard menu ({hotkey} toggles)"
         ));
         egui::Popup::menu(&entry)
             // Explicit id: the icon's auto id shifts if an earlier entry becomes conditional.

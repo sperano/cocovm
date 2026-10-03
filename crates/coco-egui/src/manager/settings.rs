@@ -12,8 +12,12 @@ use eframe::egui;
 
 use crate::cli::LogLevel;
 use crate::config::{self, FileConfig, ManagerSort};
+use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
 
 use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
+
+mod hotkeys;
+use hotkeys::HotkeyEditor;
 
 /// `control_port`'s DragValue range; `0` disables the control server
 /// (`manager/control.rs`'s `bind_control`).
@@ -42,6 +46,7 @@ pub(crate) struct SettingsDialog {
     /// keeps it nonzero.
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
+    hotkey_editor: HotkeyEditor,
     /// Preserved unchanged because the machine-list control owns this key.
     manager_sort: Option<ManagerSort>,
     error: Option<String>,
@@ -68,6 +73,7 @@ impl SettingsDialog {
 
     fn from_file(file: FileConfig, error: Option<String>) -> Self {
         let control_port = file.control_port.unwrap_or(crate::control::DEFAULT_PORT);
+        let hotkeys = file.hotkeys();
         Self {
             log_level: file.log_level.unwrap_or(config::DEFAULT_LOG_LEVEL),
             control_port,
@@ -91,6 +97,7 @@ impl SettingsDialog {
             welcome_image_shuffle: file
                 .welcome_image_shuffle
                 .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
+            hotkey_editor: HotkeyEditor::new(hotkeys),
             manager_sort: file.manager_sort,
             error,
         }
@@ -100,6 +107,8 @@ impl SettingsDialog {
     /// so a field the user never touched keeps tracking future defaults
     /// instead of pinning today's value into the file.
     fn to_file_config(&self) -> FileConfig {
+        let hotkeys = &self.hotkey_editor.hotkeys;
+        let changed = |hotkey: Hotkey, default: Hotkey| (hotkey != default).then_some(hotkey);
         FileConfig {
             log_level: (self.log_level != config::DEFAULT_LOG_LEVEL).then_some(self.log_level),
             control_port: (self.control_port != crate::control::DEFAULT_PORT)
@@ -120,6 +129,10 @@ impl SettingsDialog {
             welcome_image_shuffle: (self.welcome_image_shuffle
                 != config::DEFAULT_WELCOME_IMAGE_SHUFFLE)
                 .then_some(self.welcome_image_shuffle),
+            hotkey_key_layout: changed(hotkeys.key_layout, DEFAULT_HOTKEYS.key_layout),
+            hotkey_keyboard_mode: changed(hotkeys.keyboard_mode, DEFAULT_HOTKEYS.keyboard_mode),
+            hotkey_new_machine: changed(hotkeys.new_machine, DEFAULT_HOTKEYS.new_machine),
+            hotkey_debugger: changed(hotkeys.debugger, DEFAULT_HOTKEYS.debugger),
             manager_sort: self.manager_sort,
         }
     }
@@ -176,6 +189,9 @@ impl SettingsDialog {
             egui::Checkbox::new(&mut self.welcome_image_shuffle, "Shuffle welcome images"),
         );
 
+        ui.add_space(DETAIL_SECTION_GAP);
+        self.hotkey_editor.draw(ui);
+
         if let Some(err) = &self.error {
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
@@ -225,13 +241,18 @@ impl ManagerApp {
     }
 
     /// Saves the draft and closes the dialog; applies the icons-only toggles,
-    /// the welcome-image cycle, `log_level` and `control_port` live unless a
-    /// CLI/env override wins. A failure shows in the dialog, which stays open
-    /// with the old listener.
+    /// the welcome-image cycle, the hotkeys, `log_level` and `control_port`
+    /// live unless a CLI/env override wins. A failure shows in the dialog,
+    /// which stays open with the old listener.
     fn commit_settings(&mut self, ctx: &egui::Context) {
-        let Some(dialog) = &self.settings else {
+        let Some(dialog) = &mut self.settings else {
             return;
         };
+        // Reset can bring back a default another action has since taken.
+        if let Err(e) = dialog.hotkey_editor.hotkeys.check_distinct() {
+            dialog.error = Some(e);
+            return;
+        }
         let file = dialog.to_file_config();
         let live = LiveSettings::from_dialog(dialog);
         let log_level = (!self.log_level_overridden).then_some(dialog.log_level);
@@ -296,6 +317,7 @@ impl ManagerApp {
             welcome.shuffle = live.welcome_image_shuffle;
         }
         welcome.rearm();
+        self.hotkeys = live.hotkeys;
     }
 }
 
@@ -308,6 +330,7 @@ struct LiveSettings {
     /// `None` only for a zero draft, which the DragValue range never produces.
     welcome_image_cycle_secs: Option<NonZeroU32>,
     welcome_image_shuffle: bool,
+    hotkeys: Hotkeys,
 }
 
 impl LiveSettings {
@@ -318,6 +341,7 @@ impl LiveSettings {
             welcome_image_cycle: dialog.welcome_image_cycle,
             welcome_image_cycle_secs: NonZeroU32::new(dialog.welcome_image_cycle_secs),
             welcome_image_shuffle: dialog.welcome_image_shuffle,
+            hotkeys: dialog.hotkey_editor.hotkeys,
         }
     }
 }
