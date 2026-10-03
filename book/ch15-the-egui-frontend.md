@@ -1541,7 +1541,7 @@ VirtualBox or Parallels, listing every machine you have defined, with a
 deck-style transport — power on, suspend to disk, power off — and a detail
 pane for editing hardware and attached media.
 The dispatch in `main()` is unconditional now: "the app always opens the
-CocoVM manager window" ([`crates/coco-egui/src/main.rs:155-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L155-L157)) — and
+CoCoVM manager window" ([`crates/coco-egui/src/main.rs:155-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L155-L157)) — and
 everything downstream of it is in
 [`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its submodules. `coco` used to fork on
 argument count instead — no arguments opened the manager, any argument at

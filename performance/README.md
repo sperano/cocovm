@@ -1,4 +1,4 @@
-# Measure CocoVM performance
+# Measure CoCoVM performance
 
 Use these baselines before changing the renderer, audio pipeline, repaint scheduling,
 resource management, or synchronous host operations. The harness separates native

@@ -109,7 +109,7 @@ Core Graphics reports a 120 Hz internal panel at bounds `-1512,0,1512,982` and t
 panel and `100,100` on the main external panel. Nine checks in each run verify the
 requested position, `AXMain`, and `AXFocused`; the final egui snapshot also reports
 `Performance 0` focused and unminimized. These runs use the host's nominal active
-refresh modes. CocoVM doesn't select a display refresh rate, and no global display
+refresh modes. CoCoVM doesn't select a display refresh rate, and no global display
 setting changes during capture. Controlled `predicted_dt` tests cover adapter behavior
 that these two native modes don't exercise.
 

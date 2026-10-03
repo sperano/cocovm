@@ -1852,7 +1852,7 @@ every missing file in one pass rather than one frustrating retry at a time.
 
 ## 16.8 The development format and its fixture test
 
-Snapshots use one development schema, version `1`. CocoVM does not promise
+Snapshots use one development schema, version `1`. CoCoVM does not promise
 backward compatibility for snapshots created by other development builds.
 There are no schema migrations or legacy decoders. A different schema number
 produces `UnsupportedSchema`, and unreadable gzip or CBOR data produces a

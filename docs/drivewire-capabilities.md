@@ -1,8 +1,8 @@
 # DriveWire capabilities and server design
 
-This is a capability inventory and proposed design for extending CocoVM's
+This is a capability inventory and proposed design for extending CoCoVM's
 DriveWire server. It does not claim implementation or compatibility beyond the
-existing code. The CocoVM baseline is `fcd60cf`.
+existing code. The CoCoVM baseline is `fcd60cf`.
 
 For the selected NitrOS-9-first target, drive-allocation policy, and source
 compatibility details, see the [guest contract](drivewire-guest-contract.md)
@@ -10,7 +10,7 @@ and [acceptance recipes](drivewire-acceptance.md). Persistent configuration
 has since moved into [VM settings](drivewire-settings.md); the implementation
 gaps below describe the original inventory baseline.
 
-CocoVM already embeds a disk-oriented DriveWire server in each VM. The useful
+CoCoVM already embeds a disk-oriented DriveWire server in each VM. The useful
 extension is host-file access and the services layered on virtual channels.
 Keep protocol sessions per VM, with optional shared resource definitions in the
 manager. VM settings own DriveWire configuration. Choose the guest interface for
@@ -21,7 +21,7 @@ directory access before implementing it.
 DriveWire combines byte-level transactions with higher-level services. A server
 can implement one layer without implementing every service that uses it.
 
-| Capability | Guest-visible behavior | CocoVM baseline |
+| Capability | Guest-visible behavior | CoCoVM baseline |
 | --- | --- | --- |
 | Disk sectors | Read, write, retry, and extended-read transactions transfer 256-byte sectors. The wire carries a drive byte and a 24-bit sector number. [Specification][spec] | Implemented for four flat-file or memory images. |
 | Lifecycle and time | Initialization, reset, driver handshake, no-op, and host date/time. [Specification][spec] | Clock and handshake work. Reset, init, and term are accepted without reset side effects. |
@@ -37,7 +37,7 @@ can implement one layer without implementing every service that uses it.
 | MIDI | The Java server routes channel data to MIDI output and exposes synthesizer controls. [Java MIDI routing][java-midi], [controls][java-midi-controls] | Absent from DriveWire. |
 | Host terminals | Java virtual-window channels connect to a host terminal service. [Java virtual-port handler][java-ports] | Absent. |
 | Remote filesystem extension | Java dispatches `OP_RFM` to an incomplete file-oriented service. Matching NitrOS-9 sources also have stubs. [Java RFM handler][java-rfm], [guest file manager][guest-rfm] | Absent. |
-| WireBug | Register/memory debugging is described, but the specification marks it unimplemented. [Specification][spec] | Absent from DriveWire; CocoVM has a separate debugger. |
+| WireBug | Register/memory debugging is described, but the specification marks it unimplemented. [Specification][spec] | Absent from DriveWire; CoCoVM has a separate debugger. |
 
 The Java implementation also has management interfaces for configuration,
 logging, ports, printers, and server status. These are server product features,
@@ -84,10 +84,10 @@ must precede a commitment to transparent folder access. The inspected CoCo 3
 DriveWire bootlist does not include RFM modules.
 [Guest file manager][guest-rfm], [bootlist][guest-bootlist]
 
-Selecting a directory in CocoVM therefore needs a defined guest contract.
+Selecting a directory in CoCoVM therefore needs a defined guest contract.
 A folder containing `.dsk` images and a folder containing individual host files
 are different features. Ordinary HDB-DOS disk access alone cannot distinguish
-host filenames because CocoVM receives sector requests.
+host filenames because CoCoVM receives sector requests.
 
 ## Existing implementation and gaps
 

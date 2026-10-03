@@ -6,7 +6,7 @@
 // Foundation, either version 3 of the License, or (at your option) any later
 // version. See XRoar's COPYING.GPL for redistribution conditions.
 //
-// Adapted for CocoVM on 2026-09-11. This table omits Dragon-only cartridges
+// Adapted for CoCoVM on 2026-09-11. This table omits Dragon-only cartridges
 // and non-cartridge system, DOS, and IDE ROMs, and adds CyD GMC metadata.
 // XRoar's `gmc` type also drives legacy `$FF40`-banked carts; those entries
 // use `BankedRomPak` here so they don't claim the GMC sound port.
@@ -43,7 +43,7 @@ macro_rules! rom {
     };
 }
 
-/// Known CoCo cartridge ROMs adapted from XRoar, plus CocoVM additions.
+/// Known CoCo cartridge ROMs adapted from XRoar, plus CoCoVM additions.
 #[rustfmt::skip]
 pub const KNOWN_CARTRIDGE_ROMS: &[KnownCartridgeROM] = &[
     rom!(0x7d1cac0e, 0x2000, RomPak, Any, "Androne", Some(1983), Some("Tandy"), Some("26-3096"), None, Some("Androne (1983) (26-3096) (Tandy).ccc")),

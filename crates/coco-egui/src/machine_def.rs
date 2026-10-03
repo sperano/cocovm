@@ -1,5 +1,5 @@
 //! Versioned machine-definition file format: the persisted "cold" layer for
-//! the CocoVM manager. A machine definition is a small, human-editable TOML
+//! the CoCoVM manager. A machine definition is a small, human-editable TOML
 //! file describing hardware, attached media, and peripherals, one per file under
 //! `config_dir()/machines/<slug>.toml`.
 //!

@@ -36,7 +36,7 @@ struct GamepadHost {
 }
 
 impl SharedGamepad {
-    /// Open the one application-lifetime backend. CocoVM doesn't use rumble,
+    /// Open the one application-lifetime backend. CoCoVM doesn't use rumble,
     /// so force-feedback device handles and worker resources stay disabled.
     pub(crate) fn new() -> Self {
         let backend = match gilrs::GilrsBuilder::new()
