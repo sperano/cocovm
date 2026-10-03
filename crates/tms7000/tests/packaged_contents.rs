@@ -1,4 +1,4 @@
-//! Guards the `cargo package` file list for the tms7000 crate (Vikunja #64/#65):
+//! Guards the `cargo package` file list for the tms7000 crate:
 //! the MAME BSD-3-Clause NOTICE must ship, and no packaged test or example may
 //! use the workspace-only `cocovm-test-assets` dev-dependency (packaging strips
 //! path-only dev-dependencies without a version, so such a target would fail to

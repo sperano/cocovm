@@ -34,7 +34,7 @@ const ROUND_TRIP_BUDGET: u32 = 2 * (466 + 128 + 466);
 /// Wall-clock bound on every kernel-socket wait in
 /// [`tcp_endpoint_round_trip_through_the_bus`]. Only ever reached on
 /// genuine failure, so generosity costs nothing on the happy path — 2 s
-/// proved too tight on a heavily loaded host (Vikunja #190).
+/// proved too tight on a heavily loaded host.
 const SOCKET_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn bus() -> SystemBus {

@@ -3,20 +3,6 @@ for Virtual ][-level polish. Workspace: `crates/mc6809` (CPU),
 `crates/coco-core` (headless machine), `crates/coco-egui` (frontend + VM
 manager). `book/` is a 16-chapter course built from this codebase.
 
-## Vikunja task workflow
-
-- Add the `in progress` label when starting work on a task.
-- Never mention Vikunja or link to its tasks in GitHub PR titles, descriptions,
-  or comments.
-- Always create a dedicated git worktree and branch before editing for a
-  Vikunja task. Never implement a Vikunja task directly in the primary
-  worktree or on `main`.
-- Finish every Vikunja task by creating a pull request.
-- Temporarily skip the book PR hooks when creating these pull requests.
-- When the user reports that a PR was merged, verify the worktree is clean
-  and its changes are merged, then remove that worktree and its local branch.
-  Preserve any uncommitted or unmerged work instead of forcing cleanup.
-
 ## Local resources (copyrighted, present only on this machine)
 
 - `./docs/` — authoritative reference PDFs (6809/6309 instruction sets, MC6809
