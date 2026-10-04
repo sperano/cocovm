@@ -316,10 +316,6 @@ fn handle_post(
     let Some(value) = parse_json_body(&request.body) else {
         return write_response(writer, 400, "text/plain", b"bad request", &[]);
     };
-    let Ok(header_version) = header_protocol_version(request) else {
-        let body = b"unsupported MCP-Protocol-Version";
-        return write_response(writer, 400, "text/plain", body, &[]);
-    };
     let initialize_version = initialize_version(&value);
     let session_id = match admit_initialize_session(initialize_version, sessions) {
         Ok(id) => id,
@@ -333,17 +329,33 @@ fn handle_post(
             );
         }
     };
-    let session_version = match initialize_version {
+    // `initialize` negotiates from its body and ignores the header, which
+    // the spec defines only for the requests that follow it.
+    let version = match initialize_version {
         Some(version) => version,
-        None => match check_session(request, sessions, Instant::now()) {
+        None => match request_version(request, sessions) {
             Ok(version) => version,
-            Err(status) => return write_response(writer, status, "text/plain", b"", &[]),
+            Err((status, body)) => return write_response(writer, status, "text/plain", body, &[]),
         },
     };
-    // The header names the version for this request; a client that omits it
-    // gets the one its session negotiated.
-    handler.set_protocol_version(header_version.unwrap_or(session_version));
+    handler.set_protocol_version(version);
     dispatch_post(handler, value, session_id, sessions, writer)
+}
+
+/// The protocol version a request after `initialize` is answered in: its
+/// `MCP-Protocol-Version` header, else the version its session negotiated.
+/// `Err` holds the HTTP status and body for a missing or unknown session
+/// (see [`check_session`]) or an unsupported header.
+fn request_version(
+    request: &HttpRequest,
+    sessions: &Arc<Mutex<SessionStore>>,
+) -> Result<&'static str, (u16, &'static [u8])> {
+    let session_version =
+        check_session(request, sessions, Instant::now()).map_err(|status| (status, &b""[..]))?;
+    match header_protocol_version(request) {
+        Ok(header_version) => Ok(header_version.unwrap_or(session_version)),
+        Err(()) => Err((400, b"unsupported MCP-Protocol-Version")),
+    }
 }
 
 /// The request's `MCP-Protocol-Version` header: `Ok(None)` when absent,

@@ -251,7 +251,10 @@ fn negotiated_protocol_version_gates_structured_output() {
         Err(400)
     );
 
-    let (_, headers, _) = send(port, "POST", MCP_PATH, &[], INITIALIZE);
+    // `initialize` ignores the header (even an unknown one) and negotiates
+    // from its body.
+    let (status, headers, _) = send(port, "POST", MCP_PATH, &[unsupported], INITIALIZE);
+    assert_eq!(status, 200);
     let latest = ("Mcp-Session-Id", headers["mcp-session-id"].as_str());
     assert_eq!(lists_output_schemas(port, &[latest]), Ok(true));
 }
