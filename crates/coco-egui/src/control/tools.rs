@@ -18,8 +18,8 @@ pub trait Backend {
     fn call(&mut self, req: &Request) -> Result<Reply, String>;
 }
 
-pub fn list() -> Value {
-    json!({"tools": tool_defs::definitions()})
+pub fn list(include_annotations: bool) -> Value {
+    json!({"tools": tool_defs::definitions(include_annotations)})
 }
 
 #[derive(Deserialize)]

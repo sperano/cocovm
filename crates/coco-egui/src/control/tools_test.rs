@@ -109,7 +109,7 @@ fn every_listed_tool_round_trips_through_the_mock() {
     ];
     assert_eq!(
         cases.len(),
-        tool_defs::definitions().len(),
+        tool_defs::definitions(true).len(),
         "every tool must be covered here"
     );
 
