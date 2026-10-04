@@ -14,7 +14,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
-use super::jsonrpc::{self, Handler};
+use super::jsonrpc;
+use super::mcp::{self, Mcp};
 use super::{CONTROL_SESSION_IDLE_TIMEOUT, MAX_CONTROL_SESSIONS, MCP_PATH};
 
 /// Longest request line + headers accepted, before the connection is closed
@@ -186,20 +187,31 @@ fn reason_phrase(status: u16) -> &'static str {
     }
 }
 
-/// MCP sessions and their most recent successful lookup time.
+/// One MCP session: when it was last used and the protocol version its
+/// `initialize` negotiated.
+struct Session {
+    last_used: Instant,
+    protocol_version: &'static str,
+}
+
+/// MCP sessions, keyed by `Mcp-Session-Id`.
 #[derive(Default)]
 pub(super) struct SessionStore {
-    sessions: HashMap<String, Instant>,
+    sessions: HashMap<String, Session>,
 }
 
 impl SessionStore {
-    fn create(&mut self, now: Instant) -> Option<String> {
+    fn create(&mut self, now: Instant, protocol_version: &'static str) -> Option<String> {
         self.expire_idle(now);
         if self.sessions.len() >= MAX_CONTROL_SESSIONS {
             return None;
         }
         let id = generate_session_id();
-        self.sessions.insert(id.clone(), now);
+        let session = Session {
+            last_used: now,
+            protocol_version,
+        };
+        self.sessions.insert(id.clone(), session);
         Some(id)
     }
 
@@ -207,18 +219,18 @@ impl SessionStore {
         self.sessions.remove(id);
     }
 
-    fn contains_and_touch(&mut self, id: &str, now: Instant) -> bool {
+    /// The live session `id`'s negotiated protocol version, refreshing its
+    /// idle deadline; `None` for an unknown or expired session.
+    fn touch(&mut self, id: &str, now: Instant) -> Option<&'static str> {
         self.expire_idle(now);
-        let Some(last_used) = self.sessions.get_mut(id) else {
-            return false;
-        };
-        *last_used = now;
-        true
+        let session = self.sessions.get_mut(id)?;
+        session.last_used = now;
+        Some(session.protocol_version)
     }
 
     fn expire_idle(&mut self, now: Instant) {
-        self.sessions.retain(|_, last_used| {
-            now.saturating_duration_since(*last_used) < CONTROL_SESSION_IDLE_TIMEOUT
+        self.sessions.retain(|_, session| {
+            now.saturating_duration_since(session.last_used) < CONTROL_SESSION_IDLE_TIMEOUT
         });
     }
 }
@@ -228,7 +240,7 @@ impl SessionStore {
 /// connection the listener accepts (MCP session IDs aren't per-connection).
 pub(super) fn serve_connection(
     stream: TcpStream,
-    handler: &mut impl Handler,
+    handler: &mut Mcp,
     sessions: &Arc<Mutex<SessionStore>>,
 ) {
     let Ok(write_half) = stream.try_clone() else {
@@ -267,7 +279,7 @@ fn is_timeout(error: &io::Error) -> bool {
 
 fn handle_request(
     request: &HttpRequest,
-    handler: &mut impl Handler,
+    handler: &mut Mcp,
     sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
@@ -297,16 +309,19 @@ fn handle_request(
 
 fn handle_post(
     request: &HttpRequest,
-    handler: &mut impl Handler,
+    handler: &mut Mcp,
     sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
     let Some(value) = parse_json_body(&request.body) else {
         return write_response(writer, 400, "text/plain", b"bad request", &[]);
     };
-    let method = value.get("method").and_then(Value::as_str).unwrap_or("");
-    let is_initialize = method == "initialize";
-    let session_id = match admit_initialize_session(is_initialize, sessions) {
+    let Ok(header_version) = header_protocol_version(request) else {
+        let body = b"unsupported MCP-Protocol-Version";
+        return write_response(writer, 400, "text/plain", body, &[]);
+    };
+    let initialize_version = initialize_version(&value);
+    let session_id = match admit_initialize_session(initialize_version, sessions) {
         Ok(id) => id,
         Err(()) => {
             return write_response(
@@ -318,10 +333,39 @@ fn handle_post(
             );
         }
     };
-    if !is_initialize && let Err(status) = check_session(request, sessions, Instant::now()) {
-        return write_response(writer, status, "text/plain", b"", &[]);
-    }
+    let session_version = match initialize_version {
+        Some(version) => version,
+        None => match check_session(request, sessions, Instant::now()) {
+            Ok(version) => version,
+            Err(status) => return write_response(writer, status, "text/plain", b"", &[]),
+        },
+    };
+    // The header names the version for this request; a client that omits it
+    // gets the one its session negotiated.
+    handler.set_protocol_version(header_version.unwrap_or(session_version));
     dispatch_post(handler, value, session_id, sessions, writer)
+}
+
+/// The request's `MCP-Protocol-Version` header: `Ok(None)` when absent,
+/// `Err` when it names a version this server doesn't speak (a 400 per spec
+/// 2025-06-18).
+fn header_protocol_version(request: &HttpRequest) -> Result<Option<&'static str>, ()> {
+    request
+        .header("mcp-protocol-version")
+        .map(|v| mcp::supported_version(v).ok_or(()))
+        .transpose()
+}
+
+/// For an `initialize` request, the protocol version it negotiates; `None`
+/// for every other message.
+fn initialize_version(message: &Value) -> Option<&'static str> {
+    let method = message.get("method").and_then(Value::as_str)?;
+    (method == "initialize").then(|| {
+        let requested = message
+            .pointer("/params/protocolVersion")
+            .and_then(Value::as_str);
+        mcp::negotiate_version(requested)
+    })
 }
 
 fn parse_json_body(body: &[u8]) -> Option<Value> {
@@ -332,22 +376,22 @@ fn parse_json_body(body: &[u8]) -> Option<Value> {
 }
 
 fn admit_initialize_session(
-    initialize: bool,
+    initialize_version: Option<&'static str>,
     sessions: &Arc<Mutex<SessionStore>>,
 ) -> Result<Option<String>, ()> {
-    if !initialize {
+    let Some(version) = initialize_version else {
         return Ok(None);
-    }
+    };
     sessions
         .lock()
         .expect("sessions mutex poisoned")
-        .create(Instant::now())
+        .create(Instant::now(), version)
         .map(Some)
         .ok_or(())
 }
 
 fn dispatch_post(
-    handler: &mut impl Handler,
+    handler: &mut Mcp,
     value: Value,
     session_id: Option<String>,
     sessions: &Arc<Mutex<SessionStore>>,
@@ -383,24 +427,19 @@ fn dispatch_post(
 /// Every request but `initialize` must carry a known `Mcp-Session-Id`: `400`
 /// when the header is missing outright, `404` when it names a session the
 /// server doesn't know (expired, or never `initialize`d) — the spec's cue
-/// for the client to re-initialize.
+/// for the client to re-initialize. `Ok` holds the session's negotiated
+/// protocol version.
 fn check_session(
     request: &HttpRequest,
     sessions: &Arc<Mutex<SessionStore>>,
     now: Instant,
-) -> Result<(), u16> {
-    match request.header("mcp-session-id") {
-        None => Err(400),
-        Some(id)
-            if sessions
-                .lock()
-                .expect("sessions mutex poisoned")
-                .contains_and_touch(id, now) =>
-        {
-            Ok(())
-        }
-        Some(_) => Err(404),
-    }
+) -> Result<&'static str, u16> {
+    let id = request.header("mcp-session-id").ok_or(400u16)?;
+    sessions
+        .lock()
+        .expect("sessions mutex poisoned")
+        .touch(id, now)
+        .ok_or(404)
 }
 
 fn generate_session_id() -> String {

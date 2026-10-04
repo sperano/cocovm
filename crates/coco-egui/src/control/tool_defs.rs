@@ -1,11 +1,13 @@
 //! Name, description, and JSON Schema `inputSchema` for every tool
-//! `tools/list` reports. [`crate::control::tools`] dispatches calls to these
-//! by name.
+//! `tools/list` reports, plus an `outputSchema` for the tools whose result
+//! has structure. [`crate::control::tools`] dispatches calls to these by
+//! name, and drops `outputSchema` for clients older than protocol 2025-06-18.
 
 use coco_core::joystick::{AXIS_CENTER, AXIS_MAX};
 use serde_json::{Value, json};
 
 use super::key_names;
+use super::protocol::VmStatus;
 use super::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS};
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
@@ -15,6 +17,18 @@ const MAX_DRIVE: u8 = (crate::UI_DRIVES - 1) as u8;
 
 fn tool(name: &str, description: impl Into<String>, schema: Value) -> Value {
     json!({"name": name, "description": description.into(), "inputSchema": schema})
+}
+
+/// [`tool`] with an `outputSchema` its `structuredContent` conforms to.
+fn tool_with_output(
+    name: &str,
+    description: impl Into<String>,
+    input: Value,
+    output: Value,
+) -> Value {
+    let mut def = tool(name, description, input);
+    def["outputSchema"] = output;
+    def
 }
 
 fn object_schema(properties: Value, required: &[&str]) -> Value {
@@ -32,11 +46,29 @@ fn vm_property() -> Value {
     })
 }
 
+fn byte_schema() -> Value {
+    json!({"type": "integer", "minimum": 0, "maximum": u8::MAX})
+}
+
+fn address_schema() -> Value {
+    json!({"type": "integer", "minimum": 0, "maximum": u16::MAX})
+}
+
 fn list_vms() -> Value {
-    tool(
+    let statuses: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
+    let vm = object_schema(
+        json!({
+            "slug": {"type": "string"},
+            "name": {"type": "string"},
+            "status": {"type": "string", "enum": statuses}
+        }),
+        &["slug", "name", "status"],
+    );
+    tool_with_output(
         "list_vms",
         "List every VM the manager knows, with its lifecycle status.",
         object_schema(json!({}), &[]),
+        object_schema(json!({"vms": {"type": "array", "items": vm}}), &["vms"]),
     )
 }
 
@@ -49,10 +81,24 @@ fn start_vm() -> Value {
 }
 
 fn screen_text() -> Value {
-    tool(
+    tool_with_output(
         "screen_text",
         "Read the VM's text screen as lines, plus the current video mode.",
         object_schema(json!({"vm": vm_property()}), &[]),
+        object_schema(
+            json!({
+                "lines": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "One string per screen row, top to bottom."
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "Video-mode summary, with the text buffer's base address."
+                }
+            }),
+            &["lines", "mode"],
+        ),
     )
 }
 
@@ -194,16 +240,28 @@ fn wait() -> Value {
 }
 
 fn peek() -> Value {
-    tool(
+    tool_with_output(
         "peek",
         "Read bytes from VM memory without side effects.",
         object_schema(
             json!({
                 "vm": vm_property(),
-                "addr": {"type": "integer", "minimum": 0, "maximum": u16::MAX},
+                "addr": address_schema(),
                 "len": {"type": "integer", "minimum": 1, "maximum": MAX_PEEK_LEN}
             }),
             &["addr", "len"],
+        ),
+        object_schema(
+            json!({
+                "addr": address_schema(),
+                "bytes": {
+                    "type": "array",
+                    "maxItems": MAX_PEEK_LEN,
+                    "items": byte_schema(),
+                    "description": "Bytes read from `addr` upward, wrapping past $FFFF."
+                }
+            }),
+            &["addr", "bytes"],
         ),
     )
 }
@@ -215,11 +273,11 @@ fn poke() -> Value {
         object_schema(
             json!({
                 "vm": vm_property(),
-                "addr": {"type": "integer", "minimum": 0, "maximum": u16::MAX},
+                "addr": address_schema(),
                 "bytes": {
                     "type": "array",
                     "maxItems": MAX_POKE_LEN,
-                    "items": {"type": "integer", "minimum": 0, "maximum": u8::MAX}
+                    "items": byte_schema()
                 }
             }),
             &["addr", "bytes"],

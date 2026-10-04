@@ -56,6 +56,45 @@ fn tools_call_dispatches_through_the_backend() {
 }
 
 #[test]
+fn negotiate_version_accepts_only_supported_versions() {
+    assert_eq!(negotiate_version(Some("2025-03-26")), "2025-03-26");
+    assert_eq!(negotiate_version(Some("2099-01-01")), PROTOCOL_VERSION);
+    assert_eq!(negotiate_version(None), PROTOCOL_VERSION);
+    assert_eq!(supported_version("2024-11-05"), Some("2024-11-05"));
+    assert_eq!(supported_version("2099-01-01"), None);
+}
+
+fn declares_output_schema(mcp: &mut Mcp) -> bool {
+    let result = mcp.handle("tools/list", Value::Null).unwrap();
+    result["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t.get("outputSchema").is_some())
+}
+
+fn list_vms_is_structured(mcp: &mut Mcp) -> bool {
+    let result = mcp
+        .handle("tools/call", json!({"name": "list_vms", "arguments": {}}))
+        .unwrap();
+    result.get("structuredContent").is_some()
+}
+
+#[test]
+fn structured_output_starts_at_protocol_2025_06_18() {
+    for (version, structured) in [
+        ("2024-11-05", false),
+        ("2025-03-26", false),
+        ("2025-06-18", true),
+    ] {
+        let mut mcp = mcp_with(vec![Ok(Reply::Vms(vec![]))]);
+        mcp.set_protocol_version(version);
+        assert_eq!(declares_output_schema(&mut mcp), structured, "{version}");
+        assert_eq!(list_vms_is_structured(&mut mcp), structured, "{version}");
+    }
+}
+
+#[test]
 fn unrecognized_method_is_method_not_found() {
     let mut mcp = mcp_with(vec![]);
     let err = mcp.handle("resources/list", Value::Null).unwrap_err();

@@ -135,6 +135,9 @@ pub enum VmStatus {
 }
 
 impl VmStatus {
+    /// Every state, in declaration order.
+    pub const ALL: [VmStatus; 3] = [VmStatus::Running, VmStatus::Suspended, VmStatus::PoweredOff];
+
     /// The wire spelling, for human-readable listings.
     pub fn as_str(self) -> &'static str {
         match self {

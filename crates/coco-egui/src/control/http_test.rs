@@ -99,12 +99,12 @@ fn session_store_rejects_capacity_until_a_session_expires() {
     let now = Instant::now();
     let mut store = SessionStore::default();
     for _ in 0..MAX_CONTROL_SESSIONS {
-        assert!(store.create(now).is_some());
+        assert!(store.create(now, mcp::PROTOCOL_VERSION).is_some());
     }
-    assert!(store.create(now).is_none());
+    assert!(store.create(now, mcp::PROTOCOL_VERSION).is_none());
 
     let expired = now + CONTROL_SESSION_IDLE_TIMEOUT;
-    assert!(store.create(expired).is_some());
+    assert!(store.create(expired, mcp::PROTOCOL_VERSION).is_some());
     assert_eq!(store.sessions.len(), 1);
 }
 
@@ -112,11 +112,47 @@ fn session_store_rejects_capacity_until_a_session_expires() {
 fn session_lookup_refreshes_its_idle_deadline() {
     let now = Instant::now();
     let mut store = SessionStore::default();
-    let id = store.create(now).expect("session admitted");
+    let id = store
+        .create(now, mcp::PROTOCOL_VERSION)
+        .expect("session admitted");
     let refreshed = now + CONTROL_SESSION_IDLE_TIMEOUT / 2;
 
-    assert!(store.contains_and_touch(&id, refreshed));
-    assert!(store.contains_and_touch(&id, now + CONTROL_SESSION_IDLE_TIMEOUT));
+    assert!(store.touch(&id, refreshed).is_some());
+    assert!(
+        store
+            .touch(&id, now + CONTROL_SESSION_IDLE_TIMEOUT)
+            .is_some()
+    );
+}
+
+#[test]
+fn session_remembers_its_negotiated_protocol_version() {
+    let now = Instant::now();
+    let mut store = SessionStore::default();
+    let id = store.create(now, "2025-03-26").expect("session admitted");
+    assert_eq!(store.touch(&id, now), Some("2025-03-26"));
+    assert_eq!(store.touch("no-such-session", now), None);
+}
+
+#[test]
+fn protocol_version_header_is_optional_but_must_be_supported() {
+    let absent = parse("POST /mcp HTTP/1.1\r\n\r\n");
+    assert_eq!(header_protocol_version(&absent), Ok(None));
+    let known = parse("POST /mcp HTTP/1.1\r\nMCP-Protocol-Version: 2025-03-26\r\n\r\n");
+    assert_eq!(header_protocol_version(&known), Ok(Some("2025-03-26")));
+    let unknown = parse("POST /mcp HTTP/1.1\r\nMCP-Protocol-Version: 1999-01-01\r\n\r\n");
+    assert_eq!(header_protocol_version(&unknown), Err(()));
+}
+
+#[test]
+fn initialize_version_negotiates_only_for_initialize() {
+    let init =
+        serde_json::json!({"method": "initialize", "params": {"protocolVersion": "2024-11-05"}});
+    assert_eq!(initialize_version(&init), Some("2024-11-05"));
+    let unknown = serde_json::json!({"method": "initialize", "params": {"protocolVersion": "x"}});
+    assert_eq!(initialize_version(&unknown), Some(mcp::PROTOCOL_VERSION));
+    let list = serde_json::json!({"method": "tools/list"});
+    assert_eq!(initialize_version(&list), None);
 }
 
 #[test]
