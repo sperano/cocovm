@@ -154,6 +154,37 @@ fn batch_rules_follow_the_session_protocol_across_connections() {
     );
 }
 
+/// The `MCP-Protocol-Version` header, not the session, decides whether a
+/// batch is accepted: batches exist only in 2025-03-26.
+#[test]
+fn protocol_version_header_decides_batch_support() {
+    let server = bind();
+    let batch = r#"[{"jsonrpc":"2.0","id":1,"method":"ping"}]"#;
+    for (session_version, header_version, status) in [
+        (
+            mcp::PROTOCOL_VERSION_2025_03_26,
+            mcp::PROTOCOL_VERSION_2025_06_18,
+            400,
+        ),
+        (
+            mcp::PROTOCOL_VERSION_2025_06_18,
+            mcp::PROTOCOL_VERSION_2025_03_26,
+            200,
+        ),
+    ] {
+        let session_id = initialize_session(&server, session_version);
+        let headers = [
+            ("Mcp-Session-Id", session_id.as_str()),
+            ("MCP-Protocol-Version", header_version),
+        ];
+        assert_eq!(
+            send(server.port(), "POST", MCP_PATH, &headers, batch).0,
+            status,
+            "session {session_version}, header {header_version}"
+        );
+    }
+}
+
 #[test]
 fn tools_list_uses_the_session_protocol_across_connections() {
     let server = bind();
