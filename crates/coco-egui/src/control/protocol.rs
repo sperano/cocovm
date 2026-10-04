@@ -109,6 +109,8 @@ pub enum Reply {
     Screen {
         lines: Vec<String>,
         mode: String,
+        /// BASIC's text cursor; `None` when it doesn't describe the screen.
+        cursor: Option<coco_core::TextCursor>,
     },
     Screenshot {
         png_base64: String,

@@ -6,8 +6,10 @@ mod artifact_phase;
 mod audio;
 mod render;
 mod run;
+mod text_cursor;
 
 pub use render::ActiveRect;
+pub use text_cursor::TextCursor;
 mod video_mode;
 
 use mc6809::{Bus, MC6809};

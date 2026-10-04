@@ -13,7 +13,7 @@ impl Machine {
     /// Classify the current video mode. CoCo 1/2 (no GIME) always runs the
     /// VDG-native path (PIA1 $FF22 bit 7 selects graphics vs text); CoCo 3
     /// also checks INIT0 COCO and $FF98 BP.
-    fn video_mode(&self) -> VideoMode {
+    pub(super) fn video_mode(&self) -> VideoMode {
         match self.config.variant {
             MachineVariant::Coco1 | MachineVariant::Coco2 => {
                 if self.bus.pia1.b.output & video::VDG_AG != 0 {
@@ -72,7 +72,7 @@ impl Machine {
     /// placeholder line naming the mode.
     pub fn text_screen_lines(&mut self) -> Vec<String> {
         match self.video_mode() {
-            VideoMode::CocoText | VideoMode::CocoGraphics => {
+            VideoMode::CocoText => {
                 let base = self.legacy_display_base();
                 (0..video::ROWS as u16)
                     .map(|row| {
@@ -86,6 +86,9 @@ impl Machine {
                     .collect()
             }
             VideoMode::GIMEText => gime_video::text_lines(&self.bus.gime, &self.bus.ram),
+            VideoMode::CocoGraphics => {
+                vec!["<no text buffer: VDG graphics mode (PMODE, $FF22 A/G=1)>".to_string()]
+            }
             VideoMode::GIMEGraphics => {
                 vec!["<no text buffer: GIME graphics mode (HSCREEN, $FF98 BP=1)>".to_string()]
             }

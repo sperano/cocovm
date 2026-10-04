@@ -51,7 +51,9 @@ fn start_vm() -> Value {
 fn screen_text() -> Value {
     tool(
         "screen_text",
-        "Read the VM's text screen as lines, plus the current video mode.",
+        "Read the VM's text screen as lines, plus the current video mode and the 0-based \
+         row/column where BASIC's next character lands (32-column VDG and WIDTH 40/80 \
+         screens). Graphics modes have no text buffer.",
         object_schema(json!({"vm": vm_property()}), &[]),
     )
 }
