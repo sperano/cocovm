@@ -210,15 +210,6 @@ pub enum Reply {
     Bytes(Vec<u8>),
 }
 
-/// A zero-based insertion position in a decoded text screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScreenCursor {
-    /// Character row from the top of the decoded screen.
-    pub row: usize,
-    /// Character column from the left edge of the decoded screen.
-    pub column: usize,
-}
-
 /// Decoded screen text, video mode, and a validated insertion position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScreenSnapshot {
@@ -227,7 +218,7 @@ pub struct ScreenSnapshot {
     /// Diagnostic summary of the active video mode.
     pub mode: String,
     /// Validated ROM insertion position, or `None` outside known conventions.
-    pub cursor: Option<ScreenCursor>,
+    pub cursor: Option<coco_core::TextCursor>,
 }
 
 /// One manager entry as [`Action::ListVms`] reports it.
@@ -247,6 +238,9 @@ pub enum VmStatus {
 }
 
 impl VmStatus {
+    /// Every state, in declaration order.
+    pub const ALL: [VmStatus; 3] = [VmStatus::Running, VmStatus::Suspended, VmStatus::PoweredOff];
+
     /// The wire spelling, for human-readable listings.
     pub fn as_str(self) -> &'static str {
         match self {

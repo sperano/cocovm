@@ -8,10 +8,60 @@ use super::jsonrpc::{Handler, METHOD_NOT_FOUND, RpcError};
 use super::tools;
 use super::tools::Backend;
 
-/// Protocol version this server speaks when a client doesn't ask for one of
-/// the versions it understands.
-pub const PROTOCOL_VERSION: &str = "2025-06-18";
-const SUPPORTED_PROTOCOL_VERSIONS: [&str; 3] = ["2024-11-05", "2025-03-26", "2025-06-18"];
+pub const PROTOCOL_VERSION_2024_11_05: &str = "2024-11-05";
+pub const PROTOCOL_VERSION_2025_03_26: &str = "2025-03-26";
+pub const PROTOCOL_VERSION_2025_06_18: &str = "2025-06-18";
+
+/// MCP features that differ between the protocol versions this server offers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProtocolVersion {
+    November2024,
+    March2025,
+    June2025,
+}
+
+impl ProtocolVersion {
+    pub(crate) fn negotiate(params: &Value) -> Self {
+        params
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            .and_then(Self::parse)
+            .unwrap_or(Self::June2025)
+    }
+
+    /// `version` when it names one of the versions this server speaks, as
+    /// in an `MCP-Protocol-Version` header; `None` otherwise.
+    pub(crate) fn parse(version: &str) -> Option<Self> {
+        match version {
+            PROTOCOL_VERSION_2024_11_05 => Some(Self::November2024),
+            PROTOCOL_VERSION_2025_03_26 => Some(Self::March2025),
+            PROTOCOL_VERSION_2025_06_18 => Some(Self::June2025),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::November2024 => PROTOCOL_VERSION_2024_11_05,
+            Self::March2025 => PROTOCOL_VERSION_2025_03_26,
+            Self::June2025 => PROTOCOL_VERSION_2025_06_18,
+        }
+    }
+
+    pub(crate) fn accepts_batches(self) -> bool {
+        self == Self::March2025
+    }
+
+    fn supports_tool_annotations(self) -> bool {
+        self != Self::November2024
+    }
+
+    /// Whether tool definitions carry `outputSchema` and results carry
+    /// `structuredContent`; older clients get the text content alone.
+    fn supports_structured_output(self) -> bool {
+        self == Self::June2025
+    }
+}
 
 const INSTRUCTIONS: &str = "cocovm's built-in MCP server drives the VMs the app manages directly. \
 Call list_vms first to find a VM's slug (most tools take an optional `vm` argument that can be \
@@ -23,20 +73,40 @@ screen, since the ROM's keyboard scan and screen redraw both take real emulated 
 /// Handles the MCP-specific methods; everything else is [`METHOD_NOT_FOUND`].
 pub struct Mcp {
     backend: Box<dyn Backend>,
+    /// Version in effect for the request being handled; the transport sets
+    /// it per request, since sessions outlive connections.
+    protocol_version: ProtocolVersion,
 }
 
 impl Mcp {
     pub fn new(backend: Box<dyn Backend>) -> Self {
-        Self { backend }
+        Self {
+            backend,
+            protocol_version: ProtocolVersion::June2025,
+        }
+    }
+
+    pub(crate) fn set_protocol_version(&mut self, protocol_version: ProtocolVersion) {
+        self.protocol_version = protocol_version;
     }
 }
 
 impl Handler for Mcp {
     fn handle(&mut self, method: &str, params: Value) -> Result<Value, RpcError> {
         match method {
-            "initialize" => Ok(initialize_result(&params)),
-            "tools/list" => Ok(tools::list()),
-            "tools/call" => tools::call(self.backend.as_mut(), params),
+            "initialize" => {
+                self.protocol_version = ProtocolVersion::negotiate(&params);
+                Ok(initialize_result(self.protocol_version))
+            }
+            "tools/list" => Ok(tools::list(
+                self.protocol_version.supports_tool_annotations(),
+                self.protocol_version.supports_structured_output(),
+            )),
+            "tools/call" => tools::call(
+                self.backend.as_mut(),
+                params,
+                self.protocol_version.supports_structured_output(),
+            ),
             other => Err(RpcError::new(
                 METHOD_NOT_FOUND,
                 format!("method not found: {other}"),
@@ -45,14 +115,9 @@ impl Handler for Mcp {
     }
 }
 
-fn initialize_result(params: &Value) -> Value {
-    let requested = params.get("protocolVersion").and_then(Value::as_str);
-    let protocol_version = match requested {
-        Some(v) if SUPPORTED_PROTOCOL_VERSIONS.contains(&v) => v,
-        _ => PROTOCOL_VERSION,
-    };
+fn initialize_result(protocol_version: ProtocolVersion) -> Value {
     json!({
-        "protocolVersion": protocol_version,
+        "protocolVersion": protocol_version.as_str(),
         "capabilities": {"tools": {}},
         "serverInfo": {"name": "cocovm", "version": env!("CARGO_PKG_VERSION")},
         "instructions": INSTRUCTIONS,

@@ -1,10 +1,8 @@
 use crate::gime::{init0, vmode};
-use crate::{Machine, MachineConfig, TextCursor};
+use crate::{Machine, MachineConfig, TextCursor, basic_vars};
 
-use super::{
-    GIME_CURSOR_COLUMN, GIME_CURSOR_ROUTINE, GIME_CURSOR_ROUTINE_OFFSET, GIME_CURSOR_ROW,
-    GIME_TEXT_COLUMNS, GIME_TEXT_ROWS, LEGACY_CURSOR_POINTER, LEGACY_CURSOR_ROUTINE,
-    LEGACY_CURSOR_ROUTINE_OFFSET,
+use crate::machine::text_cursor::{
+    GIME_CURSOR_ROUTINE, GIME_CURSOR_ROUTINE_OFFSET, VDG_CURSOR_ROUTINE, VDG_CURSOR_ROUTINE_OFFSET,
 };
 
 const ROM_BYTES: usize = 32 * 1024;
@@ -13,7 +11,9 @@ const GIME_LPR_EIGHT_LINES: u8 = 3;
 const GIME_HRES_40_COLUMNS: u8 = 1 << crate::gime::vres::HRES_SHIFT;
 
 fn machine_with_rom(rom: Vec<u8>) -> Machine {
-    Machine::new(MachineConfig::default(), rom.into_boxed_slice())
+    let mut machine = Machine::new(MachineConfig::default(), rom.into_boxed_slice());
+    machine.bus.gime.sam_page = (basic_vars::VDG_SCREEN_BASE / crate::gime::SAM_PAGE_UNIT) as u8;
+    machine
 }
 
 fn machine() -> Machine {
@@ -22,8 +22,8 @@ fn machine() -> Machine {
 
 fn stock_basic_machine() -> Machine {
     let mut rom = vec![0; ROM_BYTES];
-    rom[LEGACY_CURSOR_ROUTINE_OFFSET..LEGACY_CURSOR_ROUTINE_OFFSET + LEGACY_CURSOR_ROUTINE.len()]
-        .copy_from_slice(LEGACY_CURSOR_ROUTINE);
+    rom[VDG_CURSOR_ROUTINE_OFFSET..VDG_CURSOR_ROUTINE_OFFSET + VDG_CURSOR_ROUTINE.len()]
+        .copy_from_slice(VDG_CURSOR_ROUTINE);
     rom[GIME_CURSOR_ROUTINE_OFFSET..GIME_CURSOR_ROUTINE_OFFSET + GIME_CURSOR_ROUTINE.len()]
         .copy_from_slice(GIME_CURSOR_ROUTINE);
     machine_with_rom(rom)
@@ -45,19 +45,15 @@ fn legacy_text_reports_and_normalizes_a_valid_cursor_cell() {
     let cursor_address = base + CURSOR_OFFSET;
     write_workspace(
         &mut machine,
-        LEGACY_CURSOR_POINTER,
+        basic_vars::CURPOS,
         (cursor_address >> 8) as u8,
     );
-    write_workspace(
-        &mut machine,
-        LEGACY_CURSOR_POINTER + 1,
-        cursor_address as u8,
-    );
+    write_workspace(&mut machine, basic_vars::CURPOS + 1, cursor_address as u8);
     write_workspace(&mut machine, cursor_address, BLINK_BYTE);
 
     let screen = machine.text_screen();
 
-    assert_eq!(screen.cursor, Some(TextCursor { row: 2, column: 3 }));
+    assert_eq!(screen.cursor, Some(TextCursor { row: 2, col: 3 }));
     assert_eq!(screen.lines[2].as_bytes()[3], SPACE);
 }
 
@@ -66,8 +62,8 @@ fn legacy_cursor_outside_the_visible_buffer_is_ignored() {
     let mut machine = stock_basic_machine();
     machine.bus.gime.init0 = init0::COCO;
     let outside = machine.legacy_display_base() + crate::video::SCREEN_LEN as u16;
-    write_workspace(&mut machine, LEGACY_CURSOR_POINTER, (outside >> 8) as u8);
-    write_workspace(&mut machine, LEGACY_CURSOR_POINTER + 1, outside as u8);
+    write_workspace(&mut machine, basic_vars::CURPOS, (outside >> 8) as u8);
+    write_workspace(&mut machine, basic_vars::CURPOS + 1, outside as u8);
 
     assert_eq!(machine.text_screen().cursor, None);
 }
@@ -82,14 +78,19 @@ fn gime_text_reports_valid_workspace_coordinates() {
     machine.bus.gime.vmode = GIME_LPR_EIGHT_LINES;
     machine.bus.gime.vres = GIME_HRES_40_COLUMNS;
     machine.bus.gime.all_ram = true;
-    write_workspace(&mut machine, GIME_CURSOR_COLUMN, 7);
-    write_workspace(&mut machine, GIME_CURSOR_ROW, 4);
-    write_workspace(&mut machine, GIME_TEXT_COLUMNS, COLUMNS);
-    write_workspace(&mut machine, GIME_TEXT_ROWS, ROWS);
+    write_workspace(
+        &mut machine,
+        basic_vars::HRWIDTH,
+        basic_vars::hrwidth::HIRES_40,
+    );
+    write_workspace(&mut machine, basic_vars::H_CURSX, 7);
+    write_workspace(&mut machine, basic_vars::H_CURSY, 4);
+    write_workspace(&mut machine, basic_vars::H_COLUMN, COLUMNS);
+    write_workspace(&mut machine, basic_vars::H_ROW, ROWS);
 
     assert_eq!(
         machine.text_screen().cursor,
-        Some(TextCursor { row: 4, column: 7 })
+        Some(TextCursor { row: 4, col: 7 })
     );
 }
 
@@ -100,8 +101,13 @@ fn gime_cursor_requires_matching_dimensions_and_text_mode() {
     machine.bus.gime.vmode = GIME_LPR_EIGHT_LINES;
     machine.bus.gime.vres = 0;
     machine.bus.gime.all_ram = true;
-    write_workspace(&mut machine, GIME_TEXT_COLUMNS, 80);
-    write_workspace(&mut machine, GIME_TEXT_ROWS, 24);
+    write_workspace(
+        &mut machine,
+        basic_vars::HRWIDTH,
+        basic_vars::hrwidth::HIRES_80,
+    );
+    write_workspace(&mut machine, basic_vars::H_COLUMN, 80);
+    write_workspace(&mut machine, basic_vars::H_ROW, 24);
     assert_eq!(machine.text_screen().cursor, None);
 
     machine.bus.gime.vmode = vmode::BP;
@@ -119,14 +125,10 @@ fn legacy_workspace_is_ignored_without_the_stock_basic_routine() {
     let cursor_address = base + CURSOR_OFFSET;
     write_workspace(
         &mut machine,
-        LEGACY_CURSOR_POINTER,
+        basic_vars::CURPOS,
         (cursor_address >> 8) as u8,
     );
-    write_workspace(
-        &mut machine,
-        LEGACY_CURSOR_POINTER + 1,
-        cursor_address as u8,
-    );
+    write_workspace(&mut machine, basic_vars::CURPOS + 1, cursor_address as u8);
     write_workspace(&mut machine, cursor_address, CURSOR_BYTE);
 
     let screen = machine.text_screen();
@@ -148,10 +150,15 @@ fn gime_workspace_is_ignored_without_the_stock_basic_routine() {
     machine.bus.gime.vmode = GIME_LPR_EIGHT_LINES;
     machine.bus.gime.vres = GIME_HRES_40_COLUMNS;
     machine.bus.gime.all_ram = true;
-    write_workspace(&mut machine, GIME_CURSOR_COLUMN, 7);
-    write_workspace(&mut machine, GIME_CURSOR_ROW, 4);
-    write_workspace(&mut machine, GIME_TEXT_COLUMNS, COLUMNS);
-    write_workspace(&mut machine, GIME_TEXT_ROWS, ROWS);
+    write_workspace(
+        &mut machine,
+        basic_vars::HRWIDTH,
+        basic_vars::hrwidth::HIRES_40,
+    );
+    write_workspace(&mut machine, basic_vars::H_CURSX, 7);
+    write_workspace(&mut machine, basic_vars::H_CURSY, 4);
+    write_workspace(&mut machine, basic_vars::H_COLUMN, COLUMNS);
+    write_workspace(&mut machine, basic_vars::H_ROW, ROWS);
 
     assert_eq!(machine.text_screen().cursor, None);
 }

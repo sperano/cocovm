@@ -1,18 +1,23 @@
 //! Maps `tools/list` and `tools/call` onto the [`protocol`] request/reply
 //! types.
 
+use coco_core::TextCursor;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::jsonrpc::{INVALID_PARAMS, RpcError};
 use super::protocol::{
-    Action, ControlError, Reply, Request, ScreenCursor, ScreenSnapshot, Stick, TextMatcher, VmInfo,
+    Action, ControlError, Reply, Request, ScreenSnapshot, Stick, TextMatcher, VmInfo,
 };
 use super::tool_defs;
 
 /// Bytes shown per line of a [`peek`] hex dump.
 const HEX_DUMP_WIDTH: usize = 16;
+/// Tool-definition key for the result schema (protocol 2025-06-18 on).
+const OUTPUT_SCHEMA: &str = "outputSchema";
+/// Tool-result key for the value matching [`OUTPUT_SCHEMA`].
+const STRUCTURED_CONTENT: &str = "structuredContent";
 
 /// Sends one request and waits for its reply. Exists so `tools::call` can be
 /// tested against a mock instead of the real frame-loop queue.
@@ -20,8 +25,24 @@ pub trait Backend {
     fn call(&mut self, req: &Request) -> Result<Reply, ControlError>;
 }
 
-pub fn list() -> Value {
-    json!({"tools": tool_defs::definitions()})
+/// The `tools/list` result. `include_annotations` adds each tool's
+/// behavior hints (protocol 2025-03-26 on); without `structured_output`
+/// (clients older than protocol 2025-06-18) the tools carry no
+/// `outputSchema`.
+pub fn list(include_annotations: bool, structured_output: bool) -> Value {
+    let mut tools = tool_defs::definitions(include_annotations);
+    if !structured_output {
+        for tool in &mut tools {
+            remove_key(tool, OUTPUT_SCHEMA);
+        }
+    }
+    json!({"tools": tools})
+}
+
+fn remove_key(value: &mut Value, key: &str) {
+    if let Some(object) = value.as_object_mut() {
+        object.remove(key);
+    }
 }
 
 #[derive(Deserialize)]
@@ -33,7 +54,20 @@ struct CallParams {
 
 /// Dispatch one `tools/call`. `Err` only for malformed params (unknown tool,
 /// wrong argument shape); a tool or backend failure is `Ok` with `isError`.
-pub fn call(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError> {
+/// Without `structured_output` the result keeps only its text content.
+pub fn call(
+    backend: &mut dyn Backend,
+    params: Value,
+    structured_output: bool,
+) -> Result<Value, RpcError> {
+    let mut result = dispatch(backend, params)?;
+    if !structured_output {
+        remove_key(&mut result, STRUCTURED_CONTENT);
+    }
+    Ok(result)
+}
+
+fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError> {
     let call_params: CallParams = serde_json::from_value(params)
         .map_err(|e| RpcError::new(INVALID_PARAMS, format!("invalid tools/call params: {e}")))?;
     let args = match call_params.arguments {
@@ -87,6 +121,17 @@ fn text_result(text: String) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": false})
 }
 
+/// A text result plus the `structuredContent` its tool's `outputSchema`
+/// describes. The text stays human-readable rather than the serialized JSON
+/// the spec suggests: it is what pre-2025-06-18 clients show the model.
+fn structured_result(text: String, structured: Value) -> Value {
+    json!({
+        "content": [{"type": "text", "text": text}],
+        STRUCTURED_CONTENT: structured,
+        "isError": false
+    })
+}
+
 fn error_result(text: String) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": true})
 }
@@ -102,23 +147,33 @@ fn format_vms(vms: &[VmInfo]) -> String {
         .join("\n")
 }
 
+fn vms_json(vms: &[VmInfo]) -> Value {
+    let vms: Vec<Value> = vms
+        .iter()
+        .map(|v| json!({"slug": v.slug, "name": v.name, "status": v.status.as_str()}))
+        .collect();
+    json!({"vms": vms})
+}
+
 fn format_screen(screen: &ScreenSnapshot) -> String {
+    let cursor = match screen.cursor {
+        Some(TextCursor { row, col }) => format!("cursor: row {row}, column {col} (0-based)"),
+        None => "cursor: unknown (graphics mode, or BASIC is not driving this screen)".to_string(),
+    };
     format!(
-        "```\n{}\n```\n{}\n{}",
+        "```\n{}\n```\n{}\n{cursor}",
         screen.lines.join("\n"),
-        screen.mode,
-        format_cursor(screen.cursor)
+        screen.mode
     )
 }
 
-fn format_cursor(cursor: Option<ScreenCursor>) -> String {
-    match cursor {
-        Some(cursor) => format!(
-            "cursor: {{\"row\":{},\"column\":{}}}",
-            cursor.row, cursor.column
-        ),
-        None => "cursor: null".to_string(),
+/// `screen_text`'s `structuredContent`; `cursor` is left out when unknown.
+fn screen_json(snapshot: &ScreenSnapshot) -> Value {
+    let mut screen = json!({"lines": snapshot.lines, "mode": snapshot.mode});
+    if let Some(TextCursor { row, col }) = snapshot.cursor {
+        screen["cursor"] = json!({"row": row, "col": col});
     }
+    screen
 }
 
 fn format_control_error(error: &ControlError) -> String {
@@ -158,7 +213,7 @@ fn dispatch_list_vms(backend: &mut dyn Backend, args: Value) -> Result<Value, Rp
         action: Action::ListVms,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Vms(vms) => Some(text_result(format_vms(&vms))),
+        Reply::Vms(vms) => Some(structured_result(format_vms(&vms), vms_json(&vms))),
         _ => None,
     }))
 }
@@ -184,7 +239,10 @@ fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value,
         action: Action::ScreenText,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Screen(screen) => Some(text_result(format_screen(&screen))),
+        Reply::Screen(screen) => Some(structured_result(
+            format_screen(&screen),
+            screen_json(&screen),
+        )),
         _ => None,
     }))
 }
@@ -404,7 +462,10 @@ fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Valu
         },
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Screen(screen) => Some(text_result(format_screen(&screen))),
+        Reply::Screen(screen) => Some(structured_result(
+            format_screen(&screen),
+            screen_json(&screen),
+        )),
         _ => None,
     }))
 }
@@ -424,7 +485,10 @@ fn dispatch_peek(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcErr
         action: Action::Peek { addr, len },
     };
     Ok(finish(backend, req, move |reply| match reply {
-        Reply::Bytes(bytes) => Some(text_result(hex_dump(addr, &bytes))),
+        Reply::Bytes(bytes) => Some(structured_result(
+            hex_dump(addr, &bytes),
+            json!({"addr": addr, "bytes": bytes}),
+        )),
         _ => None,
     }))
 }

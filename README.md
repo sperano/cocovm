@@ -119,6 +119,11 @@ pause a machine, wait for video fields or matching screen text, and read or
 write memory. Screen matching accepts a literal string or regular expression.
 Call `tools/list` through an MCP client for the complete schemas.
 
+Clients that negotiate MCP protocol version 2025-06-18 also receive structured
+results: `list_vms`, `screen_text`, and `peek` declare an output schema and
+return JSON alongside their text. Clients on earlier protocol versions receive
+the text only.
+
 ## Develop CoCoVM
 
 Run the workspace checks before submitting a change:

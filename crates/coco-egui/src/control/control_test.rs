@@ -94,6 +94,117 @@ fn read_response(reader: &mut BufReader<TcpStream>) -> (u16, HashMap<String, Str
 
 const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#;
 
+fn initialize_session(server: &ControlServer, protocol_version: &str) -> String {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {"protocolVersion": protocol_version},
+    })
+    .to_string();
+    let (status, headers, response) = send(server.port(), "POST", MCP_PATH, &[], &body);
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_str::<Value>(&response).unwrap()["result"]["protocolVersion"],
+        json!(protocol_version)
+    );
+    headers["mcp-session-id"].clone()
+}
+
+#[test]
+fn batch_rules_follow_the_session_protocol_across_connections() {
+    let server = bind();
+    let batch = r#"[{"jsonrpc":"2.0","id":3,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","id":2,"method":"ping"}]"#;
+    for version in [
+        mcp::PROTOCOL_VERSION_2024_11_05,
+        mcp::PROTOCOL_VERSION_2025_06_18,
+    ] {
+        let session_id = initialize_session(&server, version);
+        let headers = [("Mcp-Session-Id", session_id.as_str())];
+        assert_eq!(
+            send(server.port(), "POST", MCP_PATH, &headers, batch).0,
+            400
+        );
+    }
+
+    let session_id = initialize_session(&server, mcp::PROTOCOL_VERSION_2025_03_26);
+    let headers = [("Mcp-Session-Id", session_id.as_str())];
+    let (status, _, body) = send(server.port(), "POST", MCP_PATH, &headers, batch);
+    assert_eq!(status, 200);
+    let responses: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(responses.as_array().unwrap().len(), 2);
+    assert_eq!(responses[0]["id"], json!(3));
+    assert_eq!(responses[1]["id"], json!(2));
+
+    let notifications = r#"[{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","method":"notifications/cancelled"}]"#;
+    let (status, _, body) = send(server.port(), "POST", MCP_PATH, &headers, notifications);
+    assert_eq!(status, 202);
+    assert!(body.is_empty());
+    assert_eq!(send(server.port(), "POST", MCP_PATH, &headers, "[]").0, 400);
+    assert_eq!(
+        send(
+            server.port(),
+            "POST",
+            MCP_PATH,
+            &headers,
+            &format!("[{INITIALIZE}]")
+        )
+        .0,
+        400
+    );
+}
+
+/// The `MCP-Protocol-Version` header, not the session, decides whether a
+/// batch is accepted: batches exist only in 2025-03-26.
+#[test]
+fn protocol_version_header_decides_batch_support() {
+    let server = bind();
+    let batch = r#"[{"jsonrpc":"2.0","id":1,"method":"ping"}]"#;
+    for (session_version, header_version, status) in [
+        (
+            mcp::PROTOCOL_VERSION_2025_03_26,
+            mcp::PROTOCOL_VERSION_2025_06_18,
+            400,
+        ),
+        (
+            mcp::PROTOCOL_VERSION_2025_06_18,
+            mcp::PROTOCOL_VERSION_2025_03_26,
+            200,
+        ),
+    ] {
+        let session_id = initialize_session(&server, session_version);
+        let headers = [
+            ("Mcp-Session-Id", session_id.as_str()),
+            ("MCP-Protocol-Version", header_version),
+        ];
+        assert_eq!(
+            send(server.port(), "POST", MCP_PATH, &headers, batch).0,
+            status,
+            "session {session_version}, header {header_version}"
+        );
+    }
+}
+
+#[test]
+fn tools_list_uses_the_session_protocol_across_connections() {
+    let server = bind();
+    let list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
+    for (version, annotations_expected) in [
+        (mcp::PROTOCOL_VERSION_2024_11_05, false),
+        (mcp::PROTOCOL_VERSION_2025_03_26, true),
+        (mcp::PROTOCOL_VERSION_2025_06_18, true),
+    ] {
+        let session_id = initialize_session(&server, version);
+        let headers = [("Mcp-Session-Id", session_id.as_str())];
+        let (status, _, body) = send(server.port(), "POST", MCP_PATH, &headers, list);
+        assert_eq!(status, 200);
+        let response: Value = serde_json::from_str(&body).unwrap();
+        for tool in response["result"]["tools"].as_array().unwrap() {
+            assert_eq!(tool.get("annotations").is_some(), annotations_expected);
+        }
+    }
+}
+
 /// A real client keeps one connection open for the whole session: three
 /// requests on one socket, each answered in order, the third ending it.
 #[test]
@@ -184,7 +295,7 @@ fn mcp_session_lifecycle_over_real_http() {
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(
         response["result"]["tools"].as_array().unwrap().len(),
-        tool_defs::definitions().len()
+        tool_defs::definitions(true).len()
     );
 
     // tools/call list_vms: goes out on the request queue; answer it like the
@@ -215,6 +326,48 @@ fn mcp_session_lifecycle_over_real_http() {
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(response["result"]["isError"], json!(false));
     assert_eq!(response["result"]["content"][0]["type"], json!("text"));
+}
+
+/// Whether `tools/list` over `headers` declares any `outputSchema`, or the
+/// HTTP status when the request is refused.
+fn lists_output_schemas(port: u16, headers: &[(&str, &str)]) -> Result<bool, u16> {
+    let list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
+    let (status, _, body) = send(port, "POST", MCP_PATH, headers, list);
+    if status != 200 {
+        return Err(status);
+    }
+    let response: Value = serde_json::from_str(&body).unwrap();
+    let tools = response["result"]["tools"].as_array().unwrap().clone();
+    Ok(tools.iter().any(|t| t.get("outputSchema").is_some()))
+}
+
+/// The session's `initialize` version decides structured output on later
+/// connections; an `MCP-Protocol-Version` header overrides it per request.
+#[test]
+fn negotiated_protocol_version_gates_structured_output() {
+    let server = bind();
+    let port = server.port();
+    let initialize = INITIALIZE.replace("2025-06-18", "2025-03-26");
+    let (status, headers, _) = send(port, "POST", MCP_PATH, &[], &initialize);
+    assert_eq!(status, 200);
+    let session_id = headers["mcp-session-id"].clone();
+    let session = ("Mcp-Session-Id", session_id.as_str());
+
+    assert_eq!(lists_output_schemas(port, &[session]), Ok(false));
+    let newer = ("MCP-Protocol-Version", "2025-06-18");
+    assert_eq!(lists_output_schemas(port, &[session, newer]), Ok(true));
+    let unsupported = ("MCP-Protocol-Version", "1999-01-01");
+    assert_eq!(
+        lists_output_schemas(port, &[session, unsupported]),
+        Err(400)
+    );
+
+    // `initialize` ignores the header (even an unknown one) and negotiates
+    // from its body.
+    let (status, headers, _) = send(port, "POST", MCP_PATH, &[unsupported], INITIALIZE);
+    assert_eq!(status, 200);
+    let latest = ("Mcp-Session-Id", headers["mcp-session-id"].as_str());
+    assert_eq!(lists_output_schemas(port, &[latest]), Ok(true));
 }
 
 #[test]

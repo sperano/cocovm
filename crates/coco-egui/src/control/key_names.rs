@@ -35,6 +35,29 @@ pub fn key_pos(name: &str) -> Option<(Pos, bool)> {
     kbd::char_key(c)
 }
 
+/// Map every character of a `type_text` burst to its key, as
+/// [`kbd::char_key`] does. If any character has no CoCo key, maps nothing
+/// and names each distinct offender once, in order of first appearance.
+pub fn text_taps(text: &str) -> Result<Vec<(Pos, bool)>, String> {
+    let mut taps = Vec::with_capacity(text.len());
+    let mut unmappable: Vec<char> = Vec::new();
+    for c in text.chars() {
+        match kbd::char_key(c) {
+            Some(tap) => taps.push(tap),
+            None if !unmappable.contains(&c) => unmappable.push(c),
+            None => {}
+        }
+    }
+    if unmappable.is_empty() {
+        return Ok(taps);
+    }
+    let listed: Vec<String> = unmappable.iter().map(|c| format!("{c:?}")).collect();
+    Err(format!(
+        "no CoCo key for {}; nothing was typed",
+        listed.join(", ")
+    ))
+}
+
 /// Human-readable list of the accepted names, for tool descriptions.
 pub fn describe() -> String {
     let named: Vec<&str> = NAMED_KEYS.iter().map(|(n, _)| *n).collect();

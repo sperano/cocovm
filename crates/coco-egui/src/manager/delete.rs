@@ -116,13 +116,13 @@ impl ManagerApp {
         };
         let slug = self.entries[index].slug.clone();
         let path = dir.join(format!("{slug}.toml"));
+        self.stop_vm(index);
         // A file already gone is fine — the goal state is reached either way.
         match fs::remove_file(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(format!("{}: {e}", path.display())),
         }
-        self.stop_vm(index);
         self.entries.remove(index);
         self.selection.remove_index(index);
         if self.edit.as_ref().is_some_and(|e| e.slug == slug) {
@@ -156,3 +156,7 @@ fn draw_delete_warnings(ui: &mut egui::Ui, plural: bool, running: bool, suspende
         ui.label(egui::RichText::new(text).strong());
     }
 }
+
+#[cfg(test)]
+#[path = "delete_test.rs"]
+mod tests;

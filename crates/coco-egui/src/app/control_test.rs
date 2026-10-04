@@ -21,13 +21,14 @@ fn boot() -> CocoApp {
 }
 
 #[test]
-fn screen_text_reports_lines_and_mode() {
+fn screen_text_reports_lines_mode_and_cursor() {
     let mut app = boot();
     let Reply::Screen(screen) = app.screen_text() else {
         panic!("expected Reply::Screen");
     };
     assert!(!screen.lines.is_empty());
     assert!(!screen.mode.is_empty());
+    assert_eq!(screen.cursor, app.machine.basic_text_cursor());
 }
 
 #[test]
@@ -65,6 +66,17 @@ fn start_remote_typing_queues_mapped_characters_and_reports_fields() {
     let fields = app.start_remote_typing("HI").expect("running VM accepts");
     assert_eq!(app.remote_type_ahead.queue.len(), 2);
     assert_eq!(fields, 2 * crate::typeahead::FIELDS_PER_TAP);
+}
+
+#[test]
+fn start_remote_typing_rejects_unmappable_characters_and_types_nothing() {
+    let mut app = boot();
+    let err = app
+        .start_remote_typing("PRINT [1]{~}")
+        .expect_err("characters with no CoCo key must be rejected");
+    assert!(err.contains("'['") && err.contains("'{'") && err.contains("'~'"));
+    assert!(app.remote_type_ahead.queue.is_empty());
+    assert!(!app.remote_type_ahead.is_active());
 }
 
 #[test]

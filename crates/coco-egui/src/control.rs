@@ -23,8 +23,8 @@ pub mod tool_defs;
 pub mod tools;
 
 pub use protocol::{
-    Action, ControlError, Reply, Request, Response, ScreenCursor, ScreenSnapshot, Stick,
-    TextMatcher, VmInfo, VmStatus,
+    Action, ControlError, Reply, Request, Response, ScreenSnapshot, Stick, TextMatcher, VmInfo,
+    VmStatus,
 };
 pub use server::ControlServer;
 
