@@ -22,11 +22,21 @@ pub(crate) enum ProtocolVersion {
 
 impl ProtocolVersion {
     pub(crate) fn negotiate(params: &Value) -> Self {
-        match params.get("protocolVersion").and_then(Value::as_str) {
-            Some(PROTOCOL_VERSION_2024_11_05) => Self::November2024,
-            Some(PROTOCOL_VERSION_2025_03_26) => Self::March2025,
-            Some(PROTOCOL_VERSION_2025_06_18) => Self::June2025,
-            _ => Self::June2025,
+        params
+            .get("protocolVersion")
+            .and_then(Value::as_str)
+            .and_then(Self::parse)
+            .unwrap_or(Self::June2025)
+    }
+
+    /// `version` when it names one of the versions this server speaks, as
+    /// in an `MCP-Protocol-Version` header; `None` otherwise.
+    pub(crate) fn parse(version: &str) -> Option<Self> {
+        match version {
+            PROTOCOL_VERSION_2024_11_05 => Some(Self::November2024),
+            PROTOCOL_VERSION_2025_03_26 => Some(Self::March2025),
+            PROTOCOL_VERSION_2025_06_18 => Some(Self::June2025),
+            _ => None,
         }
     }
 
@@ -45,6 +55,12 @@ impl ProtocolVersion {
     fn supports_tool_annotations(self) -> bool {
         self != Self::November2024
     }
+
+    /// Whether tool definitions carry `outputSchema` and results carry
+    /// `structuredContent`; older clients get the text content alone.
+    fn supports_structured_output(self) -> bool {
+        self == Self::June2025
+    }
 }
 
 const INSTRUCTIONS: &str = "cocovm's built-in MCP server drives the VMs the app manages directly. \
@@ -57,6 +73,8 @@ screen, since the ROM's keyboard scan and screen redraw both take real emulated 
 /// Handles the MCP-specific methods; everything else is [`METHOD_NOT_FOUND`].
 pub struct Mcp {
     backend: Box<dyn Backend>,
+    /// Version in effect for the request being handled; the transport sets
+    /// it per request, since sessions outlive connections.
     protocol_version: ProtocolVersion,
 }
 
@@ -82,8 +100,13 @@ impl Handler for Mcp {
             }
             "tools/list" => Ok(tools::list(
                 self.protocol_version.supports_tool_annotations(),
+                self.protocol_version.supports_structured_output(),
             )),
-            "tools/call" => tools::call(self.backend.as_mut(), params),
+            "tools/call" => tools::call(
+                self.backend.as_mut(),
+                params,
+                self.protocol_version.supports_structured_output(),
+            ),
             other => Err(RpcError::new(
                 METHOD_NOT_FOUND,
                 format!("method not found: {other}"),

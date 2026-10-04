@@ -128,6 +128,46 @@ fn session_lookup_refreshes_its_idle_deadline() {
 }
 
 #[test]
+fn protocol_version_header_overrides_the_session_version() {
+    let sessions = Arc::new(Mutex::new(SessionStore::default()));
+    let id = sessions
+        .lock()
+        .unwrap()
+        .create(Instant::now(), ProtocolVersion::March2025)
+        .expect("session admitted");
+    let request = |headers: &str| {
+        parse(&format!(
+            "POST /mcp HTTP/1.1\r\nMcp-Session-Id: {id}\r\n{headers}\r\n"
+        ))
+    };
+
+    assert_eq!(
+        request_version(&request(""), &sessions),
+        Ok(ProtocolVersion::March2025)
+    );
+    assert_eq!(
+        request_version(&request("MCP-Protocol-Version: 2025-06-18\r\n"), &sessions),
+        Ok(ProtocolVersion::June2025)
+    );
+    assert_eq!(
+        request_version(&request("MCP-Protocol-Version: 1999-01-01\r\n"), &sessions),
+        Err((400, &b"unsupported MCP-Protocol-Version"[..]))
+    );
+}
+
+#[test]
+fn request_version_rejects_missing_and_unknown_sessions() {
+    let sessions = Arc::new(Mutex::new(SessionStore::default()));
+    let no_session = parse("POST /mcp HTTP/1.1\r\nMCP-Protocol-Version: 2025-06-18\r\n\r\n");
+    assert_eq!(
+        request_version(&no_session, &sessions),
+        Err((400, &b""[..]))
+    );
+    let unknown = parse("POST /mcp HTTP/1.1\r\nMcp-Session-Id: nope\r\n\r\n");
+    assert_eq!(request_version(&unknown, &sessions), Err((404, &b""[..])));
+}
+
+#[test]
 fn close_response_advertises_connection_close() {
     let mut out = Vec::new();
     write_close_response(&mut out, 503, "text/plain", b"busy").unwrap();

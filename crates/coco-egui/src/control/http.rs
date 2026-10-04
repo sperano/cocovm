@@ -334,9 +334,9 @@ fn handle_single_post(
     if method(&value) == Some("initialize") {
         return handle_initialize(handler, value, sessions, writer);
     }
-    let protocol_version = match check_session(request, sessions, Instant::now()) {
+    let protocol_version = match request_version(request, sessions) {
         Ok(version) => version,
-        Err(status) => return write_response(writer, status, "text/plain", b"", &[]),
+        Err((status, body)) => return write_response(writer, status, "text/plain", body, &[]),
     };
     handler.set_protocol_version(protocol_version);
     dispatch_single(handler, value, None, sessions, writer)
@@ -373,9 +373,9 @@ fn handle_batch_post(
     sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
-    let protocol_version = match check_session(request, sessions, Instant::now()) {
+    let protocol_version = match request_version(request, sessions) {
         Ok(version) => version,
-        Err(status) => return write_response(writer, status, "text/plain", b"", &[]),
+        Err((status, body)) => return write_response(writer, status, "text/plain", body, &[]),
     };
     if !protocol_version.accepts_batches()
         || messages.is_empty()
@@ -395,6 +395,25 @@ fn handle_batch_post(
     }
     let body = serde_json::to_vec(&responses).unwrap_or_default();
     write_response(writer, 200, "application/json", &body, &[])
+}
+
+/// The protocol version a request after `initialize` is answered in: its
+/// `MCP-Protocol-Version` header, else the version its session negotiated.
+/// `Err` holds the HTTP status and body for a missing or unknown session
+/// (see [`check_session`]) or an unsupported header (a 400 per spec
+/// 2025-06-18). `initialize` never comes here: it negotiates from its body.
+fn request_version(
+    request: &HttpRequest,
+    sessions: &Arc<Mutex<SessionStore>>,
+) -> Result<ProtocolVersion, (u16, &'static [u8])> {
+    let session_version =
+        check_session(request, sessions, Instant::now()).map_err(|status| (status, &b""[..]))?;
+    match request.header("mcp-protocol-version") {
+        None => Ok(session_version),
+        Some(header) => {
+            ProtocolVersion::parse(header).ok_or((400, &b"unsupported MCP-Protocol-Version"[..]))
+        }
+    }
 }
 
 fn method(value: &Value) -> Option<&str> {

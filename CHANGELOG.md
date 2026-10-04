@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binding, then press the new key. They are stored as `hotkey_*` keys in
   `config.toml` and apply to open VM windows on Save. A hotkey must not type
   into the machine, clash with another hotkey, or take a built-in shortcut.
+- Structured MCP tool results. For clients on protocol 2025-06-18,
+  `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
+  `structuredContent` next to the existing text: the VM list; the screen
+  lines, mode, and cursor; and the address and bytes. Older clients get the
+  text alone. Requests with an unsupported `MCP-Protocol-Version` header are
+  rejected with HTTP 400.
 
 ### Changed
 - The MCP server's `screen_text` tool reports where BASIC's next character

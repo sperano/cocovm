@@ -154,6 +154,37 @@ fn batch_rules_follow_the_session_protocol_across_connections() {
     );
 }
 
+/// The `MCP-Protocol-Version` header, not the session, decides whether a
+/// batch is accepted: batches exist only in 2025-03-26.
+#[test]
+fn protocol_version_header_decides_batch_support() {
+    let server = bind();
+    let batch = r#"[{"jsonrpc":"2.0","id":1,"method":"ping"}]"#;
+    for (session_version, header_version, status) in [
+        (
+            mcp::PROTOCOL_VERSION_2025_03_26,
+            mcp::PROTOCOL_VERSION_2025_06_18,
+            400,
+        ),
+        (
+            mcp::PROTOCOL_VERSION_2025_06_18,
+            mcp::PROTOCOL_VERSION_2025_03_26,
+            200,
+        ),
+    ] {
+        let session_id = initialize_session(&server, session_version);
+        let headers = [
+            ("Mcp-Session-Id", session_id.as_str()),
+            ("MCP-Protocol-Version", header_version),
+        ];
+        assert_eq!(
+            send(server.port(), "POST", MCP_PATH, &headers, batch).0,
+            status,
+            "session {session_version}, header {header_version}"
+        );
+    }
+}
+
 #[test]
 fn tools_list_uses_the_session_protocol_across_connections() {
     let server = bind();
@@ -295,6 +326,48 @@ fn mcp_session_lifecycle_over_real_http() {
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(response["result"]["isError"], json!(false));
     assert_eq!(response["result"]["content"][0]["type"], json!("text"));
+}
+
+/// Whether `tools/list` over `headers` declares any `outputSchema`, or the
+/// HTTP status when the request is refused.
+fn lists_output_schemas(port: u16, headers: &[(&str, &str)]) -> Result<bool, u16> {
+    let list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
+    let (status, _, body) = send(port, "POST", MCP_PATH, headers, list);
+    if status != 200 {
+        return Err(status);
+    }
+    let response: Value = serde_json::from_str(&body).unwrap();
+    let tools = response["result"]["tools"].as_array().unwrap().clone();
+    Ok(tools.iter().any(|t| t.get("outputSchema").is_some()))
+}
+
+/// The session's `initialize` version decides structured output on later
+/// connections; an `MCP-Protocol-Version` header overrides it per request.
+#[test]
+fn negotiated_protocol_version_gates_structured_output() {
+    let server = bind();
+    let port = server.port();
+    let initialize = INITIALIZE.replace("2025-06-18", "2025-03-26");
+    let (status, headers, _) = send(port, "POST", MCP_PATH, &[], &initialize);
+    assert_eq!(status, 200);
+    let session_id = headers["mcp-session-id"].clone();
+    let session = ("Mcp-Session-Id", session_id.as_str());
+
+    assert_eq!(lists_output_schemas(port, &[session]), Ok(false));
+    let newer = ("MCP-Protocol-Version", "2025-06-18");
+    assert_eq!(lists_output_schemas(port, &[session, newer]), Ok(true));
+    let unsupported = ("MCP-Protocol-Version", "1999-01-01");
+    assert_eq!(
+        lists_output_schemas(port, &[session, unsupported]),
+        Err(400)
+    );
+
+    // `initialize` ignores the header (even an unknown one) and negotiates
+    // from its body.
+    let (status, headers, _) = send(port, "POST", MCP_PATH, &[unsupported], INITIALIZE);
+    assert_eq!(status, 200);
+    let latest = ("Mcp-Session-Id", headers["mcp-session-id"].as_str());
+    assert_eq!(lists_output_schemas(port, &[latest]), Ok(true));
 }
 
 #[test]

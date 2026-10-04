@@ -108,3 +108,27 @@ fn annotations_can_be_omitted_for_older_protocols() {
         assert!(definition.get("annotations").is_none());
     }
 }
+
+#[test]
+fn only_tools_with_structured_results_declare_an_output_schema() {
+    let defs = definitions(true);
+    let with_output: Vec<&str> = defs
+        .iter()
+        .filter(|d| d.get("outputSchema").is_some())
+        .map(|d| d["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(with_output, ["list_vms", "screen_text", "peek"]);
+    for def in defs.iter().filter(|d| d.get("outputSchema").is_some()) {
+        assert_eq!(def["outputSchema"]["type"], json!("object"));
+        assert!(def["outputSchema"]["required"].is_array());
+    }
+}
+
+#[test]
+fn list_vms_status_enum_names_every_vm_status() {
+    let defs = definitions(true);
+    let list_vms = defs.iter().find(|d| d["name"] == "list_vms").unwrap();
+    let status = &list_vms["outputSchema"]["properties"]["vms"]["items"]["properties"]["status"];
+    let names: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
+    assert_eq!(status["enum"], json!(names));
+}

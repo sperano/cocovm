@@ -1,11 +1,13 @@
 //! Name, description, and JSON Schema `inputSchema` for every tool
-//! `tools/list` reports. [`crate::control::tools`] dispatches calls to these
-//! by name.
+//! `tools/list` reports, plus an `outputSchema` for the tools whose result
+//! has structure. [`crate::control::tools`] dispatches calls to these by
+//! name, and drops `outputSchema` for clients older than protocol 2025-06-18.
 
 use coco_core::joystick::{AXIS_CENTER, AXIS_MAX};
 use serde_json::{Value, json};
 
 use super::key_names;
+use super::protocol::VmStatus;
 use super::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS};
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
@@ -59,6 +61,20 @@ fn tool(
     definition
 }
 
+/// [`tool`] with an `outputSchema` its `structuredContent` conforms to.
+fn tool_with_output(
+    name: &str,
+    description: impl Into<String>,
+    input: Value,
+    output: Value,
+    annotations: ToolAnnotations,
+    include_annotations: bool,
+) -> Value {
+    let mut def = tool(name, description, input, annotations, include_annotations);
+    def["outputSchema"] = output;
+    def
+}
+
 fn object_schema(properties: Value, required: &[&str]) -> Value {
     let mut schema = json!({"type": "object", "properties": properties});
     if !required.is_empty() {
@@ -74,11 +90,29 @@ fn vm_property() -> Value {
     })
 }
 
+fn byte_schema() -> Value {
+    json!({"type": "integer", "minimum": 0, "maximum": u8::MAX})
+}
+
+fn address_schema() -> Value {
+    json!({"type": "integer", "minimum": 0, "maximum": u16::MAX})
+}
+
 fn list_vms(include_annotations: bool) -> Value {
-    tool(
+    let statuses: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
+    let vm = object_schema(
+        json!({
+            "slug": {"type": "string"},
+            "name": {"type": "string"},
+            "status": {"type": "string", "enum": statuses}
+        }),
+        &["slug", "name", "status"],
+    );
+    tool_with_output(
         "list_vms",
         "List every VM the manager knows, with its lifecycle status.",
         object_schema(json!({}), &[]),
+        object_schema(json!({"vms": {"type": "array", "items": vm}}), &["vms"]),
         READ_ONLY,
         include_annotations,
     )
@@ -95,12 +129,27 @@ fn start_vm(include_annotations: bool) -> Value {
 }
 
 fn screen_text(include_annotations: bool) -> Value {
-    tool(
+    tool_with_output(
         "screen_text",
         "Read the VM's text screen as lines, plus the current video mode and the 0-based \
          row/column where BASIC's next character lands (32-column VDG and WIDTH 40/80 \
          screens). Graphics modes have no text buffer.",
         object_schema(json!({"vm": vm_property()}), &[]),
+        object_schema(
+            json!({
+                "lines": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "One string per screen row, top to bottom."
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "Video-mode summary, with the text buffer's base address."
+                },
+                "cursor": cursor_schema()
+            }),
+            &["lines", "mode"],
+        ),
         READ_ONLY,
         include_annotations,
     )
@@ -264,17 +313,45 @@ fn wait(include_annotations: bool) -> Value {
     )
 }
 
+/// `screen_text`'s optional `cursor`, absent when the text says "unknown".
+fn cursor_schema() -> Value {
+    let mut schema = object_schema(
+        json!({
+            "row": {"type": "integer", "minimum": 0},
+            "col": {"type": "integer", "minimum": 0}
+        }),
+        &["row", "col"],
+    );
+    schema["description"] = json!(
+        "0-based row/column where BASIC's next character lands; absent in graphics \
+         modes or when BASIC is not driving the screen."
+    );
+    schema
+}
+
 fn peek(include_annotations: bool) -> Value {
-    tool(
+    tool_with_output(
         "peek",
         "Read bytes from VM memory without side effects.",
         object_schema(
             json!({
                 "vm": vm_property(),
-                "addr": {"type": "integer", "minimum": 0, "maximum": u16::MAX},
+                "addr": address_schema(),
                 "len": {"type": "integer", "minimum": 1, "maximum": MAX_PEEK_LEN}
             }),
             &["addr", "len"],
+        ),
+        object_schema(
+            json!({
+                "addr": address_schema(),
+                "bytes": {
+                    "type": "array",
+                    "maxItems": MAX_PEEK_LEN,
+                    "items": byte_schema(),
+                    "description": "Bytes read from `addr` upward, wrapping past $FFFF."
+                }
+            }),
+            &["addr", "bytes"],
         ),
         READ_ONLY,
         include_annotations,
@@ -288,11 +365,11 @@ fn poke(include_annotations: bool) -> Value {
         object_schema(
             json!({
                 "vm": vm_property(),
-                "addr": {"type": "integer", "minimum": 0, "maximum": u16::MAX},
+                "addr": address_schema(),
                 "bytes": {
                     "type": "array",
                     "maxItems": MAX_POKE_LEN,
-                    "items": {"type": "integer", "minimum": 0, "maximum": u8::MAX}
+                    "items": byte_schema()
                 }
             }),
             &["addr", "bytes"],
