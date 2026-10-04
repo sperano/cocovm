@@ -68,6 +68,17 @@ fn start_remote_typing_queues_mapped_characters_and_reports_fields() {
 }
 
 #[test]
+fn start_remote_typing_rejects_unmappable_characters_and_types_nothing() {
+    let mut app = boot();
+    let err = app
+        .start_remote_typing("PRINT [1]{~}")
+        .expect_err("characters with no CoCo key must be rejected");
+    assert!(err.contains("'['") && err.contains("'{'") && err.contains("'~'"));
+    assert!(app.remote_type_ahead.queue.is_empty());
+    assert!(!app.remote_type_ahead.is_active());
+}
+
+#[test]
 fn start_remote_typing_rejects_overlong_text_and_a_draining_burst() {
     let mut app = boot();
     let too_long = "A".repeat(crate::control::MAX_TYPE_TEXT_CHARS + 1);
