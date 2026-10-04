@@ -818,6 +818,7 @@ dependencies = [
  "owo-colors",
  "pluralizer",
  "png",
+ "regex",
  "rfd",
  "serde",
  "serde_json",

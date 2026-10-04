@@ -6,7 +6,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::jsonrpc::{INVALID_PARAMS, RpcError};
-use super::protocol::{Action, Reply, Request, Stick, VmInfo};
+use super::protocol::{
+    Action, ControlError, Reply, Request, ScreenCursor, ScreenSnapshot, Stick, TextMatcher, VmInfo,
+};
 use super::tool_defs;
 
 /// Bytes shown per line of a [`peek`] hex dump.
@@ -15,7 +17,7 @@ const HEX_DUMP_WIDTH: usize = 16;
 /// Sends one request and waits for its reply. Exists so `tools::call` can be
 /// tested against a mock instead of the real frame-loop queue.
 pub trait Backend {
-    fn call(&mut self, req: &Request) -> Result<Reply, String>;
+    fn call(&mut self, req: &Request) -> Result<Reply, ControlError>;
 }
 
 pub fn list() -> Value {
@@ -51,6 +53,7 @@ pub fn call(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "reset" => dispatch_reset(backend, args),
         "set_running" => dispatch_set_running(backend, args),
         "wait" => dispatch_wait(backend, args),
+        "wait_for_text" => dispatch_wait_for_text(backend, args),
         "peek" => dispatch_peek(backend, args),
         "poke" => dispatch_poke(backend, args),
         other => Err(RpcError::new(
@@ -76,7 +79,7 @@ fn finish(
     match backend.call(&req) {
         Ok(reply) => on_ok(reply)
             .unwrap_or_else(|| error_result("cocovm returned an unexpected reply".into())),
-        Err(msg) => error_result(msg),
+        Err(error) => error_result(format_control_error(&error)),
     }
 }
 
@@ -99,8 +102,30 @@ fn format_vms(vms: &[VmInfo]) -> String {
         .join("\n")
 }
 
-fn format_screen(lines: &[String], mode: &str) -> String {
-    format!("```\n{}\n```\n{mode}", lines.join("\n"))
+fn format_screen(screen: &ScreenSnapshot) -> String {
+    format!(
+        "```\n{}\n```\n{}\n{}",
+        screen.lines.join("\n"),
+        screen.mode,
+        format_cursor(screen.cursor)
+    )
+}
+
+fn format_cursor(cursor: Option<ScreenCursor>) -> String {
+    match cursor {
+        Some(cursor) => format!(
+            "cursor: {{\"row\":{},\"column\":{}}}",
+            cursor.row, cursor.column
+        ),
+        None => "cursor: null".to_string(),
+    }
+}
+
+fn format_control_error(error: &ControlError) -> String {
+    match &error.screen {
+        Some(screen) => format!("{}\n{}", error.message, format_screen(screen)),
+        None => error.message.clone(),
+    }
 }
 
 fn hex_dump(addr: u16, bytes: &[u8]) -> String {
@@ -159,7 +184,7 @@ fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value,
         action: Action::ScreenText,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Screen { lines, mode } => Some(text_result(format_screen(&lines, &mode))),
+        Reply::Screen(screen) => Some(text_result(format_screen(&screen))),
         _ => None,
     }))
 }
@@ -351,6 +376,40 @@ fn dispatch_wait(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcErr
 }
 
 #[derive(Deserialize)]
+struct WaitForTextArgs {
+    #[serde(default)]
+    vm: Option<String>,
+    pattern: String,
+    #[serde(default)]
+    regex: bool,
+    timeout_fields: u32,
+}
+
+fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
+    let WaitForTextArgs {
+        vm,
+        pattern,
+        regex,
+        timeout_fields,
+    } = parse_args(args)?;
+    let matcher = match TextMatcher::new(pattern, regex) {
+        Ok(matcher) => matcher,
+        Err(message) => return Ok(error_result(message)),
+    };
+    let req = Request {
+        vm,
+        action: Action::WaitForText {
+            matcher,
+            timeout_fields,
+        },
+    };
+    Ok(finish(backend, req, |reply| match reply {
+        Reply::Screen(screen) => Some(text_result(format_screen(&screen))),
+        _ => None,
+    }))
+}
+
+#[derive(Deserialize)]
 struct PeekArgs {
     #[serde(default)]
     vm: Option<String>,
@@ -390,13 +449,13 @@ fn dispatch_poke(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcErr
 
 #[cfg(test)]
 pub(crate) struct MockBackend {
-    pub(crate) responses: std::collections::VecDeque<Result<Reply, String>>,
+    pub(crate) responses: std::collections::VecDeque<Result<Reply, ControlError>>,
     pub(crate) calls: Vec<Request>,
 }
 
 #[cfg(test)]
 impl MockBackend {
-    pub(crate) fn new(responses: Vec<Result<Reply, String>>) -> Self {
+    pub(crate) fn new(responses: Vec<Result<Reply, ControlError>>) -> Self {
         Self {
             responses: responses.into(),
             calls: Vec::new(),
@@ -406,7 +465,7 @@ impl MockBackend {
 
 #[cfg(test)]
 impl Backend for MockBackend {
-    fn call(&mut self, req: &Request) -> Result<Reply, String> {
+    fn call(&mut self, req: &Request) -> Result<Reply, ControlError> {
         self.calls.push(req.clone());
         self.responses
             .pop_front()

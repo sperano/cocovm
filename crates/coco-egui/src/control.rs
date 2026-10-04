@@ -22,7 +22,10 @@ mod server;
 pub mod tool_defs;
 pub mod tools;
 
-pub use protocol::{Action, Reply, Request, Response, Stick, VmInfo, VmStatus};
+pub use protocol::{
+    Action, ControlError, Reply, Request, Response, ScreenCursor, ScreenSnapshot, Stick,
+    TextMatcher, VmInfo, VmStatus,
+};
 pub use server::ControlServer;
 
 /// Loopback port the app listens on unless told otherwise.
@@ -33,6 +36,8 @@ pub const PORT_ENV: &str = "COCOVM_CONTROL_PORT";
 pub(crate) const MCP_PATH: &str = "/mcp";
 /// Upper bound on a single `wait` request, in fields (one minute at 60 Hz).
 pub const MAX_WAIT_FIELDS: u32 = 3600;
+/// Most characters accepted in a `wait_for_text` literal or regex pattern.
+pub const MAX_WAIT_PATTERN_CHARS: usize = 1024;
 /// Upper bound on a single `press_keys` hold, in fields.
 pub const MAX_HOLD_FIELDS: u32 = 600;
 /// Default hold for `press_keys` when the request gives none: long enough

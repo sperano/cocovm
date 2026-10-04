@@ -6,7 +6,10 @@ use coco_core::joystick::{AXIS_CENTER, AXIS_MAX};
 use serde_json::{Value, json};
 
 use super::key_names;
-use super::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS};
+use super::{
+    MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS,
+    MAX_WAIT_PATTERN_CHARS,
+};
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
 /// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
@@ -193,6 +196,29 @@ fn wait() -> Value {
     )
 }
 
+fn wait_for_text() -> Value {
+    tool(
+        "wait_for_text",
+        "Wait until decoded screen text matches a literal string or regular expression. Returns \
+         the matching screen, video mode, and cursor. On timeout, returns an error with the last \
+         screen state.",
+        object_schema(
+            json!({
+                "vm": vm_property(),
+                "pattern": {"type": "string", "maxLength": MAX_WAIT_PATTERN_CHARS},
+                "regex": {"type": "boolean"},
+                "timeout_fields": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_WAIT_FIELDS,
+                    "description": "Maximum wait in video fields (60/s)."
+                }
+            }),
+            &["pattern", "timeout_fields"],
+        ),
+    )
+}
+
 fn peek() -> Value {
     tool(
         "peek",
@@ -242,6 +268,7 @@ pub fn definitions() -> Vec<Value> {
         reset(),
         set_running(),
         wait(),
+        wait_for_text(),
         peek(),
         poke(),
     ]

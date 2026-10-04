@@ -74,6 +74,25 @@ impl PendingControl {
             remaining_taps: usize::MAX,
         }
     }
+
+    /// `wait_for_text` uses its field budget as an actual timeout, so its
+    /// wall deadline has no completion margin.
+    fn new_text_wait(
+        reply: crate::control::ReplyHandle,
+        slug: String,
+        condition: PendingCondition,
+        timeout_fields: u64,
+        field_rate_hz: f64,
+    ) -> Self {
+        let timeout = Duration::from_secs_f64(timeout_fields as f64 / field_rate_hz);
+        Self {
+            reply,
+            slug,
+            condition,
+            deadline: Instant::now() + timeout,
+            remaining_taps: usize::MAX,
+        }
+    }
 }
 
 /// What a [`PendingControl`] is waiting for, checked against its target
@@ -85,6 +104,12 @@ enum PendingCondition {
     KeysReleased,
     /// `wait`: `CocoApp::fields_run` has reached the target count.
     WaitUntilField(u64),
+    /// `wait_for_text`: match before the terminal field, then time out with
+    /// the last snapshot.
+    WaitForText {
+        matcher: crate::control::TextMatcher,
+        terminal_field: u64,
+    },
 }
 
 impl PendingCondition {
@@ -94,6 +119,7 @@ impl PendingCondition {
             PendingCondition::TypeTextDrained => "typed text to drain",
             PendingCondition::KeysReleased => "held keys to release",
             PendingCondition::WaitUntilField(_) => "the requested fields to elapse",
+            PendingCondition::WaitForText { .. } => "screen text",
         }
     }
 }

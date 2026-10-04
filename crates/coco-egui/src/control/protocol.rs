@@ -5,6 +5,55 @@
 
 use serde::Deserialize;
 
+/// A literal or compiled regex used by `wait_for_text`.
+#[derive(Clone, Debug)]
+pub enum TextMatcher {
+    Literal(String),
+    Regex { source: String, regex: regex::Regex },
+}
+
+impl TextMatcher {
+    pub fn new(pattern: String, regex: bool) -> Result<Self, String> {
+        let length = pattern.chars().count();
+        if length > super::MAX_WAIT_PATTERN_CHARS {
+            return Err(format!(
+                "pattern is {length} characters; at most {} per call",
+                super::MAX_WAIT_PATTERN_CHARS
+            ));
+        }
+        if regex {
+            let compiled = regex::Regex::new(&pattern)
+                .map_err(|error| format!("invalid regular expression: {error}"))?;
+            Ok(Self::Regex {
+                source: pattern,
+                regex: compiled,
+            })
+        } else {
+            Ok(Self::Literal(pattern))
+        }
+    }
+
+    pub fn is_match(&self, screen: &ScreenSnapshot) -> bool {
+        let text = screen.lines.join("\n");
+        match self {
+            Self::Literal(pattern) => text.contains(pattern),
+            Self::Regex { regex, .. } => regex.is_match(&text),
+        }
+    }
+}
+
+impl PartialEq for TextMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left == right,
+            (Self::Regex { source: left, .. }, Self::Regex { source: right, .. }) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for TextMatcher {}
+
 /// One request from a tool call. `vm` names the target by manager slug;
 /// `None` selects "the only running VM", an error when there are several.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +112,11 @@ pub enum Action {
     Wait {
         fields: u32,
     },
+    /// Wait until decoded screen text matches, or until `timeout_fields` pass.
+    WaitForText {
+        matcher: TextMatcher,
+        timeout_fields: u32,
+    },
     /// Read `len` bytes from `addr` without side effects.
     Peek {
         addr: u16,
@@ -97,8 +151,57 @@ impl Stick {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Response {
     Ok(Reply),
-    Err(String),
+    Err(ControlError),
 }
+
+/// A failed request, optionally carrying the last decoded screen snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlError {
+    /// Human-readable error summary.
+    pub message: String,
+    /// Last decoded screen for condition-wait timeouts.
+    pub screen: Option<ScreenSnapshot>,
+}
+
+impl ControlError {
+    pub fn with_screen(message: impl Into<String>, screen: ScreenSnapshot) -> Self {
+        Self {
+            message: message.into(),
+            screen: Some(screen),
+        }
+    }
+}
+
+impl From<String> for ControlError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            screen: None,
+        }
+    }
+}
+
+impl From<&str> for ControlError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+
+impl std::ops::Deref for ControlError {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for ControlError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ControlError {}
 
 /// The successful payload of a request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,16 +209,33 @@ pub enum Reply {
     /// The action completed with nothing to report.
     Done,
     Vms(Vec<VmInfo>),
-    Screen {
-        lines: Vec<String>,
-        mode: String,
-    },
+    Screen(ScreenSnapshot),
     Screenshot {
         png_base64: String,
         width: u32,
         height: u32,
     },
     Bytes(Vec<u8>),
+}
+
+/// A zero-based insertion position in a decoded text screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenCursor {
+    /// Character row from the top of the decoded screen.
+    pub row: usize,
+    /// Character column from the left edge of the decoded screen.
+    pub column: usize,
+}
+
+/// Decoded screen text, video mode, and a validated insertion position.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenSnapshot {
+    /// Fixed-width decoded character rows.
+    pub lines: Vec<String>,
+    /// Diagnostic summary of the active video mode.
+    pub mode: String,
+    /// Validated ROM insertion position, or `None` outside known conventions.
+    pub cursor: Option<ScreenCursor>,
 }
 
 /// One manager entry as [`Action::ListVms`] reports it.

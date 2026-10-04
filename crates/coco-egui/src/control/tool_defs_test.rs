@@ -13,6 +13,7 @@ const EXPECTED_NAMES: &[&str] = &[
     "reset",
     "set_running",
     "wait",
+    "wait_for_text",
     "peek",
     "poke",
 ];
@@ -26,6 +27,29 @@ fn every_tool_has_name_description_and_object_schema() {
         assert!(def["description"].as_str().is_some_and(|d| !d.is_empty()));
         assert_eq!(def["inputSchema"]["type"], json!("object"));
     }
+}
+
+#[test]
+fn wait_for_text_bounds_pattern_and_timeout() {
+    let defs = definitions();
+    let wait = defs
+        .iter()
+        .find(|definition| definition["name"] == "wait_for_text")
+        .unwrap();
+    let properties = &wait["inputSchema"]["properties"];
+    assert_eq!(
+        properties["pattern"]["maxLength"],
+        json!(crate::control::MAX_WAIT_PATTERN_CHARS)
+    );
+    assert_eq!(properties["timeout_fields"]["minimum"], json!(1));
+    assert_eq!(
+        properties["timeout_fields"]["maximum"],
+        json!(crate::control::MAX_WAIT_FIELDS)
+    );
+    assert_eq!(
+        wait["inputSchema"]["required"],
+        json!(["pattern", "timeout_fields"])
+    );
 }
 
 #[test]

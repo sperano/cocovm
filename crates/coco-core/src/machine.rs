@@ -8,6 +8,7 @@ mod render;
 mod run;
 
 pub use render::ActiveRect;
+pub use video_mode::{TextCursor, TextScreen};
 mod video_mode;
 
 use mc6809::{Bus, MC6809};
