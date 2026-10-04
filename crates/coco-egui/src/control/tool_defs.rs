@@ -182,7 +182,8 @@ fn set_running() -> Value {
 fn wait() -> Value {
     tool(
         "wait",
-        "Let video fields elapse before replying (60 fields is about 1 second).",
+        "Let video fields elapse before replying (60 fields is about 1 second). Fails if the \
+         VM is or becomes paused.",
         object_schema(
             json!({
                 "vm": vm_property(),

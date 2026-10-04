@@ -1,6 +1,6 @@
 //! Resolving deferred requests: checking each [`PendingControl`]'s condition
 //! against its (re-resolved, by slug) target entry every frame, replying
-//! once it's met, gone, or timed out.
+//! once it's met, gone, paused, or timed out.
 
 use std::time::Instant;
 
@@ -15,15 +15,39 @@ enum Outcome {
     /// The target entry vanished because it stopped or its window closed.
     /// Rename transactions retarget pending requests before re-sorting.
     Gone(String),
+    /// The target VM stopped advancing before the condition was met, so
+    /// its fields would never come: paused by `set_running` or the debugger,
+    /// or `suspended` from the manager.
+    Paused {
+        suspended: bool,
+    },
     Waiting,
     /// Still waiting, but a `type_text` burst has drained to this many taps
     /// since the last check.
     Progressed(usize),
 }
 
+/// The error for a request whose VM stopped advancing mid-wait, naming the
+/// tool that resumes it: a Suspended entry needs `start_vm` (`set_running`
+/// refuses it), a paused one `set_running`. Any typed text or held keys stay
+/// queued and finish once the VM resumes.
+fn paused_message(pending: &PendingControl, suspended: bool) -> String {
+    let (state, resume_with) = if suspended {
+        ("suspended", "start_vm")
+    } else {
+        ("paused", "set_running")
+    };
+    format!(
+        "VM '{}' was {state} while waiting for {}; call {resume_with} to resume",
+        pending.slug,
+        pending.condition.describe()
+    )
+}
+
 impl ManagerApp {
     /// Reply to and drop every [`PendingControl`] whose condition is met,
-    /// whose target vanished, or whose deadline passed; keep the rest.
+    /// whose target vanished or paused, or whose deadline passed; keep the
+    /// rest.
     /// Called once per `update()`, after [`Self::draw_running_vms`] has run
     /// this frame's fields. Running VM viewports wake the manager as fields
     /// advance; the earliest deadline supplies a bounded wake for stalled VMs.
@@ -46,6 +70,10 @@ impl ManagerApp {
             match self.check_pending(&pending) {
                 Outcome::Done => pending.reply.reply(Response::Ok(Reply::Done)),
                 Outcome::Gone(msg) => pending.reply.reply(Response::Err(msg)),
+                Outcome::Paused { suspended } => {
+                    let msg = paused_message(&pending, suspended);
+                    pending.reply.reply(Response::Err(msg));
+                }
                 Outcome::Waiting if now >= pending.deadline => {
                     let msg = format!("timed out waiting for {}", pending.condition.describe());
                     pending.reply.reply(Response::Err(msg));
@@ -69,7 +97,8 @@ impl ManagerApp {
         let Some(idx) = self.entries.iter().position(|e| e.slug == pending.slug) else {
             return Outcome::Gone(format!("VM '{}' no longer exists", pending.slug));
         };
-        let Some(vm) = self.entries[idx].vm.as_ref() else {
+        let entry = &self.entries[idx];
+        let Some(vm) = entry.vm.as_ref() else {
             return Outcome::Gone(format!("VM '{}' is no longer running", pending.slug));
         };
         let done = match pending.condition {
@@ -79,6 +108,11 @@ impl ManagerApp {
         };
         if done {
             return Outcome::Done;
+        }
+        if !vm.running {
+            return Outcome::Paused {
+                suspended: entry.suspended,
+            };
         }
         let remaining = vm.remote_type_ahead.queue.len();
         let typing = matches!(pending.condition, PendingCondition::TypeTextDrained);

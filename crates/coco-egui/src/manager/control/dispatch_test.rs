@@ -174,3 +174,49 @@ fn deferred_capacity_is_reserved_before_vm_mutation() {
             .is_active()
     );
 }
+
+/// Dispatch `action` on `vm` through `dispatch_control` and return the
+/// receiver its reply lands on.
+fn dispatch(manager: &mut ManagerApp, vm: &str, action: Action) -> mpsc::Receiver<Response> {
+    let (tx, rx) = mpsc::channel();
+    let request = Request {
+        vm: Some(vm.to_string()),
+        action,
+    };
+    manager.dispatch_control(Incoming::new(request, ReplyHandle::new(tx)));
+    rx
+}
+
+#[test]
+fn wait_rejects_a_paused_vm_up_front() {
+    let mut app = manager(vec![running_entry("live")]);
+    app.entries[0].vm.as_mut().unwrap().set_running(false);
+
+    let rx = dispatch(&mut app, "live", Action::Wait { fields: 1 });
+
+    assert_eq!(
+        rx.try_recv().expect("immediate reply"),
+        Response::Err(crate::app::PAUSED_ERROR.to_string())
+    );
+    assert!(app.pending.is_empty());
+}
+
+#[test]
+fn pending_wait_fails_in_the_update_that_pauses_its_vm() {
+    let mut app = manager(vec![running_entry("live")]);
+    let wait = dispatch(&mut app, "live", Action::Wait { fields: 1 });
+    assert_eq!(app.pending.len(), 1, "a running VM defers the wait");
+
+    let pause = dispatch(&mut app, "live", Action::SetRunning { running: false });
+    assert_eq!(
+        pause.try_recv().expect("immediate reply"),
+        Response::Ok(Reply::Done)
+    );
+    app.resolve_control_pending(&eframe::egui::Context::default());
+
+    match wait.try_recv().expect("wait replied without timing out") {
+        Response::Err(msg) => assert!(msg.contains("was paused"), "{msg}"),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert!(app.pending.is_empty());
+}
