@@ -281,6 +281,7 @@ fn wait_errors_promptly_once_its_vm_is_paused() {
         Response::Err(msg) => {
             assert!(msg.contains("was paused"), "{msg}");
             assert!(msg.contains("call set_running"), "{msg}");
+            assert!(!msg.contains("queued"), "nothing to resume: {msg}");
         }
         other => panic!("expected an Err reply, got {other:?}"),
     }
@@ -314,7 +315,10 @@ fn press_keys_errors_promptly_once_its_vm_is_paused() {
     vm.set_running(false);
 
     match resolve_once(&mut manager, "live", PendingCondition::KeysReleased) {
-        Response::Err(msg) => assert!(msg.contains("held keys"), "{msg}"),
+        Response::Err(msg) => {
+            assert!(msg.contains("held keys"), "{msg}");
+            assert!(msg.contains("stays queued"), "{msg}");
+        }
         other => panic!("expected an Err reply, got {other:?}"),
     }
 }

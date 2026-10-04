@@ -29,16 +29,23 @@ enum Outcome {
 
 /// The error for a request whose VM stopped advancing mid-wait, naming the
 /// tool that resumes it: a Suspended entry needs `start_vm` (`set_running`
-/// refuses it), a paused one `set_running`. Any typed text or held keys stay
-/// queued and finish once the VM resumes.
+/// refuses it), a paused one `set_running`. Typed text or held keys stay
+/// queued and finish once the VM resumes; the message says so, since a
+/// retried `type_text` is refused until then.
 fn paused_message(pending: &PendingControl, suspended: bool) -> String {
     let (state, resume_with) = if suspended {
         ("suspended", "start_vm")
     } else {
         ("paused", "set_running")
     };
+    let leftover = match pending.condition {
+        PendingCondition::WaitUntilField(_) => "",
+        PendingCondition::TypeTextDrained | PendingCondition::KeysReleased => {
+            "; the input stays queued until then"
+        }
+    };
     format!(
-        "VM '{}' was {state} while waiting for {}; call {resume_with} to resume",
+        "VM '{}' was {state} while waiting for {}; call {resume_with} to resume{leftover}",
         pending.slug,
         pending.condition.describe()
     )
