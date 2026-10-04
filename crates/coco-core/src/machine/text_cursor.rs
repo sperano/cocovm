@@ -41,7 +41,7 @@ impl Machine {
         }
         let pos = u16::from_be_bytes([
             self.bus.peek(basic_vars::CURPOS),
-            self.bus.peek(basic_vars::CURPOS.wrapping_add(1)),
+            self.bus.peek(basic_vars::CURPOS + 1),
         ]);
         if !(basic_vars::VDG_SCREEN_BASE..=basic_vars::VDG_SCREEN_LAST).contains(&pos) {
             return None;
