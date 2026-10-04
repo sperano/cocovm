@@ -99,12 +99,12 @@ fn session_store_rejects_capacity_until_a_session_expires() {
     let now = Instant::now();
     let mut store = SessionStore::default();
     for _ in 0..MAX_CONTROL_SESSIONS {
-        assert!(store.create(now).is_some());
+        assert!(store.create(now, ProtocolVersion::June2025).is_some());
     }
-    assert!(store.create(now).is_none());
+    assert!(store.create(now, ProtocolVersion::June2025).is_none());
 
     let expired = now + CONTROL_SESSION_IDLE_TIMEOUT;
-    assert!(store.create(expired).is_some());
+    assert!(store.create(expired, ProtocolVersion::June2025).is_some());
     assert_eq!(store.sessions.len(), 1);
 }
 
@@ -112,11 +112,19 @@ fn session_store_rejects_capacity_until_a_session_expires() {
 fn session_lookup_refreshes_its_idle_deadline() {
     let now = Instant::now();
     let mut store = SessionStore::default();
-    let id = store.create(now).expect("session admitted");
+    let id = store
+        .create(now, ProtocolVersion::March2025)
+        .expect("session admitted");
     let refreshed = now + CONTROL_SESSION_IDLE_TIMEOUT / 2;
 
-    assert!(store.contains_and_touch(&id, refreshed));
-    assert!(store.contains_and_touch(&id, now + CONTROL_SESSION_IDLE_TIMEOUT));
+    assert_eq!(
+        store.get_and_touch(&id, refreshed),
+        Some(ProtocolVersion::March2025)
+    );
+    assert_eq!(
+        store.get_and_touch(&id, now + CONTROL_SESSION_IDLE_TIMEOUT),
+        Some(ProtocolVersion::March2025)
+    );
 }
 
 #[test]

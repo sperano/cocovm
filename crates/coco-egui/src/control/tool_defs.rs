@@ -13,8 +13,50 @@ use super::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MA
 /// the FDC's larger addressable maximum).
 const MAX_DRIVE: u8 = (crate::UI_DRIVES - 1) as u8;
 
-fn tool(name: &str, description: impl Into<String>, schema: Value) -> Value {
-    json!({"name": name, "description": description.into(), "inputSchema": schema})
+#[derive(Clone, Copy)]
+struct ToolAnnotations {
+    read_only: bool,
+    destructive: bool,
+    idempotent: bool,
+}
+
+const READ_ONLY: ToolAnnotations = ToolAnnotations {
+    read_only: true,
+    destructive: false,
+    idempotent: true,
+};
+const DESTRUCTIVE_IDEMPOTENT: ToolAnnotations = ToolAnnotations {
+    read_only: false,
+    destructive: true,
+    idempotent: true,
+};
+const DESTRUCTIVE: ToolAnnotations = ToolAnnotations {
+    read_only: false,
+    destructive: true,
+    idempotent: false,
+};
+
+fn tool(
+    name: &str,
+    description: impl Into<String>,
+    schema: Value,
+    annotations: ToolAnnotations,
+    include_annotations: bool,
+) -> Value {
+    let mut definition = json!({
+        "name": name,
+        "description": description.into(),
+        "inputSchema": schema,
+    });
+    if include_annotations {
+        definition["annotations"] = json!({
+            "readOnlyHint": annotations.read_only,
+            "destructiveHint": annotations.destructive,
+            "idempotentHint": annotations.idempotent,
+            "openWorldHint": false,
+        });
+    }
+    definition
 }
 
 fn object_schema(properties: Value, required: &[&str]) -> Value {
@@ -32,42 +74,50 @@ fn vm_property() -> Value {
     })
 }
 
-fn list_vms() -> Value {
+fn list_vms(include_annotations: bool) -> Value {
     tool(
         "list_vms",
         "List every VM the manager knows, with its lifecycle status.",
         object_schema(json!({}), &[]),
+        READ_ONLY,
+        include_annotations,
     )
 }
 
-fn start_vm() -> Value {
+fn start_vm(include_annotations: bool) -> Value {
     tool(
         "start_vm",
         "Start (or resume) a VM by its manager slug; a no-op if it's already running.",
         object_schema(json!({"vm": vm_property()}), &["vm"]),
+        DESTRUCTIVE_IDEMPOTENT,
+        include_annotations,
     )
 }
 
-fn screen_text() -> Value {
+fn screen_text(include_annotations: bool) -> Value {
     tool(
         "screen_text",
         "Read the VM's text screen as lines, plus the current video mode and the 0-based \
          row/column where BASIC's next character lands (32-column VDG and WIDTH 40/80 \
          screens). Graphics modes have no text buffer.",
         object_schema(json!({"vm": vm_property()}), &[]),
+        READ_ONLY,
+        include_annotations,
     )
 }
 
-fn screenshot() -> Value {
+fn screenshot(include_annotations: bool) -> Value {
     tool(
         "screenshot",
         "Capture the VM's framebuffer as a PNG. GIME graphics modes are 640x240 with \
          non-square pixels.",
         object_schema(json!({"vm": vm_property()}), &[]),
+        READ_ONLY,
+        include_annotations,
     )
 }
 
-fn type_text() -> Value {
+fn type_text(include_annotations: bool) -> Value {
     tool(
         "type_text",
         format!(
@@ -84,10 +134,12 @@ fn type_text() -> Value {
             }),
             &["text"],
         ),
+        DESTRUCTIVE,
+        include_annotations,
     )
 }
 
-fn press_keys() -> Value {
+fn press_keys(include_annotations: bool) -> Value {
     tool(
         "press_keys",
         format!(
@@ -108,10 +160,12 @@ fn press_keys() -> Value {
             }),
             &["keys"],
         ),
+        DESTRUCTIVE,
+        include_annotations,
     )
 }
 
-fn joystick() -> Value {
+fn joystick(include_annotations: bool) -> Value {
     tool(
         "joystick",
         format!(
@@ -130,10 +184,12 @@ fn joystick() -> Value {
             }),
             &["stick"],
         ),
+        DESTRUCTIVE_IDEMPOTENT,
+        include_annotations,
     )
 }
 
-fn insert_disk() -> Value {
+fn insert_disk(include_annotations: bool) -> Value {
     tool(
         "insert_disk",
         "Mount a disk image file in a floppy drive.",
@@ -148,10 +204,12 @@ fn insert_disk() -> Value {
             }),
             &["drive", "path"],
         ),
+        DESTRUCTIVE,
+        include_annotations,
     )
 }
 
-fn eject_disk() -> Value {
+fn eject_disk(include_annotations: bool) -> Value {
     tool(
         "eject_disk",
         "Remove whatever disk image is mounted in a floppy drive.",
@@ -159,10 +217,12 @@ fn eject_disk() -> Value {
             json!({"vm": vm_property(), "drive": {"type": "integer", "minimum": 0, "maximum": MAX_DRIVE}}),
             &["drive"],
         ),
+        DESTRUCTIVE_IDEMPOTENT,
+        include_annotations,
     )
 }
 
-fn reset() -> Value {
+fn reset(include_annotations: bool) -> Value {
     tool(
         "reset",
         "Reset the VM; `hard` power-cycles it (clears RAM).",
@@ -170,10 +230,12 @@ fn reset() -> Value {
             json!({"vm": vm_property(), "hard": {"type": "boolean"}}),
             &[],
         ),
+        DESTRUCTIVE,
+        include_annotations,
     )
 }
 
-fn set_running() -> Value {
+fn set_running(include_annotations: bool) -> Value {
     tool(
         "set_running",
         "Pause or resume emulation.",
@@ -181,10 +243,12 @@ fn set_running() -> Value {
             json!({"vm": vm_property(), "running": {"type": "boolean"}}),
             &["running"],
         ),
+        DESTRUCTIVE_IDEMPOTENT,
+        include_annotations,
     )
 }
 
-fn wait() -> Value {
+fn wait(include_annotations: bool) -> Value {
     tool(
         "wait",
         "Let video fields elapse before replying (60 fields is about 1 second).",
@@ -195,10 +259,12 @@ fn wait() -> Value {
             }),
             &["fields"],
         ),
+        DESTRUCTIVE,
+        include_annotations,
     )
 }
 
-fn peek() -> Value {
+fn peek(include_annotations: bool) -> Value {
     tool(
         "peek",
         "Read bytes from VM memory without side effects.",
@@ -210,10 +276,12 @@ fn peek() -> Value {
             }),
             &["addr", "len"],
         ),
+        READ_ONLY,
+        include_annotations,
     )
 }
 
-fn poke() -> Value {
+fn poke(include_annotations: bool) -> Value {
     tool(
         "poke",
         "Write bytes to VM memory, with normal bus side effects.",
@@ -229,26 +297,28 @@ fn poke() -> Value {
             }),
             &["addr", "bytes"],
         ),
+        DESTRUCTIVE,
+        include_annotations,
     )
 }
 
 /// Every tool `tools/list` reports, in the order `tools/call` accepts them.
-pub fn definitions() -> Vec<Value> {
+pub fn definitions(include_annotations: bool) -> Vec<Value> {
     vec![
-        list_vms(),
-        start_vm(),
-        screen_text(),
-        screenshot(),
-        type_text(),
-        press_keys(),
-        joystick(),
-        insert_disk(),
-        eject_disk(),
-        reset(),
-        set_running(),
-        wait(),
-        peek(),
-        poke(),
+        list_vms(include_annotations),
+        start_vm(include_annotations),
+        screen_text(include_annotations),
+        screenshot(include_annotations),
+        type_text(include_annotations),
+        press_keys(include_annotations),
+        joystick(include_annotations),
+        insert_disk(include_annotations),
+        eject_disk(include_annotations),
+        reset(include_annotations),
+        set_running(include_annotations),
+        wait(include_annotations),
+        peek(include_annotations),
+        poke(include_annotations),
     ]
 }
 

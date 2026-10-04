@@ -33,7 +33,10 @@ fn initialize_falls_back_for_an_unrecognized_protocol_version() {
     let result = mcp
         .handle("initialize", json!({"protocolVersion": "1999-01-01"}))
         .unwrap();
-    assert_eq!(result["protocolVersion"], json!(PROTOCOL_VERSION));
+    assert_eq!(
+        result["protocolVersion"],
+        json!(PROTOCOL_VERSION_2025_06_18)
+    );
 }
 
 #[test]
@@ -42,8 +45,46 @@ fn tools_list_reports_every_tool() {
     let result = mcp.handle("tools/list", Value::Null).unwrap();
     assert_eq!(
         result["tools"].as_array().unwrap().len(),
-        tool_defs::definitions().len()
+        tool_defs::definitions(true).len()
     );
+}
+
+#[test]
+fn tools_list_omits_annotations_for_2024_clients() {
+    let mut mcp = mcp_with(vec![]);
+    mcp.handle(
+        "initialize",
+        json!({"protocolVersion": PROTOCOL_VERSION_2024_11_05}),
+    )
+    .unwrap();
+
+    let result = mcp.handle("tools/list", Value::Null).unwrap();
+
+    assert!(
+        result["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| tool.get("annotations").is_none())
+    );
+}
+
+#[test]
+fn tools_list_includes_annotations_for_2025_clients() {
+    for protocol_version in [PROTOCOL_VERSION_2025_03_26, PROTOCOL_VERSION_2025_06_18] {
+        let mut mcp = mcp_with(vec![]);
+        mcp.handle("initialize", json!({"protocolVersion": protocol_version}))
+            .unwrap();
+        let result = mcp.handle("tools/list", Value::Null).unwrap();
+
+        assert!(
+            result["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|tool| tool["annotations"].is_object())
+        );
+    }
 }
 
 #[test]
@@ -85,7 +126,7 @@ fn full_session_over_the_jsonrpc_dispatcher() {
     assert_eq!(responses[1]["id"], json!(2));
     assert_eq!(
         responses[1]["result"]["tools"].as_array().unwrap().len(),
-        tool_defs::definitions().len()
+        tool_defs::definitions(true).len()
     );
     assert_eq!(responses[2]["id"], json!(3));
     assert_eq!(responses[2]["result"]["isError"], json!(false));

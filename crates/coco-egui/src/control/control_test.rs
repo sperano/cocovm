@@ -94,6 +94,86 @@ fn read_response(reader: &mut BufReader<TcpStream>) -> (u16, HashMap<String, Str
 
 const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#;
 
+fn initialize_session(server: &ControlServer, protocol_version: &str) -> String {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {"protocolVersion": protocol_version},
+    })
+    .to_string();
+    let (status, headers, response) = send(server.port(), "POST", MCP_PATH, &[], &body);
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_str::<Value>(&response).unwrap()["result"]["protocolVersion"],
+        json!(protocol_version)
+    );
+    headers["mcp-session-id"].clone()
+}
+
+#[test]
+fn batch_rules_follow_the_session_protocol_across_connections() {
+    let server = bind();
+    let batch = r#"[{"jsonrpc":"2.0","id":3,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","id":2,"method":"ping"}]"#;
+    for version in [
+        mcp::PROTOCOL_VERSION_2024_11_05,
+        mcp::PROTOCOL_VERSION_2025_06_18,
+    ] {
+        let session_id = initialize_session(&server, version);
+        let headers = [("Mcp-Session-Id", session_id.as_str())];
+        assert_eq!(
+            send(server.port(), "POST", MCP_PATH, &headers, batch).0,
+            400
+        );
+    }
+
+    let session_id = initialize_session(&server, mcp::PROTOCOL_VERSION_2025_03_26);
+    let headers = [("Mcp-Session-Id", session_id.as_str())];
+    let (status, _, body) = send(server.port(), "POST", MCP_PATH, &headers, batch);
+    assert_eq!(status, 200);
+    let responses: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(responses.as_array().unwrap().len(), 2);
+    assert_eq!(responses[0]["id"], json!(3));
+    assert_eq!(responses[1]["id"], json!(2));
+
+    let notifications = r#"[{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","method":"notifications/cancelled"}]"#;
+    let (status, _, body) = send(server.port(), "POST", MCP_PATH, &headers, notifications);
+    assert_eq!(status, 202);
+    assert!(body.is_empty());
+    assert_eq!(send(server.port(), "POST", MCP_PATH, &headers, "[]").0, 400);
+    assert_eq!(
+        send(
+            server.port(),
+            "POST",
+            MCP_PATH,
+            &headers,
+            &format!("[{INITIALIZE}]")
+        )
+        .0,
+        400
+    );
+}
+
+#[test]
+fn tools_list_uses_the_session_protocol_across_connections() {
+    let server = bind();
+    let list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
+    for (version, annotations_expected) in [
+        (mcp::PROTOCOL_VERSION_2024_11_05, false),
+        (mcp::PROTOCOL_VERSION_2025_03_26, true),
+        (mcp::PROTOCOL_VERSION_2025_06_18, true),
+    ] {
+        let session_id = initialize_session(&server, version);
+        let headers = [("Mcp-Session-Id", session_id.as_str())];
+        let (status, _, body) = send(server.port(), "POST", MCP_PATH, &headers, list);
+        assert_eq!(status, 200);
+        let response: Value = serde_json::from_str(&body).unwrap();
+        for tool in response["result"]["tools"].as_array().unwrap() {
+            assert_eq!(tool.get("annotations").is_some(), annotations_expected);
+        }
+    }
+}
+
 /// A real client keeps one connection open for the whole session: three
 /// requests on one socket, each answered in order, the third ending it.
 #[test]
@@ -184,7 +264,7 @@ fn mcp_session_lifecycle_over_real_http() {
     let response: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(
         response["result"]["tools"].as_array().unwrap().len(),
-        tool_defs::definitions().len()
+        tool_defs::definitions(true).len()
     );
 
     // tools/call list_vms: goes out on the request queue; answer it like the
