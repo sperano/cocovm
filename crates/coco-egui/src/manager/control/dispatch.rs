@@ -236,7 +236,7 @@ impl ManagerApp {
             terminal_field: app.fields_run.saturating_add(timeout_fields),
         };
         let field_rate_hz = app.machine.config.video.field_rate_hz();
-        self.pending.push(PendingControl::new_text_wait(
+        self.pending.push(PendingControl::new(
             reply,
             slug,
             condition,

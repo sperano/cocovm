@@ -164,7 +164,7 @@ fn deferred_capacity_is_reserved_before_vm_mutation() {
     let Response::Err(message) = rx.recv().expect("overload reply") else {
         panic!("expected overload error");
     };
-    assert!(message.contains("too many deferred"));
+    assert!(message.message.contains("too many deferred"));
     assert!(
         !app.entries[0]
             .vm

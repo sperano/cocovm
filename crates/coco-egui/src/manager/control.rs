@@ -74,25 +74,6 @@ impl PendingControl {
             remaining_taps: usize::MAX,
         }
     }
-
-    /// `wait_for_text` uses its field budget as an actual timeout, so its
-    /// wall deadline has no completion margin.
-    fn new_text_wait(
-        reply: crate::control::ReplyHandle,
-        slug: String,
-        condition: PendingCondition,
-        timeout_fields: u64,
-        field_rate_hz: f64,
-    ) -> Self {
-        let timeout = Duration::from_secs_f64(timeout_fields as f64 / field_rate_hz);
-        Self {
-            reply,
-            slug,
-            condition,
-            deadline: Instant::now() + timeout,
-            remaining_taps: usize::MAX,
-        }
-    }
 }
 
 /// What a [`PendingControl`] is waiting for, checked against its target

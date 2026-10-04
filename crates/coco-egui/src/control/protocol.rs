@@ -187,14 +187,6 @@ impl From<&str> for ControlError {
     }
 }
 
-impl std::ops::Deref for ControlError {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.message
-    }
-}
-
 impl std::fmt::Display for ControlError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(&self.message)
