@@ -70,7 +70,10 @@ fn type_text() -> Value {
         "type_text",
         format!(
             "Type text into the VM through the keyboard type-ahead; \"\\n\" or \"\\r\" presses \
-             ENTER. Blocks until fully typed; at most {MAX_TYPE_TEXT_CHARS} characters per call."
+             ENTER. Blocks until fully typed; at most {MAX_TYPE_TEXT_CHARS} characters per call. \
+             Accepts letters, digits, space, and the punctuation on the CoCo keyboard; a \
+             character with no CoCo key (such as [ {{ ~, tab, or non-ASCII) fails the whole \
+             call with an error naming it, and nothing is typed."
         ),
         object_schema(
             json!({
